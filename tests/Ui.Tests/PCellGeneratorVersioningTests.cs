@@ -40,7 +40,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
     [Fact]
     public void GeneratorVersion_IsPartOfTheContentAddressingHash()
     {
-        var defaults = new Dictionary<string, double> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 };
+        var defaults = new Dictionary<string, PCellValue> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 };
 
         string cellDirAtCurrentVersion = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MTEE", defaults, null, null, PCellLayerSelection.Default);
@@ -56,7 +56,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
     [Fact]
     public void StaleOnDiskCell_FromBeforeAGeneratorFix_IsNeverReused_FreshCorrectGeometryIsGeneratedInstead()
     {
-        var defaults = new Dictionary<string, double> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 };
+        var defaults = new Dictionary<string, PCellValue> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 };
 
         // Simulate the pre-fix world: a generated cell folder written under the OLD (unversioned)
         // hash scheme, containing the OLD, buggy (+Y/90°) branch geometry — exactly what a workspace
@@ -101,13 +101,13 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
     /// <summary>Reproduces GeneratedCellStore's OLD (pre-versioning) hash exactly, so this test can
     /// plant a stale cell folder under the name a pre-fix session would have used.</summary>
     private static string LegacyHashWithoutVersion(
-        string generatorId, IReadOnlyDictionary<string, double> parameters,
+        string generatorId, IReadOnlyDictionary<string, PCellValue> parameters,
         string? techIdentity, PCellLayerSelection layerSelection)
     {
         var sb = new System.Text.StringBuilder();
         sb.Append(generatorId).Append('|');
         foreach (var kv in parameters.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            sb.Append(kv.Key).Append('=').Append(kv.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).Append(';');
+            sb.Append(kv.Key).Append('=').Append(kv.Value.ToString()).Append(';');
         sb.Append('|').Append(techIdentity ?? "");
         sb.Append('|').Append(layerSelection.SignalLayerNameOverride ?? "")
           .Append(',').Append(layerSelection.GroundLayerNameOverride ?? "");

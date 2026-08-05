@@ -275,7 +275,7 @@ public sealed class LayoutInstance
 /// for the read-only/regeneration gates in this phase; L5's own schematic→layout work is what
 /// will attach this to a real placed instance's cell.
 /// </summary>
-public sealed record PCellOrigin(string GeneratorId, IReadOnlyDictionary<string, double> Parameters);
+public sealed record PCellOrigin(string GeneratorId, IReadOnlyDictionary<string, PCells.PCellValue> Parameters);
 
 /// <summary>
 /// brief-L5-followups-2.md §4.2/R-L5g-6: a per-generated-cell REGENERATION RECORD — the exact inputs
@@ -299,12 +299,49 @@ public sealed record PCellOrigin(string GeneratorId, IReadOnlyDictionary<string,
 /// </summary>
 public sealed record PCellSnapshot(
     string GeneratorId,
-    IReadOnlyDictionary<string, double> Parameters,
+    IReadOnlyDictionary<string, PCells.PCellValue> Parameters,
     string? TechIdentity,
     string? SignalLayerNameOverride,
     string? GroundLayerNameOverride);
 
 // ── Container ───────────────────────────────────────────────────────────────
+
+/// <summary>
+/// A connection point on a cell — name, where it is, how WIDE the connection is, and which way it
+/// FACES (docs/design/layout-view.md §9, R3).
+///
+/// <para><b>Why this is its own type and not a <see cref="LabelShape"/> with <c>IsPort</c> set.</b>
+/// Those two answer different questions and only look similar. A port label is TEXT the user sees;
+/// it carries a name, a position and a layer, and nothing else — which is all a label needs. A pin
+/// is CONNECTIVITY: a connection is an edge, not a point, so a width and an outward direction are
+/// what make it usable by anything that has to join to it. Overloading the label would have meant
+/// putting connectivity fields on a type used broadly for ordinary annotation, and would still have
+/// left "which labels are pins" as a flag rather than a list.</para>
+///
+/// <para><b>This is the state whose absence made pins unpersistable.</b> Before it, a generated
+/// cell's pins survived only as those name/position/layer labels, and the renderer recovered width
+/// and direction by re-invoking the generator — exact for a PCell, and impossible for an imported
+/// cell, which has no generator to invoke. A pin list on the view is what lets artwork that was
+/// merely IMPORTED carry connectivity too.</para>
+/// </summary>
+public sealed class LayoutPin
+{
+    /// <summary>The terminal's name (<c>G</c>, <c>D</c>, <c>S</c>). May be empty when nothing named
+    /// it — an unnamed pin is still a real connection point, just one the user must identify.</summary>
+    public string Name { get; set; } = "";
+
+    public long X { get; set; }
+    public long Y { get; set; }
+
+    /// <summary>How wide the connection is, across the direction it faces. Zero means unstated.</summary>
+    public long WidthDbu { get; set; }
+
+    /// <summary>Which way the pin faces, degrees counter-clockwise from +X — the direction a
+    /// connection leaves the cell.</summary>
+    public double OutwardDeg { get; set; }
+
+    public LayerKey Layer { get; set; }
+}
 
 public sealed class LayoutView
 {
@@ -315,6 +352,16 @@ public sealed class LayoutView
 
     /// <summary>Relative path to a .ctech.</summary>
     public string? TechRef { get; set; }
+
+    /// <summary>
+    /// This cell's connection points (§9, R3). Empty for a cell that declares none — which is the
+    /// ordinary case for hand-drawn artwork and not a defect.
+    ///
+    /// <para>Populated by a PCell generator's own declared pins, or recovered from imported artwork
+    /// by <c>PinInference</c>. Both routes land here, so nothing downstream needs to know which one
+    /// produced them.</para>
+    /// </summary>
+    public List<LayoutPin> Pins { get; set; } = [];
 
     /// <summary>Non-null when this view's <see cref="Shapes"/> were produced by a PCell generator
     /// rather than drawn by hand. See <see cref="PCellOrigin"/>.</summary>
@@ -334,7 +381,7 @@ public sealed class LayoutView
     /// discarded), per R-L5-11's three-row table. Absent entry = never schematic-generated (a
     /// palette-placed instance, R-L5-6's own exemption) or not yet run.
     /// </summary>
-    public Dictionary<string, Dictionary<string, double>> SchematicPCellSnapshots { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, Dictionary<string, PCells.PCellValue>> SchematicPCellSnapshots { get; } = new(StringComparer.Ordinal);
 
     /// <summary>brief-L5-followups-2.md §4.2/R-L5g-6: the generalized regeneration record — see
     /// <see cref="Layout.PCellSnapshot"/>. Keyed by generated-cell FOLDER NAME (never an instance

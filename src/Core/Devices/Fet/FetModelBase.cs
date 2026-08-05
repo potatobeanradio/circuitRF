@@ -34,11 +34,16 @@ namespace CircuitRF.Core.Devices.Fet;
 /// </summary>
 public abstract class FetModelBase : ComponentModel
 {
-    private const double Boltzmann  = 1.380649e-23;
-    private const double ElemCharge = 1.602176634e-19;
+    private const double Boltzmann  = Temperature.Boltzmann;
+    private const double ElemCharge = Temperature.ElemCharge;
 
-    /// <summary>Nominal (parameter-extraction) temperature, °C. 26.85 °C = 300 K.</summary>
-    public const double NominalTemperatureC = 26.85;
+    /// <summary>
+    /// Nominal (parameter-extraction) temperature, °C. 26.85 °C = 300 K.
+    /// Forwarding alias for <see cref="Temperature.NominalC"/>, which is now the definition — kept
+    /// under this name because the factory and the FET tests refer to it and there is no reason to
+    /// churn them. New code should use <see cref="Temperature"/> directly.
+    /// </summary>
+    public const double NominalTemperatureC = Temperature.NominalC;
 
     /// <summary>
     /// Temperature scaling of a parameter whose coefficient is given in **percent per degree** —
@@ -75,29 +80,23 @@ public abstract class FetModelBase : ComponentModel
         // Junction potential falls with temperature; the gate capacitances follow it, plus a small
         // linear expansion term. The gate diode's saturation current rises. All three are the
         // standard relations that go with these parameters — the same ones a junction diode uses.
+        // The three relations are SHARED with the junction diode rather than written twice — they are
+        // the same physics for the same reason, and two copies would be two answers to one question.
+        // See Temperature; this family's own tests are the proof the move changed no number.
         double vbiT = vbi;
         if (dT != 0.0)
         {
-            double tK1 = tnomC + 273.15, tK2 = tempC + 273.15;
-            double vt2 = Boltzmann * tK2 / ElemCharge;
-            double eg1 = bandgap - 7.02e-4 * tK1 * tK1 / (1108.0 + tK1);
-            double eg2 = bandgap - 7.02e-4 * tK2 * tK2 / (1108.0 + tK2);
-            double tr  = tK2 / tK1;
-
             if (vbi > 0)
             {
-                vbiT = tr * vbi - 2.0 * vt2 * System.Math.Log(tr * System.Math.Sqrt(tr)) - (tr * eg1 - eg2);
-                double scale = 1.0 + m * (400e-6 * dT - (vbiT - vbi) / vbi);
+                vbiT = Temperature.JunctionPotentialAt(vbi, tempC, tnomC, bandgap);
+                double scale = Temperature.DepletionCapacitanceScale(vbi, vbiT, m, dT);
                 cgs *= scale;
                 cgd *= scale;
             }
 
             if (gateSaturationCurrent > 0)
-            {
-                double n = gateEmissionCoefficient > 0 ? gateEmissionCoefficient : 1.0;
-                gateSaturationCurrent *= System.Math.Pow(tr, xti / n)
-                                       * System.Math.Exp(-ElemCharge * eg1 * (1.0 - tr) / (Boltzmann * tK2));
-            }
+                gateSaturationCurrent *= Temperature.SaturationCurrentScale(
+                    tempC, tnomC, gateEmissionCoefficient, xti, bandgap);
         }
 
         _capModel = capModel;

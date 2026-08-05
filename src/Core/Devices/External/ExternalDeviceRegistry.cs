@@ -132,6 +132,11 @@ public static class ExternalDeviceRegistry
         get { lock (_resolverGate) return _resolvers.ToArray(); }
     }
 
+    /// <summary>
+    /// Resolvers circuitRF always offers, whatever a host has registered. Asked last.
+    /// </summary>
+    public static readonly IExternalProviderResolver[] BuiltInResolvers = [new VerilogAFileResolver()];
+
     // ── lookup ────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -146,9 +151,13 @@ public static class ExternalDeviceRegistry
 
         if (_resolving) return null;    // a resolver asked for the name it is resolving
 
+        // The built-in resolver is ALWAYS in the chain and is deliberately last, so a host or a kit
+        // can override anything it would answer. It survives ClearResolvers because that exists to
+        // drop the resolvers belonging to a workspace being closed, and this one belongs to no
+        // workspace: placing a compiled model file must work on a fresh install with no workspace,
+        // no kit and nothing configured.
         IExternalProviderResolver[] resolvers;
-        lock (_resolverGate) resolvers = _resolvers.ToArray();
-        if (resolvers.Length == 0) return null;
+        lock (_resolverGate) resolvers = [.. _resolvers, .. BuiltInResolvers];
 
         _resolving = true;
         try

@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Layout;
@@ -33,10 +34,15 @@ public sealed class ClayFile
     public ClayPCellOrigin? PCellOrigin { get; set; }
 
     /// <summary>L5 R-L5-11: see <see cref="LayoutView.SchematicPCellSnapshots"/>.</summary>
-    public Dictionary<string, Dictionary<string, double>>? SchematicPCellSnapshots { get; set; }
+    public Dictionary<string, Dictionary<string, PCellValue>>? SchematicPCellSnapshots { get; set; }
 
     /// <summary>brief-L5-followups-2.md §4.2/R-L5g-6: see <see cref="LayoutView.PCellSnapshots"/>.</summary>
     public Dictionary<string, ClayPCellSnapshot>? PCellSnapshots { get; set; }
+
+    /// <summary>See <see cref="LayoutView.Pins"/>. Additive — omitted when empty, so every existing
+    /// pin-free <c>.clay</c> re-serializes byte-for-byte and needs no <see cref="FormatVersion"/>
+    /// bump.</summary>
+    public List<LayoutPin>? Pins { get; set; }
 
     public List<LayoutShape> Shapes { get; set; } = [];
     public List<LayoutInstance> Instances { get; set; } = [];
@@ -48,7 +54,7 @@ public sealed class ClayFile
 public sealed class ClayPCellSnapshot
 {
     public string GeneratorId { get; set; } = "";
-    public Dictionary<string, double> Parameters { get; set; } = new();
+    public Dictionary<string, PCellValue> Parameters { get; set; } = new();
     public string? TechIdentity { get; set; }
     public string? SignalLayerNameOverride { get; set; }
     public string? GroundLayerNameOverride { get; set; }
@@ -62,7 +68,7 @@ public sealed class ClayPCellSnapshot
 public sealed class ClayPCellOrigin
 {
     public string GeneratorId { get; set; } = "";
-    public Dictionary<string, double> Parameters { get; set; } = new();
+    public Dictionary<string, PCellValue> Parameters { get; set; } = new();
 }
 
 /// <summary>Reads and writes .clay files. Framework-free (no Avalonia / Skia).</summary>
@@ -75,7 +81,7 @@ public static class LayoutPersistence
         WriteIndented               = true,
         DefaultIgnoreCondition      = JsonIgnoreCondition.WhenWritingNull,
         PropertyNameCaseInsensitive = true,
-        Converters                  = { new JsonStringEnumConverter() },
+        Converters                  = { new JsonStringEnumConverter(), new PCells.PCellValueJsonConverter() },
     };
 
     // ── Write ─────────────────────────────────────────────────────────────────
@@ -114,20 +120,21 @@ public static class LayoutPersistence
         SnapDbu       = view.SnapDbu,
         AngleMode     = view.AngleMode,
         TechRef       = view.TechRef,
-        PCellOrigin   = view.PCellOrigin is { } o ? new ClayPCellOrigin { GeneratorId = o.GeneratorId, Parameters = new Dictionary<string, double>(o.Parameters) } : null,
+        PCellOrigin   = view.PCellOrigin is { } o ? new ClayPCellOrigin { GeneratorId = o.GeneratorId, Parameters = new Dictionary<string, PCellValue>(o.Parameters) } : null,
         SchematicPCellSnapshots = view.SchematicPCellSnapshots.Count > 0
-            ? view.SchematicPCellSnapshots.ToDictionary(kv => kv.Key, kv => new Dictionary<string, double>(kv.Value))
+            ? view.SchematicPCellSnapshots.ToDictionary(kv => kv.Key, kv => new Dictionary<string, PCellValue>(kv.Value))
             : null,
         PCellSnapshots = view.PCellSnapshots.Count > 0
             ? view.PCellSnapshots.ToDictionary(kv => kv.Key, kv => new ClayPCellSnapshot
             {
                 GeneratorId = kv.Value.GeneratorId,
-                Parameters = new Dictionary<string, double>(kv.Value.Parameters),
+                Parameters = new Dictionary<string, PCellValue>(kv.Value.Parameters),
                 TechIdentity = kv.Value.TechIdentity,
                 SignalLayerNameOverride = kv.Value.SignalLayerNameOverride,
                 GroundLayerNameOverride = kv.Value.GroundLayerNameOverride,
             })
             : null,
+        Pins          = view.Pins.Count > 0 ? [.. view.Pins] : null,
         Shapes        = [.. view.Shapes],
         Instances     = [.. view.Instances],
     };
@@ -146,12 +153,12 @@ public static class LayoutPersistence
 
         if (file.SchematicPCellSnapshots is not null)
             foreach (var kv in file.SchematicPCellSnapshots)
-                view.SchematicPCellSnapshots[kv.Key] = new Dictionary<string, double>(kv.Value);
+                view.SchematicPCellSnapshots[kv.Key] = new Dictionary<string, PCellValue>(kv.Value);
 
         if (file.PCellSnapshots is not null)
             foreach (var kv in file.PCellSnapshots)
                 view.PCellSnapshots[kv.Key] = new PCellSnapshot(
-                    kv.Value.GeneratorId, new Dictionary<string, double>(kv.Value.Parameters),
+                    kv.Value.GeneratorId, new Dictionary<string, PCellValue>(kv.Value.Parameters),
                     kv.Value.TechIdentity, kv.Value.SignalLayerNameOverride, kv.Value.GroundLayerNameOverride);
 
         foreach (var shape in file.Shapes)
@@ -164,6 +171,7 @@ public static class LayoutPersistence
                 view.Shapes.Add(normalized);
         }
         view.Instances.AddRange(file.Instances);
+        if (file.Pins is not null) view.Pins.AddRange(file.Pins);
 
         return view;
     }

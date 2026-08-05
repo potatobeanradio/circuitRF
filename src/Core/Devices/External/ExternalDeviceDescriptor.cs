@@ -42,13 +42,21 @@ public sealed record ExternalParamDescriptor(
 /// system singular. circuitRF does not guess: a provider that reports a node as degenerate without
 /// naming what it follows is a hard error at elaboration, because the alternative is a silently
 /// wrong operating point.</para>
+///
+/// <para><b>CollapsedToGround</b> is the other degenerate case: a node the provider reports as tied
+/// to the ground reference rather than to another node of the same device. It is a separate field
+/// and not <c>SlavedTo = 0</c>, because node 0 is an ordinary device node like any other — a device
+/// whose first pin happens to be an interesting net would otherwise be read as grounding itself.
+/// The two are mutually exclusive; a provider reporting both for one node is a hard error at
+/// elaboration.</para>
 /// </summary>
 public sealed record ExternalNodeDescriptor(
     int              Index,
     bool             External,
-    NodeQuantityKind QuantityKind = NodeQuantityKind.Electrical,
-    string           Label        = "",
-    int?             SlavedTo     = null);
+    NodeQuantityKind QuantityKind      = NodeQuantityKind.Electrical,
+    string           Label             = "",
+    int?             SlavedTo          = null,
+    bool             CollapsedToGround = false);
 
 /// <summary>
 /// Everything circuitRF knows about an externally-provided device type. All of it is learned at
@@ -75,4 +83,8 @@ public sealed record ExternalDeviceDescriptor(
     /// </summary>
     public IEnumerable<(int Node, int SlavedTo)> SlavedNodes
         => Nodes.Where(n => n.SlavedTo is not null).Select(n => (n.Index, n.SlavedTo!.Value));
+
+    /// <summary>Nodes the provider reports as tied to the ground reference. Empty for most devices.</summary>
+    public IEnumerable<int> GroundedNodes
+        => Nodes.Where(n => n.CollapsedToGround).Select(n => n.Index);
 }

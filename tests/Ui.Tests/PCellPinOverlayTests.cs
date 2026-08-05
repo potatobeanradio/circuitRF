@@ -45,7 +45,7 @@ public sealed class PCellPinOverlayTests : IDisposable
         var view = new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000, AngleMode = AngleMode.AnyAngle };
         var inst = new LayoutInstance { CellRef = Path.GetRelativePath(vmBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 };
         view.Instances.Add(inst);
-        return (view, inst, defaults["L"]);
+        return (view, inst, defaults.Real("L"));
     }
 
     private static SKColor PixelAt(SKSurface surface, int x, int y)

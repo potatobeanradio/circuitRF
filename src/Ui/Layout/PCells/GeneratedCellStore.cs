@@ -46,7 +46,7 @@ public static class GeneratedCellStore
     public static string GetOrCreate(
         string workspaceRootDir,
         string generatorId,
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         string? techIdentity,
         PCellLayerSelection layerSelection,
@@ -54,7 +54,7 @@ public static class GeneratedCellStore
         => GetOrCreate(workspaceRootDir, generatorId, parameters, technology, techIdentity, layerSelection, out _, cache);
 
     /// <summary>
-    /// Same as <see cref="GetOrCreate(string,string,IReadOnlyDictionary{string,double},Technology?,string?,PCellLayerSelection,PCellGeometryCache?)"/>
+    /// Same as <see cref="GetOrCreate(string,string,IReadOnlyDictionary{string,PCellValue},Technology?,string?,PCellLayerSelection,PCellGeometryCache?)"/>
     /// but also surfaces <paramref name="diagnostics"/> — the generator's own <see cref="PCellResult.Diagnostics"/>
     /// (e.g. R-klp-10's curvature warning), non-null only on an ACTUAL generation (a cache hit means
     /// the geometry — and whatever it would have warned about — was already reported the first time
@@ -66,7 +66,7 @@ public static class GeneratedCellStore
     public static string GetOrCreate(
         string workspaceRootDir,
         string generatorId,
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         string? techIdentity,
         PCellLayerSelection layerSelection,
@@ -109,6 +109,21 @@ public static class GeneratedCellStore
                     // hardcoded-default convention documented for LabelShape elsewhere.
         foreach (var pin in result.Pins)
         {
+            // TWO records, deliberately, because they answer different questions. The pin is the
+            // CONNECTIVITY: name, position, connecting width and outward direction — everything
+            // needed to join to it, persisted so an instance of this cell is connectable without
+            // re-running the generator. The label is the visible TEXT beside it. Writing only the
+            // label is what previously lost width and direction at the disk boundary.
+            view.Pins.Add(new LayoutPin
+            {
+                Name       = pin.Name,
+                X          = pin.X,
+                Y          = pin.Y,
+                WidthDbu   = pin.WidthDbu,
+                OutwardDeg = pin.OutwardDirectionDeg,
+                Layer      = pin.Layer,
+            });
+
             view.Shapes.Add(new LabelShape
             {
                 X      = pin.X,
@@ -136,11 +151,11 @@ public static class GeneratedCellStore
     /// </summary>
     public static void RecordSnapshot(
         LayoutView view, string cellDir, string generatorId,
-        IReadOnlyDictionary<string, double> parameters, string? techIdentity, PCellLayerSelection layerSelection)
+        IReadOnlyDictionary<string, PCellValue> parameters, string? techIdentity, PCellLayerSelection layerSelection)
     {
         string cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         view.PCellSnapshots[cellName] = new PCellSnapshot(
-            generatorId, new Dictionary<string, double>(parameters), techIdentity,
+            generatorId, new Dictionary<string, PCellValue>(parameters), techIdentity,
             layerSelection.SignalLayerNameOverride, layerSelection.GroundLayerNameOverride);
     }
 
@@ -165,7 +180,7 @@ public static class GeneratedCellStore
     /// cell per unique parameter set").</summary>
     public static bool Exists(
         string workspaceRootDir, string generatorId,
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         string? techIdentity, PCellLayerSelection layerSelection)
     {
         string cellName = BuildCellName(generatorId, parameters, techIdentity, layerSelection);
@@ -177,20 +192,28 @@ public static class GeneratedCellStore
     // ── Content addressing ───────────────────────────────────────────────────
 
     private static string BuildCellName(
-        string generatorId, IReadOnlyDictionary<string, double> parameters,
+        string generatorId, IReadOnlyDictionary<string, PCellValue> parameters,
         string? techIdentity, PCellLayerSelection layerSelection)
     {
+        // The folder name IS this hash, and a placed instance's CellRef names that folder — so this
+        // encoding is a compatibility surface, not an implementation detail. PCellValue.ToString
+        // writes a Real exactly as the pre-contract-v2 code wrote a double, which is what keeps every
+        // already-placed instance in an existing workspace resolving after the widening; see that
+        // method's own doc comment.
         var sb = new StringBuilder();
         sb.Append(generatorId).Append('|');
         foreach (var kv in parameters.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            sb.Append(kv.Key).Append('=').Append(kv.Value.ToString("R", CultureInfo.InvariantCulture)).Append(';');
+            sb.Append(kv.Key).Append('=').Append(kv.Value.ToString()).Append(';');
         sb.Append('|').Append(techIdentity ?? "");
         sb.Append('|').Append(layerSelection.SignalLayerNameOverride ?? "")
           .Append(',').Append(layerSelection.GroundLayerNameOverride ?? "");
         // R-L5f-5-follow-up: the generator's own content version (PCellRegistry.GeneratorVersion) is
         // part of the hash so a fixed generator never resolves to a stale, pre-fix on-disk cell — see
         // PCellRegistry's own doc comment on _generatorVersions for the full story.
-        sb.Append('|').Append(PCellRegistry.GeneratorVersion(generatorId));
+        // Byte-identical to the previous Append(int) for every built-in — see
+        // PCellRegistry.GeneratorContentKey. For a script-backed generator this is a hash of the
+        // script itself, which is what makes editing one actually invalidate the cells it produced.
+        sb.Append('|').Append(PCellRegistry.GeneratorContentKey(generatorId));
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         string hex  = Convert.ToHexString(hash)[..12].ToLowerInvariant();

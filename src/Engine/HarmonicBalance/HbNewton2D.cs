@@ -170,7 +170,7 @@ public static class HbNewton2D
                     double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t1, t2] : 0.0;
                     portV[p] = vp - vm;
                 }
-                var res = ec.Model.Evaluate(new PortVoltages(portV));
+                var res = ec.Evaluate(new PortVoltages(portV));
 
                 for (int p = 0; p < portCount; p++)
                 {
@@ -546,7 +546,7 @@ public static class HbNewton2D
                     double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t1, t2] : 0.0;
                     portV[p] = vp - vm;
                 }
-                var res = ec.Model.Evaluate(new PortVoltages(portV));
+                var res = ec.Evaluate(new PortVoltages(portV));
                 for (int p = 0; p < portCount; p++)
                     portITime[p][t1, t2] = res.I[p];
             }

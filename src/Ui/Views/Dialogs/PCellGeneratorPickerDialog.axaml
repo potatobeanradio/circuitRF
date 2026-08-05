@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.PCellGeneratorPickerDialog"
+        Title="Place Parametric Cell"
+        Width="400"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" FontSize="12" Opacity="0.7" Margin="0,0,0,10"
+                   Text="Choose a parametric cell. It is placed at its own default parameters, which you can edit afterwards in the Properties inspector."/>
+
+        <ListBox x:Name="ChoiceList" Grid.Row="1" MaxHeight="300" FontSize="12">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:CompileBindings="False">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding Id}"/>
+                        <TextBlock Text="{Binding Summary}" FontSize="11" Opacity="0.6"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock x:Name="EmptyText" Grid.Row="1" FontSize="12" Opacity="0.6" TextWrapping="Wrap"
+                   Text="No parametric cells are available." IsVisible="False"/>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button x:Name="CancelButton" Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center"/>
+            <Button x:Name="OkButton" Content="Place" Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

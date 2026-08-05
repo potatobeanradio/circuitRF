@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wire="clr-namespace:CircuitRF.Ui.Layout.PCells.Wire"
+        x:Class="CircuitRF.Ui.Views.Dialogs.PCellTrustDialog"
+        Title="Generated Artwork"
+        Width="470"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
+                   x:Name="HeadingText"
+                   Text="Allow this kit to draw its own artwork?"/>
+
+        <TextBlock Grid.Row="1" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"
+                   Text="Its cells are drawn by scripts the kit ships. circuitRF runs them with Python, as ordinary programs on this machine — allow them only if you trust where the kit came from."/>
+
+        <Border Grid.Row="2" Margin="0,12,0,0" Padding="10,8"
+                CornerRadius="4"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                Background="{DynamicResource SystemChromeLowColor}">
+            <ItemsControl x:Name="KitList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="wire:PCellKit">
+                        <StackPanel Margin="0,2">
+                            <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding EntryScript}" FontSize="11" Opacity="0.6"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+
+        <TextBlock Grid.Row="3" FontSize="11" Opacity="0.7" TextWrapping="Wrap" Margin="0,12,0,0"
+                   Text="If you don't allow this, those cells draw as placeholders and the rest of your design is unaffected. Your answer is remembered on this machine; Settings ▸ General ▸ Generated Artwork asks again."/>
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Don't Allow" Width="100" FontSize="12" IsCancel="True"
+                    HorizontalContentAlignment="Center" Click="OnDontAllowClick"/>
+            <Button Content="Allow" Width="100" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnAllowClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

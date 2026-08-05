@@ -85,10 +85,16 @@ public partial class ParameterEditorView : UserControl
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title         = "Choose Model Library",
+            Title         = "Choose Model File",
             AllowMultiple = false,
             FileTypeFilter =
             [
+                // A COMPILED Verilog-A model, which is what a user places directly. Offered first
+                // because it is the one they can pick without owning a kit.
+                new FilePickerFileType("Compiled Verilog-A model (*.osdi)")
+                {
+                    Patterns = ["*.osdi", "*.OSDI"],
+                },
                 new FilePickerFileType("Model library (*.so, *.dll, *.dylib)")
                 {
                     Patterns = ["*.so", "*.dll", "*.dylib", "*.SO", "*.DLL", "*.DYLIB"],

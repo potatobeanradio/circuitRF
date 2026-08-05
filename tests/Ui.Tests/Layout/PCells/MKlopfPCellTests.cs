@@ -11,7 +11,7 @@ public class MKlopfPCellTests
 {
     private static readonly Technology Pcb = StarterTechnologies.Pcb2Layer();
 
-    private static Dictionary<string, double> BaseParams(double offset = 0.0, double smoothSteps = 1.0) =>
+    private static Dictionary<string, PCellValue> BaseParams(double offset = 0.0, double smoothSteps = 1.0) =>
         new()
         {
             ["Z1"] = 50.0,

@@ -54,7 +54,7 @@ public sealed partial class LayoutEditorViewModel
     /// snapshot. No-ops (reporting why) when <see cref="Model"/> is not PCell-backed, or the
     /// generator id is unknown (should not happen for a well-formed <see cref="PCellOrigin"/>).
     /// </summary>
-    public bool RegeneratePCell(IReadOnlyDictionary<string, double>? newParameters = null,
+    public bool RegeneratePCell(IReadOnlyDictionary<string, PCellValue>? newParameters = null,
         PCellLayerSelection? layerSelection = null)
     {
         var origin = Model.PCellOrigin;
@@ -69,7 +69,7 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
-        var merged = new Dictionary<string, double>(origin.Parameters);
+        var merged = new Dictionary<string, PCellValue>(origin.Parameters);
         if (newParameters is not null)
             foreach (var kv in newParameters) merged[kv.Key] = kv.Value;
 
@@ -104,7 +104,7 @@ public sealed partial class LayoutEditorViewModel
     /// edit. Unspecified parameter names in <paramref name="newParameters"/> keep the resolved cell's
     /// current value, mirroring <see cref="RegeneratePCell"/>'s own merge behavior.
     /// </summary>
-    public bool EditInstancePCellParameters(int instanceIndex, IReadOnlyDictionary<string, double> newParameters)
+    public bool EditInstancePCellParameters(int instanceIndex, IReadOnlyDictionary<string, PCellValue> newParameters)
     {
         if ((uint)instanceIndex >= (uint)Model.Instances.Count) return false;
         var inst = Model.Instances[instanceIndex];
@@ -121,11 +121,25 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
-        var merged = new Dictionary<string, double>(origin.Parameters);
+        var merged = new Dictionary<string, PCellValue>(origin.Parameters);
         foreach (var kv in newParameters) merged[kv.Key] = kv.Value;
 
-        string newCellDir = PCells.GeneratedCellStore.GetOrCreate(
-            workspaceRoot, origin.GeneratorId, merged, Technology, ResolvedTechPath, PCells.PCellLayerSelection.Default, out var editDiagnostics);
+        string newCellDir;
+        IReadOnlyList<string>? editDiagnostics;
+        try
+        {
+            newCellDir = PCells.GeneratedCellStore.GetOrCreate(
+                workspaceRoot, origin.GeneratorId, merged, Technology, ResolvedTechPath, PCells.PCellLayerSelection.Default, out editDiagnostics);
+        }
+        catch (Exception ex)
+        {
+            // The instance keeps the parameters it had — a failed regeneration must leave the design
+            // exactly as it was, never half-edited onto a cell that was never written.
+            _messageSink?.Error($"'{origin.GeneratorId}' could not generate artwork for these parameters, " +
+                                $"so the instance is unchanged. {ex.Message}");
+            return false;
+        }
+
         PCells.GeneratedCellStore.RecordSnapshot(
             Model, newCellDir, origin.GeneratorId, merged, ResolvedTechPath, PCells.PCellLayerSelection.Default);
         if (editDiagnostics is { Count: > 0 })

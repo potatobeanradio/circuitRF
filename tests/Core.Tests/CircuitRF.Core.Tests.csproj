@@ -37,6 +37,20 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <!--
+    Keep the NATIVE OSDI worker in step with the build, so its gate is real on a fresh checkout
+    rather than permanently Skipped.
+
+    ContinueOnError is deliberate and is the standing rule for every native worker here: a missing C
+    compiler prints a message and the build still succeeds. A missing worker must never be the reason
+    somebody cannot build or test the application - OsdiWorkerTests then report Skipped with a reason
+    naming what to run.
+  -->
+  <Target Name="BuildOsdiWorker" BeforeTargets="Build" Condition="'$(OS)' != 'Windows_NT'">
+    <Exec Command="&quot;$(MSBuildThisFileDirectory)../../tools/osdi-worker/build.sh&quot;"
+          ContinueOnError="true" StandardOutputImportance="low" />
+  </Target>
+
   <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>DeviceWorkerExampleDir</_Parameter1>

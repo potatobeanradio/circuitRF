@@ -406,6 +406,10 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         _showOnSchematic  = param.ShowOnSchematic;
         _selectedEnumIndex = ParseEnumIndex(param.Expression);
         if (IsLayerChoiceParam) RecomputeLayerChoiceOptions();
+        // A built-in primitive has no cell to declare a file-valued parameter on, so the registry
+        // states it. Set BEFORE the cell pass, which owns the answer for a kit part and leaves this
+        // alone when there is no cell.
+        IsFilePathParam = ComponentTypeRegistry.IsFilePathParameter(ownerSymbol, param.Name);
         LoadCellDeclaredChoices();
         _isRefreshing = false;
 

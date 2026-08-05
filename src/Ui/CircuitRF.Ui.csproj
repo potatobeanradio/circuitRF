@@ -169,6 +169,10 @@
           Command="&quot;$(MSBuildProjectDirectory)/../../tools/senior-worker/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot;"
           ContinueOnError="WarnAndContinue"
           StandardOutputImportance="high" />
+    <!-- Same rule, same reason: keep the OSDI worker in step, and never fail the build over it. -->
+    <Exec Condition="'$(OS)' != 'Windows_NT'"
+          Command="&quot;$(MSBuildProjectDirectory)/../../tools/osdi-worker/build.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot;"
+          ContinueOnError="true" StandardOutputImportance="low" />
     <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
           Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\senior-worker\ensure-built.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;"
           ContinueOnError="WarnAndContinue"

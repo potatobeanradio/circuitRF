@@ -1,5 +1,574 @@
 # Core — local conventions
 
+A user's OWN Verilog-A model is a placeable component (2026-08-03) — COMPLETE, palette included.
+Type `VerilogA`; `src/Core/Devices/External/VerilogAFileResolver.cs` plus a factory path. **No kit, no
+manifest, nothing to install**: a user compiles their model with their own compiler, places the
+component, points its `File` at the result, and runs.
+
+**The difference from `ExtDevice` is who supplies the model, and it is why this is a second type.**
+`ExtDevice` names a PROVIDER — a kit that was installed, with a manifest saying which program
+evaluates its devices. This names a FILE. Everything below the provider seam is identical, which is
+the point: an externally-supplied device is an ordinary nonlinear component either way, and node
+expansion keys on `ExternalDeviceModel` so it was inherited with no change.
+
+- **The provider name CARRIES the path** (`VerilogA|/abs/path.osdi`), and that is what makes the
+  caching correct: the registry keys providers by name, so two instances naming one file share a
+  worker and two naming different files get one each. Anything coarser evaluates one user's model
+  with another's.
+- **`VerilogAFileResolver` is BUILT IN and survives `ClearResolvers`.** That call exists to drop the
+  resolvers belonging to a workspace being closed; this one belongs to no workspace, because placing
+  a model file must work on a fresh install with nothing configured. It is asked LAST, so a host or
+  a kit can still override anything it would answer.
+- **A missing file is a REFUSAL, not a null.** Null means "this resolver has no opinion", which would
+  send the caller on to report that no provider answered to the name — and the name is a file path,
+  so the useful message is that the file is not there.
+- **`File` and `Model` are always verbatim, never tried as an expression first.** The existing
+  fall-back-on-throw rule is not enough for a path: one that happens to parse as arithmetic would be
+  silently turned into a number.
+- **`Pins` is circuitRF's, not the model's, and is NOT forwarded.** The symbol has to know how many
+  terminals to draw before anything has opened the file. Forwarding it asks the model to accept a
+  name it never declared, which a strict model refuses — failing every device it serves. **Found by
+  the sanity test, not by review.**
+- **The type is optional when the file declares one device.** Asking a user to name it as well as
+  find it is a step that answers itself; two or more, and it has to be stated.
+
+**Palette and dialog** (`src/Ui`): a tile under **Devices**, findable by *VerilogA*, *Verilog-A*,
+*OSDI*, *compact model*, *custom*, *PSP*, *BSIM*, *HICUM*. The `File` row offers a **Browse…** picker
+filtered to `*.osdi` — built-ins had no way to declare a file-valued parameter (only kit cells did),
+so `ComponentTypeRegistry.IsFilePathParameter` states it. The glyph is a plain box with numbered
+leads: circuitRF does not know what the model IS, so drawing a transistor would assert something
+untrue on the schematic. Variadic on its own `Pins` parameter rather than `NumPorts`, because a
+four-terminal MOSFET is not a four-port.
+
+Gate: 16 in `tests/Ui.Tests/VerilogAComponentTests.cs` (palette, search terms, the registry's names
+checked against the factory's constants rather than by eye, the file picker, and pin counts 2–8 all
+landing on the connection grid at distinct positions), plus 5 in
+`tests/Engine.Tests/External/VerilogATransistorSanityTests.cs`.
+
+**Transistor sanity check, on a real BiCMOS kit's compiled MOSFET.** A common-source stage solved by
+circuitRF's own DC engine — which is a much stronger claim than the worker tests make, because
+elaboration has to expand a four-terminal device, resolve the seven nodes the model collapses, mint
+the rest, and Newton has to converge on derivatives that arrived over a pipe. Asserted as what a
+transistor DOES, never as stored numbers: it conducts into the circuit, Id rises monotonically with
+Vgs over four decades, Id saturates with Vdd (under 1.35× for a 50 % supply rise, where a resistor
+would give 1.5×), gm is positive, and every collapsed TERMINAL still carries the user's net. Skips
+with a reason without a compiled model or a built worker.
+
+Validated against REAL compiled compact models (2026-08-03) — COMPLETE, and it found two defects that
+no synthetic fixture could. `tests/Core.Tests/Devices/External/CompiledModelValidationTests.cs`, 5
+tests, **Skipped with a reason** unless `CIRCUITRF_OSDI_MODELS` names a directory of compiled models.
+
+**circuitRF stays MIT and nothing GPL is anywhere near it.** The Verilog-A compiler is GPL-3.0 and
+lives on the USER's machine — never invoked by circuitRF, never shipped. The `.va` sources are the
+kit's and are never vendored. The `.osdi` is a build output of those two and is never committed,
+which is exactly why the tests locate models through an environment variable: committing a binary
+would put someone else's build product in an MIT repository. `osdi.h` remains MPL-2.0 in its own
+file, file-scoped, touching nothing. See `tools/osdi-worker/README.md` for the table.
+
+**Two defects, both invisible to the fixture by construction:**
+
+1. **`OsdiSimParas` must be NON-NULL and NULL-TERMINATED.** The worker passed four null pointers,
+   meaning "no simulator parameters". A model resolves `$simparam("gmin", …)` by SCANNING `names`,
+   so null there is a null dereference *inside the model*, during `setup_instance` — presenting as
+   the worker dying with no output at all. The fixture never asks for a simulator parameter.
+2. **A collapsed TERMINAL must keep the USER'S net, and this one is the serious one.** A real MOSFET
+   collapses its drain terminal onto its internal drain, and its bulk terminal plus three internal
+   bulk nodes onto a single master. Reading `SlavedTo` literally gave the *terminal* the internal
+   node's index, so the net the user wired to that pin was dropped: **a device that solves perfectly
+   while disconnected from the circuit around it**, with nothing on screen saying so.
+
+   The fix is a GROUP resolution in `Elaborator.BuildExternalDeviceNodes`, and it needs two passes
+   for a reason: one master may have several slaves of which only one is external, and assigning as
+   each is encountered copies the internal index into the others before the terminal is reached. The
+   groups are also resolved BEFORE minting, because minting a master that is then absorbed into a
+   terminal's net leaves an orphan unknown — an all-zero row and column, which DC hides entirely and
+   the S-parameter assembly reports as a singularity naming a node the user cannot find. **Two
+   terminals collapsed onto each other is refused**: the device is shorting two of the user's nets,
+   which circuitRF cannot carry, and stamping at one silently drops the other.
+
+**Every oracle is the model's own output under a different operation** — the reported Jacobian against
+a central difference of the currents it returned, the reported capacitance against a difference of its
+charges, collapse reports against structural coherence. No reference simulator is involved, which is
+what makes this runnable at all: the kit ships no measured data.
+
+**The gate has teeth, verified rather than assumed.** A sign flip introduced deliberately into the
+worker's Jacobian scatter (`G[r*n+c] += jr[e]` → `-=`) turns `V2` red immediately and names the
+offending entry with both values. Reverted; the suite is green again.
+
+**A vacuity guard on both counting tests**, because that is the failure mode here: `V2` asserts that
+at least one Jacobian entry was large enough to compare (a bias that puts the device somewhere it does
+nothing would pass every check), and `V4` asserts at least one model reported a collapsed node.
+
+Measured on real models: a 4-terminal resistor with a thermal node (129 parameters, 4 internal nodes)
+and an industrial MOSFET (809 parameters, 9 internal, **7 collapsed nodes**). Suite 6,223 pass with no
+kit present; the compiled tier lights up when one is.
+
+Symbols and part discovery for a one-symbol-per-file kit (2026-08-03) — COMPLETE, palette included.
+`src/Core/Pdk/KitSymbolFileReader.cs` plus two recognisers, and a fourth shape in
+`PdkImporter.DiscoverParts`.
+
+**The gap this closes, and it was total.** Part discovery knew three shapes: a catalog, a
+`<cell>/<view>/<file>` database tree, or subcircuits the kit also draws. A fourth exists and is what
+an openly-licensed kit looks like — symbols together in one folder, ONE FILE PER PART; the behaviour
+behind them in a netlist in a different folder; a compiled model library in a third; and no catalog
+anywhere. Such a kit matched none of the three and imported as a pile of recognised files with an
+**empty palette**.
+
+- **A terminal is a rectangle record whose attributes declare a NAME, not one on a particular
+  layer.** The layer number is the format's display convention — it decides what colour the editor
+  draws the box — and a kit may renumber it. Keying on the layer would read such a kit as a symbol
+  with no pins at all: it still imports, still appears in the palette, and cannot be wired to
+  anything.
+- **Recognised STRUCTURALLY, never by extension and never by the tool named in the first line.** The
+  extension is shared with unrelated formats, and keying off the writing tool would put a particular
+  editor's identity into circuitRF and stop recognising the format the moment a kit generated it with
+  something else. Same rule the component catalog already follows.
+- **An attribute block SPANS LINES**, and a template routinely does. A line-at-a-time reader takes the
+  first line as the whole block and loses every parameter after it, which leaves a part that looks
+  read and has half an interface.
+- **The symbol's own template outranks a name-matched subcircuit** for the parameter interface: it is
+  the kit stating this part's parameters WITH its own defaults. The subcircuit stands in when the
+  symbol declares no template.
+- **The instance's own name is not a parameter.** Offering it as one puts a "what is this instance
+  called" box in the parameter editor beside the real parameters.
+- **The part is NOT pointed at the file it came from.** Its terminals are already read and attached;
+  handing the path to the installer would send a DIFFERENT record-based text reader at it, and two
+  such formats quietly reading each other's files produce a symbol that is drawn, placeable and wrong.
+- **The kit's own type word becomes the palette category**, so browsing groups the way the kit's
+  documentation does rather than the way circuitRF would guess.
+
+**A netlist is recognised by its DIRECTIVES, not its extension** (`SpiceNetlistRecognizer`). Kits of
+this shape spell the same content `.lib`, `.sp`, `.spice`, `.mod`, `.cir` and `.net`, sometimes
+several within one kit, and `.lib` is claimed by unrelated formats elsewhere. **This was found by a
+test, not by inspection** — the netlist in the gate's own fixture was classified as nothing at all,
+so the parameter interface silently fell back to the symbol's template and the fallback path was
+never exercised. Directives are matched at the START of a line: a mention inside prose or a path is
+not a declaration, and reading documentation as a netlist puts phantom parts in a palette.
+
+**`SubcircuitsIn` now reaches for the SPICE reader** rather than growing a second grammar — that
+reader already turns `.subckt` into ordinary cells with ports and a parameter interface, which is
+exactly what part discovery wants. This is the join between the netlist phase and this one.
+
+**The palette needed NO new UI code.** `PdkPartInstaller` already tries a per-part drawing first and
+falls back to terminals the importer attached — the path a symbol LIBRARY established — so attaching
+`Pins` was the whole of it. Same property the device-worker manifest had: the seam was already the
+right shape.
+
+**`DsnSymbolReader.TranslationVersion` now governs this path too**, because every source of terminals
+goes through `KitTemplateSymbol`. NOT bumped: nothing here moves an existing pin, and no workspace has
+a version recorded for a path that did not exist. A future change to that class's scale, snap, axis
+flip or ordering moves pins on all three sources and does need the bump.
+
+Gate: 9 in `tests/Core.Tests/Pdk/KitSymbolFileReaderTests.cs`, 6 in
+`tests/Ui.Tests/OpenKitPaletteTests.cs` — the latter drives a synthetic kit of this shape through
+`PdkImporter` AND `PdkPartInstaller`, because "the importer returned parts" was already true for kits
+whose palette was empty. Suite 6,211 pass.
+
+**VERIFIED against a real openly-licensed kit (2026-08-03), and it changed three things.** The kit was
+cloned outside the repository (sparse, tech files only) and driven through by disposable probe,
+deleted after running. **Result: 41 primitive symbols → 38 read with terminals,
+0 refused**; the 3 without pins genuinely have none (two annotation widgets, one gallery). End to end:
+**110 parts → 110 palette items → 110 symbols installed, 0 omitted, 0 diagnostics**, with a pin-count
+histogram (1–8) matching the device families. What the probe found:
+
+- **A malformed symbol lost all its pins, and the kit's own file is the malformed one.** One device's
+  `template="…` has no closing quote. Quote tracking then makes every following brace look quoted, the
+  attribute block runs on and swallows the terminals, and the device imports with NO pins — listed, in
+  the palette, impossible to wire. Fixed by bounding a block at the next RECORD, since a record always
+  begins a line: the terminals survive and only the malformed attribute is lost. **The kit is wrong
+  and nothing had noticed**, because nothing else reads that attribute.
+- **Pin ORDER is stated after all** — `sim_pinnumber`, on 21 of the 38. Used where every pin of a
+  symbol has one; declaration order remains the fallback, because a partial set would interleave
+  numbered and unnumbered pins arbitrarily. This replaces the earlier "unverified, names are carried
+  so something can bind by name later" caveat.
+- **A template states netlisting as well as device**: `name` and `spiceprefix` appear on every device
+  and are how the instance is WRITTEN, not what it is. Excluded — otherwise every part gets two boxes
+  in its parameter editor for things the user cannot usefully change.
+
+Still deliberate: the drawn BODY is not read — the pins are the kit's and the body is circuitRF's own,
+the same bargain the symbol-library path strikes.
+
+Native model top-ups (2026-08-03) — COMPLETE. The diode completed, a semiconductor capacitor added,
+temperature coefficients on the resistor, and the device multiplier.
+
+**The junction temperature relations now live in `Temperature`, shared, and that is the point of the
+change rather than a side effect.** They began inside `FetModelBase` for its gate diode; `DiodeModel`
+needs the same three for the same physics, and a second copy is a second answer to one question —
+which is exactly what `ResolveDeviceC` already exists to prevent. `JunctionPotentialAt`,
+`DepletionCapacitanceScale`, `SaturationCurrentScale` and `BandgapAt` are the shared four. **The FET
+family's own 27 tests are the proof the extraction changed no number** — that is what makes it a
+refactor rather than a rewrite.
+
+- **`Eg ≤ 0` means "the bandgap term is not modelled" and `BandgapAt` returns zero.** Without it there
+  is no way to state a device whose saturation current does not move with temperature: the Varshni
+  narrowing term is non-zero even at `Eg(0) = 0` and would go on scaling the current by itself. Same
+  rule as the diode's `Bv = 0`. **This is what keeps the A0 ambient tests honest** — they recover the
+  device temperature by inverting the diode's own conduction current, and with `Is(T)` live that
+  inversion would have to undo `Is(T)` first, using the model's temperature code to check the model's
+  temperature code. The fixtures state `Xti=0 Eg=0`; `Is(T)` is gated separately against a closed form.
+- **`SiliconBandgapEv = 1.16` is Eg at 0 K, NOT the 1.11 several tables quote**, which is Eg at room
+  temperature. The two are not interchangeable — this one is what `BandgapAt` subtracts from.
+
+**Diode — what was added, and one deliberate behaviour change.** `Area` (scales `Is`/`Isr`/`Cj0`/`Ibv`
+up and `Rs` down), `Isr`/`Nr` (recombination), `Nbv` (breakdown emission), `Tnom`/`Xti`/`Eg`, and the
+temperature relations on `Is`, `Isr`, `Vj` and `Cj0`.
+
+- **Recombination is a SECOND exponential, not a correction to the first.** Its own saturation current
+  AND its own ideality factor — near 2 where the diffusion term's is near 1 — which is what lets it
+  dominate at low bias and vanish at high. Folding it into `Is` fits one decade and misses the rest.
+  The gate asserts the CROSSOVER, because a single-bias check passes for a model that ignores one term.
+- **`Nbv` defaults to the published 1, NOT to `N` — a deliberate change.** Before the parameter
+  existed the breakdown branch reused `N`, which made the reverse knee follow the forward ideality.
+  Nothing physical requires that and no parameter table states it. A design with `Bv > 0` and `N ≠ 1`
+  gets a different reverse knee than it did.
+- **A junction potential driven past zero falls back to the card's own value BEFORE it is used**, so
+  the capacitance scale is not computed from it either. A relation leaving its range says nothing
+  about the device.
+
+**`SemiC` — a capacitor whose value comes from a process and a geometry**, `Cfixed + Cj·area +
+Cjsw·perimeter`, times `1 + TC1·ΔT + TC2·ΔT²`. `W`/`L` give the area and perimeter of a rectangle;
+explicit `Area`/`Perim` win, for a shape that is not one.
+
+- **A separate type from `CapacitorModel`, not extra parameters on it.** An ideal capacitor takes a
+  capacitance; this one takes a process and a shape and works one out. Merged, `C` becomes ambiguous —
+  the value, or a parasitic to add to the geometric term? Apart, both questions have one answer.
+- **It is LINEAR, and that is physics rather than simplification.** A capacitance that varies with bias
+  is a junction, and a junction is a diode — `DiodeModel` already carries that charge and its
+  derivative in the form HB needs. A bias-dependent `SemiC` would be a second, worse copy of it under
+  a name that does not say so.
+- **`Temperature.PolynomialScale` is a different shape from the junction relations** and is named
+  separately for that reason: a resistor's and a capacitor's temperature dependence is a fitted curve,
+  not device physics. Reaching for the junction relations there would be borrowing physics from
+  something that has none.
+
+**Resistor `TC1`/`TC2` is a MULTIPLIER resolved at construction, not a parameter read at stamp time.**
+The ambient a device is evaluated at is known at elaboration and nowhere else, so a resistor reading
+`c.Parameters` inside `Stamp` cannot see it. `ParametricSweepEngine` re-elaborates every point, so
+resolving early loses nothing. `R` stays in the parameterless registry, so `TryCreate("R")` still
+returns a factor-1 resistor and the whole path is additive.
+
+**The device multiplier `m` has ONE seam, and creating it was most of the work.** `ElaboratedComponent`
+now owns `Stamp` / `StampLinearized` / `Evaluate`, and the 16 engine call sites go through the
+component instead of through `ec.Model`. **Do not call `ec.Model.Stamp(...)` directly** — it bypasses
+the multiplier and silently simulates one device where the netlist asked for several.
+
+- **A decorator around `ComponentModel` was considered and rejected.** There are 47 `ec.Model is X`
+  checks across the engines — sources, probes, ports, terms, SDD-with-control-refs, mutual inductance
+  — and a wrapper stops matching every one of them, silently. The component-level seam has no such
+  failure mode, and after the move there is exactly one place the multiplier is applied.
+- **What scales: admittance contributions and current injections, plus all four nonlinear blocks.**
+  That is the whole of what "the same thing again, in parallel" does, and stating it that way needs no
+  list of which model is which. Scaling the currents and forgetting the Jacobian would converge slowly
+  to the right DC answer and be wrong outright at AC.
+- **What is REFUSED: anything that allocates a branch-current unknown.** Two ideal voltage sources in
+  parallel is not a circuit — it is the same constraint written twice. Refusing at the moment
+  `AddBranch` (or any Group-2 method) is called catches every such model, present and future, by name
+  and without a list.
+- **`m ≤ 0` is refused rather than obeyed.** Some dialects read `m = 0` as "this device is not there";
+  deleting a component the user placed, in silence, is the worse answer.
+- **Lower-case `m` is the multiplier; upper-case `M` is the diode's grading coefficient** — on a
+  component that can carry both, meaning nothing like each other. Resolved parameters compare
+  ordinally so the two are genuinely different keys, and there is a test pinning it, because a diode
+  reading its grading coefficient as a device count gives a circuit with 0.4 diodes in it that
+  simulates perfectly. **The SPICE reader normalises the instance spelling** (`M=4` → `m`), because
+  that dialect is case-insensitive and would otherwise walk straight into this; a model CARD is left
+  alone, where `M` means what circuitRF means by it.
+
+Gate: 33 in `DiodeModelTests`, 14 in `tests/Engine.Tests/Devices/NativeModelTopUpTests.cs` over
+`testdata/A3/*.cnl` — the whole path, elaborated and solved by the real engines, because every one of
+these features leaves the model class correct and the answer wrong if it fails to survive elaboration.
+Oracles are closed forms or a second netlist, never a stored number. Suite 6,196 pass.
+
+**NOT done here, deliberately:** the bipolar model stays on the compiled path (A1), not native — the
+kit's own authors are migrating there, and a native implementation is permanent maintenance of someone
+else's physics. `Rs` and `Bv` carry no temperature coefficients of their own.
+
+Reading the SPICE dialect (2026-08-03) — COMPLETE. `src/Core/Netlist/Spice/` reads a netlist and its
+model cards into the same `Library` of `Cell`s circuitRF's own `.cnl` produces, so a subcircuit read
+from one is treated exactly like a cell the user drew.
+
+**A sibling of `KitNetlistReader`, not an extension of it.** That reader takes a different format;
+what carries across is its SHAPE — an honest note per line it could not use, an explicit set of cells
+whose definition was only partly read, and no supplier named anywhere. Bending one reader to cover
+two formats puts two grammars in one state machine and loses exactly those properties.
+
+**`M` is MILLI here and circuitRF's own table says MEGA — this is the load-bearing fact.** The SI
+table is case-sensitive (`M` mega, `m` milli); this dialect is case-INsensitive and `M` is milli in
+either case, with mega spelled `MEG`. A capacitance written `1M` read through the SI table is 10⁹
+times too large, and it parses, stamps and converges. So **every literal is resolved in
+`SpiceNumber` and handed on as a plain decimal**, and the SI table is never consulted for a suffix
+that came out of this dialect. `MEG`/`MIL` are matched before `M` for the same reason — one-character
+matching first reads a megohm as a milliohm and carries on.
+
+- **A power-of-ten prefix is applied by RE-READING the literal with the exponent appended**, not by
+  multiplying: `3.0 * 1e-9` is `3.0000000000000004e-9` while `3e-9` is the nearest double to what the
+  file wrote. Numerically irrelevant, and it reads back out as noise, which is what a user sees.
+- **After an explicit exponent no prefix is applied** — `1e-12F` is one picofarad, not 1e-27. Found by
+  the test, not by review: read the other way it scales twice, quietly, in the one notation a careful
+  author reaches for precisely to be unambiguous.
+- **The trailer after a prefix is LETTERS ONLY.** Admitting `/` so a unit like `F/m` could be
+  swallowed whole eats the division in `1/2` and yields `12` — a wrong number out of a valid
+  expression.
+- **`A` for atto is deliberately absent**: no card uses it, a bare `A` meaning amperes is plausible,
+  so recognising it can only ever turn a value into 1e-18 times itself.
+- **`1F` is one FEMTO-unit, not one farad.** The dialect's own sharp edge, kept rather than smoothed —
+  a reader that "fixed" it would disagree with every file it is meant to read.
+
+**A rewritten value carries NO whitespace, and that is a requirement rather than tidying.** circuitRF's
+generic instance-line parser splits on whitespace and reads bare words as nets, so `if(a, b, c)` comes
+back from a `.cnl` round trip as a value plus two phantom nets — every later node index shifted, and it
+still runs. This is the trap already recorded further down this file, reached from a new direction.
+
+**`tests/Core.Tests/Netlist/SpiceNetlistRoundTripTests.cs` exists because reading is not the run path.**
+The run path is `CnlWriter → .cnl → CnlReader → elaborate`, so anything the writer cannot say is gone
+before the elaborator sees it — the same shape as the three losses already recorded below, each of
+which looked like an extractor bug and was not. Assertions are made after RE-READING.
+
+**A passive's third word: value or model name?** Nothing in the word settles it and both spellings are
+ordinary. Brackets and numbers are values beyond doubt; a bare identifier is decided by a question the
+reader can actually answer — **is a parameter of that name in scope?** Reading `R1 in out rtop` as a
+model reference gives a resistor with no value pointing at a card that does not exist.
+
+**Everything else is taken from the END of the bare words** — one rule covering a three- and a
+four-terminal transistor and a subcircuit call of any width, with a trailing bare NUMBER popped first
+as the positional `area`.
+
+**A model card is NOT given a design-layer type.** It is the parameter block of whatever device
+implements its type — a built-in, a compiled model behind a provider, or nothing yet — so it is carried
+on the result and bound by whoever supplies that device. A `D`/`Q`/`M` instance's `Reference` is the
+card's name, so it fails loudly until something answers to it rather than silently elaborating to a
+default. The type and its bracket are read off the RAW text, because the bracket is routinely glued
+(`nmos(level=54)`) and the tokeniser keeps a bracketed run whole — off the word list the type is
+spelled `nmos(level` on every such card.
+
+**"Incomplete" means the DEFINITION was damaged, not that a type is unfamiliar.** A skipped analysis
+directive leaves the circuit exactly as written and does not mark anything; an unreadable line of the
+definition does, because what is left is a plausible-looking different circuit. An unfamiliar device
+type marks nothing either — it is very often a device a provider supplies, and marking it reports the
+working case as broken. Simulator directives are listed and named rather than merely unknown: a file
+full of them must read as understood.
+
+**A conditional that cannot be evaluated takes NO branch.** Reading it as false silently deletes the
+guarded block and leaves a cell that builds and is wrong; taking no branch and marking the cell
+incomplete says "circuitRF could not read this", which is true, rather than "the file said no", which
+is a claim nothing here can make.
+
+**Sections are ALTERNATIVES, so an unrequested one is skipped AND named.** Reading a library file whole
+defines the same parameters several times over; choosing a corner nobody asked for is a guess.
+`.lib <file> <section>` reads one; `.lib <section>` … `.endl` marks one.
+
+**Statistical distributions are reduced to their nominal value and REPORTED** (`SpiceNetlistResult.Statistics`).
+circuitRF does not sample distributions and this does not add that. Doing the reduction silently is the
+bad outcome — the number that comes out is indistinguishable from one that carried no distribution at
+all. Bracketed only when the nominal is compound, so a card's plain `0.4` does not become `(0.4)`.
+
+**Inclusion is guarded by file IDENTITY, and the ROOT file is registered before it is read** — otherwise
+the root is the one file that can be entered twice, and a cycle back to the top recurses to the depth
+limit instead of being reported as what it is. Notes carry the file as well as the line: an included
+file's line 12 and the including file's line 12 are different lines.
+
+**A directive's name is the leading dot plus letters, NOT the first whitespace-separated word.** A
+condition is written `.if(x==1)` as readily as `.if (x==1)`, and the tokeniser keeps a bracketed run
+whole — so the glued spelling's first "word" is the whole directive, matches no case, and falls
+through to the switch's last arm. That arm is `.endif`, so every conditional in a file written that
+way unwinds the wrong construct.
+
+**VERIFIED against a kit's model libraries (2026-08-03) — 32 of them, and it found four
+defects.** Measured after the fixes: 57 subcircuits, 75 model cards, **notes down 241 → 98**, and the
+remaining 98 are all legitimate reports (a corner section redefining a model, an unrequested section
+skipped). Statistical uses rose 32 → 130, which is itself the proof the first fix landed.
+
+- **A mismatched `.ends <name>` was a HARD ERROR and should never have been.** `.ends` closes the
+  innermost open subcircuit whatever name follows it — the dialect's own rule, and every simulator
+  reads it that way — so the nesting is never in doubt and the name is decoration. The kit has one
+  stray suffix (`.ends diodevdd_4kv_mod` closing `diodevdd_4kv`) and refusing threw away an ENTIRE
+  model library over it. Now a note.
+- **`name =value`** — the `=` glued to the VALUE rather than the name. Two words, one binding. The kit
+  writes all 75 of its statistical parameters that way; both halves were falling through as bare
+  words, so the file read cleanly, reported nothing, and declared none of them.
+- **`.params` is the plural spelling of the same directive**, and the kit uses both.
+- **`N` is how a device backed by a COMPILED model is instantiated** — the join to the OSDI worker.
+  Its terminal count is the model's, not the letter's, which is exactly the case the
+  take-the-name-from-the-END rule was written for; observed as a four-terminal resistor with a
+  thermal node.
+
+Gate: 91 tests — `SpiceNumberTests` (34), `SpiceExpressionTests` (19), `SpiceNetlistReaderTests` (32),
+`SpiceNetlistRoundTripTests` (6). All fixtures synthetic; the repo commits no third-party kit data.
+
+**NOT done here, and deliberately.** Nothing yet turns a read subcircuit into a placeable PART — that
+needs symbols and part discovery, which is its own piece of work. `V`/`I` sources and the remaining
+element letters are reported and skipped rather than read: their value forms are a small language of
+their own (`PULSE`, `SIN`, `DC … AC …`) and a device definition rarely contains one. And the `m=`
+multiplier is carried faithfully but nothing applies it — it is cross-cutting and belongs in
+elaboration, not in each model.
+
+Hosting an openly-specified compiled model ABI (2026-08-03) — COMPLETE for a native host platform.
+`tools/osdi-worker/` is a **third** worker, beside `senior-worker` (a proprietary model ABI) and
+`netlist-worker` (a library that describes a circuit). It shares no ABI with either — same
+relationship those two already have — and it reaches circuitRF through the existing provider seam
+with **no engine change and no new component type**.
+
+**Why this ABI is worth hosting, and it is not a preference.** Its four load functions map onto
+`ComponentModel.Evaluate`'s `(i, q, dg, dc)` essentially one to one, because the interface separates
+**resistive** from **reactive** natively — the charge formulation HB wants, rather than a transient
+derivative to undo. One integration therefore reaches an entire ecosystem of compact models instead
+of one supplier's.
+
+Three ABI facts established by READING a reference host, not by inference — each would have been
+silent:
+
+- **Residual offsets are byte offsets into the INSTANCE struct**, read as
+  `*(double *)((char *)inst + off)`, with `UINT32_MAX` meaning the node has none. Read as indices
+  into an output array they would have produced plausible numbers out of the wrong memory.
+- **The `load_spice_rhs_*` pair must NOT be used.** Those return a *linearized* right-hand side in
+  SPICE's own convention — which is exactly why the reference host's DC path uses them. circuitRF
+  wants raw `i` and `q`, which the residual offsets give directly. The SPICE pair converges, to a
+  different formulation's answer.
+- **The Jacobian is written through HOST-INSTALLED pointers and it accumulates.** Scratch doubles are
+  installed at the declared offsets and scattered into `G`/`C` by each entry's own node pair; the
+  scratch is zeroed per point rather than assumed overwritten, because in a real host several
+  instances share one matrix entry.
+
+**Node collapsing is DECLARED by the model, so a slaved node costs nothing here.** The other worker
+needs a run-time alias map precisely because its ABI cannot say *which* node a degenerate one
+follows — the measured difference there was 279,127 iterations at residual 35.6 versus 5 at 7.6e-12.
+That whole problem does not recur on this path, and `probe` correctly answers with nothing, leaving
+the create-time report standing.
+
+**It is answered at `create`, not at `describe`, and the reporting was DEAD until 2026-08-03.** Which
+nodes collapse depends on the parameters the instance was given — a zero series resistance degenerates
+a node a nonzero one leaves free — so it cannot be a property of the type. The worker emitted the
+array from the beginning; `DeviceWorkerProvider.Create` never read it, so a collapsed node was still
+minted a free unknown and the whole "it comes for free" claim was untrue in code. `ReadCollapsedNodes`
++ `ApplyCollapsedNodes` fold it onto a **new** descriptor record (the cached type descriptor is shared
+by every instance, so writing into it would let one instance's collapse degenerate a node on all the
+others), and it is applied *before* the probe so a probing worker refines the collapsed shape rather
+than erasing it.
+
+**"Grounded" is a SEPARATE claim from "slaved", not `SlavedTo = 0`.** `node_2 == UINT32_MAX` on the
+wire (`"to": -1`) means tied to the ground reference; node 0 is an ordinary pin, usually wired to
+something interesting, so conflating the two would ground a device's own first terminal.
+`ExternalNodeDescriptor.CollapsedToGround` carries it and the elaborator gives such a node index 0.
+This is the shape a model reports for a thermal node with self-heating switched off.
+
+**An EXTERNAL pin reported as grounded is REFUSED, deliberately.** The user wired a net to it, and
+both available readings are wrong and silent: give the pin node 0 and the user's net is left floating
+rather than shorted; ignore the report and the device solves a node the model says does not exist.
+Neither shows on screen. A node reported both grounded and slaved is likewise refused — the two name
+different masters and nothing here can tell which is meant.
+
+Gate for all of it: `O8`/`O9` in `OsdiWorkerTests` (the test model's `crf_collapse` declares both
+flavours and decides them from its own parameters, so the same provider yields a collapsed and an
+uncollapsed instance — the uncollapsed one is what stops the test passing vacuously; `O9` then shows
+the collapse in the ANSWER, since a report that is carried and never acted on is indistinguishable
+from one that is wrong), plus 5 in `tests/Engine.Tests/External/GroundCollapsedNodeTests.cs` carrying
+it through elaboration and the S-parameter assembly.
+
+**Temperature rides as its own reserved key, never as a model parameter.**
+`DeviceWorkerProvider.ReservedTemperatureKey` (`__temperatureK`, KELVIN) is lifted out of the
+parameter dictionary at `create` and written as a top-level field; `__`-prefixed keys are skipped by
+the descriptor check, which of course does not declare them. Writing it as a parameter would give a
+model that happens to declare that name the value twice, with the two meanings competing. This is
+where **A0 pays off** — and the gate observes it in the ANSWER (the test model's conductance carries
+a coefficient, so 400 K must give twice what 300 K does), because a temperature that never lands
+still produces finite, entirely plausible currents.
+
+**`osdi.h` is third-party and stays BYTE-IDENTICAL** (MPL-2.0, its own notice intact, in its own
+file — it does not touch the MIT core). It is the ABI contract: the struct layout must match the
+producing compiler's exactly, so a hand-copied or tidied version is a silent corruption. Its
+`PARA_KIND_*` macros are *signed* expressions overflowing at `3 << 30`; the masks are therefore
+re-expressed as unsigned at the worker's own call sites, never by editing the header.
+
+**`tools/fake-osdi-model/` is a test-only library, the same bargain `tools/fake-model-lib` strikes** —
+the real producers of these files are GPL-3.0 Verilog-A compilers that must never be a build
+dependency. It is NOT a model: every device has a closed-form answer written in its comment, so the
+gate asserts against arithmetic rather than against another implementation.
+
+**The native build cannot fail the build.** `tests/Core.Tests` runs `build.sh` with
+`ContinueOnError`; a machine with no C compiler reports the gate **Skipped with a reason** naming
+what to run, via a `FixtureFact` added to Core.Tests for the purpose.
+
+**A design can name one, and this needed NO new production code.** The existing manifest already
+carries a command plus arguments, already resolves a bare command name against circuitRF's own tools
+folder, and already makes a relative argument absolute against the manifest's directory — an OSDI
+library is exactly "which model library the worker should load", the case that mechanism was built
+for. A second, OSDI-specific launch path would have been a parallel road for no gain. `dotnet build`
+now copies the worker beside the application the same way it keeps the other workers in step.
+
+**NOT done, and the honest list:** host platform only,
+no cross-compilation and no VM entry — and unlike the other worker it may need neither, since a user
+compiles these natively, which is worth confirming before building any of it; and the
+`param_opvar[]` ordering convention is read **defensively** (each entry's own `flags` decides
+model-vs-instance) rather than assumed — unconfirmed against a real compiled model.
+
+Gate: 9 tests in `tests/Core.Tests/Devices/External/OsdiWorkerTests.cs`, driving the worker as a real
+process through the real `DeviceWorkerProvider` — describe, closed-form `i`/`q`/`dg`/`dc`, temperature
+observed in the answer, a 2000-point batch (which only passes if partial reads are looped on both
+sides), an undeclared parameter refused, and a non-library refused. Plus `tools/osdi-worker/verify.py`
+at the protocol level. Suite 6,076 pass, 0 fail.
+
+**One unexplained failure, recorded rather than dismissed.** The full solution went red once with a
+single `Engine.Tests` failure on the first run after the worker binary was built, and **the name was
+not captured** — which is the mistake, not the failure. Two subsequent full runs are clean, and
+`Engine.Tests` alone is clean. Per this repo's own standing note, isolated repetition proves nothing
+about a load-dependent race, so this is NOT called flaky. If it returns, capture the name first.
+
+Design-wide ambient temperature (2026-08-03) — COMPLETE. `src/Core/Devices/Temperature.cs` is now the
+one definition of temperature for every component model, and a design states its ambient as the global
+**`temp`**, in °C.
+
+**Scope correction worth recording, because the opposite was believed for a while.** Temperature was
+NOT missing from circuitRF — the FET family and `Diode` have carried per-instance `Temp`/`Tnom` in
+degrees Celsius, with the published scaling forms, since the FET family landed. Three things were
+missing, and only those: an **ambient** (every device defaulted to its own extraction point, so there
+was no way to run a whole circuit at 85 °C without editing every instance), **`Dtemp`** (a rise above
+ambient, which is the only thing a subcircuit can meaningfully state about itself), and a **route from
+the design into the factory** — `TryCreate` saw per-instance parameters and nothing else.
+
+- **`temp` is an ordinary global, deliberately, and this is NOT a `.cnl` format change.** Globals
+  already round-trip, already resolve through the expression machinery, and are already overridden
+  per point by `ParametricSweepEngine`, **which re-elaborates every point** (`ParametricSweepEngine.cs`,
+  the `Elaborate` inside the sweep loop). So a temperature sweep needed no new mechanism at all — that
+  is what `A7` pins, by reproducing the engine's own override-and-re-elaborate without depending on it.
+  A directive would have been a format change for a capability the format already had.
+- **It is REPORTED when present.** The user did not ask for `temp` to mean this, so a design that
+  happens to use the name for something else must not have its meaning changed in silence. A design
+  with no `temp` says nothing — asserted, because an ordinary design acquiring a temperature message
+  would be noise on every run.
+- **`Temperature.ResolveDeviceC` is the ONE rule** — `Temp` (absolute) beats `Dtemp` (ambient + rise)
+  beats ambient — so the FET family and the diode cannot answer the question differently. Stating both
+  is resolved (`Temp` wins) **and said out loud**: the two together cannot both be what the author
+  meant, and a silent discard is found months later.
+- **Ambient must NEVER move `Tnom`, and that is the silent failure this area is most prone to.**
+  `Tnom` is the parameter set's own extraction temperature — a property of the model card, not of the
+  run. Move both together and ΔT is zero at every ambient: every temperature relation collapses to the
+  identity while the device still looks temperature-aware and every number stays finite. `A6` is the
+  guard, asserted as a relative difference on a FET whose `Beta` carries a coefficient.
+- **Additive by construction.** With no `temp` global the ambient IS `Temperature.NominalC`, so a
+  design that says nothing about temperature elaborates to exactly what it did before. `A1` pins that,
+  and the whole 6,070-test suite is the wider proof.
+- **`Temperature` is not on `FetModelBase` any more.** It was never FET plumbing — `Diode` already
+  reached for the same nominal and the external-device boundary will too. `FetModelBase.NominalTemperatureC`
+  stays as a forwarding alias so no model, factory call or test changed.
+- **26.85 °C is 300.00 K exactly**, verified as a bit-exact IEEE-754 double sum rather than repeated
+  from the old comment. That exactness is what lets a device stating no temperature collapse every
+  relation to the identity with no residual drift. Do not "tidy" it to 27 °C.
+
+**Trap confirmed while building this, and already guarded in production:** `new Variable(name, expr, "")`
+throws `Unknown unit ''` — `Evaluator.ApplyUnit` returns early on `null` only, and an empty string falls
+through to `Units.Scale`. `ParametricSweepEngine` carries an explicit `IsNullOrEmpty(baseUnit) ? null`
+guard for exactly this. **`null` means "no unit"; `""` is an error.** `ResolveAmbient` degrades and
+reports rather than throwing, which is how one probe found it.
+
+**NOT done here, on purpose:** passives (R/C/L) still ignore temperature — TC1/TC2 is device physics,
+not plumbing. And `CreateExternalDeviceModel` does not yet receive the ambient: handing a temperature
+to an out-of-process provider is a protocol question, and it belongs with the work that adds one.
+
+Gate: 6 tests in `tests/Core.Tests/Devices/TemperatureTests.cs` (including one that recovers a
+default-constructed diode's `Vt` from its own conduction current, making the extraction provably
+numeric-identity rather than probably harmless) and 9 in
+`tests/Core.Tests/Elaboration/AmbientTemperatureTests.cs`. Suite 6,070 pass, 0 fail.
+
 Built-in large-signal FET family (2026-08-02) — COMPLETE, palette included.
 `src/Core/Devices/Fet/`: `CurticeQuadraticFetModel`, `CurticeCubicFetModel`, `StatzFetModel`,
 `MaterkaFetModel`, `AngelovFetModel`, over a shared `FetModelBase`. Types `FET_Curtice`,

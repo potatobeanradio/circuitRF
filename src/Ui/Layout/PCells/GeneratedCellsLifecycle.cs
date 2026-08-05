@@ -40,14 +40,25 @@ public static class GeneratedCellsLifecycle
     /// A corrupt/unreadable <c>.clay</c>, or a single bad snapshot entry, is skipped (best-effort)
     /// rather than blocking the rest of the workspace from opening.
     /// </summary>
-    public static void RegenerateAll(string workspaceRootDir, Func<string?, Technology?> resolveTech)
+    /// <param name="report">Where a snapshot that could not be rebuilt goes. Null discards, which is
+    /// the pre-B7 behaviour — but a script that fails is exactly what an author needs told, so the
+    /// application supplies one.</param>
+    /// <param name="skipPaths">Layouts the caller is holding open in memory and will repoint itself.
+    /// Rewriting the file under an open document would fight whatever is unsaved in it.</param>
+    public static RegenerateOutcome RegenerateAll(
+        string workspaceRootDir,
+        Func<string?, Technology?> resolveTech,
+        Action<string>? report = null,
+        IReadOnlySet<string>? skipPaths = null)
     {
         string genRootPrefix = Path.GetFullPath(Path.Combine(workspaceRootDir, GeneratedCellStore.ReservedFolderName))
             + Path.DirectorySeparatorChar;
 
         IEnumerable<string> clayFiles;
         try { clayFiles = Directory.EnumerateFiles(workspaceRootDir, "*.clay", SearchOption.AllDirectories); }
-        catch { return; }
+        catch { return default; }
+
+        int repointed = 0, rewritten = 0;
 
         foreach (var clayPath in clayFiles)
         {
@@ -56,22 +67,105 @@ public static class GeneratedCellsLifecycle
             // about to be recreated here.
             if (Path.GetFullPath(clayPath).StartsWith(genRootPrefix, StringComparison.OrdinalIgnoreCase))
                 continue;
+            if (skipPaths is not null && skipPaths.Contains(Path.GetFullPath(clayPath))) continue;
 
             LayoutView view;
             try { view = LayoutPersistence.LoadFromFile(clayPath); }
             catch { continue; }
             if (view.PCellSnapshots.Count == 0) continue;
 
-            foreach (var snap in view.PCellSnapshots.Values)
-            {
-                try
-                {
-                    GeneratedCellStore.GetOrCreate(
-                        workspaceRootDir, snap.GeneratorId, snap.Parameters, resolveTech(snap.TechIdentity),
-                        snap.TechIdentity, new PCellLayerSelection(snap.SignalLayerNameOverride, snap.GroundLayerNameOverride));
-                }
-                catch { /* best-effort — a corrupt snapshot must not block opening the rest of the workspace */ }
-            }
+            int moved = Regenerate(workspaceRootDir, view, resolveTech, report);
+            if (moved == 0) continue;
+
+            repointed += moved;
+            try { LayoutPersistence.SaveToFile(clayPath, view); rewritten++; }
+            catch (Exception ex) { report?.Invoke($"'{clayPath}' could not be updated: {ex.Message}"); }
         }
+
+        return new RegenerateOutcome(repointed, rewritten);
+    }
+
+    /// <summary>
+    /// Rebuilds every generated cell <paramref name="view"/> references and — the part that matters
+    /// once a generator can be EDITED — repoints its instances when the rebuild lands somewhere new.
+    /// Returns how many instances moved; zero means nothing about the view changed.
+    ///
+    /// <para><b>This closes a gap B5's content hash opened.</b> A generated cell's folder name is a
+    /// hash that now includes the generator's own content, so editing a script changes the name.
+    /// <see cref="LayoutView.PCellSnapshots"/> is keyed by that name and an instance's
+    /// <see cref="LayoutInstance.CellRef"/> points at it — so without this, editing a script and
+    /// reopening the workspace regenerates every cell under a NEW name and leaves every placed
+    /// instance pointing at a folder that will now never be built. The design would open full of
+    /// Not Found placeholders, and nothing would say why.</para>
+    ///
+    /// <para>Mutates <paramref name="view"/> in place; the caller decides whether that means saving a
+    /// file or marking an open document dirty.</para>
+    /// </summary>
+    public static int Regenerate(
+        string workspaceRootDir,
+        LayoutView view,
+        Func<string?, Technology?> resolveTech,
+        Action<string>? report = null)
+    {
+        var rekeyed = new Dictionary<string, PCellSnapshot>(StringComparer.Ordinal);
+        int repointed = 0;
+        bool changed = false;
+
+        foreach (var (oldName, snap) in view.PCellSnapshots)
+        {
+            string cellDir;
+            try
+            {
+                cellDir = GeneratedCellStore.GetOrCreate(
+                    workspaceRootDir, snap.GeneratorId, snap.Parameters, resolveTech(snap.TechIdentity),
+                    snap.TechIdentity, new PCellLayerSelection(snap.SignalLayerNameOverride, snap.GroundLayerNameOverride));
+            }
+            catch (Exception ex)
+            {
+                // Best-effort per snapshot — one generator that will not run must not stop the rest of
+                // the workspace opening. Reported rather than swallowed: for an author editing a
+                // script, this message IS the error report.
+                report?.Invoke($"The cells generated by '{snap.GeneratorId}' could not be rebuilt: {ex.Message}");
+                rekeyed[oldName] = snap;
+                continue;
+            }
+
+            string newName = Path.GetFileName(cellDir);
+            if (string.Equals(newName, oldName, StringComparison.Ordinal)) { rekeyed[oldName] = snap; continue; }
+
+            // The cell moved because its generator changed. Every instance naming the old folder now
+            // names the new one; a CellRef is a relative path, so only its last segment moves.
+            foreach (var inst in view.Instances)
+            {
+                if (!NamesCell(inst.CellRef, oldName)) continue;
+                inst.CellRef = ReplaceLastSegment(inst.CellRef, newName);
+                repointed++;
+            }
+
+            rekeyed[newName] = snap;
+            changed = true;
+        }
+
+        if (!changed) return 0;
+
+        view.PCellSnapshots.Clear();
+        foreach (var (name, snap) in rekeyed) view.PCellSnapshots[name] = snap;
+        return repointed;
+    }
+
+    private static bool NamesCell(string? cellRef, string cellName)
+        => cellRef is { Length: > 0 }
+           && string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(cellRef)), cellName,
+                            StringComparison.OrdinalIgnoreCase);
+
+    private static string ReplaceLastSegment(string cellRef, string newName)
+    {
+        string trimmed = Path.TrimEndingDirectorySeparator(cellRef);
+        string? parent = Path.GetDirectoryName(trimmed);
+        return string.IsNullOrEmpty(parent) ? newName : Path.Combine(parent, newName);
     }
 }
+
+/// <summary>What a regeneration pass actually changed. Zero of both is the ordinary case — nothing
+/// about the generators moved since last time.</summary>
+public readonly record struct RegenerateOutcome(int InstancesRepointed, int LayoutsRewritten);

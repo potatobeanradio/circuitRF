@@ -264,14 +264,18 @@ public static partial class LayoutRenderer
                 foreach (var (_, fp, sp) in layerVisuals) { fp.Dispose(); sp.Dispose(); }
             }
 
-            // brief-L5-followups-2.md §6 (R-L5g-13/14/15): a top-level resolved instance whose cell is
-            // PCell-generated gets its pins drawn as a screen-space overlay, ABOVE its own geometry —
-            // never as layer geometry (never touches `compiled`/`layerVisuals`, never contributes to
-            // any counter, never reachable by any exporter, which walk `LayoutView.Shapes` and never
-            // see this at all). Deliberately top-level only — a PCell nested inside another instance's
-            // compiled aggregate has no per-instance draw call left to hook this onto (the SAME scope
-            // narrowing R-L3a-3's own "nested broken instance" placeholder already uses).
-            if (opts.ShowPCellPins && step.SubView!.PCellOrigin is not null)
+            // brief-L5-followups-2.md §6 (R-L5g-13/14/15): a top-level resolved instance's pins are
+            // drawn as a screen-space overlay, ABOVE its own geometry — never as layer geometry
+            // (never touches `compiled`/`layerVisuals`, never contributes to any counter, never
+            // reachable by any exporter, which walk `LayoutView.Shapes` and never see this at all).
+            // Deliberately top-level only — a cell nested inside another instance's compiled aggregate
+            // has no per-instance draw call left to hook this onto (the SAME scope narrowing
+            // R-L3a-3's own "nested broken instance" placeholder already uses).
+            //
+            // The test is "does this cell HAVE pins", not "was it generated". Gating on PCellOrigin
+            // was what made an IMPORTED cell's pins invisible: it has none, so the overlay was
+            // skipped before it could ever look at the cell's own pin list.
+            if (opts.ShowPCellPins && (step.SubView!.Pins.Count > 0 || step.SubView!.PCellOrigin is not null))
                 DrawPCellPinOverlay(canvas, inst, step.SubView!, tech, ps, scaleUm, opts.Theme, rows, cols);
         }
     }
@@ -293,12 +297,30 @@ public static partial class LayoutRenderer
 
     private static IReadOnlyList<PCellPin> ResolvePins(LayoutView subView, Technology? tech)
     {
+        // The cell's OWN persisted pins first. This is what makes the overlay work for a cell that
+        // was IMPORTED rather than generated — it has no generator to re-invoke, and before pins were
+        // persisted it could never show one. A generated cell lands here too, since its pins are
+        // written at generation.
+        if (subView.Pins.Count > 0)
+            return [.. subView.Pins.Select(p => new PCellPin(p.Name, p.X, p.Y, p.Layer, p.WidthDbu, p.OutwardDeg))];
+
+        // Nothing persisted, but the view knows what generated it: a PCell generator is a pure
+        // function of its inputs (pcell-contract.md R5), so calling it fresh is exact. Reached by a
+        // generated cell written before pins were persisted — a pure cache, so this heals on the next
+        // regeneration rather than needing a migration.
         if (subView.PCellOrigin is not { } origin) return [];
         if (_pcellPinCache.TryGetValue(subView, out var cached)) return cached.Pins;
 
-        IReadOnlyList<PCellPin> pins = PCellRegistry.TryGet(origin.GeneratorId, out var generator)
-            ? generator(origin.Parameters, tech, PCellLayerSelection.Default).Pins
-            : [];
+        // A generator can now be a script in another process, so this call can FAIL — which a
+        // built-in never could. This is the render path: a failure here must cost the pin overlay,
+        // never the frame. Cached either way (as an empty list) so a broken generator is asked once
+        // per resolved cell rather than on every repaint.
+        IReadOnlyList<PCellPin> pins = [];
+        if (PCellRegistry.TryGet(origin.GeneratorId, out var generator))
+        {
+            try { pins = generator(origin.Parameters, tech, PCellLayerSelection.Default).Pins; }
+            catch (Layout.PCells.Wire.PCellWireException) { pins = []; }
+        }
         _pcellPinCache.AddOrUpdate(subView, new PinCacheEntry { Pins = pins });
         return pins;
     }

@@ -27,7 +27,7 @@ public class MTeeOrientationTests
         Assert.True(symbolPort3IsPhysicallyDown, "test assumption: MTee's symbol port 3 is drawn below center");
 
         var result = MTeePCell.Generate(
-            new Dictionary<string, double> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 },
+            new Dictionary<string, PCellValue> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 },
             StarterTechnologies.Pcb2Layer(), PCellLayerSelection.Default);
         var pin3 = result.Pins.First(p => p.Name == "3");
 

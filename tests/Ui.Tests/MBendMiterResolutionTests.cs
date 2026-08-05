@@ -139,10 +139,10 @@ public sealed class MBendMiterResolutionTests : IDisposable
     [Fact]
     public void ThreeMiterModes_ProduceThreeDistinctOutlines_ForARightAngleBend()
     {
-        var defaults = new Dictionary<string, double> { ["W"] = 0.0029, ["Angle"] = 90.0 };
-        var none = MBendPCell.Generate(new Dictionary<string, double>(defaults) { ["Miter"] = 0.0 }, null, PCellLayerSelection.Default);
-        var fifty = MBendPCell.Generate(new Dictionary<string, double>(defaults) { ["Miter"] = 1.0 }, null, PCellLayerSelection.Default);
-        var optimal = MBendPCell.Generate(new Dictionary<string, double>(defaults) { ["Miter"] = 2.0 }, null, PCellLayerSelection.Default);
+        var defaults = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["Angle"] = 90.0 };
+        var none = MBendPCell.Generate(new Dictionary<string, PCellValue>(defaults) { ["Miter"] = 0.0 }, null, PCellLayerSelection.Default);
+        var fifty = MBendPCell.Generate(new Dictionary<string, PCellValue>(defaults) { ["Miter"] = 1.0 }, null, PCellLayerSelection.Default);
+        var optimal = MBendPCell.Generate(new Dictionary<string, PCellValue>(defaults) { ["Miter"] = 2.0 }, null, PCellLayerSelection.Default);
 
         var noneXy = ((PolygonShape)none.Shapes[0]).Xy;
         var fiftyXy = ((PolygonShape)fifty.Shapes[0]).Xy;
@@ -166,9 +166,9 @@ public sealed class MBendMiterResolutionTests : IDisposable
     [Fact]
     public void OptimalMiter_ProducesADistinctCutOutline_ForACwRightAngleBendToo()
     {
-        var defaults = new Dictionary<string, double> { ["W"] = 0.0029, ["Angle"] = -90.0 };
-        var none = MBendPCell.Generate(new Dictionary<string, double>(defaults) { ["Miter"] = 0.0 }, null, PCellLayerSelection.Default);
-        var optimal = MBendPCell.Generate(new Dictionary<string, double>(defaults) { ["Miter"] = 2.0 }, null, PCellLayerSelection.Default);
+        var defaults = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["Angle"] = -90.0 };
+        var none = MBendPCell.Generate(new Dictionary<string, PCellValue>(defaults) { ["Miter"] = 0.0 }, null, PCellLayerSelection.Default);
+        var optimal = MBendPCell.Generate(new Dictionary<string, PCellValue>(defaults) { ["Miter"] = 2.0 }, null, PCellLayerSelection.Default);
 
         var noneXy = ((PolygonShape)none.Shapes[0]).Xy;
         var optimalXy = ((PolygonShape)optimal.Shapes[0]).Xy;
@@ -183,9 +183,9 @@ public sealed class MBendMiterResolutionTests : IDisposable
     public void ObliqueBend_WithMiterSet_ReportsWhyAndStaysUnmitered()
     {
         var withoutMiter = MBendPCell.Generate(
-            new Dictionary<string, double> { ["W"] = 0.0029, ["Angle"] = 45.0, ["Miter"] = 0.0 }, null, PCellLayerSelection.Default);
+            new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["Angle"] = 45.0, ["Miter"] = 0.0 }, null, PCellLayerSelection.Default);
         var withMiter = MBendPCell.Generate(
-            new Dictionary<string, double> { ["W"] = 0.0029, ["Angle"] = 45.0, ["Miter"] = 2.0 }, null, PCellLayerSelection.Default);
+            new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["Angle"] = 45.0, ["Miter"] = 2.0 }, null, PCellLayerSelection.Default);
 
         var withoutXy = ((PolygonShape)withoutMiter.Shapes[0]).Xy;
         var withXy = ((PolygonShape)withMiter.Shapes[0]).Xy;

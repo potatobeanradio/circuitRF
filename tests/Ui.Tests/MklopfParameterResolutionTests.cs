@@ -95,7 +95,7 @@ public sealed class MklopfParameterResolutionTests : IDisposable
         Assert.False(origin.Parameters.ContainsKey("W1"));
         // Narrower width (W2 < W1) means higher impedance (Z2 > Z1) — sanity check the conversion
         // actually ran the right direction, not just "some number."
-        Assert.True(origin.Parameters["Z2"] > origin.Parameters["Z1"]);
+        Assert.True(origin.Parameters.Real("Z2") > origin.Parameters.Real("Z1"));
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class MklopfParameterResolutionTests : IDisposable
         var origin = CellLayoutResolver.Resolve(target.Instances[0].CellRef, layoutDir).View!.PCellOrigin!;
         Assert.True(origin.Parameters.ContainsKey("L"));
         Assert.False(origin.Parameters.ContainsKey("F3db"));
-        Assert.True(origin.Parameters["L"] > 0);
+        Assert.True(origin.Parameters.Real("L") > 0);
     }
 
     [Fact]

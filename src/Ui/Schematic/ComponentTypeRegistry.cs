@@ -214,6 +214,14 @@ public static class ComponentTypeRegistry
             SearchTerms: ["NLC", "NonlinearC", "nonlinear capacitor", "nonlinear", "varactor", "varicap", "CV", "C(V)"],
             IsCommon: false),
         // ── Semiconductor devices ────────────────────────────────────────────
+        // A model the USER supplies. Sits with the built-in devices because that is what a user is
+        // looking for when they reach for it — a transistor circuitRF does not ship — and it needs
+        // no kit, no manifest and nothing installed beyond the compiled model file itself.
+        [SymbolKind.VerilogA]      = new("VerilogA", "X",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["VerilogA", "Verilog-A", "OSDI", "compact model", "compiled", "custom",
+                          "transistor", "device", "nonlinear", "BSIM", "PSP", "HICUM", "external"],
+            IsCommon: false),
         [SymbolKind.Diode]         = new("Diode", "D",
             Category: ComponentCategory.Devices,
             SearchTerms: ["Diode", "D", "junction", "rectifier", "varactor", "schottky", "pn", "nonlinear"],
@@ -385,6 +393,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mtaper        => "MTAPER",
         SymbolKind.Mklopf        => "MKLOPF",
         SymbolKind.Diode         => "Diode",
+        SymbolKind.VerilogA      => "VerilogA",
         // One engine component per law — deliberately NOT one "FET" with a mode parameter.
         SymbolKind.FetCurtice      => "FET_Curtice",
         SymbolKind.FetCurticeCubic => "FET_CurticeCubic",
@@ -393,6 +402,18 @@ public static class ComponentTypeRegistry
         SymbolKind.FetAngelov      => "FET_Angelov",
         _                        => Get(kind).DisplayName,
     };
+
+    /// <summary>
+    /// True when a BUILT-IN primitive's parameter names a file, so the editor offers a Browse…
+    /// picker beside the text box.
+    ///
+    /// <para>Kit parts declare this on the cell itself; a built-in has no cell to declare it on, so
+    /// it is stated here. A path is exactly the kind of value nobody should be asked to type, and a
+    /// mistyped one fails much later with a worse message.</para>
+    /// </summary>
+    public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
+        => kind == SymbolKind.VerilogA
+        && parameterName.Equals("File", StringComparison.Ordinal);
 
     /// <summary>
     /// The gate-charge, gate-conduction and temperature parameters every built-in FET law shares.
@@ -530,6 +551,19 @@ public static class ComponentTypeRegistry
                     new("ExtrapMode","NearestEdge",   "",  false, UnitDimension.None),
                 ];
             }
+
+            // VerilogA: a compiled model the user points at. Only `File` is required — everything
+            // else the model needs is one of ITS parameters, added by the user in the dialog and
+            // forwarded verbatim, because a compact model has hundreds and they belong to its author.
+            //
+            // `Pins` is circuitRF's, not the model's: the symbol has to know how many terminals to
+            // draw before anything has read the file. Set it to what the model declares.
+            case SymbolKind.VerilogA:
+                return [
+                    new("File",  "",  "", true,  UnitDimension.None),
+                    new("Model", "",  "", false, UnitDimension.None),
+                    new("Pins",  "2", "", false, UnitDimension.None),
+                ];
 
             // ── Semiconductor devices ────────────────────────────────────────
             // Every name below is a factory key — ComponentModelFactory.CreateDiodeModel /

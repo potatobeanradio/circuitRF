@@ -189,6 +189,13 @@
                                 Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference)" Padding="6,3">
                             <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/>
                         </Button>
+                        <!-- Place a parametric cell — circuitRF's own generators and whatever a
+                             referenced kit contributes, in one picker. Beside Instance because it
+                             ends in the same gesture: it generates the cell, then arms the ordinary
+                             instance placement so the ghost follows the cursor and a click commits. -->
+                        <Button Click="OnPlacePCell" ToolTip.Tip="Parametric Cell… (place a generated cell)" Padding="6,3">
+                            <mi:MaterialIcon Kind="ShapePlus" Width="16" Height="16"/>
+                        </Button>
 
                         <!-- PCell pin overlay toggle (docs/sonnet-briefs/brief-L5-followups-2.md §6,
                              R-L5g-15) — default on; view preference only, never model state. Native

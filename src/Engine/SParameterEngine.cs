@@ -358,17 +358,17 @@ public static class SParameterEngine
             // Never IsSParamPort, so they fall through the port skips above to here.
             if (ec.Model.Kind == ModelKind.Nonlinear)
             {
-                ec.Model.StampLinearized(mna, ec, omega, BuildBias(ec, dcNodeVoltages));
+                ec.StampLinearized(mna, omega, BuildBias(ec, dcNodeVoltages));
                 continue;
             }
 
-            ec.Model.Stamp(mna, ec, omega);
+            ec.Stamp(mna, omega);
             netlist.DrainModelWarnings(ec.Model);
         }
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel)
             {
-                ec.Model.Stamp(mna, ec, omega);
+                ec.Stamp(mna, omega);
                 netlist.DrainModelWarnings(ec.Model);
             }
     }
@@ -590,7 +590,7 @@ public static class SParameterEngine
             if (ec.Model is P1ToneModel p1)
                 p1.StampAsSParamPort(tempMna, ec);
             else
-                ec.Model.Stamp(tempMna, ec, 1.0);
+                ec.Stamp(tempMna, 1.0);
             netlist.DrainModelWarnings(ec.Model);
             for (int b = before; b < tempMna.BranchCount; b++)
                 branchLabels[tempMna.NodeCount + b] = $"{ec.ComponentType}:{ec.InstancePath}";
@@ -599,7 +599,7 @@ public static class SParameterEngine
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel)
             {
-                ec.Model.Stamp(tempMna, ec, 1.0);
+                ec.Stamp(tempMna, 1.0);
                 netlist.DrainModelWarnings(ec.Model);
             }
 

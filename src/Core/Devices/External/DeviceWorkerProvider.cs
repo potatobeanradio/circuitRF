@@ -45,6 +45,17 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
     /// <param name="name">Registration name. Opaque to circuitRF; rendered, never interpreted.</param>
     /// <param name="executablePath">Path to the worker binary — runtime configuration.</param>
     /// <param name="arguments">Whatever the worker needs to know, typically which library to load.</param>
+    /// <summary>Marks a key as circuitRF's own plumbing rather than something the model declared.</summary>
+    public const string ReservedPrefix = "__";
+
+    /// <summary>
+    /// Absolute device temperature in KELVIN, supplied alongside the parameters and lifted out of
+    /// them at <c>create</c>. Kelvin because that is what the ABIs that take a temperature want;
+    /// circuitRF's own parameters are Celsius throughout, and the conversion belongs at this
+    /// boundary — the same rule the diode's factory already follows.
+    /// </summary>
+    public const string ReservedTemperatureKey = ReservedPrefix + "temperatureK";
+
     public static DeviceWorkerProvider Launch(
         string               name,
         string               executablePath,
@@ -102,22 +113,42 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
         int handle;
         int nodeCount;
         IReadOnlyList<DeviceWorkerDelayPair> delayPairs;
+        IReadOnlyList<(int Node, int To)>    collapsed;
 
         using (var reply = _channel.Send(w =>
         {
             w.WriteString("cmd", "create");
             w.WriteString("typeId", typeId);
+
+            // A device's TEMPERATURE is not a model parameter and must not be written as one. Some
+            // ABIs take it as a required argument to instance setup, and a model that happens to
+            // declare a parameter of the same name would then receive it twice with the two
+            // meanings competing. So it rides as its own top-level field, keyed on a reserved name
+            // that no descriptor can collide with — the same "__ is circuitRF plumbing" rule the
+            // component factory already applies when deciding what to forward.
+            if (parameters.TryGetValue(ReservedTemperatureKey, out var tk) &&
+                double.TryParse(tk, NumberStyles.Float, CultureInfo.InvariantCulture, out double kelvin) &&
+                kelvin > 0.0)
+                w.WriteNumber("temperatureK", kelvin);
+
             WriteParameters(w, descriptor, parameters);
         }))
         {
             handle     = ReadInt(reply.Root, "handle", -1);
             nodeCount  = ReadInt(reply.Root, "pinCount", descriptor.NodeCount);
             delayPairs = ReadDelayPairs(reply.Root);
+            collapsed  = ReadCollapsedNodes(reply.Root);
 
             if (handle < 0)
                 throw new ExternalDeviceException(
                     $"'{Name}' created '{typeId}' but did not say which instance it created.");
         }
+
+        // Node collapsing is answered at CREATE, not at describe, because which nodes collapse
+        // depends on the parameters this instance was given — a series resistance of zero degenerates
+        // a node that a nonzero one leaves free. It is folded in BEFORE the probe below so a probing
+        // worker refines the collapsed shape rather than erasing it.
+        descriptor = ApplyCollapsedNodes(descriptor, collapsed);
 
         // Node roles are measured, not declared: which pins are thermal and which nodes are not
         // free unknowns comes back from a structural probe of the instance that was just built.
@@ -157,7 +188,8 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
                 nodes.Add(new ExternalNodeDescriptor(
                     index,
                     External: ReadBool(n, "external", index < externals),
-                    SlavedTo: ReadSlavedTo(n)));
+                    SlavedTo: ReadSlavedTo(n),
+                    CollapsedToGround: ReadBool(n, "collapsedToGround", false)));
             }
         }
 
@@ -210,6 +242,10 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
 
         foreach (var (name, text) in parameters)
         {
+            // Reserved plumbing keys are consumed by the caller above, never offered to the model —
+            // and so are never checked against the descriptor, which of course does not declare them.
+            if (name.StartsWith(ReservedPrefix, StringComparison.Ordinal)) continue;
+
             ExternalParamDescriptor declared =
                 descriptor.Parameters.FirstOrDefault(p => p.Name == name)
                 ?? throw new ExternalDeviceException(
@@ -253,6 +289,58 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
         return pairs;
     }
 
+    // ── collapsed nodes ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads a worker's report of which nodes this instance collapsed, as
+    /// <c>[{ "node": n, "to": m }]</c>, where a <c>to</c> below zero means the ground reference
+    /// rather than another node.
+    ///
+    /// <para>An ABI that <i>declares</i> its collapsible pairs can say which node a degenerate one
+    /// follows — which is the part a structural probe cannot recover, and the part that has to be
+    /// right: a collapsed node left as a free unknown is an all-zero row and column, a solve that
+    /// simply does not converge with nothing anywhere saying why.</para>
+    /// </summary>
+    private static IReadOnlyList<(int Node, int To)> ReadCollapsedNodes(JsonElement root)
+    {
+        if (!root.TryGetProperty("collapsed", out var array) || array.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var collapsed = new List<(int, int)>();
+        foreach (var c in array.EnumerateArray())
+        {
+            int node = ReadInt(c, "node", -1);
+            if (node >= 0) collapsed.Add((node, ReadInt(c, "to", -1)));
+        }
+        return collapsed;
+    }
+
+    /// <summary>
+    /// Folds a create-time collapse report onto the type's declared nodes.
+    ///
+    /// <para>The result is a NEW record — the cached type descriptor is shared by every instance of
+    /// the type and collapsing is per-instance, so writing into it would let one instance's zero
+    /// series resistance degenerate a node on every other instance.</para>
+    /// </summary>
+    private static ExternalDeviceDescriptor ApplyCollapsedNodes(
+        ExternalDeviceDescriptor              descriptor,
+        IReadOnlyList<(int Node, int To)>     collapsed)
+    {
+        if (collapsed.Count == 0) return descriptor;
+
+        var byNode = new Dictionary<int, int>();
+        foreach (var (node, to) in collapsed) byNode[node] = to;
+
+        var nodes = descriptor.Nodes.Select(n =>
+            byNode.TryGetValue(n.Index, out int to)
+                ? (to < 0
+                       ? n with { CollapsedToGround = true, SlavedTo = null }
+                       : n with { SlavedTo = to, CollapsedToGround = false })
+                : n).ToList();
+
+        return descriptor with { Nodes = nodes };
+    }
+
     // ── probe ─────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -283,7 +371,10 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
                                   ? NodeQuantityKind.Thermal
                                   : NodeQuantityKind.Electrical,
                 Label:        original?.Label ?? "",
-                SlavedTo:     ReadSlavedTo(n) ?? original?.SlavedTo));
+                SlavedTo:     ReadSlavedTo(n) ?? original?.SlavedTo,
+                // A probe refines; it does not repeal. A worker whose collapse report came back at
+                // create and whose probe says nothing about node roles must keep the collapse.
+                CollapsedToGround: ReadBool(n, "collapsedToGround", original?.CollapsedToGround ?? false)));
         }
 
         return nodes.Count == 0 ? declared : declared with { Nodes = nodes };

@@ -1,0 +1,5 @@
+*.osdi
+*.so
+*.dylib
+*.dll
+*.o

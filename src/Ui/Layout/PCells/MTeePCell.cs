@@ -22,13 +22,13 @@ public static class MTeePCell
     public const string GeneratorId = "MTEE";
 
     public static PCellResult Generate(
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         PCellLayerSelection layerSelection)
     {
-        double w1Meters = parameters.GetValueOrDefault("W1", 0.0);
-        double w2Meters = parameters.GetValueOrDefault("W2", 0.0);
-        double w3Meters = parameters.GetValueOrDefault("W3", 0.0);
+        double w1Meters = parameters.Real("W1", 0.0);
+        double w2Meters = parameters.Real("W2", 0.0);
+        double w3Meters = parameters.Real("W3", 0.0);
 
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
         long w1 = PCellUnits.MetresToDbu(w1Meters, dbuPerMicron);

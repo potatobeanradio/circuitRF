@@ -1,0 +1,10 @@
+; A3 - the device multiplier, at netlist level.
+;
+; Four things that must agree, pairwise: a resistor with m=4 against four in parallel written out;
+; a capacitor with m=4 against 4x the capacitance; and a diode with m=4 against one of four times
+; the area. Nothing here is a stored number - each pair is its own oracle.
+Port:P1  a 0  Num=1 Z=50
+Port:P2  b 0  Num=2 Z=50
+
+R:Rm     a 0  R=400 m=4
+R:Rref   b 0  R=100

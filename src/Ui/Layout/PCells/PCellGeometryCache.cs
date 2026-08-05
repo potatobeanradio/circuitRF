@@ -29,7 +29,7 @@ public sealed class PCellGeometryCache
     public PCellResult GetOrGenerate(
         string generatorId,
         PCellGenerator generator,
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         PCellLayerSelection layerSelection)
     {
@@ -45,12 +45,15 @@ public sealed class PCellGeometryCache
 
     public void Clear() => _cache.Clear();
 
-    private static string FingerprintParameters(IReadOnlyDictionary<string, double> parameters)
+    /// <summary><see cref="PCellValue.ToString"/> is the single encoding, shared with
+    /// <see cref="GeneratedCellStore"/>'s content hash — two values that key the same cache entry must
+    /// also resolve to the same generated cell, and one encoding is how that stays true.</summary>
+    private static string FingerprintParameters(IReadOnlyDictionary<string, PCellValue> parameters)
     {
         var sb = new StringBuilder();
         foreach (var kv in parameters.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
-            sb.Append(kv.Key).Append('=').Append(kv.Value.ToString("R", CultureInfo.InvariantCulture)).Append(';');
+            sb.Append(kv.Key).Append('=').Append(kv.Value.ToString()).Append(';');
         }
         return sb.ToString();
     }

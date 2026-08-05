@@ -25,6 +25,7 @@ using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.PCells;
+using CircuitRF.Ui.Layout.TechImport;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Ui.Renderers;
@@ -238,6 +239,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var name = dir is not null   ? Path.GetFileName(dir)         : null;
         WindowTitle = !string.IsNullOrEmpty(name) ? $"{name} — circuitRF" : "circuitRF";
 
+        // Driven from the property change rather than from each workspace-reset path, because the
+        // resolver must see the NEW root: a hand-placed call ordered before this assignment would
+        // point the new workspace's generators at the old workspace's folder, and the failure — a
+        // cell resolving to the wrong kit's script — is silent.
+        ResetPCellGenerators(dir);
+
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
@@ -348,6 +355,265 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// (NewWorkspace / SwitchToWorkspace / ResetToBlankShell) so stale cached entries from the
     /// previous workspace can never leak into the new one.
     /// </summary>
+    /// <summary>
+    /// The workspace's own PCell generator resolver, or null when no workspace is open. Disposed and
+    /// replaced on every workspace-lifetime reset — see <see cref="ResetPCellGenerators"/>.
+    /// </summary>
+    private CircuitRF.Ui.Layout.PCells.Wire.PCellWorkerResolver? _pcellResolver;
+
+    /// <summary>This installation's record of which kits' scripts may run. Rebuilt with the resolver so
+    /// a decision made in one workspace is visible in the next without a restart.</summary>
+    private CircuitRF.Ui.Layout.PCells.Wire.PCellTrustStore? _pcellTrust;
+
+    /// <summary>
+    /// Points the PCell registry at <paramref name="workspaceRootDir"/>'s generator scripts, after
+    /// ending whatever the previous workspace had running.
+    ///
+    /// <para><b>Disposing the resolver is what actually ends the interpreters</b> — clearing the
+    /// registry only drops circuitRF's references to them. Getting that backwards leaves a Python
+    /// process per kit running with nothing to talk to, which is a leak the user cannot see and
+    /// cannot clean up.</para>
+    ///
+    /// <para>A RESOLVER, not a provider: opening a workspace starts no interpreter. One is started
+    /// the first time a design actually places a cell that kit generates.</para>
+    /// </summary>
+    private void ResetPCellGenerators(string? workspaceRootDir)
+    {
+        CircuitRF.Ui.Layout.PCells.PCellRegistry.ClearResolvers();
+
+        var previous = _pcellResolver;
+        _pcellResolver = null;
+        try { previous?.Dispose(); } catch { /* teardown must not fail a workspace switch */ }
+
+        _pcellTrust = null;
+        if (string.IsNullOrWhiteSpace(workspaceRootDir)) { ReloadPCellGeneratorsCommand.NotifyCanExecuteChanged(); return; }
+
+        try
+        {
+            // B6: a kit's scripts run only with this installation's explicit permission. The gate is
+            // handed to the resolver, not applied here, so the refusal happens at the one point that
+            // would otherwise launch an interpreter — including on paths that never went near a prompt.
+            var trust = CircuitRF.Ui.Layout.PCells.Wire.PCellTrustStore.UserLocal();
+            _pcellTrust = trust;
+
+            var resolver = new CircuitRF.Ui.Layout.PCells.Wire.PCellWorkerResolver(
+                workspaceRootDir!, findInterpreter: null, report: m => Messages.Warning(m),
+                trust: trust.Decide);
+
+            // Replayed, not re-derived — see CwsFile.PythonInterpreter's own note. Read straight off
+            // disk rather than from a cached CwsFile, because this runs on the workspace-path change
+            // and nothing has necessarily loaded one yet.
+            resolver.Recorded = ReadRecordedPythonInterpreter(workspaceRootDir!);
+            resolver.InterpreterChosen += RecordPythonInterpreter;
+
+            _pcellResolver = resolver;
+            CircuitRF.Ui.Layout.PCells.PCellRegistry.AddResolver(resolver);
+
+            // Asked from the MANIFEST SCAN, which reads JSON and starts nothing — so the question is
+            // put up front, in a calm moment, without costing the laziness B3 deliberately built.
+            var pending = resolver.Kits
+                .Where(k => trust.Decide(k.Directory) == CircuitRF.Ui.Layout.PCells.Wire.PCellTrustDecision.Unknown)
+                .ToList();
+            if (pending.Count > 0) RequestPCellConsent(pending);
+
+            RefreshPCellPaletteItems();
+        }
+        catch (Exception ex)
+        {
+            // A kit's generated artwork failing to become available must never stop a workspace
+            // opening — the user's design is their data, and every such cell still draws as the
+            // existing Not Found placeholder.
+            Messages.Warning($"PCell generators could not be made available: {ex.Message}");
+        }
+
+        ReloadPCellGeneratorsCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Puts B6's consent question, once per kit per installation, and applies the answer.
+    ///
+    /// <para><b>Deferred off the workspace-path change, not shown from inside it.</b> This runs from a
+    /// property-changed handler in the middle of opening a workspace; a modal dialog there would
+    /// re-enter the open. Posting at Background priority lets the open finish first, and the workspace
+    /// is re-checked when the prompt finally runs because the user may have switched away meanwhile —
+    /// answering a question about a workspace that is no longer open would record the wrong thing.</para>
+    /// </summary>
+    private void RequestPCellConsent(IReadOnlyList<CircuitRF.Ui.Layout.PCells.Wire.PCellKit> pending)
+    {
+        string? askedFor = CurrentWorkspacePath;
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (!string.Equals(CurrentWorkspacePath, askedFor, StringComparison.Ordinal)) return;
+            if (_pcellTrust is not { } trust || _pcellResolver is not { } resolver) return;
+
+            bool? allowed;
+            try { allowed = await Views.Dialogs.PCellTrustDialog.ShowAsync(ResolveOwner(null), pending); }
+            catch (Exception ex)
+            {
+                // A prompt that could not be shown records NOTHING — never a refusal, and certainly
+                // never permission. The kit's cells draw as placeholders and the question stands.
+                Messages.Warning($"Permission for generated artwork could not be requested: {ex.Message}");
+                return;
+            }
+
+            if (allowed is null) return; // dismissed without answering — ask again next time
+
+            foreach (var kit in pending) trust.Record(kit.Directory, allowed.Value);
+
+            if (!allowed.Value)
+            {
+                Messages.Info($"Generated artwork from {Plural(pending.Count, "kit")} will draw as " +
+                              "placeholders. Settings ▸ General ▸ Generated Artwork asks again.");
+                return;
+            }
+
+            // The resolver already concluded that these kits could not run; that conclusion is cached,
+            // as are any generators resolved through it. Both have to go before the cells can appear.
+            resolver.StopProviders();
+            CircuitRF.Ui.Layout.PCells.PCellRegistry.InvalidateResolved();
+
+            if (CurrentWorkspacePath is { } cws)
+            {
+                try { RegenerateAllGeneratedCells(cws); }
+                catch (Exception ex)
+                {
+                    Messages.Warning($"Generated cells could not be rebuilt after granting permission: {ex.Message}");
+                }
+            }
+
+            RefreshAllOpenLayoutTech();
+            Messages.Success($"Generated artwork from {Plural(pending.Count, "kit")} is allowed to run on this machine.");
+        }, DispatcherPriority.Background);
+    }
+
+    private static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
+
+    private bool CanReloadPCellGenerators() => _pcellResolver is not null;
+
+    /// <summary>
+    /// B7's authoring loop: edit a generator script, press this, see the artwork change — without
+    /// closing the workspace.
+    ///
+    /// <para><b>Four things are stale after a script edit, and all four have to go.</b> The running
+    /// interpreter (it loaded the old code), the manifest scan (the kit may declare different files
+    /// now), the per-kit CONTENT HASH (cached once per session — leave it and the edit resolves to the
+    /// cell the previous version wrote, so the edit appears to do nothing), and the generator delegates
+    /// the registry handed out. <see cref="PCellWorkerResolver.Rescan"/> covers the first three;
+    /// <c>PCellRegistry.InvalidateResolved</c> the fourth.</para>
+    ///
+    /// <para>Repointing is NOT undoable, and that is deliberate: this is a cache refresh, like the
+    /// live technology reload, not an edit the user made. The affected documents are marked dirty so
+    /// the new references are saved.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanReloadPCellGenerators))]
+    private void ReloadPCellGenerators()
+    {
+        if (_pcellResolver is not { } resolver || CurrentWorkspacePath is not { } cwsPath) return;
+        if (_pcellTrust is not { } trust) return;
+
+        resolver.Rescan();
+        CircuitRF.Ui.Layout.PCells.PCellRegistry.InvalidateResolved();
+
+        // A kit added since the workspace opened has never been asked about, and Unknown does not run.
+        var pending = resolver.Kits
+            .Where(k => trust.Decide(k.Directory) == CircuitRF.Ui.Layout.PCells.Wire.PCellTrustDecision.Unknown)
+            .ToList();
+        if (pending.Count > 0) RequestPCellConsent(pending);
+
+        // Open documents are repointed in memory; rewriting their files underneath them would fight
+        // whatever is unsaved. Everything else is repointed on disk.
+        var openLayouts = _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()).ToList();
+        var openPaths = openLayouts
+            .Select(d => d.FilePath)
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Select(p => Path.GetFullPath(p!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        try { RegenerateAllGeneratedCells(cwsPath, openPaths); }
+        catch (Exception ex) { Messages.Warning($"Generated cells could not be rebuilt: {ex.Message}"); }
+
+        int repointed = 0;
+        foreach (var doc in openLayouts)
+        {
+            int moved;
+            try { moved = RepointOpenLayout(doc, cwsPath); }
+            catch (Exception ex)
+            {
+                Messages.Warning($"'{doc.Title}' could not be updated after the reload: {ex.Message}");
+                continue;
+            }
+
+            if (moved == 0) continue;
+            repointed += moved;
+            doc.ViewModel.IsDirty = true;
+            doc.ViewModel.Model.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        }
+
+        RefreshAllOpenLayoutTech();
+
+        Messages.Success(repointed > 0
+            ? $"Generated artwork reloaded — {Plural(repointed, "placed cell")} moved to newly generated artwork."
+            : "Generated artwork reloaded.");
+    }
+
+    /// <summary>Rebuilds and repoints one open layout, using the same pass the on-disk sweep uses so
+    /// an open document and a closed one can never end up repointed differently.</summary>
+    private int RepointOpenLayout(LayoutDocument doc, string cwsPath)
+    {
+        var techCache = new Dictionary<string, Technology?>(StringComparer.OrdinalIgnoreCase);
+        Technology? ResolveTech(string? techIdentity)
+        {
+            if (string.IsNullOrEmpty(techIdentity)) return null;
+            if (techCache.TryGetValue(techIdentity, out var cached)) return cached;
+            Technology? tech = null;
+            try { if (File.Exists(techIdentity)) tech = TechPersistence.LoadFromFile(techIdentity); }
+            catch { /* best-effort — a missing .ctech regenerates on the fallback palette */ }
+            techCache[techIdentity] = tech;
+            return tech;
+        }
+
+        return GeneratedCellsLifecycle.Regenerate(
+            Path.GetDirectoryName(cwsPath)!, doc.ViewModel.Model, ResolveTech, m => Messages.Warning(m));
+    }
+
+    private static string? ReadRecordedPythonInterpreter(string workspaceRootDir)
+    {
+        try
+        {
+            string cws = Path.Combine(workspaceRootDir, ".cws");
+            return File.Exists(cws) ? WorkspacePersistence.LoadFromFile(cws).PythonInterpreter : null;
+        }
+        catch { return null; } // a .cws we cannot read is the workspace's problem, not this decision's
+    }
+
+    /// <summary>
+    /// Writes the settled interpreter back, so the next open replays it instead of probing.
+    ///
+    /// <para>Written immediately rather than at the next save: settling on an interpreter is not an
+    /// edit to a document the user might reasonably discard, and the whole point of recording it is
+    /// that the NEXT open is fast.</para>
+    /// </summary>
+    private void RecordPythonInterpreter(CircuitRF.Ui.Layout.PCells.Wire.PythonInterpreter chosen)
+    {
+        if (CurrentWorkspacePath is not { } cwsPath) return;
+        try
+        {
+            var cws = File.Exists(cwsPath) ? WorkspacePersistence.LoadFromFile(cwsPath) : new CwsFile();
+            string record = chosen.ToRecord();
+            if (string.Equals(cws.PythonInterpreter, record, StringComparison.Ordinal)) return;
+
+            cws.PythonInterpreter = record;
+            WorkspacePersistence.SaveToFileAtomic(cwsPath, cws);
+        }
+        catch (Exception ex)
+        {
+            // Failing to RECORD the decision must never undo having MADE it — the generators are
+            // already running; the only cost is probing again next time.
+            Messages.Warning($"The chosen Python interpreter could not be recorded: {ex.Message}");
+        }
+    }
+
     private void ResetTechCache()
     {
         _techCache = new TechnologyCache();
@@ -988,7 +1254,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>R-L5g-8: thin wrapper over <see cref="GeneratedCellsLifecycle.RegenerateAll"/>, supplying
     /// a small memoized <c>.ctech</c> loader as the technology resolver.</summary>
-    private void RegenerateAllGeneratedCells(string cwsPath)
+    private void RegenerateAllGeneratedCells(string cwsPath, IReadOnlySet<string>? skipPaths = null)
     {
         var techCache = new Dictionary<string, Technology?>(StringComparer.OrdinalIgnoreCase);
         Technology? ResolveTech(string? techIdentity)
@@ -1002,7 +1268,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return tech;
         }
 
-        GeneratedCellsLifecycle.RegenerateAll(Path.GetDirectoryName(cwsPath)!, ResolveTech);
+        // Reported, not swallowed: a generator that will not run is exactly what an author needs
+        // told, and one message per distinct reason is the difference between a report and a flood.
+        var said = new HashSet<string>(StringComparer.Ordinal);
+        void Report(string m) { if (said.Add(m)) Messages.Warning(m); }
+
+        var outcome = GeneratedCellsLifecycle.RegenerateAll(
+            Path.GetDirectoryName(cwsPath)!, ResolveTech, Report, skipPaths);
+
+        // Silent when nothing moved, which is every ordinary open.
+        if (outcome.InstancesRepointed > 0)
+            Messages.Info($"{Plural(outcome.InstancesRepointed, "placed cell")} moved to newly generated " +
+                          $"artwork after a generator change ({Plural(outcome.LayoutsRewritten, "layout")} updated).");
     }
 
     /// <summary>
@@ -2245,9 +2522,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             result = await Task.Run(() =>
             {
                 using var stream = File.OpenRead(files[0].Path.LocalPath);
+
+                // The kit's own statement about its pins, if it ships one, read from beside the GDSII
+                // file rather than from the workspace: it describes THAT kit, and travels with it.
+                // Absent is silent (nearly every kit states nothing); present-but-unreadable is
+                // reported, because those are two different situations needing two different answers.
+                var pinRules = PinInferenceRules.Load(
+                    Path.Combine(Path.GetDirectoryName(files[0].Path.LocalPath)!, PinInferenceRules.FileName),
+                    out string? rulesProblem);
+                if (rulesProblem is not null)
+                    Dispatcher.UIThread.Post(() => Messages.Warning(rulesProblem));
+
                 return CircuitRF.Ui.Layout.Interchange.GdsiiImport.Import(
                     stream, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
                     preferSourceResolution: false,
+                    pinRules: pinRules,
                     resolveLayerMapping: rows =>
                     {
                         var settled = Dispatcher.UIThread
@@ -2303,12 +2592,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>Names which cell(s) will actually open with the design visible on screen — the thing
     /// the user actually wants after an import, per R-fix-6. Ordinarily exactly one; a pathological
     /// all-mutually-referenced library (no structure is ever "outermost") says so explicitly rather
-    /// than guessing one to open.</summary>
+    /// than guessing one to open.
+    ///
+    /// <para>MANY tops is not pathological — it is what a device LIBRARY looks like, where every
+    /// primitive is its own top and only the via arrays and corner pieces are referenced by anything
+    /// (C1: a real one measured 46 tops out of 56 structures). So the many case is truncated the same
+    /// way the created-cell list already is; listing all of them buries the counts that precede it in
+    /// the same message.</para></summary>
     internal static string DescribeTopLevelCells(IReadOnlyList<string> topLevelCellDirs) => topLevelCellDirs.Count switch
     {
         0 => "No distinct top-level cell — every structure is referenced by another.",
         1 => $"Top-level cell: \"{Path.GetFileName(topLevelCellDirs[0])}\".",
-        _ => $"Top-level cells: {string.Join(", ", topLevelCellDirs.Select(d => $"\"{Path.GetFileName(d)}\""))}.",
+        _ => $"Top-level cells: {FormatTruncatedNameList([.. topLevelCellDirs.Select(Path.GetFileName)])}.",
     };
 
     /// <summary>Opens <paramref name="cellDir"/>'s primary layout, if it resolves — silently does
@@ -2729,10 +3024,58 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 $"File ▸ Manage PDKs.",
                 PdkLoadLog.PathFor(wsRoot!));
 
-        _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
+        PublishKitPaletteItems();
 
         RegisterKitProviderResolver(wsRoot);
     }
+
+
+    /// <summary>
+    /// Learns which parametric cells each kit offers, then republishes the palette.
+    ///
+    /// <para>Listing may START a kit's interpreter (a script's own <c>describe</c> is the only source
+    /// of its generator list), so it runs off the UI thread and publishes back on it.</para>
+    /// </summary>
+    private void RefreshPCellPaletteItems()
+    {
+        var resolver = _pcellResolver;
+        if (resolver is null) return;
+
+        _ = Task.Run(() =>
+        {
+            IReadOnlyDictionary<string, string> byKit;
+            try { byKit = resolver.KitNameByGeneratorId; }
+            catch (Exception ex)
+            {
+                Dispatcher.UIThread.Post(() =>
+                    Messages.Warning($"A kit's parametric cells could not be listed for the palette: {ex.Message}"));
+                return;
+            }
+
+            var builtIn = new HashSet<string>(
+                CircuitRF.Ui.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _pcellGeneratorKits.Clear();
+                foreach (var kv in byKit)
+                    if (!builtIn.Contains(kv.Key))
+                        _pcellGeneratorKits[kv.Key] = kv.Value;
+                PublishKitPaletteItems();
+            });
+        });
+    }
+
+    /// <summary>Publishes the kit section of the palette — one tile per part, carrying every view
+    /// that part can be placed as. The matching rules live in <see cref="KitPaletteMerge"/>, which is
+    /// framework-free and therefore testable on its own.</summary>
+    private void PublishKitPaletteItems() =>
+        _factory.PaletteTool?.SetPdkParts(KitPaletteMerge.Compose(_pdkPaletteItems, _pcellGeneratorKits));
+
+    /// <summary>Kit-contributed generator ids and the kit each came from. Kept apart from
+    /// <see cref="_pdkPaletteItems"/> so a kit re-import rebuilds one without discarding the other,
+    /// and merged into one tile per part at publish time.</summary>
+    private readonly Dictionary<string, string> _pcellGeneratorKits = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Settled settings per loaded kit, for the provider resolver.</summary>
     private readonly List<(string Kit, DeviceWorkerManifest Manifest)> _kitManifests = [];
@@ -2915,7 +3258,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         _pdkPaletteItems.RemoveAll(i => string.Equals(i.Pdk?.KitName, kit, StringComparison.Ordinal));
         _pdkPaletteItems.AddRange(outcome.Items);
-        _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
+        PublishKitPaletteItems();
         RegisterKitProviderResolver(wsRoot);
 
         // What the import worked out is neutral status, not a warning. Reporting a successful
@@ -3037,6 +3380,109 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex)
         {
             Messages.Error($"Failed to create technology: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// File ▸ Import ▸ Technology… — builds a <c>.ctech</c> from a process kit's own technology files.
+    ///
+    /// <para>Everything imported comes out of the kit at run time; circuitRF holds no knowledge of any
+    /// particular process. What it derives — and, more importantly, everything it could NOT derive
+    /// cleanly — is reported to Messages, because a stackup that is silently approximate produces
+    /// numbers that converge and are wrong.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task ImportTechnology(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Info("Open or create a workspace first — an imported technology is saved into it.");
+            return;
+        }
+
+        var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title         = "Import Technology — choose the folder holding the process data",
+            AllowMultiple = false,
+        });
+        if (folders.Count == 0) return;
+
+        string root = folders[0].Path.LocalPath;
+
+        TechnologyScanResult scan;
+        try
+        {
+            scan = await Task.Run(() => ProcessTechnologyImport.Scan(root));
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import Technology failed while scanning: {ex.Message}");
+            return;
+        }
+
+        if (!scan.HasStack)
+        {
+            foreach (var note in scan.Notes) Messages.Warning($"Import Technology — {note}");
+            return;
+        }
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techDir      = Path.Combine(workspaceDir, "tech");
+
+        var choice = await new ImportTechnologyDialog(
+            scan, techDir, root, NextFreeTechName(techDir)).ShowDialog<ImportTechnologyResult?>(window);
+        if (choice is null) return;
+
+        // Notes from the SCAN are worth saying even once a choice has been made — "no layer table was
+        // found" explains a technology that arrives with an empty layer list.
+        foreach (var note in scan.Notes) Messages.Info($"Import Technology — {note}");
+
+        try
+        {
+            var result = await Task.Run(
+                () => ProcessTechnologyImport.Import(choice.StackFilePath, choice.LayerTablePath));
+
+            var tech = result.Technology;
+            tech.Name = choice.Name;
+
+            Directory.CreateDirectory(techDir);
+            var techPath = Path.Combine(techDir, $"{choice.Name}.ctech");
+            TechPersistence.SaveToFile(techPath, tech);
+
+            if (choice.SetAsDefault)
+            {
+                CwsFile cws;
+                try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+                catch { cws = new CwsFile(); }
+                cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
+                WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+                _techCache.Invalidate(techPath);
+                RefreshAllOpenLayoutTech();
+            }
+
+            _factory.ProjectTreeTool?.Refresh();
+            OpenOrActivateTech(techPath);
+
+            int conductors = tech.Stackup.Layers.Count(l => l.Kind == StackupKind.Conductor);
+            int vias       = tech.Stackup.Layers.Count(l => l.Kind == StackupKind.Via);
+            Messages.Success(
+                $"Imported technology \"{tech.Name}\" — {tech.Layers.Count} layer(s), {conductors} " +
+                $"conductor(s), {vias} via(s), {tech.DrcRules.Count} rule(s).", techPath);
+
+            // Every derivation that had to give, said individually rather than rolled into a count.
+            foreach (var note in result.Notes) Messages.Warning($"Import Technology — {note}");
+
+            // The editor's own validation is the last word on whether the result is usable, so it is
+            // run here rather than left for the user to discover on the Stackup tab.
+            foreach (var problem in TechValidation.Validate(tech))
+                Messages.Warning($"Import Technology — {problem}");
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import Technology failed: {ex.Message}");
         }
     }
 
@@ -6820,6 +7266,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // R-L5g-7: quitting is a close too — leave a clean workspace on disk.
             DeleteGeneratedCellsFolder(CurrentWorkspacePath);
         }
+
+        // Ends the workspace's generator interpreters deliberately, while there is still a chance to
+        // ask them to shut down. The ProcessExit backstop in App only clears references — it cannot
+        // wait for a process to close its own files.
+        ResetPCellGenerators(null);
+
         _recovery.ClearSession();
     }
 

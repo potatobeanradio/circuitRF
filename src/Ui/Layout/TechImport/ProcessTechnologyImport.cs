@@ -1,0 +1,193 @@
+// Finds a process's technology files inside a kit and turns a chosen pair into a Technology.
+//
+// Discovery is by CONTENT, not by extension or by folder name: a kit arranges its own tree however it
+// likes, and the two files this needs are recognisable by their own grammar. It is bounded in every
+// direction (depth, file count, file size) so pointing it at a large tree — or at the wrong tree
+// entirely — costs a known amount of work rather than an open-ended walk.
+
+namespace CircuitRF.Ui.Layout.TechImport;
+
+/// <summary>One process file found while scanning, with enough context to choose between several.</summary>
+/// <param name="Path">Absolute path.</param>
+/// <param name="RelativePath">Path relative to the scanned root, '/'-separated — what the user reads.</param>
+/// <param name="Label">
+/// The name the file states for itself (a stack file's technology name), or its file name. Several
+/// stack files in one kit are usually the same process at different process corners, and the label is
+/// how a user tells them apart.
+/// </param>
+public sealed record TechnologyFileCandidate(string Path, string RelativePath, string Label);
+
+/// <summary>What a scan of a kit turned up.</summary>
+public sealed record TechnologyScanResult(
+    IReadOnlyList<TechnologyFileCandidate> StackFiles,
+    IReadOnlyList<TechnologyFileCandidate> LayerTables,
+    IReadOnlyList<string>                  Notes)
+{
+    /// <summary>True when there is enough to build a technology from.</summary>
+    public bool HasStack => StackFiles.Count > 0;
+}
+
+public static class ProcessTechnologyImport
+{
+    /// <summary>How deep below the scanned root to look. A kit nests its technology data a few levels down.</summary>
+    public const int MaxDepth = 6;
+
+    /// <summary>
+    /// Files bigger than this are not peeked at. Both formats are small — a stack description is a
+    /// couple of kilobytes and even a large layer table is a few hundred — while a kit's bulk is
+    /// artwork and model data that would cost real time to read and can never match.
+    /// </summary>
+    public const long MaxFileBytes = 8L * 1024 * 1024;
+
+    /// <summary>A ceiling on how many files a scan will look at, so a wrong root cannot run away.</summary>
+    public const int MaxFilesExamined = 40_000;
+
+    /// <summary>How much of a file is read to decide what it is.</summary>
+    private const int PeekBytes = 64 * 1024;
+
+    public static TechnologyScanResult Scan(string rootDirectory)
+    {
+        var stacks  = new List<TechnologyFileCandidate>();
+        var tables  = new List<TechnologyFileCandidate>();
+        var notes   = new List<string>();
+
+        if (!Directory.Exists(rootDirectory))
+            return new TechnologyScanResult([], [], [$"\"{rootDirectory}\" is not a folder."]);
+
+        int examined = 0;
+        bool truncated = false;
+
+        foreach (string path in EnumerateBounded(rootDirectory, MaxDepth))
+        {
+            if (examined >= MaxFilesExamined) { truncated = true; break; }
+            examined++;
+
+            string? text = TryReadCandidate(path);
+            if (text is null) continue;
+
+            if (ProcessStackReader.LooksLikeStackFile(text))
+            {
+                var desc = ProcessStackReader.Read(text);
+                stacks.Add(new TechnologyFileCandidate(
+                    path, Relative(rootDirectory, path),
+                    desc.TechnologyName is { Length: > 0 } n ? n : Path.GetFileName(path)));
+            }
+            else if (LayerPropertiesReader.LooksLikeLayerPropertiesFile(text))
+            {
+                tables.Add(new TechnologyFileCandidate(
+                    path, Relative(rootDirectory, path), Path.GetFileName(path)));
+            }
+        }
+
+        if (truncated)
+            notes.Add($"The folder holds more than {MaxFilesExamined:N0} files; the scan stopped there. " +
+                      "Point the import at the folder holding the process data rather than the whole kit.");
+
+        if (stacks.Count == 0)
+            notes.Add("No interconnect technology file was found. circuitRF builds a stackup from the " +
+                      "file that states each layer's thickness, permittivity and sheet resistance; " +
+                      "without one there is nothing to derive a substrate from.");
+
+        if (tables.Count == 0 && stacks.Count > 0)
+            notes.Add("No layer table was found, so the technology will carry a stackup but no layers. " +
+                      "Nothing drawn can be bound to a process layer until one is added.");
+
+        // Ordered so the choice a user is offered is stable run to run.
+        stacks.Sort(static (a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
+        tables.Sort(static (a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
+
+        return new TechnologyScanResult(stacks, tables, notes);
+    }
+
+    /// <summary>
+    /// Reads the chosen files and builds the technology. A layer table is optional — a stackup with no
+    /// layer table is a degraded but honest result, and refusing would leave a user with a process
+    /// whose stack circuitRF can plainly read and no way to get at it.
+    /// </summary>
+    public static TechnologyImportResult Import(string stackFilePath, string? layerTablePath)
+    {
+        var stack = ProcessStackReader.Read(File.ReadAllText(stackFilePath));
+
+        ProcessLayerTable? table = null;
+        if (layerTablePath is { Length: > 0 })
+            table = LayerPropertiesReader.Read(File.ReadAllText(layerTablePath));
+
+        return ProcessTechnologyBuilder.Build(
+            stack, table, Path.GetFileNameWithoutExtension(stackFilePath));
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private static IEnumerable<string> EnumerateBounded(string root, int maxDepth)
+    {
+        var queue = new Queue<(string Dir, int Depth)>();
+        queue.Enqueue((root, 0));
+
+        while (queue.Count > 0)
+        {
+            var (dir, depth) = queue.Dequeue();
+
+            string[] files;
+            try { files = Directory.GetFiles(dir); }
+            catch (SystemException) { continue; }   // unreadable folder: skip, never fail the scan
+
+            foreach (var f in files) yield return f;
+
+            if (depth >= maxDepth) continue;
+
+            string[] subs;
+            try { subs = Directory.GetDirectories(dir); }
+            catch (SystemException) { continue; }
+
+            foreach (var s in subs) queue.Enqueue((s, depth + 1));
+        }
+    }
+
+    /// <summary>
+    /// A file's full text when its opening looks like one of the two formats, otherwise null.
+    ///
+    /// <para>Two stages, and the split is load-bearing rather than an optimisation. A recogniser has
+    /// to see a file WHOLE — a layer table is XML, and a truncated document does not parse at all, so
+    /// deciding on a fixed-size peek would reject every real one — but reading every file in a kit
+    /// whole would mean reading its artwork and model data too. So the peek only looks for the
+    /// format's own marker word, which is cheap and appears in the first few lines of both, and the
+    /// file is read entire only once that has matched.</para>
+    ///
+    /// <para>Binary is detected by a NUL byte in the peek, the same rule the kit importer already uses.</para>
+    /// </summary>
+    private static string? TryReadCandidate(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length == 0 || info.Length > MaxFileBytes) return null;
+
+            string peek;
+            using (var fs = File.OpenRead(path))
+            {
+                var buffer = new byte[(int)Math.Min(PeekBytes, info.Length)];
+                int read = fs.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+                if (Array.IndexOf(buffer, (byte)0, 0, read) >= 0) return null;
+                peek = System.Text.Encoding.UTF8.GetString(buffer, 0, read);
+            }
+
+            bool promising =
+                peek.Contains("layer-properties", StringComparison.Ordinal) ||
+                peek.Contains("TECHNOLOGY",       StringComparison.OrdinalIgnoreCase);
+
+            if (!promising) return null;
+
+            return info.Length <= PeekBytes ? peek : File.ReadAllText(path);
+        }
+        catch (SystemException)
+        {
+            return null;
+        }
+    }
+
+    private static string Relative(string root, string path)
+    {
+        string rel = Path.GetRelativePath(root, path);
+        return rel.Replace(Path.DirectorySeparatorChar, '/');
+    }
+}

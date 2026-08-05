@@ -12,7 +12,7 @@ public class PCellReadOnlyAndRegenerationTests
 
     private static LayoutView MakePCellView()
     {
-        var parameters = new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 };
+        var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 };
         var result = MlinPCell.Generate(parameters, Pcb, PCellLayerSelection.Default);
         var view = new LayoutView();
         view.Shapes.AddRange(result.Shapes);
@@ -74,7 +74,7 @@ public class PCellReadOnlyAndRegenerationTests
         var vm = new LayoutEditorViewModel(view) { Technology = Pcb };
         var originalPin2X = ((RectShape)view.Shapes[0]).X2;
 
-        bool ok = vm.RegeneratePCell(new Dictionary<string, double> { ["L"] = 0.02 }); // double the length
+        bool ok = vm.RegeneratePCell(new Dictionary<string, PCellValue> { ["L"] = 0.02 }); // double the length
 
         Assert.True(ok);
         Assert.NotNull(view.PCellOrigin);
@@ -90,7 +90,7 @@ public class PCellReadOnlyAndRegenerationTests
         var view = MakePCellView();
         var vm = new LayoutEditorViewModel(view) { Technology = Pcb };
 
-        vm.RegeneratePCell(new Dictionary<string, double> { ["L"] = 0.02 }); // W not supplied — must be preserved
+        vm.RegeneratePCell(new Dictionary<string, PCellValue> { ["L"] = 0.02 }); // W not supplied — must be preserved
 
         Assert.Equal(0.0029, view.PCellOrigin!.Parameters["W"]);
     }
@@ -99,7 +99,7 @@ public class PCellReadOnlyAndRegenerationTests
     public void Regenerate_OnNonPCellView_Fails_ReportsWhy()
     {
         var vm = new LayoutEditorViewModel(new LayoutView());
-        bool ok = vm.RegeneratePCell(new Dictionary<string, double> { ["L"] = 0.02 });
+        bool ok = vm.RegeneratePCell(new Dictionary<string, PCellValue> { ["L"] = 0.02 });
         Assert.False(ok);
     }
 }

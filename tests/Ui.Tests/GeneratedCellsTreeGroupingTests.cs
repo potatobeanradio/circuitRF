@@ -44,7 +44,7 @@ public sealed class GeneratedCellsTreeGroupingTests : IDisposable
     {
         for (int i = 0; i < 40; i++)
         {
-            var parms = new System.Collections.Generic.Dictionary<string, double> { ["W"] = 0.001 * (i + 1), ["L"] = 0.01 };
+            var parms = new System.Collections.Generic.Dictionary<string, PCellValue> { ["W"] = 0.001 * (i + 1), ["L"] = 0.01 };
             GeneratedCellStore.GetOrCreate(_root, "MLIN", parms, null, null, PCellLayerSelection.Default);
         }
 

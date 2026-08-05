@@ -48,7 +48,7 @@ public sealed class MKlopfCurvatureAndSmoothingTests
     [Fact]
     public void RL5g4WorkedExample_NoWarning_BecauseRMinIsFarLargerThanThreeWLocal()
     {
-        var parms = new Dictionary<string, double>
+        var parms = new Dictionary<string, PCellValue>
         {
             ["Z1"] = 50.0, ["Z2"] = 100.0, ["GammaMax"] = 0.05,
             ["L"] = 0.200, ["Offset"] = 0.100, ["SmoothSteps"] = 1.0,
@@ -67,7 +67,7 @@ public sealed class MKlopfCurvatureAndSmoothingTests
         // A short taper with an aggressive offset relative to its length genuinely violates the
         // R_min >= 3xW_local margin (verified directly: R_min~2.85mm vs 3xW_local~7.67mm here) —
         // proving the check fires when the geometry actually warrants it, not just that it exists.
-        var parms = new Dictionary<string, double>
+        var parms = new Dictionary<string, PCellValue>
         {
             ["Z1"] = 50.0, ["Z2"] = 100.0, ["GammaMax"] = 0.05,
             ["L"] = 0.010, ["Offset"] = 0.008, ["SmoothSteps"] = 1.0,
@@ -82,7 +82,7 @@ public sealed class MKlopfCurvatureAndSmoothingTests
     [Fact]
     public void ZeroOffset_NeverWarns_StraightCenterlineHasNoCurvature()
     {
-        var parms = new Dictionary<string, double>
+        var parms = new Dictionary<string, PCellValue>
         {
             ["Z1"] = 50.0, ["Z2"] = 100.0, ["GammaMax"] = 0.05,
             ["L"] = 0.010, ["Offset"] = 0.0, ["SmoothSteps"] = 1.0,
@@ -100,7 +100,7 @@ public sealed class MKlopfCurvatureAndSmoothingTests
         Directory.CreateDirectory(root);
         try
         {
-            var parms = new Dictionary<string, double>
+            var parms = new Dictionary<string, PCellValue>
             {
                 ["Z1"] = 50.0, ["Z2"] = 100.0, ["GammaMax"] = 0.05,
                 ["L"] = 0.010, ["Offset"] = 0.008, ["SmoothSteps"] = 1.0,

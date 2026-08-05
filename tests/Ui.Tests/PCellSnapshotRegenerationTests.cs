@@ -80,8 +80,8 @@ public sealed class PCellSnapshotRegenerationTests : IDisposable
         var editVm = MakeVmAt("Edited");
         Assert.True(editVm.CommitPaletteDrop(SymbolKind.Mlin, 0, 0, 0));
         var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
-        double newW = defaults["W"] * 3;
-        Assert.True(editVm.EditInstancePCellParameters(0, new Dictionary<string, double> { ["W"] = newW }));
+        double newW = defaults.Real("W") * 3;
+        Assert.True(editVm.EditInstancePCellParameters(0, new Dictionary<string, PCellValue> { ["W"] = newW }));
         string editedCellRef = editVm.Model.Instances[0].CellRef;
         Assert.NotEqual(paletteCellRef, editedCellRef); // genuinely forked to a different cell
         string editClayPath = Path.Combine(_root, "Edited", "layout", "main.clay");
@@ -109,7 +109,7 @@ public sealed class PCellSnapshotRegenerationTests : IDisposable
         // Every instance's ORIGINAL CellRef resolves again, with the exact parameters it had before —
         // proving the regenerated cell is byte-identical to what was deleted, for all three origins.
         AssertResolvesWithW(schCellRef, schLayoutDir, 7 * 1e-3);
-        AssertResolvesWithW(paletteCellRef, Path.GetDirectoryName(paletteClayPath)!, defaults["W"]);
+        AssertResolvesWithW(paletteCellRef, Path.GetDirectoryName(paletteClayPath)!, defaults.Real("W"));
         AssertResolvesWithW(editedCellRef, Path.GetDirectoryName(editClayPath)!, newW);
     }
 
@@ -118,6 +118,6 @@ public sealed class PCellSnapshotRegenerationTests : IDisposable
         var res = CellLayoutResolver.Resolve(cellRef, baseDir);
         Assert.Equal(CellLayoutState.Resolved, res.State);
         Assert.NotNull(res.View!.PCellOrigin);
-        Assert.Equal(expectedWMeters, res.View.PCellOrigin!.Parameters["W"], 9);
+        Assert.Equal(expectedWMeters, res.View.PCellOrigin!.Parameters.Real("W"), 9);
     }
 }

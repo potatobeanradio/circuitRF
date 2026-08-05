@@ -138,6 +138,120 @@ public sealed class SlavedNodeAllocationTests : IDisposable
         Assert.Contains(nl.Nodes.AllNames, n => n.EndsWith($"_n{SlavedProvider.Master}", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// <b>An external pin collapsed onto an internal node keeps the USER'S net.</b> This is the shape
+    /// a real compact model reports — a MOSFET collapses its drain terminal onto its internal drain,
+    /// and its bulk terminal plus three internal bulk nodes onto one — and reading "node A follows
+    /// node B" literally gives the TERMINAL the internal node's index. The net the user wired to that
+    /// pin is then dropped, and the device solves perfectly while disconnected from the circuit
+    /// around it. Nothing on screen says so.
+    ///
+    /// <para>Asserted with the group shape that makes it hard: several nodes collapsed onto one
+    /// master, only one of them external, and the external one NOT first. Assigning as each is
+    /// encountered would copy the internal index into the others before reaching the terminal.</para>
+    /// </summary>
+    [Fact]
+    public void AnExternalPinCollapsedOntoAnInternalNode_KeepsTheUsersNet()
+    {
+        ExternalDeviceRegistry.Clear();
+        ExternalDeviceRegistry.Register(new CollapsingProvider(Provider));
+
+        var (lib, tb) = new CnlReader().Read(
+            "Term:T1  a  0  Num=1 Z=50 Ohm\n" +
+            "Term:T2  b  0  Num=2 Z=50 Ohm\n" +
+            $"ExtDevice:X1  a  b  Provider={Provider} Type={CollapsingProvider.TypeName}\n");
+        var nl = new Elaborator(lib).Elaborate(tb);
+
+        var ec = nl.Components.Single(c => c.Model is ExternalDeviceModel);
+        int netA = nl.Nodes.IndexOf("a");
+
+        // Ground-referenced pairs: node k occupies Nodes[2k]. Pin A, the internal node it was
+        // collapsed onto, AND the other members of that group all sit on the user's net.
+        Assert.Equal(netA, ec.Nodes[2 * CollapsingProvider.PinA]);
+        Assert.Equal(netA, ec.Nodes[2 * CollapsingProvider.Master]);
+        Assert.Equal(netA, ec.Nodes[2 * CollapsingProvider.AlsoSlaved]);
+
+        // …and no internal unknown was minted for any of them.
+        Assert.DoesNotContain(nl.Nodes.AllNames, n => n.Contains("_n2", StringComparison.Ordinal));
+    }
+
+    /// <summary>Two terminals collapsed together shorts two user nets, which circuitRF cannot carry.</summary>
+    [Fact]
+    public void TwoExternalPinsCollapsedTogether_AreRefused()
+    {
+        ExternalDeviceRegistry.Clear();
+        ExternalDeviceRegistry.Register(new CollapsingProvider(Provider, collapseBothPins: true));
+
+        var (lib, tb) = new CnlReader().Read(
+            "Term:T1  a  0  Num=1 Z=50 Ohm\n" +
+            "Term:T2  b  0  Num=2 Z=50 Ohm\n" +
+            $"ExtDevice:X1  a  b  Provider={Provider} Type={CollapsingProvider.TypeName}\n");
+
+        var ex = Assert.Throws<ExternalDeviceException>(() => new Elaborator(lib).Elaborate(tb));
+        Assert.Contains("shorts the nets", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Four nodes, of which pin 0 and pin 1 are external and nodes 2 and 3 internal. Node 2 is the
+    /// master; pin 0 and node 3 follow it — the external one declared LAST, which is the ordering
+    /// that catches an assign-as-you-go implementation.
+    /// </summary>
+    private sealed class CollapsingProvider(string name, bool collapseBothPins = false) : IExternalDeviceProvider
+    {
+        public const string TypeName = "Collapsing";
+        public const int    PinA = 0, PinB = 1, Master = 2, AlsoSlaved = 3, NodeCount = 4;
+
+        public string Name { get; } = name;
+
+        private readonly ExternalDeviceDescriptor _descriptor = new(
+            TypeId: TypeName, DisplayName: "Collapsing device (synthetic)",
+            ExternalPinCount: 2, InternalNodeCount: 2, Parameters: [],
+            Nodes:
+            [
+                new ExternalNodeDescriptor(PinB,       External: true,  Label: "b"),
+                new ExternalNodeDescriptor(Master,     External: false, Label: "master"),
+                new ExternalNodeDescriptor(AlsoSlaved, External: false, Label: "also", SlavedTo: Master),
+                new ExternalNodeDescriptor(PinA,       External: true,  Label: "a",    SlavedTo: Master),
+            ]);
+
+        private readonly ExternalDeviceDescriptor _shorting = new(
+            TypeId: TypeName, DisplayName: "Collapsing device (synthetic)",
+            ExternalPinCount: 2, InternalNodeCount: 2, Parameters: [],
+            Nodes:
+            [
+                new ExternalNodeDescriptor(Master,     External: false, Label: "master"),
+                new ExternalNodeDescriptor(AlsoSlaved, External: false, Label: "also"),
+                new ExternalNodeDescriptor(PinA,       External: true,  Label: "a", SlavedTo: Master),
+                new ExternalNodeDescriptor(PinB,       External: true,  Label: "b", SlavedTo: Master),
+            ]);
+
+        private ExternalDeviceDescriptor Chosen => collapseBothPins ? _shorting : _descriptor;
+
+        public IReadOnlyList<ExternalDeviceDescriptor> Describe() => [Chosen];
+
+        public IExternalDeviceInstance Create(string typeId, IReadOnlyDictionary<string, string> p)
+            => new Instance(Chosen);
+
+        private sealed class Instance(ExternalDeviceDescriptor descriptor) : IExternalDeviceInstance
+        {
+            public ExternalDeviceDescriptor Descriptor { get; } = descriptor;
+
+            public ExternalDeviceEvaluation Evaluate(IReadOnlyList<double> v)
+            {
+                var i = new double[NodeCount];
+                var g = new double[NodeCount, NodeCount];
+                const double gd = 0.01;
+                i[Master] = gd * (v[Master] - v[PinB]);
+                i[PinB]   = gd * (v[PinB] - v[Master]);
+                g[Master, Master] =  gd; g[Master, PinB] = -gd;
+                g[PinB, PinB]     =  gd; g[PinB, Master] = -gd;
+                return new ExternalDeviceEvaluation(i, new double[NodeCount], g, new double[NodeCount, NodeCount]);
+            }
+
+            public void Dispose() { }
+        }
+    }
+
     [Fact]
     public void TheSParameterAssemblyIsNotSingular()
     {

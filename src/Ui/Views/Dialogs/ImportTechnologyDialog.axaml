@@ -1,0 +1,82 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.ImportTechnologyDialog"
+        Title="Import Technology"
+        Width="520"
+        SizeToContent="Height"
+        MinHeight="260"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+
+            <TextBlock x:Name="SourceLabel"
+                       FontSize="11"
+                       Opacity="0.7"
+                       TextWrapping="Wrap"/>
+
+            <TextBlock Text="Stack description:" FontSize="12" Margin="0,4,0,0"/>
+            <ComboBox x:Name="StackCombo"
+                      FontSize="12"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="OnStackChanged"/>
+            <TextBlock Text="Thicknesses, permittivities and sheet resistances. A process usually ships one of these per corner."
+                       FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Layer table:" FontSize="12" Margin="0,4,0,0"/>
+            <ComboBox x:Name="LayerTableCombo"
+                      FontSize="12"
+                      HorizontalAlignment="Stretch"/>
+            <TextBlock Text="Layer numbers, names and colours. Without one the technology carries a stackup but no layers."
+                       FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Technology name:" FontSize="12" Margin="0,4,0,0"/>
+            <TextBox x:Name="NameBox"
+                     FontSize="12"
+                     MaxLength="200"
+                     TextChanged="OnNameChanged"
+                     KeyDown="OnKeyDown"/>
+            <TextBlock x:Name="ValidationMessage"
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+
+            <CheckBox x:Name="SetAsDefaultCheck"
+                      Content="Set as workspace default"
+                      FontSize="12"
+                      Margin="0,4,0,0"/>
+
+            <TextBlock x:Name="PreviewLabel"
+                       FontSize="11"
+                       Opacity="0.7"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,12,0,0">
+            <Button Content="Cancel"
+                    Width="80"
+                    FontSize="12"
+                    IsCancel="True"
+                    HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button x:Name="OkButton"
+                    Content="Import"
+                    Width="90"
+                    IsDefault="True"
+                    IsEnabled="False"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"
+                    Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

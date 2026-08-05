@@ -562,6 +562,26 @@ public sealed class LayoutCanvas : Control
         var payload = TryParsePaletteDragPayload(e);
         if (payload is null) { e.DragEffects = DragDropEffects.None; return; }
 
+        // A tile that places a parametric cell by id — every cell a kit contributes. Checked first
+        // because such a tile carries the placeholder SymbolKind every kit tile shares, which the
+        // SymbolKind path below would (correctly) refuse.
+        if (payload.PCellGeneratorId is { Length: > 0 } dragGen)
+        {
+            if (!vm.CanDropPCellGenerator(dragGen))
+            {
+                e.DragEffects = DragDropEffects.None;
+                vm.CancelPaletteDragGhost();
+                return;
+            }
+
+            e.DragEffects = DragDropEffects.Copy;
+            e.Handled     = true;
+            var (gx, gy) = SnappedDropPoint(e, vm);
+            vm.UpdatePCellDragGhost(dragGen, gx, gy);
+            InvalidateVisual();
+            return;
+        }
+
         // R-L5-8: only a component with a registered PCell generator is droppable — the cursor says
         // no before release for anything else (a Term, a Var, ...).
         if (!vm.CanDropPaletteComponent(payload.Kind, payload.PortCount))
@@ -586,9 +606,19 @@ public sealed class LayoutCanvas : Control
         if (_viewModel is not { } vm) return;
         var payload = TryParsePaletteDragPayload(e);
         if (payload is null) return;
-        if (!vm.CanDropPaletteComponent(payload.Kind, payload.PortCount)) return;
 
         var (sx, sy) = SnappedDropPoint(e, vm);
+
+        if (payload.PCellGeneratorId is { Length: > 0 } dropGen)
+        {
+            if (!vm.CanDropPCellGenerator(dropGen)) return;
+            vm.CommitPCellDrop(dropGen, sx, sy);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
+        if (!vm.CanDropPaletteComponent(payload.Kind, payload.PortCount)) return;
         vm.CommitPaletteDrop(payload.Kind, payload.PortCount, sx, sy);
         e.Handled = true;
         InvalidateVisual();

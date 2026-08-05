@@ -1293,8 +1293,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         {
             if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
             { row.ValueText = ""; row.Error = "No technology resolves — can't convert."; return; }
-            double z1 = origin.Parameters.GetValueOrDefault("Z1", 50.0);
-            double z2 = origin.Parameters.GetValueOrDefault("Z2", 50.0);
+            double z1 = origin.Parameters.Real("Z1", 50.0);
+            double z2 = origin.Parameters.Real("Z2", 50.0);
             var reporter = new MicrostripValidityReporter("(layout entry-mode display)");
             double converted;
             if (row.Name is "W1" or "W2")
@@ -1304,8 +1304,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             }
             else
             {
-                double gammaMax = origin.Parameters.GetValueOrDefault("GammaMax", 0.05);
-                double l = origin.Parameters.GetValueOrDefault("L", 0.02);
+                double gammaMax = origin.Parameters.Real("GammaMax", 0.05);
+                double l = origin.Parameters.Real("L", 0.02);
                 converted = MicrostripKlopfEntryConversion.LengthToF3db(z1, z2, gammaMax, l, h, t, er, reporter);
             }
             row.Error = null;
@@ -1313,10 +1313,19 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             return;
         }
 
-        if (!origin.Parameters.TryGetValue(row.Name, out double siValue)) return;
+        if (!origin.Parameters.TryGetValue(row.Name, out var value)) return;
 
-        row.ValueText = FormatPCellParamValue(row.Unit, siValue);
+        row.ValueText = FormatPCellParamValue(row.Unit, value);
     }
+
+    /// <summary>
+    /// Contract version 2: a parameter is no longer necessarily a number. A Real still goes through
+    /// the unit machinery below (that is every built-in PCell's every parameter); every other kind
+    /// shows its own text, because there is no unit to convert a model name or a flag through and
+    /// formatting one as a number would show a confident <c>0</c> where the real value is a word.
+    /// </summary>
+    private string FormatPCellParamValue(string unit, PCellValue value)
+        => value.Kind == PCellValueKind.Real ? FormatPCellParamValue(unit, value.AsReal()) : value.AsText();
 
     private string FormatPCellParamValue(string unit, double siValue)
     {
@@ -1362,6 +1371,60 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>The kind the selected instance's cell currently stores for <paramref name="name"/> —
+    /// Real for anything the row list can't resolve, which is every built-in PCell parameter and the
+    /// MKlopf entry-mode pseudo-names.</summary>
+    private PCellValueKind CurrentParamKind(string name)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return PCellValueKind.Real;
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        return res is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
+               && origin.Parameters.TryGetValue(name, out var v)
+            ? v.Kind : PCellValueKind.Real;
+    }
+
+    /// <summary>
+    /// Parses an edit back into the kind the parameter already has, and <b>never into a different
+    /// one</b>. Which kind a parameter is belongs to the cell that declares it, not to whatever the
+    /// user's typing happens to look like — letting a typed <c>4</c> silently turn a finger count
+    /// into a Real would change the content hash and, with it, which generated cell the instance
+    /// resolves to. A value that cannot be read as that kind is refused by name rather than
+    /// coerced.
+    /// </summary>
+    private bool TryParsePCellParamValue(string unit, PCellValueKind kind, string text,
+                                         out PCellValue value, out string? reason)
+    {
+        value  = PCellValue.Real(0);
+        reason = null;
+        string trimmed = text.Trim();
+
+        switch (kind)
+        {
+            case PCellValueKind.Real:
+                if (!TryParsePCellParamValue(unit, trimmed, out var si)) { reason = "Invalid value"; return false; }
+                value = PCellValue.Real(si);
+                return true;
+
+            case PCellValueKind.Int:
+                if (!long.TryParse(trimmed, System.Globalization.NumberStyles.Integer,
+                                   System.Globalization.CultureInfo.InvariantCulture, out long i))
+                { reason = "This parameter takes a whole number."; return false; }
+                value = PCellValue.Int(i);
+                return true;
+
+            case PCellValueKind.Bool:
+                if (bool.TryParse(trimmed, out bool b)) { value = PCellValue.Bool(b); return true; }
+                if (trimmed is "1") { value = PCellValue.Bool(true);  return true; }
+                if (trimmed is "0") { value = PCellValue.Bool(false); return true; }
+                reason = "This parameter takes true or false.";
+                return false;
+
+            default:
+                value = PCellValue.Text(trimmed);
+                return true;
+        }
+    }
+
     /// <summary>R-L5f-9: copy-on-write — routes through <see cref="LayoutEditorViewModel.
     /// EditInstancePCellParameters"/>, the SAME repoint-to-whatever-cell-the-new-values-hash-to
     /// mechanism the Properties Inspector's own instance CellRef re-target uses internally; a sibling
@@ -1379,11 +1442,11 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             return;
         }
 
-        if (!TryParsePCellParamValue(row.Unit, text, out var siValue))
-        { row.Error = "Invalid value"; return; }
+        if (!TryParsePCellParamValue(row.Unit, CurrentParamKind(row.Name), text, out var newValue, out var reason))
+        { row.Error = reason; return; }
         row.Error = null;
 
-        _vm.EditInstancePCellParameters(indices[0], new Dictionary<string, double> { [row.Name] = siValue });
+        _vm.EditInstancePCellParameters(indices[0], new Dictionary<string, PCellValue> { [row.Name] = newValue });
         RefreshFromVm();
     }
 
@@ -1408,8 +1471,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
         { row.Error = "No technology resolves — can't convert."; return; }
 
-        double z1cur = origin.Parameters.GetValueOrDefault("Z1", 50.0);
-        double z2cur = origin.Parameters.GetValueOrDefault("Z2", 50.0);
+        double z1cur = origin.Parameters.Real("Z1", 50.0);
+        double z2cur = origin.Parameters.Real("Z2", 50.0);
         var reporter = new MicrostripValidityReporter("(layout entry-mode edit)");
 
         if (row.Name is "W1" or "W2")
@@ -1419,14 +1482,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             double w2 = row.Name == "W2" ? newValueSi : w2cur;
             var (z1, z2) = MicrostripKlopfEntryConversion.WidthToImpedance(w1, w2, h, t, er, reporter);
             row.Error = null;
-            _vm.EditInstancePCellParameters(instanceIndex, new Dictionary<string, double> { ["Z1"] = z1, ["Z2"] = z2 });
+            _vm.EditInstancePCellParameters(instanceIndex, new Dictionary<string, PCellValue> { ["Z1"] = z1, ["Z2"] = z2 });
         }
         else // "F3db"
         {
-            double gammaMax = origin.Parameters.GetValueOrDefault("GammaMax", 0.05);
+            double gammaMax = origin.Parameters.Real("GammaMax", 0.05);
             double l = MicrostripKlopfEntryConversion.F3dbToLength(z1cur, z2cur, gammaMax, newValueSi, h, t, er, reporter);
             row.Error = null;
-            _vm.EditInstancePCellParameters(instanceIndex, new Dictionary<string, double> { ["L"] = l });
+            _vm.EditInstancePCellParameters(instanceIndex, new Dictionary<string, PCellValue> { ["L"] = l });
         }
         RefreshFromVm();
     }

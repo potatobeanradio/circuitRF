@@ -58,6 +58,8 @@ public static class PdkFormatRegistry
         new ExtensionRecognizer(),
         new CellDatabaseRecognizer(),
         new ComponentCatalogRecognizer(),
+        new SymbolRecordFileRecognizer(),
+        new SpiceNetlistRecognizer(),
         new LayerTechnologyRecognizer(),
     ];
 }
@@ -126,6 +128,75 @@ internal sealed class ExtensionRecognizer : IPdkFormatRecognizer
 
             _ => null,
         };
+    }
+}
+
+/// <summary>
+/// A plain-text RECORD symbol file: one symbol per file, each line a single-letter record with its
+/// fields and a braced attribute block.
+///
+/// <para><b>Recognised by its STRUCTURE, never by its extension or by the tool named in its first
+/// line.</b> The extension is shared with several unrelated formats, and keying off the writing
+/// tool's name would put a particular editor's identity into circuitRF — and would stop recognising
+/// the same format the moment a kit generated it with something else. The grammar is the thing that
+/// is actually stable.</para>
+///
+/// <para>Runs at a higher priority than the extension recogniser so a symbol whose extension is also
+/// claimed elsewhere is classified by what it contains.</para>
+/// </summary>
+internal sealed class SymbolRecordFileRecognizer : IPdkFormatRecognizer
+{
+    /// <summary>
+    /// This recogniser's own classification. Named rather than repeated as a literal, because part
+    /// discovery has to be able to tell a symbol IT can read from one classified as artwork some
+    /// other reader handles — the two fail for different reasons and need different messages.
+    /// </summary>
+    public const string Format = "symbol record file (text)";
+
+    public int Priority => 20;
+
+    public PdkAsset? Recognize(string path, Func<string> peek)
+    {
+        string text = peek();
+        if (text.Length == 0 || !KitSymbolFileReader.LooksLikeSymbolFile(text)) return null;
+
+        return new PdkAsset(path, PdkAssetKind.SymbolArtwork, PdkAssetSupport.Supported, Format,
+                            "One symbol per file. circuitRF reads its terminals, their names, and " +
+                            "the part's parameter interface with the kit's own defaults, and " +
+                            "installs it as a placeable symbol.");
+    }
+}
+
+/// <summary>
+/// A netlist or model library in the SPICE dialect, recognised by the DIRECTIVES it contains rather
+/// than by its extension.
+///
+/// <para><b>An extension list would not have worked, and that is the reason this exists.</b> Kits of
+/// this shape spell the same content <c>.lib</c>, <c>.sp</c>, <c>.spice</c>, <c>.mod</c>, <c>.cir</c>
+/// and <c>.net</c> — sometimes several within one kit — and <c>.lib</c> in particular is claimed by
+/// unrelated formats elsewhere. A file that declares a subcircuit or a model card IS one, whatever it
+/// is called, and a file that does not is not one however it is spelled.</para>
+///
+/// <para>Directives are matched at the START of a line only. A mention of <c>.model</c> inside prose
+/// or a path is not a declaration, and reading documentation as a netlist would put phantom parts in
+/// a kit's palette.</para>
+/// </summary>
+internal sealed class SpiceNetlistRecognizer : IPdkFormatRecognizer
+{
+    public int Priority => 15;
+
+    private static readonly Regex Directive =
+        new(@"^\s*\.(subckt|model)\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled);
+
+    public PdkAsset? Recognize(string path, Func<string> peek)
+    {
+        string text = peek();
+        if (text.Length == 0 || !Directive.IsMatch(text)) return null;
+
+        return new PdkAsset(path, PdkAssetKind.Netlist, PdkAssetSupport.Supported,
+                            "subcircuit netlist (SPICE dialect)",
+                            "circuitRF reads its subcircuits as ordinary cells, and its model cards " +
+                            "as the parameter sets the devices in them refer to.");
     }
 }
 

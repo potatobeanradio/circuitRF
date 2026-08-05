@@ -1,6 +1,25 @@
 # circuitRF — PCell Contract Design
 
-**Status:** Shipped (contract version 1) · **Date:** 2026-07-29, implemented 2026-07-28 · **Phase:** L5a
+**Status:** Shipped (contract version 2) · **Date:** 2026-07-29, implemented 2026-07-28; version 2 2026-08-03 · **Phase:** L5a, revised B0
+
+**Contract version 2 (2026-08-03) — read this before R2 and R5 below.** Two changes, both made before
+any third party could write a cell against version 1, because neither is retrofittable afterwards:
+
+1. **Parameters are kinded values, not bare doubles** (`PCellValue`: Real, Int, Bool, String). A real
+   cell names a model, counts fingers, picks a display mode — every one of those is a string, an
+   integer or a flag, and a `double`-only contract forces each to be smuggled through as a number the
+   generator decodes by private convention. Int is separate from Real deliberately: a count that
+   arrives as 3.0000000000000004 either gets rounded by a rule the caller cannot see or produces
+   geometry nobody asked for.
+2. **R5's literal "no file reads" is replaced by a determinism obligation** — see R5 below. The
+   prohibition was unsatisfiable for the script host §9 leaves open, which reads its own modules by
+   nature.
+
+*Neither is a file-format change.* A parameter of the only kind a version-1 workspace can contain — a
+Real — is written to `.clay` as the same bare JSON number and hashed into a generated cell's folder
+name as the same string as before, so every existing workspace resolves unchanged. Only a genuinely
+new kind takes a tagged form. The six built-in generators were migrated with a byte-comparison of
+their geometry against output recorded beforehand (`PCellGeometryGoldenTests`): no coordinate moved.
 
 **Implementation note (L5a completion):** the contract described below is implemented as designed.
 One resolution the implementation made, recorded here since it affects how every future reader
@@ -75,7 +94,8 @@ Generate(parameters, technology) → { shapes, pins }
 
 ### 3.1 Inputs
 
-**Parameters** are the resolved values of the cell's own parameters, from its `.ccell`.
+**Parameters** are the resolved values of the cell's own parameters, from its `.ccell` — kinded
+values (Real, Int, Bool, String) as of contract version 2, not bare numbers.
 
 **R2. A PCell reads the same parameter list its symbol displays.** One list, not two. A symbol showing `W`
 and a generator reading a different `W` is a defect that surfaces only as wrong geometry.
@@ -112,13 +132,23 @@ arm 1 along +X.
 
 ### 3.4 Purity
 
-**R5. `Generate` is pure and deterministic.** The same parameters and technology produce byte-identical
-output, always. No file reads, no clock, no ambient state, no randomness.
+**R5. `Generate` is deterministic given its declared inputs.** The same parameters and technology
+produce byte-identical output, always — on any machine, in any process, at any time. No clock, no
+ambient or global state, no randomness, no set-iteration order, no address-derived hashing, no
+accumulation whose order varies between runs.
+
+*Restated at contract version 2.* R5 used to read "no file reads." That was the wrong way to say it:
+a script host reads its own modules in order to exist at all, so the literal prohibition was
+unsatisfiable for the very extension this contract is meant to admit — and it named a mechanism
+instead of the property that actually matters. A generator that reads a file is fine **provided that
+file's content is part of its cache key**; that is the content-hash obligation, and it belongs with
+the generator-content hashing work rather than here.
 
 This is not a style preference. The per-cell geometry cache keys on **(cell, parameter values, technology)**,
 so an impure generator breaks that cache **silently** — producing stale or inconsistent geometry with no
 error anywhere and no way to tell from the result that anything went wrong. It is the same class of failure
-as a stale technology resolution, and equally hard to trace back to its cause.
+as a stale technology resolution, and equally hard to trace back to its cause. Two users on different
+machines getting different geometry is the same failure seen from the other end.
 
 ### 3.5 Evaluation and caching
 
@@ -142,6 +172,14 @@ metres.
 
 **R8. The contract carries a version.** A PDK declares which version it targets. This costs nothing while
 there is one version and cannot be retrofitted once third-party cells exist in the wild.
+
+`PCellContractVersion.Current`. Bump it, and record the reason here, whenever `Generate`'s signature
+or its guarantees change.
+
+| Version | Change |
+|---|---|
+| 1 | Initial contract (L5a). |
+| 2 | Parameters widened from `double` to kinded `PCellValue`; R5 restated as determinism rather than as a file-access prohibition. Both had to land before any third party wrote a cell. |
 
 ## 4. Regeneration, and the escape hatch
 

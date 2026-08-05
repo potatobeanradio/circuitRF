@@ -17,6 +17,12 @@ namespace CircuitRF.Ui.Schematic;
 /// the connection grid or a wire will not attach, and two rules for that would drift apart at the
 /// first change. It also means a part backed by a library and one backed by a drawing put their
 /// pins in the same places.</para>
+///
+/// <para><b>Every source of terminals now arrives here, and <see cref="DsnSymbolReader.TranslationVersion"/>
+/// therefore governs all of them</b> — a binary symbol library, and a plain-text record symbol file.
+/// A workspace records the version its kits were translated under, so a change to the scale, snap,
+/// axis flip or ordering below MOVES pins on every one of those paths and needs the bump. Moved pins
+/// silently disconnect wires the user already placed, which is the failure that rule exists for.</para>
 /// </summary>
 internal static class KitTemplateSymbol
 {

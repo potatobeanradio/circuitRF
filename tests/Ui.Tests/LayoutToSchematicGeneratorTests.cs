@@ -93,7 +93,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
         // Edit the layout instance's W to 15 mm (repoint to a new generated cell, same mechanism
         // EditInstancePCellParameters uses).
         var origin = CellLayoutResolver.Resolve(source.Instances[0].CellRef, layoutDir).View!.PCellOrigin!;
-        var newParams = new Dictionary<string, double>(origin.Parameters) { ["W"] = 15 * 1e-3 };
+        var newParams = new Dictionary<string, PCellValue>(origin.Parameters) { ["W"] = 15 * 1e-3 };
         string newCellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", newParams, null, null, PCellLayerSelection.Default);
         source.Instances[0].CellRef = Path.GetRelativePath(layoutDir, newCellDir);
 
@@ -158,7 +158,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
         // 40 mil width, expressed directly in SI metres — exactly what a layout-side PCell always
         // stores (PCell contract R-pc-6), regardless of what unit the user typed it in.
         double wMeters = 40.0 * 0.0254e-3; // 40 mil -> metres
-        var pcellParams = new Dictionary<string, double> { ["W"] = wMeters, ["L"] = 0.01 };
+        var pcellParams = new Dictionary<string, PCellValue> { ["W"] = wMeters, ["L"] = 0.01 };
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", pcellParams, null, null, PCellLayerSelection.Default);
 
         var source = new LayoutView();
@@ -185,7 +185,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
         var layoutDir = MakeLayoutDir("Amp6");
         double wMeters = 40.0 * 0.0254e-3; // 40 mil
         double lMeters = 250.0 * 0.0254e-3; // 250 mil
-        var originalParams = new Dictionary<string, double> { ["W"] = wMeters, ["L"] = lMeters };
+        var originalParams = new Dictionary<string, PCellValue> { ["W"] = wMeters, ["L"] = lMeters };
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", originalParams, null, null, PCellLayerSelection.Default);
 
         var source = new LayoutView();
@@ -210,7 +210,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
 
         // Directly confirm the resolved PCell parameters are bit-for-bit the values we started with.
         var origin = CellLayoutResolver.Resolve(inst.CellRef, layoutDir).View!.PCellOrigin!;
-        Assert.Equal(wMeters, origin.Parameters["W"], 9);
-        Assert.Equal(lMeters, origin.Parameters["L"], 9);
+        Assert.Equal(wMeters, origin.Parameters.Real("W"), 9);
+        Assert.Equal(lMeters, origin.Parameters.Real("L"), 9);
     }
 }

@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
 using CircuitRF.Core.Devices.External;
+using CircuitRF.Core.Netlist.Spice;
 
 namespace CircuitRF.Core.Pdk;
 
@@ -252,6 +253,49 @@ public static class PdkImporter
 
         if (report.Parts.Count > 0) return;
 
+        // ── The parts: one readable SYMBOL FILE each ─────────────────────────
+        //
+        // A kit of this shape has no catalog and no cell-database tree: its symbols sit together in
+        // a folder, one file per part, and the behaviour behind them lives somewhere else entirely —
+        // a netlist, or a compiled model library, in a different folder with no naming relationship
+        // to the symbols at all. Nothing above finds such a kit, and it imports as a pile of
+        // recognised files with an empty palette.
+        //
+        // Tried before the cell-database shape because the evidence is stronger: circuitRF actually
+        // READ the terminals out of these files, rather than inferring a part from the shape of a
+        // directory path.
+        foreach (var a in report.Assets.Where(IsRecordSymbolFile))
+        {
+            var symbol = ReadSymbolFile(report.RootPath, report.KitRoot, a.RelativePath);
+            if (symbol is null || symbol.Pins.Count == 0) continue;
+
+            string id = Path.GetFileNameWithoutExtension(a.FileName);
+            if (id.Length == 0 || !seen.Add(id)) continue;
+
+            var sub = BestSubcircuitFor(id, subcircuits);
+
+            report.Parts.Add(new PdkPart(
+                Id: id, DisplayName: id,
+                // The kit's own word for what kind of device this is, so the palette groups the way
+                // the kit does rather than the way circuitRF would guess.
+                Category: symbol.TypeWord.Length > 0 ? symbol.TypeWord : "symbols",
+                IconRelativePath: FindArtworkFor(id, artwork, PdkAssetKind.PaletteIcon)?.RelativePath,
+                // Deliberately NOT pointed at the file it came from. The terminals are already read
+                // and attached below; handing the path to the installer would send a DIFFERENT
+                // record-based text reader at it, and two such formats quietly reading each other's
+                // files produces a symbol that is drawn, placeable and wrong.
+                SymbolArtwork: null,
+                LayoutArtwork: FindArtworkFor(id, artwork, PdkAssetKind.LayoutArtwork),
+                // The symbol's own template is the kit stating this part's interface WITH its
+                // defaults, so it outranks a subcircuit matched by name. The subcircuit stands in
+                // when the symbol declares no template.
+                Parameters: symbol.Parameters.Count > 0 ? symbol.Parameters : sub?.Parameters,
+                PinCount:   symbol.Pins.Count,
+                Pins:       symbol.Pins));
+        }
+
+        if (report.Parts.Count > 0) return;
+
         // ── The parts: cells the kit drew ────────────────────────────────────
         //
         // A component is a CELL — the thing a kit gives an icon and a symbol to, and the thing a
@@ -299,6 +343,22 @@ public static class PdkImporter
                 PinCount:         sub.PinCount));
         }
     }
+
+    /// <summary>
+    /// Whether a netlist is written in the SPICE dialect. Keyed on the one construct that declares a
+    /// subcircuit there, at the start of a line — a mention of the word inside a comment or a path
+    /// is not a declaration.
+    /// </summary>
+    private static bool LooksLikeSpiceNetlist(string text)
+        => RxSpiceSubckt.IsMatch(text);
+
+    private static readonly Regex RxSpiceSubckt =
+        new(@"^\s*\.subckt\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>Whether a default reads as a number, which is what decides the parameter editor's shape.</summary>
+    private static bool IsNumericText(string s)
+        => s.Length > 0 && double.TryParse(s, System.Globalization.NumberStyles.Float,
+                                           System.Globalization.CultureInfo.InvariantCulture, out _);
 
     /// <summary>
     /// The subcircuit that supplies a cell's parameter interface: the one sharing the most name
@@ -407,6 +467,26 @@ public static class PdkImporter
     }
 
     /// <summary>
+    /// Whether an asset is a symbol in the plain-text record format — one THIS importer reads,
+    /// rather than artwork some other reader handles. The distinction decides both which parts are
+    /// discovered and, when none are, which explanation the user gets.
+    /// </summary>
+    private static bool IsRecordSymbolFile(PdkAsset a)
+        => a.Kind == PdkAssetKind.SymbolArtwork
+        && a.Support == PdkAssetSupport.Supported
+        && a.FormatName == SymbolRecordFileRecognizer.Format;
+
+    /// <summary>Reads one plain-text record symbol file, resolving it against either root.</summary>
+    private static KitSymbolFile? ReadSymbolFile(string root, string? kitRoot, string relativePath)
+    {
+        string rel  = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        string full = Path.Combine(root, rel);
+        if (!File.Exists(full) && kitRoot is { Length: > 0 })
+            full = Path.Combine(kitRoot, rel);
+        return KitSymbolFileReader.TryReadFile(full);
+    }
+
+    /// <summary>
     /// Reads the parts an XML component catalog declares.
     ///
     /// <para>Parsed with a regex rather than an XML parser on purpose. These files carry a default
@@ -487,6 +567,29 @@ public static class PdkImporter
             text = File.ReadAllText(full);
         }
         catch { yield break; }
+
+        // A netlist in the SPICE dialect states its subcircuits as `.subckt`, which the reader
+        // written for that format already turns into ordinary cells with ports and a parameter
+        // interface. Reaching for it here rather than adding a second grammar to the regex below is
+        // the whole point of that reader existing — and it is what gives a kit of this shape its
+        // parameter defaults and its terminal count.
+        if (LooksLikeSpiceNetlist(text))
+        {
+            SpiceNetlistResult? read = null;
+            try { read = SpiceNetlistReader.Read(text, Path.GetDirectoryName(full), full); }
+            catch { read = null; }               // a netlist that will not read is not a failed import
+
+            if (read is not null)
+            {
+                foreach (var cell in read.Library.Cells)
+                    yield return new SubcircuitDef(
+                        cell.Name,
+                        cell.Ports.Count,
+                        [.. cell.Parameters.Select(p => new PdkPartParameter(
+                            p.Name, p.DefaultExpression, IsText: !IsNumericText(p.DefaultExpression)))]);
+                yield break;
+            }
+        }
 
         foreach (Match m in RxDefine.Matches(text))
         {
@@ -838,16 +941,22 @@ public static class PdkImporter
         {
             int catalogs = report.Assets.Count(a => a.Kind == PdkAssetKind.ComponentCatalog);
             int netlists = report.Assets.Count(a => a.Kind == PdkAssetKind.Netlist);
+            int symbols  = report.Assets.Count(IsRecordSymbolFile);
             int drawings = report.Assets.Count(a => a.Kind is PdkAssetKind.SymbolArtwork
                                                             or PdkAssetKind.LayoutArtwork);
 
             string why =
                 catalogs > 0 ? "its catalog declared none that could be read"
+              // Symbols in a format circuitRF READS, yielding no part, means one thing: none of
+              // them declares a terminal. Sending the user to look at the folder layout instead —
+              // which is what the cell-database message does — would be the wrong place entirely.
+              : symbols  > 0 ? "its symbol files declare no terminals that circuitRF could read, " +
+                               "so nothing in the kit can be wired to anything"
               : netlists > 0 ? "its netlists declare no subcircuit that the kit also draws"
               : drawings > 0 ? "its drawings are not arranged as a cell database, so no part name " +
                                "could be read from them"
               :                "it declares its parts in none of the ways circuitRF reads — no " +
-                               "component catalog, no netlist, and no cell database";
+                               "component catalog, no netlist, no symbol files, and no cell database";
 
             report.Warn(
                 $"No placeable parts were found in this kit: {why}.",

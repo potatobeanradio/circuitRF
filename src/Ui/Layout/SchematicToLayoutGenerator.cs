@@ -154,7 +154,7 @@ public static class SchematicToLayoutGenerator
                 lines.Add(new ReportLine(schematicId, $"{schematicId} — added", ReportSeverity.Info));
 
                 if (generatorId is not null && pcellParams is not null)
-                    target.SchematicPCellSnapshots[schematicId] = new Dictionary<string, double>(pcellParams);
+                    target.SchematicPCellSnapshots[schematicId] = new Dictionary<string, PCellValue>(pcellParams);
 
                 continue;
             }
@@ -178,13 +178,13 @@ public static class SchematicToLayoutGenerator
                     if (currentLayoutParams is null || !currentLayoutParams.TryGetValue(name, out var layoutVal))
                         continue; // nothing on the existing cell to compare against (shouldn't happen once created, but never throw over it)
 
-                    if (NearlyEqual(layoutVal, newVal))
+                    if (SameParamValue(layoutVal, newVal))
                         continue; // schematic and layout already agree — nothing changed for this parameter
 
-                    bool hadSnapshot   = snapshot is not null && snapshot.TryGetValue(name, out var snapVal);
-                    double snap        = hadSnapshot ? snapshot![name] : layoutVal;
-                    bool schematicMoved = !hadSnapshot || !NearlyEqual(snap, newVal);
-                    bool layoutMoved    = hadSnapshot && !NearlyEqual(snap, layoutVal);
+                    bool hadSnapshot    = snapshot is not null && snapshot.ContainsKey(name);
+                    PCellValue snap     = hadSnapshot ? snapshot![name] : layoutVal;
+                    bool schematicMoved = !hadSnapshot || !SameParamValue(snap, newVal);
+                    bool layoutMoved    = hadSnapshot && !SameParamValue(snap, layoutVal);
 
                     bool isWarning = layoutMoved; // R-L5-11 table: layout-diverged (alone or together with schematic) => warning
                     if (!schematicMoved && !layoutMoved) continue; // shouldn't happen given the NearlyEqual guard above, but stay honest
@@ -192,14 +192,14 @@ public static class SchematicToLayoutGenerator
                     string? unit = comp.Parameters.FirstOrDefault(p => p.Name == name)?.Unit;
                     string unitSuffix = string.IsNullOrEmpty(unit) ? "" : $" {unit}";
                     lines.Add(new ReportLine(schematicId,
-                        $"{schematicId} — {name} changed from {Fmt(ToDisplayValue(unit, layoutVal))}{unitSuffix} to {Fmt(ToDisplayValue(unit, newVal))}{unitSuffix}" +
+                        $"{schematicId} — {name} changed from {FormatParamValue(unit, layoutVal)}{unitSuffix} to {FormatParamValue(unit, newVal)}{unitSuffix}" +
                         (isWarning ? " (a layout edit is being overwritten)" : " (from schematic)"),
                         isWarning ? ReportSeverity.Warning : ReportSeverity.Info));
                     reportedThisInstance = true;
                     if (isWarning) overwritten++;
                 }
 
-                target.SchematicPCellSnapshots[schematicId] = new Dictionary<string, double>(pcellParams);
+                target.SchematicPCellSnapshots[schematicId] = new Dictionary<string, PCellValue>(pcellParams);
 
                 if (cellRefChanged)
                 {
@@ -267,11 +267,11 @@ public static class SchematicToLayoutGenerator
     /// <see cref="ResolveComponentLayout"/> would compute for a schematic instance — default
     /// expressions are always plain literals (never variable references), so an empty <see cref="Scope"/>
     /// is exact, not an approximation.</summary>
-    public static IReadOnlyDictionary<string, double> ResolveDefaultParameters(SymbolKind kind, int portCount)
+    public static IReadOnlyDictionary<string, PCellValue> ResolveDefaultParameters(SymbolKind kind, int portCount)
     {
         var scope = new Scope("global");
         var evaluator = new Evaluator();
-        var resolved = new Dictionary<string, double>(StringComparer.Ordinal);
+        var resolved = new Dictionary<string, PCellValue>(StringComparer.Ordinal);
         foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, portCount))
         {
             if (NonPCellParamNames.Contains(dp.Name)) continue;
@@ -292,7 +292,7 @@ public static class SchematicToLayoutGenerator
         string workspaceRootDir, string targetLayoutBaseDir, LayoutView target,
         Technology? technology, string? techIdentity,
         Scope scope, Evaluator evaluator,
-        out IReadOnlyDictionary<string, double>? pcellParams, out string? generatorId,
+        out IReadOnlyDictionary<string, PCellValue>? pcellParams, out string? generatorId,
         out string? resolveWarning, out IReadOnlyList<string>? pcellDiagnostics)
     {
         pcellParams = null;
@@ -322,7 +322,7 @@ public static class SchematicToLayoutGenerator
         if (!PCellRegistry.TryGet(reference, out var generator))
             return null; // no PCell generator and no CellRef — an ordinary electrical-only component
 
-        var resolved = new Dictionary<string, double>(StringComparer.Ordinal);
+        var resolved = new Dictionary<string, PCellValue>(StringComparer.Ordinal);
         foreach (var p in comp.Parameters)
         {
             if (NonPCellParamNames.Contains(p.Name)) continue;
@@ -466,7 +466,7 @@ public static class SchematicToLayoutGenerator
     /// <c>MKlopfPCell.Generate</c> itself uses when no technology resolves (1.6 mm / 35 µm / 4.4), so
     /// this can never compute a different answer than the generator it is feeding.</summary>
     private static void ResolveMklopfCanonicalParams(
-        Dictionary<string, double> resolved, Technology? technology, PCellLayerSelection layerSelection)
+        Dictionary<string, PCellValue> resolved, Technology? technology, PCellLayerSelection layerSelection)
     {
         var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, layerSelection);
         double h = substrate?.HeightMeters ?? 1.6e-3;
@@ -474,26 +474,46 @@ public static class SchematicToLayoutGenerator
         double er = substrate?.RelativePermittivity ?? 4.4;
         var quiet = new MicrostripValidityReporter("(MKLOPF entry-route resolution, not reported)");
 
-        if (!resolved.ContainsKey("Z1") && resolved.TryGetValue("W1", out var w1) && resolved.TryGetValue("W2", out var w2))
+        if (!resolved.ContainsKey("Z1") && resolved.ContainsKey("W1") && resolved.ContainsKey("W2"))
         {
-            var (z1, z2) = MicrostripKlopfEntryConversion.WidthToImpedance(w1, w2, h, t, er, quiet);
+            var (z1, z2) = MicrostripKlopfEntryConversion.WidthToImpedance(
+                resolved.Real("W1"), resolved.Real("W2"), h, t, er, quiet);
             resolved["Z1"] = z1;
             resolved["Z2"] = z2;
             resolved.Remove("W1");
             resolved.Remove("W2");
         }
 
-        if (!resolved.ContainsKey("L") && resolved.TryGetValue("F3db", out var f3db))
+        if (!resolved.ContainsKey("L") && resolved.ContainsKey("F3db"))
         {
-            double gammaMax = resolved.GetValueOrDefault("GammaMax", 0.05);
-            double z1 = resolved.GetValueOrDefault("Z1", 50.0);
-            double z2 = resolved.GetValueOrDefault("Z2", 100.0);
-            resolved["L"] = MicrostripKlopfEntryConversion.F3dbToLength(z1, z2, gammaMax, f3db, h, t, er, quiet);
+            double gammaMax = resolved.Real("GammaMax", 0.05);
+            double z1 = resolved.Real("Z1", 50.0);
+            double z2 = resolved.Real("Z2", 100.0);
+            resolved["L"] = MicrostripKlopfEntryConversion.F3dbToLength(
+                z1, z2, gammaMax, resolved.Real("F3db"), h, t, er, quiet);
             resolved.Remove("F3db");
         }
     }
 
     internal static bool NearlyEqual(double a, double b) => Math.Abs(a - b) <= 1e-9 * Math.Max(1.0, Math.Max(Math.Abs(a), Math.Abs(b)));
+
+    /// <summary>
+    /// "Did this parameter change" for the R-L5-9/10/11 overwrite classification, across kinds. Two
+    /// Reals compare with <see cref="NearlyEqual"/>'s tolerance — a value that has been through a
+    /// unit conversion and back is not bit-identical and must not read as an edit. Every other kind
+    /// compares exactly: there is no rounding to absorb in a model name, a finger count, or a flag,
+    /// and a tolerance there would only ever hide a real difference. A KIND change is a change.
+    /// </summary>
+    internal static bool SameParamValue(PCellValue a, PCellValue b)
+        => a.Kind == PCellValueKind.Real && b.Kind == PCellValueKind.Real
+            ? NearlyEqual(a.AsReal(), b.AsReal())
+            : a.Equals(b);
+
+    /// <summary>A parameter value as a change report shows it: a Real through the same unit
+    /// conversion the schematic edits it in, anything else as its own text (a model name is not a
+    /// number and must not be formatted as one).</summary>
+    internal static string FormatParamValue(string? unit, PCellValue v)
+        => v.Kind == PCellValueKind.Real ? Fmt(ToDisplayValue(unit, v.AsReal())) : v.AsText();
 
     internal static string Fmt(double d) => d.ToString("0.#####", CultureInfo.InvariantCulture);
 

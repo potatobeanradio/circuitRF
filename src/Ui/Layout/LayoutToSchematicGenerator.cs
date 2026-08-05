@@ -1,6 +1,7 @@
 using System.Globalization;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands;
+using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Layout;
@@ -122,7 +123,7 @@ public static class LayoutToSchematicGenerator
                 created++;
                 lines.Add(new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
                     $"{comp.InstanceName} — created from layout", SchematicToLayoutGenerator.ReportSeverity.Info));
-                source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, double>(origin.Parameters);
+                source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, PCellValue>(origin.Parameters);
                 continue;
             }
 
@@ -141,12 +142,17 @@ public static class LayoutToSchematicGenerator
                 if (!SchematicToLayoutGenerator.TryResolveSiValue(param.Expression, param.Unit, scope, evaluator, out var schematicVal, out _))
                     continue;
 
-                if (SchematicToLayoutGenerator.NearlyEqual(schematicVal, layoutVal)) continue;
+                // The schematic side can only ever produce a number (a parameter is an expression),
+                // so its value enters the comparison as a Real — a layout parameter of some other
+                // kind therefore always reads as changed, which is correct: it cannot be expressed by
+                // the schematic value it is being compared against.
+                PCellValue schematicValue = schematicVal;
+                if (SchematicToLayoutGenerator.SameParamValue(schematicValue, layoutVal)) continue;
 
-                bool hadSnapshot    = snapshot is not null && snapshot.TryGetValue(name, out _);
-                double snap         = hadSnapshot ? snapshot![name] : schematicVal;
-                bool schematicMoved = hadSnapshot && !SchematicToLayoutGenerator.NearlyEqual(snap, schematicVal);
-                bool layoutMoved    = !hadSnapshot || !SchematicToLayoutGenerator.NearlyEqual(snap, layoutVal);
+                bool hadSnapshot    = snapshot is not null && snapshot.ContainsKey(name);
+                PCellValue snap     = hadSnapshot ? snapshot![name] : schematicValue;
+                bool schematicMoved = hadSnapshot && !SchematicToLayoutGenerator.SameParamValue(snap, schematicValue);
+                bool layoutMoved    = !hadSnapshot || !SchematicToLayoutGenerator.SameParamValue(snap, layoutVal);
 
                 bool isWarning = schematicMoved; // the schematic's own edit is what's about to be lost
                 if (!schematicMoved && !layoutMoved) continue;
@@ -157,15 +163,15 @@ public static class LayoutToSchematicGenerator
 
                 string unitSuffix = string.IsNullOrEmpty(param.Unit) ? "" : $" {param.Unit}";
                 lines.Add(new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
-                    $"{comp.InstanceName} — {name} changed from {SchematicToLayoutGenerator.Fmt(SchematicToLayoutGenerator.ToDisplayValue(param.Unit, schematicVal))}{unitSuffix} " +
-                    $"to {SchematicToLayoutGenerator.Fmt(SchematicToLayoutGenerator.ToDisplayValue(param.Unit, layoutVal))}{unitSuffix}" +
+                    $"{comp.InstanceName} — {name} changed from {SchematicToLayoutGenerator.FormatParamValue(param.Unit, schematicValue)}{unitSuffix} " +
+                    $"to {SchematicToLayoutGenerator.FormatParamValue(param.Unit, layoutVal)}{unitSuffix}" +
                     (isWarning ? " (a schematic edit is being overwritten)" : " (from layout)"),
                     isWarning ? SchematicToLayoutGenerator.ReportSeverity.Warning : SchematicToLayoutGenerator.ReportSeverity.Info));
                 reportedThisInstance = true;
                 if (isWarning) overwritten++;
             }
 
-            source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, double>(origin.Parameters);
+            source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, PCellValue>(origin.Parameters);
 
             if (anyChanged)
             {
@@ -189,7 +195,7 @@ public static class LayoutToSchematicGenerator
     /// through it, so the two can never disagree (unlike writing the number first and the unit
     /// separately). Non-Length fields (Ω, dimensionless) keep whatever unit <c>DefaultParameters</c>
     /// already gave them — only length physically differs by workspace convention.</summary>
-    private static void ApplyPCellParamsToComponent(EditableComponent comp, IReadOnlyDictionary<string, double> layoutParams, Technology? technology)
+    private static void ApplyPCellParamsToComponent(EditableComponent comp, IReadOnlyDictionary<string, PCellValue> layoutParams, Technology? technology)
     {
         string lengthUnit = MicrostripSubstrateInjection.LengthUnitFor(technology);
         foreach (var param in comp.Parameters)
@@ -203,8 +209,14 @@ public static class LayoutToSchematicGenerator
     /// <summary>Schematic Expression string for a PCell-SI value — <see cref="SchematicToLayoutGenerator.ToDisplayValue"/>
     /// (the shared inverse conversion) formatted the way an <see cref="EditableParameter.Expression"/>
     /// is stored: a bare number in the parameter's own unit.</summary>
-    private static string ToDisplayExpression(string? unit, double siValue)
-        => SchematicToLayoutGenerator.ToDisplayValue(unit, siValue).ToString("0.######", CultureInfo.InvariantCulture);
+    /// <summary>A non-Real value is written as its own text rather than converted through a unit —
+    /// a schematic <c>Expression</c> is free-form, so a model name pushes back as that name. It will
+    /// not resolve to a number on the way FORWARD (<c>TryResolveSiValue</c> reports it), which is the
+    /// honest outcome until the schematic side carries kinded parameters of its own.</summary>
+    private static string ToDisplayExpression(string? unit, PCellValue value)
+        => value.Kind == PCellValueKind.Real
+            ? SchematicToLayoutGenerator.ToDisplayValue(unit, value.AsReal()).ToString("0.######", CultureInfo.InvariantCulture)
+            : value.AsText();
 
     private static Scope BuildVariableScope(SchematicEditModel schematic)
     {

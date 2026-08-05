@@ -16,13 +16,13 @@ public static class MTaperPCell
     public const string GeneratorId = "MTAPER";
 
     public static PCellResult Generate(
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         PCellLayerSelection layerSelection)
     {
-        double w1Meters = parameters.GetValueOrDefault("W1", 0.0);
-        double w2Meters = parameters.GetValueOrDefault("W2", 0.0);
-        double lMeters = parameters.GetValueOrDefault("L", 0.0);
+        double w1Meters = parameters.Real("W1", 0.0);
+        double w2Meters = parameters.Real("W2", 0.0);
+        double lMeters = parameters.Real("L", 0.0);
 
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
         long w1 = PCellUnits.MetresToDbu(w1Meters, dbuPerMicron);

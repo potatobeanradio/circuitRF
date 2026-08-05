@@ -8,7 +8,15 @@ namespace CircuitRF.Ui.Layout.PCells;
 /// pcell-contract.md whenever the Generate signature or its guarantees change.</summary>
 public static class PCellContractVersion
 {
-    public const int Current = 1;
+    /// <summary>
+    /// 2 (2026-08-03): parameters carry KINDED values rather than bare doubles
+    /// (<see cref="PCellValue"/>), and R5's purity rule is restated in terms of determinism rather
+    /// than of file access. Both had to land before any third party writes a cell — a script host
+    /// reads its own modules by nature, so the old wording was unsatisfiable for one, and a cell
+    /// that needs a model name cannot express it through a double. Neither is retrofittable once
+    /// cells exist in the wild, which is what this version field is for.
+    /// </summary>
+    public const int Current = 2;
 }
 
 /// <summary>
@@ -59,12 +67,24 @@ public sealed record PCellLayerSelection(string? SignalLayerNameOverride, string
 /// technology, and that is a separate code path (the microstrip <c>ComponentModel</c>s in
 /// <c>src/Core/Devices/</c>), not this one.
 ///
-/// R5 (purity): implementations MUST be pure functions of their three inputs — no file reads, no
-/// clock, no ambient/global state, no randomness. This is not a style preference:
-/// <see cref="PCellGeometryCache"/> keys on (generator id, parameter values, technology) and an
-/// impure generator breaks that cache silently.
+/// R5 (DETERMINISM — restated at contract version 2): the same inputs must always produce the same
+/// output. <see cref="PCellGeometryCache"/> keys on (generator id, parameter values, technology),
+/// so a generator that answers differently for one key breaks that cache silently — the second
+/// caller gets the first one's geometry and nothing says so.
+///
+/// <para><b>The rule used to read "no file reads", and that was the wrong way to say it.</b> A
+/// script host reads its own modules to exist at all, so the literal prohibition is unsatisfiable
+/// for the very extension this contract is being widened for. What actually matters is that
+/// everything the output depends on is DECLARED: no clock, no ambient or global state, no
+/// randomness, no set-iteration order, no address-derived hashing, and no accumulation whose order
+/// varies between runs. A generator that reads a file must have that file's content in its cache
+/// key — the obligation the generator content hash exists to carry.</para>
+///
+/// <para>Determinism is stated with force because its failure is silent and cache-poisoning: two
+/// users on different machines must get identical geometry, and when they do not, what they see is
+/// a design that changed by itself.</para>
 /// </summary>
 public delegate PCellResult PCellGenerator(
-    IReadOnlyDictionary<string, double> parameters,
+    IReadOnlyDictionary<string, PCellValue> parameters,
     Technology? technology,
     PCellLayerSelection layerSelection);

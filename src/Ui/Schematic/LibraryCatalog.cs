@@ -27,7 +27,14 @@ public sealed record PaletteItem(
     /// Non-null when this entry came from an imported kit rather than the built-in library.
     /// Built-in entries leave it null and are completely unaffected by it.
     /// </summary>
-    PdkPartRef? Pdk = null);
+    PdkPartRef? Pdk = null,
+    /// <summary>
+    /// Non-null when this tile places a PARAMETRIC CELL by generator id rather than a component by
+    /// <see cref="SymbolKind"/>. Every cell a kit contributes is discovered at run time and has no
+    /// enum member of its own, so the id is what identifies it — see
+    /// <c>LayoutEditorViewModel.PlacePCell</c>.
+    /// </summary>
+    string? PCellGeneratorId = null);
 
 /// <summary>
 /// Identifies one part contributed by an imported kit, and points at whatever artwork that kit

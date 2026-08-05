@@ -51,7 +51,7 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
     public void DifferentParameters_TwoInstances_GetDifferentGeneratedCells_R_L5_1()
     {
         var defaultsA = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
-        var defaultsB = new Dictionary<string, double>(defaultsA) { ["W"] = defaultsA["W"] * 2 };
+        var defaultsB = new Dictionary<string, PCellValue>(defaultsA) { ["W"] = defaultsA.Real("W") * 2 };
 
         string cellDirA = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaultsA, null, null, PCellLayerSelection.Default);
         string cellDirB = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaultsB, null, null, PCellLayerSelection.Default);
@@ -72,8 +72,8 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
 
         string sibling1CellRefBefore = vm.Model.Instances[1].CellRef;
 
-        var newW = defaults["W"] * 3;
-        bool ok = vm.EditInstancePCellParameters(0, new Dictionary<string, double> { ["W"] = newW });
+        var newW = defaults.Real("W") * 3;
+        bool ok = vm.EditInstancePCellParameters(0, new Dictionary<string, PCellValue> { ["W"] = newW });
         Assert.True(ok);
 
         // Instance 0 now points somewhere else...
@@ -83,7 +83,7 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
 
         var res0 = CellLayoutResolver.Resolve(vm.Model.Instances[0].CellRef, vm.InstanceBaseDir);
         Assert.Equal(CellLayoutState.Resolved, res0.State);
-        Assert.Equal(newW, res0.View!.PCellOrigin!.Parameters["W"], 9);
+        Assert.Equal(newW, res0.View!.PCellOrigin!.Parameters.Real("W"), 9);
 
         // Undo restores the original CellRef.
         vm.UndoCommand.Execute(null);

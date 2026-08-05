@@ -61,6 +61,7 @@ public static class BuiltInSymbols
     private static readonly Dictionary<int, Symbol> _zportCache = new();
     // SnP cache key: (n, refNode, cfg, pitch)
     private static readonly Dictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
+    private static readonly Dictionary<int, Symbol> _verilogACache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly Dictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
 
@@ -97,6 +98,13 @@ public static class BuiltInSymbols
             {
                 int n = portCount > 0 ? portCount : 2;
                 return PrimitivesForSnp(n, refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
+            }
+            case SymbolKind.VerilogA:
+            {
+                int n = portCount > 0 ? portCount : 2;
+                if (!_verilogACache.TryGetValue(n, out var sym))
+                    _verilogACache[n] = sym = BuildVerilogASymbol(n);
+                return sym;
             }
             case SymbolKind.Resistor:   return _resistor;
             case SymbolKind.Inductor:   return _inductor;
@@ -476,6 +484,30 @@ public static class BuiltInSymbols
         if (!_snpCache.TryGetValue(key, out var sym))
             _snpCache[key] = sym = BuildSnpSymbol(n, refNode, cfg, pitch);
         return sym;
+    }
+
+    /// <summary>
+    /// A plain box with a lead to each terminal. Deliberately generic: circuitRF does not know what
+    /// the user's model IS — it could be a transistor, a diode, a whole subcircuit — so drawing a
+    /// transistor glyph would assert something untrue on the schematic. The terminal NUMBERS are
+    /// drawn instead, because with a generic body they are the only thing telling a user which lead
+    /// is which.
+    /// </summary>
+    private static Symbol BuildVerilogASymbol(int n)
+    {
+        var ports = SymbolPortDefs.GenerateGenericDevicePorts(n);
+
+        float top = ports.Min(p => p.LocalY), bottom = ports.Max(p => p.LocalY);
+        double cy = (top + bottom) * 0.5;
+        double halfH = Math.Max((bottom - top) * 0.5 + 60, 100);
+        const double halfW = 110;
+
+        var prims = new List<SymbolPrimitive> { RRect(0, cy, halfW * 2, halfH * 2, 12) };
+
+        foreach (var (_, lx, ly) in ports)
+            prims.Add(L(lx < 0 ? -halfW : halfW, ly, lx, ly));
+
+        return Sym(prims, SymbolKind.VerilogA, n);
     }
 
     private static Symbol BuildSnpSymbol(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)

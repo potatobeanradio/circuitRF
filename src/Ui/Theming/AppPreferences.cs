@@ -44,6 +44,14 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LaunchPane? LaunchPane { get; set; }
 
+    // Which kits' PCell generator scripts this installation has agreed to run, keyed by the kit's
+    // absolute directory. DELIBERATELY here and not in .cws: a decision recorded inside a shared
+    // workspace could be written by whoever sent you the workspace, which would defeat the prompt
+    // entirely. See PCellTrustStore for the full reasoning.
+    [JsonPropertyName("pcell_trust")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, bool>? PCellTrust { get; set; }
+
     // Message timestamp display — null means default (Time). Serialized as a number, like the others.
     [JsonPropertyName("message_timestamp")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

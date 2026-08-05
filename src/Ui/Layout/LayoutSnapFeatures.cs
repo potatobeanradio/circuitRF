@@ -141,9 +141,28 @@ public sealed class LayoutSnapFeatureIndex
         for (int i = 0; i < view.Shapes.Count; i++)
             AddShapeFeatures(features, view.Shapes[i], i);
 
-        if (view.PCellOrigin is { } origin && PCellRegistry.TryGet(origin.GeneratorId, out var generator))
+        // The cell's OWN pins first — the same order the pin overlay uses, and for the same reason:
+        // an IMPORTED cell has no generator to re-invoke, so gating this on PCellOrigin made its pins
+        // unsnappable. That is a worse gap than the overlay's was: a pin the user can SEE but cannot
+        // snap to is half a connection, which reads as the snap being broken rather than the pin
+        // being absent.
+        if (view.Pins.Count > 0)
         {
-            var pins = generator(origin.Parameters, tech, PCellLayerSelection.Default).Pins;
+            foreach (var pin in view.Pins)
+                features.Add(new IntrinsicSnapFeature(SnapFeatureKind.Pin, pin.X, pin.Y, pin.Layer, -1));
+        }
+        else if (view.PCellOrigin is { } origin && PCellRegistry.TryGet(origin.GeneratorId, out var generator))
+        {
+            // Nothing persisted, but the view knows what generated it. Reached by a generated cell
+            // written before pins were persisted — a pure cache, so it heals on regeneration.
+            //
+            // Same reasoning as the pin overlay's own call: a script-backed generator can fail, and
+            // this runs on the interaction path. Losing a cell's snap points is a real degradation;
+            // throwing out of a pointer-move handler is a crash.
+            IReadOnlyList<PCellPin> pins = [];
+            try { pins = generator(origin.Parameters, tech, PCellLayerSelection.Default).Pins; }
+            catch (PCells.Wire.PCellWireException) { }
+
             foreach (var pin in pins)
                 features.Add(new IntrinsicSnapFeature(SnapFeatureKind.Pin, pin.X, pin.Y, pin.Layer, -1));
         }

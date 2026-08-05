@@ -368,14 +368,14 @@ public sealed class HbLinearExtractor
             if (ec.Model is PortModel or TermModel) continue;
 
             if (zeroDrive && IsVoltageOrToneSource(ec))
-                ec.Model.Stamp(new ZeroDriveMna(mna), ec, omega);
+                ec.Stamp(new ZeroDriveMna(mna), omega);
             else
-                ec.Model.Stamp(mna, ec, omega);
+                ec.Stamp(mna, omega);
         }
         // Mutual coupling after inductors are stamped.
         foreach (var ec in _netlist.Components)
             if (ec.Model is MutualInductanceModel)
-                ec.Model.Stamp(mna, ec, omega);
+                ec.Stamp(mna, omega);
 
         // Gmin regularization.
         if (_settings.ConductanceRegularization != RegularizationMode.Never)

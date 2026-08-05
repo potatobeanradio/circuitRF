@@ -225,7 +225,10 @@ public class FileMenuRestructureTests
     [Fact]
     public void ImportSubmenu_ContainsExpectedFormats_NoGerber()
     {
-        string[] expected = ["Data", "GDSII", "DXF", "PDK"];
+        // "Technology" joined the list with C0 (process technology import). The assertion stays exact
+        // and ordered rather than loosened to "contains" — this is what keeps the in-window Menu and
+        // the macOS NativeMenu, which are hand-mirrored, from drifting apart.
+        string[] expected = ["Data", "GDSII", "DXF", "PDK", "Technology"];
 
         foreach (var children in new[] { InWindowFileChildren(), NativeFileChildren() })
         {

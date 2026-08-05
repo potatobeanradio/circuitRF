@@ -165,7 +165,7 @@ public sealed class NonlinearDcEngine
             // count across each stamp, because allocation is the model's own business and nothing
             // else knows how many it took.
             int before = mna.Size;
-            try { ec.Model.Stamp(mna, ec, omega: 0.0); }
+            try { ec.Stamp(mna, omega: 0.0); }
             catch (NotImplementedException) { }
             for (int b = before; b < mna.Size; b++)
                 _branchOwners[b] = $"{ec.ComponentType}:{ec.InstancePath}";
@@ -693,7 +693,7 @@ public sealed class NonlinearDcEngine
                 ctrl = new ControlCurrents(cVals);
             }
 
-            var res = ec.Model.Evaluate(new PortVoltages(portV), ctrl);
+            var res = ec.Evaluate(new PortVoltages(portV), ctrl);
 
             for (int p = 0; p < portCount; p++)
             {

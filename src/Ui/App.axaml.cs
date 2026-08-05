@@ -53,6 +53,11 @@ public partial class App : Application
         // untouched by this flag, which governs only Dock's own drag-begin restack.
         Dock.Settings.DockSettings.BringWindowsToFrontOnDrag = false;
 
+        // Teach the kit importer to recognise a process's own technology files, so importing a kit
+        // that carries them SAYS SO rather than listing them as unrecognised. The readers behind them
+        // are UI-project code, which is why this is registered here rather than shipped as a built-in.
+        Layout.TechImport.ProcessTechnologyRecognizers.RegisterOnce();
+
         // Register built-in .ccolor assets via AssetLoader so ThemeResolver can find them.
         ThemeResolver.SetBuiltInProvider(name =>
         {
@@ -102,6 +107,13 @@ public partial class App : Application
         // three paths reach Environment.Exit directly, and a fourth added later would silently not
         // be covered.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => ExternalDeviceRegistry.ResetResolved();
+
+        // The same guarantee for PCell generators, and it is needed for the same reason: a leaked
+        // interpreter is invisible to the user and cannot be cleaned up by them. Clearing the
+        // registry is not sufficient on its own — the WorkspaceViewModel's own resolver is what
+        // holds the processes and disposes them; this is the backstop for a path that never gets to
+        // a workspace reset.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => CircuitRF.Ui.Layout.PCells.PCellRegistry.ClearResolvers();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

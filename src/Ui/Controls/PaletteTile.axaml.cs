@@ -66,7 +66,8 @@ public partial class PaletteTile : UserControl
         _pressArgs    = null;   // clear before await — prevents re-entry
         _dragOccurred = true;
 
-        var payload = new PaletteDragPayload(vm.Item.Kind, vm.Item.PortCount, vm.Item.Pdk?.CellDir);
+        var payload = new PaletteDragPayload(
+            vm.Item.Kind, vm.Item.PortCount, vm.Item.Pdk?.CellDir, vm.Item.PCellGeneratorId);
         var transferItem = new DataTransferItem();
         transferItem.Set(DataFormat.Text, payload.Serialize());
         var transfer = new DataTransfer();

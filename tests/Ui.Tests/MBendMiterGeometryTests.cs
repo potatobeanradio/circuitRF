@@ -109,7 +109,7 @@ public sealed class MBendMiterGeometryTests
     {
         double wMeters = 0.0029; // MBend's own default W
         var result = MBendPCell.Generate(
-            new Dictionary<string, double> { ["W"] = wMeters, ["Angle"] = 90.0, ["Miter"] = 2.0 },
+            new Dictionary<string, PCellValue> { ["W"] = wMeters, ["Angle"] = 90.0, ["Miter"] = 2.0 },
             null, PCellLayerSelection.Default);
 
         // No technology resolved -> the W/h->infinity asymptote (leg = 0.52*W), per MBendPCell's own
@@ -123,7 +123,7 @@ public sealed class MBendMiterGeometryTests
         // The two NEW vertices (not present in the unmitered 6-vertex L) must each sit exactly
         // expectedLegDbu away from the sharp corner, along one arm's own outer edge.
         var none = MBendPCell.Generate(
-            new Dictionary<string, double> { ["W"] = wMeters, ["Angle"] = 90.0, ["Miter"] = 0.0 },
+            new Dictionary<string, PCellValue> { ["W"] = wMeters, ["Angle"] = 90.0, ["Miter"] = 0.0 },
             null, PCellLayerSelection.Default);
         var noneXy = ((PolygonShape)none.Shapes[0]).Xy;
         long sharpCornerX = noneXy[0], sharpCornerY = noneXy[1]; // (cornerX+halfW, -halfW), the outer corner

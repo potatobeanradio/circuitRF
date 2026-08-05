@@ -73,6 +73,13 @@ public enum SymbolKind
     /// internal node itself, so the schematic shows one device either way.</summary>
     Diode,
 
+    /// <summary>
+    /// A compiled Verilog-A model the USER supplies (engine "VerilogA"). Points at a compiled model
+    /// file and runs it — no kit, no manifest, nothing to install. Variadic: the model decides how
+    /// many terminals it has, so `Pins` sets how many the symbol shows.
+    /// </summary>
+    VerilogA,
+
     // ── Built-in large-signal FET family ──────────────────────────────────────
     // Five SEPARATE kinds, one per published drain-current law, because they are NOT variants of
     // one another: each has its own parameter set, and several reuse a spelling for a different

@@ -1,5 +1,1129 @@
 # UI (Avalonia) — local conventions
 
+Every real device in the kit generates — `offset` on the host channel (C2, 2026-08-04) — COMPLETE.
+Wire version 5 adds `PCellWireOp.Offset`; `cni.geo.fgSize` is the script side. **33 of 34 registered
+cells now generate through the production bridge over the real transport** (was 32, and 24 before the
+parameter-type fix). The one that does not is `ResistorBase`, which declares `genLayout` and raises
+inside it — a base class by intent.
+
+**`fgSize` is grow/shrink, which is Clipper2 OFFSET — so it belongs on the channel for exactly the
+booleans' reason (§8).** Growing one layer out of another is how a kit derives a well from the
+diffusion it must enclose; circuitRF already offsets with Clipper2, and two implementations would
+differ at the boundary — a design-rule violation that draws perfectly. The service uses the SAME join
+and end style `LayoutBooleans.Offset` uses, so **a script's grow and the editor's own Offset command
+agree by construction**, which is asserted directly rather than assumed: one test runs both and
+compares area and bounds.
+
+- **`fgSize` creates a NEW figure and leaves the original alone** — unlike a boolean, which consumes
+  its operands. This is the derive idiom: both the diffusion and the well it encloses are real artwork
+  that has to survive. Consuming the original would delete the diffusion the moment the well was
+  derived from it.
+- **The kit's own call shape carries two arguments this layer has nothing to do with** — a
+  `ShapeFilter` (for selecting within a group; there is one figure here) and a snap grid (a rounding
+  refinement; coordinates are already exact integers). Both are accepted and dropped rather than
+  refused: a call that ran elsewhere must not fail here on arguments that mean nothing to us.
+- **A shrink that consumes the region yields NOTHING, and that is an answer** — the same outcome the
+  editor's Offset produces, not a failure.
+- **One reply type serves both ops** (`PCellWireRegionReply`): both answer with regions-and-their-holes,
+  and two identical types would be two things to keep in step for no gain.
+
+**The gap was only diagnosable because of the falsy-sentinel change made alongside it.** Before it,
+`fig.fgSize(...)` reached `_Figure.__getattr__`'s `None` and failed as `'NoneType' object is not
+callable` — true and useless. Naming the missing method is what identified this as an offset rather
+than a mystery.
+
+Gate: 3 new tests in `PCellBooleanChannelTests.cs` (a grow expanding by exactly the asked distance, a
+shrink that consumes the region yielding nothing while still being asked, and the script-versus-editor
+agreement) — 9 in that file, 20 across the channel and bridge suites. Suite 6,496 pass, 0 fail (1
+pre-existing skip); `verify.py` all checks passed.
+
+Vendor cells: 24 → 32 of 34 generating (C2, 2026-08-04) — the kit's own parameter TYPES were the
+blocker. Four fixes in `tools/pcell-python/cni/`, no C# change.
+
+**The headline bug was in my own bridge, and it is the kind that only shows up at scale.**
+`cni.bridge._declare` sent every kit parameter as TEXT. A kit states some defaults in its own
+engineering notation (`'1u'`, `'0.13u'`) and parses them with its own reader — but states others as
+plain numbers and does ARITHMETIC on them (`if vn_columns > 1`). Flattening both to text broke the
+second kind at the comparison, far from the declaration: **ten cells failed on `'>' not supported
+between instances of 'str' and 'int'`**. A parameter now crosses in the kit's OWN type — a count stays
+a count, a string stays a string — read back with the matching accessor. **`bool` is checked before
+`int` in both directions**, since `bool` subclasses `int` in Python and the other order sends every
+flag as the integer 1.
+
+- **Nothing is CONVERTED, in either direction, and that is unchanged.** Declaring a width as a LENGTH
+  would make circuitRF convert SI metres to database units and hand the cell a number its own parser
+  never expected. Preserving the type means circuitRF HOSTS the kit's parameter language rather than
+  reinterpreting it. (This corrects the previous entry's "every parameter crosses as TEXT" — the
+  no-conversion rule was right, the flattening was not.)
+
+**A kit annotates figures with its own tags and reads them back off figures it never tagged** —
+`fig.col = True` on the pieces of a collector, then `[g.add(f) for f in self.getShapes() if f.col]`
+across everything drawn. `_Figure.__getattr__` answers an unset name rather than raising.
+
+- **It returns a FALSY SENTINEL, not `None`, and the difference is diagnosis.** `None` handles the tag
+  case and does the wrong thing for the other one: a kit reaching for a METHOD this layer has not
+  implemented got `'NoneType' object is not callable` — true and useless. `_UnsetTag` is falsy,
+  empty and equal to `None`, and calling it raises `Rect.fgSize() is not implemented by circuitRF's
+  kit compatibility layer` — which is how the last remaining cell's gap was identified at all.
+- **Dunder lookups are never answered.** Claiming `__iter__`/`__len__`/`__deepcopy__` would advertise
+  capabilities the object does not have, and those failures land far from the cause.
+
+**`addPin` returns a HANDLE, not its internal tuple.** The kit keeps talking to a pin after declaring
+it (`pin.addShape(fig)`, tying artwork to the terminal); returning the tuple made an ordinary line a
+crash. circuitRF needs none of that association — a pin's position comes from the declared box and its
+width and direction from the artwork (`PinInference`) — so the handle records the name and accepts the
+rest.
+
+**`Path`'s argument order was wrong: the WIDTH comes before the points** (`Path(layer, width, points,
+style)`). Same class as the earlier `Text` fix, and it fails the same distant way — the point list
+constructor reports `'float' object is not iterable`, nowhere near the call. Now accepted in either
+order: whichever argument is a number is the width, whichever is a sequence is the centreline.
+
+**Abstract bases are filtered STRUCTURALLY** — a class that never overrides `genLayout` draws nothing
+and is a shared base, not a device. Detected by comparing the method against `DloGen`'s own rather than
+by a `*_base`/`*Base` name convention, which is one supplier's habit and would not survive the next
+kit. A base that DOES override it and raises is indistinguishable from a broken cell without running
+it, so it stays listed and reports why — the honest outcome.
+
+**Measured through the production bridge over the real transport: 32 of 34 registered cells generate**
+(was 24). The two that do not are `ResistorBase` (declares `genLayout`, raises inside — a base by
+intent) and `dpantenna`, which needs `fgSize`.
+
+**`fgSize` is the one remaining real gap, and it belongs on the host-call channel.** It is a
+grow/shrink — Clipper2 OFFSET, which circuitRF already owns (`LayoutBooleans.Offset`) — so the same
+reasoning that put booleans on the wire (§8: one implementation, or two that disagree invisibly)
+applies unchanged. It is an `offset` op beside `clip`, not a second mechanism.
+
+Gate: suite 6,493 pass, 0 fail (1 pre-existing skip); `verify.py` all checks passed. **One failure
+captured by name and confirmed NOT a regression:**
+`Engine.Tests.External.WorkerBackedAnalysisTests.ASweepReusesTheWorkerItAlreadyStarted`, once in one
+full run — the device-worker area, which this work does not touch at all (every change is under
+`tools/pcell-python/cni/`); passes in isolation and on a clean second full run.
+
+A kit's cells are placeable — palette drag-drop and a picker (C2, 2026-08-04) — COMPLETE. Wire
+version 4 (declared parameter defaults), a generator-id placement path, `PCellGeneratorPickerDialog`
++ a layout-toolbar button, and kit cells as draggable palette tiles.
+
+**What was actually broken.** Placement was keyed on `SymbolKind`, so a kit's cells were
+**structurally unplaceable**: they are discovered at run time and there is no enum member to give
+them. A kit could be referenced, its cells resolved, its geometry generated in tests — and still be
+unreachable from the application. `LayoutEditorViewModel.PlacePCell(generatorId, parameters, x, y)`
+inverts it: the ID is the primitive and `SymbolKind` is a caller that resolves to one first, so the
+built-ins behave exactly as before and a kit's cells become reachable.
+
+**Wire version 4 — `PCellWireParameterDecl.Default`.** A script can always substitute its own default
+for a parameter it was not sent, and that is enough to GENERATE. It is not enough to PLACE: circuitRF
+records a generated cell's parameter set (`PCellOrigin`) and edits from there, so a cell placed with an
+empty set has nothing to show and nothing to adjust. **Declared, never inferred** — a default the host
+guessed (zero, the low end of a range) is a value the generator never sanctioned, and a wrong one
+draws perfectly. A parameter declaring none is ABSENT from the defaults rather than given one.
+
+- **A real bug this surfaced:** `PCellWorkerProvider.DescribeJson` had its own converter list, without
+  `PCellValueJsonConverter` — so the moment a declaration carried a value, describe failed to
+  deserialize. Two converter lists for one encoding is exactly the drift schema §3 exists to prevent;
+  the describe options now register it too.
+
+**Drag-and-drop from the palette (owner request).** A kit's cells now appear as palette tiles and
+drop onto a layout like any other.
+
+- **`PaletteItem.PCellGeneratorId` / `PaletteDragPayload.PCellGeneratorId`** — a kit tile shares the
+  placeholder `SymbolKind.Generic` every kit tile uses, so the kind alone cannot say WHICH cell was
+  dragged; without the id a dropped vendor cell would place whatever that placeholder means, which is
+  nothing.
+- **The generator tail is MARKED (`@pcell:`), because the payload's other optional tail is a PATH**
+  and a path may contain `:`. An unmarked tail would make a kit part's cell folder and a generator id
+  indistinguishable. Pinned by a test that round-trips all three payload shapes, including a CellDir
+  containing a colon.
+- **The canvas checks the generator-id branch FIRST** in both DragOver and Drop — a PCell tile carries
+  the placeholder kind, which the `SymbolKind` path below would (correctly) refuse.
+- **The ghost is the generator's REAL output at its DECLARED DEFAULTS** (`UpdatePCellDragGhost`) —
+  not an outline, not a placeholder box. A ghost that did not match what the drop produces would
+  mislead at exactly the moment the user is deciding where to put it. Asserted on the ghost's actual
+  shapes and drop point, plus a pixel test that it PAINTS: a populated overlay field is not the same
+  thing as the user seeing it, which is precisely the gap the pin overlay had (right data, gated-shut
+  call site).
+- **The geometry cache is `static`**, so only the very FIRST drag of a given cell anywhere in the
+  process pays a generation; every later tick and every later drag of the same cell is free. Worth
+  knowing: that first tick runs a real IPC round trip on the UI thread, so a heavy script cell can
+  stall one frame at the start of its first drag. Acceptable at one frame, once — if it ever is not,
+  the fix is to ghost a bbox until the real geometry arrives, not to drop the cache.
+
+**ONE TILE PER PART — the drop target decides which view is placed.** A part is not two things
+because it has two views. A kit's `nmos` with both a schematic symbol and a layout generator is one
+component; two tiles would make a user choose between things that mean the same, and choose wrongly
+half the time. So the generator is MERGED onto the part's existing tile: dropping it on a schematic
+places the symbol, dropping it on a layout places the cell. **This is how the built-ins have always
+behaved** (one MLIN tile, both canvases) — the kit path now matches it rather than inventing a second
+shape. `KitPaletteMerge.Compose` is the whole rule, framework-free so it is testable without a
+`WorkspaceViewModel`.
+
+- **A drag payload carries BOTH routes.** Emitting only one made the same tile work on one canvas and
+  silently do nothing on the other. Both tails are MARKED (`@pcell:`, `@cell:`) and the path is always
+  LAST, because a cell folder is a path and may contain `:` — unmarked it could not be told from a
+  generator id, and placed first it would swallow it. An older unmarked path tail still parses, so a
+  drag begun before an update does not become unparseable mid-gesture.
+- **Filed under the KIT's own heading**, beside that kit's schematic parts. `PaletteTool` already
+  builds a Kit category per distinct `PdkPartRef.KitName`, so attribution is the whole of it.
+- **Matching is two steps, and the second is deliberately conservative.** Same kit + same part id is
+  the confident case. A name match ACROSS kits handles a supplier whose schematic kit and PCell kit are
+  named differently — but ONLY when exactly one part anywhere carries that name. Merging two kits'
+  same-named parts would give one kit's tile the other's layout, which draws perfectly and is wrong;
+  an ambiguous name gets its own tile instead of a coin flip.
+- **A generator with no schematic part still gets a tile** — layout-only, but real and placeable.
+- **`PCellWorkerResolver.KitNameByGeneratorId` is the attribution**, recorded in
+  `EnsureStartedLocked` because that is the ONE place both facts are in hand: a kit's ids are only
+  known once its script has described itself. **`PCellKit` deliberately still carries no generator
+  list** — listing kits drives the trust prompt, which must start nothing.
+
+**The picker is deliberately NOT the schematic Library Palette's own structure.** That palette is built
+from `ComponentTypeRegistry` and every tile carries a `SymbolKind` and a symbol glyph; a vendor layout
+cell has neither. `PCellGeneratorPickerDialog` (layout toolbar, beside Instance) lists every registered
+generator — built-in and kit — with what its parameters would be, then generates the cell and arms the
+ORDINARY instance-placement ghost. Reusing that gesture is the point: a placed generated cell IS an
+ordinary instance whose cell folder happens to carry a `PCellOrigin`, so a second placement path would
+be one more thing to keep in step for no gain.
+
+- **Listing may start a kit's interpreter** (a script's `describe` is the only source of its generator
+  list), so both the picker and the palette refresh do it off the UI thread.
+- **A kit tile shows the generic placeholder glyph**, like a kit part that ships no icon. A per-cell
+  thumbnail would mean generating all 34 cells to draw tiles; a vendor cell is identified by name.
+
+**Gate:** 13 tests in `PCellVendorBridgeTests.cs` (discovery, generation at the kit's own defaults,
+text parameters parsed by the kit, a boolean serviced by the real provider, an unreadable device
+costing only itself, a manifest naming only the kit, declared defaults present/absent/unknown, the
+end-to-end placement recording an editable `PCellOrigin`, the three payload shapes, and a full
+drag-over→ghost→drop, and each cell attributed to its own kit) plus 6 in `KitPaletteMergeTests.cs`
+(one tile for a two-view part, a layout-only generator getting its own, a cross-kit name merging when
+unambiguous, never merging across two same-named kits, an ambiguous name not guessed at, and the empty
+case) and a pixel test in `LayoutPinListTests.cs` that the ghost paints at its drop point, compared
+against the same frame WITHOUT it so it cannot pass on background alone. The kit is synthetic — the repo commits no third-party kit data. Suite 6,493
+pass, 0 fail (1 pre-existing skip); `verify.py` all checks passed.
+
+Cells carry their own pins now — `LayoutView.Pins` (C1↔C2 join, 2026-08-04) — COMPLETE.
+New `LayoutPin` on `LayoutView`, written by both routes: a PCell generator's declared pins
+(`GeneratedCellStore`) and inference over imported artwork (`GdsiiImport` → `PinInference`).
+
+**The loss this closes, stated precisely because it was invisible.** A generated cell's pins survived
+only as `IsPort` `LabelShape`s, which carry a name, a position and a layer — so the connecting WIDTH
+and the outward DIRECTION were dropped the moment the cell reached disk. The renderer worked around
+that by re-invoking the generator, which is exact for a PCell (R5: a pure function of its inputs) and
+**impossible for a cell that was merely IMPORTED** — it has no generator to invoke. C1 imported a real
+56-cell device library and every one of those cells was inert geometry with no connectivity at all.
+
+- **A pin is not a port label with extra fields, and merging them was rejected.** They answer
+  different questions: a port label is TEXT the user sees; a pin is CONNECTIVITY, and a connection is
+  an EDGE, not a point — width and outward direction are what make it joinable. Overloading
+  `LabelShape` would have put connectivity fields on a type used broadly for ordinary annotation and
+  still left "which labels are pins" as a flag rather than a list. **Both are written**, deliberately:
+  dropping the label would have traded one loss for another.
+- **Additive — no `.clay` `FormatVersion` bump.** `Pins` is omitted when empty, so every existing
+  pin-free file re-serializes byte-for-byte. Pinned by a test that asserts the serialized text
+  contains no `"Pins"` and round-trips identically, plus a hand-authored pre-field file still loading.
+- **The renderer reads the cell's OWN pins first, generator second.** A generated cell written before
+  this lands on the generator fallback and heals on its next regeneration — a generated cell is a pure
+  deletable cache (R-L5g-6), so no migration is owed.
+
+**The gate was one level above where I first looked, and it is worth recording.** `ResolvePins` was
+the obvious place, but `LayoutRenderer.Instances`' call site tested
+`step.SubView.PCellOrigin is not null` before ever calling it — so an imported cell's pins were
+skipped before anything could read them. **The test is now "does this cell HAVE pins", not "was it
+generated".** Found by a rendering test failing, not by reading the code; a persistence-only test
+suite would have passed with the overlay still blind.
+
+**`GdsiiImport` runs inference itself, on the RECONCILED shapes.** Layer mapping has already settled
+which destination layer each shape landed on, and that is what the purpose lookup reads — inferring
+before reconciliation would ask the wrong technology what "pin" means. Results are reported as one
+aggregate line plus capped per-cell notes: a device library is dozens of cells, and a line each would
+bury the totals that say whether inference actually worked.
+
+**`PinInferenceRules.FileName` (`pin-rules.json`) is read from beside the GDSII file, not the
+workspace** — it describes THAT kit and travels with it. Absent is silent (nearly every kit states
+nothing); present-but-unreadable is reported, because those need different answers.
+
+**Gate:** 5 tests in `tests/Ui.Tests/Layout/LayoutPinListTests.cs` (round trip with width and
+direction, byte-identical re-serialization of a pin-free layout, a pre-field file loading, a generated
+cell persisting pins alongside its port labels, and — the one that was previously impossible — an
+imported cell with NO generator rendering its pin markers) plus 2 in `GdsiiImportTests.cs` (artwork
+with pin boxes and labels arriving with named, width-and-direction-carrying pins and a reported count;
+plain artwork arriving with no pins and saying nothing about them, since a cell that declares no
+connection points is ordinary rather than defective), plus 2 more for snap (an imported cell's pins
+resolving as `Pin` snap features with no generator anywhere; a pin-free cell contributing none and not
+throwing). Suite 6,479 pass, 0 fail (1 pre-existing skip).
+
+**The same blindness existed in a SECOND consumer, and auditing for it was the point.** Having found
+the gate in the renderer, every other place that reaches for a cell's pins was checked rather than
+assumed clean — `LayoutSnapFeatures.Build` had the identical `PCellOrigin`-gated generator call, so an
+imported cell's pins were **unsnappable**. That is the worse of the two: a pin the user can SEE but
+cannot snap to is half a connection, and reads as the snap being broken rather than the pin being
+absent. Same fix, same order (own pins first, generator as the pre-persistence fallback), same
+degradation contract on the interaction path (a script-backed generator that throws costs snap
+points, never the pointer-move handler).
+
+**Standing rule for any future pin consumer: ask whether the cell HAS pins, never whether it was
+generated.** `PCellOrigin` answers "can this be regenerated / is it read-only" (`IsPCellReadOnly`,
+push-in refusal, `LayoutToSchematicGenerator`'s create half) — all correct uses, and all left alone.
+It is the wrong question for connectivity, because connectivity has two sources and only one of them
+has a generator.
+
+**Naming kept deliberately:** `LayoutRenderOptions.ShowPCellPins` now governs any cell's pins, not
+only a PCell's. Renaming it would touch every export call site that relies on its default-off
+behaviour (R-bmp-3's own reasoning), which is churn against a field whose meaning the doc comment
+already states.
+
+A vendor kit's cells become circuitRF generators (C2, 2026-08-04) — COMPLETE. **Track C2's actual
+deliverable**: `tools/pcell-python/cni/bridge.py` (`register_kit`) plus
+`src/Ui/Layout/PCells/Wire/PCellPythonPackage.cs` and one seam in `PCellWorkerResolver`. A kit is
+referenced where it lies, its cells are discovered rather than listed, and they arrive above the wire
+as ordinary `PCellGenerator` delegates — nothing above that line knows the geometry came from a
+vendor's Python.
+
+**Discovered, never declared.** `register_kit(package)` walks the kit's own device package and
+registers one generator per cell. A kit that gains a device gains a generator with nothing to update
+— the same reason `describe` is the only source of a script's generator list (schema §4.1): a
+written-down second copy is a cache with no invalidation, and the failure is a palette offering a
+cell that is not there. **Measured: 34 of 35 cells register**, the one exception
+being a known missing class attribute, reported and skipped.
+
+**A kit parameter crosses as the kit's OWN TEXT, verbatim — a decision, not a shortcut.** A kit
+states its defaults in its own engineering notation (`'1u'`, `'0.13u'`, `'3'`) and parses them with
+its own reader. Declaring a width as a LENGTH would make circuitRF convert SI metres to database
+units and hand the cell a number its own parser never expected — circuitRF silently translating
+somebody else's parameter language. Passing text through means circuitRF **hosts** that language
+rather than reinterpreting it, and what the user types is what the kit reads. **The cost is stated
+rather than hidden:** a kit parameter gets no unit dropdown and no dimensional checking in
+circuitRF's own editor, because circuitRF genuinely does not know what it is. A kit wanting those
+declares them beside itself later — the same shape `PinInferenceRules` already uses — with nothing
+here changing.
+
+**circuitRF supplies its own Python package; a manifest names only the kit.** A manifest cannot know
+where circuitRF was installed, and an absolute path written into a shipped kit makes that kit
+machine-specific — the opposite of "reference it where it lies". `PCellPythonPackage.RootDirectory`
+locates it (deployed beside the executable, else a bounded walk up to the repo's `tools/`), and
+`PCellWorkerResolver.PythonPathFor` puts it **FIRST**, ahead of anything the manifest names: the
+package and the host are versioned together (the wire version is a constant in both), so a kit
+shipping an older copy of its own must not shadow the one that matches. A mismatch would otherwise
+surface as a refusal naming two version numbers with nothing pointing at the stale copy that caused
+it. **Located by the package's own presence, never by the folder's name** — a directory that merely
+looks right is never adopted silently. Absent ⇒ null, reported, cells draw as placeholders; the same
+degrade-never-deny rule a missing kit already follows.
+
+- **Two base classes register alongside the real devices, and that is left alone deliberately.** A
+  name heuristic (`*_base`, `*Base`) would be knowledge about one supplier's habits living inside
+  circuitRF, and would fail on the next kit. A base class that cannot generate reports why when
+  placed, which is the honest outcome.
+- **An unreadable device costs that one cell, not the kit** — one broken module must never take a
+  user's other thirty with it, the same rule the kit importer already follows for an unparsable
+  symbol. Problems are returned from `register_kit` and printed to stderr, which circuitRF already
+  surfaces on failure.
+
+**Gate:** 7 tests in `tests/Ui.Tests/Layout/PCells/PCellVendorBridgeTests.cs`, driven through the
+PRODUCTION `PCellWorkerProvider` and `PCellWorkerResolver` rather than a test harness — discovery
+from a package, generation at the kit's own defaults with the micron→DBU conversion landing exactly,
+a parameter crossing as text and being parsed by the kit, a vendor cell's boolean serviced by the
+real provider (hole and all), an unreadable device costing only itself, this build finding its own
+package, and — the one that matters most — **a manifest naming ONLY the kit still resolving**, which
+is the whole difference between referencing a kit and editing a path into it first. **The kit in
+these tests is synthetic**: the repository commits no third-party kit data, and a test keyed to a
+vendor library on one machine fails on a fresh clone. The kit is exercised by running it.
+Suite 6,470 pass, 0 fail (1 pre-existing skip); `verify.py` all checks passed.
+
+PCell wire version 3 — a generator can ask circuitRF to clip (C2, 2026-08-04) — COMPLETE.
+`src/Ui/Layout/PCells/Wire/PCellWireHostServices.cs` plus a service loop in
+`PCellWorkerProvider.ExchangeLocked`; `tools/pcell-python/circuitrf_pcell/services.py` and a rewritten
+`tools/pcell-python/cni/geo.py` on the script side.
+
+**The traffic reverses for exactly one reason: layer booleans must have ONE implementation, and it is
+not the script's.** circuitRF already clips with Clipper2, over the same int64 database units the wire
+speaks. A second clipper on the far side of a pipe would be two implementations of one rule whose
+disagreement is invisible — a result off by a database unit renders perfectly and is wrong. It is the
+same reasoning that keeps metres off the wire, with a worse failure mode. So the script asks.
+
+- **The discriminator is `op`, and it is unambiguous by construction.** Every request carries one; no
+  reply ever does — replies carry `ok`. A frame arriving while the host waits for a generate reply is
+  a service request iff it names an op, so the host needs no mode flag, no sequence number and no
+  correlation id. `PCellWireHostServices.IsServiceRequest` is the whole test.
+- **Servicing happens INSIDE the exchange, on the same thread, holding the same lock.** A service
+  request arrives on the same pipe as the reply and must be answered before that reply can be read —
+  it is not a second conversation to run concurrently, it is the middle of this one. Handing it to
+  another thread would mean a second writer on the request pipe, which is exactly the interleaving
+  `_gate` exists to prevent. Recursion is not a hazard: servicing never re-enters the provider.
+- **Every incoming ring is normalised to positive orientation.** Under `LayoutClipper.Rule` (NonZero,
+  stated once repo-wide) two rings of opposite winding CANCEL rather than combine, so a set of figures
+  whose winding a generator never thought about would silently lose regions. The cost is that an input
+  ring cannot carry a hole; the script side does not produce one.
+- **A polygon's description and its coordinates must stay in step.** `CollectSolids` emits a solid's
+  own record BEFORE recursing into islands nested in its holes — recursing inside the hole loop would
+  interleave an island's coordinates into the middle of its parent's, and the reader would silently
+  mis-slice the payload. Fixed by construction, not by a check.
+- **Bounded, so a runaway ends as a message rather than a freeze**
+  (`MaxServiceCallsPerExchange = 4096`). Real cells issue single digits to low hundreds — `sealring`
+  measured at 115 booleans in one generate.
+- **Holes are carried, not dropped.** Subtracting a via pad from a pour is the most common layout
+  boolean there is, and circuitRF's model represents the result exactly (§3.1a). The `cni` `Polygon`
+  gained a `holes` list purely so a boolean's real answer survives to `_emit`.
+- **`PythonRunner.Exchange` (the test harness) runs the SAME service loop as production**, so a test
+  drives the real host behaviour rather than a simplified one that would pass where production hangs.
+
+**Measured against the production kit, over the real transport — this is what the channel bought:**
+6 of the 10 boolean-blocked cells now generate, including **all four RF MOSFETs** (`rfnmos` 78 shapes
+/4 pins/11 booleans, `rfpmos` 79/4/8, `rfnmosHV` 79/4/11, `rfpmosHV` 80/4/8), plus `rfcmim` (743/3/5)
+and `sealring` (147/0/115). **25 of 35 vendor cells generate**, up from 19. The four still blocked fail
+on unrelated one-off API details, not on anything architectural.
+
+**Four `cni` gaps closed on the way, each found by running the kit rather than reading it:**
+`DloGen.getShapes()` (a cell re-reads its own drawing to group pieces of it), `Transform` +
+`_Figure.transform`/`moveBy` (the kit reorients a drawn piece in place and expects the registered
+figure to have moved — `moveBy` is expressed THROUGH `transform` so the two can never disagree about
+what moving means), `Grouping` unwrapped as a boolean operand, and `FigureGroup.getComp`/`getComps`
+(a kit checks how many regions a boolean produced before deciding what to do with the result).
+
+**Gate:** 6 tests in `tests/Ui.Tests/Layout/PCells/PCellBooleanChannelTests.cs` — a union asked
+mid-generate coming back as one exact region (asserted on AREA, not vertex count: Clipper2 keeps the
+collinear vertices where the operands' edges met, so the outline is 6 points describing the same
+rectangle), difference subtracting in the direction asked (a wrong-direction subtraction still looks
+plausible, which is why this asserts the extent), a hole surviving as a hole, 12 booleans in one
+generate each answered without losing the reply, an unknown rule refused by name rather than silence,
+and — with no host connected — a refusal that names why, since there is deliberately no Python
+fallback clipper. Suite 6,463 pass, 0 fail (1 pre-existing skip); `verify.py` all checks passed.
+
+PCell wire version 2 — the request states the resolution (C2, 2026-08-04) — COMPLETE.
+`PCellWireGenerateRequest.DbuPerMicron`, reachable as `Technology.dbu_per_micron` in the Python
+package. **This is B1's own predicted version bump, taken for the case that forced it.**
+
+**What changed and what did NOT, because the difference is the whole point.** Metres are still absent
+from every message and length PARAMETERS still arrive already converted by `PCellUnits.MetresToDbu` —
+so there is still nothing for a script to convert and still exactly one rounding rule across the
+boundary. B7's "the same cell written in C# and in a script is byte-identical" is untouched. What
+version 2 adds is narrower: a generator can express a constant **it holds itself** — a process
+dimension out of a kit's own data, a physical length in micrometres with no other route to becoming a
+coordinate. Vendor PCell libraries compute in absolute microns throughout, which is exactly the case
+B1 wrote down as "a version bump, not a workaround".
+
+- **The value was already in hand.** `EncodeGenerate` has taken `dbuPerMicron` as an argument since
+  B1 — it is what converts the length parameters — and threw it away afterwards. Version 2 writes the
+  same figure it just used, so the parameter conversion and the stated resolution cannot disagree.
+- **It rides on the technology object, NOT as a third generator argument.** A new argument is a
+  CONTRACT change and would break every generator ever written; an extra attribute breaks none. The
+  two version numbers move independently for precisely this reason.
+- **Done while nothing in the field speaks version 1.** A bump refuses every older script and that
+  cost rises with every third-party cell ever written; at the time of the change there were none. If
+  this was ever going to happen it was free exactly now, and never again.
+- **The door is narrower than "metres on the wire", and that distinction is written into the schema
+  doc rather than left to be re-derived.** A generator may scale its OWN constants; it still cannot be
+  handed a metre, because it is still never handed one. Putting metres on the wire would undo the real
+  guarantee and is a different decision.
+- **One test caught the change and it was the right one** —
+  `ALengthCrossesInDbu_AndTheResolutionIsNowhereInTheMessage` asserted both guarantees together. It is
+  now split: the metres half keeps its own test (renamed `..._AndNoMetreIsAnywhereInTheMessage`) and
+  the resolution gets its own. **Checked together, giving up the weaker one would have looked like
+  giving up both.**
+
+Gate: 232 PCell tests, `verify.py`'s checks (now tracking `WIRE_VERSION` rather than a hardcoded 1,
+plus three new ones ending in a 0.42 µm process constant becoming 420 DBU). Suite 6,457 pass.
+
+Recovering real pins from vendor artwork (C2 — the hard part, 2026-08-04) — COMPLETE.
+`src/Ui/Layout/PinInference.cs` derives R3-grade pins (name, position, connecting **width**, **outward
+direction**) from artwork that carries only a box on a pin-purpose layer and, sometimes, a label
+sitting inside it.
+
+**This is the riskiest inference in the PDK program and the reason is worth stating: a wrong answer
+here renders perfectly.** The geometry is untouched, the cell draws exactly as the process drew it, and
+only the connectivity is wrong — a pin facing the wrong way, or named after the device's model rather
+than its terminal. Nothing on screen says so. So every rule is STRUCTURAL (it asks only about shapes
+and containment, never about what a name *looks like*), every inconclusive case is REPORTED, and
+anything a kit knows that circuitRF cannot derive is run-time data beside the kit.
+
+**The naming rule is the one everything turns on, and containment alone is NOT enough.** Measured on a
+real process's device library: a transistor cell carries one descriptive label at its centre, and that
+centre falls inside the GATE's pin box — so plain containment names the gate after the device's model,
+confidently and invisibly. A capacitor's labels fall inside BOTH its pins. Only the bipolar, which
+genuinely labels its terminals, has one label per pin. So a label must lie inside exactly ONE pin, a pin
+must contain exactly ONE such label, and the assignment is accepted only if it looks deliberate — **two
+or more pins named, or every pin named.** A cell either labels its terminals or it does not; one label
+landing in one pin out of three is an annotation that happens to overlap.
+
+- **Verified against real vendor artwork: 56 cells, 104 pins, 52 named — and every single name is a
+  genuine terminal** (`G/S/D/TIE` on the MOSFETs, `B/C/E` on the bipolars, `VDD/PAD/VSS` on the ESD
+  diodes, `W/G1/G2` on the varicap). Zero names taken from a model or a description; the trap is
+  refused on `nmos`, `pmos`, `cmim` and `inductor2`. **Confirmed to bite:** relaxing the rule to plain
+  containment turns `OneLabelOverlappingOnePinOfSeveral_NamesNothing` red immediately.
+- **Nothing asks what the text SAYS.** A rule rejecting names that "look like" model numbers would be
+  knowledge about one supplier's habits living inside circuitRF and would fail on the next kit — so
+  there is a test proving a model-looking string IS accepted when the cell labels systematically.
+- **Direction is the dominant axis of (pin centre − cell centre), compared as FRACTIONS of the cell's
+  own size.** Against raw distances a cell ten times wider than tall reads every pin as facing
+  sideways. **Confirmed to bite** by its own test.
+- **A central pin is a real case, not a degenerate one** — a gate spanning the full cell height, a
+  bipolar's emitter contact in the middle. Position genuinely says nothing, so rather than let rounding
+  pick a side it is reported and falls back to the pin's own shape (a box presents its short edges).
+  18 of the 104 real pins landed here, each one reported.
+- **A label never stretches the cell extent.** A label is an anchor point that may sit far outside the
+  drawn geometry; letting one in moves the centre every direction is measured against.
+- **`PinInferenceRules` is the kit's own statement, beside the kit** (`pinPurposes`, `labelPurposes`,
+  per-cell overrides of name/direction/width). Keyed by inferred name OR by ordinal — name-only would
+  be circular when the name is exactly what the kit is supplying. **An absent file is silent; a present
+  unreadable one is reported** — two situations needing two different answers, and nearly every kit
+  states nothing.
+- **With no technology, nothing is a pin rather than everything.** Purposes identify a pin and they live
+  in the technology; guessing from the layer number would make every drawn shape a pin.
+
+**Gate:** 22 tests in `tests/Ui.Tests/Layout/PinInferenceTests.cs`, synthetic fixtures reproducing in
+miniature the exact real device shapes each rule exists for. Suite 6,456 pass.
+
+**NOT wired anywhere yet, deliberately** — this is the mechanism, and it currently has no caller. A
+persisted cell has nowhere to keep a pin's width and outward direction (`IsPort` labels carry only
+name/position/layer, and `LabelShape` was deliberately not polluted with pin fields), so making an
+imported device cell genuinely connectable needs a `LayoutView`-level pin list. The live vendor-PCell
+bridge is separate again and needs the user's own GPL runtime installed.
+
+A process's device library imports against its own technology (C1, 2026-08-04) — COMPLETE, and it
+needed almost no code. `GdsiiImport` already turns every structure into a real cell folder with a
+layout view through the ordinary `CellFolder` machinery, reachable today from File ▸ Import ▸ GDSII
+Library… So this was a VERIFICATION phase plus one fix, and saying that is better than inventing work.
+
+**The result worth keeping is the join with C0: a real device library's artwork used 77 distinct
+layers, and the technology imported from that same process already defined all 77** — nothing to add,
+nothing to reconcile, no dialog. That is the strongest independent evidence C0's layer table is right,
+because it was derived from a completely different file. Had it been keyed wrongly the failure would be
+loud but only when somebody tried it: one layer decision per layer, on an import of dozens of cells.
+`ImportedTechnologyAbsorbsItsOwnArtworkTests` is the permanent gate (synthetic on both sides — the
+repository commits no third-party artwork).
+
+- **Measured on the real library: 56 structures → 56 cells in 105 ms**, 19,937 shapes, 46 tops, zero
+  renamed structures, zero diagnostics.
+- **`DescribeTopLevelCells` listed every top by name, and that is wrong for a LIBRARY.** Fine for a
+  design with one top; a wall of 46 names for a device library, burying the counts earlier in the same
+  message. It now truncates through `FormatTruncatedNameList`, which already existed for exactly this.
+  **Many tops is not pathological here — it is what a device library IS**: every primitive is its own
+  top, and only the via arrays and corner pieces are referenced by anything.
+- **Assert on GEOMETRY, not shape type, when checking imported artwork.** GDSII has no rectangle
+  record, so a rectangle is written as a boundary and legitimately reads back as a `PolygonShape`.
+  Cost one red test before it was obvious.
+- **These are layout-only cells** — artwork, with no symbol, parameter interface or model. Making a
+  primitive simulate is the compiled-model path, already built; making one parametric is the PCell
+  work.
+
+Importing a technology from a process kit (C0, 2026-08-04) — COMPLETE. `src/Ui/Layout/TechImport/` —
+two readers, a builder, a bounded scan, and **File ▸ Import ▸ Technology…**. A process's own files
+become a `.ctech` in the workspace's `tech/` folder.
+
+**The one thing here that fails silently is the thickness convention, and everything else is
+bookkeeping around it.** A process file states a conductor's thickness AND, separately, the thickness
+of the dielectric the conductor sits **inside** — the two overlap. circuitRF's stackup is a plain pile
+of slabs whose thicknesses add up. Carried across verbatim the stack is inflated by the sum of every
+metal thickness (over a third of the total height on a real back-end stack), and **nothing downstream
+says so**: the layer table, the colours and every drawn shape are exactly right while every substrate
+height an electrical model resolves is wrong. So a conductor's own thickness is taken OUT of the
+dielectric run above it, **nearest slab first** — a process routinely splits that run in two to model a
+liner separately, and taking it all from the last slab drives that one negative while the run as a
+whole is thick enough. **Confirmed to bite:** neutering the subtraction turns four tests red, including
+the via-reach one.
+
+- **Verified against an independent oracle, not against itself.** The kit's own 2.5-D cross-section is
+  a different file, written for a different purpose, that circuitRF never reads. Every conductor
+  thickness matches and all four inter-metal separations reproduce exactly (0.540 / 0.540 / 0.850 /
+  2.800 µm), with the top metal's base landing on the section file's own figure to three decimals.
+- **A via's conductivity uses the distance it ACTUALLY reaches** — the converted separation, not the
+  file's stated dielectric thickness. It is an effective figure including contact resistance, which is
+  what the process guarantees; the plug material's own conductivity is not what anyone wants here.
+- **No ground reference is chosen — it is reported.** A process file states none; every conductor is a
+  signal layer until a design says otherwise. Picking one would put a guess inside the substrate every
+  microstrip component resolves, silently. It is the single thing `TechValidation` flags on a freshly
+  imported technology, and the import says so at import time.
+- **Snap, flatten tolerance, label height and via size scale off the process's own finest feature**, so
+  a 130 nm process gets sensible numbers with nothing written down about one.
+- **Recognised by GRAMMAR, never by extension or by a tool's namespace.** Kits spell the stack file
+  `.itf`, `.dat` and `.txt`; the layer table is matched by LOCAL element name, so one carrying a
+  namespace (which names the tool that wrote it) reads exactly like one without.
+- **A layer's `Name` carries its purpose** (`Metal1.drawing`, not `Metal1`). Every name-first match in
+  circuitRF — paste reconciliation, technology retargeting — keys on `LayerDef.Name`, and a real table
+  has a dozen purposes per layer. `Purpose` is carried separately as well.
+- **Two recognisers are registered with `PdkFormatRegistry` from `App.axaml.cs`**, so an ordinary kit
+  import *reports* that the kit carries process data and names the menu item that uses it. They live on
+  the UI side because the readers do — `Technology` is a UI-project type — which is exactly the
+  extension that registry exists for. **Registration is deliberately NOT exercised from a test**: the
+  registry is process-wide static, so registering from one test leaves the recognisers installed for
+  the whole run and a kit fixture could classify differently depending on test order. The call site is
+  pinned by source scan instead.
+- **Discovery is by content and bounded in every direction** (depth 6, 40,000 files, 8 MB each). The
+  peek is two-stage on purpose rather than as an optimisation: a recogniser must see a layer table
+  WHOLE (truncated XML does not parse at all), but reading every file in a kit whole would mean reading
+  its artwork and model data too — so the peek looks only for the format's own marker word and the file
+  is read entire once that matches.
+
+**Gate:** 38 tests in `tests/Ui.Tests/Layout/TechImport/`, all over synthetic fixtures — the repository
+commits no third-party process data. Suite 6,430 pass, 0 fail (1 pre-existing skip).
+`FileMenuRestructureTests.ImportSubmenu_ContainsExpectedFormats_NoGerber` was updated rather than
+loosened: it stays exact and ordered, which is what keeps the hand-mirrored in-window and macOS menus
+from drifting apart.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: File ▸ Import ▸
+Technology… on a folder of process files offers the stack descriptions it found (one per corner) and
+the layer tables, and importing one opens it in the Technology Editor with its layers, stackup and
+rules populated and one warning about the ground reference.
+
+Editing a generator script and seeing the change (B7, 2026-08-03) — COMPLETE. **Track B is complete.**
+Error surfacing, a reload action, and the repointing that makes both mean anything.
+
+**The largest part of this closes a gap B5 opened, and it is worth being plain about that.** A
+generated cell's folder name is a hash that now includes the generator's own content, so editing a
+script moves every cell it produces. `LayoutView.PCellSnapshots` is keyed by that name and every placed
+instance's `CellRef` points at it — so editing a script and reopening the workspace would regenerate
+everything under NEW names and leave every instance pointing at a folder that will now never be built.
+The design would open full of Not Found placeholders with nothing saying why.
+`GeneratedCellsLifecycle.Regenerate` therefore **repoints** as it rebuilds: instances follow their cell
+to the new folder and the snapshot table is re-keyed with it, so the next regeneration starts from the
+truth. **Confirmed to bite** — deleting the repoint loop turns two tests red, including the headline.
+
+- **On disk at workspace open** (no document is open yet, so files can be rewritten freely), and
+  **in memory for open documents** on reload — the same `Regenerate` pass either way, so an open
+  layout and a closed one can never end up repointed differently. `RegenerateAll` takes the open
+  documents' paths as `skipPaths`: rewriting a file under an open document would fight whatever is
+  unsaved in it.
+- **Repointing is not undoable, deliberately** — it is a cache refresh, like the live technology
+  reload, not an edit the user made. Affected documents are marked dirty so the new references save.
+
+**Design ▸ Reload Generated Artwork** is the authoring loop. **Four things are stale after a script
+edit and all four have to go:** the running interpreter (it loaded the old code), the manifest scan
+(the kit may declare different files now), the **per-kit content hash**, and the generator delegates
+the registry handed out. `Rescan` covers the first three; `PCellRegistry.InvalidateResolved` the
+fourth.
+
+- **`Rescan` now clears the content keys and `StopProviders` still keeps them — that difference is
+  load-bearing, not an inconsistency.** The hash is computed once per kit per session; leave it and a
+  mid-session edit resolves straight back to the cell the previous version wrote, so **the edit appears
+  to do nothing at all**, which is the most confusing possible outcome. `StopProviders` is called when
+  PERMISSION changes, where the scripts have not moved and a session-scoped fallback key must stay
+  stable or the same cells regenerate twice. **Confirmed to bite:** dropping `_contentKeys.Clear()`
+  from `Rescan` turns `Rescan_RereadsTheContentHash_SoAnEditedScriptResolvesSomewhereNew` red.
+- Reload also re-runs B6's consent check, so a kit added since the workspace opened is asked about
+  rather than silently skipped.
+
+**Error surfacing: two call sites could throw straight out of a gesture.** `GetOrCreate` was unguarded
+in `TryPlacePCellFromPalette` (a DROP handler — an exception there takes the gesture, possibly the app,
+down rather than reporting anything) and in `EditInstancePCellParameters`. Both now report and return
+false, leaving the design exactly as it was. `GeneratedCellsLifecycle` swallowed every failure with a
+bare `catch {}`; it now takes a reporter, deduped so one broken kit is one message rather than one per
+snapshot. The message carries **the script's own traceback**, which `PCellWorkerProvider.Failed` was
+already attaching — usually the only description of what went wrong, and nobody thinks to open a log
+for it. **Confirmed to bite** (with a regression that actually COMPILES — a non-compiling one silently
+tests a stale binary, which this repo has been caught by before).
+
+**R9 needed no change and now has a test saying so:** a script-generated cell is an ordinary generated
+cell, marked by the same `PCellOrigin`, so `IsPCellReadOnly` refuses edits to it exactly as it does for
+a built-in's.
+
+**Determinism** — identical inputs produce byte-identical geometry across two SEPARATE interpreter
+processes, and shape order is exactly what the script returned (an ordering leak would change geometry
+silently while every parameter stayed identical). **What this cannot cover, stated rather than
+implied:** two DIFFERENT Python versions — only one interpreter exists in this environment. The rule is
+documented for kit authors in the package README; the ordering guarantee is the part circuitRF itself
+owns. B2's C#-built-in-versus-Python byte-identity test (the plan's "build this early") has been green
+since B2 and still is.
+
+**Gate:** 11 in `PCellAuthoringLoopTests` (repoint in memory and on disk, unchanged-generator moves
+nothing, open layouts skipped, the content-hash re-read and its deliberate counterpart, a raising
+script reported with its traceback while the instance is unchanged, a failing generator reported with
+its snapshot surviving, R9 on a script cell, cross-process determinism, shape order). Three deliberate
+regressions confirmed red. Firewall 4, Core 1,115, RfCore 281, Ui 4,450, Engine 542 (+1 pre-existing
+skip); four full runs, plus `verify.py`'s 44 checks.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: editing a
+generator script and choosing Design ▸ Reload Generated Artwork updates the placed cells in an open
+layout; a script that raises reports its own traceback rather than doing nothing; and reopening a
+workspace after editing a script shows the new artwork rather than Not Found placeholders.
+
+Consent before running a kit's generator scripts (B6, 2026-08-03) — COMPLETE.
+`PCellTrustStore` + one gate inside `PCellWorkerResolver`, a prompt naming exactly what would run, and
+a way back from a refusal. Third-party code executes only with this installation's explicit permission.
+
+**The decision is recorded PER USER, NOT in `.cws` — a deliberate departure from the plan's "recorded
+per workspace" wording, and the whole feature depends on it.** A decision stored in a file that travels
+with the artifact can be written by whoever sends you the artifact: a workspace arriving with its own
+scripts already marked trusted would run them on open with no prompt, which defeats the mechanism
+entirely. It lives in `AppPreferences.PCellTrust` (`preferences.json`), keyed by the kit's absolute
+directory. `TheWorkspaceFile_CarriesNoTrustDecision` asserts by reflection that `CwsFile` has no such
+field — **do not "improve" this by moving it into the workspace.**
+
+- **Keyed by the kit's DIRECTORY, not its content.** Folding B5's content hash into the key would
+  re-ask on every save while somebody is authoring a generator — training exactly the reflexive
+  "Allow" the prompt exists to prevent. Moving a kit asks again, which is honest: it is a different
+  thing on disk.
+
+**The prompt is not the enforcement; the gate in `EnsureStartedLocked` is.** A prompt that never
+appeared — headless, a dialog that failed, a workspace switched away mid-question — leaves the decision
+`Unknown`, and **`Unknown` does not run**. Only `Allowed` starts anything. **Confirmed to bite:**
+disabling that one condition turns four tests red, including the headline
+`AnUnknownKit_IsNeverStarted_AndOffersNothing`.
+
+- **Degrade, never deny** — a refused or unasked kit's cells draw as the existing Not Found
+  placeholder; every other kit, every built-in and the design itself are untouched. Same rule a missing
+  kit, a missing layout and a foreign document already follow.
+- **The gate defaults to permissive when the caller supplies NO policy** (headless callers have nobody
+  to ask and nowhere to record an answer). That is exactly how a security default rots, so
+  `TheApplication_AlwaysPassesATrustPolicy` pins that the application's own — and by regex-scan, its
+  **only** — construction site passes one.
+
+**Asked from the manifest SCAN, which reads JSON and starts nothing**, so the question is put up front
+in a calm moment without costing B3's laziness: consent is recorded, and the interpreter still starts
+lazily on first use. The prompt is posted at Background priority off the workspace-path change (a modal
+shown from inside that handler would re-enter the open) and re-checks the workspace when it finally
+runs — answering about a workspace the user has since left would record the wrong thing.
+
+- **A dismissed prompt records NOTHING** — never a refusal, and certainly never permission; the
+  question simply stands. **Allow is deliberately not the default button**: Enter does nothing, because
+  a consent prompt clearable by a reflexive keystroke has not obtained consent. Escape maps to Don't
+  Allow, the safe side.
+- **A refusal IS recorded**, because a prompt that re-asks every open is one people learn to dismiss
+  unread — which is why there has to be a way back: **Settings ▸ General ▸ Generated Artwork ▸ Ask
+  Again**, named in the refusal message itself. Without it, one mis-click permanently breaks a kit's
+  artwork with nothing visible to undo it.
+
+**Granting permission takes effect without reopening the workspace**, and that needed two invalidations,
+not one: `PCellWorkerResolver.StopProviders()` (the resolver had already concluded the kit could not
+run, and cached it) plus `PCellRegistry.InvalidateResolved()` (the generator delegates it handed out),
+then a regenerate + refresh. **`StopProviders` disposes** — clearing the map alone starts a SECOND
+process per kit on the next lookup and leaves the first running with nothing to talk to, a leak the user
+can neither see nor clean up. `Rescan` was routed through the same teardown for the same reason (it
+previously cleared the map without disposing — latent, since only the constructor called it).
+**Confirmed to bite:** making `StopProviders` skip the dispose turns
+`StopProviders_EndsTheProcess_RatherThanLeavingASecondOneRunning` red.
+
+**Gate:** 17 in `PCellTrustTests` — the store (unknown-by-default, both decisions remembered, one entry
+per directory however it is spelled, a refusal is written, a seeded store answers the same), the gate
+(unknown and refused kits start nothing and offer nothing, one refused kit leaves another's cells
+working, granting works mid-session, the dispose leak, the no-policy default), that listing kits to ask
+about starts nothing, where the decision is kept, and two source scans for the parts that cannot be
+constructed headlessly. Firewall 4, Core 1,115, RfCore 281, Ui 4,439, Engine 542 (+1 pre-existing skip);
+four full runs. **One failure captured by name:** `PerfBenchmarkTests.BuildRenderModel_10k_Under50ms`,
+once in four runs — the wall-clock SCHEMATIC render benchmark this file already documents as a known
+full-suite CPU-contention flake; it references nothing in this work (grepped) and passes in isolation.
+
+**Not built, deliberately:** real sandboxing (deferred by the plan — B3's process boundary is what makes
+adding it later a change rather than a redesign), per-kit granularity within one prompt (kits are
+normally discovered one at a time; a batch Allow/Don't Allow covers the rare multi-kit first open), and
+a management surface listing individual permissions (the Settings action clears them all).
+
+Caching and invalidation for script-backed PCells (B5, 2026-08-03) — COMPLETE.
+`PCellGeneratorContentHash` plus one seam on the resolver, funnelled through a single new call in
+`GeneratedCellStore.BuildCellName`. **A generator that is a FILE THE USER EDITS cannot have a
+hand-maintained version number**, so the number becomes a hash of the thing itself.
+
+**This closes a failure this codebase has already had once.** A generated cell was keyed on
+`(generator, parameters, technology, layers)` alone, so fixing a generator's geometry bug never
+invalidated the cells the buggy version built — the fix landed, the tests passed, and the artwork did
+not change. That was solved for built-ins by a version number somebody has to remember to bump; the
+hash is the same idea with nobody to remember.
+
+**Built-in cells keep their exact folder names, and that is asserted against the literal old
+expression** — `PCellRegistry.GeneratorContentKey` returns `GeneratorVersion(id).ToString(Invariant)`
+for a built-in, which is byte-identical to the previous `Append(int)`. Getting this wrong would rename
+every generated cell in every existing workspace while every placed instance still pointed at the old
+name, and each would render as the R-L5a-1 "Not Found" placeholder — the same trap B0's own encoding
+rule exists for.
+
+**What is hashed is what the kit DECLARES**, defaulting to the entry script's own directory (`*.py`,
+recursive) plus the manifest itself — changing the entry point or the declared data is a change to what
+the generators are, even with every script untouched. New manifest fields `sources` and `dataFiles`.
+**`pythonPath` is deliberately NOT hashed:** it may point at a shared environment the kit does not own,
+and hashing a virtual environment on every workspace open is a cost nobody would trace back to here.
+
+- **Paths are hashed RELATIVE to the manifest**, so moving or copying a kit — which happens routinely —
+  does not regenerate every cell in the workspace. The name is hashed as well as the bytes, so renaming
+  a file (which can change which module a script imports) is a change.
+- **Over-large or unreadable ⇒ NO key, never a partial one.** Past `MaxFiles`/`MaxBytes`, or on a file
+  that cannot be read, `Compute` returns empty with a problem and the resolver substitutes a
+  per-session `"session-" + Guid` — cells regenerate rather than being wrongly reused. A partial hash
+  presented as a complete one is the worst available answer: it looks stable and is not.
+
+**Gate:** 12 in `PCellGeneratorCachingTests` (built-in keys unchanged ×3; editing a script resolves to a
+different cell; an unchanged generator keeps its cells across sessions; a declared data file and the
+manifest each invalidate; moving a kit does not; renaming a source does; an implausibly large source set
+is refused rather than partially hashed; no stable key ⇒ regenerate). **Four turn red against a
+deliberate regression** to the old `Append(GeneratorVersion(...))` — including the exact stale-cell
+failure this phase exists to prevent. Firewall 4, Core 1,115, RfCore 281, Ui 4,422, Engine 542 (+1
+pre-existing skip); four full-solution runs, plus `verify.py`'s 44 checks.
+
+**The warm process pool was scoped and deliberately NOT built — measured, not assumed.** The plan asks
+for one "so a workspace open with many generated cells does not pay per-cell startup." Measured on the
+real transport: **startup + describe ≈ 53 ms, once per kit; 200 distinct generates ≈ 4.0 ms total
+(0.02 ms each); the content hash ≈ 0.36 ms.** B3's provider already keeps one live process per kit and
+starts it lazily on first use, so **there is no per-cell startup for a pool to amortise** — a pool would
+add concurrency and lifecycle to a cost that does not exist in the shape B3 took. If the design ever
+changes to a process per cell, this is the measurement that says build it.
+
+- **The claim is gated on a counter, not a clock**, matching this repo's own convention:
+  `ProcessPCellWorkerTransport.StartCount` is asserted to be exactly 1 across many generated cells
+  (`GeneratingManyCells_StartsExactlyOneProcess`). A wall-clock gate here would flake under full-suite
+  load and would not actually say what it means.
+
+Interpreter discovery and the zero-configuration path (B4, 2026-08-03) — COMPLETE.
+`PythonInterpreterDiscovery` plus one additive `.cws` field. The bar is the one a kit import already
+sets — reference, place, run, nothing to configure.
+
+**Probed by RUNNING code, not by asking for a version string**, and that is the load-bearing choice.
+Each candidate is asked `-c "import sys; print(...)"`, which proves it can actually EXECUTE something
+and returns a form needing no parsing of prose. A shim or stub on PATH will happily print a plausible
+version and then fail to run a script — accepted, that surfaces later as a broken KIT rather than a
+broken interpreter, which sends the user to the wrong place. Pinned by a test using a shell script
+that only echoes a version.
+
+**Order, most specific first: the kit's own declaration → this workspace's recorded choice → PATH →
+the platform launcher → the usual install locations.**
+
+- **A kit's declaration outranks everything, and when it does not work discovery STOPS.** A kit that
+  names an environment is stating where its dependencies are; quietly falling back to another
+  interpreter runs its cells against an environment missing what they import, and the failure lands
+  on an import statement far from here. **Confirmed to bite** — removing the early return turns
+  `AKitsDeclarationThatDoesNotWork_StopsRatherThanFallingBack` red.
+- **PATH before install locations** because it is what the user's own shell would run — the least
+  surprising answer, and also what a virtual environment activates.
+- **The Windows launcher needs `-3`.** `py.exe` is a DISPATCHER, not an interpreter, and without it
+  may hand back a Python 2 on a machine that still has one. That is why the transport gained
+  interpreter-prefix arguments and `PythonInterpreter` carries `Arguments` at all.
+- **An interpreter below 3.9 is refused BY VERSION**, naming both its version and the minimum, rather
+  than allowed through to fail on syntax somewhere the user cannot connect to the cause.
+- **The candidate list is finite and asserted small** (≤12). A wider search costs a process launch
+  per entry and would eventually match something that is not a Python.
+
+**The decision is recorded in `.cws` (`PythonInterpreter`), replayed rather than re-derived** — the
+same bargain a kit's own settings already strike, where the measured difference was 0.5 ms against
+199.8 ms. Additive, `WhenWritingNull`, **no `FormatVersion` bump**; a workspace that never settled on
+one writes nothing rather than a null entry. Written immediately on settling rather than at the next
+save, because settling is not an edit a user might reasonably discard and the whole point is that the
+NEXT open is fast. **A recorded choice that no longer works is re-derived and re-recorded** rather
+than treated as fatal — an interpreter can be upgraded or removed between sessions and the workspace
+should heal, not require the user to know that is what happened.
+
+- **Visible as well as recorded**: the choice is reported once (version, command, how it was found)
+  and only when it differs from what was already recorded — an automatically-made decision should be
+  visible the first time it is made and silent on every open after.
+- **Failing to RECORD must never undo having MADE it** — the generators are already running; the only
+  cost is probing again next time.
+
+**Degrade, never deny — the rule this phase exists to keep.** No interpreter means the kit's cells
+draw as the existing Not Found placeholder, with a message naming what was tried and how to fix it;
+every other generator, the built-ins, and the design itself are untouched, and nothing throws. Same
+rule a missing kit, a missing layout and a foreign document already follow: the user's design is
+their data.
+
+**Gate:** 20 in `PythonInterpreterDiscoveryTests` — real probing, the stub and old-version refusals,
+the full resolution order including both kit-declaration behaviours, record round-tripping (including
+a quoted Windows path with a space), the `.cws` field's additivity, and the degradation path.
+Firewall 4, Core 1,115, RfCore 281, Ui 4,410, Engine 542 (+1 pre-existing skip); five full-solution
+runs.
+
+**One failure seen and CAPTURED BY NAME** (the rule this repo already states — an uncaptured name is
+the mistake): `PerfBenchmarkTests.BuildRenderModel_10k_Under50ms`, once in five full runs. It is the
+wall-clock SCHEMATIC render-model benchmark this file already documents as a known full-suite
+CPU-contention flake; it touches no layout or PCell code at all (grepped, not assumed) and passes in
+isolation. Recorded as the known flake rather than attributed to this work.
+
+The PCell worker host (B3, 2026-08-03) — COMPLETE. `src/Ui/Layout/PCells/Wire/`'s transport,
+provider and resolver, plus one seam in `PCellRegistry`. **A generator script is now an ordinary
+`PCellGenerator` and nothing above that line knows the difference.**
+
+**The whole phase is one seam.** `PCellRegistry.TryGet` now asks registered resolvers when an id is
+not a built-in, and caches what one answers. That single change is why the content-addressed cell
+store, the geometry cache, copy-on-write parameter editing, the regeneration snapshots and both
+schematic↔layout directions all work with script cells **with no change to any of them** — the same
+arrangement `ExternalDeviceRegistry` already has for devices, and the reason an embedded interpreter
+would later be a swap of `PCellWorkerProvider` rather than a redesign.
+
+- **Built-ins are checked FIRST**, so a kit cannot shadow `MLIN`. `KnownGeneratorIds` still means
+  built-ins only (its callers are asking "is this one of ours"); `AllKnownGeneratorIds()` is the full
+  list and may start a generator.
+- **`ClearResolvers` does not dispose anything.** The registry did not create the resolvers and does
+  not own their processes; the WORKSPACE disposes its own, which is what actually ends the
+  interpreters. Getting that backwards leaves a Python process per kit running with nothing to talk
+  to — a leak the user cannot see or clean up.
+- **The resolver list is process-wide static**, so test classes touching it need
+  `[Collection(PCellResolverCollection.Name)]`.
+
+**Resolvers are registered at workspace open; providers are not — opening a workspace starts no
+interpreter.** One starts the first time a design actually places a cell that kit generates.
+`ResetPCellGenerators` is driven from **`OnCurrentWorkspacePathChanged`**, not from the four
+workspace-reset paths, because it must see the NEW root: a call ordered before that assignment points
+the new workspace's generators at the old workspace's folder, and a cell resolving to the wrong kit's
+script is silent.
+
+**A failing generator must not take a frame down with it, and this needed real changes.** A built-in
+could never fail; a script can, and two of its callers are on paths where an exception is a crash
+rather than a defect — `LayoutRenderer.Instances`' pin overlay (every repaint) and
+`LayoutSnapFeatures` (every pointer move). Both now degrade: the cell loses its pins or its snap
+points, the frame survives. **Confirmed to bite** — removing the render guard turns
+`AGeneratorThatThrows_CostsThePinsAndSnapPoints_NotTheFrame` red.
+
+**Two test defects found by checking that the gates actually bite, both of which had made a test pass
+for the wrong reason:**
+
+- **`MLIN` is a BUILT-IN**, so the store test resolved it from the built-in dictionary and never
+  exercised the resolver at all. Rewritten around `VIAARRAY`, which is not. Found by removing the
+  resolver lookup and watching the test still pass.
+- **`LayoutViewport` is a positional record** — `Width`/`Height` are the last two arguments and
+  default to **zero** under an object initializer, which culls everything. The render-guard test was
+  rendering an empty frame. Anything constructing a viewport for a render test must pass all five
+  positionally.
+
+**A fast-dying script's own words were being lost, and the fix differs from the device path's
+deliberately.** `FlushErrorOutput` must NOT skip the wait when `HasExited` is false: a script that
+dies fast is usually mid-exit and not yet reaped when the failure is reported, so the check says
+"still alive", the wait is skipped, and the stderr that explains everything is dropped. The device
+worker can afford that gate because its `RecentErrorOutput` is also read on a success-adjacent path
+(an in-band point failure from a live worker); this one is reached **only** from `Failed(...)`, so a
+bounded wait is only ever paid when something has already gone wrong.
+
+- **Caught by capturing the name, which is the part that matters.** It failed once in a
+  full-solution run and passed every time in isolation — this repo's own standing rule is that
+  isolated repetition proves nothing about a load-dependent race, and that an uncaptured failure name
+  is the mistake. **Six consecutive clean full-solution runs after the fix**, against a failure in
+  the second run before it.
+
+**Gate:** 14 in `PCellWorkerHostTests` (a script's generators become `PCellGenerator`s; refusal names
+the generator and carries the script's output; a script that dies immediately still reports what it
+said; a wire-version mismatch refused naming both; the resolver starting nothing until asked; a broken
+kit reported and skipped without making other kits unresolvable; an id collision keeping the first and
+reporting it; the store/content-addressing path end to end; built-in-wins; resolver caching, clearing
+and throwing-resolver isolation; and the render/snap degradation). Firewall 4, Core 1,115, RfCore 281,
+Ui 4,390, Engine 542 (+1 pre-existing skip).
+
+**NOT built, deliberately:** real interpreter discovery (B4 — `PCellWorkerResolver` takes a
+`findInterpreter` seam whose default is just the manifest's declaration or `python3`), caching and
+invalidation (B5), trust (B6), editor error surfacing and a reload action (B7). **Known gap worth
+naming:** a script-backed generator's content hash does not yet include the script's own content, so
+editing a script mid-session can reuse a generated cell — B5's content-hash obligation is what closes
+that. It is bounded today because `.generated-cells/` is deleted on workspace close and regenerated
+on open.
+
+The Python PCell package (B2, 2026-08-03) — COMPLETE. `tools/pcell-python/` (the package, a reference
+generator, and a standalone `verify.py`), plus `PCellGeneratorManifest` — the run-time declaration a
+kit puts beside itself saying its layouts are generated and by what.
+
+**The package is written from the SPECIFICATION, never ported from circuitRF's own codec, and that is
+the point rather than a preference.** Two implementations arrived at independently agreeing is
+evidence about the format; one implementation agreeing with itself is not. Same rule
+`tools/DeviceWorkerExample` already follows for the device path — and it is what makes the gate below
+mean something.
+
+**The early B7 gate is built and green.** The plan says to build "the same cell as a C# built-in and
+as a Python generator, asserted byte-identical" early rather than at the end, so it is here:
+`PythonMlinAndTheBuiltInMlin_ProduceByteIdenticalGeometry`, four parameter sets, over a real pipe.
+One artifact pins the metre→DBU conversion happening host-side and only once, the wire carrying it
+faithfully, and two independent generators agreeing where a 300 µm edge lands.
+
+- **Confirmed to bite:** declaring MLIN's `W` as `Parameter.real` instead of `Parameter.length` turns
+  all four cases red — the host then never converts it, 0.0029 metres truncates to 0 DBU, and the line
+  collapses to zero width. That is exactly the failure the README calls "the one declaration worth
+  checking twice", demonstrated rather than asserted.
+
+**`dbu()` exists because Python's `round()` is banker's rounding.** `round(0.5)` is `0` and
+`round(2.5)` is `2`, which disagrees with circuitRF's round-half-away-from-zero at exactly the
+midpoints where two adjacent shapes decide whether they abut; `int()` truncates, a different
+disagreement in the same place. So the package owns one rule and **refuses a fractional float where a
+coordinate is expected**, naming `dbu()` — silently rounding would be the package inventing a rule the
+author never saw. Being made to write `dbu(w / 2)` is the mechanism, not an inconvenience.
+
+**`bool` is checked before `int` in both directions, and that ordering is load-bearing.** In Python
+`bool` subclasses `int`, so `isinstance(True, int)` is `True`; checked the other way round every flag
+arrives as the integer 1 and every `if guard:` still passes — a bug that only surfaces when somebody
+writes `guard is True`. Pinned in `verify.py`.
+
+**A pin's width and outward direction are REQUIRED arguments**, not optional ones with defaults. A
+connection is an edge, not a point; this is the field most easily omitted and most expensive to add
+later, so the constructor does not permit omitting it.
+
+**`pcell-generators.json` mirrors `device-provider.json`'s shape deliberately** — an entry point, an
+optional interpreter override, paths resolved relative to the manifest's own folder so a kit can be
+moved or copied whole and still resolve. A kit author who has met one recognises the other.
+
+- **It does NOT list the kit's generators**, and that is deliberate: `describe` is the only source,
+  and a second would be a cache that can silently disagree with the script — the failure this
+  codebase has already been bitten by (a recorded setting outliving what it described). The cost is
+  starting the interpreter once to list a kit's cells; the benefit is that the list cannot be stale.
+- **Absent is silent; present-but-broken is reported.** A kit with no generated artwork simply has no
+  manifest, and reporting that would be noise on nearly every kit — but the two states need different
+  answers from the user, so they are distinguished.
+
+**Failure modes, each with a test:** a generator that raises becomes a refusal carrying its own
+message **and its traceback** (a script is somebody's own code and that is the only view they get of
+it failing) — never a crashed process and never a silently empty cell. An unknown generator id is
+refused listing what the script does offer. A wire-version mismatch is refused by the SCRIPT too,
+naming both numbers.
+
+**`stdout` is the wire and must carry nothing else** — a stray `print()` lands mid-frame and
+desynchronises the stream, surfacing as a malformed reply nowhere near the print. Documented at
+`run()` and in the README; generators write to `stderr`, which the harness drains on its own thread
+(nobody reading it fills the pipe and the script blocks forever inside a write — the same trap the
+device worker already records).
+
+**`PythonRunner` is a TEST HARNESS, not B3's worker host.** No provider, no resolver, no interpreter
+discovery, no lifecycle beyond one process per test. It exists because driving the package the way
+the real host eventually will is the only honest way to check it.
+
+**Gate:** 13 in `PCellPythonPackageTests` (byte-identity ×4, describe's dimensions, version-mismatch
+refusal, the full vocabulary via a via array, diagnostics-with-geometry, two failure modes, a
+3,600-shape cell over a real pipe, 50 sequential requests staying in step, the resolved layer
+reaching the script), 7 in `PCellGeneratorManifestTests`, and 44 checks in `tools/pcell-python/verify.py`
+(no pytest, no .NET — run it with `python3 tools/pcell-python/verify.py`). **Skipped with a reason
+when no python3 is on PATH** via `PythonFactAttribute` — circuitRF must build and test on a machine
+with no Python on it, matching the convention the OSDI worker's C compiler already set. Firewall 4,
+Core 1,115, RfCore 281, Ui 4,376, Engine 542 (+1 pre-existing skip) — green.
+
+PCell wire schema — the third-party-facing format (B1, 2026-08-03) — COMPLETE.
+`docs/design/pcell-wire-schema.md` (wire version 1) plus `src/Ui/Layout/PCells/Wire/`. **This is the
+irreversible part of Track B**: the contract can be revised while no third-party cells exist, the wire
+cannot, because a shipped cell is a program that speaks these bytes and nothing else. Every rule is
+chosen for that. B3 (the process host) and B2 (the Python package) build on it and change none of it.
+
+**The one decision everything follows from: THERE ARE NO METRES ON THE WIRE.** R7 says the metre→DBU
+conversion happens in one place with one rounding rule; across a process boundary that is a schema
+constraint, not a documentation note — an API handing a script metres has two rounding rules on day
+one. So the host converts, with `PCellUnits.MetresToDbu` (the same function an in-process generator
+calls), and **`dbuPerMicron` appears in no message.** That absence IS the mechanism: a script has
+neither a metre nor the resolution to convert one with, so there is no field it could do the
+arithmetic in. **[Half of this was superseded by wire version 2 — see the C2 entry at the top of this
+file. No metres is still true and is still the guarantee that matters; the resolution is now stated.]** This is what keeps B7's "the same cell written in C# and in a script is byte-identical"
+reachable — neither side is converting.
+
+- **Which parameters are lengths is the GENERATOR's declaration**, returned by `describe`. That is
+  what makes `describe` load-bearing rather than a handshake pleasantry: the host cannot convert what
+  it was not told is a length. A parameter never declared is passed through unconverted rather than
+  guessed at.
+- **`PCellWireDimension` has three members** (None/Length/Angle), not circuitRF's full
+  `UnitDimension`. Those are the only two that change the representation; offering Resistance would
+  invite a script to expect an ohm-aware conversion the wire cannot provide.
+- **A length keeps its KIND across the conversion** — a Real stays a Real carrying an integral DBU
+  count. The kind says what the parameter *is* (continuous, versus a count), not what unit it is in;
+  promoting it to Int because the value came out whole would contradict B0's rule that a kind belongs
+  to whoever declared it.
+- **The known limitation, stated rather than left to be discovered:** the wire is scale-free, so a
+  script can compute a length from a RATIO (which covers microstrip, whose closed forms are functions
+  of `W/h`) but not from a physical constant. A generator that needs an absolute physical length is a
+  version bump, not a workaround. **[This is the limitation wire version 2 removed, and it was
+  removed the way this sentence said to — see the C2 entry at the top.]**
+- **Not an invention:** `StackupLayer.ThicknessDbu` is *already* DBU in circuitRF's technology model —
+  SI metres are a derived view `SubstrateResolver` computes for the electrical models. The wire
+  carries the stored form.
+
+**A fractional coordinate is unrepresentable, structurally.** Every coordinate lives in the int64
+binary payload and is addressed from the JSON as `{"at": i, "count": n}`; **no coordinate ever appears
+in the JSON**, so there is nowhere to write a `3.5`. That — not speed — is why bulk geometry is
+binary here: the development plan is explicit that latency does not matter for PCells (unlike the
+device path), so the payload earns its place by being a constraint rather than an optimisation.
+Scalar lengths that are not coordinates (a path width, a drill size) are JSON integers.
+
+**`PCellWireProtocol` is a SIBLING of `DeviceWorkerProtocol`, not the same class, and the duplication
+is deliberate.** Identical header layout for identical reasons, but the payload element type differs
+(int64 DBU versus doubles), which changes the length arithmetic, the not-a-whole-number check and
+every desync message — and the device path is live against a production kit and is not worth
+destabilising to share eighty lines. **The property both must keep: a partial read on a pipe is normal
+and must be LOOPED**, never treated as end-of-stream; it is tested on each side separately, because a
+shared test would not prove it of both implementations.
+
+**Values reuse `.clay`'s encoding exactly** (bare number = Real, bare string = String, bare bool =
+Bool, `{"int": n}` = Int) — literally the same `PCellValueJsonConverter`. One encoding for the file
+and the wire means a value cannot mean two things in the two places.
+
+**Refused, never skipped.** An unknown shape kind, an unknown edge kind, a span pointing outside the
+payload, an odd coordinate count: all named errors. A silently dropped shape leaves a cell that
+renders, looks complete, and is missing a piece — the worst failure this boundary has. `bitmap` is
+**permanently** absent from the vocabulary (a tracing underlay is not artwork — R-bmp-3 already
+excludes it from booleans, flatten, DRC and every export).
+
+**Two versions cross in both directions and a mismatch is refused, not negotiated.**
+`PCellWireVersion` (bytes) is separate from `PCellContractVersion` (semantics) because they move
+independently; conflating them means a host that only speaks a new layout claims to implement a new
+contract. Negotiation would mean N code paths of which the rare ones are wrong.
+
+**§3.4's open question does not block this, and the reason is worth recording.** Whether the PCell
+contract should move to `src/Core` for headless generation is unanswered — and the schema is a byte
+format, so which assembly holds the encoder changes not a single byte of it. That question is also
+bigger than it looks: the contract's outputs *are* `LayoutShape`/`LayerKey`/`Technology`, so moving
+the contract alone is impossible; it would mean moving the whole layout model.
+
+**Gate:** 33 tests in `Layout/PCells/PCellWireSchemaTests.cs`. The one that carries the most weight is
+the `[Theory]` driving **all six built-in generators' real output** through encode→decode and
+comparing full structural descriptions — a vocabulary check against hand-built shapes would only prove
+the encoder agrees with itself. Two deliberate regressions were confirmed to turn it red (sending
+metres instead of DBU → 6 failures; skipping an unknown shape kind instead of refusing → 1) and
+reverted. Firewall 4, Core 1,115, RfCore 281, Ui 4,356, Engine 542 (+1 pre-existing skip) — green.
+
+**NOT built here, deliberately:** the process host and transport (B3), interpreter discovery (B4), the
+Python package (B2), trust (B6). This phase is the format; how two processes come to be talking is
+separate and revisable.
+
+PCell contract version 2 — kinded parameters, and R5 restated (B0, 2026-08-03) — COMPLETE.
+`PCellGenerator` takes `IReadOnlyDictionary<string, PCellValue>` (Real / Int / Bool / String) instead of
+bare doubles, and R5's literal "no file reads" is replaced by a determinism obligation. Both had to land
+**before** any third party writes a cell — that is what `PCellContractVersion` exists for and neither is
+retrofittable afterwards. `docs/design/pcell-contract.md` carries the version table and the restated R5.
+
+**The whole widening rests on one encoding rule: a Real is written exactly as the pre-kinded code wrote a
+`double`.** A generated cell's folder name is a SHA-256 over `PCellValue.ToString()` per parameter, and a
+placed instance's `CellRef` names that folder — so an encoding one byte different would rename every
+generated cell in every existing workspace while every instance still pointed at the old name, and each
+would render as the R-L5a-1 "Not Found" placeholder. `PCellValue.ToString()` therefore writes a Real bare
+(`0.0003`) and only tags the kinds no version-1 workspace can contain (`Int:4`, `Bool:true`,
+`String:nch`). The tagged forms cannot collide: a Real is digits, and a String holding the text `Int:4`
+encodes as `String:Int:4`. **Do not "make the encoding uniform."**
+`PCellValueTests.ARealEncodesExactlyAsThePreKindedCodeWroteADouble` compares against the literal old
+expression (never a constant copied out of the new code), and
+`TheGeneratedCellName_IsUnchangedForAnAllRealParameterSet` proves it end to end through the real store
+against a hand-transcribed copy of the pre-widening `BuildCellName`. Both were **confirmed to fail**
+against a deliberately uniform encoding (8 red), then restored.
+
+**`.clay` gained no `FormatVersion` bump, and that is a claim with a test behind it.** `PCellValueJsonConverter`
+writes a Real as a bare JSON number, a Bool as `true`/`false`, a String as a string — all natively
+distinguishable — so an existing file reads back identically and an all-Real layout re-serializes
+byte-for-byte (`AnAllRealLayoutReSerializesToTheSameBytes`). **`Int` is the one kind that must be tagged**
+(`{"int": 4}`): JSON has a single number token, so a bare Int would reload as a Real, hash to a different
+folder, and dangle every instance naming the old one. An unrecognised tagged object is **refused**, not
+guessed at — guessing a kind puts the wrong value in the content hash, which surfaces as a cell that
+silently regenerated rather than as a bad file.
+
+**Geometry is unchanged, proven by byte-comparison rather than by review.** `PCellGeometryGoldenTests`
+renders all six built-in generators over 14 parameter sets (chosen to hit each generator's own branches —
+mitred and unmitred bends, offset and straight tapers) against a baseline recorded *before* the migration:
+it passes with no coordinate moved. Two generators now read the kind they actually mean — MBend's `Miter`
+through `Real` (an enumeration: which kind the caller used must not decide the mode) and MKlopf's
+`SmoothSteps` through `Bool` — both of which still read a pre-v2 `2.0`/`1.0` identically, which is why the
+baseline holds. **The brief says "seven built-in generators"; there are six** (MLIN, MBEND, MTEE, MCROSS,
+MTAPER, MKLOPF) — all migrated.
+
+**The golden file deliberately does NOT stamp the contract version.** It did, and that made the baseline
+un-comparable across exactly the change it exists to survive: the bump rewrote the header, the byte-compare
+failed, and the only way to see that no coordinate had moved was to read the diff and judge the one changed
+line harmless. A baseline needing that judgement on every contract change is not a baseline. Per-case
+GENERATOR versions are still stamped — those genuinely mean "this geometry is allowed to differ."
+
+**Kind travels the whole path, not just the generator call.** `PCellOrigin.Parameters`,
+`PCellSnapshot.Parameters`, `LayoutView.SchematicPCellSnapshots`, `GeneratedCellStore`,
+`PCellGeometryCache`, both schematic↔layout generators and the Properties Inspector all carry `PCellValue`.
+Narrower would have made the widening inert: a vendor cell's string parameter that cannot survive a save
+cannot be regenerated from the layout's own snapshot table, which is the record that makes
+"a generated cell is a pure, deletable cache" true (R-L5g-6).
+
+- **Change classification is kind-aware.** `SchematicToLayoutGenerator.SameParamValue` compares two Reals
+  with `NearlyEqual`'s tolerance (a value round-tripped through a unit conversion is not bit-identical and
+  must not read as an edit) and every other kind exactly — there is no rounding to absorb in a model name
+  or a flag, and a tolerance there could only hide a real difference. **A kind change is a change.**
+- **The Properties Inspector never coerces a kind.** An edit re-enters the kind the parameter already has;
+  a value that cannot be read as that kind is refused **by name** ("This parameter takes a whole number.")
+  rather than truncated. Which kind a parameter is belongs to the cell that declares it — letting a typed
+  `4` turn a finger count into a Real would change the content hash and silently repoint the instance at a
+  different generated cell. A non-Real value shows its own text; before the widening the inspector could
+  only read a double, so a String would have rendered a confident `0`. Both pinned by tests confirmed to
+  fail against the pre-fix behaviour.
+- **The schematic side still only produces numbers** (a parameter is an expression), so a non-Real layout
+  parameter pushed back through "Update Schematic from Layout" is written as its own text and will not
+  resolve forward — reported, not silent. Kinded schematic parameters are a separate question.
+
+**Gate:** 22 new tests (`Layout/PCells/PCellValueTests.cs` 18, `PCellPropertiesInspectorParameterListTests`
++2, `PCellGeometryGoldenTests` — the baseline itself). Firewall 4, Core 1,115, RfCore 281, Ui 4,323,
+Engine 542 (+1 pre-existing skip) — all green. **Not interactively verified** (no visual driver here) —
+please confirm on your end that an existing workspace's placed PCells still resolve (no "Not Found"
+placeholders) and that editing a PCell parameter in the Properties Inspector still works as before.
+
 Built-in devices in the palette (2026-08-02) — COMPLETE. The junction diode and the five
 large-signal FET laws (`FET_Curtice`, `FET_CurticeCubic`, `FET_Statz`, `FET_Materka`,
 `FET_Angelov`) are now placeable, wired at the six usual touch points: `SymbolKind`,

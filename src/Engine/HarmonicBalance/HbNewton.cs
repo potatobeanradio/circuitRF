@@ -292,10 +292,10 @@ public static class HbNewton
                     int m = ((SddModel)ec.Model).ControlRefs.Length;
                     var cVals = new double[m];
                     for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTime[ci, t];
-                    res = ec.Model.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
+                    res = ec.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
                 }
                 else
-                    res = ec.Model.Evaluate(new PortVoltages(portV));
+                    res = ec.Evaluate(new PortVoltages(portV));
 
                 for (int p = 0; p < portCount; p++)
                 {
@@ -1208,10 +1208,10 @@ public static class HbNewton
                     int m = ((SddModel)ec.Model).ControlRefs.Length;
                     var cVals = new double[m];
                     for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTimePost[ci, t];
-                    res = ec.Model.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
+                    res = ec.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
                 }
                 else
-                    res = ec.Model.Evaluate(new PortVoltages(portV));
+                    res = ec.Evaluate(new PortVoltages(portV));
                 for (int p = 0; p < portCount; p++)
                     portITime[p, t] = res.I[p];
             }

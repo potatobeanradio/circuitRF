@@ -271,8 +271,8 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
         var res = CellLayoutResolver.Resolve(liveInst.CellRef, vm.InstanceBaseDir);
         Assert.Equal(CellLayoutState.Resolved, res.State);
         var newOrigin = res.View!.PCellOrigin!;
-        Assert.Equal(expectedZ1, newOrigin.Parameters["Z1"], precision: 3);
-        Assert.Equal(expectedZ2, newOrigin.Parameters["Z2"], precision: 3);
+        Assert.Equal(expectedZ1, newOrigin.Parameters.Real("Z1"), precision: 3);
+        Assert.Equal(expectedZ2, newOrigin.Parameters.Real("Z2"), precision: 3);
 
         // W2 (the sibling, un-typed field) reads the SAME value after the commit as before it — a
         // fresh row lookup, since a fork rebuilds the whole PCellParamRows collection (a new CellRef
@@ -310,7 +310,7 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
         var res = CellLayoutResolver.Resolve(liveInst.CellRef, vm.InstanceBaseDir);
         Assert.Equal(CellLayoutState.Resolved, res.State);
         var newOrigin = res.View!.PCellOrigin!;
-        Assert.Equal(expectedL, newOrigin.Parameters["L"], precision: 3);
+        Assert.Equal(expectedL, newOrigin.Parameters.Real("L"), precision: 3);
     }
 
     // ── Reset-on-new-selection ────────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
         var instA = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDirA), X = 0, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(instA);
 
-        var defaultsB = new Dictionary<string, double>(defaults) { ["Z1"] = 25.0 };
+        var defaultsB = new Dictionary<string, PCellValue>(defaults) { ["Z1"] = 25.0 };
         string cellDirB = GeneratedCellStore.GetOrCreate(_root, "MKLOPF", defaultsB, null, null, PCellLayerSelection.Default);
         var instB = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDirB), X = 20_000_000, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(instB);

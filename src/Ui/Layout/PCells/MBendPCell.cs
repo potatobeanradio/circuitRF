@@ -51,17 +51,20 @@ public static class MBendPCell
     public const string GeneratorId = "MBEND";
 
     public static PCellResult Generate(
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         PCellLayerSelection layerSelection)
     {
-        double wMeters = parameters.GetValueOrDefault("W", 0.0);
-        double angleDeg = parameters.GetValueOrDefault("Angle", 90.0);
+        double wMeters = parameters.Real("W", 0.0);
+        double angleDeg = parameters.Real("Angle", 90.0);
         // "Miter" (0=None, 1=Fifty, 2=Optimal — MicrostripBendMiter's own order); "Mitered" (0/1)
         // still read as a fallback for a hand-authored parameter set predating this brief.
+        // Read through Real, not Int, so an Int-kinded 2 and the Real 2.0 every pre-contract-v2
+        // parameter set carries decide the same mode — this is an ENUMERATION, and which kind the
+        // caller happened to use is not something the geometry may depend on.
         var miter = parameters.ContainsKey("Miter")
-            ? (MicrostripBendMiter)(int)Math.Round(parameters["Miter"])
-            : (parameters.GetValueOrDefault("Mitered", 0.0) != 0.0 ? MicrostripBendMiter.Optimal : MicrostripBendMiter.None);
+            ? (MicrostripBendMiter)(int)Math.Round(parameters.Real("Miter", 0.0))
+            : (parameters.Real("Mitered", 0.0) != 0.0 ? MicrostripBendMiter.Optimal : MicrostripBendMiter.None);
 
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
         long w = PCellUnits.MetresToDbu(wMeters, dbuPerMicron);

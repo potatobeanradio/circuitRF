@@ -57,7 +57,7 @@ public sealed class SchematicToLayoutUndoTests : IDisposable
 
         // Layout-side edit that the next run will overwrite.
         var origin = CellLayoutResolver.Resolve(target.Instances[0].CellRef, layoutDir).View!.PCellOrigin!;
-        var edited = new Dictionary<string, double>(origin.Parameters) { ["W"] = 20 * 1e-3 };
+        var edited = new Dictionary<string, PCellValue>(origin.Parameters) { ["W"] = 20 * 1e-3 };
         string editedCellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", edited, null, null, PCellLayerSelection.Default);
         string editedCellRef = Path.GetRelativePath(layoutDir, editedCellDir);
         target.Instances[0].CellRef = editedCellRef;

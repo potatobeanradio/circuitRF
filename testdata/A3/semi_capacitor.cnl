@@ -1,0 +1,23 @@
+; A3 - a capacitor whose value comes from a process and a geometry rather than a typed number.
+;
+; Two one-ports side by side: one built from Cj/Cjsw plus a width and a length, the other from the
+; capacitance that geometry implies, stated directly. The reflection each presents must agree.
+;
+;   area  = 20 um * 40 um             = 8e-10 m^2
+;   perim = 2 * (20 um + 40 um)       = 1.2e-4 m
+;   C     = 1e-3*8e-10 + 2e-10*1.2e-4 = 8.24e-13 F
+;   dT    = 125 - 25 = 100, so        * (1 + 1e-4*100) = 1.01
+;   C(T)                              = 8.3224e-13 F
+;
+; The ambient is stated rather than left at the default, so the temperature term is a hundred
+; degrees rather than the two the default nominal would give - large enough that dropping it fails.
+temp = 125
+
+Port:P1  a 0  Num=1 Z=50
+Port:P2  b 0  Num=2 Z=50
+
+R:R1     a n1  R=50
+SemiC:C1 n1 0  Cj=1e-3 Cjsw=2e-10 W=20 um L=40 um Tnom=25 TC1=1e-4
+
+R:R2     b n2  R=50
+C:C2     n2 0  C=8.3224e-13

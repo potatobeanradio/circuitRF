@@ -38,8 +38,12 @@ public static class GdsiiImport
         Technology? destTech,
         int destDbuPerMicron,
         bool preferSourceResolution,
-        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null)
+        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
+        PinInferenceRules? pinRules = null)
     {
+        int pinsFound = 0, pinsNamed = 0;
+        var pinNotes = new List<string>();
+
         var reader = GdsiiReader.Open(gdsiiStream);
         var rawStructures = reader.ReadStructures().ToList();
         var messages = new List<string>(reader.Diagnostics);
@@ -125,6 +129,27 @@ public static class GdsiiImport
             var view = new LayoutView { DbuPerMicron = targetDbuPerMicron };
             view.Shapes.AddRange(reconciled.Shapes);
 
+            // Imported artwork carries no pin list — GDSII has no such record. Recover one from the
+            // drawing itself, against the DESTINATION technology (which is what says a purpose means
+            // "pin"), so an imported device cell arrives connectable rather than as inert geometry.
+            // Run on the RECONCILED shapes: layer mapping has already settled which destination layer
+            // each one landed on, and that is what the purpose lookup reads.
+            var inferred = PinInference.Infer(cellName, reconciled.Shapes, destTech, pinRules);
+            foreach (var pin in inferred.Pins)
+                view.Pins.Add(new LayoutPin
+                {
+                    Name       = pin.Name ?? "",
+                    X          = pin.XDbu,
+                    Y          = pin.YDbu,
+                    WidthDbu   = pin.WidthDbu,
+                    OutwardDeg = pin.OutwardDeg,
+                    Layer      = pin.Layer,
+                });
+
+            pinsFound += inferred.Pins.Count;
+            pinsNamed += inferred.Pins.Count(p => !string.IsNullOrEmpty(p.Name));
+            foreach (var note in inferred.Notes) pinNotes.Add($"{cellName}: {note}");
+
             foreach (var inst in s.Instances)
             {
                 string cellRef = cellDirByStructure.TryGetValue(inst.CellRef, out var targetDir)
@@ -157,6 +182,19 @@ public static class GdsiiImport
             .Where(s => !referencedStructureNames.Contains(s.Name))
             .Select(s => cellDirByStructure[s.Name])
             .ToList();
+
+        // One aggregate line, not one per cell: a device library is dozens of cells, and a line each
+        // would bury the totals that actually tell the user whether inference worked. The individual
+        // notes follow, capped — an inconclusive pin is worth naming, but not at the cost of a wall.
+        if (pinsFound > 0)
+        {
+            messages.Add($"Recovered {pinsFound} pin(s) across {createdDirs.Count} cell(s); " +
+                         $"{pinsNamed} carried a terminal name.");
+            const int MaxNotes = 20;
+            messages.AddRange(pinNotes.Take(MaxNotes));
+            if (pinNotes.Count > MaxNotes)
+                messages.Add($"(+{pinNotes.Count - MaxNotes} more pin note(s).)");
+        }
 
         return new ImportResult(false, createdDirs, cellNameByStructure, layersToAdd, messages, topLevelCellDirs);
     }

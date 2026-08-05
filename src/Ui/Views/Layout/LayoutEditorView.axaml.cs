@@ -589,6 +589,28 @@ public partial class LayoutEditorView : UserControl
 
     // ── Change Technology (L1g Gap 1) — metadata-bar affordance ─────────────────────────────────
 
+    // ── Place a parametric cell (C2 — a kit's cells reachable from the application) ────────────────
+
+    private async void OnPlacePCell(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        // Listing may START a kit's interpreter (a script's own describe is the only source of its
+        // generator list), so it is done off the UI thread — a first listing after a workspace opens
+        // pays a process launch, and freezing the window for it would be the wrong trade.
+        var generators = await Task.Run(vm.PlaceablePCells);
+
+        var chosen = await PCellGeneratorPickerDialog.ShowAsync(owner, generators);
+        if (chosen is not { } pick) return;
+
+        // Generates the cell (or reuses the content-addressed one already on disk) and arms the
+        // ordinary instance-placement ghost — the user places it exactly like any other instance.
+        vm.BeginPCellPlacement(pick.Id, pick.Parameters);
+        LayoutCanvasCtrl.InvalidateVisual();
+    }
+
     // ── L3a — Instance-place tool (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md §6) ────────
 
     private async void OnInstanceTool(object? sender, RoutedEventArgs e)

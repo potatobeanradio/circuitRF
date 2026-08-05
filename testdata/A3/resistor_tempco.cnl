@@ -1,0 +1,11 @@
+; A3 - resistor temperature coefficients, at netlist level.
+;
+; A divider whose top resistor carries TC1/TC2 and whose bottom one does not, driven by a 1 V
+; source. The node voltage is then Rbot / (Rtop(T) + Rbot), which is a closed form the test
+; computes for itself - so the fixture proves the coefficients reached the stamp, not that two
+; copies of the same code agree.
+temp = 125
+
+Vdc:V1  in 0  Vdc=1
+R:Rtop  in mid  R=1000 TC1=5e-3 TC2=1e-6 Tnom=25
+R:Rbot  mid 0   R=1000

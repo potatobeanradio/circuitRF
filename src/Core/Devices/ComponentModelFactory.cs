@@ -32,7 +32,7 @@ public static class ComponentModelFactory
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone",
-            "NonlinearC", "Diode",
+            "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             "ExtDevice",
@@ -49,9 +49,16 @@ public static class ComponentModelFactory
     /// a function the netlist declared. Passing them here keeps the table tied to the netlist that
     /// declared it, so two designs open at once cannot see each other's functions.
     /// </param>
+    /// <param name="ambientC">
+    /// The design's ambient temperature in °C — what a device is evaluated at when it states no
+    /// temperature of its own. Defaults to <see cref="Temperature.NominalC"/>, so a caller that
+    /// does not supply one gets exactly the behaviour that predates ambient support: every device
+    /// sits at its own extraction point and every temperature relation collapses to the identity.
+    /// </param>
     public static ComponentModel? TryCreate(string typeName,
         IReadOnlyDictionary<string, Value> parameters,
-        IReadOnlyList<UserFunction>? functions = null)
+        IReadOnlyList<UserFunction>? functions = null,
+        double ambientC = Temperature.NominalC)
     {
         if (typeName.Equals("SnP",    StringComparison.OrdinalIgnoreCase))
             return CreateSnpModel(parameters);
@@ -73,9 +80,13 @@ public static class ComponentModelFactory
         if (typeName.Equals("NonlinearC", StringComparison.OrdinalIgnoreCase))
             return CreateNonlinearCModel(parameters);
         if (typeName.Equals("Diode", StringComparison.OrdinalIgnoreCase))
-            return CreateDiodeModel(parameters);
+            return CreateDiodeModel(parameters, ambientC);
+        if (typeName.Equals("R", StringComparison.OrdinalIgnoreCase))
+            return CreateResistorModel(parameters, ambientC);
+        if (typeName.Equals("SemiC", StringComparison.OrdinalIgnoreCase))
+            return CreateSemiCapacitorModel(parameters, ambientC);
         if (typeName.StartsWith("FET_", StringComparison.OrdinalIgnoreCase))
-            return CreateFetModel(typeName, parameters);
+            return CreateFetModel(typeName, parameters, ambientC);
         if (typeName.Equals("TLIN", StringComparison.OrdinalIgnoreCase))
             return CreateTLineModel(parameters);
         if (typeName.Equals("MLIN", StringComparison.OrdinalIgnoreCase))
@@ -92,6 +103,8 @@ public static class ComponentModelFactory
             return CreateMicrostripKlopfModel(parameters);
         if (typeName.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
             return CreateExternalDeviceModel(parameters);
+        if (typeName.Equals("VerilogA", StringComparison.OrdinalIgnoreCase))
+            return CreateVerilogAModel(parameters, ambientC);
         if (typeName.Equals("Chain", StringComparison.OrdinalIgnoreCase))
             return CreateChainModel(parameters, functions);
         return TryCreate(typeName);
@@ -170,6 +183,110 @@ public static class ComponentModelFactory
 
         return new ExternalDeviceModel(instance, providerName, label);
     }
+
+    // ── VerilogA — a compiled model the USER named, with no kit involved ──────
+
+    /// <summary>Names the compiled model file. A file picker in the parameter dialog fills it in.</summary>
+    public const string VerilogAFileParam = "File";
+
+    /// <summary>Selects one device type inside that file. Optional when the file declares exactly one.</summary>
+    public const string VerilogAModelParam = "Model";
+
+    /// <summary>
+    /// How many terminals the SYMBOL draws. circuitRF's own, not the model's: the schematic has to
+    /// know before anything has opened the file. Never forwarded — a model asked to accept a
+    /// parameter it never declared refuses, which would fail every device it serves.
+    /// </summary>
+    public const string VerilogAPinsParam = "Pins";
+
+    /// <summary>
+    /// A compiled compact model a user placed on a schematic and pointed at their own file.
+    ///
+    /// <para><b>The difference from <c>ExtDevice</c> is who supplies the model.</b> That one names a
+    /// PROVIDER — a kit that was installed, with a manifest saying which program evaluates its
+    /// devices. This one names a FILE, and there is no kit, no manifest and nothing to install: a
+    /// user compiles their own Verilog-A with their own compiler and places it. Everything below the
+    /// provider seam is identical, which is the point — an externally-supplied device is an ordinary
+    /// nonlinear component either way.</para>
+    ///
+    /// <para><b>Every parameter but the two selectors is forwarded verbatim</b>, matched against the
+    /// names the model's own descriptor declares. circuitRF interprets none of them: a compact model
+    /// has hundreds and they belong to its author.</para>
+    /// </summary>
+    private static ExternalDeviceModel CreateVerilogAModel(
+        IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        if (!parameters.TryGetValue(VerilogAFileParam, out var fv) ||
+            fv.Kind != ValueKind.String || fv.AsString().Trim().Length == 0)
+            throw new ExternalDeviceException(
+                "VerilogA: no model file. Set the component's 'File' parameter to a compiled model — " +
+                "circuitRF loads one you built, it does not compile Verilog-A itself.");
+
+        string modelFile   = fv.AsString().Trim();
+        string providerName = VerilogAFileResolver.ProviderNameFor(modelFile);
+        var    provider     = ExternalDeviceRegistry.Require(providerName);
+
+        var offered = provider.Describe();
+        if (offered.Count == 0)
+            throw new ExternalDeviceException(
+                $"VerilogA: '{modelFile}' declares no device type. It loaded, so it is a compiled " +
+                "model file, but there is nothing in it to place.");
+
+        // The type is optional when there is no ambiguity — a model file usually holds one device,
+        // and asking the user to name it as well as find it is a step that answers itself.
+        string typeId;
+        if (parameters.TryGetValue(VerilogAModelParam, out var tv) &&
+            tv.Kind == ValueKind.String && tv.AsString().Trim().Length > 0)
+        {
+            typeId = tv.AsString().Trim();
+            if (!offered.Any(d => string.Equals(d.TypeId, typeId, StringComparison.Ordinal)))
+                throw new ExternalDeviceException(
+                    $"VerilogA: '{modelFile}' has no device type '{typeId}'. It offers: " +
+                    $"{string.Join(", ", offered.Select(d => d.TypeId))}.");
+        }
+        else if (offered.Count == 1)
+        {
+            typeId = offered[0].TypeId;
+        }
+        else
+        {
+            throw new ExternalDeviceException(
+                $"VerilogA: '{modelFile}' declares {offered.Count} device types, so which one to " +
+                $"place has to be stated. Set 'Model' to one of: " +
+                $"{string.Join(", ", offered.Select(d => d.TypeId))}.");
+        }
+
+        var forwarded = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, val) in parameters)
+        {
+            // `__`-prefixed names are circuitRF's own plumbing and are not part of "everything
+            // else"; forwarding one asks the model to accept a name it never declared.
+            if (key.StartsWith(ExternalDeviceProviderReservedPrefix, StringComparison.Ordinal)) continue;
+            if (key.Equals(VerilogAFileParam,  StringComparison.OrdinalIgnoreCase) ||
+                key.Equals(VerilogAModelParam, StringComparison.OrdinalIgnoreCase) ||
+                key.Equals(VerilogAPinsParam,  StringComparison.OrdinalIgnoreCase)) continue;
+            // Temperature is not a model parameter — it rides as its own reserved field below.
+            if (key.Equals(Temperature.AbsoluteParamName, StringComparison.Ordinal) ||
+                key.Equals(Temperature.DeltaParamName,    StringComparison.Ordinal)) continue;
+
+            forwarded[key] = val.Kind == ValueKind.String
+                ? val.AsString()
+                : val.AsReal().ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        // The device's own temperature, in KELVIN, through the reserved key — the same one rule the
+        // diode and the FET family resolve through, so no two devices in one design can disagree.
+        forwarded[DeviceWorkerProvider.ReservedTemperatureKey] =
+            Temperature.ToKelvin(Temperature.ResolveDeviceC(parameters, ambientC))
+                       .ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+
+        string label = parameters.TryGetValue("__instanceLabel", out var lv) && lv.Kind == ValueKind.String
+                       ? lv.AsString() : typeId;
+
+        return new ExternalDeviceModel(provider.Create(typeId, forwarded), providerName, label);
+    }
+
+    private const string ExternalDeviceProviderReservedPrefix = DeviceWorkerProvider.ReservedPrefix;
 
     private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters)
     {
@@ -548,7 +665,7 @@ public static class ComponentModelFactory
     /// working device the user can then edit.
     /// </summary>
     private static ComponentModel? CreateFetModel(
-        string typeName, IReadOnlyDictionary<string, Value> parameters)
+        string typeName, IReadOnlyDictionary<string, Value> parameters, double ambientC)
     {
         double P(string name, double fallback) =>
             parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
@@ -560,12 +677,17 @@ public static class ComponentModelFactory
         // Temp and Tnom are both in DEGREES CELSIUS and both default to the same value, so a model
         // that states no temperature is evaluated exactly at its extraction point and every
         // temperature relation collapses to the identity — no silent shift from a unit mismatch.
+        //
+        // Temp/Dtemp resolve through the ONE shared rule (Temperature.ResolveDeviceC) so this family
+        // and the diode cannot answer the question differently. Tnom does NOT: it is the parameter
+        // set's own extraction temperature, a property of the model card rather than of the run, and
+        // ambient must never move it — doing so would cancel the very ΔT being asked for.
         double cgs = P("Cgs", 0.0), cgd = P("Cgd", 0.0);
         double isg = P("Is", 0.0), ng = P("N", 1.0);
         int    cap = (int)P("CapModel", 1.0);
         double vbi = P("Vbi", 1.0), mg = P("Mj", 0.5), fc = P("Fc", 0.5);
-        double tC  = P("Temp", Fet.FetModelBase.NominalTemperatureC);
-        double tnC = P("Tnom", Fet.FetModelBase.NominalTemperatureC);
+        double tC  = Temperature.ResolveDeviceC(parameters, ambientC);
+        double tnC = P("Tnom", Temperature.NominalC);
         double xti = P("Xti", 0.0), eg = P("Eg", 1.16);
 
         // Every call is by NAME. These constructors carry a dozen-plus optional parameters and only
@@ -626,7 +748,7 @@ public static class ComponentModelFactory
     /// supplier kit states only the ones that matter for its device and expects the rest to take
     /// their usual values — omitting Cj0 must give a diode with no junction capacitance, not an error.
     /// </summary>
-    private static DiodeModel CreateDiodeModel(IReadOnlyDictionary<string, Value> parameters)
+    private static DiodeModel CreateDiodeModel(IReadOnlyDictionary<string, Value> parameters, double ambientC)
     {
         double P(string name, double fallback) =>
             parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
@@ -646,9 +768,79 @@ public static class ComponentModelFactory
             // parameter table. The model itself takes kelvin because that is what kT/q wants;
             // the conversion belongs at this boundary, not in the user's parameter value. Two
             // components in the same palette must never read the same parameter name in
-            // different units.
-            temperatureK:        P("Temp", Fet.FetModelBase.NominalTemperatureC) + 273.15,
-            seriesResistance:    P("Rs",   0.0));
+            // different units. `Temp`/`Dtemp`/ambient resolve through the same shared rule the
+            // FET family uses, so the two cannot drift.
+            temperatureK:        Temperature.ToKelvin(Temperature.ResolveDeviceC(parameters, ambientC)),
+            seriesResistance:    P("Rs",   0.0),
+            // Recombination is off unless a card asks for it: Isr = 0 is the ordinary case, and a
+            // non-zero default would put a second exponential under every diode ever placed.
+            recombinationCurrent:  P("Isr", 0.0),
+            recombinationEmission: P("Nr",  2.0),
+            // Nbv defaults to the PUBLISHED 1, not to N. Before this parameter existed the
+            // breakdown branch reused N, which made the reverse knee follow the forward ideality —
+            // nothing physical requires that, and no parameter table states it.
+            breakdownEmission:     P("Nbv", 1.0),
+            area:                  P("Area", 1.0),
+            // Tnom is the CARD's extraction temperature, and ambient must never move it. Every
+            // temperature relation is written in T − Tnom, so moving both together makes ΔT zero at
+            // every ambient while the device still looks temperature-aware.
+            nominalTemperatureK:   Temperature.ToKelvin(P("Tnom", Temperature.NominalC)),
+            saturationTempExponent: P("Xti", 3.0),
+            bandgapAtZeroK:        P("Eg",  Temperature.SiliconBandgapEv));
+    }
+
+    // ── R (temperature coefficients) ──────────────────────────────────────────
+
+    /// <summary>
+    /// A resistor with temperature coefficients. <c>TC1</c>/<c>TC2</c> absent gives a factor of
+    /// EXACTLY 1 and therefore the resistor circuitRF has always had — the whole of this path is
+    /// additive, and the parameterless <c>TryCreate("R")</c> still returns exactly that.
+    /// </summary>
+    private static ResistorModel CreateResistorModel(
+        IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        double tc1 = P("TC1", 0.0), tc2 = P("TC2", 0.0);
+        if (tc1 == 0.0 && tc2 == 0.0) return new ResistorModel();
+
+        // Tnom is the value's own extraction temperature; ambient must never move it. Temp/Dtemp go
+        // through the ONE shared rule so a resistor and a diode in one design cannot disagree about
+        // what temperature they are at.
+        double dT = Temperature.DeltaT(
+            Temperature.ResolveDeviceC(parameters, ambientC), P("Tnom", Temperature.NominalC));
+
+        return new ResistorModel(Temperature.PolynomialScale(tc1, tc2, dT));
+    }
+
+    // ── SemiC (a capacitor whose value comes from process and geometry) ───────
+
+    /// <summary>
+    /// The area and perimeter components are BOTH optional and add: a capacitor stated only by
+    /// <c>C</c> is an ordinary one, and one stated by <c>Cj</c>/<c>Cjsw</c> gets its value from the
+    /// process. Giving both is legitimate — a fixed parasitic beside a geometric term.
+    /// </summary>
+    private static SemiCapacitorModel CreateSemiCapacitorModel(
+        IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        double w = P("W", 0.0), l = P("L", 0.0);
+
+        return new SemiCapacitorModel(
+            fixedCapacitance:     P("C", 0.0),
+            areaCapacitance:      P("Cj",   0.0),
+            perimeterCapacitance: P("Cjsw", 0.0),
+            // Width and length give the area and perimeter of a rectangle, which is what a card's
+            // Cj/Cjsw are stated per. Either may be given directly instead, for a shape that is not
+            // one — the explicit value wins, because it is the more specific statement.
+            area:      parameters.ContainsKey("Area")  ? P("Area",  0.0) : w * l,
+            perimeter: parameters.ContainsKey("Perim") ? P("Perim", 0.0) : 2.0 * (w + l),
+            tc1: P("TC1", 0.0), tc2: P("TC2", 0.0),
+            deltaT: Temperature.DeltaT(
+                Temperature.ResolveDeviceC(parameters, ambientC), P("Tnom", Temperature.NominalC)));
     }
 
     // ── NonlinearC ────────────────────────────────────────────────────────────

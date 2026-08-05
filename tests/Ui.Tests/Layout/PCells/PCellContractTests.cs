@@ -15,7 +15,7 @@ public class PCellContractTests
     [Fact]
     public void Mlin_Generate_ReturnsShapesAndTwoPins()
     {
-        var result = MlinPCell.Generate(new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 },
+        var result = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 },
             Pcb, PCellLayerSelection.Default);
 
         Assert.NotEmpty(result.Shapes);
@@ -29,7 +29,7 @@ public class PCellContractTests
     public void MTee_Generate_ReturnsThreePins_UnionedIntoOneOutline()
     {
         var result = MTeePCell.Generate(
-            new Dictionary<string, double> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 },
+            new Dictionary<string, PCellValue> { ["W1"] = 0.0029, ["W2"] = 0.0015, ["W3"] = 0.0029 },
             Pcb, PCellLayerSelection.Default);
 
         Assert.Equal(3, result.Pins.Count);
@@ -41,7 +41,7 @@ public class PCellContractTests
     public void MCross_Generate_ReturnsFourPins_UnionedIntoOneOutline()
     {
         var result = MCrossPCell.Generate(
-            new Dictionary<string, double> { ["W1"] = 0.0029, ["W2"] = 0.0029, ["W3"] = 0.0029, ["W4"] = 0.0029 },
+            new Dictionary<string, PCellValue> { ["W1"] = 0.0029, ["W2"] = 0.0029, ["W3"] = 0.0029, ["W4"] = 0.0029 },
             Pcb, PCellLayerSelection.Default);
 
         Assert.Equal(4, result.Pins.Count);
@@ -53,7 +53,7 @@ public class PCellContractTests
     [Fact]
     public void Mlin_Pin1_IsAtOrigin()
     {
-        var result = MlinPCell.Generate(new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 },
+        var result = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 },
             Pcb, PCellLayerSelection.Default);
         Assert.Equal(0, result.Pins[0].X);
         Assert.Equal(0, result.Pins[0].Y);
@@ -62,9 +62,9 @@ public class PCellContractTests
     [Fact]
     public void TwoMlins_AbutExactly_WhenSecondPlacedAtFirstsPin2Location()
     {
-        var a = MlinPCell.Generate(new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 },
+        var a = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 },
             Pcb, PCellLayerSelection.Default);
-        var b = MlinPCell.Generate(new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.005 },
+        var b = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.005 },
             Pcb, PCellLayerSelection.Default);
 
         // Place b's origin (its own pin 1) at a's pin 2 world location (pure translation, no rotation).
@@ -82,7 +82,7 @@ public class PCellContractTests
     [Fact]
     public void Mlin_Generate_100Times_ByteIdenticalOutput()
     {
-        var parameters = new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 };
+        var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 };
         var first = MlinPCell.Generate(parameters, Pcb, PCellLayerSelection.Default);
 
         for (int i = 0; i < 100; i++)
@@ -101,7 +101,7 @@ public class PCellContractTests
     [Fact]
     public void Mlin_Generate_SurvivesSerializeReloadOfTechnology_ByteIdentical()
     {
-        var parameters = new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 };
+        var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 };
         var first = MlinPCell.Generate(parameters, Pcb, PCellLayerSelection.Default);
 
         var reloaded = TechPersistence.Deserialize(TechPersistence.Serialize(Pcb));
@@ -137,9 +137,9 @@ public class PCellContractTests
     {
         // Structural: every generator computes W (or W1..W4) via PCellUnits.MetresToDbu, so a
         // shared 2.9mm input produces the same 2,900,000 DBU pin width across all four.
-        var mlin = MlinPCell.Generate(new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 },
+        var mlin = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 },
             Pcb, PCellLayerSelection.Default);
-        var bend = MBendPCell.Generate(new Dictionary<string, double> { ["W"] = 0.0029, ["Angle"] = 90.0, ["Mitered"] = 0.0 },
+        var bend = MBendPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["Angle"] = 90.0, ["Mitered"] = 0.0 },
             Pcb, PCellLayerSelection.Default);
         Assert.Equal(2_900_000, mlin.Pins[0].WidthDbu);
         Assert.Equal(2_900_000, bend.Pins[0].WidthDbu);
@@ -150,7 +150,7 @@ public class PCellContractTests
     [Fact]
     public void Mlin_Generate_WithNoTechnology_StillProducesGeometry()
     {
-        var result = MlinPCell.Generate(new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 },
+        var result = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 },
             null, PCellLayerSelection.Default);
         Assert.NotEmpty(result.Shapes);
         Assert.Equal(2, result.Pins.Count);

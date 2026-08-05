@@ -10,12 +10,12 @@ public static class MlinPCell
     public const string GeneratorId = "MLIN";
 
     public static PCellResult Generate(
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         PCellLayerSelection layerSelection)
     {
-        double wMeters = parameters.GetValueOrDefault("W", 0.0);
-        double lMeters = parameters.GetValueOrDefault("L", 0.0);
+        double wMeters = parameters.Real("W", 0.0);
+        double lMeters = parameters.Real("L", 0.0);
 
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
         long w = PCellUnits.MetresToDbu(wMeters, dbuPerMicron);

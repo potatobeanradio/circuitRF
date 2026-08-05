@@ -126,6 +126,25 @@ public sealed class CwsFile
     public string? DefaultTechRef { get; set; }
 
     /// <summary>
+    /// The Python interpreter this workspace settled on for PCell generator scripts — the command,
+    /// with any prefix arguments after it (e.g. <c>py.exe -3</c>).
+    ///
+    /// <para><b>An automatically-made decision, recorded so it is visible and one line to
+    /// correct.</b> Discovery probes candidates by RUNNING each one, which costs a process launch
+    /// apiece; the answer does not change between sessions, so it is replayed rather than
+    /// re-derived — the same bargain a kit's own settings already strike, where the measured
+    /// difference was 0.5 ms against 199.8 ms. A recorded interpreter that no longer works is
+    /// re-derived and re-recorded rather than treated as fatal: an interpreter can be upgraded or
+    /// removed between sessions, and the workspace should heal rather than need the user to know
+    /// that is what happened.</para>
+    ///
+    /// <para>Null means "not settled yet". No <c>FormatVersion</c> bump — an absent field on an
+    /// older <c>.cws</c> loads as null and discovery simply runs.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PythonInterpreter { get; set; }
+
+    /// <summary>
     /// PDKs this workspace references. An import writes nothing into the workspace — a kit's
     /// translated symbols and parameter interfaces are the vendor's content and are rebuilt in
     /// memory on open (docs/design/pdk-import.md). Null or empty means no kits.

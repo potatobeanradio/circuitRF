@@ -69,6 +69,7 @@
                                     <NativeMenuItem Header="GDSII…" Command="{Binding ImportGdsiiLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -139,6 +140,8 @@
                     <NativeMenu>
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Reload Generated Artwork"       Command="{Binding ReloadPCellGeneratorsCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -341,6 +344,9 @@
                     <MenuItem Header="_PDK…"
                               Command="{Binding ImportPdkCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>
+                    <MenuItem Header="_Technology…"
+                              Command="{Binding ImportTechnologyCommand}"
+                              CommandParameter="{Binding $parent[Window]}"/>
                 </MenuItem>
                 <MenuItem Header="_Export">
                     <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>
@@ -489,6 +495,12 @@
                           InputGesture="Ctrl+Shift+U"
                           ToolTip.Tip="Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Reload Generated Artwork"
+                          Command="{Binding ReloadPCellGeneratorsCommand}"
+                          ToolTip.Tip="Re-reads this workspace's PCell generator scripts and rebuilds the cells they draw. Requires an open workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

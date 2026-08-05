@@ -61,6 +61,10 @@ public sealed class Elaborator
         var netlist     = new ElaboratedNetlist();
         var globalScope = BuildGlobalScope(tb);
 
+        // Ambient must be known BEFORE flattening: models are constructed during the walk, and a
+        // temperature-aware one bakes its temperature in at construction.
+        _ambientC = ResolveAmbient(tb, globalScope, netlist);
+
         // The TestBench's instance list IS the root frame — no TopCell lookup.
         FlattenInstances(
             tb.Instances,
@@ -104,6 +108,64 @@ public sealed class Elaborator
     }
 
     // ── Scope helpers ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The design's ambient temperature in °C for this elaboration. Set once, before flattening.
+    /// <see cref="Temperature.NominalC"/> when the design says nothing — which is what makes ambient
+    /// support additive: a netlist with no <c>temp</c> global elaborates to exactly what it did
+    /// before ambient existed.
+    /// </summary>
+    private double _ambientC = Temperature.NominalC;
+
+    /// <summary>
+    /// Reads the ambient temperature out of the global variable named <c>temp</c> (°C).
+    ///
+    /// <para><b>Why a global rather than a directive.</b> Globals already round-trip through
+    /// <c>.cnl</c>, already resolve through the ordinary expression machinery, and are already
+    /// overridden per point by <c>ParametricSweepEngine</c> — which re-elaborates every point, so a
+    /// temperature sweep needs no new mechanism at all. A directive would be a format change for a
+    /// capability the format already has.</para>
+    ///
+    /// <para><b>It is reported, because it was not asked for explicitly.</b> A design that happens
+    /// to use <c>temp</c> for something else would otherwise have its meaning silently changed. The
+    /// note fires only when the global exists, so an ordinary design says nothing.</para>
+    /// </summary>
+    private double ResolveAmbient(TestBench tb, Scope globalScope, ElaboratedNetlist netlist)
+    {
+        if (!tb.GlobalVariables.Any(v =>
+                string.Equals(v.Name, Temperature.AmbientGlobalName, StringComparison.OrdinalIgnoreCase)))
+            return Temperature.NominalC;
+
+        Value val;
+        try
+        {
+            val = _evaluator.Resolve(Temperature.AmbientGlobalName, globalScope);
+        }
+        catch (Exception ex)
+        {
+            // An unresolvable temp is reported and ignored rather than failing the elaboration: the
+            // rest of the design is perfectly simulable at the nominal, and refusing to elaborate
+            // would hide every other problem behind this one.
+            netlist.AddWarningOnce("ambient-temperature-unresolved",
+                $"Global '{Temperature.AmbientGlobalName}' could not be resolved ({ex.Message}); " +
+                $"using the nominal {Temperature.NominalC:0.##} °C as the ambient temperature.");
+            return Temperature.NominalC;
+        }
+
+        if (val.Kind != ValueKind.Real)
+        {
+            netlist.AddWarningOnce("ambient-temperature-not-real",
+                $"Global '{Temperature.AmbientGlobalName}' is not a real number, so it is not being " +
+                $"read as an ambient temperature; using the nominal {Temperature.NominalC:0.##} °C.");
+            return Temperature.NominalC;
+        }
+
+        double ambientC = val.AsReal();
+        netlist.AddWarningOnce("ambient-temperature",
+            $"Ambient temperature {ambientC:0.##} °C, from the global '{Temperature.AmbientGlobalName}'. " +
+            "Devices stating no temperature of their own are evaluated there.");
+        return ambientC;
+    }
 
     private Scope BuildGlobalScope(TestBench tb)
     {
@@ -238,7 +300,16 @@ public sealed class Elaborator
                 // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).
                 var resolvedNodes  = inst.NetBindings.Select(n => netlist.Nodes.GetOrAssign(ResolveNet(n))).ToArray();
                 var resolvedParams = ResolveParameters(inst, currentScope);
-                var model          = ComponentModelFactory.TryCreate(inst.Reference, resolvedParams, _functions)
+                // Temp wins over Dtemp (Temperature.ResolveDeviceC), but the two together cannot
+                // both be what the author meant — so the discard is reported rather than silent.
+                if (Temperature.HasContradictoryOverride(resolvedParams))
+                    netlist.AddWarningOnce($"temp-and-dtemp:{childPath}",
+                        $"'{childPath}' states both {Temperature.AbsoluteParamName} (absolute) and " +
+                        $"{Temperature.DeltaParamName} (a rise above ambient). " +
+                        $"{Temperature.AbsoluteParamName} is used and " +
+                        $"{Temperature.DeltaParamName} is ignored.");
+
+                var model          = ComponentModelFactory.TryCreate(inst.Reference, resolvedParams, _functions, _ambientC)
                                      ?? throw new InvalidOperationException(
                                          $"Failed to create model for primitive '{inst.Reference}' at '{childPath}'");
 
@@ -315,7 +386,7 @@ public sealed class Elaborator
                         $"use a Pin for cell interfaces and place Terms only in the testbench.");
 
                 var ec = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model)
-                         { ReferenceNode = refNode };
+                         { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath) };
                 netlist.AddComponent(ec);
             }
             else
@@ -360,7 +431,11 @@ public sealed class Elaborator
             return ResolvePnToneParameters(inst, parentScope);
         if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
             return ResolveSnpParameters(inst, parentScope);
-        if (inst.Reference.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
+        // Both name a device somebody else supplies, so both need the same rule: most of their
+        // parameters belong to that model and must NOT be expression-evaluated. VerilogA's `File` is
+        // the sharpest case — a leading '/' alone crashes the expression parser at position 0.
+        if (inst.Reference.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase) ||
+            inst.Reference.Equals("VerilogA",  StringComparison.OrdinalIgnoreCase))
             return ResolveExtDeviceParameters(inst, parentScope);
         if (inst.Reference.Equals("Chain", StringComparison.OrdinalIgnoreCase))
             return ResolveChainParameters(inst, parentScope);
@@ -421,6 +496,39 @@ public sealed class Elaborator
         return result;
     }
 
+    // ── device multiplier ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The netlist's <c>m</c> — how many identical copies of a component are in parallel.
+    ///
+    /// <para><b>Lower-case <c>m</c>, and the case matters.</b> Upper-case <c>M</c> is the junction
+    /// diode's grading coefficient, on a component that can carry both, and the two mean nothing
+    /// like each other. Resolved parameters are compared ordinally so the two are genuinely
+    /// different keys — but the collision is a real one, and a diode reading its grading coefficient
+    /// as a device count would produce a circuit with 0.5 diodes in it and simulate perfectly.</para>
+    ///
+    /// <para><b>Zero or negative is refused rather than obeyed.</b> Some dialects read <c>m = 0</c>
+    /// as "this device is not there". Deleting a component the user placed, in silence, is a worse
+    /// answer than saying the value cannot be used.</para>
+    /// </summary>
+    private static double ResolveMultiplicity(IReadOnlyDictionary<string, Value> parameters, string path)
+    {
+        if (!parameters.TryGetValue(MultiplierParamName, out var v) || v.Kind != ValueKind.Real)
+            return 1.0;
+
+        double m = v.AsReal();
+        if (m <= 0.0 || !double.IsFinite(m))
+            throw new InvalidOperationException(
+                $"'{path}' states a device multiplier {MultiplierParamName}={m:G6}. It is the number " +
+                "of identical copies in parallel and must be greater than zero — a device that is " +
+                "not there is expressed by removing it, not by multiplying it away.");
+
+        return m;
+    }
+
+    /// <summary>The instance parameter naming how many copies of a component are in parallel.</summary>
+    public const string MultiplierParamName = "m";
+
     // ── ExtDevice node allocation ─────────────────────────────────────────────
 
     /// <summary>
@@ -441,21 +549,39 @@ public sealed class Elaborator
         var nodeIndex = new int[d.NodeCount];
         for (int k = 0; k < d.ExternalPinCount; k++) nodeIndex[k] = declaredNets[k];
 
-        // Internal nodes first, so a slaved node can point at one of them regardless of order.
-        //
-        // A SLAVED NODE IS NEVER MINTED. It takes its master's index below, so minting one first
-        // leaves an unknown in the system that nothing then references — an all-zero row AND column,
-        // which is the definition of a singular matrix. DC hides it (gmin holds the orphan at 0 and
-        // nothing reads it), so it surfaces only in the S-parameter assembly, as a singularity
-        // report naming nodes the user cannot find in their schematic because they do not exist in
-        // it. Masters are never themselves slaved — chains are rejected below — so every master is
-        // minted by this loop or is an external pin.
-        for (int k = d.ExternalPinCount; k < d.NodeCount; k++)
+
+        // An EXTERNAL pin collapsed to ground is refused rather than interpreted. The user wired a
+        // net to it, and circuitRF's two available readings are both wrong: give the pin node 0 and
+        // the user's net is silently left floating instead of shorted; leave it alone and the
+        // device is solving a node the model says does not exist. Neither shows on screen, so the
+        // provider is told to stop offering the pin instead.
+        foreach (var node in d.Nodes)
         {
-            if (d.Nodes.FirstOrDefault(n => n.Index == k)?.SlavedTo is not null) continue;
-            nodeIndex[k] = netlist.Nodes.GetOrAssign($"__extdev_{childPath}_n{k}");
+            if (!node.CollapsedToGround) continue;
+            if (node.SlavedTo is not null)
+                throw new ExternalDeviceException(
+                    $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is reported both " +
+                    $"as grounded and as slaved to node {node.SlavedTo} — it cannot be both.");
+            if (node.Index < d.ExternalPinCount)
+                throw new ExternalDeviceException(
+                    $"ExtDevice '{childPath}' (type '{d.TypeId}'): external pin {node.Index} is reported " +
+                    $"as collapsed to ground, but a pin the user wires cannot be grounded from inside " +
+                    $"the device. The provider should not offer it as a pin under these parameters.");
         }
 
+        // Collapsed nodes are merged in GROUPS, and within a group AN EXTERNAL PIN ALWAYS WINS.
+        //
+        // A real compact model collapses a terminal onto the internal node behind it — a MOSFET's
+        // drain onto its internal drain, its bulk and three internal bulk nodes onto one. Reading
+        // "node A follows node B" literally there gives the terminal the INTERNAL node's index, and
+        // the net the user wired to that pin is dropped: the device solves happily, entirely
+        // disconnected from the circuit around it. Nothing on screen says so.
+        //
+        // Two passes, because one master may have several slaves and only one of them external —
+        // measured on a real model, four nodes collapse onto one internal bulk node and the fourth
+        // is the bulk TERMINAL. Assigning as they are encountered would copy the internal index into
+        // the first three before the terminal is reached.
+        var groupOf = new Dictionary<int, List<int>>();
         foreach (var node in d.Nodes)
         {
             if (node.SlavedTo is not int master) continue;
@@ -467,7 +593,55 @@ public sealed class Elaborator
                 throw new ExternalDeviceException(
                     $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is slaved to " +
                     $"node {master}, which is itself slaved — chains are not supported.");
-            nodeIndex[node.Index] = nodeIndex[master];
+
+            if (!groupOf.TryGetValue(master, out var members))
+                groupOf[master] = members = [master];
+            members.Add(node.Index);
+        }
+
+        // The index each group settles on, decided BEFORE any node is minted. An internal master
+        // whose group contains a terminal must not be minted at all: minting it and then overwriting
+        // it leaves an unknown in the system that nothing references — an all-zero row AND column,
+        // which is the definition of a singular matrix. DC hides that completely (gmin holds the
+        // orphan at zero and no equation reads it), so it surfaces only in the S-parameter assembly,
+        // as a singularity report naming nodes the user cannot find anywhere in their schematic.
+        var settled = new Dictionary<int, int>();
+        foreach (var (master, members) in groupOf)
+        {
+            var externals = members.Where(m => m < d.ExternalPinCount).ToList();
+
+            // Two terminals collapsed together means the device shorts two of the user's nets. That
+            // is a real statement, and circuitRF cannot carry it: stamping at one net silently drops
+            // the other. Refused rather than half-applied.
+            if (externals.Count > 1 && externals.Select(e => nodeIndex[e]).Distinct().Count() > 1)
+                throw new ExternalDeviceException(
+                    $"ExtDevice '{childPath}' (type '{d.TypeId}'): pins " +
+                    $"{string.Join(", ", externals)} are collapsed onto one another, which shorts the " +
+                    "nets wired to them. Join those nets in the schematic instead.");
+
+            if (externals.Count > 0) settled[master] = nodeIndex[externals[0]];
+        }
+
+        // Now mint, for internal nodes that genuinely still need an unknown of their own.
+        for (int k = d.ExternalPinCount; k < d.NodeCount; k++)
+        {
+            var declared = d.Nodes.FirstOrDefault(n => n.Index == k);
+            if (declared?.SlavedTo is not null) continue;      // takes its group's index below
+            if (settled.ContainsKey(k)) continue;              // absorbed into a terminal's net
+
+            // A node the provider collapsed onto the ground reference IS ground — it takes node 0
+            // rather than an unknown of its own, for the same reason a slaved node takes its
+            // master's. This is the shape a model reports for, say, a thermal node when
+            // self-heating is switched off: the whole thermal network vanishes and the node with it.
+            if (declared?.CollapsedToGround == true) { nodeIndex[k] = 0; continue; }
+
+            nodeIndex[k] = netlist.Nodes.GetOrAssign($"__extdev_{childPath}_n{k}");
+        }
+
+        foreach (var (master, members) in groupOf)
+        {
+            int representative = settled.TryGetValue(master, out int external) ? external : nodeIndex[master];
+            foreach (int m in members) nodeIndex[m] = representative;
         }
 
         // Ground-referenced pairs: [n0, 0, n1, 0, ...].
@@ -496,8 +670,14 @@ public sealed class Elaborator
 
         foreach (var ov in inst.Overrides)
         {
+            // The selectors are ALWAYS verbatim, never tried as an expression first. Provider and
+            // Type name things; File is a path and Model is a name inside it. Falling back to
+            // verbatim only when evaluation throws is not enough for these: a path that happens to
+            // parse as arithmetic would be silently turned into a number.
             if (ov.Name.Equals("Provider", StringComparison.OrdinalIgnoreCase) ||
-                ov.Name.Equals("Type",     StringComparison.OrdinalIgnoreCase))
+                ov.Name.Equals("Type",     StringComparison.OrdinalIgnoreCase) ||
+                ov.Name.Equals(Devices.ComponentModelFactory.VerilogAFileParam,  StringComparison.OrdinalIgnoreCase) ||
+                ov.Name.Equals(Devices.ComponentModelFactory.VerilogAModelParam, StringComparison.OrdinalIgnoreCase))
             {
                 result[ov.Name] = new Value(ov.Expression.Trim().Trim('"'));
                 continue;

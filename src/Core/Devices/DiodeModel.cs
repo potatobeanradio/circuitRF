@@ -11,12 +11,33 @@ namespace CircuitRF.Core.Devices;
 /// device-modelling text states, and the parameter names are the conventional ones.</para>
 ///
 /// <code>
-///   I(V)  =  Is · (exp(V / (N·Vt)) − 1)                        forward / reverse
-///         =  −Ibv · exp(−(Bv + V) / (N·Vt))                    below −Bv, when Bv > 0
+///   I(V)  =  Is · (exp(V / (N·Vt))  − 1)                       diffusion
+///         +  Isr· (exp(V / (Nr·Vt)) − 1)                       recombination
+///         =  −Ibv · exp(−(Bv + V) / (Nbv·Vt))                  below −Bv, when Bv > 0
 ///   Qj(V) =  Cj0·Vj/(1−M) · (1 − (1 − V/Vj)^(1−M))             V ≤ Fc·Vj   (depletion)
 ///   Qd(V) =  Tt · I(V)                                          (diffusion)
 ///   Vt    =  k·T/q
 /// </code>
+///
+/// <para><b>Recombination is a SECOND exponential, not a correction to the first.</b> It has its own
+/// saturation current and its own emission coefficient — conventionally near 2 where the diffusion
+/// term's is near 1 — which is exactly why it dominates at low bias and is invisible at high bias.
+/// Folding it into <c>Is</c> would fit one decade of the I-V curve and miss the rest.</para>
+///
+/// <para><b>Breakdown has its own emission coefficient too.</b> It is a different mechanism from
+/// forward conduction and does not share <c>N</c>; <c>Nbv</c> defaults to 1, which is the published
+/// default. Reusing <c>N</c> there — as this model did before the parameter existed — makes the
+/// reverse knee follow the forward ideality, which nothing physical requires.</para>
+///
+/// <para><b>Area is geometry and is applied BEFORE temperature.</b> It scales the currents and the
+/// capacitance up and the series resistance down, all by construction of what "m² of the same
+/// junction" means. The order matters only for readability here, since the two are independent
+/// multipliers — but stating it keeps the next parameter from being added in the wrong place.</para>
+///
+/// <para><b>The junction temperature relations are SHARED with the FET family</b>
+/// (<see cref="Temperature"/>), not written twice: same physics, same question, one answer. With
+/// <c>Temp == Tnom</c> every one of them collapses to the identity, so a diode that states no
+/// temperature is bit-identical to one with no temperature model at all.</para>
 ///
 /// <para><b>Series resistance is INSIDE the model, on a real internal node</b> — placing a separate
 /// resistor beside every diode is not required and would not scale to a part built from many of
@@ -44,6 +65,7 @@ public sealed class DiodeModel : ComponentModel
     private const double ExpArgLimit = 40.0;
 
     private readonly double _is, _n, _cj0, _vj, _m, _fc, _bv, _ibv, _tt, _gmin, _vt, _rs;
+    private readonly double _isr, _nr, _nbv;
 
     /// <param name="temperatureK">
     /// Junction temperature in KELVIN; sets Vt = kT/q. Defaults to the SAME nominal the FET family
@@ -57,33 +79,75 @@ public sealed class DiodeModel : ComponentModel
     /// for continuity, so a device that added its own would double it at exactly the nodes where it
     /// matters. Non-zero here is for a caller that has a specific reason.
     /// </param>
+    /// <param name="nominalTemperatureK">
+    /// The temperature this parameter set was EXTRACTED at, in kelvin — a property of the model card,
+    /// never of the run. Ambient must not move it: move both together and ΔT is zero at every
+    /// temperature, every relation collapses to the identity, and the device still looks
+    /// temperature-aware.
+    /// </param>
+    /// <param name="area">
+    /// Junction area, as a multiple of the area the parameters were extracted for. Dimensionless by
+    /// convention — the parameters are per unit of whatever the card's own unit is, and circuitRF
+    /// does not need to know which.
+    /// </param>
     public DiodeModel(
-        double saturationCurrent   = 1e-14,
-        double emissionCoefficient = 1.0,
-        double zeroBiasCapacitance = 0.0,
-        double junctionPotential   = 1.0,
-        double gradingCoefficient  = 0.5,
-        double forwardBiasCapCoeff = 0.5,
-        double breakdownVoltage    = 0.0,
-        double breakdownCurrent    = 1e-3,
-        double transitTime         = 0.0,
-        double minimumConductance  = 0.0,
-        double temperatureK        = Fet.FetModelBase.NominalTemperatureC + 273.15,
-        double seriesResistance    = 0.0)
+        double saturationCurrent      = 1e-14,
+        double emissionCoefficient    = 1.0,
+        double zeroBiasCapacitance    = 0.0,
+        double junctionPotential      = 1.0,
+        double gradingCoefficient     = 0.5,
+        double forwardBiasCapCoeff    = 0.5,
+        double breakdownVoltage       = 0.0,
+        double breakdownCurrent       = 1e-3,
+        double transitTime            = 0.0,
+        double minimumConductance     = 0.0,
+        double temperatureK           = Temperature.NominalK,
+        double seriesResistance       = 0.0,
+        double recombinationCurrent   = 0.0,
+        double recombinationEmission  = 2.0,
+        double breakdownEmission      = 1.0,
+        double area                   = 1.0,
+        double nominalTemperatureK    = Temperature.NominalK,
+        double saturationTempExponent = 3.0,
+        double bandgapAtZeroK         = Temperature.SiliconBandgapEv)
     {
-        _is   = saturationCurrent;
-        _n    = emissionCoefficient > 0 ? emissionCoefficient : 1.0;
-        _cj0  = zeroBiasCapacitance;
-        _vj   = junctionPotential > 0 ? junctionPotential : 1.0;
-        _m    = gradingCoefficient;
+        double a = area > 0 ? area : 1.0;
+
+        double tK  = temperatureK        > 0 ? temperatureK        : Temperature.NominalK;
+        double tnK = nominalTemperatureK > 0 ? nominalTemperatureK : Temperature.NominalK;
+        double tempC = Temperature.ToCelsius(tK), tnomC = Temperature.ToCelsius(tnK);
+        double dT    = tK - tnK;                       // scale-free: the same number in K or °C
+
+        _n    = emissionCoefficient   > 0 ? emissionCoefficient   : 1.0;
+        _nr   = recombinationEmission > 0 ? recombinationEmission : 2.0;
+        _nbv  = breakdownEmission     > 0 ? breakdownEmission     : 1.0;
+
+        // Geometry, then physics. Both are plain multipliers, so the order is presentational — but
+        // the temperature relations are written in terms of the CARD's parameters, and reading them
+        // as though they applied to an area-scaled value is the mistake this ordering forecloses.
+        _is  = saturationCurrent    * a * Temperature.SaturationCurrentScale(tempC, tnomC, _n,  saturationTempExponent, bandgapAtZeroK);
+        _isr = recombinationCurrent * a * Temperature.SaturationCurrentScale(tempC, tnomC, _nr, saturationTempExponent, bandgapAtZeroK);
+        _ibv = breakdownCurrent     * a;
+
+        double vj0 = junctionPotential > 0 ? junctionPotential : 1.0;
+        double vjT = Temperature.JunctionPotentialAt(vj0, tempC, tnomC, bandgapAtZeroK);
+        // A junction potential driven to or past zero says nothing physical — it is the relation
+        // leaving its range, not the device. Fall back to the card's own value BEFORE it is used,
+        // so the capacitance scale is not computed from it either.
+        if (vjT <= 0) vjT = vj0;
+
+        _vj  = vjT;
+        _m   = gradingCoefficient;
+        _cj0 = zeroBiasCapacitance * a * Temperature.DepletionCapacitanceScale(vj0, vjT, _m, dT);
+
         // Fc must stay below 1 or the depletion expression divides by zero at the changeover.
         _fc   = forwardBiasCapCoeff is > 0 and < 0.95 ? forwardBiasCapCoeff : 0.5;
         _bv   = breakdownVoltage;
-        _ibv  = breakdownCurrent;
         _tt   = transitTime;
         _gmin = minimumConductance;
-        _vt   = Boltzmann * (temperatureK > 0 ? temperatureK : 300.0) / ElemCharge;
-        _rs   = seriesResistance > 0 ? seriesResistance : 0.0;
+        _vt   = Temperature.ThermalVoltage(tK);
+        // m junctions in parallel each carry their own series resistance, so the pair is in parallel.
+        _rs   = seriesResistance > 0 ? seriesResistance / a : 0.0;
     }
 
     /// <summary>True when Rs is modelled, which is what puts the extra node and port in play.</summary>
@@ -97,35 +161,53 @@ public sealed class DiodeModel : ComponentModel
     public override string[] TerminalNames =>
         _rs > 0 ? ["anode", "internal", "internal", "cathode"] : ["anode", "cathode"];
 
-    /// <summary>Conduction current and its derivative. Both are returned because every caller wants both.</summary>
-    private (double I, double G) Conduction(double v)
+    /// <summary>
+    /// One saturation-current exponential and its derivative, continued by its TANGENT above the
+    /// argument limit — value and slope both stay continuous, which is what keeps Newton convergent.
+    /// A clamp keeps the value finite and puts a kink in the Jacobian, which stalls the solve in a
+    /// way that looks like a bad circuit.
+    /// </summary>
+    private static (double I, double G) Exponential(double v, double isat, double vte)
     {
-        double vte = _n * _vt;
-
-        // Reverse breakdown. Only when Bv is given: Bv = 0 means "not modelled", not "breaks down at 0 V".
-        if (_bv > 0 && v < -_bv)
-        {
-            double a  = -(_bv + v) / vte;                    // ≥ 0 and growing as v goes more negative
-            double e  = System.Math.Exp(System.Math.Min(a, ExpArgLimit));
-            double i  = -_ibv * e;
-            double g  = _ibv * e / vte;
-            // Beyond the limit the exponential is frozen, so its slope is too — continue linearly.
-            if (a > ExpArgLimit) i -= g * (a - ExpArgLimit) * vte;
-            return (i + _gmin * v, g + _gmin);
-        }
+        if (isat <= 0) return (0.0, 0.0);
 
         double x = v / vte;
         if (x > ExpArgLimit)
         {
-            // Tangent continuation: value and slope both match at the changeover.
             double eL = System.Math.Exp(ExpArgLimit);
-            double iL = _is * (eL - 1.0);
-            double gL = _is * eL / vte;
-            return (iL + gL * (v - ExpArgLimit * vte) + _gmin * v, gL + _gmin);
+            double iL = isat * (eL - 1.0);
+            double gL = isat * eL / vte;
+            return (iL + gL * (v - ExpArgLimit * vte), gL);
         }
 
         double ex = System.Math.Exp(x);
-        return (_is * (ex - 1.0) + _gmin * v, _is * ex / vte + _gmin);
+        return (isat * (ex - 1.0), isat * ex / vte);
+    }
+
+    /// <summary>Conduction current and its derivative. Both are returned because every caller wants both.</summary>
+    private (double I, double G) Conduction(double v)
+    {
+        // Reverse breakdown. Only when Bv is given: Bv = 0 means "not modelled", not "breaks down at
+        // 0 V". It carries its OWN emission coefficient — a different mechanism from forward
+        // conduction, which is why it does not share N.
+        if (_bv > 0 && v < -_bv)
+        {
+            double vteb = _nbv * _vt;
+            double a  = -(_bv + v) / vteb;                   // ≥ 0 and growing as v goes more negative
+            double e  = System.Math.Exp(System.Math.Min(a, ExpArgLimit));
+            double i  = -_ibv * e;
+            double g  = _ibv * e / vteb;
+            // Beyond the limit the exponential is frozen, so its slope is too — continue linearly.
+            if (a > ExpArgLimit) i -= g * (a - ExpArgLimit) * vteb;
+            return (i + _gmin * v, g + _gmin);
+        }
+
+        // Diffusion plus recombination: two independent exponentials with their own ideality
+        // factors, which is what lets one dominate at low bias and the other at high.
+        var (id, gd) = Exponential(v, _is,  _n  * _vt);
+        var (ir, gr) = Exponential(v, _isr, _nr * _vt);
+
+        return (id + ir + _gmin * v, gd + gr + _gmin);
     }
 
     /// <summary>Depletion (junction) charge and its derivative, the small-signal junction capacitance.</summary>

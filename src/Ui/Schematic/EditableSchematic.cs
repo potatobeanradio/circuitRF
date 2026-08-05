@@ -116,6 +116,11 @@ public static class SymbolPortDefs
             case SymbolKind.Snp:
                 return GenerateSnpPorts(portCount >= 1 ? portCount : 2,
                     refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
+            // VerilogA: a generic box whose terminal count is the MODEL's, not the symbol's. Pins
+            // run down the left side then the right, in the order the model declares them — which
+            // is the order its own netlist line uses, so pin 1 is the model's first terminal.
+            case SymbolKind.VerilogA:
+                return GenerateGenericDevicePorts(portCount >= 1 ? portCount : 2);
             default:
                 return [("1", 0f, -200f), ("2", 0f, 200f)];
         }
@@ -177,6 +182,29 @@ public static class SymbolPortDefs
     /// <param name="refNode">True to append a RefNode pin (index N).</param>
     /// <param name="cfg">Pin layout template.</param>
     /// <param name="pitch">Same-side pin pitch for N ≥ 4 (Tight=100, Loose=200).</param>
+    /// <summary>
+    /// N pins on a box: the first half down the left edge, the rest down the right. Spacing is a
+    /// multiple of the connection grid so a wire always meets a pin, and the box grows with N rather
+    /// than crowding — a twelve-terminal model has to stay wireable.
+    /// </summary>
+    public static (string Name, float LocalX, float LocalY)[] GenerateGenericDevicePorts(int n)
+    {
+        var pins = new (string, float, float)[n];
+        int left = (n + 1) / 2, right = n - left;
+
+        for (int i = 0; i < n; i++)
+        {
+            bool onLeft = i < left;
+            int  row    = onLeft ? i : i - left;
+            int  count  = onLeft ? left : right;
+
+            // Centred on the origin, 200 apart — the same pitch the two-terminal primitives use.
+            float y = (row - (count - 1) / 2.0f) * 200f;
+            pins[i] = ((i + 1).ToString(), onLeft ? -200f : 200f, y);
+        }
+        return pins;
+    }
+
     public static (string Name, float LocalX, float LocalY)[] GenerateSnpPorts(
         int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
     {
@@ -381,6 +409,14 @@ public sealed class EditableComponent
     {
         get
         {
+            // VerilogA is variadic too, but on its OWN parameter: "NumPorts" means ports, and a
+            // compact model's terminals are not ports — a four-terminal MOSFET is not a four-port.
+            if (Symbol is SymbolKind.VerilogA)
+            {
+                var pins = Parameters.FirstOrDefault(q => q.Name == "Pins");
+                return pins is not null && int.TryParse(pins.Expression, out int np) && np >= 1 ? np : 2;
+            }
+
             if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp)
             {
                 var p = Parameters.FirstOrDefault(q => q.Name == "NumPorts");

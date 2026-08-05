@@ -14,7 +14,7 @@ public class PCellGeometryCacheTests
     public void RepeatedIdenticalParameters_InvokesGeneratorExactlyOnce()
     {
         var cache = new PCellGeometryCache();
-        var parameters = new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 };
+        var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 };
 
         for (int i = 0; i < 2500; i++) // the 50x50-array gate
             cache.GetOrGenerate(MlinPCell.GeneratorId, MlinPCell.Generate, parameters, Pcb, PCellLayerSelection.Default);
@@ -28,7 +28,7 @@ public class PCellGeometryCacheTests
         var cache = new PCellGeometryCache();
         for (int i = 0; i < 10; i++)
         {
-            var parameters = new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.001 * (i % 3) };
+            var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.001 * (i % 3) };
             cache.GetOrGenerate(MlinPCell.GeneratorId, MlinPCell.Generate, parameters, Pcb, PCellLayerSelection.Default);
         }
         Assert.Equal(3, cache.GeneratorCallCount); // only 3 distinct L values among the 10 calls
@@ -38,7 +38,7 @@ public class PCellGeometryCacheTests
     public void DifferentTechnology_InvokesGeneratorAgain()
     {
         var cache = new PCellGeometryCache();
-        var parameters = new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 };
+        var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 };
         var mmic = StarterTechnologies.MmicGaAs();
 
         cache.GetOrGenerate(MlinPCell.GeneratorId, MlinPCell.Generate, parameters, Pcb, PCellLayerSelection.Default);
@@ -51,7 +51,7 @@ public class PCellGeometryCacheTests
     public void CachedResult_IsReturnedUnchanged()
     {
         var cache = new PCellGeometryCache();
-        var parameters = new Dictionary<string, double> { ["W"] = 0.0029, ["L"] = 0.01 };
+        var parameters = new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["L"] = 0.01 };
 
         var first = cache.GetOrGenerate(MlinPCell.GeneratorId, MlinPCell.Generate, parameters, Pcb, PCellLayerSelection.Default);
         var second = cache.GetOrGenerate(MlinPCell.GeneratorId, MlinPCell.Generate, parameters, Pcb, PCellLayerSelection.Default);

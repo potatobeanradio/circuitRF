@@ -33,16 +33,18 @@ public static class MKlopfPCell
     private const double BlendWidthMultiple = 3.0;
 
     public static PCellResult Generate(
-        IReadOnlyDictionary<string, double> parameters,
+        IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         PCellLayerSelection layerSelection)
     {
-        double z1 = parameters.GetValueOrDefault("Z1", 50.0);
-        double z2 = parameters.GetValueOrDefault("Z2", 100.0);
-        double gammaMax = parameters.GetValueOrDefault("GammaMax", 0.05);
-        double lMeters = parameters.GetValueOrDefault("L", 0.02);
-        double offsetMeters = parameters.GetValueOrDefault("Offset", 0.0);
-        bool smoothSteps = parameters.GetValueOrDefault("SmoothSteps", 1.0) != 0.0;
+        double z1 = parameters.Real("Z1", 50.0);
+        double z2 = parameters.Real("Z2", 100.0);
+        double gammaMax = parameters.Real("GammaMax", 0.05);
+        double lMeters = parameters.Real("L", 0.02);
+        double offsetMeters = parameters.Real("Offset", 0.0);
+        // A flag, so it is read as one — but AsBool treats a non-zero Real as true, so the 1.0/0.0
+        // every pre-contract-v2 parameter set carries still decides it the same way.
+        bool smoothSteps = parameters.Bool("SmoothSteps", true);
 
         var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, layerSelection);
         double hMeters = substrate?.HeightMeters ?? 1.6e-3;

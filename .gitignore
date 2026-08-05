@@ -32,3 +32,7 @@ tools/senior-worker/build/
 tools/fake-model-lib/build/
 tools/netlist-worker/build/
 tools/netlist-worker/.wineprefix/
+
+# Python bytecode from the PCell tooling
+__pycache__/
+*.py[cod]
