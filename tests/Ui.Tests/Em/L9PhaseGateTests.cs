@@ -14,17 +14,18 @@
 //     disagrees there is no way to tell which. That is the same reasoning that made L7b's Tier C3 a
 //     reported non-result rather than a loosened tolerance.
 //
-//   • "backside vias" — **a backside via is not representable through the product path, and this is
-//     a real finding rather than a scoping convenience.** A backside via joins a signal level to the
-//     GROUND PLANE, and the ground plane is the laterally infinite plane the Green's function handles
-//     analytically: it is not a meshed level. L9c's via basis is a rooftop spanning two ADJACENT
-//     MESHED levels, so a via to ground would need an attachment (half) basis terminating on the
-//     boundary, which does not exist. PlanarExtractor.BuildVias already reports it: a via whose span
-//     names Backside Metal is dropped with a note, because Backside Metal is a ground reference and
-//     therefore never an analysis level. What IS representable on this starter is the Metal1↔Metal2
-//     post — the airbridge/crossover the MMIC stackup was built for — and that is what this gate uses.
+//   • "backside vias" — **when this gate was written a backside via was not representable through
+//     the product path at all, and finding that out is what scoped the follow-up that fixed it.** A
+//     backside via joins a signal level to the GROUND PLANE, which is the laterally infinite plane
+//     the Green's function handles analytically rather than a meshed level, so it needs an
+//     ATTACHMENT (half) basis terminating on the boundary. That basis did not exist; L9c's via basis
+//     is a rooftop spanning two adjacent MESHED levels. It exists now
+//     (brief-ground-vias-and-interior-electrostatics, Part A), so gates 3 and 4 below use a real
+//     backside via and §11's own sentence is finally reachable. Gates 1 and 2 keep the Metal1↔Metal2
+//     post — the airbridge the MMIC stackup was built for — because a SERIES via is what they are
+//     about, and a via to ground is a SHUNT element.
 //
-// So the gate is three external-data-free claims, exactly as L9e proposed them:
+// So the gate is four external-data-free claims — L9e's three, plus the ground via's own:
 //
 //   1. a two-level structure WITH VIAS runs end to end through the product path and is physically
 //      sane — reciprocal, passive, and carrying the signature a series via inductance must produce;
@@ -32,7 +33,12 @@
 //      gap grows — an exact-limit check with no external data, and the one place the general kernel
 //      is measured against the shipped one through the whole product path;
 //   3. the wiring itself — one drawn layout, a .cem, the registry, the extractor's via handling and
-//      the ℓ/w refusal — which is the claim most likely to break and the cheapest to check.
+//      the ℓ/w refusal — which is the claim most likely to break and the cheapest to check;
+//   4. **a GROUND via changes the boundary condition at the end of a shunt stub** — the same artwork
+//      with and without it turns a λ_g/4 NOTCH into transmission. That is the ground-via brief's own
+//      Tier 5, and it is a with/without COMPARISON for the same reason gate 1 is: the two-level
+//      de-embedding residual is the same order as a short structure's own reflection, so an absolute
+//      tolerance there would be a tolerance on the residual under another name.
 //
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // TIERING, AND THE COST THAT DECIDED IT
@@ -172,6 +178,72 @@ public class L9PhaseGateTests(ITestOutputHelper output) : IDisposable
         return view;
     }
 
+    /// <summary>
+    /// <b>Gate 4's fixture: a through line with a SHUNT STUB, optionally SHORTED to ground.</b>
+    ///
+    /// <para>A quarter-wave stub inverts whatever terminates it. Left open it presents a SHORT at the
+    /// junction and the through path notches; shorted to ground it presents an OPEN and the through
+    /// path is transparent. So the two artworks differ by one drawn <c>ViaShape</c> and must behave
+    /// oppositely at the same frequency — which is the strongest end-to-end statement available about
+    /// a ground via, and needs no external data and no absolute tolerance.</para>
+    ///
+    /// <para><b>The via square is the STUB'S OWN WIDTH and sits flush at its far end</b>, which reads
+    /// like a violation of this file's own "every edge ≥ 20 µm from every other" rule and is the
+    /// opposite: a smaller square centred in the stub would leave a sliver run on either side of it
+    /// and drive the pitch — and therefore N — through the floor. Flush, the footprint contributes
+    /// gridlines that coincide with metal edges the mesher already has.</para>
+    /// </summary>
+    private static LayoutView ShuntStub(double lineUm, double widthUm, double stubUm, bool shorted)
+    {
+        double cx = 0.5 * lineUm, x0 = cx - 0.5 * widthUm, x1 = cx + 0.5 * widthUm;
+        double yTop = widthUm + stubUm;
+
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.Add(Rect(Metal1, 0,  0,       lineUm, widthUm));
+        view.Shapes.Add(Rect(Metal1, x0, widthUm, x1,     yTop));       // the mesher UNIONS a layer's
+        if (shorted)                                                    // shapes, so abutting is fine
+            view.Shapes.Add(Via(BacksideVia, cx, yTop - 0.5 * widthUm, widthUm));
+        view.Shapes.Add(PortLabel(Metal1, 0,      0.5 * widthUm, "P1"));
+        view.Shapes.Add(PortLabel(Metal1, lineUm, 0.5 * widthUm, "P2"));
+        return view;
+    }
+
+    /// <summary>
+    /// Kernel A's own ε_eff for this cross-section — <b>the right input for sizing the stub, and not
+    /// circular</b>: it is a 2-D quasi-static solve sharing no code with kernel B. L8's own gate 1
+    /// measured what the alternative costs — sizing from the crude pre-solve estimate (εᵣ+1)/2 made
+    /// the fixture 23% too long on FR-4 and put the notch 20% below its own prediction.
+    /// </summary>
+    private static double KernelAEeff(Technology tech, double widthUm)
+    {
+        var line = Rect(Metal1, 0, 0, 10 * widthUm, widthUm);
+        var ex = CrossSectionExtractor.Extract([line], tech, Dbu, null);
+        Assert.True(ex.Ok, ex.Refusal);
+        return RlgcExtractor.Extract(ex.Problem!, BoundaryMesher.Mesh(ex.Problem!, EmMeshSettings.Default)).Eeff;
+    }
+
+    private static double[] LinSpace(double lo, double hi, int n)
+    {
+        var f = new double[n];
+        for (int i = 0; i < n; i++) f[i] = lo + (hi - lo) * i / (n - 1.0);
+        return f;
+    }
+
+    /// <summary>
+    /// The MMIC starter with a THINNER GaAs slab. A ground attachment's length IS the slab height,
+    /// and <c>PlanarLevels.MaxElectricalLength</c> bounds k·ℓ at 0.30 — a limit on the BASIS (one
+    /// z-rooftop, so the current is uniform along the whole run), not on the quadrature. The shipped
+    /// 100 µm slab measures k·ℓ = 0.50 at 66 GHz and is refused by name, which is the refusal working:
+    /// the fixture is moved rather than the constant.
+    /// </summary>
+    private static Technology MmicWithSlab(double heightUm)
+    {
+        var tech = StarterTechnologies.MmicGaAs();
+        var gaas = tech.Stackup.Layers.First(l => l.Kind == StackupKind.Dielectric && l.Name == "GaAs");
+        gaas.ThicknessDbu = Um(heightUm);
+        return tech;
+    }
+
     /// <summary>The MMIC starter with its air gap widened. Everything else — Metal1, Metal2, GaAs,
     /// the ground reference, both via entries — is the shipped technology, so the only thing that
     /// varies between gate 2's runs is the inter-level distance.</summary>
@@ -195,6 +267,13 @@ public class L9PhaseGateTests(ITestOutputHelper output) : IDisposable
                 Inv(freqsHz[0] / 1e9), Inv(freqsHz[^1] / 1e9),
                 freqsHz.Length, Core.Design.SweepKind.Linear, "GHz", "GHz"),
             PlanarMesh   = mesh ?? PlanarMeshSettings.Default,
+
+            // Every point in a gate is SOLVED. Adaptive sampling is on by default and would model
+            // the interior of a longer sweep to 1e-3 — correct for a user and wrong for a gate,
+            // which has to be able to say that the number it reports came out of the solver. With
+            // these short lists it would seed everything anyway; saying so explicitly is what stops
+            // that being an accident of the seed count.
+            AdaptiveSampling = false,
         };
 
     private static string Inv(double v) => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
@@ -275,23 +354,89 @@ public class L9PhaseGateTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
-    /// <b>A backside via is dropped, and reported.</b> The header explains why this is structural
-    /// rather than unimplemented; what matters for a gate is that it is never silent — a via that
-    /// vanishes from a full-wave solve with no note is exactly the failure mode L9c's own mesher
-    /// finding records ("a via footprint must contribute gridlines, or the via silently vanishes").
+    /// <b>A backside via is BUILT now, and this test is UPDATED rather than deleted.</b>
+    ///
+    /// <para>FINDING 1 of this gate was that a backside via is not representable by this kernel at
+    /// all: it joins a signal level to the GROUND PLANE, which is the laterally infinite conductor
+    /// the Green's function handles analytically and is never a meshed level, so L9c's rooftop-in-z
+    /// could not express it. That was why §11's own gate sentence had to be re-worded rather than
+    /// merely failed, and the extractor's dropping it with a note was correct-and-reported behaviour
+    /// for a capability that did not exist.</para>
+    ///
+    /// <para>The capability now exists — <c>PlanarBasisFunctions</c>' ground-ATTACHMENT (half) basis,
+    /// gated against a closed form in <c>ViaPhysicsTests.T4_1</c> to 0.081% over ℓ/w ∈ [0.01, 5]. So
+    /// the claim flips: the drawn backside via must produce a real <c>PlanarVia</c> naming the ground
+    /// terminal, and the mesh must carry vertical unknowns for it.</para>
     /// </summary>
     [Fact]
-    public void Gate3Wiring_ABacksideVia_IsDroppedWithANote_BecauseGroundIsNotAMeshedLevel()
+    public void Gate3Wiring_ABacksideVia_NowExtractsAsAGroundAttachment()
     {
         var tech = StarterTechnologies.MmicGaAs();
         var view = Airbridge(withVias: false);
-        view.Shapes.Add(Via(BacksideVia, 150, 50, 40));
+        view.Shapes.Add(Via(BacksideVia, 60, 50, 40));
+
+        var r = PlanarExtractor.Extract(view.Shapes, tech, Dbu, 30e9);
+        Assert.True(r.Ok, r.Refusal);
+
+        var p = r.Problem!;
+        var ground = Assert.Single(p.ViaList);
+        Assert.True(ground.ToGround);
+        Assert.Equal(PlanarVia.GroundTerminal, ground.LowerLayerIndex);
+        Assert.Equal(0, ground.UpperLayerIndex);          // it lands on Metal1, the lowest level
+        Assert.True(p.CanSolve().Ok, p.CanSolve().Reason);
+        Assert.Contains(r.Notes, n => n.Contains("BACKSIDE", StringComparison.Ordinal));
+
+        // …and it reaches the mesh as real vertical unknowns rather than vanishing.
+        var mesh = SurfaceMesher.Mesh(p);
+        Assert.True(mesh.CanSolve, mesh.Refusal);
+        Assert.True(mesh.ViaUnknownCount > 0,
+            "the backside via produced no vertical unknown — it vanished silently, which is the " +
+            "failure mode L9c's own mesher finding is about");
+        Assert.All(mesh.Mesh.Bases.Where(b => b.Direction == PlanarBasisDirection.Z),
+                   b => Assert.True(b.AttachesToGround));
+
+        output.WriteLine($"GATE 3 (backside via) — N = {mesh.UnknownCount} " +
+                         $"({mesh.ViaUnknownCount} ground-attachment vertical unknown(s)).");
+    }
+
+    /// <summary>
+    /// <b>R-gv-6's other half: the refusal did not simply disappear.</b> A via naming a conductor
+    /// that is neither an analysis level nor the ground plane this kernel models is still dropped,
+    /// by name. The only non-meshed conductor a via may terminate on is the ground reference R-em-4
+    /// resolves — a different ground pour is a FINITE conductor this kernel does not mesh, and
+    /// treating it as the infinite plane would solve a structure nobody drew. That is exactly the
+    /// class of silent wrongness FINDING 2 of this gate is about.
+    /// </summary>
+    [Fact]
+    public void Gate3Wiring_AViaToSomeOtherConductor_IsStillDroppedByName()
+    {
+        var tech = StarterTechnologies.MmicGaAs();
+
+        // Re-point the backside-via stackup entry at a conductor that is not the ground reference.
+        // (Technology/Stackup/StackupLayer are mutable classes, not records — StarterTechnologies
+        // hands back a fresh instance per call, so editing it in place affects nothing else.)
+        int repointed = 0;
+        foreach (var l in tech.Stackup.Layers)
+            if (l.Kind == StackupKind.Via && l.SpanFromLayer is not null && l.SpanToLayer is not null &&
+                (l.SpanFromLayer.Contains("Backside", StringComparison.Ordinal) ||
+                 l.SpanToLayer.Contains("Backside", StringComparison.Ordinal)))
+            {
+                if (l.SpanFromLayer.Contains("Backside", StringComparison.Ordinal))
+                    l.SpanFromLayer = "Not A Real Layer";
+                else
+                    l.SpanToLayer = "Not A Real Layer";
+                repointed++;
+            }
+        Assert.True(repointed > 0, "the MMIC starter must carry a backside-via stackup entry to re-point");
+
+        var view = Airbridge(withVias: false);
+        view.Shapes.Add(Via(BacksideVia, 60, 50, 40));
 
         var r = PlanarExtractor.Extract(view.Shapes, tech, Dbu, 30e9);
         Assert.True(r.Ok, r.Refusal);
         Assert.Empty(r.Problem!.ViaList);
-        Assert.Contains(r.Notes, n => n.Contains("not among this EM setup's analysis levels",
-                                                 StringComparison.Ordinal));
+        Assert.Contains(r.Notes, n => n.Contains("Not A Real Layer", StringComparison.Ordinal)
+                                   && n.Contains("ground plane", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -327,13 +472,24 @@ public class L9PhaseGateTests(ITestOutputHelper output) : IDisposable
         var verdict = kernel.CanSolve(narrow.Problem!);
         Assert.True(verdict.Ok, "the ℓ/w bound is retired; this must no longer refuse: " + verdict.Reason);
 
-        // …and the electrical bound still fires, on the quantity it is actually about. A 60 µm-thick
-        // air gap at 30 GHz on this stackup is k·ℓ well past 0.05.
-        var tall = PlanarExtractor.Extract(Airbridge().Shapes, MmicWithAirGap(60), Dbu, 30e9);
+        // …and the electrical bound still fires, on the quantity it is actually about — but it now
+        // fires at 0.30 rather than 0.05, because M1's own R-gv-1 measurement (ViaPhysicsTests.M1_2)
+        // subdivided an ATTACHED via and found the answer moves 0.077% at k·ℓ = 0.23 and 0.141% at
+        // k·ℓ = 1.0, while the chain that would fix it costs ~14% of a de-embedded point. A 60 µm gap
+        // at 30 GHz is k·ℓ = 0.14, which is now comfortably INSIDE the bound and must be accepted;
+        // 200 µm is k·ℓ = 0.45 and is not.
+        var wasRefused = PlanarExtractor.Extract(Airbridge().Shapes, MmicWithAirGap(60), Dbu, 30e9);
+        Assert.True(wasRefused.Ok, wasRefused.Refusal);
+        var nowFine = kernel.CanSolve(wasRefused.Problem!);
+        Assert.True(nowFine.Ok,
+            "k·ℓ = 0.14 is inside the measured bound and must no longer refuse: " + nowFine.Reason);
+
+        var tall = PlanarExtractor.Extract(Airbridge().Shapes, MmicWithAirGap(200), Dbu, 30e9);
         Assert.True(tall.Ok, tall.Refusal);
         var no = kernel.CanSolve(tall.Problem!);
         Assert.False(no.Ok);
         Assert.Contains("UNIFORM", no.Reason!, StringComparison.Ordinal);
+        Assert.Contains("MEASUREMENT", no.Reason!, StringComparison.Ordinal);
 
         output.WriteLine("GATE 3 — ℓ/w = 0.75 now ACCEPTED; the electrical refusal reads:\n  " + no.Reason);
     }
@@ -505,5 +661,124 @@ public class L9PhaseGateTests(ITestOutputHelper output) : IDisposable
                 for (int c = 0; c < 2; c++)
                     worst = Math.Max(worst, (S(a, i, r, c) - S(b, i, r, c)).Magnitude);
         return worst;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // GATE 4 — "a GROUND via changes the boundary condition at the end of a shunt stub."
+    //          Category=Benchmark: ten de-embedded points.
+    //
+    // This is the ground-via brief's own Tier 5, and it is the claim that brief named as the one
+    // worth building first — for the same reason gate 1 is a comparison rather than an absolute: it
+    // is a WITH/WITHOUT run of one artwork, so it would have caught L9's own dead-via bug (the
+    // extractor's ViaShape branch looked its drawing layer up in a map built from the stackup's
+    // z BANDS, which a via entry never has, so every drawn via was silently ignored).
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void Gate4_AGroundViaAtAStubsEnd_TurnsItsQuarterWaveNOTCH_IntoTransmission()
+    {
+        // 50 µm rather than the starter's 100: the ground attachment's length IS the slab height,
+        // and at 66 GHz a 100 µm one measures k·ℓ = 0.50 against MaxElectricalLength's 0.30 — the
+        // refusal fires, by name, exactly as it should. **The fixture moves, not the constant.**
+        const double slabUm = 50;
+        var tech = MmicWithSlab(slabUm);
+
+        // ── SIZING, and the two constraints that decided it ──────────────────────────────────
+        //
+        // The line is 144 µm rather than the starter's own 72 µm, and the target is 60 GHz rather
+        // than gate 1's 30 GHz. Both are cost: the mesh pitch is the narrowest run over
+        // MinCellsAcrossConductor, so doubling the width halves the cells per axis, and halving the
+        // wavelength halves the structure. Together they take this from L9's own gate-1 scale
+        // (N = 1,023, 149.9 s per de-embedded point) to something a gate can afford twice over.
+        //
+        // Neither weakens the claim: a shorted quarter-wave stub inverts its termination at ANY
+        // width, and the two runs differ by one drawn shape.
+        const double widthUm = 144, fTarget = 60e9;
+
+        double eeffA  = KernelAEeff(tech, widthUm);
+        double lambda = EmConstants.C0 / (fTarget * Math.Sqrt(eeffA)) * 1e6;   // µm
+        double stubUm = 0.25 * lambda;
+        double lineUm = 0.5 * lambda;                    // enough uniform line to calibrate against
+
+        // The band is centred BELOW f_target on purpose. The open stub's own open-end extension
+        // (~0.4 h = 40 µm on this stub) lengthens it electrically and pulls the notch down; L8's
+        // gate 1 measured that effect at −7.7% on FR-4 and −0.7% on GaAs, and the ground via adds
+        // its own partial inductance to the shorted arm on top. 0.80…1.10 brackets both.
+        var scan = LinSpace(0.80 * fTarget, 1.10 * fTarget, 5);
+
+        var open   = Run(Setup("gate4-open",   scan), tech, ShuntStub(lineUm, widthUm, stubUm, shorted: false));
+        var short_ = Run(Setup("gate4-shorted", scan), tech, ShuntStub(lineUm, widthUm, stubUm, shorted: true));
+
+        var freqs = Freq(open.Data!);
+        var mo = new double[freqs.Length];
+        var ms = new double[freqs.Length];
+        int notch = 0;
+        for (int i = 0; i < freqs.Length; i++)
+        {
+            mo[i] = S(open.Data!,   i, 1, 0).Magnitude;
+            ms[i] = S(short_.Data!, i, 1, 0).Magnitude;
+            if (mo[i] < mo[notch]) notch = i;
+        }
+
+        output.WriteLine($"GATE 4 — MMIC GaAs, {widthUm} µm line on {slabUm} µm GaAs. ε_eff(A) {eeffA:F4}, " +
+                         $"stub {stubUm:F1} µm = λ_g/4 at {fTarget / 1e9:F0} GHz, through {lineUm:F1} µm.");
+        output.WriteLine($"  N: open {open.PlanarMesh!.UnknownCount}, shorted " +
+                         $"{short_.PlanarMesh!.UnknownCount} " +
+                         $"({short_.PlanarMesh!.ViaUnknownCount} vertical — the ground attachment).");
+        output.WriteLine("    f (GHz)    |S21| OPEN stub    |S21| SHORTED stub    ratio");
+        for (int i = 0; i < freqs.Length; i++)
+            output.WriteLine($"    {freqs[i] / 1e9,7:F2}    {mo[i],14:G4}    {ms[i],17:G4}" +
+                             $"    {(mo[i] > 0 ? ms[i] / mo[i] : double.NaN),6:F2}" +
+                             (i == notch ? "   ← the open stub's notch" : ""));
+
+        // The via must be REPRESENTED, or the two runs are the same run and the ratio below is 1.
+        Assert.True(short_.PlanarMesh!.ViaUnknownCount > 0,
+                    "the shorted fixture produced no vertical unknowns — the ground via was dropped");
+        Assert.Equal(0, open.PlanarMesh!.ViaUnknownCount);
+
+        // The notch has to be INSIDE the band, or nothing has been located and the ratio is taken at
+        // an arbitrary frequency rather than at the resonance.
+        Assert.True(notch > 0 && notch < freqs.Length - 1,
+            $"the open stub's notch landed at a band edge ({freqs[notch] / 1e9:F2} GHz) — the scan " +
+            "does not bracket the resonance.");
+
+        // ── THE CLAIM ────────────────────────────────────────────────────────────────────────
+        // At the frequency where the OPEN stub shorts the line, the SHORTED one is transparent.
+        // A ratio, not a level: the de-embedding residual on a two-level run is the same order as a
+        // short structure's own reflection (L9d measured worst |S₁₁| ≈ 1.0e-1 on a matched section),
+        // so an absolute gate on either curve would be a gate on that residual.
+        double ratio = ms[notch] / mo[notch];
+        double fN = ParabolicMinimum(freqs[notch - 1], freqs[notch], freqs[notch + 1],
+                                     mo[notch - 1], mo[notch], mo[notch + 1]);
+        output.WriteLine($"\n  the open stub notches at {fN / 1e9:F2} GHz (interpolated), " +
+                         $"{(fN / fTarget - 1) * 100:+0.0;-0.0}% of the bare λ_g/4 prediction.");
+        output.WriteLine($"  |S21| there: shorted {ms[notch]:G4} against open {mo[notch]:G4} — {ratio:F2}×.");
+
+        Assert.True(ratio >= 3.0,
+            $"a ground via at the stub's end must invert its boundary condition: at the open stub's " +
+            $"own notch the shorted one transmitted only {ratio:F2}× as much.");
+
+        // Reciprocity and passivity, on both runs. NEVER losslessness — an open planar structure
+        // radiates and launches surface waves, and a stub with a ground via radiates more, not less.
+        foreach (var (name, r) in new[] { ("open", open), ("shorted", short_) })
+        for (int i = 0; i < freqs.Length; i++)
+        {
+            Assert.True((S(r.Data!, i, 0, 1) - S(r.Data!, i, 1, 0)).Magnitude < 1e-6,
+                        $"{name}: reciprocity at {freqs[i] / 1e9:F2} GHz");
+            double p = 0;
+            for (int j = 0; j < 2; j++) p += S(r.Data!, i, j, 0).Magnitude * S(r.Data!, i, j, 0).Magnitude;
+            Assert.True(p <= 1.02, $"{name}: passivity at {freqs[i] / 1e9:F2} GHz — Σ|S|² = {p:F4}");
+        }
+    }
+
+    /// <summary>The vertex of the parabola through three equally-spaced samples, clamped to the
+    /// bracket — the grid minimum is quantised to the scan step and this removes that term.</summary>
+    private static double ParabolicMinimum(double xL, double xC, double xR,
+                                           double yL, double yC, double yR)
+    {
+        double denom = yL - 2 * yC + yR;
+        if (Math.Abs(denom) < 1e-30) return xC;
+        return Math.Clamp(xC + 0.5 * (yL - yR) / denom * (xR - xC), xL, xR);
     }
 }

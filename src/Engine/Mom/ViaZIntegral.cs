@@ -227,6 +227,37 @@ internal static class ViaZIntegral
     }
 
     /// <summary>
+    /// <b>M2 — the same z-average with the fit replaced by DIRECT integration</b>
+    /// (<see cref="PlanarKernelSet.GetDirectMinusStaticAsymptotes"/>).
+    ///
+    /// <para>Identical in every other respect: the same nodes, the same weights, the same
+    /// <see cref="PlanarKernelTerms.Combine"/>, and the SINGULAR half is untouched (it is closed
+    /// form in z and was never fitted). Only the bounded half's evaluator changes, which is exactly
+    /// the piece M1 measured as the failure.</para>
+    ///
+    /// <para><b>The cost is n_z² TABLES rather than n_z² fits</b>, and a table costs
+    /// <paramref name="samples"/> Sommerfeld points at 40–50 ms each. That is why the sample count
+    /// is a measured argument rather than the mesh-derived spacing the fill's own remainder table
+    /// uses — see M2's own convergence measurement.</para>
+    /// </summary>
+    public static PlanarKernelTerms AveragedTermsDirect(
+        PlanarKernelSet set, GreensKernel kernel, Span si, Span sj, int nz,
+        PlanarExtractionOrder order, double rhoFloor, double rhoMaxM, int samples)
+    {
+        var (zi, wi) = Nodes(si, nz);
+        var (zj, wj) = Nodes(sj, nz);
+        double norm = 1.0 / (si.Length * sj.Length);
+
+        var parts = new List<(double Weight, PlanarKernelTerms Terms)>(nz * nz);
+        for (int a = 0; a < nz; a++)
+        for (int b = 0; b < nz; b++)
+            parts.Add((wi[a] * wj[b] * norm,
+                       set.GetDirectMinusStaticAsymptotes(kernel, zi[a], zj[b], rhoMaxM, samples)));
+
+        return PlanarKernelTerms.Combine(parts, order, rhoFloor);
+    }
+
+    /// <summary>
     /// <b>R-viz-5 — the MIXED block integrates over ONE z only, and its asymptote's z-integral is
     /// also closed form.</b>
     ///

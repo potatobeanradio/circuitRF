@@ -66,9 +66,24 @@ public enum PlanarBasisDirection
 /// across that edge. <b>This is the unknown</b> — R-msh-6's whole point is that N is the number of
 /// these, not the number of cells.
 /// </summary>
-/// <param name="CellA">Index into <see cref="PlanarMesh.Cells"/> — the lower-index (left/below) cell.</param>
+/// <param name="CellA">Index into <see cref="PlanarMesh.Cells"/> — the lower-index (left/below) cell.
+/// <b>For an <see cref="AttachesToGround"/> basis both cells are the ONE meshed foot</b>; the signs
+/// come from <c>PlanarBasisFunctions.Halves</c>, not from the two indices.</param>
 /// <param name="CellB">Index into <see cref="PlanarMesh.Cells"/> — the higher-index cell.</param>
-public sealed record PlanarBasis(int LayerIndex, int CellA, int CellB, PlanarBasisDirection Direction);
+/// <param name="AttachesToGround">
+/// <b>The ground-attachment (HALF) basis: one meshed foot, and the other terminal is the laterally
+/// infinite PEC the Green's function handles analytically.</b> A backside via joins a signal level to
+/// the ground plane, which is never a meshed level — L9c's rooftop-in-z spans two MESHED levels and
+/// cannot express it, which is why L9's own phase gate could not gate the thing §11 asks for.
+///
+/// <para>Its z span runs from <c>PlanarLevels.GroundZ</c> to <c>PlanarLevels.Of(LayerIndex)</c>, and
+/// for this basis alone <see cref="LayerIndex"/> names the MESHED level rather than the lower of two.
+/// Its current still flows +z (from the ground up to the metal), exactly like every other vertical
+/// basis — see <c>PlanarBasisFunctions</c>' header for why matching that direction was worth more
+/// than matching a sign in prose.</para>
+/// </param>
+public sealed record PlanarBasis(int LayerIndex, int CellA, int CellB, PlanarBasisDirection Direction,
+                                 bool AttachesToGround = false);
 
 /// <summary>
 /// The surface mesh: one tensor-product grid shared by every conductor layer (D8), the cells of it

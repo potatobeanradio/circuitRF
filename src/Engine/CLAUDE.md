@@ -1,5 +1,138 @@
 # Engine — local conventions
 
+## `Mom/` — G_A^zz's ceiling: M1 is a NEGATIVE result, M2 is the direct path (brief-gazz-accuracy-ceiling, 2026-08-06) — **M0+M1+M2+M4; M3 not started**
+
+Continues the M0 entry below. **Read `src/Engine/Mom/CLAUDE.md`'s own G_A^zz sections before touching
+any of it.** Four things from out here:
+
+- **M1 IS A NEGATIVE RESULT, and three of the five knob groups the brief names cannot reach the failing
+  component at all.** `Dcim.FitAtHeights` never reads `BranchPointOrders`, `BranchSamples` or
+  `BranchExtent` — L9c made the interior sum rule a theorem by inspection, so there is no branch-point
+  sampling to configure — and `FitTolerance` is inert too. Asserted as bit-identity over 30
+  configurations rather than argued. The knobs that DO reach it give **10.4× at best (14 → 1.35),
+  still 71× outside the ≤ 1.9e-2 envelope, while making the error 23× WORSE inside ρ/λ ≤ 0.1** where
+  the kernel is used today. **No per-component setting is simply better**, so R-zz-2's plumbing was
+  not built.
+- **M2 ships `PlanarFillSettings.DirectVerticalKernel` (default off)** — the ẑẑ block alone takes its
+  kernel from `SommerfeldIntegral.EvaluateInterior` instead of the fit, reachable exactly like
+  `UseRadialTable = false`. It converges in the table's sample count (**8.3e-5 at 128, 2.9e-6 at 256**)
+  and costs **19–43% of a de-embedded point per via span per frequency**. The one trap worth knowing:
+  **tabulate the REMAINDER, not the kernel** — the kernel still diverges as 1/ρ after the static
+  asymptotes come out, and a linear table would be worst exactly at the self and touching pairs.
+- **THE FINDING is (b), and it is not what the brief expected: on §10.7's own FR-4 hero with two vias
+  18 mm apart — the one layout M0 left refused — the FITTED block is 4.53e-7 from the direct one.**
+  L9c measured the fit POINTWISE; the refusal is asked of a MESH; nobody had asked the second question,
+  and essentially none of the pointwise error survives into the assembled block there. **Do not widen
+  the constant on that** — it is one layout on one stack, and the GaAs cross-check (where L9c's
+  pointwise error is 130× larger) **was NOT RUN**: the fixture was mis-sized and did not finish in
+  35 minutes. A small-mesh, high-frequency GaAs fixture is the most valuable next measurement here.
+- **M4: the constant did NOT move.** `Dcim.ValidatedRhoOverLambdaAtHeights` is byte-identical, because
+  M1 showed nothing supports widening it. `PlanarSolve.VerticalRangeVerdict` now takes the fill
+  settings and skips the refusal — with a note — when the direct kernel is on, since that limit is a
+  property of the FIT and not of the integrator it was measured against.
+
+Gate: **`tests/Engine.Tests` 1,002 passed + 1 pre-existing skip — the routine tier is UNCHANGED in
+size**, because both new methods are `Category=Benchmark`. `tests/Ui.Tests` **4,741** and
+`tests/Firewall.Tests` **4/4**, both green; nothing outside `src/Engine/Mom/` and
+`tests/Engine.Tests/Mom/` was touched.
+
+## `Mom/` — G_A^zz's accuracy ceiling: M0 (brief-gazz-accuracy-ceiling, 2026-08-06) — **M0 ONLY; M1–M3 are measured deferrals**
+
+**A FOLLOW-UP to L9**, independent of the other two. It closes the single limit that stopped a
+via-bearing full-wave run on ordinary board geometry. **Read `src/Engine/Mom/CLAUDE.md`'s own
+G_A^zz section (at the end of that file) before touching any of it.**
+
+The four things worth knowing from out here:
+
+- **§10.7's FR-4 HERO WITH A VIA NOW RUNS AT 10 GHz**, and no constant moved.
+  `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` is untouched — what changed is *which ρ it is asked
+  about*. `PlanarSolve`'s own comment already said the limit "binds ONLY the ẑẑ block" and the code
+  two lines later asked the MESH DIAGONAL. `G_A^zz` has exactly two consumers anywhere, both between
+  two VERTICAL bases, so the right quantity is the extent of the **via footprints**. On the hero
+  that is 0.024 λ against the mesh's 0.674 λ: REFUSED → **PASS** for one via, and for two vias 1 mm
+  apart.
+- **Two vias genuinely far apart still refuse, and that is correct.** At 18 mm the fit really is
+  asked about 0.617 λ, the regime L9c measured at 14×. Narrowing the question is not widening the
+  answer — and the refusal now names the separation as being **between vias**, quotes the mesh
+  diagonal beside it, and says outright that shrinking the surrounding metal does not act on it.
+  "Move the vias closer" and "make the board smaller" are different instructions.
+- **NARROWING EXPOSED THAT THREE COMPONENTS WERE GOVERNED BY NOTHING, and that is a finding rather
+  than a gap.** Scoping `G_A^zz` to the via footprints leaves `G_A^xx`, `G_q` and the MIXED
+  component's interior pairings unchecked — and the mixed block couples a via to *every* horizontal
+  basis, so its ρ genuinely spans the mesh. `Dcim.ValidatedRhoOverLambdaInteriorHorizontal = 1.0`
+  records what L9c actually measured (≤ 1.9e-2 out to ρ/λ = 1), and every general-kernel run now says
+  whether it is inside that or PAST it. **A note, not a refusal** — reporting "unmeasured" is honest;
+  refusing on it would invent a limit and would refuse structures accepted today.
+- **TIER 1 IS INSTRUMENTED, NOT ARGUED**, because that is the whole soundness case. A new optional
+  `PlanarFillDiagnostics` records the widest separation the ẑẑ arm actually reaches: 56.57 µm against
+  the 56.57 µm the refusal checked — **equal, not merely bounded** — on a mesh 412 µm across. And the
+  fill is **bit-identical with and without it attached**, since an instrument that perturbed what it
+  measures would be worse than none.
+
+**M1 (the DCIM knob sweep), M2 (direct integration instead of a fit) and M3 (a depth search) are not
+started**, and the residual they would close is the two-vias-far row above. The brief's own §7 names
+M0 as the natural fault line and possibly the only milestone needed. **Do not reach for an
+amplitude-conditioning cap** — L9c measured it worse (14 → 39).
+
+Gate: **1,002 routine tests in `tests/Engine.Tests`** (+4), no new Benchmark methods. `tests/Ui.Tests`
+**4,741 and green**; `tests/Firewall.Tests` 4/4.
+
+## `Mom/` — the GROUND VIA: the attachment basis (brief-ground-vias-and-interior-electrostatics, 2026-08-06) — **PART A, M1 + M3 (M2 deliberately not built; M4 partial; Part B not started)**
+
+**A FOLLOW-UP to L9, like the via z-integral before it.** It closes gap A — the thing L9's own phase
+gate found and named as the most valuable remaining work here: **a backside via was not representable
+by this kernel at all.** **Read `src/Engine/Mom/CLAUDE.md`'s own ground-via section (at the end of
+that file) before touching any of it**; every measured table lives there.
+
+The five things worth knowing from out here:
+
+- **A BACKSIDE VIA NOW WORKS, and it is right to 0.081%.** L9c's via basis spans two adjacent MESHED
+  levels; a via to ground joins a signal level to the laterally infinite PEC the Green's function
+  handles analytically, which is never one. The new ground-ATTACHMENT (half) basis is gated against a
+  closed form — a bar of length ℓ plus its **equal-direction** image (L9e's T2_1 earned that sign) —
+  **worst 0.081% over ℓ/w ∈ [0.01, 5] and a 16× range of w**, the same span T3_1 uses for an interior
+  via. Through the product path a drawn backside via on the MMIC starter now extracts, meshes and
+  produces 4 vertical unknowns where before it was dropped with a note.
+- **THE CHAIN WAS MEASURED AND NOT BUILT, and the brief's own premise is what the measurement
+  refuted.** §0.2 item 3 argues a chain of z-segments is mandatory because a 100 µm GaAs backside via
+  at 30 GHz is k·ℓ = 0.23, 4.5× over `MaxElectricalLength`. Measured on an ATTACHED via — the only
+  kind that exists in a real structure — subdividing into 8 moves the answer **0.077% at k·ℓ = 0.23
+  and 0.141% at k·ℓ = 1.0**, with the current only 1.5–2.0% non-uniform. A FLOATING rod does move
+  (10.2%), but that movement is **98% static** — identical at k·ℓ = 0.01 and 0.23 — so it is the
+  floating end condition, not electrical length. Meanwhile the chain costs **14.2% of a de-embedded
+  point at n = 8** and grows ~4× per doubling. **`MaxElectricalLength` is 0.05 → 0.30 instead**, from
+  the measurement rather than from an O((kℓ)²) argument. Widening it unlocks nothing on its own:
+  `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` is the limit that actually binds and is untouched.
+- **TWO STRUCTURAL INVARIANTS GENUINELY BREAK, and both are re-gated rather than exempted.** L9c's
+  D5 (`∫∇·f dS = 0`) does not survive a one-pulse basis — its net charge is −1, balanced by the
+  plane's IMAGE, and adding a compensating pulse would double-count the image the Green's function
+  already carries. And L8c's `s_A + s_B = 0` fails, so the extracted CONSTANT stops cancelling in
+  exactly one row with nothing noticing. **That one does not bite, and it is measured rather than
+  reasoned**: the answer is invariant under `PlanarExtractionOrder` to 1.09e-15 / 3.28e-9 on a row
+  where the cancellation is provably gone.
+- **THE SIGN CONVENTION IS DELIBERATELY NOT THE BRIEF'S, for reciprocity.** D4 calls the net charge
+  "+1"; this keeps EVERY vertical basis's current flowing +z instead, so the ẑẑ block needs no
+  per-basis direction factor and reciprocity stays structural with an attachment and an interior via
+  in the same mesh — which is exactly the MMIC starter. The gate asserts the attachment↔via cross
+  block is non-zero, because that block is precisely what a direction slip would invert while leaving
+  `Z` symmetric and wrong.
+- **L9c's TWO SILENT MESHER FAILURES DO NOT TRANSFER FOR FREE** and are re-asserted for the ground-via
+  path specifically: the footprint must contribute hard GRIDLINES (or the via vanishes with no error)
+  and must NOT get the edge grading a conductor rim gets (adding it grows N 1.08×, not 5.8×).
+
+**Not built, on purpose or on cost:** the z-segment chain (measured, above); M4's shunt λ_g/4 SHORTED
+stub through the product path (its three-claim gate is the strongest end-to-end statement available
+and is the first thing a continuation should write); R-gv-8's ω → 0 static-limit rung; and **all of
+Part B** — the interior electrostatic Green's function, `C_pul` at a buried level, and L9c's still
+un-run Tier 4, which is now the most valuable remaining work in this area.
+
+Gate: **997 routine tests in `tests/Engine.Tests` in ~2 min** (+4 over the z-integral's 993), plus
+**+2 methods tagged `Category=Benchmark`** in this area (`T4_1` 11 s, `M1_2` 13 min — M1 is a
+measurement, and its cost is the four chain fills it takes alone). `tests/Ui.Tests` **4,741 and
+green** with **two gate tests UPDATED rather than loosened** (a backside via now extracts instead of
+being dropped; the electrical refusal now fires at 0.30 with the measurement in its wording);
+`tests/Firewall.Tests` unchanged (4/4).
+
 ## `Mom/` — the via's z-integral: removing the midpoint rule (brief-via-z-integral, 2026-08-06) — **COMPLETE (M1–M6)**
 
 **A FOLLOW-UP to L9, not a sixth slice of it** — it fixes the one defect L9e found and deliberately

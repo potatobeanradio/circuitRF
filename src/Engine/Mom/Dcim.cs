@@ -510,6 +510,23 @@ public static class Dcim
     /// </summary>
     public const double ValidatedRhoOverLambdaAtHeights = 0.1;
 
+    /// <summary>
+    /// <b>How far L9c's Tier 5 measured the OTHER three interior components — the ones
+    /// <see cref="ValidatedRhoOverLambdaAtHeights"/> is not about.</b>
+    ///
+    /// <para>G_A^xx, G_q and the mixed component are ≤ 1.9e-2 of the free-space kernel out to ρ/λ = 1
+    /// on every grounded stack, both interior pairings — L9b's own envelope for the top-half-space
+    /// pairing. <b>This is a MEASURED RANGE, not a refusal</b>, and it exists because scoping
+    /// <see cref="ValidatedRhoOverLambdaAtHeights"/> to the via footprints (R-zz-1) would otherwise
+    /// have left these three checked by nothing at all: the mixed block couples a via to EVERY
+    /// horizontal basis, so its ρ genuinely spans the mesh.</para>
+    ///
+    /// <para>Past it there is simply no measurement. <c>PlanarSolve</c> says so in a note rather than
+    /// refusing, for R-prt-13's own reason: reporting "unmeasured" is honest, and refusing on it
+    /// would be inventing a limit instead of reporting one.</para>
+    /// </summary>
+    public const double ValidatedRhoOverLambdaInteriorHorizontal = 1.0;
+
     /// <inheritdoc cref="ValidatedRhoOverLambdaAtHeights"/>
     public static EmSuitability WithinValidatedRangeAtHeights(
         GreensKernel kernel, LayeredSpectralGreens g, double rhoOverLambda)

@@ -512,4 +512,103 @@ public class PlanarMeshOverlayTests
         Assert.Equal(PlanarBudgetVerdict.Ok, r.Verdict);
         Assert.True(r.UnknownCount is > 100 and < 1000, $"N = {r.UnknownCount}");
     }
+
+    // ── M2 (brief-gazz-accuracy-ceiling) — the direct ẑẑ kernel, reachable from the panel ──────
+
+    [Fact]
+    public void ZzM2_ACemThatNeverTurnedOnTheDirectKernel_ReSerialisesBYTEIDENTICALLY()
+    {
+        // Same additive convention as AnalysisKind / PlanarMesh / PortZ0s: the DTO field is
+        // NULLABLE and the document's DefaultIgnoreCondition is WhenWritingNull, so a .cem written
+        // before M2 gains no byte. A plain `bool` would have been written unconditionally and
+        // changed every existing file.
+        var setup = new EmSetup { Name = "hero", LayoutRef = "Amp/layout/Amp.clay" };
+        string before = EmSetupPersistence.Serialize(setup);
+
+        Assert.DoesNotContain("DirectVerticalKernel", before);
+
+        var reloaded = EmSetupPersistence.Deserialize(before);
+        Assert.False(reloaded.DirectVerticalKernel);
+        Assert.Equal(before, EmSetupPersistence.Serialize(reloaded));
+    }
+
+    [Fact]
+    public void ZzM2_TurningItOn_RoundTripsAndSurvivesClone()
+    {
+        var setup = new EmSetup
+        {
+            Name                 = "planar",
+            LayoutRef            = "Amp/layout/Amp.clay",
+            AnalysisKind         = EmAnalysisKind.Planar,
+            DirectVerticalKernel = true,
+        };
+
+        string json = EmSetupPersistence.Serialize(setup);
+        Assert.Contains("DirectVerticalKernel", json);
+        Assert.True(EmSetupPersistence.Deserialize(json).DirectVerticalKernel);
+
+        // Clone drives the editor's UNDO snapshots — a field missing from it is silently lost on
+        // the next unrelated edit, which is the failure this asserts against rather than assumes.
+        Assert.True(setup.Clone().DirectVerticalKernel);
+    }
+
+    // ── Defaults that have to be useful on the COMMON case, not on a debugging fixture ─────────
+
+    [Fact]
+    public void ACemWrittenBeforeAdaptiveSampling_LoadsWithItON_AndReSerialisesBYTEIDENTICALLY()
+    {
+        // Opposite polarity to every other flag here, because the DEFAULT is on: null means ON, and
+        // only an explicit opt-OUT is ever written. A pre-adaptive file therefore gains no byte and
+        // picks the new default up — which is the point, since solving all 101 default points on the
+        // full-wave kernel is 80 minutes to nearly three hours.
+        var setup = new EmSetup { Name = "hero", LayoutRef = "Amp/layout/Amp.clay" };
+        string before = EmSetupPersistence.Serialize(setup);
+
+        Assert.True(setup.AdaptiveSampling);
+        Assert.DoesNotContain("AdaptiveSampling", before);
+
+        var reloaded = EmSetupPersistence.Deserialize(before);
+        Assert.True(reloaded.AdaptiveSampling);
+        Assert.Equal(before, EmSetupPersistence.Serialize(reloaded));
+    }
+
+    [Fact]
+    public void TurningAdaptiveSamplingOFF_IsWrittenExplicitly_RoundTripsAndSurvivesClone()
+    {
+        var setup = new EmSetup
+        {
+            Name             = "planar",
+            LayoutRef        = "Amp/layout/Amp.clay",
+            AnalysisKind     = EmAnalysisKind.Planar,
+            AdaptiveSampling = false,
+        };
+
+        string json = EmSetupPersistence.Serialize(setup);
+        Assert.Contains("AdaptiveSampling", json);
+        Assert.False(EmSetupPersistence.Deserialize(json).AdaptiveSampling);
+        Assert.False(setup.Clone().AdaptiveSampling);   // Clone drives the editor's undo snapshots
+    }
+
+    [Fact]
+    public void DispersionCorrection_DefaultsON_ForANewSetup_ButAnExistingFilesFALSE_IsPreserved()
+    {
+        // The default flipped because the default sweep runs to 20 GHz, where kernel A's static C
+        // puts eps_eff 23% high (L8d). The field is NON-nullable in the file, so every .cem ever
+        // written carries an explicit value and no existing setup changes behaviour — asserted here
+        // against a hand-written file rather than reasoned about.
+        Assert.True(new EmSetup().DispersionCorrection);
+
+        const string olderFile = """
+        {
+          "FormatVersion": 1,
+          "Name": "older",
+          "LayoutRef": "Amp/layout/Amp.clay",
+          "DispersionCorrection": false
+        }
+        """;
+
+        var loaded = EmSetupPersistence.Deserialize(olderFile);
+        Assert.False(loaded.DispersionCorrection);
+        Assert.True(loaded.AdaptiveSampling);           // …while a field it never had takes the default
+    }
 }

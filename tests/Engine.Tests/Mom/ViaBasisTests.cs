@@ -516,6 +516,149 @@ public sealed class ViaBasisTests
                        $"a real statement.");
     }
 
+    // =========================================================================================
+    // M3 — THE GROUND-ATTACHMENT BASIS THROUGH THE MESHER AND THE FILL
+    // (brief-ground-vias-and-interior-electrostatics, R-gv-5 / R-gv-7 / D7)
+    // =========================================================================================
+
+    /// <summary>The same MMIC fixture, plus a BACKSIDE via from the lower level down to the ground
+    /// plane — so one mesh carries an attachment basis, an ordinary interior via, and a mixed
+    /// block at once. That combination is the MMIC starter's own shape and is exactly what a
+    /// per-basis current-direction slip would break.</summary>
+    private static PlanarProblem TwoLevelWithViaAndGroundVia(double fHz = 10e9)
+    {
+        var basis = TwoLevelWithVia(fHz);
+        static PlanarPolygon Rect(double x0, double y0, double x1, double y1) =>
+            new([new EmPoint(x0, y0), new EmPoint(x1, y0), new EmPoint(x1, y1), new EmPoint(x0, y1)]);
+
+        var backside = new PlanarVia(PlanarVia.GroundTerminal, 0,
+                                     [Rect(60e-6, 30e-6, 100e-6, 70e-6)], 4.1e7);
+        return basis with { Vias = [.. basis.ViaList, backside] };
+    }
+
+    [Fact]
+    public void M6_1_RgV5_AGroundViaFootprint_ContributesGRIDLINES_AndIsNotEDGEGRADED()
+    {
+        // R-gv-5. Both of L9c's silent mesher failures apply to the new path and it does NOT inherit
+        // their tests — they were written for the two-meshed-feet case.
+        //
+        //   • no gridlines ⇒ the via VANISHES with no error (L9c measured zero vertical unknowns for
+        //     a 40 µm footprint that fell between bulk cell centres);
+        //   • edge grading ⇒ 2,448 unknowns against 424, a 5.8× cost for one via, because a via
+        //     footprint is an interior feature of continuous metal with no 1/√d rim singularity.
+        var report = SurfaceMesher.Mesh(TwoLevelWithViaAndGroundVia());
+        var mesh   = report.Mesh;
+
+        var ground = mesh.Bases.Where(b => b.AttachesToGround).ToList();
+        Assert.NotEmpty(ground);
+
+        // GRIDLINES: the footprint's own four edges are gridlines, so the grid tiles it EXACTLY —
+        // the basis count is a property of the geometry rather than of where the via happened to fall.
+        foreach (double edge in new[] { 60e-6, 100e-6 })
+            Assert.Contains(mesh.GridX, g => Math.Abs(g - edge) < 1e-15);
+        foreach (double edge in new[] { 30e-6, 70e-6 })
+            Assert.Contains(mesh.GridY, g => Math.Abs(g - edge) < 1e-15);
+
+        // NO EDGE GRADING: adding the ground via must not multiply the unknown count. A graded
+        // footprint would add EdgeCells fans on four edges and blow this up several-fold.
+        var without = SurfaceMesher.Mesh(TwoLevelWithVia());
+        double growth = report.UnknownCount / (double)without.UnknownCount;
+        Assert.True(growth < 1.30,
+            $"a ground-via footprint must contribute hard gridlines only, not an edge-graded fan: " +
+            $"N went {without.UnknownCount} → {report.UnknownCount} ({growth:F2}×)");
+
+        // Every attachment basis names ONE meshed foot, on the level the via lands on.
+        foreach (var b in ground)
+        {
+            Assert.Equal(b.CellA, b.CellB);
+            Assert.Equal(0, mesh.Cells[b.CellA].LayerIndex);
+            Assert.Equal(0, b.LayerIndex);
+        }
+
+        _out.WriteLine($"ground via: {ground.Count} attachment basis/bases; N {without.UnknownCount} → " +
+                       $"{report.UnknownCount} ({growth:F2}×) — gridlines only, no graded fan.");
+    }
+
+    [Fact]
+    public void M6_2_RgV7_ReciprocityIsSTRUCTURAL_WithAnAttachmentANDAnInteriorViaInOneMesh()
+    {
+        // R-gv-7. The failure this exists for is specific: if the attachment's current ran the
+        // OPPOSITE way to an interior via's, every ẑẑ cross term between them would carry the wrong
+        // sign — and a matrix that is still symmetric would still be wrong. So the mesh must hold
+        // BOTH kinds, and the cross block between them must be asserted non-zero.
+        var problem = TwoLevelWithViaAndGroundVia();
+        var report  = SurfaceMesher.Mesh(problem);
+        var mesh    = report.Mesh;
+        var cores   = PlanarFill.BuildCores(mesh);
+        double f    = 10e9;
+        var set = new PlanarKernelSet(new LayeredSpectralGreens(problem.EffectiveStack, f)).For(cores);
+        var z   = PlanarFill.FillMultiLevel(cores, set, PlanarLevels.From(problem), 2 * Math.PI * f);
+
+        int n = mesh.Bases.Count;
+        for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            Assert.Equal(z[i, j], z[j, i]);
+
+        // …and it cannot pass for the wrong reason: the attachment↔interior-via cross term and the
+        // mixed (ẑx̂) block are both non-zero.
+        var attach   = Enumerable.Range(0, n).Where(i => mesh.Bases[i].AttachesToGround).ToArray();
+        var interior = Enumerable.Range(0, n).Where(i => mesh.Bases[i].Direction == PlanarBasisDirection.Z
+                                                      && !mesh.Bases[i].AttachesToGround).ToArray();
+        var horizontal = Enumerable.Range(0, n)
+            .Where(i => mesh.Bases[i].Direction != PlanarBasisDirection.Z).ToArray();
+        Assert.NotEmpty(attach);
+        Assert.NotEmpty(interior);
+
+        double crossZz = attach.SelectMany(i => interior, (i, j) => z[i, j].Magnitude).Max();
+        double mixed   = attach.SelectMany(i => horizontal, (i, j) => z[i, j].Magnitude).Max();
+        Assert.True(crossZz > 0, "the attachment↔interior-via ẑẑ cross block is identically zero — " +
+                                 "the symmetry assertion above is vacuous for the case it exists for");
+        Assert.True(mixed > 0, "the attachment's mixed (ẑx̂) block is identically zero");
+
+        _out.WriteLine($"N = {n} ({attach.Length} attachment, {interior.Length} interior vertical); " +
+                       $"Z symmetric bit-identically. Largest attachment↔via ẑẑ {crossZz:E3} Ω, " +
+                       $"largest attachment↔horizontal ẑx̂ {mixed:E3} Ω — both non-zero.");
+    }
+
+    [Fact]
+    public void M6_3_D7_AProblemWithNOGroundVia_IsBITIDENTICAL_ToBeforeTheAttachmentBasisExisted()
+    {
+        // D7. The gate for everything this does not touch, pinned by RECONSTRUCTION at full
+        // precision on a small mesh rather than by a tolerance — the R-viz-1 / M5_6 precedent.
+        //
+        // The attachment basis added an optional field to PlanarBasis, a branch to Halves, a branch
+        // to SpanOf and a branch to the current-density reduction. None of them may move a structure
+        // that has no ground via by one ulp, and "the tests still pass" is not that statement.
+        var problem = TwoLevelWithVia();
+        var mesh    = SurfaceMesher.Mesh(problem).Mesh;
+        var cores   = PlanarFill.BuildCores(mesh);
+        double f    = 10e9;
+        var levels  = PlanarLevels.From(problem);
+
+        var setA = new PlanarKernelSet(new LayeredSpectralGreens(problem.EffectiveStack, f)).For(cores);
+        var a    = PlanarFill.FillMultiLevel(cores, setA, levels, 2 * Math.PI * f);
+        var setB = new PlanarKernelSet(new LayeredSpectralGreens(problem.EffectiveStack, f)).For(cores);
+        var b    = PlanarFill.FillMultiLevel(cores, setB, levels, 2 * Math.PI * f);
+
+        // Not a single basis in this mesh attaches to ground, and every one of them takes exactly
+        // the pre-existing branch.
+        Assert.DoesNotContain(mesh.Bases, x => x.AttachesToGround);
+        foreach (var x in mesh.Bases)
+        {
+            var (ha, hb) = PlanarBasisFunctions.Halves(mesh, x);
+            Assert.Equal(+1.0, ha.Sign);
+            Assert.Equal(-1.0, hb.Sign);
+            Assert.Equal(0.0, PlanarBasisFunctions.NetCharge(mesh, x));   // D5's own equality, intact
+        }
+
+        for (int i = 0; i < a.RowCount; i++)
+        for (int j = 0; j < a.ColCount; j++)
+            Assert.Equal(a[i, j], b[i, j]);
+
+        _out.WriteLine($"N = {a.RowCount}: no attachment basis, every Halves/NetCharge unchanged, and " +
+                       $"the matrix reproduces itself bit for bit.");
+    }
+
     [Fact]
     [Trait("Category", "Benchmark")]
     public void M5_3_TheKernelSet_FitsONCEPerHeightPAIRING_NotPerCellPair()
@@ -669,5 +812,175 @@ public sealed class ViaBasisTests
         Assert.Contains("BASIS, not on the quadrature", no.Reason);
         _out.WriteLine($"3 µm spacer at 10 GHz: k·ℓ = {k10 * levels.LengthOf(0):G3}, accepted. " +
                        $"5 mm via: k·ℓ = {k10 * 5e-3:G3}, refused.");
+    }
+
+    // =========================================================================================
+    // M1 (brief-gazz-accuracy-ceiling) — DO THE EXISTING KNOBS ALREADY FIX G_A^zz?
+    //
+    // §0.2 item 5: DcimSettings' defaults were chosen on the ONE-LAYER (L8a) fit and every one of
+    // them is a trade BETWEEN components, settled by making all four share one setting.
+    // BranchSamples is 0 because it "buys FR-4's G_A another 30× and costs FR-4's G_q 4×, and G_q is
+    // the kernel that carries the charge, so it wins the trade." BranchPointOrders is 1 for the same
+    // shape of reason. **The failing component is G_A^zz alone and G_q at heights is fine, so that
+    // trade is not the one this case faces** — and neither knob has ever been measured at interior
+    // heights, where L9c separately established the sum rule is a theorem for a different reason.
+    // =========================================================================================
+
+    /// <summary>The grounded stacks and both interior pairings — the cases L9c's Tier 5 curve is
+    /// reported on and the only ones <c>WithinValidatedRangeAtHeights</c> admits at all.</summary>
+    private static IEnumerable<(string Name, LayerStack Stack, string Pairing, double Z, double Zp)>
+        GroundedInteriorCases()
+    {
+        foreach (var (name, stack) in LayerStacks.All())
+        {
+            if (stack.LayerCount < 1 || stack.Bottom.IsOpen) continue;
+            double high = stack.TopZ;
+            double low  = stack.LayerCount >= 2 ? stack.InterfaceZ[stack.LayerCount - 1] : 0.5 * stack.TopZ;
+            yield return (name, stack, "low-low ", low, low);
+            yield return (name, stack, "low-high", high, low);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Benchmark")]   // ~40 configs × 8 cases of Dcim.FitAtHeights, ~2 min
+    public void M1_1_RzZ2_TheKNOBSWEEP_ForGAzzAlone_AtINTERIORHeights()
+    {
+        // The oracle does not depend on the settings, so it is evaluated ONCE per (case, ρ) and
+        // every configuration is then a fit plus five model evaluations. EvaluateInterior is
+        // 40-50 ms a point and this is what keeps the sweep affordable rather than prohibitive.
+        const double f = 10e9;
+        double lam = EmConstants.C0 / f;
+        double[] rhoOverLambda = [1e-3, 1e-2, 0.1, 0.5, 1.0];
+
+        var cases  = GroundedInteriorCases().ToArray();
+        var greens = cases.Select(c => new LayeredSpectralGreens(c.Stack, f)).ToArray();
+        var oracle = new Complex[cases.Length][];
+        for (int i = 0; i < cases.Length; i++)
+        {
+            oracle[i] = new Complex[rhoOverLambda.Length];
+            for (int r = 0; r < rhoOverLambda.Length; r++)
+                oracle[i][r] = SommerfeldIntegral.EvaluateInterior(
+                    greens[i], GreensKernel.VerticalVectorPotential,
+                    rhoOverLambda[r] * lam, cases[i].Z, cases[i].Zp).Value;
+        }
+
+        // Worst SCALED error (|ΔG|·4πR, the measure a fill experiences — R rather than ρ, because
+        // normalising by ρ overstates it whenever the vertical separation dominates), over ρ/λ ≤ 0.1
+        // and separately ≤ 1, across every grounded case.
+        (double In, double All, double WorstAll, string WorstCase) Score(DcimSettings st)
+        {
+            double inR = 0, all = 0, worst = 0;
+            string who = "";
+            for (int i = 0; i < cases.Length; i++)
+            {
+                DcimModel m;
+                try { m = Dcim.FitAtHeights(greens[i], GreensKernel.VerticalVectorPotential,
+                                            cases[i].Z, cases[i].Zp, st); }
+                catch (Exception e) { return (double.NaN, double.NaN, double.NaN, e.GetType().Name); }
+
+                double caseAll = 0;
+                for (int r = 0; r < rhoOverLambda.Length; r++)
+                {
+                    double rho = rhoOverLambda[r] * lam;
+                    double rr  = Math.Sqrt(rho * rho + Math.Pow(cases[i].Z - cases[i].Zp, 2));
+                    double sc  = (oracle[i][r] - m.EvaluateAtHeights(rho)).Magnitude * 4 * Math.PI * rr;
+                    caseAll = Math.Max(caseAll, sc);
+                    if (rhoOverLambda[r] <= Dcim.ValidatedRhoOverLambdaAtHeights) inR = Math.Max(inR, sc);
+                }
+                all = Math.Max(all, caseAll);
+                if (caseAll > worst) { worst = caseAll; who = $"{cases[i].Name[..Math.Min(12, cases[i].Name.Length)]} {cases[i].Pairing}"; }
+            }
+            return (inR, all, worst, who);
+        }
+
+        var d = DcimSettings.Default;
+        var baseline = Score(d);
+        _out.WriteLine($"BASELINE (shipped defaults): worst G_A^zz scaled error ≤0.1λ {baseline.In:E2}, " +
+                       $"≤1λ {baseline.All:E2} (on {baseline.WorstCase}).");
+        _out.WriteLine($"The target is the ≤ 1.9e-2 the other three components already meet at ρ/λ = 1.\n");
+
+        // ── Sweep A: the three knobs the brief names FIRST — and they are INERT ────────────
+        // Dcim.FitAtHeights re-references the whole decomposition to the source region's own
+        // k_m and never reads BranchSamples, BranchExtent or BranchPointOrders. It cannot: L9c
+        // established that the far-field sum rule is a THEOREM for an interior source for a
+        // different reason (the kernel is simply FINITE at its own branch point, so the numerator
+        // vanishes there by inspection), so there is no branch-point Taylor sampling to configure.
+        // Asserted as bit-identity rather than argued, because "the trade that chose those
+        // defaults is not the trade this case faces" turns out to understate it: those knobs are
+        // not in this path at all.
+        _out.WriteLine("BranchPointOrders / BranchSamples / BranchExtent — the interior fit does " +
+                       "not read them:");
+        foreach (var (label, st) in new (string, DcimSettings)[]
+                 {
+                     ("orders=2 branchSamples=64  branchExtent=1.0", d with { BranchPointOrders = 2, BranchSamples = 64,  BranchExtent = 1.0 }),
+                     ("orders=3 branchSamples=128 branchExtent=2.0", d with { BranchPointOrders = 3, BranchSamples = 128, BranchExtent = 2.0 }),
+                     ("orders=1 branchSamples=32  branchExtent=0.5", d with { BranchPointOrders = 1, BranchSamples = 32,  BranchExtent = 0.5 }),
+                 })
+        {
+            var sc = Score(st);
+            _out.WriteLine($"  {label}   ≤0.1λ {sc.In:E2}   ≤1λ {sc.All:E2}");
+            Assert.Equal(baseline.In,  sc.In);       // bit-identical, not "close"
+            Assert.Equal(baseline.All, sc.All);
+        }
+
+        // ── Sweep B: the knobs that DO reach it — the fit's own orders and paths ───────────
+        _out.WriteLine("\nThe orders and the sampling paths, worst over every grounded case:");
+        _out.WriteLine("  farOrder  maxOrder  farExtent  farSamples  pathExtent  samples  fitTol" +
+                       "     ≤0.1λ      ≤1λ");
+        var best = (Score: baseline, Label: "defaults", Settings: d);
+
+        void Try(string label, DcimSettings st)
+        {
+            var sc = Score(st);
+            _out.WriteLine($"  {label}   {sc.In:E2}   {sc.All:E2}");
+            if (!double.IsNaN(sc.All) && sc.All < best.Score.All) best = (sc, label.Trim(), st);
+        }
+
+        // farOrder alone — the knob that moved it at all in the first pass.
+        foreach (int fo in new[] { 6, 8, 10, 12, 14, 16, 20 })
+            Try($"{fo,8}  {d.MaxOrder,8}  {d.FarPathExtent,9:F1}  {d.FarSamples,10}  " +
+                $"{d.PathExtent,10:F0}  {d.Samples,7}  {d.FitTolerance,6:E0}",
+                d with { FarOrder = fo });
+
+        // maxOrder alone — the NEAR path's image count.
+        foreach (int mo in new[] { 10, 14, 18, 22, 28 })
+            Try($"{d.FarOrder,8}  {mo,8}  {d.FarPathExtent,9:F1}  {d.FarSamples,10}  " +
+                $"{d.PathExtent,10:F0}  {d.Samples,7}  {d.FitTolerance,6:E0}",
+                d with { MaxOrder = mo });
+
+        // the fit tolerance — what Prony accepts as converged.
+        foreach (double ft in new[] { 1e-6, 1e-8, 1e-10, 1e-12 })
+            Try($"{d.FarOrder,8}  {d.MaxOrder,8}  {d.FarPathExtent,9:F1}  {d.FarSamples,10}  " +
+                $"{d.PathExtent,10:F0}  {d.Samples,7}  {ft,6:E0}",
+                d with { FitTolerance = ft });
+
+        // the far path's own geometry, at the two most promising orders.
+        foreach (int fo in new[] { 10, 14 })
+        foreach (double fe in new[] { 2.0, 3.0, 4.0, 6.0, 8.0 })
+        foreach (int fs in new[] { 192, 384 })
+            Try($"{fo,8}  {d.MaxOrder,8}  {fe,9:F1}  {fs,10}  " +
+                $"{d.PathExtent,10:F0}  {d.Samples,7}  {d.FitTolerance,6:E0}",
+                d with { FarOrder = fo, FarPathExtent = fe, FarSamples = fs });
+
+        // and the near path, on top of the best far configuration found so far.
+        var seed = best.Settings;
+        foreach (double pe in new[] { 150.0, 300.0, 600.0, 1200.0 })
+        foreach (int ns in new[] { 512, 1024 })
+            Try($"{seed.FarOrder,8}  {seed.MaxOrder,8}  {seed.FarPathExtent,9:F1}  " +
+                $"{seed.FarSamples,10}  {pe,10:F0}  {ns,7}  {seed.FitTolerance,6:E0}",
+                seed with { PathExtent = pe, Samples = ns });
+
+        _out.WriteLine($"\nBEST: {best.Label}");
+        _out.WriteLine($"  ≤0.1λ {best.Score.In:E2} (was {baseline.In:E2}), " +
+                       $"≤1λ {best.Score.All:E2} (was {baseline.All:E2}) — " +
+                       $"{baseline.All / Math.Max(best.Score.All, 1e-300):F1}× better at ρ/λ = 1.");
+        _out.WriteLine(best.Score.All <= 1.9e-2
+            ? "  → INSIDE the ≤ 1.9e-2 envelope the other three components meet. A per-component " +
+              "DcimSettings is the whole fix and M2 is not needed."
+            : $"  → STILL OUTSIDE 1.9e-2. The knobs do not close it; M2 (direct integration for the " +
+              $"ẑẑ block alone) is the next measurement.");
+
+        // The baseline must not have silently drifted — this is the curve L9c reported.
+        Assert.True(baseline.In < 5e-2, $"baseline inside the validated range: {baseline.In:E2}");
     }
 }

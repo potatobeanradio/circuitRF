@@ -1,5 +1,111 @@
 # UI (Avalonia) — local conventions
 
+Two vias far apart on a board: there is now a way through, and a finding about the refusal itself
+(brief-gazz-accuracy-ceiling, 2026-08-06) — **M1 + M2 + M4; M3 deferred.** A follow-up to the M0 entry
+immediately below, entirely engine-side; the whole story is in `src/Engine/Mom/CLAUDE.md`.
+
+**What a user will notice: the one case M0 left refused now has an answer.** M0 made an ordinary board
+with a via simulate by asking the accuracy limit about the vias' own separation instead of the board's
+size. Two vias genuinely far apart still refused. There is now a setting that runs them —
+`DirectVerticalKernel` — which replaces the fitted Green's function with direct numerical integration
+for the one affected term. It is accurate at any separation and **costs roughly 20–40% more per
+frequency point**, so it is off by default and the refusal now names it as the way past itself.
+
+**No accuracy limit was widened, and the reason is a measurement rather than caution.** Every tuning
+knob the fit has was swept; the best setting is still far outside the target AND is worse in the range
+the kernel is used in today. So the constant stays exactly where it was and the way past it is a
+different method, not a wider claim about the same one.
+
+**The finding worth flagging to you, because it may change what you want done next.** On §10.7's own
+FR-4 board with two vias 18 mm apart — the exact case that was refused — the **fitted** answer turns
+out to be right to about 5e-7, i.e. the refusal is refusing a structure that would have solved
+correctly. That is one board on one material, and the material matters a lot, so nothing was widened
+on it. Confirming it on GaAs (where the underlying error is ~130× larger) is the obvious next step and
+**was not completed** — the test fixture written for it was mis-sized and did not finish in 35 minutes.
+If that check comes back the same way, the limit itself can probably be relaxed and the setting becomes
+unnecessary for most boards.
+
+**The setting is now in the EM panel, and wiring it exposed that NOTHING in the solver's settings
+was reachable from there** — the run service passed nothing at all, so every knob the engine had was
+dead as far as a user was concerned. Fixing that also let two DEFAULTS be set for the common case
+rather than for a debugging fixture: **adaptive frequency sampling is now on** (the default sweep is
+101 points and a full-wave point costs 48–72 seconds, so solving every one of them was an 80-minute
+to three-hour run for no accuracy gain — the modelled points are within 2.5e-5 of solved ones), and
+**the microstrip dispersion correction is now on** (the default sweep ends at 20 GHz, where leaving
+it off reports an effective permittivity 23% high). **No existing `.cem` changes behaviour**: both
+were arranged so a file already on disk keeps exactly what it recorded, and only a newly created
+setup picks the new defaults up.
+
+**Gate:** `tests/Engine.Tests` 1,004 routine (+2 opt-in benchmark methods); `tests/Ui.Tests` **4,746
+and green**. **Not interactively verified** — please confirm on your end that the EM panel shows the
+two new checkboxes (Frequency sampling, Vertical (via) kernel), that each greys out with a stated
+reason where it does not apply, and that a planar run now reports how many frequency points it
+actually solved.
+
+A via-bearing board-scale structure is no longer refused (brief-gazz-accuracy-ceiling, 2026-08-06) —
+**M0 only; M1–M3 deferred with their reasons.** A follow-up to L9, entirely engine-side; the whole
+story is in `src/Engine/Mom/CLAUDE.md`'s own G_A^zz section.
+
+**What a user will notice: an ordinary board with a via now simulates.** The full-wave kernel refused
+any via-bearing structure wider than ρ/λ = 0.1 — §10.7's own 2.9 × 20 mm FR-4 hero is 0.67 λ at
+10 GHz, so full-wave analysis of a via was available at MMIC scale and unavailable at board scale.
+**No accuracy limit was widened to fix this.** The limit governs one kernel component, `G_A^zz`,
+which is only ever evaluated between two vias — and the refusal was being asked about the size of the
+whole board instead. Asked about the vias' own separation, the hero reads 0.024 λ and runs.
+
+**Two vias genuinely far apart still refuse, and the message now tells you which problem you have.**
+It names the separation as being **between vias**, quotes the board's own size alongside it, and says
+that shrinking the surrounding metal will not help — because "move the vias closer together" and
+"make the board smaller" are different instructions and only one of them acts on this.
+
+**One new note on every general-kernel run**, and it is deliberately a note rather than a refusal: the
+other three kernel components were measured out to ρ/λ = 1, and a run past that now says so instead
+of going quiet. Reporting "unmeasured" is honest; refusing on it would invent a limit and would refuse
+structures that work today.
+
+**Gate:** `tests/Ui.Tests` **4,741 and green** (no test needed updating — nothing accepted before is
+refused now, by construction); `tests/Engine.Tests` **1,002 routine**; `tests/Firewall.Tests` 4/4.
+**Not interactively verified** — please confirm on your end that an EM setup on a board-scale
+two-level layout with a single via now runs instead of showing the ρ/λ refusal, and that the panel's
+notes report the via-footprint separation it checked.
+
+The ground via — a backside via now runs (brief-ground-vias-and-interior-electrostatics, 2026-08-06)
+— **PART A: M1 + M3 complete; M2 deliberately not built; M4 partial; Part B not started.** A
+follow-up to L9, and almost all of it is engine-side; the whole story is in
+`src/Engine/Mom/CLAUDE.md`'s own ground-via section (at the end of that file).
+
+**What a user will notice: a backside via stops being ignored.** L9's own phase gate found that a via
+to the ground plane was not representable by this kernel at all — `PlanarExtractor` dropped it with a
+note, correctly, because L9c's via basis spans two adjacent MESHED levels and the ground plane is the
+laterally infinite conductor the Green's function handles analytically rather than a meshed level. On
+a GaAs MMIC that is how a source terminal reaches ground, so the kernel could model an airbridge and
+not the commonest via there is. **A drawn backside via now extracts, meshes and solves**, and its own
+inductance is gated against a closed form to **0.081%** over a 500× span of aspect ratio.
+
+**A refusal MOVED rather than disappearing, and it is the one to re-check on your end.** The
+electrical bound (a via basis is one z-rooftop, so its current is uniform along the whole run) fired
+at k·ℓ = 0.05; it now fires at **0.30**, because that bound was measured for the first time.
+Subdividing an ATTACHED via — the only kind that exists in a real structure — moves the answer
+**0.077% at k·ℓ = 0.23 and 0.141% at k·ℓ = 1.0**, while the subdivision costs ~14% of a de-embedded
+point. So a via that used to be refused for being a fraction of a wavelength long (a 60 µm air gap at
+30 GHz, say) now simply solves. **Widening it unlocks nothing on its own** and the refusal keeps
+saying so: `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` already restricts every via-bearing run to
+electrically small structures and is untouched.
+
+**A via to the WRONG ground is still refused, by name.** The only non-meshed conductor a via may
+terminate on is the ground reference R-em-4 resolves. A different ground pour is a finite conductor
+this kernel does not mesh, and treating it as the infinite plane would solve a structure you did not
+draw — so it is dropped with a note naming the layer, exactly as before.
+
+**Gate:** `tests/Ui.Tests` **4,741 and green**, with **two gate tests UPDATED rather than deleted** —
+`L9PhaseGateTests`' backside-via case now asserts the via is BUILT (it asserted it was dropped), and
+its electrical-refusal case now asserts a 60 µm gap is accepted while a 200 µm one is not.
+`tests/Engine.Tests` **997 routine in ~2 min**; `tests/Firewall.Tests` 4/4. **Not interactively
+verified** (no visual driver here, as in every prior EM phase) — please confirm on your end that an
+EM setup whose layout carries a backside via now reports it as a ground attachment in the panel notes
+and produces vertical unknowns, that a via pointed at some other conductor is still reported as
+ignored, and that an ordinary two-level layout with Metal1↔Metal2 posts is unchanged.
+
 The via's z-integral — removing the midpoint rule (brief-via-z-integral, 2026-08-06) — **COMPLETE.**
 A follow-up to L9 rather than a sixth slice of it; almost all of it is engine-side, and the whole
 story is in `src/Engine/Mom/CLAUDE.md`'s own follow-up section (at the end of that file).

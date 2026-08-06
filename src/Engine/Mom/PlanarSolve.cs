@@ -520,16 +520,26 @@ public static class PlanarSolve
         // ONLY the ẑẑ block, so it is asked only when the mesh actually carries vertical bases: a
         // multi-level structure with no via is governed by the horizontal components, which L9c
         // measured at ≤ 1.9e-2 out to ρ/λ = 1 on every grounded stack.
-        if (general && HasVerticalBasis(mesh))
+        //
+        // ── R-zz-1 — AND IT IS ASKED OF THE VERTICAL BASES, NOT OF THE MESH DIAGONAL ──────────
+        //
+        // The comment above already said the limit "binds ONLY the ẑẑ block", and it was still asked
+        // of Diagonal(mesh). Those are not the same quantity: G_A^zz is consumed in exactly two
+        // places (PlanarFill's `zi && zj` arm and the SingularPrismPart it calls), both between two
+        // VERTICAL bases, so the largest ρ it is ever asked about is the extent of the via
+        // FOOTPRINTS — not of the board. On §10.7's own 2.9 × 20 mm FR-4 hero at 10 GHz the mesh
+        // diagonal is 0.67 λ and a single via's own footprint is ~0.02 λ: the old question refused a
+        // whole class of board-scale structures on a separation the kernel is never asked about.
+        //
+        // Two vias genuinely far apart still refuse, and that is correct rather than a leftover —
+        // there the fit really is asked about that ρ. Which is why the message has to name what the
+        // separation is BETWEEN: "move the vias closer together" and "make the board smaller" are
+        // different instructions and only one of them is the right one.
+        if (general)
         {
-            double extent = Diagonal(mesh);
-            var range = new PlanarKernelSet(new LayeredSpectralGreens(problem.EffectiveStack, fHi))
-                            .WithinValidatedRange(extent);
-            if (!range.Ok)
-                throw new InvalidOperationException(
-                    $"This structure carries vertical (via) current and is {SurfaceMesher.Eng(extent)}m " +
-                    $"across, which at {SurfaceMesher.Eng(fHi)}Hz is ρ/λ = " +
-                    $"{extent / (EmConstants.C0 / fHi):G3} between its most distant cells. " + range.Reason);
+            var (verdict, scoped) = VerticalRangeVerdict(problem, mesh, fHi, st.Fill);
+            if (!verdict.Ok) throw new InvalidOperationException(verdict.Reason);
+            notes.AddRange(scoped);
         }
 
         var sw    = Stopwatch.StartNew();
@@ -965,11 +975,147 @@ public static class PlanarSolve
         return false;
     }
 
-    /// <summary>The widest separation this mesh can ask the kernel about.</summary>
-    private static double Diagonal(PlanarMesh mesh)
+    /// <summary>The widest separation this mesh can ask the kernel about — its own bounding-box
+    /// diagonal. Public because it is what a caller compares the ẑẑ-scoped extent against.</summary>
+    public static double Diagonal(PlanarMesh mesh)
     {
         var (x0, y0, x1, y1) = Extent(mesh);
         return Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
+    }
+
+    /// <summary>
+    /// <b>R-zz-1 — G_A^zz's range verdict, asked of the VIA FOOTPRINTS rather than of the mesh.</b>
+    ///
+    /// <para>Extracted from <see cref="Run"/> so it is reachable without paying for a solve: a
+    /// board-scale two-level structure is ~1,140 unknowns and a de-embedded point on one is minutes,
+    /// so a test that had to run it could not gate the ACCEPTED case at all — only the refused one.
+    /// This is the decision, composed exactly as <see cref="Run"/> composes it, and <see cref="Run"/>
+    /// calls it rather than repeating it. Public for the same reason <c>PlanarKernel.CanSolve</c> is:
+    /// a pre-flight verdict is worth having before committing to a sweep.</para>
+    /// </summary>
+    public static (EmSuitability Verdict, List<string> Notes) VerticalRangeVerdict(
+        PlanarProblem problem, PlanarMesh mesh, double fHiHz, PlanarFillSettings? fill = null)
+    {
+        var notes  = new List<string>();
+        double lam = EmConstants.C0 / fHiHz;
+
+        // ── The ẑẑ block, and ONLY it ─────────────────────────────────────────────────────────
+        //
+        // The comment at the call site already said the limit "binds ONLY the ẑẑ block", and it was
+        // still asked of Diagonal(mesh). Those are not the same quantity: G_A^zz has exactly two
+        // consumers (PlanarFill's `zi && zj` arm and the SingularPrismPart it calls), both between
+        // two VERTICAL bases, so the largest ρ it is ever asked about is the extent of the via
+        // FOOTPRINTS — not of the board. On §10.7's own 2.9 × 20 mm FR-4 hero at 10 GHz the mesh
+        // diagonal is 0.67 λ while a single via's own footprint is ~0.02 λ: the old question refused
+        // a whole class of board-scale structures on a separation the kernel is never asked about.
+        //
+        // Two vias genuinely far apart still refuse, and that is correct rather than a leftover —
+        // there the fit really is asked about that ρ. Which is why the message names what the
+        // separation is BETWEEN: "move the vias closer together" and "make the board smaller" are
+        // different instructions and only one of them acts on this.
+        if (HasVerticalBasis(mesh))
+        {
+            double extent = VerticalExtent(mesh);
+            var range = new PlanarKernelSet(new LayeredSpectralGreens(problem.EffectiveStack, fHiHz))
+                            .WithinValidatedRange(extent);
+
+            // ── M4 (R-zz-4/5) — the constant did NOT move, and the way past it is a DIFFERENT
+            //    KERNEL rather than a wider claim about the same one.
+            //
+            // M1 measured every reachable DcimSettings knob and none of them closes this: three of
+            // the five the brief names are structurally inert on the interior path (FitAtHeights
+            // reads no branch-point setting — the interior sum rule is a theorem by inspection), and
+            // the best reachable configuration is still 71× outside the envelope while being 23×
+            // WORSE inside ρ/λ ≤ 0.1, where the kernel is used today. So ValidatedRhoOverLambdaAtHeights
+            // stays exactly where L9c measured it, and DirectVerticalKernel replaces the FIT for this
+            // one block with direct Sommerfeld integration — which is the oracle the limit was
+            // measured against, and therefore has no such limit of its own.
+            if (fill?.DirectVerticalKernel == true)
+            {
+                // NOT an early return: D2's note below is unconditional, and dropping it would
+                // re-open exactly the "narrowing left something ungoverned" hole M0 closed.
+                notes.Add(
+                    $"G_A^zz spans ρ/λ = {extent / lam:G3} between the via footprints" +
+                    (range.Ok ? ", inside the fit's own validated range" :
+                                $", PAST the {Dcim.ValidatedRhoOverLambdaAtHeights} the FIT is " +
+                                $"validated over") +
+                    " — and this run has DirectVerticalKernel on, so the ẑẑ block takes its kernel " +
+                    "from direct Sommerfeld integration rather than from the fit. That limit is a " +
+                    "property of the fit and does not apply to the integrator it was measured " +
+                    "against. This is the expensive path by construction.");
+            }
+            else if (!range.Ok)
+                return (EmSuitability.No(
+                    $"This structure's vertical (via) current spans {SurfaceMesher.Eng(extent)}m " +
+                    $"between its most distant VIA FOOTPRINT cells, which at " +
+                    $"{SurfaceMesher.Eng(fHiHz)}Hz is ρ/λ = {extent / lam:G3}. This is a separation " +
+                    $"between VIAS, not the size of the board: the mesh itself is " +
+                    $"{SurfaceMesher.Eng(Diagonal(mesh))}m across and that is NOT what is refused " +
+                    $"here. Bringing the vias closer together, or lowering the sweep's top, acts on " +
+                    $"this; shrinking the surrounding metal does not. Alternatively set " +
+                    $"PlanarFillSettings.DirectVerticalKernel, which replaces the FIT with direct " +
+                    $"Sommerfeld integration for this one block — accurate at any separation, and " +
+                    $"far slower (see M2's own cost measurement). " + range.Reason), notes);
+
+            else notes.Add(
+                $"G_A^zz's range was checked over the via footprints ({SurfaceMesher.Eng(extent)}m, " +
+                $"ρ/λ = {extent / lam:G3}) rather than over the whole mesh " +
+                $"({SurfaceMesher.Eng(Diagonal(mesh))}m, ρ/λ = {Diagonal(mesh) / lam:G3}) — that " +
+                $"kernel is only ever asked about pairs of vertical bases.");
+        }
+
+        // ── D2 — narrowing the question must not leave anything UNGOVERNED, and it exposed that it
+        //    would have. Scoping G_A^zz to the via footprints leaves the interior pairings of
+        //    G_A^xx, G_q and the MIXED component — whose ρ genuinely spans the mesh, since the mixed
+        //    block couples a via to EVERY horizontal basis — checked by nothing at all.
+        //
+        //    They do not need a refusal and the NUMBER is what says so: L9c's Tier 5 measured them
+        //    at ≤ 1.9e-2 of the free-space kernel out to ρ/λ = 1 on every grounded stack, which is
+        //    L9b's own envelope for the top-half-space pairing. Past ρ/λ = 1 there is simply no
+        //    measurement, and this is a NOTE rather than a refusal for exactly R-prt-13's reason:
+        //    reporting "unmeasured" is honest, and refusing on it would be inventing a limit.
+        double meshRho = Diagonal(mesh) / lam;
+        notes.Add(meshRho <= Dcim.ValidatedRhoOverLambdaInteriorHorizontal
+            ? $"The interior G_A^xx / G_q / mixed pairings span ρ/λ = {meshRho:G3}, inside the " +
+              $"{Dcim.ValidatedRhoOverLambdaInteriorHorizontal} L9c's Tier 5 measured them over " +
+              $"(≤ 1.9e-2 of the free-space kernel on every grounded stack)."
+            : $"The interior G_A^xx / G_q / mixed pairings span ρ/λ = {meshRho:G3}, PAST the " +
+              $"{Dcim.ValidatedRhoOverLambdaInteriorHorizontal} L9c's Tier 5 measured them over " +
+              $"(≤ 1.9e-2 there). Nothing above that separation has been measured for these three " +
+              $"components — this is a note rather than a refusal because 'unmeasured' is what it " +
+              $"is, and refusing on it would be inventing a limit rather than reporting one.");
+
+        return (EmSuitability.Yes, notes);
+    }
+
+    /// <summary>
+    /// <b>R-zz-1 — the widest separation the ẑẑ block can ask about</b>: the bounding-box diagonal of
+    /// the cells that carry a VERTICAL basis. <c>G_A^zz</c> has exactly two consumers, both in
+    /// <c>PlanarFill</c>'s <c>zi &amp;&amp; zj</c> arm, so this is an upper bound on every ρ that
+    /// kernel is ever evaluated at — and an EXACT one whenever the two extreme via cells are
+    /// themselves a pair, which they always are (the arm computes every pair).
+    /// </summary>
+    public static double VerticalExtent(PlanarMesh mesh)
+    {
+        double x0 = double.PositiveInfinity, y0 = double.PositiveInfinity;
+        double x1 = double.NegativeInfinity, y1 = double.NegativeInfinity;
+        bool any = false;
+
+        foreach (var b in mesh.Bases)
+        {
+            if (b.Direction != PlanarBasisDirection.Z) continue;
+            foreach (int ci in new[] { b.CellA, b.CellB })
+            {
+                var c = mesh.Cells[ci];
+                if (c.XMin < x0) x0 = c.XMin;
+                if (c.YMin < y0) y0 = c.YMin;
+                if (c.XMax > x1) x1 = c.XMax;
+                if (c.YMax > y1) y1 = c.YMax;
+                any = true;
+            }
+        }
+
+        return any ? Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)) : 0.0;
     }
 
     private static (double, double, double, double) Extent(PlanarMesh mesh)

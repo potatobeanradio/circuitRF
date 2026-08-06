@@ -220,6 +220,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<string> _conductorLayerChoices = [];
     [ObservableProperty] private string _signalLayerChoice = InferSignalLayer;
     [ObservableProperty] private bool   _dispersionCorrection;
+    [ObservableProperty] private bool   _adaptiveSampling = true;
+    [ObservableProperty] private bool   _directVerticalKernel;
 
     /// <summary>Non-null when the dispersion opt-in must be disabled, with the reason. The panel
     /// ASKS <see cref="QuasiStaticKernel.TryMicrostripDispersion"/> rather than re-deriving the
@@ -472,6 +474,49 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         CommitEdit(before, "Change dispersion correction");
     }
 
+    partial void OnAdaptiveSamplingChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.AdaptiveSampling) return;
+        var before = SnapshotJson();
+        Working.AdaptiveSampling = value;
+        CommitEdit(before, "Change adaptive frequency sampling");
+    }
+
+    partial void OnDirectVerticalKernelChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.DirectVerticalKernel) return;
+        var before = SnapshotJson();
+        Working.DirectVerticalKernel = value;
+        CommitEdit(before, "Change vertical-kernel integration");
+    }
+
+    /// <summary>
+    /// R13a — why adaptive sampling is unavailable, or null when it is. It only ever applies to the
+    /// planar kernel: a cross-section solve is a closed form per frequency, so modelling one to save
+    /// it would save nothing.
+    /// </summary>
+    public string? AdaptiveSamplingDisabledReason =>
+        Working.AnalysisKind == EmAnalysisKind.CrossSection
+            ? "Adaptive sampling applies to the planar (full-wave) analysis; a cross-section solve " +
+              "is closed-form per frequency and every point is already cheap."
+            : null;
+
+    /// <summary>
+    /// R13a — why the direct ẑẑ kernel is unavailable, or null when it is. It only ever affects
+    /// G_A^zz, which is evaluated in exactly one place (pairs of VERTICAL bases), so on a layout
+    /// with no vias it would change nothing at all and is disabled rather than silently inert.
+    /// </summary>
+    public string? DirectVerticalKernelDisabledReason =>
+        Working.AnalysisKind == EmAnalysisKind.CrossSection
+            ? "The direct vertical kernel is part of the planar (full-wave) analysis; this setup uses " +
+              "the cross-section kernel."
+            : PlanarProblem is { } pp && pp.ViaList.Count == 0
+                ? "This layout has no vias, so there is no vertical current and G_A^zz is never " +
+                  "evaluated — this setting would change nothing."
+                : null;
+
     // ── Refresh: extract, ask CanSolve, project the readback ───────────────────────────────────
 
     private void RebuildAll()
@@ -480,6 +525,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Port1Z0Text = FormatComplexOhms(Working.Port1Z0);
         Port2Z0Text = FormatComplexOhms(Working.Port2Z0);
         DispersionCorrection = Working.DispersionCorrection;
+        AdaptiveSampling     = Working.AdaptiveSampling;
+        DirectVerticalKernel = Working.DirectVerticalKernel;
         AnalysisKind = Working.AnalysisKind;
         SignalLayerChoice = Working.SignalStackupLayerName is { Length: > 0 } s ? s : InferSignalLayer;
         RefreshMeshText();
@@ -511,6 +558,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         Problem            = null;
         PlanarProblem      = null;
+        OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
+        OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         Readback           = null;
         ExtractionRefusal  = null;
         KernelRefusal      = null;
@@ -629,6 +678,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         }
 
         PlanarProblem = planar.Problem;
+        OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
+        OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
 
         var verdict = new PlanarKernel().CanSolve(planar.Problem!);
         KernelRefusal = verdict.Ok ? null : verdict.Reason;
@@ -713,6 +764,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarMeshNotes        = [];
         PlanarExtractionRefusal = null;
         PlanarProblem          = null;
+        OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
+        OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         // R-em-17, and it matters MORE for the heat map than for the mesh: a current map drawn over
         // edited artwork looks like it still matches the artwork underneath it.
         CurrentDensity         = null;

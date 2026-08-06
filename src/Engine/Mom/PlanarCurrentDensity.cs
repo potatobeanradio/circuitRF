@@ -165,8 +165,12 @@ public static class PlanarCurrentDensity
                     // A via's current does not ramp: it is the SAME current at both feet, so both
                     // carry the whole of it rather than half. That is not the rooftop's ½ with a
                     // different constant — it is a different quantity (see PlanarCurrentDensityMap.Iz).
+                    //
+                    // A GROUND ATTACHMENT has ONE meshed foot and names it as both cells, so adding
+                    // to both would report twice the current that is actually there. Its other foot
+                    // is the ground plane, which is not meshed and has no cell to colour.
                     iz[bs.CellA] += i;
-                    iz[bs.CellB] += i;
+                    if (!bs.AttachesToGround) iz[bs.CellB] += i;
                     break;
             }
         }

@@ -75,6 +75,42 @@
 // it is the same normalisation ("unit total current across the shared connection"), not a different
 // one.
 //
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// THE GROUND-ATTACHMENT (HALF) BASIS — ONE MESHED FOOT, AND ITS NET CHARGE IS NOT ZERO
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// A BACKSIDE via joins a signal level to the GROUND PLANE, which is the laterally infinite PEC the
+// Green's function handles analytically and is never a meshed level. L9's own phase gate found that
+// L9c's rooftop-in-z therefore cannot express the commonest via on a MMIC at all. What it needs is
+// an ATTACHMENT basis: the same uniform 1/Area vertical weight over the footprint, one divergence
+// pulse at the meshed foot, and NOTHING at the grounded foot.
+//
+// THE TWO STRUCTURAL INVARIANTS THAT DO NOT SURVIVE IT, both re-stated here rather than left to
+// look like breakage:
+//
+//   (a) L9c's D5 asserts ∫∇·f dS = 0 as an EQUALITY on every basis. An attachment basis has ONE
+//       pulse, so its net charge is ∓1 — balanced by its IMAGE below the plane, not by a second
+//       pulse on the metal. Adding a compensating pulse "to restore D5" would double-count the
+//       image the Green's function already carries. The equality that survives is |net| = 1 and it
+//       is asserted exactly, not to a tolerance (ViaBasisTests).
+//
+//   (b) L8c's own header records that s_A + s_B = 0, so "any part of G_q that does not depend on ρ
+//       contributes exactly ZERO to the scalar block". That cancellation is what makes the
+//       EXTRACTED CONSTANT harmless everywhere else, and IT FAILS FOR THIS ROW: the four-term signed
+//       sum degenerates to one term, so the constant survives into Z^φ. Nothing in the fill notices,
+//       which is exactly why the ω → 0 capacitance is gated (R-gv-8, PlanarStaticLimitTests) rather
+//       than the sign being reasoned about.
+//
+// SIGN CONVENTION, STATED ONCE AND DELIBERATELY NOT THE BRIEF'S. Its D4 calls the net charge "+1".
+// This file instead keeps EVERY vertical basis's current flowing +z (A → B, upward), attachment
+// included, so the ẑẑ block needs no per-basis direction factor and reciprocity stays structural
+// with an attachment and an interior via in the SAME mesh — which is exactly the MMIC starter
+// (a backside via and a Metal1↔Metal2 post). With that orientation the single pulse sits at the
+// UPPER (meshed) foot and carries −1/Area, so the net charge on the metal is −1 and the plane's
+// +1 image is the return. Matching the other vertical bases' direction is worth more than matching
+// a sign in prose; the physics D4 is about — the charge is not zero, the ground plane is the
+// return, do not add a compensating pulse — is unchanged.
+//
 // R-via-5 — WHERE VERTICAL BASES SIT IN THE UNKNOWN VECTOR IS A CONTRACT FROM THE MOMENT IT IS
 // WRITTEN, because ports, the current-density map and de-embedding all index by it. **Every
 // horizontal basis of every level comes before every vertical one.** Adding a via therefore renumbers
@@ -106,6 +142,14 @@ public static class PlanarBasisFunctions
     /// </summary>
     public static (RooftopHalf A, RooftopHalf B) Halves(PlanarMesh mesh, PlanarBasis basis)
     {
+        // The GROUND-ATTACHMENT basis has ONE meshed foot. Both halves name that same cell so no
+        // caller has to guard an index, and the GROUNDED half carries Sign = 0 — which makes the
+        // fill's own four-term signed sum drop the ground terms with no special case anywhere. The
+        // meshed half comes FIRST so Divergence's first-match walk returns the real pulse.
+        if (basis.AttachesToGround)
+            return (new RooftopHalf(basis.CellB, -1.0, double.NaN),
+                    new RooftopHalf(basis.CellB,  0.0, double.NaN));
+
         var a = mesh.Cells[basis.CellA];
         var b = mesh.Cells[basis.CellB];
 
@@ -126,6 +170,19 @@ public static class PlanarBasisFunctions
     /// <summary>True for the vertical (via) basis — the one whose weight is uniform rather than a
     /// ramp, and whose two cells sit on different levels at the same grid position.</summary>
     public static bool IsVertical(PlanarBasis basis) => basis.Direction == PlanarBasisDirection.Z;
+
+    /// <summary>
+    /// <b><c>∫∇·f dS</c> over the basis's whole support</b> — the sum of its divergence pulses, each
+    /// integrating to exactly its own sign. <b>0 for every rooftop and every interior via</b> (L9c's
+    /// D5, unchanged and still an equality); <b>−1 for a ground-attachment basis</b>, whose return
+    /// charge is the plane's image rather than a second pulse on the metal. See the file header for
+    /// why a compensating pulse would double-count the image, and for the sign convention.
+    /// </summary>
+    public static double NetCharge(PlanarMesh mesh, PlanarBasis basis)
+    {
+        var (a, b) = Halves(mesh, basis);
+        return a.Sign + b.Sign;
+    }
 
     /// <summary>
     /// The scalar weight <c>ξ/Area</c> at a point of one half's cell — the magnitude of <c>f</c>

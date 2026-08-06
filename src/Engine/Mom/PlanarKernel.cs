@@ -148,7 +148,13 @@ public sealed class PlanarKernel
 
         foreach (var via in problem.ViaList)
         {
-            double lo = problem.LevelZ(via.LowerLayerIndex);
+            // A GROUND ATTACHMENT has no lower LEVEL — its lower terminal is the plane itself, at the
+            // stack's own bottom. Asking LevelZ for it indexes Layers[-1], which is what this check
+            // did until L9's gate 4 ran a backside via through the product path and got a raw
+            // ArgumentOutOfRangeException instead of a verdict. The QUESTION is unchanged and is still
+            // worth asking of an attachment: a via from the plane up to a level that crosses a
+            // dielectric interface on the way has two sets of asymptotic coefficients under it.
+            double lo = via.ToGround ? stack.InterfaceZ[0] : problem.LevelZ(via.LowerLayerIndex);
             double hi = problem.LevelZ(via.UpperLayerIndex);
             if (!(hi > lo)) continue;
 
@@ -159,7 +165,8 @@ public sealed class PlanarKernel
             if (rLo == rHi) continue;
 
             return EmSuitability.No(
-                $"The via between levels {via.LowerLayerIndex} and {via.UpperLayerIndex} spans " +
+                $"The via between {(via.ToGround ? "the ground plane" : $"level {via.LowerLayerIndex}")} " +
+                $"and level {via.UpperLayerIndex} spans " +
                 $"z = {SurfaceMesher.Eng(lo)}m to {SurfaceMesher.Eng(hi)}m, which crosses a " +
                 $"dielectric interface of the medium (region {rLo} to region {rHi}). This kernel " +
                 $"integrates a via's Green's function over its length in CLOSED FORM, and that form " +
@@ -180,7 +187,12 @@ public sealed class PlanarKernel
     /// </summary>
     private static EmSuitability MidpointRuleVerdict(PlanarProblem problem, double fHiHz)
     {
-        if (problem.ViaList.Count == 0 || problem.Layers.Count < 2) return EmSuitability.Yes;
+        // A GROUND via needs only ONE meshed level, so the two-level guard below is not the right
+        // question for it: its span is the plane up to its own metal.
+        bool ground = false;
+        foreach (var v in problem.ViaList) if (v.ToGround) { ground = true; break; }
+        if (problem.ViaList.Count == 0 || (problem.Layers.Count < 2 && !ground))
+            return EmSuitability.Yes;
         double lambdaG = problem.MaxFrequencyHz > 0 && fHiHz == problem.MaxFrequencyHz
             ? problem.GuidedWavelengthM
             : (problem with { MaxFrequencyHz = fHiHz }).GuidedWavelengthM;
@@ -188,7 +200,7 @@ public sealed class PlanarKernel
         // L9e's GEOMETRIC arm (and with it NarrowestViaFootprint) is gone: the z-integral it bounded
         // is resolved, and the ℓ/w curve it was measured on is flat. What is left is electrical and
         // is about the BASIS — see PlanarLevels.CanRepresentVias.
-        return PlanarLevels.From(problem).CanRepresentVias(2.0 * Math.PI / lambdaG);
+        return PlanarLevels.From(problem).CanRepresentVias(2.0 * Math.PI / lambdaG, ground);
     }
 
     /// <summary>The pre-solve mesh and R17's verdict — §10.5's "report the unknown count before

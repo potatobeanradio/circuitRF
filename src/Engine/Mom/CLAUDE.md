@@ -3720,3 +3720,434 @@ singular part of the average is two endpoint evaluations. The cost is n_z fits a
   result for why, and for what would make it worth re-measuring.
 - **`Dcim.ValidatedRhoOverLambdaAtHeights`**, untouched, and it is the binding limit on every
   via-bearing structure.
+
+## The GROUND VIA — the attachment basis (follow-up to L9, gap A)
+
+**A FOLLOW-UP to L9, like the via z-integral before it.** Brief:
+`docs/sonnet-briefs/brief-ground-vias-and-interior-electrostatics.md`, **Part A only** — Part B (the
+interior electrostatic Green's function) is not started; see the end of this section.
+
+It closes the gap L9's own phase gate found and named as the most valuable remaining work in this
+area: **a backside via was not representable by this kernel at all.** L9c's via basis is a rooftop
+spanning two adjacent MESHED levels; a via to ground joins a signal level to the laterally infinite
+PEC the Green's function handles analytically, which is never a meshed level. On a GaAs MMIC that is
+how a source terminal reaches ground — the commonest via there is.
+
+```
+PlanarMesh.cs            + PlanarBasis.AttachesToGround (optional, defaulted)
+PlanarBasisFunctions.cs  + the half basis's Halves/NetCharge, and the two invariants it breaks
+PlanarKernelSet.cs       + PlanarLevels.GroundZ / AttachmentLengthOf; MaxElectricalLength 0.05 → 0.30
+PlanarProblem.cs         + PlanarVia.GroundTerminal / ToGround; CanSolve's PEC-bottom refusal
+SurfaceMesher.cs         the ground-via path — one meshed foot, gridlines but no edge grading
+PlanarFill.cs            SpanOf takes the BASIS, so an attachment spans GroundZ → its own level
+PlanarCurrentDensity.cs  an attachment names one cell twice and must not be counted twice
+PlanarKernel.cs          the electrical verdict asks about the attachment's own span too
+PlanarExtractor.cs (Ui)  BuildVias produces a ground attachment — for the RIGHT ground only
+```
+
+### THE DELIVERABLE: the ground via's own inductance, against a closed form
+
+`ViaPhysicsTests.T4_1`. §2's observation is exact and no new oracle was written: a via to ground at
+εᵣ = 1 over a PEC is a bar of length ℓ **plus its equal-direction image** (L9e's T2_1 earned that
+sign — the CURRENT reflection at a PEC is +1), i.e. exactly the half of a 2ℓ bar `ExactInductance`
+already integrates in closed form, evaluated at z₀ = 0.
+
+| ℓ/w | 0.01 | 0.05 | 0.075 | 0.1 | 0.5 | 1.0 | 5.0 |
+|---|---|---|---|---|---|---|---|
+| w = 10 µm | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | −0.00% |
+| w = 40 µm | 0.01% | 0.01% | 0.01% | 0.01% | 0.01% | 0.01% | −0.01% |
+| w = 160 µm | −0.00% | 0.02% | 0.02% | 0.02% | 0.01% | 0.01% | −0.08% |
+
+**Worst 0.081% over ℓ/w ∈ [0.01, 5] and a 16× range of w** — the same span and the same shape as
+T3_1's own curve for an interior via, for the basis that did not exist until now.
+
+### THE FINDING: M1 measured the chain's premise and it is FALSE, so the chain is NOT built
+
+The brief's D2 makes the attachment basis "the bottom member of a chain whose other members are
+ordinary z-rooftops", and §0.2 item 3 argues the chain is mandatory: `MaxElectricalLength` is k·ℓ ≤
+0.05 and a 100 µm GaAs backside via at 30 GHz is **k·ℓ = 0.23**, 4.5× over, with no intermediate
+levels to split across. **M1 (`ViaPhysicsTests.M1_2`, R-gv-1) measured it, and the premise does not
+survive.**
+
+**(3b) — an ATTACHED via, the only kind that exists in a real structure** (and the kind a backside
+via is at *both* ends — its lower terminal is a perfect conductor, an even stronger termination than
+a finite plate). Subdivide the same via into n segments and compare the reaction vᵀZ⁻¹v:
+
+| k·ℓ | f | n=2 vs n=1 | n=4 vs n=1 | **n=8 vs n=1** | worst \|i_k/mean − 1\| at n=8 |
+|---|---|---|---|---|---|
+| 0.01 | 1.33 GHz | 0.020% | 0.050% | **0.062%** | 1.54% |
+| 0.23 | 30.6 GHz | 0.031% | 0.065% | **0.077%** | 1.53% |
+| 0.50 | 66.4 GHz | 0.100% | 0.147% | **0.172%** | 1.61% |
+| 1.00 | 133 GHz | 0.089% | 0.126% | **0.141%** | 2.04% |
+
+1.0 is as far as `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` permits on that fixture (ρ/λ = 0.095),
+and the test asserts that rather than measuring outside the kernel's own validated range.
+
+**(3a) — a FLOATING rod does move, by 10.2% at n = 8 with the current 28.5% non-uniform — and that
+movement is 98% STATIC.** It is identical (10.181% → 10.345%) from k·ℓ = 0.01 to 0.23, a 23× span;
+an electrical effect would scale like (kℓ)², i.e. 529×. It is the floating end condition — a
+free-floating conductor's current genuinely vanishes at both ends and a uniform basis can never
+represent that, however short the rod. **A via in a circuit is terminated at both ends and has no
+such freedom.** Reading (3a) as "the chain is needed" is exactly L9e's own mistake one layer up:
+blaming an electrical bound for a quantity that has no frequency in it.
+
+**(1) — and the chain is not cheap.** Real fills on L9's own two-level fixture, counting
+`PlanarKernelSet.FitCount`:
+
+| n | N | vertical | fits/frequency | added | seconds @105 ms | % of a 149.9 s point |
+|---|---|---|---|---|---|---|
+| 1 | 514 | 2 | 13 | 0 | 0.00 | 0.00% |
+| 2 | 516 | 4 | 27 | 14 | 1.47 | 0.98% |
+| 4 | 520 | 8 | 70 | 57 | 5.98 | 3.99% |
+| 8 | 528 | 16 | **216** | 203 | 21.31 | **14.22%** |
+
+Growth of the added fits is **4.07× then 3.56× per doubling** — quadratic, not linear. Equal-length
+segments share NO pairing (a fit is keyed on ABSOLUTE heights, and segment k's nodes sit at
+z₀ + kℓ/n + offsets), and the ẑẑ arithmetic alone under-predicts it: the SCALAR block adds its own
+(n+1)(n+2)/2 level pairings, which only a real fill reveals.
+
+**So: 14% of a solve to move the answer 0.08%. The chain is not built, and `MaxElectricalLength` is
+0.05 → 0.30 instead**, set past every measured point where the uniform-current basis is worth under
+0.1%. `T3_3` and `L9PhaseGateTests.Gate3Wiring_TheAspectRatioRefusalIsGone_…` are **updated, not
+loosened** — the refusal's own wording now names the measurement rather than prescribing a remedy
+that is not worth it, and a 60 µm gap at 30 GHz (k·ℓ = 0.14) is now ACCEPTED where it used to refuse.
+**Widening it unlocks nothing on its own** and the refusal keeps saying so:
+`Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` already restricts every via-bearing run to electrically
+small structures, and it is byte-identical.
+
+### The two structural invariants it breaks, both re-gated rather than exempted (§0.2 item 4)
+
+**(a) L9c's D5 equality does not survive.** An attachment has ONE divergence pulse, so
+`∫∇·f dS = ∓1` — balanced by its IMAGE below the plane, not by a second pulse on the metal. Adding a
+compensating pulse "to restore D5" would **double-count the image the Green's function already
+carries**. `PlanarBasisFunctions.NetCharge` is the one place the quantity is stated; `T4_2` asserts
+−1 exactly (not to a tolerance, for D5's own reason) and `M6_3` asserts 0 exactly for every other
+basis. The ρ → ∞ decay is measured, not asserted: **ρ^−3.00** over a decade, against a monopole's
+ρ^−1 — an absent or wrongly-signed image would read ρ^−1.
+
+**(b) L8c's `s_A + s_B = 0` fails, so the extracted CONSTANT stops cancelling** — in exactly one row,
+and nothing in the fill notices. **It does not bite, and that is measured rather than reasoned**
+(`T4_3`): the split between the closed-form constant and the numerically-integrated remainder is
+arbitrary, so the assembled entry must be invariant under `PlanarExtractionOrder`. Inverse vs
+Constant is **1.09e-15**, Inverse vs Linear **3.28e-9** — on a row where `s_A + s_B = −1`, so the
+agreement is a real statement rather than a vacuous one.
+
+### The sign convention is NOT the brief's, and the reason is reciprocity
+
+D4 calls the net charge "+1". This file instead keeps **every** vertical basis's current flowing +z
+(A → B, upward), attachment included — so the ẑẑ block needs no per-basis direction factor and
+reciprocity stays structural with an attachment and an interior via in the SAME mesh, which is
+exactly the MMIC starter (a backside via and a Metal1↔Metal2 post). With that orientation the single
+pulse sits at the upper (meshed) foot and carries −1. `M6_2` is the gate, and it asserts the
+attachment↔interior-via ẑẑ cross block is **non-zero** (5.79e-1 Ω) so the symmetry cannot pass for
+the wrong reason — that cross block is precisely what a direction slip would invert while leaving
+`Z` symmetric and wrong.
+
+**The mechanism that made this cheap:** `Halves` returns the ONE meshed cell **twice**, with the
+grounded half carrying `Sign = 0`. The fill's own four-term signed sum then drops the ground terms
+with no index guard and no special case anywhere downstream.
+
+### R-gv-5 — the mesher's two silent failures do NOT transfer for free
+
+They were fixed for the two-meshed-feet path at L9c and the new path does not inherit their tests.
+`ViaBasisTests.M6_1` asserts both **for the ground-via path specifically**: the footprint's own four
+edges are hard gridlines (without them the via vanishes with no error — L9c measured zero vertical
+unknowns for a 40 µm footprint between cell centres), and adding it grows N by **1.08×**, not the
+5.8× an edge-graded fan would cost. Both hold because `CollectBoundaryLines` walks `problem.ViaList`
+without caring which terminal a via names — by construction, and now asserted.
+
+### R-gv-6 — the extractor builds it only for the ground the kernel actually models
+
+`PlanarExtractor.BuildVias` used to drop a via whose span named a non-analysis conductor
+(`unknownLevels`). It now produces a ground attachment when the named conductor **is the ground
+reference R-em-4 resolves**, and still drops anything else **by name**: a different ground pour is a
+FINITE conductor this kernel does not mesh, and treating it as the infinite plane would solve a
+structure nobody drew. `L9PhaseGateTests` gates both halves through the product path — a drawn
+backside via on the MMIC starter now extracts, meshes and produces **4 ground-attachment vertical
+unknowns** (N = 943), where before it was dropped with a note.
+
+### M4's Tier 5 — BUILT, and it found a production bug before it passed anything
+
+`L9PhaseGateTests.Gate4_AGroundViaAtAStubsEnd_TurnsItsQuarterWaveNOTCH_IntoTransmission`,
+`Category=Benchmark`, **6.6 min**. A quarter-wave stub inverts whatever terminates it, so one drawn
+`ViaShape` decides whether the through path notches or is transparent — a with/without COMPARISON,
+for the same reason L9's own gate 1 is one (the two-level de-embedding residual is the same order as
+a short structure's own reflection, so an absolute tolerance there would be a tolerance on the
+residual). 144 µm line on a 50 µm GaAs slab, ε_eff(A) 9.3602, stub 408.3 µm = λ_g/4 at 60 GHz:
+
+| f (GHz) | \|S₂₁\| OPEN stub | \|S₂₁\| SHORTED stub | ratio |
+|---|---|---|---|
+| 48.00 | 0.5137 | 0.9682 | 1.88 |
+| 52.50 | 0.4019 | 0.9841 | 2.45 |
+| **57.00** | **0.007319** | **0.9959** | **136** |
+| 61.50 | 0.5145 | 0.9866 | 1.92 |
+| 66.00 | 0.6863 | 0.9509 | 1.39 |
+
+**136× at the open stub's own notch** (interpolated 56.72 GHz, −5.5% of the bare λ_g/4 prediction —
+the open-end extension, in the direction and roughly the size L8's own gate 1 measured). N = 892
+open / 1,006 shorted, of which **63 are the ground attachment's** vertical unknowns.
+
+**THE BUG, and it is exactly what a phase gate is for.** `PlanarKernel.CanSolve`'s
+`EveryViaLiesInOneMediumRegion` called `problem.LevelZ(via.LowerLayerIndex)` — and a ground
+attachment's lower index is `PlanarVia.GroundTerminal = -1`, so it indexed `Layers[-1]` and threw a
+raw `ArgumentOutOfRangeException` instead of returning a verdict. **Every engine-side test of the
+attachment basis is on hand-built problems that never reach `CanSolve`**, which is why nothing caught
+it; the product path reaches it on every run. Fixed by taking the stack's own bottom
+(`InterfaceZ[0]`) for an attachment — the question the check asks is still worth asking of one, since
+an attachment crossing a dielectric interface has the same two-sets-of-coefficients problem — and the
+refusal now names "the ground plane" rather than "level -1".
+
+**One fixture decision worth recording: the slab is 50 µm rather than the starter's 100.** A ground
+attachment's length IS the slab height, and at the band's top a 100 µm one measures k·ℓ = 0.50
+against `MaxElectricalLength`'s 0.30. **The refusal fired, by name, and the FIXTURE moved rather than
+the constant** — which is the second thing this gate demonstrates.
+
+### What is NOT built, and what a continuation starts from
+- **R-gv-8's ω → 0 capacitance gate against `PlanarStaticLimitTests`.** `T4_3` covers the mechanism
+  the trap actually runs through (the extracted constant) at full frequency; the static-limit rung is
+  the independent cross-check and is not run.
+- **The z-segment chain (M2).** Deliberately, on the measurement above. If a case ever appears where
+  it matters — an attached via past k·ℓ ≈ 1 that `ValidatedRhoOverLambdaAtHeights` still admits —
+  M1_2's own `ChainVias` helper (in `ViaPhysicsTests`) is the construction, and its cost is measured.
+- **ALL OF PART B** — the interior electrostatic Green's function, `C_pul` at a buried level, and
+  L9c's still-un-run Tier 4. Nothing here touches it, and `PlanarSolve`'s buried-level refusal is
+  byte-identical. It is now the most valuable remaining work in this area, and this slice hit its
+  edge directly: `T4_2`'s decay measurement had to be taken at a TOP-SURFACE height because
+  `LayeredStaticGreens` refuses an interior source by name — the very refusal Part B exists to lift.
+
+
+## G_A^zz's accuracy ceiling — M0: the refusal was asking the wrong question (follow-up to L9)
+
+**A FOLLOW-UP to L9**, a sibling of the via z-integral and the ground-via briefs and independent of
+both. Brief: `docs/sonnet-briefs/brief-gazz-accuracy-ceiling.md`. **M0 only** — M1 (the DCIM knob
+sweep), M2 (direct integration instead of a fit) and M3 (a depth search) are measured deferrals, and
+the brief's own §7 names M0 as the natural fault line and possibly the only milestone needed.
+
+```
+PlanarSolve.cs   + VerticalExtent / VerticalRangeVerdict (public — a pre-flight verdict, like
+                   PlanarKernel.CanSolve); Run calls it rather than repeating it
+Dcim.cs          + ValidatedRhoOverLambdaInteriorHorizontal = 1.0 (a MEASURED RANGE, not a refusal)
+PlanarFill.cs    + PlanarFillDiagnostics — optional, defaulted null, Tier 1's own instrument
+```
+
+**`Dcim.ValidatedRhoOverLambdaAtHeights` did NOT move.** L9c measured the 14× that justifies it and
+nothing here re-measured it. What moved is *which ρ it is asked about*.
+
+### THE FINDING: the comment was right and the code was not
+
+`PlanarSolve`'s own comment already said the limit *"binds ONLY the ẑẑ block"* — and two lines later
+it asked `Diagonal(mesh)`. Those are different quantities, and on board-scale geometry they differ by
+more than the limit itself. `G_A^zz` has exactly **two** consumers anywhere (`PlanarFill`'s
+`zi && zj` arm and the `SingularPrismPart` it calls), both between two VERTICAL bases, so the widest
+ρ it is ever evaluated at is the extent of the **via footprints**, not of the board.
+
+**§10.7's own FR-4 hero (2.9 × 20 mm on 1.6 mm FR-4), two levels, 10 GHz, λ₀ = 30 mm:**
+
+| layout | N | mesh diagonal | OLD ρ/λ | via extent | **NEW ρ/λ** | verdict |
+|---|---|---|---|---|---|---|
+| one via, mid-board | 1,105 | 20.21 mm | 0.674 | 0.707 mm | **0.024** | REFUSED → **PASS** |
+| two vias, 1 mm apart | 1,174 | 20.21 mm | 0.674 | 1.581 mm | **0.053** | REFUSED → **PASS** |
+| two vias, 18 mm apart | 1,174 | 20.21 mm | 0.674 | 18.507 mm | **0.617** | REFUSED → REFUSED |
+
+**§10.7's FR-4 hero with a via runs at 10 GHz.** The last row is not a leftover — there the fit
+genuinely IS asked about 0.617 λ, which is the regime L9c measured at 14×. **Narrowing the question
+is not widening the answer**, and the refusal's wording carries that distinction because the two
+cases need different instructions: it names the separation as being **between vias**, quotes the mesh
+diagonal alongside it, and says outright that shrinking the surrounding metal does not act on it.
+
+**Tier 1 is INSTRUMENTED, not read off the code**, because that difference is the entire soundness
+argument. `PlanarFillDiagnostics` records the widest separation the ẑẑ arm actually reaches; on L9d's
+own fixture it is **56.57 µm against the 56.57 µm the refusal checked — equal, not merely bounded**
+(the arm computes every pair, so the two extreme via cells always are one), on a mesh 412 µm across.
+
+### D2 — narrowing EXPOSED that three components were governed by nothing, and that is a finding
+
+Scoping `G_A^zz` to the via footprints leaves the interior pairings of `G_A^xx`, `G_q` and the
+**mixed** component checked by nothing at all — and the mixed block couples a via to *every*
+horizontal basis, so its ρ genuinely does span the mesh. They do not need a refusal, and **the number
+is what says so** rather than an assumption: L9c's Tier 5 measured all three at **≤ 1.9e-2** of the
+free-space kernel out to ρ/λ = 1 on every grounded stack, which is L9b's own envelope for the
+top-half-space pairing.
+
+`Dcim.ValidatedRhoOverLambdaInteriorHorizontal = 1.0` records that, and `PlanarSolve` states it on
+every general-kernel run — *inside* it below, and **"PAST … nothing above that separation has been
+measured"** above. **A note, not a refusal, for exactly R-prt-13's reason**: reporting "unmeasured" is
+honest, and refusing on it would be inventing a limit rather than reporting one. It would also have
+refused structures accepted today, which D6 forbids.
+
+### What did NOT move (D6 / R-zz-5)
+
+**Nothing accepted today can become refused**, and it is a property of the construction rather than a
+tolerance: the vertical extent is a subset of the mesh, so narrowing can only ever accept MORE. The
+fill's arithmetic is untouched — `M0_4` proves the matrix is **bit-identical with and without the
+Tier 1 instrument attached**, which is the claim worth making, since an instrument that perturbed
+what it measures would be worse than none.
+
+### M1–M3, deferred with the reason rather than attempted
+
+The residual is the last row of the table: two vias genuinely far apart on a board still refuse, and
+closing that needs the fit itself to improve. The brief's own ordering stands and none of it is
+started:
+
+- **M1 — the DCIM knob sweep.** `BranchSamples` is 0 and `BranchPointOrders` is 1 because of trades
+  measured on the **one-layer** fit and settled **between components** by sharing one `DcimSettings`.
+  The failing component is `G_A^zz` alone and `G_q` at heights is fine, so that trade is not the one
+  this case faces. Per-component settings are a lookup on `GreensKernel` in `PlanarKernelSet`, and
+  R-dcm-1 requires the one-layer path never to see it.
+- **M2 — direct integration.** `SommerfeldIntegral.EvaluateInterior` is accurate everywhere out
+  there and costs 40–50 ms a point; the ẑẑ block is a function of ρ alone at a fixed pairing and
+  already consumes a radial table, and L9c measured a 100× coarsening at 9.6e-10. The measurement
+  nobody has taken is the table's *required* sample count — by refining until the block stops moving,
+  rather than inheriting the DCIM table's mesh-derived spacing.
+- **M3 — a depth search.** Still declined, and still should be, until M1 and M2 are measured.
+
+**Do NOT reach for an amplitude-conditioning cap.** L9c measured it worse (14 → 39 on GaAs low–low at
+a cap of 1e4; every candidate rejected at 1e2). It is a correct diagnosis and a bad selector.
+
+## G_A^zz's accuracy ceiling — M1 (a negative result), M2 (the direct path), M4
+
+Continues the M0 section above. Brief: `docs/sonnet-briefs/brief-gazz-accuracy-ceiling.md`.
+**M0 + M1 + M2 + M4 are done; M3 (a depth search) is still not started and is still not earned.**
+
+### M1 — THE KNOBS DO NOT CLOSE IT, and three of the five cannot even reach it
+
+§3's M1 names five `DcimSettings` knob groups. Swept on `G_A^zz` alone at interior heights, over every
+grounded stack in `LayerStacks.All()` and both interior pairings, against
+`SommerfeldIntegral.EvaluateInterior` (`ViaBasisTests.M1_1`, `Category=Benchmark`, ~3 min):
+
+**`BranchPointOrders`, `BranchSamples`, `BranchExtent` and `FitTolerance` are INERT**, and this is
+structural rather than a tuning plateau: `Dcim.FitAtHeights` re-references the whole decomposition to
+the source region's own k_m and **never reads any of them** — L9c established that the far-field sum
+rule is a theorem for an interior source *by inspection* (the kernel is finite at its own branch
+point), so there is no branch-point Taylor sampling to configure. 30 configurations, bit-identical.
+The test asserts that as an equality rather than arguing it.
+
+**The reachable knobs give 10.4× at best and it is not a free win**, worst over every grounded case:
+
+| | ≤ 0.1 λ | ≤ 1 λ |
+|---|---|---|
+| shipped defaults | 2.82e-3 | **1.40e+1** |
+| best found (`FarOrder=10`, `PathExtent=1200`) | **6.46e-2** | **1.35** |
+| the target the other three components meet | — | **1.9e-2** |
+
+Still **71× outside** the envelope, and **23× WORSE inside ρ/λ ≤ 0.1**, which is where the kernel is
+actually used today. `FarOrder` 6 → 8 is where most of the gain is (14 → 3.8); everything past 10 is
+flat or worse. **There is no per-component setting that is simply better** — it is a trade and it goes
+the wrong way, so R-zz-2's per-component plumbing was NOT built.
+
+### M2 — the direct path, and the measurement that matters more than it does
+
+`PlanarFillSettings.DirectVerticalKernel` (default **false**) makes the ẑẑ block take its kernel from
+`SommerfeldIntegral.EvaluateInterior` instead of from the fit — reachable exactly like
+`UseRadialTable = false`, via `PlanarKernelSet.GetDirectMinusStaticAsymptotes` and
+`ViaZIntegral.AveragedTermsDirect`. Everything else is untouched: the singular half is closed form in
+z and was never fitted, and the scalar, horizontal-vector and mixed blocks do not change.
+
+**TABULATE THE REMAINDER, NOT THE KERNEL.** The first version tabulated `_full`, which still diverges
+as 1/ρ once the static asymptotes are removed (the direct term's own 1/ρ and the poles' ln ρ are still
+in it) — a linear table cannot carry either, and it would be worst exactly at the self and touching
+cell pairs, where most of the block's value is. Subtracting `Extracted` first is what makes the
+tabulated function bounded, and handing back `table + Extracted` as `_full` makes `Remainder()` return
+the tabulated function exactly, so the fill sees the shape it always does. **Caught before any number
+below was believed**, which is the standing rule here.
+
+**The direct-table cache lives on `FitCache` and is shared across every `For()` view**, for exactly the
+reason L9d shared the fits — a de-embedded solve builds one view per mesh — and it matters more here,
+because a miss is seconds of Sommerfeld integration rather than ~90 ms of fit.
+
+**The measurements** (`MultiLevelPortTests.ZzM2_1`, `Category=Benchmark`), on §10.7's own FR-4 hero with
+two vias 18 mm apart — **the one layout M0 left refused**, N = 1,174, ρ/λ = 0.617 against the 0.1 limit:
+
+| | |
+|---|---|
+| **(0) oracle check** — direct vs fitted at ρ/λ = 0.053, INSIDE the limit where L9c measured the fit at ≤ 2.8e-3 | **8.67e-5** |
+| **(a) the block's own convergence** in the table's sample count (32/64/128/256 vs the next finer) | 2.18e-3 / 7.45e-4 / **8.34e-5** / 2.89e-6 |
+| **(b) the FITTED block against the CONVERGED direct one** (which IS the oracle) | **4.53e-7** |
+| **(c) cost**, per via span per frequency, at 32 / 128 / 512 samples | 21.5 / 28.4 / 64.7 s = **14% / 19% / 43%** of a 149.9 s de-embedded point |
+
+**(b) must be taken against the CONVERGED direct block, and getting that wrong overstates the fit's
+error by two decades.** Comparing it against a fresh 128-sample table reads 8.67e-5 — which is (a)'s
+own 128-vs-256 table resolution, not anything the fit did. The test reuses (a)'s finest block for
+exactly that reason.
+
+**(b) IS THE FINDING, and it is not the one the brief expected.** L9c's Tier 5 measured the interior
+fit **POINTWISE** — |ΔG| at one ρ. The refusal is asked of a **MESH**. Nobody had asked the second
+question, and on this layout the answer is that essentially none of the pointwise error survives into
+the assembled block: **4.53e-7, five decades inside the 1.9e-2 envelope.** So on §10.7's own board the
+refusal is refusing a structure that would have solved correctly.
+
+**Do NOT widen `ValidatedRhoOverLambdaAtHeights` on that.** It is ONE layout on ONE stack, and the
+stack matters enormously — L9c's own table has FR-4 low–low at 1.1e-1 at ρ/λ = 1 against GaAs
+low–low at **14**.
+
+**The GaAs cross-check is NOT RUN, and that is now a MEASUREMENT rather than "it did not finish".**
+The smallest fixture that reaches ρ/λ ≈ 0.6 at all — two 200 µm pads 18 mm apart on 100 µm GaAs,
+each pad its own via footprint, on the `CoarseForZz` mesh — costs:
+
+| | |
+|---|---|
+| N = 738, 324 cells, **162 vertical bases**, ρ/λ = 0.607 | |
+| cores | 10.5 s |
+| **FITTED fill** | **236.8 s** |
+| **DIRECT fill, 32 samples** — the COARSEST rung of the ladder | **828.3 s** |
+
+A comparison needs the fitted fill plus at least two direct rungs (an oracle not shown to have
+stopped moving is not an oracle), so the honest cost is **45+ minutes** against this project's whole
+~40-minute opt-in tier.
+
+**What drives it is NOT what the first attempt assumed — not the unknown count and not the physical
+size.** The same fixture at 100 GHz and 1.8 mm (a tenth of the extent, the same ρ/λ) meshes to the
+IDENTICAL N = 738 with the identical 162 vertical bases, because the mesh is scale-free: the pitch
+comes from the narrowest run and the via footprint is one. It is the **vertical basis count** — the
+ẑẑ block is 162² entries and the mixed block integrates a derivative against every horizontal basis,
+against L9d's own measured fixture which had TWO. A via footprint cannot be shrunk relative to its
+pad without leaving a sliver run beside it, which drives the pitch down and the count straight back
+up. **So the affordable version needs a mesher whose pitch is not tied to the via footprint, not a
+smaller number here** — and the FR-4 conclusion stands as being about FR-4.
+
+### M4 — the constant does NOT move; the way past it is a different KERNEL
+
+`Dcim.ValidatedRhoOverLambdaAtHeights` is byte-identical. M1 is why: no setting improves the fit, so
+widening the constant would be widening a claim nothing supports. Instead
+`PlanarSolve.VerticalRangeVerdict` takes the fill settings, and with `DirectVerticalKernel` on it
+**skips the refusal and says so in a note** — the limit is a property of the FIT and does not apply to
+the integrator it was measured against. The refusal's own text now names the setting as the way past
+it, alongside the two geometric instructions M0 added.
+
+**Not an early return** — D2's horizontal-components note below it is unconditional, and dropping it
+would re-open exactly the "narrowing left something ungoverned" hole M0 closed.
+
+### The setting is REACHABLE, and two robustness fixes came with making it so
+
+`PlanarFillSettings.DirectVerticalKernel` is wired through the `.cem` to the EM panel — see
+`src/Ui/Layout/Em/CLAUDE.md`. **Wiring it found that `EmRunService` passed `null` for the whole of
+`PlanarSolveSettings`**, so nothing in it — including L9e's adaptive frequency sampling — had ever
+been reachable from the product. That is now fixed and adaptive sampling is the default.
+
+Two fixes in this file's own code, both for hazards the direct path introduced:
+
+- **A per-key build gate on the direct tables.** `GetDirectMinusStaticAsymptotes` is seconds of
+  Sommerfeld integration, not the ~90 ms a fit costs, so two threads racing the same key would
+  duplicate it outright. Double-checked locking on a per-key gate object, with the shared cache read
+  under `_fits.Gate` on both sides of it.
+- **`PlanarFillSettings.Validate()`, called from `BuildCores`.** The settings that matter are the
+  ones whose bad case is a silently WRONG answer rather than an exception: `ViaZNodes = 0` produces
+  an empty quadrature-node set, which makes the ẑẑ block **zero** — vias stop conducting and the
+  s-parameters are complete, smooth and wrong. Every node/panel count is refused by name; the
+  defaults are of course accepted. It is a construction-time refusal rather than a per-entry check,
+  so it costs nothing in the fill.
+
+### Gate, and one latent hazard checked rather than assumed
+
+**`tests/Engine.Tests` 1,002 passed + 1 pre-existing skip — the routine tier is UNCHANGED in size**,
+because both new methods are `Category=Benchmark`. `tests/Ui.Tests` **4,741**, `tests/Firewall.Tests`
+**4/4**. Nothing outside `src/Engine/Mom/` and `tests/Engine.Tests/Mom/` was touched, and
+`Dcim.ValidatedRhoOverLambdaAtHeights` and its refusal string are byte-identical.
+
+`DirectVerticalKernel` / `VerticalTableSamples` were inserted into the MIDDLE of
+`PlanarFillSettings`' positional parameter list, beside the other via settings where a reader looks for
+them. That is safe here and was checked rather than assumed: there is **no `new PlanarFillSettings(`
+anywhere in the repository** — every site is `PlanarFillSettings.Default` plus a name-based
+`with { }` — and a future positional caller would bind an `int` to a `bool` and fail to compile rather
+than silently shift.
+

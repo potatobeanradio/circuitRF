@@ -119,7 +119,8 @@ public sealed record PlanarConductorLayer(
 /// </summary>
 /// <param name="LowerLayerIndex">Index into <see cref="PlanarProblem.Layers"/> of the level the via
 /// starts from. Must be the LOWER of the two — the pair is ordered, which is what makes the sign of
-/// the divergence pulse a contract rather than an observation (R-via-5).</param>
+/// the divergence pulse a contract rather than an observation (R-via-5).
+/// <b><see cref="GroundTerminal"/> instead means the GROUND PLANE</b> — see that constant.</param>
 /// <param name="UpperLayerIndex">…and the level it lands on.</param>
 /// <param name="Polygons">The via's footprint in the layout plane, metres.</param>
 /// <param name="SigmaSm">Conductivity, for the loss model. Not used by the sheet mesher.</param>
@@ -127,7 +128,27 @@ public sealed record PlanarVia(
     int                          LowerLayerIndex,
     int                          UpperLayerIndex,
     IReadOnlyList<PlanarPolygon> Polygons,
-    double                       SigmaSm);
+    double                       SigmaSm)
+{
+    /// <summary>
+    /// <b><see cref="LowerLayerIndex"/> = −1 means "the ground plane"</b>: the laterally infinite PEC
+    /// the Green's function terminates on, which is never a meshed level and therefore has no layer
+    /// index of its own. This is what a BACKSIDE via is, and on a MMIC it is how a source terminal
+    /// reaches ground — the commonest via there is.
+    ///
+    /// <para>It is a sentinel rather than a separate record because everything else about the via is
+    /// unchanged: the same footprint artwork on the same shared tensor grid, the same uniform 1/Area
+    /// vertical weight. What differs is one basis (an attachment, one meshed foot — see
+    /// <c>PlanarBasisFunctions</c>' header) and one span (<c>PlanarLevels.GroundZ</c> upward).</para>
+    ///
+    /// <para><b>Only legitimate when the stack's bottom termination genuinely IS that PEC</b>;
+    /// <see cref="PlanarProblem.CanSolve"/> refuses it by name otherwise.</para>
+    /// </summary>
+    public const int GroundTerminal = -1;
+
+    /// <summary>True when this via's lower terminal is the ground plane (<see cref="GroundTerminal"/>).</summary>
+    public bool ToGround => LowerLayerIndex == GroundTerminal;
+}
 
 /// <summary>
 /// R-msh-8a: a note that some part of the analysed geometry already has a validated closed-form
@@ -280,6 +301,32 @@ public sealed record PlanarProblem(
 
         foreach (var v in ViaList)
         {
+            // ── The GROUND-ATTACHMENT form, and its one earned refusal ────────────────────────
+            //
+            // A via naming PlanarVia.GroundTerminal claims its lower terminal is the PEC the Green's
+            // function terminates on. That is only true when the stack actually terminates in one:
+            // on an open-below or PMC stack the same drawing means something else entirely, and
+            // accepting it would produce a complete, plausible, wrong answer for a structure nobody
+            // drew — the failure mode L9's own phase-gate finding is about.
+            if (v.ToGround)
+            {
+                if (stack.Bottom.Kind != TerminationKind.Pec)
+                    return EmSuitability.No(
+                        $"A via runs to the GROUND PLANE, but this medium's bottom termination is " +
+                        $"{stack.Bottom} rather than a PEC. The ground-attachment basis is a half " +
+                        $"rooftop whose lower terminal is the laterally infinite PERFECT CONDUCTOR " +
+                        $"the Green's function handles analytically — its return charge is that " +
+                        $"plane's own image, and there is no image to be the return without it. " +
+                        $"Terminate the stack in a ground plane, or take the via to a meshed " +
+                        $"conductor level instead.");
+
+                if (v.UpperLayerIndex < 0 || v.UpperLayerIndex >= Layers.Count)
+                    return EmSuitability.No(
+                        $"A ground via lands on level {v.UpperLayerIndex}, which is not inside " +
+                        $"0..{Layers.Count - 1}.");
+                continue;
+            }
+
             if (v.LowerLayerIndex < 0 || v.UpperLayerIndex >= Layers.Count ||
                 v.LowerLayerIndex >= v.UpperLayerIndex)
                 return EmSuitability.No(

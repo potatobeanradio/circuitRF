@@ -77,7 +77,27 @@ public sealed class CemFile
 
     public CemMesh Mesh { get; set; } = new();
 
+    /// <summary>
+    /// <b>Non-nullable on purpose, unlike every other flag here.</b> The model's default flipped to
+    /// <c>true</c>, and every <c>.cem</c> ever written carries this field explicitly — so an
+    /// existing setup keeps whatever it recorded and only a newly created one picks the new default
+    /// up. Making it nullable-and-omitted would silently change the answer for every file on disk.
+    /// </summary>
     public bool    DispersionCorrection  { get; set; }
+
+    /// <summary>
+    /// <b>Null means ON</b> — the opposite polarity to the flags around it, because the default is
+    /// on. A <c>.cem</c> written before adaptive sampling existed has no field, loads with it
+    /// enabled, and re-serialises with no field; only an explicit opt-OUT is ever written.
+    /// </summary>
+    public bool?   AdaptiveSampling      { get; set; }
+
+    /// <summary>
+    /// M2 — <b>null means off</b>, which is what every <c>.cem</c> written before it means. Nullable
+    /// + <c>WhenWritingNull</c> (the document-wide default) so such a file loads AND re-serialises
+    /// byte-identically, exactly as <see cref="AnalysisKind"/> and <see cref="PlanarMesh"/> do.
+    /// </summary>
+    public bool?   DirectVerticalKernel  { get; set; }
     public string? SnpOutputPathOverride { get; set; }
 
     /// <summary>
@@ -164,6 +184,8 @@ public static class EmSetupPersistence
             TruncationTailCells = s.Mesh.TruncationTailCells,
         },
         DispersionCorrection  = s.DispersionCorrection,
+        AdaptiveSampling      = s.AdaptiveSampling ? null : false,
+        DirectVerticalKernel  = s.DirectVerticalKernel ? true : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         AnalysisKind          = s.AnalysisKind == EmAnalysisKind.Auto ? null : s.AnalysisKind,
         PlanarMesh            = s.PlanarMesh == PlanarMeshSettings.Default ? null : new CemPlanarMesh
@@ -193,6 +215,8 @@ public static class EmSetupPersistence
             f.Mesh.TruncationHeights,
             f.Mesh.TruncationTailCells),
         DispersionCorrection  = f.DispersionCorrection,
+        AdaptiveSampling      = f.AdaptiveSampling ?? true,
+        DirectVerticalKernel  = f.DirectVerticalKernel ?? false,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         PlanarMesh            = f.PlanarMesh is { } pm

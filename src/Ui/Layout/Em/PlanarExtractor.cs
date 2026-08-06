@@ -383,7 +383,7 @@ public static class PlanarExtractor
                 // kernel on, and it must only happen when there is something general to say.
                 levels.Count > 1 ? levelZ[i] : double.NaN);
 
-        var vias = BuildVias(viaShapes, levels, tech, perDbu, notes);
+        var vias = BuildVias(viaShapes, levels, tech, perDbu, notes, groundBand);
 
         var problem = new PlanarProblem(
             conductorLayers,
@@ -576,12 +576,13 @@ public static class PlanarExtractor
     /// </summary>
     private static List<PlanarVia> BuildVias(
         List<(ViaShape Shape, StackupLayer Entry)> viaShapes, List<Band> levels, Technology tech,
-        double perDbu, List<string> notes)
+        double perDbu, List<string> notes, Band? groundBand = null)
     {
         var vias = new List<PlanarVia>();
         if (viaShapes.Count == 0) return vias;
 
-        int noSpan = 0, unknownLevels = 0, notAdjacent = 0;
+        int noSpan = 0, unknownLevels = 0, notAdjacent = 0, toGround = 0, wrongGround = 0;
+        var wrongGroundNames = new List<string>();
 
         foreach (var (shape, entry) in viaShapes)
         {
@@ -590,10 +591,44 @@ public static class PlanarExtractor
 
             int a = levels.FindIndex(b => string.Equals(b.Layer.Name, from, StringComparison.Ordinal));
             int b2 = levels.FindIndex(b => string.Equals(b.Layer.Name, to, StringComparison.Ordinal));
-            if (a < 0 || b2 < 0) { unknownLevels++; continue; }
 
-            int lower = Math.Min(a, b2), upper = Math.Max(a, b2);
-            if (upper != lower + 1) { notAdjacent++; continue; }
+            // ── R-gv-6 — a via to the GROUND the kernel actually models ───────────────────────
+            //
+            // A backside via names a conductor that is NOT an analysis level, so before L9's own
+            // phase gate it fell into `unknownLevels` and was dropped with a note. That behaviour
+            // was correct and reported; what was missing was the basis. It is now built — but ONLY
+            // when the named conductor is the one the Green's function terminates on. The ground
+            // plane this kernel has is the laterally infinite PEC at z = 0, which R-em-4 resolves
+            // to exactly one band; a via to some OTHER ground-designated pour is a finite conductor
+            // the kernel does not mesh, and turning it into an attachment would silently model a
+            // different structure. The refusal must not simply disappear — that is the failure
+            // mode L9's own FINDING 2 is about.
+            int lower, upper;
+            if (a < 0 || b2 < 0)
+            {
+                string missing = a < 0 ? from : to;
+                int meshed     = a < 0 ? b2   : a;
+
+                if (meshed < 0) { unknownLevels++; continue; }
+
+                if (groundBand is null ||
+                    !string.Equals(groundBand.Layer.Name, missing, StringComparison.Ordinal))
+                {
+                    wrongGround++;
+                    if (!wrongGroundNames.Contains(missing)) wrongGroundNames.Add(missing);
+                    continue;
+                }
+
+                lower = PlanarVia.GroundTerminal;
+                upper = meshed;
+                toGround++;
+            }
+            else
+            {
+                lower = Math.Min(a, b2);
+                upper = Math.Max(a, b2);
+                if (upper != lower + 1) { notAdjacent++; continue; }
+            }
 
             // The equal-area square, centred on the via: side = d·√π/2.
             double d = shape.DrillSize * perDbu;
@@ -607,6 +642,20 @@ public static class PlanarExtractor
                                     new EmPoint(cx + half, cy + half), new EmPoint(cx - half, cy + half)])],
                 entry.SigmaSm));
         }
+
+        if (toGround > 0)
+            notes.Add($"{toGround} of them are BACKSIDE vias, running from a signal level down to " +
+                      $"the ground plane '{groundBand!.Layer.Name}'. That plane is the laterally " +
+                      "infinite conductor the Green's function handles analytically rather than a " +
+                      "meshed level, so each is a half (attachment) basis whose return charge is the " +
+                      "plane's own image.");
+        if (wrongGround > 0)
+            notes.Add($"{wrongGround} via shape(s) span a conductor ({string.Join(", ", wrongGroundNames)}) " +
+                      "that is neither an analysis level nor the ground plane this kernel models, and " +
+                      "were ignored. The only non-meshed conductor a via may terminate on is the " +
+                      "ground reference R-em-4 resolves — a different ground pour is a finite " +
+                      "conductor this kernel does not mesh, and treating it as the infinite plane " +
+                      "would solve a structure you did not draw.");
 
         if (vias.Count > 0)
             notes.Add($"{vias.Count} via(s) were extracted. Each round barrel is replaced by the " +

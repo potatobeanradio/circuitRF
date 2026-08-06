@@ -260,7 +260,20 @@ public static class EmRunService
         PlanarKernelResult solved;
         try
         {
-            solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, null, ct);
+            // Until M2 this passed `null`, so NOTHING in PlanarSolveSettings/PlanarFillSettings was
+            // reachable from the EM panel — including adaptive frequency sampling, which exists
+            // precisely so the default 101-point sweep is not 80 minutes to three hours (L8d/L9d
+            // measured 48 s and 71.9 s per de-embedded point). It is ON by default; see
+            // EmSetup.AdaptiveSampling for the accuracy measurement that makes that safe.
+            var solveSettings = PlanarSolveSettings.Default with
+            {
+                Adaptive = setup.AdaptiveSampling ? PlanarAdaptiveSettings.Default : null,
+                Fill = setup.DirectVerticalKernel
+                    ? (PlanarSolveSettings.Default.Fill ?? PlanarFillSettings.Default)
+                      with { DirectVerticalKernel = true }
+                    : PlanarSolveSettings.Default.Fill,
+            };
+            solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, solveSettings, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)

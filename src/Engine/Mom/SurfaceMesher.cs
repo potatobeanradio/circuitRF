@@ -218,10 +218,25 @@ public static class SurfaceMesher
         // has nothing to conserve charge against, and is dropped and counted rather than solved.
         int firstVia = bases.Count;
         int viaFootprintCells = 0, viaUnattached = 0;
+        int groundUnknowns = 0;
         foreach (var via in problem.ViaList)
         {
-            var lower = cellAtPerLayer[via.LowerLayerIndex];
+            // ── The GROUND-ATTACHMENT path (R-gv-5) ───────────────────────────────────────────
+            //
+            // A via to the plane has only ONE meshed foot, so the three-way coincidence above
+            // becomes a two-way one: the footprint covers the cell, and the MESHED level carries
+            // metal there. The plane always does — that is what makes it the ground plane.
+            //
+            // Both of L9c's silent mesher failures apply to this path too and it does NOT inherit
+            // their tests: the footprint must still contribute HARD GRIDLINES (or the via vanishes
+            // with no error — measured at zero vertical unknowns on a 40 µm footprint) and must
+            // still NOT get the edge grading a conductor rim gets (measured at 2,448 unknowns
+            // against 424). Both are handled in CollectBoundaryLines, which walks problem.ViaList
+            // without caring which terminal a via names — so a ground via is covered by
+            // construction, and asserted for this path specifically in SurfaceMesherTests.
             var upper = cellAtPerLayer[via.UpperLayerIndex];
+            var lower = via.ToGround ? null : cellAtPerLayer[via.LowerLayerIndex];
+
             for (int iy = 0; iy < ny; iy++)
             {
                 double yc = 0.5 * (gy[iy] + gy[iy + 1]);
@@ -234,7 +249,20 @@ public static class SurfaceMesher
                     if (!covered) continue;
 
                     viaFootprintCells++;
-                    int a = lower[iy * nx + ix], b = upper[iy * nx + ix];
+                    int b = upper[iy * nx + ix];
+
+                    if (via.ToGround)
+                    {
+                        if (b < 0) { viaUnattached++; continue; }
+                        // Both cells name the ONE meshed foot; the signs come from Halves, and the
+                        // grounded half carries Sign = 0 so the fill's four-term sum drops it.
+                        bases.Add(new PlanarBasis(via.UpperLayerIndex, b, b,
+                                                  PlanarBasisDirection.Z, AttachesToGround: true));
+                        groundUnknowns++;
+                        continue;
+                    }
+
+                    int a = lower![iy * nx + ix];
                     if (a < 0 || b < 0) { viaUnattached++; continue; }
                     bases.Add(new PlanarBasis(via.LowerLayerIndex, a, b, PlanarBasisDirection.Z));
                 }
@@ -248,6 +276,13 @@ public static class SurfaceMesher
                       "that carries metal on BOTH levels. The via mesh is not a separate mesh: L8b's " +
                       "D8 put every level on one tensor grid so that a vertical basis is a cell PAIR " +
                       "in z, exactly as a rooftop is a cell pair in x or y.");
+            if (groundUnknowns > 0)
+                notes.Add($"{groundUnknowns} of those are GROUND ATTACHMENTS — half rooftops whose " +
+                          "lower terminal is the ground plane itself, which is the laterally " +
+                          "infinite conductor the Green's function handles analytically and is never " +
+                          "a meshed level. Their return charge is that plane's own image rather than " +
+                          "a second divergence pulse on the metal, so unlike every other basis here " +
+                          "their net charge is not zero.");
             if (viaUnattached > 0 || viaUnknowns == 0)
                 notes.Add($"{viaUnattached} via footprint cell(s) were DROPPED because one of the two " +
                           $"levels carries no metal there, and {viaUnknowns} vertical unknown(s) " +

@@ -121,11 +121,54 @@ public sealed class EmSetup
     /// defaults are already right, not because the dialogs are fast.</summary>
     public EmMeshSettings Mesh { get; set; } = EmMeshSettings.Default;
 
-    /// <summary>The Kirschning–Jansen dispersion correction — <b>off by default</b>, and disabled
-    /// with a stated reason when the cross-section is not a single microstrip. The panel asks
+    /// <summary>
+    /// The Kirschning–Jansen dispersion correction — <b>ON by default</b>, and disabled with a
+    /// stated reason when the cross-section is not a single microstrip. The panel asks
     /// <c>QuasiStaticKernel.TryMicrostripDispersion</c> whether it applies rather than re-deriving
-    /// the condition.</summary>
-    public bool DispersionCorrection { get; set; }
+    /// the condition, so turning it on costs nothing where it does not apply.
+    ///
+    /// <para><b>It defaults on because the default sweep runs to 20 GHz.</b> Kernel A holds C at its
+    /// quasi-static value, and L8d measured the consequence directly on §10.7's own hero: ε_eff is
+    /// +0.86% at 2 GHz, +9.8% at 10 GHz and +23.3% at 20 GHz against the static answer — while the
+    /// full-wave kernel tracks Kirschning–Jansen to 0.89% out to 10 GHz. Leaving the correction off
+    /// makes the most ordinary run there is (one microstrip, swept over a decade) report a number
+    /// that is visibly wrong at the top of its own default band.</para>
+    ///
+    /// <para>A <c>.cem</c> written before this default flipped carries an explicit <c>false</c> —
+    /// the field is non-nullable in the file — so no existing setup changes behaviour; only a newly
+    /// created one picks the correction up.</para>
+    /// </summary>
+    public bool DispersionCorrection { get; set; } = true;
+
+    /// <summary>
+    /// <b>Adaptive frequency sampling (planar kernel only) — ON by default.</b> Solve a subset of
+    /// the requested frequencies and model the rest, refining until a solved midpoint agrees with
+    /// the model to <c>PlanarAdaptiveSettings.Default.Tolerance</c> (1e-3 in |ΔS|).
+    ///
+    /// <para><b>This is what makes the default sweep usable at all.</b> A de-embedded full-wave
+    /// point costs 48 s on one level and 71.9 s on two (L8d/L9d, measured alone), so the default
+    /// 101-point sweep is 80 minutes to nearly three hours solved point by point. Adaptive sampling
+    /// costs nothing in accuracy at that tolerance — L9e measured the realised worst |ΔS| against
+    /// the fully-solved answer at <b>2.5e-5</b>, orders below the kernel's own de-embedding
+    /// residual — and the published grid is always exactly the grid that was asked for, with every
+    /// solved point carrying the solver's own matrix byte for byte.</para>
+    ///
+    /// <para>Turn it off to solve every requested point. Nothing about kernel A is affected: a
+    /// cross-section solve is a closed form per frequency and 101 of them are sub-second.</para>
+    /// </summary>
+    public bool AdaptiveSampling { get; set; } = true;
+
+    /// <summary>
+    /// <b>M2 (brief-gazz-accuracy-ceiling) — take the ẑẑ Green's function from direct Sommerfeld
+    /// integration instead of from the DCIM fit.</b> Planar kernel only, and only meaningful when the
+    /// layout carries vias: it is the one block G_A^zz is ever evaluated in.
+    ///
+    /// <para>Off by default because it is <b>15–45% more per frequency point per via span</b>
+    /// (measured). It exists because the fit's own validated range is ρ/λ ≤ 0.1 between via
+    /// footprints, and a board with vias further apart than that is refused — this is the way past
+    /// that refusal, and the refusal names it.</para>
+    /// </summary>
+    public bool DirectVerticalKernel { get; set; }
 
     /// <summary>Workspace-relative override for the written <c>.snp</c>. Empty = the predictable
     /// path <c>EmRunService</c> derives from the layout and setup names (R-em-19).</summary>
@@ -145,6 +188,8 @@ public sealed class EmSetup
         PortZ0s                = [.. PortZ0s],   // a fresh list: Complex is immutable, the list is not
         Mesh                   = Mesh,           // record, immutable
         DispersionCorrection   = DispersionCorrection,
+        AdaptiveSampling       = AdaptiveSampling,
+        DirectVerticalKernel   = DirectVerticalKernel,
         SnpOutputPathOverride  = SnpOutputPathOverride,
     };
 

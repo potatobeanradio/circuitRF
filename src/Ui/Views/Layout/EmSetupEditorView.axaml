@@ -362,6 +362,28 @@
                            Text="{Binding ViewModel.CurrentDensityScale}"
                            IsVisible="{Binding ViewModel.CurrentDensity, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
+                <!-- ── Frequency sampling — ON by default; see EmSetup.AdaptiveSampling ────── -->
+                <TextBlock Classes="sect" Text="Frequency sampling"/>
+                <CheckBox Name="AdaptiveSamplingCheck" FontSize="11"
+                          Content="Adaptive (solve fewer points, model the rest)"
+                          IsChecked="{Binding ViewModel.AdaptiveSampling}"
+                          IsEnabled="{Binding ViewModel.AdaptiveSamplingDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
+                          ToolTip.Tip="Solves a subset of the requested frequencies and models the rest, refining until a solved midpoint agrees with the model to 1e-3 in |S|. The published sweep is always exactly the grid you asked for, and every solved point carries the solver's own result unchanged. Turn this off to solve every point."/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.AdaptiveSamplingDisabledReason}"
+                           IsVisible="{Binding ViewModel.AdaptiveSamplingDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                <!-- ── Vertical (via) kernel — M2, disabled with a stated reason ───────────── -->
+                <TextBlock Classes="sect" Text="Vertical (via) kernel"/>
+                <CheckBox Name="DirectVerticalKernelCheck" FontSize="11"
+                          Content="Integrate G_A^zz directly (slower, accurate at any via spacing)"
+                          IsChecked="{Binding ViewModel.DirectVerticalKernel}"
+                          IsEnabled="{Binding ViewModel.DirectVerticalKernelDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
+                          ToolTip.Tip="Replaces the fitted Green's function with direct numerical integration for the one term that couples vias to each other. Costs roughly 15-45% more per frequency point per via span. Turn this on when a run is refused for its via separation."/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.DirectVerticalKernelDisabledReason}"
+                           IsVisible="{Binding ViewModel.DirectVerticalKernelDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
                 <!-- ── Dispersion (disabled with a stated reason) ───────────── -->
                 <TextBlock Classes="sect" Text="Dispersion"/>
                 <CheckBox Name="DispersionCheck" FontSize="11"

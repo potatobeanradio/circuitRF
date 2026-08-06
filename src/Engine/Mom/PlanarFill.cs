@@ -140,6 +140,33 @@ namespace CircuitRF.Engine.Mom;
 /// the smallest setting that is a genuine QUADRATURE (1 is a midpoint rule, and reading the setting
 /// as "midpoint" is the mistake this whole change exists to undo), and it costs 3 fits per via span
 /// against 10 at n_z = 4 — 0.28% of a de-embedded point instead of 1.05%.</para></param>
+/// <summary>
+/// <b>R-zz-1's Tier 1 instrument.</b> What the fill actually ASKED the kernel about, as opposed to
+/// what a reading of the code says it asks about — which is the difference the whole scoping change
+/// turns on, and the reason this exists rather than a comment.
+///
+/// <para>Optional and defaulted-null everywhere, so no existing caller changes and the fill pays
+/// nothing when it is absent. Thread-safe because <c>ForRows</c> may run the ẑẑ arm in parallel.</para>
+/// </summary>
+public sealed class PlanarFillDiagnostics
+{
+    private readonly object _gate = new();
+    private double _maxVerticalPairRho;
+
+    /// <summary>The largest in-plane separation any <c>G_A^zz</c> query reached — i.e. the widest ρ
+    /// the ONE kernel <see cref="Dcim.ValidatedRhoOverLambdaAtHeights"/> governs was evaluated at.
+    /// Zero when the mesh carries no vertical basis.</summary>
+    public double MaxVerticalPairRhoM
+    {
+        get { lock (_gate) return _maxVerticalPairRho; }
+    }
+
+    internal void ObserveVerticalPair(double rhoM)
+    {
+        lock (_gate) if (rhoM > _maxVerticalPairRho) _maxVerticalPairRho = rhoM;
+    }
+}
+
 /// <param name="ViaZStaticNodes">Gauss nodes per PANEL of the singular half's one-dimensional
 /// t-integral (the panels are the trapezoidal density's own knots plus the kink at t = 0). Its
 /// integrand is a piecewise-smooth product of a linear density and a bounded mean, so a modest rule
@@ -161,11 +188,62 @@ public sealed record PlanarFillSettings(
     double                TableCellFraction       = 0.02,
     double                RhoFloorFraction        = 1e-8,
     int                   MaxTableSamples         = 1 << 15,
+    bool                  DirectVerticalKernel    = false,
+    int                   VerticalTableSamples    = 256,
     int                   ViaZNodes               = 2,
     int                   ViaZStaticNodes         = 10,
     bool                  Parallel                = true)
 {
     public static readonly PlanarFillSettings Default = new();
+
+    /// <summary>
+    /// <b>Refuse a setting that would silently produce a WRONG answer rather than an exception.</b>
+    ///
+    /// <para>These are not defensive checks against nonsense for its own sake — each one guards a
+    /// value whose bad case is a complete, smooth, plausible result. <c>ViaZNodes = 0</c> is the
+    /// clearest: <see cref="ViaZIntegral.Nodes"/> returns empty arrays, the z-average sums nothing,
+    /// and the ẑẑ block comes out ZERO — i.e. the vias stop conducting and nothing anywhere looks
+    /// wrong. A quadrature count that silently means "skip the integral" is exactly the failure this
+    /// area keeps finding, so it is refused at the one place every fill passes through.</para>
+    /// </summary>
+    public void Validate()
+    {
+        static void AtLeast(int v, int min, string name, string why)
+        {
+            if (v < min)
+                throw new ArgumentOutOfRangeException(name, v,
+                    $"{name} must be at least {min}. {why}");
+        }
+
+        AtLeast(ViaZNodes, 1, nameof(ViaZNodes),
+            "At 0 the z-quadrature has no nodes, so the ẑẑ block integrates to zero and the vias " +
+            "silently stop carrying current. R-viz-3 measured 2 as the default.");
+        AtLeast(ViaZStaticNodes, 1, nameof(ViaZStaticNodes),
+            "This is the singular half's t-rule; at 0 the via's closed-form z-integral contributes " +
+            "nothing and its inductance collapses.");
+        AtLeast(SelfPanels, 1, nameof(SelfPanels), "The self term needs at least one panel.");
+        AtLeast(TouchPanels, 1, nameof(TouchPanels), "A touching pair needs at least one panel.");
+        AtLeast(NearNodes,  1, nameof(NearNodes),  "A Gauss rule needs at least one node.");
+        AtLeast(MidNodes,   1, nameof(MidNodes),   "A Gauss rule needs at least one node.");
+        AtLeast(FarNodes,   1, nameof(FarNodes),   "A Gauss rule needs at least one node.");
+        AtLeast(RemainderNodesNear, 1, nameof(RemainderNodesNear),
+            "R-fil-8 measured 8 here because a fitted image can sit closer to the metal than a cell " +
+            "is wide; at 0 the remainder is dropped entirely.");
+        AtLeast(RemainderNodesMid,  1, nameof(RemainderNodesMid),  "A Gauss rule needs at least one node.");
+        AtLeast(RemainderNodesFar,  1, nameof(RemainderNodesFar),  "A Gauss rule needs at least one node.");
+        AtLeast(MaxTableSamples,      8, nameof(MaxTableSamples),
+            "A radial table below 8 samples cannot carry its own interpolation stencil.");
+        AtLeast(VerticalTableSamples, 8, nameof(VerticalTableSamples),
+            "M2 measured the assembled ẑẑ block still moving 2.2e-3 at 32 samples and converged at 128.");
+
+        if (!(TableCellFraction > 0))
+            throw new ArgumentOutOfRangeException(nameof(TableCellFraction), TableCellFraction,
+                "The radial table's spacing is this fraction of the smallest cell edge; at 0 it has " +
+                "no spacing to sample on.");
+        if (RhoFloorFraction < 0)
+            throw new ArgumentOutOfRangeException(nameof(RhoFloorFraction), RhoFloorFraction,
+                "The ρ floor is a non-negative fraction of the smallest cell edge.");
+    }
 
     /// <summary>A deliberately finer setting, for the "refine and it must converge" gate (Tier 6).</summary>
     public PlanarFillSettings Finer(int factor) => this with
@@ -288,7 +366,10 @@ public static class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildCores(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
-        ArgumentNullException.ThrowIfNull(mesh);
+                // Every fill in the engine passes through here, so this is the one place the settings
+        // have to be sound — see PlanarFillSettings.Validate for why each check exists.
+        (settings ?? PlanarFillSettings.Default).Validate();
+ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;
 
         int n = mesh.Bases.Count;
@@ -576,7 +657,8 @@ public static class PlanarFill
     /// one-level mesh with no vias, which is what <c>PlanarFillTests</c> gates it against.
     /// </summary>
     public static Mat<Complex> FillMultiLevel(PlanarFillCores cores, PlanarKernelSet set,
-                                              PlanarLevels levels, double omega)
+                                              PlanarLevels levels, double omega,
+                                              PlanarFillDiagnostics? diagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(cores);
         ArgumentNullException.ThrowIfNull(set);
@@ -658,9 +740,30 @@ public static class PlanarFill
             lock (zzTerms)
             {
                 if (zzTerms.TryGetValue(key, out var hit)) return hit;
-                var t = ViaZIntegral.AveragedTerms(set, GreensKernel.VerticalVectorPotential,
-                                                   si, sj, st.ViaZNodes, st.Order, cores.RhoFloorM);
-                var made = (t, Remainder(t, cores));
+                // M2 (R-zz-3) — the ẑẑ block ALONE may take its kernel from direct Sommerfeld
+                // integration rather than from the DCIM fit. Reachable as a setting, exactly like
+                // UseRadialTable = false, because M1 measured the fit as the failure and measured
+                // every DcimSettings knob as unable to fix it. Nothing else in the fill changes:
+                // the singular half is closed form in z and was never fitted, and the horizontal
+                // and scalar blocks are untouched.
+                PlanarKernelTerms t;
+                Func<double, Complex> r;
+                if (st.DirectVerticalKernel)
+                {
+                    double rhoMax = Math.Max(cores.ExtentM, cores.MinCellEdgeM * 8);
+                    t = ViaZIntegral.AveragedTermsDirect(
+                            set, GreensKernel.VerticalVectorPotential, si, sj, st.ViaZNodes,
+                            st.Order, cores.RhoFloorM, rhoMax, st.VerticalTableSamples);
+                    // Already a table; re-tabulating would interpolate an interpolation.
+                    r = t.Remainder;
+                }
+                else
+                {
+                    t = ViaZIntegral.AveragedTerms(set, GreensKernel.VerticalVectorPotential,
+                                                  si, sj, st.ViaZNodes, st.Order, cores.RhoFloorM);
+                    r = Remainder(t, cores);
+                }
+                var made = (t, r);
                 zzTerms[key] = made;
                 return made;
             }
@@ -712,8 +815,15 @@ public static class PlanarFill
                     // cell-pair quadratures — the entry is linear in the kernel, so averaging the
                     // TERMS is the same thing as averaging the entries and the fill's own O(N²) work
                     // is untouched.
-                    var si = SpanOf(levels, bi.LayerIndex);
-                    var sj = SpanOf(levels, bj.LayerIndex);
+                    // R-zz-1's Tier 1 instrument: record the largest LATERAL separation this arm —
+                    // the only consumer of G_A^zz anywhere — actually asks about, so the refusal's
+                    // own scoping is asserted against what the fill does rather than against a
+                    // reading of the code.
+                    diagnostics?.ObserveVerticalPair(
+                        CellPairSpan(mesh.Cells[bi.CellA], mesh.Cells[bj.CellA]));
+
+                    var si = SpanOf(levels, bi);
+                    var sj = SpanOf(levels, bj);
                     var (t, rem) = ZzTermsFor(si, sj);
                     Complex core = CellPairPotential(mesh, cores, bi.CellA, bj.CellA, t, rem, st);
 
@@ -729,7 +839,7 @@ public static class PlanarFill
                 {
                     var vertical   = zi ? bi : bj;
                     var horizontal = zi ? bj : bi;
-                    var sv = SpanOf(levels, vertical.LayerIndex);
+                    var sv = SpanOf(levels, vertical);
                     double zh = levels.Of(horizontal.LayerIndex);
                     // R-viz-5: ONE z-integral, and it is folded into the radial derivative the block
                     // already consumes — so MixedEntry is called exactly as often as it was.
@@ -747,9 +857,24 @@ public static class PlanarFill
         return z;
     }
 
-    /// <summary>The z extent a vertical basis occupies — its two feet's levels.</summary>
-    private static ViaZIntegral.Span SpanOf(PlanarLevels levels, int lowerLayer) =>
-        new(levels.Of(lowerLayer), levels.Of(lowerLayer + 1));
+    /// <summary>The largest in-plane distance between any point of one cell and any point of the
+    /// other — the widest ρ a cell-pair integral over the two can reach.</summary>
+    private static double CellPairSpan(PlanarCell a, PlanarCell b)
+    {
+        double dx = Math.Max(a.XMax, b.XMax) - Math.Min(a.XMin, b.XMin);
+        double dy = Math.Max(a.YMax, b.YMax) - Math.Min(a.YMin, b.YMin);
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    /// <summary>
+    /// The z extent a vertical basis occupies. An ordinary via spans its two feet's levels; a
+    /// GROUND ATTACHMENT spans the plane up to its one meshed level, and for that basis alone
+    /// <c>LayerIndex</c> names the meshed level rather than the lower of two.
+    /// </summary>
+    private static ViaZIntegral.Span SpanOf(PlanarLevels levels, PlanarBasis b) =>
+        b.AttachesToGround
+            ? new(levels.GroundZ, levels.Of(b.LayerIndex))
+            : new(levels.Of(b.LayerIndex), levels.Of(b.LayerIndex + 1));
 
     /// <summary>
     /// <b>The ẑẑ entry's SINGULAR half: the two extracted asymptotes, z-integrated in closed form.</b>

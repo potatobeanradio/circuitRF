@@ -13,6 +13,42 @@ Gate command is plain `dotnet test`.
 
 ---
 
+## The `.cem` DEFAULTS are for the common case, not for a debugging fixture
+
+Three of them were wrong for an ordinary user, and two were wrong in the same direction — they made
+the panel's own default sweep either unusably slow or visibly inaccurate.
+
+**`AdaptiveSampling` is ON by default, and until now nothing in `PlanarSolveSettings` was reachable
+from the panel at all** — `EmRunService` passed `null`. The default frequency spec is 1-20 GHz at
+**101 points**, and L8d/L9d measured a de-embedded full-wave point at **48 s on one level and 71.9 s
+on two**: solved point by point that sweep is 80 minutes to nearly three hours. L9e's adaptive
+sampling exists for exactly this and was built, tested and unreachable. At its default tolerance
+(1e-3 in |ΔS|) L9e measured the realised worst error against the fully-solved answer at **2.5e-5** —
+orders below the kernel's own de-embedding residual — and R-adf-2/3 guarantee the published grid is
+the grid that was asked for, with every solved point carrying the solver's matrix byte for byte. It
+is free accuracy-wise and it is the difference between the default sweep being runnable and not.
+
+**`DispersionCorrection` defaults ON.** Kernel A holds C at its quasi-static value; L8d measured
+ε_eff against the static answer at **+0.86% at 2 GHz, +9.8% at 10 GHz and +23.3% at 20 GHz** on
+§10.7's own hero, while the full-wave kernel tracks Kirschning-Jansen to 0.89% out to 10 GHz. With a
+default sweep that ends at 20 GHz, leaving it off made the most ordinary run there is — one
+microstrip over a decade — report a number that is visibly wrong at the top of its own band. It
+self-disables where it does not apply (`TryMicrostripDispersion` returns null for anything that is
+not a single microstrip), so turning it on costs nothing elsewhere.
+
+**Nothing on disk changes behaviour, and the two flags get OPPOSITE persistence treatment for that
+reason.** `DispersionCorrection` is **non-nullable** in the file, so every `.cem` ever written
+carries an explicit value and keeps it; only a newly created setup picks the new default up.
+`AdaptiveSampling` is **nullable with null meaning ON** — the opposite polarity to
+`DirectVerticalKernel` and every other flag around it — so a file written before adaptive sampling
+existed gains no byte, re-serialises byte-identically, and picks the default up. Gated by
+`PlanarMeshOverlayTests`' three default tests, one of which asserts an older file's explicit `false`
+survives.
+
+**Left alone deliberately:** the 1-20 GHz / 101-point band itself (a defensible generic RF sweep, and
+with adaptive sampling on the point count is now cheap), `AnalysisKind = Auto` (L8e already made this
+the right default), `PlanarMesh.Auto`, and the 50 Ω near/far port impedances.
+
 ## R-em-1 — framework-free, and enforced
 
 Nothing under this folder references Avalonia or SkiaSharp. That is the single structural decision
@@ -74,6 +110,39 @@ reason the Tier A oracle is statable at all.
 stackup's value is the physically correct one and it moves only Wheeler's conductor-loss term.
 
 ---
+
+## The GROUND VIA — R-gv-6, and the refusal that had to survive it
+
+Brief: `docs/sonnet-briefs/brief-ground-vias-and-interior-electrostatics.md` (Part A). The engine
+half — the attachment basis, the two invariants it breaks, and the measurement that stopped the chain
+being built — is in `src/Engine/Mom/CLAUDE.md`'s own ground-via section.
+
+**`BuildVias` now produces a ground attachment, and ONLY for the ground the kernel actually models.**
+A backside via's stackup span names a conductor that is not an analysis level, so before this it fell
+into `unknownLevels` and was dropped with a note — correct-and-reported behaviour for a capability
+that did not exist. It exists now (`PlanarVia.GroundTerminal`), so a via naming **the ground reference
+R-em-4 resolves** becomes a real `PlanarVia` with `LowerLayerIndex = -1`.
+
+**The refusal did not simply disappear, and that is the point.** Anything else — a via to some other
+ground-designated pour, or to a conductor that is not in the analysis at all — is still dropped, by
+name, listing the layer. A different ground pour is a **finite** conductor this kernel does not mesh;
+treating it as the infinite plane would produce a complete, plausible s-parameter set for a structure
+nobody drew. That is exactly the class of silent wrongness this gate's own FINDING 2 (the dead via
+extraction) is about, and `L9PhaseGateTests.Gate3Wiring_AViaToSomeOtherConductor_IsStillDroppedByName`
+is what keeps it honest.
+
+**The two-way check that makes it safe** is split across the two halves and neither is sufficient
+alone: the extractor decides the named conductor IS the resolved ground reference; `PlanarProblem
+.CanSolve` independently refuses a ground attachment whenever the medium's bottom termination is not
+a PEC — because a via drawn on an open-below or PMC stack means something else entirely, and the
+attachment basis's return charge is that plane's own image.
+
+**`Gate3Wiring_ABacksideVia_…` is UPDATED, not deleted.** It asserted the via was dropped; it now
+asserts it extracts (`ToGround`, landing on Metal1), passes `CanSolve`, and reaches the mesh as real
+vertical unknowns — N = 943 with 4 ground-attachment unknowns on the MMIC starter at 30 GHz. Note the
+fixture had to move the via from x = 150 µm to x = 60 µm: the airbridge's Metal1 has a GAP at 150, so
+the footprint landed on bare dielectric and the mesher correctly dropped it as unattached. A ground
+attachment still needs metal at its ONE meshed foot.
 
 ## L9d — N levels, a `LayerStack`, vias, and a port's LEVEL
 
