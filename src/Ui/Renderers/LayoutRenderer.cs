@@ -459,6 +459,12 @@ public static partial class LayoutRenderer
 
                 if (opts.Overlay?.SnapMarker is { } snapMarker)
                     DrawSnapMarker(canvas, snapMarker, layerMap, ps, scaleUm, theme);
+
+                // L5b: §9A.1's "system layer over the geometry" — drawn LAST inside the path-space
+                // transform so a violation is never hidden behind the metal it is about, and above
+                // the selection outline so a selected shape's own violation stays visible.
+                if (opts.Overlay?.DrcMarkers is { Count: > 0 } drcMarkers)
+                    DrawDrcMarkers(canvas, drcMarkers, theme, ps, scaleUm);
             }
             finally
             {

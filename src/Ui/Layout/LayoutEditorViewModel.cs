@@ -382,6 +382,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // own intrinsic feature cache. Always invalidates (rather than checking info.Kind) since a
             // vertex/handle edit keeps the shape COUNT unchanged but moves its features.
             LayoutSnapFeatureIndex.Invalidate(Model);
+
+            // L5b: a DRC result describes geometry that has now changed. Markers drawn over moved
+            // artwork, and a violation count that no longer matches it, are both worse than showing
+            // nothing — so the result is dropped rather than refreshed (R16b: checking is on demand).
+            ClearDrcResultOnEdit();
+
             bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
             bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
             if (shapesChanged || instancesChanged)
@@ -2409,6 +2415,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 ? (ghostView, pt.X, pt.Y) : null,
             ShowScaleHandles = ShowScaleHandles,
             SnapMarker = _currentSnapCandidate,
+            DrcMarkers = BuildDrcMarkers(),
         };
     }
 

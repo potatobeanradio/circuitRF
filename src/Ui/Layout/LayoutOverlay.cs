@@ -86,4 +86,28 @@ public sealed record class LayoutOverlay
     /// highest-priority candidate is shown, never the whole coincident stack (R-snp-9's cycling is a
     /// click-time concern, not a rendering one).</summary>
     public SnapCandidate? SnapMarker { get; init; }
+
+    /// <summary>
+    /// L5b (docs/design/layout-view.md §9A.1): the DRC violation regions to draw over the artwork.
+    /// A SYSTEM LAYER in the design doc's sense — superimposed on the geometry, never part of it: no
+    /// <c>LayerKey</c>, never in <c>LayoutView.Shapes</c>, never reachable by an exporter, and never
+    /// counted in <c>LayoutFrameCounters</c>. Empty when no check has run, when markers are toggled
+    /// off, or when an edit has invalidated the last result.
+    /// </summary>
+    public IReadOnlyList<DrcMarker> DrcMarkers { get; init; } = [];
 }
+
+/// <summary>
+/// One violation's region, ready to draw. Deliberately a flat render-facing record rather than the
+/// <c>DrcViolation</c> itself — the renderer has no business knowing what a rule is, and the panel
+/// has no business knowing what a colour is.
+/// </summary>
+/// <param name="Rings">Flat, implicitly-closed DBU vertex lists, in world coordinates.</param>
+/// <param name="Severity">Drives the marker colour.</param>
+/// <param name="Waived">A waived violation still draws (§9A.1: waivers must stay VISIBLE), muted.</param>
+/// <param name="Selected">The row the violations panel currently has selected.</param>
+public readonly record struct DrcMarker(
+    IReadOnlyList<long[]> Rings,
+    DrcSeverity           Severity,
+    bool                  Waived,
+    bool                  Selected);

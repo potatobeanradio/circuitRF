@@ -46,6 +46,11 @@ public sealed class LayoutRenderTheme
     /// as an inset, kernel B's is in the same (x, y) plane the canvas already draws.</summary>
     public SKColor PlanarMeshCell { get; init; }
 
+    /// <summary>L5b DRC violation markers — see <see cref="ColorRole.LayoutDrcError"/>.</summary>
+    public SKColor DrcError { get; init; }
+    public SKColor DrcWarning { get; init; }
+    public SKColor DrcWaived { get; init; }
+
     public static LayoutRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         SKColor SK(string role)
@@ -70,6 +75,9 @@ public sealed class LayoutRenderTheme
             EmMeshInterface  = SK(ColorRole.LayoutEmMeshInterface),
             EmMeshTruncation = SK(ColorRole.LayoutEmMeshTruncation),
             PlanarMeshCell   = SK(ColorRole.LayoutPlanarMeshCell),
+            DrcError         = SK(ColorRole.LayoutDrcError),
+            DrcWarning       = SK(ColorRole.LayoutDrcWarning),
+            DrcWaived        = SK(ColorRole.LayoutDrcWaived),
         };
     }
 

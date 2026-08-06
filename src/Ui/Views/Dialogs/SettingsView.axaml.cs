@@ -79,6 +79,8 @@ public partial class SettingsView : Window
 
             TransparentBgCheck.IsChecked = prefs.CopyTransparentBackground ?? true;
 
+            CheckDrcOnExportCheck.IsChecked = prefs.CheckDrcOnExport ?? true;
+
             MsgTimestampCombo.ItemsSource   = new[] { "Time", "Date + Time", "Hidden" };
             MsgTimestampCombo.SelectedIndex = (int)(prefs.MessageTimestamp ?? MessageTimestampMode.Time);
 
@@ -109,6 +111,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.CopyTransparentBackground = TransparentBgCheck.IsChecked);
+    }
+
+    private void OnCheckDrcOnExportChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.CheckDrcOnExport = CheckDrcOnExportCheck.IsChecked);
     }
 
     private void OnMsgTimestampChanged(object? sender, SelectionChangedEventArgs e)

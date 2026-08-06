@@ -122,6 +122,7 @@
                                     <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
                                     <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
                                     <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
+                                    <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -141,6 +142,8 @@
                     <NativeMenu>
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Check Design Rules"             Command="{Binding CheckDesignRulesCommand}" Gesture="Meta+Shift+K"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Reload Generated Artwork"       Command="{Binding ReloadPCellGeneratorsCommand}"/>
                     </NativeMenu>
@@ -215,6 +218,11 @@
         <KeyBinding Gesture="Meta+U"        Command="{Binding UpdateLayoutFromSchematicCommand}"/>
         <KeyBinding Gesture="Ctrl+Shift+U"  Command="{Binding UpdateSchematicFromLayoutCommand}"/>
         <KeyBinding Gesture="Meta+Shift+U"  Command="{Binding UpdateSchematicFromLayoutCommand}"/>
+        <!-- L5b DRC. K for "check"; Shift because the unshifted Ctrl/Meta+K is conventionally a
+             different thing in most editors and this is not a per-keystroke action. Audited against
+             every other gesture in this file before choosing it — nothing else uses it. -->
+        <KeyBinding Gesture="Ctrl+Shift+K"  Command="{Binding CheckDesignRulesCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+K"  Command="{Binding CheckDesignRulesCommand}"/>
         <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding ShowSettingsCommand}" CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+Q"        Command="{Binding QuitApplicationCommand}"/>
         <KeyBinding Gesture="Escape"        Command="{Binding DisarmPlacementCommand}"/>
@@ -460,6 +468,10 @@
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages">
                         <MenuItem.Icon><mi:MaterialIcon Kind="MessageTextOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <MenuItem Header="_DRC"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Zoom to _Fit"
@@ -501,6 +513,13 @@
                           InputGesture="Ctrl+Shift+U"
                           ToolTip.Tip="Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Check Design Rules"
+                          Command="{Binding CheckDesignRulesCommand}"
+                          InputGesture="Ctrl+Shift+K"
+                          ToolTip.Tip="Check the active layout against its technology's minimum-width and minimum-spacing rules. Requires an active layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Reload Generated Artwork"

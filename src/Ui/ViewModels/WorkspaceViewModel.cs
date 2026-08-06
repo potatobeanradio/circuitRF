@@ -3524,7 +3524,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             var result = await Task.Run(
-                () => ProcessTechnologyImport.Import(choice.StackFilePath, choice.LayerTablePath));
+                () => ProcessTechnologyImport.Import(
+                    choice.StackFilePath, choice.LayerTablePath,
+                    choice.RuleDeckPaths, choice.RuleValueTablePaths));
 
             var tech = result.Technology;
             tech.Name = choice.Name;
@@ -3867,6 +3869,36 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // active and, if so, ask it to run ITS OWN export via LayoutDocument.RequestExportGdsii/
     // RequestExportDxf — never a second export code path (item 5/R-fix-4's own "route every entry
     // point through the same accessor").
+
+    /// <summary>
+    /// Design ▸ Check Design Rules (docs/design/layout-view.md §9A) — the menu entry point.
+    ///
+    /// <para>Runs the check on the active layout, brings the DRC panel forward so the result is not
+    /// reported into a panel nobody can see, and posts a one-line summary to Messages. R16b holds:
+    /// nothing is blocked, nothing is modified, and the user stays where they were.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void CheckDesignRules()
+    {
+        if (ResolveActiveDocumentForCommands() is not LayoutDocument doc) return;
+
+        var result = doc.ActiveViewModel.RunDrc();
+
+        _factory.DrcTool?.SetActiveLayout(doc.ActiveViewModel);
+        ShowToolPanel(Docking.DockPanelIds.Drc);
+
+        foreach (var d in result.Diagnostics) Messages.Warning($"DRC — {d}");
+
+        string tech = result.TechnologyName is { Length: > 0 } n ? $" against \"{n}\"" : "";
+        if (result.IsClean)
+            Messages.Success($"DRC{tech}: no violations — {result.RulesEvaluated} rule(s) over " +
+                             $"{result.ShapesChecked:N0} shape(s)" +
+                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived." : "."));
+        else
+            Messages.Warning($"DRC{tech}: {result.ErrorCount} error(s), {result.WarningCount} warning(s)" +
+                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived" : "") +
+                             $" — see the DRC panel.");
+    }
 
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private void ExportGdsii() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGdsii();
@@ -5164,8 +5196,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ActiveSaveScope = SaveScope.SingleDoc;
     }
 
-    private void ActivateLayoutDocumentForProperties(LayoutDocument doc) =>
+    private void ActivateLayoutDocumentForProperties(LayoutDocument doc)
+    {
         _factory.PropertiesTool?.SetActiveLayout(doc.ActiveViewModel);
+        // L5b: the violations panel follows the same active-layout signal — a DRC result belongs to
+        // the layout that was checked, so showing one document's violations beside another document's
+        // artwork would be worse than showing none.
+        _factory.DrcTool?.SetActiveLayout(doc.ActiveViewModel);
+    }
 
     // Cell dir for a view file at .../cell/<viewfolder>/file.ext → .../cell (two levels up); else null.
     private static string? CellDirOfView(string viewFilePath)
@@ -6448,6 +6486,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // — if it binds after this fires (first open) — by consuming the pending flag on DataContext change.
         (activeDockable as IActivatableDocument)?.RequestActivationFocus();
 
+        // L5b: the violations panel follows the active LAYOUT and nothing else. Cleared FIRST and set
+        // again only by the LayoutDocument branch, so no document type can leave a previous layout's
+        // violations on screen beside unrelated artwork by simply not knowing about this panel.
+        _factory.DrcTool?.SetActiveLayout(null);
+
         // Properties panel — route to data display, schematic, symbol-editor, or cell inspector.
         if (activeDockable is DataDisplayDocument ddDoc)
         {
@@ -6508,6 +6551,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Generate Netlist is enabled only when a schematic document is active.
         GenerateNetlistCommand.NotifyCanExecuteChanged();
+
+        // Design ▸ Check Design Rules is enabled only when a layout document is active.
+        CheckDesignRulesCommand.NotifyCanExecuteChanged();
 
         // Export GDSII/DXF (item 8) are enabled only when a layout document is active.
         ExportGdsiiCommand.NotifyCanExecuteChanged();

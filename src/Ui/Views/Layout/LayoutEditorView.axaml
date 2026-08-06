@@ -277,6 +277,19 @@
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                        <!-- L5b DRC (docs/design/layout-view.md §9A). On the toolbar as well as the
+                             Design menu because a check is something a user runs repeatedly while
+                             fixing what it found — reaching for a menu each time is the difference
+                             between a check people use and one they run once. -->
+                        <Button Click="OnCheckDesignRules"
+                                ToolTip.Tip="Check Design Rules (Ctrl/⌘+Shift+K)"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                         <!-- GDSII export (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md) — a
                              whole-hierarchy operation, so it sits with Insert Bitmap/Instance rather
                              than under any single drawing tool. -->

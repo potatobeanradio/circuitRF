@@ -1,10 +1,15 @@
-// Whole-design flatten for Gerber export (docs/sonnet-briefs/brief-L4c-gerber-export.md §4, R-L4c-6).
-// Gerber has no hierarchy at all — every instance and array must be flattened before writing. Reuses
-// L3c's existing machinery (LayoutFlatten.FlattenAllLevels, its affine coordinate walk, R-L3c-2) rather
-// than writing a second flattener: this file is only the DRIVING loop that applies FlattenAllLevels to
-// every one of the root design's own instances (L3c's own VM entry point applies it to a single
-// user-selected instance; export needs the whole design). Cross-technology reconciliation (R-L3c-3)
-// reuses LayoutLayerMapping/LayoutFragment.ApplyReconciliation exactly as L3c's own
+// Whole-design flatten — the elaborated, flat geometry a consumer that cannot express hierarchy needs.
+// Two consumers today: Gerber export (which has no hierarchy at all) and DRC (docs/design/layout-view.md
+// §9A.1: "v1 runs flat on the elaborated geometry, with a cell-count guard, and says so"). Originally
+// written for the Gerber writer alone (brief-L4c-gerber-export.md §4, R-L4c-6) and generalised in place
+// when DRC became the second caller — a format-agnostic flatten does not belong under Interchange, and a
+// DRC stack trace naming a Gerber type would be a category error.
+//
+// Reuses L3c's existing machinery (LayoutFlatten.FlattenAllLevels, its affine coordinate walk, R-L3c-2)
+// rather than writing a second flattener: this file is only the DRIVING loop that applies FlattenAllLevels
+// to every one of the root design's own instances (L3c's own VM entry point applies it to a single
+// user-selected instance; a whole-design consumer needs all of them). Cross-technology reconciliation
+// (R-L3c-3) reuses LayoutLayerMapping/LayoutFragment.ApplyReconciliation exactly as L3c's own
 // LayoutEditorViewModel.Flatten.cs does, with the SAME stated scope narrowing L3c itself uses:
 // checked only against each TOP-LEVEL instance's own DIRECT sub-cell, not re-checked at every deeper
 // nesting level (LayoutEditorViewModel.Flatten.cs's CommitFlattenAllLevels doc comment states this
@@ -12,9 +17,9 @@
 
 using CircuitRF.Ui.Schematic;
 
-namespace CircuitRF.Ui.Layout.Interchange;
+namespace CircuitRF.Ui.Layout;
 
-public static class GerberHierarchyFlatten
+public static class LayoutDesignFlatten
 {
     /// <summary>Same order-of-magnitude safety valve as R-L3c-4's own Flatten-All-Levels ceiling —
     /// reused directly (not re-derived) since a flattened WHOLE DESIGN is exactly the same class of
@@ -70,7 +75,7 @@ public static class GerberHierarchyFlatten
             var res = CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir);
             if (res.State != CellLayoutState.Resolved)
             {
-                unresolved.Add($"Instance referencing \"{inst.CellRef}\" does not resolve — skipped, no geometry exported for it.");
+                unresolved.Add($"Instance referencing \"{inst.CellRef}\" does not resolve — skipped, no geometry contributed for it.");
                 continue;
             }
 
@@ -105,7 +110,7 @@ public static class GerberHierarchyFlatten
             shapes.AddRange(reconciled);
 
             foreach (var surviving in allLevels.SurvivingInstances)
-                unresolved.Add($"Instance referencing \"{surviving.CellRef}\" (nested under \"{inst.CellRef}\") could not be resolved — skipped, no geometry exported for it.");
+                unresolved.Add($"Instance referencing \"{surviving.CellRef}\" (nested under \"{inst.CellRef}\") could not be resolved — skipped, no geometry contributed for it.");
 
             flattenedCount++;
         }

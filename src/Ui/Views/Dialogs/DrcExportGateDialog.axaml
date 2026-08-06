@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.DrcExportGateDialog"
+        Title="Design-rule check"
+        Width="480"
+        SizeToContent="Height"
+        MinHeight="200"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock x:Name="HeadlineLabel"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap"/>
+
+            <TextBlock x:Name="TechnologyLabel"
+                       FontSize="11"
+                       Opacity="0.7"
+                       TextWrapping="Wrap"/>
+
+            <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="ViolationList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" FontSize="11" Opacity="0.85"
+                                       TextWrapping="Wrap" Margin="0,1"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock Text="The export can still go ahead — this check reports, it does not block."
+                       FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+            <CheckBox x:Name="KeepCheckingCheck"
+                      Content="Check design rules before exporting"
+                      FontSize="12"
+                      IsChecked="True"
+                      Margin="0,6,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,12,0,0">
+            <Button Content="Cancel"
+                    Width="90"
+                    FontSize="12"
+                    IsCancel="True"
+                    HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button Content="Export Anyway"
+                    Width="130"
+                    IsDefault="True"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"
+                    Click="OnExportClick"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -62,6 +62,18 @@ public static class ColorRole
     /// </summary>
     public const string LayoutPlanarMeshCell = "Layout.PlanarMeshCell";
 
+    /// <summary>
+    /// L5b (docs/design/layout-view.md §9A.1): a DRC violation marker. Three roles rather than one
+    /// because severity must be readable at a glance without the panel — and because a WAIVED
+    /// violation must still be visible (§9A.1) while reading as deliberate rather than outstanding.
+    /// Deliberately distinct from <see cref="SystemWarning"/>: a violation marker sits ON the artwork
+    /// and has to stay legible against layer colours, which a general-purpose warning colour does not
+    /// have to.
+    /// </summary>
+    public const string LayoutDrcError   = "Layout.DrcError";
+    public const string LayoutDrcWarning = "Layout.DrcWarning";
+    public const string LayoutDrcWaived  = "Layout.DrcWaived";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -76,5 +88,6 @@ public static class ColorRole
         LayoutSelection, LayoutPCellPin,
         LayoutEmMeshConductor, LayoutEmMeshInterface, LayoutEmMeshTruncation,
         LayoutPlanarMeshCell,
+        LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived,
     ];
 }

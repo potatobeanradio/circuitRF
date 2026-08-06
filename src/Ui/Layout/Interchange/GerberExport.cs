@@ -1,5 +1,5 @@
 // Gerber/Excellon export orchestrator (docs/sonnet-briefs/brief-L4c-gerber-export.md). Closes Phase L4
-// — export only, no Gerber import/reader at all (§8, R-menu-5). Ties together GerberHierarchyFlatten
+// — export only, no Gerber import/reader at all (§8, R-menu-5). Ties together LayoutDesignFlatten
 // (R-L4c-6 — the whole design flattens, since Gerber has no hierarchy), label-to-geometry conversion
 // (R-L4c-5, reusing the SAME stroked-font pipeline the label-flatten feature already built), per-layer
 // grouping, and GerberWriter/ExcellonWriter/GerberJobFile. Analyze runs the exact same write path into
@@ -65,7 +65,7 @@ public static class GerberExport
     /// Walks and flattens <paramref name="rootView"/>'s whole hierarchy, converts labels to geometry,
     /// and computes the fidelity plan — no bytes written yet. <paramref name="resolvedCrossTechMappings"/>
     /// carries any prior <see cref="LayerMappingRow"/> confirmations (keyed by the resolved sub-cell's
-    /// absolute cell directory, matching <see cref="GerberHierarchyFlatten.FlattenResult.PendingCrossTechMappings"/>);
+    /// absolute cell directory, matching <see cref="LayoutDesignFlatten.FlattenResult.PendingCrossTechMappings"/>);
     /// pass null/empty on the first call. When <see cref="ExportPlan.RequiresMappingConfirmation"/> comes
     /// back true, the caller must resolve every pending entry (the SAME <c>LayerMappingDialog</c> paste/
     /// retarget/flatten already use) and call <see cref="Analyze"/> again with the merged dictionary.
@@ -75,7 +75,7 @@ public static class GerberExport
         Func<string?, string, TechResolution>? resolveTechAt,
         IReadOnlyDictionary<string, IReadOnlyList<LayerMappingRow>>? resolvedCrossTechMappings = null)
     {
-        var flatten = GerberHierarchyFlatten.Flatten(rootView, rootCellDir, rootTech, resolveTechAt, resolvedCrossTechMappings);
+        var flatten = LayoutDesignFlatten.Flatten(rootView, rootCellDir, rootTech, resolveTechAt, resolvedCrossTechMappings);
 
         var defaultFormat = new GerberFormat(GerberUnits.DefaultIntegerDigits, 6);
 
@@ -85,7 +85,7 @@ public static class GerberExport
                 PortLabelsOmitted: 0, BitmapsOmitted: 0, PathsAsStroke: 0, PathsAsRegion: 0,
                 TopLevelInstancesFlattened: 0, ShapesContributedByFlatten: 0, UnresolvedInstances: [],
                 PendingCrossTechMappings: flatten.PendingCrossTechMappings, ExceedsHierarchyCeiling: true,
-                Diagnostics: [$"Flattening this design would exceed {GerberHierarchyFlatten.HardCeiling:N0} shapes — refused. Nothing was changed."],
+                Diagnostics: [$"Flattening this design would exceed {LayoutDesignFlatten.HardCeiling:N0} shapes — refused. Nothing was changed."],
                 Tech: rootTech);
 
         if (flatten.PendingCrossTechMappings.Count > 0)

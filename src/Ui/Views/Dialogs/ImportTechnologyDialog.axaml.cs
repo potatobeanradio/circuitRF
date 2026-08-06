@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -11,11 +13,17 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// What the Import Technology dialog returns on Import. <paramref name="LayerTablePath"/> is null
 /// when the user chose to import the stack alone.
 /// </summary>
+/// <param name="RuleDeckPaths">
+/// Every file of the process's design-rule deck, or empty when the user declined to import rules (or
+/// the kit ships none). A deck is read as one program — see <c>TechnologyScanResult.RuleDeckFiles</c>.
+/// </param>
 public sealed record ImportTechnologyResult(
-    string  Name,
-    string  StackFilePath,
-    string? LayerTablePath,
-    bool    SetAsDefault);
+    string                Name,
+    string                StackFilePath,
+    string?               LayerTablePath,
+    bool                  SetAsDefault,
+    IReadOnlyList<string> RuleDeckPaths,
+    IReadOnlyList<string> RuleValueTablePaths);
 
 /// <summary>
 /// Picks which of a kit's technology files to build a technology from.
@@ -65,6 +73,21 @@ public partial class ImportTechnologyDialog : Window
         // A layer table is what makes drawn geometry mean anything, so the first one is offered by
         // default; "none" stays available for a kit whose table circuitRF could not read.
         LayerTableCombo.SelectedIndex = scan.LayerTables.Count > 0 ? 1 : 0;
+
+        // A deck is not an alternative to choose between (see TechnologyScanResult.RuleDeckFiles), so
+        // it is offered as one checkbox with a count rather than a picker. Absent kit -> absent row.
+        if (scan.HasRuleDeck)
+        {
+            ImportRulesCheck.IsVisible = true;
+            RuleDeckLabel.IsVisible    = true;
+            RuleDeckLabel.Text =
+                $"{scan.RuleDeckFiles.Count} rule-deck file(s)" +
+                (scan.RuleValueTables.Count > 0
+                    ? $", {scan.RuleValueTables.Count} rule-value table(s)."
+                    : ", no rule-value table found — only rules stating their value in place can be read.") +
+                " circuitRF checks minimum width and minimum spacing; every other rule the deck states " +
+                "is reported at import and not enforced.";
+        }
 
         _fallbackName = fallbackName;
         SuggestNameFromSelection();
@@ -135,8 +158,15 @@ public partial class ImportTechnologyDialog : Window
         if (NameValidator.Validate(name) is not null) return;
         if (_techDir is not null && File.Exists(Path.Combine(_techDir, $"{name}.ctech"))) return;
 
+        bool wantRules = _scan.HasRuleDeck && ImportRulesCheck.IsChecked == true;
+
         Close(new ImportTechnologyResult(
-            name, stack.Path, SelectedLayerTable()?.Path, SetAsDefaultCheck.IsChecked == true));
+            name,
+            stack.Path,
+            SelectedLayerTable()?.Path,
+            SetAsDefaultCheck.IsChecked == true,
+            wantRules ? _scan.RuleDeckFiles.Select(f => f.Path).ToList() : [],
+            wantRules ? _scan.RuleValueTables.Select(f => f.Path).ToList() : []));
     }
 
     private void UpdateView()

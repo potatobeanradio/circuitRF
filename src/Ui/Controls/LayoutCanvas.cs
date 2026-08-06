@@ -355,6 +355,45 @@ public sealed class LayoutCanvas : Control
         _panX = vp.PanX; _panY = vp.PanY; _zoom = vp.Zoom;
     }
 
+    /// <summary>
+    /// L5b (§9A.1's click-to-zoom): brings one region on screen, centred, with room around it so the
+    /// user sees what the violation is NEXT to — a marker filling the whole viewport shows the defect
+    /// and hides its context, which is the thing you actually need in order to fix it.
+    ///
+    /// <para>A degenerate region (a violation whose marker is a hairline, which is the common case
+    /// for spacing) is grown to a minimum span first, so zooming to it lands at a usable
+    /// magnification instead of clamping against <c>MaxZoom</c> at some arbitrary depth.</para>
+    /// </summary>
+    public void ZoomToRegion(Bbox region)
+    {
+        if (region.IsEmpty || Bounds.Width < 1 || Bounds.Height < 1) return;
+
+        long minSpan = Math.Max(1, _viewModel?.Model.SnapDbu * ZoomToRegionMinSnapSteps ?? 1);
+        long w = region.MaxX - region.MinX;
+        long h = region.MaxY - region.MinY;
+
+        long padX = Math.Max(0, (minSpan - w) / 2);
+        long padY = Math.Max(0, (minSpan - h) / 2);
+
+        long marginX = (long)Math.Round((w + 2 * padX) * ZoomToRegionMargin);
+        long marginY = (long)Math.Round((h + 2 * padY) * ZoomToRegionMargin);
+
+        var padded = new Bbox(
+            region.MinX - padX - marginX, region.MinY - padY - marginY,
+            region.MaxX + padX + marginX, region.MaxY + padY + marginY);
+
+        var vp = LayoutViewport.ZoomToFit(padded, Bounds.Width, Bounds.Height);
+        _panX = vp.PanX; _panY = vp.PanY; _zoom = Math.Clamp(vp.Zoom, MinZoom, MaxZoom);
+        RaiseViewportChanged();
+        InvalidateVisual();
+    }
+
+    /// <summary>A hairline violation is grown to at least this many snap steps before zooming.</summary>
+    private const int ZoomToRegionMinSnapSteps = 20;
+
+    /// <summary>Context around the violation, as a fraction of its own (padded) span per side.</summary>
+    private const double ZoomToRegionMargin = 1.5;
+
     public void ZoomIn()  => ZoomAtCenter(_zoom * ZoomFactor);
     public void ZoomOut() => ZoomAtCenter(_zoom / ZoomFactor);
 

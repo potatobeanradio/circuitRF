@@ -1,5 +1,232 @@
 # UI (Avalonia) — local conventions
 
+Phase L5b — DRC v1 (docs/design/layout-view.md §9A, 2026-08-06) — COMPLETE. **Phase L5b is done.**
+A layout can now be checked against its technology's minimum-width and minimum-spacing rules, the
+violations are regions you can click to, waivers persist, and a process's own rule DECK can be read
+at technology import.
+
+**The four boundary decisions, because each one is the difference between a check people run twice
+and a check they run once.**
+
+1. **Minimum width is a morphological OPENING with MITER joins, eroded by w/2 − 1 DBU.** Both halves
+   are load-bearing. Round joins round every convex corner by w/2, so the difference then reports
+   four corner slivers on a plain rectangle that PASSES — a false positive on literally every shape
+   drawn. And eroding by exactly w/2 collapses an at-limit region to zero width, which Clipper2 drops
+   as degenerate, so the whole trace comes back as a violation. **A trace drawn exactly at the
+   minimum is the commonest thing on a board.** Backing the radius off one DBU moves the detection
+   threshold to "narrower than w by more than 1 DBU" — 1 nm on a default technology.
+   `MinWidth_TraceExactlyAtTheLimit_Passes` is the gate; setting the backoff to zero turns it red.
+2. **Minimum spacing inflates BOTH conductors by s/2 with ROUND joins and intersects.** Round because
+   spacing is a euclidean distance and a mitered corner would measure the diagonal. The overlap IS
+   the gap that has to be opened, which is the marker a user can act on — a highlight on metal that
+   is not itself wrong tells them nothing. A gap of exactly s inflates to a zero-area contact, which
+   Clipper2 drops, so an at-limit gap passes for the same reason an at-limit trace does.
+3. **Unnamed geometry is grouped by CONNECTIVITY, one conductor per connected component.** Both
+   simpler readings are wrong in ways that make the check worthless on real artwork: treating all
+   unnamed shapes as one net silently passes every board drawn before nets are stamped (the ordinary
+   case for hand-drawn artwork), and treating each unnamed shape as its own net reports a violation
+   for every pair of overlapping rectangles a pour is drawn from — §9A.1's own named failure mode,
+   arrived at from the other direction. Connectivity is what the net attribute would have said if
+   anyone had stamped it, and it is one Clipper2 union away.
+4. **A waiver names a PLACE.** Its key is rule + layer + the marker's exact bounding box. Exact rather
+   than quantised because DBU are integers and both Clipper2 and the flattener are deterministic, so
+   re-running on unchanged geometry reproduces the key bit-for-bit. Editing the offending shape
+   changes it, which un-waives the violation — the correct outcome, since the waiver was granted for
+   geometry that no longer exists.
+
+**A waiver is not undoable, deliberately.** It is a review judgement recorded against the design, not
+a geometry edit; putting it on the shape-editing undo stack would let Ctrl+Z after an unrelated edit
+silently revoke it. It does dirty the document, so it is saved. `LayoutView.DrcWaivers` round-trips in
+the `.clay` — additive, **no `FormatVersion` bump**, omitted when empty so every existing file
+re-serializes byte-for-byte.
+
+**A stale result is DROPPED, not refreshed.** `Model.Changed` clears `DrcResult`. A marker drawn over
+geometry that has moved is worse than no marker, and a violation count that no longer matches the
+artwork is worse than no count. This is the ONLY way a check is allowed to affect the editor — R16b's
+"DRC never blocks editing" is otherwise trivially true of a function that cannot touch it.
+
+**Every DRC surface NAMES the technology it checked against, and this is not decoration.** A layout
+with no `TechRef` of its own resolves the WORKSPACE DEFAULT, and a workspace holding two processes has
+one default. **A clean result checked against the wrong process's rules is indistinguishable from a
+clean result checked against the right one.** The panel header, the Messages summary and the
+pre-export prompt all state it. Do not remove it as redundant with the panel's contents; it is not.
+
+## Where rules come from, and the two-PDK answer (§9A.4)
+
+**Rules live on the TECHNOLOGY — never on a layout, never on a kit.** Everything else follows:
+- One editing surface. An imported process produces an ordinary `.ctech` in `tech/`, edited in the
+  same Technology Editor as a starter technology. There is no second, kit-flavoured DRC UI.
+- **Two processes in one workspace: no conflict, by construction.** Two `.ctech` files; a layout
+  resolves exactly one technology; a check runs against that one. Nothing merges, nothing arbitrates.
+- Precedence within one `.ctech`: **the process's own rule DECK wins** where it states a rule (it is
+  what a fab signs off against), the stack description's own WMIN/SMIN fills in where the deck states
+  nothing, and hand-authored rules are how a technology with neither gets any.
+- A **cross-technology sub-cell** is left out of the check and named in the diagnostics. Running a
+  CHECK must not be the thing that asks the user to confirm a layer mapping.
+
+## Reading a rule deck — what is deliberately NOT attempted
+
+A rule deck is a **program**: variables, arrays, loops, conditionals, and a large vocabulary of
+geometric operations. **A half-interpreted deck is worse than none** — a rule silently mapped onto the
+wrong layer, or a conditional exclusion quietly dropped, produces a check that passes a design it
+should have failed. `RuleDeckReader` reads exactly the two shapes circuitRF can express and **counts
+and reports everything else by operation name**. Measured on a real process: **23 width/spacing rules
+read, 87 further rules reported as not enforced** (`sep` ×34, `enclosed` ×20, derived-layer ×15,
+`interacting` ×11, …). The report is the deliverable as much as the rules are — a user who imports a
+process stating hundreds of rules and gets 23 needs to see that number, not discover it later.
+
+**Three findings from getting this working against a real deck, each of which cost real rules:**
+- **Array bindings are FILE-LOCAL; layer bindings are global.** Two files of one deck routinely bind
+  the same ordinary name (a list called "the metals") to different lists, because each is a local
+  variable in its own program. Collecting them globally lets the last file read win, and every earlier
+  file's rules resolve against another file's list — **measured, that is the difference between
+  reading eight back-end metal rules and reading none.**
+- **Comment stripping must be quote-aware.** A deck states each rule's description as an interpolated
+  string (`"… width: #{value} µm"`), so cutting at the first `#` truncates it mid-quote and loses
+  every rule's NAME and description — the two things that let a violation be traced back to the
+  process's own documentation.
+- **The rule-value table is chosen by COVERAGE, not by name or scan order.** A kit ships one table per
+  corner AND unrelated configuration that is structurally a map of numbers. Picking the first
+  candidate found reads the deck against a table answering none of its keys; every rule falls out as
+  "value not stated" and the import looks like the deck was unreadable. Counting how many of the
+  deck's own keys each table defines settles it with no knowledge of any file's name.
+
+Also: **`ProcessTechnologyImport.MaxDepth` went 6 → 8.** A deck splits its rules into a folder per
+section of the process, which on a kit lands seven or eight levels below the root a user points
+the import at. At depth 6 the scan found 4 deck files and zero rules. The scan stays bounded in every
+other direction (40,000 files, 8 MB each, a marker-word peek).
+
+**A rule on a DERIVED layer expression is reported, not mapped onto its base layer** — mapping it
+would widen the rule silently.
+
+## Entry points
+
+Four, on purpose: **Design ▸ Check Design Rules** (both hand-mirrored menu surfaces) for
+discoverability, **Ctrl/⌘+Shift+K** and a **layout-toolbar button** for the repeat-while-fixing loop,
+and the **DRC panel's own Check button** for when the panel is what you are already looking at. The
+shortcut was audited against every other gesture in `WorkspaceWindow.axaml` before being chosen;
+`EveryDrcEntryPoint_IsWired` and `TheDrcShortcut_IsNotSharedWithAnyOtherCommand` pin both.
+
+**The toolbar button DELEGATES to the menu's own command rather than calling `RunDrc` itself.** That
+command also brings the DRC panel forward, and a check whose findings land in a panel the user cannot
+see reads as having done nothing — two entry points doing the same thing differently is exactly how
+that inconsistency ships. The workspace view model is resolved by walking the application's windows,
+the mechanism `TornOffFileMenuView` already uses for the same reason (this view's DataContext is a
+`LayoutDocument`, not the workspace); a torn-off window with no shell in reach falls back to running
+the check locally, so the button never does nothing.
+
+The violations panel is a new dock tool (`DockPanelIds.Drc`), tabbed with Messages by default — both
+are "what the tool has to tell you about this design". It follows the active LAYOUT document the same
+way `PropertiesTool` follows the active editor. **`WithMissingPanelsFilled` gives it its default spot
+in a `.cws` written before this build**, which is the mechanism that already exists for exactly this.
+
+## R16d — export offers to run DRC first
+
+One shared gate (`ConfirmDesignRulesBeforeExportAsync`) called from all three export paths, so GDSII,
+DXF and Gerber can never drift on what "checked before writing" means. **A clean design is not
+prompted at all** — a "no violations" modal before every export is exactly the dialog people learn to
+dismiss unread, which then also gets dismissed on the export that mattered (the same reasoning the
+GDSII/Gerber fidelity dialogs already apply when there is nothing to report). Violations show the
+counts, list the first twelve, and the export can still go ahead.
+
+**The checkbox lives in two places** because R16d's literal "a checkbox in the export dialog" has a
+hole in it: the GDSII and Gerber fidelity dialogs are SKIPPED when there is nothing to report, so a
+checkbox there would be unreachable in the common case. It is therefore in the pre-export prompt
+(where the setting is in front of you at the moment it is costing you something) and in **Settings ▸
+General** (where a user whose designs are clean can still find it). `AppPreferences.CheckDrcOnExport`,
+per user rather than per workspace — a working habit, not a property of a design, and a workspace
+arriving from someone else must not silently turn a user's check off. **Default ON.**
+
+## The rename, and why
+
+`GerberHierarchyFlatten` → **`LayoutDesignFlatten`**, out of `Layout/Interchange/` into `Layout/`. It
+was always a format-agnostic whole-design flatten; DRC is its second consumer (§9A.1's "v1 runs flat
+on the elaborated geometry"), and a DRC stack trace naming a Gerber type would be a category error.
+Behaviour is unchanged; `GerberExport` is the other caller.
+
+## Markers
+
+`LayoutOverlay.DrcMarkers` — a system layer in §10.5's sense: superimposed on the geometry, no
+`LayerKey`, never in `LayoutView.Shapes`, never reachable by an exporter (true by construction — every
+export path passes `Overlay = null`), never counted in `LayoutFrameCounters`. Translucent fill so the
+metal underneath stays readable, solid outline so a thin violation is visible, **and a fixed-size
+crosshair when the region's on-screen extent falls under 5 device pixels** — the most common violation
+is a hairline gap band, which at any usable zoom paints under one pixel. A violation the user cannot
+see is a check that did not run. Three theme roles (error / warning / waived) so severity reads without
+the panel, and a waived violation still draws — §9A.1 requires waivers to stay VISIBLE.
+
+## Curved geometry — two bugs that made the check unusable on real artwork
+
+Both were found by running a real process's own rules over real artwork rather than over hand-built
+fixtures, and **both made the check report violations on geometry that is perfectly legal** — the failure
+mode that destroys trust in a checker fastest. Each now has a permanent regression test, and each test was
+confirmed to turn red against the pre-fix code.
+
+1. **Clipper2 offsets round to the integer DBU grid, so erode-then-dilate is not an exact identity.** On an
+   axis-aligned rectangle the rounding is exact; on a FLATTENED CURVE every one of its many oblique
+   vertices lands back a fraction of a DBU off, and `union − opened` came back as a rash of sub-DBU slivers
+   around the whole perimeter — reported as width violations on a shape twice the minimum width. **The
+   count scaled with vertex count** (a plain circle reported 3-4; a larger one reported 20), so the check
+   was unusable on any layout containing circles, rounded corners, arcs, round-capped traces or via pads.
+   **Fix: dilate by `radius + WidthDilateOvershootDbu` (2 DBU), not by `radius`.** The extra dilation can
+   only ever REMOVE area from `union − opened`, so it cannot hide a violation: a genuinely narrow neck is
+   erased by the erosion and has no opened region to grow back from. Confirmed at the threshold — a trace
+   2 DBU under the rule is still caught, and one exactly at the rule still passes.
+2. **DRC flattened curves at 1 µm regardless of process scale.** `LayoutFlattener.ResolveTolDbu` falls back
+   to a fixed 1 µm when neither the shape nor the technology states a tolerance — a sane default for
+   DRAWING, and six times the minimum-width rule of a fine-geometry process. At that tolerance a via pad
+   flattens to a **triangle**, whose corners really are narrower than the rule, so the check dutifully
+   reported three violations on a perfectly legal pad. **Fix: a per-layer flatten-tolerance cap,
+   `min(resolved tolerance, max(1, smallest rule on that layer / 16))`,** computed in `DrcEngine.Run`
+   before any flattening and threaded through `DrcRegions.Expand`. **The flattening error has to be small
+   compared to the quantity being measured, or the check is measuring its own approximation** — the same
+   reasoning `LayoutHitTest` already applies to a click tolerance. A sixteenth keeps the chord error well
+   under the one- and two-DBU margins the width check itself works to, while staying coarse enough that a
+   large curve on a coarse-ruled layer does not explode into vertices (a board's 6 mil rule still permits a
+   ~9500 DBU sagitta).
+
+**Do not "simplify" either constant away.** `WidthDilateOvershootDbu = 0` turns six tests red;
+`ToleranceFractionOfRule` neutered to no cap turns four red — including
+`MinWidth_OnATechnologyStatingNoFlattenTolerance_StillFlattensFinelyEnoughToBeRight`, which deliberately
+exercises the fallback path by leaving `DefaultFlattenTolDbu` unset.
+
+## Cost, stated rather than claimed
+
+**Not benchmarked.** The check is O(shapes) to flatten, one Clipper2 union per layer, and a
+bbox-filtered pairwise sweep over that layer's conductors — the same cost class as an L1e boolean over
+the whole design, paid on demand rather than per frame, which is why no L2-style budget applies. What
+IS in place is the refusal: above `DrcEngine.DefaultMaxShapes` (500,000, reusing L3c's own flatten
+ceiling rather than re-deriving one) the run refuses outright and says so, so a pathological design
+costs a message rather than a hang. If checking a large design ever feels slow, the measurement to
+take first is the per-layer union, not the pairwise sweep — the sweep already rejects most pairs on a
+bounding box.
+
+## Gate
+
+**78 new tests** (`DrcEngineTests` 32, `RuleDeckReaderTests` 15, `DrcViewModelTests` 14,
+`DrcWaiverPersistenceTests` 4, `DrcExportGateAndPanelWiringTests` 8, `RuleDeckIntoTechnologyTests` 5).
+Firewall 4, Core 1,118, RfCore 281, Ui.Tests **4,821** — all green. Engine 1,004 (+1 pre-existing
+skip) green on the baseline run at the start of this work; on a later run taken CONCURRENTLY with a
+Ui.Tests invocation, `Hero1BTests.Hero1B_ImportElaborateAndSolve_WithinBudgetAndConsistent` failed
+once at 20 s. **Captured by name rather than hidden, and confirmed not a regression:** it is a
+wall-clock BUDGET test, this file's own L8a note already records that "Hero1B's 10 s budget is
+marginal on this machine independently of the phase", and nothing in this work touches `src/Engine`
+at all — every changed file is under `src/Ui`, `docs/` or `tests/Ui.Tests`.
+
+**Four gates confirmed to actually catch a regression, not merely exercise the path:** setting
+the width backoff to zero turns `MinWidth_TraceExactlyAtTheLimit_Passes` red; making array
+bindings global again turns `ATwoFileDeck_BindingTheSameListNameDifferently_KeepsEachFilesOwnList` red;
+and the two curved-geometry constants above each turn their own tests red when neutered.
+
+**Not interactively verified** (no visual driver here, matching every prior Layout Editor phase) —
+please confirm on your end: Design ▸ Check Design Rules on a layout brings the DRC panel forward and
+lists violations with the technology named; double-clicking a row zooms to it with context around it;
+the Markers toggle shows/hides the overlay; waiving a row greys it and clears the error count, and
+survives save-and-reopen; exporting a design with violations shows the pre-export prompt and exporting
+a clean one shows nothing extra; and File ▸ Import ▸ Technology… on a process folder offers "Import
+design rules from this process's rule deck" and reports both what it read and what it could not.
+
+
 Two vias far apart on a board: there is now a way through, and a finding about the refusal itself
 (brief-gazz-accuracy-ceiling, 2026-08-06) — **M1 + M2 + M4; M3 deferred.** A follow-up to the M0 entry
 immediately below, entirely engine-side; the whole story is in `src/Engine/Mom/CLAUDE.md`.

@@ -18,19 +18,47 @@ namespace CircuitRF.Ui.Layout.TechImport;
 public sealed record TechnologyFileCandidate(string Path, string RelativePath, string Label);
 
 /// <summary>What a scan of a kit turned up.</summary>
+/// <param name="RuleDeckFiles">
+/// Every file that reads as part of the process's design-rule deck. Unlike a stack description or a
+/// layer table, these are NOT alternatives to choose between — a deck is one program split across
+/// many files (its layer bindings in one, its rules in dozens), so they are read together or not at
+/// all.
+/// </param>
+/// <param name="RuleValueTables">
+/// The tables the deck reads its numbers out of. Several are a genuine choice (a process states one
+/// per corner), so the first is used by default and the rest are reported.
+/// </param>
 public sealed record TechnologyScanResult(
     IReadOnlyList<TechnologyFileCandidate> StackFiles,
     IReadOnlyList<TechnologyFileCandidate> LayerTables,
-    IReadOnlyList<string>                  Notes)
+    IReadOnlyList<string>                  Notes,
+    IReadOnlyList<TechnologyFileCandidate> RuleDeckFiles,
+    IReadOnlyList<TechnologyFileCandidate> RuleValueTables)
 {
+    public TechnologyScanResult(
+        IReadOnlyList<TechnologyFileCandidate> stackFiles,
+        IReadOnlyList<TechnologyFileCandidate> layerTables,
+        IReadOnlyList<string>                  notes)
+        : this(stackFiles, layerTables, notes, [], []) { }
+
     /// <summary>True when there is enough to build a technology from.</summary>
     public bool HasStack => StackFiles.Count > 0;
+
+    /// <summary>True when the kit ships a design-rule deck circuitRF found.</summary>
+    public bool HasRuleDeck => RuleDeckFiles.Count > 0;
 }
 
 public static class ProcessTechnologyImport
 {
-    /// <summary>How deep below the scanned root to look. A kit nests its technology data a few levels down.</summary>
-    public const int MaxDepth = 6;
+    /// <summary>
+    /// How deep below the scanned root to look. A kit nests its technology data several levels down,
+    /// and a rule deck is deeper still — it splits its rules into a folder per section of the process
+    /// (front end, back end, geometry), which on a kit lands seven or eight levels below the kit
+    /// root a user actually points the import at. The scan stays bounded in every other direction
+    /// (<see cref="MaxFilesExamined"/>, <see cref="MaxFileBytes"/>, and a marker-word peek), so the
+    /// cost of the extra depth is bounded too.
+    /// </summary>
+    public const int MaxDepth = 8;
 
     /// <summary>
     /// Files bigger than this are not peeked at. Both formats are small — a stack description is a
@@ -49,6 +77,8 @@ public static class ProcessTechnologyImport
     {
         var stacks  = new List<TechnologyFileCandidate>();
         var tables  = new List<TechnologyFileCandidate>();
+        var decks   = new List<TechnologyFileCandidate>();
+        var values  = new List<TechnologyFileCandidate>();
         var notes   = new List<string>();
 
         if (!Directory.Exists(rootDirectory))
@@ -77,6 +107,16 @@ public static class ProcessTechnologyImport
                 tables.Add(new TechnologyFileCandidate(
                     path, Relative(rootDirectory, path), Path.GetFileName(path)));
             }
+            else if (RuleDeckReader.LooksLikeRuleValueTable(text))
+            {
+                values.Add(new TechnologyFileCandidate(
+                    path, Relative(rootDirectory, path), Path.GetFileName(path)));
+            }
+            else if (RuleDeckReader.LooksLikeRuleDeck(text))
+            {
+                decks.Add(new TechnologyFileCandidate(
+                    path, Relative(rootDirectory, path), Path.GetFileName(path)));
+            }
         }
 
         if (truncated)
@@ -95,8 +135,10 @@ public static class ProcessTechnologyImport
         // Ordered so the choice a user is offered is stable run to run.
         stacks.Sort(static (a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
         tables.Sort(static (a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
+        decks.Sort(static (a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
+        values.Sort(static (a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
 
-        return new TechnologyScanResult(stacks, tables, notes);
+        return new TechnologyScanResult(stacks, tables, notes, decks, values);
     }
 
     /// <summary>
@@ -104,7 +146,11 @@ public static class ProcessTechnologyImport
     /// layer table is a degraded but honest result, and refusing would leave a user with a process
     /// whose stack circuitRF can plainly read and no way to get at it.
     /// </summary>
-    public static TechnologyImportResult Import(string stackFilePath, string? layerTablePath)
+    public static TechnologyImportResult Import(
+        string                 stackFilePath,
+        string?                layerTablePath,
+        IReadOnlyList<string>? ruleDeckPaths       = null,
+        IReadOnlyList<string>? ruleValueTablePaths = null)
     {
         var stack = ProcessStackReader.Read(File.ReadAllText(stackFilePath));
 
@@ -112,8 +158,38 @@ public static class ProcessTechnologyImport
         if (layerTablePath is { Length: > 0 })
             table = LayerPropertiesReader.Read(File.ReadAllText(layerTablePath));
 
+        var deck = ReadRuleDeck(ruleDeckPaths, ruleValueTablePaths);
+
         return ProcessTechnologyBuilder.Build(
-            stack, table, Path.GetFileNameWithoutExtension(stackFilePath));
+            stack, table, Path.GetFileNameWithoutExtension(stackFilePath), deck);
+    }
+
+    /// <summary>
+    /// Reads the deck's files as one program. A file that cannot be read is skipped rather than
+    /// failing the import — a deck is dozens of files and one unreadable corner of it must not cost a
+    /// user the technology.
+    /// </summary>
+    public static ProcessRuleDeck ReadRuleDeck(
+        IReadOnlyList<string>? ruleDeckPaths,
+        IReadOnlyList<string>? ruleValueTablePaths)
+    {
+        if (ruleDeckPaths is not { Count: > 0 }) return ProcessRuleDeck.Empty;
+
+        var tables = new List<IReadOnlyDictionary<string, double>>();
+        foreach (var p in ruleValueTablePaths ?? [])
+        {
+            try { tables.Add(RuleDeckReader.ReadRuleValues(File.ReadAllText(p))); }
+            catch (SystemException) { tables.Add(new Dictionary<string, double>()); }
+        }
+
+        var texts = new List<string>(ruleDeckPaths.Count);
+        foreach (var p in ruleDeckPaths)
+        {
+            try { texts.Add(File.ReadAllText(p)); }
+            catch (SystemException) { /* skip: see this method's own doc comment */ }
+        }
+
+        return RuleDeckReader.Read(texts, tables);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -173,7 +249,12 @@ public static class ProcessTechnologyImport
 
             bool promising =
                 peek.Contains("layer-properties", StringComparison.Ordinal) ||
-                peek.Contains("TECHNOLOGY",       StringComparison.OrdinalIgnoreCase);
+                peek.Contains("TECHNOLOGY",       StringComparison.OrdinalIgnoreCase) ||
+                // A rule deck's own two grammar markers: it binds a drawn layer to a stream number,
+                // or reads a value out of the rule table. Both appear within the first few lines of
+                // any deck file that carries anything circuitRF can use.
+                peek.Contains("get_polygons",     StringComparison.Ordinal) ||
+                peek.Contains("drc_rules",        StringComparison.Ordinal);
 
             if (!promising) return null;
 

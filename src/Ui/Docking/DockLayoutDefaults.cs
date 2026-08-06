@@ -43,6 +43,7 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Properties,  Side = DockSide.Left,   Group = 1, Order = 0, Active = true,  Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion         },
+            new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion         },
         ],
     };
 

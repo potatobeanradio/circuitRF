@@ -11,7 +11,9 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.Drc;
 using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views.Dialogs;
 
@@ -243,6 +245,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportDxfRequested         -= OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      -= OnExportGerberRequestedFromMenu;
         }
+        RebindDrcZoomSubscription(null);
         _subscribedDoc = DataContext as LayoutDocument;
         if (_subscribedDoc is not null)
         {
@@ -251,6 +254,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportGdsiiRequested       += OnExportGdsiiRequestedFromMenu;
             _subscribedDoc.ExportDxfRequested         += OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      += OnExportGerberRequestedFromMenu;
+            RebindDrcZoomSubscription(_subscribedDoc.ActiveViewModel);
             if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
         UpdateHierarchyButtonStates();
@@ -264,8 +268,108 @@ public partial class LayoutEditorView : UserControl
     // through Avalonia's binding engine; this does not.
     private void OnActiveViewModelChangedForNav(object? sender, System.EventArgs e)
     {
-        if (DataContext is LayoutDocument doc) RebindRulerUnitsSubscription(doc);
+        if (DataContext is LayoutDocument doc)
+        {
+            RebindRulerUnitsSubscription(doc);
+            // Same reason as the ruler-unit subscription immediately above: this is a code-behind
+            // subscription on the ACTIVE frame's own view model, and a push-in swaps that instance.
+            RebindDrcZoomSubscription(doc.ActiveViewModel);
+        }
         UpdateHierarchyButtonStates();
+    }
+
+    // ── L5b DRC ───────────────────────────────────────────────────────────────
+
+    private LayoutEditorViewModel? _drcZoomVm;
+
+    private void RebindDrcZoomSubscription(LayoutEditorViewModel? vm)
+    {
+        if (ReferenceEquals(_drcZoomVm, vm)) return;
+        if (_drcZoomVm is not null) _drcZoomVm.ZoomToRegionRequested -= OnDrcZoomToRegion;
+        _drcZoomVm = vm;
+        if (_drcZoomVm is not null) _drcZoomVm.ZoomToRegionRequested += OnDrcZoomToRegion;
+    }
+
+    private void OnDrcZoomToRegion(Bbox region) => LayoutCanvasCtrl.ZoomToRegion(region);
+
+    /// <summary>
+    /// Toolbar entry point.
+    ///
+    /// <para>Delegates to the SAME <c>WorkspaceViewModel.CheckDesignRulesCommand</c> the Design menu
+    /// runs, rather than calling <c>RunDrc</c> here. Not tidiness: that command also brings the DRC
+    /// panel forward, and a check whose findings land in a panel the user cannot see is a check that
+    /// reads as having done nothing. Two entry points doing the same thing differently is exactly how
+    /// that inconsistency gets shipped.</para>
+    ///
+    /// <para>The workspace view model is resolved by walking the application's own windows — the same
+    /// mechanism <c>TornOffFileMenuView</c> already uses, and for the same reason: this view's own
+    /// DataContext is a <c>LayoutDocument</c>, not the workspace. A torn-off window with no workspace
+    /// shell reachable falls back to running the check directly, so the button never does nothing.</para>
+    /// </summary>
+    private void OnCheckDesignRules(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LayoutDocument doc) return;
+
+        if (Avalonia.Application.Current?.ApplicationLifetime
+                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var workspace = desktop.Windows
+                .OfType<WorkspaceWindow>()
+                .Select(w => w.DataContext as WorkspaceViewModel)
+                .FirstOrDefault(v => v is not null);
+
+            if (workspace?.CheckDesignRulesCommand.CanExecute(null) == true)
+            {
+                workspace.CheckDesignRulesCommand.Execute(null);
+                return;
+            }
+        }
+
+        // No workspace shell in reach (a torn-off window). Run the check and report it here; the
+        // markers still draw and the panel, if it is open, still fills.
+        var vm     = doc.ActiveViewModel;
+        var result = vm.RunDrc();
+
+        foreach (var d in result.Diagnostics) vm.ReportWarning($"DRC — {d}");
+
+        string tech = result.TechnologyName is { Length: > 0 } n ? $" against \"{n}\"" : "";
+        if (result.IsClean)
+            vm.ReportMessage($"DRC{tech}: no violations — {result.RulesEvaluated} rule(s) over " +
+                             $"{result.ShapesChecked:N0} shape(s)" +
+                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived." : "."));
+        else
+            vm.ReportWarning($"DRC{tech}: {result.ErrorCount} error(s), {result.WarningCount} warning(s)" +
+                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived" : "") +
+                             " — see the DRC panel.");
+    }
+
+    /// <summary>
+    /// R16d's pre-export check, shared by GDSII, DXF and Gerber so the three can never drift on what
+    /// "checked before writing" means. Returns false only when the user cancelled.
+    ///
+    /// <para>Off by preference → no check, no dialog, no delay. On and clean → no dialog either (see
+    /// <c>DrcExportGateDialog</c> for why a "nothing found" modal is worse than none). On and dirty →
+    /// the violations are shown, the DRC panel's own list is populated behind it, and the export
+    /// still goes ahead if the user says so.</para>
+    /// </summary>
+    private async Task<bool> ConfirmDesignRulesBeforeExportAsync(
+        LayoutEditorViewModel vm, Window owner, string format)
+    {
+        if ((AppPreferencesIo.Load().CheckDrcOnExport ?? true) is false) return true;
+
+        DrcRunResult result;
+        try { result = vm.RunDrc(); }
+        catch (Exception ex)
+        {
+            // A check that itself failed must never be the thing that stops an export.
+            vm.ReportWarning($"DRC before export: the check could not run ({ex.Message}). Exporting anyway.");
+            return true;
+        }
+
+        foreach (var d in result.Diagnostics) vm.ReportWarning($"DRC — {d}");
+        if (result.IsClean) return true;
+
+        return await new DrcExportGateDialog(result, format).ShowDialog<bool>(owner);
     }
 
     private void OnActivationFocusRequested()
@@ -668,6 +772,9 @@ public partial class LayoutEditorView : UserControl
             var confirmed = await new GdsiiExportFidelityDialog(plan).ShowDialog<bool>(owner);
             if (!confirmed || !plan.CanWrite) return;
         }
+        else if (!plan.CanWrite) return;
+
+        if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, "GDSII")) return;
 
         var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -750,6 +857,8 @@ public partial class LayoutEditorView : UserControl
         _lastViewMode = dialog.ViewMode;
         _lastAcadVersion = dialog.AcadVersion;
 
+        if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, "DXF")) return;
+
         var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
@@ -830,6 +939,8 @@ public partial class LayoutEditorView : UserControl
         {
             return;
         }
+
+        if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, "Gerber")) return;
 
         var folder = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {

@@ -918,6 +918,72 @@ plumbing. Building DRC first therefore buys most of the infrastructure LVS would
 `Net` attribute from something the editor *asserts* into something the tool can *verify*. That is the
 order to do these in.
 
+### 9A.4 Where rules come from, and what happens with more than one process — **SHIPPED (L5b, 2026-08-06)**
+
+**A rule set belongs to a TECHNOLOGY, never to a layout and never to a kit.** `Technology.DrcRules`
+in the `.ctech` is the one place rules live, and it has been since L0a. Everything below follows from
+that one fact, and it is why the questions people ask about multi-process workspaces have short
+answers.
+
+**Where the rules in a `.ctech` come from — three sources, one precedence order:**
+
+1. **The process's own rule DECK**, read at import (§9A.4a). This wins wherever it states a rule: a
+   deck is the document a fab actually signs off against.
+2. **The process's stack description**, which carries a minimum width and spacing alongside each
+   conductor's material properties. A summary written for an electrical model, not the manufacturing
+   rule — so it fills in only where the deck states nothing (or where no deck was found).
+3. **Hand-authored**, in the Technology Editor's DRC Rules tab. This is how a technology with neither
+   of the above gets rules, and how anyone corrects or extends what was imported.
+
+**There is exactly ONE editing surface, and a kit's rules are not special.** Importing a process
+produces an ordinary `.ctech` in the workspace's `tech/` folder. It is edited in the same Technology
+Editor as a starter technology, with the same undo, the same validation, the same save. There is no
+second, kit-flavoured DRC UI to build or maintain, because there is no second kind of rule.
+
+**Two processes in one workspace: no conflict, by construction.** Two imports produce two `.ctech`
+files. A layout resolves exactly ONE technology — its own `TechRef` if it declares one, otherwise the
+workspace default (see `TechnologyResolver`) — and a check runs against that one. Two layouts in one
+workspace, drawn against different processes, each check against their own rules; nothing merges,
+nothing arbitrates, and there is no "which rule set wins" question to answer.
+
+**The one failure mode this shape genuinely has, and what is done about it.** A layout that declares
+no `TechRef` of its own falls back to the workspace default — which, in a workspace holding two
+processes, may not be the one the designer has in mind. **A clean result checked against the wrong
+process's rules is indistinguishable from a clean result checked against the right one.** So every
+DRC surface NAMES the technology it checked against: the violations panel's header, the Messages
+summary, and the pre-export prompt all state it. That is the whole mitigation and it costs nothing.
+Do not remove it on the grounds that it is redundant with the panel's own contents; it is not.
+
+**A cross-technology sub-cell is left out and said so, never checked against the wrong rules.** A
+sub-cell drawn against a different technology needs a layer mapping confirmed before its geometry can
+be placed on this design's layers. Running a CHECK must not be the thing that asks the user for that
+decision, so such a sub-cell contributes no geometry and is named in the run's diagnostics.
+
+#### 9A.4a Reading a process's rule deck
+
+A rule deck is a **program** — variables, arrays, loops, conditionals, and a large vocabulary of
+geometric operations (enclosure, separation with projection limits, angle and area filters, antenna
+ratios, density windows). Interpreting one in general is a language project.
+
+**A half-interpreted deck is worse than none**: a rule silently mapped onto the wrong layer, or a
+conditional exclusion quietly dropped, produces a check that passes a design it should have failed.
+So `RuleDeckReader` reads exactly the two rule shapes circuitRF can express — minimum width and
+minimum spacing on one drawn layer — and **counts and reports everything else by operation name**.
+The report is the point. A user who imports a process stating 300 rules and gets 20 needs to see that
+number at import, not discover it by trusting a checker that only ever looked at a fourteenth of the
+deck. Adding a rule kind later is a `DrcRuleKind` value, one Clipper2 recipe, and one line in the
+reader's grammar — the reported "cannot check yet" count is what tells you which one to add first.
+
+Three properties worth stating, because each was arrived at by a measurement rather than a preference:
+
+- **Recognised by GRAMMAR, never by extension, folder or tool name** — the same rule the stack and
+  layer-table readers already follow.
+- **Deck layers are matched to circuitRF layers by STREAM NUMBER, not by name.** A deck names its
+  layers in its own vocabulary and a layer table names them in the process's; the only thing both
+  agree on is the (layer, datatype) pair the geometry is actually drawn with.
+- **A rule on a DERIVED layer expression** (one layer minus another, a size- or angle-filtered subset)
+  is reported, not mapped onto its base layer — mapping it would widen the rule silently.
+
 ---
 
 ## 10. The 2.5D MoM simulator
@@ -1592,7 +1658,7 @@ Each phase has a gate that must pass before the next begins.
 | **L3 — Hierarchy** | Instances, arrays, push-in/pop-out, flatten, group-into-cell, cycle detection, `CellUsageScanner` extension | Rename/Remove Cell stays correct with `.clay` references; a 50×50 array renders inside budget |
 | **L4 — Interchange** | GDSII read/write (auto-flatten curves), DXF write + subset read (curves preserved via bulge/`CIRCLE`/`SPLINE`), Gerber + Excellon write (arcs via G02/G03), layer-mapping dialog, per-format curve-fidelity note in the export dialog | GDSII round-trips a hierarchical design with arrays; a circle survives a DXF round-trip as a circle; a Gerber set opens correctly in an independent viewer with arcs intact |
 | **L5 — Schematic→layout** | Instance placement, net stamping, net labels, ratsnest, idempotent re-run | Re-running after a schematic edit preserves hand placement and reports removals |
-| **L5b — DRC v1** | Rule model in `.ctech`, min-width + min-spacing checks over Clipper2, violation model with geometric markers, violations panel on a system layer, waivers, run-on-export checkbox | Both rules fire correctly on a seeded test layout and stay silent on a clean one; markers locate the violating *region*; a waiver persists and suppresses; spacing respects nets (no false hits within one pour) |
+| **L5b — DRC v1** ✅ | Rule model in `.ctech`, min-width + min-spacing checks over Clipper2, violation model with geometric markers, violations panel on a system layer, waivers, run-on-export checkbox | **DONE (2026-08-06).** All four gate clauses met. Both rules fire on a seeded layout and stay silent on a clean one — including the two boundary cases that decide whether anyone runs the check twice: a trace drawn EXACTLY at the minimum width passes, and a gap exactly at the rule passes. Markers are regions, not points, and a spacing marker is centred on the GAP (the thing to widen) rather than on either conductor. Waivers persist in the `.clay`, survive save/reload/re-check, and stay listed-and-visible rather than disappearing. Spacing groups unnamed geometry by CONNECTIVITY, so a pour drawn as several overlapping rectangles is one conductor while two genuinely disjoint unnamed regions are still compared. **Plus, beyond the gate:** a process's own rule DECK is now readable at technology import (§9A.4), and every rule shape circuitRF cannot express is counted and reported rather than silently dropped |
 | **L6 — Stackup + mesh** | Stackup editor with presets inside the `.ctech` editor; cross-section extraction (§10.3.3) + cut-line tool; 1D boundary mesher with edge grading; mesh viewer | Extract and mesh a microstrip cross-section, visually inspect edge refinement, segment count reported, non-uniform geometry refused with a specific message — **no solver yet** |
 | **L7 — Quasi-static kernel (A)** | `IEmKernel`, charge solve, [C]/[C₀]/[L]/[G]/[R], RLGC → s-parameters, ports + de-embedding, frequency sweep, results → `DataSet` | Microstrip Z₀/εeff within 2% of Hammerstad-Jensen on **both** starter techs; truncation-convergence, reciprocity, passivity, losslessness, and mesh-convergence checks pass; **§10.10 acceptance test passes** |
 | **L7b — Coupled lines + co-sim** ✅ | Multiconductor [L][C], even/odd modal decomposition, coupled-line s-parameters as a 4-port, `.snp` back-annotation into the schematic | **DONE (2026-08-05).** Ships the SYMMETRIC pair — a fixed modal matrix, no eigensolver. Exact off-diagonal oracle, far-apart pair reproducing two independent single lines, `Z_o < Z_e`, 4-port reciprocity/passivity/losslessness; an EM-derived `.s4p` drops into an HB testbench and runs end to end. Asymmetric pairs and N > 2 refused by name → **L7b-b** |

@@ -34,7 +34,8 @@ public static class ProcessTechnologyBuilder
     public static TechnologyImportResult Build(
         ProcessStackDescription stack,
         ProcessLayerTable?      layerTable,
-        string                  fallbackName)
+        string                  fallbackName,
+        ProcessRuleDeck?        ruleDeck = null)
     {
         var notes  = new List<string>();
         notes.AddRange(stack.Notes);
@@ -70,7 +71,7 @@ public static class ProcessTechnologyBuilder
             DefaultViaDrillDbu    = ChooseViaSizeDbu(stack),
             Layers                = layers,
             Stackup               = stackup,
-            DrcRules              = BuildDrcRules(stack, byName),
+            DrcRules              = BuildDrcRules(stack, byName, ruleDeck, layerTable, notes),
         };
 
         // A process states no ground plane — every conductor in a back-end stack is a signal layer
@@ -431,15 +432,74 @@ public static class ProcessTechnologyBuilder
     }
 
     /// <summary>
-    /// Minimum width and spacing, where the process states them. These come from the STACK
-    /// description, which carries them alongside the material properties — they are not a translation
-    /// of a rule deck, which is a script for another tool and is deliberately not attempted.
+    /// Minimum width and spacing, from two sources with a deliberate precedence between them.
+    ///
+    /// <para><b>The process's own RULE DECK wins where it states a rule.</b> A deck is the document a
+    /// fab actually signs off against; a stack description carries a min width and spacing alongside
+    /// its material properties, which is a summary written for an electrical model rather than the
+    /// manufacturing rule. Where a deck states nothing (or none was found), the stack's own figures
+    /// still fill in — a technology with approximate rules is far more useful than one with none.</para>
+    ///
+    /// <para>The deck is matched to circuitRF layers by STREAM NUMBER, not by name: a deck names its
+    /// layers in its own vocabulary and a layer table names them in the process's, and the only thing
+    /// both agree on is the (layer, datatype) pair the geometry is actually drawn with. Matching by
+    /// name here would silently drop most of the deck.</para>
     /// </summary>
     private static List<DrcRule> BuildDrcRules(
         ProcessStackDescription               stack,
-        Dictionary<string, ProcessLayerEntry> byName)
+        Dictionary<string, ProcessLayerEntry> byName,
+        ProcessRuleDeck?                      ruleDeck,
+        ProcessLayerTable?                    layerTable,
+        List<string>                          notes)
     {
         var rules = new List<DrcRule>();
+        var fromDeck = new HashSet<(LayerKey, DrcRuleKind)>();
+
+        if (ruleDeck is { Rules.Count: > 0 })
+        {
+            // Only a layer the technology actually carries can be checked — a rule on a layer the
+            // layer table never defined would be inert and would read as coverage that isn't there.
+            var known = new HashSet<LayerKey>(
+                (layerTable?.Entries ?? []).Select(e => new LayerKey(e.Layer, e.Datatype)));
+
+            int unmatched = 0;
+            foreach (var r in ruleDeck.Rules)
+            {
+                var key = new LayerKey(r.StreamLayer, r.StreamDatatype);
+                if (known.Count > 0 && !known.Contains(key)) { unmatched++; continue; }
+                if (r.ValueUm <= 0) continue;
+
+                // First statement of a (layer, kind) wins: a deck routinely states a general rule and
+                // then a narrower one for a special case circuitRF cannot express, and adopting the
+                // narrower one as if it were general would fail geometry the process permits.
+                if (!fromDeck.Add((key, r.Kind))) continue;
+
+                rules.Add(new DrcRule
+                {
+                    Name     = r.Name,
+                    Kind     = r.Kind,
+                    Layer    = key,
+                    ValueDbu = ToDbu(r.ValueUm),
+                    Severity = DrcSeverity.Error,
+                });
+            }
+
+            notes.Add($"Read {rules.Count} width/spacing rule(s) from the process's design-rule deck.");
+
+            if (unmatched > 0)
+                notes.Add($"{unmatched} deck rule(s) name a layer the layer table does not define and " +
+                          "were not imported.");
+
+            if (ruleDeck.UnsupportedTotal > 0)
+            {
+                var top = string.Join(", ", ruleDeck.Unsupported.Take(4).Select(u => $"{u.Operation} ×{u.Count}"));
+                notes.Add($"The deck states {ruleDeck.UnsupportedTotal} further rule(s) in forms circuitRF " +
+                          $"cannot check yet ({top}). They are NOT enforced — this technology checks " +
+                          "minimum width and minimum spacing only.");
+            }
+
+            notes.AddRange(ruleDeck.Notes);
+        }
 
         foreach (var e in stack.Entries)
         {
@@ -448,7 +508,7 @@ public static class ProcessTechnologyBuilder
 
             var key = new LayerKey(row.Layer, row.Datatype);
 
-            if (e.MinWidthUm > 0)
+            if (e.MinWidthUm > 0 && !fromDeck.Contains((key, DrcRuleKind.MinWidth)))
                 rules.Add(new DrcRule
                 {
                     Name     = $"{e.Name} minimum width",
@@ -458,7 +518,7 @@ public static class ProcessTechnologyBuilder
                     Severity = DrcSeverity.Error,
                 });
 
-            if (e.MinSpacingUm > 0)
+            if (e.MinSpacingUm > 0 && !fromDeck.Contains((key, DrcRuleKind.MinSpacing)))
                 rules.Add(new DrcRule
                 {
                     Name     = $"{e.Name} minimum spacing",

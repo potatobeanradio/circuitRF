@@ -45,6 +45,15 @@
                        IsVisible="False"
                        TextWrapping="Wrap"/>
 
+            <CheckBox x:Name="ImportRulesCheck"
+                      Content="Import design rules from this process's rule deck"
+                      FontSize="12"
+                      IsChecked="True"
+                      IsVisible="False"
+                      Margin="0,4,0,0"/>
+            <TextBlock x:Name="RuleDeckLabel"
+                       FontSize="11" Opacity="0.6" IsVisible="False" TextWrapping="Wrap"/>
+
             <CheckBox x:Name="SetAsDefaultCheck"
                       Content="Set as workspace default"
                       FontSize="12"

@@ -390,6 +390,18 @@ public sealed class LayoutView
     /// arrived via schematic generation, a palette drop, or a layout-authored copy-on-write edit.</summary>
     public Dictionary<string, PCellSnapshot> PCellSnapshots { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// L5b (docs/design/layout-view.md §9A.1): deliberate, persisted exceptions to a design rule at a
+    /// named place — see <see cref="Drc.DrcWaiver"/>. Lives on the LAYOUT, never on the technology: a
+    /// waiver is a statement about this artwork, and a technology shared by twenty cells must not
+    /// accumulate one cell's exceptions.
+    ///
+    /// <para><b>Not undoable, deliberately.</b> Waiving is a review judgement recorded against the
+    /// design, not a geometry edit — putting it on the shape-editing undo stack would let Ctrl+Z after
+    /// an unrelated edit silently revoke it. It does mark the document dirty so it is saved.</para>
+    /// </summary>
+    public List<Drc.DrcWaiver> DrcWaivers { get; } = [];
+
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
 

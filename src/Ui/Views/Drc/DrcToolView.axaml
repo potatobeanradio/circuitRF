@@ -1,0 +1,120 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Drc.DrcToolView"
+             x:DataType="vm:DrcTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <Grid RowDefinitions="Auto,Auto,*">
+
+        <!-- Header: run, marker toggle, and — never optional — WHICH technology was checked. A clean
+             result checked against the wrong process's rules looks exactly like a clean result
+             checked against the right one, so the panel always says which. -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*" Margin="4,2">
+            <Button Grid.Column="0"
+                    x:Name="RunButton"
+                    Click="OnRunClick"
+                    IsEnabled="{Binding IsLayoutActive}"
+                    ToolTip.Tip="Check the active layout against its technology's design rules"
+                    Padding="6,2"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    FontSize="11">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="ShieldCheckOutline" Width="14" Height="14"/>
+                    <TextBlock Text="Check" FontSize="11" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <CheckBox Grid.Column="1"
+                      Content="Markers"
+                      FontSize="11"
+                      Margin="8,0,0,0"
+                      IsEnabled="{Binding IsLayoutActive}"
+                      IsChecked="{Binding EditorVm.ShowDrcMarkers, Mode=TwoWay, FallbackValue=True}"
+                      ToolTip.Tip="Draw violation regions over the artwork"/>
+
+            <TextBlock Grid.Column="2"
+                       Text="{Binding EditorVm.DrcTechnologyText, FallbackValue=''}"
+                       FontSize="11"
+                       Opacity="0.7"
+                       Margin="10,0,0,0"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"/>
+        </Grid>
+
+        <TextBlock Grid.Row="1"
+                   Margin="8,0,8,4"
+                   FontSize="11"
+                   Opacity="0.75"
+                   TextWrapping="Wrap"
+                   Text="{Binding EditorVm.DrcSummaryText, FallbackValue='Open a layout to check it.'}"/>
+
+        <!-- Empty states are distinct on purpose: "no layout" and "checked, clean" are different
+             answers and reading one as the other is how a user comes to trust a check that never ran. -->
+        <TextBlock Grid.Row="2"
+                   Text="Open a layout document to run a design-rule check."
+                   FontSize="12"
+                   Opacity="0.6"
+                   Margin="12"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding !IsLayoutActive}"/>
+
+        <ListBox Grid.Row="2"
+                 x:Name="ViolationsList"
+                 IsVisible="{Binding IsLayoutActive}"
+                 ItemsSource="{Binding EditorVm.DrcViolations}"
+                 SelectedItem="{Binding EditorVm.SelectedDrcViolation, Mode=TwoWay}"
+                 DoubleTapped="OnRowDoubleTapped"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 SelectionMode="Single">
+
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="lay:DrcViolationRow">
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="2,2">
+
+                        <!-- Icon carries severity as well as colour — never colour alone. -->
+                        <mi:MaterialIcon Grid.Column="0"
+                                         Kind="AlertCircleOutline"
+                                         Width="14" Height="14"
+                                         Margin="0,2,6,0"
+                                         VerticalAlignment="Top"
+                                         IsVisible="{Binding IsError}"
+                                         Foreground="{DynamicResource CrfWarningBrush}"/>
+                        <mi:MaterialIcon Grid.Column="0"
+                                         Kind="CheckCircleOutline"
+                                         Width="14" Height="14"
+                                         Margin="0,2,6,0"
+                                         VerticalAlignment="Top"
+                                         Opacity="0.5"
+                                         IsVisible="{Binding IsWaived}"/>
+
+                        <StackPanel Grid.Column="1" Spacing="1">
+                            <TextBlock Text="{Binding RuleText}"
+                                       FontSize="12"
+                                       TextTrimming="CharacterEllipsis"
+                                       Opacity="{Binding RowOpacity}"/>
+                            <TextBlock Text="{Binding DetailText}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding LocationText}" FontSize="11" Opacity="0.5"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="2"
+                                Command="{Binding ToggleWaiveCommand}"
+                                Padding="4,1"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                FontSize="11"
+                                VerticalAlignment="Top"
+                                ToolTip.Tip="Waive or un-waive this violation. Saved with the layout.">
+                            <mi:MaterialIcon Kind="EyeOffOutline" Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

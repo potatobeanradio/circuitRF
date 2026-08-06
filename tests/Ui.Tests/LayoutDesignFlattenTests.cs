@@ -8,8 +8,8 @@ namespace CircuitRF.Ui.Tests;
 /// <summary>R-L4c-6 (gate 7): Gerber has no hierarchy at all, so the whole design must flatten before
 /// export. Reuses L3c's own <see cref="LayoutFlatten"/> machinery and R-L3c-3's cross-technology
 /// reconciliation (via <see cref="LayoutLayerMapping"/>) — this file drives the whole-design walk
-/// <see cref="GerberHierarchyFlatten"/> adds on top of that existing machinery.</summary>
-public class GerberHierarchyFlattenTests : IDisposable
+/// <see cref="LayoutDesignFlatten"/> adds on top of that existing machinery.</summary>
+public class LayoutDesignFlattenTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("gerber-flatten-test-").FullName;
 
@@ -40,7 +40,7 @@ public class GerberHierarchyFlattenTests : IDisposable
         var topView = LayoutPersistence.LoadFromFile(Path.Combine(topLayoutDir, "TOP.clay"));
         topView.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(topLayoutDir, childDir), X = 5000, Y = 7000, Mag = 1.0 });
 
-        var result = GerberHierarchyFlatten.Flatten(topView, topDir, null, null, null);
+        var result = LayoutDesignFlatten.Flatten(topView, topDir, null, null, null);
 
         Assert.Equal(1, result.TopLevelInstancesFlattened);
         var rect = Assert.IsType<RectShape>(Assert.Single(result.Shapes));
@@ -62,7 +62,7 @@ public class GerberHierarchyFlattenTests : IDisposable
             CellRef = Path.GetRelativePath(topLayoutDir, childDir), X = 0, Y = 0, Mag = 1.0, Rows = 5, Cols = 5, PitchX = 1000, PitchY = 1000,
         });
 
-        var result = GerberHierarchyFlatten.Flatten(topView, topDir, null, null, null);
+        var result = LayoutDesignFlatten.Flatten(topView, topDir, null, null, null);
 
         Assert.Equal(25, result.Shapes.Count);
         Assert.Empty(result.UnresolvedInstances);
@@ -79,7 +79,7 @@ public class GerberHierarchyFlattenTests : IDisposable
         var topLayoutDir = CellFolder.SubFolderPath(topDir, ViewType.Layout);
         var topView = LayoutPersistence.LoadFromFile(Path.Combine(topLayoutDir, "TOP.clay"));
 
-        var result = GerberHierarchyFlatten.Flatten(topView, topDir, null, null, null);
+        var result = LayoutDesignFlatten.Flatten(topView, topDir, null, null, null);
 
         Assert.Empty(result.Shapes);
         Assert.Single(result.UnresolvedInstances);
@@ -101,7 +101,7 @@ public class GerberHierarchyFlattenTests : IDisposable
         TechResolution ResolveTechAt(string? techRef, string clayDir) =>
             new(mmic, "/fake/mmic.ctech", TechResolutionSource.LayoutRef, []);
 
-        var result = GerberHierarchyFlatten.Flatten(topView, topDir, pcb, ResolveTechAt, null);
+        var result = LayoutDesignFlatten.Flatten(topView, topDir, pcb, ResolveTechAt, null);
 
         Assert.Empty(result.Shapes); // left unflattened — nothing silently remapped
         Assert.NotEmpty(result.PendingCrossTechMappings);
@@ -126,7 +126,7 @@ public class GerberHierarchyFlattenTests : IDisposable
         TechResolution ResolveTechAt(string? techRef, string clayDir) =>
             new(mmic, "/fake/mmic.ctech", TechResolutionSource.LayoutRef, []);
 
-        var firstPass = GerberHierarchyFlatten.Flatten(topView, topDir, pcb, ResolveTechAt, null);
+        var firstPass = LayoutDesignFlatten.Flatten(topView, topDir, pcb, ResolveTechAt, null);
         var pendingEntry = Assert.Single(firstPass.PendingCrossTechMappings);
 
         // The user explicitly chooses to remap onto PCB's Drill layer — deliberately NOT the
@@ -138,7 +138,7 @@ public class GerberHierarchyFlattenTests : IDisposable
             .ToList();
         var resolved = new Dictionary<string, IReadOnlyList<LayerMappingRow>> { [pendingEntry.Key] = settledRows };
 
-        var secondPass = GerberHierarchyFlatten.Flatten(topView, topDir, pcb, ResolveTechAt, resolved);
+        var secondPass = LayoutDesignFlatten.Flatten(topView, topDir, pcb, ResolveTechAt, resolved);
 
         Assert.Empty(secondPass.PendingCrossTechMappings);
         var rect = Assert.IsType<RectShape>(Assert.Single(secondPass.Shapes));

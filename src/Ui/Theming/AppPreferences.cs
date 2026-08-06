@@ -52,6 +52,15 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, bool>? PCellTrust { get; set; }
 
+    // L5b / R16d: "Export offers to run DRC first. Not mandatory, not silent." Null means the default,
+    // which is ON — catching a spacing error before it reaches a fab is most of DRC's value, and a
+    // check the user has to remember to run before every export is one they will forget before the
+    // export that mattered. Per USER, not per workspace: it is a working habit, not a property of a
+    // design, and a workspace arriving from someone else must not silently turn a user's check off.
+    [JsonPropertyName("check_drc_on_export")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CheckDrcOnExport { get; set; }
+
     // Message timestamp display — null means default (Time). Serialized as a number, like the others.
     [JsonPropertyName("message_timestamp")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

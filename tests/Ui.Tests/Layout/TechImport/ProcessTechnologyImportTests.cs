@@ -29,6 +29,9 @@ public class ProcessStackReaderTests
         VIA ViaMid { FROM=MetalLow  TO=MetalTop  AREA=0.04  RPV=5 }
         """;
 
+    /// <summary>The fixture stack, parsed — so a sibling test file need not repeat the parse call.</summary>
+    internal static ProcessStackDescription Read() => ProcessStackReader.Read(Stack);
+
     [Fact]
     public void RecognisedByGrammar_NotByExtension()
     {

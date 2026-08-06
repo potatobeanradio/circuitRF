@@ -79,6 +79,7 @@ public class CircuitRfDockFactory : Factory
     public PropertiesTool?   PropertiesTool   { get; private set; }
     public AnalysesTool?     AnalysesTool     { get; private set; }
     public PaletteTool?      PaletteTool      { get; private set; }
+    public DrcTool?          DrcTool          { get; private set; }
 
     public CircuitRfDockFactory()
     {
@@ -153,6 +154,7 @@ public class CircuitRfDockFactory : Factory
             AnalysesTool    = new AnalysesTool();
             PaletteTool     = new PaletteTool();
             MessagesTool    = new MessagesTool();
+            DrcTool         = new DrcTool();
         }
         else
         {
@@ -163,6 +165,7 @@ public class CircuitRfDockFactory : Factory
             AnalysesTool    ??= new AnalysesTool();
             PaletteTool     ??= new PaletteTool();
             MessagesTool    ??= new MessagesTool();
+            DrcTool         ??= new DrcTool();
         }
 
         ITool? ToolFor(string id) => id switch
@@ -172,6 +175,7 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Properties  => PropertiesTool,
             DockPanelIds.Analyses    => AnalysesTool,
             DockPanelIds.Messages    => MessagesTool,
+            DockPanelIds.Drc         => DrcTool,
             _                        => null,
         };
 
@@ -490,6 +494,7 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Properties  => PropertiesTool,
         DockPanelIds.Analyses    => AnalysesTool,
         DockPanelIds.Messages    => MessagesTool,
+        DockPanelIds.Drc         => DrcTool,
         _                        => null,
     };
 

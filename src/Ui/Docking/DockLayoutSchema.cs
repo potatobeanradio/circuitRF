@@ -227,8 +227,12 @@ public static class DockPanelIds
     public const string Analyses    = "Analyses";
     public const string Messages    = "Messages";
 
+    /// <summary>L5b's violations panel. Tabbed with Messages by default — both are "what the tool has
+    /// to tell you about this design", and neither is worth its own permanent strip of window.</summary>
+    public const string Drc         = "Drc";
+
     public static readonly string[] All =
     [
-        ProjectTree, Palette, Properties, Analyses, Messages,
+        ProjectTree, Palette, Properties, Analyses, Messages, Drc,
     ];
 }
