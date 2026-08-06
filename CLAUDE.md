@@ -67,7 +67,25 @@ measured under the threshold, or folded into `Benchmark`).
   `Rbf2DPerfTests`, 4 methods: millisecond-fast, but a ~0.3 ms operation reads ~10 ms per sample under
   full-suite load, so even a best-of-20 gate flaked). **Do not untag those on the grounds that they run
   quickly** — they are tagged for the purpose the mechanism serves, not the letter of the ~5 s rule.
-  Currently 23 tests repo-wide (16 in `Ui.Tests`, 3 in `Engine.Tests`, 4 in `RfCore.Tests`): the
+  Currently **74 test methods** repo-wide (59 in `Engine.Tests`, 14 in `Ui.Tests`, 1 in
+  `RfCore.Tests`) — the L8/L9 full-wave phases are where nearly all of them came from, because a
+  single de-embedded full-wave point costs ~48 s one level and 71.9 s two (and **149.9 s** at the
+  two-level-with-vias mesh L9's own phase gate runs on, N = 1,023), so none of those measurements can
+  live in the routine tier. **L9's phase gate added 2** (`L9PhaseGateTests.Gate1` 5 m 28 s and
+  `Gate2` 6 m 29 s, **11.97 min together, measured alone** — the via-carries-current comparison and the
+  two-level degeneracy; their routine counterparts, the three `Gate3Wiring_…` tests, stay in the
+  default gate at ~25 ms). **L9e added 7** (`ViaPhysicsTests.T3_1` 54 s — the ℓ/w
+  error curve and its convergence sweeps; `AdaptiveSweepTests.T1_2` 16 s / `T4_1` and `T4_2` ~3-4 min
+  each — the tolerance curve, the sweep-time measurement and D3's interpolant comparison;
+  `PlanarBudgetTests.T4_3` 68 s / `T4_4` ~1 min / `T5_1` 6 s — the run-level memory arithmetic, its
+  working-set cross-check and ACA's compression measurement), bringing the opt-in tier to roughly
+  40 minutes in total. **The via z-integral follow-up added 3** (`ViaPhysicsTests.T3_1b` 24 s and
+  `T3_1c` 1 m 37 s — the subdivision-invariance ladder and the n_z convergence table; `M1_1` 23 s —
+  the cost measurement that decided the design), and **re-pointed `T3_1`** from measuring the midpoint
+  rule's error to gating the fill's, at 16 s instead of 54 s. **Net ~+2 min.** The older, named ones are: the L8 phase gate
+  (`L8PhaseGateTests.Gate1/Gate2/Gate3` × 2 starters, plus
+  `EmAcceptanceBudgetTests.R18_WhatTheUserWaitsForAfterSimulate_AtTheShippingMesh`, ~8.5 min together
+  — its routine counterpart `Gate3Wiring` stays in the default gate at 2.5 s); the
   500,000-shape `LayoutPerf` TIMED sweeps
   (`LayoutPerformanceBaselineTests.Baseline_500k`/`Baseline_50k` + `R8bCrossoverExperiment`,
   `LayoutLodMergeCacheBenchmarkTests.{LodOnly,Final}_FullExtent_500k` +

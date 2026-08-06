@@ -434,4 +434,45 @@ public class CnlWriterTests
             Assert.Equal(overrides[i].Unit, inst.Overrides[i].Unit);
         }
     }
+
+    // ── SnP File quoting (found at L7b Tier C5) ──────────────────────────────
+
+    private static string WriteSnpWithFile(string reference, string file)
+    {
+        var tb = new TestBench("TB");
+        tb.Instances.Add(new Instance("X1", reference, ["a", "b"],
+            [new ParameterAssignment("File", file)]));
+        return CnlWriter.Write(tb);
+    }
+
+    /// <summary>
+    /// <b>An SnP's File must be written QUOTED.</b> CnlReader resolves a RELATIVE Touchstone path
+    /// against the .cnl's own directory only inside its quoted-string branch, so an unquoted relative
+    /// path reaches the model verbatim and is then looked for relative to the process working
+    /// directory — where it does not exist. hero1.cnl's own <c>File="…s2p"</c> is the canonical form.
+    ///
+    /// <para>Found by L7b's co-simulation gate: EM back-annotation is the first thing to write a
+    /// relative SnP path from the schematic side, where the Browse… picker had always produced an
+    /// absolute one that happened not to need the resolution branch.</para>
+    /// </summary>
+    [Fact]
+    public void SnpFile_IsWrittenQuoted_SoARelativePathStillResolves()
+        => Assert.Contains("File=\"results/coupled.s2p\"",
+                           WriteSnpWithFile("SnP", "results/coupled.s2p"), StringComparison.Ordinal);
+
+    /// <summary>An already-quoted value must not be double-quoted on the way out.</summary>
+    [Fact]
+    public void AnAlreadyQuotedSnpFile_IsNotQuotedTwice()
+    {
+        string text = WriteSnpWithFile("SnP", "\"already.s2p\"");
+        Assert.Contains("File=\"already.s2p\"", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"\"already", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>The quoting is SnP-specific — a File parameter on another component keeps its bare
+    /// form, so this fix cannot perturb every other instance line in the file.</summary>
+    [Fact]
+    public void AFileParamOnANonSnpInstance_IsNotQuoted()
+        => Assert.Contains("File=model.so",
+                           WriteSnpWithFile("ExtDevice", "model.so"), StringComparison.Ordinal);
 }

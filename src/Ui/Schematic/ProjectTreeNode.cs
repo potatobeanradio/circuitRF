@@ -43,6 +43,10 @@ public enum NodeKind
     /// <summary>A .ctech technology file.</summary>
     TechFile,
 
+    /// <summary>A .cem EM setup file (brief-L6-L7-em-ui.md D1/R-em-9). Workspace-scoped and never
+    /// scratch, exactly like <see cref="TechFile"/>.</summary>
+    EmSetupFile,
+
     /// <summary>Any other file not covered by the above kinds.</summary>
     OtherFile,
 

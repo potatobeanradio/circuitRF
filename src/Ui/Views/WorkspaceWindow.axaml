@@ -34,6 +34,7 @@
                                     <NativeMenuItem Header="New Layout"       Command="{Binding NewLayoutCommand}"/>
                                     <NativeMenuItem Header="New Data Display" Command="{Binding NewDataDisplayCommand}"       Gesture="Meta+Shift+D"/>
                                     <NativeMenuItem Header="New Technology…"  Command="{Binding NewTechnologyCommand}"        CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="New EM Setup…"    Command="{Binding NewEmSetupCommand}"           CommandParameter="{Binding $parent[Window]}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -253,6 +254,11 @@
                               Command="{Binding NewTechnologyCommand}"
                               CommandParameter="{Binding $parent[Window]}">
                         <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="New _EM Setup…"
+                              Command="{Binding NewEmSetupCommand}"
+                              CommandParameter="{Binding $parent[Window]}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="New _Workspace…"

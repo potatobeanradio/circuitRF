@@ -1,6 +1,6 @@
 # circuitRF — Layout View (design + plan)
 
-**Status:** Proposal — rev 4 (§4 JSON example corrected to real serializer output after L0a landed) · **Date:** 2026-07-26 · **Phase:** 8 (proposed)
+**Status:** Proposal — rev 5 (kernel W, 3D wirebonds — §10.11, phases LW1/LW2) · **Date:** 2026-08-04 · **Phase:** 8 (proposed)
 
 **Decisions taken (owner, 2026-07-26).** All are folded into the body below; §13 keeps the record.
 1. **MoM kernel: quasi-static 2D per-unit-length first**, then full-wave single-dielectric, then the
@@ -22,6 +22,13 @@
 12. **Bitmaps are a primitive** (§3.1b) — reference images to trace over, stored by path, always painted
     behind the geometry, and never exported to a fabrication format.
 
+**Decision taken (owner, 2026-08-04).**
+
+13. **A fourth MoM kernel, W, covers 3D wirebond geometry** — thin-wire, quasi-static first, wires-only
+    first, sharing `IEmKernel` and everything else in §10 (§10.11). Designed in
+    [`mom-wirebond-kernel.md`](mom-wirebond-kernel.md); phases **LW1/LW2**, which depend on L7 and
+    **not** on L8/L9.
+
 The layout view holds a cell's **physical geometry**: the 2D shapes that get manufactured. Two consumers
 justify it, and they pull in slightly different directions:
 
@@ -30,14 +37,17 @@ justify it, and they pull in slightly different directions:
 2. **EM simulation** — a lightweight 2.5D Method-of-Moments s-parameter solve. Here the layout is a
    *model*: it needs a substrate stackup, a mesh, ports, and a numeric kernel.
 
-Companions: `grid-and-connectivity.md` (the two-grid philosophy this extends), `symbol-editor.md`
+Companions: `mom-wirebond-kernel.md` (kernel W — 3D wirebonds, §10.11),
+`grid-and-connectivity.md` (the two-grid philosophy this extends), `symbol-editor.md`
 (the editor pattern to mirror), `workspace-and-project-tree.md` §2 (cell folders and primacy),
 `project-file-formats.md` (JSON conventions), `schematic-hierarchy-navigation.md` (push-in/pop-out),
 `ui-architecture.md` (the UI firewall).
 
 **Scale of the effort.** Sections 1–9A are a large but conventional editor build — comparable to the
 schematic + symbol editor together. Section 10 (MoM) is a research-grade numerics project on its own
-and is scoped separately with an explicit staged path. Do not treat them as one phase.
+and is scoped separately with an explicit staged path. Do not treat them as one phase. Within §10, the
+research risk is concentrated in the **layered-medium Green's function** (§10.2) — kernels A and W1/W2
+use a free-space kernel and are ordinary, bounded engineering.
 
 ---
 
@@ -917,7 +927,13 @@ order to do these in.
 2.5D MoM solves the mixed-potential integral equation over conductors embedded in a **laterally infinite,
 vertically stratified** medium. Metal is horizontal and thin; current flows in-plane, plus z-directed
 current through vias. This is the planar-EM class of tool. It is *not* FEM and not
-general 3D — a wirebond arcing through air is out of scope by construction.
+general 3D — a wirebond arcing through air is out of scope **for kernels A, B and C**.
+
+> **Amended 2026-08-04.** That last clause originally read "out of scope by construction," which was
+> too strong as a statement about MoM. It is true of the *kernels described here* and false of the
+> method. A wirebond is **3D geometry in a stratified medium — the medium is still 2.5D**, which is
+> why commercial 2.5D planar solvers were extended to bondwires. **Kernel W** (§10.11) covers it
+> and does not disturb anything below.
 
 The pieces, in dependency order:
 
@@ -943,6 +959,41 @@ and it is where a schedule goes to die. Item 4 (singular self- and near-term int
 such place.
 
 Plan for this honestly rather than discovering it in month four.
+
+> **Measured at L8a (2026-08-05).** Item 3 now has a number rather than a warning. The layered
+> Green's function for a grounded slab is built and validated against direct Sommerfeld integration
+> — a second, independent formulation — over ρ/λ ∈ [1e-4, 10] on both starter substrates at 2, 10
+> and 20 GHz. **Error as a fraction of the free-space kernel at the same ρ, which is what a matrix
+> fill experiences, is ≤ 6e-3 across that entire span; strict relative error is ≤ 1e-2 out to
+> ρ/λ ≈ 1** and degrades beyond, which is where `Dcim.WithinValidatedRange` refuses. Details, the
+> full curve and the two occasions an *oracle* rather than the method turned out to be wrong are in
+> `src/Engine/Mom/CLAUDE.md` §L8a. Item 4 — the singular self- and near-terms — is untouched and is
+> still the second place a schedule goes to die; it is L8c.
+>
+> **Measured at L8c (2026-08-05). Item 4 now has a number as well, and it is not the one that was
+> feared.** The singular self- and near-term integrals turned out NOT to be where the difficulty
+> lives, because a rectangular mesh with source and observer in one plane makes the INNER integral
+> closed form — six of them, derived and checked against adaptive quadrature to 1e-12. The classic
+> "nearly touching cells" problem comes from doing both integrals numerically; here only the outer one
+> is, and it sees a continuous function with a kink, which is a quadrature-ORDER question. Against the
+> εᵣ = 1 reduction, where the kernel is exact and only the quadrature can be wrong, the assembled
+> matrix is right to **5.0e-6**; against direct Sommerfeld integration with the real DCIM kernel it is
+> **5.4e-3**, i.e. item 3's own error and not item 4's.
+>
+> **Where the schedule actually went was a different place, and it is worth naming.** DCIM's fitted
+> complex images are only "smooth" while none of them sits closer to the metal plane than a cell is
+> wide — and on the FR-4 starter above ~5 GHz several do (min|b|/cell = 0.165 at 10 GHz, 0.079 at
+> 20 GHz). The extraction's smooth remainder therefore is not smooth on the mesh's own scale, and a
+> quadrature rule that is ample for free space was 5% wrong while converging gently enough to look
+> converged at every step. Details in `src/Engine/Mom/CLAUDE.md` §L8c.
+>
+> Two structural notes for whoever picks up L8b–L8e. **L8 is split into five slices** (L8a the
+> Green's function, L8b the mesher and viewer, L8c basis functions and the fill, L8d ports and
+> de-embedding, L8e results and the kernel registry), on the same staging principle every phase in
+> this area has used. And **the v1 kernel supports exactly one conductor layer, on the top surface
+> of the slab** — so source and observer are always at the same height and the Green's function is a
+> function of ρ alone. That is enough for all three of L8's own gates; multiple metal levels,
+> z-directed current and vias are L9's, and are refused by name until then.
 
 ### 10.3 The v1 kernel — 2D quasi-static per-unit-length (decided)
 
@@ -976,12 +1027,24 @@ explicit convergence test: extending the truncation must not move Z₀ by more t
 1. Solve with the real stackup → **[C]**. Solve again with every dielectric replaced by air → **[C₀]**.
 2. **εeff = C/C₀** (per-mode for multiconductor).
 3. **[L] = µ₀ε₀[C₀]⁻¹** — the standard TEM identity. No second solve type needed.
-4. **[G] = ω·tanδ-weighted partial capacitances** — accumulate each dielectric's contribution during the
-   [C] fill so the weighting is exact rather than a single lumped tanδ.
-5. **[R]** from **Wheeler's incremental inductance rule**: recede each conductor surface by half a skin
-   depth, recompute L, and `R = (ω/2)·∂L/∂n · (2/δ)`. It reuses the same solver with a perturbed
-   geometry, so conductor loss costs one extra fill rather than a new formulation. Skin depth is
-   frequency-dependent, so R ∝ √f falls out naturally.
+4. **[G]** — *superseded at L7, 2026-08-04.* This item originally said "ω·tanδ-weighted partial
+   capacitances, accumulated during the [C] fill". There is a cheaper and exactly-correct route: carry
+   `ε* = ε_r(1 − j·tanδ)` through the whole system, which makes the interface coefficient K complex and
+   [C] come out complex, `C = C′ − jC″`. Then `Y = jω·C_complex = ωC″ + jωC′` exactly, i.e.
+   `G = −ω·Im(C)` and `C = Re(C)`. It costs **one** complex solve on a matrix of a few hundred, handles
+   any number of independently lossy dielectrics, and `G ∝ ω` for constant tanδ falls out rather than
+   being asserted. **Do not implement a separate partial-capacitance accumulation.**
+5. **[R]** from **Wheeler's incremental inductance rule**: recede each conductor surface, recompute L,
+   and `R(ω) = (R_s(ω)/µ₀)·∂L/∂n` with `R_s = √(ωµ₀/2σ) = 1/(σδ)`. It reuses the same solver with a
+   perturbed geometry, so conductor loss costs one extra fill rather than a new formulation, and
+   R ∝ √f falls out of R_s.
+   *Two corrections made at L7:* (a) this item previously read `R = (ω/2)·∂L/∂n·(2/δ)`, which is short
+   by a factor δ² — `R_s/µ₀` is `ωδ/2`, not `ω/δ`; (b) the recession must **not** be half a skin depth,
+   because that makes it frequency-dependent and forces a matrix refill per frequency, destroying the
+   frequency-independence below for no accuracy gain. ∂L/∂n is a purely *geometric* derivative,
+   evaluated once. The recession must be summed over **every** lossy surface — the signal conductors
+   *and* the ground plane; omitting the ground-plane term is the common error and it under-reports
+   microstrip loss noticeably.
 6. **γ = √((R+jωL)(G+jωC))**, **Z_c = √((R+jωL)/(G+jωC))** → ABCD of a length-ℓ uniform line → S,
    renormalized to the port reference impedances. Multiconductor goes through modal decomposition to
    generalized coupled-line s-parameters.
@@ -1019,16 +1082,50 @@ Everything except the kernel is shared across A, B and C: the `.ctech` stackup m
 port model and placement UX, the frequency-sweep UI, the mesh viewer, the results plumbing, the
 validation harness, and the edge-grading logic (§10.5). Fix the boundary now:
 
-```
+```csharp
 IEmKernel {
+    string         Name         { get; }
     EmCapabilities Capabilities { get; }          // uniform-cross-section | planar | layered+vias
-    EmMeshReport   Mesh(LayoutFragment, Stackup, MeshSettings);   // for the viewer, pre-solve
-    DataSet        Solve(LayoutFragment, Stackup, Port[], double[] freqs, CancellationToken);
+    EmSuitability  CanSolve(EmProblem problem);   // the ONLY place a refusal is worded
+    EmMeshReport   Mesh(EmProblem, EmMeshSettings);               // for the viewer, pre-solve
+    DataSet        Solve(EmProblem, EmMeshSettings, double[] freqsHz, CancellationToken);
 }
 ```
 
+**Corrected at L7 (2026-08-04): the kernel consumes a neutral `EmProblem`, not `LayoutFragment` +
+`Stackup`.** The original signature above named Ui types, and that is not simultaneously satisfiable
+with §10.7's "all of it lives in `src/Engine/Mom/`": `LayoutFragment`, `Stackup` and `Technology`
+live in `src/Ui/Layout/`, the reference graph is `Ui → Engine → Core → RfCore`, and inverting the
+arrow would break the UI firewall that `tests/Firewall.Tests` enforces.
+
+`EmProblem` (`src/Engine/Mom/EmProblem.cs`) is the neutral cross-section model — conductors as
+finite-thickness polygons, dielectric regions as horizontal slabs, an optional ground plane, ports,
+and the propagation length — **in SI units throughout, knowing nothing about DBU, `.clay` shapes,
+layer tables or `LayerKey`.** The §10.3.3 cross-section extractor produces it, which is what
+extraction already had to do. This is the better boundary anyway: it is the standing invariant *"the
+numeric layer sees only fully-resolved values"* applied to geometry, and it is what lets the entire
+kernel be validated against closed-form oracles without constructing a layout document.
+
 `Capabilities` is what drives the §10.3.3 refusal message, so adding kernel B is a registration plus a
-capability widening — not a rewrite of the calling code.
+capability widening — not a rewrite of the calling code. **Kernel W (§10.11) is the first real test of
+that claim**: it widens `EmCapabilities` with `Wires` (and later `Surfaces`) and registers, touching
+nothing else. If W cannot be added this way, the interface is wrong and it is cheaper to learn that at
+L7 than at L8.
+
+`CanSolve` splits the refusal duty cleanly: the *geometric* refusals — bends, tapers, non-parallel
+conductors — are detected by the Ui-side extractor before an `EmProblem` is ever built, and the
+kernel words the ones it can see from the problem itself (a non-tiling region stack, a
+zero-thickness conductor, a self-intersecting outline, a port naming an absent conductor, a port
+with no resolvable reference, and — since L7b-b — more than `QuasiStaticKernel.MaxSignalConductors`
+signal conductors). Both follow the same shape: name the specific feature, name where the capability
+arrives. **Each phase has NARROWED those multiconductor refusals rather than deleting them**:
+L7b accepted a symmetric coupled pair with its 2N ports; L7b-b's general modal decomposition
+accepts an asymmetric pair and any N up to a conductor ceiling bounded by the dense
+boundary-element solve, which is stated with its measured cost. Deleting a refusal instead of
+narrowing it is how a kernel starts silently answering questions it cannot answer.
+
+**No kernel registry exists yet, deliberately.** One kernel, constructed directly; a registry earns
+its place when W or B exists.
 
 #### 10.3.5 What v1 explicitly cannot do
 
@@ -1070,6 +1167,42 @@ grading logic written here is the same logic B and C will use. A few hundred seg
 Leaning rectangular rooftop for B, with triangles added for spirals and tapers: Sonnet has demonstrated
 for decades that a rectangular mesher is a production choice, not a toy. Left open until L8.
 
+> **Decided and measured at L8b (2026-08-05): rectangular rooftop on a TENSOR-PRODUCT grid, with
+> diagonals and curves STAIRCASED.** Triangles are not built — RWG needs a robust constrained Delaunay
+> triangulator, which is a real commitment and is not earned by a slice whose job is to produce a
+> number. The staircasing error was measured on the shipping PCells rather than on a synthetic
+> diagonal, because those are what a user actually selects and because **this phase's own gate is not
+> all-Manhattan** (`MBendPCell` cuts a 45° mitre, and mitred vs. unmitred is exactly the distinction
+> the bend gate asks the kernel to make).
+>
+> **The mitre survives staircasing** — at the auto cell size the cut is reproduced to 2.8% of its area
+> and removes 18 cells, so a mitred bend and a square one give different meshes and different unknown
+> counts. **The smooth tapers are the sharper result**: local WIDTH error along an `MTaper`/`MKlopf`
+> outline is 17–24% at worst and 5.5–11% RMS, while the global AREA error is only ~0.5% — and a
+> Klopfenstein taper's whole value is a controlled equiripple |Γ| (0.05 by default), against which the
+> local number is the one that matters. Two consequences, both recorded in `src/Engine/Mom/CLAUDE.md`
+> §L8b: a smooth taper is a case for the shipped analytic model rather than for full-wave (the N
+> report says so, by name), and if a future phase needs a taper's own full-wave answer accurately,
+> **conformal/diagonal boundary cells — one straight cut through an otherwise rectangular cell — are
+> the proportionate next step, not a triangulator.** The cell type and the report were deliberately
+> shaped not to forbid that.
+>
+> **Sizing rules, as built.** λ_g is taken in the local dielectric at the sweep's HIGHEST frequency
+> (εᵣ, i.e. the shortest wavelength the structure can see — conservative, and the only value available
+> before a solve), and the mesh is computed **once per sweep**, not once per frequency. Cell size is
+> per AXIS, from the narrowest conductor run measured along that axis; that is what keeps a long, thin
+> taper affordable on a tensor grid. The unknown count is **basis functions, not cells** — a rooftop
+> spans a pair of adjacent cells — and that is the number §10.7's ceiling refuses on.
+
+> **Closed at L8c (2026-08-05): the edge reference length, measured against a converged physical
+> quantity.** L8b could only count unknowns; the convergence half needed a solver. Measured on the
+> static capacitance of the FR-4 hero above, refining each candidate along its own ladder: the shipped
+> **conductor-width reference lands 0.18% from the two candidates' consensus limit at N = 552**, and
+> the cell-size alternative 0.11% at N = 787. The mechanism is on the record too — the conductor-width
+> edge cell does not shrink as cells/λ rises, so its flat refinement sequence means "already at its own
+> limit" rather than "converging", and it sits ~0.35% low. That is inside any EM tolerance and is what
+> keeps an ordinary GaAs line under R17, where the alternative measures N = 7,562. The default stands.
+
 **Meshing rules, all auto-derived from the analysis so the user need not think.** (The wavelength rule
 binds only from L8 onward; the quasi-static kernel has no wavelength dependence, so its `Auto` mesh is
 driven purely by geometry and edge grading — one more reason v1 sweeps for free.)
@@ -1100,8 +1233,65 @@ but wrong numbers.
   short and a longer uniform reference line of the port's cross-section, extract the port's own
   reflection and the line's propagation constant, and remove them — the standard two-line calibration.
   Show the de-embedding reference plane in the layout so its location is never a mystery.
+- **…but de-embedding is a no-op for kernel A specifically, and that is a finding, not a shortcut
+  (added at L7, 2026-08-04).** The paragraph above is about a *meshed* port excitation, which is what
+  arrives with the full-wave kernel at L8. Kernel A never meshes a port: it computes γ and Z_c
+  analytically from the per-unit-length RLGC and forms the Z-matrix of a uniform line of length ℓ
+  directly, so the reference planes are exactly at the line ends **by construction** and there is no
+  port discontinuity to remove. Building the two-line calibration now would be building a calibration
+  for an error that does not exist; it becomes real work at L8. The observable consequence is pinned
+  by a test: ∠S₂₁ is exactly −βℓ with no offset.
 - **Ground reference** must be explicit: for microstrip it is the stackup's ground plane; for CPW it is
   the adjacent coplanar conductors. Get this wrong and everything downstream is wrong.
+
+> **Decided and built at L8e (2026-08-05) — a port is a LABEL, not a new shape type.** The "Port tool
+> that snaps to a conductor edge" above is real now, and what it places is an ordinary `LabelShape`
+> with `IsPort` set. That flag already existed and already round-trips, so **the `.clay` schema did not
+> change** and a layout carrying ports still round-trips byte-identically. Four consequences:
+>
+> - **Numbering** comes from the label's own text — `1`, `P1`, `p2`, `#3`, `Port 4` all parse. A label
+>   that names no number is auto-numbered to the lowest free one rather than refused, and the Port tool
+>   uses the same parser, so what the tool writes and what the extractor reads cannot drift.
+> - **Two labels naming the same number is a refusal by name**, not a silent win for one of them.
+> - **The side is INFERRED from geometry, reported in the notes, and refused when ambiguous.** A label
+>   at the exact corner of a conductor is equally close to two edges; guessing reverses the direction of
+>   current into the structure, which is a hard π in S₂₁ — smooth, plausible, and invisible in a
+>   magnitude plot. So it is named and refused: *"Port 1 is ambiguous… Move the label."* Every resolved
+>   port reports its inferred side and which way current flows in.
+> - **The reference impedance lives in the `.cem`**, per port, never on the shape. A layout is geometry.
+>
+> **The de-embedding reference plane is not user-positionable, and that is a stated limitation.** It sits
+> one mesh cell in from the drawn metal edge, because that is where L8d's calibration actually removes
+> the port discontinuity; an adjustable plane would need a re-referencing step that does not exist. The
+> planes are DRAWN over the layout (the bullet list's own requirement, "so its location is never a
+> mystery") from the coordinates the *engine* reports, not from a Ui re-derivation of them.
+
+> **Built and measured at L8d (2026-08-05).** The two-line calibration above is implemented, and three
+> things about it are worth having in the design note rather than only in the engine's own file.
+>
+> **The bullet list's own emphasis was right about the wrong thing.** The calibration ALGEBRA is exact:
+> a de-embedded uniform section comes out perfectly matched at the two lengths the calibration was
+> solved from — |S₁₁| = 8.5e-16, four equations fixing four unknowns — and the two independent routes
+> to γ (the two-line trace and a travelling-wave fit that shares no algebra with it) agree to
+> **2.5e-4 … 3.9e-3** across 2–10 GHz. What limits accuracy is not the calibration but **direct
+> radiative and surface-wave coupling between the two ports**, which decays only algebraically and has
+> no term in a "box + matched line + box" model. Measured on 1.6 mm FR-4: a section that should be
+> matched reads |S₁₁| = 3.9e-4 at 2 GHz and 6.0e-3 at 10 GHz — an f² scaling, and NOT monotone in the
+> standard's length, which is how it was identified. **A de-embedded answer here is good to a few 1e-3
+> at 2 GHz and a few 1e-2 at 10 GHz, and a longer feed does not improve it.** Real planar tools suppress
+> this with box walls or absorbing boundaries; this kernel has neither, by design.
+>
+> **"Show the de-embedding reference plane in the layout" is now a trivial UI job**, because the plane
+> is not a user choice: it is one cell in from the drawn metal end, fixed by construction, and there is
+> deliberately no offset knob — offering one would offer a way to get a different answer for the same
+> structure.
+>
+> **One thing the bullet list does not say and should: the de-embedded S is referenced to the LINE'S own
+> Z_c, and the calibration cannot determine it.** That is a property of the method, not a gap. Z_c comes
+> from `γ/(jωC_pul)` with C_pul differenced between the two standards so the end effects cancel exactly;
+> kernel A is its ORACLE and never an input (measured: C_pul agrees to −0.26%, Z_c to +0.40% at 1 GHz).
+> The assumption that C is frequency-independent is the route's real cost, and it is 0.4% / 2.3% / 6.3%
+> at 1 / 5 / 20 GHz against kernel A's static value. Details in `src/Engine/Mom/CLAUDE.md` §L8d.
 
 ### 10.7 Solver and the size budget
 
@@ -1134,6 +1324,53 @@ frequency sampling** (solve sparsely, rational-interpolate, refine where the mod
 essential at L9 — it typically cuts solve count by 5–10× and is the best performance investment after
 the mesh. Build it only when the kernel that needs it exists; v1 does not.
 
+> **Measured at L8c (2026-08-05), on the fill and factorisation as built.** At 10 GHz on FR-4, per
+> frequency, with the frequency-independent geometric core built once:
+>
+> | N | cells | kernel fit | core (once) | fill | LU | matrix | cached core | per freq | 101 points |
+> |---|---|---|---|---|---|---|---|---|---|
+> | **552** (the hero above) | 297 | 0.21 s | 2.87 s | 1.48 s | 0.04 s | 4.6 MB | 2.4 MB | **1.73 s** | **178 s** |
+> | 1,956 | 1,012 | 0.20 s | 13.9 s | 6.80 s | 2.08 s | 58 MB | 30 MB | 9.08 s | 931 s |
+> | 4,933 (≈ R17) | 2,520 | 0.20 s | 53.9 s | 21.8 s | 42.8 s | 371 MB | 188 MB | 64.8 s | 6,599 s |
+>
+> **Three corrections to the paragraph above, all in the same direction.** First, *"solve is O(N³) LU
+> per frequency"* is true and is **not yet the constraint**: the O(N²) fill is 114× the LU at N = 552
+> and is still 1.8× it at the ceiling, so the crossover has not been reached inside R17's own budget.
+> Second, the hero's *"Instant"* is a statement about its 4 MB matrix, not about its sweep — a
+> 101-point sweep of it is about **three minutes**. (§10.10's 30-second target is an *interaction*
+> budget and is unaffected.) Third, the **400 MB line is optimistic by half a matrix**: reusing the
+> frequency-independent core is worth 62% of a single-frequency solve at the hero size and 45% at the
+> ceiling, but its cached arrays add **51% on top of the matrix** — 559 MB resident at N = 4,933.
+>
+> **So adaptive frequency sampling is no longer a "build it at L9" item**; the kernel that needs it now
+> exists. The cheaper first move, though, is per-cell-pair moment caching in the vector block: adjacent
+> rooftops share cells, so the same cell pair is currently integrated up to four times. See
+> `src/Engine/Mom/CLAUDE.md` §L8c for both.
+>
+> **Measured again at L8d (2026-08-05), with ports and de-embedding on, and the multiplier is 4.4×.**
+> The table above is the cost of filling and factoring the DUT alone. A de-embedded answer also solves
+> the calibration standards at every frequency, and they are not small — on the same hero they measure
+> N = 297 / 382 / 331 / 416 against the DUT's 552, i.e. **2.58× the DUT's own unknowns**:
+>
+> | per frequency, N = 552, FR-4 at 10 GHz | | 101 points |
+> |---|---|---|
+> | kernel fit (`Dcim.Fit`, shared across all meshes) | 0.20 s | 20 s |
+> | the DUT (fill + factor + excite) | 1.47 s | 149 s |
+> | **the calibration standards** | **5.98 s** | **604 s** |
+> | **total** | **7.66 s** | **~780 s** + 10 s of cores |
+>
+> (The DUT column reproduces L8c's own 1.48 s fill to 1%, which is what says the two measurements are
+> comparable. Both runs above were taken in isolation and repeat to 1.5%; the same test run alongside
+> nine other benchmark tests reads more than twice as slow, so **measure this one alone or not at all**.)
+>
+> **The standards are 78% of the cost, so the first saving to take is not in the fill at all.** Two are
+> identified and neither needs new numerics: (1) the two ports of a plain microstrip *should* share one
+> calibration and do not, because L8b's edge grading is not exactly mirror-symmetric end to end —
+> **making it symmetric is worth 2× here**; (2) a calibration is a first-class reusable object, so a UI
+> that caches one per feed cross-section pays for it once across every DUT that shares it. Adaptive
+> frequency sampling is worth correspondingly more than §10.7 assumed, because the per-point cost went
+> up 4.4× while the number of points did not.
+
 All of it lives in `src/Engine/Mom/`, uses NumFlat for the dense factorisation, and touches no UI.
 
 ### 10.8 Results and EM/circuit co-simulation
@@ -1145,10 +1382,18 @@ the existing Touchstone exporter writes it. **No new result type**, per the stan
 attach to a `TestBench`, never to a `Cell`"* — an EM setup naturally attaches to a **layout view**,
 which is a cell view, and would otherwise violate it.
 
-**R17a. An EM setup is a property of the layout** (like a saved analysis card, persisted in the
-`.clay`), and **running it writes an `.snp` file** plus returning a `DataSet`. The schematic consumes
-that artifact through the **existing SnP component** — no new analysis kind, no change to the testbench
-model, no new result type.
+**R17a. An EM setup is its own document — a `.cem` — that REFERENCES a layout**, and **running it
+writes an `.snp` file** plus returning a `DataSet`. The schematic consumes that artifact through the
+**existing SnP component** — no new analysis kind, no change to the testbench model, no new result type.
+
+> **Revised at L6/L7 (brief-L6-L7-em-ui.md D1).** This rule originally read *"an EM setup is a property
+> of the layout, persisted in the `.clay`"*. The standalone document serves R17a's own stated purpose
+> better: the standing invariant *"analyses attach to a `TestBench`, never to a `Cell`"* is satisfied
+> more cleanly by a setup that is not embedded in a cell view at all, and it buys three things
+> embedding does not — several EM setups against one layout, editing a setup without dirtying the
+> `.clay`, and a setup that is independently diffable and versionable. A `.cem` is workspace-scoped and
+> never scratch (mirroring `.ctech`), and it names its layout by workspace-relative path, **never by
+> embedding geometry** — which is exactly why re-running after a layout edit picks the edit up.
 
 The consequences are all good ones:
 - **EM/circuit co-simulation for free.** Lay out a matching network, EM-simulate it, drop the resulting
@@ -1158,6 +1403,21 @@ The consequences are all good ones:
   a colleague, or diff against a measurement.
 - **Re-running is a file update**, so the schematic picks up the new result the same way it picks up any
   changed SnP source.
+
+> **Extended at L8e (2026-08-05) — still no new result type, and the diagnostics group is per KERNEL.**
+> Whichever kernel runs, the `DataSet` has the same shape: `S`, per-port `Z0`, and **one** diagnostics
+> group. Kernel A's is `"tline"` (Zc, Gamma, Eeff, AttenDbPerM, Rpul, Lpul, Gpul, Cpul); kernel B's is
+> `"planar"` (Gamma, Zc, Eeff, AttenDbPerM, Cpul, CalElectricalDeg, DeembedResidual, DeembedRejected,
+> CalibrationUsable). **They deliberately do not share a name.** A per-unit-length quantity from a 2-D
+> quasi-static solve and one back-solved from a de-embedded full-wave S-matrix are different claims;
+> they agree on a uniform line — that agreement is L8's phase gate — and they diverge with frequency,
+> which is dispersion and is a *result*. One shared group would let a Data Display trace silently mix
+> the two in any project that contains both kinds of run.
+>
+> The staleness stamp below now covers the **planar** problem too — geometry, mesh settings, and ports
+> each hashed separately, so the warning says *which* of the three moved. Without that it would have
+> gone on stamping the cross-section for a run that has no cross-section, and staleness detection would
+> have quietly stopped working for kernel B while still appearing to be on.
 
 Two details worth fixing now: write the `.snp` to a **predictable path** derived from the cell and setup
 name (mirroring `RunResultsWriter`'s convention) so the schematic's reference is stable across runs; and
@@ -1175,6 +1435,25 @@ closed-form anchors.
 microstrip even/odd-mode impedances; a quarter-wave open stub's resonant frequency; a known
 Rogers-substrate line.
 
+**Learned at L7 (2026-08-04): validate the charge solver against *exact* closed forms before comparing
+anything to Hammerstad-Jensen.** H-J is an empirical fit, so a ±2% agreement against it can hide a real
+defect and a disagreement tells you nothing about which of five stages is wrong. The ladder that
+actually worked, each tier passing before the next was written: (0) the potential and field integrals
+vs quadrature and vs a finite difference of each other; (1) coax `2πε₀/ln(b/a)`, wire-over-ground
+`2πε₀/acosh(h/a)` — this is what tests the image ground — and two parallel wires; (2) two-layer coax
+`2πε₀/[ln(r_m/a)/ε₁ + ln(b/r_m)/ε₂]`, which is the only cheap closed form that genuinely exercises a
+dielectric interface, plus a fully-filled coax and a lossy fill for the complex-ε* path; then (3) H-J.
+Two of these caught real defects that the ±2% H-J gate had passed.
+
+**And H-J is not the arbiter where it is itself extrapolated.** Its finite-thickness correction widens
+W, which *raises* εeff; a boundary-element solve of the real rectangle sees the strip's side faces in
+air, so a thicker strip *lowers* εeff. At t/W ≈ 0.2 — ordinary 35 µm copper on a narrow strip — the two
+disagree by ~5% and H-J is the one outside its regime. Gate against it at a thin strip across the full
+W/h span, and against real metal only where t/W is small. Same lesson for `MicrostripLoss`'s
+`α_c = R_s/(Z₀W)`: it is a wide-strip asymptote that over-counts the ground plane, and the right check
+is that a proper Wheeler computation approaches it monotonically from below as W/h → ∞ (measured 0.40
+at W/h = 0.3, 0.96 at W/h = 50), not a fixed tolerance band at one geometry.
+
 **Oracle-free self-consistency, which catches most real bugs:**
 - Reciprocity: S₁₂ = S₂₁ to solver tolerance.
 - Passivity: eigenvalues of I − SᴴS ≥ 0.
@@ -1182,6 +1461,18 @@ Rogers-substrate line.
 - Mesh convergence: refine the mesh, results must converge monotonically rather than wander.
 - A uniform line of length 2L must equal two cascaded lines of length L.
 - Reference-plane invariance: moving the de-embedding plane must only rotate phase.
+
+**Added at L8a (2026-08-05), because the full-wave kernel needs oracles kernel A did not.** The same
+ladder discipline, one tier lower: (−1) the special functions themselves, against an *integral
+representation* and the Wronskian, before anything uses them; (0) the spectral-domain function alone,
+before any inverse transform exists — a spectral function that is wrong produces a spatial function
+that is wrong in a way no downstream oracle can localise; (1) the exact reductions, of which
+**εᵣ = 1 collapsing to free space plus one image** is the strongest and is the direct analogue of the
+image gate that validated kernel A's R-mom-7; (2) the production method against **direct numerical
+Sommerfeld integration**, which shares no approximation with it. Two of these caught real defects,
+and in one case the defect was in the *oracle* — see `src/Engine/Mom/CLAUDE.md` §L8a. Note also that
+**losslessness does not survive into kernel B**: an open planar structure radiates and launches
+surface waves, so |S₁₁|² + |S₂₁|² < 1 legitimately. Reciprocity and passivity carry over.
 
 **Regression golden data** reviewed and approved by the owner before it becomes a gate — the established
 project pattern.
@@ -1197,18 +1488,95 @@ The path it measures:
 |---|---|---|
 | New layout from the workspace's starter template | 1 click — stackup, layers, units all preset from `.ctech` | 3 s |
 | Draw the line | Path tool, click start, click end, type `W = 2.9mm` in the live dimension field | 8 s |
-| Ports | Port tool, click each end — auto-numbered, 50 Ω default | 5 s |
 | Frequency | EM panel: `1` `20` `GHz`, 101 points | 8 s |
 | Mesh | Untouched — `Auto` is the default and is correct | 0 s |
 | Run | 1 click | 1 s |
 
-Total ≈ 25 s. **The chosen v1 kernel covers this case exactly** — a uniform microstrip line is precisely
+Total ≈ 20 s.
+
+> **The "Ports — Port tool, click each end, 5 s" row is gone (brief-L6-L7-em-ui.md D5).** For a uniform
+> cross-section the two ports simply ARE the two ends of the extracted line, by construction — the same
+> fact that makes de-embedding a no-op for kernel A (R-mom-15): there is nothing to place because there
+> is no meshed port to place. The `.cem` carries per-port Z₀ and nothing else. A Port tool becomes real
+> work at **L8**, when a meshed port exists, and `PinInference` is what it should be built on then
+> rather than a new picking mode. The target got *easier*, not harder. **The chosen v1 kernel covers this case exactly** — a uniform microstrip line is precisely
 what a quasi-static per-unit-length solver is for — so the headline acceptance test is satisfied by L7
 rather than waiting on full-wave. The same test runs against the MMIC starter tech with a GaAs line, so
 both markets are gated (§2.4).
 
-What makes the target achievable is not speed of interaction but **defaults that are already right**: preset stackups, auto mesh, auto port numbering, 50 Ω, and numeric entry with unit suffixes
+What makes the target achievable is not speed of interaction but **defaults that are already right**: preset stackups, auto mesh, ports that need no placing at all (D5), 50 Ω, and numeric entry with unit suffixes
 (R6). Design the defaults first and the target falls out; design the dialogs first and it never will.
+
+### 10.11 Kernel W — 3D wirebond simulation
+
+**Full design: [`mom-wirebond-kernel.md`](mom-wirebond-kernel.md).** Summarised here because it changes
+§10's kernel inventory, `EmCapabilities`, and the phasing table, and because §10.1's original wording
+excluded it.
+
+**What it is.** A **thin-wire MoM kernel** for bond wires: ball- and wedge-bond loop profiles, 0.5–1.25
+mil radii, 5–50 mil loop heights, 5–300 mil pitch, arrays to 200 wires, with full mutual coupling
+between every wire. This is the founding problem of computational EM (Harrington/Richmond/NEC), and for
+this geometry it beats FEM decisively: unknowns scale with **wire count, not with the volume of air
+between the wires**, the 1 mil radius collapses into an analytic kernel rather than a meshing problem,
+and the radiation condition is exact — no airbox, no PML. Where FEM still wins: inhomogeneous 3D
+dielectrics, complex 3D metal (leadframes, clips, lids), cavity resonance, and field plots.
+
+**It is a separate kernel, not an extension of A.** Kernel A is a 2D cross-section solver and cannot see
+a wirebond. It is also **not unlocked by C** — a stepped ground is a *lateral* variation, precisely what
+the 2.5D premise forbids, so DCIM buys nothing here. Kernel W registers against the §10.3.4 interface
+and shares the `.ctech` stackup, the port model, the sweep UI, the mesh viewer, the results plumbing and
+the validation harness.
+
+**Staged the same way as A→B→C, for the same reason:**
+
+| | Kernel | Property |
+|---|---|---|
+| **W1** | Quasi-static PEEC — partial inductance (Neumann), coefficients of potential, exact round-wire Bessel internal impedance | **Frequency-independent matrices — fill once, sweep free**, exactly as kernel A |
+| **W2** | Retarded thin-wire MoM — add `e^{-jkR}` to the mutuals | Genuine full-wave; per-frequency refill. A flag on the same kernel, not a second kernel |
+| **W3** | Wires in the layered stack | Needs DCIM. **Named, not promised** — downstream of C |
+
+**Scope tiers.** **T1 = wires only** over an image ground plane: free-space kernel, one exact image, no
+wire-to-surface junction, ports at the wire ends, its own `.snp` cascaded in the schematic with the
+planar result. T1 ships and is useful standalone. **T2 = wires + meshed surfaces**, and this is the
+scheduling insight worth carrying: **one piece of machinery (surface panels + wire-to-surface junction
+basis functions) unlocks three separately-requested capabilities** — coupling to landing pads, a finite
+overmold body, and discontinuous ground. None is obtainable without the junction; all three arrive
+together. T2 is the larger half of the wirebond effort and must be budgeted as one deliverable, not as
+three small additions to T1.
+
+**Overmold.** The fact that shrinks it: **mold compound is non-magnetic**, so it touches [P] and [G] and
+**never [Lp]**. Inductance — the dominant bondwire parasitic — is unaffected by the mold model; only
+capacitance, delay and a small dielectric loss carry its error. Ship homogeneous fill as a mode and
+**bound charge on the mold surfaces** as the real thing, which is the direct 3D analogue of §10.3.1's
+already-chosen formulation and handles a finite cap, sidewalls, die attach and the die surface with the
+free-space kernel. The accuracy floor is the EMC datasheet (εr 3.4–4.5, poorly characterised above a few
+GHz), which is itself the argument for stopping there.
+
+**Discontinuous ground.** A flat plane is free because it is an image, exact only for a laterally
+infinite plane; a z-step kills the image, the dielectric image series **and** DCIM. The answer is to
+mesh the ground as a conductor — cheap for [P] (charge panels at V = 0), the real work for [Lp] (surface
+current cells, full Ruehli PEEC). Keep it affordable by hybridising: semi-infinite image plane for the
+lower tier, meshed panels only for the raised structure, graded because return current spreads over
+roughly ±2h. Ignoring a 20 mil step under half a span costs ~6% on L; ignoring a **ground gap** costs
+30–50%+.
+
+**Sizing.** ~25–30 segments per wire (set by arc fidelity, not wavelength): 8 wires ≈ 250 unknowns,
+40 wires ≈ 1,200, 200 wires ≈ 6,000 → 576 MB dense, ~3 s LU per frequency. Only the 200-wire extreme
+brushes R17's ceiling; meshed ground is what pushes it over, and that is where ACA first earns its keep.
+
+**The PRD tension, resolved.** A wirebond is a **parametric component instance whose layout view is its
+2D projection** plus an annotation — `.clay` gains no 3D shape type and no volumetric mesher is written,
+so "layout is 2D" and "no volume meshing" survive untouched. The PRD's §2 non-goal was **narrowed on
+2026-08-04 (PRD v1.3)** from "no 3D full-wave EM" to *no FEM, no volumetric meshing, no arbitrary 3D
+geometry* — the old wording would have excluded a solver that requires none of those things.
+
+**Two things this design insists on, because they are how bondwire models usually go wrong:**
+- **Ports carry an explicit reference conductor.** Partial inductance is not a physical quantity on its
+  own; "the inductance of this bond wire" is meaningless without a stated return path.
+- **Ground bond wires are ordinary wires, not a boundary condition.** Modelling only the signal wires
+  against an assumed perfect plane reports optimistically low inductance. Conversely, a user who
+  declares downbonds explicitly gets much of the stepped-ground effect in **T1**, before any surface
+  kernel exists.
 
 ---
 
@@ -1227,9 +1595,12 @@ Each phase has a gate that must pass before the next begins.
 | **L5b — DRC v1** | Rule model in `.ctech`, min-width + min-spacing checks over Clipper2, violation model with geometric markers, violations panel on a system layer, waivers, run-on-export checkbox | Both rules fire correctly on a seeded test layout and stay silent on a clean one; markers locate the violating *region*; a waiver persists and suppresses; spacing respects nets (no false hits within one pour) |
 | **L6 — Stackup + mesh** | Stackup editor with presets inside the `.ctech` editor; cross-section extraction (§10.3.3) + cut-line tool; 1D boundary mesher with edge grading; mesh viewer | Extract and mesh a microstrip cross-section, visually inspect edge refinement, segment count reported, non-uniform geometry refused with a specific message — **no solver yet** |
 | **L7 — Quasi-static kernel (A)** | `IEmKernel`, charge solve, [C]/[C₀]/[L]/[G]/[R], RLGC → s-parameters, ports + de-embedding, frequency sweep, results → `DataSet` | Microstrip Z₀/εeff within 2% of Hammerstad-Jensen on **both** starter techs; truncation-convergence, reciprocity, passivity, losslessness, and mesh-convergence checks pass; **§10.10 acceptance test passes** |
-| **L7b — Coupled lines + co-sim** | Multiconductor [L][C], modal decomposition, coupled-line s-parameters, `.snp` back-annotation into the schematic | Even/odd-mode oracle for coupled microstrip; an EM-derived `.snp` drops into an HB testbench and runs |
-| **L8 — Full-wave, single dielectric (B)** | Layered Green's function for a grounded slab, surface basis functions + 2D mesher, per-frequency fill/solve, current-density heat map | A quarter-wave open stub resonates at the right frequency; a bend's s-parameters are physically sane; A and B agree on a uniform line |
-| **L9 — General layered stack (C)** | DCIM, N dielectrics, vias and z-directed current, adaptive frequency sampling, N-budget enforcement | Multi-layer structure with backside vias; agreement with published reference structures |
+| **L7b — Coupled lines + co-sim** ✅ | Multiconductor [L][C], even/odd modal decomposition, coupled-line s-parameters as a 4-port, `.snp` back-annotation into the schematic | **DONE (2026-08-05).** Ships the SYMMETRIC pair — a fixed modal matrix, no eigensolver. Exact off-diagonal oracle, far-apart pair reproducing two independent single lines, `Z_o < Z_e`, 4-port reciprocity/passivity/losslessness; an EM-derived `.s4p` drops into an HB testbench and runs end to end. Asymmetric pairs and N > 2 refused by name → **L7b-b** |
+| **L7b-b — Asymmetric pairs + N > 2** ✅ | General modal decomposition of `[Z][Y]`; the non-Hermitian complex eigensolver it requires | **DONE (2026-08-05).** Route A only: the real symmetric generalized eigenproblem `Gevd(Re[C], [L]⁻¹)` for the lossless line, with loss carried perturbatively. **The error was MEASURED against an exact closed-form 2×2 modal oracle, not assumed** — worst 5e-4 in |S| on a realistic asymmetric pair, 1.7e-2 in a regime built to break it — so the complex QR eigensolver (Route B) was **not built**, per D2. A symmetric pair goes through the general path like everything else; L7b's fixed `[1 1; 1 −1]` construction survives as a test oracle only. Mode-axis `tline` cubes + `ModeCouplingResidual`; conductor ceiling with its measured cost |
+| **L8 — Full-wave, single dielectric (B)** ✅ | Layered Green's function for a grounded slab, surface basis functions + 2D mesher, per-frequency fill/solve, current-density heat map. **SPLIT into L8a–L8e** (2026-08-05), for the same reason L6/L7 and L7b were staged: §10.2 flags this as the one schedule-uncertain phase, so its riskiest piece is isolated and measured first. **L8a** = the Green's function alone + its oracle ladder ([`brief-L8a-layered-greens-function.md`](../sonnet-briefs/brief-L8a-layered-greens-function.md)); **L8b** = 2D mesher + plan-view mesh overlay + the R17 pre-solve N report (§10.5: the viewer lands *before* the solver) ([`brief-L8b-planar-mesher-and-overlay.md`](../sonnet-briefs/brief-L8b-planar-mesher-and-overlay.md)); **L8c** = basis functions + matrix fill + the singular/near-singular integrals (§10.2's second schedule risk) ([`brief-L8c-fill-and-singular-integrals.md`](../sonnet-briefs/brief-L8c-fill-and-singular-integrals.md)); **L8d** = ports + the two-line de-embedding that is finally real work + per-frequency solve ([`brief-L8d-ports-and-de-embedding.md`](../sonnet-briefs/brief-L8d-ports-and-de-embedding.md)); **L8e** = results, current-density heat map, the kernel registry §10.3.4 defers to exactly this moment, narrowed refusals, and the phase gate ([`brief-L8e-results-registry-and-the-phase-gate.md`](../sonnet-briefs/brief-L8e-results-registry-and-the-phase-gate.md)) | **DONE (2026-08-05).** All three gate sentences pass on BOTH starters, at the shipping mesh, through the product path. **Stub:** notch +0.8% (FR-4) / +3.8% (GaAs) against the open-end-corrected prediction, and below the bare λ_g/4 on both — the open-end extension is real and measured. **Bend:** reciprocal to 1e-9, passive at every point, \|S₁₁\| rising with frequency as a shunt capacitance must, and the mitre lowers the reflection. **A vs B on a uniform line:** ε_eff agrees to 0.96% (FR-4, 1 GHz) / 3.15% (GaAs, 10 GHz), diverging with frequency because B has dispersion and A does not. **No losslessness check anywhere** — an open planar structure radiates. The gate cost ~8.5 min and is `Category=Benchmark`; what stays routine is the product-path wiring case. Two real defects were found BY the gate, not by inspection: an ambiguity threshold scaled to the bounding box rather than the line end, and a fixture that chamfered the wrong corner |
+| **L9 — General layered stack (C)** | DCIM, N dielectrics, vias and z-directed current, adaptive frequency sampling, N-budget enforcement | Multi-layer structure with backside vias; **agreement with published reference structures — PROPOSED FOR STRIKING, awaiting the owner's ruling** (see below) |
+| **LW1 — Wirebond T1 (kernel W)** | Parametric wirebond component (ball + wedge profiles) with a 2D-projection layout view; CSV wirebond-table import; 3D polyline mesher + mesh viewer; quasi-static PEEC ([Lp], [P], Bessel internal impedance) with a `Retarded` flag for W2; image ground; homogeneous + image-series overmold; explicit port reference conductors | Single wire over ground within 2% of closed-form L; 2-wire mutual within 2% of Neumann at 10 and 100 mil pitch; **8-wire GSGSG array within 5% of owner-generated 3D FEM data on all S-parameters to 20 GHz**; molded vs. bare shows the expected signature (L unchanged, C ≈ 4×); reciprocity/passivity/losslessness/segment-convergence pass; a 200-wire array reports N first and solves inside the R17 budget |
+| **LW2 — Wirebond T2 (surfaces)** | Surface panels (free charge, bound charge, surface current); wire-to-surface junction basis functions; meshed stepped ground with image/mesh hybrid + graded mesh; finite mold body; coupling to planar metal | **Right-angle-corner 3-image oracle passes before any package geometry**; stepped-paddle case within 5% of the same 3D FEM reference; a ground-gap case reproduces the expected 30–50% inductance jump; a multi-tier ground with no declared connection is refused rather than silently shorted |
 
 L0–L5 are sequential-ish, but L4 can run in parallel with L3 once the geometry model is frozen, L5b
 needs only L1's Clipper2 work plus L5's nets, and L6 can start any time after L2. L7 is small — the
@@ -1237,6 +1608,13 @@ reason for choosing kernel A — so **L0…L7 is a shippable product**: a real l
 fab interchange, a working DRC, and an instant transmission-line solver. L8 is the long pole and the
 first phase whose schedule is genuinely uncertain (§10.2); it should not start until L7's oracles are
 green, because those oracles are what will tell you whether B is right.
+
+**LW1/LW2 depend on L6 and L7 and on nothing in L8 or L9** — kernel W's free-space kernel carries no
+DCIM risk. LW1 is therefore schedulable *before* L8, and the case for doing so is that it serves the
+PA/module designer who is already this project's hero-circuit persona at a fraction of L8's schedule
+uncertainty. **That priority call is left open** (§13). LW2 should not start until LW1's oracles are
+green, for the same reason L8 waits on L7. LW3 (kernel W3 — wires in the layered stack) is downstream of
+L9 and is named, not scheduled.
 
 ---
 
@@ -1260,13 +1638,20 @@ green, because those oracles are what will tell you whether B is right.
 | Unit/DBU model gets it wrong and everything inherits the mistake | Medium | §1 is the first thing built and the first thing tested; unit change asserted to be a byte-identical no-op |
 | Schematic→layout regenerating over hand placement | Medium | R16 idempotency by stable schematic `Id`, designed in from the start |
 | Scope creep into auto-routing and LVS | Medium | Both named as non-goals for this plan. DRC is in scope but bounded to §9A's two rules; LVS is a direction, not a phase. Revisit only after L8 |
+| Kernel W (LW1/LW2) dilutes effort across two EM kernels at once | Medium | LW1 shares everything but the kernel with L7 and carries **no DCIM dependency**, so it is not a second research project. Sequenced against L8 rather than beside it, and LW2 gated behind LW1's oracles |
+| LW2's wire-to-surface junction is under-estimated because it looks like "just adding panels" | **High** | Named in §10.11 as the larger half of the wirebond effort and budgeted as one deliverable unlocking three capabilities. Gated on the right-angle-corner 3-image oracle *before* any package geometry, so the junction's correctness is measurable in isolation |
+| A wirebond result is reported without a stated return path and is silently optimistic | **High** | §10.11: ports carry an explicit reference conductor and the UI refuses a port without one; ground bond wires are ordinary wires; a multi-tier ground with no declared connection is refused rather than shorted |
+| Someone waits for L9/DCIM expecting stepped-ground support to fall out of it | Medium | Stated explicitly in §10.11 and `mom-wirebond-kernel.md` §7.1 (RW10): a z-step is a lateral variation, which is exactly what the 2.5D premise forbids. DCIM buys nothing here |
+| The overmold model is refined past the accuracy of the material data | Low | §10.11: EMC εr spans 3.4–4.5 and is poorly characterised above a few GHz. The ladder stops at bound-charge surfaces by design; PMCHWT and VIE are named and declined |
+| "No 3D EM" in the PRD and kernel W's existence contradict each other in the shipped docs | ~~Medium~~ **Closed 2026-08-04** | §10.11 resolves the layout half (2D projection, no 3D shape type, no volume mesher); the PRD §2 non-goal was narrowed to *no FEM, no volumetric meshing, no arbitrary 3D geometry* in v1.3, and §5/§8/§9 now describe kernel W |
 
 ---
 
 ## 13. Decisions taken — the record
 
-All ten questions this plan opened are answered. Numbers are stable so earlier revisions still resolve.
-Each entry states the decision and where it now lives in the body.
+All twelve questions this plan opened are answered — the original ten, plus 11 and 12 raised on
+2026-08-04. Numbers are stable and append-only, so earlier revisions still resolve. Each entry states
+the decision and where it now lives in the body.
 
 | # | Question | Decision | Where it lives |
 |---|---|---|---|
@@ -1280,10 +1665,12 @@ Each entry states the decision and where it now lives in the body.
 | 8 | Clipper2 | **Approved.** Managed C#, Boost licence, integer coordinates. Added to the README acknowledgments | §6.1 |
 | 9 | EM results vs. the TestBench invariant | **`.snp` artifact** consumed by the existing SnP component — invariant preserved, co-simulation for free | §10.8 R17a |
 | 10 | DRC | **In scope.** Min-width + min-spacing first, chosen because those two force the whole framework to exist | §9A, phase L5b |
+| 11 | 3D wirebonds (raised 2026-08-04) | **In scope as kernel W** — thin-wire MoM, quasi-static first (W1) then retarded (W2), wires-only (T1) first then meshed surfaces (T2). Separate kernel behind the existing `IEmKernel`; **independent of L8/L9** | §10.11, phases LW1–LW2, and [`mom-wirebond-kernel.md`](mom-wirebond-kernel.md) |
+| 12 | How a 3D wire lives in a 2D layout | **A parametric component instance whose layout view is its 2D projection** plus an annotation. `.clay` gains no 3D shape type; no volumetric mesher is written | §10.11, `mom-wirebond-kernel.md` §9.2 (RW15) |
 
 ### What is still genuinely open
 
-Nothing blocks starting L0. Three things are deliberately left to be decided *by* the work rather than
+Nothing blocks starting L0. Five things are deliberately left to be decided *by* the work rather than
 ahead of it, and each has a phase that will answer it:
 
 - **The R8b merge threshold** — a number, set from the L2 benchmark, not guessed here.
@@ -1291,9 +1678,87 @@ ahead of it, and each has a phase that will answer it:
   Decided at L8, when there is a working mesher and real geometry to judge against (§10.5).
 - **DXF `SPLINE` on export** — emit true splines or flatten Béziers to polylines. Decided at L4 against
   what real downstream consumers actually accept, which is an empirical question, not a design one.
+- **LW1's priority relative to L8** — kernel W carries no DCIM risk and serves the PA/module designer
+  directly, so running it first is defensible on risk-adjusted value. A roadmap call, not a technical
+  one, and it does not block either phase's design. Tracked as `PRD.md` §17 open item 4.
+- **The N-ceiling for a 200-wire array over a *meshed* ground** — raise R17, coarsen the ground mesh,
+  or implement ACA. Decided at LW2 against real numbers, not guessed here.
+
+*(The PRD's "no 3D EM" wording was the third item here until 2026-08-04; it is now resolved in PRD
+v1.3 — see the §12 risk row and decision 11.)*
 
 ### Non-goals, stated so they stay non-goals
 
 Auto-routing. Live as-you-type DRC. LVS as a phase (it is a direction — §9A.3). Gerber *import*.
-3D/FEM electromagnetics. Each is a real product on its own; naming them here is what keeps them from
-arriving one plausible increment at a time.
+**FEM, volumetric meshing, and arbitrary 3D geometry.** Each is a real product on its own; naming them
+here is what keeps them from arriving one plausible increment at a time.
+
+> **Narrowed 2026-08-04.** This line previously read "3D/FEM electromagnetics." Kernel W (§10.11) is a
+> 3D *thin-wire* MoM over a specific, parameterised conductor class, which is in scope. FEM, volume
+> meshing, and drawing arbitrary 3D solids remain out — and kernel W deliberately requires none of
+> them: the layout stays 2D, `.clay` gains no 3D shape type, and the only 3D object is a wirebond
+> polyline generated from named parameters.
+
+
+### §11's L9 gate sentence — the proposal on the record (L9e, 2026-08-05)
+
+**This is a proposal, not a decision.** §10.9's own rule is that golden data becomes a gate only when
+the owner has approved it, so the second clause of the L9 row stays as written until ruled on.
+
+**Proposed: strike *"agreement with published reference structures"*.** L9a found it does not survive
+this project's own rules, and L9e reconstructed the reasoning: a published multilayer S-parameter
+almost always arrives **without a verifiable stackup** — no tanδ, no metal thickness, often no
+dielectric tolerance. A gate resting on one measures the transcription rather than the kernel, and
+when it disagrees there is no way to tell which. That is the same reasoning that made L7b's Tier C3 a
+reported non-result rather than a loosened tolerance.
+
+**Proposed: strike *"with backside vias"* too, and say "with vias between metal levels".** This is the
+correction the gate itself forced, and it is structural rather than a scoping convenience. **A backside
+via is not representable by this kernel at all**: it joins a signal level to the GROUND PLANE, and the
+ground plane is the laterally infinite plane the Green's function handles analytically — never a
+meshed level. L9c's via basis is a rooftop spanning two ADJACENT MESHED levels, so a via to ground
+needs an **attachment (half) basis terminating on the PEC boundary**, which does not exist.
+`PlanarExtractor` already drops such a via with a note (its span names a ground-reference conductor,
+which is never an analysis level), so the behaviour is correct and reported — it is simply not
+something that can be gated. What IS representable on the MMIC starter is the **Metal1↔Metal2 post**,
+the airbridge the stackup was built for. Building the attachment basis is now the second-most valuable
+thing anyone could add to this area, after L9c's un-run Tier 4.
+
+**Proposed replacement — three self-consistency checks, all external-data-free. BUILT, as
+`tests/Ui.Tests/Em/L9PhaseGateTests.cs`:**
+
+1. **The vias carry the current** — |S₂₁| of a drawn airbridge against |S₂₁| of the same artwork with
+   the posts removed, on the MMIC starter, plus reciprocity and passivity (never losslessness). The
+   fixture's Metal1 has a gap, so the posts are the only conducting path across it.
+   **The absolute-inductance form of this check stays a FINDING rather than a pass**: the kernel and
+   the fill are right and the midpoint rule is 4.9% high on the shipping MMIC spacer (L9e), so an
+   inductance gate would have to be stated on the split via or on the geometric bound, not on the raw
+   rule. And the obvious signature — |S₁₁| rising with frequency — is reported and NOT gated, because
+   L9d measured the two-level de-embedding residual at the same order as the effect.
+   **UPDATE (via-z-integral follow-up, 2026-08-06): the midpoint rule is GONE.** The z-integral is
+   resolved and the absolute inductance is now measured against an independently-integrated exact
+   partial inductance, flat to **0.124%** over ℓ/w ∈ [0.01, 5] and a 16× range of footprint width
+   (`ViaPhysicsTests.T3_1`). That is the absolute-inductance gate this paragraph said could not be
+   stated, and it lives in the engine's own tier rather than here — the de-embedding residual still
+   bounds what the PRODUCT path can claim, so gate 1 is unchanged.
+2. **A two-level structure against the one-level reduction it degenerates to** — a Metal1 line shadowed
+   by a floating Metal2 strip; widen the gap and the perturbation must fall, onto the answer the
+   SHIPPED one-slab path gives for the same line. The gate is the ordering; the absolute closeness is
+   bounded by that same residual.
+3. **The wiring** — two levels and two vias extracted with the equal-area square, a backside via
+   dropped WITH its note, and a via long against its own footprint refused by name. The only routine
+   one, because it refuses or extracts and never fills a matrix.
+   **UPDATE (2026-08-06): the ℓ/w refusal is retired** and that third claim now asserts the opposite —
+   the geometry it used to refuse must be ACCEPTED — while the ELECTRICAL refusal (k·ℓ ≤ 0.05, which
+   is about the via basis carrying a uniform current rather than about any quadrature) must still
+   fire. Retiring it widens nothing: `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` is untouched and is
+   what actually restricts a via-bearing run to electrically small structures.
+
+Sizing note, since it constrains any future fixture: `G_A^zz` is validated to ρ/λ ≤ 0.1 (free-space λ),
+so these run at 300 µm over 10–30 GHz. §10.7's FR-4 hero at ~0.67 λ is refused by construction, and
+**`Dcim.ValidatedRhoOverLambdaAtHeights` must NOT be widened because a gate fixture is inconvenient** —
+L9c measured the 14× error that justifies it.
+
+**Confirmed and worth recording so it is not re-scoped:** the buried-level de-embedding refusal does
+**not** block this gate. Both ports sit on the slab's top level, so L9c's un-run Tier 4 (a static
+Green's function at interior heights) is not a prerequisite for it.

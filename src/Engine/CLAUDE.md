@@ -1,5 +1,619 @@
 # Engine — local conventions
 
+## `Mom/` — the via's z-integral: removing the midpoint rule (brief-via-z-integral, 2026-08-06) — **COMPLETE (M1–M6)**
+
+**A FOLLOW-UP to L9, not a sixth slice of it** — it fixes the one defect L9e found and deliberately
+bounded rather than repaired. **Read `src/Engine/Mom/CLAUDE.md`'s own follow-up section (at the end of
+that file) before touching any of it**; the split, the cost table and both wrong oracles live there.
+
+The six things worth knowing from out here:
+
+- **THE VIA IS PHYSICALLY RIGHT NOW.** L9e measured a via's terminal inductance high by
+  **≈ 0.673·(ℓ/w)** — 4.9% on §10.7's own 3 µm-over-40 µm MMIC post, 220% at ℓ/w = 5. Re-measured
+  against the FILL over three footprint widths spanning 16×, the same sweep is **flat to 0.124%**
+  across ℓ/w ∈ [0.01, 5]. **And n = 1 now equals n = 8**: L9e's split-via chain
+  (55.3% → 1.14% at ℓ/w = 1) is reproduced by a SINGLE via at every rung, so subdivision is an
+  INVARIANCE rather than a convergence.
+- **A PLAIN GAUSS RULE IN z DOES NOT WORK, and that is the whole design.** At Δ = |z−z′| > 0 the
+  kernel's ρ-structure lives on the scale Δ, which the fill's 8-node cell quadrature and its
+  2%-of-a-cell radial table cannot resolve when Δ ≪ cell — and Δ ≤ ℓ is exactly the regime the defect
+  lives in. Worse, a discrete rule keeps a `Σ_a w_a²·C/ρ` the true integral does not have. So the
+  integral is SPLIT: the two extracted asymptotes (whose coefficients are **measured at exactly 0
+  drift** with the heights, and whose depths are exactly Δ and Σ_b) are integrated over the two prisms
+  in CLOSED FORM in z; everything else — bounded, smooth in z — takes an ordinary rule applied to the
+  TERMS rather than to the entry, so the fill's O(N²) work is untouched.
+- **L9c's COST PREMISE was false, and M1 is what says so.** It declined the z-integral because "it
+  would need a fit per z-quadrature node rather than one per pairing". Measured: a fit is 89.5 ms, the
+  count is a property of the PAIRING SET rather than of N (every via of one drawn layer spans the same
+  two levels), and n_z = 4 adds 15 pairings — **1.58 s per frequency, 1.05% of a 149.9 s de-embedded
+  point**. End to end a de-embedded point reads **65.5 s taken ALONE**, against L9d's own 71.9 s.
+- **`MaxLengthOverWidth` is RETIRED and `MaxElectricalLength` is now about the BASIS.** The geometric
+  bound has nothing left to refuse. The electrical one stays because a via basis is ONE z-rooftop per
+  gap, so its current is uniform along the whole length — exact for a short via, wrong for a resonant
+  one however well the kernel is integrated, and no quadrature removes it. **Retiring the geometric
+  bound WIDENS NOTHING**: `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` already restricts every
+  via-bearing run to electrically small structures and is untouched.
+- **A NEGATIVE RESULT, kept.** L9c's four-family span does NOT make a fifth height pair a
+  constant-coefficient combination of four fitted ones — derivably, because the four basis functions
+  are themselves functions of k_ρ so the recombination does not survive the inverse transform.
+  Measured at **8.8e-4**, which is *inside* the interior fit's own envelope and therefore does not
+  contradict it either; refuted by derivation, not by measurement, and recorded as such.
+- **TWO ORACLES WERE WRONG FIRST — the eighth and ninth times in this area.** A uniformly panelled
+  quadrature read 9.5e-5 from the new lifted-rectangle closed form at c = 1e-3 while agreeing to 2e-15
+  at c ≥ 0.05 — the CHECK failing to resolve a spike 50× narrower than its own panel, not the closed
+  form. Grading the panels closed it to 1e-13. And `T2_2` had to be re-pointed from
+  `MidpointInductance` to `ExactInductance`, because reproducing the midpoint value is now the failure.
+
+Gate: **993 routine tests in `tests/Engine.Tests` in 70 s** (L9e's baseline: 992 in 65 s), plus
+9 methods tagged `Category=Benchmark` in this area (~20 min). `tests/Ui.Tests` **4,740 and green** with
+one gate test UPDATED rather than deleted (`L9PhaseGateTests`' ℓ/w refusal now asserts that the
+geometry it used to refuse is ACCEPTED); `tests/Firewall.Tests` unchanged (4/4).
+
+## `Mom/` — L9e: adaptive sampling, the N budget, the refusal audit (brief-L9e-adaptive-sampling-budget-and-the-phase-gate, 2026-08-05) — **M1-M4 COMPLETE; M5's PHASE GATE IS NOT**
+
+**Last of L9's five slices, and the only one that is mostly engineering rather than physics — except
+that the physics check nobody had built turned out to be the finding.** **Read
+`src/Engine/Mom/CLAUDE.md`'s own L9e section before touching any of it**; the measured curves, the
+gate proposal and every deferral's number live there.
+
+The seven things worth knowing from out here:
+
+- **THE VIA IS NOT PHYSICALLY RIGHT, and the kernel and the fill are both innocent.** *(FIXED by the
+  z-integral follow-up above; the bound named at the end of this bullet is retired. The measurement
+  stands and is what the fix is gated against.)* §0.2 item 1
+  asked for the check that had never existed. `G_A^zz` at εᵣ = 1 over a PEC is free space plus a
+  POSITIVE image to ≤ 3.0e-4 (against 21 for a negative one, which is what earns the sign); the ẑẑ
+  entry reproduces an independently-integrated closed form to ≤ 5.1e-5 across ℓ/w ∈ [0.075, 10].
+  **What is wrong is L9c's MIDPOINT RULE, and it is wrong about a quantity nothing bounded.** Its
+  stated cost, O((kℓ)²), is about the wave factor alone; the same substitution also freezes 1/R over
+  the via's length, which is a purely GEOMETRIC condition — measured, the via's inductance is high by
+  **≈ 0.67·(ℓ/w)**: 4.9% on §10.7's own 3 µm-over-40 µm MMIC spacer, and R-via-6's electrical bound
+  admits ℓ/w ≈ 12 (≈ 5× too large) at 10 GHz on GaAs. A second, GEOMETRIC bound now ships
+  (`PlanarLevels.MaxLengthOverWidth`), carrying the measured slope and naming the remedy — **splitting
+  the via across intermediate levels converges** (55% → 1.1% for n = 1 → 8 at ℓ/w = 1), which is the
+  refusal's own advice, now measured.
+- **The adaptive-sampling collision was resolved by separating the EXPENSIVE from the ORDERED.** The
+  calibrator must be stepped in increasing frequency order; refinement inserts points mid-band. The
+  solve depends only on the frequency, the branch continuation only on the order — so the standards'
+  raw matrices are cached per frequency and the whole sorted set is replayed after every insertion at
+  **zero extra solves** (`PlanarPortCalibrator.SolveCount` is the counter), reproducing the sequential
+  branch decisions **bit for bit**. The alternative (predicting βΔℓ from the pre-solve ε_eff) was
+  rejected on L8d's own measurement that the estimate runs 15-20% low.
+- **Tier 1's dense reduction passes EXACTLY**: with the tolerance at zero, the adaptive path
+  reproduces the non-adaptive sweep bit for bit. Off, the path is L8d's own — pinned by
+  `MultiLevelPortTests.M1_1`'s hand reconstruction, unchanged.
+- **R17 polices a MESH; the user experiences a RUN.** Measured exactly (16·N², plus `CoreBytes`): a
+  de-embedded run at N = 2,932 holds **209 MB** live, projecting to **~607 MB at the ceiling against
+  the 381 MB the refusal's own message quotes**. The constant is defensible; its message is not.
+  Changing it is the owner's call.
+- **The near-DC hole L8e recorded is CLOSED**, because M1 is what makes it reachable — an adaptive
+  scheme chooses its own frequencies. `Dcim.CanFitAtFrequency` refuses k₀H < 1e-6 (the 6 Hz point that
+  spent 50 s and ended in a raw framework exception) and refuses L9b's `PathExtent·k₀H < 1` band with
+  its measured numbers and the extent the user would need. **D8's decision, stated so neither option
+  is left open:** a frequency-aware path extent is the right fix and is not a one-line change — the
+  sample budget must rise with the extent, and `Samples` is what L8a's whole accuracy table is
+  calibrated against.
+- **ACA is DEFERRED with the number.** Far-field blocks of a real N = 790 fill need **53-62% of
+  min(m,n)** in rank at 1e-3, even with a full pivot that overstates a practical scheme. The blocks
+  reachable under R17's ceiling are simply not many wavelengths apart. Two precedents for a measured
+  deferral: L7b-b's Route B and L9c's amplitude cap.
+- **The refusal audit's sweep now catches ANY phase letter, and immediately caught one more** —
+  `ModalDecomposition` still promised "arrives at L7b-b", which L7b-b delivered. Two further offenders
+  were found by hand outside the sweep's phrasing, which is the argument for the sweep being a floor
+  rather than the audit.
+
+**§11's L9 gate sentence: a PROPOSAL is on the record** (in the Mom note) for the owner to rule on —
+strike *"agreement with published reference structures"*, replace with three external-data-free
+self-consistency checks. ~~**L9's phase gate itself is NOT built**~~ — **it WAS built**, in a later
+pass (`tests/Ui.Tests/Em/L9PhaseGateTests.cs`, three gates, two of them `Category=Benchmark`), and it
+found two things before it passed anything: the Ui-side via extraction was dead code, and a BACKSIDE
+via is not representable by this kernel at all.
+
+Gate: **992 routine tests in `tests/Engine.Tests` in 65 s** (+19 over L9d's 973, and just over the
+~60 s ceiling — see the Mom note for why and what the trade is), plus **7 methods tagged
+`Category=Benchmark`, ~10 min**. `tests/Ui.Tests` **4,737 and green** with two tests UPDATED rather
+than loosened; `tests/Firewall.Tests` unchanged (4/4).
+
+## `Mom/` — L9d: ports on more than one level, references, de-embedding (brief-L9d-multilevel-ports-and-references, 2026-08-05) — **COMPLETE (M1–M5)**
+
+**Fourth of L9's five slices, and the first one that turns a two-level `Z` into an s-parameter.** L9c
+left a matrix nothing excited. **Read `src/Engine/Mom/CLAUDE.md`'s own L9d section before touching any
+of it**; the Ui half is in `src/Ui/Layout/Em/CLAUDE.md`. It is also the first L9 slice whose blast
+radius is not `src/Engine/Mom/` — the extractor, the port inference and the provenance stamp all moved.
+
+The six things worth knowing from out here:
+
+- **THE COST, measured rather than projected: 71.9 s per de-embedded point, ~73 minutes for a
+  101-point sweep, at N = 514 with two levels and one via.** Against L8d's own 7.66 s at N = 552 that
+  is **9.4× at essentially the same N** — so what moved is not the unknown count but the **per-entry
+  cost of the general kernel**. L9c's note projected ~4.3× from N alone and was measuring the wrong
+  quantity. This is what makes L9e's adaptive frequency sampling non-optional.
+- **A real performance bug came out of measuring it.** `PlanarFill.FillMultiLevel` re-integrated D6's
+  frequency-independent geometric cores four times per matrix entry instead of looking them up — and
+  because **a calibration standard is always single-level**, every one of its entries took that branch.
+  Invisible at L9c (one fill, one small fixture); crippling the moment de-embedding exists.
+- **The kernel is a DISCRIMINATED WRAPPER, and the failure widening it would have caused was in the
+  CACHE.** `PlanarKernelSet.For()` copied its fit cache per view, so a de-embedded solve would have
+  refit every pairing per MESH — L9c's measured 9 fits per frequency becoming 9 per mesh, with no
+  answer anywhere looking wrong. The `DcimModel` fit is now shared across views; only the cheap
+  per-view terms are derived. **R-mlp-1's bit-identity is pinned by RECONSTRUCTING L8d's own call
+  sequence**, not by a tolerance.
+- **A port ON A VIA is refused, and the refusal is EARNED by showing it is a different OBJECT.** A
+  vertical basis has no end in the layout plane, its unit current already crosses its footprint, and
+  there is no cell beyond the cut to reference against. Driving the horizontal rooftops at the same
+  (x, y) is a perfectly good port — a *different* one. Measured structurally: every port row lies in
+  R-via-5's horizontal prefix.
+- **De-embedding refuses a port on a BURIED level, and the reason is electrostatics rather than
+  levels.** C_pul is differenced from two standards' static capacitances, and the only static Green's
+  function here is an image series over a **grounded slab**. The de-embedded S is *referenced* to the
+  Z_c that produces, so a wrong C_pul renormalises every published s-parameter. Points at L9c's
+  **un-run Tier 4** — the single most valuable thing anyone could build next for this area.
+- **G_A^zz's ρ/λ ≤ 0.1 limit is now a REFUSAL, scoped to meshes that actually carry vertical current**
+  (the same structure at 100 GHz is refused *with* a via and solves *without* one). It binds real
+  answers: §10.7's FR-4 hero is ~0.67 λ across at 10 GHz, so a via-bearing DUT that size is refused
+  outright; an MMIC at a few hundred µm is ~0.01 λ and passes comfortably.
+
+Gate: **973 routine tests in `tests/Engine.Tests` in 51 s** (L9c's baseline: 965 in 51 s — the +8
+routine tests cost nothing measurable), plus **9 methods tagged `Category=Benchmark`, ~6 min**: every
+de-embedded point and every multi-level fill. `tests/Ui.Tests` **4,737 and green**; `tests/Firewall.Tests`
+unchanged (4/4).
+
+## `Mom/` — L9c: z-directed current, vias and the multi-level problem (brief-L9c-z-directed-current-and-vias, 2026-08-05) — **COMPLETE (M1–M5)**
+
+**Third of L9's five slices.** **Read `src/Engine/Mom/CLAUDE.md`'s own L9c section before touching any
+of it** — the derivation, the measured ladder, the Tier 5 table and three findings live there.
+
+The eight things worth knowing from out here:
+
+- **There are FOUR kernel components, and "the horizontal one with the TE line swapped" is wrong
+  TWICE.** A z-directed current enters the TM line as a **series voltage source**, so `G_A^zz` and the
+  mixed component are built from two transmission-line Green's functions this repository did not have
+  (`I_v`, `I_i`) — obtained from one cascade traversal by running the ladder on the DUAL line. And
+  **`G_A^zz` carries a TE term even though a vertical dipole radiates no TE field**: it is not the
+  field, it is what is left after subtracting −∇φ, and φ uses a TM−TE `G_q`.
+- **THE IMAGE SIGN FLIPS because the CURRENT reflection does.** A PEC is a short: the voltage
+  reflection is −1 and the current reflection is +1, and the vertical component is built from a
+  current. Measured at **4.1e-15 / 9.6e-15**, mixed component identically zero to 2.1e-15.
+- **THE FAR-FIELD SUM RULE IS A THEOREM FOR THE INTERIOR FIT TOO — for a different reason, and the
+  first version of the fit asserted its ABSENCE and was wrong.** L8a's rule holds because `1 + Γ`
+  cancels a pole; an interior source's kernel is simply FINITE at its own branch point, so
+  `M(k_zm) = 2j k_zm·K` vanishes by inspection. Measured as O(k_zm) on all 24 cases before it was
+  imposed. **Asserting the absence of a theorem needs the same evidence as asserting one.**
+- **THE CROSS-REGION PAIRING IS NOT WORSE THAN THE SAME-REGION ONE**, which is the answer to the
+  question §10.2's warning was about — and it is the **opposite** of what the branch point this slice
+  located suggested (−3.45 j k₀, 0.137 of the DCIM far path on GaAs, closer than the 0.178 that cost
+  L9b 59×). Both are true and both are reported: **locating a cut is not measuring its cost.**
+  Inside `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` every component on every grounded stack is
+  **≤ 2.8e-3** — inside L9b's envelope. Above it `G_A^zz` reaches 14× on GaAs, from a diagnosed
+  rank-deficient depth pair (Σ|A| = 1.1e9), and the refusal is worded on that.
+- **THE VIA IS A ROOFTOP ONE DIMENSION OVER.** A footprint that is one cell of L8b's shared grid makes
+  a vertical basis a cell pair *in z*, with the same ±1/Area divergence pulses — so charge
+  conservation and junction continuity are exact **by construction** (asserted as equalities, D5) and
+  L8d's single factorisation is untouched. D2's construction (b), a separate basis plus a constraint
+  row, was never reached for.
+- **TWO MESHER FINDINGS, both silent failures.** A via footprint must contribute GRIDLINES or the via
+  **vanishes with no error** (measured: a 40 µm footprint sat between cell centres at 169.6 and
+  269.3 µm and produced zero unknowns). And it must **not** get the edge grading a conductor rim gets
+  — grading it measured 2,448 unknowns against 424 on the same fixture.
+- **N for §10.7's hero: 552 one level, 1,104 two levels, 1,140 with a via — 2.07×, well under R17's
+  5,000.** The brief's worry that two levels plus vias would cross the ceiling does not materialise.
+- **THE FILL EXISTS AND ONLY ONE OF ITS THREE NEW BLOCKS NEEDED NEW MACHINERY.** The scalar block
+  generalises for free (∇·f is the same pulse, and the geometric cores are in-plane so the height pair
+  enters only through coefficients); the ẑẑ block IS the scalar block's cell-pair integral with
+  `G_A^zz` and a factor ℓ_mℓ_n; only the ẑx̂ block is new, because its dyadic entry is a **∂/∂x**
+  rather than a value. It reproduces L8c's own fill on a one-level mesh to **6.8e-7** through two
+  independent fits and two independent extractions, `Z` is symmetric bit-identically with a non-zero
+  mixed block, and **D7's projected ~12 fits per frequency measured 9**. The via is treated as
+  electrically short (kℓ = 2.3e-3 on a 3 µm spacer) with the long-via case refused by name.
+
+Gate: **963 routine tests in `tests/Engine.Tests/Mom/`; the whole routine `Engine.Tests` tier is 963
+tests in 45 s**, inside the ~60 s ceiling. Plus 3 methods opt-in via
+`--settings circuitrf.benchmark.runsettings` (~3 min). `tests/Firewall.Tests` unchanged (4/4) and
+**`tests/Ui.Tests` unchanged and green (4,732)** — which is D6's "make the new members optional so the
+extractor keeps compiling" decision gated rather than argued. Nothing outside `src/Engine/Mom/` and
+`tests/Engine.Tests/Mom/` was touched.
+
+## `Mom/` — L9b: DCIM for the general layered medium (brief-L9b-dcim-for-the-general-medium, 2026-08-05) — COMPLETE
+
+**Second of L9's five slices.** L9a built the spectral kernel for an arbitrary stratified medium; this
+makes DCIM work for it. **No mesher, no basis functions, no `G_A^zz`, no vias, no ports, no
+`IEmKernel`/`EmCapabilities` change, nothing in `src/Ui`.** **Read `src/Engine/Mom/CLAUDE.md`'s own L9b
+section before touching any of it** — the derivations, the measured curve and the two new limits live
+there rather than being repeated here.
+
+The six things worth knowing from out here:
+
+- **THE FINDING: the second branch point is a STRUCTURAL obstruction, not an accuracy problem.** An
+  open-below stack makes Γ depend on `k_zb = √(k_b² − k_top² + k_z0²)`, which carries a second branch
+  cut at `k_z0 = ±j·k₀√(εᵣµᵣ − 1)` — on the imaginary axis, in the half-plane the sampling path runs
+  into. DCIM fits Γ as a sum of exponentials in k_z0, which is **entire** and cannot carry a cut. On a
+  4 µm oxide over silicon the error reaches **59× the free-space kernel on G_q and 2.3e+4× on G_A**,
+  against ≤ 1.6e-2 everywhere admitted, and no `BranchPointOrders` setting touches it. Refused by name.
+  **`LayerStacks.OpenBelow` is degenerate for this question** (alumina in air, k_b = k₀ exactly, the two
+  branch points coincide) and must not be the fixture anyone concludes from — so `PlanarExtractor`'s
+  ungrounded refusal can be narrowed for an equal-density bottom and never for a denser one.
+- **A fit per source/observer height pair is simply WRONG for the top half-space.** The height pair is an
+  exact shift of every fitted image — same amplitudes, depth `b_i + Σ`, poles scaled by the real decay
+  `e^{−αΣ}` — so the sum rule and the far-field theorem survive it untouched and `DcimModel.Evaluate(ρ, z,
+  z′)` needs no refit. The interior case is **also** an exact shift, of FOUR families in the source
+  region's own `k_zm` (measured: four coefficients from four height pairs predict a fifth to **9.8e-15**),
+  and it is handed to L9c as a scoped job with its oracle requirements enumerated rather than half-built.
+- **L9a's cost projection was against the wrong quantity, by 15–35×.** A general-medium fit is
+  **11–102 ms per frequency per kernel — the same as the shipped one-layer closed-form fit (96 ms)** — not
+  1.4–3.4 s. The fit samples the top-interface reflection ladder, not `KernelAtHeights`, and most of its
+  wall clock is Prony and the amplitude solve, which the stack does not touch. D7's cascade cache is also
+  **2.5–3.7×**, not the ~2× L9a named. **L9c/L9d are scheduled against ~0.2 s per frequency at any height
+  pair**, so a 101-point sweep of a two-level structure is minutes, not hours.
+- **Two limits L8a did not have, both now in the refusal.** A **near-field floor** at
+  `ρ/λ = 1/(2π·PathExtent) = 5.3e-4` — derived, stack-independent, invisible on a single 1.6 mm substrate
+  and dominant once a 3 µm layer is in the stack (1.8e-1 below it, 1.6e-2 above). And an **electrically
+  thin UNGROUNDED stack**, measured and bracketed (k₀H = 0.021 fails at 1.7e-1, 0.105 passes at 2.1e-2)
+  — with the mechanism **not** isolated and the refusal saying so, because the obvious candidate was
+  tested and ruled out.
+- **The far-field sum rule survives generalisation and is still a theorem** (`|1 + Γ|` = 2.2e-16 on every
+  stack), and the `BranchPointOrders` table re-run on the multilayer stacks says **order 1 stays the
+  default** — best or within 1.6× of best everywhere except GaAs's G_q, where order 0 was already better
+  at L8a and reproduces here through a completely different kernel.
+- **The shipped one-layer fit is BIT-IDENTICAL**, pinned by exact equality on twelve dumped configurations
+  after the shared internals were refactored. But **the general path's fit is NOT bit-identical to it and
+  cannot be**: the samples agree to 2.7e-11 while Prony's order choice and the three-candidate scoring are
+  discrete decisions taken on them, so the image count differs while both fits are equally good against
+  the oracle. The honest gate is Tier 4's, not an image-by-image comparison.
+
+Gate: **400 routine tests in `tests/Engine.Tests/Mom/` (+22); the whole routine `Engine.Tests` tier is 942
+tests in 44 s**, inside the ~60 s ceiling. Plus 5 test methods (22 cases) opt-in via
+`--settings circuitrf.benchmark.runsettings`, **~11 min** — of which 6 m 40 s is the ORACLE self-check on
+the two open-below stacks, run before a single number below it was believed. `tests/Ui.Tests` and `tests/Firewall.Tests` unchanged. Nothing outside
+`src/Engine/Mom/` and `tests/Engine.Tests/Mom/` was touched; `Dcim.ValidatedRhoOverLambda` and its refusal
+string are byte-identical.
+
+## `Mom/` — L9a: the general layered medium (brief-L9a-general-layered-medium, 2026-08-05) — COMPLETE
+
+**First of L9's FIVE slices, and L9 must not be attempted as one** — §11's L9 row is strictly more work
+than L8, which needed five. This slice is the spectral kernel for an arbitrary stratified medium with
+source and observer at arbitrary heights, plus its oracle ladder. **No DCIM change, no mesher, no basis
+functions, no vias, no ports, nothing in `src/Ui`.** **Read `src/Engine/Mom/CLAUDE.md`'s own L9a section
+before touching any of it** — the conventions, the branch-rule finding, the measured ladder and the cost
+table live there rather than being repeated here.
+
+The six things worth knowing from out here:
+
+- **The shipped one-layer kernel is UNTOUCHED and is the gate.** `GroundedSlab`, `SpectralGreens`'s
+  closed forms and `StaticGreens` all still work exactly as L8 shipped them; the general medium is built
+  alongside and gated by *exact* agreement with them — **Γ^e, Γ^h and Γ^q to 6.2e-14 / 7.1e-14** across
+  both starters, five frequencies and the whole k_ρ range. Collapsing the two is a later, separate,
+  measured decision (the L7b-b precedent).
+- **THE FINDING: the proper-sheet branch rule is not an analytic function, and R-lyr-4 needs one.**
+  `ProperRoot` negates its own result whenever `Im(w) < 0`, so it flips sign on half of any contour in
+  w = k_ρ² — which silently broke the small-k_ρ Taylor extraction that replaces L8a's exact 0/0
+  cancellation. **The reflection coefficients stayed perfect to 2e-16 while Γ^q's k_ρ → 0 limit came out
+  5% wrong.** Nothing but the direct comparison against L8a's closed form would have caught it.
+- **Split-a-layer invariance is 1e-13, not bit-identical, and the reason is reported rather than
+  tolerated**: `exp(a)exp(b) ≠ exp(a+b)`. The internal interface itself IS exactly transparent — 7 of 16
+  samples are bit-identical and the vector kernel's worst deviation is 9.8e-15.
+- **The pole finder had to change TWICE for one silent wrong answer.** A uniform scan cannot see a thin
+  slab's TM₀ (it sits 1e-12 of the range above cutoff), and a "safe" 1e-9 endpoint guard band excluded it
+  outright. Counts now match the slab's own cutoff conditions exactly; **the ungrounded stack carries a
+  TE mode at every frequency measured, where a grounded slab has none until 25 GHz.**
+- **Cost: the cascade is 6.8× the closed form at one layer and 17× at three** (0.202 → 1.37 → 3.42
+  µs/sample). At L9b that multiplies by the number of height pairs, so a DCIM fit at L8a's own sample
+  budget lands at 1.4–3.4 s per frequency per height pair. The one-off costs are not the problem (Taylor
+  extraction 98 µs, pole search 5.8 ms); the per-sample cascade is, and caching the TM/TE ladder pair is a
+  named ~2× that L9b should not have to rediscover.
+- **§11's L9 gate sentence does not survive this project's own rules** — see the L9a section for the
+  proposed replacement. Nothing was built on unverifiable published data.
+
+Gate: **378 routine tests in `tests/Engine.Tests/Mom/` (+28); the whole routine `Engine.Tests` tier is 920
+tests in 43 s**, inside the ~60 s ceiling. Plus 4 opt-in via `--settings circuitrf.benchmark.runsettings`
+(~8 s). `tests/Firewall.Tests` unchanged. Nothing outside `src/Engine/Mom/` and `tests/Engine.Tests/Mom/`
+was touched, and no user-facing string, refusal or capability changed.
+
+## `Mom/` — L8e: the kernel registry, the planar `DataSet`, and current density (brief-L8e-results-registry-and-the-phase-gate, 2026-08-05) — COMPLETE
+
+**Last of L8's five slices.** The engine half is small on purpose: the registry §10.3.4 has been
+deferring since L6, kernel B's own entry point, its diagnostics group, and the current-density
+reduction. **Read `src/Engine/Mom/CLAUDE.md`'s own L8e section before touching any of it.**
+
+The four things worth knowing from out here:
+
+- **`EmKernelRegistry` unifies the OUTPUT contract, not the input.** `IEmKernel` is still exactly
+  kernel A's — it consumes an `EmProblem`. Kernel B consumes a `PlanarProblem`, which L8b's D1 makes a
+  SIBLING of `EmProblem` rather than a subtype, so a shared input interface could only be `object` or a
+  union. What is genuinely shared is `EmKernelOutcome`: kind, kernel name, `DataSet`, `EmSuitability`,
+  notes. `EmCapabilities.Planar`, declared at L6 and read by nothing since, finally has a consumer.
+- **Auto-selection takes extractor VERDICTS, not geometry, because it has to.** Both extractors are in
+  `src/Ui/Layout/Em/`, behind the firewall; the registry is here. The good side effect is that D2's
+  rule is testable in `Engine.Tests` with no layout document — 16 tests, milliseconds. Auto prefers A
+  whenever A accepts (about a thousand times cheaper, and exact for a uniform cross-section), falls to
+  B when A refuses, and when neither accepts it refuses quoting BOTH. Explicit stays explicit in both
+  directions.
+- **The planar diagnostics group is `"planar"`, deliberately NOT `"tline"`.** Same `DataSet` shape as
+  kernel A — `S`, per-port `Z0`, one diagnostics group — but a per-unit-length quantity from a 2-D
+  quasi-static solve and one back-solved from a de-embedded full-wave S-matrix are different claims.
+  They agree on a uniform line (that agreement is L8's phase gate) and diverge with frequency, which is
+  dispersion and is a *result*.
+- **The current-density reduction lives in the engine, and its two surprising consequences are
+  documented rather than smoothed:** an outermost cell carries HALF what its neighbour does and that is
+  correct (a rooftop spans two cells); and the exact identity is against the two adjacent EDGE
+  currents' mean, not against the port current. One excitation, one frequency, no superposition — and
+  the solve captures the column during the sweep the panel already pays for, so the map costs no second
+  factorisation.
+
+Nothing outside this slice's own files changed: `SurfaceMesher`, `PlanarMesh`, the cell/basis ordering,
+the fill quadrature and L8d's calibration settings are all untouched. `PlanarSolve` gained three
+*optional* settings and three result fields for the captured column; its arithmetic did not change.
+
+Gate: see `src/Ui/CLAUDE.md` — L8's phase gate runs through the product path, not through the kernel.
+
+## `Mom/` — L8d: ports and de-embedding (brief-L8d-ports-and-de-embedding, 2026-08-05) — COMPLETE
+
+**Fourth of L8's five slices, and the first that produces a number a user would recognise.** L8c left
+a matrix nobody excited; this adds the right-hand side, the per-frequency solve, and the two-line
+calibration §10.6 calls mandatory and R-mom-15 calls *"real work at L8"*. **Read `src/Engine/Mom/
+CLAUDE.md`'s own L8d section before touching any of it.** Scope is the engine only: no `DataSet`, no
+`.snp`, no kernel registry, no `IEmKernel` change, nothing in `src/Ui` — all L8e.
+
+The six things worth knowing from out here:
+
+- **A port is an INCIDENCE MATRIX, and that is what makes the whole slice small.** L8c normalised the
+  rooftop to unit current across its shared edge, so a delta-gap of *v* volts reacts with it as exactly
+  *v* — no gap width, no quadrature. With `B` carrying ±1 on each port's row, `Y = BᵀZ⁻¹B`: one
+  factorisation, P back-substitutions, and reciprocity structural for the third time in this area.
+- **THE FINDING: what limits de-embedding accuracy is RADIATION, not the algebra.** The de-embedded S
+  of a uniform section is exact at the two lengths the calibration was solved from (|S₁₁| = 8.5e-16)
+  and drifts away from them — **not monotonically in the standard's length**, and scaling with
+  frequency as **f²**. Both are the signature of direct radiative and surface-wave coupling between the
+  ports, which decays only algebraically and has no term in a "box + matched line + box" model.
+  Measured on 1.6 mm FR-4: a section that should be matched reads 3.9e-4 at 2 GHz and 6.0e-3 at 10 GHz.
+  **A longer feed does not fix it**, which is why R-prt-4's "minimum feed length" came back as a
+  negative result rather than a number.
+- **A and B agree on a uniform line — the phase table's own gate — to 0.01% at 1 GHz**, then diverge
+  upward by dispersion, tracking the Kirschning-Jansen closed form to 0.9% out to 10 GHz. **That
+  divergence is a RESULT, not an error**; it is one of the two things kernel B exists to compute.
+- **Three branch decisions, and one of them was a real bug.** The obvious rule for γ's sign — negate if
+  `Re γ < 0`, since a passive line has α ≥ 0 — flips β too, and α is two orders of magnitude smaller and
+  its extracted sign is noise. On FR-4 at 20 GHz it turned a correct β = 804 into 1492. β selects the
+  branch; α is only a tiebreak.
+- **Two calibration standards do NOT cover a 2–20 GHz sweep.** One line separation covers 8:1 (TRL's
+  own [20°, 160°]); 2–20 GHz is 10:1. The count is derived from the band, designed to 4:1 for margin,
+  and aimed at 60° rather than 90° because the pre-solve ε_eff estimate runs 15–20% low.
+- **De-embedding costs 4.4× the bare fill, and the standards are 78% of it** — they are 2.58× the DUT's
+  own unknowns on §10.7's hero (7.66 s per frequency against L8c's 1.73 s, so ~780 s for a 101-point
+  sweep). The cheapest saving is not in the fill: making L8b's edge grading exactly mirror-symmetric
+  would let the two ports of a plain microstrip share one calibration, which they currently do not.
+
+## `Mom/` — L8c: the fill and the singular integrals (brief-L8c-fill-and-singular-integrals, 2026-08-05) — COMPLETE
+
+**Third of L8's five slices, and §10.2's SECOND named place a schedule goes to die** — item 4, the
+singular self- and near-term integrals. **Read `src/Engine/Mom/CLAUDE.md`'s own L8c section before
+touching any of it**; the six derived closed forms, the quadrature rule and every measurement live
+there rather than being repeated here. Scope is the basis, the fill and the dense factorisation only:
+no ports, no excitation, no s-parameters, no `IEmKernel` change (L8d/L8e).
+
+The six things worth knowing from out here:
+
+- **There are THREE singular pieces in this kernel and the second is the one that gets missed.**
+  Besides the obvious `1/ρ`, every surface-wave term carries a real `ln ρ` — `H₀⁽²⁾ = J₀ − jY₀` and
+  `Y₀ → (2/π)(ln(z/2)+γ)` — and a grounded slab always has at least one surface wave. Both are
+  extracted and integrated with an ANALYTIC inner integral; only a smooth remainder goes through
+  quadrature. That is the whole payoff of the rectangular mesh: the classic near-singular difficulty
+  comes from doing *both* integrals numerically, and here only one of them is.
+- **R-fil-8's condition FAILS on the FR-4 starter, and that was the finding of the slice.** "The
+  fitted images are smooth" holds only while no image depth is small against a cell — measured,
+  `min|b|/cell` is **0.165 at 10 GHz and 0.079 at 20 GHz** on FR-4 (against 6–13 on GaAs). The
+  remainder therefore is not smooth on the mesh's own scale, and a 3-point rule was **5% wrong** on
+  the self entry while converging so gently (n^-2.2) that it looked converged at every step. The
+  remainder rule is 8 points near because of that measurement, not by taste.
+- **The fill is three decades more accurate than the kernel it fills from, and the report says so.**
+  Against the εᵣ = 1 reduction — where the kernel is exact and only the quadrature can be wrong — the
+  whole matrix is right to **5.0e-6**. Against direct Sommerfeld integration with the real DCIM
+  kernel, worst over both starters and 2/10/20 GHz, it is **5.4e-3**, i.e. L8a's own ≤ 6e-3 kernel
+  error. Chasing the quadrature further is wasted work.
+- **The ORACLE was wrong first, for the third time in this area.** The Sommerfeld comparison initially
+  read 2.4e-2 on FR-4 at 20 GHz; the cause was the oracle's own radial table clamping its
+  interpolation stencil at the top of its range (2.1e-3 there, against a DCIM error of 4.2e-6 at the
+  same ρ). Refining the oracle is what separated the two, and `T2_4` now pins the oracle's own
+  convergence at 3.7e-6 so a future disagreement starts from a known-good reference.
+- **R-msh-5's deferred half is CLOSED and the conductor-width default survives.** Measured on a
+  converged static capacitance of §10.7's hero: the default lands **0.18% from the consensus limit at
+  N = 552**, the cell-size alternative 0.11% at N = 787. The mechanism is on the record too — the
+  conductor-width edge cell does not shrink with cells/λ, so its flat refinement sequence means "already
+  at its own limit" rather than "converging to the truth", and it sits ~0.35% low. That is inside any
+  EM tolerance and is what keeps an ordinary GaAs line under R17 (L8b measured N = 7,562 for the
+  alternative there).
+- **The cost is a FINDING, not a pass.** A 101-point sweep of §10.7's own 552-unknown hero takes
+  **~3 minutes**, and what dominates is the FILL rather than the LU — right up to R17's ceiling
+  (114× the LU at N = 552, still 1.8× at N = 4,933). D6's reused frequency-independent core is 62% of
+  a single-frequency solve at the hero size, so it earned itself; its cached arrays also add **51% on
+  top of §10.7's own 400 MB memory line**, which is worth knowing before anyone believes 5,000 is
+  comfortable. The two ways out — per-cell-pair moment caching for the vector remainder (~4×) and
+  §10.7's own adaptive frequency sampling — are named in the Mom note rather than left for L8d to
+  discover.
+
+Gate: **297 routine tests in `tests/Engine.Tests/Mom/` (+81), ~11 s**, plus 17 opt-in via
+`--settings circuitrf.benchmark.runsettings` (~6 min: the oracle sweep, the convergence studies,
+R-fil-12's measurement and all of Tier 8). `tests/Ui.Tests` and `tests/Firewall.Tests` unchanged.
+
+## `Mom/` — L8b: the surface mesher and the N report (brief-L8b-planar-mesher-and-overlay, 2026-08-05) — COMPLETE
+
+**Second of L8's five slices, and it adds NO PHYSICS** — it turns drawn geometry into cells, counts
+them, and hands the count back before anything is solved. **Read `src/Engine/Mom/CLAUDE.md`'s own L8b
+section before touching any of it**; the grid-model decision, the reference-length measurement and
+the staircasing numbers live there rather than being repeated here.
+
+The five things worth knowing from out here:
+
+- **N for §10.7's own worked example is 552, and every non-Manhattan shipping PCell is under R17's
+  5,000 ceiling.** The design note predicts "a few hundred" for the FR-4 hero and that is what comes
+  out. MBend/MTaper/MKlopf land at 536-2,055 across both starter technologies, so **no one-click
+  library part exceeds the budget** — which is the answer D8 was scheduled against, measured rather
+  than assumed.
+- **The grid model is TENSOR-PRODUCT, and the thing that makes it affordable is per-AXIS spacing.**
+  Each axis's pitch comes from the narrowest run measured along that axis, so a taper gets a fine
+  transverse pitch and a coarse axial one. Isotropic spacing on the §10.7 taper would have been
+  ~15,000 unknowns; per-axis makes it 714.
+- **N is BASIS FUNCTIONS, not cells, and R17 is about N.** A rooftop spans a pair of adjacent cells,
+  so N is the number of shared internal edges — about 2× the cell count. Reporting cells while
+  budgeting basis functions is a factor-of-two error in the one number this slice exists to produce.
+- **Kernel A's edge-grading CODE was reused; its FINDING was not, and the difference is measured.**
+  R-mom-8's cell-size field composes over any geometry and is called directly. But its "the reference
+  length is the metal THICKNESS" conclusion does not carry over — a planar sheet has no thickness —
+  and the cell-size alternative measures at **N = 7,562 on an ordinary GaAs line, over the ceiling**,
+  against 705 for the conductor-width reference. The convergence half of that measurement needs a
+  solver and is named as L8c's rather than faked.
+- **The staircased mitre SURVIVES (2.8% cut-area error, 18 cells, N 550 vs 586 unmitred), and the
+  smooth tapers are the real finding.** Local width error on MTaper/MKlopf is 17-24% worst and
+  5.5-11% RMS while the global AREA error is 0.5% — and a Klopfenstein's whole value is a controlled
+  equiripple |Γ| of 0.05, so the local number is the one that matters. A recommendation for L8c is in
+  the Ui-side note.
+
+Gate: **22 routine tests in `tests/Engine.Tests/Mom/SurfaceMesherTests.cs` (~0.3 s), none tagged
+`Benchmark`** — this slice's sweeps are milliseconds, not the CPU-heavy kind L8a had to make opt-in.
+Tier 6 and the PCell half of Tier 7 are in `tests/Ui.Tests/Em/PlanarMeshPCellTests.cs`, because the
+PCell generators are in `src/Ui` and the reference graph is `Ui → Engine`.
+
+## `Mom/` — L8a: the layered Green's function (brief-L8a-layered-greens-function, 2026-08-05) — COMPLETE
+
+**Kernel B's foundation, and a DIFFERENT KERNEL rather than an increment on A.** Kernel A's whole
+design was an escape from Sommerfeld integrals; that escape is not available for a full-wave planar
+solver on a grounded slab, and nothing in L8a shares code with kernel A. **Read
+`src/Engine/Mom/CLAUDE.md`'s own L8a section before touching any of it** — the formulation's
+derivation, three algebraic facts that silently destroy it, the measured accuracy range, and two
+findings about the ORACLES are recorded there rather than repeated here. Scope is the Green's
+function and its oracle ladder only: no mesher, no fill, no solve, no ports, no `EmProblem` or
+`IEmKernel` change, no kernel registry (L8b–L8e).
+
+The six things worth knowing from out here:
+
+- **The deliverable is a MEASURED RANGE, not "DCIM works" (R-lgf-4).** Against direct Sommerfeld
+  integration over ρ/λ ∈ [1e-4, 10], both starter substrates, 2/10/20 GHz: error as a fraction of
+  the free-space kernel — what a matrix fill actually experiences — is **≤ 6e-3 across the entire
+  span**, and that is the number L8c should be scheduled against. Strict relative error is ≤ 1e-2
+  out to **ρ/λ ≈ 1** and degrades to 0.25–0.57 at ρ/λ = 10. `Dcim.WithinValidatedRange` is the
+  R-mom-17 refusal that words it.
+- **The far-field defect had an exact cause and the fix is a theorem.** `1 + Γ` vanishes identically
+  at the branch point k_ρ = k₀, so the coefficient of the 1/ρ far field is exactly
+  `(1 + Γ(∞)) + Σ A_i` — and the physical far field has no 1/ρ term. The sampling path never visits
+  k_z0 = 0, so an unconstrained fit extrapolates that cancellation and leaves the error behind as an
+  uncancelled 1/ρ: **187% at ρ/λ = 10 on GaAs.** Imposing `Σ A_i = −(1 + Γ(∞))` exactly fixes it.
+  Higher Taylor orders at the same point are also exact statements and make it *worse* — measured,
+  tabulated, and the reason the default is order 1.
+- **`FitResidual` does NOT predict the spatial error — the same finding as L7b-b's
+  `ModeCouplingResidual`, for the same reason.** GaAs's best spectral fit belongs to a configuration
+  whose far-field error is one of the worst. It is the honest measure of what the fit did; only the
+  oracle says what the answer is worth.
+- **Both ORACLES were checked before anything was concluded from them, and one was wrong.** The
+  static image series had to carry a COMPLEX K; written with a real εᵣ it sat a
+  frequency-*independent* 1.1e-6 from the kernel's ω → 0 limit, which reads exactly like a
+  convergence floor. Refining the integrator 100× moved the answer by 7e-11 while the discrepancy
+  did not move — that is what ruled it out. Fixed, convergence is exactly quadratic.
+- **Bessel functions were WRITTEN, not added as a dependency**, because the root `CLAUDE.md`
+  reserves that to the owner — defining series only, with the asymptotic coefficients computed from
+  their product rather than transcribed. Measured to 2.9e-13 against an integral representation and
+  5.6e-11 against the Wronskian. Likewise no general complex eigensolver: Prony plus Durand-Kerner
+  reaches GPOF's poles, consistent with L7b-b's decision not to write one.
+- **5 tests are tagged `Category=Benchmark` for another test's budget, not their own runtime** (the
+  heaviest is ~3 s). `Hero1BTests` gates on a 10 s wall-clock budget and is **marginal on this
+  machine independently of this phase** — measured at 4.2–9.6 s with these tests excluded from the
+  full-solution run — so its budget was left alone and this phase's reporting sweeps were made
+  opt-in instead.
+
+Gate: **194 routine tests in `tests/Engine.Tests/Mom/` (+25), ~4 s**, plus 5 opt-in via
+`--settings circuitrf.benchmark.runsettings` (~5 s).
+
+## `Mom/` — L7b-b: the general modal decomposition (brief-L7b-b-general-modal-decomposition, 2026-08-05) — COMPLETE
+
+Any N conductors, symmetric or not, through **one** path. **Read `src/Engine/Mom/CLAUDE.md`'s own
+L7b-b section before touching any of it** — the Route A derivation, the `Ti` normalisation that puts
+the reported `Zc` in ohms, and four findings that changed the phase are recorded there rather than
+repeated here. It **partly supersedes the L7b section in that same file**, which says so at the top.
+
+The five things worth knowing from out here:
+
+- **Route B was NOT built, because D2 said the measurement decides and the measurement said no.**
+  Route A (`Gevd(Re[C], [L]⁻¹)` on the lossless problem, loss carried perturbatively) is wrong by
+  **4.9e-4 in |S|** on a realistic asymmetric copper pair swept 100 kHz–20 GHz at tanδ up to 0.2, and
+  by **1.7e-2** in a fixture built to break it (100 mm of 1 MS/m metal, 10:1 widths, four decades
+  below its own Wheeler crossover). Two orders of magnitude below the `[C]` solve's own
+  discretisation error. A hand-written Hessenberg+shifted-QR complex eigensolver is a real
+  numerical-methods commitment; this does not earn it.
+- **A symmetric pair cannot measure Route A's error — it is EXACT there**, because `[1 1; 1 −1]`
+  diagonalises any `[a b; b a]` and every one of [R], [L], [G], [C] has that form for a mirror-
+  symmetric pair. The brief's own G1 fixture therefore had to be replaced: the measurement is taken
+  on an ASYMMETRIC pair against a closed-form 2×2 complex eigen-decomposition (the quadratic formula,
+  no eigensolver library) that shares the block construction with production, so the comparison
+  isolates exactly the approximation being measured.
+- **`ModeCouplingResidual` does NOT predict the terminal error** — the two are anti-correlated in
+  frequency, and at 20 GHz the error exceeds the residual, so it is not even a bound. G1 said to
+  report that rather than loosen a tolerance. It is still the right diagnostic (it is the honest
+  measure of what was discarded, and it is loud where the error is worst); it is not a predictor.
+- **On a discretised mesh the general path is ~3 orders of magnitude CLOSER to exact than L7b's
+  forced modal matrix** (8e-6 against 8.9e-3). L7b forced the modal matrix a *perfectly* symmetric
+  pair would have, but the solved matrices carry the mesher's own diagonal asymmetry — so forcing
+  `[1 1; 1 −1]` was itself the larger approximation. It survives as a test oracle only; nothing
+  should be reinstated on the grounds that it was the better answer.
+- **Reciprocity stays STRUCTURAL at exactly L7b's strength.** Every block is `Tv·diag(x/e)·Tvᵀ`,
+  symmetric for any Tv, assembled so `[i,j]` and `[j,i]` are bit-identical; *S* then inherits that
+  through `RFNetwork.ZToS` to solver tolerance, precisely as it did before.
+
+Gate: 169 tests in `tests/Engine.Tests/Mom/` (+30), ~3 s, none tagged `Benchmark`. Three L7b tests
+were **updated, not loosened** — they asserted refusals that pointed at L7b-b, which is what L7b-b
+delivers.
+
+## `Mom/` — L7b: the symmetric coupled pair (brief-L7b-coupled-lines-and-cosim, 2026-08-05) — COMPLETE
+
+Coupled-line s-parameters as a 4-port, plus `.snp` back-annotation into the schematic. **Read
+`src/Engine/Mom/CLAUDE.md`'s own L7b section before touching any of it** — the modal algebra, the D3
+port map, and two findings that changed the design are recorded there rather than repeated here.
+
+The four things worth knowing from out here:
+
+- **No eigensolver is involved, and that is load-bearing.** A symmetric pair decouples with the fixed
+  matrix `[1 1; 1 −1]/√2` by symmetry alone. NumFlat's complex EVD is Hermitian-only and returns REAL
+  eigenvalues, while a lossy line's γ² is genuinely complex — verified against NumFlat 1.3.0 directly.
+  Asymmetric pairs and N > 2 need that eigensolver and are refused by name (L7b-b).
+- **The five `[0,0]` collapses in `RlgcExtractor` are opened** — `∂L/∂n` is a per-surface N×N matrix
+  (each conductor receded ALONE), `R_dc` is diagonal, `R`/`G` have matrix forms. `MatrixFillCount` is
+  still exactly 4 for a single line, so R-mom-11's counter gate is unchanged.
+- **The single-line answer is bit-identical**, verified by reconstructing the pre-L7b extractor and
+  comparing at full precision — two arithmetic re-associations that moved `R` by one ulp were found
+  and reverted. The Tier 3 oracles carry tolerances and could not have caught that.
+- **R-cpl-8 is asked of the GEOMETRY, not the solved `[C]`.** Testing `C₁₁ ≈ C₂₂` is the obvious
+  implementation and it wrongly refuses a mirror-symmetric pair whose mesh is merely under-resolved
+  (measured: 6.8% on a 1 µm strip, converging to 0.99% under refinement). The matrix version survives
+  as a "refine the mesh" warning.
+
+Gate: 139 tests in `tests/Engine.Tests/Mom/` (+25), ~2 s, none tagged `Benchmark`. **Tier C3's
+published even/odd fit was NOT obtainable and is reported as such** — substituted by a merged-strip
+limiting case against an independently computed geometry, converging to 0.075%.
+
+## `Mom/` — the quasi-static MoM kernel, kernel A (brief-L6-L7-mom-kernel-a, 2026-08-04) — COMPLETE
+
+`src/Engine/Mom/` is the 2D quasi-static per-unit-length EM kernel for phases L6/L7 (engine half only
+— no UI, no `.clay`, no `.snp`). **It has its own `CLAUDE.md`: read `src/Engine/Mom/CLAUDE.md` before
+touching anything in there.** Every sign convention of the formulation, the two deliberate deviations
+from `layout-view.md` §10.5's meshing wording, and the two findings about the closed-form oracles
+themselves are recorded there rather than repeated here.
+
+The four things worth knowing from out here:
+
+- **R-mom-1 — the kernel consumes a neutral `EmProblem`, not Ui types.** `layout-view.md` §10.3.4's
+  original `Solve(LayoutFragment, Stackup, …)` signature is not simultaneously satisfiable with §10.7's
+  "lives in `src/Engine/Mom/`", because those types are in `src/Ui/Layout/` and the reference graph is
+  `Ui → Engine → Core → RfCore`. `EmProblem` is the SI-unit cross-section model the Ui-side extractor
+  produces; the design note has been corrected. `tests/Firewall.Tests` still passes unchanged.
+- **`ChargeSolver` takes an `EmMesh`, not an `EmProblem`** — the physics is stated over segments, and
+  that is what lets the exact *cylindrical*-interface oracles be tested at all.
+- **R-mom-11 is enforced by a counter, not a comment.** `RlgcModel.MatrixFillCount` is asserted at
+  exactly 4 for both a 3-point and a 1001-point sweep, because "[C], [C₀] and ∂L/∂n are
+  frequency-independent" is the whole performance story and is easy to lose in a refactor.
+- **Results follow the house convention exactly** — `SNP` → `DataSetBuilder.FromSnp` → per-port `Z0`
+  cube, plus a `"tline"` group. No new result type.
+
+Gate: 114 tests in `tests/Engine.Tests/Mom/`, ~2 s, none tagged `Benchmark`. Tier 3 (microstrip vs
+Hammerstad-Jensen, 0.1 ≤ W/h ≤ 10, FR-4 and GaAs) lands at ≤ 1.3% on ε_eff and ≤ 0.6% on Z₀ against a
+±2% requirement.
+
 HB spectrum stage 2 — harmonic axis carries integer orders (brief-hb-spectrum-2-order-axis, 2026-06-23) — COMPLETE: `HbEngine.BuildSingleToneDataSet` now stores integer **orders** `[0,1,…,K]` (unit `""`) on the harmonic axis instead of frozen `k*f0` Hz values. Physical frequency is reconstructed `order × f0(slice)` everywhere it is needed (geometry, markers, stems, X label) via `HbSpectrum.HarmonicFreqHz`. The per-slice fundamental is resolved from `ToneFreqs[sweep…,tone=0]` by `PlotInspectorViewModel` and injected into the Trace via `SetSpectrumFundamentals(f0ByX)` before each `SetCubeData`/`SetFamilyData` call. Export (`.npy`) emits integer orders + the `ToneFreqs` cube; consumers reconstruct `order × f0`. **Follow-ups:** (a) two-tone `mixIndex` → integer indices with `ToneFreqs`-based mix-frequency reconstruction; (b) optional physical-frequency column in the Table. 6 gate tests (1 Engine, 5 Ui). Build 0W/0E; 429+376+1409+4 total tests pass.
 
 HB spectrum stage 1 — ToneFreqs metadata (brief-hb-spectrum-1-tone-metadata, 2026-06-23) — COMPLETE: Every HB run now emits a stacking `ToneFreqs` cube carrying the per-operating-point fundamental(s): single-tone `ToneFreqs[tone(1)]=[f0]` added in `HbEngine.BuildSingleToneDataSet`; two-tone already emitted `ToneFreqs[tone(2)]=[f1,f2]`. Both are non-`__`, so `DataSet.StackSweepAxis` prepends the sweep axis giving `ToneFreqs[sweep,tone]` with per-point tone frequencies. `HbSpectrum` static (`src/Core/Expressions/HbSpectrum.cs`) centralizes the index/order→frequency rule (`HarmonicFreqHz`, `MixFreqHz`). `ToneFreqs`/`MetaMixOrder` hidden from the signal picker. 5 gate tests. Build 0W/0E.

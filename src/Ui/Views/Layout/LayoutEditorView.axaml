@@ -166,6 +166,17 @@
                                 ToolTip.Tip="{Binding ActiveViewModel.ViaToolTipText}" Padding="6,3">
                             <mi:MaterialIcon Kind="RecordCircleOutline" Width="16" Height="16"/>
                         </Button>
+                        <!-- Port tool (L8e D3) — §10.6's "click an edge, get P1". A port is an
+                             ordinary label with its port flag set; the tool sets the flag and
+                             auto-numbers, and nothing else. The reference impedance lives in the
+                             .cem, and which END of the conductor the port names is inferred from
+                             the geometry at extraction time (and refused when ambiguous), never
+                             stored on the shape where it would go stale under an edit. -->
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Port}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Port"
+                                ToolTip.Tip="Port — click a conductor end to place an EM port (auto-numbered)" Padding="6,3">
+                            <mi:MaterialIcon Kind="TargetVariant" Width="16" Height="16"/>
+                        </Button>
                         <Button Click="OnInsertBitmap" ToolTip.Tip="Insert Bitmap…" Padding="6,3">
                             <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
                         </Button>
@@ -205,6 +216,14 @@
                         <ToggleButton IsChecked="{Binding ActiveViewModel.ShowPCellPins}"
                                       ToolTip.Tip="Show PCell pins" Padding="6,3">
                             <mi:MaterialIcon Kind="PinOutline" Width="16" Height="16"/>
+                        </ToggleButton>
+
+                        <!-- EM mesh overlay toggle (brief-L6-L7-em-ui.md R-em-15) — same
+                             session-only view-preference contract as the pin toggle above; draws
+                             nothing until a .cem's Mesh button has produced one. -->
+                        <ToggleButton IsChecked="{Binding ActiveViewModel.ShowEmMesh}"
+                                      ToolTip.Tip="Show EM cross-section mesh" Padding="6,3">
+                            <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
                         </ToggleButton>
 
                         <!-- Geometry snap toggles (docs/sonnet-briefs/brief-snap-distance-and-geometry-

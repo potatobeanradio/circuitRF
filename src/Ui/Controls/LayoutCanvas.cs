@@ -305,6 +305,10 @@ public sealed class LayoutCanvas : Control
         {
             Theme = theme, ShowGrid = true, Overlay = _viewModel?.Overlay, PathCache = _pathCache,
             BaseDir = _viewModel?.InstanceBaseDir, ShowPCellPins = _viewModel?.ShowPCellPins ?? true,
+            ShowEmMesh = _viewModel?.ShowEmMesh ?? false, EmMesh = _viewModel?.EmMeshReport,
+            ShowPlanarMesh = _viewModel?.ShowPlanarMesh ?? false, PlanarMesh = _viewModel?.PlanarMeshReport,
+            PlanarCurrentDensity = _viewModel?.PlanarCurrentDensity,
+            PlanarPorts = _viewModel?.PlanarReferencePlanes ?? [],
         };
 
         context.Custom(new LayoutDrawOperation(

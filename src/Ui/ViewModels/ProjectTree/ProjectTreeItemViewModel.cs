@@ -76,6 +76,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
         (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
+        (NodeKind.EmSetupFile,     _)     => MaterialIconKind.SineWave,
         (NodeKind.KnownFile,       _)     => _node.IsDirectory
                                                 ? MaterialIconKind.FolderOutline
                                                 : MaterialIconKind.FileOutline,
@@ -99,6 +100,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// "Reload Technology" context items. No editor yet (L0d); double-click stays a no-op.</summary>
     public bool IsTechFile => Kind == NodeKind.TechFile;
 
+    /// <summary>brief-L6-L7-em-ui.md R-em-9 — a .cem EM setup document.</summary>
+    public bool IsEmSetupFile => Kind == NodeKind.EmSetupFile;
+
     /// <summary>True when this .ctech node is the workspace's current default technology.
     /// Resolved through the host so it reflects the live .cws state when the menu opens.</summary>
     public bool IsWorkspaceDefaultTech => _actions?.IsWorkspaceDefaultTech(this) ?? false;
@@ -116,7 +120,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>True for openable leaf files (.csch / .csym / .clay / .cdd / .ctech) — drives the "Open" context item.</summary>
     public bool IsOpenableFile =>
-        Kind is NodeKind.DataDisplayFile or NodeKind.TechFile
+        Kind is NodeKind.DataDisplayFile or NodeKind.TechFile or NodeKind.EmSetupFile
         || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay");
 
     /// <summary>True when this node has unsaved work — drives the "Save" context item.
@@ -129,6 +133,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         NodeKind.Cell            => "Save Cell",
         NodeKind.DataDisplayFile => "Save Data Display",
         NodeKind.TechFile        => "Save Technology",
+        NodeKind.EmSetupFile     => "Save EM Setup",
         NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".csch" => "Save Schematic",
         NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".csym" => "Save Symbol",
         NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".clay" => "Save Layout",
@@ -153,6 +158,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.DataDisplayFile
                                           or NodeKind.ColorThemeFile
                                           or NodeKind.TechFile
+                                          or NodeKind.EmSetupFile
                                           or NodeKind.KnownFile
                                           or NodeKind.OtherFile;
 
@@ -436,6 +442,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.DataDisplayFile => f.DataDisplays,
             NodeKind.ColorThemeFile  => f.ColorThemes,
             NodeKind.TechFile        => f.TechFiles,
+            // An EM setup is process/analysis configuration alongside the technology it reads, so it
+            // rides the same filter toggle rather than earning a seventh checkbox of its own.
+            NodeKind.EmSetupFile     => f.TechFiles,
             NodeKind.KnownFile       => f.KnownFiles,
             NodeKind.KnownFilesGroup => f.KnownFiles,
             NodeKind.UserFolder      => f.WorkspaceFileSystem,

@@ -1,5 +1,465 @@
 # UI (Avalonia) — local conventions
 
+The via's z-integral — removing the midpoint rule (brief-via-z-integral, 2026-08-06) — **COMPLETE.**
+A follow-up to L9 rather than a sixth slice of it; almost all of it is engine-side, and the whole
+story is in `src/Engine/Mom/CLAUDE.md`'s own follow-up section (at the end of that file).
+
+**What a user will notice: one refusal is GONE.** L9e shipped a named refusal for a via that is long
+against its own footprint, quoting ℓ/w, because the midpoint rule made such a via's inductance high by
+≈ 0.673·(ℓ/w) — 4.9% on the shipping MMIC post. **That defect is fixed**: the z-integral is resolved
+and the same sweep now measures flat to **0.124%** over ℓ/w ∈ [0.01, 5] and a 16× range of footprint
+width, so `PlanarLevels.MaxLengthOverWidth` and its refusal are retired. A tall narrow via now
+*solves* instead of refusing.
+
+**The ELECTRICAL refusal stays, and its wording changed because what it bounds changed.** k·ℓ ≤ 0.05
+is no longer about the quadrature — it is about the BASIS: a via is one z-rooftop per inter-level gap,
+so the current it carries is uniform along its whole length. That is exact for a short via and wrong
+for a resonant one however well the Green's function is integrated. The remedy it names is unchanged
+(split the via across intermediate levels) for a different reason: subdivision now buys a current
+*profile* rather than a better integral.
+
+**Retiring the geometric bound WIDENS NOTHING**, and the release note should say so rather than let it
+read as new capability. `Dcim.ValidatedRhoOverLambdaAtHeights = 0.1` on `G_A^zz` already restricts
+every via-bearing full-wave run to electrically small structures — §10.7's own FR-4 hero is refused
+outright at 10 GHz — and that limit is untouched. This makes the answers that were already reachable
+correct.
+
+**Gate:** `tests/Ui.Tests` **4,740 and green**, with **one gate test UPDATED rather than deleted** —
+`L9PhaseGateTests`' ℓ/w case now asserts that the geometry it used to refuse is ACCEPTED, and that the
+electrical refusal still fires on a 60 µm gap at 30 GHz. `tests/Engine.Tests` **993 routine in 70 s**;
+`tests/Firewall.Tests` 4/4. **Not interactively verified** (no visual driver here, as in every prior
+EM phase) — please confirm on your end that an EM setup carrying a tall narrow via now runs instead of
+showing the ℓ/w refusal, and that an ordinary two-level layout with posts is unchanged.
+
+L9's PHASE GATE — the product path, on a two-level structure with vias (2026-08-05) — **BUILT, and it
+found two things before it passed anything.** `tests/Ui.Tests/Em/L9PhaseGateTests.cs`, modelled on
+L8e's own gate and living here for the same reason: what a phase gate adds over the engine's own tiers
+is the **product path** — drawn artwork → extractor → registry → kernel → `DataSet` → `.snp` — and
+three of those five are in `src/Ui`. Read `src/Engine/Mom/CLAUDE.md`'s "L9's PHASE GATE" section for
+the gate's own reasoning and `src/Ui/Layout/Em/CLAUDE.md` for the extractor fix.
+
+**Finding 1 — the Ui-side via extraction was DEAD CODE.** `PlanarExtractor.BuildStack` skips every
+`StackupKind.Via` entry (correctly — a via has no z band of its own), but the `ViaShape` branch looked
+its drawing layer up in the map built FROM those bands, so the lookup could never match: **every drawn
+via was silently ignored and `BuildVias` was unreachable.** That is why it had no test — nothing could
+reach it. Fixed by binding via entries separately, straight off the stackup.
+
+**Finding 2 — a BACKSIDE via is not representable by this kernel at all**, which corrects §11's own L9
+gate sentence rather than merely failing it. A backside via joins a signal level to the GROUND PLANE,
+and the ground plane is the laterally infinite plane the Green's function handles analytically, never
+a meshed level; L9c's via basis spans two adjacent MESHED levels. It needs an attachment (half) basis
+on the PEC boundary, which does not exist. The extractor already drops such a via **with a note**, so
+the behaviour is correct and reported — it simply cannot be gated. The gate therefore uses the
+**Metal1↔Metal2 post**, the airbridge the MMIC stackup was built for.
+
+**Finding 3 — gate 2's own first premise was wrong, and the measurement is what said so.** Written as
+"a floating strip 3 µm above the line perturbs it more than one 50 µm above", it FAILED. Worst |ΔS|
+against the shipped one-level answer, a 300 × 100 µm Metal1 line at 20 GHz: **8.87e-4 at 3 µm,
+7.12e-3 at 50 µm, 5.27e-4 at 400 µm** — a maximum around 50 µm. Not a kernel defect: a **floating**
+conductor's perturbation vanishes at BOTH ends (tight against the line it rides at the line's own
+potential; far away it decouples). A driven or terminated second line would fall monotonically. The
+gate is now stated past that maximum, where the limit is a theorem (13.5× down from 50 to 400 µm), and
+the near point is kept and REPORTED so the non-monotonicity stays visible.
+
+**Gate 1's own numbers, because they leave nothing to argue about** — a 300 × 100 µm airbridge on the
+MMIC starter at the shipping mesh, N = 1,023 (8 vertical) against N = 806 with the posts removed:
+**|S₂₁| = 0.9993 bridged against 0.0502 open at 10 GHz (19.9×), and 0.9991 against 0.1468 at 30 GHz
+(6.8×)**. With the posts the bridge transmits essentially perfectly; without them only the capacitive
+gap is left, and its own |S₂₁| rises with frequency exactly as a series capacitance must.
+
+**The gate is three claims**, all external-data-free: the vias carry the current across a gap in Metal1
+(|S₂₁| bridged against |S₂₁| with the posts removed — a COMPARISON, because L9d measured the two-level
+de-embedding residual at the same order as an absolute |S₁₁| signature); the two-level answer
+degenerates onto the SHIPPED one-level one as the inter-level gap opens; and the wiring itself. The
+first two are `Category=Benchmark` (**149.9 s per de-embedded point at N = 1,023** on the airbridge,
+measured alone; **5 m 28 s + 6 m 29 s = 11.97 min** for the pair); the three wiring tests are routine
+at ~25 ms.
+
+**Gate:** `tests/Ui.Tests` **4,740 and green** (+3 routine), `tests/Engine.Tests` 992 (991 + 1
+pre-existing skip) in 68 s — unchanged by this work, since the only code touched is
+`PlanarExtractor` — `tests/Firewall.Tests` 4/4, and both Benchmark gates pass on the numbers above.
+
+L9e — adaptive sampling, the N budget, the refusal audit, and the VIA finding
+(brief-L9e-adaptive-sampling-budget-and-the-phase-gate.md, 2026-08-05) — **M1-M4 COMPLETE; L9's PHASE
+GATE IS NOT.** Last of L9's five slices. Read `src/Engine/Mom/CLAUDE.md` §L9e for the measured curves,
+every deferral's number, and the §11 gate proposal; `docs/design/layout-view.md`'s own §11 now carries
+that proposal too, marked as awaiting your ruling.
+
+**Gate:** `tests/Engine.Tests` **992 routine tests in 65 s** (991 pass + 1 pre-existing skip, +19 over
+L9d's 973-in-51 s — **just over the ~60 s ceiling, said plainly rather than smoothed**), plus **7
+methods tagged `Category=Benchmark`, ~10 min**. `tests/Ui.Tests` **4,737 and green**, with **two tests
+UPDATED, not loosened** (`EmRefusalWordingTests`, `ExtractionRefusalTests` — both asserted refusals
+that named a PHASE, and the phases have arrived). `tests/Firewall.Tests` 4/4.
+
+**The headline is a defect, not a feature: the via's terminal inductance is high by ≈ 0.67·(ℓ/w).**
+Nobody had ever compared a via to a physical quantity — every L9c/L9d via test is structural. The
+kernel is right and the fill is right; L9c's MIDPOINT RULE is not, and the reason it went unnoticed is
+that its refusal bounds the wrong quantity: the stated O((kℓ)²) cost is about the wave factor alone,
+while the same substitution also freezes 1/R over the via's length, which is a purely GEOMETRIC
+condition with no frequency in it. **§10.7's own 3 µm-over-40 µm MMIC spacer is 4.9% high**, and the
+existing electrical bound admits an aspect ratio ~5× worse than that. A second, geometric bound now
+ships with the measured slope in it, and the remedy — splitting the via across intermediate levels,
+which the refusal already advised — is now measured to converge (55% → 1.1% at n = 8).
+
+**Two things a user will notice, both new refusals, both earned:** a via that is long against its own
+footprint is refused by name with the error it would have made and the fix; and a sweep whose lowest
+frequency is near DC is refused instead of spending 50 s and ending in a raw framework exception (L8e
+recorded that hole and could not reach it — adaptive sampling, which picks its own frequencies, is
+exactly what makes it reachable).
+
+**Adaptive frequency sampling is built and is OFF by default.** With it on, the panel's notes say how
+many points were actually SOLVED and the worst disagreement refinement stopped at — that reaches the
+EM panel for free through `PlanarKernelResult.Notes` → `EmRunService`, no Ui change. A user who cannot
+tell whether a value was solved or modelled cannot tell whether it is credible, which is the same
+argument L8e made for naming the kernel in every outcome's `Reason`. **The published grid is always
+exactly the grid you asked for**, and a solved point carries the solver's own matrix byte for byte.
+
+**ACA was measured and deferred with the number** (53-62% rank on real far-field blocks — the blocks
+reachable under the unknown ceiling are simply not many wavelengths apart), and **R17's ceiling
+message is now known to understate a real run by ~1.6×** (~607 MB projected at the ceiling against the
+381 MB of matrix it quotes) — the constant is yours to move or leave.
+
+**Not interactively verified** (no visual driver here, matching every prior EM phase) — please confirm
+on your end: an EM setup whose layout carries a via that is tall against its footprint now shows a
+named refusal quoting ℓ/w rather than solving; a sweep starting at a near-DC frequency is refused
+rather than hanging; and a two-metal-level layout still extracts and simulates exactly as it did after
+L9d (nothing in this slice changes that path).
+
+L9d — ports on more than one level, references, de-embedding, and the cost
+(brief-L9d-multilevel-ports-and-references.md, 2026-08-05) — COMPLETE, M1–M5. **Fourth of L9's five
+slices, and the first that reaches `src/Ui` at all** — every earlier L9 slice was engine-only. Read
+`src/Engine/Mom/CLAUDE.md` §L9d for the kernel wrapper, the two refusals and the cost, and
+`src/Ui/Layout/Em/CLAUDE.md` §L9d for the extractor, the port level and the provenance stamp.
+
+**Gate:** `tests/Engine.Tests` **973 routine tests in 51 s** (L9c's own baseline was 965 in 51 s, so
+the +8 cost nothing measurable) plus **9 methods tagged `Category=Benchmark`, ~6 min** — every
+de-embedded point and every multi-level fill. `tests/Ui.Tests` **4,737, green** (+5 new; **one
+pre-L9d test UPDATED, not loosened** — `Extractor_RefusesMultipleMetalLevels_ByName_PointingAtL9`
+asserted the refusal this slice delivers). `tests/Firewall.Tests` 4/4, unchanged.
+
+**The number that decides L9e: a de-embedded two-level point costs 71.9 s, a 101-point sweep ~73
+minutes** — measured at N = 514 with one via and four single-level standards, against L8d's own
+7.66 s at N = 552. That is **9.4× at essentially the same N**, so what moved is the per-entry cost of
+the general kernel, not the unknown count. **L9e's adaptive frequency sampling is no longer optional.**
+The measurement was taken with the test run ALONE, per L8d's own warning that a benchmark sharing a
+run reads more than twice as slow.
+
+**Two things a user will notice, both refusals, both earned rather than "not implemented":** a port
+placed **on a via** is refused (a vertical basis has no end in the layout plane and its unit current
+already crosses its footprint — driving the horizontal metal at the same point is a perfectly good
+port, just a *different* one), and a port on a **buried** level de-embeds nothing (C_pul comes from an
+electrostatic image series over a grounded slab, and the de-embedded S is *referenced* to the Z_c that
+produces — so a wrong C_pul renormalises every published s-parameter rather than merely blurring it).
+The second points at L9c's un-run Tier 4, which is the single most valuable thing anyone could build
+next for this area.
+
+**Not interactively verified** (no visual driver here, matching every prior EM phase) — please confirm
+on your end: a two-metal-level layout extracts without the old "refused, arrives at L9" message; the
+EM panel shows one checkbox per signal level under "Analysis levels" and toggling one is undoable and
+clears the mesh; a port label sitting on metal on two levels is refused **by name**; and a `.cem`
+written before this phase still opens and re-saves byte-identically.
+
+L8e — the kernel registry, ports from labels, the heat map, and **L8's PHASE GATE**
+(brief-L8e-results-registry-and-the-phase-gate.md, 2026-08-05) — COMPLETE. **Phase L8 is DONE.**
+Read `src/Engine/Mom/CLAUDE.md` §L8e for the registry, the `"planar"` group and the current-density
+reduction, and `src/Ui/Layout/Em/CLAUDE.md` §L8e for the Ui delta.
+
+**The gate is three sentences and all three pass, on BOTH starters, at the shipping mesh, through
+the product path — one drawn layout, a `.cem`, Simulate.**
+
+| | PCB 2-Layer (FR-4) | MMIC GaAs |
+|---|---|---|
+| **Stub** — λ_g/4 open stub notch vs. the open-end-corrected prediction | **+0.8%** (5.536 GHz vs 5.490), −7.7% vs bare, N = 790 | **+3.8%** (29.789 GHz vs 28.694), −0.7% vs bare, N = 2,830 |
+| **Bend** — reciprocity / passivity / \|S₁₁\| rising / mitre | 1e-9 / Σ\|S\|² ≤ 0.983 / 0.047→0.554 over 2.5–10 GHz / **mitred 0.78× square** | 1e-9 / Σ\|S\|² ≤ 0.999 / 0.011→0.118 over 10–40 GHz / **mitred 0.91× square** |
+| **A vs B** — ε_eff on a uniform line | **0.96%** at 1 GHz, 1.76% at 2 GHz (N = 552) | **3.15%** at 10 GHz, 3.72% at 20 GHz (N = 501) |
+
+- **The stub number is only meaningful because the fixture is sized from KERNEL A's ε_eff.** The first
+  version sized it from the crude pre-solve estimate (εᵣ+1)/2, which is 23% low on FR-4; the stub came
+  out 10% too long and resonated 20% below its own prediction, and a ±15% band passed it anyway. That
+  is the shape of a gate that measures nothing. A's ε_eff is the right input and is not circular — it
+  is a 2-D quasi-static solve sharing no code with kernel B, already gated to 2% against
+  Hammerstad-Jensen.
+- **The open-end extension is REAL and is now measured**: the notch is below the bare λ_g/4 on both
+  starters, which is exactly the thing someone would otherwise "fix" the solver toward.
+- **A and B diverge with frequency and that is a RESULT, not an error** — B has microstrip dispersion
+  and A holds C at its quasi-static value. The gate is on the agreement at the bottom of each band.
+- **NO LOSSLESSNESS CHECK EXISTS ANYWHERE.** An open planar structure radiates and launches surface
+  waves; Σ|S|² = 0.80 at 10 GHz on FR-4 is physics, not a defect. Reciprocity and passivity carry over
+  and are gated.
+- **The bend's shunt C is an order-of-magnitude-and-sign gate, deliberately.** Extracted 118.6 fF
+  (FR-4, de-rotated to the corner with the run's own reported γ) against Kirschning-Jansen-Koster's
+  302 fF, and 6.9 vs 9.9 fF on GaAs. It reads low because a pure-shunt fit of an L-C-L network always
+  does. Fitting L-C-L properly is a modelling exercise, not a phase gate.
+
+**Two real defects were found BY the gate rather than by inspection, which is the argument for having
+run it at the shipping mesh on both starters:**
+1. **The port ambiguity threshold was scaled to the conductor's BOUNDING BOX.** An L-bend's box is
+   arm × arm, so on GaAs the threshold was 49.8 µm and a port at the exact centre of the 72 µm line
+   end (36 µm from the flanking edge) was refused as "at a corner". The scale is now local to the end.
+   Pinned by a millisecond test (`EmPortExtractionTests`) so nobody needs a 2-minute solve to catch it.
+2. **A near-DC frequency produces a raw framework exception, not a refusal.** Found via a test bug (a
+   point *count* passed where a frequency list was expected put a 6 Hz point in the sweep). Not
+   reachable from the EM panel; recorded in `src/Engine/Mom/CLAUDE.md` §L8e rather than fixed.
+
+**The cost, reported rather than hidden.** The A-vs-B gate at the shipping mesh measures **~74 s for
+FR-4 alone and ~2 min 12 s for both starters** — against the routine budget of ~90 s for the whole
+repository. The cost is not the DUT: it is two calibration standards per port, which L8d measured at
+2.58× the DUT's unknowns and 78% of a de-embedded point, and which the two ends of a plain microstrip
+do not share. So **all three accuracy gates are `Category=Benchmark`** and the routine tier keeps the
+claim most likely to break and cheapest to check: `Gate3Wiring`, one layout and two `.cem`s through the
+registry into both kernels on a coarse mesh, **2.5 s for both starters**. Opt-in tier: **~8.5 min**
+(`--settings circuitrf.benchmark.runsettings`), which is at the brief's ~8 min budget.
+
+**R18's 30-second target survives the restored Ports row (D8).** §10.10 struck "Ports — Port tool,
+click each end, 5 s" at L7 because kernel A meshes no port; L8 restores it. Scripted against the real
+view models: **11 interactions, 25 s** on a bend, and the analysis-kind step costs **zero** because
+`Auto` is now the default and picks B by itself, saying so in the notes. A uniform line costs one extra
+click (26 s) to override Auto's correct choice of A. **What the user waits for after Simulate is the
+new part**: ONE frequency at the shipping mesh on §10.7's own hero (N = 552) is **48 s** — mesh + DCIM
+fit + fill + solve + two calibration standards + the `.snp`. A 101-point sweep is ~80 minutes. Kernel A
+answers the same sweep in well under a second. The interaction budget was never the constraint here.
+
+**`EmSetup.AnalysisKind` now defaults to `Auto`** (it was `CrossSection`; L8b deferred the change to
+this slice). Safe because auto-selection is conservative — a geometry A accepts still goes to A and
+still produces the identical number, and a pre-L8b `.cem` still round-trips byte-identically. The only
+behaviour that changes is that geometry which used to be REFUSED now runs on kernel B, which is what
+shipping the full-wave kernel means. One existing test caught the consequence and was updated, not
+loosened: a circle used to come back as "…circle…", and now comes back as "place ports" with the
+circle refusal in the notes — both halves asserted.
+
+L8b — the surface mesher, the plan-view overlay and the N report
+(brief-L8b-planar-mesher-and-overlay.md, 2026-08-05) — COMPLETE, all four milestones. **Read
+`src/Engine/Mom/CLAUDE.md`'s L8b section for the mesher and every measured number, and
+`src/Ui/Layout/Em/CLAUDE.md`'s L8b section for the Ui delta.** This slice adds NO PHYSICS: it turns
+drawn geometry into cells, counts them, draws them, and refuses politely above the budget.
+
+**The N report is the entire product, and the number is the one the design note predicts.** §10.7's
+own worked example — 50 Ω microstrip on 1.6 mm FR-4, 2.9 × 20 mm at 10 GHz — meshes to 297 cells and
+**N = 552**, which is the "few hundred" §10.7 arithmetic says it should be. The MMIC counterpart is
+378 cells / N = 705.
+
+- **D8 landed on a TENSOR-PRODUCT grid, and no one-click library part comes near R17's 5,000
+  ceiling** — MBend/MTaper/MKlopf measure 536–2,055 unknowns across both starter technologies. What
+  makes that true is **per-axis** spacing (each axis's pitch from the narrowest run measured along
+  that axis), not isotropic: isotropic on the §10.7 taper would have been ~15,000.
+- **The staircased mitre survives, which is what L8's own phase gate turns on** — 2.8% cut-area error
+  at the auto cell size, 18 cells removed, N 550 against the unmitred 586, so mitred and unmitred stay
+  distinguishable. **The smooth tapers are the sharper finding**: 17–24% worst local WIDTH error while
+  the global AREA error is 0.5%, and a Klopfenstein's whole value is an equiripple |Γ| of 0.05. The
+  recommendation for L8c is in the report and in the engine note.
+- **D5 — the plan-view overlay is added and the cross-section INSET STAYS.** Kernel A's mesh has no
+  coordinate mapping to the plan view and its inset is still right; kernel B's is in the same plane
+  the canvas draws. Which one shows follows from which mesh was computed, not from a mode. Both
+  default to off at the render layer, so no export draws either, by construction.
+- **D7 — the `.cem` names its analysis and there is no automatic kernel selection.** `AnalysisKind`
+  and `PlanarMesh` are omitted from the file when they hold their defaults, so every pre-L8b `.cem`
+  re-serialises byte-identically — pinned by a test that asserts the text contains neither field. The
+  registry is L8e's.
+- **A real robustness defect was found by Tier 3, not by inspection**: the first grading scheme put a
+  hard cutoff exactly where the marcher's own geometric steps land, so a floating-point last bit
+  decided whether a cell was graded, and translating the same rectangle 3.7 mm changed the mesh by
+  33%. Deriving the growth ratio instead makes the field continuous; the mesher is now exactly
+  translation-invariant, which is stronger than the tier asked for.
+
+**Gate:** Engine 758 (+22, ~0.3 s for the new file, none tagged `Benchmark` — this slice's sweeps are
+milliseconds), Ui 4,677 (+23), Firewall 4 — all green. Tier 6 and the PCell half of Tier 7 live in
+`tests/Ui.Tests/Em/PlanarMeshPCellTests.cs` because the PCell generators are in `src/Ui`.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: an EM setup
+switched to the planar kernel shows cell boundaries drawn OVER the artwork (not as an inset) and they
+pan and zoom with the geometry; the panel reports the unknown count, the cell count and the frequency
+λ_g was taken at; editing the `.clay` clears the mesh rather than leaving a stale one on screen; and a
+cross-section setup still shows the inset panel exactly as before.
+
+L7b-b — the general modal decomposition (brief-L7b-b-general-modal-decomposition.md, 2026-08-05) —
+COMPLETE, all five milestones (M2 deliberately not built — see below). **Read
+`src/Engine/Mom/CLAUDE.md`'s L7b-b section** for the physics; `src/Ui/Layout/Em/CLAUDE.md`'s L7b-b
+section for the (very small) Ui delta.
+
+**The Ui half was almost free, and that is L7b's doing rather than luck** — the extractor already
+built 2N ports for any N, `EmSetup.PortZ0s` was already an arbitrary-length list, and the panel's
+port rows were already built from the extracted count. Three lines changed: `EmSolveResult` gained a
+defaulted `SolveNotes`, `EmRunService` appends it beside the mesh and RLGC notes, and that is all.
+
+**The phase gate runs at three conductors:** three coupled lines extracted from a real layout →
+`EmRunService` writes a real `.s6p` → `EmBackAnnotation` places an `SnP` → `NetExtractor` +
+`CnlWriter` produce a real `netlist.cnl` → `SchematicRunService` runs an HB analysis against it
+(`EmCoSimulationTests.TG5_…`). `EmBackAnnotation` needed **no** change; a second test drives the
+4 → 6 port change and confirms the same component is repointed rather than duplicated.
+
+- **`Route B` was NOT built, and that is the phase's headline decision, not an omission.** D2 said
+  the measurement decides; Route A's worst error is 4.9e-4 in |S| on a realistic asymmetric pair and
+  1.7e-2 in a fixture built to break it — two orders of magnitude below the `[C]` solve's own
+  discretisation error. The measurement, and the exact closed-form oracle it was taken against, are
+  in the engine note.
+- **The `tline` group grew a mode axis**; `…Even`/`…Odd` survive as an alias for N = 2 only, sliced
+  from the same arrays, so no saved `.cdd` trace breaks.
+- **An ASYMMETRIC pair now runs to a real `.s4p`.** Two Ui tests were **updated, not loosened** —
+  they asserted the refusal that pointed at L7b-b, which is what this phase delivers; the
+  "a kernel refusal is the KERNEL's" claim moved to R-gen-9's conductor-ceiling fixture.
+
+**Gate:** Firewall 4, Core 1,118, RfCore 281, Ui 4,654, Engine 711 (+1 pre-existing skip) — 6,768
+pass, 0 fail, on two consecutive full runs. 30 new Engine tests, 3 new Ui tests.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: an EM setup on
+THREE parallel lines shows a six-row per-port Z₀ list in the panel, Simulate lands an `.s6p`, the
+panel's notes include the mode-coupling residual line, and a deliberately asymmetric pair (two
+different widths) now simulates instead of showing a refusal.
+
+L7b — coupled lines and co-simulation (brief-L7b-coupled-lines-and-cosim.md, 2026-08-05) — COMPLETE,
+all five milestones. **Read `src/Ui/Layout/Em/CLAUDE.md`'s own L7b section** — D3's port numbering,
+why per-port Z₀ is additive, and back-annotation's two-step idempotency key live there.
+
+**The phase gate is co-simulation end to end, and it runs:** a coupled pair extracted from a real
+layout → `EmRunService` writes a real `.s4p` → `EmBackAnnotation` places an `SnP` → `NetExtractor` +
+`CnlWriter` produce a real `netlist.cnl` at the workspace root → `SchematicRunService` runs an HB
+analysis against it and produces results (`EmCoSimulationTests.TC5_…`). Every step drives the
+production path; nothing is stubbed.
+
+- **The extractor builds `2N` ports** (D3: `2k−1` = conductor *k*'s near end, `2k` its far end), not
+  the two on `conductors[0]` kernel A built.
+- **`.cem` gained an optional `PortZ0s`**, omitted when empty — so every pre-L7b `.cem` loads AND
+  re-serializes byte-identically. `Port1Z0`/`Port2Z0` survive as the near/far defaults at any
+  conductor count. The panel shows a per-port list only above two ports.
+- **`EmBackAnnotation` places-or-updates an ORDINARY `SnP`** — no new component, no new analysis kind.
+  Idempotent on a two-step key (deterministic `EM_<setup>` name, then the file already read): a
+  re-run that changes nothing does not dirty the schematic, a renamed component is still found, and a
+  port-count change repoints the same component instead of adding a second.
+
+**One real bug in Core this surfaced and fixed:** `CnlWriter` wrote an SnP's `File` **unquoted**,
+while `CnlReader` resolves a relative Touchstone path only inside its quoted-string branch — so a
+relative SnP path was looked for relative to the process working directory. It had never bitten
+because the Browse… picker always produced an absolute path; back-annotation is the first thing to
+write a relative one (R-cpl-13 stores workspace-relative). Three gate tests in
+`Core.Tests/Netlist/CnlWriterTests.cs`.
+
+**Gate:** Firewall 4, Core 1,118, RfCore 281, Ui 4,651, Engine 681 (+1 pre-existing skip) — 6,735
+pass, 0 fail, on two consecutive full runs. 25 new Engine tests, 19 new Ui tests, 3 new Core tests.
+Three pre-L7b Ui tests were **updated, not loosened** — they asserted that a coupled pair is refused,
+which is exactly what this phase supersedes; they now assert that a SYMMETRIC pair runs and an
+ASYMMETRIC one is refused by name.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: an EM setup on a
+coupled pair shows a four-row per-port Z₀ list in the panel, Simulate lands an `.s4p`, and
+back-annotating twice leaves exactly one SnP component in the schematic.
+
+Phases L6/L7, Ui half — the EM setup document, extraction, mesh viewer, run
+(brief-L6-L7-em-ui.md, 2026-08-04) — COMPLETE, all five milestones. **It has its own `CLAUDE.md`:
+read `src/Ui/Layout/Em/CLAUDE.md` before touching anything in there** — the two DBU scales, the
+height rules, who refuses what, and why the mesh overlay is an inset panel are all recorded there
+rather than repeated here. New area `src/Ui/Layout/Em/` (framework-free, enforced), the
+`.cem` document + panel, `LayoutRenderer.Mesh.cs`, and one additive RfCore change.
+
+**The Tier A gate is met, and it is the only thing that proves the Ui half hands the engine the
+geometry it thinks it does.** A 2.9 mm × 20 mm rectangle on `Pcb2Layer`'s Top Copper, extracted and
+handed straight to the kernel, lands **within 3% of 50 Ω with ε_eff in 3.0–3.6** — matching
+`MicrostripOracleTests.T3_5_TheFiftyOhmHero_LandsAtFiftyOhmsWithAFewHundredUnknowns`. The MMIC half
+is stronger still: a 72 µm line on Metal1 reproduces a hand-built `GaAsMicrostrip`-shaped problem's
+Z₀ and ε_eff **to 1e-6 relative**. The same 50 Ω result comes back through the whole run path
+(`EmRunTests.TheFiftyOhmHero_LandsAtFiftyOhms_ThroughTheWholeRunPath`), so extraction, `CanSolve`,
+solve, and the `DataSet` are gated end to end.
+
+## The one bug the tests caught that would have been silent: two DBU scales, not one
+
+R-em-2 says "DBU → metres happens exactly once, here". **It is two conversions with two different
+scales.** Shape coordinates use the layout's own `DbuPerMicron`; stackup thicknesses use
+`LayoutUnits.DefaultDbuPerMicron`, always — neither `Technology` nor the `.ctech` file carries a
+resolution, so there is nothing else those integers could be relative to, and `SubstrateResolver`
+already named that same constant `FallbackDbuPerMicron` for exactly this reason. Conflating them
+rescales every substrate height by the ratio: a plausible answer, wrong by 10× on a layout drawn at
+100 DBU/µm, with the layer table and every drawn shape still perfectly correct.
+`DbuToMetres_RoundTrips_AtSeveralResolutions` is what found it — a test written to check a round
+trip, not to look for this.
+
+## R-em-4/4a — the height rules are both 2%-scale traps, and both are pinned
+
+**Ground is the TOP SURFACE of the highest ground-designated conductor below the signal**, not
+`Stackup.Bottom == Ground`. Both starters set the boundary condition AND carry a designated
+conductor, at different heights; taking the boundary literally puts the plane 35 µm low on 1.6 mm
+FR-4 and fails Tier A outright. **A conductor's z band is absorbed into the dielectric ABOVE it**,
+and adjacent same-material regions merge — which is what collapses `MmicGaAs`'s explicit air layer,
+Metal1's empty band and Metal2's band into ONE air region. Without the merge the Metal2 case grows
+two spurious regions and stops matching the engine's own `GaAsMicrostrip`. Both starters' full
+region tables are asserted field-for-field against restated `EmProblemBuilders` values (the two test
+projects share no code, so restating is this repo's convention, each annotated with the builder call
+it mirrors).
+
+## Who refuses what — the split that must not be duplicated
+
+The extractor owns the GEOMETRIC refusals (bend, curved edge, taper, non-parallel conductors, an
+unbound layer, two signal levels, stripline, ℓ = 0, nothing on a conductor layer); the kernel owns
+the problem-level ones. **A coupled pair extracts cleanly and is refused by
+`QuasiStaticKernel.CanSolve` with its own L7b message** — there is deliberately no second copy of
+that refusal in `src/Ui`. Every row of R-em-6's table has a test asserting the wording is SPECIFIC
+(names the feature, the location, and where the capability arrives) rather than merely non-empty,
+which is the same bar the engine half's R-mom-17 tests hold. Refusal coordinates print in the
+technology's own display unit (mil on `Pcb2Layer`) and the tests assert against `LayoutUnits.Format`
+rather than a hard-coded string — not circular, since what is under test is that the extractor names
+the RIGHT coordinate.
+
+## Two decisions that CHANGED `docs/design/layout-view.md`, both now written into it
+
+- **D1 — §10.8's R17a.** An EM setup is its own `.cem` document that REFERENCES a layout, not a
+  property persisted in the `.clay`. It serves R17a's own stated purpose better (the standing
+  "analyses attach to a `TestBench`, never to a `Cell`" invariant) and buys three things embedding
+  does not: several setups against one layout, editing without dirtying the `.clay`, and a setup
+  that is independently diffable. Workspace-scoped and **never scratch**, mirroring `TechDocument`
+  exactly — no materialize path to build. `WorkspaceViewModel.ResolveEmLayout` prefers the OPEN
+  layout editor's live model over the on-disk file, so an unsaved edit is what gets analysed.
+- **D5 — §10.10's budget table lost its 5-second "Ports" row.** For a uniform cross-section the two
+  ports ARE the two ends of the extracted line, by construction — the same fact that makes
+  de-embedding a no-op (R-mom-15). The 30-second target got easier, not harder.
+
+## The mesh overlay is an inset panel, and the conductor gets a locator box
+
+The mesh lives in the CROSS-SECTION plane; the layout canvas shows the PLAN view. There is no
+coordinate mapping between them, so painting mesh segments onto artwork would be a picture of
+nothing — §10.5's "mesh viewer" is a cross-section viewer. `LayoutRenderOptions.ShowEmMesh`/`EmMesh`
+copy `ShowPCellPins`' contract exactly (screen-space, never layer geometry, never counted in
+`LayoutFrameCounters`, never reachable by an exporter, default `false`, toggle default at the VM
+layer) — asserted by a pixel oracle both ways plus a counter-equality test.
+
+**The conductor locator box is an honest affordance, not a fudge.** On a true-scale panel spanning
+the 20-substrate-height truncation (R-mom-10 requires truncation to be visible), a 2.9 mm strip
+35 µm thick measures FOUR PIXELS — I measured it, which is why the box exists. It is drawn AT the
+conductor's own bounds, only widened to a legible minimum. Do not "fix" this by cropping the panel
+to the conductors: that hides truncation, which is the one place kernel A can be quietly wrong.
+
+## R-em-20 — hash the extracted `EmProblem`, never the file bytes
+
+A cosmetic layout edit must NOT report staleness and a real cross-section change must ALWAYS report
+it; the `EmProblem` is exactly "everything the answer depends on and nothing else", so hashing it
+makes both true by construction. Geometry, mesh settings and port impedances get **three separate
+hashes** so a mismatch says WHICH moved. Comparison happens BEFORE the file is overwritten — the
+point is to tell the user their schematic has been reading stale s-parameters, which is only
+knowable from the file about to be replaced. An unstamped third-party `.snp` is not stale; there is
+nothing to compare against. The stamp rides on a new **additive** `TouchstoneExportOptions.HeaderComments`
+(defaults null ⇒ every existing caller compiles and its output stays byte-identical).
+
+## Workspace participation — one arm per `.ctech` touch point
+
+`NodeKind.EmSetupFile`, the `.cem` scanner arm, open/activate, tree dirty dot, Save (single-doc and
+Save-All), the close/quit prompt, `.cws` `kind="emsetup"` persistence and restore, and File ▸ New ▸
+EM Setup… on both menu surfaces. The two exact-and-ordered New-submenu tests were **updated, not
+loosened** — that exactness is what keeps the hand-mirrored in-window and macOS menus from drifting.
+
+## Gate
+
+Firewall 4, Core 1,115, RfCore 281, Ui 4,629 (+63 new: 16 Tier E extraction, 17 Tier E refusals,
+17 Tier D, 9 Tier M, 12 Tier R, 4 Tier A, 2 framework-free guard — some counted across files),
+Engine 656 (+1 pre-existing skip) — all green. The R-em-1 framework-free guard was **confirmed to
+bite**: adding an `Avalonia.Point` to `EmExtractionSettings.cs` turns it red immediately.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout
+Editor phase) — the panel's rendered layout, the mesh inset's appearance, and the File-menu item
+cannot be exercised headlessly; correctness rests on the VM-level and pixel-oracle gates above,
+which drive the same public methods the view calls. Please confirm on your end: File ▸ New ▸ EM
+Setup… beside an open layout creates a `.cem` already pointing at it; the panel shows the
+cross-section readback and the resolved stackup read-only with a working "Edit technology…" link;
+Mesh draws the cross-section inset over the layout and Simulate lands a Data Display plus an `.snp`;
+drawing a bend and re-opening the setup shows the specific bend refusal with Simulate disabled; and
+editing the layout clears the displayed mesh rather than leaving the old one on screen.
+
 Every real device in the kit generates — `offset` on the host channel (C2, 2026-08-04) — COMPLETE.
 Wire version 5 adds `PCellWireOp.Offset`; `cni.geo.fgSize` is the script side. **33 of 34 registered
 cells now generate through the production bridge over the real transport** (was 32, and 24 before the

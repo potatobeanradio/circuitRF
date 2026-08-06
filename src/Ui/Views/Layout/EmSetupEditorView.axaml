@@ -1,0 +1,404 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:em="using:CircuitRF.Ui.Layout.Em"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Layout.EmSetupEditorView"
+             x:DataType="em:EmSetupDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.colhdr">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="TextBlock.sect">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,10,0,4"/>
+        </Style>
+        <Style Selector="TextBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ComboBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+
+        <!-- ── Header: identity + D2's two buttons ──────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto">
+                <StackPanel Grid.Column="0" Orientation="Vertical">
+                    <TextBlock Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding ViewModel.LayoutStatus}" Classes="colhdr"
+                               TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <!-- D2: Mesh computes the mesh ONLY and never solves. -->
+                <Button Grid.Column="1" Name="MeshButton" Margin="4,0,0,0"
+                        Command="{Binding ViewModel.BuildMeshCommand}"
+                        ToolTip.Tip="Compute the boundary mesh only — no solve. Cheap enough to press repeatedly.">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="GridLarge" Width="14" Height="14"/>
+                        <TextBlock Text="Mesh"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- R-em-13/R-L1h-3: disabled WITH the live reason visible, never a silent no-op. -->
+                <Button Grid.Column="2" Name="SimulateButton" Margin="4,0,0,0"
+                        Command="{Binding ViewModel.SimulateCommand}"
+                        ToolTip.Tip="{Binding ViewModel.BlockingReason}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="Play" Width="14" Height="14"/>
+                        <TextBlock Text="Simulate"/>
+                    </StackPanel>
+                </Button>
+
+                <Button Grid.Column="3" Margin="8,0,0,0" Command="{Binding ViewModel.UndoCommand}"
+                        ToolTip.Tip="Undo">
+                    <mi:MaterialIcon Kind="UndoVariant" Width="14" Height="14"/>
+                </Button>
+                <Button Grid.Column="4" Margin="2,0,0,0" Command="{Binding ViewModel.RedoCommand}"
+                        ToolTip.Tip="Redo">
+                    <mi:MaterialIcon Kind="RedoVariant" Width="14" Height="14"/>
+                </Button>
+                <Button Grid.Column="5" Margin="8,0,0,0" Command="{Binding ViewModel.SaveCommand}"
+                        Content="Save"/>
+            </Grid>
+        </Border>
+
+        <!-- ── The blocking reason, shown LIVE (R-em-13) ────────────────────── -->
+        <Border DockPanel.Dock="Top" Padding="8,6"
+                Background="{DynamicResource CrfWarningBrush}"
+                IsVisible="{Binding ViewModel.BlockingReason, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <TextBlock Text="{Binding ViewModel.BlockingReason}" TextWrapping="Wrap" FontSize="11"/>
+        </Border>
+
+        <ScrollViewer>
+            <StackPanel Margin="10,6,10,14" Spacing="2">
+
+                <!-- ── L8e: which kernel, and why (D2, R-res-1) ──────────────────
+                     Auto first, because D2's rule is conservative and right for nearly every setup:
+                     kernel A whenever the geometry reduces to a uniform cross-section, kernel B
+                     otherwise. An explicit choice is NEVER overridden — in either direction — and the
+                     reason line below always says which was picked and why. -->
+                <TextBlock Classes="sect" Text="Analysis"/>
+                <ComboBox Classes="cell" HorizontalAlignment="Stretch"
+                          ItemsSource="{x:Static em:EmSetupEditorViewModel.AnalysisKindChoices}"
+                          SelectedItem="{Binding ViewModel.AnalysisKind}"/>
+                <TextBlock FontSize="11" Margin="0,3,0,0"
+                           Text="{Binding ViewModel.SelectedKernelName}" FontWeight="SemiBold"/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.KernelChoiceReason}"/>
+
+                <!-- ── Cross-section readback (R-em-8: rendered, never recomputed) ── -->
+                <TextBlock Classes="sect" Text="Cross-section"/>
+                <TextBlock Text="{Binding ViewModel.Readback.Summary}" TextWrapping="Wrap"
+                           FontSize="11"
+                           IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto"
+                      IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}"
+                      Margin="0,4,0,0">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Propagation axis"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.Axis}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Signal layer"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.SignalLayerName}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Ground reference"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.GroundLayerName}"/>
+                </Grid>
+
+                <ItemsControl ItemsSource="{Binding ViewModel.Notes}" Margin="0,4,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="10" Opacity="0.75"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- ── Signal layer (R-em-4b) ──────────────────────────────── -->
+                <TextBlock Classes="sect" Text="Signal conductor"/>
+                <ComboBox Classes="cell" HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding ViewModel.ConductorLayerChoices}"
+                          SelectedItem="{Binding ViewModel.SignalLayerChoice}"/>
+
+                <!-- ── L9d/D5: which conductor levels the PLANAR analysis includes ──────────
+                     Deliberately separate from the combo above, which is the CROSS-SECTION
+                     kernel's own control and means a different thing (which single conductor a
+                     uniform cross-section is about). Nothing checked = infer, which is every level
+                     carrying artwork and is what every pre-L9d .cem asks for. -->
+                <StackPanel Spacing="2" IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
+                    <TextBlock Classes="sect" Text="Analysis levels"/>
+                    <TextBlock FontSize="10" Opacity="0.75" TextWrapping="Wrap"
+                               Text="Which conductor levels the full-wave solve meshes, bottom-to-top. Leave all unchecked to include every level that carries artwork."/>
+                    <ItemsControl ItemsSource="{Binding ViewModel.AnalysisLevelRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox FontSize="11" Content="{Binding Name}"
+                                          IsChecked="{Binding IsIncluded}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ── Frequency sweep ──────────────────────────────────────────
+                     R-em-11: the EXISTING FrequencySpecViewModel, never a second frequency editor.
+                     What that rule protects is the LOGIC — unit suffixes, the coefficient rescale on
+                     a unit change, mode/kind, and the resolved-value preview — and every one of
+                     those is the VM's, bound to below. The markup is presentation: SpBodyView's own
+                     copy is an ItemTemplate inside a segment list with a Remove button, which is not
+                     what a single-sweep panel wants, and extracting it into a shared UserControl
+                     would churn the analysis editor for no behavioural gain. -->
+                <TextBlock Classes="sect" Text="Frequency sweep"/>
+                <Grid DataContext="{Binding ViewModel.Frequency}"
+                      ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="Start" Classes="colhdr"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Classes="cell" Text="{Binding StartCoeff, Mode=TwoWay}"/>
+                            <ComboBox Grid.Column="1" Classes="cell"
+                                      ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
+                                      SelectedItem="{Binding StartUnit, Mode=TwoWay}"/>
+                        </Grid>
+                        <TextBlock Text="{Binding StartPreview}" FontSize="10" Opacity="0.55"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="Stop" Classes="colhdr"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Classes="cell" Text="{Binding StopCoeff, Mode=TwoWay}"/>
+                            <ComboBox Grid.Column="1" Classes="cell"
+                                      ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
+                                      SelectedItem="{Binding StopUnit, Mode=TwoWay}"/>
+                        </Grid>
+                        <TextBlock Text="{Binding StopPreview}" FontSize="10" Opacity="0.55"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Spacing="2" MinWidth="130">
+                        <StackPanel Orientation="Horizontal" Spacing="0">
+                            <Button Content="Step"   Classes="seg-btn" Classes.active="{Binding IsStepMode}"
+                                    Command="{Binding SetModeStepCommand}"/>
+                            <Button Content="Points" Classes="seg-btn" Classes.active="{Binding IsPointsMode}"
+                                    Command="{Binding SetModePointsCommand}"/>
+                            <Button Content="Lin" Classes="seg-btn" Margin="6,0,0,0"
+                                    Classes.active="{Binding IsLinear}" Command="{Binding SetKindLinearCommand}"/>
+                            <Button Content="Log" Classes="seg-btn"
+                                    Classes.active="{Binding IsLog}" Command="{Binding SetKindLogCommand}"/>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsStepMode}">
+                            <TextBox Classes="cell" Text="{Binding StepCoeff, Mode=TwoWay}"/>
+                            <ComboBox Grid.Column="1" Classes="cell"
+                                      ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
+                                      SelectedItem="{Binding StepUnit, Mode=TwoWay}"/>
+                        </Grid>
+                        <TextBox Classes="cell" IsVisible="{Binding IsPointsMode}"
+                                 Text="{Binding NumPointsExpr, Mode=TwoWay}"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ── Ports ───────────────────────────────────────────────── -->
+                <TextBlock Classes="sect" Text="Ports"/>
+                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="3">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Port 1 Z₀ (Ω)"
+                               VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="0" Grid.Column="1" Classes="cell" Tag="Port1Z0"
+                               Text="{Binding ViewModel.Port1Z0Text}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" FontSize="10"
+                               Foreground="{DynamicResource CrfWarningBrush}"
+                               Text="{Binding ViewModel.Port1Z0Error}"
+                               IsVisible="{Binding ViewModel.Port1Z0Error, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Port 2 Z₀ (Ω)"
+                               VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="2" Grid.Column="1" Classes="cell" Tag="Port2Z0"
+                               Text="{Binding ViewModel.Port2Z0Text}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="3" Grid.Column="1" FontSize="10"
+                               Foreground="{DynamicResource CrfWarningBrush}"
+                               Text="{Binding ViewModel.Port2Z0Error}"
+                               IsVisible="{Binding ViewModel.Port2Z0Error, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                </Grid>
+                <!-- R-cpl-6: per-port list, shown only once the cross-section has more than a
+                     single line's two ports. D3 numbering: port 2k-1 is conductor k's near end. -->
+                <StackPanel IsVisible="{Binding ViewModel.ShowPortList}" Margin="0,6,0,0">
+                    <TextBlock Classes="colhdr" Text="Per-port reference impedance"/>
+                    <ItemsControl ItemsSource="{Binding ViewModel.PortRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="em:EmPortZ0Row">
+                                <Grid ColumnDefinitions="190,*" ColumnSpacing="6" Margin="0,2,0,0">
+                                    <TextBlock Grid.Column="0" Classes="colhdr" Text="{Binding Label}"
+                                               VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBox Classes="cell" Tag="PortRow"
+                                                 Text="{Binding Text}"
+                                                 LostFocus="OnPortRowLostFocus" KeyDown="OnPortRowKeyDown"/>
+                                        <TextBlock FontSize="10"
+                                                   Foreground="{DynamicResource CrfWarningBrush}"
+                                                   Text="{Binding Error}"
+                                                   IsVisible="{Binding HasError}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                           IsVisible="{Binding !ViewModel.IsPlanarAnalysis}"
+                           Text="Kernel A has no meshed port, so the ports ARE the ends of the extracted conductors by construction — there is nothing to place, and de-embedding is a no-op."/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                           IsVisible="{Binding ViewModel.IsPlanarAnalysis}"
+                           Text="Kernel B meshes its ports, so each one is a port LABEL in the layout — place them with the layout editor's Port tool. Which end of a conductor a label names is inferred from the geometry and reported below; an ambiguous one is refused rather than guessed. The de-embedding reference plane is fixed one mesh cell in from the drawn metal edge and is deliberately not adjustable."/>
+
+                <!-- ── Mesh settings (all six — R-em-11) ───────────────────── -->
+                <TextBlock Classes="sect" Text="Mesh"/>
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                      ColumnSpacing="6" RowSpacing="3">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Min cells across width" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="0" Grid.Column="1" Classes="cell" Tag="MinCellsAcrossWidth"
+                               Text="{Binding ViewModel.MinCellsAcrossWidthText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Edge cells" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="1" Grid.Column="1" Classes="cell" Tag="EdgeCells"
+                               Text="{Binding ViewModel.EdgeCellsText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Edge fraction of width" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="2" Grid.Column="1" Classes="cell" Tag="EdgeFractionOfWidth"
+                               Text="{Binding ViewModel.EdgeFractionText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Classes="colhdr" Text="Edge growth ratio" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="3" Grid.Column="1" Classes="cell" Tag="EdgeGrowthRatio"
+                               Text="{Binding ViewModel.EdgeGrowthText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Classes="colhdr" Text="Truncation (substrate heights)" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="4" Grid.Column="1" Classes="cell" Tag="TruncationHeights"
+                               Text="{Binding ViewModel.TruncationHeightsText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="5" Grid.Column="0" Classes="colhdr" Text="Truncation tail cells" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="5" Grid.Column="1" Classes="cell" Tag="TruncationTailCells"
+                               Text="{Binding ViewModel.TruncationTailCellsText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                </Grid>
+
+                <!-- R-em-16: the engine's own report, VERBATIM. -->
+                <TextBlock Classes="sect" Text="Mesh report"
+                           IsVisible="{Binding ViewModel.MeshReport, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                      ColumnSpacing="6"
+                      IsVisible="{Binding ViewModel.MeshReport, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Unknowns"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.MeshReport.UnknownCount}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Smallest cell"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.MeshReport.MinCellLength}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Largest cell"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.MeshReport.MaxCellLength}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Classes="colhdr" Text="Truncation half-extent"/>
+                    <TextBlock Grid.Row="3" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.MeshReport.TruncationHalfExtent}"/>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding ViewModel.MeshNotes}" Margin="0,4,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="10" Opacity="0.8"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- ── L8b/L8e: the surface mesh, the R17 verdict and the heat map ── -->
+                <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,4"
+                      IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
+                    <TextBlock Grid.Column="0" Classes="sect" Margin="0" Text="Surface mesh"/>
+                    <Button Grid.Column="1" FontSize="11" Padding="6,2"
+                            Command="{Binding ViewModel.BuildPlanarMeshCommand}"
+                            ToolTip.Tip="Mesh the artwork and report the unknown count — no solve. §10.5 puts the mesh viewer before the solver on purpose.">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <mi:MaterialIcon Kind="GridLarge" Width="14" Height="14"/>
+                            <TextBlock Text="Mesh"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto"
+                      ColumnSpacing="6" RowSpacing="3"
+                      IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="0" Grid.Column="1" Classes="cell" Tag="CellsPerWavelength"
+                               Text="{Binding ViewModel.PlanarCellsPerWavelengthText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Edge mesh" VerticalAlignment="Center"/>
+                    <CheckBox  Grid.Row="1" Grid.Column="1" Name="PlanarEdgeMeshCheck" FontSize="11"
+                               Content="Refine at conductor edges"
+                               IsChecked="{Binding ViewModel.PlanarEdgeMesh}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Edge cells" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="2" Grid.Column="1" Classes="cell" Tag="PlanarEdgeCells"
+                               Text="{Binding ViewModel.PlanarEdgeCellsText}"
+                               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                </Grid>
+                <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                           Text="{Binding ViewModel.PlanarMeshSummary}"
+                           IsVisible="{Binding ViewModel.PlanarMeshReport, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                <ItemsControl ItemsSource="{Binding ViewModel.PlanarMeshNotes}" Margin="0,4,0,0"
+                              IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="10" Opacity="0.8"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- R-res-8: the heat map's scale, with its UNITS and its NORMALISATION, in the
+                     engine's own words. An unlabelled ramp over an unstated normalisation is
+                     decoration; §10.5 asks for a diagnostic. -->
+                <TextBlock Classes="sect" Text="Current density"
+                           IsVisible="{Binding ViewModel.CurrentDensity, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.CurrentDensityScale}"
+                           IsVisible="{Binding ViewModel.CurrentDensity, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                <!-- ── Dispersion (disabled with a stated reason) ───────────── -->
+                <TextBlock Classes="sect" Text="Dispersion"/>
+                <CheckBox Name="DispersionCheck" FontSize="11"
+                          Content="Kirschning–Jansen dispersion correction"
+                          IsChecked="{Binding ViewModel.DispersionCorrection}"
+                          IsEnabled="{Binding ViewModel.DispersionDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
+                          ToolTip.Tip="{Binding ViewModel.DispersionDisabledReason}"/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.DispersionDisabledReason}"
+                           IsVisible="{Binding ViewModel.DispersionDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                <!-- ── Stackup: SHOWN, not edited (R-em-12) ────────────────── -->
+                <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,4">
+                    <TextBlock Grid.Column="0" Classes="sect" Margin="0"
+                               Text="{Binding ViewModel.TechnologyName, StringFormat='Stackup — {0}'}"/>
+                    <Button Grid.Column="1" Name="EditTechButton" FontSize="11" Padding="6,2"
+                            Content="Edit technology…"
+                            ToolTip.Tip="Opens the .ctech. Process data has exactly one editor — two would diverge."/>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding ViewModel.StackupRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="em:EmStackupRow">
+                            <Grid ColumnDefinitions="76,*,90,190,*" ColumnSpacing="6" Margin="0,1">
+                                <TextBlock Grid.Column="0" FontSize="10" Opacity="0.7" Text="{Binding Kind}"/>
+                                <TextBlock Grid.Column="1" FontSize="11" Text="{Binding Name}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="2" FontSize="11" Text="{Binding Thickness}"/>
+                                <TextBlock Grid.Column="3" FontSize="10" Opacity="0.8" Text="{Binding Electrical}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="4" FontSize="10" Opacity="0.6" Text="{Binding DrawingLayers}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

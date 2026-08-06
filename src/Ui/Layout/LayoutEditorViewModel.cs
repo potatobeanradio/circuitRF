@@ -105,6 +105,42 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <see cref="DisplayUnit"/>/<see cref="SnapDbu"/> already follow), never touches <see cref="IsDirty"/>.</summary>
     [ObservableProperty] private bool _showPCellPins = true;
 
+    /// <summary>brief-L6-L7-em-ui.md R-em-15: view toggle for the EM mesh overlay — same
+    /// session-local, never-persisted, never-undoable contract as <see cref="ShowPCellPins"/>, and
+    /// the same "the toggle default lives at the VM layer, not in LayoutRenderOptions" rule. Default
+    /// ON so pressing Mesh shows the mesh without a second gesture; the overlay still draws nothing
+    /// until <see cref="EmMeshReport"/> is non-null.</summary>
+    [ObservableProperty] private bool _showEmMesh = true;
+
+    /// <summary>The mesh to draw, pushed here by the <c>.cem</c> editor that produced it. R-em-17:
+    /// this is CLEARED when the layout is edited — the overlay survives an edit by being
+    /// invalidated, never by going stale.</summary>
+    [ObservableProperty] private Engine.Mom.EmMeshReport? _emMeshReport;
+
+    /// <summary>brief-L8b D5: view toggle for the PLAN-VIEW surface-mesh overlay. Same contract as
+    /// <see cref="ShowEmMesh"/> in every respect. The two are independent and both may be on — which
+    /// overlay a document actually shows follows from which mesh was computed, not from a mode, so
+    /// there is no third "which kernel am I looking at" toggle to keep in step.</summary>
+    [ObservableProperty] private bool _showPlanarMesh = true;
+
+    /// <summary>The surface mesh to draw, pushed here by the <c>.cem</c> editor that produced it.
+    /// R-em-17 applies MORE strongly here than to the cross-section inset: a plan-view mesh drawn
+    /// over EDITED artwork is worse than no mesh, because it looks like it still matches.</summary>
+    [ObservableProperty] private Engine.Mom.PlanarMeshReport? _planarMeshReport;
+
+    /// <summary>L8e/D5 — the per-cell current-density map to shade the surface mesh with, pushed
+    /// here by the <c>.cem</c> editor whose run produced it. Null takes the plain cell-boundary
+    /// path, which is exactly what L8b's own provision was shaped for. R-em-17 applies and matters
+    /// MORE than for the mesh itself: a current map over edited artwork looks like it still
+    /// matches.</summary>
+    [ObservableProperty] private Engine.Mom.PlanarCurrentDensityMap? _planarCurrentDensity;
+
+    /// <summary>§10.6's "show the de-embedding reference plane in the layout". <b>A drawing job over
+    /// a location the ENGINE reports</b> (<c>PlanarPortResolution.ReferencePlaneM</c>) — L8d's D2
+    /// fixes the plane one cell in from the drawn metal end and deliberately offers no offset, so
+    /// there is nothing here to compute and nothing for a user to move.</summary>
+    [ObservableProperty] private IReadOnlyList<Engine.Mom.PlanarPortResolution> _planarReferencePlanes = [];
+
     // ── Technology (L0c) ───────────────────────────────────────────────────────
 
     /// <summary>The resolved technology, or null when unresolved (missing/corrupt/no default) —
@@ -322,6 +358,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             OnPropertyChanged(nameof(InstanceCountText));
             OnPropertyChanged(nameof(ExtentText));
 
+            // R-em-17: the mesh overlay survives the layout being edited underneath it by being
+            // INVALIDATED, not by being stale. An edited .clay clears the displayed mesh; it does
+            // not keep drawing the old one, which would be a picture of a cross-section that is no
+            // longer there.
+            EmMeshReport     = null;
+            PlanarMeshReport = null;
+            PlanarCurrentDensity  = null;
+            PlanarReferencePlanes = [];
+
             // Any model mutation (draw, move, delete, undo, redo — every one of them calls
             // NotifyChanged) invalidates the overlap-cycling cache (R-L1c-2). Selected indices may
             // also have shifted or been removed by the mutation, so drop any that are now stale.
@@ -433,7 +478,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// tool in this list: a single click commits a <see cref="ViaShape"/> immediately at the snapped
     /// point, technology-default pad/drill, no drag and no ghost-then-click two-step — see
     /// <see cref="ViaToolAvailability"/> for why it is not always enabled.</summary>
-    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label, Instance, Via }
+    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label, Instance, Via, Port }
 
     [ObservableProperty] private Tool _activeTool = Tool.Select;
 
@@ -482,6 +527,66 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         var via = new ViaShape { Layer = CurrentLayerKey, X = sx, Y = sy, PadSize = pad, DrillSize = drill };
         Execute(new AddShapeCommand(Model, via));
         RebuildOverlay();
+    }
+
+    // ── Port tool (L8e D3) ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §10.6's "click an edge, get P1", and <b>the tool sets the port flag and nothing else</b>.
+    ///
+    /// <para>A port is an ordinary <see cref="LabelShape"/> with <see cref="LabelShape.IsPort"/> set
+    /// — the provision <c>LayoutModel.cs</c> has carried since L0a, spent here. There is no new
+    /// shape type, no change to <c>.clay</c>'s schema, and a layout full of port labels round-trips
+    /// exactly as it already did.</para>
+    ///
+    /// <para><b>The reference impedance is deliberately NOT here.</b> It lives in the <c>.cem</c>
+    /// (<c>EmSetup.PortZ0s</c>, already per-port and already additive, R-cpl-6). Putting it on the
+    /// shape would give one quantity two homes, and the layout is the wrong one: the same artwork can
+    /// legitimately be analysed by two EM setups at two reference impedances.</para>
+    ///
+    /// <para><b>The SIDE is not here either.</b> Which end of a conductor a port names is inferred
+    /// from the geometry at extraction time, reported, and refused when ambiguous
+    /// (<c>EmPortExtraction</c>, R-res-5) — a side stored on the shape would go stale the moment the
+    /// artwork moved under it.</para>
+    /// </summary>
+    private void CommitPortPlacement(double wx, double wy, KeyModifiers mods, double zoomPxPerDbu)
+    {
+        bool suspend = (mods & KeyModifiers.Alt) != 0;
+        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+
+        // The same visibility floor an ordinary committed label gets — a port marker that renders
+        // sub-pixel is a port the user cannot see they placed (the L1-fix default-zoom lesson).
+        long height = Renderers.LayoutRenderer.EffectiveVisibleLabelHeightDbu(_labelHeightDbu, zoomPxPerDbu);
+
+        var label = new LabelShape
+        {
+            Layer    = CurrentLayerKey,
+            X        = sx,
+            Y        = sy,
+            Text     = NextPortName(),
+            Height   = height,
+            Rotation = LayoutRotation.R0,
+            IsPort   = true,
+        };
+        Execute(new AddShapeCommand(Model, label));
+        RebuildOverlay();
+    }
+
+    /// <summary>
+    /// D3's auto-numbering: the lowest port number this layout does not already use. Reads the
+    /// EXISTING port labels through <c>EmPortExtraction.TryParseNumber</c> — the same parser the
+    /// extractor uses — so the tool and the extractor can never disagree about what "P3" means.
+    /// </summary>
+    internal string NextPortName()
+    {
+        var used = new HashSet<int>();
+        foreach (var s in Model.Shapes)
+            if (s is LabelShape { IsPort: true } l && Em.EmPortExtraction.TryParseNumber(l.Text, out int n))
+                used.Add(n);
+
+        int next = 1;
+        while (used.Contains(next)) next++;
+        return $"P{next}";
     }
 
     // ── Selection (L1c) ───────────────────────────────────────────────────────
@@ -1786,6 +1891,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
 
         if (ActiveTool == Tool.Via) { CommitViaPlacement(wx, wy, mods); return; }
+
+        if (ActiveTool == Tool.Port) { CommitPortPlacement(wx, wy, mods, zoomPxPerDbu); return; }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 

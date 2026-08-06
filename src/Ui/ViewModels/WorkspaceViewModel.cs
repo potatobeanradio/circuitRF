@@ -24,6 +24,7 @@ using RfCore.Data;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Layout.TechImport;
 using CircuitRF.Ui.Messages;
@@ -1104,6 +1105,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         docPath = techDocKind.FilePath;
                         kind    = "tech";
                     }
+                    else if (dockable is EmSetupDocument emDocKind)
+                    {
+                        docPath = emDocKind.FilePath;
+                        kind    = "emsetup";
+                    }
 
                     // R-fgn-6: a foreign document is never recorded in the current workspace's .cws —
                     // even one that's currently DOCKED (opened via File ▸ Open from outside the
@@ -1130,6 +1136,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     DataDisplayDocument add                 => add.FilePath,
                     LayoutDocument alad                     => alad.FilePath,
                     TechDocument atech                      => atech.FilePath,
+                    EmSetupDocument aem                  => aem.FilePath,
                     _                                       => null,
                 };
 
@@ -1412,6 +1419,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     break;
                 case "tech" when File.Exists(absPath):
                     OpenOrActivateTech(absPath);
+                    break;
+                case "emsetup" when File.Exists(absPath):
+                    OpenOrActivateEmSetup(absPath);
                     break;
             }
         }
@@ -1718,6 +1728,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 LayoutDocument lad               => lad.FilePath,
                 DataDisplayDocument dd           => dd.FilePath,
                 TechDocument td                  => td.FilePath,
+                EmSetupDocument emd           => emd.FilePath,
                 CellParameterEditorDocument cpd  => Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath),
                 _ => null,
             };
@@ -3384,6 +3395,76 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// File ▸ New ▸ EM Setup… — creates a <c>.cem</c> beside the layout it analyses (D1/R-em-9:
+    /// workspace-scoped, never scratch). <b>R18's 30-second target is reachable because the defaults
+    /// are already right, not because the dialogs are fast</b> — a fresh setup arrives at
+    /// <c>EmMeshSettings.Default</c>, 50 Ω, and a 1–20 GHz / 101-point sweep, so the only thing the
+    /// user must supply is which layout.
+    /// </summary>
+    [RelayCommand]
+    private async Task NewEmSetup(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Info("Open or create a workspace first.");
+            return;
+        }
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        // Default to the active layout, which is overwhelmingly the one the user means.
+        string layoutRef = "";
+        if (ResolveActiveDocumentForCommands() is LayoutDocument activeLayout &&
+            activeLayout.FilePath is { } lp && !WorkspaceRootFinder.IsOutside(lp, workspaceDir))
+            layoutRef = Path.GetRelativePath(workspaceDir, lp).Replace('\\', '/');
+
+        string stem = layoutRef.Length > 0
+            ? Path.GetFileNameWithoutExtension(layoutRef)
+            : "EmSetup";
+
+        var emDir = Path.Combine(workspaceDir, "em");
+        var name  = await new Views.Dialogs.InputNameDialog(
+            "New EM Setup", "Name:", NextFreeEmSetupName(emDir, stem)).ShowDialog<string?>(window);
+        if (name is null) return;
+        if (!NameValidator.IsValid(name))
+        {
+            Messages.Error($"'{name}' is not a usable name. {NameValidator.Validate(name)}");
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(emDir);
+            var setup = new EmSetup { Name = name, LayoutRef = layoutRef };
+            var path  = Path.Combine(emDir, name + EmSetupPersistence.Extension);
+            if (File.Exists(path))
+            {
+                Messages.Error($"An EM setup named '{name}' already exists.");
+                return;
+            }
+            EmSetupPersistence.SaveToFile(path, setup);
+            _factory.ProjectTreeTool?.Refresh();
+            OpenOrActivateEmSetup(path);
+            Messages.Success("Created EM setup", path);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to create EM setup: {ex.Message}");
+        }
+    }
+
+    private static string NextFreeEmSetupName(string emDir, string stem)
+    {
+        string candidate = stem;
+        for (int n = 2; File.Exists(Path.Combine(emDir, candidate + EmSetupPersistence.Extension)); n++)
+            candidate = $"{stem}{n}";
+        return candidate;
+    }
+
+    /// <summary>
     /// File ▸ Import ▸ Technology… — builds a <c>.ctech</c> from a process kit's own technology files.
     ///
     /// <para>Everything imported comes out of the kit at run time; circuitRF holds no knowledge of any
@@ -3509,6 +3590,27 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     public void OpenTechnologyDocument(string absolutePath) => OpenOrActivateTech(absolutePath);
 
+    /// <summary>The absolute <c>.ctech</c> path a given <c>.clay</c> resolves to, or null when it
+    /// resolves to none. Exposed so the EM setup panel's "Edit technology…" link can reach the ONE
+    /// editor for process data (R-em-12) instead of growing a second stackup editor.</summary>
+    public string? ResolvedTechPathFor(string clayAbsolutePath)
+    {
+        LayoutView? view = null;
+        foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
+            if (open.FilePath is { } fp &&
+                string.Equals(Path.GetFullPath(fp), Path.GetFullPath(clayAbsolutePath),
+                              StringComparison.OrdinalIgnoreCase))
+            { view = open.ViewModel.Model; break; }
+
+        if (view is null)
+        {
+            if (!File.Exists(clayAbsolutePath)) return null;
+            try { view = LayoutPersistence.LoadFromFile(clayAbsolutePath); }
+            catch { return null; }
+        }
+        return ResolveTechFor(view.TechRef, clayAbsolutePath).ResolvedPath;
+    }
+
     private void OpenOrActivateTech(string absolutePath)
     {
         if (ActivateIfOpen(absolutePath)) return;
@@ -3530,6 +3632,165 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Error($"Failed to open technology: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Opens (or focuses) a <c>.cem</c> EM setup as an ordinary editor document. Mirrors
+    /// <see cref="OpenOrActivateTech"/> exactly — R-em-9: a <c>.cem</c> is workspace-scoped and
+    /// never scratch, so there is no materialize path.
+    /// </summary>
+    public void OpenOrActivateEmSetup(string absolutePath)
+    {
+        if (ActivateIfOpen(absolutePath)) return;
+
+        try
+        {
+            var setup = EmSetupPersistence.LoadFromFile(absolutePath);
+            if (setup.Name.Length == 0) setup.Name = Path.GetFileNameWithoutExtension(absolutePath);
+            var vm = new EmSetupEditorViewModel(absolutePath, setup)
+            {
+                ResolveLayout = r => ResolveEmLayout(absolutePath, r),
+                RunRequested  = RunEmSetupAsync,
+            };
+            vm.SaveError        += m => Messages.Error(m);
+            vm.EmSetupSaved     += p => Messages.Success("Saved", p);
+            // R-em-15/17: the mesh "renders automatically in the layout view" (D2), and is dropped
+            // there the moment the setup's own state says it is no longer current.
+            vm.AnalysisRefreshed += () => PushEmMeshToLayout(vm);
+            vm.Refresh();
+
+            var doc = new EmSetupDocument(Path.GetFileName(absolutePath), vm, absolutePath);
+            _factory.OpenDocument(doc);
+            _openDocsByPath[absolutePath] = doc;
+            HookEmSetupDirty(doc);
+            Messages.Info("Opened", absolutePath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to open EM setup: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// R-em-10: resolves a <c>.cem</c>'s workspace-relative layout reference to the LIVE geometry —
+    /// the open editor's own model when that layout is open, so an unsaved edit is what gets
+    /// analysed, otherwise a fresh read from disk. Re-running after a layout edit picks the edit up
+    /// only because the geometry is read HERE, at use time, and never embedded in the <c>.cem</c>.
+    /// </summary>
+    private EmLayoutSource? ResolveEmLayout(string cemPath, string layoutRef)
+    {
+        if (layoutRef.Length == 0) return null;
+
+        string abs = Path.IsPathRooted(layoutRef)
+            ? layoutRef
+            : Path.GetFullPath(Path.Combine(
+                CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(cemPath)!,
+                layoutRef));
+
+        LayoutView? view = null;
+        foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
+            if (open.FilePath is { } fp &&
+                string.Equals(Path.GetFullPath(fp), abs, StringComparison.OrdinalIgnoreCase))
+            { view = open.ViewModel.Model; break; }
+
+        if (view is null)
+        {
+            if (!File.Exists(abs)) return null;
+            try { view = LayoutPersistence.LoadFromFile(abs); }
+            catch { return null; }
+        }
+
+        var tech = ResolveTechFor(view.TechRef, abs);
+        return new EmLayoutSource(abs, view, tech.Tech, view.DbuPerMicron);
+    }
+
+    /// <summary>
+    /// R-em-18 — <c>RunSchematicDocAsync</c>'s five steps with a different middle: background
+    /// <c>Task.Run</c>, <c>Messages</c> for warnings FIRST, then the results write,
+    /// <see cref="RefreshOpenDataDisplaysAsync"/> and
+    /// <see cref="AutoOpenOrCreateDataDisplayAsync"/>. No new results plumbing and no new result
+    /// type — the kernel already returns a <c>DataSet</c> carrying S, per-port Z0 and the "tline"
+    /// group, and this path must not filter any of it out on the way to Data Display.
+    /// </summary>
+    private async Task RunEmSetupAsync(EmSetupEditorViewModel vm)
+    {
+        var baseDir = CurrentWorkspacePath is { } cws
+            ? Path.GetDirectoryName(cws)!
+            : _recovery.SessionDir;
+        var resultsRoot = Path.Combine(baseDir, "results");
+
+        var source = ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef);
+        var setup  = vm.Working.Clone();
+
+        Messages.Info($"Running EM setup '{setup.Name}'…");
+
+        EmRunResult result;
+        try
+        {
+            result = await Task.Run(() => EmRunService.Run(setup, source, resultsRoot));
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"The EM run failed: {ex.Message}");
+            return;
+        }
+
+        foreach (var w in result.Warnings) Messages.Warning(w);
+
+        switch (result.Status)
+        {
+            case EmRunStatus.NoLayout:
+            case EmRunStatus.Refused:
+                Messages.Error(result.Error ?? "The EM setup could not be solved.");
+                return;
+            case EmRunStatus.EngineError:
+                Messages.Error(result.Error ?? "The EM solve failed.");
+                return;
+        }
+
+        if (result.MeshReport is { } meshReport) vm.AdoptMeshReport(meshReport);
+        if (result.PlanarMesh is { } planarMesh)
+        {
+            vm.AdoptPlanarResult(planarMesh, result.PlanarSolve);
+            vm.AdoptCurrentDensity(result.CurrentDensity, result.PlanarPorts ?? []);
+        }
+        if (result.SnpPath is { } snp) Messages.Success("Wrote s-parameters", snp);
+
+        if (result.NpyPath is { } npy)
+        {
+            await RefreshOpenDataDisplaysAsync([npy]);
+            await AutoOpenOrCreateDataDisplayAsync(baseDir, EmRunService.ResolveResultKey(setup), npy);
+        }
+    }
+
+    /// <summary>Copies a <c>.cem</c>'s current mesh onto the open layout it analyses. A layout that
+    /// is not open simply has nowhere to draw it, which is not an error.</summary>
+    private void PushEmMeshToLayout(EmSetupEditorViewModel vm)
+    {
+        if (ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef) is not { } source) return;
+        foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
+            if (open.FilePath is { } fp &&
+                string.Equals(Path.GetFullPath(fp), source.AbsolutePath, StringComparison.OrdinalIgnoreCase))
+            {
+                // Both meshes, always — L8b's D5: WHICH overlay draws follows from which report is
+                // non-null, never from a mode. A cross-section setup leaves the planar one null and
+                // vice versa, so pushing both is how "the right one shows" stays true with no branch.
+                open.ViewModel.EmMeshReport     = vm.MeshReport;
+                open.ViewModel.PlanarMeshReport = vm.PlanarMeshReport;
+                // L8e — the per-cell current density, when a planar run has produced one. Null
+                // outside that case, which the renderer takes as "draw plain cell boundaries".
+                open.ViewModel.PlanarCurrentDensity  = vm.CurrentDensity;
+                open.ViewModel.PlanarReferencePlanes = vm.ReferencePlanes;
+            }
+    }
+
+    private void HookEmSetupDirty(EmSetupDocument doc)
+    {
+        doc.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(EmSetupEditorViewModel.IsDirty))
+                _factory.ProjectTreeTool?.SetTechFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+        };
     }
 
     /// <summary>Reflects a .ctech editor's dirty state onto its tree node's dirty dot — mirrors
@@ -3915,6 +4176,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case NodeKind.TechFile:
                 OpenOrActivateTech(node.AbsolutePath);
+                return;
+
+            case NodeKind.EmSetupFile:
+                OpenOrActivateEmSetup(node.AbsolutePath);
                 return;
 
             default:
@@ -4954,6 +5219,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return _openDocsByPath.Values.OfType<TechDocument>().Any(d =>
                     d.IsDirty && string.Equals(Path.GetFullPath(d.FilePath), techKey, StringComparison.OrdinalIgnoreCase));
             }
+            case NodeKind.EmSetupFile:
+            {
+                var emKey = Path.GetFullPath(node.AbsolutePath);
+                return _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d =>
+                    d.IsDirty && string.Equals(Path.GetFullPath(d.FilePath), emKey, StringComparison.OrdinalIgnoreCase));
+            }
             default:
                 return false;
         }
@@ -4984,6 +5255,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case NodeKind.TechFile:
                 SaveTechByPath(node.AbsolutePath);
                 break;
+            case NodeKind.EmSetupFile:
+                SaveEmSetupByPath(node.AbsolutePath);
+                break;
         }
 
         if (CurrentWorkspacePath is not null)
@@ -4994,6 +5268,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         var key = Path.GetFullPath(absPath);
         var doc = _openDocsByPath.Values.OfType<TechDocument>().FirstOrDefault(d =>
+            string.Equals(Path.GetFullPath(d.FilePath), key, StringComparison.OrdinalIgnoreCase));
+        if (doc is { IsDirty: true }) doc.ViewModel.SaveCommand.Execute(null);
+    }
+
+    private void SaveEmSetupByPath(string absPath)
+    {
+        var key = Path.GetFullPath(absPath);
+        var doc = _openDocsByPath.Values.OfType<EmSetupDocument>().FirstOrDefault(d =>
             string.Equals(Path.GetFullPath(d.FilePath), key, StringComparison.OrdinalIgnoreCase));
         if (doc is { IsDirty: true }) doc.ViewModel.SaveCommand.Execute(null);
     }
@@ -6610,6 +6892,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
+        // An EM setup, like a technology, is always materialized — a dirty one must be offered the
+        // same Save / Don't Save / Cancel before its tab closes.
+        if (dockable is EmSetupDocument emCloseDoc && emCloseDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{emCloseDoc.Id}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:   return false;
+                case SaveChangesResult.DontSave: return true;
+                case SaveChangesResult.Save:
+                    emCloseDoc.ViewModel.SaveCommand.Execute(null);
+                    return !emCloseDoc.IsDirty;
+            }
+        }
+
         // Technology editor document — always materialized, never scratch, so Save is a direct
         // write (no offer-target dialog like Layout/Symbol).
         if (dockable is TechDocument techDoc && techDoc.IsDirty)
@@ -6723,6 +7024,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SymbolEditorDocument syd => syd.IsDirty,
         LayoutDocument ld        => ld.IsDirty,
         TechDocument td          => td.IsDirty,
+        EmSetupDocument emd   => emd.IsDirty,
         _                        => HasAnyDirtyWork(),
     };
 
@@ -6805,6 +7107,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return;
             }
 
+            // SingleDoc scope for an active EM setup — R-em-9: never scratch, so a direct write,
+            // exactly like the technology editor above.
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
+                ResolveActiveDocumentForCommands() is EmSetupDocument singleEmDoc)
+            {
+                if (!singleEmDoc.IsDirty)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                singleEmDoc.ViewModel.SaveCommand.Execute(null);
+                return;
+            }
+
             // AllDocs scope: save every dirty document.
             var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
             var dirtyMaterialized = _openDocsByPath.Values
@@ -6825,11 +7141,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 .OfType<TechDocument>()
                 .Where(d => d.IsDirty)
                 .ToList();
+            var dirtyEmDocs = _openDocsByPath.Values
+                .OfType<EmSetupDocument>()
+                .Where(d => d.IsDirty)
+                .ToList();
 
             bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
                          || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
                          || dirtyScratchLayouts.Count > 0 || dirtyMaterializedLayouts.Count > 0
-                         || dirtyTechDocs.Count > 0;
+                         || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0;
             if (!anyDirty)
             {
                 Messages.Info("Nothing to save.");
@@ -6919,6 +7239,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Dirty technology docs — always materialized, direct write via VM.
             foreach (var techDoc in dirtyTechDocs)
                 techDoc.ViewModel.SaveCommand.Execute(null);
+
+            // Dirty EM setups — R-em-9: never scratch, so the same direct write.
+            foreach (var emDoc in dirtyEmDocs)
+                emDoc.ViewModel.SaveCommand.Execute(null);
         }
         finally
         {
@@ -7025,6 +7349,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             || _scratchLayouts.Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<TechDocument>().Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d => d.IsDirty && Keep(d))
             || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || HasOrphanedDirtySession()
@@ -7069,6 +7394,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .OfType<TechDocument>()
             .Where(d => d.IsDirty && Keep(d))
             .ToList();
+        var dirtyEmDocs = _openDocsByPath.Values
+            .OfType<EmSetupDocument>()
+            .Where(d => d.IsDirty && Keep(d))
+            .ToList();
         var dirtyOrphanedSessions       = _registry.GetOrphanedDirtyPaths(IsSessionReferenced);
         var dirtyOrphanedLayoutSessions = _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced);
 
@@ -7076,7 +7405,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                   + dirtyScratchSymbols.Count + dirtyMatSymbols.Count
                   + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
                   + dirtyScratchLayouts.Count + dirtyMatLayouts.Count
-                  + dirtyTechDocs.Count
+                  + dirtyTechDocs.Count + dirtyEmDocs.Count
                   + dirtyOrphanedSessions.Count
                   + dirtyOrphanedLayoutSessions.Count;
         if (total == 0) return true;
@@ -7090,6 +7419,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             : dirtyMatSymbols.Count            > 0 ? dirtyMatSymbols[0].Id
             : dirtyMatLayouts.Count            > 0 ? dirtyMatLayouts[0].Id
             : dirtyTechDocs.Count              > 0 ? dirtyTechDocs[0].Id
+            : dirtyEmDocs.Count                > 0 ? dirtyEmDocs[0].Id
             : dirtyMatDisplays.Count           > 0 ? dirtyMatDisplays[0].Id
             : dirtyScratchDisplays.Count       > 0 ? dirtyScratchDisplays[0].Id
             : dirtyOrphanedSessions.Count       > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedSessions[0])
@@ -7188,6 +7518,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Dirty technology docs — always materialized, direct write via VM.
                 foreach (var techDoc in dirtyTechDocs)
                     techDoc.ViewModel.SaveCommand.Execute(null);
+                foreach (var emDoc in dirtyEmDocs)
+                    emDoc.ViewModel.SaveCommand.Execute(null);
                 // Dirty data displays → save in place (materialized) or via picker (scratch).
                 foreach (var dd in dirtyMatDisplays)
                     await SaveDataDisplayDoc(dd, owner);

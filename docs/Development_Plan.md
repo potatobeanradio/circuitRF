@@ -92,11 +92,17 @@ One expression engine serves global variables, **cell parameters** (hierarchical
 | **7. Data Display** | Results & measured-vs-sim | `DataCube`-native plotter; plot + table views; measured-vs-simulated overlay; loadpull contour rendering | Simulation results and a lab Touchstone overlay on one Smith chart |
 | **8. Hardening & optional extensions** | Polish + future doors | Packaging (Win/macOS/Linux); docs; regression suite in CI; *optional:* Verilog-A/OSDI backend (→ **ASM-HEMT**), third-party cell bridge | Installers on 3 OSes; regression suite green; deferred items have clean plug-in points |
 | **9. Layout editor** ✅ *(substantially complete)* | Physical design, in the same tool | Integer-DBU geometry model + `.clay`/`.ctech` formats (L0); drawing, selection, booleans, scale, labels, bitmaps (L1); spatial index, LOD, path caching (L2); hierarchy — instances, arrays, navigation, flatten, group-into-cell (L3); **GDSII / DXF / Gerber+Excellon** interchange (L4); the **PCell** contract + substrate-aware **microstrip family** (L5a); **schematic↔layout generation** (L5) | A PCB and an MMIC design draw, edit and export; exported GDSII/DXF/Gerber open correctly in independent third-party viewers; schematic→layout and layout→schematic are idempotent and report what they change |
-| **10. Electromagnetic simulation (2.5D MoM)** ▶ *(next)* | Close the schematic → layout → EM loop | Substrate stackup + mesher (L6); **quasi-static per-unit-length** kernel for uniform cross-sections (L7); **full-wave, single dielectric + ground plane** (L8); **general layered stack, N dielectrics, vias and z-directed current** (L9). Ports attach to layout pins; results return as S-parameters consumable anywhere a Touchstone block is | L7 agrees with closed-form microstrip (Hammerstad-Jensen) within **±2%** on Z₀ and εeff over the published validity range; L8/L9 agree with reference/measured data for a coupled-line and a via-bearing structure |
+| **10. Electromagnetic simulation (MoM)** ▶ *(next)* | Close the schematic → layout → EM loop | **Planar (2.5D):** substrate stackup + mesher (L6); **quasi-static per-unit-length** kernel for uniform cross-sections (L7); **full-wave, single dielectric + ground plane** (L8); **general layered stack, N dielectrics, vias and z-directed current** (L9). **3D wirebonds (thin-wire):** parametric bond wire + quasi-static PEEC with full inter-wire coupling, wires-only over a ground plane (LW1); meshed surfaces — landing pads, overmold, stepped ground (LW2). Ports attach to layout pins; results return as S-parameters consumable anywhere a Touchstone block is | L7 agrees with closed-form microstrip (Hammerstad-Jensen) within **±2%** on Z₀ and εeff over the published validity range; L8/L9 agree with reference/measured data for a coupled-line and a via-bearing structure; **LW1 agrees with closed-form partial inductance within 2% and with owner-generated 3D FEM data within 5% on an 8-wire GSGSG array to 20 GHz**; LW2 passes the right-angle-corner image oracle before any package geometry |
 
 Phases 0–5 are the "engine half" (disproportionate *thinking*); 6–8 the "product half" (disproportionate
 *typing*) — which maps onto the model split below. Phases 9–10 repeat that shape at smaller scale: the layout
 editor is mostly product work, the MoM kernel is mostly engine work.
+
+**Within Phase 10, the research risk is not evenly spread.** L8/L9 need the layered-medium Green's function
+and DCIM — the one genuinely uncertain schedule in this project (`layout-view.md` §10.2). L7 and **LW1/LW2 do
+not**: they use a free-space kernel and are ordinary bounded engineering. LW1/LW2 depend on L6 and L7 and on
+**nothing in L8 or L9**, so the wirebond arc is schedulable independently of the full-wave arc. Whether it runs
+first is an open sequencing call (§10).
 
 ## 5. AI workflow: Opus vs Sonnet, Chat vs Code
 
@@ -148,6 +154,10 @@ Update each at the end of the phase that touches its subsystem.
 | Solo-dev + AI architectural drift | `CLAUDE.md` invariants; Opus subsystem-boundary reviews; engine-first |
 | Swift → C# semantics | Design the C# model deliberately (don't transliterate); review the Swift before Phase 1 |
 | Big-sweep memory | `DataSet`/`DataCube` backing store swappable to chunked/memory-mapped; deep measurement reach noted for a future prune-to-referenced-nodes pass |
+| Layered-medium Green's function / DCIM (L8–L9) consumes the schedule | The single genuine research risk in Phase 10. Deferred behind a shippable L0–L7; `IEmKernel` isolates it; L7's oracles exist before L8 starts. **Nothing in the wirebond arc depends on it** — do not schedule LW1/LW2 as if it did |
+| LW2 under-estimated because it looks like "adding panels to LW1" | Named as the larger half of the wirebond effort: one deliverable (surface panels + wire-to-surface junction basis functions) unlocking landing pads, overmold and stepped ground together. Gated on the right-angle-corner 3-image oracle *before* any package geometry, so junction correctness is measurable in isolation |
+| A wirebond result is reported with no stated return path and is silently optimistic | Ports carry an explicit reference conductor and the UI refuses a port without one; ground bond wires are ordinary wires, not a boundary condition; a multi-tier ground with no declared connection is refused rather than shorted |
+| Two EM kernels in flight dilute a solo project | LW1 shares everything but the kernel with L7 and carries no DCIM dependency, so it is an increment, not a second research project. Sequenced against L8, not beside it; LW2 gated behind LW1's oracles |
 | Licensing | MIT core; never ingest GPL from third-party simulators; comply with ASM-HEMT's license at v2; reuse your own MIT splotRF freely |
 | Packaging-tool lag on .NET 10 | Budget Phase 8 time; reuse splotRF's `wix`/`fpm`/macOS recipes |
 
@@ -176,10 +186,26 @@ MTAPER and the **Klopfenstein taper** with a novel off-axis `Offset` parameter �
 `docs/design/microstrip-models.md` against primary literature; and **schematic↔layout generation** in both
 directions.
 
-**Next (Phase 10 — electromagnetic simulation):** the 2.5D method-of-moments arc (L6–L9) described in
-`docs/design/layout-view.md` §10. Staged so each stage has a validation oracle: the quasi-static kernel is
-checked against the same closed-form microstrip implementation the MLIN component uses, which is why that
-implementation is deliberately **shared** rather than duplicated.
+**Next (Phase 10 — electromagnetic simulation):** two method-of-moments arcs sharing one solver interface,
+one stackup model, one port model, one mesh viewer and one results path.
+
+- **Planar 2.5D (L6–L9)** — described in `docs/design/layout-view.md` §10. Staged so each stage has a
+  validation oracle: the quasi-static kernel is checked against the same closed-form microstrip
+  implementation the MLIN component uses, which is why that implementation is deliberately **shared**
+  rather than duplicated.
+- **3D wirebonds (LW1–LW2)** — described in `docs/design/mom-wirebond-kernel.md`, summarised in
+  `layout-view.md` §10.11. A thin-wire kernel for ball- and wedge-bond arrays up to 200 wires with full
+  mutual coupling, covering overmold and stepped ground. Staged on the same principle — quasi-static
+  (frequency-independent matrices, so sweeps are effectively free) before retarded full-wave, wires-only
+  before meshed surfaces — and validated against closed-form partial inductance, a right-angle-corner
+  image solution, and owner-generated 3D FEM data.
+
+Two things about the wirebond arc are worth carrying forward into scheduling. It **carries no DCIM risk**
+(free-space kernel throughout), so it is not a second research project running beside L8. And its second
+phase, **LW2, is the larger half** — a single deliverable (surface panels plus wire-to-surface junction
+basis functions) that unlocks three separately-requested capabilities at once: coupling to landing pads, a
+finite overmold body, and discontinuous ground. Budgeting LW2 as "a few small additions to LW1" is the way
+this phase would be under-estimated.
 
 **Remaining for the v1 (alpha) release:**
 1. **Hardening (Phase 8)** — installers for Windows/macOS/Linux, broader docs, and keeping the `testdata/`
@@ -194,8 +220,11 @@ implementation is deliberately **shared** rather than duplicated.
 - Five hero circuits locked (PRD §4).
 - splotRF: **shared core** (external `RfCore` sibling, `ProjectReference`); circuitRF owns the `DataSet`/`DataCube` contract.
 - PRD written **before** the Swift review (done); Swift review is the next step.
+- **3D wirebond EM (2026-08-04)** — in scope as a fourth MoM kernel (PRD §5; `docs/design/mom-wirebond-kernel.md`). The PRD's "no 3D full-wave EM" non-goal was **narrowed** to *no FEM, no volumetric meshing, no arbitrary 3D geometry*; a wirebond is a parametric component with a 2D-projection layout view, so the layout stays 2D and no volume mesher is written.
 
-*Remaining genuinely-open items are tracked in PRD §17 (power-sweep range; Hero-5 IM tolerances; NFR numbers).*
+*Remaining genuinely-open items are tracked in PRD §17 (power-sweep range; Hero-5 IM tolerances; NFR numbers;
+**LW1-vs-L8 sequencing** — the wirebond arc carries no DCIM risk and could reasonably precede the full-wave
+planar arc, which is a roadmap call that blocks neither design).*
 
 ## 11. Noise analysis — a deliberate green field (v2 candidate)
 

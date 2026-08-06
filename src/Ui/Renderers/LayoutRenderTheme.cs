@@ -33,6 +33,19 @@ public sealed class LayoutRenderTheme
     /// copper.</summary>
     public SKColor PCellPin { get; init; }
 
+    /// <summary>brief-L6-L7-em-ui.md R-em-15 — the three EM mesh overlay colours. Conductor and
+    /// dielectric-interface segments are visibly different because they are different unknowns
+    /// (free vs. bound charge); the truncation marker is the R-mom-10 quantity a user has to be able
+    /// to see in order to trust the answer.</summary>
+    public SKColor EmMeshConductor  { get; init; }
+    public SKColor EmMeshInterface  { get; init; }
+    public SKColor EmMeshTruncation { get; init; }
+
+    /// <summary>brief-L8b D5 — the plan-view surface-mesh cell boundary. A separate role from the
+    /// three above because both overlays exist at once: kernel A's mesh is a cross-section and draws
+    /// as an inset, kernel B's is in the same (x, y) plane the canvas already draws.</summary>
+    public SKColor PlanarMeshCell { get; init; }
+
     public static LayoutRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         SKColor SK(string role)
@@ -53,6 +66,10 @@ public sealed class LayoutRenderTheme
             Selection       = SK(ColorRole.LayoutSelection),
             Warning         = SK(ColorRole.SystemWarning),
             PCellPin        = SK(ColorRole.LayoutPCellPin),
+            EmMeshConductor  = SK(ColorRole.LayoutEmMeshConductor),
+            EmMeshInterface  = SK(ColorRole.LayoutEmMeshInterface),
+            EmMeshTruncation = SK(ColorRole.LayoutEmMeshTruncation),
+            PlanarMeshCell   = SK(ColorRole.LayoutPlanarMeshCell),
         };
     }
 

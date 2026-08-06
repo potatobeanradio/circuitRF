@@ -1,8 +1,10 @@
 # circuitRF — Project Requirements Document (PRD)
 
-**Status:** Approved — v1.2 baseline · **Owner:** (you) · **Date:** 2026-05-30
+**Status:** Approved — v1.3 baseline · **Owner:** (you) · **Date:** 2026-08-04
 **Scope of this document:** defines *what* circuitRF v1 must do and how we'll know it's done. It does **not** specify the data model or algorithms (those live in `docs/design/`).
 
+> **v1.2 → v1.3 (2026-08-04):** added **3D wirebond EM** as a fourth MoM kernel (§5, §8, §9), and **narrowed the §2 non-goal** from "no 3D full-wave EM" to *no FEM, no volumetric meshing, no arbitrary 3D geometry* — the previous wording would have excluded a thin-wire solver that requires none of those things. **Layout remains 2D**: a wirebond is a parametric *component* whose layout view is its 2D projection, so no 3D shape type enters the layout database and no volume mesher is written. Design detail in [`design/mom-wirebond-kernel.md`](design/mom-wirebond-kernel.md); phases **LW1/LW2** in the development plan. No change to the five heroes, the engine, or any other scope.
+>
 > **v1.1 → v1.2:** added **Hero 1B** — a ~10,000-component mechanically-generated linear network as a **performance/scale anchor** (validates the §14 10k-component / <10 s NFR), distinct from the correctness heroes; targeted at Phase 2 (§4). Recorded the engine-wide **magnitude (= peak) phasor convention** and the **RF-power-source available-power formulation** (both resolved in `linear-engine.md` rev 3). No scope change to the correctness heroes.
 >
 > **v1.0 → v1.1:** result model clarified during data-model design — a run returns a **`DataSet`** of named **`DataCube`s** (each a single-kind `Real` or `Complex` array), replacing "one DataCube" language (§11, §13); **`.npy` exports the whole `DataSet` as one packed structured array** (§11). No scope change.
@@ -27,7 +29,7 @@ circuitRF v1 is deliberately bounded. The following are **not** in v1:
 
 - **Not a SPICE simulator.** Transient analysis is deferred; v1 ships DC, S-parameters, and harmonic balance only.
 - **Full Verilog-A is deferred to v2.** v1 ships built-in nonlinear models plus the Symbolically-Defined Device (§6). The **ASM-HEMT** GaN model rides on the v2 Verilog-A/OSDI backend (§6.1) — not in v1.
-- **Layout is 2D only, and EM is 2.5D.** The layout view is fully implemented in v1 (§8, §9) with a **2.5D method-of-moments** solver (§5). There is **no 3D layout and no 3D full-wave EM** — no arbitrary 3D structures, no volumetric meshing.
+- **Layout is 2D. EM is 2.5D planar plus 3D wirebonds — and no FEM.** The layout view is fully implemented in v1 (§8, §9) with a **2.5D method-of-moments** solver for planar geometry and a **thin-wire MoM kernel for bond wires** (§5). Out of scope: **FEM, volumetric meshing, and arbitrary 3D geometry** — the user cannot draw a 3D solid, the layout database stores no 3D shape type, and nothing meshes a volume. A wirebond is admitted as a **parametric component** whose layout view is its 2D projection and whose 3D path is generated from named parameters (loop height, profile, diameter), which is why it needs none of the excluded machinery.
 - **No layout auto-router.** Schematic→layout places components; the user routes. Obstacle-aware auto-routing applies to schematic wiring only.
 - **A third-party cell database is not the storage layer.** v1 uses circuitRF's own human-readable native format. An optional third-party *cell import/export bridge* may come later; full support is out of scope.
 - **No co-simulation, no system/behavioral-level modeling (e.g., X-parameter generation), no optimization/yield engine** in v1.
@@ -86,7 +88,11 @@ These circuits define "done" for the v1 engine; every proposed feature is gated 
   - **Continuation** — power/source stepping required for convergence at drive.
 - **Parametric sweeps** — a generic sweep wraps *any* analysis over one or more parameters (Pin_available, a DC voltage, or any user variable / cell parameter per §7), producing complex, multi-dimensional results.
 - **Loadpull / sourcepull** — a first-class experiment: sweep source/load Γ (fundamental, and **harmonic loadpull** where harmonic terminations are varied), report FOMs as Smith-chart contours. Headline differentiator; dedicated UX attention.
-- **Electromagnetic analysis (2.5D method of moments)** — analyse **layout** geometry against its technology **stackup** and return S-parameters that are consumable anywhere a Touchstone block is, closing the schematic → layout → EM loop inside one tool. Staged: quasi-static per-unit-length for uniform cross-sections, then full-wave over a single dielectric with a ground plane, then the general layered stack with **vias and z-directed current**. Closed-form microstrip (Hammerstad-Jensen) is the validation oracle for the first stage; ports attach to layout **pins**. Design detail in [`design/layout-view.md`](design/layout-view.md) §10.
+- **Electromagnetic analysis (method of moments)** — analyse **layout** geometry against its technology **stackup** and return S-parameters that are consumable anywhere a Touchstone block is, closing the schematic → layout → EM loop inside one tool. Ports attach to layout **pins**. Two kernel families, sharing one solver interface, one stackup model, one port model, one mesh viewer and one results path:
+  - **Planar (2.5D)** — staged: quasi-static per-unit-length for uniform cross-sections, then full-wave over a single dielectric with a ground plane, then the general layered stack with **vias and z-directed current**. Closed-form microstrip (Hammerstad-Jensen) is the validation oracle for the first stage. Design detail in [`design/layout-view.md`](design/layout-view.md) §10.
+  - **3D wirebonds (thin-wire)** — ball- and wedge-bond loop profiles in arrays up to **200 wires**, capturing the **mutual coupling between every wire**, over the packaging-realistic range: 0.5–1.25 mil wire radius, 5–50 mil loop height, 5–300 mil pitch. Staged the same way and for the same reason: quasi-static PEEC first (frequency-independent matrices, so a sweep is effectively free), then retarded full-wave. Wires-only over a ground plane first; meshed surfaces — landing pads, **overmold**, and **stepped/discontinuous ground** — second. Closed-form partial inductance (Neumann/Grover) and a right-angle-corner image solution are the validation oracles; owner-generated 3D FEM data is the regression anchor. Design detail in [`design/mom-wirebond-kernel.md`](design/mom-wirebond-kernel.md), summarised in `layout-view.md` §10.11.
+
+  This kernel exists because die-to-board bondwire inductance is a first-order design parameter in exactly the power-amplifier and module work the hero circuits (§4) represent, and because it is the geometry where MoM most clearly beats FEM: unknowns scale with wire count rather than with the volume of air between the wires.
 
 ## 6. Components (functional requirements)
 
@@ -132,7 +138,9 @@ User content is organized as **cells**: a collection of electrically connected c
 
 1. **Symbol** — the glyph rendered when the cell is instanced; defines port x/y positions.
 2. **Schematic** — the electrical representation: positions of sub-cell instances and their interconnections.
-3. **Layout** — the physical (2D) representation: geometry on a technology-defined layer stack, hierarchy with instances and arrays, and **parametric cells** whose artwork is generated from the cell's parameters rather than drawn. Implemented in v1; 3D is out of scope (§2). A layout resolves a **technology** (`.ctech`) supplying its layer table and substrate stackup, which is also what the EM solver (§5) and the substrate-aware microstrip components (§6) read.
+3. **Layout** — the physical (2D) representation: geometry on a technology-defined layer stack, hierarchy with instances and arrays, and **parametric cells** whose artwork is generated from the cell's parameters rather than drawn. Implemented in v1; drawing 3D geometry is out of scope (§2). A layout resolves a **technology** (`.ctech`) supplying its layer table and substrate stackup, which is also what the EM solver (§5) and the substrate-aware microstrip components (§6) read.
+
+   A **wirebond** is the one object with a physical extent the 2D canvas cannot show. It is modelled as a **parametric component instance**, not a shape: its parameters carry the endpoints, loop height, profile and wire diameter, its layout view is the **2D projection** plus an annotation, and its 3D path is generated for the EM solver (§5) on demand. The layout database therefore gains no 3D shape type, and "layout is 2D" (§2) holds without qualification.
 
 Cells live in **Libraries**; circuitRF can reference many libraries simultaneously. Hierarchy is first-class: push into a sub-cell's schematic, edit, pop back. Sub-cell instances may receive parameter overrides from the parent (§7).
 
@@ -144,6 +152,7 @@ Cells live in **Libraries**; circuitRF can reference many libraries simultaneous
 - **Clipboard** — copy/paste all or selectable portions to/from other schematics via the **system clipboard**.
 - **Symbol editor** — edit a custom cell's symbol.
 - **Layout editor** — draw and edit physical geometry on the technology's layer stack: drawing tools with curves and holes, boolean operations, scale, a **technology/stackup editor**, hierarchy with instances and arrays, push-in/pop-out, flatten and group-into-cell, and **GDSII / DXF / Gerber+Excellon** import and export.
+- **Wirebond placement** — place a parametric bond wire between two pads (ball or wedge profile, loop height, diameter), shown on the canvas as its 2D projection with an annotation. A **CSV wirebond table importer** covers the packaging workflow, because hand-placing a 200-wire array is not a workflow anyone will use.
 - **Schematic ↔ layout generation** — an explicit command in each direction: place or update layout instances from the schematic, or update the schematic from layout edits. Never automatic; each run reports what it changed and is a single undo.
 - **Undo/redo** — across all editors.
 - **Data Display** — native `DataCube`-driven plots and tables (Smith, polar, rectangular, table); **measured-vs-simulated overlay**.
@@ -204,7 +213,7 @@ Advanced users must always reach every underlying setting; "easy" is the default
 
 ## 16. Risks (pointers; full register in the development plan)
 
-Dominant risks: **HB convergence and two-tone frequency indexing** (now with a hard mixing-order-≥5 requirement from Hero 5 — design on paper first); **Verilog-A/ASM-HEMT scope** (deferred to v2; v1 device interface pre-accommodates its needs); **hierarchical parameter resolution and cycle detection** (correctness during elaboration); **schematic-canvas performance/auto-routing** (custom virtualized canvas, not control-per-component); **scope creep vs "lightweight"** (the five heroes + §2 non-goals are the gate). Swift→C# translation and large-sweep memory are tracked in the plan's risk register.
+Dominant risks: **HB convergence and two-tone frequency indexing** (now with a hard mixing-order-≥5 requirement from Hero 5 — design on paper first); **Verilog-A/ASM-HEMT scope** (deferred to v2; v1 device interface pre-accommodates its needs); **hierarchical parameter resolution and cycle detection** (correctness during elaboration); **schematic-canvas performance/auto-routing** (custom virtualized canvas, not control-per-component); **scope creep vs "lightweight"** (the five heroes + §2 non-goals are the gate); and, in the EM phase, the **layered-medium Green's function / DCIM** (the one genuinely uncertain schedule — note that the wirebond kernel deliberately does **not** depend on it). Swift→C# translation, large-sweep memory, and the wirebond-specific risks are tracked in the plan's risk register.
 
 ## 17. Decisions resolved & remaining open items
 
@@ -218,10 +227,18 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 - ASM-HEMT → v2 via Verilog-A/OSDI (§6.1).
 - `.npy` multi-axis result → **whole `DataSet` exported as one packed structured array** (§11).
 
+**Resolved (v1.3, 2026-08-04):**
+- **3D wirebond EM → in scope**, as a fourth MoM kernel behind the existing solver interface (§5). Thin-wire, quasi-static first then retarded; wires-only first then meshed surfaces.
+- **The §2 "no 3D EM" non-goal → narrowed** to *no FEM, no volumetric meshing, no arbitrary 3D geometry*. The old wording excluded a solver that needs none of them.
+- **How a 3D wire lives in a 2D layout → a parametric component with a 2D-projection view** (§8). No 3D shape type in the layout database; "layout is 2D" survives intact.
+- **Overmold → modelled**, via bound charge on the encapsulant surfaces with a homogeneous-fill fast mode. Not via volume meshing.
+- **Discontinuous (stepped) ground → modelled**, by meshing the ground as a conductor. Explicitly *not* something the layered-medium kernel provides.
+
 **Remaining open items:**
 1. **Hero 2/4/5 power-sweep range** — TBD pending the chosen SDD FET model (small-signal start, compression depth, and the drive level(s) used for the Hero-5 IM check).
 2. Hero-5 IM tolerances (§4) are **[PROPOSED]** — confirm dBc bounds once reference IM data exists.
 3. NFR numbers in §14 remain **[PROPOSED]**.
+4. **Wirebond kernel priority relative to the full-wave planar kernel** — the wirebond phases depend on the quasi-static planar phase and on nothing beyond it, so they carry no layered-Green's-function schedule risk and could run first. A roadmap sequencing call, not a scope question; it blocks neither design.
 
 ---
 

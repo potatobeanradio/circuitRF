@@ -199,6 +199,7 @@ public static class WorkspaceScanner
             ".cdd"    => NodeKind.DataDisplayFile,
             ".ccolor" => NodeKind.ColorThemeFile,
             ".ctech"  => NodeKind.TechFile,
+            ".cem"    => NodeKind.EmSetupFile,
             _         => NodeKind.OtherFile,
         };
         return new ProjectTreeNode(kind, FileName(file), file, Rel(file, workspaceRoot));

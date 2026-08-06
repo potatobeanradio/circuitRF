@@ -175,7 +175,7 @@ public static class CnlWriter
             sb.Append($"  {inst.RefNetBinding}");
 
         foreach (var ov in inst.Overrides)
-            sb.Append($"  {FormatParam(ov)}");
+            sb.Append($"  {FormatParam(ov, inst.Reference)}");
 
         return sb.ToString();
     }
@@ -252,12 +252,28 @@ public static class CnlWriter
         return sb.ToString();
     }
 
-    private static string FormatParam(ParameterAssignment ov)
+    private static string FormatParam(ParameterAssignment ov, string? reference = null)
     {
+        // An SnP's File must be QUOTED. CnlReader resolves a relative Touchstone path against the
+        // .cnl's own directory ONLY inside its `pexpr[0] == '"'` branch — so an unquoted relative
+        // path reaches the model verbatim and is then looked for relative to the process working
+        // directory, which is nowhere. hero1.cnl's own `File="…s2p"` is the canonical form.
+        //
+        // This surfaced at L7b: EM back-annotation is the first thing to write a RELATIVE SnP path
+        // from the schematic side (R-cpl-13 stores workspace-relative), where the Browse… picker had
+        // always produced an absolute one that happened not to need the resolution branch.
+        if (reference is not null
+            && reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
+            && ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)
+            && !IsQuoted(ov.Expression))
+            return $"{ov.Name}=\"{ov.Expression}\"";
+
         if (!string.IsNullOrEmpty(ov.Unit))
             return $"{ov.Name}={ov.Expression} {ov.Unit}";
         return $"{ov.Name}={ov.Expression}";
     }
+
+    private static bool IsQuoted(string s) => s.Length >= 2 && s[0] == '"' && s[^1] == '"';
 
     // ── Analysis emission ─────────────────────────────────────────────────────
 

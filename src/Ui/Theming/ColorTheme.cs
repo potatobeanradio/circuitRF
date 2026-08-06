@@ -77,6 +77,10 @@ public sealed class ColorTheme
             [ColorRole.LayoutCursorIndicator]       = new(206,  74,  36),
             [ColorRole.LayoutSelection]              = new( 30, 110, 220),
             [ColorRole.LayoutPCellPin]               = new(  0, 150, 110),
+            [ColorRole.LayoutEmMeshConductor]        = new(210,  60,  40),
+            [ColorRole.LayoutEmMeshInterface]        = new( 40, 110, 200),
+            [ColorRole.LayoutEmMeshTruncation]       = new(140, 140, 140),
+            [ColorRole.LayoutPlanarMeshCell]         = new( 40, 110, 200),
         },
         new Dictionary<string, Rgba>
         {
@@ -102,5 +106,9 @@ public sealed class ColorTheme
             [ColorRole.LayoutCursorIndicator]       = new(240, 120,  70),
             [ColorRole.LayoutSelection]              = new( 90, 165, 255),
             [ColorRole.LayoutPCellPin]               = new( 60, 210, 170),
+            [ColorRole.LayoutEmMeshConductor]        = new(255, 120,  95),
+            [ColorRole.LayoutEmMeshInterface]        = new(110, 175, 255),
+            [ColorRole.LayoutEmMeshTruncation]       = new(160, 160, 160),
+            [ColorRole.LayoutPlanarMeshCell]         = new(110, 175, 255),
         });
 }

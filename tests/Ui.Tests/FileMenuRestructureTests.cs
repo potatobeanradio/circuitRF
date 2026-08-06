@@ -144,10 +144,16 @@ public class FileMenuRestructureTests
     }
 
     // §1.1 — New submenu, exact order, both surfaces.
+    // brief-L6-L7-em-ui.md D1/R-em-9 added "New EM Setup…" after "New Technology…" — a .cem is a
+    // workspace-scoped document alongside the technology it reads, so it belongs beside it. These
+    // two lists stay EXACT and ORDERED on purpose: that is what keeps the hand-mirrored in-window
+    // and macOS menus from drifting apart, so an addition updates them rather than loosening them.
     private static readonly string[] ExpectedNewSubmenuInWindow =
-        ["New _Cell…", "New _Schematic", "New S_ymbol", "New _Layout", "New _Data Display", "New _Technology…"];
+        ["New _Cell…", "New _Schematic", "New S_ymbol", "New _Layout", "New _Data Display",
+         "New _Technology…", "New _EM Setup…"];
     private static readonly string[] ExpectedNewSubmenuNative =
-        ["New Cell…", "New Schematic", "New Symbol", "New Layout", "New Data Display", "New Technology…"];
+        ["New Cell…", "New Schematic", "New Symbol", "New Layout", "New Data Display",
+         "New Technology…", "New EM Setup…"];
 
     [Fact]
     public void InWindowNewSubmenu_ExactOrder()

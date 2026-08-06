@@ -20,11 +20,19 @@ namespace RfCore.Export;
 
 // ── Options & result types ────────────────────────────────────────────────────
 
+/// <param name="HeaderComments">
+/// Optional <c>!</c>-prefixed header lines, written verbatim before the option line. <b>Additive:
+/// null (the default) writes nothing, so every pre-existing caller's output stays byte-identical.</b>
+/// Added for the EM run path, which stamps provenance into the <c>.snp</c> it writes so a stale one
+/// sitting next to an edited layout is detectable rather than silently believed
+/// (docs/design/layout-view.md §10.8, brief-L6-L7-em-ui.md R-em-19/20).
+/// </param>
 public sealed record TouchstoneExportOptions(
     double       Z0Ohms,
     int          Digits,
     char         DigitFormat,   // 'f' | 'g' | 'e'
-    MatrixFormat MatrixFormat);
+    MatrixFormat MatrixFormat,
+    IReadOnlyList<string>? HeaderComments = null);
 
 public enum TouchstoneExportStatus { Ok, NoSCube, NameCollision }
 
@@ -196,6 +204,12 @@ public static class TouchstoneExporter
 
             var snp = new SNP(freqs, mats, MatrixType.S, opts.MatrixFormat,
                               new Complex(opts.Z0Ohms, 0));
+
+            // Header comments ride on the SNP's own Comments list (FrequencyIndex -1 = header),
+            // which TouchstoneIO.Write already emits — no writer change needed.
+            if (opts.HeaderComments is { Count: > 0 })
+                foreach (var line in opts.HeaderComments)
+                    snp.Comments.Add(new CommentEntry(-1, line));
 
             // Ensure parent directory exists
             string? dir = Path.GetDirectoryName(path);

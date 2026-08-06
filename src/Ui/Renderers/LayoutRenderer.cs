@@ -3,6 +3,7 @@ using System.Linq;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Theming;
 using SkiaSharp;
+using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Ui.Renderers;
 
@@ -77,6 +78,38 @@ public readonly struct LayoutRenderOptions
     /// the interactive canvas opts in via its own view-toggle VM property (default ON there, R-L5g-15
     /// — the toggle default lives at the VM layer, not here).</summary>
     public bool ShowPCellPins { get; init; }
+
+    /// <summary>brief-L6-L7-em-ui.md R-em-15 — draws the EM cross-section mesh as a screen-space
+    /// inset (see <c>LayoutRenderer.Mesh.cs</c>). Copies <see cref="ShowPCellPins"/>' contract
+    /// exactly: never layer geometry, never contributes to any <see cref="LayoutFrameCounters"/>
+    /// geometry count, never reachable by any exporter, and <b>defaulting to false</b> so every
+    /// export/one-shot render draws no mesh by construction. The toggle default lives at the VM
+    /// layer, not here.</summary>
+    public bool ShowEmMesh { get; init; }
+
+    /// <summary>The mesh to draw when <see cref="ShowEmMesh"/> is set. Null draws nothing — R-em-17:
+    /// an edited layout CLEARS this rather than leaving a stale mesh on screen.</summary>
+    public EmMeshReport? EmMesh { get; init; }
+
+    /// <summary>brief-L8b D5 — draws the PLAN-VIEW surface mesh over the artwork (see
+    /// <c>LayoutRenderer.PlanarMesh.cs</c>). Same contract as <see cref="ShowEmMesh"/>, including the
+    /// default of false; the two are independent, and which one a document actually shows follows
+    /// from which mesh was computed rather than from a mode.</summary>
+    public bool ShowPlanarMesh { get; init; }
+
+    /// <summary>The surface mesh to draw when <see cref="ShowPlanarMesh"/> is set. Null draws nothing
+    /// — R-em-17 applies here MORE strongly than to the inset: a plan-view mesh drawn over EDITED
+    /// artwork is worse than no mesh.</summary>
+    public PlanarMeshReport? PlanarMesh { get; init; }
+
+    /// <summary>L8e/D5 — the per-cell |J| map to shade the surface mesh with. Null takes the plain
+    /// cell-boundary path; this IS L8b's own one-per-cell-scalar provision, now wired.</summary>
+    public PlanarCurrentDensityMap? PlanarCurrentDensity { get; init; }
+
+    /// <summary>§10.6 — the resolved ports whose de-embedding reference planes to draw over the
+    /// artwork. Null or empty draws none. (Nullable rather than defaulted to <c>[]</c> because this
+    /// is a readonly struct, which may not carry field initialisers.)</summary>
+    public IReadOnlyList<PlanarPortResolution>? PlanarPorts { get; init; }
 
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true, ShowPCellPins = true };
 }
@@ -374,6 +407,25 @@ public static partial class LayoutRenderer
                 if (counters.InstancesExamined > 0)
                     DrawInstances(canvas, view, tech, instanceCandidates, instanceDragOverrides, opts, ps, scaleUm, counters, missingCellRefs);
 
+                // L8b D5 — the plan-view surface mesh. Drawn INSIDE the path-space transform (it is
+                // in the same (x, y) plane as the artwork, which is the whole reason this overlay can
+                // exist at all) and above the layers, so cell boundaries read against the metal. The
+                // cross-section inset below is drawn AFTER the transform is restored, because it is
+                // screen-space; the two are deliberately different and both are correct.
+                if (opts.ShowPlanarMesh && opts.PlanarMesh is { } planarMesh)
+                {
+                    // L8e/D5 — the heat map IS the per-cell-scalar path L8b left provisioned, and it
+                    // is one argument, not a second overlay.
+                    var density = opts.PlanarCurrentDensity;
+                    DrawPlanarMeshOverlay(canvas, planarMesh, theme, ps, view.DbuPerMicron, scaleUm,
+                                          density is null ? null : density.Normalised);
+
+                    // §10.6 — the de-embedding reference planes, over the engine's own coordinates.
+                    if (opts.PlanarPorts is { Count: > 0 } refPlanes)
+                        DrawPlanarReferencePlanes(canvas, refPlanes, theme, ps,
+                                                  view.DbuPerMicron, scaleUm);
+                }
+
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
                     DrawGhostShape(canvas, ghost, layerMap, ps, scaleUm);
 
@@ -412,6 +464,11 @@ public static partial class LayoutRenderer
             {
                 canvas.Restore();
             }
+
+            // R-em-15: drawn AFTER the path-space transform has been restored — the mesh overlay is
+            // screen-space, and it must never be swept up by anything that walks layer geometry.
+            if (opts.ShowEmMesh && opts.EmMesh is { } meshReport)
+                DrawEmMeshOverlay(canvas, meshReport, theme, vp.Width, vp.Height);
 
             return new LayoutRenderResult(
                 unknownLayers.Count == 0 ? [] : unknownLayers.ToArray(),

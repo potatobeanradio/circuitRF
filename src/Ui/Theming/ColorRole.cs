@@ -41,6 +41,27 @@ public static class ColorRole
     /// reads as copper (or any other physical layer).</summary>
     public const string LayoutPCellPin = "Layout.PCellPin";
 
+    /// <summary>brief-L6-L7-em-ui.md R-em-15: a CONDUCTOR segment in the EM mesh overlay.</summary>
+    public const string LayoutEmMeshConductor = "Layout.EmMeshConductor";
+
+    /// <summary>R-em-15: a DIELECTRIC-INTERFACE segment in the EM mesh overlay. Deliberately a
+    /// different colour from <see cref="LayoutEmMeshConductor"/> — they are different unknowns (free
+    /// vs. bound charge), and a user reading a mesh needs to see which is which.</summary>
+    public const string LayoutEmMeshInterface = "Layout.EmMeshInterface";
+
+    /// <summary>R-em-15: the truncation extent marker. R-mom-10 calls truncation "the one place
+    /// kernel A can be quietly wrong", so a viewer that hides it defeats the reporting the engine
+    /// already does.</summary>
+    public const string LayoutEmMeshTruncation = "Layout.EmMeshTruncation";
+
+    /// <summary>
+    /// brief-L8b-planar-mesher-and-overlay.md D5: a cell boundary in the PLAN-VIEW surface-mesh
+    /// overlay. Distinct from the three cross-section roles above because the two overlays coexist —
+    /// kernel A still produces cross-section meshes, and which one is drawn follows from which mesh
+    /// was computed, not from a mode.
+    /// </summary>
+    public const string LayoutPlanarMeshCell = "Layout.PlanarMeshCell";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -53,5 +74,7 @@ public static class ColorRole
         LayoutBackground, LayoutGridMinor, LayoutGridMajor,
         LayoutRulerBackground, LayoutRulerText, LayoutRulerTick, LayoutCursorIndicator,
         LayoutSelection, LayoutPCellPin,
+        LayoutEmMeshConductor, LayoutEmMeshInterface, LayoutEmMeshTruncation,
+        LayoutPlanarMeshCell,
     ];
 }
