@@ -50,6 +50,7 @@
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
                                     <NativeMenuItem Header="Open Schematic…"    Command="{Binding OpenSchematicFileCommand}"    CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Open Technology…"   Command="{Binding OpenTechnologyFileCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Symbol…"       Command="{Binding OpenSymbolFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Layout…"       Command="{Binding OpenLayoutFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}"  CommandParameter="{Binding $parent[Window]}"/>
@@ -71,6 +72,7 @@
                                     <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Into Open Technology…" Command="{Binding ImportIntoTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -78,6 +80,7 @@
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
                                     <NativeMenuItem Header="Data"   Command="{Binding ExportDataCommand}"/>
+                                    <NativeMenuItem Header="Technology Sections…" Command="{Binding ExportTechnologySectionsCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="GDSII"  Command="{Binding ExportGdsiiCommand}"/>
                                     <NativeMenuItem Header="DXF"    Command="{Binding ExportDxfCommand}"/>
                                     <NativeMenuItem Header="Gerber" Command="{Binding ExportGerberCommand}"/>
@@ -295,6 +298,12 @@
                               CommandParameter="{Binding $parent[Window]}">
                         <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <MenuItem Header="Open _Technology…"
+                              Command="{Binding OpenTechnologyFileCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="A technology file opens on its own — no workspace needed.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                     <MenuItem Header="Open S_ymbol…"
                               Command="{Binding OpenSymbolFileCommand}"
                               CommandParameter="{Binding $parent[Window]}">
@@ -361,12 +370,20 @@
                     <MenuItem Header="_Technology…"
                               Command="{Binding ImportTechnologyCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>
+                    <MenuItem Header="Into Open _Technology…"
+                              Command="{Binding ImportIntoTechnologyCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="Bring layers, stackup or DRC rules from another .ctech into the technology you are editing. Requires an open technology."/>
                 </MenuItem>
                 <MenuItem Header="_Export">
                     <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>
                     <MenuItem Header="_Data"
                               Command="{Binding ExportDataCommand}"
                               ToolTip.Tip="No data to export."/>
+                    <MenuItem Header="Technology _Sections…"
+                              Command="{Binding ExportTechnologySectionsCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="Write this technology's layers, stackup or DRC rules to a portable .ctech. Requires an open technology."/>
                     <MenuItem Header="_GDSII"
                               Command="{Binding ExportGdsiiCommand}"
                               ToolTip.Tip="Requires an active layout document."/>

@@ -173,21 +173,21 @@ public class FileMenuRestructureTests
     //    among the three top-level items ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void InWindowOpenSubmenu_ExactlyFourItems_InOrder()
+    public void InWindowOpenSubmenu_ExactItemsInOrder()
     {
         var openItem = FindTopLevel(InWindowFileChildren(), "_Open");
         Assert.Equal(
-            ["Open Sc_hematic…", "Open S_ymbol…", "Open _Layout…", "Open Data _Display…"],
+            ["Open Sc_hematic…", "Open _Technology…", "Open S_ymbol…", "Open _Layout…", "Open Data _Display…"],
             openItem.Children.Select(c => c.Header).ToArray());
         Assert.All(openItem.Children, c => Assert.False(c.IsSeparator));
     }
 
     [Fact]
-    public void NativeOpenSubmenu_ExactlyFourItems_InOrder()
+    public void NativeOpenSubmenu_ExactItemsInOrder()
     {
         var openItem = FindTopLevel(NativeFileChildren(), "Open");
         Assert.Equal(
-            ["Open Schematic…", "Open Symbol…", "Open Layout…", "Open Data Display…"],
+            ["Open Schematic…", "Open Technology…", "Open Symbol…", "Open Layout…", "Open Data Display…"],
             openItem.Children.Select(c => c.Header).ToArray());
     }
 
@@ -231,10 +231,12 @@ public class FileMenuRestructureTests
     [Fact]
     public void ImportSubmenu_ContainsExpectedFormats_NoGerber()
     {
-        // "Technology" joined the list with C0 (process technology import). The assertion stays exact
+        // "Technology" joined with C0 (process technology import); "Into Open Technology" with the
+        // technology-merge work, which is a genuinely different destination — one creates a `.ctech`,
+        // the other merges into the one being edited. The assertion stays exact
         // and ordered rather than loosened to "contains" — this is what keeps the in-window Menu and
         // the macOS NativeMenu, which are hand-mirrored, from drifting apart.
-        string[] expected = ["Data", "GDSII", "DXF", "PDK", "Technology"];
+        string[] expected = ["Data", "GDSII", "DXF", "PDK", "Technology", "Into Open Technology"];
 
         foreach (var children in new[] { InWindowFileChildren(), NativeFileChildren() })
         {

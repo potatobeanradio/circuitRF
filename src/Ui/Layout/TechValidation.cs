@@ -57,6 +57,33 @@ public static class TechValidation
         {
             if (!knownLayers.Contains(rule.Layer))
                 problems.Add($"DRC rule \"{rule.Name}\" references unknown layer ({rule.Layer.Layer},{rule.Layer.Datatype}).");
+
+            // A rule may measure a DERIVED region, so the layers it actually reads are inside its
+            // expressions. Validating them here — where every other technology-consistency problem
+            // is surfaced — is what stops a mistyped expression from becoming a rule that silently
+            // measures nothing at run time.
+            ValidateRegion(rule, rule.RegionA, "first", knownLayers, problems);
+
+            if (rule.Kind == DrcRuleKind.Density)
+            {
+                if (rule.WindowDbu is not > 0)
+                    problems.Add($"DRC rule \"{rule.Name}\" is a density rule with no window size.");
+                if (rule.MinRatio is null && rule.MaxRatio is null)
+                    problems.Add($"DRC rule \"{rule.Name}\" is a density rule with neither a minimum nor a maximum.");
+            }
+
+            if (rule.Kind == DrcRuleKind.AntennaRatio && rule.MaxRatio is not > 0)
+                problems.Add($"DRC rule \"{rule.Name}\" is an antenna rule with no maximum ratio.");
+
+            if (rule.NetScope != DrcNetScope.Any &&
+                rule.Kind is not (DrcRuleKind.MinSpacing or DrcRuleKind.MinSeparation))
+                problems.Add($"DRC rule \"{rule.Name}\" states a net scope, which only a spacing or " +
+                             "separation rule can use.");
+
+            if (rule.NeedsSecondRegion && string.IsNullOrWhiteSpace(rule.RegionB))
+                problems.Add($"DRC rule \"{rule.Name}\" is a {rule.Kind} rule but states no second region.");
+            else
+                ValidateRegion(rule, rule.RegionB, "second", knownLayers, problems);
         }
 
         // R-tec-2 (brief-technology-editor-units-and-layers.md): a microstrip component cannot
@@ -71,5 +98,28 @@ public static class TechValidation
                          "microstrip components cannot resolve a ground plane.");
 
         return problems;
+    }
+
+    /// <summary>
+    /// Checks one of a rule's region expressions: it must parse, and every layer it names must be
+    /// defined. Blank is fine — that means "the rule's own layer", which is what a hand-authored
+    /// rule says.
+    /// </summary>
+    private static void ValidateRegion(
+        DrcRule rule, string? text, string which,
+        HashSet<LayerKey> knownLayers, List<string> problems)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        if (!Drc.DrcLayerExprParser.TryParse(text, out var expr, out string? error) || expr is null)
+        {
+            problems.Add($"DRC rule \"{rule.Name}\" has an unreadable {which} region: {error}");
+            return;
+        }
+
+        foreach (var key in expr.ReferencedLayers())
+            if (!knownLayers.Contains(key))
+                problems.Add($"DRC rule \"{rule.Name}\" {which} region references unknown layer " +
+                             $"({key.Layer},{key.Datatype}).");
     }
 }

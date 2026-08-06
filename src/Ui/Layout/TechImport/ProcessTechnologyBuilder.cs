@@ -472,19 +472,43 @@ public static class ProcessTechnologyBuilder
                 // First statement of a (layer, kind) wins: a deck routinely states a general rule and
                 // then a narrower one for a special case circuitRF cannot express, and adopting the
                 // narrower one as if it were general would fail geometry the process permits.
-                if (!fromDeck.Add((key, r.Kind))) continue;
+                //
+                // A rule measuring a DERIVED region is exempt: several genuinely different rules on
+                // one layer differ only in their operand (`metal`, `metal minus filler`, `metal that
+                // touches a pad`), and collapsing them to the first would keep an arbitrary one and
+                // silently drop the rest. They are distinguished by their expression instead.
+                bool derived = r.RegionA is not null || r.RegionB is not null;
+                if (!derived && !fromDeck.Add((key, r.Kind))) continue;
 
                 rules.Add(new DrcRule
                 {
                     Name     = r.Name,
                     Kind     = r.Kind,
                     Layer    = key,
-                    ValueDbu = ToDbu(r.ValueUm),
+                    RegionA  = r.RegionA,
+                    RegionB  = r.RegionB,
+                    // A minimum-area rule's value is an AREA, so it scales by the SQUARE of the
+                    // resolution. Read as a length it would be wrong by a factor of a million at the
+                    // default DBU — which would either report every shape or none, with nothing in
+                    // the output to suggest the unit was the problem.
+                    ValueDbu = r.Kind == DrcRuleKind.MinArea
+                        ? ToDbu(1) * ToDbu(1) * (long)Math.Round(r.ValueUm)
+                        : ToDbu(r.ValueUm),
                     Severity = DrcSeverity.Error,
                 });
             }
 
-            notes.Add($"Read {rules.Count} width/spacing rule(s) from the process's design-rule deck.");
+            int derivedCount = rules.Count(x => x.RegionA is not null || x.RegionB is not null);
+            var kinds = rules.GroupBy(x => x.Kind)
+                             .OrderByDescending(g => g.Count())
+                             .Select(g => $"{g.Count()} {g.Key}");
+
+            notes.Add($"Read {rules.Count} rule(s) from the process's design-rule deck " +
+                      $"({string.Join(", ", kinds)}).");
+
+            if (derivedCount > 0)
+                notes.Add($"{derivedCount} of them measure a derived region built from more than one " +
+                          "drawn layer, rather than a layer on its own.");
 
             if (unmatched > 0)
                 notes.Add($"{unmatched} deck rule(s) name a layer the layer table does not define and " +
@@ -494,8 +518,8 @@ public static class ProcessTechnologyBuilder
             {
                 var top = string.Join(", ", ruleDeck.Unsupported.Take(4).Select(u => $"{u.Operation} ×{u.Count}"));
                 notes.Add($"The deck states {ruleDeck.UnsupportedTotal} further rule(s) in forms circuitRF " +
-                          $"cannot check yet ({top}). They are NOT enforced — this technology checks " +
-                          "minimum width and minimum spacing only.");
+                          $"cannot check yet ({top}). They are NOT enforced — a design that passes this " +
+                          "technology's rules has been checked against the rules listed above and no others.");
             }
 
             notes.AddRange(ruleDeck.Notes);

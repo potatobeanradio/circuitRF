@@ -31,6 +31,10 @@ public class RuleDeckIntoTechnologyTests
           mt_c_value = drc_rules['MT_c'].to_f
           mt_c_l = metaltop_drw.enclosed(metallow_drw, mt_c_value.um, euclidian)
           mt_c_l.output('MT.c', "enclosure")
+
+          # A shape circuitRF still cannot express, so the report has both halves to state.
+          mt_d_l = metaltop_drw.area(mt_c_value.um)
+          mt_d_l.output('MT.d', "min area")
         end
         """;
 
@@ -101,9 +105,16 @@ public class RuleDeckIntoTechnologyTests
     {
         var notes = Build(ReadDeck()).Notes;
 
-        Assert.Contains(notes, n => n.Contains("2 width/spacing rule(s)"));
-        Assert.Contains(notes, n => n.Contains("cannot check yet") && n.Contains("enclosed"));
-        Assert.Contains(notes, n => n.Contains("minimum width and minimum spacing only"));
+        // Updated for v2, not loosened. The fixture's `enclosed` statement is now READ rather than
+        // counted as unreadable, so the note reports a different mix — what the test still guards is
+        // the property that matters: the import states how many rules it read, by kind, AND how many
+        // it will not enforce. A user who imports a process stating hundreds of rules and gets a
+        // handful needs to see both numbers, not discover the second by trusting a checker that only
+        // ever looked at a fraction of the deck.
+        Assert.Contains(notes, n => n.Contains("rule(s) from the process's design-rule deck"));
+        Assert.Contains(notes, n => n.Contains("MinEnclosure"));           // read, and named by kind
+        Assert.Contains(notes, n => n.Contains("cannot check yet") && n.Contains("area"));
+        Assert.Contains(notes, n => n.Contains("checked against the rules listed above and no others"));
     }
 
     [Fact]

@@ -111,21 +111,180 @@ public sealed class Stackup
     public List<StackupLayer> Layers { get; set; } = [];
 }
 
-// L5b forward hook (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §5, DRC): annular ring —
-// (ViaShape.PadSize - ViaShape.DrillSize) / 2 — is the natural third DrcRuleKind after MinWidth and
-// MinSpacing, and it is expressible ONLY because a via's pad and drill are one object (§1's own framing
-// for why ViaShape exists at all). Not added now — L5b is not built yet — but the rule kind belongs
-// here when it lands, not bolted on elsewhere.
-public enum DrcRuleKind { MinWidth, MinSpacing }
+// Annular ring — (ViaShape.PadSize - ViaShape.DrillSize) / 2 — is still unbuilt, and is expressible
+// ONLY because a via's pad and drill are one object (brief-via-primitive-and-stackup.md §1). It
+// belongs in DrcRuleKind when it lands, not bolted on elsewhere.
+
+/// <summary>
+/// What a rule measures.
+///
+/// <para><b>These are measurement kinds, not rule names.</b> A process states hundreds of rules;
+/// they are instances of a much smaller set of measurements applied to different regions at
+/// different values. Growing this enum covers more of a deck — but the OPERAND is what unlocked
+/// most of it, because real rules measure DERIVED regions (<see cref="DrcRule.RegionA"/>) built by
+/// boolean algebra and topological selection, not bare drawing layers.</para>
+/// </summary>
+public enum DrcRuleKind
+{
+    /// <summary>Minimum width of the region — its narrowest internal dimension.</summary>
+    MinWidth,
+
+    /// <summary>Minimum gap between distinct conductors of the SAME region.</summary>
+    MinSpacing,
+
+    /// <summary>Minimum gap between region A and region B — two different regions.</summary>
+    MinSeparation,
+
+    /// <summary>
+    /// Minimum margin by which region A must extend beyond region B on every side. A is the
+    /// enclosing region, B the enclosed one — a contact enclosed by the metal over it.
+    /// </summary>
+    MinEnclosure,
+
+    /// <summary>Minimum extent over which region A and region B must overlap where they meet.</summary>
+    MinOverlap,
+
+    /// <summary>
+    /// Minimum width of a concave gap WITHIN one polygon — a slot or a re-entrant corner.
+    /// Distinct from <see cref="MinSpacing"/>, which measures between separate conductors: a notch
+    /// is a gap spacing cannot see, because both of its sides belong to the same conductor.
+    /// </summary>
+    MinNotch,
+
+    /// <summary>
+    /// Minimum enclosed AREA of each polygon of the region.
+    ///
+    /// <para><b><see cref="DrcRule.ValueDbu"/> holds square DBU for this kind</b>, not a length —
+    /// the one place that field is not a distance. Stated here rather than inferred, because a
+    /// value silently read in the wrong unit is off by the resolution SQUARED (a million at the
+    /// default) and would either report everything or nothing.</para>
+    /// </summary>
+    MinArea,
+
+    /// <summary>
+    /// Minimum PERIMETER of each polygon of the region, in DBU.
+    ///
+    /// <para>A deck's own edge-length rules select on an EDGE collection; this measures the whole
+    /// polygon's boundary, which is the question this model can answer honestly. An edge-level rule
+    /// is reported as unsupported rather than approximated by this one.</para>
+    /// </summary>
+    MinPerimeter,
+
+    /// <summary>
+    /// The fraction of each window the region must cover, checked over a sliding square window.
+    ///
+    /// <para><see cref="DrcRule.WindowDbu"/> is the window side and <see cref="DrcRule.MinRatio"/>
+    /// / <see cref="DrcRule.MaxRatio"/> are the bounds. Unlike every other kind this one is not a
+    /// distance at all, which is why it carries its own fields rather than overloading
+    /// <see cref="DrcRule.ValueDbu"/> — a density stated as a length would be nonsense.</para>
+    /// </summary>
+    Density,
+
+    /// <summary>
+    /// Maximum ratio of connected metal AREA to the gate area it is attached to, per net.
+    ///
+    /// <para>Region A is the metal, region B the gate. <see cref="DrcRule.MaxRatio"/> is the limit.
+    /// This is the one rule kind that is meaningless without net identity — it asks a question about
+    /// a whole net, not about any pair of shapes — which is why it could not exist before
+    /// <c>DrcConnectivity</c>.</para>
+    /// </summary>
+    AntennaRatio,
+}
+
+/// <summary>
+/// Which pairs a spacing rule applies to.
+///
+/// <para>A process states a large share of its spacing rules TWICE, at different values: two pieces
+/// of one net may legally sit closer than two that could short together. Without this, a checker
+/// must pick one value — the same-net value passes genuine shorts, the different-net value fails
+/// correct artwork.</para>
+/// </summary>
+public enum DrcNetScope
+{
+    /// <summary>Every pair, regardless of net. The default, and what a rule that says nothing means.</summary>
+    Any,
+
+    /// <summary>Only pairs on the same net.</summary>
+    SameNet,
+
+    /// <summary>Only pairs on different nets.</summary>
+    DifferentNet,
+}
+
 public enum DrcSeverity { Error, Warning }
 
 public sealed class DrcRule
 {
     public string Name { get; set; } = "";
     public DrcRuleKind Kind { get; set; }
+
+    /// <summary>
+    /// The layer a violation's marker is attributed to, and — when <see cref="RegionA"/> is null —
+    /// the region the rule measures.
+    ///
+    /// <para>It stays a plain <see cref="LayerKey"/> even now that a rule can measure a derived
+    /// region, because a marker has to belong SOMEWHERE for the panel to group by and the renderer
+    /// to colour. "The violation is on Metal1" is information a user acts on, and an arbitrary
+    /// expression has no single layer to infer it from.</para>
+    /// </summary>
     public LayerKey Layer { get; set; }
+
+    /// <summary>
+    /// The region this rule measures, as a <c>DrcLayerExprParser</c> expression. Null means "just
+    /// <see cref="Layer"/>" — which is what every hand-authored rule and every pre-v2 `.ctech`
+    /// says, so those keep working untouched and the field stays additive.
+    /// </summary>
+    public string? RegionA { get; set; }
+
+    /// <summary>
+    /// The second region, for the two-region kinds. Null for the one-region kinds; a two-region
+    /// kind with no <c>RegionB</c> is reported as unusable rather than silently measured against
+    /// itself.
+    /// </summary>
+    public string? RegionB { get; set; }
+
+    /// <summary>
+    /// The rule's threshold, in DBU — except for <see cref="DrcRuleKind.MinArea"/>, where it is
+    /// SQUARE DBU. See that member for why the exception is stated rather than inferred.
+    /// </summary>
     public long ValueDbu { get; set; }
+
+    /// <summary>
+    /// For <see cref="DrcRuleKind.Density"/>: the side of the square window the ratio is measured
+    /// over, in DBU. Null everywhere else.
+    ///
+    /// <para>A density rule without a window is meaningless — "40% metal" is true of some window
+    /// size and false of another — so the window is part of the rule, not a checker setting.</para>
+    /// </summary>
+    public long? WindowDbu { get; set; }
+
+    /// <summary>For <see cref="DrcRuleKind.Density"/>: the minimum permitted coverage, 0..1.</summary>
+    public double? MinRatio { get; set; }
+
+    /// <summary>For <see cref="DrcRuleKind.Density"/>: the maximum permitted coverage, 0..1.</summary>
+    public double? MaxRatio { get; set; }
+
+    /// <summary>
+    /// Which pairs a spacing or separation rule applies to. <see cref="DrcNetScope.Any"/> on every
+    /// other kind, and on any rule that does not say — so this is additive and inert until used.
+    /// </summary>
+    public DrcNetScope NetScope { get; set; } = DrcNetScope.Any;
+
     public DrcSeverity Severity { get; set; } = DrcSeverity.Error;
+
+    /// <summary>
+    /// True when this kind requires <see cref="RegionB"/>.
+    ///
+    /// <para><c>[JsonIgnore]</c> is load-bearing, not tidiness: System.Text.Json serializes
+    /// get-only properties by default, so without it every `.ctech` would gain a
+    /// <c>"NeedsSecondRegion"</c> field derived from data already in the file — noise in a
+    /// hand-edited format, and a value that would be silently ignored on read while looking
+    /// authoritative.</para>
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool NeedsSecondRegion =>
+        Kind is DrcRuleKind.MinSeparation or DrcRuleKind.MinEnclosure or DrcRuleKind.MinOverlap
+             or DrcRuleKind.AntennaRatio;
 }
 
 public sealed class Technology

@@ -250,11 +250,16 @@ public static class ProcessTechnologyImport
             bool promising =
                 peek.Contains("layer-properties", StringComparison.Ordinal) ||
                 peek.Contains("TECHNOLOGY",       StringComparison.OrdinalIgnoreCase) ||
-                // A rule deck's own two grammar markers: it binds a drawn layer to a stream number,
-                // or reads a value out of the rule table. Both appear within the first few lines of
-                // any deck file that carries anything circuitRF can use.
+                // A rule deck's own grammar markers: it binds a drawn layer to a stream number, or
+                // reads a value out of the rule table.
+                //
+                // THREE markers, not two. A process may ship a second, self-contained deck that
+                // binds layers as `source.polygons("8/0")` and carries no rule-value table at all —
+                // it matches neither of the original two, so the peek passed over it and two thirds
+                // of the process's readable rules went unread with nothing in the report to say so.
                 peek.Contains("get_polygons",     StringComparison.Ordinal) ||
-                peek.Contains("drc_rules",        StringComparison.Ordinal);
+                peek.Contains("drc_rules",        StringComparison.Ordinal) ||
+                peek.Contains(".polygons(",       StringComparison.Ordinal);
 
             if (!promising) return null;
 

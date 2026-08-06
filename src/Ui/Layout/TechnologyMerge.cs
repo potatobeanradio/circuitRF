@@ -1,0 +1,384 @@
+// Combining technologies section by section (docs/design/layout-view.md §2.4a).
+//
+// <b>The problem this solves.</b> Before it, a technology was all-or-nothing: importing a process
+// produced a whole new `.ctech`, and importing again over the same name silently replaced the file —
+// hand-authored rules, edited colours, a chosen ground reference, all gone with no prompt and no
+// record. There was no way to take one process's DRC rules into a technology you had already tuned,
+// no way to reuse a layer table across workspaces, and no way to send someone your rules.
+//
+// <b>Why there is no new file format.</b> A `.ctech` with only DRC rules populated is a valid
+// `.ctech` — it loads, it round-trips, and it is obviously a technology file to anyone who opens it.
+// Inventing a `.cdrc` would mean a second format, a second reader, a second version field and a
+// second set of bugs, to express something the format already expresses. "Export my rules" writes a
+// `.ctech`; "import just the rules" reads one and takes one section.
+
+namespace CircuitRF.Ui.Layout;
+
+/// <summary>Which parts of a technology an operation applies to.</summary>
+[Flags]
+public enum TechSection
+{
+    None      = 0,
+    Layers    = 1,
+    Stackup   = 2,
+    DrcRules  = 4,
+    All       = Layers | Stackup | DrcRules,
+}
+
+/// <summary>What to do when both technologies carry an item with the same identity.</summary>
+public enum TechMergeMode
+{
+    /// <summary>The incoming item wins.</summary>
+    Replace,
+
+    /// <summary>
+    /// The existing item wins; only genuinely new items are added.
+    ///
+    /// <para>This is the default for a REASON. A user who has tuned a technology and then imports a
+    /// process update almost never wants their own edits silently reverted — and unlike a bad merge,
+    /// a missed update is visible (the value is simply the old one) and fixable. Replace is offered,
+    /// but it is not what happens when someone clicks through without reading.</para>
+    /// </summary>
+    AddMissingOnly,
+
+    /// <summary>
+    /// The user decides item by item, from a list of the actual collisions.
+    ///
+    /// <para>A blanket policy answers "what usually happens"; this answers "what about THIS rule".
+    /// A process update typically changes a handful of values out of a hundred, and the user often
+    /// wants most of them and not the two they deliberately tuned — which neither blanket answer
+    /// expresses.</para>
+    /// </summary>
+    Selective,
+}
+
+/// <summary>
+/// One item present in both technologies, with enough of each side to choose between them.
+/// </summary>
+/// <param name="Key">
+/// Stable identity, unique across sections — what a caller ticks to say "replace this one".
+/// Section-qualified because a layer and a rule may legitimately share a name.
+/// </param>
+public sealed record TechMergeConflict(
+    TechSection Section, string Key, string Label, string Mine, string Theirs);
+
+/// <summary>What a merge did, per section. Every number is reported to the user.</summary>
+public sealed record TechMergeReport(
+    int LayersAdded,   int LayersReplaced,   int LayersKept,
+    int StackupAdded,  int StackupReplaced,  int StackupKept,
+    int RulesAdded,    int RulesReplaced,    int RulesKept,
+    IReadOnlyList<string> Warnings)
+{
+    public static readonly TechMergeReport Empty = new(0, 0, 0, 0, 0, 0, 0, 0, 0, []);
+
+    public int TotalAdded    => LayersAdded + StackupAdded + RulesAdded;
+    public int TotalReplaced => LayersReplaced + StackupReplaced + RulesReplaced;
+    public int TotalKept     => LayersKept + StackupKept + RulesKept;
+
+    public bool ChangedNothing => TotalAdded == 0 && TotalReplaced == 0;
+
+    /// <summary>A one-line summary in the user's own terms.</summary>
+    public string Summary()
+    {
+        if (ChangedNothing) return "Nothing changed — every incoming item was already present.";
+
+        var parts = new List<string>();
+        if (LayersAdded + LayersReplaced > 0)
+            parts.Add($"{LayersAdded} layer(s) added, {LayersReplaced} replaced");
+        if (StackupAdded + StackupReplaced > 0)
+            parts.Add($"{StackupAdded} stackup entr(ies) added, {StackupReplaced} replaced");
+        if (RulesAdded + RulesReplaced > 0)
+            parts.Add($"{RulesAdded} DRC rule(s) added, {RulesReplaced} replaced");
+
+        string kept = TotalKept > 0 ? $"; {TotalKept} existing item(s) kept" : "";
+        return string.Join("; ", parts) + kept + ".";
+    }
+}
+
+public static class TechnologyMerge
+{
+    /// <summary>
+    /// Everything present in BOTH technologies, so a caller can offer the choice per item rather
+    /// than only as a blanket policy. Pure — it changes nothing.
+    /// </summary>
+    public static IReadOnlyList<TechMergeConflict> FindConflicts(
+        Technology target, Technology source, TechSection sections)
+    {
+        var found = new List<TechMergeConflict>();
+
+        if (sections.HasFlag(TechSection.Layers))
+        {
+            var byKey = target.Layers.ToDictionary(l => l.Key);
+            foreach (var incoming in source.Layers)
+                if (byKey.TryGetValue(incoming.Key, out var mine))
+                    found.Add(new TechMergeConflict(
+                        TechSection.Layers, LayerKeyOf(incoming.Key),
+                        $"Layer {incoming.Key.Layer}/{incoming.Key.Datatype}",
+                        mine.Name, incoming.Name));
+        }
+
+        if (sections.HasFlag(TechSection.Stackup))
+        {
+            var byName = new Dictionary<string, StackupLayer>(StringComparer.Ordinal);
+            foreach (var sl in target.Stackup.Layers) byName.TryAdd(sl.Name, sl);
+
+            foreach (var incoming in source.Stackup.Layers)
+                if (byName.TryGetValue(incoming.Name, out var mine))
+                    found.Add(new TechMergeConflict(
+                        TechSection.Stackup, StackupKeyOf(incoming.Name),
+                        $"Stackup \"{incoming.Name}\"",
+                        Describe(mine), Describe(incoming)));
+        }
+
+        if (sections.HasFlag(TechSection.DrcRules))
+        {
+            var byName = new Dictionary<string, DrcRule>(StringComparer.Ordinal);
+            foreach (var r in target.DrcRules) byName.TryAdd(r.Name, r);
+
+            foreach (var incoming in source.DrcRules)
+                if (byName.TryGetValue(incoming.Name, out var mine))
+                    found.Add(new TechMergeConflict(
+                        TechSection.DrcRules, RuleKeyOf(incoming.Name),
+                        $"Rule \"{incoming.Name}\"",
+                        Describe(mine), Describe(incoming)));
+        }
+
+        return found;
+    }
+
+    private static string LayerKeyOf(LayerKey k)   => $"Layers|{k.Layer}/{k.Datatype}";
+    private static string StackupKeyOf(string n)   => $"Stackup|{n}";
+    private static string RuleKeyOf(string n)      => $"DrcRules|{n}";
+
+    private static string Describe(StackupLayer s) =>
+        $"{s.Kind}, {s.ThicknessDbu} DBU" + (s.IsGroundReference ? ", ground" : "");
+
+    private static string Describe(DrcRule r)
+    {
+        string what = r.Kind switch
+        {
+            DrcRuleKind.Density      => $"window {r.WindowDbu}, {r.MinRatio}..{r.MaxRatio}",
+            DrcRuleKind.AntennaRatio => $"max ratio {r.MaxRatio}",
+            _                        => $"{r.ValueDbu} DBU",
+        };
+        string region = r.RegionA is { } a ? $" on {a}" : "";
+        return $"{r.Kind}, {what}{region}";
+    }
+
+    /// <summary>
+    /// Merges <paramref name="source"/>'s chosen sections into <paramref name="target"/>, in place.
+    ///
+    /// <para>Identity is per section and deliberately not uniform: a layer IS its
+    /// <see cref="LayerDef.Key"/> (§2.1 — the name is a label), a stackup entry is its
+    /// <see cref="StackupLayer.Name"/> (which is also what <c>SpanFromLayer</c>/<c>SpanToLayer</c>
+    /// reference, so matching on anything else would break those references), and a DRC rule is its
+    /// <see cref="DrcRule.Name"/> (the process's own name for it, which is what a violation is traced
+    /// back to).</para>
+    /// </summary>
+    /// <param name="replaceKeys">
+    /// For <see cref="TechMergeMode.Selective"/>: the conflict keys the user chose to replace, from
+    /// <see cref="FindConflicts"/>. Null replaces nothing.
+    /// </param>
+    public static TechMergeReport Merge(
+        Technology target, Technology source, TechSection sections, TechMergeMode mode,
+        IReadOnlySet<string>? replaceKeys = null)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (sections == TechSection.None) return TechMergeReport.Empty;
+
+        var warnings = new List<string>();
+        int la = 0, lr = 0, lk = 0, sa = 0, sr = 0, sk = 0, ra = 0, rr = 0, rk = 0;
+
+        if (sections.HasFlag(TechSection.Layers))
+        {
+            var byKey = target.Layers.ToDictionary(l => l.Key);
+
+            foreach (var incoming in source.Layers)
+            {
+                if (!byKey.TryGetValue(incoming.Key, out var existing)) { target.Layers.Add(Clone(incoming)); la++; continue; }
+                if (!WantsReplace(mode, replaceKeys, LayerKeyOf(incoming.Key))) { lk++; continue; }
+
+                // A layer that changes NAME under the same key is worth saying: every name-first
+                // match in this codebase — paste reconciliation, technology retargeting — keys on
+                // LayerDef.Name, so silently renaming one changes how future pastes land.
+                if (!string.Equals(existing.Name, incoming.Name, StringComparison.Ordinal))
+                    warnings.Add($"Layer {incoming.Key.Layer}/{incoming.Key.Datatype} was renamed " +
+                                 $"\"{existing.Name}\" → \"{incoming.Name}\".");
+
+                target.Layers[target.Layers.IndexOf(existing)] = Clone(incoming);
+                byKey[incoming.Key] = incoming;
+                lr++;
+            }
+        }
+
+        if (sections.HasFlag(TechSection.Stackup))
+        {
+            var byName = new Dictionary<string, StackupLayer>(StringComparer.Ordinal);
+            foreach (var sl in target.Stackup.Layers) byName.TryAdd(sl.Name, sl);
+
+            foreach (var incoming in source.Stackup.Layers)
+            {
+                if (!byName.TryGetValue(incoming.Name, out var existing))
+                {
+                    target.Stackup.Layers.Add(Clone(incoming));
+                    byName[incoming.Name] = incoming;
+                    sa++;
+                    continue;
+                }
+
+                if (!WantsReplace(mode, replaceKeys, StackupKeyOf(incoming.Name))) { sk++; continue; }
+                target.Stackup.Layers[target.Stackup.Layers.IndexOf(existing)] = Clone(incoming);
+                sr++;
+            }
+
+            // A merged stackup is ORDER-SENSITIVE in a way the other sections are not: entries are
+            // top-to-bottom and a substrate resolution reads that order. Appending an incoming entry
+            // to the end puts it at the bottom of the stack, which is almost never where it belongs.
+            if (sa > 0)
+                warnings.Add($"{sa} stackup entr(ies) were appended at the BOTTOM of the stack. " +
+                             "Stackup order is physical (top to bottom) — check it in the Stackup tab.");
+        }
+
+        if (sections.HasFlag(TechSection.DrcRules))
+        {
+            var byName = new Dictionary<string, DrcRule>(StringComparer.Ordinal);
+            foreach (var r in target.DrcRules) byName.TryAdd(r.Name, r);
+
+            foreach (var incoming in source.DrcRules)
+            {
+                if (!byName.TryGetValue(incoming.Name, out var existing))
+                {
+                    target.DrcRules.Add(Clone(incoming));
+                    byName[incoming.Name] = incoming;
+                    ra++;
+                    continue;
+                }
+
+                if (!WantsReplace(mode, replaceKeys, RuleKeyOf(incoming.Name))) { rk++; continue; }
+                target.DrcRules[target.DrcRules.IndexOf(existing)] = Clone(incoming);
+                rr++;
+            }
+
+            // Rules brought in WITHOUT their layers reference layers that may not exist here. That is
+            // the single most likely way this feature is misused — "just the rules, please" — and the
+            // result is a rule that measures nothing while looking perfectly healthy in the editor.
+            // Said at merge time, where the user can still act on it, not only at run time.
+            if (!sections.HasFlag(TechSection.Layers) && (ra > 0 || rr > 0))
+            {
+                var known = target.Layers.Select(l => l.Key).ToHashSet();
+                int dangling = target.DrcRules.Count(r => LayersOf(r).Any(k => !known.Contains(k)));
+
+                if (dangling > 0)
+                    warnings.Add($"{dangling} rule(s) name layers this technology does not define, so " +
+                                 "they will measure nothing. Import the layer table too, or map them " +
+                                 "in the DRC tab.");
+            }
+        }
+
+        return new TechMergeReport(la, lr, lk, sa, sr, sk, ra, rr, rk, warnings);
+    }
+
+    /// <summary>
+    /// A new technology carrying only the chosen sections of <paramref name="source"/> — what
+    /// "export my DRC rules" writes.
+    ///
+    /// <para>The result is an ordinary, valid <c>.ctech</c>: it loads, it round-trips, and the import
+    /// side needs no knowledge that it was produced this way. A rules-only file simply has no layers,
+    /// which the importer reports as "this file offers DRC rules only".</para>
+    /// </summary>
+    public static Technology Extract(Technology source, TechSection sections, string? name = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        var result = new Technology
+        {
+            Name             = name ?? source.Name,
+            DefaultDisplayUnit = source.DefaultDisplayUnit,
+            DefaultSnapDbu   = source.DefaultSnapDbu,
+        };
+
+        if (sections.HasFlag(TechSection.Layers))
+            foreach (var l in source.Layers) result.Layers.Add(Clone(l));
+
+        if (sections.HasFlag(TechSection.Stackup))
+        {
+            result.Stackup.Top = source.Stackup.Top;
+            result.Stackup.Bottom = source.Stackup.Bottom;
+            foreach (var sl in source.Stackup.Layers) result.Stackup.Layers.Add(Clone(sl));
+        }
+
+        if (sections.HasFlag(TechSection.DrcRules))
+            foreach (var r in source.DrcRules) result.DrcRules.Add(Clone(r));
+
+        return result;
+    }
+
+    /// <summary>
+    /// Whether a colliding item should be replaced.
+    ///
+    /// <para><see cref="TechMergeMode.Selective"/> with no key set replaces NOTHING — the safe
+    /// reading of "the user was asked and ticked none", never "the user was asked and everything
+    /// wins".</para>
+    /// </summary>
+    private static bool WantsReplace(TechMergeMode mode, IReadOnlySet<string>? keys, string key) =>
+        mode switch
+        {
+            TechMergeMode.Replace        => true,
+            TechMergeMode.AddMissingOnly => false,
+            _                            => keys is not null && keys.Contains(key),
+        };
+
+    /// <summary>Which sections a technology actually carries — drives what an import dialog offers.</summary>
+    public static TechSection SectionsPresentIn(Technology tech)
+    {
+        var s = TechSection.None;
+        if (tech.Layers.Count > 0) s |= TechSection.Layers;
+        if (tech.Stackup.Layers.Count > 0) s |= TechSection.Stackup;
+        if (tech.DrcRules.Count > 0) s |= TechSection.DrcRules;
+        return s;
+    }
+
+    /// <summary>Every drawing layer a rule reads — its own layer plus any its expressions name.</summary>
+    private static IEnumerable<LayerKey> LayersOf(DrcRule rule)
+    {
+        yield return rule.Layer;
+
+        foreach (string? text in new[] { rule.RegionA, rule.RegionB })
+        {
+            if (string.IsNullOrWhiteSpace(text)) continue;
+            if (!Drc.DrcLayerExprParser.TryParse(text, out var expr, out _) || expr is null) continue;
+            foreach (var k in expr.ReferencedLayers()) yield return k;
+        }
+    }
+
+    // ── Clones ──────────────────────────────────────────────────────────────────
+    // Merging must never alias the source's objects into the target: the two technologies outlive the
+    // merge independently, and a later edit to one would otherwise silently change the other.
+
+    private static LayerDef Clone(LayerDef l) => new()
+    {
+        Key = l.Key, Name = l.Name, Color = l.Color, FillOpacity = l.FillOpacity,
+        ZOrder = l.ZOrder, Visible = l.Visible, Selectable = l.Selectable,
+        Purpose = l.Purpose, Interchange = l.Interchange,
+    };
+
+    private static StackupLayer Clone(StackupLayer s) => new()
+    {
+        Kind = s.Kind, Name = s.Name, ThicknessDbu = s.ThicknessDbu,
+        Epsr = s.Epsr, TanD = s.TanD, Mur = s.Mur, SigmaSm = s.SigmaSm,
+        DrawingLayers = [.. s.DrawingLayers], IsGroundReference = s.IsGroundReference,
+        Fill = s.Fill, WallThicknessDbu = s.WallThicknessDbu,
+        SpanFromLayer = s.SpanFromLayer, SpanToLayer = s.SpanToLayer,
+    };
+
+    private static DrcRule Clone(DrcRule r) => new()
+    {
+        Name = r.Name, Kind = r.Kind, Layer = r.Layer,
+        RegionA = r.RegionA, RegionB = r.RegionB,
+        ValueDbu = r.ValueDbu, WindowDbu = r.WindowDbu,
+        MinRatio = r.MinRatio, MaxRatio = r.MaxRatio,
+        NetScope = r.NetScope, Severity = r.Severity,
+    };
+}

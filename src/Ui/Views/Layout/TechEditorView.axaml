@@ -382,7 +382,8 @@
                             <ItemsControl ItemsSource="{Binding ViewModel.DrcRules}" Margin="4,0,4,4">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="lay:DrcRuleRowViewModel">
-                                        <Grid Margin="0,2" ColumnSpacing="4">
+                                        <StackPanel Margin="0,3" Spacing="2">
+                                        <Grid ColumnSpacing="4">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"    SharedSizeGroup="DName"     MinWidth="120"/>
                                                 <ColumnDefinition Width="Auto" SharedSizeGroup="DKind"     MinWidth="100"/>
@@ -395,7 +396,7 @@
                                                      Text="{Binding StagedName}"
                                                      LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                             <ComboBox Grid.Column="1" Classes="cell" Width="100" Tag="Kind"
-                                                      ItemsSource="{x:Static lay:TechEditorViewModel.DrcRuleKinds}"
+                                                      ItemsSource="{x:Static lay:DrcRuleRowViewModel.AllKinds}"
                                                       SelectedItem="{Binding StagedKind}"
                                                       SelectionChanged="OnComboSelectionChanged"/>
                                             <ComboBox Grid.Column="2" Classes="cell" Width="140" Tag="Layer"
@@ -403,8 +404,9 @@
                                                       SelectedItem="{Binding StagedLayer}"
                                                       DisplayMemberBinding="{Binding Label}"
                                                       SelectionChanged="OnComboSelectionChanged"/>
-                                            <StackPanel Grid.Column="3" Spacing="1">
+                                            <StackPanel Grid.Column="3" Spacing="1" IsVisible="{Binding ShowValue}">
                                                 <TextBox Classes="cell" Width="90" Tag="Value"
+                                                         ToolTip.Tip="{Binding ValueLabel}"
                                                          Text="{Binding StagedValueText}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <TextBlock Text="{Binding ValueError}" FontSize="9"
@@ -421,6 +423,81 @@
                                                 <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
                                             </Button>
                                         </Grid>
+
+                                        <!-- v2: the layer EXPRESSION a rule measures, plus the
+                                             fields only some kinds carry. Laid out on a second line
+                                             rather than widening the grid: an expression is long,
+                                             and squeezing it into a column would make the common
+                                             case (a bare layer, no expression) unreadable. -->
+                                        <Grid ColumnSpacing="4" Margin="0,0,0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Classes="label" Text="Region:"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBox Grid.Column="1" Classes="cell" Tag="RegionA"
+                                                     HorizontalAlignment="Stretch"
+                                                     Watermark="this rule's own layer"
+                                                     Text="{Binding StagedRegionA}"
+                                                     ToolTip.Tip="{x:Static lay:DrcRuleRowViewModel.RegionHint}"
+                                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+
+                                            <TextBlock Grid.Column="2" Classes="label" Text="and:"
+                                                       VerticalAlignment="Center"
+                                                       IsVisible="{Binding ShowRegionB}"/>
+                                            <TextBox Grid.Column="3" Classes="cell" Tag="RegionB"
+                                                     HorizontalAlignment="Stretch"
+                                                     IsVisible="{Binding ShowRegionB}"
+                                                     Watermark="second region, e.g. 10/0"
+                                                     Text="{Binding StagedRegionB}"
+                                                     ToolTip.Tip="{x:Static lay:DrcRuleRowViewModel.RegionHint}"
+                                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                        </Grid>
+
+                                        <TextBlock Text="{Binding RegionAError}" FontSize="9" TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasRegionAError}"
+                                                   Foreground="{DynamicResource CrfWarningBrush}"/>
+                                        <TextBlock Text="{Binding RegionBError}" FontSize="9" TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasRegionBError}"
+                                                   Foreground="{DynamicResource CrfWarningBrush}"/>
+
+                                        <!-- Kind-specific fields. Hidden, not disabled, when they do
+                                             not apply — a greyed "second region" on a width rule
+                                             invites the question of what it would have meant. -->
+                                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                                    IsVisible="{Binding ShowDensity}">
+                                            <TextBlock Classes="label" Text="Window:" VerticalAlignment="Center"/>
+                                            <TextBox Classes="cell" Width="80" Tag="Window"
+                                                     Text="{Binding StagedWindowText}"
+                                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                            <TextBlock Classes="label" Text="Min:" VerticalAlignment="Center"/>
+                                            <TextBox Classes="cell" Width="60" Tag="MinRatio"
+                                                     Watermark="0..1"
+                                                     Text="{Binding StagedMinRatioText}"
+                                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                                    IsVisible="{Binding ShowMaxRatio}">
+                                            <TextBlock Classes="label" Text="Max ratio:" VerticalAlignment="Center"/>
+                                            <TextBox Classes="cell" Width="70" Tag="MaxRatio"
+                                                     Text="{Binding StagedMaxRatioText}"
+                                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                                    IsVisible="{Binding ShowNetScope}">
+                                            <TextBlock Classes="label" Text="Applies to:" VerticalAlignment="Center"/>
+                                            <ComboBox Classes="cell" Width="130" Tag="NetScope"
+                                                      ItemsSource="{x:Static lay:DrcRuleRowViewModel.AllNetScopes}"
+                                                      SelectedItem="{Binding StagedNetScope}"
+                                                      SelectionChanged="OnComboSelectionChanged"/>
+                                        </StackPanel>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

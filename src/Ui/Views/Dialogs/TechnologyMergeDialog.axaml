@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
+        x:Class="CircuitRF.Ui.Views.Dialogs.TechnologyMergeDialog"
+        Title="Import from Technology"
+        SizeToContent="WidthAndHeight" MinWidth="440"
+        WindowStartupLocation="CenterOwner" CanResize="False">
+    <StackPanel Margin="16" Spacing="12">
+        <TextBlock x:Name="HeaderText" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock x:Name="SubtitleText" Opacity="0.7" FontSize="11" TextWrapping="Wrap" MaxWidth="400"/>
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Bring in" FontSize="11" Opacity="0.6"/>
+            <CheckBox x:Name="LayersCheck"  Content="Layer table"/>
+            <CheckBox x:Name="StackupCheck" Content="Stackup"/>
+            <CheckBox x:Name="RulesCheck"   Content="DRC rules"/>
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="When something already exists here" FontSize="11" Opacity="0.6"/>
+            <RadioButton x:Name="SelectiveRadio" GroupName="Mode"
+                         Content="Take the imported version — untick any you want to keep"/>
+            <RadioButton x:Name="ReplaceRadio" GroupName="Mode"
+                         Content="Take the imported version for everything"/>
+            <RadioButton x:Name="KeepMineRadio" GroupName="Mode"
+                         Content="Keep mine — add only what is new"/>
+            <RadioButton x:Name="ReplaceAllRadio" GroupName="Mode"
+                         Content="Replace the whole file"/>
+            <TextBlock x:Name="ReplaceAllWarning" FontSize="10" TextWrapping="Wrap" MaxWidth="400"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       Text="Everything in the existing technology is discarded, including any edits you have made to it."/>
+        </StackPanel>
+
+        <!-- The per-item list. Hidden until "let me choose" is picked: a process update typically
+             collides on a handful of items out of a hundred, and showing that list unprompted would
+             bury the two simple answers most people want. -->
+        <Border x:Name="ConflictPanel" IsVisible="False"
+                BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="6" MaxHeight="220">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+                    <TextBlock x:Name="ConflictCountText" FontSize="11" Opacity="0.7"
+                               VerticalAlignment="Center"/>
+                    <Button Content="All" FontSize="10" Padding="6,1" Click="OnSelectAllClick"/>
+                    <Button Content="None" FontSize="10" Padding="6,1" Click="OnSelectNoneClick"/>
+                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="ConflictList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="dlg:ConflictRow">
+                                <CheckBox Margin="0,1" IsChecked="{Binding Replace, Mode=TwoWay}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" FontSize="11"/>
+                                        <TextBlock Text="{Binding Detail}" FontSize="10" Opacity="0.6"
+                                                   TextWrapping="Wrap" MaxWidth="360"/>
+                                    </StackPanel>
+                                </CheckBox>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Content="Cancel" IsCancel="True" MinWidth="80" HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button x:Name="OkButton" Content="Import" IsDefault="True" MinWidth="80"
+                    HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

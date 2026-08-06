@@ -178,24 +178,101 @@ public class RuleDeckReaderTests
         Assert.Contains(rules, r => r.StreamLayer == 30);
     }
 
+    /// <summary>
+    /// A process may ship TWO decks that share no vocabulary: a modular one binding layers with
+    /// <c>get_polygons(8, 0)</c>, and a self-contained one binding them with
+    /// <c>source.polygons("8/0")</c> and carrying no rule-value table at all. Recognising only the
+    /// first silently skipped the second — measured against a real process, that was 96 of 143
+    /// readable rules, with nothing in the import report to suggest a file had been passed over.
+    /// </summary>
+    [Fact]
+    public void ADeckBindingLayersInTheQuotedForm_IsRecognisedAndRead()
+    {
+        const string deck = """
+            Metal1 = source.polygons("8/0")
+            Metal2 = source.polygons("10/0")
+            Metal1.width(0.16.um).output('M1.a', "Min. Metal1 width")
+            Metal1.sep(Metal2, 0.2.um).output('M1.c', "Min. Metal1 to Metal2 separation")
+            """;
+
+        Assert.True(RuleDeckReader.LooksLikeRuleDeck(deck),
+            "a deck that binds layers only in the quoted form must still be recognised as a deck");
+
+        var result = RuleDeckReader.Read([deck], (IReadOnlyDictionary<string, double>?)null);
+
+        Assert.Equal(2, result.Rules.Count);
+        Assert.Contains(result.Rules, r => r.Kind == DrcRuleKind.MinWidth && r.StreamLayer == 8);
+        Assert.Contains(result.Rules, r => r.Kind == DrcRuleKind.MinSeparation && r.RegionB == "10/0");
+    }
+
+    /// <summary>
+    /// A chain, which the single-operation binder could not read at all. `a.not(b).and(c)` is one
+    /// derived region, and stopping after the first link would measure a region the deck never meant.
+    /// </summary>
+    [Fact]
+    public void AChainedDerivedRegion_IsReadWhole()
+    {
+        const string deck = """
+            v = drc_rules['V1_a'].to_f
+            metal1_drw.not(metal2_drw).and(via1_drw).width(v.um).output('CH.a', "chained")
+            """;
+
+        var rule = Assert.Single(RuleDeckReader.Read([LayersDef, deck], Values()).Rules);
+        Assert.Equal("and(not(8/0, 10/0), 19/0)", rule.RegionA);
+    }
+
     // ── Everything else is REPORTED, never silently dropped ──────────────────
 
+    /// <summary>
+    /// <b>Updated for v2, not loosened.</b> This test asserted that `sep` and `enclosed` were
+    /// counted as unreadable — which was true when circuitRF could only measure width and spacing.
+    /// v2 measures both, so the SAME deck text now produces rules, and the test asserts that
+    /// instead. What it still guards is the property that actually matters: an operation circuitRF
+    /// cannot express is counted and named, never silently dropped.
+    /// </summary>
     [Fact]
-    public void RuleShapesCircuitRfCannotCheck_AreCountedByOperation()
+    public void TwoRegionRules_AreNowRead_WithTheirOperandsInTheStatedDirection()
     {
         const string deck = """
             v = drc_rules['V1_a'].to_f
             a = via1_drw.enclosed(metal1_drw, v.um, euclidian)
             b = metal1_drw.sep(metal2_drw, v.um)
-            c = metal1_drw.enclosed(metal2_drw, v.um)
+            """;
+
+        var result = RuleDeckReader.Read([LayersDef, deck], Values());
+
+        Assert.Equal(2, result.Rules.Count);
+
+        // `x.enclosed(y)` means x is surrounded BY y, so the ENCLOSING region is y. circuitRF's
+        // MinEnclosure always takes the enclosing region first, so the operands swap on the way in.
+        // Backwards, this measures a real quantity in the wrong direction: it fires on correct
+        // artwork and passes the incorrect kind.
+        var enclosure = Assert.Single(result.Rules, r => r.Kind == DrcRuleKind.MinEnclosure);
+        Assert.Equal("8/0", enclosure.RegionA);     // metal1 encloses
+        Assert.Equal("19/0", enclosure.RegionB);    // via1 is enclosed
+        Assert.Equal(19, enclosure.StreamLayer);    // the marker stays on the layer the user drew
+
+        var sep = Assert.Single(result.Rules, r => r.Kind == DrcRuleKind.MinSeparation);
+        Assert.Null(sep.RegionA);                   // a bare layer needs no expression
+        Assert.Equal("10/0", sep.RegionB);
+    }
+
+    [Fact]
+    public void RuleShapesCircuitRfStillCannotCheck_AreCountedByOperation()
+    {
+        const string deck = """
+            v = drc_rules['V1_a'].to_f
+            a = metal1_drw.area(v.um)
+            b = metal2_drw.area(v.um)
+            c = metal1_drw.isolated(v.um)
             """;
 
         var result = RuleDeckReader.Read([LayersDef, deck], Values());
 
         Assert.Empty(result.Rules);
         Assert.Equal(3, result.UnsupportedTotal);
-        Assert.Contains(result.Unsupported, u => u is { Operation: "enclosed", Count: 2 });
-        Assert.Contains(result.Unsupported, u => u.Operation == "sep");
+        Assert.Contains(result.Unsupported, u => u is { Operation: "area", Count: 2 });
+        Assert.Contains(result.Unsupported, u => u.Operation == "isolated");
     }
 
     /// <summary>

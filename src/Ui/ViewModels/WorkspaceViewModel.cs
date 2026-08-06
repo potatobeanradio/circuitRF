@@ -3472,6 +3472,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// cleanly — is reported to Messages, because a stackup that is silently approximate produces
     /// numbers that converge and are wrong.</para>
     /// </summary>
+    /// <summary>
+    /// Opens a `.ctech` from anywhere — <b>no workspace required</b>.
+    ///
+    /// <para>A technology is a portable, self-contained file. Requiring a workspace to look at one
+    /// was an accident of the only entry points being the project tree and the import flow, not a
+    /// property of the format: <see cref="OpenOrActivateTech"/> has always needed nothing but a
+    /// path. Someone sent a `.ctech` and wanting to read its rules should not have to create a
+    /// workspace first.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenTechnologyFile(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open Technology",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Technology") { Patterns = ["*.ctech"] }],
+        });
+        if (files.Count == 0) return;
+
+        OpenOrActivateTech(files[0].Path.LocalPath);
+    }
+
     [RelayCommand]
     private async Task ImportTechnology(Window? owner)
     {
@@ -3533,7 +3559,44 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             Directory.CreateDirectory(techDir);
             var techPath = Path.Combine(techDir, $"{choice.Name}.ctech");
-            TechPersistence.SaveToFile(techPath, tech);
+
+            // Re-importing over an existing technology used to overwrite the file outright — every
+            // hand-authored rule, edited colour and chosen ground reference gone, with no prompt and
+            // no record. Ask, and offer the answer that does not lose work.
+            if (File.Exists(techPath))
+            {
+                var existing = TryLoadTechnologyForMerge(techPath);
+                if (existing is null) return;
+
+                var conflicts = TechnologyMerge.FindConflicts(
+                    existing, tech, TechnologyMerge.SectionsPresentIn(tech));
+
+                var merge = await new TechnologyMergeDialog(
+                    Path.GetFileName(techPath), TechnologyMerge.SectionsPresentIn(tech),
+                    isReimport: true, conflicts).ShowDialog<TechnologyMergeResult?>(window);
+                if (merge is null) return;
+
+                if (merge.ReplaceWholeFile)
+                {
+                    TechPersistence.SaveToFile(techPath, tech);
+                    Messages.Warning($"Replaced \"{choice.Name}\" entirely — any edits made to it are gone.");
+                }
+                else
+                {
+                    var report = TechnologyMerge.Merge(
+                        existing, tech, merge.Sections, merge.Mode, merge.ReplaceKeys);
+                    TechPersistence.SaveToFile(techPath, existing);
+                    tech = existing;
+                    Messages.Success($"Merged into \"{choice.Name}\" — {report.Summary()}", techPath);
+                    foreach (var w in report.Warnings) Messages.Warning($"Import Technology — {w}");
+                }
+
+                _techCache.Invalidate(techPath);
+            }
+            else
+            {
+                TechPersistence.SaveToFile(techPath, tech);
+            }
 
             if (choice.SetAsDefault)
             {
@@ -3612,6 +3675,108 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         return ResolveTechFor(view.TechRef, clayAbsolutePath).ResolvedPath;
     }
+
+    /// <summary>Loads a `.ctech` for a merge, reporting rather than throwing.</summary>
+    private Technology? TryLoadTechnologyForMerge(string path)
+    {
+        try { return TechPersistence.LoadFromFile(path); }
+        catch (Exception ex)
+        {
+            Messages.Error($"Could not read \"{Path.GetFileName(path)}\": {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Brings chosen sections of ANOTHER technology into the one currently being edited — the
+    /// mix-and-match path. Covers "take just this process's DRC rules" and "reuse that layer table"
+    /// with one mechanism, because both are the same operation with a different section selected.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsTechDocumentActive))]
+    private async Task ImportIntoTechnology(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+        if (ResolveActiveDocumentForCommands() is not TechDocument doc) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import from Technology",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Technology") { Patterns = ["*.ctech"] }],
+        });
+        if (files.Count == 0) return;
+
+        var source = TryLoadTechnologyForMerge(files[0].Path.LocalPath);
+        if (source is null) return;
+
+        var available = TechnologyMerge.SectionsPresentIn(source);
+        if (available == TechSection.None)
+        {
+            Messages.Warning("That technology carries no layers, stackup or rules to import.");
+            return;
+        }
+
+        var conflicts = TechnologyMerge.FindConflicts(doc.ViewModel.Working, source, available);
+
+        var choice = await new TechnologyMergeDialog(
+            Path.GetFileName(files[0].Path.LocalPath), available, isReimport: false, conflicts)
+            .ShowDialog<TechnologyMergeResult?>(window);
+        if (choice is null) return;
+
+        var report = doc.ViewModel.MergeFrom(source, choice.Sections, choice.Mode, choice.ReplaceKeys);
+        Messages.Success($"Import from technology — {report.Summary()}");
+        foreach (var w in report.Warnings) Messages.Warning($"Import from technology — {w}");
+    }
+
+    /// <summary>
+    /// Writes chosen sections of the technology being edited to a new `.ctech` — what "send someone
+    /// my DRC rules" does. The result is an ordinary technology file with the other sections empty,
+    /// so the receiving side needs no special knowledge of how it was produced.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsTechDocumentActive))]
+    private async Task ExportTechnologySections(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+        if (ResolveActiveDocumentForCommands() is not TechDocument doc) return;
+
+        var tech = doc.ViewModel.Working;
+        var available = TechnologyMerge.SectionsPresentIn(tech);
+        if (available == TechSection.None)
+        {
+            Messages.Warning("This technology has nothing to export yet.");
+            return;
+        }
+
+        var choice = await new TechnologyExportDialog(tech.Name, available)
+            .ShowDialog<TechSection?>(window);
+        if (choice is null || choice == TechSection.None) return;
+
+        var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export Technology Sections",
+            SuggestedFileName = $"{tech.Name}-export.ctech",
+            DefaultExtension = "ctech",
+            FileTypeChoices = [new FilePickerFileType("Technology") { Patterns = ["*.ctech"] }],
+        });
+        if (file is null) return;
+
+        try
+        {
+            var extracted = TechnologyMerge.Extract(tech, choice.Value, $"{tech.Name} (export)");
+            TechPersistence.SaveToFile(file.Path.LocalPath, extracted);
+            Messages.Success(
+                $"Exported {extracted.Layers.Count} layer(s), {extracted.Stackup.Layers.Count} " +
+                $"stackup entr(ies), {extracted.DrcRules.Count} rule(s).", file.Path.LocalPath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Export failed: {ex.Message}");
+        }
+    }
+
+    private bool IsTechDocumentActive() => ResolveActiveDocumentForCommands() is TechDocument;
 
     private void OpenOrActivateTech(string absolutePath)
     {
@@ -6557,6 +6722,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Export GDSII/DXF (item 8) are enabled only when a layout document is active.
         ExportGdsiiCommand.NotifyCanExecuteChanged();
+        // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
+        // the active document type is NOT re-evaluated on its own — it must be added to BOTH
+        // fan-outs, or it silently stays stuck at whatever it was on construction.
+        ImportIntoTechnologyCommand.NotifyCanExecuteChanged();
+        ExportTechnologySectionsCommand.NotifyCanExecuteChanged();
         ExportDxfCommand.NotifyCanExecuteChanged();
 
         // Save Schematic As… / Save Layout As… are each enabled only when their own document type
@@ -6770,6 +6940,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ActiveSaveScope = doc is IUndoableDocument ? SaveScope.SingleDoc : SaveScope.AllDocs;
 
         ExportGdsiiCommand.NotifyCanExecuteChanged();
+        // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
+        // the active document type is NOT re-evaluated on its own — it must be added to BOTH
+        // fan-outs, or it silently stays stuck at whatever it was on construction.
+        ImportIntoTechnologyCommand.NotifyCanExecuteChanged();
+        ExportTechnologySectionsCommand.NotifyCanExecuteChanged();
         ExportDxfCommand.NotifyCanExecuteChanged();
         SaveLooseSchematicCommand.NotifyCanExecuteChanged();
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();

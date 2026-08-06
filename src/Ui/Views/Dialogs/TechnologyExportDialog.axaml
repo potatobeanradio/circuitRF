@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.TechnologyExportDialog"
+        Title="Export Technology Sections"
+        SizeToContent="WidthAndHeight" MinWidth="420"
+        WindowStartupLocation="CenterOwner" CanResize="False">
+    <StackPanel Margin="16" Spacing="12">
+        <TextBlock x:Name="HeaderText" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock FontSize="11" Opacity="0.7" TextWrapping="Wrap" MaxWidth="380"
+                   Text="The result is an ordinary technology file with the other sections empty. Whoever receives it can import just the parts they want."/>
+
+        <StackPanel Spacing="4">
+            <CheckBox x:Name="LayersCheck"  Content="Layer table"/>
+            <CheckBox x:Name="StackupCheck" Content="Stackup"/>
+            <CheckBox x:Name="RulesCheck"   Content="DRC rules"/>
+        </StackPanel>
+
+        <TextBlock x:Name="RulesOnlyNote" FontSize="10" TextWrapping="Wrap" MaxWidth="380"
+                   Foreground="{DynamicResource CrfWarningBrush}" IsVisible="False"
+                   Text="Rules reference layers by number. Without the layer table, the receiving technology must already define those layers or the rules will measure nothing."/>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Content="Cancel" IsCancel="True" MinWidth="80" HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button Content="Export…" IsDefault="True" MinWidth="80" HorizontalContentAlignment="Center"
+                    Click="OnOkClick"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

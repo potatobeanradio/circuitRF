@@ -372,4 +372,25 @@ public sealed partial class TechEditorViewModel : ObservableObject
         Working.DrcRules.Remove(row.Rule);
         CommitEdit(before, $"Remove DRC rule {row.Rule.Name}");
     }
+
+    /// <summary>
+    /// Merges another technology's chosen sections into this one as ONE undoable edit.
+    ///
+    /// <para>One snapshot, not one per item: a user who imports a layer table and does not like the
+    /// result wants Ctrl+Z to undo "the import", not to walk back out of it three hundred times.
+    /// The coarse-snapshot undo this editor already uses makes that free.</para>
+    /// </summary>
+    public TechMergeReport MergeFrom(
+        Technology source, TechSection sections, TechMergeMode mode,
+        IReadOnlySet<string>? replaceKeys = null)
+    {
+        var before = SnapshotJson();
+        var report = TechnologyMerge.Merge(Working, source, sections, mode, replaceKeys);
+
+        if (report.ChangedNothing) return report;
+
+        CommitEdit(before, "Import from technology");
+        RebuildAll();
+        return report;
+    }
 }

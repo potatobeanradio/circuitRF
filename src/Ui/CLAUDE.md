@@ -1,5 +1,276 @@
 # UI (Avalonia) — local conventions
 
+Technology UX — merge, mix-and-match, export, and opening a `.ctech` on its own (2026-08-06).
+Answers five owner questions, all of which had the same answer before this: no. One of them had a
+worse answer than no.
+
+**What re-import used to do, and why it was the urgent one.** The import dialog pre-filled a FREE
+name, so a re-import made a second file. Type the existing name and `TechPersistence.SaveToFile`
+replaced it outright — every hand-authored rule, edited colour and chosen ground reference gone, with
+no prompt and no record. **A re-import over an existing technology now always asks.**
+
+**`TechnologyMerge`** (framework-free, `src/Ui/Layout/`) is the one mechanism behind all of it —
+re-import, mix-and-match, "just the DRC rules", and "send someone my rules" are the same operation
+with a different source and a different section selected. Building four features would have meant
+four chances to disagree about what "replace" means.
+
+- **Identity is per section and deliberately NOT uniform.** A layer IS its `Key` (§2.1 — the name is
+  a label); a stackup entry is its `Name` (which is also what `SpanFromLayer`/`SpanToLayer`
+  reference, so matching on anything else would break those references); a rule is its `Name` (the
+  process's own name, which is what a violation traces back to).
+- **A replace keeps the item's POSITION.** Rules and stackup entries are listed in the technology's
+  own order — and the stackup's order is physical — so a replace that appended would reorder the list
+  under the user.
+- **Everything merged is CLONED.** The two technologies outlive the merge independently; aliasing
+  would mean a later edit to one silently changing the other.
+- **Merging rules WITHOUT their layers is warned about at merge time.** "Just send me the rules" is
+  the most likely use and the most likely way it goes wrong: a rule references layers by number, and
+  without them it looks perfectly healthy in the editor and measures nothing.
+- **Appended stackup entries are flagged as order-sensitive** — they land at the BOTTOM of the stack,
+  which is almost never where they belong.
+
+**The collision prompt defaults to taking the imported version, per owner instruction.** The dialog
+lists the ACTUAL collisions with both sides on one line (`yours: 111 DBU → incoming: 222 DBU`), every
+one ticked, and the user unticks what they want to keep. That is the mode selected by default
+whenever anything collides — someone who just chose to import an update is asking for the update; the
+list exists so they can hold back the few items they deliberately tuned, not so they must re-approve
+the ninety they wanted. Blanket "take everything", "keep mine", and (on re-import only) "replace the
+whole file" are also offered. **`Selective` with nothing ticked replaces NOTHING** — the safe reading
+of "the user was asked and ticked none".
+
+**No new file format, on purpose.** A `.ctech` carrying only DRC rules is a valid `.ctech`: it loads,
+round-trips, and is obviously a technology file. A `.cdrc` would mean a second format, a second
+reader, a second version field and a second set of bugs to express something the format already
+expresses. Export writes a `.ctech`; import reads one and takes the sections you tick.
+
+**Opening a `.ctech` never needed a workspace** — `OpenOrActivateTech` has only ever needed a path.
+Requiring one was an accident of the only entry points being the project tree and the import flow.
+**File ▸ Open ▸ Open Technology…** opens one from anywhere.
+
+**The v2 DRC fields are now editable** (the gap D1-D4 left open): `RegionA`/`RegionB` as validated
+expression boxes that store the CANONICAL rendering — so a re-save does not churn the file on
+whitespace — plus the density window, min/max ratio and net scope. **Fields that do not apply to the
+selected kind are HIDDEN, not disabled**: a greyed "second region" on a width rule invites the
+question of what it would have meant. A density ratio typed as a percentage is normalised, and that
+conversion is scoped to density alone because an antenna limit is a plain ratio legitimately far
+above 1. `MinArea` relabels its Value box to "Area:", since that is the one place `ValueDbu` is not a
+distance.
+
+**`MergeFrom` is ONE undoable edit.** A user who imports a layer table and dislikes the result wants
+Ctrl+Z to undo "the import", not to walk back out of it three hundred times — which the editor's
+coarse-snapshot undo makes free.
+
+**Three menu-structure tests were UPDATED, not loosened.** They assert the Open and Import submenus
+exactly, in order, which is what stops the two hand-mirrored surfaces drifting — and they earned
+their keep here: the in-window and macOS menus had ended up ordering the two Technology import items
+differently, and the test caught it. Both now read create-then-merge.
+
+**Gate:** Ui.Tests **4,954**, Firewall 4/4. 31 new tests (`TechnologyMergeTests` 18,
+`DrcRuleEditorFieldTests` 18 — some shared). **Not interactively verified**: the merge and export
+dialogs, and the per-item conflict list, cannot be exercised headlessly. Please confirm on your end
+that a re-import prompts with its collisions listed and pre-ticked, that unticking one keeps your
+version, and that File ▸ Open ▸ Open Technology… works with no workspace open.
+
+Phase L5c — DRC v2, parts D2-D4: selectors, area/perimeter/density, and LAYOUT NET EXTRACTION
+(2026-08-06). Builds on D1's expression model. **The headline is net extraction — it is the
+capability the net-aware rules were blocked on, and it is not LVS.**
+
+**D2 — selectors and two more measurement kinds.**
+- `with_area(expr, min, max)` and `with_perimeter(expr, min, max)`, both bounds inclusive, either
+  open (written as an empty slot: `with_area(1/0, 100, )` is "at least 100"). An open bound writes
+  as an empty slot rather than a sentinel number because a magic large integer reads as data.
+- `MinArea` and `MinPerimeter`. **`ValueDbu` holds SQUARE DBU for `MinArea`** — the one place that
+  field is not a distance, stated on the enum member rather than inferred, because a value read in
+  the wrong unit is off by the resolution SQUARED (a million at the default) and would report every
+  shape or none.
+- **`with_length` is deliberately NOT mapped to `with_perimeter`.** A deck's `with_length` selects on
+  an EDGE collection; a polygon's perimeter is a different quantity and would silently select
+  different shapes. It stays reported as unsupported — the honest outcome.
+
+**D3 — density.** A sliding square window, stepped by HALF a window. Stepping by a full window would
+miss a violating region straddling two boundaries, which is the classic way a density check passes a
+design the fab then rejects. **The window never leaves the artwork's own extent**: letting the grid
+run off the end measures blank space beyond the design as low density and reports a violation all the
+way around the boundary — not a density problem, the absence of a die outline. Where the design is
+smaller than one window, one window covering it is the honest answer. The marker is the WINDOW, not
+the metal in it: the user has to add or remove fill across that area, and highlighting the existing
+metal points at shapes that are already correct.
+
+**D4 — `DrcConnectivity`, and what it is not.** Two pieces of metal are one net when they touch on a
+layer or a via joins them across layers. The stackup is what says which layers a via joins — exactly
+what `SpanFromLayer`/`SpanToLayer` have carried since the via primitive landed, unread until now.
+**It is not LVS**: it answers "which shapes are electrically joined", from geometry and the stackup
+alone. It does not know what any net is called, does not compare against a schematic, and does not
+extract devices.
+
+- **The bridge test is "does the via touch each side", not "do the two sides overlap each other"** —
+  that is what makes a staircase of offset metal connect correctly, where the two metal pieces need
+  never overlap one another.
+- **Extraction runs only when a rule asks for it.** It walks every via against every piece of metal,
+  so a technology whose rules never mention nets must not pay for it — which is every starter
+  technology.
+- **`DrcNetScope`** (Any / SameNet / DifferentNet) on spacing and separation. A process states a large
+  share of its spacing rules TWICE at two values: two pieces of one net may legally sit closer than
+  two that could short. Without net identity a checker must pick one — the same-net value passes
+  genuine shorts, the different-net value fails correct artwork. **An unknown net is never assumed to
+  be DIFFERENT**, because that reports a pair the extraction could not classify as a potential short,
+  which is the false positive most likely to end trust in the check.
+- **`AntennaRatio`** asks a question about a whole NET rather than any pair of shapes, which is why it
+  could not exist before this. A net attached to no gate is not reported — it has no antenna to
+  discharge through, and flagging it would mark every routing net on the design.
+
+**Two bugs the end-to-end run against a real process found, neither reachable from fixtures.**
+1. **A second deck was silently skipped entirely.** A process may ship two decks sharing no
+   vocabulary: a modular one binding layers as `get_polygons(8, 0)`, and a self-contained one binding
+   them as `source.polygons("8/0")` with no rule-value table at all. Both the file recogniser and the
+   scanner's content peek keyed on the first form only, so the second was passed over with nothing in
+   the import report to say a file had been skipped. **Measured: 96 of 143 readable rules — two
+   thirds of the process.** Both now recognise three markers.
+2. **A diagnostic said "not defined in the technology" for layers that were defined.** The evaluator
+   built its missing-layer list from the layers with GEOMETRY, so a layer the technology defines that
+   this design simply has nothing on was reported as undefined. Most layers of a real process are
+   empty in any one cell — measured, 31 layers were reported and every one was defined. The evaluator
+   now takes the technology's own layer table and separates the two facts; only a genuinely undefined
+   layer is reported.
+
+**A misread the same run corrected:** `area` was briefly mapped to `MinArea`. On a real deck it
+appears only as a PROPERTY access (`x.area`, feeding a density sum), never as `area(value)` — the
+mapping produced 21 phantom entries reported as "no value stated", a category that tells a user
+nothing because the rule never existed. Reverted, with the reasoning recorded where the mapping was.
+
+**Chained expressions (`a.not(b).and(c)`) needed a scanner, not a regex.** The binder read one
+operation per line, which silently fails on a chain, and a regex cannot count nested parentheses.
+`RuleDeckStatement` walks the chain: a base symbol then a run of `.op(args)`, where the last link may
+be a MEASUREMENT. Both a derived binding and a rule fall out of one structure. **A partially-applied
+chain is never returned** — it would name a region the deck never meant, and a rule measured against
+the wrong region is the silent-wrong-answer failure this area exists to avoid.
+
+**The unsupported count is restricted to rule-SHAPED operations.** A first version counted every
+statement the reader did not consume, which turned an honest 128 into a meaningless 2,348 by counting
+logging, iteration and bookkeeping as unenforced rules. A number a user cannot act on is worse than no
+number — it makes the real figure unfindable.
+
+**Measured end to end against a real process** — scan, import, validate, run: **141 rules imported**
+(42 MinWidth, 36 MinSeparation, 33 MinSpacing, 30 MinEnclosure), **83 measuring derived regions**,
+against 321 reported as not enforced. A 780-shape design over 60 layers checks in **40 ms**. The
+starting point for all of this was 23 rules of two kinds.
+
+**Still not enforced, largest first:** enclosure and separation whose operands are built by
+constructs the chain scanner does not model (~90), `with_coincident_edges` (30), `with_length` (21),
+`drc(...)` universal-DSL statements (17). Density and antenna rules are stated PROCEDURALLY in a real
+deck — loops accumulating areas — so the two kinds exist and are checkable but are authored by hand or
+by the Technology Editor, not imported.
+
+**Gate:** Ui.Tests **4,918**, Firewall 4/4. 21 further tests. **Not interactively verified** — the
+Technology Editor still has no field for `RegionA`/`RegionB`/`WindowDbu`/`MaxRatio`/`NetScope`, so an
+imported derived rule is visible only through a run's own report. That is the largest remaining gap in
+this area and the first UI task of any follow-up.
+
+Phase L5c — DRC v2, part 1: rule EXPRESSIONS and the two-region checks (2026-08-06) — the operand
+half. A rule now measures a layer EXPRESSION, not a bare layer, and there are four more measurement
+kinds: separation, enclosure, overlap and notch. **Read this before adding a fifth kind — the operand
+is what unlocked coverage, not the enum.**
+
+**The finding that reframed v2.** Rules in a real process deck are not `(layer, kind, value)` triples.
+They are expressions: a derived layer is built by boolean algebra and topological selection, and only
+then measured. That is why v1 could not read 15 of the 38 width/space statements in a real deck — not
+because the CHECK was missing, but because there was nowhere to put the operand. Adding more
+`DrcRuleKind` values without an operand model would have moved almost nothing.
+
+**`DrcLayerExpr` + `DrcLayerExprParser` + `DrcRegionEval`** (`src/Ui/Layout/Drc/`) are the operand.
+Vocabulary is deliberately the one real decks use — `and`/`or`/`not`/`xor`, `sized`, `merged`,
+`holes`, and the six whole-polygon selections (`interacting`/`not_interacting`/`inside`/`outside`/
+`covering`/`not_covering`) — so translating a deck statement is mechanical rather than interpretive.
+Adding an operation no deck invokes buys nothing; leaving one out means a rule must be reported as
+unsupported, which is honest but worse.
+
+- **Serialized as TEXT, not polymorphic JSON** — `and(1/0, not(2/0, 3/0))` is one `.ctech` field a
+  person can read and diff, against a dozen nested `$type` objects that nobody can. It also gives the
+  Technology Editor something to validate directly instead of a tree widget.
+- **Function-call form throughout, including for the booleans.** Infix would need precedence, and a
+  precedence mistake in a DRC rule is invisible: `a.not(b).and(c)` and `a.not(b.and(c))` both parse,
+  both evaluate, and produce different regions. Parentheses ARE the structure.
+- **`not` is a DIFFERENCE, not a complement** — the parser says so in its own error text, because
+  "not" reads as unary and the complement of a region is unbounded.
+- **Whole-polygon selection never returns partial area.** That is the entire difference between
+  `interacting` and `and`, and an implementation that returned partial area would look plausible on
+  screen and measure differently.
+- **Edge contact counts as interacting.** Clipper2 reports the intersection of two regions sharing
+  only an edge as empty, so a strict area test would report two abutting polygons as not interacting
+  — the opposite of what every deck means. Tested against a one-DBU dilation; at the default
+  resolution that is a nanometre, far below any drawn feature. **Do not raise it.**
+- **Sub-expressions are memoized per run**, keyed by the expression itself — `DrcLayerExpr` is a
+  record tree, so two structurally identical expressions share an entry with no hand-written key.
+  A deck measures a dozen rules against the same derived layer; re-deriving it per rule is the
+  difference between a check that runs once and one that runs once per rule.
+- **A layer the technology does not define contributes NOTHING rather than failing its rule**, and is
+  reported once per run. A deck written for a full process names layers a simpler technology omits,
+  and refusing those rules outright would hide the ones that ARE evaluable.
+
+**The four new kinds, and the one boundary that took a second attempt.**
+- **MinSeparation** is spacing between two regions — same inflate-both-and-intersect construction,
+  round joins for the same reason. It runs **pairwise over components, and skips overlapping pairs**.
+  That is semantic, not performance: where a polygon of B sits INSIDE a polygon of A there is no gap,
+  and measured region-against-region a correctly-enclosed contact reports a separation violation as a
+  ring all the way around it — one false finding per contact, which on a real design is most of them.
+  Subtracting the overlap afterwards does NOT fix it, because the ring survives the subtraction. The
+  first implementation did exactly that and the test caught it.
+- **MinEnclosure** is `B − erode(A, e)`, restricted to B polygons that actually meet A. A contact
+  nowhere near the metal is not "enclosed by zero" — it is a different rule's problem, and reporting
+  it here would bury the real findings under one violation per unrelated shape on the layer.
+- **MinOverlap** is the WIDTH question asked of `A ∩ B`, sharing `NarrowerThan` with the width check
+  rather than opening a second chance to get the opening wrong.
+- **MinNotch** closes each connected component and subtracts. **Per component, not per layer** — a
+  notch is a gap whose two sides are the same conductor; closing the whole layer would also bridge
+  the gaps BETWEEN conductors and report every one of them, which is the spacing check's job.
+
+**Every new kind inherits the width check's one-DBU backoff and two-DBU dilate overshoot**, so the
+detection threshold is "under the rule by more than one DBU". The one-DBU cases in the tests are PASS
+cases on purpose. A check that fires on a rule drawn exactly at its limit is the one failure that
+stops people running it.
+
+**Additive, no `.ctech` format bump.** `RegionA`/`RegionB` are null on every hand-authored and every
+pre-v2 rule, and null means "just this rule's own layer" — so those keep working untouched, pinned by
+a test comparing a rule with no expression against the same rule written as `1/0`. `NeedsSecondRegion`
+carries `[JsonIgnore]`, which is load-bearing: System.Text.Json serializes get-only properties, so
+without it every `.ctech` would gain a field derived from data already in the file.
+
+**`DrcRule.Layer` stays a plain `LayerKey` even now that rules measure derived regions** — a marker
+has to belong somewhere for the panel to group by and the renderer to colour. "The violation is on
+Metal1" is information a user acts on; an arbitrary expression has no single layer to infer it from.
+A derived rule's marker goes on the first layer its expression reads.
+
+**Importer.** `RuleDeckReader` now records derived-layer bindings (`x = a.not(b)`, `x = a.sized(v)`,
+`x = a.merged`) as expressions and reads `sep`/`separation`/`enclosed`/`enclosing`/`overlap`/`notch`.
+`x.enclosed(y)` means x is surrounded BY y, so its operands **swap** on the way in — circuitRF's
+MinEnclosure always takes the enclosing region first. Backwards, that measures a real quantity in the
+wrong direction: it fires on correct artwork and passes the incorrect kind. Confirmed to bite —
+neutering the swap turns `TwoRegionRules_AreNowRead_WithTheirOperandsInTheStatedDirection` red.
+
+- A rule measuring a derived region is **exempt from the first-statement-wins collapse**: several
+  genuinely different rules on one layer differ only in their operand (`metal`, `metal minus filler`,
+  `metal touching a pad`), and collapsing them to the first would keep an arbitrary one.
+- Sizing converts µm → DBU at `LayoutUnits.DefaultDbuPerMicron`, the same fixed convention
+  `SubstrateResolver` already relies on for stackup thicknesses — neither `Technology` nor the
+  `.ctech` carries a resolution, so this is settled, not a guess.
+
+**Measured on a real process deck: 23 → 46 rules read** (12 MinWidth, 14 MinSpacing, 11 MinEnclosure,
+9 MinSeparation), **23 of them measuring a derived region**, against 128 still reported as not
+enforced. The largest remaining category is **chained expressions** (`a.not(b).and(c)`) — the binder
+reads one operation per binding, so a chain resolves to nothing and its rule is reported rather than
+guessed at. That is the highest-value next increment, ahead of any new rule kind.
+
+**Two v1 tests were UPDATED, not loosened** — both asserted that `sep`/`enclosed` are counted as
+unreadable, which is exactly what this phase makes false. They now assert the new capability, and the
+property they still guard (an operation circuitRF cannot express is counted and named, never silently
+dropped) is unchanged. The import note lost its "checks minimum width and minimum spacing only"
+wording, which was true and is not any more.
+
+**Gate:** Ui.Tests **4,897**, Firewall 4/4. 65 new tests (`DrcLayerExprParserTests` 24,
+`DrcRegionEvalTests` 11, `DrcTwoRegionCheckTests` 30). **Not interactively verified** — the
+Technology Editor has no field for `RegionA`/`RegionB` yet, so an imported derived rule is visible
+only through a run's own report; adding those two fields is the first UI task of the next slice.
+
 Phase L5b — DRC v1 (docs/design/layout-view.md §9A, 2026-08-06) — COMPLETE. **Phase L5b is done.**
 A layout can now be checked against its technology's minimum-width and minimum-spacing rules, the
 violations are regions you can click to, waivers persist, and a process's own rule DECK can be read

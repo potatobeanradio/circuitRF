@@ -30,13 +30,22 @@ namespace CircuitRF.Ui.Layout.TechImport;
 /// <param name="StreamDatatype">Stream datatype of that layer.</param>
 /// <param name="ValueUm">The rule's value, in micrometres (the unit a deck states lengths in).</param>
 /// <param name="Description">The deck's own one-line description, when it states one.</param>
+/// <param name="RegionA">
+/// The region the rule measures, as a <c>DrcLayerExprParser</c> expression, when the deck measures a
+/// DERIVED layer rather than a drawn one. Null means "just the layer named by
+/// <paramref name="StreamLayer"/>/<paramref name="StreamDatatype"/>" — which is what a simple rule
+/// says, and what every rule this reader could read before it understood derived layers.
+/// </param>
+/// <param name="RegionB">The second region, for the two-region kinds. Null otherwise.</param>
 public sealed record RuleDeckRule(
     string      Name,
     DrcRuleKind Kind,
     int         StreamLayer,
     int         StreamDatatype,
     double      ValueUm,
-    string?     Description);
+    string?     Description,
+    string?     RegionA = null,
+    string?     RegionB = null);
 
 /// <summary>A rule shape circuitRF cannot express, and how many of them the deck states.</summary>
 public sealed record RuleDeckUnsupported(string Operation, int Count);
@@ -73,9 +82,21 @@ public static partial class RuleDeckReader
     /// reads at least one value out of a rule-value table. Both markers are the deck language's own
     /// grammar, not a file name.
     /// </summary>
+    /// <summary>
+    /// Whether a file states rules in a form this reader understands.
+    ///
+    /// <para><b>All THREE markers matter.</b> A process may ship two decks that share no vocabulary:
+    /// a modular one binding layers with <c>get_polygons(8, 0)</c>, and a self-contained one binding
+    /// them with <c>source.polygons("8/0")</c> and carrying no rule-value table at all. Recognising
+    /// only the first silently skipped the second — measured, that was 96 of 143 readable rules,
+    /// two thirds of the deck, with nothing in the import report to suggest a file had been passed
+    /// over.</para>
+    /// </summary>
     public static bool LooksLikeRuleDeck(string text) =>
         !string.IsNullOrWhiteSpace(text) &&
-        (LayerBindRegex().IsMatch(text) || ValueBindRegex().IsMatch(text));
+        (LayerBindRegex().IsMatch(text) ||
+         QuotedLayerBindRegex().IsMatch(text) ||
+         ValueBindRegex().IsMatch(text));
 
     /// <summary>
     /// True when the text is a rule-VALUE table: JSON carrying a top-level object of rule name →
@@ -233,6 +254,17 @@ public static partial class RuleDeckReader
     /// </summary>
     private static void CollectLayerBindings(string text, Dictionary<string, (int, int)> layerByName)
     {
+        // A second binding form, from the same process's self-contained "maximal" deck:
+        // `Metal1 = source.polygons("8/0")` instead of `metal1_drw = get_polygons(8, 0)`.
+        // Both name a drawn layer; recognising only one reads only one of the two decks a process
+        // ships, and the unread one's rules all fall out as "region is not a drawn layer" — 220 of
+        // them, measured, which is what made this worth adding rather than assuming.
+        foreach (var m in QuotedLayerBindRegex().Matches(text).Cast<Match>())
+        {
+            if (int.TryParse(m.Groups[2].Value, out int ql) && int.TryParse(m.Groups[3].Value, out int qd))
+                layerByName[m.Groups[1].Value] = (ql, qd);
+        }
+
         foreach (var m in LayerBindRegex().Matches(text).Cast<Match>())
             if (int.TryParse(m.Groups[2].Value, out int lay) &&
                 int.TryParse(m.Groups[3].Value, out int dt))
@@ -284,6 +316,12 @@ public static partial class RuleDeckReader
         var loops     = new List<LoopBinding>();
         int depth     = 0;
 
+        // Symbol -> layer EXPRESSION, for the derived layers a deck builds before measuring them.
+        // This is what turned "a rule on a derived layer" from an unsupported category into a rule:
+        // `m = metal.not(keepout)` followed by `m.width(x)` is one binding and one measurement, and
+        // without the binding the measurement has no operand this model can name.
+        var derivedByName = new Dictionary<string, string>(StringComparer.Ordinal);
+
         for (int i = 0; i < lines.Length; i++)
         {
             string raw  = lines[i];
@@ -313,47 +351,136 @@ public static partial class RuleDeckReader
                 continue;
             }
 
-            var call = RuleCallRegex().Match(line);
-            if (!call.Success)
+            // ── One statement shape covers every rule the deck states ───────────────────
+            // A deck statement is a chain: a base symbol then a run of `.op(args)`. Some links
+            // build a region, and the last one may MEASURE it. Both a derived-layer binding and a
+            // rule fall out of that, which is why there is one path here rather than one per shape.
+            if (!RuleDeckStatement.TryParse(line, out var stmt) || stmt is null)
             {
                 if (UnsupportedOpRegex().Match(line) is { Success: true } op)
                 {
-                    string name = op.Groups[1].Value;
-                    unsupported[name] = unsupported.GetValueOrDefault(name) + 1;
+                    string opName = op.Groups[1].Value;
+                    unsupported[opName] = unsupported.GetValueOrDefault(opName) + 1;
                 }
                 continue;
             }
 
-            string receiver = call.Groups[1].Value;
-            var    kind     = call.Groups[2].Value == "width" ? DrcRuleKind.MinWidth : DrcRuleKind.MinSpacing;
-            string operand  = call.Groups[3].Value;
-
-            if (!TryResolveValue(operand, valueVars, ruleValues, out double valueUm))
+            // The last link that is not pure bookkeeping is the one that says what this statement IS.
+            int last = -1;
+            bool hasOutput = false;
+            for (int k = stmt.Ops.Count - 1; k >= 0; k--)
             {
-                unsupported[$"{call.Groups[2].Value} (value not stated in the rule table)"] =
-                    unsupported.GetValueOrDefault($"{call.Groups[2].Value} (value not stated in the rule table)") + 1;
+                string n = stmt.Ops[k].Name;
+                if (n == "output") { hasOutput = true; continue; }
+                if (RuleDeckStatement.IsPassThroughOp(n)) continue;
+                last = k;
+                break;
+            }
+
+            if (last < 0) continue;                       // `l.output(...)`, `x.forget` — bookkeeping
+
+            string lastOp = RuleDeckStatement.Canonical(stmt.Ops[last].Name);
+
+            void Count(string label)
+                => unsupported[label] = unsupported.GetValueOrDefault(label) + 1;
+
+            string? Lookup(string symbol) => LookupRegion(symbol, layerByName, derivedByName);
+
+            // ── A measurement ───────────────────────────────────────────────────────────
+            if (MeasurementKind(lastOp) is { } kind)
+            {
+                var args = stmt.Ops[last].Args;
+                bool twoRegion = kind is DrcRuleKind.MinSeparation or DrcRuleKind.MinEnclosure
+                                      or DrcRuleKind.MinOverlap;
+
+                if (args.Count == 0) { Count($"{lastOp} (no value stated)"); continue; }
+
+                // The chain scanner hands back the argument verbatim, so the deck's own `.um`
+                // suffix is still on it — the regex this replaced stripped it in the pattern.
+                // Stripping it here keeps the ONE place a value is resolved unchanged.
+                string valueToken = twoRegion ? (args.Count > 1 ? args[1] : "") : args[0];
+                if (valueToken.EndsWith(".um", StringComparison.Ordinal))
+                    valueToken = valueToken[..^3];
+
+                if (!TryResolveValue(valueToken, valueVars, ruleValues, out double valueUm))
+                {
+                    Count($"{lastOp} (value not stated in the rule table)");
+                    continue;
+                }
+
+                string? regionB = null;
+                if (twoRegion)
+                {
+                    regionB = Lookup(args[0]);
+                    if (regionB is null) { Count($"{lastOp} (second region is not a drawn or derived layer)"); continue; }
+                }
+
+                var targets = ResolveRegions(stmt.Base, loops, arrayByName, layerByName, derivedByName);
+                if (targets.Count == 0) { Count($"{lastOp} (first region is not a drawn or derived layer)"); continue; }
+
+                var (ruleName, description) = ReadOutputLabel(lines, i);
+                bool anyResolved = false;
+
+                foreach (var t in targets)
+                {
+                    string baseExpr = t.Expr ?? $"{t.Layer}/{t.Datatype}";
+                    string? regionA = RuleDeckStatement.TryBuildRegion(
+                        stmt, last, sym => sym == stmt.Base ? baseExpr : Lookup(sym));
+
+                    if (regionA is null) continue;        // a link in the chain did not resolve
+                    anyResolved = true;
+
+                    string name = t.Suffix is null ? ruleName : $"{ruleName} ({t.Suffix})";
+                    if (!seen.Add($"{name}|{t.Layer}/{t.Datatype}|{kind}")) continue;
+
+                    // A chain that reduced to the bare layer needs no expression — keeping it null
+                    // is what makes an imported simple rule identical to a hand-authored one.
+                    string? exprA = regionA == $"{t.Layer}/{t.Datatype}" ? null : regionA;
+
+                    // `x.enclosed(y)` means x is surrounded BY y, so the ENCLOSING region is y.
+                    // circuitRF's MinEnclosure always takes the enclosing region first, so the pair
+                    // swaps here. Backwards, this measures a real quantity in the wrong direction:
+                    // it fires on correct artwork and passes the incorrect kind.
+                    bool swap = lastOp == "enclosed";
+                    string? a = swap ? regionB : exprA;
+                    string? b = swap ? (exprA ?? $"{t.Layer}/{t.Datatype}") : regionB;
+
+                    rules.Add(new RuleDeckRule(name, kind, t.Layer, t.Datatype, valueUm, description, a, b));
+                }
+
+                if (!anyResolved) Count($"{lastOp} (a step in its layer expression did not resolve)");
                 continue;
             }
 
-            var targets = ResolveReceiver(receiver, loops, arrayByName, layerByName);
-            if (targets.Count == 0)
+            // ── A derived-layer binding ─────────────────────────────────────────────────
+            if (RuleDeckStatement.IsRegionOp(lastOp))
             {
-                // A derived expression (one layer minus another, an angle- or size-filtered subset).
-                // The rule is real; the LAYER it applies to is not one circuitRF draws on, so mapping
-                // it onto the base layer would widen the rule silently.
-                string label = $"{call.Groups[2].Value} on a derived layer";
-                unsupported[label] = unsupported.GetValueOrDefault(label) + 1;
+                if (stmt.AssignTo is null)
+                {
+                    // A selection reported directly as a rule ("anything inside X is forbidden").
+                    // Real, and not a measurement this model has a kind for.
+                    if (hasOutput) Count($"{lastOp} (reported directly, not a measurement)");
+                    continue;
+                }
+
+                var targets = ResolveRegions(stmt.Base, loops, arrayByName, layerByName, derivedByName);
+                string baseExpr = targets.Count > 0
+                    ? targets[0].Expr ?? $"{targets[0].Layer}/{targets[0].Datatype}"
+                    : Lookup(stmt.Base) ?? "";
+
+                if (baseExpr.Length == 0) continue;
+
+                string? built = RuleDeckStatement.TryBuildRegion(
+                    stmt, last + 1, sym => sym == stmt.Base ? baseExpr : Lookup(sym));
+
+                if (built is not null) derivedByName[stmt.AssignTo] = built;
                 continue;
             }
 
-            var (ruleName, description) = ReadOutputLabel(lines, i);
-
-            foreach (var (layer, datatype, suffix) in targets)
-            {
-                string name = suffix is null ? ruleName : $"{ruleName} ({suffix})";
-                if (!seen.Add($"{name}|{layer}/{datatype}|{kind}")) continue;
-                rules.Add(new RuleDeckRule(name, kind, layer, datatype, valueUm, description));
-            }
+            // ── Anything else ───────────────────────────────────────────────────────────
+            // Only rule-SHAPED operations are counted. A deck is a program, and counting its
+            // logging, iteration and bookkeeping as unenforced rules buries the real figure.
+            if (RuleDeckStatement.IsKnownGeometricOp(lastOp)) Count(lastOp);
         }
 
         // Only worth saying when a loop binding was STILL IN SCOPE at end of file — that is the one
@@ -496,10 +623,83 @@ public static partial class RuleDeckReader
         return line;
     }
 
+
+    // ── Derived layers and two-region rules ───────────────────────────────────
+
+    /// <summary>A resolved operand: the expression text, plus the layer a marker is attributed to.</summary>
+    private readonly record struct RegionTarget(string? Expr, int Layer, int Datatype, string? Suffix);
+
+
+    /// <summary>
+    /// The rule kind a deck measurement op means, or null when it is not one this model can express.
+    /// </summary>
+    private static DrcRuleKind? MeasurementKind(string op) => op switch
+    {
+        "width"                   => DrcRuleKind.MinWidth,
+        "space"                   => DrcRuleKind.MinSpacing,
+        "sep" or "separation"     => DrcRuleKind.MinSeparation,
+        "enclosed" or "enclosing" => DrcRuleKind.MinEnclosure,
+        "overlap"                 => DrcRuleKind.MinOverlap,
+        "notch"                   => DrcRuleKind.MinNotch,
+
+        // `area` is deliberately NOT here. Measured on a real deck it appears only as a PROPERTY
+        // access (`x.area`, feeding a density sum), never as `area(value)` — reading it as a
+        // minimum-area rule produced 21 phantom entries reported as "no value stated", which is a
+        // category that tells a user nothing because the rule never existed.
+
+        _                         => null,
+    };
+
+    /// <summary>A symbol's expression text — a drawn layer's own leaf, or a recorded derived one.</summary>
+    private static string? LookupRegion(
+        string symbol,
+        Dictionary<string, (int Layer, int Datatype)> layerByName,
+        Dictionary<string, string> derivedByName)
+    {
+        if (layerByName.TryGetValue(symbol, out var lk)) return $"{lk.Layer}/{lk.Datatype}";
+        return derivedByName.TryGetValue(symbol, out string? expr) ? expr : null;
+    }
+
+
+    /// <summary>
+    /// <see cref="ResolveReceiver"/> widened to derived layers: one symbol resolves to one region, a
+    /// loop variable to every member of the array it iterates.
+    /// </summary>
+    private static List<RegionTarget> ResolveRegions(
+        string receiver,
+        List<LoopBinding> loops,
+        Dictionary<string, List<string>> arrayByName,
+        Dictionary<string, (int Layer, int Datatype)> layerByName,
+        Dictionary<string, string> derivedByName)
+    {
+        var result = new List<RegionTarget>();
+
+        foreach (var (layer, datatype, suffix) in ResolveReceiver(receiver, loops, arrayByName, layerByName))
+            result.Add(new RegionTarget(null, layer, datatype, suffix));
+
+        if (result.Count > 0) return result;
+
+        // A derived symbol. Its marker goes on the FIRST layer the expression reads — an expression
+        // has no single layer of its own, and the first operand is the one the deck named first,
+        // which is the one a reader of the rule would expect the violation to be attributed to.
+        if (derivedByName.TryGetValue(receiver, out string? expr) &&
+            Drc.DrcLayerExprParser.TryParse(expr, out var parsed, out _) && parsed is not null)
+        {
+            var first = parsed.ReferencedLayers().FirstOrDefault();
+            if (first != default || parsed is Drc.DrcLayerExpr.Layer)
+                result.Add(new RegionTarget(expr, first.Layer, first.Datatype, null));
+        }
+
+        return result;
+    }
+
     // ── Grammar ───────────────────────────────────────────────────────────────
 
     [GeneratedRegex(@"^\s*(\w+)\s*=\s*get_polygons\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)", RegexOptions.Multiline)]
     private static partial Regex LayerBindRegex();
+
+    [GeneratedRegex(@"^\s*(\w+)\s*=\s*\w+\s*\.\s*polygons\s*\(\s*['""](\d+)\s*/\s*(\d+)['""]\s*\)", RegexOptions.Multiline)]
+    private static partial Regex QuotedLayerBindRegex();
 
     [GeneratedRegex(@"^\s*(\w+)\s*=\s*\[\s*([\w\s,]+?)\s*\]\s*$", RegexOptions.Multiline)]
     private static partial Regex ArrayBindRegex();
@@ -510,8 +710,23 @@ public static partial class RuleDeckReader
     [GeneratedRegex(@"^\s*(?:\w+\s*=\s*)?(\w+)\.(width|space)\s*\(\s*([\w.]+?)(?:\.um)?\s*[,)]")]
     private static partial Regex RuleCallRegex();
 
-    [GeneratedRegex(@"\.\s*(enclosed|enclosing|separation|sep|overlap|inside|outside|interacting|area|angle|edges|isolated|notch|holes|covering|density|extent|drc)\s*\(")]
+    [GeneratedRegex(@"\.\s*(inside|outside|interacting|area|angle|edges|isolated|holes|covering|density|extent|drc)\s*\(")]
     private static partial Regex UnsupportedOpRegex();
+
+    [GeneratedRegex(@"^\s*(\w+)\s*=\s*(\w+)\s*\.\s*(and|or|not|xor|join|interacting|not_interacting|inside|outside|covering|not_covering)\s*\(\s*(\w+)\s*\)\s*$")]
+    private static partial Regex DerivedBinaryBindRegex();
+
+    [GeneratedRegex(@"^\s*(\w+)\s*=\s*(\w+)\s*\.\s*(merged|holes)\s*(?:\(\s*\))?\s*$")]
+    private static partial Regex DerivedUnaryBindRegex();
+
+    [GeneratedRegex(@"^\s*(\w+)\s*=\s*(\w+)\s*\.\s*sized?\s*\(\s*([\d.]+)\s*\.\s*um\s*\)\s*$")]
+    private static partial Regex DerivedSizedBindRegex();
+
+    [GeneratedRegex(@"^\s*(?:\w+\s*=\s*)?(\w+)\s*\.\s*(sep|separation|enclosed|enclosing|overlap)\s*\(\s*(\w+)\s*,\s*([\w.]+?)(?:\.um)?\s*[,)]")]
+    private static partial Regex TwoRegionRuleCallRegex();
+
+    [GeneratedRegex(@"^\s*(?:\w+\s*=\s*)?(\w+)\s*\.\s*notch\s*\(\s*([\w.]+?)(?:\.um)?\s*[,)]")]
+    private static partial Regex NotchRuleCallRegex();
 
     [GeneratedRegex(@"^\s*(\w+)\s*\.\s*each(?:_with_index)?\s+do\s*\|\s*(\w+)")]
     private static partial Regex LoopOpenRegex();

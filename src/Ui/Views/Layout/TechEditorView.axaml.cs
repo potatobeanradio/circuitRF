@@ -65,8 +65,13 @@ public partial class TechEditorView : UserControl
             case DrcRuleRowViewModel dr:
                 switch (tag)
                 {
-                    case "Name":  dr.CommitName();  break;
-                    case "Value": dr.CommitValue(); break;
+                    case "Name":     dr.CommitName();     break;
+                    case "Value":    dr.CommitValue();    break;
+                    case "RegionA":  dr.CommitRegionA();  break;
+                    case "RegionB":  dr.CommitRegionB();  break;
+                    case "Window":   dr.CommitWindow();   break;
+                    case "MinRatio": dr.CommitMinRatio(); break;
+                    case "MaxRatio": dr.CommitMaxRatio(); break;
                 }
                 break;
         }
@@ -83,7 +88,8 @@ public partial class TechEditorView : UserControl
             {
                 case "Kind":     dr.CommitKind();     break;
                 case "Layer":    dr.CommitLayer();    break;
-                case "Severity": dr.CommitSeverity();  break;
+                case "Severity": dr.CommitSeverity(); break;
+                case "NetScope": dr.CommitNetScope(); break;
             }
         }
     }
