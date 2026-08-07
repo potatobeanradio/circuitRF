@@ -276,6 +276,175 @@ public sealed class PCellWireSchemaTests
         Assert.Equal(original.Pins.Count, decoded.Pins.Count);
         for (int i = 0; i < original.Pins.Count; i++)
             Assert.Equal(original.Pins[i], decoded.Pins[i]);
+
+        // Gate 12 (brief-pcell-parameter-handles.md): handles ride the same round trip as shapes and
+        // pins, on the same real generator output. Three of the six built-ins declare them; the other
+        // three declare none, and BOTH answers must survive — "not draggable" is a supported state,
+        // not an absent field to be papered over with an empty list.
+        Assert.Equal(original.Handles?.Count ?? 0, decoded.Handles?.Count ?? 0);
+        for (int i = 0; i < (original.Handles?.Count ?? 0); i++)
+            Assert.Equal(original.Handles![i], decoded.Handles![i]);
+    }
+
+    // ── Wire version 6: handles ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AHandlesCoordinates_RideInThePayload_NeverInTheJson()
+    {
+        // §2's guarantee is structural: a fractional coordinate is unrepresentable because there is
+        // nowhere to write one. Four ints per handle is not a reason to make an exception.
+        var result = new PCellResult([], [], Handles:
+            [new PCellHandle("L", 111, 222, 3_333_333, 444, AxisDeg: 0)]);
+
+        var frame = PCellWireCodec.EncodeGenerateReply(result);
+
+        Assert.DoesNotContain("3333333", frame.Json);
+        Assert.DoesNotContain("111", frame.Json);
+        Assert.Contains(3_333_333L, frame.Payload.ToArray());
+    }
+
+    [Fact]
+    public void AHandlesBounds_StayInTheJson_BecauseTheyAreValuesNotCoordinates()
+    {
+        // A minimum impedance of 20.5 ohms is a legitimate fractional bound; a fractional coordinate
+        // is not. That is why these two live on opposite sides of the JSON/payload line.
+        var result = new PCellResult([], [], Handles:
+            [new PCellHandle("Z1", 0, 0, 10, 0, 0, Label: "Impedance", Min: 20.5, Max: 90.25)]);
+
+        var frame = PCellWireCodec.EncodeGenerateReply(result);
+        var decoded = PCellWireCodec.DecodeGenerateReply(frame);
+
+        Assert.Contains("20.5", frame.Json);
+        Assert.Equal(20.5, decoded.Handles![0].Min);
+        Assert.Equal(90.25, decoded.Handles[0].Max);
+        Assert.Equal("Impedance", decoded.Handles[0].Label);
+    }
+
+    [Fact]
+    public void AGeneratorDeclaringNoHandles_DecodesToNull_NotAnEmptyList()
+    {
+        var decoded = PCellWireCodec.DecodeGenerateReply(
+            PCellWireCodec.EncodeGenerateReply(new PCellResult([], [])));
+
+        Assert.Null(decoded.Handles);
+    }
+
+    [Fact]
+    public void AnUnknownHandleKind_DropsThatHandleAndReportsIt_KeepingTheOthers()
+    {
+        // R-pch-6. A newer script talking to an older host must lose only the grips that host cannot
+        // draw — never its artwork, never its other grips, and never silently.
+        var json = """
+        { "ok": true, "shapes": [], "pins": [], "handles": [
+            { "parameter": "L", "kind": "linear",   "span": {"at": 0, "count": 4}, "axisDeg": 0 },
+            { "parameter": "A", "kind": "helical",  "span": {"at": 4, "count": 4}, "axisDeg": 0 },
+            { "parameter": "B", "kind": "helical",  "span": {"at": 8, "count": 4}, "axisDeg": 0 } ] }
+        """;
+        var frame = new PCellWireFrame(json, new long[] { 0, 0, 100, 0, 0, 0, 200, 0, 0, 0, 300, 0 });
+
+        var decoded = PCellWireCodec.DecodeGenerateReply(frame);
+
+        Assert.Single(decoded.Handles!);
+        Assert.Equal("L", decoded.Handles![0].Parameter);
+        // Once per distinct kind, not once per handle — two 'helical' grips is one thing to say.
+        Assert.Single(decoded.Diagnostics!);
+        Assert.Contains("helical", decoded.Diagnostics![0]);
+    }
+
+    [Fact]
+    public void AnUnknownHandleKind_NeverFailsTheGenerate()
+    {
+        var json = """
+        { "ok": true,
+          "shapes": [ { "kind": "rect", "layer": {"layer":1,"datatype":0}, "xy": {"at": 0, "count": 4} } ],
+          "pins": [],
+          "handles": [ { "parameter": "A", "kind": "helical", "span": {"at": 4, "count": 4}, "axisDeg": 0 } ] }
+        """;
+        var frame = new PCellWireFrame(json, new long[] { 0, 0, 500, 500, 0, 0, 100, 0 });
+
+        var decoded = PCellWireCodec.DecodeGenerateReply(frame);
+
+        Assert.Single(decoded.Shapes);          // the artwork survives
+        Assert.Null(decoded.Handles);           // nothing draggable was recognised
+        Assert.NotEmpty(decoded.Diagnostics!);  // and it was not silent
+    }
+
+    [Fact]
+    public void AngularHandles_CrossTheWire_EvenThoughThisBuildWillNotDragThem()
+    {
+        // The kind is in the wire vocabulary from day one so that implementing it later needs no
+        // further bump. The editor's own Validate is what declines to drag it — see the solver tests.
+        var result = new PCellResult([], [], Handles:
+            [new PCellHandle("Angle", 0, 0, 100, 0, 45, PCellHandleKind.Angular)]);
+
+        var decoded = PCellWireCodec.DecodeGenerateReply(PCellWireCodec.EncodeGenerateReply(result));
+
+        Assert.Equal(PCellHandleKind.Angular, decoded.Handles![0].Kind);
+        Assert.Equal(45, decoded.Handles[0].AxisDeg);
+    }
+
+    [Fact]
+    public void ATwoAxisGrip_CrossesWithBothItsParameters()
+    {
+        var result = new PCellResult([], [], Handles:
+        [
+            new PCellHandle("L", 0, 0, 5000, 300, 0,
+                Cross: new PCellHandleCrossAxis("Offset", "Off-axis", Min: -1000, Max: 1000)),
+        ]);
+
+        var decoded = PCellWireCodec.DecodeGenerateReply(PCellWireCodec.EncodeGenerateReply(result));
+
+        var cross = decoded.Handles![0].Cross!;
+        Assert.Equal("Offset", cross.Parameter);
+        Assert.Equal("Off-axis", cross.Label);
+        Assert.Equal(-1000, cross.Min);
+        Assert.Equal(1000, cross.Max);
+    }
+
+    [Fact]
+    public void AnOrdinaryOneAxisGrip_CarriesNoCrossAxisAtAll()
+    {
+        var frame = PCellWireCodec.EncodeGenerateReply(
+            new PCellResult([], [], Handles: [new PCellHandle("L", 0, 0, 5000, 0, 0)]));
+
+        Assert.DoesNotContain("cross", frame.Json, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(PCellWireCodec.DecodeGenerateReply(frame).Handles![0].Cross);
+    }
+
+    [Fact]
+    public void ADeclaredDeferredPreview_CrossesTheWire_AndAutoIsOmitted()
+    {
+        var deferred = PCellWireCodec.EncodeGenerateReply(
+            new PCellResult([], [], Preview: PCellPreviewMode.Deferred));
+        var auto = PCellWireCodec.EncodeGenerateReply(new PCellResult([], []));
+
+        Assert.Contains("deferred", deferred.Json);
+        Assert.DoesNotContain("preview", auto.Json, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Equal(PCellPreviewMode.Deferred, PCellWireCodec.DecodeGenerateReply(deferred).Preview);
+        Assert.Equal(PCellPreviewMode.Auto, PCellWireCodec.DecodeGenerateReply(auto).Preview);
+    }
+
+    [Fact]
+    public void AnUnrecognisedPreviewValue_ReadsAsAuto_AndNeverRefusesTheGenerate()
+    {
+        // The field is a performance HINT. Refusing a generate over one would trade a working cell
+        // for a preference — the opposite trade from an unknown SHAPE kind, which does refuse.
+        var frame = new PCellWireFrame(
+            """{ "ok": true, "shapes": [], "pins": [], "preview": "someday" }""", Array.Empty<long>());
+
+        var decoded = PCellWireCodec.DecodeGenerateReply(frame);
+
+        Assert.Equal(PCellPreviewMode.Auto, decoded.Preview);
+    }
+
+    [Fact]
+    public void TheWireVersion_IsSix_AndTheContractVersionDidNotMove()
+    {
+        // Adding an optional reply field is a bump because describe compares for EQUALITY and refuses
+        // rather than negotiating. The contract number stays put: Generate's signature is unchanged.
+        Assert.Equal(6, PCellWireVersion.Current);
+        Assert.Equal(2, PCellContractVersion.Current);
     }
 
     /// <summary>A curve crosses as a curve. A generator that flattened its own would bake a tolerance

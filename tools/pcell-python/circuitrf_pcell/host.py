@@ -12,12 +12,19 @@ import traceback
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Callable, Sequence
 
-from .geometry import Pin, Result, Shape
+from .geometry import AUTO, Handle, Pin, Result, Shape
 from .tech import Technology
 from .values import Parameters, encode
 from .services import set_channel
 from .wire import read_frame, write_frame
 
+#: Wire version 6 (2026-08-06) added optional ``handles`` to the generate reply: draggable parameter
+#: grips, so a placed cell can be edited by dragging its artwork rather than only by typing numbers.
+#: Purely additive — a generator that declares none behaves exactly as before — but the bump is still
+#: required, because ``describe`` compares versions for equality and refuses rather than negotiating.
+#: ``CONTRACT_VERSION`` is untouched: a generator's signature has not changed, only what it may
+#: optionally include in its result.
+#:
 #: Wire version 5 (2026-08-04) added an ``offset`` service op — grow/shrink, asked of the host for the
 #: same reason the booleans are: it is Clipper2 offset, which circuitRF already owns.
 #:
@@ -35,7 +42,7 @@ from .wire import read_frame, write_frame
 #: argument to every generator: a new parameter would be a CONTRACT change and would break every
 #: generator ever written, while an extra attribute breaks none. The two versions move independently
 #: for exactly this reason — see ``docs/design/pcell-wire-schema.md`` §7.
-WIRE_VERSION = 5
+WIRE_VERSION = 6
 CONTRACT_VERSION = 2
 
 #: Dimensions the wire understands. Deliberately three: length and angle are the only ones that
@@ -182,6 +189,10 @@ def _encode_result(result: Result) -> tuple[str, list[int]]:
     }
     if result.diagnostics:
         body["diagnostics"] = list(result.diagnostics)
+    if result.handles:
+        body["handles"] = [h.to_json(payload) for h in _as_handles(result.handles)]
+    if result.preview != AUTO:
+        body["preview"] = result.preview
     return json.dumps(body), payload
 
 
@@ -193,6 +204,16 @@ def _as_shapes(shapes: Sequence[Any]) -> Sequence[Shape]:
                 "constructors in circuitrf_pcell (Rect, Polygon, Path, ...)."
             )
     return shapes
+
+
+def _as_handles(handles: Sequence[Any]) -> Sequence[Handle]:
+    for h in handles:
+        if not isinstance(h, Handle):
+            raise TypeError(
+                f"A generator returned {type(h).__name__} where a Handle was expected. Use "
+                "circuitrf_pcell.Handle(parameter, anchor=..., at=..., axis=...)."
+            )
+    return handles
 
 
 def _error(message: str) -> str:

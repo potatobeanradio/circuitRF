@@ -51,6 +51,18 @@ public static class MCrossPCell
             new PCellPin("4",      0, -stub4, signalLayer, w4, 270.0),
         };
 
-        return new PCellResult([merged], pins);
+        // pcell-parameter-handles.md — one width grip per arm, on that arm's own edge at its own
+        // midpoint. The four arms radiate from the origin along 0/90/180/270, so each grip measures
+        // its width across its own arm's direction: the +X and -X arms are edited vertically, the
+        // +Y and -Y arms horizontally.
+        var handles = new[]
+        {
+            new PCellHandle("W1",  stub1 / 2, 0,  stub1 / 2,  w1 / 2, AxisDeg: 90),
+            new PCellHandle("W2",  0,  stub2 / 2,  w2 / 2,  stub2 / 2, AxisDeg: 0),
+            new PCellHandle("W3", -stub3 / 2, 0, -stub3 / 2,  w3 / 2, AxisDeg: 90),
+            new PCellHandle("W4",  0, -stub4 / 2,  w4 / 2, -stub4 / 2, AxisDeg: 0),
+        };
+
+        return new PCellResult([merged], pins, Handles: handles);
     }
 }

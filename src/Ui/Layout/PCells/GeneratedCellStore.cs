@@ -53,6 +53,35 @@ public static class GeneratedCellStore
         PCellGeometryCache? cache = null)
         => GetOrCreate(workspaceRootDir, generatorId, parameters, technology, techIdentity, layerSelection, out _, cache);
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _cellsWritten =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// How many generated cell FOLDERS have actually been written under
+    /// <paramref name="workspaceRootDir"/> — incremented only on a real creation, never on the reuse
+    /// path.
+    ///
+    /// <para>Test instrumentation, and specifically what makes R-pch-9 ("no generated cell is written
+    /// during a parameter-handle drag") a COUNTER assertion rather than a timing one. A drag that
+    /// wrote a folder per pointer move would leave hundreds of orphaned cells behind — there is no
+    /// garbage collection for them by design — and would make the cost of dragging depend on
+    /// filesystem latency. Counting is the only way to state that as a fact rather than a hope.</para>
+    ///
+    /// <para><b>Counted PER WORKSPACE, not per process, and that is not a detail.</b> A single
+    /// process-wide counter reads correctly in isolation and is meaningless under a parallel test
+    /// run: any other test creating a cell in its own temp workspace perturbs it, so the assertion
+    /// silently becomes "nothing anywhere wrote a cell", which is not what anyone meant. Keyed by
+    /// root, the count is about the drag under test and nothing else.</para>
+    /// </summary>
+    public static int CellsWrittenUnder(string workspaceRootDir)
+        => _cellsWritten.TryGetValue(NormalizeRoot(workspaceRootDir), out int n) ? n : 0;
+
+    private static string NormalizeRoot(string dir)
+    {
+        try { return Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir)); }
+        catch { return dir; }
+    }
+
     /// <summary>
     /// Same as <see cref="GetOrCreate(string,string,IReadOnlyDictionary{string,PCellValue},Technology?,string?,PCellLayerSelection,PCellGeometryCache?)"/>
     /// but also surfaces <paramref name="diagnostics"/> — the generator's own <see cref="PCellResult.Diagnostics"/>
@@ -87,6 +116,7 @@ public static class GeneratedCellStore
 
         Directory.CreateDirectory(genRoot);
         CellFolder.CreateCellFolder(genRoot, cellName);
+        _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
 
         var result = (cache ?? new PCellGeometryCache())
             .GetOrGenerate(generatorId, generator, parameters, technology, layerSelection);

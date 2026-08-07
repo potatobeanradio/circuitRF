@@ -766,6 +766,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
         _selectPressWX = px; _selectPressWY = py;
 
+        // pcell-parameter-handles.md R-pch-8: a PCell instance's PARAMETER grips are tested FIRST, and
+        // specifically before the instance-body move drag further down — otherwise grabbing a grip
+        // would move the whole instance instead, which is the one interaction failure here that a
+        // user cannot work around. There is no conflict with L1d's own handles below: a SHAPE shows
+        // geometry handles, an INSTANCE shows parameter handles, and an instance has never had
+        // geometry handles at all.
+        if (TryBeginPCellHandleDrag(px, py, tolDbu))
+            return;
+
         // L1h: bbox scale handles take priority over everything else when they're showing (R-L1h-5) —
         // a 2+ selection always has them; a single selection has them only while Scale mode is toggled
         // on, in which case they TEMPORARILY REPLACE L1d's handles rather than coexist with them.
@@ -1441,6 +1450,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // it exactly once found.
         UpdateSnapMarker(px, py, mods, snapTolDbu, pixelDbu);
 
+        if (_pcellHandleDrag is not null)
+        {
+            if (!leftDown) { ResetPCellHandleDragState(); RebuildOverlay(); return; }
+            UpdatePCellHandleDrag(px, py, (mods & KeyModifiers.Alt) != 0);
+            return;
+        }
+
         if (_scaleDragKind != ScaleDragKind.None)
         {
             if (!leftDown) { ResetScaleDragState(); RebuildOverlay(); return; }
@@ -1516,6 +1532,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void HandleSelectRelease(double wx, double wy)
     {
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        if (_pcellHandleDrag is not null)
+        {
+            CommitPCellHandleDrag();
+            RebuildOverlay();
+            return;
+        }
 
         if (_scaleDragKind != ScaleDragKind.None)
         {
@@ -2123,6 +2146,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _snapDragActive = false;
         ResetHandleDragState();
         ResetScaleDragState();
+        // Escape mid-drag: nothing committed, no undo entry — the parameters were never touched,
+        // because a handle drag only ever writes on release.
+        ResetPCellHandleDragState();
         CancelInstancePlacement();
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
@@ -2322,7 +2348,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
         else
         {
-            DrawReadoutText = "";
+            // A parameter-handle drag owns the readout for its whole gesture — it is set INSIDE the
+            // rebuild rather than before it, because this method is the one place that decides what
+            // the readout says and an assignment made before calling it would simply be overwritten.
+            DrawReadoutText = _pcellHandleDrag?.Readout ?? "";
         }
 
         LayoutMarquee? marquee = _selectDragKind == SelectDragKind.Marquee
@@ -2345,6 +2374,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 dict[idx] = clone;
             }
             instanceDragOverrides = dict;
+        }
+        else if (_pcellHandleDrag is { } pinDrag && (pinDrag.PendingDx != 0 || pinDrag.PendingDy != 0))
+        {
+            // R-pch-4b: a pinned-anchor grip drag moves the whole instance so the anchor holds its
+            // world position. Riding the EXISTING instance-drag-override channel means the renderer
+            // needed no change at all — it already substitutes an overridden instance for the stored
+            // one, which is exactly what this is.
+            var shifted = LayoutGeometry.Clone(pinDrag.Instance);
+            LayoutGeometry.TranslateBy(shifted, pinDrag.PendingDx, pinDrag.PendingDy);
+            instanceDragOverrides = new Dictionary<int, LayoutInstance> { [pinDrag.InstanceIndex] = shifted };
         }
 
         IReadOnlyDictionary<int, LayoutShape> dragOverrides = EmptyDragOverrides;
@@ -2416,6 +2455,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             ShowScaleHandles = ShowScaleHandles,
             SnapMarker = _currentSnapCandidate,
             DrcMarkers = BuildDrcMarkers(),
+            // pcell-parameter-handles.md: the selected PCell instance's parameter grips, and — while
+            // one is being dragged live — the regenerated artwork to draw in that instance's place.
+            PCellHandles = BuildPCellHandleMarkers(),
+            PCellHandlePreview = _pcellHandleDrag is { PreviewView: { } handleGhost } dragging
+                ? (dragging.InstanceIndex, handleGhost) : null,
         };
     }
 

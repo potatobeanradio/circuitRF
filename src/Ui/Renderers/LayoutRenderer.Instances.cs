@@ -179,6 +179,17 @@ public static partial class LayoutRenderer
                 continue;
             }
 
+            // pcell-parameter-handles.md: while a parameter grip is being dragged live, the instance
+            // draws the REGENERATED artwork in place of its own resolved cell. The model and the
+            // generated cell on disk are untouched until the drag commits — the same rule
+            // dragOverrides already follows for a shape move, one level up.
+            var subView = step.SubView!;
+            if (opts.Overlay?.PCellHandlePreview is { } handlePreview && handlePreview.InstanceIndex == entry.Index)
+                subView = handlePreview.GhostView;
+
+            // Deliberately the STORED cell's bbox even when a preview is substituted: this drives the
+            // LOD decision only ("is this too small to draw at all"), and a grip drag never changes a
+            // cell's size by orders of magnitude mid-gesture.
             var overallBbox = CellHierarchy.InstanceBbox(inst, baseDir);
             if (overallBbox.IsEmpty) continue;
             double screenW = (overallBbox.MaxX - overallBbox.MinX) * devicePxPerDbu;
@@ -191,7 +202,7 @@ public static partial class LayoutRenderer
             }
 
             visiting.Add(step.ResolvedCellDir!);
-            var compiled = CompileCell(step.SubView!, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, counters);
+            var compiled = CompileCell(subView, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, counters);
             visiting.Remove(step.ResolvedCellDir!);
 
             var (a, b, c, d) = LayoutInstanceTransform.PathSpaceLinearCoefficients(inst);
@@ -275,8 +286,8 @@ public static partial class LayoutRenderer
             // The test is "does this cell HAVE pins", not "was it generated". Gating on PCellOrigin
             // was what made an IMPORTED cell's pins invisible: it has none, so the overlay was
             // skipped before it could ever look at the cell's own pin list.
-            if (opts.ShowPCellPins && (step.SubView!.Pins.Count > 0 || step.SubView!.PCellOrigin is not null))
-                DrawPCellPinOverlay(canvas, inst, step.SubView!, tech, ps, scaleUm, opts.Theme, rows, cols);
+            if (opts.ShowPCellPins && (subView.Pins.Count > 0 || subView.PCellOrigin is not null))
+                DrawPCellPinOverlay(canvas, inst, subView, tech, ps, scaleUm, opts.Theme, rows, cols);
         }
     }
 

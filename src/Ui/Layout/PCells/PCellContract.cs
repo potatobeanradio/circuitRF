@@ -34,6 +34,185 @@ public sealed record PCellPin(
     long WidthDbu,
     double OutwardDirectionDeg);
 
+/// <summary>
+/// How a <see cref="PCellHandle"/>'s grip travels (pcell-parameter-handles.md §2.1).
+/// </summary>
+public enum PCellHandleKind
+{
+    /// <summary>The grip travels along a straight line through the anchor in direction
+    /// <see cref="PCellHandle.AxisDeg"/>. A drag's projection onto that line is the scalar the
+    /// parameter follows.</summary>
+    Linear,
+
+    /// <summary>
+    /// The grip swings about the anchor. The angle of (cursor − anchor), measured counter-clockwise
+    /// from <see cref="PCellHandle.AxisDeg"/>, is the scalar the parameter follows — so
+    /// <see cref="PCellHandle.AxisDeg"/> is a REFERENCE direction here, not a direction of travel.
+    ///
+    /// <para>Everything else is unchanged: the sensitivity is still measured rather than declared,
+    /// the projection is still one scalar, and the solver never learns which kind it is holding. The
+    /// only differences are the projection formula and that the scalar is in DEGREES, which is why
+    /// the probe and convergence thresholds have their own angular values.</para>
+    /// </summary>
+    Angular,
+}
+
+/// <summary>
+/// How eagerly a drag on this cell should redraw its artwork (pcell-parameter-handles.md R-pch-10).
+/// </summary>
+public enum PCellPreviewMode
+{
+    /// <summary>The host times the first regeneration of a gesture and decides. The default, and
+    /// right for every cell whose cost it cannot know in advance.</summary>
+    Auto,
+
+    /// <summary>
+    /// Always defer: the pre-drag artwork stands, the grip and readout follow the cursor, and the
+    /// cell regenerates once on release.
+    ///
+    /// <para><b>For a generator that already knows it is too expensive to redraw per frame</b> — a
+    /// cell with hundreds of shapes, or one that issues many boolean round trips per generate. Auto
+    /// reaches the same conclusion, but only after spending one full regeneration to find out;
+    /// declaring it skips that. An author who is wrong about their own cell costs the user a live
+    /// preview they could have had, never correctness — the committed value is identical either
+    /// way.</para>
+    /// </summary>
+    Deferred,
+}
+
+/// <summary>
+/// The parameter a <see cref="PCellHandle"/> drives when dragged PERPENDICULAR to its own axis
+/// (pcell-parameter-handles.md R-pch-4a). Null on an ordinary one-degree-of-freedom grip, which is
+/// the common case.
+///
+/// <para><b>This is not the two-parameter apportionment R-pch-4 rules out.</b> That rule exists
+/// because splitting one drag between two parameters needs a tie-break and every tie-break is
+/// arbitrary. An orthogonal decomposition needs none: travel along the axis and travel across it are
+/// independent scalars, each with exactly one parameter, and the split is unique. What R-pch-4
+/// forbids is guessing; this does not guess.</para>
+/// </summary>
+public sealed record PCellHandleCrossAxis(
+    string Parameter,
+    string? Label = null,
+    double? Min = null,
+    double? Max = null);
+
+/// <summary>
+/// One draggable grip on generated artwork — pcell-parameter-handles.md R-pch-1/R-pch-4.
+///
+/// <para><b>Coordinates are cell-local DBU</b>, exactly the frame <see cref="PCellPin"/> already
+/// uses, so the instance transform applies to both identically and neither needs its own
+/// convention.</para>
+///
+/// <para><b>The generator never states how much the parameter changes per unit of travel</b>
+/// (R-pch-2). It states only which parameter, where the grip is, what it measures from, and which
+/// way it moves; the host measures the sensitivity by regenerating with a perturbation
+/// (<see cref="PCellHandleSolver"/>). Declaring an affine <c>scale</c> instead was rejected because
+/// it would differ between an in-process generator (lengths in SI metres) and a script one (lengths
+/// already in DBU) for the same cell, and because it cannot describe a non-linear relationship at
+/// all.</para>
+///
+/// <para><b><see cref="Min"/>/<see cref="Max"/> are in the parameter's own units</b> — SI metres for
+/// a length in-process, DBU for the same length on the wire, matching what the parameter values
+/// themselves already are on each side. They are a convenience that lets the editor stop the grip at
+/// the bound and name it; a generator that clamps internally needs neither, because regeneration is
+/// authoritative (R-pch-3).</para>
+/// </summary>
+public sealed record PCellHandle(
+    string Parameter,
+    long AnchorX,
+    long AnchorY,
+    long X,
+    long Y,
+    double AxisDeg,
+    PCellHandleKind Kind = PCellHandleKind.Linear,
+    string? Label = null,
+    double? Min = null,
+    double? Max = null,
+    PCellHandleCrossAxis? Cross = null,
+    bool KeepAnchorFixed = false)
+{
+    /// <summary>What the readout calls it — the generator's own <see cref="Label"/>, else the
+    /// parameter name.</summary>
+    public string DisplayLabel => string.IsNullOrWhiteSpace(Label) ? Parameter : Label!;
+
+    // KeepAnchorFixed (R-pch-4b): "hold my ANCHOR still in world space while I am dragged."
+    //
+    // A generator cannot move its own origin — R4 pins pin 1 at (0,0) — so without this, dragging a
+    // cell's LEFT edge grows it to the right, which is the opposite of what the gesture means. The
+    // host instead translates the INSTANCE so that the anchor keeps the world position it had, which
+    // is the one thing a generator structurally cannot do for itself.
+    //
+    // It is expressed on the anchor rather than as a free "fixed point" because the anchor is
+    // already what the grip measures FROM, and it is already re-emitted on every generate — so the
+    // host can read where it moved to instead of being told a rule for predicting it. Declaring the
+    // OPPOSITE edge as the anchor and setting this flag is the whole of "drag this end, keep the
+    // other end still".
+    //
+    // A no-op when the anchor does not move (an anchor at the cell origin, say), so it is safe and
+    // self-documenting to set on every edge grip of a set rather than only the ones that need it.
+
+    /// <summary>The perpendicular axis's own label, on a two-axis grip.</summary>
+    public string CrossDisplayLabel =>
+        Cross is null ? "" : string.IsNullOrWhiteSpace(Cross.Label) ? Cross.Parameter : Cross.Label!;
+
+    /// <summary>
+    /// The scalar this handle measures ACROSS its own axis — travel perpendicular to
+    /// <see cref="AxisDeg"/>, positive 90° counter-clockwise from it. The other half of an orthogonal
+    /// decomposition, and meaningful only when <see cref="Cross"/> is set.
+    /// </summary>
+    public double ProjectCross(double px, double py)
+    {
+        double dx = px - AnchorX, dy = py - AnchorY;
+        double rad = AxisDeg * (Math.PI / 180.0);
+        return -dx * Math.Sin(rad) + dy * Math.Cos(rad);
+    }
+
+    /// <summary>Where this grip currently sits across its own axis.</summary>
+    public double ProjectedCrossPosition => ProjectCross(X, Y);
+
+    /// <summary>
+    /// This grip seen as its own perpendicular one-degree-of-freedom handle — the same anchor and
+    /// position, the axis turned 90°, and the cross parameter promoted to the primary.
+    ///
+    /// <para>Used by the solver so a two-axis grip needs no second code path anywhere: each axis is
+    /// solved by the ordinary machinery, and the only new thing is that a drag does it twice.</para>
+    /// </summary>
+    public PCellHandle AsCrossHandle() => Cross is null
+        ? this
+        : new PCellHandle(Cross.Parameter, AnchorX, AnchorY, X, Y, AxisDeg + 90.0, Kind,
+                          Cross.Label, Cross.Min, Cross.Max);
+
+    /// <summary>
+    /// The scalar this handle measures at an arbitrary point, in the handle's own projection: DBU
+    /// along the axis for <see cref="PCellHandleKind.Linear"/>, degrees about the anchor for
+    /// <see cref="PCellHandleKind.Angular"/>.
+    ///
+    /// <para>One implementation, shared by the solver (which projects a regenerated grip position)
+    /// and the editor (which projects the cursor). Two copies would be two chances to disagree about
+    /// a sign.</para>
+    /// </summary>
+    public double Project(double px, double py)
+    {
+        double dx = px - AnchorX, dy = py - AnchorY;
+        if (Kind == PCellHandleKind.Angular)
+        {
+            double deg = Math.Atan2(dy, dx) * (180.0 / Math.PI) - AxisDeg;
+            // Normalised to (-180, 180] so a grip either side of the reference reads with the sign
+            // the user expects rather than jumping by a full turn.
+            while (deg <= -180.0) deg += 360.0;
+            while (deg > 180.0) deg -= 360.0;
+            return deg;
+        }
+        double rad = AxisDeg * (Math.PI / 180.0);
+        return dx * Math.Cos(rad) + dy * Math.Sin(rad);
+    }
+
+    /// <summary>Where this grip currently sits, in its own projection — the value
+    /// <see cref="Project"/> returns for the declared position.</summary>
+    public double ProjectedPosition => Project(X, Y);
+}
+
 /// <summary>R3: shapes and pins, nothing else — a PCell describes one cell's contents in
 /// cell-local coordinates (§6 of the design doc: no placement transform, that's the instance's
 /// job). <paramref name="Diagnostics"/> (additive, brief-L5-followups-2.md §2.2 finding) carries
@@ -41,9 +220,25 @@ public sealed record PCellPin(
 /// a PURE generator (R5) has no message sink of its own to post to directly, so this is the ONE
 /// channel; every caller that invokes a <see cref="PCellGenerator"/> is responsible for surfacing a
 /// non-empty <see cref="Diagnostics"/> through its own <c>IMessageSink</c>. Null/empty = nothing to
-/// report — the common case for every other generator, which needed no change.</summary>
+/// report — the common case for every other generator, which needed no change.
+///
+/// <para><paramref name="Handles"/> (additive, pcell-parameter-handles.md) is the OPTIONAL list of
+/// draggable parameter grips. <b>Null means "not draggable", which is why the feature costs every
+/// existing generator nothing</b> — a trailing defaulted parameter leaves every construction site
+/// compiling untouched, and a cell that declares none behaves exactly as it did before this
+/// existed. Handles are returned per-generate rather than declared once, because their positions are
+/// functions of the parameter values; they are never persisted in <c>.clay</c>, so the generator is
+/// the single source and there is no second copy to go stale.</para></summary>
+/// <para><paramref name="Preview"/> lets a generator that already knows it is expensive skip
+/// straight to deferred drag preview instead of paying one full regeneration for the host to work
+/// that out (R-pch-10). Defaulted to <see cref="PCellPreviewMode.Auto"/>, so it costs nothing to
+/// ignore.</para></summary>
 public sealed record PCellResult(
-    IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<PCellPin> Pins, IReadOnlyList<string>? Diagnostics = null);
+    IReadOnlyList<LayoutShape> Shapes,
+    IReadOnlyList<PCellPin> Pins,
+    IReadOnlyList<string>? Diagnostics = null,
+    IReadOnlyList<PCellHandle>? Handles = null,
+    PCellPreviewMode Preview = PCellPreviewMode.Auto);
 
 /// <summary>
 /// R9: layer selection (Signal Layer + Ground Reference) is per-instance overridable and is not a

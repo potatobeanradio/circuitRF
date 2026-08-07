@@ -1,4 +1,309 @@
+Angular grips, MLIN's four edge grips, and the anchor that holds still (owner round 3, 2026-08-06) —
+COMPLETE. Two owner asks after the follow-up round below: an angle grip for MBend "in a nice place for
+UX", and MLIN grips "at each edge's midpoint so you can drag from that end and keep other parts of the
+geometry fixed". The second one is why `Angular` finally had to ship — and why a rule that did not exist
+had to be invented first.
+
+**R-pch-4b — `PCellHandle.KeepAnchorFixed`, and the reason no generator could have solved this itself.**
+R4 puts pin 1 at the cell origin and the principal axis along +X, so a cell asked for a longer `L` grows
+to the RIGHT, always. Dragging the LEFT edge therefore grew the trace AWAY from the cursor, and no
+amount of generator-side cleverness fixes it — the constraint IS the contract. The flag moves the
+responsibility to the only side that can act on it: the host reads where the generator re-emitted the
+anchor and translates the placed INSTANCE by `anchorWorldBefore − anchorWorldAfter`. Four things about
+it are worth keeping:
+- **It is on the ANCHOR, not a free "fixed point"** — the anchor is already what the grip measures
+  from and is already re-emitted on every generate, so the host READS where it moved instead of being
+  told a rule for predicting it. No rule would work: MLIN's left-edge anchor moves by the whole length
+  change, its top-edge anchor by half the width change.
+- **Declaring the OPPOSITE edge as the anchor is the whole feature.** The projection from far edge to
+  near edge is then the dimension itself (drag the top edge 1 mm ⇒ W changes 1 mm, not 2), and pinning
+  holds the far edge. One declaration says both.
+- **The measurement INVERTS §4.1's own rule, and that is load-bearing.** The solver ordinarily projects
+  the regenerated grip through the ORIGINAL anchor, deliberately, so a generator that moves its own
+  frame cannot contaminate the reading. A pinned grip's cell coordinates do not move AT ALL — MLIN's
+  left-edge grip sits at (0,0) for every value of `L`; only its anchor moves. Measured the ordinary way
+  it reads as a dead grip (`Unmeasurable`) and the drag is refused outright. `PCellHandleSolver.
+  TryProject` therefore re-anchors on the regenerated handle when `KeepAnchorFixed`, keeping the
+  declared axis. **This was found by the test failing, not by inspection.**
+- **The edit and the translate are ONE `ReplaceInstanceCommand`** (`EditInstancePCellParameters` gained
+  an optional translate). Two commands would let Undo restore the geometry and leave the instance moved.
+  The live preview rides the EXISTING `Overlay.InstanceDragOverrides` channel, so the renderer needed no
+  change at all.
+
+**MLIN now declares four grips, one per edge midpoint**, each anchored on the opposite edge with
+`KeepAnchorFixed`. Right and top happen not to move their anchors, so the flag is a no-op there — set
+anyway, because four edge grips behaving as two different rules would read worse than one uniform rule.
+**Two consequences for anyone reading the tests:** two grips now share each label, so
+`PCellParameterHandleDragTests.GripFor` takes the FIRST (right edge for `L`, top edge for `W` — exactly
+the grip every pre-existing test was written against), and the `W` drag's expected value changed from
+0.8 mm to 1.85 mm because the anchor moved from the centreline to the bottom edge. The number changed
+because the declaration did, not because anything regressed.
+
+**`Angular` shipped, and the drop-and-report path it used to exercise moved rather than disappeared.**
+`PCellHandleSolver.Validate` no longer declines it; `PCellHandleKind.UnsupportedKind` is now unreachable
+from `Validate` and survives for the WIRE decoder, which is the only place an unrecognised kind can
+still arrive. The solver itself needed nothing else — the projection was already implemented and the
+sensitivity is measured, not declared, so an angle behaves like any other scalar. What DID need work is
+the hint: an Angular grip's `AxisDeg` is a REFERENCE direction, not a direction of travel, so
+`ToMarker` derives the TANGENT from the already-transformed radius (transforming a point along `AxisDeg`
+is right for Linear and points at a fixed compass bearing for Angular), and the renderer draws an ARC
+through the grip centred on the anchor. A straight tangent is the obvious cheap substitute and is
+misleading in exactly the way that matters — it reads as unbounded travel in one direction when the grip
+is on a circle. The arc's LENGTH is the same `reach` a linear hint spans, so both kinds read as the same
+weight of affordance at any radius.
+
+**MBend's angle grip is at PIN 2, swinging about the bend's own pivot corner** — the free end, which is
+what changing a bend angle physically moves. `AxisDeg: 0` because `Angle` is measured from +X, so the
+grip's own angular projection IS the parameter; nothing relies on that identity (the host measures the
+relationship) but making them agree keeps the drag converging on the first iteration.
+
+**"Can the user grab pin 1 instead?" — YES, and the first answer here (a flat "no, structurally") was
+wrong in a way worth recording, because the mistake is repeatable.** Pin 1 sits at (0,0) for every
+value of `Angle`, so its bearing from the PIVOT is always 180° — a pivot-anchored grip there is
+invariant in the parameter and the host correctly refuses it as `Unmeasurable`. That much was right.
+Concluding "so pin 1 cannot drive the angle" was not: **the anchor is a free choice, and anchoring on
+PIN 2 makes the same parameter perfectly measurable**, because pin 2 is the end that moves. Holding
+pin 2 still then needs only R-pch-4b's translation — no rotation, so `LayoutInstance.Rot` being a
+four-value enum never enters into it. **Standing lesson: when a grip looks unmeasurable, try every
+candidate anchor before concluding the parameter is unreachable from that point.** The relationship
+turns out to be the inscribed-angle one (bearing = `Angle`/2 off the reference), exactly linear, so
+the solve converges on its first iteration.
+
+**MBend therefore declares THREE grips: W, an angle grip at pin 2 (anchored on the pivot), and an
+angle grip at pin 1 (anchored on pin 2).** The asymmetry in anchoring is forced by R4, not chosen, and
+is stated in the generator itself. Pin 2's own anchor does not move with `Angle`, so its
+`KeepAnchorFixed` is a no-op — set anyway, so a reader does not have to work out which of two sibling
+grips is the special one. Degenerate at `Angle` = 180° (the arms fold and the pins coincide), which is
+the already-diagnosed straight-through case rather than a new failure mode.
+
+**The Properties Inspector now follows a grip drag live.** `LayoutEditorViewModel` exposes
+`PCellHandleDragParameters` (the committed set with the dragged parameter, and its cross axis, replaced
+by what the solver has reached) plus `PCellHandleDragInstanceIndex`; `LayoutShapePropertiesViewModel.
+ParametersForDisplay` substitutes them — **index-checked**, so a drag on one instance can never bleed
+into a panel showing another. Three things about it:
+- **It reports the SOLVED value, never the cursor's.** R-pch-3 makes regeneration authoritative, so a
+  clamped or quantized parameter must read the same in the panel as the grip's position on screen. A
+  panel that counted past a clamp while the grip sat still would be the panel lying about the design.
+- **The refresh TRIGGER already existed** — `RebuildOverlay` fires on every pointer move and the panel
+  already listens for `Overlay`. Only the DATA source was stale, so this is a substitution, not new
+  plumbing, and the row collection is refreshed in place (no rebuild, no scroll/focus churn).
+- **R-L1j-2's read-only-mid-drag rule is widened to grip drags** (`DragBlocksEdits`). The values are
+  moving under the user and are about to be superseded by the release; accepting a typed edit into
+  that would race the drag.
+The MKlopf entry-mode pseudo-rows (W1/W2/F3db) read through the same source, so dragging MKlopf's
+far-end grip moves `F3db` — a function of `L` — in step with the artwork.
+
+**Wire version 6 absorbed `keepAnchorFixed` rather than becoming 7** — same reasoning as the previous
+round: version 6 has not shipped to anyone, and the field is additive within it (absent reads as false,
+so a script written before it behaves exactly as it did).
+
+**Gate:** Ui.Tests **5,075** and green. Three tests were UPDATED, not loosened, and each asserted
+something this round deliberately makes false: `Validate_AngularKind_IsRejectedAsUnsupported_NotAsBroken`
+(Angular was declined; it is accepted now), `AnAngularHandle_IsDroppedAsUnsupported_NotAsBroken` (its
+synthetic generator now declares a genuinely SWINGING grip on an angle-valued parameter — the old one
+was a Linear grip wearing the wrong kind, which would have measured as unmeasurable rather than
+exercising the real path), and `MBend_DeclaresAWidthGripOnly_NotAngleAndNotMiter`. Ten new drag tests cover the pinned
+anchor (left edge grows leftwards with the right edge held; bottom edge widens downwards; one undo
+entry despite the instance also moving; the pin is in WORLD space, checked at R90), MBend's two angle
+grips (both declared, both driving `Angle` in the same direction — derived from the half-angle
+relationship rather than hardcoded, so the test fails on a sign flip — and pin 2 holding its world
+position while pin 1 swings), and the live Properties Inspector (values move mid-drag, fields go
+read-only, a drag on one instance leaves a panel showing another alone). `python3 tools/pcell-python/verify.py` — all checks pass.
+
+**Not interactively verified** (no visual driver here, matching every prior Layout Editor phase) —
+please confirm on your end: an MLIN shows four grips, one per edge midpoint; dragging the left or bottom
+edge moves that edge and leaves the opposite one where it was; one Ctrl+Z puts both the size and the
+position back; MBend shows an arc-hinted grip at BOTH pins and swinging either one bends it while the
+other end stays put; and the Properties Inspector's parameter values count up and down live while any
+grip is dragged.
+
 # UI (Avalonia) — local conventions
+
+PCell parameter handles — dragging generated artwork to edit the parameter that produced it
+(brief-pcell-parameter-handles.md, 2026-08-06) — COMPLETE, M1-M6 plus a follow-up round; **M7
+(`Angular`) deliberately not built**. Design: `docs/design/pcell-parameter-handles.md`, now Shipped.
+A placed PCell instance grows draggable grips: grab one, the parameter follows, the cell regenerates.
+**All six built-ins declare grips** — MLIN (W, L), MTaper (W1, W2, L), MTee and MCross (one width per
+arm), MBend (W only), MKlopf (one two-axis grip).
+
+**The decision the whole feature turns on: the generator declares WHAT is editable and WHERE the grip
+is; the host measures HOW MUCH by asking the generator.** A `PCellHandle` states a parameter name, an
+anchor, the grip's current position and an axis — and no scale factor, no offset, and **no unit**. The
+obvious alternative (a declared affine `value = offset + scale × distance`) was rejected after it met
+three real cases: an in-process C# generator gets lengths in **SI metres** while its geometry is DBU,
+so MLIN's `scale` would be `1/dbuPerMetre`; the same cell in Python gets lengths **already in DBU**,
+so its `scale` is 1 — two languages, two constants, one geometry; and MKlopf's `Offset` is not affine
+at all. Measuring by finite difference removes all three and handles non-linearity for free. **Do not
+"simplify" this by adding a declared scale** — it would put the metres-vs-DBU trap back into the one
+place a cell author is most likely to get it wrong.
+
+**⚠ `PCellRegistry.GeneratorVersion` must NOT be bumped for a handle-only change, and this is the one
+thing here that would cost a user their workspace.** That field feeds the generated cell's content
+hash, i.e. its FOLDER NAME, and every placed `LayoutInstance.CellRef` names that folder — a bump
+renames every generated cell in the field while every instance still points at the old name, and each
+one then renders as the "Not Found" placeholder. Handles are not geometry. Pinned by
+`PCellHandleContractTests.AGeneratedCellsFolderName_IsUnchangedByAddingHandles` against a **frozen
+literal** (`MLIN_161352b4c533`, derived independently from the documented hash recipe rather than
+recomputed from the code under test — a test that computes both sides passes whatever you did).
+**Confirmed to bite:** adding `{ "MLIN", 2 }` to `_generatorVersions` turns it and its companion red.
+
+**The cursor is inverse-transformed into cell-local space; the grip is never forward-transformed and
+projected in world.** `LayoutInstanceTransform.InverseTransformPoint` already existed (L3a's hit-test
+uses it), and routing through it makes rotation, mirroring and magnification correct with no
+per-transform arithmetic written by hand — including the trap that at `Mag = 2`, dragging 2 mm on
+screen is 1 mm in the cell. **Confirmed to bite:** replacing it with a forward-transform-and-project-
+in-world turns **8 of the 10** rotation×mirror×Mag cases red (the two that survive are the ones where
+the transform is an identity for this purpose, which is exactly right).
+
+**Snap happens in WORLD space, before the inverse transform** — the user is aligning to the grid they
+can see. Alt suspends it, as everywhere.
+
+**A drag writes nothing to disk until release.** Preview regeneration goes through an in-memory
+`PCellGeometryCache` created per gesture and dropped with it (a long-lived one would grow without
+bound, since every pointer move is a new parameter set); `GeneratedCellStore.GetOrCreate` runs exactly
+once, on release, through the EXISTING `EditInstancePCellParameters` — so copy-on-write, the single
+`ReplaceInstanceCommand`, and one undo entry per gesture all come for free. New
+`GeneratedCellStore.CellsWrittenCount` makes that a **counter** assertion rather than a timing one, per
+this repo's own convention: 50 pointer moves write 0 folders, release writes exactly 1.
+
+**R-pch-11 (added to the design doc during implementation — it did not have it): the solver is
+deterministic and every candidate value is snapped to a 12-significant-digit lattice, not only the
+committed one.** The committed value feeds `PCellValue.ToString()`, which IS the content hash naming
+the generated cell — a value differing in its last digit between two identical drags mints a SECOND
+cell folder for one design intent, silently defeating R6's sharing.
+
+**Three was not enough iterations, and the fix was a secant rather than a bigger cap.** Measured: a
+quadratic cell driven by the probe's fixed slope *oscillates* around the target and was still 12% out
+after three corrections. Re-deriving the slope from the last two (value, projection) pairs converges
+on the fourth; a linear cell still converges on the first. Cap is now 6. Every other constant the
+solver uses is tabulated in the design doc §4.3 — δ schedule, growth, "moved measurably", tolerance.
+
+**`Angular` did not ship, deliberately, and that is what exercises the drop-and-report path.** The
+kind exists in the enum and in the wire vocabulary and `PCellHandle.Project` implements its
+projection, but `PCellHandleSolver.Validate` declines it as `UnsupportedKind`. No shipping built-in
+needs it, and leaving it unimplemented gives R-pch-6's degradation a real test subject instead of a
+synthetic one. Implementing it later needs **no wire bump** — that is what R-pch-6 bought.
+
+**Wire version 5 → 6** (`CONTRACT_VERSION` untouched at 2 — `Generate`'s signature did not change).
+The bump is required even though `handles` is purely additive, because `describe` compares versions
+for EQUALITY and refuses rather than negotiating. A handle's four coordinates ride in the **binary
+payload** as one 4-element span like every other coordinate (§2's "a fractional coordinate is
+unrepresentable" is structural, and four ints is not a reason to make an exception); `min`/`max` stay
+in the JSON because they are parameter VALUES, where a fractional bound is legitimate. **An
+unrecognised handle `kind` drops that one handle and reports once per distinct kind** — never the
+generate, never the cell's other handles. That asymmetry with an unknown SHAPE kind (which refuses) is
+deliberate and stated in the schema doc: losing a grip is recoverable in the parameter dialog, losing
+a shape is not recoverable at all.
+
+**One pre-existing test needed its fixture moved, and it found a real interaction rather than a
+flake.** `MklopfLayoutEntryModeTests.SwitchingToADifferentMklopfInstance_ResetsEntryModeToCanonical`
+placed its second instance at 20 mm — exactly where the first instance's `L` grip sits on a 20 mm
+taper — so the click meant to select it now grabs the grip instead. **That is correct behaviour**: a
+grip belongs to the selected instance, is drawn on top, and must win the press (otherwise grabbing one
+would move the whole instance, which a user cannot work around). The fixture moved to 40 mm so it can
+keep testing the entry-mode reset it is actually about, and the interaction itself is now pinned by
+`PCellParameterHandleDragTests.AGripWinsThePress_EvenOverAnotherInstanceSittingUnderIt` so nobody has
+to rediscover it.
+
+**Gate:** 88 new tests — `PCellHandleSolverTests` 30 (synthetic linear/quadratic/quantized/clamped/
+dead generators — the built-ins are none of those, which is why the solver is tested against
+synthetics), `PCellParameterHandleDragTests` 31 (the real gesture entry points against a real
+generated cell on disk, incl. the 10-case transform theory), `PCellHandleDegradationTests` 10 (design
+§8's table row by row, plus the preview budget, via a synthetic kit registered through the ordinary
+resolver seam — the built-in registry is closed and no shipping cell has a broken declaration),
+`PCellHandleContractTests` 10, plus 7 in `PCellWireSchemaTests`. Firewall 4/4, Core 1,118, RfCore 281,
+**Ui.Tests 5,042**, Engine 1,004 (+1 pre-existing skip) — all green on a full-solution run. `python3 tools/pcell-python/verify.py` — all
+checks pass, including 13 new ones for the handle encoding. **Two failures appeared in an
+intermediate full-solution run and were confirmed NOT regressions** — both are already documented in
+this file as known full-suite contention (`PerfBenchmarkTests.BuildRenderModel_10k_Under50ms` and
+`Hero1BTests.Hero1B_ImportElaborateAndSolve_WithinBudgetAndConsistent`); each passed cleanly in
+isolation and both passed on the final full run.
+
+**One genuine shared-state defect was found by the full run and fixed rather than tagged around.**
+`GeneratedCellStore`'s new write counter started life process-wide, which reads correctly in isolation
+and is meaningless under a parallel test run — any other test creating a cell in its own temp
+workspace perturbs it, so R-pch-9's assertion silently degraded to "nothing anywhere wrote a cell".
+It is now keyed by workspace root (`CellsWrittenUnder(root)`), which makes the count about the drag
+under test and nothing else. **Any future process-wide counter added here should be keyed the same
+way from the start.**
+
+
+**Follow-up round (same day) — four owner items, all in the design doc as numbered rules.**
+
+**R-pch-4a — a grip may declare a SECOND parameter across its own axis, and that does NOT contradict
+R-pch-4.** R-pch-4 forbids *apportioning* one drag between two parameters, because every tie-break is
+arbitrary. An **orthogonal decomposition** needs no tie-break: along-axis and across-axis are
+independent scalars with one parameter each, and the split is unique. MKlopf's far end is the case
+that earns it — drag +X for `L`, across for `Offset`, in one grip. Three consequences worth keeping:
+two grips at one point (what MKlopf's first draft had) are **indistinguishable under the cursor**;
+both axes commit as **one edit and one undo entry**; and the axes solve **in sequence, not
+simultaneously** — the cross axis against the parameters the primary already settled, because the two
+are independent as scalars but the geometry a cell draws for one may depend on the other. **Pin 1
+stays fixed while the far grip is dragged by CONSTRUCTION** (R4 puts it at the cell origin, so no
+parameter can move it), not by arithmetic.
+
+**Both axes render LIVE, and the numbers say so rather than an assumption.** The live ghost is built
+from both solved values, so a diagonal drag redraws the artwork moved *and* stretched. Measured on
+MKlopf — the real cell the two-axis grip exists for — **~1.2 ms per generate warm, ~4 ms for the
+first pointer move** (two solves plus the ghost), **~2.6 ms per move after**, against the 16 ms
+budget; the press costs ~7 ms because it runs TWO sensitivity probes, one per axis, once per gesture.
+The unconditional test of "the ghost carries both axes" uses a trivially fast SYNTHETIC two-axis
+generator, because whether the budget trips is a property of the machine, not of the code; the
+real-MKlopf test asserts the readout (timing-independent) unconditionally and the ghost only when one
+was produced.
+
+**A bug this surfaced, worth remembering because it reads as a generator failure:** the solver looks a
+regenerated grip up by parameter NAME, but a cross axis is solved through a synthetic handle whose
+`Parameter` is the CROSS name while the generator's own list still identifies that grip by its
+PRIMARY one. Searching by the synthetic name finds nothing, and "nothing" is indistinguishable from
+"the generator threw". `MeasureSensitivity`/`Solve` now take an explicit `matchParameter`.
+
+**R-pch-8a — placement is circuitRF's problem, never the author's**, now stated as a rule with the
+list of what the host handles (screen position, axis-hint direction, which screen direction is
+"along", the `Mag` division, which array cell). **A generator is deliberately given no way to ask how
+it was placed**, because one that could is one that could get it wrong. A cell written for an
+unrotated placement works rotated, mirrored and magnified with no change and no awareness — pinned by
+the 10-case transform gate, which was already green before this round and is what made the answer
+"yes, already" rather than "yes, after a fix".
+
+**R-pch-10 gains a declaration: `PCellResult.Preview`** (`Auto` default / `Deferred`). A generator
+that already knows it is too expensive to redraw per frame says so and is believed **without being
+timed**, saving the one full regeneration Auto spends measuring. Being wrong costs the user a live
+preview they could have had, **never a wrong answer** — gated by a side-by-side test asserting a
+declared-deferred drag commits a bit-identical value to an identical Auto drag. An unrecognised
+`preview` on the wire reads as Auto and is not reported, which is the OPPOSITE trade from an unknown
+handle `kind` (dropped and reported) and deliberately so: a hint with no effect on the answer must not
+cost a working cell.
+
+**The grip glyph now REUSES L1d's own grab square rather than inventing a shape** (`DrawGrabSquare`,
+shared). The first draft used a hollow diamond, which is already L1d's **bulge** handle — inventing a
+shape is how that happened. What marks a grip as parametric is its own colour role, a small hollow
+centre, and a dashed axis hint (two hints on a two-axis grip) that no L1d handle has. The two sets are
+never on screen together — a shape shows geometry handles, an instance shows parameter grips — so the
+difference has to read across a change of selection, not side by side.
+
+**MBend gets exactly one grip (W), and the two it does not get are stated in the generator itself** so
+nobody adds them by reflex: `Angle` needs an Angular grip (declared, not implemented), and `Miter` is
+an enumeration wearing a Real's clothes with no continuum to drag along.
+
+**Wire version 6 absorbed both new fields rather than becoming 7** — `crossParameter` and `preview`
+were folded in because version 6 has not shipped to anyone (this is all one uncommitted change). Had
+it shipped, each would have been its own bump.
+
+**Tests updated, not loosened:** the "these generators declare no handles" theory asserted a state
+this round deliberately makes false. "Not draggable is the default" is now asserted against the
+CONTRACT (`new PCellResult([], [])`) rather than against whichever cell happens not to opt in — which
+is the property that actually matters and cannot rot as more built-ins declare grips.
+
+**Gate after the follow-up:** Ui.Tests **5,062**, everything else unchanged and green.
+
+**Not interactively verified** (no visual driver here, matching every prior Layout Editor phase) —
+please confirm on your end: selecting a placed MLIN shows two amber grip squares with a hollow centre
+and a dashed axis hint, readably different from a shape's blue L1d handles; dragging the end grip
+stretches the trace live with an `L = …` readout in the toolbar; dragging the top edge widens it;
+MKlopf's single far-end grip shows TWO axis hints and dragging it diagonally changes `L` and `Offset`
+together while pin 1 stays put; MTee and MCross show one grip per arm; Escape mid-drag leaves the
+design untouched; and a heavy script-backed cell falls back to grip-plus-readout without stuttering.
 
 Technology UX — merge, mix-and-match, export, and opening a `.ctech` on its own (2026-08-06).
 Answers five owner questions, all of which had the same answer before this: no. One of them had a

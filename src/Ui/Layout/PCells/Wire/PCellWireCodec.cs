@@ -191,6 +191,33 @@ public static class PCellWireCodec
                 Width = pin.WidthDbu, OutwardDeg = pin.OutwardDirectionDeg,
             });
 
+        if (result.Preview == PCellPreviewMode.Deferred)
+            reply.Preview = PCellWirePreviewMode.Deferred;
+
+        if (result.Handles is { Count: > 0 })
+        {
+            reply.Handles = new List<PCellWireHandle>(result.Handles.Count);
+            foreach (var h in result.Handles)
+                reply.Handles.Add(new PCellWireHandle
+                {
+                    Parameter = h.Parameter,
+                    Kind      = h.Kind == PCellHandleKind.Angular
+                                    ? PCellWireHandleKind.Angular : PCellWireHandleKind.Linear,
+                    // The four coordinates go in the PAYLOAD, never the JSON — §2's guarantee that a
+                    // fractional coordinate is unrepresentable holds by there being nowhere to write one.
+                    Span      = Append(payload, [h.AnchorX, h.AnchorY, h.X, h.Y]),
+                    AxisDeg   = h.AxisDeg,
+                    Label     = h.Label,
+                    Min       = h.Min,
+                    Max       = h.Max,
+                    CrossParameter = h.Cross?.Parameter,
+                    CrossLabel     = h.Cross?.Label,
+                    CrossMin       = h.Cross?.Min,
+                    CrossMax       = h.Cross?.Max,
+                    KeepAnchorFixed = h.KeepAnchorFixed,
+                });
+        }
+
         return new PCellWireFrame(JsonSerializer.Serialize(reply, PCellWireJson.Options), payload.ToArray());
     }
 
@@ -327,8 +354,17 @@ public static class PCellWireCodec
         foreach (var p in reply.Pins)
             pins.Add(new PCellPin(p.Name, p.X, p.Y, p.Layer.ToKey(), p.Width, p.OutwardDeg));
 
+        var diagnostics = reply.Diagnostics is { Count: > 0 } ? new List<string>(reply.Diagnostics) : null;
+        var handles = DecodeHandles(reply.Handles, payload, ref diagnostics);
+
+        // An unrecognised preview value reads as Auto: it is a performance hint, and refusing a
+        // generate over one would trade a working cell for a preference.
+        var preview = string.Equals(reply.Preview, PCellWirePreviewMode.Deferred, StringComparison.Ordinal)
+            ? PCellPreviewMode.Deferred : PCellPreviewMode.Auto;
+
         return new PCellResult(shapes, pins,
-            reply.Diagnostics is { Count: > 0 } ? reply.Diagnostics : null);
+            diagnostics is { Count: > 0 } ? diagnostics : null,
+            handles, preview);
     }
 
     private static LayoutShape DecodeShape(PCellWireShape s, ReadOnlySpan<long> payload)
@@ -444,6 +480,56 @@ public static class PCellWireCodec
                         $"The PCell generator emitted an edge of kind '{e.Kind}', which this build does not know.");
             }
         return list;
+    }
+
+    /// <summary>
+    /// Wire version 6. <b>An unrecognised <c>kind</c> drops THAT handle and says so — it never fails
+    /// the generate and never touches the cell's other handles.</b> That is what lets a further kind
+    /// be added later without the next version bump becoming a cliff for anyone: a newer script
+    /// talking to an older host loses the grips that host cannot draw and keeps its artwork, which
+    /// is the correct degradation. The report rides on the diagnostics list because that is already
+    /// the ONE channel a generate has for saying something without failing.
+    /// </summary>
+    private static IReadOnlyList<PCellHandle>? DecodeHandles(
+        List<PCellWireHandle>? handles, ReadOnlySpan<long> payload, ref List<string>? diagnostics)
+    {
+        if (handles is not { Count: > 0 }) return null;
+
+        var list = new List<PCellHandle>(handles.Count);
+        var droppedKinds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var h in handles)
+        {
+            PCellHandleKind kind;
+            if (string.Equals(h.Kind, PCellWireHandleKind.Linear, StringComparison.Ordinal))
+                kind = PCellHandleKind.Linear;
+            else if (string.Equals(h.Kind, PCellWireHandleKind.Angular, StringComparison.Ordinal))
+                kind = PCellHandleKind.Angular;
+            else
+            {
+                droppedKinds.Add(h.Kind);
+                continue;
+            }
+
+            var cross = h.CrossParameter is { Length: > 0 } cp
+                ? new PCellHandleCrossAxis(cp, h.CrossLabel, h.CrossMin, h.CrossMax)
+                : null;
+            var c = Read(h.Span, payload, 4, "handle");
+            list.Add(new PCellHandle(h.Parameter, c[0], c[1], c[2], c[3], h.AxisDeg, kind,
+                                     h.Label, h.Min, h.Max, cross, h.KeepAnchorFixed));
+        }
+
+        // Once per distinct kind, not once per handle — a cell declaring twelve grips of one unknown
+        // kind is one thing to tell the user about, not twelve.
+        foreach (string kind in droppedKinds.OrderBy(k => k, StringComparer.Ordinal))
+        {
+            diagnostics ??= [];
+            diagnostics.Add(
+                $"This generator declares a '{kind}' drag handle, which this build does not support. " +
+                "That handle is ignored; the cell's artwork and its other handles are unaffected.");
+        }
+
+        return list.Count > 0 ? list : null;
     }
 
     // ── Payload access ────────────────────────────────────────────────────────

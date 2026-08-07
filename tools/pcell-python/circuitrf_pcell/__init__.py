@@ -32,9 +32,15 @@ See ``docs/design/pcell-wire-schema.md`` and ``docs/design/pcell-contract.md``.
 """
 
 from .geometry import (
+    ANGULAR,
+    AUTO,
+    DEFERRED,
+    LINEAR,
     Circle,
     Curve,
+    CrossAxis,
     Edge,
+    Handle,
     Label,
     Layer,
     Path,
@@ -66,6 +72,12 @@ from .values import Parameters
 from .wire import WireError, read_frame, write_frame
 
 __all__ = [
+    "ANGULAR",
+    "AUTO",
+    "CrossAxis",
+    "DEFERRED",
+    "LINEAR",
+    "Handle",
     "clip",
     "offset",
     "ClippedPolygon",

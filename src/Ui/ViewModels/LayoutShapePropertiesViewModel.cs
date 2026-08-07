@@ -85,7 +85,15 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// live values) but cannot be typed into until the drag commits.</summary>
     [ObservableProperty] private bool _isEditingEnabled = true;
 
-    private bool DragBlocksEdits() => _vm is not null && _vm.Overlay.DragOverrides.Count > 0;
+    /// <summary>
+    /// R-L1j-2, widened to cover a PCell grip drag. During a shape drag <c>_selected</c> holds
+    /// throwaway preview clones, so committing an edit against them would write to an object the
+    /// model has never seen. During a GRIP drag the panel is showing the solver's in-flight values,
+    /// which are about to be superseded by the release — accepting a typed edit into that would race
+    /// the drag. Both cases read the same to a user: values move live, fields are not typeable.
+    /// </summary>
+    private bool DragBlocksEdits() =>
+        _vm is not null && (_vm.Overlay.DragOverrides.Count > 0 || _vm.PCellHandleDragParameters is not null);
 
     // ── Generic field dispatch (view code-behind is Tag-keyed, mirrors TechEditorView's
     // CommitField/OnComboSelectionChanged dispatcher pattern) ──────────────────────────────────────
@@ -1293,8 +1301,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         {
             if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
             { row.ValueText = ""; row.Error = "No technology resolves — can't convert."; return; }
-            double z1 = origin.Parameters.Real("Z1", 50.0);
-            double z2 = origin.Parameters.Real("Z2", 50.0);
+            // The DERIVED entry-mode rows read through the same live source as the canonical ones, so
+            // dragging MKlopf's far-end grip moves F3db (which is a function of L) in step with the
+            // artwork rather than showing the value the drag started from.
+            var mk = ParametersForDisplay(origin.Parameters);
+            double z1 = mk.Real("Z1", 50.0);
+            double z2 = mk.Real("Z2", 50.0);
             var reporter = new MicrostripValidityReporter("(layout entry-mode display)");
             double converted;
             if (row.Name is "W1" or "W2")
@@ -1304,8 +1316,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             }
             else
             {
-                double gammaMax = origin.Parameters.Real("GammaMax", 0.05);
-                double l = origin.Parameters.Real("L", 0.02);
+                double gammaMax = mk.Real("GammaMax", 0.05);
+                double l = mk.Real("L", 0.02);
                 converted = MicrostripKlopfEntryConversion.LengthToF3db(z1, z2, gammaMax, l, h, t, er, reporter);
             }
             row.Error = null;
@@ -1313,9 +1325,28 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             return;
         }
 
-        if (!origin.Parameters.TryGetValue(row.Name, out var value)) return;
+        // Live during a grip drag: read the solver's in-flight value for THIS instance in place of
+        // the committed one, so the panel and the artwork tell the same story while the user drags.
+        // Every parameter the drag is not touching still comes from the committed set, so a two-axis
+        // grip moves exactly two rows and a one-axis grip exactly one.
+        var source = ParametersForDisplay(origin.Parameters);
+        if (!source.TryGetValue(row.Name, out var value)) return;
 
         row.ValueText = FormatPCellParamValue(row.Unit, value);
+    }
+
+    /// <summary>
+    /// The committed parameters, or the grip drag's in-flight ones when a drag is running on the
+    /// instance currently being inspected. Index-checked rather than assumed: a drag on one instance
+    /// must never bleed into a panel showing a different one.
+    /// </summary>
+    private IReadOnlyDictionary<string, PCellValue> ParametersForDisplay(
+        IReadOnlyDictionary<string, PCellValue> committed)
+    {
+        if (_vm is null || _vm.PCellHandleDragParameters is not { } live) return committed;
+        var indices = _vm.SelectedInstanceIndices;
+        if (indices.Count != 1 || indices[0] != _vm.PCellHandleDragInstanceIndex) return committed;
+        return live;
     }
 
     /// <summary>

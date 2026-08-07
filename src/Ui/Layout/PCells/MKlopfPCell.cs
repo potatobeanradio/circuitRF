@@ -130,9 +130,31 @@ public static class MKlopfPCell
             new PCellPin("2", lDbu, pin2YDbu, signalLayer, w2Dbu, 0.0),
         };
 
+        // pcell-parameter-handles.md — ONE grip at pin 2 driving BOTH axes (R-pch-4a): dragging it
+        // along +X changes `L`, dragging it across changes `Offset`. That is what the far end of a
+        // taper physically is — "how long, and how far off axis" — and the two are independent
+        // scalars, so the decomposition is unique rather than a guess.
+        //
+        // **Pin 1 stays put while this is dragged, by construction rather than by arithmetic**: the
+        // generator always starts at the cell origin (R4), so neither parameter can move it. The
+        // taper stretches from its fixed near end, which is what a user dragging the far corner
+        // expects.
+        //
+        // This is also the NON-LINEAR case, and the reason MKlopf declares handles at all: neither
+        // parameter moves the grip in proportion to itself once the Klopfenstein width profile is
+        // resampled along the new arc length. Nothing here says so, because nothing here has to —
+        // R-pch-2's measurement discovers the relationship and R-pch-3's iterate-until-it-lands
+        // survives its non-linearity.
+        var handles = new[]
+        {
+            new PCellHandle("L", 0, 0, lDbu, pin2YDbu, AxisDeg: 0,
+                Cross: new PCellHandleCrossAxis("Offset")),
+        };
+
         var diagnostics = reporter.Drain();
         return new PCellResult([outline], pins,
-            diagnostics.Count > 0 ? diagnostics.Select(d => d.Message).ToList() : null);
+            diagnostics.Count > 0 ? diagnostics.Select(d => d.Message).ToList() : null,
+            Handles: handles);
     }
 
     /// <summary>

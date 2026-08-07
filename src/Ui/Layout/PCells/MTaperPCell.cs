@@ -43,6 +43,17 @@ public static class MTaperPCell
             new PCellPin("2", l, 0, signalLayer, w2,   0.0),
         };
 
-        return new PCellResult([trapezoid], pins);
+        // pcell-parameter-handles.md §2.2 — two INDEPENDENT widths on one cell, each with its own
+        // grip on its own end cap, plus the length. Both width grips anchor on the centreline at
+        // their own end (the trapezoid is centred on y = 0), so each measures its own half-width and
+        // neither moves when the other is dragged.
+        var handles = new[]
+        {
+            new PCellHandle("L",  0, 0, l,     0,      AxisDeg: 0),
+            new PCellHandle("W1", 0, 0, 0,     w1 / 2, AxisDeg: 90),
+            new PCellHandle("W2", l, 0, l,     w2 / 2, AxisDeg: 90),
+        };
+
+        return new PCellResult([trapezoid], pins, Handles: handles);
     }
 }

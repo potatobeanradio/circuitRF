@@ -53,9 +53,16 @@ from brief-benchmark-gate-split.md and brief-test-suite-fast-loop.md: `Category=
 and `Category=Slow` is gone as a category (its former members are either untagged, having been
 measured under the threshold, or folded into `Benchmark`).
 
-- **Repo root, no flags: 5,169 tests in ~30 s.** Per-project (`dotnet test tests/Ui.Tests`) is
-  likewise fast on its own (~11-12 s). This is what "build+test green" means in every brief from here
-  on, unless that brief's own text says otherwise.
+- **Repo root, no flags: 7,482 tests in ~4 min** (measured 2026-08-06). This is what "build+test
+  green" means in every brief from here on, unless that brief's own text says otherwise.
+  **`Engine.Tests` is ~3 min 24 s of that on its own** — measured alone, with `--no-build`, so it is
+  the suite's own cost and not parallel contention. It grew there gradually across the L8/L9
+  electromagnetic phases (65 s at L9b, ~2 min at the ground-via work) and no single test crosses the
+  ~5 s `Category=Benchmark` threshold; ~1,000 tests averaging ~0.2 s each simply add up. **The
+  earlier "5,169 tests in ~30 s" figure recorded here was stale by roughly an order of magnitude** —
+  do not quote it. The other projects are still genuinely fast on their own: `Ui.Tests` ~27 s
+  (5,075 tests), `Core.Tests` ~1 s, `RfCore.Tests` ~6 s, `Firewall.Tests` instant, so **scope the
+  gate to the projects your change can reach** and keep the full-solution run for phase boundaries.
 - **`RfCore.Tests` IS in `circuitrf.slnx` and IS covered by a plain `dotnet test`** (2026-07-30; it was
   not, until then — an older note in `src/Ui/CLAUDE.md` says otherwise and is marked superseded). 281
   routine tests, ~4 s. Its proprietary loadpull fixtures are git-ignored, so on a fresh clone 56 of them

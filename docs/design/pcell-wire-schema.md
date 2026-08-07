@@ -221,8 +221,47 @@ wrong layer.
     "pins": [
       { "name": "1", "x": 0, "y": 0, "layer": {"layer":1,"datatype":0},
         "width": 300000, "outwardDeg": 180.0 } ],
-    "diagnostics": [ "turn 4 is inside the minimum bend radius" ] }
+    "diagnostics": [ "turn 4 is inside the minimum bend radius" ],
+    "handles": [
+      { "parameter": "L", "kind": "linear",
+        "span": {"at": 22, "count": 4}, "axisDeg": 0.0,
+        "label": "Length", "min": 50000,
+        "crossParameter": "Offset", "keepAnchorFixed": true } ],
+    "preview": "deferred" }
 ```
+
+**`handles` (wire version 6) is optional** — draggable parameter grips, see
+`pcell-parameter-handles.md`. Absent, which is what every generator written before version 6 emits,
+simply means the cell is edited through its parameter list. Each entry's `span` is exactly four
+int64 elements: **anchorX, anchorY, x, y**.
+
+`min`/`max` are parameter **values**, not coordinates, so they stay in the JSON and may legitimately
+be fractional — §3's encoding, not §2's payload rule. That is the line: a bound of 20.5 Ω is a real
+quantity; a coordinate of 20.5 DBU is not.
+
+`crossParameter` (with optional `crossLabel` / `crossMin` / `crossMax`) declares a **second**
+parameter driven by dragging ACROSS the grip's own axis — the far end of a taper is "how long" along
+it and "how far off centre" across it. Absent on an ordinary one-degree-of-freedom grip.
+
+`keepAnchorFixed` (bool, absent reads as false) asks the host to hold the grip's ANCHOR still in
+world space while the grip is dragged, translating the placed instance to do it. It is what makes
+"drag this end, keep the other end fixed" expressible at all — a generator cannot move its own
+origin, so without it a left-edge drag grows the cell rightwards. See `pcell-parameter-handles.md`
+R-pch-4b. Additive within version 6: a script written before the field existed omits it and behaves
+exactly as it did.
+
+`preview` is `"auto"` (the default, and omitted when it is) or `"deferred"`: a generator that already
+knows it is too expensive to redraw per frame says so and is believed, saving the host the one full
+regeneration it otherwise spends measuring.
+
+**An unrecognised `kind` drops that one handle and is reported once per distinct kind — it never
+fails the generate and never affects the cell's other handles.** That is what lets a further kind be
+added without the next bump becoming a cliff: a newer script talking to an older host loses only the
+grips that host cannot draw.
+
+**An unrecognised `preview` reads as `"auto"` and is not reported at all**, which is the opposite
+trade from `kind` and deliberately so: `preview` is a performance hint with no effect on the answer,
+so refusing over one would cost a working cell to honour a preference.
 
 **Every coordinate is a span into the binary payload — `{"at": i, "count": n}`, both in int64
 elements, `n` even.** No coordinate ever appears in the JSON. This is what makes "a fractional
@@ -288,7 +327,17 @@ with `"ok": true` must not be treated as failure.
 
 ## 7. Versioning
 
-`wireVersion` is **1**. It is separate from `contractVersion` and both cross in both directions.
+`wireVersion` is **6**. It is separate from `contractVersion` (still **2**) and both cross in both
+directions.
+
+| Version | Change |
+|---|---|
+| 1 | Initial format (B1). |
+| 2 | `dbuPerMicron` on the generate request, so a generator can turn a constant it holds itself into a coordinate. |
+| 3 | `clip` — a frame travelling script→host, §8. |
+| 4 | A declared `default` per parameter, so a cell can be PLACED without being told its parameters. |
+| 5 | `offset` — grow/shrink, §8. |
+| 6 | Optional `handles` and `preview` on the generate reply (§4.3), including a handle's optional `crossParameter`. Additive in shape; the bump is required anyway because versions are compared for equality. |
 
 They version different things and can move independently: the contract describes what a generator
 receives (kinded parameters, R5's guarantees), the wire describes how it crosses. A byte-layout
@@ -301,6 +350,16 @@ user exactly what to update.
 
 **Adding a shape kind, a dimension, or a parameter kind is a version bump**, because a host that
 does not know it must refuse rather than silently drop it — see §4.4.
+
+**Adding an optional reply field is also a bump**, even though nothing already on the wire changes
+shape: versions are compared for *equality*, so a script that emits the new field must also be
+speaking the version that describes it. Version 6 is exactly that case.
+
+**A handle `kind` is the one thing that degrades per-item rather than refusing** (§4.3), and the
+distinction is worth keeping straight: an unknown *shape* kind means geometry the user would never
+see is missing, so it refuses; an unknown *handle* kind means a grip is missing from artwork that is
+otherwise complete and correct, so it drops and reports. Losing a grip is recoverable in the
+parameter dialog; losing a shape is not recoverable at all.
 
 ---
 

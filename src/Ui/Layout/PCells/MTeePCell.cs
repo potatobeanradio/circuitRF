@@ -60,6 +60,20 @@ public static class MTeePCell
             new PCellPin("3", junctionX, -stub3, signalLayer, w3, 270.0),
         };
 
-        return new PCellResult([merged], pins);
+        // pcell-parameter-handles.md — one width grip per arm, each on that arm's own edge at that
+        // arm's own midpoint, so the three never coincide and none of them moves when another is
+        // dragged. Note W1's grip travels in BOTH x and y as W1 changes (its arm's stub length is a
+        // multiple of the width, so the midpoint slides): the projection onto the declared axis
+        // ignores the x component entirely, which is exactly what a one-degree-of-freedom grip is
+        // for.
+        var handles = new[]
+        {
+            new PCellHandle("W1", stub1 / 2, 0, stub1 / 2, w1 / 2, AxisDeg: 90),
+            new PCellHandle("W2", junctionX + stub2 / 2, 0, junctionX + stub2 / 2, w2 / 2, AxisDeg: 90),
+            // The branch runs along -Y, so its width is measured across X — on its own side edge.
+            new PCellHandle("W3", junctionX, -stub3 / 2, junctionX + w3 / 2, -stub3 / 2, AxisDeg: 0),
+        };
+
+        return new PCellResult([merged], pins, Handles: handles);
     }
 }

@@ -298,14 +298,142 @@ class Label(Shape):
         }
 
 
+LINEAR = "linear"
+ANGULAR = "angular"
+
+#: How eagerly circuitRF should redraw this cell's artwork while a grip is dragged.
+#:
+#: ``AUTO`` (the default) lets circuitRF time your generator once and decide. ``DEFERRED`` says
+#: "don't bother trying" — the pre-drag artwork stays put, the grip and the numeric readout follow
+#: the cursor, and the cell is regenerated once when the drag ends.
+#:
+#: **Declare DEFERRED when you already know your cell is expensive** — hundreds of shapes, or many
+#: boolean round trips per generate. AUTO reaches the same conclusion, but only after spending one
+#: full regeneration to find out. Being wrong costs the user a live preview they could have had,
+#: never a wrong answer: the committed value is identical either way.
+AUTO = "auto"
+DEFERRED = "deferred"
+
+
+@dataclass(frozen=True)
+class CrossAxis:
+    """The parameter a :class:`Handle` drives when dragged ACROSS its own axis.
+
+    Use it when one point on your cell genuinely means two things at once — the far end of a taper is
+    "how long" along its axis and "how far off centre" across it::
+
+        Handle("L", anchor=(0, 0), at=(l, offset), axis=0, cross=CrossAxis("Offset"))
+
+    Travel along the axis and travel across it are independent scalars, so circuitRF splits the drag
+    between them without guessing. Both commit together as one edit.
+    """
+
+    parameter: str
+    label: str | None = None
+    min: float | None = None
+    max: float | None = None
+
+
+@dataclass(frozen=True)
+class Handle:
+    """One draggable grip on this cell's artwork — the user drags it, a parameter follows.
+
+    Declaring one is optional and costs two facts you can already see in your own drawing code::
+
+        Handle("L", anchor=(0, 0), at=(l, 0), axis=0)              # the far end IS the length
+        Handle("W", anchor=(l // 2, 0), at=(l // 2, w // 2), axis=90)   # top edge of a centred trace
+
+    ``anchor`` is the fixed point the grip measures FROM, ``at`` is where the grip is right now for
+    these parameter values, and ``axis`` is the direction it travels in degrees (0 = +X, 90 = +Y).
+
+    **You never state how much the parameter changes per unit of travel.** circuitRF measures that by
+    regenerating your cell with the parameter perturbed and seeing where you put the grip. That is
+    why nothing here mentions a unit or a scale factor, why the same declaration works whether the
+    parameter is a length or a turn count, and why a cell whose geometry is *not* linear in its
+    parameter needs no special treatment.
+
+    Two rules worth knowing before you declare one:
+
+    * **The grip must actually move when the parameter changes**, in the direction ``axis`` names.
+      That is the whole declaration; if it does not, circuitRF reports the handle as undraggable
+      rather than guessing.
+    * **Several handles may name one parameter.** A centred width declares a grip on each edge; both
+      drive the same value and both move when either is dragged. Nothing special is needed.
+
+    ``min``/``max`` are optional bounds in the parameter's own units (on this side, that means
+    database units for a length, like everything else). They are a convenience — a generator that
+    clamps internally needs neither, because circuitRF redraws the grip wherever your cell actually
+    put it.
+    """
+
+    parameter: str
+    anchor: tuple[int, int]
+    at: tuple[int, int]
+    axis: float = 0.0
+    kind: str = LINEAR
+    label: str | None = None
+    min: float | None = None
+    max: float | None = None
+    #: An optional second parameter, driven by dragging across ``axis``. See :class:`CrossAxis`.
+    cross: "CrossAxis | None" = None
+    #: Hold this grip's ``anchor`` still on screen while the grip is dragged.
+    #:
+    #: Your cell cannot move its own origin — pin 1 is always at (0, 0) — so without this, dragging
+    #: the LEFT edge of a trace grows it to the right. circuitRF instead moves the whole placed cell
+    #: so the anchor keeps the position it had, which is what "drag this end, keep the other end
+    #: still" means. Declare the OPPOSITE edge as ``anchor`` and set this, and both hold.
+    #:
+    #: A no-op when the anchor does not move for that parameter, so it is safe to set on every grip
+    #: of a set rather than only the ones that need it.
+    keep_anchor_fixed: bool = False
+
+    def to_json(self, payload: list[int]) -> dict[str, Any]:
+        # The four coordinates ride in the binary payload like every other coordinate (schema §2), so
+        # there is nowhere a fractional one could be written. min/max are parameter VALUES, not
+        # coordinates, so they stay in the JSON — a fractional bound is legitimate.
+        at_index = len(payload)
+        payload.extend(
+            [coord(self.anchor[0]), coord(self.anchor[1]), coord(self.at[0]), coord(self.at[1])]
+        )
+        body: dict[str, Any] = {
+            "parameter": self.parameter,
+            "kind": self.kind,
+            "span": {"at": at_index, "count": 4},
+            "axisDeg": float(self.axis),
+        }
+        if self.keep_anchor_fixed:
+            body["keepAnchorFixed"] = True
+        if self.label is not None:
+            body["label"] = self.label
+        if self.min is not None:
+            body["min"] = self.min
+        if self.max is not None:
+            body["max"] = self.max
+        if self.cross is not None:
+            body["crossParameter"] = self.cross.parameter
+            if self.cross.label is not None:
+                body["crossLabel"] = self.cross.label
+            if self.cross.min is not None:
+                body["crossMin"] = self.cross.min
+            if self.cross.max is not None:
+                body["crossMax"] = self.cross.max
+        return body
+
+
 @dataclass
 class Result:
     """What a generator returns: geometry, pins, and anything it wants to say about them.
 
     ``diagnostics`` is **not an error channel** — it is for a generator that DID produce geometry
     and has a caveat about it. To refuse outright, raise; the host reports that naming the cell.
+
+    ``handles`` is optional. Declaring none — which is what every generator written before handles
+    existed does — simply means the cell is edited through its parameter list, exactly as before.
     """
 
     shapes: list[Shape] = field(default_factory=list)
     pins: list[Pin] = field(default_factory=list)
     diagnostics: list[str] = field(default_factory=list)
+    handles: list[Handle] = field(default_factory=list)
+    #: ``AUTO`` or ``DEFERRED`` — see the module constants. Only meaningful alongside ``handles``.
+    preview: str = AUTO

@@ -460,6 +460,13 @@ public static partial class LayoutRenderer
                 if (opts.Overlay?.SnapMarker is { } snapMarker)
                     DrawSnapMarker(canvas, snapMarker, layerMap, ps, scaleUm, theme);
 
+                // pcell-parameter-handles.md §4.2 — above the instance's own artwork and its selection
+                // outline, because a grip the user cannot see is a feature that did not ship. Never
+                // layer geometry: no LayerKey, never in LayoutView.Shapes, never counted, never
+                // reachable by an exporter (every export path passes Overlay = null).
+                if (opts.Overlay?.PCellHandles is { Count: > 0 } pcellHandles)
+                    DrawPCellHandles(canvas, pcellHandles, theme, ps, scaleUm);
+
                 // L5b: §9A.1's "system layer over the geometry" — drawn LAST inside the path-space
                 // transform so a violation is never hidden behind the metal it is about, and above
                 // the selection outline so a selected shape's own violation stays visible.
@@ -1022,6 +1029,20 @@ public static partial class LayoutRenderer
     /// the doubled geometry/selection strokes already use.</summary>
     private const double HandleSizeDevicePixels = 8.0;
 
+    /// <summary>
+    /// The "grab this point" glyph — L1d's own filled square, in ONE place so the two things that
+    /// draw it cannot drift apart.
+    ///
+    /// <para>A PCell parameter grip reuses it deliberately rather than inventing a shape of its own.
+    /// The editor already has a visual language for "this is draggable" and a second one would be a
+    /// second thing to learn; the grip's own difference — that it edits a parameter rather than
+    /// geometry — is carried by its colour role and by an axis hint that no L1d handle has. An
+    /// earlier draft used a hollow diamond and was wrong for a concrete reason worth remembering:
+    /// that shape is already L1d's BULGE handle.</para>
+    /// </summary>
+    private static void DrawGrabSquare(SKCanvas canvas, float cx, float cy, float half, SKPaint paint)
+        => canvas.DrawRect(new SKRect(cx - half, cy - half, cx + half, cy + half), paint);
+
     private static void DrawHandles(SKCanvas canvas, LayoutView view, int shapeIndex,
         IReadOnlyDictionary<int, LayoutShape> dragOverrides, LayoutRenderTheme theme, PathSpace ps, double scaleUm)
     {
@@ -1044,8 +1065,9 @@ public static partial class LayoutRenderer
                 case LayoutHandleKind.Vertex:
                 case LayoutHandleKind.Radius:
                 case LayoutHandleKind.CornerRadius:
-                    // Filled square.
-                    canvas.DrawRect(new SKRect(cx - half, cy - half, cx + half, cy + half), fillPaint);
+                    // Filled square. Shared with the PCell parameter grip — see
+                    // DrawGrabSquare's own note on why that reuse is deliberate.
+                    DrawGrabSquare(canvas, cx, cy, half, fillPaint);
                     break;
 
                 case LayoutHandleKind.EdgeMidpoint:

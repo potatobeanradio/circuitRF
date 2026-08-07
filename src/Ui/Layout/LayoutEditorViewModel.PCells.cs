@@ -104,7 +104,8 @@ public sealed partial class LayoutEditorViewModel
     /// edit. Unspecified parameter names in <paramref name="newParameters"/> keep the resolved cell's
     /// current value, mirroring <see cref="RegeneratePCell"/>'s own merge behavior.
     /// </summary>
-    public bool EditInstancePCellParameters(int instanceIndex, IReadOnlyDictionary<string, PCellValue> newParameters)
+    public bool EditInstancePCellParameters(int instanceIndex, IReadOnlyDictionary<string, PCellValue> newParameters,
+        long translateDx = 0, long translateDy = 0)
     {
         if ((uint)instanceIndex >= (uint)Model.Instances.Count) return false;
         var inst = Model.Instances[instanceIndex];
@@ -156,6 +157,11 @@ public sealed partial class LayoutEditorViewModel
 
         var after = LayoutGeometry.Clone(inst);
         after.CellRef = newCellRef;
+        // pcell-parameter-handles.md R-pch-4b: a parameter-handle drag with a pinned anchor also
+        // needs the instance to move, so that the edge the user did NOT grab holds its world
+        // position. It rides in the SAME ReplaceInstanceCommand — one undo entry, and no window in
+        // which the geometry has changed but the placement has not.
+        if (translateDx != 0 || translateDy != 0) LayoutGeometry.TranslateBy(after, translateDx, translateDy);
         Execute(new Commands.Layout.ReplaceInstanceCommand(Model, instanceIndex, inst, after));
         IsDirty = true;
         return true;

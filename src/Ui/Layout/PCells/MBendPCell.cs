@@ -125,7 +125,57 @@ public static class MBendPCell
             new PCellPin("2", pin2XDbu, pin2YDbu, signalLayer, w, angleDeg),
         };
 
-        return new PCellResult([merged], pins, diagnostics);
+        // pcell-parameter-handles.md — three grips, and the placement of the two angle grips is the
+        // whole UX question:
+        //
+        //   W      — the top edge of the input arm, the ordinary "widen this trace" gesture.
+        //   Angle  — an ANGULAR grip at EACH pin. Grab either end of the bend and swing it; the end
+        //            you did NOT grab holds its position. Both drive the same `Angle`.
+        //
+        //   Miter  — still no grip: an enumeration (None/Fifty/Optimal) wearing a Real's clothes,
+        //            with no continuum for a drag to move along. It belongs in the parameter list.
+        //
+        // <b>The two angle grips are anchored on OPPOSITE points, and that asymmetry is forced by R4,
+        // not chosen.</b> R4 fixes pin 1 at the cell origin with arm 1 along +X, so:
+        //
+        //   * PIN 2 swings about the PIVOT CORNER. That is its real geometric path — the arm rotates
+        //     about the bend — so the anchor is both the correct measurement frame and an accurate
+        //     hint arc. The anchor does not move with `Angle` at all, so pinning it is a no-op.
+        //
+        //   * PIN 1 CANNOT swing about the pivot, and this is where an earlier reading of the
+        //     contract concluded a pin-1 grip was impossible. Pin 1 sits at (0,0) for every value of
+        //     `Angle`; its bearing from the pivot is always 180°, so a grip anchored there is
+        //     INVARIANT in the parameter — the host measures no movement and refuses the drag. That
+        //     refusal is correct, and the conclusion drawn from it ("so pin 1 can't drive the angle")
+        //     was not: anchoring on PIN 2 instead makes the same parameter perfectly measurable,
+        //     because pin 2 is what moves. The relationship is exactly linear — the inscribed-angle
+        //     construction gives bearing = Angle/2 off the reference — so the solve converges on its
+        //     first iteration.
+        //
+        // Both angle grips therefore hold their anchor (R-pch-4b): the end you are not dragging keeps
+        // its world position while the instance translates under it. Only pin 1's anchor actually
+        // moves; pin 2's is set for uniformity, so a reader does not have to work out which of two
+        // sibling grips is the special one.
+        //
+        // <b>Degenerate at Angle = 180°</b>, where the arms fold back and the two pins coincide — the
+        // bearing is undefined there and the grip is unmeasurable. That is the already-diagnosed
+        // straight-through case, not a new failure mode.
+        var handles = new[]
+        {
+            new PCellHandle("W", arm1LenDbu / 2, 0, arm1LenDbu / 2, w / 2, AxisDeg: 90),
+
+            // Pin 2, about the pivot. Reference +X because that is how `Angle` is measured
+            // (BuildArmRect takes it from +X), so this grip's angular projection IS the parameter.
+            new PCellHandle("Angle", cornerX, cornerY, pin2XDbu, pin2YDbu,
+                AxisDeg: 0, Kind: PCellHandleKind.Angular, KeepAnchorFixed: true),
+
+            // Pin 1, about pin 2. Reference 180° so the projection reads as a positive half-angle
+            // over the whole usable range rather than wrapping through the normalisation cut.
+            new PCellHandle("Angle", pin2XDbu, pin2YDbu, 0, 0,
+                AxisDeg: 180, Kind: PCellHandleKind.Angular, KeepAnchorFixed: true),
+        };
+
+        return new PCellResult([merged], pins, diagnostics, Handles: handles);
     }
 
     /// <summary>R-L5h-7: true only for an EXACT right-angle bend — arm2's direction purely

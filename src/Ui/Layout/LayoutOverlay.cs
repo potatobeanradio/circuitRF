@@ -87,6 +87,30 @@ public sealed record class LayoutOverlay
     /// click-time concern, not a rendering one).</summary>
     public SnapCandidate? SnapMarker { get; init; }
 
+    // ── Parameter handles (docs/design/pcell-parameter-handles.md) ──────────────────────────────
+
+    /// <summary>
+    /// The draggable parameter grips of the single selected PCell instance, already transformed into
+    /// world DBU. Empty whenever the selection is not exactly one PCell-backed instance, or its
+    /// generator declares none.
+    ///
+    /// <para><b>These are not L1d handles and must not look like them.</b> An L1d handle edits
+    /// geometry; one of these edits a PARAMETER, and the artwork is regenerated around it. A user who
+    /// confuses the two is surprised in a way that is hard to undo, so the renderer draws them in
+    /// their own role with an axis hint showing which way each one travels.</para>
+    /// </summary>
+    public IReadOnlyList<PCellHandleMarker> PCellHandles { get; init; } = [];
+
+    /// <summary>
+    /// Live parameter-handle drag preview: the regenerated artwork to draw IN PLACE OF the named
+    /// instance's own resolved cell, for the duration of the drag. Null when no drag is in progress
+    /// or when the drag is running in deferred mode (R-pch-10) and the pre-drag artwork stands.
+    ///
+    /// <para>The model — and the generated cell on disk — is untouched until the drag commits, which
+    /// is the same rule <see cref="DragOverrides"/> already follows for a shape move.</para>
+    /// </summary>
+    public (int InstanceIndex, LayoutView GhostView)? PCellHandlePreview { get; init; }
+
     /// <summary>
     /// L5b (docs/design/layout-view.md §9A.1): the DRC violation regions to draw over the artwork.
     /// A SYSTEM LAYER in the design doc's sense — superimposed on the geometry, never part of it: no
@@ -96,6 +120,33 @@ public sealed record class LayoutOverlay
     /// </summary>
     public IReadOnlyList<DrcMarker> DrcMarkers { get; init; } = [];
 }
+
+/// <summary>
+/// One parameter grip, ready to draw — world DBU, with its travel direction already expressed in
+/// world terms so the renderer never has to know what an instance transform is.
+/// </summary>
+/// <param name="X">Where the grip is.</param>
+/// <param name="AnchorX">The fixed point it measures from — the axis hint is drawn between the two.</param>
+/// <param name="AxisDx">Unit travel direction in world space. Already carries the instance's own
+/// rotation and mirror, so a mirrored cell's grip hints the direction it will actually move.</param>
+/// <param name="Label">What the readout calls it — the generator's own label, else the parameter name.</param>
+/// <param name="Active">True for the grip currently being dragged.</param>
+/// <param name="HasCrossAxis">True when this grip also drives a parameter ACROSS its axis (R-pch-4a)
+/// — the renderer hints both directions so the second one is visible rather than discovered.</param>
+/// <param name="IsAngular">The grip SWINGS about its anchor rather than sliding. The hint is drawn as
+/// an arc through the grip rather than a straight line, because a straight tangent would read as
+/// "drag this way and keep going" — which is exactly what an angular grip does not do.</param>
+public readonly record struct PCellHandleMarker(
+    long   X,
+    long   Y,
+    long   AnchorX,
+    long   AnchorY,
+    double AxisDx,
+    double AxisDy,
+    string Label,
+    bool   Active,
+    bool   HasCrossAxis = false,
+    bool   IsAngular = false);
 
 /// <summary>
 /// One violation's region, ready to draw. Deliberately a flat render-facing record rather than the

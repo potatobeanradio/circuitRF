@@ -19,7 +19,17 @@ namespace CircuitRF.Ui.Layout.PCells.Wire;
 public static class PCellWireVersion
 {
     /// <summary>
-    /// Version 5 (2026-08-04) added <see cref="PCellWireOp.Offset"/> — grow/shrink, asked of the host
+    /// Version 6 (2026-08-06) added <see cref="PCellWireGenerateReply.Handles"/> — the optional
+    /// draggable parameter grips of <c>docs/design/pcell-parameter-handles.md</c>.
+    ///
+    /// <para><b>The bump is required even though the field is purely additive</b>, and the reason is
+    /// this file's own refusal rule: versions are compared for equality and a mismatch is refused
+    /// rather than negotiated, so any change to what a reply may contain is a bump by definition.
+    /// <see cref="PCellContractVersion"/> is untouched — <c>Generate</c>'s signature has not changed,
+    /// only what a generator may optionally include in its result, which is exactly the kind of
+    /// independent movement the two numbers exist to allow.</para>
+    ///
+    /// <para>Version 5 (2026-08-04) added <see cref="PCellWireOp.Offset"/> — grow/shrink, asked of the host
     /// for the same reason the booleans are (§8): it is Clipper2 offset, which circuitRF already owns,
     /// and a second implementation would disagree invisibly.
     ///
@@ -38,7 +48,7 @@ public static class PCellWireVersion
     /// rather than one circuitRF passed in. Schema §1 records why version 1 deliberately withheld
     /// it.</para>
     /// </summary>
-    public const int Current = 5;
+    public const int Current = 6;
 }
 
 /// <summary>
@@ -355,6 +365,56 @@ public sealed class PCellWirePin
     public double OutwardDeg { get; set; }
 }
 
+/// <summary>
+/// One draggable parameter grip (wire version 6, <c>pcell-parameter-handles.md</c> §3).
+///
+/// <para><b>The four coordinates ride in the binary payload, as one 4-element span</b> (anchorX,
+/// anchorY, x, y) — not as JSON numbers, however few of them there are. §2's rule that no coordinate
+/// ever appears in the JSON is what makes a fractional coordinate structurally unrepresentable, and
+/// an exception made for brevity here would cost exactly that guarantee.</para>
+///
+/// <para><see cref="Min"/> and <see cref="Max"/> ARE plain JSON numbers, and that is not an
+/// inconsistency: they are parameter VALUES, not coordinates, and §3 already encodes a value that
+/// way. A fractional bound (a minimum impedance of 20.5 Ω) is legitimate where a fractional
+/// coordinate is not.</para>
+/// </summary>
+public sealed class PCellWireHandle
+{
+    public string Parameter { get; set; } = "";
+
+    /// <summary>"linear" or "angular". A kind this host does not implement drops THAT HANDLE and is
+    /// reported once — never the whole generate, and never the cell's other handles. That is what
+    /// lets a further kind be added without the next bump becoming a cliff.</summary>
+    public string Kind { get; set; } = "linear";
+
+    /// <summary>anchorX, anchorY, x, y — exactly 4 elements.</summary>
+    public PCellWireSpan? Span { get; set; }
+
+    public double AxisDeg { get; set; }
+    public string? Label { get; set; }
+    public double? Min { get; set; }
+    public double? Max { get; set; }
+
+    /// <summary>The parameter this grip drives when dragged ACROSS its own axis (R-pch-4a). Absent
+    /// on an ordinary one-degree-of-freedom grip, which is the common case.</summary>
+    public string? CrossParameter { get; set; }
+    public string? CrossLabel { get; set; }
+    public double? CrossMin { get; set; }
+    public double? CrossMax { get; set; }
+
+    /// <summary>R-pch-4b: hold this grip's ANCHOR still in world space while it is dragged. Absent
+    /// reads as false — the pre-existing behaviour, so a wire-version-6 generator written before this
+    /// field existed keeps working unchanged.</summary>
+    public bool KeepAnchorFixed { get; set; }
+}
+
+/// <summary>The handle-kind vocabulary, in one place so the encoder and decoder cannot disagree.</summary>
+public static class PCellWireHandleKind
+{
+    public const string Linear  = "linear";
+    public const string Angular = "angular";
+}
+
 public sealed class PCellWireGenerateReply
 {
     public bool Ok { get; set; } = true;
@@ -369,6 +429,27 @@ public sealed class PCellWireGenerateReply
     /// <summary>A generator that DID produce geometry and has something to say about it. Not an error
     /// channel: a non-empty list with <see cref="Ok"/> true must not be treated as failure.</summary>
     public List<string>? Diagnostics { get; set; }
+
+    /// <summary>Optional draggable parameter grips (wire version 6). Absent — the case for every
+    /// generator written before this existed — simply means the cell is not draggable.</summary>
+    public List<PCellWireHandle>? Handles { get; set; }
+
+    /// <summary>
+    /// "auto" (or absent) / "deferred" — how eagerly a drag on this cell should redraw its artwork
+    /// (R-pch-10). A generator that already knows it is too expensive to redraw per frame says
+    /// "deferred" and is believed, saving the one full regeneration Auto spends finding out.
+    ///
+    /// <para>An unrecognised value reads as "auto", deliberately: the field is a performance HINT,
+    /// and refusing a generate over one would trade a working cell for a preference.</para>
+    /// </summary>
+    public string? Preview { get; set; }
+}
+
+/// <summary>The preview-mode vocabulary, in one place so the encoder and decoder cannot disagree.</summary>
+public static class PCellWirePreviewMode
+{
+    public const string Auto     = "auto";
+    public const string Deferred = "deferred";
 }
 
 /// <summary>The shape-kind vocabulary, in one place so the encoder and decoder cannot disagree.</summary>

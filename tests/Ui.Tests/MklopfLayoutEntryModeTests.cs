@@ -332,14 +332,20 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
 
         var defaultsB = new Dictionary<string, PCellValue>(defaults) { ["Z1"] = 25.0 };
         string cellDirB = GeneratedCellStore.GetOrCreate(_root, "MKLOPF", defaultsB, null, null, PCellLayerSelection.Default);
-        var instB = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDirB), X = 20_000_000, Y = 0, Mag = 1.0 };
+        // Placed clear of instA's own extent AND of its parameter grips. Its original position,
+        // 20 mm, is exactly where instA's `L` grip sits (the far end of a 20 mm taper), and a grip
+        // legitimately wins the press over whatever is underneath it — see
+        // pcell-parameter-handles.md R-pch-8 and PCellParameterHandleDragTests' own coverage of that
+        // interaction. Nothing about THIS test is concerned with grips; it moved so it can keep
+        // testing the entry-mode reset it is actually about.
+        var instB = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDirB), X = 40_000_000, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(instB);
 
         vm.OnPointerPressed(0, 0, Avalonia.Input.KeyModifiers.None); // select instA
         props.ToggleMklopfImpedanceEntryCommand.Execute(null);
         Assert.True(props.MklopfUsesWidthEntry);
 
-        vm.OnPointerPressed(20_000_000, 0, Avalonia.Input.KeyModifiers.None); // select instB
+        vm.OnPointerPressed(40_000_000, 0, Avalonia.Input.KeyModifiers.None); // select instB
         Assert.False(props.MklopfUsesWidthEntry);
     }
 }

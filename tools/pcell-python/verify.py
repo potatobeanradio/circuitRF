@@ -19,7 +19,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from circuitrf_pcell import (  # noqa: E402
+    DEFERRED,
+    CrossAxis,
     Edge,
+    Handle,
     WIRE_VERSION,
     Layer,
     Parameter,
@@ -147,6 +150,66 @@ check(path["edges"][1]["control"] == {"at": 4, "count": 4}, "a cubic's controls 
 raises(lambda: Polygon(Layer(1, 0), [0, 0]).to_json([]), "a one-point ring is refused")
 raises(lambda: Rect(Layer(1, 0), 0, 0, 1.5, 1).to_json([]), "a fractional rect corner is refused")
 
+# ── Handles (wire version 6) ─────────────────────────────────────────────────
+
+
+def _mkreg(preview=None):
+    """A one-generator registry whose Result carries `preview`, for the checks below."""
+    reg = Registry()
+
+    def _gen(params, tech):
+        kwargs = {"preview": preview} if preview is not None else {}
+        return Result(shapes=[], pins=[], **kwargs)
+
+    reg.add("P", [], _gen)
+    return reg
+
+
+print("handles")
+payload = []
+h = Handle("L", anchor=(0, 0), at=(3000000, 0), axis=0).to_json(payload)
+check(payload == [0, 0, 3000000, 0], "a handle's four coordinates go to the payload")
+check(h["span"] == {"at": 0, "count": 4}, "and the JSON carries only a span")
+check("3000000" not in json.dumps(h), "no handle coordinate value appears in the JSON")
+check(h["kind"] == "linear" and h["axisDeg"] == 0.0, "kind and axis default sensibly")
+check("label" not in h and "min" not in h, "unstated fields are absent, not null")
+
+bounded = Handle("W", anchor=(0, 0), at=(0, 5), axis=90, label="Width", min=1.5, max=9).to_json([])
+check(bounded["min"] == 1.5, "a bound is a parameter VALUE, so it may be fractional and stays in JSON")
+check(bounded["label"] == "Width", "a label crosses when stated")
+
+# A handle appended after shapes must not disturb their spans — one payload, appended in order.
+payload = []
+Rect(Layer(1, 0), 0, 0, 10, 10).to_json(payload)
+h2 = Handle("L", anchor=(0, 0), at=(10, 0), axis=0).to_json(payload)
+check(h2["span"] == {"at": 4, "count": 4}, "a handle's span starts after the shapes already appended")
+
+raises(
+    lambda: Handle("L", anchor=(0, 0), at=(1.5, 0), axis=0).to_json([]),
+    "a fractional handle coordinate is refused",
+)
+
+two_axis = Handle(
+    "L", anchor=(0, 0), at=(5000, 300), axis=0,
+    cross=CrossAxis("Offset", label="Off-axis", min=-1000, max=1000),
+).to_json([])
+check(two_axis["crossParameter"] == "Offset", "a two-axis grip names its cross parameter")
+check(two_axis["crossLabel"] == "Off-axis" and two_axis["crossMin"] == -1000, "with its own label and bounds")
+plain = Handle("L", anchor=(0, 0), at=(5000, 0), axis=0).to_json([])
+check("crossParameter" not in plain, "and an ordinary grip carries no cross axis at all")
+
+deferred_body = json.loads(
+    serve_one(
+        _mkreg(preview=DEFERRED),
+        json.dumps({"op": "generate", "generatorId": "P", "parameters": {}}),
+    )[0]
+)
+check(deferred_body["preview"] == "deferred", "a declared deferred preview crosses the wire")
+auto_body = json.loads(
+    serve_one(_mkreg(), json.dumps({"op": "generate", "generatorId": "P", "parameters": {}}))[0]
+)
+check("preview" not in auto_body, "and auto is omitted rather than written out")
+
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 
 print("dispatch")
@@ -198,6 +261,37 @@ crashed = json.loads(reply)
 check(not crashed["ok"], "an exception becomes a refusal, never a crashed process")
 check("turns must be at least 1" in crashed["error"], "and carries the generator's own message")
 check("Traceback" in crashed["error"], "with a traceback — this is the author's only view of it")
+
+gripped = Registry()
+
+
+def _gripped(params, tech):
+    l = params.length("L")
+    return Result(
+        shapes=[Rect(Layer(1, 0), 0, -50, l, 50)],
+        pins=[Pin("1", 0, 0, Layer(1, 0), 100, 180.0)],
+        handles=[Handle("L", anchor=(0, 0), at=(l, 0), axis=0)],
+    )
+
+
+gripped.add("GRIP", [Parameter.length("L")], _gripped)
+reply, pay = serve_one(gripped, json.dumps(
+    {"op": "generate", "generatorId": "GRIP", "parameters": {"L": 700}}))
+body = json.loads(reply)
+check(body["ok"] and len(body["handles"]) == 1, "a generate reply carries the declared handles")
+check(body["handles"][0]["parameter"] == "L", "and names the parameter it drives")
+span = body["handles"][0]["span"]
+check(pay[span["at"] + 2] == 700, "the handle's position rides in the same payload as the geometry")
+
+
+def _badhandle(params, tech):
+    return Result(shapes=[], pins=[], handles=["not a handle"])
+
+
+gripped.add("BADGRIP", [], _badhandle)
+reply, _ = serve_one(gripped, json.dumps({"op": "generate", "generatorId": "BADGRIP"}))
+check(not json.loads(reply)["ok"], "a non-Handle in handles is refused, not silently encoded")
+
 
 # ── Technology ───────────────────────────────────────────────────────────────
 

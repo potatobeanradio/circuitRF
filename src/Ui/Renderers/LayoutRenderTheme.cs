@@ -33,6 +33,10 @@ public sealed class LayoutRenderTheme
     /// copper.</summary>
     public SKColor PCellPin { get; init; }
 
+    /// <summary>A PCell instance's draggable parameter grip — its own colour, never the selection
+    /// accent or the pin colour, because it does a categorically different thing from both.</summary>
+    public SKColor PCellHandle { get; init; }
+
     /// <summary>brief-L6-L7-em-ui.md R-em-15 — the three EM mesh overlay colours. Conductor and
     /// dielectric-interface segments are visibly different because they are different unknowns
     /// (free vs. bound charge); the truncation marker is the R-mom-10 quantity a user has to be able
@@ -71,6 +75,7 @@ public sealed class LayoutRenderTheme
             Selection       = SK(ColorRole.LayoutSelection),
             Warning         = SK(ColorRole.SystemWarning),
             PCellPin        = SK(ColorRole.LayoutPCellPin),
+            PCellHandle     = SK(ColorRole.LayoutPCellHandle),
             EmMeshConductor  = SK(ColorRole.LayoutEmMeshConductor),
             EmMeshInterface  = SK(ColorRole.LayoutEmMeshInterface),
             EmMeshTruncation = SK(ColorRole.LayoutEmMeshTruncation),

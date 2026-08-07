@@ -41,6 +41,11 @@ public static class ColorRole
     /// reads as copper (or any other physical layer).</summary>
     public const string LayoutPCellPin = "Layout.PCellPin";
 
+    /// <summary>A PCell instance's draggable PARAMETER grip. Deliberately its own role rather than
+    /// reusing Layout.Selection or Layout.PCellPin: a grip edits a parameter, not geometry, and a
+    /// user who mistakes it for an L1d vertex handle is surprised in a way that is hard to undo.</summary>
+    public const string LayoutPCellHandle = "Layout.PCellHandle";
+
     /// <summary>brief-L6-L7-em-ui.md R-em-15: a CONDUCTOR segment in the EM mesh overlay.</summary>
     public const string LayoutEmMeshConductor = "Layout.EmMeshConductor";
 
@@ -85,7 +90,7 @@ public static class ColorRole
         SystemWarning,
         LayoutBackground, LayoutGridMinor, LayoutGridMajor,
         LayoutRulerBackground, LayoutRulerText, LayoutRulerTick, LayoutCursorIndicator,
-        LayoutSelection, LayoutPCellPin,
+        LayoutSelection, LayoutPCellPin, LayoutPCellHandle,
         LayoutEmMeshConductor, LayoutEmMeshInterface, LayoutEmMeshTruncation,
         LayoutPlanarMeshCell,
         LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived,
