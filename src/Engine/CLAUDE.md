@@ -1,5 +1,63 @@
 # Engine — local conventions
 
+## Batched external-device evaluation in the HB inner loop (brief-harmonicarf-h0-h3 M1, 2026-08-06)
+
+`HbNewton` now gathers a device's whole time grid and asks for it in ONE call when the model says an
+evaluation costs a round trip. **Built-in models take literally the statements they took before** —
+`ComponentModel.PrefersBatchEvaluate` is false for every one of them, and the engine branches on it,
+so a built-in device's result is bit-identical by construction rather than by tolerance.
+
+- **Measured, on this machine, taken alone, Release, warm-started across a 1 dB Pin step at K = 5
+  (32 grid samples, 3 Newton iterations):** external UNBATCHED **1.37 ms/solve**, external BATCHED
+  **0.48 ms/solve** (**2.8×**), built-in Hero-2 SDD **1.643 → 1.644 ms** — unmoved, as the code path
+  requires. The batched external figure is *faster than the built-in SDD*, because an amortised
+  round trip costs less than that SDD's expression-tree AD over 32 samples.
+- **The seam is `ComponentModel.EvaluateBatch(double[][])`** with a scalar-loop default, plus
+  `PrefersBatchEvaluate`. `ElaboratedComponent` carries both so the device multiplier stays applied
+  in exactly one place. `NonlinearDcEngine` and `HbNewton2D` can adopt it with no second design.
+- **The control-current form is always scalar.** `_c_ref(t)` is per-sample by construction and only
+  an SDD has one, which is never an external device.
+- **`ComputeDevicePortCurrents` batches too** — it is another whole grid per solve.
+- Gate: `tests/Harmonica.Tests/ExternalDeviceBatchingTests.cs`. Batched and unbatched HB results are
+  **bit-identical**, and "unbatched" is not a flag in the engine — it is a provider whose instances
+  expose only the scalar `Evaluate` and inherit `IExternalDeviceInstance.EvaluateBatch`'s default
+  loop, which is exactly what a provider that never implemented batching gets. **The fixture had to
+  be built**: `tools/fake-osdi-model`'s two devices are both LINEAR, so a Newton loop converges in
+  one or two iterations and understates any per-evaluation cost in exactly the ratio being measured.
+  A third device, `crf_fet` — a square-law FET with smooth pinch-off, a smooth triode→saturation
+  knee, Cgs/Cgd charge and three terminals — was added for it, with its closed form in the library's
+  own comment.
+- **Every hero golden is unmoved**: `Engine.Tests` 1,003 passed / 1 skipped, the only failure being
+  `Hero1BTests`' 10 s wall-clock budget under full-suite load, which `src/Engine/CLAUDE.md`'s L8a
+  entry already records as marginal on this machine independently of any phase, and which passes
+  alone in 2 s.
+
+## `LoadpullEngine.ComputeFoms` is PUBLIC (same brief, M5/M6)
+
+`FomResult` and `ComputeFoms` were private. harmonicaRF drives its own Pin search and must not
+re-derive a single FOM (§0.3 item 5), so the one definition of Pout / Pin_delivered / Gt / Gp is now
+shared rather than copied. It is a pure function of its arguments, so no existing caller's result
+moves — and it is what makes Tier 3's equivalence run a comparison of two SOLVES rather than of two
+formulas. `LoadpullEngine`'s own behaviour, its uniform Pin ladder and every Hero 3/3B golden are
+untouched.
+
+## `HbLinearExtractor.ExtractImpedance` — the open-port intermediate (same brief, M3)
+
+Additive, and nothing else in the repository calls it. It returns the interface IMPEDANCE matrix and
+the open-circuit voltages, i.e. the same extraction stopped one step before `Y = Z⁻¹`.
+
+**Why the intermediate is worth exposing.** `Y` is the right form for the Newton loop, whose
+interface is always TERMINATED and therefore well conditioned. It is the wrong form for a network
+whose ports are deliberately left OPEN — harmonicaRF's pre-terminated extraction — because an open
+port's driving-point impedance runs to the ideal bias choke's ~10 GΩ while a terminated one sits at
+tens of ohms, so `Z` spans eight or nine decades and inverting it spends them. Measured on
+harmonicaRF's fixture: closing the terminations after the inversion agreed with direct extraction to
+1e-4…1e-7; closing them in the impedance domain agrees to 1e-13. `Extract` and `ExtractDC` still
+compute exactly what they did.
+
+The constructor also gained an optional `extraInterfaceNodes`. Null — the default — is the shipped
+behaviour exactly: the interface is the nonlinear-facing nodes and nothing else.
+
 ## `Mom/` — G_A^zz's ceiling: M1 is a NEGATIVE result, M2 is the direct path (brief-gazz-accuracy-ceiling, 2026-08-06) — **M0+M1+M2+M4; M3 not started**
 
 Continues the M0 entry below. **Read `src/Engine/Mom/CLAUDE.md`'s own G_A^zz sections before touching

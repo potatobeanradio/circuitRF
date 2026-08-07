@@ -10,6 +10,58 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
+  <!--
+    TWO APPLICATIONS, ONE ASSEMBLY (docs/design/harmonicarf.md §3.1, route (b)).
+
+    circuitRF and harmonicaRF are the same code with a different Main and a different Application
+    object. Which one this build produces is `CrfApp`:
+
+        dotnet build                                  → circuitRF   (the default)
+        dotnet build   -p:CrfApp=harmonica            → harmonicaRF
+        dotnet publish -p:CrfApp=harmonica -r osx-arm64 (self-contained)
+
+    R-h8-5 — StartupObject is set EXPLICITLY for BOTH, never left to "there is only one Main". This
+    project sets TreatWarningsAsErrors, so the moment a second entry point compiles the build is
+    CS0017 without it; leaving the default case implicit is what breaks on the day the second Main
+    lands rather than on the day somebody is looking.
+
+    Size is NOT a difference between them and is not meant to be — §0.2 of brief-harmonicarf-h8
+    settled it: excluding the layout editor AND the MoM engine would save ~1.6 MB of 138, because a
+    ~95 MB .NET-plus-Avalonia floor dominates and no source split reaches it. The standalone binary
+    is the same size as circuitRF and that is the accepted outcome.
+  -->
+  <PropertyGroup>
+    <CrfApp Condition="'$(CrfApp)' == ''">circuitrf</CrfApp>
+
+    <StartupObject Condition="'$(CrfApp)' == 'circuitrf'">CircuitRF.Ui.Program</StartupObject>
+    <StartupObject Condition="'$(CrfApp)' == 'harmonica'">CircuitRF.Ui.ProgramHarmonica</StartupObject>
+
+    <!-- The ASSEMBLY NAME is deliberately the same for both, and this is not cosmetic: RfCore grants
+         InternalsVisibleTo("CircuitRF.Ui"), so renaming the assembly for the standalone build loses
+         SNP.CreateBroken / SNP.RefreshFrom and the Data Display half stops compiling. §3.1 says the
+         standalone binary IS src/Ui with a different Main; keeping one assembly name is what makes
+         that literally true. The bundle script names the .app, not the binary. -->
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CrfApp)' != 'circuitrf' and '$(CrfApp)' != 'harmonica'">
+    <!-- A typo in CrfApp must not silently build circuitRF and leave someone wondering why their
+         standalone binary opens a workspace. -->
+    <CrfAppInvalid>true</CrfAppInvalid>
+  </PropertyGroup>
+
+  <Target Name="CrfValidateApp" BeforeTargets="BeforeBuild" Condition="'$(CrfAppInvalid)' == 'true'">
+    <Error Text="CrfApp must be 'circuitrf' or 'harmonica'; got '$(CrfApp)'." />
+  </Target>
+
+  <!-- harmonicaRF's own macOS bundle identity (R-h8-9). Its own icon, its own Info.plist, its own
+       entitlements — macOS will not tolerate two applications claiming one bundle identifier, and
+       two apps sharing an icon is its own kind of wrong. -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(CrfApp)' == 'harmonica'">
+    <MacOSXBundleIcon>Assets/harmonicaRFIcon.icns</MacOSXBundleIcon>
+    <MacOSXBundleInfoPlist>Assets/macOS/Harmonica-Info.plist</MacOSXBundleInfoPlist>
+    <CodeSignEntitlements>Assets/macOS/Entitlements.plist</CodeSignEntitlements>
+  </PropertyGroup>
+
   <!-- Windows: embeds the icon into the .exe PE resources -->
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) and Exists('Assets\circuitRFIcon.ico')">
     <ApplicationIcon>Assets\circuitRFIcon.ico</ApplicationIcon>
@@ -32,7 +84,7 @@
   </PropertyGroup>
 
   <!-- macOS: Info.plist, Entitlements, icon -->
-  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(CrfApp)' == 'circuitrf'">
     <MacOSXBundleIcon>Assets/circuitRFIcon.icns</MacOSXBundleIcon>
     <MacOSXBundleInfoPlist>Assets/macOS/Info.plist</MacOSXBundleInfoPlist>
     <CodeSignEntitlements>Assets/macOS/Entitlements.plist</CodeSignEntitlements>
@@ -72,6 +124,10 @@
     <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
     <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />
     <ProjectReference Include="../RfCore/RfCore.csproj" />
+    <!-- harmonicaRF's framework-free half. The dependency runs ONE way only: src/Ui consumes
+         src/Harmonica, never the reverse — src/Harmonica is on the far side of the UI firewall and
+         tests/Firewall.Tests asserts it references no Avalonia (docs/design/harmonicarf.md §3.2). -->
+    <ProjectReference Include="../Harmonica/CircuitRF.Harmonica.csproj" />
   </ItemGroup>
 
   <ItemGroup>

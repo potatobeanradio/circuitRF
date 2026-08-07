@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    harmonicaRF's framework-free half (docs/design/harmonicarf.md §3.1). The circuit model, the solve
+    orchestrator, the intrinsic plane, the contour grid, .charm I/O and the published DataSet.
+
+    NO UI FRAMEWORK MAY EVER BE REFERENCED HERE. That is an enforced invariant, not a convention —
+    tests/Firewall.Tests asserts it for this assembly alongside RfCore, Core, Engine and Cli.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>CircuitRF.Harmonica</AssemblyName>
+    <RootNamespace>CircuitRF.Harmonica</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
+    <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />
+    <ProjectReference Include="../RfCore/RfCore.csproj" />
+  </ItemGroup>
+
+</Project>

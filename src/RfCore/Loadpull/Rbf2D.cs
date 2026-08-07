@@ -16,6 +16,13 @@
 //  NumFlat for small N due to zero call overhead).
 //
 //  Hot path (Evaluate) is allocation-free; ctor may allocate.
+//
+//  Rbf2D.Factorize / Rbf2D.Factored (2026-08-06, brief-harmonicarf-h0-h3 R-hrf-9) is an ADDITIVE
+//  second entry point: the kernel matrix depends only on node POSITIONS, so its LDLt factorization
+//  is reusable across value vectors — two metrics on one grid, or successive frames of a drag.
+//  Solve() is BIT-IDENTICAL to the constructor because it runs the same factors through the same
+//  solve. The NaN mask is part of the key: the constructor DROPS NaN nodes, so which nodes exist
+//  depends on the values after all. The constructor itself is untouched.
 // ================================================================
 
 using System;
@@ -126,6 +133,172 @@ public sealed class Rbf2D
 
         double[] rhs = (double[])_nodeValues.Clone();
         LdltSolve(work, rhs, _weights, _n);
+    }
+
+    // ================================================================
+    //  Private ctor used by Factored.Solve — everything already computed.
+    // ================================================================
+    private Rbf2D(double[] nodesRe, double[] nodesIm, double[] nodeValues, double[] weights,
+        double epsilon, RbfKernel kernel, IReadOnlyList<int> usedIndices)
+    {
+        _nodesRe     = nodesRe;
+        _nodesIm     = nodesIm;
+        _nodeValues  = nodeValues;
+        _weights     = weights;
+        _epsilon     = epsilon;
+        _kernel      = kernel;
+        _n           = nodesRe.Length;
+        _usedIndices = usedIndices;
+    }
+
+    // ================================================================
+    //  Factored — the kernel factorization, reusable across value vectors
+    // ================================================================
+
+    /// <summary>
+    /// An LDLᵀ-factored kernel matrix, re-solvable with a new value vector.
+    ///
+    /// <para><b>Why this is possible at all.</b> The expensive half of a fit depends only on node
+    /// POSITIONS: the kernel matrix is built from (re, im) and the epsilon default is a function of
+    /// their bounding box, so the O(n³) factorization is independent of the values, which enter only
+    /// as the right-hand side. Two metrics on one grid — power and efficiency — therefore share one
+    /// factorization, and so do successive frames of a termination drag, during which the grid
+    /// positions do not move and only the values change.</para>
+    ///
+    /// <para><b>The NaN mask is part of the key, and that is the subtle part.</b> A fit DROPS nodes
+    /// whose value is NaN before building anything, so which nodes exist depends on the values after
+    /// all. A point crossing in or out of a compression hole changes the node set and invalidates the
+    /// factor. <see cref="MatchesNaNMask"/> is the cheap check; a caller that skips it and re-solves
+    /// anyway gets a refusal rather than a plausible wrong surface.</para>
+    ///
+    /// <para>Purely ADDITIVE: the existing constructor is untouched and still on the critical path of
+    /// the shipping loadpull contour display. <see cref="Solve"/> produces BIT-IDENTICAL weights to
+    /// it, because it runs the same factorization through the same solve.</para>
+    /// </summary>
+    public sealed class Factored
+    {
+        private readonly double[] _work;        // LDLᵀ factors, or null-ish when the factor failed
+        private readonly bool     _ok;
+        private readonly bool[]   _presentMask; // over the FULL node set, as supplied
+
+        internal Factored(double[] work, bool ok, bool[] presentMask,
+            double[] nodesRe, double[] nodesIm, double epsilon, RbfKernel kernel,
+            IReadOnlyList<int> usedIndices)
+        {
+            _work        = work;
+            _ok          = ok;
+            _presentMask = presentMask;
+            NodesRe      = nodesRe;
+            NodesIm      = nodesIm;
+            Epsilon      = epsilon;
+            Kernel       = kernel;
+            UsedIndices  = usedIndices;
+        }
+
+        public double[] NodesRe { get; }
+        public double[] NodesIm { get; }
+        public double   Epsilon { get; }
+        public RbfKernel Kernel { get; }
+
+        /// <summary>Indices into the FULL node set that survived the NaN drop.</summary>
+        public IReadOnlyList<int> UsedIndices { get; }
+
+        public int NodeCount => NodesRe.Length;
+
+        /// <summary>Whether the factorization succeeded; a failed one solves to zero weights.</summary>
+        public bool IsUsable => _ok;
+
+        /// <summary>
+        /// True when <paramref name="values"/> has exactly the NaN pattern this factor was built for.
+        /// A caller must check this before re-solving — see the class remarks.
+        /// </summary>
+        public bool MatchesNaNMask(ReadOnlySpan<double> values)
+        {
+            if (values.Length != _presentMask.Length) return false;
+            for (int i = 0; i < values.Length; i++)
+                if (!double.IsNaN(values[i]) != _presentMask[i]) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Re-solves against this factorization. <paramref name="values"/> is over the FULL node set,
+        /// in the order the factor was built from.
+        /// </summary>
+        public Rbf2D Solve(ReadOnlySpan<double> values)
+        {
+            if (!MatchesNaNMask(values))
+                throw new ArgumentException(
+                    "This factorization was built for a different set of present nodes. The kernel " +
+                    "matrix is over the nodes that SURVIVED the NaN drop, so a value vector with a " +
+                    "different NaN pattern needs a new factorization — call Factorize again.",
+                    nameof(values));
+
+            int n = NodeCount;
+            var nodeValues = new double[n];
+            for (int i = 0; i < n; i++) nodeValues[i] = values[UsedIndices[i]];
+
+            var weights = new double[n];
+            if (_ok && n > 0)
+            {
+                double[] rhs = (double[])nodeValues.Clone();
+                LdltSolve(_work, rhs, weights, n);
+            }
+
+            return new Rbf2D(NodesRe, NodesIm, nodeValues, weights, Epsilon, Kernel, UsedIndices);
+        }
+    }
+
+    /// <summary>
+    /// Factorizes the kernel matrix for a node set, ready to be re-solved against any value vector
+    /// with the same NaN pattern. <paramref name="values"/> is used ONLY to establish that pattern.
+    /// </summary>
+    public static Factored Factorize(
+        ReadOnlySpan<double> xRe, ReadOnlySpan<double> xIm, ReadOnlySpan<double> values,
+        RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
+    {
+        int total = xRe.Length;
+        var mask    = new bool[total];
+        var usedIdx = new List<int>(total);
+        var reList  = new List<double>(total);
+        var imList  = new List<double>(total);
+
+        for (int i = 0; i < total; i++)
+        {
+            mask[i] = !double.IsNaN(values[i]);
+            if (!mask[i]) continue;
+            usedIdx.Add(i);
+            reList.Add(xRe[i]);
+            imList.Add(xIm[i]);
+        }
+
+        double[] re = reList.ToArray(), im = imList.ToArray();
+        int n = usedIdx.Count;
+
+        if (n == 0)
+            return new Factored([], false, mask, re, im, 1.0, kernel, usedIdx.AsReadOnly());
+
+        // Everything below mirrors the constructor exactly, statement for statement, so that a
+        // re-solve is bit-identical to a full rebuild rather than merely close to one.
+        double eps = epsilon ?? ComputeEpsilon(re, im, n);
+
+        double[] a = BuildKernelMatrix(re, im, n, eps, kernel);
+        for (int i = 0; i < n; i++) a[i * n + i] -= smooth;
+
+        double trace = 0.0;
+        for (int i = 0; i < n; i++) trace += a[i * n + i];
+
+        double[] work = (double[])a.Clone();
+        bool ok = LdltFactor(work, n);
+
+        if (!ok)
+        {
+            double ridge = Math.Abs(trace) > 0 ? 1e-12 * trace / n : 1e-12;
+            work = (double[])a.Clone();
+            for (int i = 0; i < n; i++) work[i * n + i] += ridge;
+            ok = LdltFactor(work, n);
+        }
+
+        return new Factored(work, ok, mask, re, im, eps, kernel, usedIdx.AsReadOnly());
     }
 
     // ================================================================

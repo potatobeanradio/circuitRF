@@ -172,7 +172,10 @@ public class LayoutLabelOwnerFollowUpFixesTests : IDisposable
     [Fact]
     public void AppAxaml_GlobalButtonStyle_CentersContentHorizontally()
     {
-        string src = ReadRepoFile(Path.Combine("src", "Ui", "App.axaml"));
+        // Moved into the shared style file at H8 (two Applications, one style set — R-h8-6). The
+        // global Button rule itself is unchanged, and this is still the scan that stops it going
+        // back to being fixed dialog-by-dialog.
+        string src = ReadRepoFile(Path.Combine("src", "Ui", "Styles", "CircuitRfStyles.axaml"));
         int styleStart = src.IndexOf("Style Selector=\"Button\"", StringComparison.Ordinal);
         Assert.True(styleStart >= 0, "expected a global Style Selector=\"Button\" in App.axaml");
         int styleEnd = src.IndexOf("</Style>", styleStart, StringComparison.Ordinal);

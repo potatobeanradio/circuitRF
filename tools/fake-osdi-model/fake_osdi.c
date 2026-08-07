@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 
 #include "../osdi-worker/osdi.h"
@@ -367,11 +368,245 @@ static OsdiNodePair col_collapsible[] = {
     { 2, UINT32_MAX },   /* T to ground, when sh == 0 */
 };
 
+/* ── device 3: "crf_fet" — a NONLINEAR three-terminal FET with charge ──────────
+ *
+ * WHY A THIRD DEVICE. The two above are both LINEAR, which is fine for everything they were written
+ * for and useless for measuring what harmonic balance costs: a linear device's Newton loop converges
+ * in one or two iterations, so it evaluates a fraction of the operating points a real transistor
+ * does, and any per-evaluation cost measured against it is understated in exactly the ratio that
+ * matters. This device generates harmonics, stores charge, and has three terminals — the shape a
+ * PA's DUT actually has.
+ *
+ * IT IS STILL NOT A MODEL. The closed form is written here and a test asserts against the
+ * arithmetic, exactly as for the other two.
+ *
+ * Nodes:  0 = G   1 = D   2 = S    (three terminals, no internal nodes)
+ *
+ *   vgs = v0 - v2      vds = v1 - v2      vgd = v0 - v1
+ *
+ *   vov  = ½( (vgs - vth) + sqrt((vgs - vth)² + delta²) )      smooth positive part
+ *   sat  = x / sqrt(1 + x²)        with x = alpha·vds          smooth triode → saturation
+ *   id   = beta · vov² · (1 + lambda·vds) · sat
+ *   ig   = ggs · vgs
+ *
+ *   I[G] = ig      I[D] = id      I[S] = −(ig + id)
+ *   Q[G] = cgs·vgs + cgd·vgd      Q[D] = −cgd·vgd      Q[S] = −cgs·vgs
+ *
+ * Derivatives, in the same coordinates:
+ *
+ *   dvov/dvgs = ½( 1 + (vgs − vth)/sqrt((vgs − vth)² + delta²) )
+ *   gm   = ∂id/∂vgs = 2·beta·vov·(dvov/dvgs)·(1 + lambda·vds)·sat
+ *   gds  = ∂id/∂vds = beta·vov²·[ lambda·sat + (1 + lambda·vds)·alpha·(1 + x²)^(−3/2) ]
+ *
+ * `sat` is written with a square root rather than tanh on purpose: the smoothing only has to be
+ * C-infinity and odd, and this form keeps the library free of any libm call a platform might not
+ * inline. Nothing physical rests on the choice.
+ */
+
+typedef struct {
+    double beta;    /* model param, A/V^2 */
+    double vth;     /* model param, V     */
+    double lambda;  /* model param, 1/V   */
+    double alpha;   /* model param, 1/V   */
+    double delta;   /* model param, V — the smoothing width at pinch-off */
+    double cgs;     /* model param, F     */
+    double cgd;     /* model param, F     */
+    double ggs;     /* model param, S — a small real gate conduction */
+} FetModel;
+
+typedef struct {
+    double   mult;              /* instance param */
+
+    uint32_t node_mapping[3];
+    double  *jac_resist[9];
+    double  *jac_react[9];
+    bool     collapsed[1];      /* no collapsible pairs; kept so the offset is real */
+
+    double   resid_resist[3];
+    double   resid_react[3];
+
+    /* Cached per-eval derivatives, handed to the Jacobian loaders. */
+    double   d_gm, d_gds, d_ggs;
+    double   d_cgs, d_cgd;
+} FetInst;
+
+static void *fet_access(void *inst, void *model, uint32_t id, uint32_t flags) {
+    (void)flags;
+    FetModel *m = (FetModel *)model;
+    FetInst  *i = (FetInst *)inst;
+    switch (id) {
+        case 0: return m ? (void *)&m->beta   : NULL;
+        case 1: return m ? (void *)&m->vth    : NULL;
+        case 2: return m ? (void *)&m->lambda : NULL;
+        case 3: return m ? (void *)&m->alpha  : NULL;
+        case 4: return m ? (void *)&m->delta  : NULL;
+        case 5: return m ? (void *)&m->cgs    : NULL;
+        case 6: return m ? (void *)&m->cgd    : NULL;
+        case 7: return m ? (void *)&m->ggs    : NULL;
+        case 8: return i ? (void *)&i->mult   : NULL;
+        default: return NULL;
+    }
+}
+
+static void fet_setup_model(void *handle, void *model, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)sim;
+    FetModel *m = (FetModel *)model;
+    /* A host that sets nothing must get a working transistor, not a dead one. */
+    if (m->beta   == 0.0) m->beta   = 0.06;
+    if (m->vth    == 0.0) m->vth    = -2.5;
+    if (m->lambda == 0.0) m->lambda = 0.02;
+    if (m->alpha  == 0.0) m->alpha  = 1.5;
+    if (m->delta  == 0.0) m->delta  = 0.2;
+    if (m->cgs    == 0.0) m->cgs    = 2.0e-12;
+    if (m->cgd    == 0.0) m->cgd    = 0.2e-12;
+    if (m->ggs    == 0.0) m->ggs    = 1.0e-6;
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+}
+
+static void fet_setup_instance(void *handle, void *inst, void *model, double temperature,
+                               uint32_t num_terminals, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)model; (void)temperature; (void)num_terminals; (void)sim;
+    FetInst *i = (FetInst *)inst;
+    if (i->mult == 0.0) i->mult = 1.0;
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+}
+
+static uint32_t fet_eval(void *handle, void *inst, const void *model, const OsdiSimInfo *info) {
+    (void)handle;
+    const FetModel *m = (const FetModel *)model;
+    FetInst  *i = (FetInst *)inst;
+
+    double v0 = info->prev_solve[i->node_mapping[0]];
+    double v1 = info->prev_solve[i->node_mapping[1]];
+    double v2 = info->prev_solve[i->node_mapping[2]];
+
+    double vgs = v0 - v2, vds = v1 - v2, vgd = v0 - v1;
+    double mu  = i->mult;
+
+    double u    = vgs - m->vth;
+    double root = sqrt(u * u + m->delta * m->delta);
+    double vov  = 0.5 * (u + root);
+    double dvov = 0.5 * (1.0 + u / root);
+
+    double x    = m->alpha * vds;
+    double s    = 1.0 / sqrt(1.0 + x * x);
+    double sat  = x * s;
+    double dsat = m->alpha * s * s * s;          /* d(sat)/d(vds) = alpha·(1+x²)^(−3/2) */
+
+    double chan = 1.0 + m->lambda * vds;
+
+    double id  = m->beta * vov * vov * chan * sat;
+    double gm  = 2.0 * m->beta * vov * dvov * chan * sat;
+    double gds = m->beta * vov * vov * (m->lambda * sat + chan * dsat);
+    double ig  = m->ggs * vgs;
+
+    i->resid_resist[0] =  mu * ig;
+    i->resid_resist[1] =  mu * id;
+    i->resid_resist[2] = -mu * (ig + id);
+
+    i->resid_react[0] =  mu * (m->cgs * vgs + m->cgd * vgd);
+    i->resid_react[1] = -mu * (m->cgd * vgd);
+    i->resid_react[2] = -mu * (m->cgs * vgs);
+
+    i->d_gm  = mu * gm;
+    i->d_gds = mu * gds;
+    i->d_ggs = mu * m->ggs;
+    i->d_cgs = mu * m->cgs;
+    i->d_cgd = mu * m->cgd;
+    return 0;
+}
+
+/* Entries, in the declared order: (0,0) (0,1) (0,2) (1,0) (1,1) (1,2) (2,0) (2,1) (2,2) */
+static void fet_load_jacobian_resist(void *inst, void *model) {
+    (void)model;
+    FetInst *i = (FetInst *)inst;
+    double gm = i->d_gm, gds = i->d_gds, gg = i->d_ggs;
+    double j[9] = {
+         gg,        0.0,   -gg,
+         gm,        gds,   -(gm + gds),
+        -(gg + gm), -gds,   gg + gm + gds,
+    };
+    for (int k = 0; k < 9; k++) if (i->jac_resist[k]) *i->jac_resist[k] += j[k];
+}
+
+static void fet_load_jacobian_react(void *inst, void *model, double alpha) {
+    (void)model;
+    FetInst *i = (FetInst *)inst;
+    double cgs = i->d_cgs * alpha, cgd = i->d_cgd * alpha;
+    double j[9] = {
+        cgs + cgd, -cgd, -cgs,
+        -cgd,       cgd,  0.0,
+        -cgs,       0.0,  cgs,
+    };
+    for (int k = 0; k < 9; k++) if (i->jac_react[k]) *i->jac_react[k] += j[k];
+}
+
+static void fet_load_residual_resist(void *inst, void *model, double *dst) {
+    (void)model;
+    FetInst *i = (FetInst *)inst;
+    for (uint32_t k = 0; k < 3; k++) dst[i->node_mapping[k]] += i->resid_resist[k];
+}
+
+static void fet_load_residual_react(void *inst, void *model, double *dst) {
+    (void)model;
+    FetInst *i = (FetInst *)inst;
+    for (uint32_t k = 0; k < 3; k++) dst[i->node_mapping[k]] += i->resid_react[k];
+}
+
+static char *fet_name_beta[]   = { (char *)"beta"   };
+static char *fet_name_vth[]    = { (char *)"vth"    };
+static char *fet_name_lambda[] = { (char *)"lambda" };
+static char *fet_name_alpha[]  = { (char *)"alpha"  };
+static char *fet_name_delta[]  = { (char *)"delta"  };
+static char *fet_name_cgs[]    = { (char *)"cgs"    };
+static char *fet_name_cgd[]    = { (char *)"cgd"    };
+static char *fet_name_ggs[]    = { (char *)"ggs"    };
+static char *fet_name_mult[]   = { (char *)"mult"   };
+
+static OsdiParamOpvar fet_params[] = {
+    { fet_name_beta,   0, (char *)"transconductance parameter", (char *)"A/V^2", PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_vth,    0, (char *)"threshold voltage",          (char *)"V",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_lambda, 0, (char *)"output slope",               (char *)"1/V",   PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_alpha,  0, (char *)"saturation knee",            (char *)"1/V",   PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_delta,  0, (char *)"pinch-off smoothing width",  (char *)"V",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_cgs,    0, (char *)"gate-source capacitance",    (char *)"F",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_cgd,    0, (char *)"gate-drain capacitance",     (char *)"F",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_ggs,    0, (char *)"gate conductance",           (char *)"S",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { fet_name_mult,   0, (char *)"multiplier",                 (char *)"",      PARA_TY_REAL | PARA_KIND_INST,  1 },
+};
+
+static OsdiNode fet_nodes[] = {
+    { (char *)"G", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(FetInst, resid_resist[0]),
+      (uint32_t)offsetof(FetInst, resid_react[0]),
+      UINT32_MAX, UINT32_MAX, false },
+    { (char *)"D", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(FetInst, resid_resist[1]),
+      (uint32_t)offsetof(FetInst, resid_react[1]),
+      UINT32_MAX, UINT32_MAX, false },
+    { (char *)"S", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(FetInst, resid_resist[2]),
+      (uint32_t)offsetof(FetInst, resid_react[2]),
+      UINT32_MAX, UINT32_MAX, false },
+};
+
+static OsdiJacobianEntry fet_jacobian[] = {
+    { { 0, 0 }, (uint32_t)offsetof(FetInst, jac_react[0]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 0, 1 }, (uint32_t)offsetof(FetInst, jac_react[1]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 0, 2 }, (uint32_t)offsetof(FetInst, jac_react[2]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 1, 0 }, (uint32_t)offsetof(FetInst, jac_react[3]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 1, 1 }, (uint32_t)offsetof(FetInst, jac_react[4]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 1, 2 }, (uint32_t)offsetof(FetInst, jac_react[5]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 2, 0 }, (uint32_t)offsetof(FetInst, jac_react[6]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 2, 1 }, (uint32_t)offsetof(FetInst, jac_react[7]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+    { { 2, 2 }, (uint32_t)offsetof(FetInst, jac_react[8]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
+};
+
 /* ── the exports the ABI is discovered through ───────────────────────────────── */
 
 uint32_t OSDI_VERSION_MAJOR = OSDI_VERSION_MAJOR_CURR;
 uint32_t OSDI_VERSION_MINOR = OSDI_VERSION_MINOR_CURR;
-uint32_t OSDI_NUM_DESCRIPTORS = 2;
+uint32_t OSDI_NUM_DESCRIPTORS = 3;
 uint32_t OSDI_DESCRIPTOR_SIZE = sizeof(OsdiDescriptor);
 
 OsdiDescriptor OSDI_DESCRIPTORS[] = {
@@ -475,6 +710,57 @@ OsdiDescriptor OSDI_DESCRIPTORS[] = {
         .load_spice_rhs_tran   = NULL,
         .load_jacobian_resist  = col_load_jacobian_resist,
         .load_jacobian_react   = NULL,
+        .load_jacobian_tran    = NULL,
+    },
+    {
+        .name = (char *)"crf_fet",
+
+        .num_nodes     = 3,
+        .num_terminals = 3,
+        .nodes         = fet_nodes,
+
+        .num_jacobian_entries = 9,
+        .jacobian_entries     = fet_jacobian,
+
+        .num_collapsible  = 0,
+        .collapsible      = NULL,
+        .collapsed_offset = (uint32_t)offsetof(FetInst, collapsed),
+
+        .noise_sources  = NULL,
+        .num_noise_src  = 0,
+
+        .num_params          = 9,   /* beta, vth, lambda, alpha, delta, cgs, cgd, ggs, mult */
+        .num_instance_params = 1,   /* mult */
+        .num_opvars          = 0,
+        .param_opvar         = fet_params,
+
+        .node_mapping_offset        = (uint32_t)offsetof(FetInst, node_mapping),
+        .jacobian_ptr_resist_offset = (uint32_t)offsetof(FetInst, jac_resist),
+
+        .num_states    = 0,
+        .state_idx_off = 0,
+
+        .bound_step_offset = 0,
+
+        .instance_size = sizeof(FetInst),
+        .model_size    = sizeof(FetModel),
+
+        .access = fet_access,
+
+        .setup_model    = fet_setup_model,
+        .setup_instance = fet_setup_instance,
+
+        .eval = fet_eval,
+
+        .load_noise            = NULL,
+        .load_residual_resist  = fet_load_residual_resist,
+        .load_residual_react   = fet_load_residual_react,
+        .load_limit_rhs_resist = NULL,
+        .load_limit_rhs_react  = NULL,
+        .load_spice_rhs_dc     = NULL,
+        .load_spice_rhs_tran   = NULL,
+        .load_jacobian_resist  = fet_load_jacobian_resist,
+        .load_jacobian_react   = fet_load_jacobian_react,
         .load_jacobian_tran    = NULL,
     },
 };

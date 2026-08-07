@@ -1,0 +1,36 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CircuitRF.Ui.HarmonicaApp"
+             Name="harmonicaRF"
+             RequestedThemeVariant="Default">
+
+    <!--
+      harmonicaRF's own Application (harmonicarf.md §3.1, route (b)).
+
+      It is the SAME ASSEMBLY as circuitRF with a different Main and a different Application — not a
+      different build of the display layer. What differs is deliberately small: no workspace, no Dock
+      layout, no launch action, no .crfw. What must NOT differ is the style and resource set, because
+      the ways that fails are silent (§7.9.4: omit the ColorPicker Fluent theme and ColorView renders
+      as an empty box with no error). Both Applications include the SAME two files below, so this is
+      a superset by construction rather than by anyone remembering to mirror an addition — R-h8-6.
+    -->
+
+    <!-- macOS app menu. harmonicaRF has no Settings dialog of its own, so About only. -->
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="About harmonicaRF…"/>
+        </NativeMenu>
+    </NativeMenu.Menu>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://CircuitRF.Ui/Styles/CircuitRfResources.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <StyleInclude Source="avares://CircuitRF.Ui/Styles/CircuitRfStyles.axaml"/>
+    </Application.Styles>
+</Application>

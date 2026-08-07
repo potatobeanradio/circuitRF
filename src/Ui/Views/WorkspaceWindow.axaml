@@ -165,6 +165,17 @@
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
 
+            <!-- Tools (D10 / R-h45-13). Moved forward from H7 deliberately: a document nobody can
+                 open cannot be tested through the product path. H7 fills this out; today it has one
+                 entry. Note harmonicaRF needs NO workspace (§1.2), so there is no gating here. -->
+            <NativeMenuItem Header="Tools">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
             <!-- Window: populated in code-behind (RebuildNativeWindowMenu) from the SAME
                  EnumerateWindowEntries() the in-window menu uses, so the two surfaces cannot
                  disagree about contents or order. -->
@@ -565,6 +576,16 @@
                 <MenuItem Header="_Stop"
                           Command="{Binding StopAnalysisCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="Stop" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+
+            <!-- Tools (D10 / R-h45-13) — hand-mirrored with the macOS NativeMenu above, as every
+                 other menu on these two surfaces is. -->
+            <MenuItem Header="_Tools" Padding="8,4">
+                <MenuItem Header="_harmonicaRF"
+                          Command="{Binding NewHarmonicaCommand}"
+                          ToolTip.Tip="Interactive harmonic-termination explorer. Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

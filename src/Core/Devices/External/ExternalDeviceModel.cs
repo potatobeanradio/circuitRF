@@ -80,19 +80,62 @@ public sealed class ExternalDeviceModel : ComponentModel
         int n = Descriptor.NodeCount;
         for (int k = 0; k < n; k++) _scratch[k] = v[k];
 
-        ExternalDeviceEvaluation r;
+        ExternalDeviceEvaluation r = Guarded(() => _instance.Evaluate(_scratch));
+
+        Check(r, n);
+        return new NonlinearResult(r.Current, r.Charge, r.Conductance, r.Capacitance);
+    }
+
+    /// <summary>
+    /// An external evaluation is a round trip, so this is the one model in the repository for which
+    /// gathering the whole set first is worth doing — see <see cref="ComponentModel.PrefersBatchEvaluate"/>.
+    /// </summary>
+    public override bool PrefersBatchEvaluate => true;
+
+    /// <summary>
+    /// One round trip for the whole set. <c>IExternalDeviceInstance.EvaluateBatch</c> carries a
+    /// scalar-loop default, so a provider that has nothing cheaper needs no change and still gets
+    /// exactly the numbers it would have returned point by point.
+    /// </summary>
+    public override IReadOnlyList<NonlinearResult> EvaluateBatch(double[][] portVoltages)
+    {
+        int n     = Descriptor.NodeCount;
+        int count = portVoltages.Length;
+        if (count == 0) return [];
+
+        IReadOnlyList<ExternalDeviceEvaluation> rs = Guarded(() => _instance.EvaluateBatch(portVoltages));
+
+        if (rs.Count != count)
+            throw new ExternalDeviceException(
+                $"External device '{InstanceLabel}' (provider '{ProviderName}', type " +
+                $"'{Descriptor.TypeId}') was asked for {count} evaluation points and returned {rs.Count}.");
+
+        var results = new NonlinearResult[count];
+        for (int k = 0; k < count; k++)
+        {
+            Check(rs[k], n);
+            results[k] = new NonlinearResult(rs[k].Current, rs[k].Charge, rs[k].Conductance, rs[k].Capacitance);
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Runs one provider call, attaching this instance's label to whatever comes back.
+    ///
+    /// <para>The worker can only name the TYPE, and that is not enough as soon as a design holds
+    /// several devices of one type — one kit's package holds five, wired differently, two of
+    /// them with gate and drain shorted and a thermal node joined to nothing else. Which instance
+    /// failed is the first thing anyone asks, and this is the only layer that knows.</para>
+    /// </summary>
+    private T Guarded<T>(Func<T> call)
+    {
         try
         {
-            r = _instance.Evaluate(_scratch);
+            return call();
         }
         catch (ExternalDeviceException ex)
         {
-            // The worker can only name the TYPE, and that is not enough as soon as a design holds
-            // several devices of one type — this kit's package holds five, wired differently, two of
-            // them with gate and drain shorted and a thermal node joined to nothing else. Which
-            // instance failed is the first thing anyone asks, and this is the only layer that knows.
-            throw new ExternalDeviceException(
-                $"External device '{InstanceLabel}': {ex.Message}", ex);
+            throw new ExternalDeviceException($"External device '{InstanceLabel}': {ex.Message}", ex);
         }
         catch (Exception ex)
         {
@@ -100,14 +143,17 @@ public sealed class ExternalDeviceModel : ComponentModel
                 $"External device '{InstanceLabel}' (provider '{ProviderName}', type " +
                 $"'{Descriptor.TypeId}') failed during evaluation: {ex.Message}", ex);
         }
+    }
 
-        if (r.Current.Length != n || r.Conductance.GetLength(0) != n || r.Conductance.GetLength(1) != n)
-            throw new ExternalDeviceException(
-                $"External device '{InstanceLabel}' (provider '{ProviderName}', type " +
-                $"'{Descriptor.TypeId}') returned {r.Current.Length} currents and a " +
-                $"{r.Conductance.GetLength(0)}×{r.Conductance.GetLength(1)} conductance matrix " +
-                $"for a {n}-node device.");
+    private void Check(in ExternalDeviceEvaluation r, int n)
+    {
+        if (r.Current.Length == n && r.Conductance.GetLength(0) == n && r.Conductance.GetLength(1) == n)
+            return;
 
-        return new NonlinearResult(r.Current, r.Charge, r.Conductance, r.Capacitance);
+        throw new ExternalDeviceException(
+            $"External device '{InstanceLabel}' (provider '{ProviderName}', type " +
+            $"'{Descriptor.TypeId}') returned {r.Current.Length} currents and a " +
+            $"{r.Conductance.GetLength(0)}×{r.Conductance.GetLength(1)} conductance matrix " +
+            $"for a {n}-node device.");
     }
 }

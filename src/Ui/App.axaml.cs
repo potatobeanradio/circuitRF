@@ -151,10 +151,14 @@ public partial class App : Application
 
             if (startupPaths.Length > 0)
             {
-                // Load workspace files on startup (Windows/Linux).
-                // For now: just show the window; workspace loading is a stub in 6b.
-                // Launch action skipped — startup file args take precedence.
+                // Startup file args take precedence over the launch action. Deferred to Background so
+                // the window is realised first — OpenFiles reaches the workspace view model, and a
+                // workspace switch rebuilds the dock layout the window is showing.
                 firstWindow.Show();
+                var startupVm = (WorkspaceViewModel)firstWindow.DataContext!;
+                Avalonia.Threading.Dispatcher.UIThread.Post(
+                    () => OpenFiles(startupVm, startupPaths),
+                    Avalonia.Threading.DispatcherPriority.Background);
             }
             else if (OperatingSystem.IsMacOS())
             {
@@ -201,8 +205,15 @@ public partial class App : Application
         // Show the first window if not yet visible.
         if (!firstWindow.IsVisible)
             firstWindow.Show();
-        // Workspace file loading from Apple Events: stub for 6b (6c wires it).
-        _ = fileArgs; // suppress unused warning
+
+        var paths = fileArgs.Files
+            .Select(f => f.Path?.LocalPath)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p!)
+            .ToArray();
+
+        if (paths.Length > 0 && firstWindow.DataContext is WorkspaceViewModel vm)
+            OpenFiles(vm, paths);
     }
 
     // Called by Program.cs named-pipe server (Windows second-instance forwarding).
@@ -211,11 +222,48 @@ public partial class App : Application
 
     private void HandleFilesInternal(string[] paths)
     {
-        // Show an existing or new workspace window and load the files (stub in 6b).
         var w = _desktop?.Windows.OfType<WorkspaceWindow>().FirstOrDefault()
                 ?? new WorkspaceWindow { DataContext = new WorkspaceViewModel() };
         if (!w.IsVisible) w.Show();
-        _ = paths; // stub: workspace loading wired in 6c
+        if (w.DataContext is WorkspaceViewModel vm) OpenFiles(vm, paths);
+    }
+
+    /// <summary>
+    /// Opens files the operating system handed us — the double-click route on every platform
+    /// (R-h8-10). One dispatcher for all three arrival paths (argv, Apple Event, the Windows
+    /// second-instance pipe), so a type opened by one is opened by all of them.
+    ///
+    /// <para><b>This finishes the <c>.crfw</c> path as well as adding <c>.charm</c>, and that is
+    /// worth stating.</b> Both entry points were stubs that showed a window and ignored the paths
+    /// they were handed — so double-clicking a workspace launched circuitRF and opened nothing, which
+    /// looked exactly like a broken file. The <c>.charm</c> work could not be built on top of a stub,
+    /// so the stub is gone rather than worked around.</para>
+    ///
+    /// <para>Only ONE workspace opens even if several are named: a workspace switch replaces the
+    /// contents of the window, so opening a second would silently discard the first.</para>
+    /// </summary>
+    private static void OpenFiles(WorkspaceViewModel vm, IReadOnlyList<string> paths)
+    {
+        bool workspaceOpened = false;
+
+        foreach (string path in paths)
+        {
+            if (!File.Exists(path)) continue;
+
+            switch (Path.GetExtension(path).ToLowerInvariant())
+            {
+                case ".crfw":
+                case ".cws":
+                    if (workspaceOpened) break;
+                    workspaceOpened = true;
+                    vm.OpenWorkspacePath(path);
+                    break;
+
+                case ".charm":
+                    vm.OpenHarmonicaPath(path);
+                    break;
+            }
+        }
     }
 
     // ---- macOS Dock icon -------------------------------------------------------

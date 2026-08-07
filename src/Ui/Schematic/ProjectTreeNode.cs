@@ -37,6 +37,19 @@ public enum NodeKind
     /// <summary>A .cdd data-display file.</summary>
     DataDisplayFile,
 
+    /// <summary>
+    /// A .charm harmonicaRF document (§8; open item 6, settled at H8).
+    ///
+    /// <para>It APPEARS in the tree, matching every other document type, and is NOT required to live
+    /// in a workspace — harmonicaRF opens with none (§1.2) and ships standalone. Those two are not in
+    /// tension: the tree reflects what is on disk under the workspace root, so a .charm saved there
+    /// shows up for the same reason a .cdd does, and one saved anywhere else is simply not under it.
+    /// It rides the DataDisplays filter rather than earning a checkbox of its own — a .charm is a
+    /// results-facing document beside a .cdd, and a seventh toggle for one file type would be
+    /// clutter.</para>
+    /// </summary>
+    HarmonicaFile,
+
     /// <summary>A .ccolor color-theme file.</summary>
     ColorThemeFile,
 

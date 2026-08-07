@@ -74,8 +74,12 @@ measured under the threshold, or folded into `Benchmark`).
   `Rbf2DPerfTests`, 4 methods: millisecond-fast, but a ~0.3 ms operation reads ~10 ms per sample under
   full-suite load, so even a best-of-20 gate flaked). **Do not untag those on the grounds that they run
   quickly** — they are tagged for the purpose the mechanism serves, not the letter of the ~5 s rule.
-  Currently **74 test methods** repo-wide (59 in `Engine.Tests`, 14 in `Ui.Tests`, 1 in
-  `RfCore.Tests`) — the L8/L9 full-wave phases are where nearly all of them came from, because a
+  Currently **~81 test methods** repo-wide (59 in `Engine.Tests`, 17 in `Ui.Tests`, 4 in
+  `Harmonica.Tests`, 1 in `RfCore.Tests`) — the earlier count of 74 omitted `Harmonica.Tests`'
+  own tier entirely; H6 added `InverseSolveCostTests` (3 methods, ~5 s) and
+  `HarmonicaDragCostTests` (1 method, ~2 s), and H7 added `HarmonicaGridDragCostTests` (1 method,
+  the 61-point grid measurement) and `HarmonicaTestbenchCliTests` (1 method, which launches the real
+  `Cli hb` process) — **~5 s together**. The L8/L9 full-wave phases are where nearly all of them came from, because a
   single de-embedded full-wave point costs ~48 s one level and 71.9 s two (and **149.9 s** at the
   two-level-with-vias mesh L9's own phase gate runs on, N = 1,023), so none of those measurements can
   live in the routine tier. **L9's phase gate added 2** (`L9PhaseGateTests.Gate1` 5 m 28 s and
@@ -216,15 +220,22 @@ contribution — the model *contributes* stamps; the engine *owns* the matrix) a
 (nonlinear: returns `i`, `q`, `dg`, `dc`). Register it in the component-model factory. Add a
 golden-reference test. See `docs/design/data-model.md` §5.
 **The base type must already accommodate the v2 ASM-HEMT/Verilog-A path:** a thermal/self-heating
-node (a native `FetModel` is *planned* at 2/3/4 ports, the 4th thermal — see
-`docs/design/data-model.md` §5; **it does not exist yet**), collapsible internal nodes, terminal
-current, and charge-based capacitances (`q(v)` with `dq/dv`). Design for these now even though v1
-ships only built-ins + SDD.
+node, collapsible internal nodes, terminal current, and charge-based capacitances (`q(v)` with
+`dq/dv`). The external-device path exercises all four today (`ExternalDeviceModel`, `VerilogA`);
+`FetModelBase` does not carry a thermal node of its own.
 
-**Nonlinear devices that exist today: `SDD`, `NonlinearC`, `Diode`.** Anything else described as a
-native model in the design notes — `FetModel`, `BjtModel` — is a plan, not code. A FET in a
-schematic today is an SDD carrying FET equations, which is a different thing from a native model
-with closed-form derivatives and its own parameter set.
+**Nonlinear devices that exist today: five native large-signal FETs (`FET_Angelov`, `FET_Curtice`,
+`FET_CurticeCubic`, `FET_Materka`, `FET_Statz`, all on `FetModelBase` in `src/Core/Devices/Fet/`,
+with selectable gate charge via `CapModel` — 0 none, 1 constant Cgs/Cgd, 2 junction), plus `SDD`,
+`NonlinearC`, `Diode`, and any externally-supplied model through `ExtDevice`/`VerilogA`.**
+
+> **Corrected 2026-08-06** (brief-harmonicarf-h0-h3 §0.3 item 1 / M6). This paragraph used to say
+> that `FetModel` "is a plan, not code" and that a FET in a schematic is an SDD carrying FET
+> equations. That has been stale since the FET family landed on 2026-08-02 — the models are
+> placeable, have analytic derivatives, their own parameter sets, and 23 gate tests of their own.
+> `BjtModel` genuinely does not exist and is deliberately not planned: the bipolar path stays on the
+> compiled/external route, because a native implementation is permanent maintenance of someone
+> else's physics (see `src/Core/CLAUDE.md`).
 
 ## Validation expectations
 Numerical changes require a `testdata/` regression test within the tolerance in the PRD.

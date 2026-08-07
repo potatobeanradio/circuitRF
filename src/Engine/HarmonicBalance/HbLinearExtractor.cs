@@ -49,12 +49,26 @@ public sealed class HbLinearExtractor
     private string[]? _branchNames;
     private int       _cachedMnaSize = -1;
 
-    public HbLinearExtractor(ElaboratedNetlist netlist, AnalysisSettings settings)
+    /// <param name="extraInterfaceNodes">
+    /// Circuit nodes to add to the interface set beyond the nonlinear-facing ones, so the extracted
+    /// N-port also has ports where they sit.
+    ///
+    /// <para><b>Why this exists.</b> harmonicaRF extracts the linear partition ONCE per harmonic with
+    /// its termination ports left OPEN, then closes them algebraically when a marker moves
+    /// (harmonicarf.md §6.2) — which needs the termination planes to be ports of the extracted
+    /// network, not just internal nodes. Null, the default, is the shipped behaviour exactly: the
+    /// interface is the nonlinear-facing nodes and nothing else. A node already in that set is
+    /// ignored rather than duplicated, so a termination that lands directly on a device terminal
+    /// (no embedding at all) needs no special case here or in the caller.</para>
+    /// </param>
+    public HbLinearExtractor(ElaboratedNetlist netlist, AnalysisSettings settings,
+                             IEnumerable<int>? extraInterfaceNodes = null)
     {
         _netlist = netlist;
         _settings = settings;
 
         _interfaceNodes = netlist.NonlinearNodes
+            .Concat(extraInterfaceNodes ?? [])
             .Where(n => n > 0)
             .Distinct()
             .OrderBy(n => n)
@@ -351,6 +365,84 @@ public sealed class HbLinearExtractor
         }
 
         return (yNN, iSrc);
+    }
+
+    /// <summary>
+    /// The same extraction as <see cref="Extract"/> and <see cref="ExtractDC"/>, stopped one step
+    /// earlier: the open-circuit IMPEDANCE matrix over the interface, and the open-circuit voltages
+    /// the circuit's own sources produce there.
+    ///
+    /// <para><b>Why the intermediate is worth exposing.</b> <c>Y = Z⁻¹</c> is the right form for the
+    /// Newton loop, whose interface is always TERMINATED and therefore well conditioned. It is the
+    /// wrong form for a network whose ports are deliberately left OPEN — harmonicaRF's
+    /// pre-terminated extraction (harmonicarf.md §6.2) — because an open port's driving-point
+    /// impedance runs to the ideal bias choke's ~10 GΩ while a terminated one sits at tens of ohms,
+    /// so <c>Z</c> spans eight or nine decades and inverting it spends them. Measured on
+    /// harmonicaRF's own fixture: closing the terminations after the inversion agreed with direct
+    /// extraction to only 1e-4…1e-7, and closing them in the impedance domain agrees to 1e-13.</para>
+    ///
+    /// <para>Nothing else in the repository calls this, and no existing path changed to add it —
+    /// <see cref="Extract"/> and <see cref="ExtractDC"/> still compute exactly what they did.</para>
+    /// </summary>
+    /// <param name="omega">
+    /// Angular frequency. Zero takes the DC path, including its inductance-regularisation retry.
+    /// </param>
+    public (Complex[,] ZNN, Complex[] VOc) ExtractImpedance(double omega)
+    {
+        bool indReg = _settings.InductanceRegularization == RegularizationMode.Always;
+        Complex[,] zNN;
+
+        if (Math.Abs(omega) < 1e-12)
+        {
+            (zNN, var singular) = ComputeZnn(indReg);
+            if (singular.Count > 0)
+            {
+                if (_settings.InductanceRegularization == RegularizationMode.Never)
+                    ThrowSingularDiagnostic(zNN);
+                if (_settings.HbConsoleDiagnostics) WarnInductanceReg(singular);
+                (zNN, _) = ComputeZnn(applyIndReg: true);
+                indReg = true;
+            }
+            return (zNN, ComputeVoc(0.0, indReg));
+        }
+
+        var mnaZ = BuildMna(omega, zeroDrive: true);
+        var lu   = mnaZ.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+
+        zNN = new Complex[_N, _N];
+        var xBuf = new Complex[mnaZ.Size];
+        for (int j = 0; j < _N; j++)
+        {
+            var b = new Complex[mnaZ.Size];
+            int nodeJ = _interfaceNodes[j];
+            if (nodeJ > 0) b[nodeJ - 1] = Complex.One;
+            lu.Solve(b, xBuf);
+            for (int k = 0; k < _N; k++)
+            {
+                int nodeK = _interfaceNodes[k];
+                zNN[k, j] = nodeK > 0 ? xBuf[nodeK - 1] : Complex.Zero;
+            }
+        }
+
+        return (zNN, ComputeVoc(omega, applyIndReg: false));
+    }
+
+    /// <summary>Open-circuit interface voltages with the circuit's own sources active.</summary>
+    private Complex[] ComputeVoc(double omega, bool applyIndReg)
+    {
+        var mna = BuildMna(omega, zeroDrive: false);
+        if (applyIndReg) ApplyInductanceReg(mna);
+        var lu = mna.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+        var x  = new Complex[mna.Size];
+        lu.Solve(mna.BuildRhs(), x);
+
+        var vOc = new Complex[_N];
+        for (int k = 0; k < _N; k++)
+        {
+            int nodeK = _interfaceNodes[k];
+            vOc[k] = nodeK > 0 ? x[nodeK - 1] : Complex.Zero;
+        }
+        return vOc;
     }
 
     // ── MNA assembly ──────────────────────────────────────────────────────────

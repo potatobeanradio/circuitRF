@@ -74,6 +74,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.CellViewFolder,  _)     => MaterialIconKind.FolderOutline,
         (NodeKind.ViewFile,        _)     => MaterialIconKind.FileOutline,
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
+        (NodeKind.HarmonicaFile, _)      => MaterialIconKind.ChartBellCurve,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
         (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
         (NodeKind.EmSetupFile,     _)     => MaterialIconKind.SineWave,
@@ -118,9 +119,11 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         || Kind == NodeKind.OtherFile
         || Kind == NodeKind.UserFolder;
 
-    /// <summary>True for openable leaf files (.csch / .csym / .clay / .cdd / .ctech) — drives the "Open" context item.</summary>
+    /// <summary>True for openable leaf files (.csch / .csym / .clay / .cdd / .charm / .ctech) — drives
+    /// the "Open" context item.</summary>
     public bool IsOpenableFile =>
-        Kind is NodeKind.DataDisplayFile or NodeKind.TechFile or NodeKind.EmSetupFile
+        Kind is NodeKind.DataDisplayFile or NodeKind.HarmonicaFile or NodeKind.TechFile
+             or NodeKind.EmSetupFile
         || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay");
 
     /// <summary>True when this node has unsaved work — drives the "Save" context item.
@@ -156,6 +159,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.Library
                                           or NodeKind.UserFolder
                                           or NodeKind.DataDisplayFile
+                                          or NodeKind.HarmonicaFile
                                           or NodeKind.ColorThemeFile
                                           or NodeKind.TechFile
                                           or NodeKind.EmSetupFile
@@ -440,6 +444,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.Library         => f.Libraries,
             NodeKind.LibrariesGroup  => f.Libraries,
             NodeKind.DataDisplayFile => f.DataDisplays,
+            // A .charm is a results-facing document beside a .cdd — same toggle, no seventh checkbox.
+            NodeKind.HarmonicaFile   => f.DataDisplays,
             NodeKind.ColorThemeFile  => f.ColorThemes,
             NodeKind.TechFile        => f.TechFiles,
             // An EM setup is process/analysis configuration alongside the technology it reads, so it

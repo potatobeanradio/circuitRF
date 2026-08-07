@@ -26,6 +26,24 @@ public sealed class VdcModel : ComponentModel
     /// </summary>
     public int LastBranchIndex { get; private set; } = -1;
 
+    /// <summary>
+    /// A supply voltage set on the MODEL rather than resolved from the netlist, overriding the
+    /// instance's own <c>Vdc=</c> while it is non-null.
+    ///
+    /// <para><b>Why this exists.</b> A resolved parameter is fixed at elaboration, so moving a bias
+    /// point otherwise means re-elaborating the whole netlist — which harmonicaRF does thousands of
+    /// times a second and which <c>harmonicarf.md</c> §6.1 measures at roughly a thousand times the
+    /// cost of the thing being changed. This is the same in-place-mutation pattern
+    /// <c>TunerModel.SetHarmonicOverride</c> already establishes for a termination.</para>
+    ///
+    /// <para>Null is the default and the shipped behaviour exactly: the netlist's own value wins and
+    /// nothing about a design that never sets this changes.</para>
+    /// </summary>
+    public double? VdcOverride { get; set; }
+
+    /// <summary>Sets <see cref="VdcOverride"/>. Present so a caller reads as an action, not a field.</summary>
+    public void SetVdc(double volts) => VdcOverride = volts;
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         if (c.Nodes.Length < 2) return;
@@ -36,6 +54,8 @@ public sealed class VdcModel : ComponentModel
             _voltage = vp.Kind == ValueKind.Real ? vp.AsReal() : vp.AsComplex().Real;
         else if (c.Parameters.TryGetValue("V", out var v))
             _voltage = v.Kind == ValueKind.Real ? v.AsReal() : v.AsComplex().Real;
+
+        if (VdcOverride is { } ov) _voltage = ov;
 
         int br = mna.AddBranch();
         LastBranchIndex = br;

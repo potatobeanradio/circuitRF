@@ -1,0 +1,109 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaSetDutDialog"
+        Title="Set DUT"
+        Width="760" Height="620"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    §4.3 / §4.5.5 — choose and configure the device.
+
+    The four kinds are ONE value object with four shapes (DutSpec), so this dialog produces a DutSpec
+    and hands it to HarmonicaViewModel.ApplyDut. It reaches no further: the rebuild, the ladder reset
+    and the fresh frame all fall out of CircuitModel.StructuralKey moving (R-h8-1).
+
+    THE INTRINSIC MAPPING IS ASKED FOR AND NEVER GUESSED (R-h8-3). Nothing can tell which internal
+    node of a compiled model is the intrinsic drain; a defaulted answer would produce glyphs that look
+    right and are not. Until it is named, the intrinsic panels draw empty and say why.
+  -->
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="12" RowSpacing="8">
+
+    <!-- ── kind ──────────────────────────────────────────────────────────── -->
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="14">
+      <TextBlock Text="Device" VerticalAlignment="Center" Opacity="0.7" Width="70"/>
+      <RadioButton x:Name="KindSdd"      GroupName="Kind" Content="SDD equations" IsCheckedChanged="OnKindChanged"/>
+      <RadioButton x:Name="KindFet"      GroupName="Kind" Content="Native FET"    IsCheckedChanged="OnKindChanged"/>
+      <RadioButton x:Name="KindDiode"    GroupName="Kind" Content="Diode"         IsCheckedChanged="OnKindChanged"/>
+      <RadioButton x:Name="KindExternal" GroupName="Kind" Content="External model" IsCheckedChanged="OnKindChanged"/>
+    </StackPanel>
+
+    <!-- ── kind-specific chooser ─────────────────────────────────────────── -->
+    <Grid Grid.Row="1" ColumnDefinitions="70,*" ColumnSpacing="14">
+
+      <!-- Native FET: the five laws. Each declares its OWN parameter set. -->
+      <TextBlock Grid.Column="0" x:Name="LawLabel" Text="Law" VerticalAlignment="Center" Opacity="0.7"/>
+      <ComboBox  Grid.Column="1" x:Name="LawCombo" HorizontalAlignment="Left" MinWidth="240"
+                 SelectionChanged="OnLawChanged"
+                 ToolTip.Tip="The five native large-signal laws are separate device TYPES, not variants — several reuse one spelling for different quantities, so each carries its own parameter set."/>
+
+      <!-- External: a bare compiled model file, or a kit. -->
+      <StackPanel Grid.Column="1" x:Name="ExternalChooser" Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <RadioButton x:Name="SourceFile" GroupName="ExtSource" Content="Model file (.osdi)"
+                       IsCheckedChanged="OnExternalSourceChanged"/>
+          <RadioButton x:Name="SourceKit"  GroupName="ExtSource" Content="Kit part"
+                       IsCheckedChanged="OnExternalSourceChanged"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" x:Name="FileRow">
+          <TextBox x:Name="ModelFileBox" Width="440" LostFocus="OnProviderCommitted"
+                   Watermark="Path to a compiled model file"/>
+          <Button Content="Browse…" Width="90" HorizontalContentAlignment="Center"
+                  Click="OnBrowseModelFileClick"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" x:Name="KitRow">
+          <ComboBox x:Name="KitCombo" MinWidth="240" SelectionChanged="OnProviderCommitted"/>
+          <Button Content="Add kit folder…" Width="130" HorizontalContentAlignment="Center"
+                  Click="OnAddKitFolderClick"
+                  ToolTip.Tip="Kit folders are a preference, not a workspace — harmonicaRF opens with no workspace at all."/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Type" VerticalAlignment="Center" Opacity="0.7"/>
+          <ComboBox x:Name="TypeCombo" MinWidth="240" SelectionChanged="OnTypeChanged"/>
+        </StackPanel>
+      </StackPanel>
+    </Grid>
+
+    <!-- ── parameters, READ from the model (R-h8-2) ──────────────────────── -->
+    <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="4">
+      <TextBlock Grid.Row="0" x:Name="ParamHeader" Opacity="0.7"
+                 Text="Parameters, as the model itself declares them"/>
+      <Border Grid.Row="1" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+              CornerRadius="4" Padding="6">
+        <ScrollViewer>
+          <StackPanel x:Name="ParamHost" Spacing="4"/>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <!-- ── §4.5.5 — the intrinsic mapping, ASKED FOR ─────────────────────── -->
+    <StackPanel Grid.Row="3" x:Name="MappingPanel" Spacing="4">
+      <TextBlock Text="Intrinsic plane" Opacity="0.7"/>
+      <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.65"
+                 Text="Nothing can tell which of this model's nodes is the intrinsic drain, so it is not guessed. Until all three are named, the intrinsic glyphs and the loadline stay empty."/>
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="Gate"   VerticalAlignment="Center" Opacity="0.7" Width="46"/>
+        <ComboBox x:Name="GateCombo"   MinWidth="150" SelectionChanged="OnMappingChanged"/>
+        <TextBlock Text="Drain"  VerticalAlignment="Center" Opacity="0.7" Width="46"/>
+        <ComboBox x:Name="DrainCombo"  MinWidth="150" SelectionChanged="OnMappingChanged"/>
+        <TextBlock Text="Source" VerticalAlignment="Center" Opacity="0.7" Width="52"/>
+        <ComboBox x:Name="SourceCombo" MinWidth="150" SelectionChanged="OnMappingChanged"/>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- ── status + commit ───────────────────────────────────────────────── -->
+    <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+      <TextBlock Grid.Column="0" x:Name="StatusLabel" VerticalAlignment="Center"
+                 TextWrapping="Wrap" Opacity="0.8"/>
+      <Button Grid.Column="1" Content="Cancel" Width="90" IsCancel="True"
+              HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+      <Button Grid.Column="2" x:Name="ApplyButton" Content="Set DUT" Width="110" IsDefault="True"
+              Classes="accent" HorizontalContentAlignment="Center" Click="OnApplyClick"/>
+    </Grid>
+
+  </Grid>
+</Window>

@@ -608,7 +608,13 @@ public sealed class LoadpullEngine
 
     // ── Live FOMs (loadpull.md §4) ───────────────────────────────────────────
 
-    private readonly record struct FomResult(
+    /// <summary>
+    /// The four fundamental-frequency figures of merit, in one place so there is exactly one
+    /// definition of each. Made public for harmonicaRF, which drives its own Pin search and must not
+    /// re-derive a single FOM (brief-harmonicarf-h0-h3 §0.3 item 5) — it is a pure function of its
+    /// arguments, so no existing caller's result moves.
+    /// </summary>
+    public readonly record struct FomResult(
         double PavlW, double PinDeliveredW, double PoutW, double GtDb, double GpDb);
 
     /// <summary>
@@ -618,7 +624,7 @@ public sealed class LoadpullEngine
     ///   Pout          = −½·Re(V[loadIdx, 1] · conj(I_nl[loadIdx, 1]))  → positive for PA
     ///   Pin_delivered = +½·Re(V[srcIdx,  1] · conj(I_nl[srcIdx,  1]))  → positive for PA
     /// </summary>
-    private static FomResult ComputeFoms(
+    public static FomResult ComputeFoms(
         Complex[,] v, Complex[] iSrcIn, Complex[,] iNl,
         int loadIdx, int srcIdx,
         double pavlW, int K)

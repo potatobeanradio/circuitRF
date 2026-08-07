@@ -223,6 +223,28 @@ public static class HbNewton
     }
 
     /// <summary>
+    /// The whole time grid of port-voltage vectors for one device, in sample order — exactly what
+    /// the scalar loop computes one sample at a time, gathered so a batched model can be asked once.
+    /// </summary>
+    private static double[][] GatherPortVoltages(
+        double[][] vTime, int gridN, int portCount, int[] portPlusIdx, int[] portMinusIdx)
+    {
+        var points = new double[gridN][];
+        for (int t = 0; t < gridN; t++)
+        {
+            var pv = new double[portCount];
+            for (int p = 0; p < portCount; p++)
+            {
+                double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t]  : 0.0;
+                double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
+                pv[p] = vp - vm;
+            }
+            points[t] = pv;
+        }
+        return points;
+    }
+
+    /// <summary>
     /// One full time-domain evaluation pass over all nonlinear devices.
     /// <paramref name="cRefByDevice"/> maps a control-SDD's component index to its
     /// <c>_c_ref(t)</c> array [localControl, gridN]; null devices get no control currents.
@@ -278,24 +300,37 @@ public static class HbNewton
             cRefByDevice?.TryGetValue(nlIdx, out cRefTime);
             bool collectSens = sens is not null && cRefTime is not null;
 
+            // One round trip for the whole time grid, when the model says a round trip is what an
+            // evaluation costs. Built-in models leave this null and take the scalar path below
+            // unchanged — the control-current form has no batched shape and is always scalar.
+            IReadOnlyList<NonlinearResult>? batch =
+                ec.PrefersBatchEvaluate && cRefTime is null
+                    ? ec.EvaluateBatch(GatherPortVoltages(vTime, gridN, portCount, portPlusIdx, portMinusIdx))
+                    : null;
+
             for (int t = 0; t < gridN; t++)
             {
-                for (int p = 0; p < portCount; p++)
-                {
-                    double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t]  : 0.0;
-                    double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
-                    portV[p] = vp - vm;
-                }
                 NonlinearResult res;
-                if (cRefTime is not null)
-                {
-                    int m = ((SddModel)ec.Model).ControlRefs.Length;
-                    var cVals = new double[m];
-                    for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTime[ci, t];
-                    res = ec.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
-                }
+                if (batch is not null)
+                    res = batch[t];
                 else
-                    res = ec.Evaluate(new PortVoltages(portV));
+                {
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t]  : 0.0;
+                        double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
+                        portV[p] = vp - vm;
+                    }
+                    if (cRefTime is not null)
+                    {
+                        int m = ((SddModel)ec.Model).ControlRefs.Length;
+                        var cVals = new double[m];
+                        for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTime[ci, t];
+                        res = ec.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
+                    }
+                    else
+                        res = ec.Evaluate(new PortVoltages(portV));
+                }
 
                 for (int p = 0; p < portCount; p++)
                 {
@@ -1193,25 +1228,37 @@ public static class HbNewton
 
             var portITime = new double[portCount, gridN];
 
+            // Same rule as the Newton pass: one round trip for the grid where an evaluation costs
+            // one, and the untouched scalar path everywhere else.
+            IReadOnlyList<NonlinearResult>? batch =
+                ec.PrefersBatchEvaluate && cRefTimePost is null
+                    ? ec.EvaluateBatch(GatherPortVoltages(vTime, gridN, portCount, portPlusIdx, portMinusIdx))
+                    : null;
+
             for (int t = 0; t < gridN; t++)
             {
-                var portV = new double[portCount];
-                for (int p = 0; p < portCount; p++)
-                {
-                    double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t]  : 0.0;
-                    double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
-                    portV[p] = vp - vm;
-                }
                 NonlinearResult res;
-                if (cRefTimePost is not null)
-                {
-                    int m = ((SddModel)ec.Model).ControlRefs.Length;
-                    var cVals = new double[m];
-                    for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTimePost[ci, t];
-                    res = ec.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
-                }
+                if (batch is not null)
+                    res = batch[t];
                 else
-                    res = ec.Evaluate(new PortVoltages(portV));
+                {
+                    var portV = new double[portCount];
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t]  : 0.0;
+                        double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
+                        portV[p] = vp - vm;
+                    }
+                    if (cRefTimePost is not null)
+                    {
+                        int m = ((SddModel)ec.Model).ControlRefs.Length;
+                        var cVals = new double[m];
+                        for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTimePost[ci, t];
+                        res = ec.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
+                    }
+                    else
+                        res = ec.Evaluate(new PortVoltages(portV));
+                }
                 for (int p = 0; p < portCount; p++)
                     portITime[p, t] = res.I[p];
             }

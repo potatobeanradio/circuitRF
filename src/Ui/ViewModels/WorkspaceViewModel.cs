@@ -23,6 +23,7 @@ using CircuitRF.Core.Netlist;
 using RfCore.Data;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.Layout.PCells;
@@ -85,6 +86,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private readonly List<SchematicDocument>    _scratchDocs         = [];
     private readonly List<SymbolEditorDocument> _scratchSymbols      = [];
     private readonly List<DataDisplayDocument>  _scratchDataDisplays = [];
+    private readonly List<HarmonicaDocument>    _scratchHarmonicas   = [];
     private readonly List<LayoutDocument>       _scratchLayouts      = [];
 
     // ---- Technology cache (L0c) -----------------------------------------------
@@ -913,6 +915,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchSymbols.Clear();
             _scratchLayouts.Clear();
             _scratchDataDisplays.Clear();
+            _scratchHarmonicas.Clear();
             _registry.Clear();
             _layoutRegistry.Clear();
             ResetTechCache();
@@ -1315,6 +1318,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchSymbols.Clear();
         _scratchLayouts.Clear();
         _scratchDataDisplays.Clear();
+            _scratchHarmonicas.Clear();
         _registry.Clear();
         _layoutRegistry.Clear();
         ResetTechCache();
@@ -1717,6 +1721,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var stillOpenScratchSymbols      = _scratchSymbols.Where(d      => !IsDockableDocked(d)).ToList();
         var stillOpenScratchLayouts      = _scratchLayouts.Where(d      => !IsDockableDocked(d)).ToList();
         var stillOpenScratchDataDisplays = _scratchDataDisplays.Where(d => !IsDockableDocked(d)).ToList();
+        var stillOpenScratchHarmonicas   = _scratchHarmonicas.Where(d   => !IsDockableDocked(d)).ToList();
 
         _openDocsByPath.Clear();
         foreach (var dockable in stillOpen)
@@ -1727,6 +1732,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 SymbolEditorDocument syed        => syed.ViewModel.CurrentSymbolPath,
                 LayoutDocument lad               => lad.FilePath,
                 DataDisplayDocument dd           => dd.FilePath,
+                HarmonicaDocument had            => had.FilePath,
                 TechDocument td                  => td.FilePath,
                 EmSetupDocument emd           => emd.FilePath,
                 CellParameterEditorDocument cpd  => Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath),
@@ -1739,6 +1745,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchSymbols.Clear();      _scratchSymbols.AddRange(stillOpenScratchSymbols);
         _scratchLayouts.Clear();      _scratchLayouts.AddRange(stillOpenScratchLayouts);
         _scratchDataDisplays.Clear(); _scratchDataDisplays.AddRange(stillOpenScratchDataDisplays);
+        _scratchHarmonicas.Clear();   _scratchHarmonicas.AddRange(stillOpenScratchHarmonicas);
 
         // Session registries: NOT a blanket Clear() — a surviving floated schematic/layout's own
         // push-in session must stay registered.
@@ -4161,6 +4168,116 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         newDoc.Materialize(absPath);
     }
 
+    // ── Tools ▸ harmonicaRF (R-h45-13 / D10) ─────────────────────────────────
+    //
+    // D10 moves the Tools menu FORWARD from H7 to here, and the reason is a testing one rather than
+    // a scheduling one: "a document nobody can open cannot be tested through the product path."
+    // H7 fills the menu out; today it has exactly one entry.
+
+    /// <summary>
+    /// Opens a new harmonicaRF instrument (harmonicarf.md §1.2).
+    ///
+    /// <para><b>No workspace required</b>, deliberately — §1.2: harmonicaRF "works with or without a
+    /// workspace open, and is structured so it can ship as a standalone binary". So this mirrors
+    /// NewDataDisplay's scratch path rather than the workspace-gated New Cell path.</para>
+    ///
+    /// <para>The document opens on a real, converging device rather than an empty canvas: §1's whole
+    /// claim is liveness, and an instrument that opens showing nothing has to be configured before it
+    /// can demonstrate anything. The first solve is LAZY and coarse — the view triggers it on attach
+    /// — so opening the tab is not a blocking wait.</para>
+    /// </summary>
+    [RelayCommand]
+    private void NewHarmonica()
+    {
+        var title = NextHarmonicaTitle();
+        var vm    = new HarmonicaDocumentViewModel();
+        var doc   = new HarmonicaDocument(title, vm);
+        _scratchHarmonicas.Add(doc);
+        _factory.OpenDocument(doc);
+    }
+
+    /// <summary>
+    /// Opens a <c>.charm</c> into a document of its own — the double-click route (R-h8-10) and the
+    /// one File ▸ Open entry point a workspace can offer for one.
+    ///
+    /// <para>An already-open document for the same file is ACTIVATED rather than opened twice, which
+    /// is the same rule every other document type here follows. The load itself happens in the view
+    /// (<c>HarmonicaView.LoadCharmFile</c>) — it is the one place that reports §8.1's unresolved
+    /// references, and a second loader here would be a second answer about a missing model.</para>
+    /// </summary>
+    public void OpenHarmonicaPath(string charmPath)
+    {
+        if (!File.Exists(charmPath)) return;
+        string full = Path.GetFullPath(charmPath);
+
+        if (_openDocsByPath.TryGetValue(full, out var already))
+        {
+            // Through the one helper, not a bare SetActiveDockable: a document torn off into its own
+            // window has to be RAISED, not merely selected behind the shell.
+            ActivateOpenDocument(already);
+            return;
+        }
+
+        var doc = new HarmonicaDocument(Path.GetFileNameWithoutExtension(full),
+                                        new HarmonicaDocumentViewModel(), full);
+        _openDocsByPath[full] = doc;
+        _factory.OpenDocument(doc);
+
+        // The view binds on the next layout pass, so the load is deferred to it — asking a document
+        // with no view yet to load a file would have nowhere to report what it found.
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                var unresolved = doc.ViewModel.Harmonica.LoadCharm(
+                    File.ReadAllText(full), Path.GetDirectoryName(full));
+                if (unresolved.Count > 0)
+                    Messages.Warning(string.Join("  ", unresolved.Select(u => u.Message)));
+                doc.ViewModel.Harmonica.ResetSchedule();
+                doc.ViewModel.Harmonica.RequestScheduledFrame(dragging: false);
+            }
+            catch (Exception ex) { Messages.Error($"Could not open '{full}': {ex.Message}"); }
+        }, Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// A harmonicaRF document has just been written to <paramref name="path"/>. Registers it by path
+    /// (so opening it from the tree activates the tab rather than opening a second one) and refreshes
+    /// the tree — open item 6's own gate: a <c>.charm</c> saved into an open workspace appears
+    /// WITHOUT a reload.
+    /// </summary>
+    public void NotifyHarmonicaSaved(HarmonicaDocument doc, string path)
+    {
+        string full = Path.GetFullPath(path);
+
+        // A Save-As moves the document to a new key; leaving the old one would make the tree open a
+        // stale tab for a file that document no longer is.
+        foreach (var stale in _openDocsByPath.Where(kv => ReferenceEquals(kv.Value, doc))
+                                             .Select(kv => kv.Key).ToList())
+            _openDocsByPath.Remove(stale);
+
+        _scratchHarmonicas.Remove(doc);
+        _openDocsByPath[full] = doc;
+
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    /// <summary>Lowest free "Untitled-harmonicaRF-N" across open harmonicaRF documents.</summary>
+    private string NextHarmonicaTitle()
+    {
+        const string prefix = "Untitled-harmonicaRF-";
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in _scratchHarmonicas) used.Add(d.Id);
+        foreach (var d in _openDocsByPath.Values)
+            if (d is HarmonicaDocument hd) used.Add(hd.Id);
+
+        for (int n = 1; ; n++)
+        {
+            var candidate = $"{prefix}{n}";
+            if (!used.Contains(candidate)) return candidate;
+        }
+    }
+
     /// <summary>
     /// Returns the lowest free "Untitled-Display-N" title across all current scratch
     /// and path-keyed open data display documents.
@@ -4369,6 +4486,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case NodeKind.DataDisplayFile:
                 OpenOrActivateDataDisplay(node.AbsolutePath);
+                return;
+
+            // Open item 6, settled: a .charm inside a workspace opens like any other document type.
+            case NodeKind.HarmonicaFile:
+                OpenHarmonicaPath(node.AbsolutePath);
                 return;
 
             case NodeKind.TechFile:

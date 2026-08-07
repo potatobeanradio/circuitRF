@@ -52,8 +52,8 @@ namespace CircuitRF.Ui.DataDisplay
     {
         // ---- Paper constants (points at 72 DPI, landscape) -----------------
 
-        private const float PageW  = 792f;   // 11" × 72
-        private const float PageH  = 612f;   // 8.5" × 72
+        internal const float PageW  = 792f;   // 11" × 72
+        internal const float PageH  = 612f;   // 8.5" × 72
         private const float Margin = 36f;    // 0.5" × 72
 
         // ---- Public entry point --------------------------------------------
@@ -361,7 +361,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         // ---- In-memory PDF / SVG builders ---------------------------
 
-        private static byte[] BuildPdfBytes(Action<SKCanvas> render)
+        internal static byte[] BuildPdfBytes(Action<SKCanvas> render)
         {
             var metadata = new SKDocumentPdfMetadata { Creator = "circuitRF" };
             using var skStream = new SKDynamicMemoryWStream();
@@ -373,7 +373,7 @@ namespace CircuitRF.Ui.DataDisplay
             return skStream.DetachAsData().ToArray();
         }
 
-        private static string BuildSvgString(Action<SKCanvas> render)
+        internal static string BuildSvgString(Action<SKCanvas> render)
         {
             using var skStream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, PageW, PageH), skStream))
@@ -516,7 +516,15 @@ namespace CircuitRF.Ui.DataDisplay
 
         // ---- Clipboard write ----------------------------------------
 
-        private static async Task SetClipboardDataAsync(
+        /// <summary>
+        /// Places one picture on the clipboard in every format a receiving application might want,
+        /// richest first. <b>Internal so harmonicaRF's own Copy Plot reaches it</b> (§7.8's "Not
+        /// reinvented"): its panels are Skia, not <c>PlotContainerViewModel</c>s, so it renders its
+        /// own page and hands the bytes to THIS — the clipboard plumbing, the Windows bypass and the
+        /// text fallback are the part worth sharing, and a second copy of them would be a second set
+        /// of platform bugs.
+        /// </summary>
+        internal static async Task SetClipboardDataAsync(
             Control anchor, byte[] pdf, string svg, string json, Bitmap? bitmap = null)
         {
             if (OperatingSystem.IsWindows())

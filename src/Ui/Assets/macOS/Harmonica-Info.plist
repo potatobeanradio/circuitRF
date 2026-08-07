@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!-- ── harmonicaRF's OWN bundle identity (R-h8-9) ─────────────────────────
+         A different application, and macOS will not tolerate it pretending otherwise: two bundles
+         sharing one CFBundleIdentifier collide in Launch Services, in the Dock, in the quarantine
+         database and in the login-item list, and the symptoms of that are all remote from the cause.
+
+         THE THREE-PLACE TRAP, unchanged from circuitRF's own Info.plist and now doubled:
+         CFBundleIdentifier must match BUNDLE_ID in bundleForHarmonicaMacOS.sh AND the --entitlements
+         argument to codesign. Nothing derives one from another. The bundle script reads the
+         identifier back OUT of this file and checks it, which is the one place the three can be
+         compared — see its own note. -->
+
+    <key>CFBundleIdentifier</key>
+    <string>com.circuitRF.harmonicaRF</string>
+
+    <!-- The binary inside Contents/MacOS/. The ASSEMBLY NAME is shared with circuitRF on purpose
+         (§3.1: the standalone binary is src/Ui with a different Main, and RfCore's InternalsVisibleTo
+         names that assembly), so this is CircuitRF.Ui in both bundles. The .app is what differs. -->
+    <key>CFBundleExecutable</key>
+    <string>CircuitRF.Ui</string>
+
+    <key>CFBundleName</key>
+    <string>harmonicaRF</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>harmonicaRF</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+
+    <!-- .NET 10 requires macOS 13 (Ventura) or later. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+
+    <!-- Suppress quarantine "damaged app" dialog for ad-hoc signed builds. -->
+    <key>LSFileQuarantineEnabled</key>
+    <false/>
+
+    <key>CFBundleIconFile</key>
+    <string>harmonicaRFIcon</string>
+
+    <!-- .charm is IMPORTED here and EXPORTED by circuitRF's Info.plist (R-h8-10). Two applications
+         must not both claim to define one type; circuitRF ships the definition, harmonicaRF states
+         that it understands it. Both then open a double-clicked .charm. -->
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.charm</string>
+            <key>UTTypeDescription</key>
+            <string>harmonicaRF Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>charm</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+
+    <!-- Document types this app can open. .crfw is deliberately ABSENT: there is no workspace in this
+         build (§1.2), so claiming the type would put an application that cannot open one in the
+         "Open With" list for every workspace on the machine. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>harmonicaRF Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.charm</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>charm</string>
+            </array>
+        </dict>
+    </array>
+
+</dict>
+</plist>

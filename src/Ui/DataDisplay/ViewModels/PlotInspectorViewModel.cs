@@ -732,7 +732,22 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 string.Equals(e.FilePath, t.SourcePath, StringComparison.OrdinalIgnoreCase));
         }
 
-        DataSet? ds = entry?.Data;
+        SetCubeDataFrom(t, entry?.Data, plotType, freqUnit);
+    }
+
+    /// <summary>
+    /// The same resolution, against a <see cref="DataSet"/> already in hand rather than one looked up
+    /// in the library.
+    ///
+    /// <para><b>Split out for harmonicaRF (R-h7-5).</b> harmonicaRF publishes its own <c>DataSet</c>
+    /// on each solved frame and has no data-source library at all — it is a live instrument, not a
+    /// document over files on disk. Everything below the lookup is identical, which is the point:
+    /// there is one slicing implementation, and the picker over harmonicaRF's cubes is the same code
+    /// the <c>.cdd</c> trace card runs.</para>
+    /// </summary>
+    internal static void SetCubeDataFrom(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit)
+    {
+        if (!t.IsCubeBound) return;
 
         // Single-cube specs (picker or typed Name[...]) resolve via the slice path (family-aware).
         // Only multi-cube element-wise expressions go through TraceExpression.

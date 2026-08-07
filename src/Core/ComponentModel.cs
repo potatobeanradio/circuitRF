@@ -49,6 +49,34 @@ public abstract class ComponentModel
         => Evaluate(v);
 
     /// <summary>
+    /// Whether an engine should gather a whole set of operating points and ask for them at once
+    /// rather than calling <see cref="Evaluate(in PortVoltages)"/> per point.
+    ///
+    /// <para><b>False for every built-in model, deliberately.</b> A built-in evaluation is a direct
+    /// call, so gathering would buy nothing and cost an allocation per point — and, more importantly,
+    /// an engine that reads this as false takes exactly the code path it took before batching
+    /// existed, which is what keeps a built-in device's result bit-identical. It is true only where
+    /// an evaluation carries real transport cost (an out-of-process model), which is the case the
+    /// batch exists for.</para>
+    /// </summary>
+    public virtual bool PrefersBatchEvaluate => false;
+
+    /// <summary>
+    /// Evaluate a whole set of port-voltage vectors, one result per vector, in declaration order.
+    ///
+    /// <para>The default is the scalar path applied once per point, so a model that has no cheaper
+    /// answer needs no code. Override only where one call for many points is genuinely cheaper than
+    /// many calls, and set <see cref="PrefersBatchEvaluate"/> alongside it.</para>
+    /// </summary>
+    public virtual IReadOnlyList<NonlinearResult> EvaluateBatch(double[][] portVoltages)
+    {
+        var results = new NonlinearResult[portVoltages.Length];
+        for (int k = 0; k < results.Length; k++)
+            results[k] = Evaluate(new PortVoltages(portVoltages[k]));
+        return results;
+    }
+
+    /// <summary>
     /// Frequency-domain weighting function H[w](ω).
     /// w=0 → 1 (identity/conductance), w=1 → jω (charge/capacitance).
     /// SDD overrides this for w≥2 (user-defined H[w] expressions, brief #3).

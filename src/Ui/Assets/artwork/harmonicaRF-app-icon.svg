@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  harmonicaRF's application icon.
+
+  R-h8-9 — DELIBERATELY NOT circuitRF's. It shares the family (the same rounded square, the same
+  accent pair) so the two read as one product, and differs in the one thing the instrument is about:
+  circuitRF's mark is the nested arcs of a Smith chart, harmonicaRF's is a harmonic comb standing on
+  a Smith rim — a fundamental and its harmonics, which is the whole subject. The plate is warmer so
+  the two are distinguishable in a Dock at a glance, not only side by side.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect x="0" y="0" width="512" height="512" rx="114" fill="#1B1630"/>
+
+  <!-- The Smith rim, cut to an arc: the terminations these harmonics are dragged around. -->
+  <g transform="translate(256,300)">
+    <path d="M -150 0 A 150 150 0 0 1 150 0" fill="none" stroke="#FFFFFF"
+          stroke-width="16" stroke-linecap="round" opacity="0.28"/>
+    <path d="M -96 0 A 96 96 0 0 1 96 0" fill="none" stroke="#22D3EE"
+          stroke-width="8" stroke-linecap="round" opacity="0.55"/>
+
+    <!-- The harmonic comb. The fundamental is the accent; the harmonics fall away as they should. -->
+    <g stroke-linecap="round" fill="none">
+      <line x1="-120" y1="0" x2="-120" y2="-44"  stroke="#22D3EE" stroke-width="16" opacity="0.55"/>
+      <line x1="-60"  y1="0" x2="-60"  y2="-92"  stroke="#22D3EE" stroke-width="16" opacity="0.75"/>
+      <line x1="0"    y1="0" x2="0"    y2="-186" stroke="#FF6A3D" stroke-width="22"/>
+      <line x1="60"   y1="0" x2="60"   y2="-118" stroke="#22D3EE" stroke-width="16" opacity="0.92"/>
+      <line x1="120"  y1="0" x2="120"  y2="-66"  stroke="#22D3EE" stroke-width="16" opacity="0.70"/>
+    </g>
+
+    <circle cx="0" cy="0" r="11" fill="#FF6A3D"/>
+  </g>
+</svg>

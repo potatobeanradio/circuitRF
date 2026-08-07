@@ -557,8 +557,14 @@ public sealed class ForeignDocumentTabTintTests
     [Fact]
     public void AppAxaml_DocumentControlHeaderTemplate_BindsIsForeignThroughTheTintConverter()
     {
+        // App.axaml + the two shared style/resource files: the application-scope styles moved into
+        // Styles/CircuitRfStyles.axaml at H8 so both Applications include one copy (R-h8-6). The
+        // wiring being pinned here is unchanged; where it is declared is not the claim.
         var appAxamlPath = FindAppAxaml();
-        var xml = File.ReadAllText(appAxamlPath);
+        var dir = Path.GetDirectoryName(appAxamlPath)!;
+        var xml = File.ReadAllText(appAxamlPath)
+                + File.ReadAllText(Path.Combine(dir, "Styles", "CircuitRfStyles.axaml"))
+                + File.ReadAllText(Path.Combine(dir, "Styles", "CircuitRfResources.axaml"));
 
         Assert.Contains("dockCtrl|DocumentControl", xml);
         Assert.Contains("HeaderTemplate", xml);

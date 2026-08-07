@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:harmv="using:CircuitRF.Ui.Views.Harmonica"
+        x:Class="CircuitRF.Ui.Views.Harmonica.HarmonicaShellWindow"
+        Title="harmonicaRF"
+        Width="1400" Height="900"
+        MinWidth="900" MinHeight="620"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource SystemChromeLowColor}">
+
+  <!--
+    R-h8-8 — the standalone shell is a PLAIN Window hosting one HarmonicaView, and Dock is not here
+    at all: a single-document application has nothing to dock. Several .charm files open as several
+    windows rather than as tabs — one window per document is what a plain Window gives for free, and
+    a tab strip would be the first piece of a document shell this binary exists not to have.
+
+    HarmonicaMenuView attaches its NativeMenu to the hosting window whenever that window is not a
+    WorkspaceWindow, so this shell gets the macOS menu bar with no new mechanism (its check is a
+    type-NAME comparison, deliberately, so the view takes no dependency on a shell that does not
+    exist in this build).
+  -->
+
+  <harmv:HarmonicaView x:Name="View"/>
+</Window>

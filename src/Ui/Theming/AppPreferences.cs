@@ -61,6 +61,15 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CheckDrcOnExport { get; set; }
 
+    // R-h8-4: folders holding device kits, for harmonicaRF's Set DUT. A PREFERENCE and not a
+    // workspace: DeviceWorkerProviderResolver's folder-list constructor needs nothing else (src/Cli's
+    // --kits already ships that form), and standing up a WorkspaceViewModel to reach it would drag in
+    // the project tree, the dock layout, technologies and PCell resolvers — none of which the device
+    // path reads. Per user rather than per workspace, because harmonicaRF standalone has no workspace.
+    [JsonPropertyName("harmonica_kit_folders")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? HarmonicaKitFolders { get; set; }
+
     // Message timestamp display — null means default (Time). Serialized as a number, like the others.
     [JsonPropertyName("message_timestamp")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

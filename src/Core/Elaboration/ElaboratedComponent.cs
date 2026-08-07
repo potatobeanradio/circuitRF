@@ -58,6 +58,23 @@ public sealed class ElaboratedComponent(
     public NonlinearResult Evaluate(in PortVoltages v, in ControlCurrents c)
         => Scale(Model.Evaluate(v, c));
 
+    /// <inheritdoc cref="ComponentModel.PrefersBatchEvaluate"/>
+    public bool PrefersBatchEvaluate => Model.PrefersBatchEvaluate;
+
+    /// <summary>
+    /// Batched nonlinear evaluation, with the device multiplier applied to every point — the same
+    /// seam as <see cref="Evaluate(in PortVoltages)"/>, for the same reason.
+    /// </summary>
+    public IReadOnlyList<NonlinearResult> EvaluateBatch(double[][] portVoltages)
+    {
+        var raw = Model.EvaluateBatch(portVoltages);
+        if (!HasMultiplier) return raw;
+
+        var scaled = new NonlinearResult[raw.Count];
+        for (int k = 0; k < scaled.Length; k++) scaled[k] = Scale(raw[k]);
+        return scaled;
+    }
+
     private IMnaContext Wrap(IMnaContext mna) => new MultipliedMnaContext(mna, Multiplicity, InstancePath);
 
     /// <summary>

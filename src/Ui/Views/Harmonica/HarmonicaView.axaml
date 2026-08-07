@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:ctrl="clr-namespace:CircuitRF.Ui.Controls"
+             xmlns:hv="clr-namespace:CircuitRF.Ui.Views.Harmonica"
+             xmlns:vm="clr-namespace:CircuitRF.Ui.Harmonica"
+             mc:Ignorable="d"
+             x:DataType="vm:HarmonicaDocument"
+             x:CompileBindings="True"
+             x:Class="CircuitRF.Ui.Views.Harmonica.HarmonicaView">
+
+  <!--
+    §7.1's LOCKED layout. The four plot panels are drawn by ONE Skia canvas from the document's own
+    CharmLayout (R-h45-1 — the layout is data, not code), so H7's Edit Display has something to
+    unlock rather than something to rewrite. The readout strip is the one panel that is NOT Skia:
+    §7.5 requires every element tooltipped and ALL TEXT SELECTABLE, which is a job for real controls.
+
+    The strip is therefore positioned by the SAME CharmLayout placement the canvas uses, applied in
+    code-behind — one layout source, two consumers.
+  -->
+
+  <DockPanel>
+
+    <!-- ── §7.6 — harmonicaRF's OWN menu set, on both hand-mirrored surfaces (R-h7-1).
+         File / Edit / Markers / Display / Grid / Help. No Simulate menu, ever. ── -->
+    <hv:HarmonicaMenuView x:Name="Menus" DockPanel.Dock="Top"/>
+
+    <!-- ── Toolbar. NO Simulate menu anywhere in harmonicaRF: it is always simulating (§7.6). ── -->
+    <Border DockPanel.Dock="Top"
+            Background="{DynamicResource SystemChromeLowColor}"
+            BorderBrush="{DynamicResource CrfTileBorderBrush}"
+            BorderThickness="0,0,0,1"
+            Padding="6,3">
+      <StackPanel Orientation="Horizontal" Spacing="4">
+
+        <Button x:Name="SolveButton" Click="OnSolveClick"
+                ToolTip.Tip="Re-solve at the full grid. harmonicaRF solves continuously; this forces a full-quality refresh.">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <mi:MaterialIcon Kind="Refresh" Width="15" Height="15"/>
+            <TextBlock Text="Solve" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+
+        <Border Width="1" Margin="4,2" Background="{DynamicResource CrfTileBorderBrush}"/>
+
+        <!-- §7.3: ONE toggle, moving the DCIV family and the loadline together. The persistent
+             indicator of which plane is shown lives on the panel itself and is never absent. -->
+        <ToggleButton x:Name="PlaneToggle"
+                      IsChecked="{Binding ViewModel.Harmonica.IntrinsicPlane, Mode=TwoWay}"
+                      ToolTip.Tip="Loadline plane. The DCIV family and the loadline move together, so the two curves are always in the same plane.">
+          <TextBlock x:Name="PlaneLabel" Text="intrinsic"/>
+        </ToggleButton>
+
+        <!-- §7.4: the X-axis unit is click-to-cycle on the axis itself; this is the same command,
+             reachable from the toolbar for discoverability. -->
+        <Button x:Name="XUnitButton" Click="OnCycleXUnitClick"
+                ToolTip.Tip="Cycle the power-sweep X axis: Pout (dBm) → Pout (W) → Pin available (dBm) → Pin available (W).">
+          <TextBlock x:Name="XUnitLabel" Text="Pout (dBm)"/>
+        </Button>
+
+        <!-- R-h6-11: the operating point the intrinsic glyphs and the inverse solve are posed at.
+             Intrinsic impedance is drive-dependent, so this is part of the question, not a detail. -->
+        <Button x:Name="CursorModeButton" Click="OnToggleCursorSnap"
+                ToolTip.Tip="Operating point for the glyphs and the inverse solve. Snap to compression follows the P-x dB point; otherwise the cursor stays where you put it.">
+          <TextBlock x:Name="CursorModeLabel" Text="cursor: compression"/>
+        </Button>
+
+        <!-- §7.7 — Edit Display's own toggle, beside the toolbar it unlocks. The menu item and this
+             run the same command; a modal state the user cannot see they are in is a trap. -->
+        <ToggleButton x:Name="EditDisplayToggle" Click="OnToggleEditDisplay"
+                      ToolTip.Tip="Edit Display: unlock the panel layout so panels can be moved, resized and removed. Re-locking restores the default arrangement.">
+          <TextBlock x:Name="EditDisplayLabel" Text="edit display"/>
+        </ToggleButton>
+
+        <Border Width="1" Margin="4,2" Background="{DynamicResource CrfTileBorderBrush}"/>
+
+        <!-- R-h6-5: FrameScheduler.StatusMessage lands HERE. A model that cannot hold the frame
+             target is told about, never silently stuttered at. -->
+        <TextBlock x:Name="StatusText" VerticalAlignment="Center" Opacity="0.7"
+                   ToolTip.Tip="Solve cost and status. Tier A is one Pin drive-up; the contour maps are tier B. When the ladder degrades or tier A alone misses the frame target, this says so."/>
+      </StackPanel>
+    </Border>
+
+    <!-- ── The §7.1 panel area. The canvas fills it; the readout strip is overlaid at the
+         placement CharmLayout gives it, so both read one layout source. ── -->
+    <Panel x:Name="PanelHost">
+      <ctrl:HarmonicaCanvas x:Name="Canvas" ClipToBounds="True"/>
+
+      <Border x:Name="ReadoutHost"
+              HorizontalAlignment="Left" VerticalAlignment="Top"
+              Background="Transparent">
+        <hv:ReadoutStripView x:Name="Readouts"/>
+      </Border>
+    </Panel>
+
+  </DockPanel>
+</UserControl>

@@ -117,6 +117,536 @@ position back; MBend shows an arc-hinted grip at BOTH pins and swinging either o
 other end stays put; and the Properties Inspector's parameter values count up and down live while any
 grip is dragged.
 
+harmonicaRF H8 — Set DUT, the standalone binary, packaging, and the four unwired hooks
+(brief-harmonicarf-h8-standalone-binary-and-set-dut.md, 2026-08-07) — **COMPLETE (M1–M5).**
+Read `src/Harmonica/CLAUDE.md`'s own H8 entry for the framework-free half (`IntrinsicPortMap`, and the
+`CharmIo` model-file bug it found). **This is the phase where harmonicaRF stops being a tab inside
+circuitRF and becomes an instrument you can hand someone.**
+
+**M1 — Set DUT.** `HarmonicaSetDutDialog` edits a `DutSpec` and hands it back; applying it is
+`HarmonicaViewModel.ApplyDut`, which routes through H7's own structural write-back (`StructuralKey`
+decides rebuild-vs-value-change, R-h7-3) rather than a second one — R-h8-1, and the dialog reaches
+neither `HarmonicaContext`, `TerminationSet` nor the scheduler. Four kinds: SDD equations, one of the
+five native FET laws, a bare `.osdi`, or a kit part.
+- **Parameters are READ from the model (R-h8-2).** `HarmonicaInputs.DeclaredModelParameters` was
+  widened with a `DutKind.External` arm reading the descriptor through `HarmonicaDutCatalog.TryDescribe`;
+  there is no second reader. An unreachable external model falls back to whatever the document already
+  carries rather than blanking the list — the parameters are still the document's, the *description* is
+  what is missing.
+- **R-h8-4 — a kit part needs a KIT-FOLDER PREFERENCE, not a workspace, and this is one line of
+  `DeviceWorkerProviderResolver`'s own API.** That type has two constructors:
+  `(IEnumerable<string> searchRoots)` — no workspace, what `src/Cli --kits` already ships — and
+  `(IEnumerable<(string, DeviceWorkerManifest)>)`, the workspace's convenience form.
+  `HarmonicaDutCatalog.RegisterKitResolver()` calls the first with `AppPreferences.HarmonicaKitFolders`.
+  **No in-memory workspace is created anywhere** (see §10's report below). The resolver is installed
+  when *Set DUT…* opens rather than at startup — installing it is what makes a kit reachable, this is
+  the first moment anything asks, and it starts nothing.
+- **The mapping is asked for, never guessed (R-h8-3)** — see the Harmonica-side entry. `HarmonicaDutEditor`
+  (framework-free, so it is testable without a `Window`) stages the edit: **all three or none** of
+  gate/drain/source, and a **missing** mapping is not an error. Changing the model drops the old
+  mapping — node names belong to the model that declared them.
+
+**M2 — the standalone entry point.** A second `Main` (`ProgramHarmonica`), a second `Application`
+(`HarmonicaApp`), and a shell (`HarmonicaShellWindow`) that is a **plain `Window`**, not a Dock
+document. Selected by an MSBuild property, `-p:CrfApp=harmonica`.
+- **R-h8-5 — `<StartupObject>` is named EXPLICITLY for BOTH configurations**, and the default case is
+  named too. `TreatWarningsAsErrors` makes a second `Main` a CS0017, so "there is only one entry point"
+  is exactly the assumption that breaks on the day the second one lands. A typo in `CrfApp` is an
+  MSBuild `<Error>`, not a silent circuitRF build.
+- **The ASSEMBLY NAME stays `CircuitRF.Ui` for both, deliberately.** Renaming it was tried and broke the
+  Data Display half at compile time: `RfCore`'s `InternalsVisibleTo` names that assembly. The `.app`
+  bundle is what differs, not the binary's name.
+- **R-h8-6 — the style/resource superset is BY CONSTRUCTION.** The application-scope resources and
+  styles moved out of `App.axaml` into `Styles/CircuitRfResources.axaml` + `Styles/CircuitRfStyles.axaml`,
+  and **both** Applications include the same two files. Neither declares an application-scope style or
+  resource of its own (pinned by an XML-structural test), so a dependency added to one cannot fall out
+  of the other — which matters because the way it fails is silent: omit the ColorPicker Fluent include
+  (`…/Themes/Fluent/Fluent.xaml`, note `.xaml`, not `.axaml`) and `ColorView` renders as an empty box
+  with no error. A grep-for-one-`StyleInclude` test would have passed the day a second one was needed.
+- **R-h8-7** — `HarmonicaApp` stands up no `WorkspaceWindow`/`WorkspaceViewModel`, runs no launch
+  action, registers no `ProcessTechnologyRecognizers` and claims no `.crfw`; it **keeps both**
+  `ProcessExit` cleanups (`ExternalDeviceRegistry.ResetResolved()` — harmonicaRF can hold an external
+  DUT, so it can leak a device worker — and `PCellRegistry.ClearResolvers()`) and
+  `ThemeResolver.SetBuiltInProvider` plus the saved theme.
+- **R-h8-8 — several `.charm` files open as several WINDOWS, not tabs.** Tabs would need the document
+  shell this binary exists to do without; with one window per document the OS window list *is* the
+  document list. The macOS menu bar comes for free: `HarmonicaMenuView` attaches its `NativeMenu` to any
+  hosting window that is not a `WorkspaceWindow` — a type-NAME comparison, so the view takes no
+  dependency on a shell that does not exist in this build (pinned, because a rename would silently stop
+  the menu bar appearing with nothing failing to compile).
+
+**M3 — packaging and identity.** `harmonicaRF-app-icon.svg`, `Assets/macOS/Harmonica-Info.plist`
+(`com.circuitRF.harmonicaRF`, its own name and icon), and `bundleForHarmonicaMacOS.sh`, which records
+the publish command in-repo and checks the plist's `CFBundleIdentifier` against its own `BUNDLE_ID` —
+R-h8-9's three-place trap (plist / script / codesign) has exactly one place the three can be compared.
+- **R-h8-10 — `.charm` is declared on BOTH binaries, EXPORTED by circuitRF and IMPORTED by
+  harmonicaRF.** Two applications both *exporting* one UTI is what Launch Services cannot arbitrate;
+  circuitRF ships the type's description, harmonicaRF states that it understands it, and both open one.
+  circuitRF's role is **Viewer**, harmonicaRF's is **Editor** — the standalone owns a `.charm`.
+  harmonicaRF deliberately claims **no** `.crfw`: offering an app that cannot open a workspace in
+  "Open With" for every workspace on the machine would be a lie.
+- `dotnet publish -c Release -r osx-arm64 --self-contained -p:CrfApp=harmonica` produces a runnable
+  arm64 binary (verified). Per §0.2 binary size is a **closed question** and was not measured.
+
+**M4 — the four hooks H7 left null.** *Set DUT…*, *Export Data*, *Copy Plot*, *Help*, all wired in
+`HarmonicaView`. Gated by **reflection over the hook set** rather than a hand-written list, so a hook
+added later and left null fails there rather than doing nothing under a menu item that looks live.
+- **R-h8-11 — both go through the EXISTING exporters.** *Export Data* writes the frame's **own
+  published `DataSet`** (R-h7-6's — the one the panels drew from), never a re-solve: a file that
+  disagreed with what is on screen is the worst possible export. One `DataSetExporter.Export` call,
+  format from the chosen extension (`.mat`/`.txt`/`.npy`).
+- **`Copy Plot` copies the PANEL UNDER THE POINTER**, falling back to the whole canvas. It reuses
+  `HarmonicaEditTarget`'s own resolution, so it cannot disagree with the delete gesture the user
+  already sees respond. **harmonicaRF has no `PlotContainerViewModel` to reuse** — its panels are one
+  Skia surface — so `HarmonicaCanvasRenderer` (new) was extracted as ONE composer with two consumers,
+  the live canvas and the exporter, and the genuinely shareable half of `PlotExporter` (the
+  multi-format clipboard write with its Windows bypass and text fallback) was widened `private` →
+  `internal` rather than copied.
+- **Open item 6 settled YES**: a `.charm` in a workspace appears in the project tree
+  (`NodeKind.HarmonicaFile`), openable, revealable, riding the **Data Displays** filter rather than a
+  seventh checkbox. `WorkspaceViewModel.OpenHarmonicaPath` activates an already-open document through
+  `ActivateOpenDocument` (so a torn-off window is **raised**, not merely tab-selected);
+  `NotifyHarmonicaSaved` re-keys `_openDocsByPath` on Save-As so reopening never mints a second live
+  view of one file.
+
+**M5 — the phase gate.** One `.charm`, two binaries, the same numbers. The value half writes a
+document, reads it back **from the file alone** with nothing carried over, re-solves, and compares
+every published cube bit-for-bit (NaN-tolerant, because an unavailable intrinsic side is NaN by
+design). The structural half is what a value comparison cannot reach: both binaries open a `.charm`
+through the **same** `HarmonicaView.LoadCharmFile` — circuitRF's Dock document and the standalone shell
+alike — so "two binaries, one file" holds by construction rather than by two implementations agreeing
+today.
+
+**One guardrail crossing, message-only, required verbatim by R-h8-4.**
+`src/Core/Devices/External/DeviceWorkerProviderResolver.cs` now distinguishes its two constructors in
+`Describe`'s empty case: the folder form says *"no kit folder has been configured, so there was nowhere
+to look for one"* rather than the workspace form's *"no kit in this workspace settled on a way to
+evaluate its devices"* — which is false and misleading in a binary that has no workspace. No behaviour
+change; `Core.Tests` 1,118 unchanged.
+
+**Gate:** `tests/Ui.Tests` **5,294** (+43), `tests/Harmonica.Tests` 94, `tests/Firewall.Tests` 5,
+`tests/Core.Tests` 1,118 — all green. **No benchmark methods added**, as §8 expected.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: the standalone binary launches to the four §7.1 panels with no workspace, no project tree and
+no launch action; its Edit ▸ Preferences… colour editor shows a **populated** `ColorView` (the §7.9.4
+gotcha); quitting it with an external DUT loaded leaves no worker process running; double-clicking a
+`.charm` opens harmonicaRF and double-clicking one while circuitRF is running opens it there; File ▸
+Set DUT… lists a kit part once a kit folder is added and refuses a partly-named intrinsic plane by
+name; and Copy Plot pastes the panel the pointer was over.
+
+harmonicaRF H7 — Edit Display, the trace picker, interchange and the colour editor
+(brief-harmonicarf-h7-edit-display-interchange-and-colour.md, 2026-08-07) — **COMPLETE (M1–M5).**
+Read `src/Harmonica/CLAUDE.md`'s own H7 entry for the framework-free half (the `.charm` traces block,
+the grid's single-point reuse, the Grid-menu preset).
+
+**THE PHASE'S BIGGEST FINDING: §7.8's "export the terminations as a `Tuner` pair" DOES NOT WORK, and
+it would have failed silently.** R-h7-13 gates *Export testbench* on running through `Cli hb`. A
+`Tuner` is **inert** on that path: nothing in `HbEngine` calls `SetRole`, `SetTone` or
+`SetSourceDrive` — those are the **loadpull** engine's, and the CLI has no loadpull verb. A
+Tuner-pair export would therefore present `Z[1]` flat at *every* harmonic and emit **no drive at
+all** — it would run, converge, and be wrong. The two components `HbEngine` *does* hand a band ruler
+to are `P1Tone` and `PnTone`, so the export uses them:
+
+- **source** — a `P1Tone` at the frame's own available power with `Z[k]` per marked band. Its
+  `|Vs| = √(8·Pavl·Re Z(1))` is byte-for-byte `HarmonicaContext.DriveVolts`' rule.
+- **load** — a `PnTone` declaring **no tones**. Its drive phasor is then zero at every spectral line
+  while its per-band `Z[k]` stays live, which is exactly "a per-harmonic passive termination" and is
+  the only way to spell one in an HB netlist today.
+- **the DC block is written explicitly, in series, at each plane.** §6.2 folds it into the
+  termination admittance rather than the netlist, so an export that omitted it would be a different
+  circuit — and at DC it is what stops the termination shorting the bias supply.
+
+*Copy termination set* is **still a `Tuner` pair**, and that is not an inconsistency: a Tuner pasted
+into a schematic IS driven by the loadpull engine. §7.8 conflated two different requirements.
+
+**THE AGREEMENT, MEASURED.** The exported testbench against the frame it came from, both sides
+through `LoadpullEngine.ComputeFoms` so it compares two SOLVES rather than two formulas:
+
+| fixture | Δ Pout | Δ Gt | Δ Pdc |
+|---|---|---|---|
+| the shipped default document (bare device, L1 only) | **7.5e-12 dB** | 7.5e-12 dB | 4.9e-10 W |
+| full lumped package + S2, L2, L3 marked | **1.5e-7 dB** | 1.5e-7 dB | 6.1e-7 W |
+
+**Five orders better than H0–H3's Tier 3 (6.7e-5 dB), and the reason is stated rather than
+celebrated**: Tier 3's reference was a `Tuner`-based netlist whose *ideal* 1 F / 1 H bias tee forced
+the harmonicaRF side to be configured to match, so the two circuits were equivalent. This export
+states the model's own `DcBlockFarads` / `BiasChokeHenries`, so the two are literally the same
+circuit and only the assembly differs. The gate still asserts the Tier 3 class; the measured number
+is reported. `HarmonicaTestbenchCliTests` (`Category=Benchmark`) runs the file through the real
+`dotnet run --project src/Cli -- hb` process, because "runnable" is a claim about the product path.
+
+**`Zs_conv`'s OFF-DIAGONALS DO SHOW SOMETHING, and the control is what makes that meaningful.** §4.5.3
+calls them "genuinely useful and rarely-visible" and this is the first phase that could look. On a
+package with a source lead (Rs = 0.8 Ω, Ls = 50 pH, Rd = 4 Ω) the largest off-diagonal is **4.567 Ω
+against the fundamental diagonal's 26.056 Ω — 17.5%.** On the **bare** shipped default it is
+**6.9e-18 Ω, i.e. 2.8e-19 of the diagonal**: pure round-off. So the quantity is real and is created
+by the coupling element, exactly as §4.5.3(a) says — and a fixture without one would have measured
+nothing while passing.
+
+**EDIT DISPLAY NEEDED ONE THING `PlotContainerViewModel` DOES NOT DO, and it is the layout model
+itself.** R-h7-9 asks for `.cdd`'s canvas; R-h7-8 forbids replacing `CharmLayout`. Those conflict:
+`PlotContainerViewModel` positions a plot in **canvas pixels** against `DataDisplayViewModel`'s own
+zoom and pan, and adopting it *is* replacing the layout mechanism — which is the thing R-h7-8 says
+has gone wrong. R-h45-1 put the layout in FRACTIONS for this milestone, so `HarmonicaEditDisplay`
+writes `CharmPanelPlacement`. **What IS reused is the part that was actually shared: `UndoRedoManager`
+and `IUndoableCommand` from `src/Ui/DataDisplay/Models/UndoRedo.cs`, unchanged.**
+- **One undo entry per gesture** — `BeginGesture` / `EndGesture` collapse a 40-move drag into one
+  command, asserted with the counter shape the PCell drags already use.
+- **R-h7-10 is a CLAMP, and that choice is stated:** `MinimumSpan = 0.05` of the document in either
+  axis, applied at drag time. Refusing the drop was the alternative and was rejected — a refused drop
+  leaves the pointer holding something with nowhere to put it, and the user cannot tell a refusal
+  from a frozen UI.
+- **`SameLayout` compares with an epsilon (5e-7), not exactly**, and that is not laziness: a drag out
+  and back gives `0.65 + 0.05 − 0.05 = 0.6500000000000001`, so exact comparison would push an undo
+  entry for a move nobody made and nobody can see.
+- **Re-locking restores §7.1's default**, so an untouched document still writes NO layout block — the
+  H4–H5 invariant survives.
+
+**R-h7-3's value/structural split is MEASURED, not tabulated.** `HarmonicaInputs.IsStructural` applies
+a probe value and compares `CircuitModel.StructuralKey`, so an input added to the model without being
+classified cannot be mis-classified. **The gate caught a real bug in that probe**: `Apply` trims, so
+a whitespace-only probe stored the identical value, the key did not move, and an SDD equation edit
+was reported as a VALUE change. Found by the test that applies each probe and compares the key — not
+by review.
+
+**§7.5's inputs are READ from the model (R-h7-4).** An SDD's parameters *are* its equations, keyed as
+the `.cnl` spells them; a native FET's come from `ComponentTypeRegistry.DefaultParameters`, the same
+declaration the schematic parameter editor renders, so Angelov shows `Ipk`/`Vpk` and Materka shows
+`Idss`/`Vp0` and neither shows the other's. The engine-name → `SymbolKind` map is built by INVERTING
+`ComponentTypeRegistry.EngineReference` rather than by a second literal table.
+
+**The `.charm` File route did not exist and is built here.** H4–H6 shipped `CharmIo` and
+`HarmonicaDocument.OnSavedToPath` but no command that reaches either — `WorkspaceViewModel` only knows
+how to CREATE a harmonicaRF document. §7.6's File ▸ Open / Save / Save As are therefore served by the
+document's own view, through `StorageProvider`, needing no workspace (§1.2) — and an unresolved model
+or embedding reference is reported in the status strip with the file it names, per §8.1, rather than
+failing the open. New and Close DO need the shell and resolve `WorkspaceViewModel` from the hosting
+window per call (R-menu-4's own per-window rule); standalone, they are simply inert.
+
+**Two menu surfaces, and `NativeMenu` has no `ItemsSource`.** `HarmonicaMenuView.axaml` carries both —
+the macOS `NativeMenu` attached via `NativeMenu.Menu` **on the UserControl**, which is what gives its
+bindings a DataContext to resolve against, and the in-window `Menu` as the control's content. The
+band submenus are built in code-behind from the SAME collections the in-window menu binds to, exactly
+as `WorkspaceWindow`'s Window menu is, for the same reason. The native menu is attached to the hosting
+Window **only when harmonicaRF has a window of its own** (torn off, or H8's standalone binary) —
+a docked tab must not replace circuitRF's application menu bar. The in-window Menu is **always**
+visible, unlike `TornOffFileMenuView`: Markers / Display / Grid exist nowhere else, so hiding them
+while docked would leave the document with no menu set at all.
+
+**One consequence of R-h7-11 worth knowing before it is rediscovered:** while a CUSTOM grid is
+installed (an imported `.gam`, or a ring set with a point dragged), §6.8's `CoarseGrid` rung is a
+**no-op**. The scheduler can still coarsen the raster and freeze contours, but it cannot thin a
+scatter it did not generate — dropping points from a grid the user hand-placed would silently answer a
+different question from the one they asked.
+
+**§6.5's per-chart plane and harmonic selectors are DOCUMENT-WIDE here, and that is a cost decision.**
+`HarmonicaSolver` builds ONE `ContourGrid` and derives both metrics from it — which is why H4–H5's own
+cost table shows a single grid solve per frame. Two independently-swept charts would be two grids,
+i.e. double the dominant term of a frame. The selectors are in the Display menu and move both charts.
+
+**A grid point is hit-tested on the RAW chart transform, and the R-h6-1 offset has no analogue here.**
+`IntrinsicGlyphScale` compresses only OUTSIDE the rim; a grid point is a passive load termination and
+is always inside, so `GammaToCanvas` and `MarkerToCanvas` agree on it **exactly** (measured at 0.00 px
+across |Γ| ∈ [0, 0.999], against 83.3 px at |Γ| = 1.6). The hit test still uses `GammaToCanvas`,
+because matching the renderer is the rule rather than the size of today's error. Its grab radius is
+**7 device pixels against a marker's 14** — a 61-point grid at marker size would leave no gaps between
+targets. It is the THIRD pass, beneath markers and glyphs.
+
+**M5's colour editor writes `CharmAppearance` and nothing else**, which is R-h7-16 expressed as a type
+rather than as a rule. The gate drives 20 full recolours THROUGH THE EDITOR and asserts
+`SolveCount`, `FactorizationCount`, `RebuildCount` and the fit's own value all unmoved — with a
+negative control proving those counters can move. The two inherited fixes are reused rather than
+re-derived: the hex field's Return-applies-and-handles / Escape-reverts / LostFocus-applies contract
+with `RRGGBBAA` and a six-digit entry taken as opaque, and `ColorView`'s Fluent theme by going through
+`ColorPickerDialog`. `Reset all colours` deliberately leaves the §7.2 fade parameters alone — they are
+not colours, and a user who flattened the fade did not ask for it back.
+
+**Gate:** `tests/Ui.Tests` **5,251** (+67), `tests/Harmonica.Tests` **94** (+5),
+`tests/Firewall.Tests` 5, `tests/Engine.Tests` 1,004 + 1 pre-existing skip — all green. Benchmark tier
+grew by **~5 s** for two methods (`HarmonicaGridDragCostTests` and `HarmonicaTestbenchCliTests`), both
+in the non-parallel `HarmonicaUiBenchmarks` collection, best-of-N minimum, measured alone.
+
+**The readout strip's input row is updated IN PLACE, never rebuilt, and that is not an optimisation.**
+`Refresh()` runs on every published frame and harmonicaRF publishes constantly; rebuilding the row
+would destroy the `TextBox` the user is typing in — the caret vanishing mid-number is the most
+disruptive thing this panel could do. The row is rebuilt only when its SHAPE changes (a different
+model declaring different parameters); otherwise values are written in place, **skipping whichever
+editor has focus**, and each editor carries an `EditorState` so a programmatic write updates its
+`Pristine` (or LostFocus would re-apply a value nobody typed) and suppresses the checkbox's own
+changed event. Not unit-tested: this repo's `Ui.Tests` instantiate no live controls anywhere, so it is
+on the interactive-verification list below.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: the harmonicaRF menu bar appears above the toolbar with File / Edit / Markers / Display /
+Grid / Help and no Simulate; typing in a readout-strip input is NOT interrupted by frames landing
+underneath it; Markers ▸ Load Bands ▸ L2 puts a second marker on both charts; the
+readout strip's top row is editable and a structural input (marked `*`) visibly resets the ladder;
+Display ▸ Edit Display outlines every panel with a corner grip and dragging one moves it; Display ▸
+Add Trace… lists the solved cubes and adding `mag(Zs_conv[1, :])` draws a new panel; Grid ▸ Import
+.gam… replaces the ring set; and Edit ▸ Preferences… recolours live with no visible re-solve.
+
+harmonicaRF H6 — the drag gesture, the inverse solve and reachability shading
+(brief-harmonicarf-h6-inverse-solve-and-drag.md, 2026-08-07) — **COMPLETE (M1–M3).**
+Read `src/Harmonica/CLAUDE.md`'s own H6 entry for the framework-free half (the solver, the sampler,
+the cost measurements and the answer to open item 8).
+
+**H4–H5 built the scheduler, the pool and the panels, and NOTHING CALLED THEM, because there was no
+pointer gesture.** That is what M1 fixes, and it is why M1 was a legitimate stopping point on its own.
+
+**`HarmonicaPanelRenderer.CanvasToGamma` / `MarkerToCanvas` / `CanvasToMarker` — R-h6-1's one
+transform pair, and the trap is measurable.** The raw `PlotRenderer.BuildTransforms` does not know
+about `AnnulusHeadroom`, so inverting it is off by that factor: **39.1 px at |Γ| = 0.95 on a 420 px
+panel**, against a 14 px grab radius. A hit test built on it would miss every marker near the rim,
+which is where markers sit. `HarmonicaDragTests.Tier1_TheInverseCarriesTheANNULUSHEADROOM_...`
+measures that offset rather than asserting its absence, and fails if the fixture ever stops
+demonstrating it.
+
+**The MARKER pair is not the same as the Γ pair, and this was a real bug caught while writing it.**
+`GammaToCanvas` is the chart transform; `MarkerToCanvas` composes it with
+`IntrinsicGlyphScale.DisplayPosition`, because R-h6-10 draws an ACTIVE extrinsic marker in the
+compressed annulus rather than clamped at the rim. The moment the renderer started doing that, a hit
+test using the bare `GammaToCanvas` disagreed with where the marker was drawn. `IntrinsicGlyphScale`
+gained `TrueRadius`/`TruePosition` — the exact inverse of the compressed scale — so the pair closes.
+
+**R-h6-2's grab radius is 14 DEVICE pixels, divided by `RenderScaling` PER EVENT.** Measured
+identical (14 px) on a 300 px and a 900 px canvas, and at 2× scaling a 6-DIP offset grabs where a
+10-DIP one does not. Nothing about panel size, marker position or the radius is cached — this repo's
+L1c and L1-fix entries are two prior tolerances that were correct at the size they were computed at.
+
+**`PublishFrame` NOW RECORDS THE FRAME'S COST, and that is R-h6-4 rather than a convenience.** A
+ladder nothing feeds can never degrade and D4's status message can never fire. Two consequences worth
+knowing: `RenderMs` is the PREVIOUS frame's, by one frame (the draw this frame provokes has not
+happened yet — said plainly rather than hidden), and **any test that also records a synthetic timing
+now double-counts**. `HarmonicaScheduledFrameTests.Tier5` was updated for exactly that reason; its
+sibling Tier6, which does not stand in for the view, still records its own.
+
+**D6's fit/raster split is now taken where it happens, and it confirms H0–H3.** `BuildSmith` calls
+`grid.Fit(metric)` explicitly before `grid.Raster(...)` — otherwise `Raster` fits lazily inside the
+block being attributed to the raster and the two can never be separated. On a real opening frame:
+**tier A 23.0 ms · grid solve 425.5 ms · fit 1.91 ms · raster 163.1 ms**. The fit is 0.3% of the
+frame; degrading it would buy nothing, which is what §6.4.1 item 6 exists to establish.
+
+**§8.1 ANSWERED — TIER 9 IS CONFIRMED FROM AN ACTUAL GESTURE** (`HarmonicaDragCostTests`,
+`Category=Benchmark`, 1400 × 900, the shipping default document):
+
+| | tierA | gridSolve | fit | raster | total |
+|---|---|---|---|---|---|
+| opening frame (`Full`) | 23.0 | 425.5 | 1.91 | 163.1 | **614 ms** |
+| drag frame (`CoarseRaster`) | 20.7 | 338.0 | 0.15 | 21.6 | **380 ms** |
+| drag frame (`Full`, the snap) | 20.7 | 330.7 | 0.14 | 148.9 | **500 ms** |
+
+A 40-move drag **settles on `FrozenContours`**, superseding **39 of 46** requests, and the status
+strip reads "Contours frozen while dragging; they update on release." **No contour-bearing rung is
+within 10× of the 33 ms budget** — Tier 9 said only freeze-and-snap holds 30 fps on this model and
+that is what an actual gesture does. D5's raster switch is still worth 7.5× of the raster stage
+(163 → 21.6 ms) for zero grid loss.
+
+**M1's gate, and the one thing that made it deterministic.** "Exactly one published frame at
+`FrameQuality.Full` — the snap" is only well-defined once the ladder has already left `Full`, and the
+realistic way it does that is **the document's own opening frame**, whose 614 ms cost degrades it
+before a user can reach for the mouse. The test does that rather than starting from a pristine
+scheduler, which is both the honest case and the reproducible one.
+
+**M2 — the glyph drag, end to end.** `HarmonicaViewModel.BeginIntrinsicDrag` / `DragIntrinsicGlyph`
+/ `EndIntrinsicDrag`, submitted to the SAME pool as every other frame (§6.7: the UI thread never
+solves). The answer crosses back **on the frame** as `HarmonicaFrame.Inverse`, and `PublishFrame`
+writes it into `Terminations` and the markers on the UI thread — a field two threads share would have
+been the obvious alternative and the wrong one. Measured through the document: the glyph lands
+**1.2e-5** from where it was dragged.
+
+**The other glyphs' targets are FROZEN at drag start, not re-read each frame.** Re-reading would let
+each frame's own answer become the next frame's requirement, and §6.6's constraint "these do not
+move" would quietly become "these may drift as far as one frame at a time allows".
+
+**A test fixture finding worth keeping: the shipped default document CANNOT exercise an intrinsic
+drag.** §4.5 consequence 1 says the glyph coincides with its marker when charge is off *and* there is
+no extrinsic network — and the default document is exactly that, so its glyph sits ~0.003 Γ (≈ 1 px)
+from its marker and the z-ordered hit test correctly grabs the marker on top. Even a realistic
+package (Rd = 8 Ω) leaves them 16 px apart against a 14 px radius. `HarmonicaInverseDragTests` uses a
+**deliberately exaggerated** package and asserts the separation exceeds the grab radius, so a future
+change that collapses the two planes fails loudly instead of silently measuring an extrinsic drag.
+
+**M3 — reachability shading, AUTOMATIC (open item 4, settled by measurement).** 52.4 ms at the
+shipping 24-sample density, paid **once per drag** (`ReachabilitySampleCount = 1` across 9 frames),
+which is under two frames of budget for a whole gesture. `HarmonicaViewModel.ShowReachableRegion`
+stays as a property so a slow model can be told not to. It is drawn **beneath** the contours and on
+the SAME compressed radial scale the glyph uses — a region in raw Γ next to a glyph on the compressed
+scale would disagree about whether an out-of-circle target is reachable, which is the one question the
+shading exists to answer.
+
+**Filling the reachable region is NOT a breach of "harmonicaRF never fills."** That ruling is about
+ISO-LINES, where a fill would claim a metric value everywhere inside a level. A region is a region,
+and a boundary alone leaves "inside or outside?" to the reader on a shape that is not convex.
+
+**R-h6-10's hatched outline, gated differentially.** An active extrinsic marker (|Γ| = 1.6) is drawn
+at x = 427 on a 460 px panel whose Γ = 1 rim is at x = 410 — beyond the rim, on the panel, not
+clamped. The hatch is measured as outline reach from the marker centre: **12 px against a plain
+marker's 7 px**, sampled on eight rays so a dashed ring cannot be missed between dashes.
+
+**R-h6-11 — the operating point is the power-sweep cursor's Pin, with snap-to-compression ON by
+default** (which is what makes "set the load at compression" the thing you get without typing a drive
+level) and a toolbar button to pin it. **Re-converge at compression is DEFAULT OFF** and implemented
+honestly: it re-runs `PinSearch` on the answer and, if compression moved more than 0.05 dB, calls
+`InverseSolver.SetOperatingPoint`, which **discards the Jacobian** — which is exactly where §6.6's
+"~10× the cost" comes from.
+
+**Gate:** `tests/Ui.Tests` **5,184** (+19), `tests/Harmonica.Tests` **89** (+11, of which 3 are
+opt-in Benchmarks), `tests/Firewall.Tests` 5, `tests/Core.Tests` 1,118, `tests/RfCore.Tests` 281 —
+all green. Benchmark tier grew by ~5 s (`InverseSolveCostTests`) and ~2 s (`HarmonicaDragCostTests`);
+both are in non-parallel collections and every reported number was measured ALONE.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: dragging a round marker on either Smith chart moves it live and the other chart follows;
+the status strip says what the ladder is doing; the cursor button toggles between "compression" and a
+pinned dBm; dragging a triangular glyph moves the round markers instead of itself; and a glyph
+dragged somewhere unreachable snaps back with a message rather than sticking.
+
+harmonicaRF H4–H5 — the theme, the layout, the four panels, the solve pool and the frame scheduler
+(brief-harmonicarf-h4-h5-panels-and-frame-scheduler.md, 2026-08-06) — **COMPLETE (M0–M6).**
+Read `src/Harmonica/CLAUDE.md`'s own H4–H5 entry for the framework-free half (the pool, the
+scheduler, `CharmLayout`, `CharmAppearance`).
+
+**`src/Ui` now references `src/Harmonica`, one way only.** The UI firewall is unchanged and still
+enforced — `tests/Firewall.Tests` asserts `CircuitRF.Harmonica` references no Avalonia, and it does
+not. Ui consumes Harmonica; never the reverse.
+
+**M1 — THE RENDER MEASUREMENTS, WHICH NOBODY HAD TAKEN.** §0.2's whole budget is a SOLVE cost; a
+frame is a solve plus a render. Measured headless through the REAL DataDisplay renderers at
+harmonicaRF-shaped content (`tests/Ui.Tests/Harmonica/HarmonicaRenderBudgetTests.cs`,
+`Category=Benchmark`, taken alone, best-of-9):
+
+| | 1× | 2× device scale |
+|---|---|---|
+| one Smith panel (61-pt grid, 10 levels, 25 polylines / 2,447 vertices, dots, 8 symbols) | **2.92 ms** | **9.26 ms** |
+| loadline panel (9-curve DCIV + loadline) | **0.15 ms** | **0.28 ms** |
+| power-sweep panel (gain + efficiency) | **0.14 ms** | **0.25 ms** |
+| the whole four-panel §7.1 layout at 1600×1000 | **6.13 ms** | **19.61 ms** |
+
+- **The trigger in §3 fires at 2×, and the owner ruled on it.** "(4) plus tier A's 9 ms exceeds
+  ~25 ms" → 15.4 ms at 1× (fine), **29.6 ms at 2×** (fires). Owner's call: proceed on the
+  **pipelined** reading, which is what §6.7 actually specifies — the UI thread never solves, so its
+  budget is the render alone (19.6 ms inside a 33 ms frame, ~1.6× headroom) and tier A's 9 ms is
+  worker-thread latency that adds to LAG, not to frame time. **D4 stands.**
+- **TURNING THE CONTOUR FILL ON COSTS 73 ms** — 25× the unfilled panel, on its own more than two
+  whole frames. §7.2 keeps contours unfilled by default, which turns out to be load-bearing rather
+  than aesthetic. Do not make fill a default without re-measuring.
+- **The §7.5 readout strip is Avalonia TextBlocks, not a Skia draw** — it costs a layout pass and is
+  not in any number above. Said rather than folded in.
+
+**`SkiaFonts.TestOverrideTypeface` (new, internal) — the seam that made all of this measurable.**
+`SkiaFonts.Load` goes through Avalonia's `AssetLoader`, which throws `InvalidOperationException:
+Unable to locate 'Avalonia.Platform.IAssetLoader'` with no live app host (measured directly, not
+assumed). Every Skia renderer draws SOME text, so without this a full-plot render could not be
+exercised — or measured — headlessly at all. Same seam `LayoutTextOutline.TestOverrideTypeface`
+already established, applied one level lower so it covers every renderer. **Production never sets
+it.** Any class that does joins `LayoutTextOutlineTypefaceCollection` — it is one static field and
+two classes setting/clearing it independently race.
+
+**M2 — the `Harmonica.*` roles (D7) and `HarmonicaRenderTheme`.** 22 roles appended to the SHARED
+`ColorRole.All`, with §7.9.2/§7.9.3's tables verbatim in `ColorTheme.BuiltIn` for both variants.
+`HarmonicaRenderTheme.FromTheme` mirrors `SchematicRenderTheme` exactly; `Light`/`Dark` are DERIVED
+from `BuiltIn`, so no hardcoded colour is the source of truth anywhere.
+- **Red is reserved to the loadline and the efficiency trace, and a test enforces it** — including
+  a non-vacuity check that the predicate actually fires on those two, so it cannot pass against any
+  palette. The five-colour band cycle is IDENTICAL in both variants on purpose: which colour means
+  "2f₀" is a harmonic-identity convention, not a theme choice.
+- **`HarmonicaRenderTheme.ToPlotTheme` is the reuse lever.** harmonicaRF does not merely share the
+  role vocabulary — it shares the RENDERERS. The panels build ordinary `Plot` objects and hand them
+  to `PlotRenderer.Draw` with harmonicaRF's palette in place of the Data Display's, so §2's "use it,
+  do not reimplement" holds for the Smith grid, the axes, the traces and the contour machinery.
+- **R-h45-11 holds by CONSTRUCTION**: `HarmonicaRenderTheme` has no field or property whose type
+  lives in the Harmonica assembly, so a colour change has no path to a grid, a context or a
+  scheduler to invalidate. Gated both ways — a real `ContourGrid` survives a 20× full theme swap
+  with `FactorizationCount` and fit identity unchanged, plus a negative control proving those
+  counters CAN move.
+
+**M3 — harmonicaRF is reachable from the application: Tools ▸ harmonicaRF (D10, R-h45-13).** No
+workspace required (§1.2). `HarmonicaDocument`/`HarmonicaDocumentViewModel`/`HarmonicaViewModel`,
+`HarmonicaView` + `HarmonicaCanvas` + `ReadoutStripView`, and `HarmonicaSolver` (which fills a
+`HarmonicaFrame` from a real `HarmonicaContext`) all ship. The Tools menu sits between Simulate and
+Window on **both** hand-mirrored surfaces, with harmonicaRF as its only entry — H7 fills it out.
+- **`HarmonicaSolver` rasters ONCE per panel and derives levels + polylines from that raster**, never
+  `ContourGrid.Contours` (which rasters again). The raster is ~76% of the extract cost — see the
+  Harmonica-side note — so calling `Contours` twice per frame would have doubled the dominant term.
+- **R-h45-3 — the marker list is ONE `ObservableCollection` handed to both Smith panels by
+  reference.** A marker moved on one chart moves on the other in the same frame because it is the
+  same object, not because two lists are kept in step. Asserted with `Assert.Same`.
+- **`ReadoutStripView` uses `SelectableTextBlock`, never `TextBlock`** (§7.5: "all text is
+  selectable"). A readout you cannot copy is one you retype by hand into a report.
+
+**M4 — the markers, the glyphs, the holes and the ramp.**
+- **R-h45-6's ramp is RANKED, not value-proportional**, and Tier 0 proves the difference against a
+  written-out alternative rather than asserting it: on a level set with a long low tail, the ranked
+  ramp leaves α[8] at 0.79 while the proportional one crushes it to 0.25 — nine contours rendered
+  indistinguishably faint. α of the top level is **exactly** 1.0, not merely close.
+- **Tier 8 is a DIFFERENTIAL render, and the first attempt at it was wrong in an instructive way.**
+  A green-channel pixel probe cannot separate an iso-line from the Smith chart's own constant-R/X
+  arcs — those legitimately cross a hole (chart chrome, not data), and where two arcs overlap the
+  composited green rivals a faintly-ramped iso-line. Rendering the SAME panel twice, once with
+  contours and once without, makes every differing pixel contour-attributable by construction. Result
+  on a real 6-hole grid: **6,083 contour pixels on the panel, 0 inside the excluded disc.**
+- **R-h45-5's fill question is MOOT, on the owner's ruling: harmonicaRF never fills.** The concern
+  was whether the fill path respects the support mask; `FillGrid`/`DrawTopoMapFill` are unreachable
+  from harmonicaRF entirely. Gated two ways — a source scan proving `HarmonicaPanelRenderer` names no
+  fill API, and a pixel test proving a closed contour's interior stays unpainted.
+
+**M5/M6 — the UI thread never solves, and the ladder is measured.** `HarmonicaViewModel.RequestFrame`
+submits to `SolvePool` and `PublishFrame` is called by the VIEW on the UI thread; `RequestScheduledFrame`
+takes its options from `FrameScheduler` rather than from the caller. **Tier C's DCIV cache lives on
+the SHARED solver, deliberately** — one solver across N workers, guarded by a lock, because computing
+it once per WORKER would be N times the work for the same answer and would break Tier 6's "computed
+once". Measured: 20 scheduled frames across a termination drag → `DcivComputeCount = 1`.
+
+**Tier 9 — frame time at each degradation tier** (`HarmonicaFrameTierCostTests`, `Category=Benchmark`,
+best-of-5, measured alone; 700 × 560, all four panels):
+
+| rung | Γ pts | HB solves | solve ms | render ms | total ms |
+|---|---|---|---|---|---|
+| `Full` (5 × 12, raster 256) | 61 | 296 | 487.3 | 9.90 | **497.2** |
+| `CoarseRaster` (5 × 12, raster 96) | 61 | 296 | 358.8 | 9.40 | **368.2** |
+| `CoarseGrid` (3 × 12, raster 96) | 37 | 183 | 253.5 | 5.54 | **259.1** |
+| `FrozenContours` (tier A only) | 0 | 10 | 10.0 | 4.73 | **14.8** |
+
+- **The finding: D5's raster switch is worth 26% of a frame for ZERO loss of grid information** —
+  `Full` and `CoarseRaster` run the identical 296 HB solves, and the 128 ms between them is raster
+  cost alone. That is exactly why §6.8 degrades the raster first.
+- **The other finding, said plainly: on this model NO contour-bearing rung holds 30 fps.** Only
+  freeze-and-snap (14.8 ms) is inside the 33 ms budget. The ladder therefore bottoms out where it was
+  designed to, and D4's status message — not a silent stutter — is what the user sees. A faster
+  model would sit higher; this one does not.
+
+**THE ONE REAL DEFECT THIS PHASE FOUND, and a pixel oracle found it, not inspection.** The shared
+complex-plot viewport (`PlotRenderer.ComplexSideMargin` et al.) insets a Smith chart by **1%** of the
+canvas — so on a 420 px panel the Γ = 1 rim lands at x = 415.8 and **four pixels** remain. R-h45-4's
+compressed annulus needs up to 25% of the rim radius beyond that, so a glyph with `|Γ_intr| > 1`
+would have been drawn **straight off the edge of the panel** — clipped, i.e. hidden, which is exactly
+what §4.5 consequence 2 forbids. Fixed LOCALLY: `HarmonicaPanelRenderer.AnnulusHeadroom` scales the
+whole panel about its centre so chart-plus-annulus fits. Widening `PlotRenderer`'s own margins would
+have moved every Data Display Smith plot in the application to solve a harmonicaRF problem.
+**Anything overlaying or hit-testing a harmonicaRF Smith panel must go through
+`HarmonicaPanelRenderer.GammaToCanvas`, never `PlotRenderer.BuildTransforms` directly** — the raw
+transform does not know about the headroom and will be off by the factor.
+
+**Two test-side traps worth remembering**, both caught by the tests' own controls rather than by
+review: a "not background" pixel probe on a Smith panel picks up CHART CHROME, so the glyph probe
+keys on the RED channel (the phosphor palette paints chrome with none); and a value-proportional
+alpha-ramp comparison needs its crushing threshold set from the actual numbers, not guessed.
+
+**Gate:** `tests/Ui.Tests` **5,165** (+90), `tests/Harmonica.Tests` **78** (+30, of which 1 is an
+opt-in Benchmark), `tests/Firewall.Tests` 5 — all green, plus `tests/Engine.Tests` **1,004** (+1 pre-existing skip) at
+the phase boundary, unchanged by this work. Benchmark tier grew by ~2.5 s
+(`RasterCostTests`), ~1.5 s (`HarmonicaRenderBudgetTests`) and ~7 s (`HarmonicaFrameTierCostTests`);
+every new timing class is in a non-parallel collection and takes a best-of-N minimum, and every
+reported number was measured ALONE.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase) —
+please confirm on your end: **Tools ▸ harmonicaRF** opens a document with no workspace open; the four
+§7.1 panels appear in their locked positions with the readout strip below them; the plane toggle and
+the X-unit cycle both work; a marker placed on one Smith chart appears on the other; and a `.charm`
+saved after recolouring reopens with those colours. Correctness otherwise rests on the pixel oracles,
+the synthetic-clock scheduler gates and the round-trip tests above.
+
 # UI (Avalonia) — local conventions
 
 PCell parameter handles — dragging generated artwork to edit the parameter that produced it

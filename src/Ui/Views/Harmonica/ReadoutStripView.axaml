@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="CircuitRF.Ui.Views.Harmonica.ReadoutStripView">
+
+  <!--
+    §7.5 — the dense settings / readout strip.
+
+    "Deliberately dense: small fonts, no section titles, no decoration — the data is self-explanatory
+    to the intended user, and every element carries a tooltip for newcomers. All text is SELECTABLE
+    so any readout can be copied."
+
+    All three of those are load-bearing and each is easy to lose:
+      • NO section titles and NO decoration — a WrapPanel of label/value pairs, nothing more.
+      • Every pair carries a ToolTip, set per item in code-behind from the frame's own tooltip text.
+      • SelectableTextBlock, not TextBlock. A readout you cannot copy is a readout you retype by
+        hand into a report, with the transcription errors that implies.
+
+    Colours come from Harmonica.ReadoutText — §7.9.2 is explicit that this role covers ALL text in
+    the strip — so the strip cannot drift away from the panels' own palette.
+  -->
+
+  <!--
+    H7 adds the strip's INPUT half (§7.5). It is the same WrapPanel discipline — one row of dense
+    label/editor pairs, no titles, every element tooltipped — sitting above the readouts, with a hair
+    rule between so the two halves read as input and output rather than as one undifferentiated list.
+  -->
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+                Padding="6,4">
+    <StackPanel Orientation="Vertical" Spacing="3">
+      <WrapPanel x:Name="Inputs" Orientation="Horizontal"/>
+      <Border    x:Name="InputRule" Height="1" Opacity="0.25" IsVisible="False"/>
+      <TextBlock x:Name="InputError" FontSize="10" IsVisible="False" TextWrapping="Wrap"/>
+      <WrapPanel x:Name="Items"  Orientation="Horizontal"/>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,74 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:conv="using:CircuitRF.Ui.Converters"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+      THE APPLICATION-SCOPE RESOURCES, IN ONE PLACE BECAUSE THERE ARE TWO APPLICATIONS.
+
+      circuitRF and harmonicaRF are two entry points into ONE assembly (harmonicarf.md §3.1 route
+      (b)), so each has its own Application object. R-h8-6 requires the standalone one to carry every
+      resource harmonicaRF's own views reach — and requires that to hold BY CONSTRUCTION rather than
+      by somebody remembering to mirror an addition. Both Applications merge this one dictionary, so
+      a key added here is in both by definition and there is nothing to keep in step.
+
+      Do not declare an application-scope resource in App.axaml or HarmonicaApp.axaml directly.
+    -->
+
+        <FontFamily x:Key="DejaVuSans">avares://CircuitRF.Ui/Assets/Fonts#DejaVu Sans</FontFamily>
+        <sys:Double x:Key="FontSize">12</sys:Double>
+
+        <!-- System.Warning brush — initialized from ColorTheme.BuiltIn in App.axaml.cs;
+             updated on ThemeService.ThemeChanged so tree warning nodes follow the active theme. -->
+        <SolidColorBrush x:Key="CrfWarningBrush" Color="#CE4A24"/>
+
+        <!-- Palette tile definition border: semitransparent neutral gray so it reads against
+             the panel in both light and dark without fighting the armed accent color.
+             BorderBrush requires a Brush; System*Color keys resolve to Color (not Brush) and
+             may silently fail to render on BorderBrush — always use a SolidColorBrush resource. -->
+        <SolidColorBrush x:Key="CrfTileBorderBrush" Color="#55808080"/>
+
+        <!-- Icon brush: wraps SystemBaseMediumColor as a Brush so it can be assigned to
+             Stroke/BorderBrush properties (which require IBrush, not Color).
+             Defined at Application scope so popup visual trees can reach it. -->
+        <SolidColorBrush x:Key="CrfIconBrush" Color="{DynamicResource SystemBaseMediumColor}"/>
+
+        <!-- brief-foreign-documents.md §4/R-fgn-7: marks a foreign document's chrome (edge band, tab
+             tint) — amber, NEVER red (red means error; a foreign document is a normal, supported
+             state), and never used to tint rendered geometry. Semi-transparent so it reads over either
+             theme without a separate light/dark pair, same convention as CrfTileBorderBrush above. -->
+        <SolidColorBrush x:Key="CrfForeignBandBrush" Color="#33E8A33D"/>
+        <SolidColorBrush x:Key="CrfForeignAccentBrush" Color="#E8A33D"/>
+
+<!-- Converters registered as application-level resources so all views can use them -->
+        <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
+        <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>
+        <conv:StubKindIsDataDisplayConverter  x:Key="StubKindIsDataDisplayConverter"/>
+        <conv:MessageLevelToIconConverter     x:Key="MessageLevelToIconConverter"/>
+        <conv:MessageLevelToColorConverter    x:Key="MessageLevelToColorConverter"/>
+        <conv:IsNotNullConverter              x:Key="IsNotNullConverter"/>
+
+        <!-- Override Dock.Fluent accent brushes with the OS system accent color.
+             DockFluentTheme/Accents/Fluent.axaml hardcodes VS-blue (#007ACC) for these
+             "DockApplication*" keys. Application.Resources wins over StyleInclude resources
+             for DynamicResource lookups, so overriding them here replaces the hardcoded blue.
+             However, the theme also uses StaticResource aliases (e.g. DockTabActiveBackgroundBrush
+             → DockApplicationAccentBrushLow) which resolve at THEME LOAD time — those alias keys
+             must be overridden here directly too, or they keep pointing to the original #007ACC
+             brush regardless of the DockApplicationAccentBrush* overrides. -->
+
+        <!-- Primary accent family -->
+        <SolidColorBrush x:Key="DockApplicationAccentBrushLow"       Color="{DynamicResource SystemAccentColor}"/>
+        <SolidColorBrush x:Key="DockApplicationAccentBrushMed"       Color="{DynamicResource SystemAccentColorLight1}"/>
+        <SolidColorBrush x:Key="DockApplicationAccentBrushHigh"      Color="{DynamicResource SystemAccentColorLight2}"/>
+        <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="{DynamicResource SystemAccentColor}"/>
+
+        <!-- StaticResource aliases the theme resolves at load time — must also be overridden -->
+        <SolidColorBrush x:Key="DockTabActiveBackgroundBrush"        Color="{DynamicResource SystemAccentColor}"/>
+        <SolidColorBrush x:Key="DockTabActiveIndicatorBrush"         Color="{DynamicResource SystemAccentColor}"/>
+        <SolidColorBrush x:Key="DockTabHoverBackgroundBrush"         Color="{DynamicResource SystemAccentColorLight1}"/>
+        <SolidColorBrush x:Key="DockTabCloseHoverBackgroundBrush"    Color="{DynamicResource SystemAccentColorLight2}"/>
+        <SolidColorBrush x:Key="DockSplitterHoverBrush"              Color="{DynamicResource SystemAccentColorLight1}"/>
+        <SolidColorBrush x:Key="DockSplitterDragBrush"               Color="{DynamicResource SystemAccentColor}"/>
+
+</ResourceDictionary>

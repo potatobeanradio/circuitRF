@@ -20,6 +20,16 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
     /// <summary>Manifests already in hand, consulted before any folder is searched.</summary>
     private readonly IReadOnlyList<(string Kit, DeviceWorkerManifest Manifest)> _known;
 
+    /// <summary>
+    /// Which constructor built this resolver — and therefore which empty-case wording is true.
+    ///
+    /// <para>The manifest form is the one a WORKSPACE uses; the folder form is used with no workspace
+    /// at all (<c>src/Cli</c>'s <c>--kits</c>, and harmonicaRF standalone). Telling a user with no
+    /// workspace that no kit in their workspace settled on anything describes a thing their build does
+    /// not have, and sends them looking for a setting that is not there.</para>
+    /// </summary>
+    private readonly bool _fromWorkspace;
+
     /// <param name="searchRoots">
     /// Folders holding kits. Each is searched for a manifest directly inside it and one level down,
     /// which is how kits are laid out — one folder per kit.
@@ -36,6 +46,7 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
         _roots  = searchRoots.Where(r => !string.IsNullOrWhiteSpace(r)).ToArray();
         _known  = [];
         _launch = launcher ?? DeviceWorkerProvider.Launch;
+        _fromWorkspace = false;
     }
 
     /// <summary>
@@ -54,6 +65,7 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
         _known  = [.. known];
         _roots  = [];
         _launch = launcher ?? DeviceWorkerProvider.Launch;
+        _fromWorkspace = true;
     }
 
     /// <summary>
@@ -64,7 +76,8 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
     public string Describe =>
         _known.Count > 0 ? string.Join(", ", _known.Select(k => k.Kit))
       : _roots.Count > 0 ? string.Join(", ", _roots)
-      :                    "no kit in this workspace settled on a way to evaluate its devices";
+      : _fromWorkspace   ? "no kit in this workspace settled on a way to evaluate its devices"
+      :                    "no kit folder has been configured, so there was nowhere to look for one";
 
     /// <summary>
     /// Separates a kit's name from a model library an instance chose instead of the kit's own. Both

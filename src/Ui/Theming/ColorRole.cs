@@ -79,6 +79,71 @@ public static class ColorRole
     public const string LayoutDrcWarning = "Layout.DrcWarning";
     public const string LayoutDrcWaived  = "Layout.DrcWaived";
 
+    // ── harmonicaRF (harmonicarf.md §7.9, D7) ────────────────────────────────────────────────────
+    //
+    // D7: these live in the SHARED role vocabulary rather than a second role system of their own.
+    // One vocabulary means one editor, one `.ccolor` interchange, and one fallback rule. If the
+    // Settings dialog ever proves cluttered, the fix is role GROUPING in the editor — not a parallel
+    // set of keys, which would immediately owe its own editor, its own file format and its own
+    // missing-role fallback.
+    //
+    // The defaults are §7.9.2 (dark) and §7.9.3 (light), and they live in ColorTheme.BuiltIn like
+    // every other role. Two rules the palette is built around, restated because they are easy to
+    // erode one commit at a time:
+    //   • GREEN is the primary for everything textual and structural.
+    //   • RED IS RESERVED — the loadline and the efficiency trace, and nothing else. Red means "this
+    //     is the quantity you are engineering"; spending it anywhere else weakens it.
+
+    public const string HarmonicaBackground       = "Harmonica.Background";
+    public const string HarmonicaAxisLine         = "Harmonica.AxisLine";
+    public const string HarmonicaAxisText         = "Harmonica.AxisText";
+    /// <summary>ALL text in the §7.5 settings/readout strip.</summary>
+    public const string HarmonicaReadoutText      = "Harmonica.ReadoutText";
+    public const string HarmonicaGridLine         = "Harmonica.GridLine";
+    /// <summary>The constant-R / constant-X arcs.</summary>
+    public const string HarmonicaSmithGrid        = "Harmonica.SmithGrid";
+    /// <summary>Iso-lines. Faded per §7.2's ranked alpha ramp — the ramp is applied on top of this
+    /// colour at draw time, so the role itself is the FULL-opacity colour.</summary>
+    public const string HarmonicaIsoline          = "Harmonica.Isoline";
+    /// <summary>Only drawn when labels are on (D11 — default OFF).</summary>
+    public const string HarmonicaIsolineLabel     = "Harmonica.IsolineLabel";
+    public const string HarmonicaGainTrace        = "Harmonica.GainTrace";
+    public const string HarmonicaDcivFamily       = "Harmonica.DcivFamily";
+    /// <summary><b>Red — reserved.</b> One of exactly two roles allowed to be red.</summary>
+    public const string HarmonicaLoadline         = "Harmonica.Loadline";
+    /// <summary><b>Red — reserved.</b> The other one.</summary>
+    public const string HarmonicaEfficiencyTrace  = "Harmonica.EfficiencyTrace";
+    public const string HarmonicaGridPoint        = "Harmonica.GridPoint";
+    /// <summary>A Γ point that did not reach the compression target — drawn HOLLOW (§6.3), so the
+    /// hole reads as measured rather than as a rendering gap.</summary>
+    public const string HarmonicaGridPointDropped = "Harmonica.GridPointDropped";
+    public const string HarmonicaOperatingCursor  = "Harmonica.OperatingCursor";
+    /// <summary>Intrinsic-drag reachability shading (§6.6). Carries its own alpha.</summary>
+    public const string HarmonicaReachableRegion  = "Harmonica.ReachableRegion";
+    public const string HarmonicaEditChrome       = "Harmonica.EditChrome";
+
+    // The five-colour harmonic-identity cycle (§4.2). Roles, so a user CAN change them — but their
+    // defaults are IDENTICAL in both variants on purpose: which colour means "2f₀" is a convention,
+    // not a theme choice, so it must survive a light/dark switch untouched.
+    public const string HarmonicaMarkerBand1 = "Harmonica.MarkerBand1";
+    public const string HarmonicaMarkerBand2 = "Harmonica.MarkerBand2";
+    public const string HarmonicaMarkerBand3 = "Harmonica.MarkerBand3";
+    public const string HarmonicaMarkerBand4 = "Harmonica.MarkerBand4";
+    public const string HarmonicaMarkerBand5 = "Harmonica.MarkerBand5";
+
+    /// <summary>The five band roles in band order — band <c>n</c> uses index <c>(n-1) % 5</c>, which
+    /// is what makes 6f₀ repeat the cycle (§4.2). One array so the renderer, the marker model and the
+    /// colour editor cannot disagree about the order.</summary>
+    public static readonly IReadOnlyList<string> HarmonicaMarkerBands =
+    [
+        HarmonicaMarkerBand1, HarmonicaMarkerBand2, HarmonicaMarkerBand3,
+        HarmonicaMarkerBand4, HarmonicaMarkerBand5,
+    ];
+
+    /// <summary>The role for a harmonic band's marker, cycling every five bands (§4.2).</summary>
+    public static string HarmonicaMarkerBand(int band)
+        => HarmonicaMarkerBands[((band - 1) % 5 + 5) % 5];
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -94,5 +159,14 @@ public static class ColorRole
         LayoutEmMeshConductor, LayoutEmMeshInterface, LayoutEmMeshTruncation,
         LayoutPlanarMeshCell,
         LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived,
+        HarmonicaBackground, HarmonicaAxisLine, HarmonicaAxisText, HarmonicaReadoutText,
+        HarmonicaGridLine, HarmonicaSmithGrid,
+        HarmonicaIsoline, HarmonicaIsolineLabel,
+        HarmonicaGainTrace, HarmonicaDcivFamily,
+        HarmonicaLoadline, HarmonicaEfficiencyTrace,
+        HarmonicaGridPoint, HarmonicaGridPointDropped,
+        HarmonicaOperatingCursor, HarmonicaReachableRegion, HarmonicaEditChrome,
+        HarmonicaMarkerBand1, HarmonicaMarkerBand2, HarmonicaMarkerBand3,
+        HarmonicaMarkerBand4, HarmonicaMarkerBand5,
     ];
 }

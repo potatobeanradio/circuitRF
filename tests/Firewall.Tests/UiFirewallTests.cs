@@ -16,6 +16,10 @@ public class UiFirewallTests
         { "CircuitRF.Core",   "CircuitRF.Core.dll"   },
         { "CircuitRF.Engine", "CircuitRF.Engine.dll" },
         { "CircuitRF.Cli",    "CircuitRF.Cli.dll"    },
+        // harmonicaRF's framework-free half (docs/design/harmonicarf.md §3.2). It ships as a
+        // standalone binary too, which does NOT weaken this: the standalone app is src/Ui with a
+        // different Main, and src/Harmonica stays on this side of the wall.
+        { "CircuitRF.Harmonica", "CircuitRF.Harmonica.dll" },
     };
 
     [Theory, MemberData(nameof(NonUiAssemblies))]

@@ -197,6 +197,7 @@ public static class WorkspaceScanner
             ".csch"   => NodeKind.ViewFile,
             ".clay"   => NodeKind.ViewFile,
             ".cdd"    => NodeKind.DataDisplayFile,
+            ".charm"  => NodeKind.HarmonicaFile,
             ".ccolor" => NodeKind.ColorThemeFile,
             ".ctech"  => NodeKind.TechFile,
             ".cem"    => NodeKind.EmSetupFile,

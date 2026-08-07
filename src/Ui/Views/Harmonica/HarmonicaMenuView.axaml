@@ -1,0 +1,279 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:vm="clr-namespace:CircuitRF.Ui.Harmonica"
+             x:Class="CircuitRF.Ui.Views.Harmonica.HarmonicaMenuView"
+             x:DataType="vm:HarmonicaMenuViewModel"
+             x:CompileBindings="True">
+
+  <!--
+    harmonicarf.md §7.6 / R-h7-1 — harmonicaRF's OWN menu set.
+
+    **There is no Simulate menu, and there is not going to be one.** harmonicaRF is always
+    simulating, so a menu offering to start it would describe a different tool. A test asserts its
+    absence on both surfaces.
+
+    **TWO SURFACES, HAND-MIRRORED**, exactly as WorkspaceWindow.axaml maintains circuitRF's own bar:
+      (1) the macOS NativeMenu, attached below via NativeMenu.Menu on this control — which is what
+          gives its bindings a DataContext to resolve against. The code-behind hands it to the
+          hosting Window when harmonicaRF is in a window of its own (a torn-off document, or the
+          standalone binary of §3.1); a docked tab must not replace circuitRF's app menu bar.
+      (2) the in-window Menu, which is this control's content and is ALWAYS shown. Unlike the File
+          menu, harmonicaRF's Markers / Display / Grid menus have no equivalent anywhere in
+          circuitRF's bar — there is nowhere else for them to live, so the document carries its own.
+
+    Anything added here must go on BOTH, or it exists on one platform only.
+  -->
+
+  <NativeMenu.Menu>
+    <NativeMenu>
+
+      <NativeMenuItem Header="File">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="New"          Command="{Binding NewDocumentCommand}"/>
+            <NativeMenuItem Header="Open .charm…" Command="{Binding OpenDocumentCommand}"/>
+            <NativeMenuItem Header="Save"         Command="{Binding SaveDocumentCommand}"/>
+            <NativeMenuItem Header="Save As…"     Command="{Binding SaveDocumentAsCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Set DUT…"     Command="{Binding SetDutCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Import .gam…" Command="{Binding ImportGamCommand}"/>
+            <NativeMenuItem Header="Export .gam…" Command="{Binding ExportGamCommand}"/>
+            <NativeMenuItem Header="Export Data…" Command="{Binding ExportDataCommand}"/>
+            <NativeMenuItem Header="Export Testbench…" Command="{Binding ExportTestbenchCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Close"        Command="{Binding CloseDocumentCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <NativeMenuItem Header="Edit">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Undo" Command="{Binding UndoCommand}" Gesture="Meta+Z"/>
+            <NativeMenuItem Header="Redo" Command="{Binding RedoCommand}" Gesture="Meta+Shift+Z"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Copy Plot"            Command="{Binding CopyPlotCommand}"/>
+            <NativeMenuItem Header="Copy Readouts"        Command="{Binding CopyReadoutsCommand}"/>
+            <NativeMenuItem Header="Copy Termination Set" Command="{Binding CopyTerminationsCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Preferences…"         Command="{Binding PreferencesCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <!-- R-h7-2 — the first thing in harmonicaRF that can CREATE a marker. Each band toggles the
+           marker AND its TerminationSet entry through one call; band 1 refuses removal. -->
+      <NativeMenuItem Header="Markers">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <!-- Populated in code-behind (RebuildNativeBandMenus) from the SAME SourceBands /
+                 LoadBands collections the in-window menu binds to, so the two surfaces cannot
+                 disagree about which bands are marked. NativeMenu has no ItemsSource — the Window
+                 menu in WorkspaceWindow.axaml is built the same way for the same reason. -->
+            <NativeMenuItem Header="Source Bands">
+              <NativeMenuItem.Menu><NativeMenu/></NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItem Header="Load Bands">
+              <NativeMenuItem.Menu><NativeMenu/></NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Reset to Defaults" Command="{Binding ResetMarkersCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <NativeMenuItem Header="Display">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Edit Display" Command="{Binding ToggleEditDisplayCommand}"/>
+            <NativeMenuItem Header="Add Trace…"   Command="{Binding AddTraceCommand}"/>
+            <NativeMenuItem Header="Remove All Traces" Command="{Binding RemoveAllTracesCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Contour Plane">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="Load"   Command="{Binding SetGridSideCommand}" CommandParameter="Load"/>
+                  <NativeMenuItem Header="Source" Command="{Binding SetGridSideCommand}" CommandParameter="Source"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItem Header="Contour Harmonic">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="f₀"  Command="{Binding SetGridHarmonicCommand}" CommandParameter="1"/>
+                  <NativeMenuItem Header="2f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="2"/>
+                  <NativeMenuItem Header="3f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="3"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItem Header="Efficiency Metric">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="DE"  Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="DE"/>
+                  <NativeMenuItem Header="PAE" Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="PAE"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItem Header="Loadline Plane" Command="{Binding ToggleLoadlinePlaneCommand}"/>
+            <NativeMenuItem Header="Contour Levels">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="5"  Command="{Binding SetContourLevelsCommand}" CommandParameter="5"/>
+                  <NativeMenuItem Header="10" Command="{Binding SetContourLevelsCommand}" CommandParameter="10"/>
+                  <NativeMenuItem Header="20" Command="{Binding SetContourLevelsCommand}" CommandParameter="20"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItem Header="Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <NativeMenuItem Header="Grid">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Grid Preset">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="3 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="3×12"/>
+                  <NativeMenuItem Header="5 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="5×12"/>
+                  <NativeMenuItem Header="7 × 16" Command="{Binding SetGridPresetCommand}" CommandParameter="7×16"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItem Header="Reset Grid"   Command="{Binding ResetGridCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Import .gam…" Command="{Binding ImportGamCommand}"/>
+            <NativeMenuItem Header="Export .gam…" Command="{Binding ExportGamCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <NativeMenuItem Header="Help">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="harmonicaRF Documentation" Command="{Binding HelpCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+    </NativeMenu>
+  </NativeMenu.Menu>
+
+  <!-- ── Surface 2: the in-window Menu, hand-mirrored with the NativeMenu above ── -->
+  <Menu x:Name="InWindowMenu">
+
+    <MenuItem Header="_File" Padding="8,4">
+      <MenuItem Header="_New"           Command="{Binding NewDocumentCommand}"/>
+      <MenuItem Header="_Open .charm…"  Command="{Binding OpenDocumentCommand}"/>
+      <MenuItem Header="_Save"          Command="{Binding SaveDocumentCommand}" InputGesture="Ctrl+S"/>
+      <MenuItem Header="Save _As…"      Command="{Binding SaveDocumentAsCommand}"/>
+      <Separator/>
+      <MenuItem Header="Set _DUT…"      Command="{Binding SetDutCommand}"
+                ToolTip.Tip="Choose the device under test — an SDD, a built-in FET law, or an external model."/>
+      <Separator/>
+      <MenuItem Header="_Import .gam…"  Command="{Binding ImportGamCommand}"
+                ToolTip.Tip="Read a Γ grid from a .gam file. An imported grid is an arbitrary scatter, not a ring set."/>
+      <MenuItem Header="_Export .gam…"  Command="{Binding ExportGamCommand}"
+                ToolTip.Tip="Write the current Γ grid, holes included."/>
+      <MenuItem Header="Export Da_ta…"  Command="{Binding ExportDataCommand}"/>
+      <MenuItem Header="Export Test_bench…" Command="{Binding ExportTestbenchCommand}"
+                ToolTip.Tip="Write a runnable .cnl reproducing this operating point, so the reference engine can check it."/>
+      <Separator/>
+      <MenuItem Header="_Close"         Command="{Binding CloseDocumentCommand}"/>
+    </MenuItem>
+
+    <MenuItem Header="_Edit" Padding="8,4">
+      <MenuItem Header="_Undo" Command="{Binding UndoCommand}" InputGesture="Ctrl+Z"/>
+      <MenuItem Header="_Redo" Command="{Binding RedoCommand}" InputGesture="Ctrl+Shift+Z"/>
+      <Separator/>
+      <MenuItem Header="Copy _Plot"     Command="{Binding CopyPlotCommand}"/>
+      <MenuItem Header="Copy _Readouts" Command="{Binding CopyReadoutsCommand}"/>
+      <MenuItem Header="Copy _Termination Set" Command="{Binding CopyTerminationsCommand}"
+                ToolTip.Tip="A Tuner pair ready to paste into a schematic."/>
+      <Separator/>
+      <MenuItem Header="P_references…"  Command="{Binding PreferencesCommand}"/>
+    </MenuItem>
+
+    <MenuItem Header="_Markers" Padding="8,4">
+      <MenuItem Header="_Source Bands" ItemsSource="{Binding SourceBands}">
+        <MenuItem.Styles>
+          <Style Selector="MenuItem" x:DataType="vm:HarmonicaBandMenuItem">
+            <Setter Property="Header"      Value="{Binding Header}"/>
+            <Setter Property="ToggleType"  Value="CheckBox"/>
+            <Setter Property="IsChecked"   Value="{Binding IsPresent, Mode=TwoWay}"/>
+            <Setter Property="IsEnabled"   Value="{Binding CanRemove}"/>
+            <Setter Property="ToolTip.Tip" Value="{Binding Tooltip}"/>
+          </Style>
+        </MenuItem.Styles>
+      </MenuItem>
+      <MenuItem Header="_Load Bands" ItemsSource="{Binding LoadBands}">
+        <MenuItem.Styles>
+          <Style Selector="MenuItem" x:DataType="vm:HarmonicaBandMenuItem">
+            <Setter Property="Header"      Value="{Binding Header}"/>
+            <Setter Property="ToggleType"  Value="CheckBox"/>
+            <Setter Property="IsChecked"   Value="{Binding IsPresent, Mode=TwoWay}"/>
+            <Setter Property="IsEnabled"   Value="{Binding CanRemove}"/>
+            <Setter Property="ToolTip.Tip" Value="{Binding Tooltip}"/>
+          </Style>
+        </MenuItem.Styles>
+      </MenuItem>
+      <Separator/>
+      <MenuItem Header="_Reset to Defaults" Command="{Binding ResetMarkersCommand}"/>
+    </MenuItem>
+
+    <MenuItem Header="_Display" Padding="8,4">
+      <MenuItem Header="_Edit Display" Command="{Binding ToggleEditDisplayCommand}"
+                ToolTip.Tip="Unlock the panel layout so panels can be moved, resized and removed.">
+        <MenuItem.Icon><mi:MaterialIcon Kind="ViewDashboardEdit" Width="16" Height="16"/></MenuItem.Icon>
+      </MenuItem>
+      <MenuItem Header="_Add Trace…" Command="{Binding AddTraceCommand}"
+                ToolTip.Tip="Plot anything harmonicaRF solved, over the published DataSet — including Zs_conv's off-diagonals.">
+        <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
+      </MenuItem>
+      <MenuItem Header="Remo_ve All Traces" Command="{Binding RemoveAllTracesCommand}"/>
+      <Separator/>
+      <MenuItem Header="Contour _Plane">
+        <MenuItem Header="_Load"   Command="{Binding SetGridSideCommand}" CommandParameter="Load"/>
+        <MenuItem Header="_Source" Command="{Binding SetGridSideCommand}" CommandParameter="Source"/>
+      </MenuItem>
+      <MenuItem Header="Contour _Harmonic">
+        <MenuItem Header="f₀"  Command="{Binding SetGridHarmonicCommand}" CommandParameter="1"/>
+        <MenuItem Header="2f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="2"/>
+        <MenuItem Header="3f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="3"/>
+      </MenuItem>
+      <MenuItem Header="E_fficiency Metric">
+        <MenuItem Header="_DE"  Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="DE"/>
+        <MenuItem Header="_PAE" Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="PAE"/>
+      </MenuItem>
+      <MenuItem Header="Loadline P_lane" Command="{Binding ToggleLoadlinePlaneCommand}"
+                ToolTip.Tip="One toggle: the DCIV family and the loadline move together."/>
+      <MenuItem Header="Contour Le_vels">
+        <MenuItem Header="5"  Command="{Binding SetContourLevelsCommand}" CommandParameter="5"/>
+        <MenuItem Header="10" Command="{Binding SetContourLevelsCommand}" CommandParameter="10"/>
+        <MenuItem Header="20" Command="{Binding SetContourLevelsCommand}" CommandParameter="20"/>
+      </MenuItem>
+      <MenuItem Header="_Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"
+                ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them, and labelling is the most expensive part of the extract."/>
+    </MenuItem>
+
+    <MenuItem Header="_Grid" Padding="8,4">
+      <MenuItem Header="Grid _Preset">
+        <MenuItem Header="3 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="3×12"/>
+        <MenuItem Header="5 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="5×12"/>
+        <MenuItem Header="7 × 16" Command="{Binding SetGridPresetCommand}" CommandParameter="7×16"/>
+      </MenuItem>
+      <MenuItem Header="_Reset Grid"   Command="{Binding ResetGridCommand}"/>
+      <Separator/>
+      <MenuItem Header="_Import .gam…" Command="{Binding ImportGamCommand}"/>
+      <MenuItem Header="_Export .gam…" Command="{Binding ExportGamCommand}"/>
+    </MenuItem>
+
+    <MenuItem Header="_Help" Padding="8,4">
+      <MenuItem Header="harmonicaRF _Documentation" Command="{Binding HelpCommand}"/>
+    </MenuItem>
+
+  </Menu>
+</UserControl>

@@ -44,7 +44,12 @@
     <key>CFBundleIconFile</key>
     <string>circuitRFIcon</string>
 
-    <!-- Declare the custom UTI for .crfw (circuitRF Workspace) files. -->
+    <!-- Declare the custom UTIs for .crfw (circuitRF Workspace) and .charm (harmonicaRF document).
+
+         R-h8-10 — .charm is declared on BOTH binaries, because circuitRF opens one too (Tools ▸
+         harmonicaRF is not going away). The UTI is EXPORTED here and IMPORTED by harmonicaRF's own
+         Info.plist: two applications must not both claim to define one type, and circuitRF is the
+         one that ships the type's own description. -->
     <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>
@@ -65,6 +70,24 @@
                 </array>
             </dict>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.charm</string>
+            <key>UTTypeDescription</key>
+            <string>harmonicaRF Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>charm</string>
+                </array>
+            </dict>
+        </dict>
     </array>
 
     <!-- Document types this app can open. -->
@@ -82,6 +105,23 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>crfw</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>harmonicaRF Document</string>
+            <!-- Viewer, not Editor: harmonicaRF standalone is the app that OWNS a .charm, and both
+                 declaring themselves the editor would make which one opens a double-click a matter of
+                 whichever Launch Services saw last. circuitRF still opens one, in Tools ▸ harmonicaRF. -->
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.charm</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>charm</string>
             </array>
         </dict>
     </array>

@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaPreferencesDialog"
+        Title="harmonicaRF Preferences"
+        Width="620" Height="520"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    §7.9.4's colour editor. It reuses circuitRF's existing colour UI rather than a new one — the
+    role-list + hex-field pattern from Views/Dialogs/SettingsView, and Views/Dialogs/ColorPickerDialog
+    for the picker itself — because that code has already absorbed two non-obvious fixes worth
+    inheriting rather than rediscovering:
+
+      • THE HEX-FIELD KEY HANDLING. Return applies AND sets e.Handled = true, or the window's default
+        button closes the dialog instead of applying; Escape reverts; LostFocus applies; the value is
+        RRGGBBAA, with a 6-digit entry taken as opaque.
+      • ColorView must be GIVEN its Fluent theme or it instantiates blank. It is included in the
+        app's App.axaml today; §3.1 warns that the standalone harmonicaRF entry point has its own
+        Application.Styles and must carry the same include, because it fails silently.
+  -->
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="12">
+
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
+      <TextBlock Text="Variant" VerticalAlignment="Center" Opacity="0.7"/>
+      <RadioButton x:Name="LightRadio" Content="Light" GroupName="Variant" IsCheckedChanged="OnVariantChanged"/>
+      <RadioButton x:Name="DarkRadio"  Content="Dark"  GroupName="Variant" IsChecked="True" IsCheckedChanged="OnVariantChanged"/>
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="240,*">
+
+      <ListBox x:Name="RoleList" Grid.Column="0" SelectionChanged="OnRoleSelected"
+               ToolTip.Tip="Right-click a role to reset just that one, in both variants."/>
+
+      <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="8">
+
+        <TextBlock x:Name="RoleNameLabel" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Border x:Name="ColorPreviewRect" Width="48" Height="24"
+                  BorderThickness="1" BorderBrush="{DynamicResource CrfTileBorderBrush}"/>
+          <TextBox x:Name="HexBox" Width="110" Watermark="RRGGBBAA"
+                   KeyDown="OnHexKeyDown" LostFocus="OnHexLostFocus"
+                   ToolTip.Tip="RRGGBBAA. A six-digit entry is taken as fully opaque. Return applies, Escape reverts."/>
+          <Button  x:Name="PickButton" Content="Pick…" Click="OnPickClick"/>
+          <Button  x:Name="RevertButton" Content="Reset This Role" Click="OnRevertClick"/>
+        </StackPanel>
+
+        <Border Height="1" Opacity="0.2" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,6"/>
+
+        <TextBlock Text="Iso-line fade (§7.2)" FontWeight="SemiBold"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="α floor" VerticalAlignment="Center" Width="60" Opacity="0.7"/>
+          <Slider x:Name="AlphaFloorSlider" Minimum="0" Maximum="1" Width="220"
+                  ValueChanged="OnFadeChanged"
+                  ToolTip.Tip="1 flattens the fade entirely — every contour fully opaque — with no code change."/>
+          <TextBlock x:Name="AlphaFloorLabel" VerticalAlignment="Center" Width="40"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="exponent" VerticalAlignment="Center" Width="60" Opacity="0.7"/>
+          <Slider x:Name="AlphaExpSlider" Minimum="0.05" Maximum="4" Width="220"
+                  ValueChanged="OnFadeChanged"
+                  ToolTip.Tip="The shaping exponent p. Larger fades the lower levels harder."/>
+          <TextBlock x:Name="AlphaExpLabel" VerticalAlignment="Center" Width="40"/>
+        </StackPanel>
+        <CheckBox x:Name="IsoLabelsCheck" Content="Iso-line labels" Click="OnIsoLabelsChanged"
+                  ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them."/>
+
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+      <Button x:Name="ImportButton" Content="Import .ccolor…" Click="OnImportClick"/>
+      <Button x:Name="ExportButton" Content="Export .ccolor…" Click="OnExportClick"/>
+      <Button x:Name="ResetAllButton" Content="Reset All Colours" Click="OnResetAllClick"/>
+      <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
+      <Button Content="Close" Width="80" IsCancel="True" HorizontalAlignment="Right"
+              HorizontalContentAlignment="Center" Click="OnCloseClick"/>
+    </StackPanel>
+
+  </Grid>
+</Window>

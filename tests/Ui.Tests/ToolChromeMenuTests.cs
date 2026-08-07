@@ -22,7 +22,14 @@ public sealed class ToolChromeMenuTests
         while (dir is not null && !File.Exists(Path.Combine(dir, "circuitrf.slnx")))
             dir = Path.GetDirectoryName(dir);
         Assert.NotNull(dir);
-        return File.ReadAllText(Path.Combine(dir!, "src", "Ui", "App.axaml"));
+        // The application-scope STYLES moved out of App.axaml into Styles/CircuitRfStyles.axaml at
+        // H8, because there are now two Applications (circuitRF and harmonicaRF standalone) and both
+        // include the one file — R-h8-6's "by construction, not by inspection". The property under
+        // test is unchanged; reading the whole surface rather than one file is what stops this scan
+        // breaking again the next time something moves between them.
+        return File.ReadAllText(Path.Combine(dir!, "src", "Ui", "App.axaml"))
+             + File.ReadAllText(Path.Combine(dir!, "src", "Ui", "Styles", "CircuitRfStyles.axaml"))
+             + File.ReadAllText(Path.Combine(dir!, "src", "Ui", "Styles", "CircuitRfResources.axaml"));
     }
 
     [Fact]
