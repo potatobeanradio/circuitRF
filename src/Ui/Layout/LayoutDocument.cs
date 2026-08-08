@@ -63,7 +63,15 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     /// L3b's own nav-frame model has to carry explicitly that the schematic's mirror-target does not
     /// (see the L3b completion note in src/Ui/CLAUDE.md for why: the schematic's push-in/pop-out does
     /// not restore viewport at all today).</summary>
-    private readonly record struct NavFrame(LayoutEditorViewModel Session, string Label, LayoutViewport? Viewport = null);
+    /// <summary><see cref="Instance"/> is the placement that was pushed INTO — null for the base frame,
+    /// and null for any push that did not record one (every pre-existing caller). It exists so a
+    /// consumer that draws something in world coordinates over this canvas — wbond.md WB27's wire
+    /// overlay is the first — can walk the transform chain down to the frame currently on screen.
+    /// The layout editor itself does not read it: a pushed-in session already holds the sub-cell's own
+    /// geometry in its own frame.</summary>
+    private readonly record struct NavFrame(
+        LayoutEditorViewModel Session, string Label, LayoutViewport? Viewport = null,
+        LayoutInstance? Instance = null, int Row = 0, int Col = 0);
 
     private readonly List<NavFrame> _frames;
 
@@ -131,12 +139,39 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     /// Pushes a sub-cell session onto the navigation stack; the tab now renders it.
     /// <paramref name="label"/> is the instance designator shown in the breadcrumb.
     /// </summary>
-    public void PushIn(LayoutEditorViewModel session, string label)
+    /// <param name="instance">
+    /// The placement being descended into. Optional, and unused by the layout editor itself — it is
+    /// recorded only so <see cref="DescentChain"/> can offer the transform chain to an overlay that
+    /// draws world-coordinate geometry over this canvas (wbond.md WB27).
+    /// </param>
+    public void PushIn(LayoutEditorViewModel session, string label,
+                       LayoutInstance? instance = null, int row = 0, int col = 0)
     {
-        _frames.Add(new NavFrame(session, label));
+        _frames.Add(new NavFrame(session, label, Viewport: null, instance, row, col));
         RebindActiveVm(session);
         RaiseRetargetEvents();
     }
+
+    /// <summary>
+    /// The instances descended through to reach the frame currently on screen, outermost first.
+    ///
+    /// <para><b>Shorter than <see cref="NavDepth"/> is a real answer, not an error:</b> a frame pushed
+    /// without an instance (any pre-existing caller) contributes nothing, so a chain shorter than the
+    /// depth means the transform down to the current frame is not fully known. A consumer that needs
+    /// an exact frame — the wire overlay does — must treat that as "cannot place geometry here" rather
+    /// than composing a partial chain, which would silently draw at the wrong offset.</para>
+    /// </summary>
+    public IReadOnlyList<(LayoutInstance Instance, int Row, int Col)> DescentChain
+        => _frames.Skip(1)
+                  .Where(f => f.Instance is not null)
+                  .Select(f => (f.Instance!, f.Row, f.Col))
+                  .ToList();
+
+    /// <summary>
+    /// True when every pushed frame recorded its instance, so <see cref="DescentChain"/> describes the
+    /// complete transform from the base cell down to what is on screen.
+    /// </summary>
+    public bool DescentChainIsComplete => DescentChain.Count == NavDepth;
 
     /// <summary>
     /// Pops the top frame and returns the popped session (for retirement).

@@ -50,6 +50,9 @@ public enum NodeKind
     /// </summary>
     HarmonicaFile,
 
+    /// <summary>A `.wBond` wirebond design (wbond.md §9).</summary>
+    WBondFile,
+
     /// <summary>A .ccolor color-theme file.</summary>
     ColorThemeFile,
 

@@ -1665,6 +1665,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     /// <summary>brief-L3a-followups.md §2/R-fix-2: removes whichever of shapes/instances are currently
     /// selected, TOGETHER, as one undo entry.</summary>
+    /// <summary>
+    /// Deletes the current shape and instance selection — the public face of <see cref="DeleteSelection"/>.
+    ///
+    /// <para>Exists so a HOST editor (the wBond editor, whose Cut spans wires and geometry together)
+    /// can delete the geometry half through the same command and the same undo entry the Delete key
+    /// uses, rather than reaching for a second removal path.</para>
+    /// </summary>
+    public void DeleteSelectedGeometry() => DeleteSelection();
+
     private void DeleteSelection()
     {
         var shapeIndices = _selectedIndices.ToList();

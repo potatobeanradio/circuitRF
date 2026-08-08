@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.WBondSaveGeometryDialog"
+        Title="Save wBond"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+    <StackPanel Margin="16" Spacing="10" MaxWidth="440">
+        <TextBlock Text="Include the layout geometry in this file?" FontWeight="SemiBold"/>
+
+        <RadioButton x:Name="ReferenceRadio" GroupName="Geometry" IsChecked="True">
+            <StackPanel Spacing="2">
+                <TextBlock Text="Reference it"/>
+                <TextBlock FontSize="11" Opacity="0.65" TextWrapping="Wrap"
+                           Text="A small file that names the cells by path. It needs this workspace to open with its geometry."/>
+            </StackPanel>
+        </RadioButton>
+
+        <RadioButton x:Name="EmbedRadio" GroupName="Geometry">
+            <StackPanel Spacing="2">
+                <TextBlock Text="Embed it"/>
+                <TextBlock FontSize="11" Opacity="0.65" TextWrapping="Wrap"
+                           Text="The geometry travels inside the file, so it opens anywhere — you can hand a colleague one file."/>
+            </StackPanel>
+        </RadioButton>
+
+        <!-- WB33: the cells that lose parametricity are named BEFORE the save, not after. -->
+        <Border x:Name="FlattenPanel" IsVisible="False"
+                Background="{DynamicResource SystemChromeLowColor}"
+                BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                CornerRadius="6" Padding="10,8">
+            <StackPanel Spacing="4">
+                <TextBlock x:Name="FlattenHeader" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap"/>
+                <SelectableTextBlock x:Name="FlattenList" FontSize="11" TextWrapping="Wrap"/>
+                <TextBlock FontSize="11" Opacity="0.65" TextWrapping="Wrap"
+                           Text="Their generators are vendor code and cannot ship inside a design file, so they become ordinary polygons. Cells built by circuitRF's own generators stay parametric."/>
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="UnresolvedPanel" IsVisible="False"
+                Background="{DynamicResource SystemChromeLowColor}"
+                BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                CornerRadius="6" Padding="10,8">
+            <StackPanel Spacing="4">
+                <TextBlock x:Name="UnresolvedHeader" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap"/>
+                <SelectableTextBlock x:Name="UnresolvedList" FontSize="11" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="NativeNote" FontSize="11" Opacity="0.65" TextWrapping="Wrap" IsVisible="False"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
+            <Button Content="Cancel" IsCancel="True" MinWidth="80"
+                    HorizontalContentAlignment="Center" Click="OnCancel"/>
+            <Button Content="Save" IsDefault="True" MinWidth="80"
+                    HorizontalContentAlignment="Center" Click="OnSave"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

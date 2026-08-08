@@ -1,9 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  circuitRF's own MIME definitions.
+
+  ALL THREE types are DEFINED here, deliberately, and that mirrors the macOS decision rather than
+  differing from it: circuitRF's Info.plist EXPORTS every UTI (it owns the formats), while
+  harmonicaRF's and wBond's plists only IMPORT the one they handle (R-h8-10 / R-wbe-7). Linux
+  shared-mime-info has no exported/imported distinction — a type is defined once, globally — so the
+  faithful mapping is "circuitRF's package defines them; each .desktop declares which it handles",
+  and the user's default application is then whatever update-desktop-database and their own choice
+  settle on.
+-->
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
     <mime-type type="application/x-circuitrf-workspace">
         <comment>circuitRF Workspace</comment>
         <comment xml:lang="en">circuitRF Workspace file</comment>
         <glob pattern="*.crfw"/>
         <icon name="circuitrf"/>
+    </mime-type>
+
+    <mime-type type="application/x-harmonicarf-document">
+        <comment>harmonicaRF Document</comment>
+        <comment xml:lang="en">harmonicaRF Document</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.charm"/>
+        <icon name="harmonicarf"/>
+    </mime-type>
+
+    <mime-type type="application/x-wbond-design">
+        <comment>wBond Design</comment>
+        <comment xml:lang="en">wBond bond-wire design</comment>
+        <sub-class-of type="application/json"/>
+        <!-- Case-insensitive, because the format is spelled .wBond and a glob is not. -->
+        <glob pattern="*.wBond"/>
+        <glob pattern="*.wbond"/>
+        <icon name="wbond"/>
     </mime-type>
 </mime-info>

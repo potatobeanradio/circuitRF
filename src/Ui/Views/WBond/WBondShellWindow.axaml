@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wbv="using:CircuitRF.Ui.Views.WBond"
+        xmlns:drcv="using:CircuitRF.Ui.Views.Drc"
+        x:Class="CircuitRF.Ui.Views.WBond.WBondShellWindow"
+        Title="wBond"
+        Width="1500" Height="950"
+        MinWidth="1000" MinHeight="660"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource SystemChromeLowColor}">
+
+  <!--
+    R-wbe-3 / R-wbe-4 — the standalone shell is a PLAIN Window hosting one WBondEditorView, and Dock
+    is not here at all.
+
+    **The fixed-grid answer, taken deliberately.** The wBond editor is already a fixed Grid with
+    GridSplitters (the panel left, the profile view above the layout view) — it never used Dock for
+    its own internals. Bringing Dock along would mean bringing the whole tool-window lifecycle with
+    it — CrfHostWindow, the tool-float teardown workaround, the layout persistence — into a binary
+    with one document and no workspace, and every one of those is a thing to keep in step for no
+    gain. So the shell adds a menu bar and an assembly-rules panel and nothing else.
+
+    Several .wBond files open as several WINDOWS rather than as tabs: with no document shell there is
+    nothing to tab, and the OS window list IS the document list.
+
+    WBondMenuView attaches its NativeMenu to the hosting window whenever that window is not a
+    WorkspaceWindow, so this shell gets the macOS menu bar with no new mechanism.
+  -->
+
+  <DockPanel>
+    <wbv:WBondMenuView x:Name="MenuBar" DockPanel.Dock="Top"/>
+
+    <!-- §5 q3 — the panel ships, and it resolves only the DOCUMENT's own .wasm reference. The
+         workspace default half of WB-D's resolution has nothing to resolve against here, so the
+         panel's own "No assembly rules." line is what states it rather than a silent empty list. -->
+    <Grid DockPanel.Dock="Bottom" x:Name="DrcHost" IsVisible="False" Height="210">
+      <drcv:DrcToolView x:Name="DrcPanel"/>
+    </Grid>
+
+    <wbv:WBondEditorView x:Name="Editor"/>
+  </DockPanel>
+</Window>

@@ -78,6 +78,26 @@ public sealed class DxfReader
     /// table" per-name (R-col-5's fallback applies uniformly either way).</summary>
     public IReadOnlyList<DxfLayerTableEntry> LayerTable { get; private set; } = [];
 
+    /// <summary>
+    /// 3D polylines found on a <c>Wires_*</c> layer — bond wires, NOT layout geometry (wbond.md §9.4).
+    ///
+    /// <para>They are kept out of <see cref="Structures"/> entirely: a wire flattened into a
+    /// <c>PathShape</c> would lose its loop height and then re-export as flat copper, which is a round
+    /// trip that silently destroys the design it was meant to preserve.</para>
+    /// </summary>
+    public IReadOnlyList<DxfWireIo.WirePolyline> WirePolylines => _wirePolylines;
+
+    /// <summary>3D polylines NOT on a wire layer, which were flattened to 2D — reported, never silent.</summary>
+    public int ThreeDPolylinesFlattened => _threeDPolylinesFlattened;
+
+    private readonly List<DxfWireIo.WirePolyline> _wirePolylines = [];
+    private int _threeDPolylinesFlattened;
+
+    /// <summary>Foot circles and other wire-layer decoration dropped on import — regenerated on export.</summary>
+    public int WireDecorationDropped => _wireDecorationDropped;
+
+    private int _wireDecorationDropped;
+
     private readonly List<string> _diagnostics = [];
     private readonly Dictionary<string, int> _unsupportedCounts = new(StringComparer.OrdinalIgnoreCase);
 
@@ -85,7 +105,30 @@ public sealed class DxfReader
     {
         var reader = new DxfReader();
         reader.Parse(textReader);
+        reader.DropWireLayerDecoration();
         return reader;
+    }
+
+    /// <summary>
+    /// Removes anything that is NOT a wire polyline from a <c>Wires_*</c> layer.
+    ///
+    /// <para>Export draws a filled circle at each wire foot (wbond.md §9.4) — a <c>CIRCLE</c> plus a
+    /// solid <c>HATCH</c>, on the wire's own layer. Those are DECORATION belonging to the wires and
+    /// are regenerated on every export. Letting them back in as layout geometry would add two shapes
+    /// per wire foot to the design on every single round trip, growing without bound while looking
+    /// perfectly plausible each time.</para>
+    ///
+    /// <para>Found by the round-trip test, not by inspection: the wire polylines were correctly
+    /// diverted and the end caps quietly were not.</para>
+    /// </summary>
+    private void DropWireLayerDecoration()
+    {
+        foreach (var structure in Structures)
+        {
+            int before = structure.Shapes.Count;
+            structure.Shapes.RemoveAll(sh => DxfWireIo.ArrayNameFrom(sh.LayerName) is not null);
+            _wireDecorationDropped += before - structure.Shapes.Count;
+        }
     }
 
     private void Parse(TextReader textReader)
@@ -336,24 +379,73 @@ public sealed class DxfReader
     private int ParseOldPolyline(List<(string Type, List<DxfGroup> Body)> tokens, int i, DxfStructure into)
     {
         var header = tokens[i].Body;
-        bool closed = (GetInt(header, 70, 0) & 1) != 0;
+        int flags = GetInt(header, 70, 0);
+        bool closed = (flags & 1) != 0;
+        bool is3d = (flags & 8) != 0;          // bit 8 = 3D polyline
+        string layer = GetStr(header, 8, "0");
         i++;
 
         var xs = new List<double>();
         var ys = new List<double>();
+        var zs = new List<double>();
         var bulges = new List<double>();
         while (i < tokens.Count && tokens[i].Type == "VERTEX")
         {
             xs.Add(GetDbl(tokens[i].Body, 10));
             ys.Add(GetDbl(tokens[i].Body, 20));
+            zs.Add(GetDbl(tokens[i].Body, 30, 0));   // Z: meaningless for a 2D polyline, the POINT of a 3D one
             bulges.Add(GetDbl(tokens[i].Body, 42, 0));
             i++;
         }
         if (i < tokens.Count && tokens[i].Type == "SEQEND") i++;
 
-        string layer = GetStr(header, 8, "0");
+        // A 3D polyline on a wire layer is a BOND WIRE, not layout geometry. Diverting it here is what
+        // keeps a round trip closed: flattening it into a PathShape would drop the loop height — the
+        // one coordinate a bond wire is actually about — and then re-export it as flat copper.
+        if (is3d && DxfWireIo.ArrayNameFrom(layer) is not null)
+        {
+            var pts = new List<(double X, double Y, double Z)>(xs.Count);
+            for (int v = 0; v < xs.Count; v++) pts.Add((xs[v], ys[v], zs[v]));
+
+            ReadWireXdata(header, out double? diameter, out string? material);
+            _wirePolylines.Add(new DxfWireIo.WirePolyline(layer, pts, diameter, material));
+            return i;
+        }
+
+        // A 3D polyline anywhere else is reported rather than silently flattened, so a user who
+        // exported one from another tool learns why it came in flat.
+        if (is3d) _threeDPolylinesFlattened++;
+
         into.Shapes.Add(BuildPolylineShape(xs, ys, bulges, closed, GetDbl(header, 40, 0), layer));
         return i;
+    }
+
+    /// <summary>
+    /// Reads the per-wire diameter and material out of XDATA, if the entity carries ours.
+    ///
+    /// <para>XDATA follows group 1001 (the application name) in the entity body. Anything under a
+    /// DIFFERENT application name is another tool's business and is skipped, which is the whole
+    /// point of the mechanism.</para>
+    /// </summary>
+    private static void ReadWireXdata(List<DxfGroup> body, out double? diameter, out string? material)
+    {
+        diameter = null;
+        material = null;
+
+        bool ours = false;
+        foreach (var g in body)
+        {
+            if (g.Code == 1001)
+            {
+                ours = string.Equals(g.Value, DxfWireIo.XdataAppName, StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (!ours) continue;
+
+            if (g.Code == 1000 && material is null) material = g.Value;
+            else if (g.Code == 1040 && diameter is null) diameter = g.AsDouble();
+        }
     }
 
     // ── LWPOLYLINE ────────────────────────────────────────────────────────────

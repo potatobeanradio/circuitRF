@@ -1,3 +1,1010 @@
+wBond WB-E — the standalone application, and the Touchstone it has never been able to write
+(brief-wbond-wbe-standalone-app.md, 2026-08-07) — **COMPLETE (M1–M5). Phase WB-E is done, and with
+it §13's own last row before kernel W.** wBond stops being a tool inside circuitRF and becomes an
+application you can hand someone: a third `Main`, a third `Application`, a plain window per document,
+its own icon and bundle identity, and a `.wBond` that opens by double-click — plus the one genuinely
+new capability, **Touchstone export**.
+
+**WB38's framing held: almost all of the standalone is a build configuration.** The new *code* is a
+shell window, a menu, a reference-geometry report and the export; the editor itself was not touched.
+
+## The interesting difference from harmonicaRF, and §7 asks for it directly: the editor needed NOTHING from `WorkspaceViewModel`
+
+H8's own note predicted this was "the most likely place this phase costs more than H8 did". It cost
+less. `WBondEditorView`, `WBondViewModel`, `WBondLayoutOverlay` and both canvases reference the
+workspace shell **nowhere at all** (grepped, not assumed) — every workspace-shaped concern was
+already a *parameter* rather than a lookup: where a scratch layout lives (`EnsureReferenceLayout`),
+where embedded geometry is unpacked (`WBondDocument.Open`'s `scratchDir`), which `.wasm` resolves
+(`ResolveAssemblyRules`'s three arguments). So `WBondShellWindow` supplies four answers and hosts the
+unmodified view. **Nothing in `src/Ui/WBond/` or `src/Ui/Views/WBond/` was made standalone-aware**;
+seven methods went `private` → `internal` so the shell's menu can bind the SAME ones the keyboard
+gestures already do, and that is the whole of the editor-side change.
+
+## R-wbe-3 — the fixed-grid answer, and it was already the answer
+
+The wBond editor never used Dock for its own internals: it is a `Grid` with `GridSplitter`s (panel
+left, profile view above layout view). So "reproduce it as a fixed grid" required no reproduction —
+the shell hosts the existing view. Bringing Dock would have meant importing `CrfHostWindow`, the
+tool-float teardown workaround and the layout persistence into a binary with one document and no
+workspace. The shell adds a menu bar and an assembly-rules panel and nothing else.
+
+## WB39 has now bitten TWICE, and the second time was verified rather than assumed
+
+Deleting the one `<StartupObject Condition="'$(CrfApp)' == 'wbond'">` line and rebuilding gives
+`src/Ui/Program.cs(19,24): error CS0017: Program has more than one entry point defined` — **naming
+circuitRF's OWN Program.cs, not the new entry point**, which is exactly why the rule is written into
+the csproj rather than remembered. It did not bite during this phase only because the rule was
+applied before the first build. The reproduction is recorded in the csproj comment.
+
+## R-wbe-5 — what network a wBond publishes, and what it was gated against
+
+**An M-port, one port per wire ARRAY, port *k* being that array's own two terminals (`Gk.i`,
+`Gk.o`).** Its impedance matrix is then *exactly* `WBondModel.ArrayImpedance(f)` — by definition,
+since the array reduction IS `v = Z_arr·i` in the branch basis. The recommendation was adopted
+unchanged; the two rivals stay rejected for the brief's own reasons (a 2M-port needs a shunt model
+the reduction does not provide; a 2-port-per-array throws away every off-diagonal, which is the
+entire content of a coupled bond array).
+
+- **Z→S is `RFNetwork.ZToS` and the writer is `TouchstoneExporter`.** No second conversion, no second
+  writer: `WBondTouchstoneExport` builds `Z_arr(f)` → `SNP` → `DataSetBuilder.FromSnp` → the existing
+  exporter, and its only arithmetic of its own is the frequency grid.
+- **The file says what its ports are** — `! Port[k] = <array name>`, the form
+  `TouchstonePortLabels` already reads on the way in, asserted by reading the written file back with
+  the ordinary reader rather than by inspecting the writer.
+- **`SplitExternal` correctly answers `Ambiguous`, and that is the RIGHT answer** rather than a gap:
+  every port names a different object because every port genuinely IS externally connectable.
+- **The frequency grid is the user's**, prompted at export (start/stop/points, lin or log). A bond
+  array is broadband and has no natural band, so deriving one from the design would be inventing a
+  claim the design does not make. The dialog states the cost (one complex M×M factorisation per
+  point) rather than letting a 600-wire export look like a hang.
+- **Publishing a design with no declared return path is REFUSED**, by the same rule
+  `WBondModel.Stamp` refuses it — and this is the more important half, because a file outlives the
+  session that produced it and an inductance without a return is optimistically low.
+
+### THE FINDING: the brief's own low-frequency framing of the closed-form anchor is INVERTED, and the measurement is what says so
+
+M3 asks for the WB19b cross-oracle "at a frequency low enough that R ≪ ωL". **For a bond wire that
+is a HIGH-frequency condition, not a low one**: R is roughly constant while ωL grows, so R/X is
+*largest* at DC and falls with frequency. Measured on the 2-array × 4-wire fixture
+(L₀₀ = 517.4 pH, L₀₁ = 76.0 pH):
+
+| f | R/X | rel. error of `Im(Z)/ω` vs `L_arr` |
+|---|---|---|
+| 1 MHz | 7.34 | 5.93e-2 |
+| 100 MHz | 8.38e-2 | 4.16e-2 |
+| 1 GHz | 2.04e-2 | 1.85e-2 |
+| 10 GHz | 6.07e-3 | 5.90e-3 |
+| 50 GHz | 2.67e-3 | 2.64e-3 |
+
+**The error tracks R/X to within ~10% over four decades** — so the residual genuinely IS the
+resistance the inductance-only form leaves out, and it vanishes as R/X does. A fixed epsilon would
+therefore have been meaningless (it would have passed or failed on the frequency chosen, saying
+nothing about the conversion), so the gate asserts the MECHANISM: the reactive error stays within
+0.5–1.5× of R/X at both 1 GHz and 20 GHz, and halves between them. A first attempt comparing full S
+against a pure-jωL network at 100 MHz failed at 1.1e-3 — and it was the *premise* that was wrong, not
+the export.
+
+## R-wbe-6 — a reference that resolves to nothing is reported, not refused
+
+`WBondReferenceGeometry` (framework-free, testable headlessly) is `Unresolved(root, baseDir)` and
+`Repoint(root, baseDir, folder)`. **A standalone binary opens a design that references cells; it just
+resolves nothing**, which WB35 says to name and offer to repair.
+
+- **Re-pointing moves only the references that FAILED.** Setting the layout's own base directory
+  would have been one line and would turn a partial miss into a total one, by moving the references
+  that were already resolving into an unpacked bundle. Each unresolved instance is re-pointed
+  individually, and **only when the chosen folder genuinely holds a resolvable cell of that name** —
+  nothing is written on a guess, so the report afterwards is still honest.
+- The names are reported, not a count: a count tells a user nothing about where to look.
+
+## R-wbe-2 — the style/resource superset, checked structurally rather than by grep
+
+All three `Application`s include the same two `Styles/` files and **none declares an
+application-scope style or resource of its own**. The test parses the real XAML and asserts that
+`Application.Resources`/`Application.Styles` contain only merged dictionaries and includes — because
+a grep for one `StyleInclude` passes the day a second one is needed, and the failure mode is silent
+(omit the ColorPicker Fluent include and `ColorView` renders as an empty box with no error).
+`Application.DataTemplates` is deliberately NOT covered: circuitRF's Dock-document templates are
+circuitRF's, and the standalone has no Dock documents to template.
+
+## §5's four questions, answered
+
+1. **"Drag-and-drop from a circuitRF project tree" — (b) plus (c), as recommended.** Embedded
+   geometry (§9.1) covers the hand-a-colleague-one-file case the standalone is *for*; a folder picker
+   (the R-wbe-6 re-point) covers naming where cells live. **(a), opening a workspace folder read-only
+   to browse cells, was NOT built** — it reintroduces the concept the binary exists to avoid, and is
+   its own later decision. No second project tree, no second workspace, no second cell resolver.
+2. **Which network — the M-port branch basis**, confirmed (above).
+3. **The DRC panel ships, resolving only the DOCUMENT's own `.wasm`.** `DrcTool` is a plain
+   observable wrapper around a `LayoutEditorViewModel`, so `DrcToolView` hosts standalone with no
+   Dock at all. The workspace-default half has nothing to resolve against, and the panel's own
+   existing `DrcAssemblyText` says "No assembly rules." rather than showing a silently empty list —
+   so §5 q3's "say so in the panel" needed no new code. `DrcToolView.ResolveWorkspace()` already
+   returns null with no workspace, so the create-a-`.wasm` prompt is skipped cleanly.
+4. **Windows and Linux packaging: the same as H8** — a macOS bundle script plus the two publish
+   one-liners recorded in it, and no installers. An MSI and an AppImage are their own piece of work
+   with their own signing story and nothing here needs one.
+
+## R-wbe-4 / R-wbe-7 — windows, menus and the type declaration
+
+Several `.wBond` files open as several **windows**; the OS window list is the document list. Closing
+a window IS closing a document, so a dirty one prompts — and a cancelled save picker cancels the
+close, or "Save" would silently behave as "Don't Save". `WBondMenuView` attaches its `NativeMenu` to
+the hosting window **per window** (Avalonia does not fall back to an application-scope menu for a key
+window that has none), guarded by a type-NAME comparison against `WorkspaceWindow` — copied from
+`HarmonicaMenuView` including its pinning test, plus one asserting the type still answers to that
+name, because a rename would otherwise silently stop the menu bar appearing with nothing failing to
+compile.
+
+**`.wBond` was declared to macOS nowhere at all until now.** It is now **exported by circuitRF's
+`Info.plist`** (Viewer role) and **imported by `WBond-Info.plist`** (Editor role) — two applications
+both *exporting* one UTI is what Launch Services cannot arbitrate. harmonicaRF declares it nowhere:
+it has no business opening a `.wBond`. The standalone claims neither `.crfw` nor `.charm`.
+
+## Two test-side traps, both already recorded in this file and both hit again
+
+- **A source scan asserting an ABSENCE must strip comments** — `WBondApp.axaml.cs`'s own doc comment
+  names `WorkspaceWindow` in the sentence explaining that it does not use one, so the first version
+  of that test failed on its own documentation. Exactly H8's own note.
+- **`System.Xml` cannot parse these plists**: `Info.plist` and `Harmonica-Info.plist` carry
+  `--entitlements` inside a comment, which `plutil` accepts and XML forbids. The comment is the
+  useful half (it records the three-place bundle-identifier trap), so the **test** strips comments
+  rather than the documentation being made worse to satisfy a parser.
+
+## WINDOWS AND LINUX — verified, and it found a real bug plus three genuine gaps (owner question, same day)
+
+**Compilation was never the problem, and that was checked rather than assumed.** All four
+cross-publishes succeed and produce real binaries: `win-x64` → `PE32+ executable (GUI) x86-64`
+(118.0 MB), `linux-x64` → `ELF 64-bit LSB pie executable, x86-64` (118.0 MB), for both harmonicaRF and
+wBond. Nothing in either standalone is platform-specific at compile time — the macOS-only paths are
+`OperatingSystem.IsMacOS()` runtime guards, and `app.manifest` (DPI awareness + supportedOS) is
+generic and correctly shared.
+
+**THE BUG: circuitRF's `Info.plist` claimed `.wBond` and `App.OpenFiles` did not handle it.** M4's
+own gate is "double-clicking a `.wBond` opens the standalone, and double-clicking one while circuitRF
+is running opens it there" — the second half did nothing. `OpenFiles` is the ONE dispatcher every
+arrival route funnels through (argv, the macOS Apple Event, the Windows second-instance pipe), and it
+had cases for `.crfw`/`.cws` and `.charm` only. So circuitRF would have launched, activated, and
+opened nothing: **precisely the "looked exactly like a broken file" failure that method's own note
+says it exists to have fixed**, reached from a new direction — a document type was DECLARED without
+the dispatcher being told. Fixed, and pinned by a test that derives the expected cases FROM the
+plist rather than from a hand-written list, so the next type declared cannot repeat it.
+**Confirmed to bite:** removing the one `case ".wbond":` turns it red with the message naming the
+extension.
+
+**Three gaps that were real but not compile failures:**
+
+- **The Windows PE icon was not per-app.** `ApplicationIcon` was conditioned on the platform only, so
+  all three executables would have embedded circuitRF's icon the moment one existed — R-h8-9's rule
+  ("two apps sharing an icon is its own kind of wrong") enforced on macOS and unenforced here. Now
+  per-`CrfApp`. **Standing gap, stated rather than hidden: no `.ico` exists for ANY of the three, so
+  every Windows build today carries the default .NET icon.** `.ico` files are build products of the
+  SVGs in `Assets/artwork/` exactly like the `.icns` files (both now gitignored), but unlike macOS
+  there is no Windows bundle script to rasterise them — `package.wx` is a WiX skeleton with a
+  `heat.exe` harvest placeholder. Producing them is packaging work nobody has done for circuitRF
+  either.
+- **Windows reads an application's identity out of the BINARY, and all three binaries share a file
+  name.** WB40 forbids changing the assembly name, so `CircuitRF.Ui.exe` is all three — which means
+  `Description` (the **File Description** Windows shows in Task Manager and Properties) and `Product`
+  were the only things that could tell them apart, and all three carried circuitRF's. Now per-app.
+  macOS had this right from H8 via per-app `CFBundleName`; this is the same decision on the platform
+  that reads it from the binary rather than from a plist.
+- **On Linux the two standalones had no `.desktop` entry and no MIME association at all** — no menu
+  entry, and `.charm`/`.wBond` opening by double-click nowhere. A `.desktop` file is what makes
+  something an application on Linux; not having one is the equivalent of shipping no plist. Added
+  `harmonicarf.desktop` and `wbond.desktop`, and `circuitrf-mime.xml` now defines all three types.
+  **That split mirrors the macOS decision rather than differing from it**: `shared-mime-info` has no
+  exported/imported distinction, so the faithful mapping of "circuitRF EXPORTS every UTI, the
+  siblings only IMPORT theirs" is "circuitRF's package DEFINES the types; each `.desktop` declares
+  which it handles". circuitRF's own entry lists all three (its Viewer role); each sibling lists only
+  its own, because an application offered in "Open With" for a document it cannot open is a lie on
+  any platform.
+
+**The one thing packaging MUST do, and nothing does it for you:** all three publishes produce a
+binary called `CircuitRF.Ui`, so a package carrying more than one has to **rename them apart** —
+`/usr/bin/circuitrf`, `/usr/bin/harmonicarf`, `/usr/bin/wbond`, which is what the three `Exec=` lines
+assume. On macOS the `.app` bundle name does this; on Linux and Windows the file name is identical
+and there is no wrapper. `postinst`/`postrm` now install and remove all three entries and say this at
+the top. **Also worth knowing while developing:** every `CrfApp` value builds into the SAME
+`bin/<config>/<tfm>/` folder, so building one after another silently overwrites — harmless for the
+tests (which never run the entry point) but it means that directory's identity is whichever app was
+built last.
+
+**NOT built, and named rather than implied:** no MSI and no `.deb`. `package.wx` remains a
+circuitRF-only WiX skeleton that registers no file associations at all — so `.crfw`, `.charm` and
+`.wBond` have no Windows association today, which is a gap circuitRF already had and the two
+standalones now share. That is installer work with its own signing story, matching §5 q4's answer
+and H8's own decision; the per-app metadata above is what an installer would consume when someone
+writes one.
+
+## Files
+
+New: `src/Ui/ProgramWBond.cs`, `WBondApp.axaml(.cs)`, `src/Ui/Views/WBond/WBondShellWindow.axaml(.cs)`,
+`WBondMenuView.axaml(.cs)`, `WBondEditorView.Touchstone.cs`, `src/Ui/WBond/WBondMenuViewModel.cs`,
+`WBondReferenceGeometry.cs`, `WBondTouchstoneExport.cs`,
+`src/Ui/Views/Dialogs/WBondTouchstoneExportDialog.axaml(.cs)`,
+`src/Ui/Assets/macOS/WBond-Info.plist`, `src/Ui/Assets/artwork/wBond-app-icon.svg`,
+`src/Ui/bundleForWBondMacOS.sh`.
+Touched: `CircuitRF.Ui.csproj` (the three-value `CrfApp`, plus per-app Windows icon/`Product`/
+`Description`), `App.axaml.cs` (the `.wBond` dispatcher case), `Assets/macOS/Info.plist` (the
+exported UTI), `linux/circuitrf-mime.xml` + `circuitrf.desktop` + `postinst` + `postrm` (all three
+applications), new `linux/harmonicarf.desktop` and `linux/wbond.desktop`, `WBondEditorView.axaml` (one toolbar button) and its three partials (seven methods
+`private` → `internal`), `.gitignore` (`src/Ui/Assets/*.icns` are build products rasterised from the
+committed SVG — no `.icns` has ever been tracked; this states it rather than leaving it to whoever
+first runs a bundle script).
+
+## Gate
+
+`dotnet build` at all three `CrfApp` values succeeds; `-p:CrfApp=typo` fails with the named MSBuild
+error. `dotnet publish -c Release -r osx-arm64 --self-contained -p:CrfApp=wbond` produces a
+**124.9 MB Mach-O 64-bit arm64 executable**, and `bundleForWBondMacOS.sh` produces `wBond.app` with
+its own icon (rasterised from the SVG), `CFBundleIdentifier = com.circuitRF.wBond` and an ad-hoc
+signature — all three bundle identifiers verified distinct.
+
+`tests/Ui.Tests` **5,609** (+48: `WBondStandaloneTests` 37, `WBondTouchstoneExportTests` 11),
+`tests/WBond.Tests` 237, `tests/Firewall.Tests` 6, `tests/Core.Tests` 1,118, `tests/RfCore.Tests` 281,
+`tests/Engine.Tests` 1,022 (+1 pre-existing skip) — all green. **No `.wBond`, `.clay`, `.ctech`,
+`.wasm` or `.cws` format version was touched**, and nothing in `src/Core`, `src/Engine`, `src/WBond`
+or `RfCore` changed at all.
+
+**ONE PRE-EXISTING FAILURE, captured by name and confirmed NOT a regression:**
+`Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`
+(93/94 pass). It fails **deterministically**, in isolation, and **identically at commit `20dcadf`
+in a clean worktree with none of this phase's work present** — so this is not the load-dependent
+flake class this file already documents, and not this phase's. Nothing here touches `src/Harmonica`,
+`CharmIo` or the external-device registry. Worth a look on its own: it is the `.charm`
+missing-model report H8 built, and it is currently reporting nothing.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm
+on your end: `dotnet build -p:CrfApp=wbond` then running the binary opens a blank wBond editor with
+the panel, both canvases and both splitters, and no project tree or workspace anywhere; File ▸ Open
+on two `.wBond` files opens two WINDOWS; a design saved with embedded geometry shows its pads while
+one referencing cells names them and offers **Locate Cells…**; Edit ▸ Preferences… reaches the
+Wirebonds defaults block and the colour theme; on macOS the File/Edit/Design/Help bar is populated
+while any wBond window is key; double-clicking a `.wBond` opens the standalone, and doing so while
+circuitRF is running opens it there; and File ▸ Export ▸ Touchstone… writes an `.sNp` whose port list
+matches the dialog's.
+
+---
+
+wBond WB-B2 — placing a wBond in a schematic: the symbol that comes from a file
+(brief-wbond-wbb2-schematic-placement.md, 2026-08-07) — **COMPLETE (M1–M4).** WB-B's unfinished row
+is closed: a `.wBond` design can now be placed, wired, simulated and swept. Everything below the
+placement line already existed and was tested; what was missing was `SymbolKind.WBond` and a
+registry entry, which is why §9.2's routes 2 and 3 had been blocked since WB-C.
+
+**R-wbb2-1's four mechanisms — the one chosen, and what it was chosen on.** A fourth:
+**`WBondSymbolProvider`, an on-demand generator resolved through the seam `CellSymbolResolver`
+already has for `PdkKitRegistry`**, checked ahead of the path branch for the same reason (the
+reference is not a path and must not be reported as a bad one). The criterion was R-wbb2-1's own
+question — *what happens when the referenced design changes* — and this answers it **structurally
+rather than by remembering to invalidate something: there is no persisted copy of the symbol at
+all.** It is generated from the file's current contents and held only in a process-lifetime cache
+keyed by mtime + length + `WBondSymbolGenerator.ContentVersion`. A stale symbol is therefore not a
+bug to avoid but a state that cannot be represented — a stronger guarantee than a content-addressed
+on-disk store, which still has to be *told* the generator changed. The other three were rejected on
+the brief's own reasoning: a built-in has fixed artwork, a variadic `PortCount` is a USER choice and
+has nowhere to put pin NAMES, and a `.csym` on disk is a second copy of the array list.
+
+**The reference is DERIVED from the `File` parameter, never stored a second time.**
+`EditableComponent.ExternalSymbolRef` returns `CellRef` for a cell reference and
+`wbond://<File>` for a wBond, so editing `File` re-points the symbol by construction —
+`CellRef` stays null. **Do not add a persisted path field for this**: a second copy is exactly the
+drift the whole mechanism exists to remove. Every symbol-resolution site (`ResolveAllCellRefs`,
+`PortDefsOf`, `EffectivePrimitivesOf`, `EffectiveGlyphBbOf`, `NetExtractor.BuildCellRefResolutions`)
+now reads `ExternalSymbolRef`; `TypeLabelText` and `ResolveCcell` still read `CellRef`, deliberately
+— a wBond's type label is "wBond" and it has no cell and therefore no published interface.
+
+**Resolution no longer requires a saved schematic.** A `CellRef` is relative to the schematic's own
+directory, so an unsaved one has no base for it; a wBond reference carries its own rule and needs
+none, which is what lets one dropped into a scratch schematic still draw its real pins.
+`CellSymbolResolver.Resolve` takes a `string?` base now and answers NotFound for a null one.
+
+**`SymbolPortDefs.For(WBond)` returns EMPTY, and `GetEffectivePortDefs`' placeholder fallback is
+skipped for it.** A two-pin fallback would let an unresolved wBond quietly extract as a
+two-terminal device — a different circuit that still parses. The extractor refuses it by name
+instead.
+
+## R-wbb2-2 — terminal ORDER, and the two §5 answers it settles
+
+Pins are walked **by pin number**, not by list position (`PortDefsOf` sorts a resolved symbol's pins
+by `PortIndex`). The two coincide today because the generator emits them in order; sorting removes
+the coincidence the contract rests on. The oracle is four DISTINCT nets on a two-array wBond, not a
+terminal count — a count passes a transposition, which is a circuit that solves, converges, and
+reports the wrong array's inductance on the wrong net.
+
+- **§5 q2 — REF DOES appear in `NetBindings`, as the last entry, and the model ignores it.**
+  `WBondModel.PortCount` is 2M+1 and `TerminalNames` ends in `REF`, so the elaborator binds 2M+1
+  nets and the stamp uses 2M. The alternative — omit REF and make `PortCount` mean something other
+  than the symbol's pin count — puts two meanings on one number that both sides must remember. WB20
+  makes REF a *declaration* the user has to be able to SAY, and a declaration nobody can wire is not
+  one. **The extractor and the model agreed on the first attempt; nothing was reconciled.**
+- **§5 q1 — `File` is workspace-relative inside the workspace and absolute outside, and it resolves
+  against the WORKSPACE ROOT** (`WBondSymbolProvider.ResolveFilePath`, mirroring
+  `Elaborator.ResolveWBondParameters` exactly) — **not** the schematic's own directory, which is
+  what a `CellRef` resolves against. The two are only distinguishable from a schematic that is not
+  at the workspace root, so every path test uses `<ws>/Amp/schematic/`.
+- **§5 q4 — ONE palette tile**, under `ComponentCategory.Other`. A wBond is like SnP (one component
+  type with a file parameter), not like a PDK part (one tile per part). Surfacing a workspace's
+  `.wBond` files as separate entries is a bigger idea and should be its own decision.
+
+## §5 q3 — a REORDER is reported, and repair is not on offer
+
+Pin ORDER *is* array order, so a reorder genuinely moves every pin: each keeps its position while
+its NAME moves to a different row, and a wire that was on `G1.i` is now on `G2.i` — correctly-named
+pins wired to the wrong nets. **There is no re-mapping that keeps the user's wires correct without
+moving the artwork they drew**, so the answer is to say so.
+
+- A hidden **`Arrays`** parameter records the array list the instance's wiring was drawn against.
+  `WBondPlacement.CheckArrayDrift` compares it to the design's current list;
+  `WorkspaceViewModel.ReportWBondArrayDrift` posts a warning, deduped per (schematic, instance, new
+  list) — a warning that reappears on every render is one people learn to dismiss unread, and this
+  is the one that must not be.
+- **A reorder is named as a reorder.** "The array list changed" reads as harmless; the same-set-
+  different-order case is detected and worded separately, and per WB30a's own rule the message names
+  the remedy (check the wiring, then update `Arrays`) rather than only the problem.
+- **An instance with no recorded list is NOT reported** — nothing is known about what it was wired
+  against, and a warning that cannot be acted on is noise.
+- `Arrays` is dropped from the extracted netlist, **and so is every blank parameter**: an empty
+  `Temp=` in a `.cnl` is the trap `src/Core/CLAUDE.md` already records, where the reader glues the
+  next token on as the value and eats the parameters after it.
+
+## R-wbb2-4 — the audit was NEVER called by the product, and that is the finding
+
+`WBondCouplingAudit.AuditAndWarn` existed, was tested, and was reachable **only from a
+hand-constructed netlist in a test** — nothing in circuitRF called it. Harmless while a wBond could
+not be placed at all; placing a SECOND one is the moment it becomes reachable by an ordinary user.
+It now runs in `SchematicRunService.RunNetlist`, immediately after elaboration, inside its own
+try/catch: an audit is advisory and must never be the reason a run that would otherwise have
+produced results does not. Gated both ways — two placed wBonds warn and name the manual remedy; one
+warns about nothing, because an audit that fires on every run is one people stop reading.
+
+## Routes 2 and 3, and where they are reached from
+
+**Route 2 — project-tree context menu, "Add to Schematic"**, placing into the schematic currently in
+front. The tree is where the user is already looking at the design; a File-menu item would put the
+action somewhere neither the schematic nor the design is visible. The **palette tile** is the other
+half of the same story: it places a wBond with a blank `File`, chosen afterwards through the
+parameter dialog's Browse… picker (`IsFilePathParameter` now covers `WBond`/`File`) — the path to
+reach for when the design is not in the workspace yet.
+
+**Route 3 — "Add as Cell…"**: the embedded `.clay` becomes the cell's layout view and the wBond
+component its schematic view, with a `.ccell` naming both primaries. Reuses
+`WBondGeometryEmbedding.Unpack` and `CellFolder.CreateCellFolder` — no second unpacker, no second
+cell-creation path. **A design carrying no embedded geometry is route 2, not a failure**, and is
+diverted there with a message rather than given an empty layout view.
+
+- **The bundle is unpacked into `<cell>/geometry/`, not into `layout/`**, so the cell's layout folder
+  holds exactly one thing — its primary `.clay` — the way every other cell's does. `Unpack` resolves
+  the root's instances against a synthetic folder of its own, so every `CellRef` is then rebased
+  through **`LayoutFlatten.RebaseCellRef`**, the same helper Group-into-Cell and Flatten already use.
+  Writing the `.clay` somewhere other than the folder `Unpack` resolved against, without that
+  rebase, is precisely what would leave the new cell full of Not-Found placeholders — so the gate
+  asserts the instance RESOLVES, not merely that a `.clay` was written.
+
+## A real pre-existing defect found on the way, NOT fixed here — **FIXED 2026-08-07**
+
+> **CLOSED by brief-core-length-units.md** (see `src/Core/CLAUDE.md`'s own entry, at the top of that
+> file, for the measured before/after table and the base-symbol decision). The diagnosis below is
+> correct as far as it goes; what it could not see is that the sweep is a SYMPTOM. `nm` and `cm` sat
+> in `_identityUnits` and evaluated to a multiplier of exactly 1, so **a plain component parameter
+> authored `L = 1 cm` in the ordinary parameter editor evaluated to 1.0, not 0.01**, with no error
+> and no warning — no sweep needed. The fix is the table; the sweep round-trip fell out of it.
+>
+> **What changed for this file's own area:** `"m"` is still MILLI (owner's call — a hand-authored
+> `C=1m` must not silently become a farad), so the metre's symbol is **`"metre"`**, and
+> `ComponentTypeRegistry.UnitOptions[Length]` now offers `"metre"` where it offered `"m"`. A length
+> sweep axis is therefore labelled `metre` in the Data Display and the `.npy`. `in`/`inch` were added
+> to the expression engine but deliberately NOT to that dropdown.
+>
+> **The phase gate is in this file's own test suite:**
+> `WBondSchematicPlacementTests.M4_ASweptLoopHeightInMil_AgreesWithTheHandWrittenNetlist` — a
+> `mil`-declared loop-height sweep from a PLACED component, against the same two heights from a
+> hand-written netlist. Measured **1086.2 pH at 10 mil and 2206.7 pH at 45 mil**, which is WB-B2's
+> own hand-`.cnl` pair (1073.8 / 2189.9 pH) to ~1%. M3's own sweep test below still declares its
+> global unitless — deliberately, so it keeps measuring what it is about (does a placed wBond
+> regenerate under a sweep) rather than the units table.
+
+**A LENGTH-dimensioned global cannot currently be swept correctly, and it fails silently.**
+`ParametricSweepEngine` documents `SweepValues` as already-SI and re-attaches
+`Units.BaseUnit(varUnit)` so the value passes through unchanged. For length it does not:
+
+- `Units.BaseUnit("mm")` is `"m"` — and **`Units._scales["m"]` is `1e-3`, the SI prefix MILLI, not
+  the metre.** So a `mm`-declared swept variable is re-scaled by 1e-3 on the way back in.
+- `"mil"` is not in `_baseUnitMap` at all (every other scaled length unit — mm, um, nm, cm — is), so
+  it passes through and re-scales by 25.4e-6.
+
+On a loop-height sweep the height then collapses below the wire's own foot drop, clamps, and the
+sweep produces a **perfectly plausible flat curve** rather than an error. Found by measurement, not
+inspection: the M3 sweep gate reported bit-identical |S21| at 10 mil and 45 mil, while the same two
+heights driven through a hand-written `.cnl` give 1073.8 pH and 2189.9 pH. **Not fixed** — it is the
+Core expression-engine units table, outside this phase's guardrails, and the fix changes every
+existing length sweep by three to five orders of magnitude. The M3 gate therefore declares its
+global unitless with the value in metres (the one spelling that works today) and says so inline.
+Left for the owner: `"m"` collides with milli, so the fix is probably a distinct base symbol for
+length rather than one more row in the map.
+
+## Files
+
+`src/Ui/Schematic/WBondSymbolProvider.cs`, `WBondPlacement.cs` (new — both framework-free).
+Touched: `SchematicModel.cs` (`SymbolKind.WBond`), `ComponentTypeRegistry.cs` (entry,
+`EngineReference`, `TryParseCode`, `DefaultParameters`, `IsFilePathParameter`), `EditableSchematic.cs`
+(`ExternalSymbolRef` + four resolution sites + `SymbolPortDefs`), `CellSymbolResolver.cs` (the seam,
+nullable base dir), `NetExtractor.cs` (the wBond emit branch), `SchematicRunService.cs` (the audit),
+`SchematicViewModel.cs` (`CommitWBondPlacement`), `WorkspaceViewModel.cs` (save hook, drift report,
+both routes), `ITreeActions.cs` / `ProjectTreeItemViewModel.cs` / `ProjectTreeView.axaml`.
+
+## Gate
+
+`tests/Ui.Tests` **5,561** (+27, `WBondSchematicPlacementTests`), `tests/WBond.Tests` 237,
+`tests/Core.Tests` 1,118, `tests/Firewall.Tests` 6 — all green. **Two gates confirmed to actually
+catch a regression:** removing the `OrderBy(PortIndex)` from `PortDefsOf` turns
+`RWbb22_PinsAreWalkedByPinNumber_NotByListPosition` red; neutering the audit call turns
+`RWbb24_TwoPlacedWBonds_WarnFromTheRun_AndTheMessageNamesTheRemedy` red. `.wBond`, `.csch`, `.ccell`
+and `.cws` format versions are all untouched — `SymbolKind` serializes by NAME, and `Arrays` is an
+ordinary component parameter.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm
+on your end: the Library palette shows a **wBond** tile under Other and dropping it places a
+component whose `File` row has a Browse… button; right-clicking a `.wBond` in the project tree
+offers **Add to Schematic** and **Add as Cell…**, and Add to Schematic with no schematic in front
+says so rather than doing nothing; adding an array in the wBond editor and saving grows the placed
+symbol's pins in an already-open schematic; reordering two arrays and saving posts the reorder
+warning once; and Add as Cell… on a design saved with embedded geometry produces a cell whose layout
+view draws the real pads.
+
+---
+
+wBond WB-D — assembly DRC: the `.wasm` rule file, 3D predicates, and the loop envelope
+(brief-wbond-wbd-assembly-drc.md, 2026-08-07) — **COMPLETE (M1–M4).** A wirebond design can now be
+checked against an assembly house's own rules, in the SAME run, the SAME panel and the SAME waiver
+store the die-side DRC already uses.
+
+**The brief's own headline held: exactly one thing here is new geometry, and everything else is an
+existing mechanism reused.** `DrcEngine.Run` gained two optional arguments; `DrcRunSettings` gained
+one field; `TechnologyMerge` gained an assembly overload; the panel gained a badge and a note. There
+is no second rule engine, no second waiver store, no second results panel and no second merge.
+
+**THE MEASUREMENT THAT SHAPED THE PHASE, and it is the owner's own question answered with numbers:
+the 600-wire clearance sweep is 2.05 ms, against 416.6 ms for the same answer without a broad phase —
+203×.** At 100 wires it is 0.31 ms against 12.7 ms (40.5×). `WirePairSweep` (a uniform XY grid over
+each wire's metal bbox, cell sized to the mean wire) turns 179,700 unordered pairs into 5,166
+candidates and 588 actually measured on the 12-array power-amplifier fixture. Both figures are
+`Category=Benchmark`, best-of-5, and the accelerated result is asserted EQUAL to the naive all-pairs
+result in the same test — a fast answer that differs from the slow one is not an optimisation.
+**An R-tree was considered and not used**: `LayoutSpatialIndex` is right for 10⁵–10⁶ shapes spread
+over a board; a wBond design is hundreds of similar-sized wires clustered around one die, which a
+uniform grid handles with a fraction of the code and no tree to keep fresh.
+
+**INTERSECTING WIRES ARE A GEOMETRY ERROR, AND ARE CHECKED WITH NO `.wasm` PRESENT AT ALL.** Two
+pieces of metal cannot occupy the same space, so a wire pair whose surfaces touch or interpenetrate is
+wrong in the design rather than close to somebody's limit — an assembly house's rule file is not what
+makes overlapping metal invalid. It is reported as its own violation ("Wires intersect") with a
+negative clearance, deliberately **not clamped to zero**: the magnitude is how far a wire has to move,
+and clamping would make "just touching" and "buried a diameter deep" read identically.
+
+## R-wbd-1 — the nm↔DBU bridge, third time of asking
+
+This bridge shipped broken twice before (`WBondRenderer` converted nm→µm instead of nm→DBU; `DxfWireIo`
+fed nm to a DBU-taking writer), and both times it was invisible on every default document. **It did NOT
+bite a third time**, and the reason is that WB-D converted in the one direction that makes it hard to:
+**the LAYOUT is converted into nanometres**, once, in `PlanarEdgeIndex.Build`, via the existing
+`WBondSnap.ToDbu`/`ToNm`. Wires are the only 3D thing here and a wire's z has no DBU equivalent at all,
+so pushing everything into DBU would have needed a second, invented convention for the vertical axis.
+Every mixed wire/layout test runs at **100 and 10,000 DBU/µm**, never at the 1,000 default where a
+nanometre and a database unit coincide exactly and a missing conversion is indistinguishable from a
+correct one.
+
+**The z assumption is stated rather than left to be discovered** (`WBondLayerHeights`): a drawing
+layer's artwork sits at the top surface of its conductor, measured from the top surface of the LOWEST
+ground-designated conductor — the same reference `SubstrateResolver` already resolves ground against,
+because a `Point3.Z` is measured from the ground plane the method of images reflects in. Stackup
+thicknesses are read at the fixed `LayoutUnits.DefaultDbuPerMicron`, NOT the layout's own resolution
+(the trap `src/Ui/Layout/Em/CLAUDE.md` already records once). No stackup, or no ground-designated
+conductor, degrades to z = 0 **and says so** — inventing heights would produce clearances that look
+authoritative and are fiction.
+
+## The four §5 open questions, answered
+
+1. **Where does the `.wasm` reference live? BOTH** — `WBondDesign.AssemblyRef` on the document overrides
+   `CwsFile.DefaultAssemblyRef` on the workspace, exactly like `.clay`'s `TechRef`. Either alone leaves a
+   real case unsayable: the workspace default is what makes the ordinary case free (one shop, one house,
+   stated once), and the document reference is what expresses the exception (one product qualified at a
+   second house) without forcing a second workspace. Both fields are additive and nullable; **no
+   `.wBond`, `.clay`, `.ctech` or `.cws` format version was bumped.**
+2. **What `LayerKey` does a wire violation carry? NONE — `DrcViolation.Layer` is now `LayerKey?`.** A bond
+   wire is not on a drawing layer, and the panel groups and colours by that field. A reserved synthetic
+   key would group every wire violation under a layer that means nothing; the layer of the pad a wire
+   lands on would be worse, because it reads as a claim about where the violation is. Layer-less
+   violations sort as a block at the END of the list rather than interleaved by coordinate — they are
+   about a different kind of object, from a different rule file, and a user scanning for "what is wrong
+   with my artwork" should not have wire findings threaded through it.
+3. **Is a one-point envelope a constant? YES, and legal.** A house that states one number means one
+   number. Out-of-order or duplicated span points ARE refused — interpolating between points whose order
+   is unknown produces a limit curve nobody stated, and quietly sorting someone's table hides a
+   transcription error much better surfaced.
+4. **Does WB-D own a `.wasm` editor? NO**, per the recommendation. The format, the resolution, the rules
+   and the checking ship; the editor is its own phase once the vocabulary has settled against a real
+   house's rule set. `WasmCache` deliberately does not mirror `TechnologyCache`'s live-override half for
+   the same reason — with no editor there is nothing that can hold an unsaved edit.
+
+## WB32b — a new workspace ships NO `.wasm`; one is created on demand (owner instruction, this round)
+
+Added during the phase at the owner's direction and written into `wbond.md` §8 as a numbered decision.
+Most designs have no wirebonds, so creating a rule file in every workspace would put a document in the
+project tree that most users would have to learn about only to ignore. The file is created at the one
+moment the user is already asking the question — the DRC panel's Check button, on a design with wires
+and no rules — offering **Choose File… / Create Default / Not Now**. `WasmDefaults.CreateStarter()`
+writes `default.wasm` at the workspace root and records it as `CwsFile.DefaultAssemblyRef`, relative
+inside the workspace and absolute outside (R-dd-6's own rule, applied here).
+
+**Every rule in the starter says `PLACEHOLDER` in its own description, and a test asserts it does.**
+That is load-bearing rather than cautious: a rule set a user believes came from their assembly house,
+but did not, would pass a design the house rejects — worse than no rule set at all. **A decline is
+remembered per workspace per session** (`_assemblyRulesAsked`), because a prompt that reappears on
+every check is one people learn to dismiss unread.
+
+## The language: what widened, and why the entry point did not
+
+`DrcLayerExpr` is REGION-valued — every node returns polygons, and the rule supplies the measurement
+kind and the threshold. That shape is exactly right for a die-side rule and cannot express
+"loop height must stay under a curve of span", which is a COMPARISON between two computed scalars. So
+WB-D adds a scalar/predicate layer ON TOP (`DrcPredicateExpr`/`DrcPredicateParser`): new operands
+(wire sets), new functions, and one genuinely new value kind (`envelope`). **Region operands are still
+parsed by the untouched `DrcLayerExprParser`** — `wire_to_layer(G1, and(8/0, 9/0))` hands its second
+argument to it as text.
+
+**`DrcLayerExprParser` was not edited at all**, which is what makes "an expression using only the
+pre-existing 2D vocabulary parses byte-identically" true by construction rather than by a test that
+happens to pass. The 10-case pinned regression exists anyway, because "by construction" stops being
+true the first time someone edits that file.
+
+- **Quantities are checked at PARSE time** (`WasmQuantity` Length/Angle/Number). Lengths are stored in
+  nanometres, so a bare `30` against `angle_change(G1)` is a reasonable 30 degrees while a bare `30`
+  against `span(G1)` is thirty NANOMETRES — a rule that can never fire, written by someone who meant
+  30 mil. The second is a parse error that says "state a unit"; the first is accepted.
+- **The ITERATION DOMAIN is inferred once from the functions used, never per evaluation.** A predicate
+  containing a pair function is evaluated per wire PAIR; otherwise per WIRE. In pair domain a per-wire
+  function on set S measures the pair member drawn from S — a set that is neither of the pair's own is
+  refused during validation rather than silently resolved.
+- **The broad phase is used only where it is provably sound.** Pruning a far-apart pair is correct only
+  when every pair term states a LOWER bound and the predicate is a plain conjunction; an upper bound,
+  an `||`, a `!`, or a per-wire term inside a pair rule each break that reasoning.
+  `DrcWireCheck.TryComputePairCutoff` returns null in every one of those cases and the check falls back
+  to the full sweep **and says so in the diagnostics** rather than being quietly slow.
+- **`envelope` is a NAMED table** (`envelope(max_loop, span(G1))`), declared in the `.wasm` rather than
+  written inline. That makes it a first-class value any rule can use for any tabulated limit, which is
+  what §8.1 asks for; an inline point list would have made it a syntax feature of one rule. Outside the
+  stated range it CLAMPS rather than extrapolating — running the last segment's slope past the end of
+  the table manufactures a limit nobody agreed to.
+
+## §8's rule table — what is expressible, and the two things that are NOT
+
+Reported rather than quietly dropped, per §7:
+
+| §8 rule | status |
+|---|---|
+| minimum wire pitch | `foot_pitch(A, B)` |
+| loop height vs span envelope | `loop_height(A) <= envelope(t, span(A))` |
+| maximum / minimum wire span | `span(A)` |
+| wire-to-pad-edge, wire-to-lead-edge clearance | `wire_to_layer(A, <region>)` |
+| wire-to-wire 3D clearance | `wire_spacing(A, B)` |
+| wire-to-die-edge clearance | `dist_to_edge(A)` |
+| maximum wire angle change | `angle_change(A)` |
+| allowed wire diameters and metals | the material section's own lists, checked structurally |
+| **tail/stitch land length** | **NOT expressible** — `Wire` models a polyline, a diameter and a metal; it has no tail or stitch to measure. Needs a model change, not a language one. |
+| **reverse-bond allowance** | **NOT expressible** — nothing on `Wire` marks a bond as reversed. `Wire.Reverse()` swaps current direction (WB26b), which is a different quantity entirely. |
+
+**`foot_pitch` is an ADDITION beyond §8.1's stated six functions, and it is stated here rather than
+buried.** "Minimum wire pitch" is the first row of §8's own table and is NOT the same quantity as
+wire-to-wire clearance: pitch is a bond-pad spacing measured between feet regardless of where the loops
+go, clearance is how close the wires come anywhere along their length. A house states both, at different
+values, and expressing pitch as clearance would pass a pair of feet on top of each other whose loops
+happen to diverge. It also needs its own broad-phase mode — **XY-only box pruning**, because two wires
+stacked vertically are far apart in 3D and directly on top of each other in plan, so a 3D box test
+would prune exactly the pair a pitch rule exists to catch.
+
+## R-wbd-2 — the closed form, gated against an oracle that shares no algebra with it
+
+Segment-to-segment distance is Ericson §5.1.9. All three failure modes are handled and each has its own
+case in a 9-case theory: **parallel/near-parallel** (`denom → 0`, falls back to s = 0 and solves t),
+**zero-length** segments (both single- and double-degenerate), and **clamping — clamp one parameter,
+then RE-SOLVE the other**. The oracle is a 201×201 brute-force sample over both parameters; over a
+400-pair randomised corpus (seeded, so a failure is reproducible) the closed form is never above the
+sampled minimum and worst-case 225 nm below it — three orders of magnitude under a 1 mil wire's radius.
+
+**`ClampingIndependently_IsWrong_OnACrossingPair` proves the trap is real rather than theoretical**: it
+implements the naive independent clamp in the test file and asserts it DISAGREES with the oracle
+(1503.33 vs 1345.36) on a fixture where the unconstrained solution lands off the end of one segment
+while the other parameter stays interior. The fixture also must not be perpendicular — with `b = 0` the
+two answers coincide by accident and the test would pass while testing nothing, which is exactly what
+the first version of it did.
+
+## R-wbd-3 — a waiver names a PLACE, never a wire index
+
+`DrcWireCheck.KeyFor` is rule name + the participating GROUPS + the marker's exact bbox in DBU. **The
+flat wire index is deliberately absent.** Flat indices shift whenever a wire is added, deleted, pasted
+or moved between groups, so a key built on one would silently re-point an existing waiver at a
+DIFFERENT wire after any structural edit — worse than losing the waiver, because it still looks like it
+applies. Pinned by `TheWaiverKey_SurvivesAWireBeingAddedElsewhere_BecauseItIsNotAFlatIndex`, which
+inserts a wire at the FRONT of the array (shifting every later index) and asserts the key is unchanged.
+Moving the offending wire DOES change the key and un-waives it, which is the correct outcome — the
+waiver was granted for geometry that no longer exists.
+
+## Markers are a projection, and the panel says so
+
+A wire violation's marker is the closest-approach point (or the wire's own footprint for a per-wire
+rule), projected into the layout plane, in the same flat DBU ring form every other marker uses — so the
+renderer needed no wire-specific path. `DrcViolationRow.ProjectionNote` puts *"Marker is a projection
+into the layout plane — the clearance is measured in 3D"* on every wire row. Without it a user looking
+at two wires that appear far apart in plan will read the marker as wrong rather than as flat.
+
+## Files
+
+`src/Ui/Layout/Assembly/` (new — `WasmModel`, `WasmPersistence`, `WasmCache`, `WasmResolver`,
+`WasmValidation`, `WasmDefaults`). **Not `Drc/`, deliberately**: a `.wasm` is a peer of `Technology` —
+a resolvable, workspace-scoped document with its own persistence, cache and resolution order — and
+`Drc/` holds the checking engine. The predicate LANGUAGE those rules are written in does live in
+`Drc/`, beside the layer language it extends.
+`src/Ui/Layout/Drc/DrcPredicateExpr.cs`, `DrcPredicateParser.cs`, `DrcWireCheck.cs`, `WBondClearance.cs`
+(new). `src/WBond/WireGeometry3D.cs`, `WirePairSweep.cs` (new — framework-free, so the whole geometry
+half is testable without Avalonia).
+
+## Gate
+
+`tests/Ui.Tests` **5,534** (+43, `WasmAssemblyDrcTests`), `tests/WBond.Tests` **237** (+19,
+`WireGeometry3DTests`), `tests/Firewall.Tests` 6, `tests/Core.Tests` 1,118 — all green. Benchmark tier
+grew by one 2-case theory (`ClearanceSweepCost_IsReported_At100And600Wires`, well under a second).
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: running Check on a wBond design in a workspace with no rule file offers Choose File… / Create
+Default / Not Now, and declining does not ask again; Create Default writes `default.wasm` at the
+workspace root and the panel then names it; a wire violation shows its section badge (Machine /
+Process / Material), its measured-vs-limit in mil, and the projection note; waiving one greys the row
+and survives save-and-reopen; and moving the offending wire un-waives it.
+
+---
+
+wBond additions — loop-height definition, selection, the profile menu, the wire inspector, mixed
+clipboard, DXF wires (owner round, 2026-08-07) — **COMPLETE.**
+
+**THE DEFINITION CHANGE, and it is the most important thing in this round: loop height is a wire's
+MAXIMUM z MINUS ITS MINIMUM z** (owner's own words, now `wbond.md` §3.0 and `Wire.LoopHeightNm`, which
+is the one place it lives). It was **rise above the CHORD**, and the two differ whenever the feet sit
+at different z — a die pad up to a substrate lead, i.e. the ordinary chip-and-wire case. A bonder is
+set up against max-minus-min; the old number reads LOW on exactly the asymmetric loops where it
+matters.
+- **`LoopProfile.ApplyTo` now SOLVES for the amplitude** it adds above the chord rather than using the
+  loop height as that amplitude. `SolveAmplitudeNm` is closed form, not a search: every point's z is
+  `chord(s) + A·height(s)`, so the wire's maximum is the maximum of a family of lines in `A`;
+  requiring it to equal `min z + LoopHeightNm` bounds `A` by `(target − chordᵢ)/heightᵢ` at every
+  rising point, and the tightest bound is the answer. One pass, nothing to converge.
+- **A loop height below the wire's own foot drop is unachievable** by any shape — a dead-straight wire
+  already measures that much — so it clamps to that floor rather than being refused (the wire is
+  drawable) or arched upward to fake the number (worse).
+- **All 206 pre-existing WBond tests passed unchanged after the change**, which is not reassurance —
+  it is the finding: every fixture in that suite had LEVEL feet, where the two definitions coincide.
+  `LoopHeightDefinitionTests` adds the asymmetric case that discriminates. **Confirmed to bite:**
+  reverting `ApplyTo` to the old one-liner turns 6 of its 12 red, and the 6 that stay green are
+  precisely the level-feet and pure-measurement ones.
+
+**Selection (§6.2) — wires and layout geometry are two independent selections held at once.** Neither
+clears the other. `SelectAllWires` / `InvertWireSelection` / `ClearSelection` on the VM; a context menu
+on the wBond editor's layout canvas offers Select All (both kinds), Select All Wires, Invert Wire
+Selection, Deselect All. **Invert works on `TouchedWires`**, so a partially-selected wire counts as
+selected and drops out of the inverted set — inverting point-by-point would turn "I picked three
+vertices" into a selection of every OTHER vertex, which is not what inverting a wire selection means.
+
+**The profile view's own context menu (§6.4a) is GROUP-scoped, and that is the point.** The profile
+view draws one curve per array, so the thing under the pointer there IS a group — "set the loop
+height" means setting it for the group you are looking at, without selecting it first. The toolbar's
+transforms stay selection-scoped and are untouched. Set Loop Height… / Span… / Diameter… / Material… /
+Rotate… / Reverse Wires / Flip Wires │ Copy Coordinates / Paste Coordinates │ Delete Group.
+- **`WBondProfileCanvas` had no public hit-test at all** — added `HitTestArray`, routed through the
+  SAME `WireHitTest.HitTestProfile` and tolerance a left-click uses, so a right-click can never
+  disagree with a left-click about what is under the pointer.
+- **Reverse and Flip are deliberately different menu items.** Reverse (WB26b) swaps which foot is the
+  input and therefore flips that wire's mutual-coupling sign; `LoopProfile.Flip` mirrors the shape
+  end-for-end (a crest at 30% moves to 70%) and changes no sign at all. They look alike in a profile
+  view, which is exactly why they are separate.
+- **Every operation works on a FREE group as well as a bound one.** A bound group is edited through
+  its profile and re-applied; a free one is re-shaped through a profile synthesised from its own
+  geometry (and unbound again afterwards), so the loop height still lands via the one exact solve
+  rather than a second, wrong, scale-the-rise calculation.
+- **`WBondUnits.TryParseLength` is the one parser** behind every "…" prompt — a bare number means the
+  document's display unit, a stated suffix always wins. `ProfileCoordinateText` is the one codec
+  behind Copy/Paste Coordinates; **Paste is greyed out until the clipboard is known to hold a
+  readable shape**, checked asynchronously so a right-click never blocks on a clipboard round trip.
+
+**DXF wires (§9.4) — the assembly-house bridge.** `Wires_<group>` layers, one 3D `POLYLINE` per wire,
+diameter and material as `CIRCUITRF_WBOND` XDATA, a filled circle (CIRCLE + solid HATCH) at each foot.
+Toolbar: **Export DXF…** (layout AND wires) and **Import Wires…** (only 3D polylines, into the current
+document, no new cell). GDSII is deliberately not offered — assembly houses do not use it and the
+format has no 3D polyline or diameter, so a wire could only be flattened to a meaningless 2D trace.
+- **THE UNITS BUG THIS ROUND SHIPPED AND THEN CAUGHT: a wire point is NANOMETRES; `WriteCoord` takes
+  DBU.** Feeding nm straight in is exactly right at the 1,000 DBU/µm default and silently wrong by a
+  factor of the resolution everywhere else — the same bridge failure the renderer shipped once at
+  WB-C3. Fixed via one `NmToDrawingUnit` factor; gated by a round trip at **three resolutions and
+  three `$INSUNITS` values**, never at the default alone. **Confirmed to bite:** dropping the
+  conversion turns 4 of 7 units tests red. `BuildDesign` was then simplified to take
+  nanometres-per-drawing-unit directly — the layout's DBU resolution cancels out of the wire path
+  entirely, and routing through it was one more scale for a caller to get wrong (it already had, in
+  this file's own first test).
+- **The round-trip test found a real leak nothing else would have:** the foot circles came back as
+  layout geometry, which would have added two shapes per wire foot to the design on EVERY trip,
+  growing without bound while looking plausible each time. `DxfReader.DropWireLayerDecoration` drops
+  anything on a `Wires_*` layer that is not a wire polyline.
+- **A test-harness bug worth remembering:** DXF handles are hexadecimal, so a handle whose value is
+  literally `30` is indistinguishable from a group-code line if you scan line by line. The first
+  scanner read an owner-handle code (330) as a Z coordinate and failed a perfectly correct writer.
+  **Anything reading DXF text in a test must walk strict (code, value) PAIRS.**
+
+**Height, span and group are EDITABLE in the wire panel (owner follow-up).**
+- **A single-wire loop-height edit DETACHES a bound wire, and that is the honest outcome.** One wire
+  cannot both follow a shared profile and stand at its own height; silently editing the shared shape
+  would move every other wire in the group from a panel that says "this wire". The Profile row flips
+  to "(free)" the moment it happens, so it is visible rather than surprising, and the profile view's
+  Set Loop Height… remains the way to change a whole group. **Span does NOT detach** — a profile
+  applies between whatever feet a wire has, so moving one foot leaves the binding valid.
+- A height below the wire's own foot drop is **refused by name**, not silently clamped: the panel can
+  say why, where `ApplyTo` (which has no user to talk to) can only clamp.
+- **Group is a combo of existing groups plus a trailing "New Group Name…"** the view resolves by
+  prompting. The move re-points the SELECTION to the wire's new flat index rather than dropping it —
+  every other structural edit drops it, but this one would blank the panel the user is editing in. The
+  emptied source group is LEFT in place: a group is a named terminal, and moving the last wire off a
+  pin is not the same statement as deleting the pin.
+
+**PASTE-WHATEVER (owner follow-up): `WBondMixedClipboard.Unwrap` is the ONE place any paste path turns
+clipboard text into payloads it can try**, and `LayoutClipboard.PasteAsync` now goes through it too.
+A mixed envelope yields its two halves; anything else is offered to both parsers unchanged, because
+each already refuses what is not its own. **Without this the Layout Editor pasted NOTHING from a mixed
+copy** — the envelope failed its marker check — which is exactly the "I copied something and paste did
+nothing" failure. Each editor takes the part it understands and ignores the rest, with neither knowing
+what the other can hold.
+
+**A REAL PRE-EXISTING DEFECT THE GROUP-MOVE TEST FOUND: no structural change in a wBond document was
+ever undoable.** `DesignSnapshot` captured points and bindings only, so `Restore` could do nothing but
+drop TRAILING wires — add, paste, delete, merge and move-between-groups all survived Ctrl+Z. It now
+captures ARRAY MEMBERSHIP by wire REFERENCE, which is what makes a deletion undoable at all: the
+deleted wire is still alive in the snapshot, so restoring membership puts the same object back rather
+than a reconstruction. **Membership is restored BEFORE points, and the order is load-bearing** — the
+point arrays are indexed by flat `AllWires()` order, which IS the concatenation of array membership,
+so restoring points against the current membership would write each wire's points onto whichever wire
+now sits at that index. **Confirmed to bite:** ignoring membership turns 4 tests red.
+- Two test fixtures were wrong in an instructive way and were fixed rather than worked around: a wire
+  lying flat in the ground plane has zero loop inductance (its image cancels it exactly), so the
+  matrix is singular and the edit is REFUSED and rolled back — a fixture that trips that is testing
+  the refusal, not the edit. Same for deleting the only group, which leaves no loop to reduce.
+
+**Gate:** `tests/Ui.Tests` **5,491**, `tests/WBond.Tests` **218**, `tests/Firewall.Tests` 6 — green.
+
+**The Properties Inspector's wire context (§6.9) — `WBondWirePropertiesViewModel` +
+`WBondWirePropertiesView`, a SIXTH mutually-exclusive `PropertiesTool` context.** Group, profile
+binding, diameter, material, measured loop height and span, and an editable X/Y/Z coordinate list.
+- **It follows the selection, not the view.** Both canvases write the same `WBondViewModel.Selection`,
+  so a wire picked in the layout view and one picked in the profile view land here identically and
+  this panel never has to know which did the picking. A PARTIAL selection (one point) still shows its
+  wire — reading a vertex's coordinate is the most likely reason to open the panel at all.
+- **Live during a drag needs no drag-override machinery here, unlike the layout editor.** A layout
+  drag previews through `Overlay.DragOverrides` and leaves the model untouched until release; a wBond
+  drag mutates the wire's points in place and raises `ReadoutChanged` every frame. Refreshing on that
+  event is the whole of it.
+- **Rows refresh IN PLACE while the point count is unchanged**, never a rebuilt collection —
+  replacing it per drag frame would reset scroll position and destroy the field being typed into. Same
+  `LazyIndexedList` shape the layout vertex list already uses, so a 101-point wire materialises only
+  what is on screen.
+- **A `PropertiesTool` setter's own flag must be assigned LAST.** These setters are "clear every flag,
+  then set mine"; `SetActiveWire` initially set `IsWireActive` first and the mechanical clear-all
+  line that follows silently undid it. Every one of the six pre-existing setters also had to gain
+  `IsWireActive = false` AND `WireInspectorVm.SetContext(null)` — the pattern's one maintenance cost,
+  and a missed line shows up as two panels visible at once.
+
+**Mixed copy/paste (§6.7) — `WBondMixedClipboard` is an ENVELOPE around the two existing payloads,
+never a third encoding of either.** Wires travel as the same `WBondClipboard.Payload` a wires-only
+copy writes and geometry as the same `LayoutFragment.Payload` the Layout Editor writes, so a mixed
+copy cannot drift from a single-kind one.
+- **The envelope is used ONLY when the selection genuinely spans both.** A wires-only copy writes the
+  plain wBond payload and a geometry-only copy the plain layout fragment, so pasting into another
+  wBond editor — or into the Layout Editor — still works exactly as before. Wrapping unconditionally
+  would have made every copy unreadable by every existing paste path.
+- **Paste tries the envelope FIRST**, because a plain payload can never be mistaken for one while the
+  reverse is not true: both single-kind parsers ignore properties they do not declare, so an envelope
+  handed to either would deserialize into an all-default object rather than failing loudly.
+- **Cut is now Copy-then-Delete across both kinds** (it previously behaved as Copy and said so).
+  `LayoutEditorViewModel.DeleteSelectedGeometry` is a thin public face on the existing private
+  `DeleteSelection`, so the geometry half goes through the same command and the same undo entry the
+  Delete key uses rather than a second removal path.
+
+---
+
+wBond WB-C4 — interchange: `.clay` embedding, PDK flattening, the clipboard, units, drag-drop
+(brief-wbond-wbc-editor.md, 2026-08-07) — **PHASE WB-C IS COMPLETE.** Read the WB-C3 entry below for
+the two canvases; this one covers the last row of §7's own table.
+
+**§9.1 embedding — the geometry travels inside the file, and what that costs is stated BEFORE the
+save, never discovered by the recipient.** `WBondGeometryEmbedding` (`src/Ui/WBond/`) analyses the
+reference layout's hierarchy and reports three sets: cells that will be **flattened** (a vendor
+PCell — its generator is vendor code and cannot ship inside a design file, WB33), cells that stay
+**parametric** (a circuitRF built-in, WB34), and references that could **not be resolved** (named, and
+left out, WB35). `WBondSaveGeometryDialog` shows that plan with Reference/Embed radios; **Reference is
+the default** because a small file that names its cells is the ordinary case and embedding is the
+deliberate "hand a colleague one file" act.
+- **Native vs. PDK is decided by `PCellRegistry.KnownGeneratorIds`**, never by a name convention — a
+  generator id we ship is ours; anything else is the vendor's.
+- **Flattening happens on a CLONE.** Mutating the resolver's cached view would leave the live
+  workspace holding flattened geometry after a save — a save silently editing what it saved.
+- **`Unpack` writes real cell folders + `.ccell`**, not an in-memory overlay, because
+  `CellLayoutResolver.Resolve` requires `Directory.Exists` before it will consult a live override.
+  Writing real folders keeps render, hit-test, snap and hierarchy descent on the one code path.
+- `WBondDocument.Open(path, scratchDir)` sets `CurrentLayoutPath` into the unpacked folder rather than
+  overriding `InstanceBaseDir` — that property is DERIVED from the path, so setting both would let the
+  two disagree.
+
+**§6.7 the clipboard, both halves.** *In*: wires and wire segments as marker-guarded text
+(`WBondClipboard`, `circuitrf/wbond-clipboard-v1`), preserving array membership where the target
+array exists and creating it where it does not. *Out*: **⇧⌘C / Ctrl+Shift+C copies the design as a
+GRAPHIC** — `WBondGraphicExport` composes one page from the two renderers that already draw this
+design on screen (`LayoutRenderer` for the reference geometry, `WBondRenderer` for the wires) and
+hands the bytes to **`PlotExporter.SetClipboardDataAsync`**, the same multi-format path (Windows
+bypass and text fallback included) the schematic, layout and data display already use. §6.7 says
+outright that this is tricky and already solved; nothing here re-solves it.
+- **Plain ⌘C stays the WIRE copy; Shift is the graphic.** The muscle-memory gesture must not surprise
+  anyone with a picture.
+- **The frame includes the reference geometry, not just the wires** (`FitViewport`) — framing on the
+  wires alone silently crops away the pads a reader needs to make sense of them, which reads as the
+  export being broken rather than as a framing choice. Gated by a test that compares the framed left
+  edge with and without the layout.
+- **An export never paints a background** (`TransparentBackground = true`, `ShowGrid = false`,
+  `Overlay = null`) so a pasted graphic takes the destination document's own background. **Confirmed
+  to bite:** flipping that one flag turns `Render_NeverPaintsABackground_TheCornersStayTransparent`
+  red immediately.
+- The framing is a pure function of the DESIGN, never of wherever the user's canvas happens to be
+  panned — the same reasoning (and the same test shape) as the layout clipboard's own R-L1f-4.
+
+**§6.6 drag-drop — a blank editor now has somewhere to drop a cell.** `WBondDocumentViewModel.
+EnsureReferenceLayout(scratchDir)` installs an empty `LayoutEditorViewModel` when there is none, and
+`NewWBond` calls it. Without a layout view model the canvas has nothing to drop INTO and the existing
+palette/tree drag path silently does nothing — which reads as drag-and-drop being broken rather than
+as there being no layout yet. The scratch directory is real (created eagerly) because a dropped
+instance's `CellRef` resolves against the layout's own directory: a blank layout with no path can
+hold a dropped cell but can never resolve it.
+
+**§9.3 / WB36 — the wire table.** `WireTableCsv` reads a packaging flow's own bond list (array, x1,
+y1, z1, x2, y2, z2) into a design; a malformed line names the missing column rather than failing
+vaguely. Hand-placing 600 wires is not a workflow and every packaging flow already has this table.
+
+**§6.5 units** — the selector changes readouts only and deliberately does NOT touch the nudge step
+(WB25: 1 mil / 5 mil is a bonder-process quantity, not a display convenience).
+
+**Gate:** `tests/Ui.Tests` **5,428**, `tests/WBond.Tests` 206, `tests/Firewall.Tests` 6 — green.
+
+**Named and NOT built, so nobody mistakes them for done:** §9.2's routes 2 and 3 (add a `.wBond`'s
+wires to an existing schematic as a component; add wires *and* geometry as a new cell) are **blocked
+on a WB-B gap** — the Core/Engine half of the wBond component exists (`ComponentModelFactory` handles
+the `wBond` type, `Elaborator.ResolveWBondParameters` resolves it, and `WBondSymbolGenerator` can
+build the symbol) but there is **no `SymbolKind.WBond` and no `ComponentTypeRegistry` entry**, so a
+wBond cannot be placed in a schematic at all. Those two routes belong to whichever brief closes that
+gap, not to WB-C. Also not built: `.cws` session restore for `.wBond` documents; Cut as
+delete-after-copy (it currently behaves as Copy, and says so); and attaching a wBond overlay to the
+MAIN Layout Editor's canvas (WB27's machinery is complete and tested — what is missing is the
+association from a `.clay` to the `.wBond` that belongs to it).
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: Tools ▸ wBond then dragging a cell from the project tree onto the layout view places it;
+saving offers Reference/Embed and names the vendor cells it would flatten; a `.wBond` saved with
+geometry opens on a machine with no access to the originating workspace and still shows its pads;
+⇧⌘C pastes a real vector graphic into Keynote/Word with no background box; and File ▸ Import ▸
+Wirebond Table… turns a bond-list CSV into a design.
+
+---
+
+wBond WB-C3 — the two canvases (brief-wbond-wbc-editor.md, 2026-08-07) — layout-view overlay, profile
+view, pointer routing, snapping, hierarchy descent, the WB15 ladder. **Substantially complete; the
+named gaps at the end of this entry are real and are NOT built.**
+
+**THE BUG THIS PHASE FOUND, and it would have been invisible on every default layout:
+`LayoutViewport`'s world unit is the layout's own DATABASE UNIT, not microns.** `LayoutViewport.Zoom`
+is device pixels per DBU (`LayoutCanvas.Zoom1To1` computes `1/dbuPerUnit`, which settles it). The
+WB-C3 overlay written before this pass converted wire nanometres to MICRONS before handing them to the
+viewport — 1000x out. It survived review because a wBond wire is stored in nanometres and the layout
+default is 1,000 DBU/µm, where **nm and DBU coincide exactly**: the wrong conversion and no conversion
+at all are indistinguishable until someone opens a 100 DBU/µm layout. `WBondSnap.ToDbu`/`ToNm` and
+`WBondRenderer.NmToDbu` are now the crossing points, and both are stated at every crossing rather than
+assumed. Gated by `TrueDiameterMode_ScalesWithTheHostLayoutsResolution` and a pixel oracle
+(`TheOverlayDrawsAtTheSamePhysicalPlace_AtAnyLayoutResolution`) — **both confirmed to turn red** when
+the bridge is neutered.
+
+**A second finding, about the test rather than the code: the first version of that pixel oracle was
+vacuous.** Its fixture put every wire on `y = 0` and let the wire run off the canvas, and y = 0 is
+invariant under exactly the scaling under test — both renders came back empty and compared equal. The
+fixture is now three wires 6 mil apart, framed in PHYSICAL terms (`PanY = -100/zoom`) so two are on
+screen, plus an `Assert.NotEmpty`. **Any test of a scale conversion needs geometry off both axes; a
+point on an axis proves nothing about the scale of that axis.**
+
+**`ILayoutCanvasOverlay` (`src/Ui/Controls/`) is the seam, and a transparent sibling control was the
+wrong shape.** An unhandled pointer event bubbles to ANCESTORS, never sideways to a sibling underneath
+— so a transparent overlay control would have had to hand-forward pan, zoom, marquee and every layout
+tool. The seam inverts it: `LayoutCanvas` asks the overlay first and it returns whether it consumed
+the gesture; anything it declines reaches the layout tools untouched. That is what makes "nudge a bond
+pad and drag a wire onto it, same view, same mouse" true rather than aspirational.
+`LayoutCanvas.InvalidateOverlay()` repaints **without** touching `LayoutPathCache` — WB17's whole
+point, and the one way to turn a cheap overlay into a 500k-shape redraw is to forget it.
+`CanvasOverlay` defaults to null, so every existing layout behaviour is bit-for-bit unchanged.
+
+**Two marquees want the same gesture, so one had to be chosen — `WireMarqueeEnabled`, default on.** A
+drag on empty space either marquee-selects wires or falls through to the layout editor's own shape
+marquee; there is no third answer. It is a toggle rather than a modifier because it is a mode a user
+stays in. A press ON a wire is consumed either way.
+
+**WB27 descent: an incomplete chain REFUSES rather than composing a partial transform.**
+`LayoutDocument.PushIn` gained an optional instance (additive — every pre-existing caller and all ~60
+existing `PushIn` test call sites compile unchanged) so `DescentChain` can offer the transform down to
+the frame on screen. `WBondDescent.CanPlace` returns false when any frame did not record its instance,
+or when the resolution changes part-way down. Drawing wires at a silently wrong offset is worse than
+drawing none, because judging a wire foot against the pad under it is the entire reason to be down
+there at all. At depth the wires are dimmed and **not selectable** — editing a wire from inside a cell
+it does not belong to is ambiguous about which instance is being edited.
+
+**`WireEdits.Translate` is now the one primitive; `Nudge` is expressed in terms of it.** A drag and a
+nudge differ only in where the displacement comes from, and `WireSelection.MovingPoints` — which
+resolves which points actually move — is exactly the rule that can be wrong. **`WBondViewModel.
+BeginGesture`/`EndGesture`** collapse a live alt-drag into ONE undo entry (same shape harmonicaRF's
+Edit Display drag already uses); without it a single drag left sixty entries.
+
+**The profile view's horizontal drag is deliberately NOT a free move.** Span is a DERIVED coordinate
+(cumulative XY arc length), so "move this point 10 mil right in the profile" has no single answer in
+the geometry that is stored. Changing span is alt-drag, which scales the bound array by a factor
+(WB24b) and is well defined. Alt-drag declares its axis ONCE, past a few pixels — re-deciding per
+frame would let a wobbling hand alternate between scaling height and span inside one gesture.
+
+**Reachable from the application: Tools ▸ wBond**, needing no workspace and no layout context (§10's
+third entry point). One menu-structure test was **updated, not loosened** —
+`ToolsMenu_ExistsOnBothSurfaces_WithHarmonicaRfAsItsOnlyEntry` asserted harmonicaRF was the only entry,
+which this deliberately makes false; it is now `..._WithTheSameEntriesInTheSameOrder`, still exact and
+still ordered, which is the property that stops the two hand-mirrored surfaces drifting.
+
+**Wire creation (§6.4) — click the start, click the end, with a ghost of the FULL generated loop.**
+Not a rubber-band line: what you are placing is a wire with a real profile, and a straight line
+between the feet would show none of the loop clearance you are actually judging as you choose where to
+land it. **The bug the test caught: the ghost was constrained by Shift and the committed wire was
+not** — ortho lived only in the pointer-move path, so the placed wire did not match the ghost the user
+was looking at when they clicked. `Constrain` is now one helper called from both, and applied BEFORE
+the snap so a constrained wire can still land exactly on a pad corner lying on that axis.
+
+**A created wire always joins an ARRAY, and one is made when there is none.** The reduction sums over
+arrays (§3.4), so a wire in no array would be drawn, would be measured, and would be absent from every
+published inductance — silently. `WBondViewModel.AddWire` is structural (a new wire changes the flat
+filament layout), which is why creation is click-click rather than something that fires per move.
+
+**The §6.4 defaults are preferences, not design state** (`WBondDefaults` + three `AppPreferences`
+fields + a Settings ▸ General block): 7 points, 1 mil, gold. Per USER because they describe how one
+shop's bonder is set up — a `.wBond` arriving from someone else must not change what the next wire you
+draw looks like. A stored point count is CLAMPED to [3, 101] rather than trusted: two points is a
+straight chord with no loop for the reduction to integrate along, and a hand-edited preferences file is
+the one route that can carry either. **The unit selector (§6.5) changes readouts only and deliberately
+does NOT touch the nudge step** — 1 mil / 5 mil is a bonder-process quantity (WB25), not a display
+convenience.
+
+**Gate:** `tests/Ui.Tests` **5,379** (+34), `tests/WBond.Tests` 205, `tests/Firewall.Tests` 6 — green.
+
+**NOT built, and these are real gaps rather than polish:** the clipboard (§6.7, WB-C4); transforms
+beyond nudge/scale — rotate-about-end-point, mirror, duplicate-with-pitch all exist as tested WB-C1
+primitives with no toolbar or gesture reaching them; and — the one most likely to be mistaken for done
+— **the descent machinery is implemented and tested but nothing attaches a wBond overlay to the main
+Layout Editor's own canvas yet**, because which wBond belongs to a cell is the `.clay` embedding
+question WB-C4 answers. WB27 is therefore correct as machinery and unreachable as a user-visible
+feature until then.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: Tools ▸ wBond opens a document with the panel docked left full height, the profile view above
+the layout view, and both splitters draggable; clicking a wire in either view selects it and dragging
+moves it live with the panel's pH readout following; the Ø toggle makes the wires read as physical
+metal; the snap toggle lands a dragged wire foot exactly on a bond pad's corner; the draw tool shows a
+ghost of the whole loop between the two clicks and Shift flattens it; and Settings ▸ General ▸
+Wirebonds changes what the next drawn wire is made of.
+
+---
+
 Angular grips, MLIN's four edge grips, and the anchor that holds still (owner round 3, 2026-08-06) —
 COMPLETE. Two owner asks after the follow-up round below: an angle grip for MBend "in a nice place for
 UX", and MLIN grips "at each edge's midpoint so you can drag from that end and keep other parts of the

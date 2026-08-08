@@ -70,6 +70,40 @@
                                        Text="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
                         </Grid>
 
+                        <!-- Wirebonds — wbond.md §6.4's creation defaults. Per USER, not per design:
+                             they describe how one shop's bonder is set up, and a .wBond arriving from
+                             someone else must not change what the next wire you draw looks like. -->
+                        <TextBlock Text="Wirebonds" FontSize="11" FontWeight="SemiBold"
+                                   Opacity="0.55" Margin="0,20,0,6"/>
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Points per wire:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <NumericUpDown Grid.Row="0" Grid.Column="1" Name="WBondPointsUpDown"
+                                           Minimum="3" Maximum="101" Increment="1" FormatString="0"
+                                           Width="110" HorizontalAlignment="Left" FontSize="12"
+                                           ValueChanged="OnWBondPointsChanged"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Wire diameter:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <NumericUpDown Name="WBondDiameterUpDown" Minimum="0.05" Maximum="20"
+                                               Increment="0.1" FormatString="0.###"
+                                               Width="110" FontSize="12"
+                                               ValueChanged="OnWBondDiameterChanged"/>
+                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Wire material:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox Grid.Row="4" Grid.Column="1" Name="WBondMaterialCombo"
+                                      Width="150" HorizontalAlignment="Left" FontSize="12"
+                                      SelectionChanged="OnWBondMaterialChanged"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="1" FontSize="11" Opacity="0.6"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Text="Applies to newly drawn wires. Existing wires keep whatever they were drawn with. Nudge steps stay 1 mil / 5 mil — those are bonder-process quantities, not display settings."/>
+                        </Grid>
+
                         <!-- Generated Artwork section — the one way back from "Don't Allow" -->
                         <TextBlock Text="Generated Artwork" FontSize="11" FontWeight="SemiBold"
                                    Opacity="0.55" Margin="0,20,0,6"/>

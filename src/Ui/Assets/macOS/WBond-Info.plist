@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!-- ── wBond's OWN bundle identity (WB-E M4, R-h8-9 applied a third time) ─────
+         A different application, and macOS will not tolerate it pretending otherwise: two bundles
+         sharing one CFBundleIdentifier collide in Launch Services, in the Dock, in the quarantine
+         database and in the login-item list, and the symptoms of that are all remote from the cause.
+
+         THE THREE-PLACE TRAP: CFBundleIdentifier must match BUNDLE_ID in bundleForWBondMacOS.sh AND
+         the --entitlements argument to codesign. Nothing derives one from another. The bundle script
+         reads the identifier back OUT of this file and checks it against its own, which is the one
+         place the three can be compared — see its own note. -->
+
+    <key>CFBundleIdentifier</key>
+    <string>com.circuitRF.wBond</string>
+
+    <!-- The binary inside Contents/MacOS/. The ASSEMBLY NAME is shared with circuitRF on purpose
+         (WB40: RfCore's InternalsVisibleTo names that assembly, and the standalone binary IS src/Ui
+         with a different Main), so this is CircuitRF.Ui in all three bundles. The .app differs. -->
+    <key>CFBundleExecutable</key>
+    <string>CircuitRF.Ui</string>
+
+    <key>CFBundleName</key>
+    <string>wBond</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>wBond</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+
+    <!-- .NET 10 requires macOS 13 (Ventura) or later. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+
+    <!-- Suppress quarantine "damaged app" dialog for ad-hoc signed builds. -->
+    <key>LSFileQuarantineEnabled</key>
+    <false/>
+
+    <key>CFBundleIconFile</key>
+    <string>wBondIcon</string>
+
+    <!-- .wBond is IMPORTED here and EXPORTED by circuitRF's Info.plist (R-wbe-7, the R-h8-10 rule
+         applied to a type that was not declared to macOS at all until now). Two applications must
+         not both claim to DEFINE one type — that is what Launch Services cannot arbitrate; circuitRF
+         ships the definition because the format is circuitRF's, and this states that wBond
+         understands it. Both then open a double-clicked .wBond. -->
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.wbond</string>
+            <key>UTTypeDescription</key>
+            <string>wBond Design</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>wBond</string>
+                    <string>wbond</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+
+    <!-- Document types this app can open. .crfw and .charm are deliberately ABSENT: there is no
+         workspace in this build and no harmonicaRF either, so claiming those types would put an
+         application that cannot open one in the "Open With" list for every workspace on the machine.
+         wBond's role here is EDITOR — the standalone is the app that owns a .wBond. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>wBond Design</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.wbond</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>wBond</string>
+                <string>wbond</string>
+            </array>
+        </dict>
+    </array>
+
+</dict>
+</plist>

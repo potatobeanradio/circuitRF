@@ -24,7 +24,10 @@ using RfCore.Data;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Harmonica;
+using CircuitRF.Ui.WBond;
+using CircuitRF.WBond;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.Assembly;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Layout.TechImport;
@@ -95,6 +98,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // NewWorkspace/SwitchToWorkspace/ResetToBlankShell so a fresh subscription always matches
     // the current instance — see ResetTechCache.
     private TechnologyCache _techCache = new();
+
+    /// <summary>
+    /// One-load-per-file cache for `.wasm` assembly rule files, reset alongside
+    /// <see cref="_techCache"/> for the same reason — a rule file resolved for the previous workspace
+    /// must not survive into the next one.
+    /// </summary>
+    private WasmCache _wasmCache = new();
 
     [ObservableProperty] private IRootDock? _layout;
 
@@ -621,6 +631,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         _techCache = new TechnologyCache();
         _techCache.TechnologyChanged += OnTechnologyChanged;
+        _wasmCache = new WasmCache();
+        _assemblyRulesAsked.Clear();
 
         // Drop any not-yet-flushed live-tech update targeting the OLD cache — every workspace-reset
         // path closes open documents first, but this guards the (rare) case of a reset landing in
@@ -2988,6 +3000,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _pdkPaletteItems.Clear();
         PdkKitRegistry.Clear();     // kit references belong to the workspace that named them
         _kitManifests.Clear();
+        // Generated wBond symbols are keyed by absolute path, so they are not workspace-scoped the
+        // way a kit reference is — but a stale entry would survive a workspace's files being edited
+        // outside circuitRF, and this is the one moment the whole session's assumptions are already
+        // being rebuilt. The reported-drift set goes with it: a fresh workspace has not been told
+        // anything yet.
+        WBondSymbolProvider.InvalidateAll();
+        _reportedWBondDrift.Clear();
 
         string? wsRoot = CurrentWorkspacePath is null
             ? null
@@ -4197,6 +4216,504 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// Opens a blank wBond editor — wbond.md §10's third entry point.
+    ///
+    /// <para><b>No workspace and no layout context required</b>, deliberately: that entry point exists
+    /// precisely for the case where there is none, and the user drags cells in from the project tree
+    /// as references afterwards. The layout half of the editor simply shows an empty canvas until one
+    /// arrives, which is a supported state rather than a broken one.</para>
+    ///
+    /// <para>The other two entry points (from a schematic's wBond symbol, and from a wire drawn in the
+    /// Layout Editor) land on this same <see cref="WBondDocument"/>.</para>
+    /// </summary>
+    [RelayCommand]
+    private void NewWBond()
+    {
+        var doc = new WBondDocument();
+
+        // §6.6/§10: a blank editor's layout view is where the user drags cells in from the project
+        // tree as references. It needs a real (if empty) layout to drop into, or the existing
+        // drag-drop path silently does nothing.
+        doc.ViewModel.EnsureReferenceLayout(
+            Path.Combine(_recovery.SessionDir, "wbond-reference", Guid.NewGuid().ToString("N")[..8]));
+
+        ResolveWBondAssemblyRules(doc);
+
+        _scratchWBonds.Add(doc);
+        _factory.OpenDocument(doc);
+    }
+
+    private readonly List<WBondDocument> _scratchWBonds = [];
+
+    /// <summary>
+    /// Workspaces already asked about assembly rules this session, so a user who declines is not
+    /// nagged on every check. Reset with the rest of the per-workspace caches.
+    /// </summary>
+    private readonly HashSet<string> _assemblyRulesAsked = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Offers to point a workspace at assembly rules the first time a check actually needs them.
+    ///
+    /// <para><b>A new workspace deliberately ships no `.wasm`.</b> Most designs have no wirebonds, and
+    /// creating a rule file in every workspace would put a document in the project tree that most
+    /// users would have to learn about only to ignore. So the file is created ON DEMAND, at the one
+    /// moment the user is already asking the question: they ran a check, the design has wires, and
+    /// there are no assembly rules to check them against.</para>
+    ///
+    /// <para>Three answers, and declining is a real one: point at an existing file (the usual case —
+    /// the house sent one), create a starter to edit against the house's document, or not now. A
+    /// decline is remembered for the session, because a prompt that reappears on every check is one
+    /// people learn to dismiss unread.</para>
+    /// </summary>
+    /// <returns>True when rules were installed and the caller should re-run the check.</returns>
+    public async Task<bool> PromptForAssemblyRulesAsync(LayoutEditorViewModel layout, Window? owner)
+    {
+        if (layout.WireDesign is null) return false;
+        if (layout.AssemblyRules?.Rules is not null) return false;
+        if (CurrentWorkspacePath is not { } cwsPath) return false;
+        if (!_assemblyRulesAsked.Add(cwsPath)) return false;
+
+        var resolved = ResolveOwner(owner);
+        if (resolved is null) return false;
+
+        var answer = await new SaveChangesDialog(
+            "This design has bond wires, but the workspace has no assembly rules to check them " +
+            "against.\n\n" +
+            "Assembly rules (a .wasm file) come from your assembly house and state what the bonder " +
+            "can do — wire pitch, loop height, clearances, allowed wire. circuitRF does not create " +
+            "one until you need it.",
+            saveLabel:     "Choose File…",
+            dontSaveLabel: "Create Default",
+            cancelLabel:   "Not Now",
+            title:         "Assembly Rules").ShowDialog<SaveChangesResult>(resolved);
+
+        string workspaceDir = Path.GetDirectoryName(cwsPath)!;
+        string? chosen = null;
+
+        if (answer == SaveChangesResult.Save)
+        {
+            var picked = await resolved.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Choose assembly rules",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("Assembly rules") { Patterns = ["*" + WasmPersistence.Extension] },
+                ],
+            });
+
+            if (picked.Count == 0 || picked[0].TryGetLocalPath() is not { } path) return false;
+            chosen = path;
+        }
+        else if (answer == SaveChangesResult.DontSave)
+        {
+            chosen = Path.Combine(workspaceDir, WasmDefaults.DefaultFileName);
+            try
+            {
+                WasmPersistence.SaveToFile(chosen, WasmDefaults.CreateStarter());
+                Messages.Success(
+                    $"Created {WasmDefaults.DefaultFileName} with placeholder rules — edit it against " +
+                    "your assembly house's own document before trusting a clean result.", chosen);
+            }
+            catch (Exception ex)
+            {
+                Messages.Error($"Could not create {WasmDefaults.DefaultFileName}: {ex.Message}");
+                return false;
+            }
+        }
+        else
+        {
+            return false;   // Not now — and not asked again this session.
+        }
+
+        // Recorded as the WORKSPACE default, relative where it lives inside the workspace, so every
+        // other wBond design in it picks the same rules up with nothing further to configure.
+        try
+        {
+            var cws = TryLoadCws(cwsPath);
+            cws.DefaultAssemblyRef = MakeWorkspaceRelative(chosen, workspaceDir);
+            WorkspacePersistence.SaveToFileAtomic(cwsPath, cws);
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"The assembly rule reference could not be recorded in the workspace: {ex.Message}");
+        }
+
+        _wasmCache.Invalidate(chosen);
+
+        // Push the newly-resolved rules onto every open wBond document, so a second design already
+        // open does not have to be reopened to see them.
+        foreach (var doc in _scratchWBonds.Concat(_openDocsByPath.Values.OfType<WBondDocument>()))
+            ResolveWBondAssemblyRules(doc);
+
+        return layout.AssemblyRules?.Rules is not null;
+    }
+
+    /// <summary>A path inside the workspace stored relative; anything outside stays absolute, because
+    /// no encoding makes an outside reference portable (the R-dd-6 rule, applied here).</summary>
+    private static string MakeWorkspaceRelative(string absolutePath, string workspaceDir)
+    {
+        string full = Path.GetFullPath(absolutePath);
+        string root = Path.GetFullPath(workspaceDir);
+
+        if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            return full;
+
+        return Path.GetRelativePath(root, full).Replace(Path.DirectorySeparatorChar, '/');
+    }
+
+    /// <summary>
+    /// Resolves a wBond document's assembly rules (wbond.md §8) and reports whatever the resolver had
+    /// to say. Called at every point a wBond document comes into existence — new, opened, imported.
+    ///
+    /// <para><b>Finding none is silent.</b> A design that names no assembly house is the ordinary case
+    /// for anyone who has not been given a rule file yet; saying "no assembly rules" on every open
+    /// would be noise, and the DRC panel already states it where it matters. Only a reference that was
+    /// STATED and could not be honoured is worth a message.</para>
+    /// </summary>
+    private void ResolveWBondAssemblyRules(WBondDocument doc)
+    {
+        string? workspaceDir = CurrentWorkspacePath is null
+            ? null
+            : Path.GetDirectoryName(CurrentWorkspacePath);
+
+        string? defaultRef = null;
+        if (CurrentWorkspacePath is not null)
+        {
+            try { defaultRef = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath).DefaultAssemblyRef; }
+            catch { /* corrupt .cws — treated as "no default", matching ResolveTechFor */ }
+        }
+
+        var resolution = doc.ResolveAssemblyRules(workspaceDir, defaultRef, _wasmCache);
+
+        foreach (var diagnostic in resolution.Diagnostics)
+            Messages.Warning(diagnostic);
+    }
+
+    /// <summary>
+    /// Opens a <c>.wBond</c> — the standalone route of §9.2, and the double-click route from the tree.
+    ///
+    /// <para>Embedded geometry is unpacked into the session's own scratch area rather than anywhere
+    /// under the workspace: it is a decoded copy of what is already in the file, not project state,
+    /// and writing it into the user's workspace would leave litter they never asked for.</para>
+    /// </summary>
+    public void OpenWBondPath(string path)
+    {
+        string full = Path.GetFullPath(path);
+        if (ActivateIfOpen(full)) return;
+
+        try
+        {
+            string scratch = Path.Combine(_recovery.SessionDir, "wbond-embedded",
+                                          Math.Abs(full.GetHashCode()).ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            var doc = WBondDocument.Open(full, scratch);
+            ResolveWBondAssemblyRules(doc);
+
+            _openDocsByPath[full] = doc;
+            _factory.OpenDocument(doc);
+
+            if (doc.HasEmbeddedGeometry)
+                Messages.Info($"Opened {Path.GetFileName(full)} with its embedded layout geometry.");
+        }
+        catch (Exception ex)
+        {
+            // WB35: report, never fail silently and never substitute.
+            Messages.Error($"Could not open {Path.GetFileName(full)}: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenWBondFile(Window? window)
+    {
+        var owner = ResolveOwner(window);
+        if (owner?.StorageProvider is not { } storage) return;
+
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open wBond",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("wBond design") { Patterns = ["*.wBond", "*.wbond"] }],
+        });
+
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) OpenWBondPath(path);
+    }
+
+    /// <summary>
+    /// Saves the active wBond document, asking about geometry embedding first (WB33).
+    ///
+    /// <para>The plan is shown BEFORE the write, because a file that quietly lost parametricity on a
+    /// PDK cell is discovered by whoever receives it — which is the worst possible moment to find
+    /// out.</para>
+    /// </summary>
+    private async Task SaveWBondDoc(WBondDocument doc, Window? owner)
+    {
+        string? target = doc.FilePath;
+
+        if (target is null)
+        {
+            if (ResolveOwner(owner)?.StorageProvider is not { } storage) return;
+
+            var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save wBond",
+                SuggestedFileName = "wirebonds.wBond",
+                DefaultExtension = "wBond",
+                FileTypeChoices = [new FilePickerFileType("wBond design") { Patterns = ["*.wBond"] }],
+            });
+
+            if (file?.TryGetLocalPath() is not { } chosen) return;
+            target = chosen;
+        }
+
+        bool embed = false;
+        var layout = doc.ViewModel.ReferenceLayout;
+
+        if (layout is not null && ResolveOwner(owner) is { } dialogOwner)
+        {
+            var plan = WBondGeometryEmbedding.Analyze(layout.Model, layout.InstanceBaseDir);
+            var choice = await WBondSaveGeometryDialog.ShowAsync(dialogOwner, plan);
+
+            if (choice == WBondSaveGeometryDialog.Choice.Cancel) return;
+            embed = choice == WBondSaveGeometryDialog.Choice.Embed;
+        }
+
+        try
+        {
+            doc.Save(target, embed);
+            _openDocsByPath[Path.GetFullPath(target)] = doc;
+            Messages.Success($"Saved {Path.GetFileName(target)}", target);
+            // M2: a placed wBond's symbol is generated from this file, so a save is the moment every
+            // open schematic referencing it must re-generate. Nothing on disk holds a copy of the
+            // symbol, so this only has to drop a cache and ask for a rebuild.
+            OnWBondSaved(target);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Could not save {Path.GetFileName(target)}: {ex.Message}");
+        }
+    }
+
+    // ── wbond.md §9.2 routes 2 and 3 — bringing a .wBond into a design ────────
+
+    /// <summary>
+    /// Route 2 (M3) — places this <c>.wBond</c>'s wires in the ACTIVE schematic as a component,
+    /// wired to nothing, with <c>File</c> already pointing at the design.
+    ///
+    /// <para><b>Why the project tree rather than the File menu or a palette drag.</b> Route 2 is
+    /// "this design, into that schematic", and the tree is where the user is already looking at the
+    /// design. The palette tile places a wBond with a blank <c>File</c> — one tile for the component
+    /// type, per §5 question 4 — and the file is then chosen in the parameter dialog's Browse…
+    /// picker; that path exists too, and is the one to reach for when the design has not been saved
+    /// into the workspace yet. A File-menu item would be a third spelling of the same action with
+    /// no schematic and no design in front of the user when they pick it.</para>
+    /// </summary>
+    public Task AddWBondToSchematicAsync(ProjectTreeNodeViewModel node)
+    {
+        if (ResolveActiveDocumentForCommands() is not SchematicDocument sd)
+        {
+            Messages.Warning(
+                "Open the schematic you want the wirebond in first — \"Add to Schematic\" places it " +
+                "into the schematic that is currently in front.");
+            return Task.CompletedTask;
+        }
+
+        if (sd.ViewModel.CommitWBondPlacement(node.AbsolutePath))
+            Messages.Success($"Placed {Path.GetFileName(node.AbsolutePath)} in {sd.Title}.",
+                             node.AbsolutePath);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Route 3 (M4) — "someone sent me a package model": creates a cell whose LAYOUT view is the
+    /// design's embedded geometry and whose SCHEMATIC view holds the wBond component.
+    ///
+    /// <para><b>A design carrying no embedded geometry is route 2, not a failure</b> — it is a
+    /// perfectly ordinary wBond that references its geometry rather than carrying it, and creating a
+    /// cell with an empty layout view would be inventing a view the file never had. It is diverted
+    /// to route 2 and told so.</para>
+    ///
+    /// <para>Reuses <c>WBondGeometryEmbedding.Unpack</c> and <c>CellFolder.CreateCellFolder</c>;
+    /// there is deliberately no second unpacker and no second cell-creation path. Unpack writes real
+    /// cell folders rather than an in-memory overlay because <c>CellLayoutResolver.Resolve</c>
+    /// requires <c>Directory.Exists</c> — WB-C's own finding, unchanged here.</para>
+    /// </summary>
+    public async Task AddWBondAsCellAsync(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Warning("Open a workspace first — a cell has to be created somewhere.");
+            return;
+        }
+
+        string wbondPath = node.AbsolutePath;
+
+        WBondDesign design;
+        try { design = WBondIo.ReadFile(wbondPath); }
+        catch (Exception ex)
+        {
+            Messages.Error($"Could not read {Path.GetFileName(wbondPath)}: {ex.Message}");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(design.EmbeddedGeometryJson))
+        {
+            Messages.Info(
+                $"\"{Path.GetFileName(wbondPath)}\" carries no embedded geometry, so there is no " +
+                "layout view to create. Use \"Add to Schematic\" to place its wires as a component.",
+                wbondPath);
+            return;
+        }
+
+        if (design.Arrays.Count == 0)
+        {
+            Messages.Warning(
+                $"\"{Path.GetFileName(wbondPath)}\" declares no wire arrays, so its schematic view " +
+                "would have no pins. Group its wires into at least one array first.", wbondPath);
+            return;
+        }
+
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        string workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        string suggested    = Path.GetFileNameWithoutExtension(wbondPath);
+
+        var dialog = new InputNameDialog("Add wBond as Cell", "Cell name:", suggested);
+        var name   = await dialog.ShowDialog<string?>(mainWindow);
+        if (name is null) return;
+
+        if (NameValidator.Validate(name) is { } reason)
+        {
+            Messages.Error($"Invalid cell name: {reason}");
+            return;
+        }
+
+        string cellDir = Path.Combine(workspaceDir, name);
+        if (Directory.Exists(cellDir))
+        {
+            Messages.Error($"A cell named '{name}' already exists.");
+            return;
+        }
+
+        try
+        {
+            CellFolder.CreateCellFolder(workspaceDir, name);
+
+            // ── layout view ───────────────────────────────────────────────────
+            // The bundle's own cells are unpacked BESIDE the cell's views (a `geometry/` folder of
+            // its own) rather than inside `layout/`, so the cell's layout folder holds exactly one
+            // thing — its primary `.clay` — the way every other cell's does.
+            string geometryDir = Path.Combine(cellDir, "geometry");
+            var unpacked = WBondGeometryEmbedding.Unpack(design.EmbeddedGeometryJson, geometryDir);
+            if (unpacked is not ({ } rootView, { } unpackedBaseDir))
+            {
+                Messages.Error(
+                    $"The geometry embedded in \"{Path.GetFileName(wbondPath)}\" is not in a form " +
+                    "this version of circuitRF can read; the cell was created without a layout view.");
+                _factory.ProjectTreeTool?.Refresh();
+                return;
+            }
+
+            string layoutDir  = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+            string layoutFile = name + CellFolder.ViewExtension(ViewType.Layout);
+            string layoutPath = Path.Combine(layoutDir, layoutFile);
+
+            // Unpack resolves the root's instances against a synthetic folder of its own; the .clay
+            // is about to live somewhere else, so every CellRef is rebased through the SAME helper
+            // Group-into-Cell and Flatten already use — never a second path-arithmetic copy.
+            foreach (var inst in rootView.Instances)
+                inst.CellRef = LayoutFlatten.RebaseCellRef(inst.CellRef, unpackedBaseDir, layoutDir);
+
+            LayoutPersistence.SaveToFile(layoutPath, rootView);
+
+            // ── schematic view ────────────────────────────────────────────────
+            string schematicDir  = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
+            string schematicFile = name + CellFolder.ViewExtension(ViewType.Schematic);
+            string schematicPath = Path.Combine(schematicDir, schematicFile);
+
+            var built = WBondPlacement.TryBuild(
+                wbondPath, workspaceDir, ComponentTypeRegistry.Get(SymbolKind.WBond).InstancePrefix + "1");
+            if (built.Component is not { } comp)
+            {
+                Messages.Error(built.Error ?? "The wirebond component could not be created.");
+                _factory.ProjectTreeTool?.Refresh();
+                return;
+            }
+
+            var schematicModel = new SchematicEditModel();
+            schematicModel.Components.Add(comp);
+            SchematicPersistence.SaveToFile(schematicPath, schematicModel, cellName: name);
+
+            // ── the cell's own .ccell names both primaries ────────────────────
+            CellPersistence.SaveToFile(
+                Path.Combine(cellDir, CellFolder.CcellFileName),
+                new CcellFile { PrimarySchematic = schematicFile, PrimaryLayout = layoutFile });
+
+            _factory.ProjectTreeTool?.Refresh();
+            Messages.Success(
+                $"Created cell '{name}' from {Path.GetFileName(wbondPath)} " +
+                $"({design.Arrays.Count} array(s), {design.WireCount} wire(s)).",
+                Path.Combine(cellDir, CellFolder.CcellFileName));
+
+            OpenOrActivateSchematic(schematicPath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Could not create a cell from {Path.GetFileName(wbondPath)}: {ex.Message}");
+            _factory.ProjectTreeTool?.Refresh();
+        }
+    }
+
+    /// <summary>
+    /// Imports a wirebond table (WB36 / §9.3). Hand-placing 600 wires is not a workflow, and every
+    /// packaging flow already has this table.
+    /// </summary>
+    /// <param name="window">Owner for the picker.</param>
+    /// <remarks>
+    /// The table becomes a NEW wBond document rather than merging into whichever one happens to be
+    /// open. A merge would need rules the design does not state — what happens to an array of the
+    /// same name, whether a repeated import duplicates or replaces — and guessing them would be the
+    /// kind of silently-wrong answer a 600-wire table makes expensive to notice.
+    /// </remarks>
+    [RelayCommand]
+    private async Task ImportWireTable(Window? window)
+    {
+        var owner = ResolveOwner(window);
+        if (owner?.StorageProvider is not { } storage) return;
+
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import Wirebond Table",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Wirebond table (CSV)") { Patterns = ["*.csv"] }],
+        });
+
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path) return;
+
+        try
+        {
+            var design = WireTableCsv.ReadFile(path);
+
+            var doc = new WBondDocument(new WBondViewModel(design));
+            ResolveWBondAssemblyRules(doc);
+
+            _scratchWBonds.Add(doc);
+            _factory.OpenDocument(doc);
+
+            Messages.Success(
+                $"Imported {design.WireCount} wire(s) in {design.Arrays.Count} array(s) from {Path.GetFileName(path)}.",
+                path);
+        }
+        catch (Exception ex)
+        {
+            // The reader names the offending line; passing that through is the whole value of it.
+            Messages.Error($"Could not import {Path.GetFileName(path)}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Opens a <c>.charm</c> into a document of its own — the double-click route (R-h8-10) and the
     /// one File ▸ Open entry point a workspace can offer for one.
     ///
@@ -4491,6 +5008,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Open item 6, settled: a .charm inside a workspace opens like any other document type.
             case NodeKind.HarmonicaFile:
                 OpenHarmonicaPath(node.AbsolutePath);
+                return;
+
+            // §10/WB37: all three entry points land on the same document, and a .wBond in a workspace
+            // opens like any other document type.
+            case NodeKind.WBondFile:
+                OpenWBondPath(node.AbsolutePath);
                 return;
 
             case NodeKind.TechFile:
@@ -4842,6 +5365,54 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// A <c>.wBond</c> design was written to disk — M2's live-update seam.
+    ///
+    /// <para>Drops the generated symbol cached for that file and rebuilds every open schematic, so a
+    /// placed wBond picks up an added, renamed or reordered array immediately rather than at the
+    /// next reopen. Then reports any instance whose wiring was drawn against a DIFFERENT array
+    /// list, which is the one change that would otherwise re-point wires in silence (§5 question 3).
+    /// </para>
+    /// </summary>
+    private void OnWBondSaved(string wbondPath)
+    {
+        try { WBondSymbolProvider.Invalidate(Path.GetFullPath(wbondPath)); }
+        catch { WBondSymbolProvider.InvalidateAll(); }
+
+        RebuildOpenSchematics();
+
+        foreach (var kv in _openDocsByPath)
+            if (kv.Value is SchematicDocument sd)
+                ReportWBondArrayDrift(sd.ViewModel.EditModel, kv.Key);
+        foreach (var doc in _scratchDocs)
+            ReportWBondArrayDrift(doc.ViewModel.EditModel, null);
+    }
+
+    // Deduped per (schematic, instance, new array list) so one saved reorder is one message, not one
+    // per rebuild. A warning that reappears on every render is one people learn to dismiss unread —
+    // and this is the single warning in the wBond path that must not be.
+    private readonly HashSet<string> _reportedWBondDrift = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// §5 question 3 / M2 — reports every placed wBond whose referenced design's array list has
+    /// changed since the instance was wired.
+    ///
+    /// <para><b>A reorder is REPORTED, never silently re-pointed, and never repaired.</b> Pin order
+    /// IS array order (R-wbb2-2's contract with <c>WBondModel</c>'s stamp), so a reorder genuinely
+    /// moves every pin; there is no re-mapping that keeps existing wires correct without moving the
+    /// artwork the user drew. Deciding that a reorder breaks the wiring is an acceptable answer —
+    /// letting it happen quietly is not.</para>
+    /// </summary>
+    private void ReportWBondArrayDrift(SchematicEditModel model, string? path)
+    {
+        foreach (var drift in WBondPlacement.CheckArrayDrift(model))
+        {
+            string key = $"{path ?? "<scratch>"}|{drift.InstanceName}|{drift.Current}";
+            if (!_reportedWBondDrift.Add(key)) continue;
+            Messages.Warning(drift.Message, path);
+        }
+    }
+
+    /// <summary>
     /// Calls TriggerRebuild() on every open SchematicDocument so cell-ref components
     /// re-resolve and re-render after a symbol save or Make-Primary change.
     /// </summary>
@@ -4892,6 +5463,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return existing!;
         var (editModel, _, _) = SchematicPersistence.LoadFromFile(key);
         ReportUnknownComponents(editModel, key);
+        // M2: a schematic saved with one array list and reopened after the design changed must show
+        // the NEW pins — which it does, because the symbol is generated on load — and must SAY that
+        // the wiring was drawn against a different list.
+        ReportWBondArrayDrift(editModel, key);
         return RegisterSession(key, BuildSessionVm(editModel));
     }
 
@@ -5112,7 +5687,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var session = GetOrCreateLayoutSession(path);
         var label   = string.IsNullOrEmpty(instance.CellRef)
             ? "(cell)" : Path.GetFileName(instance.CellRef.TrimEnd('/', '\\'));
-        doc.PushIn(session, label);
+
+        // The instance is recorded so an overlay drawing world-coordinate geometry over this canvas
+        // can walk down into the sub-cell's frame (wbond.md WB27). The layout editor ignores it.
+        doc.PushIn(session, label, instance);
     }
 
     /// <inheritdoc/>
@@ -5481,6 +6059,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ActivateLayoutDocumentForProperties(doc);
         SetActiveUndoTarget(doc);
         ActiveSaveScope = SaveScope.SingleDoc;
+    }
+
+    /// <summary>
+    /// Routes the Properties panel to a wBond document's wire context (wbond.md §6.9).
+    ///
+    /// <para>The panel follows <c>WBondViewModel.Selection</c>, which BOTH canvases write — so a wire
+    /// picked in the layout view and one picked in the profile view land here identically, and this
+    /// does not need to know which view did the picking.</para>
+    ///
+    /// <para>Deliberately NOT also routing the layout context: a wBond document has a reference layout
+    /// too, and showing both panels would put two coordinate lists on screen with no way to tell which
+    /// one an edit lands in.</para>
+    /// </summary>
+    private void ActivateWBondDocumentForProperties(WBondDocument doc)
+    {
+        _factory.PropertiesTool?.SetActiveWire(doc.ViewModel.Editor);
+        _factory.DrcTool?.SetActiveLayout(null);
     }
 
     private void ActivateLayoutDocumentForProperties(LayoutDocument doc)
@@ -6802,6 +7397,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             RouteDataDisplayProperties(null);
             ActivateLayoutDocumentForProperties(layDocForProps);
         }
+        else if (activeDockable is WBondDocument wbDocForProps)
+        {
+            RouteDataDisplayProperties(null);
+            ActivateWBondDocumentForProperties(wbDocForProps);
+        }
         else
         {
             RouteDataDisplayProperties(null);
@@ -7310,6 +7910,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchDataDisplays.Remove(scratchDisplay);
         if (dockable is LayoutDocument scratchLayout)
             _scratchLayouts.Remove(scratchLayout);
+        if (dockable is WBondDocument scratchWBond)
+            _scratchWBonds.Remove(scratchWBond);
 
         // A .ctech editor being disposed for ANY reason (not just the confirmed-dirty-close path
         // above — e.g. a force-close, or a bug in some other path that skips the confirm hook) must
@@ -7395,6 +7997,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     return;
                 }
                 await SaveDataDisplayDoc(activeDisplay, window);
+                return;
+            }
+
+            // Active wBond — same rule as the data display above: the focused document's own Save.
+            if (ResolveActiveDocumentForCommands() is WBondDocument activeWBond)
+            {
+                if (!activeWBond.IsDirty && activeWBond.FilePath is not null)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                await SaveWBondDoc(activeWBond, window);
                 return;
             }
 
@@ -7695,6 +8309,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             || _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d => d.IsDirty && Keep(d))
             || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
+            || _scratchWBonds.Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<WBondDocument>().Any(d => d.IsDirty && Keep(d))
             || HasOrphanedDirtySession()
             || HasOrphanedDirtyLayoutSession();
     }

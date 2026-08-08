@@ -11,19 +11,27 @@
   </PropertyGroup>
 
   <!--
-    TWO APPLICATIONS, ONE ASSEMBLY (docs/design/harmonicarf.md §3.1, route (b)).
+    THREE APPLICATIONS, ONE ASSEMBLY (docs/design/harmonicarf.md §3.1 route (b), wbond.md §11/WB38).
 
-    circuitRF and harmonicaRF are the same code with a different Main and a different Application
-    object. Which one this build produces is `CrfApp`:
+    circuitRF, harmonicaRF and wBond are the same code with a different Main and a different
+    Application object. Which one this build produces is `CrfApp`:
 
         dotnet build                                  → circuitRF   (the default)
         dotnet build   -p:CrfApp=harmonica            → harmonicaRF
-        dotnet publish -p:CrfApp=harmonica -r osx-arm64 (self-contained)
+        dotnet build   -p:CrfApp=wbond                → wBond
+        dotnet publish -p:CrfApp=wbond -r osx-arm64     (self-contained)
 
-    R-h8-5 — StartupObject is set EXPLICITLY for BOTH, never left to "there is only one Main". This
-    project sets TreatWarningsAsErrors, so the moment a second entry point compiles the build is
-    CS0017 without it; leaving the default case implicit is what breaks on the day the second Main
-    lands rather than on the day somebody is looking.
+    R-h8-5 / WB39 — StartupObject is set EXPLICITLY for EVERY value, never left to "there is only one
+    Main". This project sets TreatWarningsAsErrors, so the moment another entry point compiles the
+    build is CS0017 without it.
+
+    **THAT RULE HAS NOW BITTEN TWICE, and the second time was verified rather than assumed.** Deleting
+    the `wbond` line below and rebuilding with -p:CrfApp=wbond gives, immediately:
+
+        src/Ui/Program.cs(19,24): error CS0017: Program has more than one entry point defined.
+
+    — note that it names circuitRF's OWN Program.cs, not the new entry point, which is exactly why
+    the rule is written down here instead of remembered.
 
     Size is NOT a difference between them and is not meant to be — §0.2 of brief-harmonicarf-h8
     settled it: excluding the layout editor AND the MoM engine would save ~1.6 MB of 138, because a
@@ -35,22 +43,23 @@
 
     <StartupObject Condition="'$(CrfApp)' == 'circuitrf'">CircuitRF.Ui.Program</StartupObject>
     <StartupObject Condition="'$(CrfApp)' == 'harmonica'">CircuitRF.Ui.ProgramHarmonica</StartupObject>
+    <StartupObject Condition="'$(CrfApp)' == 'wbond'">CircuitRF.Ui.ProgramWBond</StartupObject>
 
-    <!-- The ASSEMBLY NAME is deliberately the same for both, and this is not cosmetic: RfCore grants
-         InternalsVisibleTo("CircuitRF.Ui"), so renaming the assembly for the standalone build loses
-         SNP.CreateBroken / SNP.RefreshFrom and the Data Display half stops compiling. §3.1 says the
-         standalone binary IS src/Ui with a different Main; keeping one assembly name is what makes
-         that literally true. The bundle script names the .app, not the binary. -->
+    <!-- The ASSEMBLY NAME is deliberately the same for all three, and this is not cosmetic (WB40):
+         RfCore grants InternalsVisibleTo("CircuitRF.Ui"), so renaming the assembly for a standalone
+         build loses SNP.CreateBroken / SNP.RefreshFrom and the Data Display half stops compiling.
+         §3.1/§11 say the standalone binary IS src/Ui with a different Main; keeping one assembly
+         name is what makes that literally true. The bundle script names the .app, not the binary. -->
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(CrfApp)' != 'circuitrf' and '$(CrfApp)' != 'harmonica'">
+  <PropertyGroup Condition="'$(CrfApp)' != 'circuitrf' and '$(CrfApp)' != 'harmonica' and '$(CrfApp)' != 'wbond'">
     <!-- A typo in CrfApp must not silently build circuitRF and leave someone wondering why their
          standalone binary opens a workspace. -->
     <CrfAppInvalid>true</CrfAppInvalid>
   </PropertyGroup>
 
   <Target Name="CrfValidateApp" BeforeTargets="BeforeBuild" Condition="'$(CrfAppInvalid)' == 'true'">
-    <Error Text="CrfApp must be 'circuitrf' or 'harmonica'; got '$(CrfApp)'." />
+    <Error Text="CrfApp must be 'circuitrf', 'harmonica' or 'wbond'; got '$(CrfApp)'." />
   </Target>
 
   <!-- harmonicaRF's own macOS bundle identity (R-h8-9). Its own icon, its own Info.plist, its own
@@ -62,9 +71,28 @@
     <CodeSignEntitlements>Assets/macOS/Entitlements.plist</CodeSignEntitlements>
   </PropertyGroup>
 
-  <!-- Windows: embeds the icon into the .exe PE resources -->
-  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) and Exists('Assets\circuitRFIcon.ico')">
-    <ApplicationIcon>Assets\circuitRFIcon.ico</ApplicationIcon>
+  <!-- wBond's own macOS bundle identity (WB-E M4, the same rule applied a third time). -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(CrfApp)' == 'wbond'">
+    <MacOSXBundleIcon>Assets/wBondIcon.icns</MacOSXBundleIcon>
+    <MacOSXBundleInfoPlist>Assets/macOS/WBond-Info.plist</MacOSXBundleInfoPlist>
+    <CodeSignEntitlements>Assets/macOS/Entitlements.plist</CodeSignEntitlements>
+  </PropertyGroup>
+
+  <!--
+    Windows: embeds the icon into the .exe PE resources — PER APP.
+
+    **This was NOT per-app until WB-E, and it is the Windows half of R-h8-9's rule.** The condition
+    used to test only the platform, so all three executables would have embedded circuitRF's icon the
+    moment one existed. Nothing broke because no `.ico` is committed (they are build products of the
+    SVGs in Assets/artwork/, exactly like the `.icns` files — see .gitignore), so today every Windows
+    build carries the default .NET icon. That is a real gap for all three and is stated in
+    src/Ui/CLAUDE.md rather than left to be discovered; what this fixes is that when the `.ico` files
+    ARE produced, each application gets its own instead of one wearing another's.
+  -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <ApplicationIcon Condition="'$(CrfApp)' == 'circuitrf' and Exists('Assets\circuitRFIcon.ico')">Assets\circuitRFIcon.ico</ApplicationIcon>
+    <ApplicationIcon Condition="'$(CrfApp)' == 'harmonica' and Exists('Assets\harmonicaRFIcon.ico')">Assets\harmonicaRFIcon.ico</ApplicationIcon>
+    <ApplicationIcon Condition="'$(CrfApp)' == 'wbond'     and Exists('Assets\wBondIcon.ico')">Assets\wBondIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -74,8 +102,36 @@
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <Authors>circuitRF</Authors>
+  </PropertyGroup>
+
+  <!--
+    PER-APP IDENTITY METADATA, and on Windows this is USER-VISIBLE rather than bookkeeping.
+
+    `Description` becomes the executable's **File Description**, which is the name Windows shows in
+    Task Manager's Details tab and in the file's own Properties. All three binaries are called
+    CircuitRF.exe (WB40 — the assembly name must not change), so before this the ONLY thing
+    distinguishing them there was identical circuitRF text on all three. `Product` is what Explorer
+    shows as the product name.
+
+    The macOS side already had this right: CFBundleName/CFBundleDisplayName are per-app in each
+    plist. This is that same decision applied to the one platform that reads it from the binary.
+  -->
+  <PropertyGroup Condition="'$(CrfApp)' == 'circuitrf'">
+    <Product>circuitRF</Product>
     <Description>Lightweight cross-platform RF circuit simulator (DC, S-parameters, harmonic balance, loadpull/sourcepull)</Description>
     <PackageId>com.circuitRF.circuitRF</PackageId>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CrfApp)' == 'harmonica'">
+    <Product>harmonicaRF</Product>
+    <Description>harmonicaRF — an interactive load-pull instrument: drag a termination on a Smith chart and watch the design follow</Description>
+    <PackageId>com.circuitRF.harmonicaRF</PackageId>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CrfApp)' == 'wbond'">
+    <Product>wBond</Product>
+    <Description>wBond — bond-wire design and assembly rule checking, with Touchstone export of the array network</Description>
+    <PackageId>com.circuitRF.wBond</PackageId>
   </PropertyGroup>
 
   <!-- SelfContained only activates when an explicit -r <rid> is supplied (dotnet publish). -->

@@ -51,6 +51,13 @@ public static class DrcEngine
     /// this too. Reused, not re-derived — same risk, same number.</summary>
     public const int DefaultMaxShapes = 500_000;
 
+    /// <summary>
+    /// The wire ceiling for the assembly half. Set an order of magnitude above the owner's stated
+    /// worst case of 600 wires (wbond.md §4), which the broad phase measures at ~2 ms — so this is a
+    /// runaway backstop, not a working limit anyone should meet.
+    /// </summary>
+    public const int DefaultMaxWires = 10_000;
+
     /// <summary>See this file's header, "erode by w/2 − 1 DBU".</summary>
     private const double WidthRadiusBackoffDbu = 1.0;
 
@@ -77,21 +84,44 @@ public static class DrcEngine
     /// set; there is no second place rules can come from, which is what makes "which rules did this
     /// check?" answerable with one file name.</param>
     /// <param name="waivers">Persisted per-violation exceptions; matched by <see cref="DrcViolation.Key"/>.</param>
+    /// <param name="settings">How far the run is allowed to go. Null means the defaults.</param>
+    /// <param name="wires">
+    /// The wBond design and its resolved assembly rules, or null when there are none
+    /// (brief-wbond-wbd §M4).
+    ///
+    /// <para><b>Additive on purpose.</b> Every pre-WB-D caller passes neither of the last two
+    /// arguments and gets a byte-identical result — the wire half is reached only when a caller hands
+    /// it a design, so "the 2D check is unchanged" is true by construction rather than by a test that
+    /// happens to pass. The gate pins it anyway.</para>
+    /// </param>
     public static DrcRunResult Run(
         IReadOnlyList<LayoutShape> shapes,
         Technology?                tech,
         IEnumerable<DrcWaiver>?    waivers = null,
-        DrcRunSettings?            settings = null)
+        DrcRunSettings?            settings = null,
+        WBondCheckContext?         wires = null)
     {
         settings ??= DrcRunSettings.Default;
 
-        if (tech is null)
-            return DrcRunResult.Empty(null,
-                ["No technology resolved for this layout, so there are no rules to check against."]);
+        // A design with wires but no technology still has assembly rules worth checking — the wires
+        // are not on a drawing layer, so nothing about them depends on the process. Returning early
+        // here (as the pre-WB-D code did unconditionally) would have made "no technology" silently
+        // mean "no wire check either".
+        if (tech is null || tech.DrcRules.Count == 0)
+        {
+            string why = tech is null
+                ? "No technology resolved for this layout, so there are no design rules to check against."
+                : $"\"{tech.Name}\" states no design rules. Add them in the Technology Editor.";
 
-        if (tech.DrcRules.Count == 0)
-            return DrcRunResult.Empty(tech.Name,
-                [$"\"{tech.Name}\" states no design rules. Add them in the Technology Editor."]);
+            if (wires is null) return DrcRunResult.Empty(tech?.Name, [why]);
+
+            var wireOnly = DrcWireCheck.Run(wires with { Tech = tech }, settings);
+            var wireOnlyViolations = ApplyWaivers(Sorted(wireOnly.Violations), waivers);
+
+            return new DrcRunResult(
+                wireOnlyViolations, wireOnly.RulesEvaluated, 0, 0, tech?.Name,
+                [why, .. wireOnly.Diagnostics]);
+        }
 
         var diagnostics = new List<string>();
 
@@ -269,10 +299,38 @@ public static class DrcEngine
                     .Take(8).Select(k => $"{k.Layer}/{k.Datatype}")) +
                 (eval.MissingLayers.Count > 8 ? ", …" : "") + ".");
 
+        // ── The assembly half, into the SAME result ─────────────────────────────────────────────
+        // One run, one panel, one waiver store — §8.1's "a new rule vocabulary over an existing DRC,
+        // not a second DRC". The wire check gets the same region evaluator the die-side rules used,
+        // so `wire_to_layer(G1, and(8/0, 9/0))` means exactly what that expression means in a
+        // `.ctech` rule rather than being resolved a second, subtly different way.
+        if (wires is not null)
+        {
+            var wireResult = DrcWireCheck.Run(
+                wires with { Tech = tech, RegionOf = eval.Evaluate }, settings);
+
+            violations.AddRange(wireResult.Violations);
+            rulesEvaluated += wireResult.RulesEvaluated;
+            diagnostics.AddRange(wireResult.Diagnostics);
+        }
+
         // Deterministic order: layer, then rule, then position. Two runs over unchanged geometry must
         // produce identical lists — the panel's selection, the markers and every test depend on it.
-        violations.Sort(Compare);
+        var final = ApplyWaivers(Sorted(violations), waivers);
 
+        return new DrcRunResult(final, rulesEvaluated, checkedLayers.Count, checkable.Count, tech.Name, diagnostics);
+    }
+
+    private static List<DrcViolation> Sorted(IEnumerable<DrcViolation> violations)
+    {
+        var list = violations.ToList();
+        list.Sort(Compare);
+        return list;
+    }
+
+    private static IReadOnlyList<DrcViolation> ApplyWaivers(
+        List<DrcViolation> violations, IEnumerable<DrcWaiver>? waivers)
+    {
         var byKey = (waivers ?? []).GroupBy(w => w.Key, StringComparer.Ordinal)
                                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
@@ -281,8 +339,7 @@ public static class DrcEngine
             final.Add(byKey.TryGetValue(v.Key, out var w)
                 ? v with { Waived = true, WaiverReason = w.Reason }
                 : v);
-
-        return new DrcRunResult(final, rulesEvaluated, checkedLayers.Count, checkable.Count, tech.Name, diagnostics);
+        return final;
     }
 
     // ── Region resolution ───────────────────────────────────────────────────────────────────────
@@ -791,11 +848,24 @@ public static class DrcEngine
         $"{rule.Kind}|{rule.Name}|{rule.Layer.Layer}/{rule.Layer.Datatype}|" +
         $"{marker.MinX},{marker.MinY},{marker.MaxX},{marker.MaxY}";
 
+    /// <summary>
+    /// Deterministic order: layer, then rule, then position — with LAYER-LESS violations (the wire
+    /// ones) sorted last as a block. Grouping them at the end rather than interleaving them by
+    /// coordinate is deliberate: they are about a different kind of object, they are attributed to a
+    /// different rule file, and a user scanning the panel for "what is wrong with my artwork" should
+    /// not have wire findings threaded through it.
+    /// </summary>
     private static int Compare(DrcViolation a, DrcViolation b)
     {
-        int c = a.Layer.Layer.CompareTo(b.Layer.Layer);          if (c != 0) return c;
-        c = a.Layer.Datatype.CompareTo(b.Layer.Datatype);        if (c != 0) return c;
-        c = string.CompareOrdinal(a.RuleName, b.RuleName);       if (c != 0) return c;
+        if (a.Layer is null != b.Layer is null) return a.Layer is null ? 1 : -1;
+
+        if (a.Layer is { } la && b.Layer is { } lb)
+        {
+            int lc = la.Layer.CompareTo(lb.Layer);               if (lc != 0) return lc;
+            lc = la.Datatype.CompareTo(lb.Datatype);             if (lc != 0) return lc;
+        }
+
+        int c = string.CompareOrdinal(a.RuleName, b.RuleName);   if (c != 0) return c;
         c = a.Marker.MinX.CompareTo(b.Marker.MinX);              if (c != 0) return c;
         c = a.Marker.MinY.CompareTo(b.Marker.MinY);              if (c != 0) return c;
         c = a.Marker.MaxX.CompareTo(b.Marker.MaxX);              if (c != 0) return c;

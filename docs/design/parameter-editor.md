@@ -136,11 +136,25 @@ unit strings are standardized for the eventual expression/unit parser. Lock thes
 | `Voltage` | `None`, `nV`, `µV`, `mV`, `V`, `kV` |
 | `Current` | `None`, `nA`, `µA`, `mA`, `A` |
 | `Power` | `None`, `fW`, `pW`, `nW`, `µW`, `mW`, `W`, `dBm` |
-| `Length` | `None`, `nm`, `µm`, `mm`, `cm`, `m`, `mil` |
+| `Length` | `None`, `nm`, `µm`, `mm`, `cm`, `metre`, `mil` |
 | `Angle` | `None`, `deg`, `rad` |
 
 (`dBm` is intentionally in the Power list — RF work uses it as a power unit; it's a closed-list option, not a
 separate dimension. Extend any list later by editing the one table — no other code changes.)
+
+**Length reads `metre`, not `m`, and that is load-bearing rather than a style choice.** In the expression
+engine's unit table (`expressions.md` §8) **`m` is the SI prefix MILLI** — it has to be, because a
+hand-authored `C=1m` means one millifarad in every netlist dialect there is. Offering `m` here for a
+*length* would therefore hand the user a value a thousand times too small, silently: that is exactly the
+bug brief-core-length-units.md closed on 2026-08-07 (`nm` and `cm` were worse — both evaluated to a
+multiplier of exactly 1, so `L = 1 cm` resolved to 1.0). Every option in this row must be a symbol
+`Units.Scale` actually carries; `metre` is the engine's own scale-1 length symbol, so the two agree
+everywhere rather than meaning different things in two places.
+
+**`in`/`inch` are deliberately NOT offered here**, although the expression engine accepts both (2.54e-2)
+and `LayoutUnits` always has. Adding them needs an inch row in `MicrostripSubstrateInjection`'s
+`ConvertMmTo`/`RoundStepFor`/`NiceLengthFor` tables first — each currently falls through to a *wrong* mm
+value for an unrecognised unit. A hand-written `.cnl` may use them today; this dropdown does not.
 
 ### Tagging each parameter with its dimension
 Add a `UnitDimension` field to the `DefaultParam` record so the registry's default-parameter template carries

@@ -23,6 +23,10 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private LayoutShapePropertiesViewModel _layoutInspectorVm = new();
 
+    /// <summary>wbond.md §6.9 — everything about one selected bond wire, incl. its coordinates.</summary>
+    [ObservableProperty]
+    private CircuitRF.Ui.WBond.WBondWirePropertiesViewModel _wireInspectorVm = new();
+
     /// <summary>True when a layout editor document is active; the Properties pane shows the
     /// layout shape properties panel rather than the schematic parameter editor.</summary>
     [ObservableProperty]
@@ -46,6 +50,10 @@ public partial class PropertiesTool : Tool
     /// <summary>True when a Known-File leaf or OtherFile node is selected in the project tree.</summary>
     [ObservableProperty]
     private bool _isFileInfoActive;
+
+    /// <summary>True when a single bond wire is selected in a wBond editor (wbond.md §6.9).</summary>
+    [ObservableProperty]
+    private bool _isWireActive;
 
     /// <summary>File-info VM for the currently selected tree leaf, or null.</summary>
     [ObservableProperty]
@@ -96,12 +104,15 @@ public partial class PropertiesTool : Tool
     /// active — i.e., when the schematic parameter editor (or empty placeholder) should be shown.
     /// </summary>
     public bool IsSchematicContextActive =>
-        !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive && !IsFileInfoActive && !IsLayoutActive;
+        !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive && !IsFileInfoActive
+        && !IsLayoutActive && !IsWireActive;
 
     partial void OnIsSymbolEditorActiveChanged(bool value)  => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsCellActiveChanged(bool value)          => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsDataDisplayActiveChanged(bool value)   => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsFileInfoActiveChanged(bool value)      => OnPropertyChanged(nameof(IsSchematicContextActive));
+    partial void OnIsWireActiveChanged(bool value) => OnPropertyChanged(nameof(IsSchematicContextActive));
+
     partial void OnIsLayoutActiveChanged(bool value)        => OnPropertyChanged(nameof(IsSchematicContextActive));
 
     public PropertiesTool()
@@ -129,6 +140,7 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
+        IsWireActive  = false;
         IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
@@ -136,6 +148,7 @@ public partial class PropertiesTool : Tool
         EditorVm.SetContext(vm);
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
+        WireInspectorVm.SetContext(null);
         HeaderText = EditorVm.IsEmptyState ? "Properties" : "Component";
     }
 
@@ -146,6 +159,7 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = vm is not null;
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
+        IsWireActive  = false;
         IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
@@ -153,6 +167,7 @@ public partial class PropertiesTool : Tool
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(vm);
         LayoutInspectorVm.SetContext(null);
+        WireInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Symbol" : "Properties";
     }
 
@@ -163,6 +178,7 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
+        IsWireActive  = false;
         IsLayoutActive        = false;
         CellEditorVm          = vm;
         PlotInspectorVm       = null;
@@ -170,6 +186,7 @@ public partial class PropertiesTool : Tool
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
+        WireInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Cell" : "Properties";
     }
 
@@ -187,6 +204,7 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = window is not null;
         IsFileInfoActive      = false;
+        IsWireActive  = false;
         IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = vm;
@@ -194,6 +212,7 @@ public partial class PropertiesTool : Tool
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
+        WireInspectorVm.SetContext(null);
         DatasetsVm.SetWindow(window);
         HeaderText = window is not null ? "Plot" : "Properties";
     }
@@ -213,6 +232,8 @@ public partial class PropertiesTool : Tool
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
+        WireInspectorVm.SetContext(null);
+        IsWireActive          = false;
         IsFileInfoActive      = vm is not null;
         FileInfoVm            = vm;
         HeaderText            = vm is not null ? "File" : "Properties";
@@ -225,6 +246,7 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
+        IsWireActive  = false;
         IsLayoutActive        = vm is not null;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
@@ -232,6 +254,43 @@ public partial class PropertiesTool : Tool
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(vm);
+        WireInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Layout" : "Properties";
+    }
+}
+
+public partial class PropertiesTool
+{
+    /// <summary>
+    /// Shows the bond-wire inspector (wbond.md §6.9), clearing every other context.
+    ///
+    /// <para>Mirrors <see cref="SetActiveLayout"/> exactly. A wBond document has BOTH a wire context
+    /// and a layout context available, and they are mutually exclusive here on purpose: the panel
+    /// follows whichever the user last selected in, and showing both at once would leave two
+    /// coordinate lists on screen with no way to tell which one an edit lands in.</para>
+    /// </summary>
+    public void SetActiveWire(CircuitRF.Ui.WBond.WBondViewModel? vm)
+    {
+        IsLayoutActive = false;
+        IsSymbolEditorActive = false;
+        IsCellActive = false;
+        IsDataDisplayActive = false;
+        IsFileInfoActive = false;
+
+        // Set LAST, after every other flag is cleared — the mechanical "clear them all then set mine"
+        // shape of these setters means an own-flag assignment placed first is silently undone.
+        IsWireActive = vm is not null;
+
+        FileInfoVm = null;
+        CellEditorVm = null;
+        PlotInspectorVm = null;
+
+        EditorVm.SetContext(null);
+        SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(null);
+
+        WireInspectorVm.SetContext(vm);
+
+        HeaderText = vm is not null ? "Wire" : "Properties";
     }
 }

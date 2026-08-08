@@ -56,6 +56,11 @@ public static class SymbolPortDefs
             case SymbolKind.Var:     return [];
             case SymbolKind.Meas:    return [];
             case SymbolKind.Mutual:  return [];
+            // wBond: every pin comes from the referenced .wBond design (WBondSymbolProvider), so
+            // there is no built-in geometry to fall back to. Empty rather than a plausible two-pin
+            // placeholder ON PURPOSE: a fallback here would let an unresolved wBond quietly extract
+            // as a two-terminal device, which is a different circuit that still simulates.
+            case SymbolKind.WBond:   return [];
             case SymbolKind.Ground:  return [("1", 0f, 0f)];
             // Term: two terminals — "+" (signal, index 0) and "−" (reference, index 1).
             // Pin order is the contract: NetBindings[0]=+ net, NetBindings[1]=− net.
@@ -335,6 +340,24 @@ public sealed class EditableComponent
     /// When non-null the cell-reference resolution path is used (CellSymbolResolver).
     /// </summary>
     public string?        CellRef      { get; set; }
+
+    /// <summary>
+    /// The reference this component's symbol is resolved from, or null for an ordinary built-in
+    /// whose artwork is fixed. Fed to <see cref="CellSymbolResolver.Resolve"/>.
+    ///
+    /// <para><b>A wBond's is DERIVED from its <c>File</c> parameter, never stored a second time.</b>
+    /// A second persisted path is exactly the drift <see cref="WBondSymbolProvider"/> exists to
+    /// avoid — editing <c>File</c> re-points the symbol by construction, with nothing to keep in
+    /// step. It is non-null even when <c>File</c> is blank, so an unconfigured wBond resolves to
+    /// NotFound and draws the placeholder rather than falling back to built-in geometry it has
+    /// none of.</para>
+    /// </summary>
+    public string? ExternalSymbolRef =>
+        CellRef
+        ?? (Symbol == SymbolKind.WBond
+                ? WBondSymbolProvider.RefFor(Parameters.FirstOrDefault(p => p.Name == "File")?.Expression)
+                : null);
+
     public double         X            { get; set; }
     public double         Y            { get; set; }
     public SymbolRotation Rotation     { get; set; }
@@ -900,7 +923,7 @@ public sealed class SchematicEditModel
 
         var comps = Components.Select(c =>
         {
-            CellSymbolResolution? res = c.CellRef is not null && cellRefResolutions is not null
+            CellSymbolResolution? res = c.ExternalSymbolRef is not null && cellRefResolutions is not null
                 && cellRefResolutions.TryGetValue(c.Id, out var r) ? r : null;
             return c.ToRenderComponent(IsConnected, res);
         }).ToList();
@@ -968,13 +991,17 @@ public sealed class SchematicEditModel
     /// </summary>
     private Dictionary<string, CellSymbolResolution>? ResolveAllCellRefs()
     {
-        if (SchematicDirectory is null) return null;
         Dictionary<string, CellSymbolResolution>? result = null;
         foreach (var comp in Components)
         {
-            if (comp.CellRef is null) continue;
+            if (comp.ExternalSymbolRef is not { } symRef) continue;
+            // A cell reference is relative to the schematic's own directory, so an unsaved schematic
+            // has no base for it. A wBond reference carries its own resolution rule (absolute, or
+            // relative to the workspace root) and needs none — which is what lets a wBond dropped
+            // into a scratch schematic still draw its real pins.
+            if (SchematicDirectory is null && !WBondSymbolProvider.IsWBondRef(symRef)) continue;
             result ??= new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal);
-            result[comp.Id] = CellSymbolResolver.Resolve(comp.CellRef, SchematicDirectory);
+            result[comp.Id] = CellSymbolResolver.Resolve(symRef, SchematicDirectory);
         }
         return result;
     }
@@ -992,17 +1019,22 @@ public sealed class SchematicEditModel
         EditableComponent comp,
         Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
-        if (comp.CellRef is not null)
+        if (comp.ExternalSymbolRef is { } symRef)
         {
             CellSymbolResolution? res = null;
             if (cellRefResolutions is not null)
                 cellRefResolutions.TryGetValue(comp.Id, out res);
             else if (SchematicDirectory is not null)
-                res = CellSymbolResolver.Resolve(comp.CellRef, SchematicDirectory);
+                res = CellSymbolResolver.Resolve(symRef, SchematicDirectory);
 
             if (res is { State: CellSymbolState.Resolved, Symbol: { } sym })
             {
-                var pins = sym.Pins;
+                // R-wbb2-2: pins are returned in PIN-NUMBER order, not list order. For a wBond the
+                // two coincide today (the generator emits them in order), but NetBindings[k] is
+                // read positionally by WBondModel's stamp, so a transposition here is a circuit
+                // that solves, converges, and reports the wrong array's inductance on the wrong
+                // net. Sorting removes the coincidence the contract would otherwise rest on.
+                var pins = sym.Pins.OrderBy(p => p.PortIndex).ToList();
                 var r = new (float LocalX, float LocalY, int PortIndex)[pins.Count];
                 for (int i = 0; i < pins.Count; i++)
                     r[i] = ((float)pins[i].LocalX, (float)pins[i].LocalY, pins[i].PortIndex);
@@ -1043,13 +1075,13 @@ public sealed class SchematicEditModel
         EditableComponent comp,
         Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
-        if (comp.CellRef is null) return null;
+        if (comp.ExternalSymbolRef is not { } symRef) return null;
 
         CellSymbolResolution? res = null;
         if (cellRefResolutions is not null)
             cellRefResolutions.TryGetValue(comp.Id, out res);
         else if (SchematicDirectory is not null)
-            res = CellSymbolResolver.Resolve(comp.CellRef, SchematicDirectory);
+            res = CellSymbolResolver.Resolve(symRef, SchematicDirectory);
 
         return res is { State: CellSymbolState.Resolved, Symbol: { } sym } ? sym.Primitives : null;
     }
@@ -1069,7 +1101,7 @@ public sealed class SchematicEditModel
         EditableComponent comp,
         Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
-        if (comp.CellRef is null) return comp.ComputeGlyphBb();
+        if (comp.ExternalSymbolRef is null) return comp.ComputeGlyphBb();
 
         var prims = EffectivePrimitivesOf(comp, cellRefResolutions);
         return prims is not null

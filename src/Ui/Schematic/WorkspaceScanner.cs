@@ -198,6 +198,7 @@ public static class WorkspaceScanner
             ".clay"   => NodeKind.ViewFile,
             ".cdd"    => NodeKind.DataDisplayFile,
             ".charm"  => NodeKind.HarmonicaFile,
+            ".wbond"  => NodeKind.WBondFile,
             ".ccolor" => NodeKind.ColorThemeFile,
             ".ctech"  => NodeKind.TechFile,
             ".cem"    => NodeKind.EmSetupFile,

@@ -110,6 +110,21 @@ public interface ITreeActions
     /// the check/radio affordance on the node.</summary>
     bool IsWorkspaceDefaultTech(ProjectTreeNodeViewModel node);
 
+    // ── wBond (.wBond) node actions (wbond.md §9.2 routes 2 and 3) ────────────
+
+    /// <summary>
+    /// Route 2 — place this <c>.wBond</c>'s wires in the ACTIVE schematic as a wBond component,
+    /// wired to nothing, with its <c>File</c> already pointing at the design.
+    /// </summary>
+    Task AddWBondToSchematicAsync(ProjectTreeNodeViewModel node);
+
+    /// <summary>
+    /// Route 3 — create a new cell whose LAYOUT view is this <c>.wBond</c>'s embedded geometry and
+    /// whose SCHEMATIC view holds the wBond component. A design carrying no embedded geometry is
+    /// route 2, not a failure, and is diverted there with a message.
+    /// </summary>
+    Task AddWBondAsCellAsync(ProjectTreeNodeViewModel node);
+
     /// <summary>New Technology… — prompts for a name and starting point (PCB / MMIC / Empty),
     /// writes tech/&lt;name&gt;.ctech, optionally sets it as the workspace default, opens it.</summary>
     Task NewTechnologyAsync(ProjectTreeNodeViewModel node);

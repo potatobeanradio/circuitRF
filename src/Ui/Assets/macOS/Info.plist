@@ -88,6 +88,29 @@
                 </array>
             </dict>
         </dict>
+        <!-- R-wbe-7 — .wBond was not declared to macOS at all until WB-E. circuitRF ships the type's
+             description because the format is circuitRF's; the standalone wBond binary IMPORTS it.
+             Two applications both EXPORTING one UTI is what Launch Services cannot arbitrate.
+             harmonicaRF declares it nowhere: it has no business opening a .wBond. -->
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.wbond</string>
+            <key>UTTypeDescription</key>
+            <string>wBond Design</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>wBond</string>
+                    <string>wbond</string>
+                </array>
+            </dict>
+        </dict>
     </array>
 
     <!-- Document types this app can open. -->
@@ -122,6 +145,25 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>charm</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>wBond Design</string>
+            <!-- Viewer, not Editor, for exactly harmonicaRF's reason: the standalone wBond binary is
+                 the app that OWNS a .wBond, and both declaring themselves the editor would make which
+                 one opens a double-click a matter of whichever Launch Services saw last. circuitRF
+                 still opens one, from the project tree or File ▸ Open wBond…. -->
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.wbond</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>wBond</string>
+                <string>wbond</string>
             </array>
         </dict>
     </array>

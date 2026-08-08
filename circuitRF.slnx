@@ -18,6 +18,9 @@
   <Folder Name="/src/Harmonica/">
     <Project Path="src/Harmonica/CircuitRF.Harmonica.csproj" />
   </Folder>
+  <Folder Name="/src/WBond/">
+    <Project Path="src/WBond/CircuitRF.WBond.csproj" />
+  </Folder>
   <Folder Name="/tools/" />
   <Folder Name="/tools/DeviceWorkerExample/">
     <Project Path="tools/DeviceWorkerExample/DeviceWorkerExample.csproj" />
@@ -40,5 +43,8 @@
   </Folder>
   <Folder Name="/tests/Harmonica.Tests/">
     <Project Path="tests/Harmonica.Tests/CircuitRF.Harmonica.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/WBond.Tests/">
+    <Project Path="tests/WBond.Tests/CircuitRF.WBond.Tests.csproj" />
   </Folder>
 </Solution>

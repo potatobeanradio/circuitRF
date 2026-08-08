@@ -126,6 +126,22 @@ public sealed class CwsFile
     public string? DefaultTechRef { get; set; }
 
     /// <summary>
+    /// Relative path (from the workspace root) to the `.wasm` assembly rule file
+    /// <c>WasmResolver</c> falls back to when a `.wBond`'s own <c>AssemblyRef</c> is null
+    /// (docs/design/wbond.md §8, WB31).
+    ///
+    /// <para>Null means "no assembly rules", which is a valid state and NOT an error: a design with
+    /// no house stated simply has its die-side rules checked and its wire geometry validated. It sits
+    /// beside <see cref="DefaultTechRef"/> rather than inside the `.ctech` because the relation
+    /// between assembly houses and process technologies is many-to-many and their lifecycles differ —
+    /// that is the whole of WB31.</para>
+    ///
+    /// <para>No FormatVersion bump: an absent field on an older `.cws` loads gracefully as null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultAssemblyRef { get; set; }
+
+    /// <summary>
     /// The Python interpreter this workspace settled on for PCell generator scripts — the command,
     /// with any prefix arguments after it (e.g. <c>py.exe -3</c>).
     ///

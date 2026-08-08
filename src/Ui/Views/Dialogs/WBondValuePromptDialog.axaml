@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.WBondValuePromptDialog"
+        Title="Set value"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+    <StackPanel Margin="16" Spacing="8" MinWidth="300" MaxWidth="380">
+        <TextBlock x:Name="PromptText" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+        <TextBlock x:Name="SubText" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+
+        <!-- Free text, not a numeric stepper: the whole point is that a unit may be typed with the
+             number ("2 mil"), which a numeric control cannot accept. -->
+        <TextBox x:Name="ValueBox" PlaceholderText="e.g. 2 mil" FontSize="12"
+                 KeyDown="OnValueKeyDown" TextChanged="OnValueChanged"/>
+
+        <!-- Choice form: used for Material, where the valid values are a closed set and free text
+             would only invite a typo the model would then have to reject. -->
+        <ComboBox x:Name="ChoiceBox" IsVisible="False" HorizontalAlignment="Stretch" FontSize="12"/>
+
+        <TextBlock x:Name="ErrorText" FontSize="11" IsVisible="False" TextWrapping="Wrap"
+                   Foreground="{DynamicResource CrfWarningBrush}"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
+            <Button Content="Cancel" IsCancel="True" MinWidth="80"
+                    HorizontalContentAlignment="Center" Click="OnCancel"/>
+            <Button x:Name="OkButton" Content="OK" IsDefault="True" MinWidth="80"
+                    HorizontalContentAlignment="Center" Click="OnOk"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

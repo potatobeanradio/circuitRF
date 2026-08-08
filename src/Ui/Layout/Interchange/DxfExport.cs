@@ -8,6 +8,7 @@
 // dialog shape stays identical across both formats (never a special-cased "DXF has no CanWrite" path).
 
 using CircuitRF.Ui.Schematic;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Layout.Interchange;
 
@@ -48,15 +49,22 @@ public static class DxfExport
         return new ExportPlan(unresolvedRefs, nameByCellName, structures, rootName, tech, dbuPerMicron);
     }
 
-    /// <summary>Runs the SAME <see cref="DxfWriter.Write"/> path into <see cref="TextWriter.Null"/> to
-    /// compute the summary the fidelity dialog shows — never a second, hand-maintained preview.</summary>
-    public static DxfExportSummary Preview(ExportPlan plan, DxfExportOptions options) =>
-        DxfWriter.Write(TextWriter.Null, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options);
+    /// <summary>
+    /// Dry-runs the write into <see cref="TextWriter.Null"/> — the SAME code path the real export
+    /// takes, so the fidelity dialog can never disagree with what actually gets written.
+    /// </summary>
+    /// <param name="wires">
+    /// Bond wires to include (wbond.md §9.4). Null — the Layout Editor's own case — writes exactly
+    /// what it always did.
+    /// </param>
+    public static DxfExportSummary Preview(ExportPlan plan, DxfExportOptions options, WBondDesign? wires = null) =>
+        DxfWriter.Write(TextWriter.Null, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options, wires);
 
-    public static DxfExportSummary Write(string filePath, ExportPlan plan, DxfExportOptions options)
+    /// <inheritdoc cref="Preview(ExportPlan, DxfExportOptions, WBondDesign?)"/>
+    public static DxfExportSummary Write(string filePath, ExportPlan plan, DxfExportOptions options, WBondDesign? wires = null)
     {
         using var stream = new StreamWriter(filePath, append: false);
-        return DxfWriter.Write(stream, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options);
+        return DxfWriter.Write(stream, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options, wires);
     }
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,

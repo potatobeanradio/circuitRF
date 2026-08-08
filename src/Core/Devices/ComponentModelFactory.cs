@@ -5,6 +5,8 @@ using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
 using RfCore;
 
+using CircuitRF.WBond;
+
 namespace CircuitRF.Core.Devices;
 
 /// <summary>
@@ -35,7 +37,7 @@ public static class ComponentModelFactory
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
-            "ExtDevice",
+            "ExtDevice", "wBond",
         };
 
     /// <summary>
@@ -107,6 +109,8 @@ public static class ComponentModelFactory
             return CreateVerilogAModel(parameters, ambientC);
         if (typeName.Equals("Chain", StringComparison.OrdinalIgnoreCase))
             return CreateChainModel(parameters, functions);
+        if (typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase))
+            return CreateWBondModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -1252,5 +1256,85 @@ public static class ComponentModelFactory
             throw new InvalidOperationException(
                 $"SDD '{sddName}': {key} must be stored as a String expression, got {val.Kind}");
         target[p - 1] = Parser.Parse(val.AsString());
+    }
+
+    /// <summary>
+    /// wBond: a wirebond component, read from a <c>.wBond</c> file
+    /// (<c>docs/design/wbond.md</c> §5, brief-wbond-wbb R-wbb-1).
+    ///
+    /// <para>Parameters: <c>File</c> names the design (required). <c>Temp</c> overrides the operating
+    /// temperature, which defaults to the file's own value and ultimately to 85 °C — load-bearing for
+    /// R, so it is overridable per instance. <c>GroundPlane</c> (0/1) overrides the plane.</para>
+    /// </summary>
+    private static ComponentModel CreateWBondModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.TryGetValue("File", out var fileValue))
+            throw new InvalidOperationException(
+                "wBond: the 'File' parameter is missing — it names the .wBond design to load.");
+
+        string path = fileValue.AsString();
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"wBond: design file not found: '{path}'", path);
+
+        var design = WBondIo.ReadFile(path);
+
+        if (parameters.TryGetValue("Temp", out var temp))
+            design.OperatingTempC = temp.AsReal();
+
+        if (parameters.TryGetValue("GroundPlane", out var plane))
+            design.GroundPlane.Enabled = plane.AsReal() != 0.0;
+
+        ApplyLoopHeightOverrides(design, parameters);
+
+        return new WBondModel(design, path);
+    }
+
+    /// <summary>
+    /// Applies loop-height overrides, which is what makes a loop height SWEEPABLE (R-wbb-6 / WB21).
+    ///
+    /// <para><c>LoopHeight</c> sets every profile; <c>LoopHeight_&lt;profile&gt;</c> sets one. Values
+    /// are in metres, because that is what the expression engine's unit handling produces — a netlist
+    /// writes <c>LoopHeight=25 mil</c> and the elaborator has already converted it.</para>
+    ///
+    /// <para><b>Setting a height regenerates every bound wire's polyline</b>, so the inductance
+    /// matrix is refilled from new geometry rather than scaled. That is the whole point: a sweep over
+    /// loop height is a sweep over geometry, and <c>ParametricSweepEngine</c> re-elaborates each
+    /// point, so it arrives here as a fresh model with a fresh design.</para>
+    /// </summary>
+    private static void ApplyLoopHeightOverrides(
+        WBondDesign design, IReadOnlyDictionary<string, Value> parameters)
+    {
+        double? all = parameters.TryGetValue("LoopHeight", out var v) ? v.AsReal() : null;
+
+        foreach (var profile in design.Profiles)
+        {
+            double? height = all;
+            if (parameters.TryGetValue($"LoopHeight_{profile.Name}", out var perProfile))
+                height = perProfile.AsReal();
+
+            if (height is null) continue;
+
+            if (height.Value <= 0.0)
+                throw new InvalidOperationException(
+                    $"wBond: loop height for profile '{profile.Name}' must be positive; got {height.Value}.");
+
+            profile.LoopHeightNm = WBondUnits.FromMetres(height.Value);
+        }
+
+        if (all is null && !parameters.Keys.Any(k => k.StartsWith("LoopHeight_", StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        // Regenerate every wire bound to a profile, between its own existing feet.
+        foreach (var array in design.Arrays)
+        {
+            foreach (var wire in array.Wires)
+            {
+                if (wire.ProfileBinding is null) continue;
+                var profile = design.ProfileByName(wire.ProfileBinding);
+                if (profile is null || wire.Points.Count < 2) continue;
+
+                profile.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
+            }
+        }
     }
 }

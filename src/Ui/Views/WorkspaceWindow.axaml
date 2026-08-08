@@ -54,6 +54,7 @@
                                     <NativeMenuItem Header="Open Symbol…"       Command="{Binding OpenSymbolFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Layout…"       Command="{Binding OpenLayoutFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Open wBond…"        Command="{Binding OpenWBondFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -73,6 +74,7 @@
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Into Open Technology…" Command="{Binding ImportIntoTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Wirebond Table…" Command="{Binding ImportWireTableCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -172,6 +174,7 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
+                        <NativeMenuItem Header="wBond" Command="{Binding NewWBondCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -330,6 +333,11 @@
                               CommandParameter="{Binding $parent[Window]}">
                         <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <MenuItem Header="Open _wBond…"
+                              Command="{Binding OpenWBondFileCommand}"
+                              CommandParameter="{Binding $parent[Window]}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="{Binding SaveMenuHeader}"
@@ -385,6 +393,10 @@
                               Command="{Binding ImportIntoTechnologyCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="Bring layers, stackup or DRC rules from another .ctech into the technology you are editing. Requires an open technology."/>
+                    <MenuItem Header="_Wirebond Table…"
+                              Command="{Binding ImportWireTableCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="A from-pad / to-pad wirebond table, as every packaging flow already has."/>
                 </MenuItem>
                 <MenuItem Header="_Export">
                     <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>
@@ -586,6 +598,11 @@
                           Command="{Binding NewHarmonicaCommand}"
                           ToolTip.Tip="Interactive harmonic-termination explorer. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_wBond"
+                          Command="{Binding NewWBondCommand}"
+                          ToolTip.Tip="Wirebond array editor. Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

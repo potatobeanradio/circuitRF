@@ -82,6 +82,32 @@ public sealed class LayoutCanvas : Control
         InvalidateVisual();
     }
 
+    // ── Canvas overlay (wbond.md WB23) ────────────────────────────────────────
+
+    public static readonly DirectProperty<LayoutCanvas, ILayoutCanvasOverlay?> CanvasOverlayProperty =
+        AvaloniaProperty.RegisterDirect<LayoutCanvas, ILayoutCanvasOverlay?>(
+            nameof(CanvasOverlay), o => o.CanvasOverlay, (o, v) => o.CanvasOverlay = v);
+
+    private ILayoutCanvasOverlay? _canvasOverlay;
+
+    /// <summary>
+    /// Something drawn over this canvas that is not part of the layout — the wBond wire overlay is the
+    /// first. Given first refusal on pointer and key input; see <see cref="ILayoutCanvasOverlay"/>.
+    /// Null (the default) leaves every existing behaviour of this control bit-for-bit unchanged.
+    /// </summary>
+    public ILayoutCanvasOverlay? CanvasOverlay
+    {
+        get => _canvasOverlay;
+        set { SetAndRaise(CanvasOverlayProperty, ref _canvasOverlay, value); InvalidateVisual(); }
+    }
+
+    /// <summary>
+    /// Repaints because the OVERLAY changed. Deliberately does not touch <see cref="_pathCache"/>:
+    /// the layout's geometry has not moved, and invalidating its cached paths is precisely the
+    /// "cheap overlay becomes a 500k-shape redraw" failure WB17 exists to prevent.
+    /// </summary>
+    public void InvalidateOverlay() => InvalidateVisual();
+
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(LayoutEditorViewModel.ActiveTool))
@@ -312,7 +338,7 @@ public sealed class LayoutCanvas : Control
         };
 
         context.Custom(new LayoutDrawOperation(
-            new Rect(Bounds.Size), _viewModel?.Model, _viewModel?.Technology, vp, opts,
+            new Rect(Bounds.Size), _viewModel?.Model, _viewModel?.Technology, vp, opts, _canvasOverlay,
             r => Dispatcher.UIThread.Post(() =>
             {
                 FrameUnknownLayers?.Invoke(r.UnknownLayers);
@@ -473,6 +499,17 @@ public sealed class LayoutCanvas : Control
         if (props.IsLeftButtonPressed && _viewModel is not null)
         {
             var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
+
+            // The overlay is asked first and only consumes what it actually hit — pan and zoom are
+            // already handled above, and anything it declines reaches the layout tools untouched.
+            if (_canvasOverlay?.OnPointerPressed(
+                    (long)Math.Round(wx), (long)Math.Round(wy), HitTolDbu(), e.KeyModifiers, e.ClickCount) == true)
+            {
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
+
             _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom, SnapTolDbu());
             InvalidateVisual();
         }
@@ -1068,6 +1105,14 @@ public sealed class LayoutCanvas : Control
         CursorWorldChanged?.Invoke(this, (wx, wy));
 
         bool leftDown = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
+
+        if (_canvasOverlay?.OnPointerMoved(
+                (long)Math.Round(wx), (long)Math.Round(wy), HitTolDbu(), leftDown, e.KeyModifiers) == true)
+        {
+            InvalidateVisual();
+            return;
+        }
+
         _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu());
         InvalidateVisual();
     }
@@ -1086,6 +1131,13 @@ public sealed class LayoutCanvas : Control
 
         var pos = e.GetPosition(this);
         var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
+
+        if (_canvasOverlay?.OnPointerReleased((long)Math.Round(wx), (long)Math.Round(wy)) == true)
+        {
+            InvalidateVisual();
+            return;
+        }
+
         _viewModel?.OnPointerReleased(wx, wy, e.KeyModifiers);
         InvalidateVisual();
     }
@@ -1120,6 +1172,16 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
+        // The overlay owns its own selection, so its nudge/delete keys have to reach it before the
+        // layout editor's — but only when it actually has something selected, which is what its own
+        // return value states.
+        if (_canvasOverlay?.OnKeyDown(e.Key, e.KeyModifiers) == true)
+        {
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         bool shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
 
@@ -1135,6 +1197,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnKeyUp(object? _, KeyEventArgs e)
     {
+        _canvasOverlay?.OnKeyUp(e.Key, e.KeyModifiers);
         if (e.Key == Key.Space) { _spaceHeld = false; UpdateCursor(); }
     }
 
@@ -1162,11 +1225,12 @@ public sealed class LayoutCanvas : Control
         private readonly Technology?         _tech;
         private readonly LayoutViewport      _vp;
         private readonly LayoutRenderOptions _opts;
+        private readonly ILayoutCanvasOverlay? _overlay;
         private readonly Action<LayoutRenderResult> _onResult;
 
-        public LayoutDrawOperation(Rect bounds, LayoutView? view, Technology? tech, LayoutViewport vp, LayoutRenderOptions opts, Action<LayoutRenderResult> onResult)
+        public LayoutDrawOperation(Rect bounds, LayoutView? view, Technology? tech, LayoutViewport vp, LayoutRenderOptions opts, ILayoutCanvasOverlay? overlay, Action<LayoutRenderResult> onResult)
         {
-            _bounds = bounds; _view = view; _tech = tech; _vp = vp; _opts = opts; _onResult = onResult;
+            _bounds = bounds; _view = view; _tech = tech; _vp = vp; _opts = opts; _overlay = overlay; _onResult = onResult;
         }
 
         public bool Equals(ICustomDrawOperation? other) => false;
@@ -1179,6 +1243,11 @@ public sealed class LayoutCanvas : Control
             if (leaseFeature is null) return;
             using var lease = leaseFeature.Lease();
             var result = LayoutRenderer.Draw(lease.SkCanvas, _view, _tech, _vp, _opts);
+
+            // After the layout, inside the same lease — the overlay draws ON the layout (WB23), and
+            // its own pass never reaches LayoutRenderer's caches.
+            _overlay?.Draw(lease.SkCanvas, _vp);
+
             _onResult(result);
         }
 

@@ -253,6 +253,22 @@
                                         </MenuItem>
                                         <Separator IsVisible="{Binding IsTechFile}"/>
 
+                                        <!-- wBond (.wBond) node actions — wbond.md §9.2 routes 2 and 3.
+                                             Route 1 (open it standalone) is the double-click. -->
+                                        <MenuItem Header="Add to Schematic"
+                                                  Command="{Binding AddWBondToSchematicCommand}"
+                                                  IsVisible="{Binding IsWBondFile}"
+                                                  ToolTip.Tip="Place these wires as a component in the schematic currently in front.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolyline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Add as Cell…"
+                                                  Command="{Binding AddWBondAsCellCommand}"
+                                                  IsVisible="{Binding IsWBondFile}"
+                                                  ToolTip.Tip="Create a cell whose layout view is this design's embedded geometry and whose schematic view holds the wirebond component.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlusOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator IsVisible="{Binding IsWBondFile}"/>
+
                                         <!-- Known File actions -->
                                         <MenuItem Header="Open External…"
                                                   Command="{Binding OpenExternalCommand}"

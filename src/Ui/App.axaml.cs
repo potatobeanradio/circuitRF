@@ -262,6 +262,18 @@ public partial class App : Application
                 case ".charm":
                     vm.OpenHarmonicaPath(path);
                     break;
+
+                // R-wbe-7 — circuitRF's Info.plist declares it a VIEWER for .wBond, so it must
+                // actually open one. Declaring the document type without wiring the dispatcher is
+                // precisely the "launched circuitRF and opened nothing, which looked exactly like a
+                // broken file" failure this method's own note above exists to have fixed; adding a
+                // type here is not optional once a plist claims it.
+                //
+                // Lower-cased above, so this catches the .wBond spelling the format actually uses as
+                // well as the .wbond one a filesystem may hand back.
+                case ".wbond":
+                    vm.OpenWBondPath(path);
+                    break;
             }
         }
     }

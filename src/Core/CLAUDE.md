@@ -1,5 +1,163 @@
 # Core — local conventions
 
+A metre is representable (brief-core-length-units.md, 2026-08-07) — COMPLETE (M1–M4).
+`src/Core/Expressions/Units.cs` could not represent a length. Not "had an awkward corner" — of the six
+length units the parameter editor offered, three evaluated to the wrong number silently, by factors of
+100, 1000 and 1,000,000,000, and `mil` had no base symbol at all.
+
+## The measured before/after table — the whole phase in one artifact
+
+`Eval("1", unit)`, measured against the shipped code on 2026-08-07 with a disposable probe (not derived
+by reading the table), and again after:
+
+| unit | before | after | correct SI | what was wrong |
+|---|---|---|---|---|
+| `nm` | **1** | 1e-9 | 1e-9 | identity unit ⇒ multiplier 1, **1e9 high** |
+| `um` | 1e-6 | 1e-6 | 1e-6 | ✓ |
+| `mm` | 1e-3 | 1e-3 | 1e-3 | ✓ |
+| `cm` | **1** | 1e-2 | 1e-2 | identity unit ⇒ multiplier 1, **100 high** |
+| `m` | 1e-3 | 1e-3 | — | **still milli, deliberately** — see the decision below |
+| `metre` | *did not exist* | 1.0 | 1.0 | the new base symbol |
+| `mil` | 2.54e-5 | 2.54e-5 | 2.54e-5 | ✓ in the table, **absent from the base-unit map** |
+| `in` / `inch` | *throws* | 2.54e-2 | 2.54e-2 | not recognised at all |
+
+And `Scale(BaseUnit(u))` — the property `ParametricSweepEngine`'s own comment claims ("BaseUnit reduces
+it to scale-1 … so injecting it leaves the value unchanged") and that length had **never** satisfied:
+
+| unit | `BaseUnit` before → after | `Scale(base)` before → after |
+|---|---|---|
+| `mm`/`um`/`nm`/`cm` | `"m"` → `"metre"` | **1e-3** → **1.0** |
+| `mil` | `"mil"` (unmapped) → `"metre"` | **2.54e-5** → **1.0** |
+| `in`/`inch` | `"in"`/`"inch"` → `"metre"` | *null* → **1.0** |
+| `GHz` (the control) | `"Hz"` → `"Hz"` | 1.0 → 1.0 (untouched) |
+
+## The base-symbol decision, and the shape that was rejected
+
+**`"m"` stays MILLI; the metre's symbol is `"metre"`** — §5 q1 shape (b), the owner's call.
+
+The rejected shape (a) was re-pointing `_scales["m"]` at 1.0 and dropping the bare-prefix reading. It
+is cheaper and reads better on an axis label, and the measurement supports its precondition almost
+entirely: **bare-prefix `m` appears exactly once in the whole committed corpus** — `C=1m` in
+`testdata/PhantomNodes/phantom_nodes.cnl` (meaning 1 mF) and its mirror assertion in
+`BareTokenAfterParameterTests`. Every other bare prefix in use (`n`, `p`, `k`, `u` — `L=1n`, `C=1p`,
+`C=4p`) collides with nothing. It was still rejected: **`m` is milli in every netlist dialect there
+is**, and a hand-authored `C=1m` silently becoming a farad is a wrong answer that parses, stamps and
+converges. The metre is what gets the new spelling, because a length is the thing that had no symbol.
+
+**The consequence, and it is the one user-visible cost:** `ComponentTypeRegistry.UnitOptions[Length]`
+now offers **`"metre"`** in place of `"m"`. Leaving `"m"` in that list under decision (b) would have
+kept the exact bug this brief closes — a user picking `m` for a length would still get milli. One
+spelling for the metre, everywhere. `MicrostripSubstrateInjection`'s two `"m"` switch arms were renamed
+to `"metre"` for the same reason; both are currently unreachable (`SchematicLengthUnit` never returns
+either), and are kept so the next person to add a metre row does not land on a silent mm fallback.
+
+**R-len-3, decided rather than discovered afterwards:** the base symbol becomes the sweep axis's unit in
+the published `DataSet` (`ParametricSweepEngine` line ~141), so it is rendered as an axis label in the
+Data Display and written into the `.npy`. **"metre" reads acceptably there and gets NO display map** —
+it is a real unit word, not an internal token. `SweptLengthUnitTests.TheSweepAxisCarriesTheBaseSymbol`
+pins it.
+
+## R-len-2 — nm/cm moving into `_scales` DID fix a second latent bug, and not the one expected
+
+Moving them flips `IsKnown` false → true, which changes the token gates that read `IsKnown` rather than
+`IsRecognizedUnit`. **The instance-line path was never affected** — `CnlReader` line ~1491 already used
+`IsRecognizedUnit`, so `R:R1 a b R=1 nm` never minted a phantom net. The two that WERE broken are the
+ones nobody thinks of:
+
+- **A top-level variable assignment** (`SplitExprUnit`, `CnlReader` ~1706): `W = 5 nm` kept `"5 nm"` as
+  the whole *expression*, which the expression parser then had to make sense of.
+- **A cell parameter declaration** (`ParseParameterDeclarations`, `CnlReader` ~316): `parameters W=5 nm`
+  simply lost the unit, so the default silently became a bare number.
+
+`VendorAReader` (~222/312/475) reads through the same gate and is fixed by the same change.
+`tests/Core.Tests/Netlist/LengthUnitTokenTests.cs` is what says so rather than assumes it —
+**confirmed to fail against the pre-fix code (11 of 18 red), with the instance-line control passing in
+both directions**, so the test distinguishes the two paths rather than merely exercising them.
+
+## §1.3's consumer list, re-verified — which sites changed numbers
+
+| site | changed? |
+|---|---|
+| `SweepAxisRowViewModel.BuildValues` (`?? 1.0`) | **yes** — an `nm`/`cm` axis was silently unscaled; `metre`/`in` are new |
+| `ParametricSweepAnalysis` spec ctor (`Analysis.cs:245`, `?? 1.0`) | **yes** — same |
+| `ParametricSweepEngine` re-attach | **yes, and this is the fix** — `Scale(BaseUnit(u))` is now 1.0, so the re-attach is the no-op its comment claims. **The engine itself needed NO change** (M2's own stated hope, confirmed by test rather than assumed) |
+| `ParameterEditorViewModel:708` MKlopf entry-mode read (`?? 1.0`) | **yes** — `nm`/`cm` now resolve |
+| `ParameterEditorViewModel:747` `FormatLengthInUnit` (`?? 1e-3`) | **yes** — same |
+| `SchematicToLayoutGenerator:530` `ToDisplayValue` | **yes** — a PCell length parameter in `nm`/`cm` |
+| `LayoutShapePropertiesViewModel:1398` | **yes** — same, in the inverse direction |
+| `FreqDeferral:247` (`?? 1.0`) | **yes** — a kit netlist writing `nm`/`cm` |
+| Everything frequency/resistance/capacitance/inductance | **no** — untouched, and `AGigahertzSweep_IsUnchanged` is the control |
+
+## R-len-6 — every `Scale(...)` fallback in `src/`, listed rather than changed
+
+Each is a place a future missing row hides the same way this one did. **Changing them was not in scope;
+listing them is.**
+
+- `src/Core/Design/Analysis.cs:245` — `?? 1.0`
+- `src/Core/Expressions/FreqDeferral.cs:247` — `?? 1.0`
+- `src/Ui/ViewModels/SweepAxisRowViewModel.cs:174` — `?? 1.0`
+- `src/Ui/ViewModels/ParameterEditorViewModel.cs:708` — `?? 1.0`
+- `src/Ui/ViewModels/ParameterEditorViewModel.cs:747` — `?? 1e-3`
+- `src/Ui/ViewModels/LayoutShapePropertiesViewModel.cs:1398` — `double? scale; if (scale is > 0)` (same class, different spelling)
+- `src/Ui/Layout/SchematicToLayoutGenerator.cs:530` — same spelling
+
+## §5 questions 2 and 4, as decisions
+
+- **q2 — should opening a design that used `nm`/`cm`/`m` or a length sweep say so? NO.** Silent
+  correction, on the owner's own instruction that legacy workspaces and designs do not need to be
+  supported. The old values were wrong by construction; there is nothing to migrate and nothing to warn
+  about. No report was built.
+- **q4 — `in`/`inch`: ADDED to the expression engine** (2.54e-2, both spellings, both mapping to
+  `"metre"`), on the owner's call. `LayoutUnits` already accepted both, so the asymmetry is closed at
+  the engine level. **Deliberately NOT added to `UnitOptions[Length]`** — that is a separate UI-list
+  decision, and wiring it properly also needs an inch row in `MicrostripSubstrateInjection`'s
+  `ConvertMmTo`/`RoundStepFor`/`NiceLengthFor` tables, which currently fall through to a *wrong* mm
+  value for an unrecognised unit. A hand-authored `.cnl` may use `in`/`inch` today; the schematic
+  parameter dropdown does not offer it. Stated rather than left to be discovered.
+
+## Tests that had to be updated — none, and that is the blast-radius measurement
+
+**Not one pre-existing test pinned the wrong behaviour.** `BaseUnitTests` covers frequency,
+capacitance, voltage and resistance and never had a length case; nothing anywhere asserted
+`Eval("1","nm") == 1` or `BaseUnit("mm") == "m"`. `BareTokenAfterParameterTests`' `C=1m` still means
+1 mF and is untouched, because `m` stayed milli. One COMMENT was corrected —
+`WBondSchematicPlacementTests.M3_AParametricSweepOverLoopHeight_WorksFromAPlacedComponent` carried a
+paragraph describing this defect as live; it now points at the M4 gate instead.
+
+## The gates
+
+- **M1** `tests/Core.Tests/Expressions/LengthUnitsTests.cs` (39) — the table above, plus
+  `Scale(BaseUnit(u)) == 1.0` for every length unit, plus the pin that `"m"` is still milli and is NOT
+  mapped to the length base. **Confirmed red pre-fix: 18 of 39.**
+- **R-len-2** `tests/Core.Tests/Netlist/LengthUnitTokenTests.cs` (18) — above. **Red pre-fix: 11 of 18.**
+- **M2** `tests/Engine.Tests/Parametric/SweptLengthUnitTests.cs` (12) — a `mm` and a `mil` sweep driven
+  through the real `ParametricSweepEngine`, read straight back out through the elaborator (`Vdc=Lvar`
+  at a unit-less site, so var-unit-wins makes the node voltage numerically the injected value), plus
+  the `GHz` control and the axis-symbol theory. **Red pre-fix: 10 of 12.** *Note on the fixture:* the
+  `nm` row sweeps at 1e6 nm rather than 1 nm — a 1 nV source is below the DC engine's own `AbsTol` and
+  reads back as 0. That is the readout's resolution, not the units'; the axis theory covers `nm` at any
+  magnitude.
+- **M4 (the phase gate)** `WBondSchematicPlacementTests.M4_ASweptLoopHeightInMil_AgreesWithTheHandWrittenNetlist`
+  — a wBond loop-height sweep at 10 mil and 45 mil from a **placed** component with a `mil`-declared
+  global, against the same two heights run from a hand-written netlist with `LoopHeight` a literal in
+  metres and no sweep anywhere, so the two paths share no unit resolution at all. **Red pre-fix.**
+  Measured: **1086.2 pH at 10 mil, 2206.7 pH at 45 mil** (series inductance recovered from the run's own
+  `S21` via `Z = 2·Z0·(1/S21 − 1)`), against WB-B2's own hand-`.cnl` pair of 1073.8 / 2189.9 pH — the
+  ~1% gap is this extraction being a 5 GHz series-Z read that carries the wire's own 0.4–0.6 Ω. **The
+  assertion is that the two paths AGREE**, not that they reproduce a stored number. Not tagged
+  `Category=Benchmark`: the whole class runs in 187 ms.
+
+**Full solution green** (Firewall 6, Core 1,175, RfCore 281, WBond 237, Ui 5,610, Engine 1,034 + 1
+pre-existing skip), with **one pre-existing failure**:
+`Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`,
+which `src/Ui/CLAUDE.md`'s WB-E entry already records as failing deterministically at commit `20dcadf`
+in a clean worktree — **re-confirmed here by stashing this brief's three production files and watching
+it still fail.** Separately, `LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect(Mixed)`
+failed **once** on the first full-solution run and did not recur in three subsequent runs (one full
+solution, two full `Ui.Tests`) or in isolation with or without this brief's changes; nothing in the
+layout-perf path reads `Units` or `UnitOptions`. Per this repo's own standing rule, isolated repetition
+does not disprove a load-dependent race — **recorded by name rather than called clean.**
+
 A user's OWN Verilog-A model is a placeable component (2026-08-03) — COMPLETE, palette included.
 Type `VerilogA`; `src/Core/Devices/External/VerilogAFileResolver.cs` plus a factory path. **No kit, no
 manifest, nothing to install**: a user compiles their model with their own compiler, places the

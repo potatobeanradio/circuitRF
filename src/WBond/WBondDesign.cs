@@ -1,0 +1,256 @@
+namespace CircuitRF.WBond;
+
+/// <summary>
+/// A point in 3D space, in integer nanometres (DBU), z measured from the ground plane.
+/// Integer storage is what makes unit switching lossless (<see cref="WBondUnits"/>).
+/// </summary>
+public readonly record struct Point3(long X, long Y, long Z)
+{
+    public static Point3 FromMetres(double x, double y, double z) =>
+        new(WBondUnits.FromMetres(x), WBondUnits.FromMetres(y), WBondUnits.FromMetres(z));
+
+    /// <summary>Convenience for authoring and tests: a point in mils.</summary>
+    public static Point3 Mils(double x, double y, double z) => new(
+        WBondUnits.ToNm(x, WBondUnit.Mil),
+        WBondUnits.ToNm(y, WBondUnit.Mil),
+        WBondUnits.ToNm(z, WBondUnit.Mil));
+}
+
+/// <summary>
+/// One bond wire: a polyline of at least two points, with a diameter and a metal.
+///
+/// <para><b><see cref="Points"/> is the truth (D1 / WB2).</b> A wire is always a 3D polyline —
+/// that is what the solver consumes and what <c>.wBond</c> stores. A loop-profile binding is a
+/// <i>generator</i> that writes these points, exactly as a PCell writes shapes; breaking the
+/// binding leaves the points untouched.</para>
+///
+/// <para><b>Direction is data, not a rendering convention (D2 / WB3).</b> <c>Points[0]</c> is the
+/// input — current enters there — and <c>Points[^1]</c> is the output. The sign of every mutual
+/// inductance depends on it, so reversing a wire negates that wire's off-diagonal row and column of
+/// the inductance matrix. Direction is never silently re-inferred; only an explicit reverse
+/// changes it.</para>
+/// </summary>
+public sealed class Wire
+{
+    /// <summary>The polyline, input end first. At least two points.</summary>
+    public List<Point3> Points { get; init; } = [];
+
+    /// <summary>Wire diameter in nanometres. The shipped default is 1 mil.</summary>
+    public long DiameterNm { get; set; } = WBondUnits.ToNm(1.0, WBondUnit.Mil);
+
+    /// <summary>The metal, by <see cref="WireMaterial.Name"/>. Defaults to gold (D7).</summary>
+    public string Material { get; set; } = WireMaterials.Default.Name;
+
+    /// <summary>Name of the <c>LoopProfile</c> this wire is bound to, or null if it is free.</summary>
+    public string? ProfileBinding { get; set; }
+
+    public bool Locked { get; set; }
+
+    /// <summary>Wire radius in metres — what the physics layer actually wants.</summary>
+    public double RadiusMetres => WBondUnits.ToMetres(DiameterNm) / 2.0;
+
+    /// <summary>
+    /// <b>The loop height: the wire's maximum z minus its minimum z.</b> This is the definition
+    /// (wbond.md §3.1a) and this property is the one place it lives — every other loop-height
+    /// quantity in the codebase is measured or set through it.
+    ///
+    /// <para><b>It is NOT the rise above the chord</b>, and the difference is not academic. In
+    /// chip-and-wire the two feet are usually at different z — a die pad up to a substrate lead — so
+    /// the straight line joining them is tilted, and the crest's height above that tilted line is
+    /// smaller than its height above the lower foot. A bonder is set up against the second number:
+    /// loop height is what a wire-bonder operator measures from the lower pad to the top of the loop.
+    /// Reporting the first under that name would read low on exactly the asymmetric loops where it
+    /// matters most.</para>
+    ///
+    /// <para><b>Consequence worth knowing: a wire's loop height can never be below its own foot
+    /// drop.</b> With the feet |z₁ − z₂| apart, even a perfectly straight wire measures that much, so
+    /// that is the floor any requested loop height is clamped to — see
+    /// <see cref="LoopProfile.ApplyTo"/>.</para>
+    /// </summary>
+    public long LoopHeightNm
+    {
+        get
+        {
+            if (Points.Count == 0) return 0;
+
+            long min = Points[0].Z, max = Points[0].Z;
+            foreach (var p in Points)
+            {
+                if (p.Z < min) min = p.Z;
+                if (p.Z > max) max = p.Z;
+            }
+            return max - min;
+        }
+    }
+
+    /// <summary>The unavoidable part of the loop height — how far apart in z the two feet are.</summary>
+    public long FootDropNm =>
+        Points.Count < 2 ? 0 : Math.Abs(Points[^1].Z - Points[0].Z);
+
+    /// <summary>Straight-line 3D distance from the input foot to the output foot.</summary>
+    public double ChordLengthMetres()
+    {
+        if (Points.Count < 2) return 0.0;
+        var a = Points[0];
+        var b = Points[^1];
+        double dx = WBondUnits.ToMetres(b.X - a.X);
+        double dy = WBondUnits.ToMetres(b.Y - a.Y);
+        double dz = WBondUnits.ToMetres(b.Z - a.Z);
+        return Math.Sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /// <summary>Total developed length along the polyline.</summary>
+    public double PathLengthMetres()
+    {
+        double total = 0.0;
+        for (int i = 1; i < Points.Count; i++)
+        {
+            var a = Points[i - 1];
+            var b = Points[i];
+            double dx = WBondUnits.ToMetres(b.X - a.X);
+            double dy = WBondUnits.ToMetres(b.Y - a.Y);
+            double dz = WBondUnits.ToMetres(b.Z - a.Z);
+            total += Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        return total;
+    }
+
+    /// <summary>Reverses the current-direction convention (WB26b). Explicit, never inferred.</summary>
+    public void Reverse() => Points.Reverse();
+}
+
+/// <summary>
+/// A named group of wires that share a pin pair on the schematic symbol and are reduced together
+/// onto the array basis (wbond.md §3.4). Names like G1, G2, D1, MT are the packaging convention.
+/// </summary>
+public sealed class WireArray
+{
+    public required string Name { get; set; }
+
+    public List<Wire> Wires { get; init; } = [];
+
+    /// <summary>The loop profile this array's profile-view curve edits, if any.</summary>
+    public string? Profile { get; set; }
+}
+
+/// <summary>
+/// The ground plane the method of images reflects in (wbond.md §3.2).
+///
+/// <para>The plane is at z = 0 by construction — the model's z origin <i>is</i> the ground
+/// reference — so there is no height field here. Disabling it removes the image contribution
+/// entirely, at which point the return path must come from wires declared as the reference
+/// (WB20, and that refusal belongs to WB-B).</para>
+/// </summary>
+public sealed class GroundPlane
+{
+    public bool Enabled { get; set; } = true;
+}
+
+/// <summary>
+/// The root of a wBond design: one per wBond component instance (wbond.md §2.1).
+/// </summary>
+public sealed class WBondDesign
+{
+    public GroundPlane GroundPlane { get; init; } = new();
+
+    /// <summary>Operating temperature in °C. Default 85 (WB4a) — load-bearing for R, so it is a field.</summary>
+    public double OperatingTempC { get; set; } = WireMaterials.DefaultOperatingTempC;
+
+    /// <summary>Metals available to this design. Defaults to the shipped table.</summary>
+    public List<WireMaterial> Materials { get; init; } = [.. WireMaterials.All];
+
+    /// <summary>Named loop shapes wires may bind to (<see cref="LoopProfile"/>).</summary>
+    public List<LoopProfile> Profiles { get; init; } = [];
+
+    public List<WireArray> Arrays { get; init; } = [];
+
+    /// <summary>
+    /// Layout geometry embedded from the originating workspace, as <b>opaque JSON</b>.
+    ///
+    /// <para><b>WB-A stores and round-trips this without interpreting a byte of it</b> (R-wb-11).
+    /// The <c>.clay</c> model lives in <c>CircuitRF.Ui</c>, which references Avalonia, so parsing it
+    /// here would breach the firewall. WB-C — where the layout model is reachable — is what fills it
+    /// in, resolves cell references and flattens PDK PCells. Until then the contract is simply that
+    /// a load/save cycle must not lose or alter it.</para>
+    /// </summary>
+    public string? EmbeddedGeometryJson { get; set; }
+
+    /// <summary>Free-form view state (projection azimuth, units, dot/line sizes), also opaque here.</summary>
+    public string? ViewStateJson { get; set; }
+
+    /// <summary>
+    /// This design's own assembly rule file (`.wasm`), as a path relative to the `.wBond`'s own
+    /// directory — or null, which means "use the workspace default" (wbond.md §8, WB31).
+    ///
+    /// <para><b>Null is the normal case and is not an error.</b> A shop that bonds at one house states
+    /// it once on the workspace; a document only carries a reference of its own when it deliberately
+    /// deviates — one product qualified at a second house. That is the same convention `.clay`'s
+    /// <c>TechRef</c> already follows, and it is what keeps Save-As and folder moves from having to
+    /// rewrite a relative path.</para>
+    ///
+    /// <para>Additive and nullable: the `.wBond` <c>FormatVersion</c> is NOT bumped for it, and a file
+    /// that never set one round-trips byte-identically.</para>
+    /// </summary>
+    public string? AssemblyRef { get; set; }
+
+    /// <summary>Looks a loop profile up by name, case-insensitively.</summary>
+    public LoopProfile? ProfileByName(string name) =>
+        Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Every wire in the design, in array order then member order.</summary>
+    public IEnumerable<Wire> AllWires() => Arrays.SelectMany(a => a.Wires);
+
+    public int WireCount => Arrays.Sum(a => a.Wires.Count);
+
+    /// <summary>
+    /// Resolves a wire's metal, falling back to the design's first material if the name is unknown
+    /// rather than throwing — an unresolvable metal is a load-time diagnostic, not a fill-time crash.
+    /// </summary>
+    public WireMaterial MaterialFor(Wire wire) =>
+        Materials.FirstOrDefault(m => string.Equals(m.Name, wire.Material, StringComparison.OrdinalIgnoreCase))
+        ?? WireMaterials.ByName(wire.Material)
+        ?? Materials.FirstOrDefault()
+        ?? WireMaterials.Default;
+
+    /// <summary>
+    /// Checks the structural invariants the array reduction depends on (R-wb-1).
+    ///
+    /// <para><b>An empty array is refused here rather than in the linear algebra.</b> It makes the
+    /// mapping matrix <b>A</b> rank-deficient and <c>L_arr</c> singular, and the failure would
+    /// otherwise surface as a confusing Cholesky error far from its cause.</para>
+    /// </summary>
+    public void Validate()
+    {
+        if (Arrays.Count == 0)
+            throw new InvalidOperationException("wBond design has no arrays.");
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var array in Arrays)
+        {
+            if (string.IsNullOrWhiteSpace(array.Name))
+                throw new InvalidOperationException("wBond array has no name.");
+
+            if (!seen.Add(array.Name))
+                throw new InvalidOperationException(
+                    $"Duplicate wBond array name '{array.Name}'. Array names are the symbol's pin names " +
+                    "and must be unique.");
+
+            if (array.Wires.Count == 0)
+                throw new InvalidOperationException(
+                    $"wBond array '{array.Name}' has no wires. An empty array makes the mapping matrix " +
+                    "rank-deficient and the array-basis inductance singular — delete it, or move a wire " +
+                    "into it.");
+
+            foreach (var wire in array.Wires)
+            {
+                if (wire.Points.Count < 2)
+                    throw new InvalidOperationException(
+                        $"A wire in array '{array.Name}' has {wire.Points.Count} point(s); a wire needs at least 2.");
+
+                if (wire.DiameterNm <= 0)
+                    throw new InvalidOperationException(
+                        $"A wire in array '{array.Name}' has a non-positive diameter.");
+            }
+        }
+    }
+}

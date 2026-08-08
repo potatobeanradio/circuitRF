@@ -75,6 +75,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.ViewFile,        _)     => MaterialIconKind.FileOutline,
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
         (NodeKind.HarmonicaFile, _)      => MaterialIconKind.ChartBellCurve,
+        (NodeKind.WBondFile, _)          => MaterialIconKind.VectorPolyline,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
         (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
         (NodeKind.EmSetupFile,     _)     => MaterialIconKind.SineWave,
@@ -104,6 +105,11 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>brief-L6-L7-em-ui.md R-em-9 — a .cem EM setup document.</summary>
     public bool IsEmSetupFile => Kind == NodeKind.EmSetupFile;
 
+    /// <summary>True for .wBond wirebond designs — drives the two §9.2 routes that bring one into
+    /// a design ("Add to Schematic", "Add as Cell…"). Double-click still opens the wBond editor
+    /// (route 1), which is what a user reaching for the file itself means.</summary>
+    public bool IsWBondFile => Kind == NodeKind.WBondFile;
+
     /// <summary>True when this .ctech node is the workspace's current default technology.
     /// Resolved through the host so it reflects the live .cws state when the menu opens.</summary>
     public bool IsWorkspaceDefaultTech => _actions?.IsWorkspaceDefaultTech(this) ?? false;
@@ -123,7 +129,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// the "Open" context item.</summary>
     public bool IsOpenableFile =>
         Kind is NodeKind.DataDisplayFile or NodeKind.HarmonicaFile or NodeKind.TechFile
-             or NodeKind.EmSetupFile
+             or NodeKind.EmSetupFile or NodeKind.WBondFile
         || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay");
 
     /// <summary>True when this node has unsaved work — drives the "Save" context item.
@@ -160,6 +166,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.UserFolder
                                           or NodeKind.DataDisplayFile
                                           or NodeKind.HarmonicaFile
+                                          or NodeKind.WBondFile
                                           or NodeKind.ColorThemeFile
                                           or NodeKind.TechFile
                                           or NodeKind.EmSetupFile
@@ -240,6 +247,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Invalidate the cached Technology for this .ctech node (prompts first if a live,
     /// unsaved editor override exists for it).</summary>
     public IAsyncRelayCommand ReloadTechnologyCommand { get; }
+
+    /// <summary>wbond.md §9.2 route 2 — add this .wBond's wires to the active schematic as a component.</summary>
+    public IAsyncRelayCommand AddWBondToSchematicCommand { get; }
+
+    /// <summary>wbond.md §9.2 route 3 — add this .wBond's wires AND its embedded geometry as a new cell.</summary>
+    public IAsyncRelayCommand AddWBondAsCellCommand { get; }
 
     // ── Primary-view availability (computed once at construction for cell nodes) ──
 
@@ -401,6 +414,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         ReloadTechnologyCommand = new AsyncRelayCommand(
             () => _actions?.ReloadTechnologyAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsTechFile);
+
+        AddWBondToSchematicCommand = new AsyncRelayCommand(
+            () => _actions?.AddWBondToSchematicAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsWBondFile);
+
+        AddWBondAsCellCommand = new AsyncRelayCommand(
+            () => _actions?.AddWBondAsCellAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsWBondFile);
     }
 
     /// <summary>
@@ -446,6 +467,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.DataDisplayFile => f.DataDisplays,
             // A .charm is a results-facing document beside a .cdd — same toggle, no seventh checkbox.
             NodeKind.HarmonicaFile   => f.DataDisplays,
+            // A .wBond is a design document; it rides the Cells toggle rather than earning its own.
+            NodeKind.WBondFile       => f.Cells,
             NodeKind.ColorThemeFile  => f.ColorThemes,
             NodeKind.TechFile        => f.TechFiles,
             // An EM setup is process/analysis configuration alongside the technology it reads, so it

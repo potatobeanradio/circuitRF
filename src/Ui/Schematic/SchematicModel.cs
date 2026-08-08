@@ -114,6 +114,15 @@ public enum SymbolKind
     /// schematic that swaps Term+GND for TermG is electrically identical.</summary>
     TermG,
 
+    /// <summary>
+    /// A wirebond design placed as a component (engine "wBond", wbond.md §5). Its symbol is
+    /// GENERATED from the <c>.wBond</c> file its <c>File</c> parameter names — two pins per wire
+    /// array plus a <c>REF</c> pin — so both the pin count and the pin names are properties of that
+    /// file rather than of this kind. See <see cref="WBondSymbolProvider"/> for why that needed a
+    /// fourth symbol mechanism, and why no copy of the symbol is ever written to disk.
+    /// </summary>
+    WBond,
+
     /// <summary>Sentinel for a component type this build of circuitRF does not recognize
     /// (brief-housekeeping-tearoff-palette-repo.md R-hk-19a) — e.g. a `.csch` saved by a newer
     /// version, or one referencing a since-removed type such as the hard-removed library FET

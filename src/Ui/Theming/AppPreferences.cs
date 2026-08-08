@@ -74,6 +74,25 @@ public sealed class AppPreferences
     [JsonPropertyName("message_timestamp")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public MessageTimestampMode? MessageTimestamp { get; set; }
+
+    // wbond.md §6.4: the defaults a newly drawn wire gets — 7 points, 1 mil diameter, gold, and the
+    // default loop profile. Per USER rather than per design: they are how one shop's bonder is set up,
+    // not a property of any one package, and a `.wBond` arriving from someone else must not silently
+    // change what the next wire you draw looks like. Null means the shipped default.
+    //
+    // Gold is both the RF packaging norm and the metal of the LW1 validation set in
+    // mom-wirebond-kernel.md, so the shipped default and the validated path agree.
+    [JsonPropertyName("wbond_wire_points")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? WBondWirePoints { get; set; }
+
+    [JsonPropertyName("wbond_wire_diameter_nm")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? WBondWireDiameterNm { get; set; }
+
+    [JsonPropertyName("wbond_wire_material")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WBondWireMaterial { get; set; }
 }
 
 public static class AppPreferencesIo

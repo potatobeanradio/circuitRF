@@ -52,8 +52,15 @@ public partial class DrcExportGateDialog : Window
     private static string Describe(DrcViolation v)
     {
         string severity = v.Severity == DrcSeverity.Error ? "Error" : "Warning";
-        string kind     = v.Kind == DrcRuleKind.MinWidth ? "minimum width" : "minimum spacing";
-        return $"• {severity} — {v.RuleName} ({kind}) on layer {v.Layer.Layer}/{v.Layer.Datatype}";
+
+        // A wire violation has no drawing layer (see DrcViolation.Layer) — it is named by the wire
+        // groups that participate instead, which is what a user would look for.
+        if (v.Layer is not { } layer)
+            return $"• {severity} — {v.RuleName}" +
+                   (v.WireGroups.Count > 0 ? $" ({string.Join(" ↔ ", v.WireGroups)})" : "");
+
+        string kind = v.Kind == DrcRuleKind.MinWidth ? "minimum width" : "minimum spacing";
+        return $"• {severity} — {v.RuleName} ({kind}) on layer {layer.Layer}/{layer.Datatype}";
     }
 
     private void OnCancelClick(object? sender, RoutedEventArgs e) => Commit(false);

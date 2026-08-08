@@ -439,6 +439,10 @@ public sealed class Elaborator
             return ResolveExtDeviceParameters(inst, parentScope);
         if (inst.Reference.Equals("Chain", StringComparison.OrdinalIgnoreCase))
             return ResolveChainParameters(inst, parentScope);
+        // wBond's `File` names a .wBond design. Same rule and the same reason as SnP's: a leading
+        // '/' alone crashes the expression parser at position 0.
+        if (inst.Reference.Equals("wBond", StringComparison.OrdinalIgnoreCase))
+            return ResolveWBondParameters(inst, parentScope);
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
@@ -894,6 +898,35 @@ public sealed class Elaborator
         if (string.IsNullOrEmpty(BaseDirectory))   return file;   // no workspace root → legacy behavior
         var rel = file.Replace('\\', '/');                        // tolerate Windows-authored separators
         return Path.GetFullPath(Path.Combine(BaseDirectory, rel));
+    }
+
+    // ── wBond parameter resolution ────────────────────────────────────────────
+
+    /// <summary>
+    /// wBond stores <c>File</c> verbatim (resolved against the workspace root exactly as SnP's is)
+    /// and evaluates everything else — <c>Temp</c>, <c>GroundPlane</c> and any loop-height override —
+    /// as an ordinary expression, which is what makes a parametric sweep over a loop height work.
+    /// </summary>
+    private IReadOnlyDictionary<string, Value> ResolveWBondParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var ov in inst.Overrides)
+        {
+            if (ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
+            {
+                var raw = ov.Expression;
+                if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+                    raw = raw[1..^1];
+                result[ov.Name] = new Value(ResolveSnpFilePath(raw));
+            }
+            else
+            {
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* skip unresolvable; the factory errors if a required numeric is missing */ }
+            }
+        }
+        return result;
     }
 
     // ── P1Tone parameter resolution ───────────────────────────────────────────

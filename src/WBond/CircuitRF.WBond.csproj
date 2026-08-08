@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    wBond's framework-free half (docs/design/wbond.md §11). The wire model, the Grover filament
+    kernels, the ground-plane image, the array-basis reduction, the internal-impedance table, the
+    incremental fill, and .wBond I/O.
+
+    NO UI FRAMEWORK MAY EVER BE REFERENCED HERE. That is an enforced invariant, not a convention —
+    tests/Firewall.Tests asserts it for this assembly alongside RfCore, Core, Engine, Cli and
+    Harmonica.
+
+    In particular: src/Ui/Layout's model/units/persistence files contain no Avalonia in their
+    SOURCE, but they live in CircuitRF.Ui which does. Referencing any of them from here fails the
+    firewall test. See WBondUnits for the one consequence that costs anything.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>CircuitRF.WBond</AssemblyName>
+    <RootNamespace>CircuitRF.WBond</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    NO PROJECT REFERENCES, DELIBERATELY.
+
+    WB-A's brief assumed this project would reference Core, Engine and RfCore. It turned out to need
+    NONE of them: the Grover kernels, the image construction, the array reduction, the Cholesky
+    factor, the internal-impedance table and .wBond I/O are all pure arithmetic over the BCL.
+
+    Keeping it a leaf is what lets src/Core reference IT, which is how the wBond ComponentModel
+    reaches the physics without a circular reference (WB-B). Adding a reference back to Core would
+    close that cycle — so if one is ever needed, the component model moves rather than the arrow.
+  -->
+
+</Project>

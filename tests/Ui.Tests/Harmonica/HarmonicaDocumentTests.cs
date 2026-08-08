@@ -39,7 +39,7 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             RepoRoot(), "src", "Ui", "Views", "WorkspaceWindow.axaml"));
 
     [Fact]
-    public void ToolsMenu_ExistsOnBothSurfaces_WithHarmonicaRfAsItsOnlyEntry()
+    public void ToolsMenu_ExistsOnBothSurfaces_WithTheSameEntriesInTheSameOrder()
     {
         // D10: "The Tools menu is added HERE, not at H7. §10 allocates it to H7, but a document
         // nobody can open cannot be tested through the product path."
@@ -59,9 +59,13 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Where(e => e.Name.LocalName == "NativeMenuItem")
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["harmonicaRF"], nativeEntries);
+        // Kept EXACT and ORDERED, which is the property that actually stops the two hand-mirrored
+        // surfaces drifting — wbond.md §10's Tools entry is the second one to arrive here.
+        Assert.Equal(["harmonicaRF", "wBond"], nativeEntries);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
+        Assert.Contains(native[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
 
         var inWindow = doc.Descendants()
             .Where(e => e.Name.LocalName == "MenuItem"
@@ -73,9 +77,11 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Where(e => e.Name.LocalName == "MenuItem")
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["_harmonicaRF"], inWindowEntries);
+        Assert.Equal(["_harmonicaRF", "_wBond"], inWindowEntries);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
+        Assert.Contains(inWindow[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
     }
 
     [Fact]

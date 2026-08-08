@@ -16,6 +16,8 @@
              xmlns:dd="using:CircuitRF.Ui.DataDisplay"
              xmlns:harm="using:CircuitRF.Ui.Harmonica"
              xmlns:harmv="using:CircuitRF.Ui.Views.Harmonica"
+             xmlns:wb="using:CircuitRF.Ui.WBond"
+             xmlns:wbv="using:CircuitRF.Ui.Views.WBond"
              xmlns:ddv="using:CircuitRF.Ui.Views.DataDisplay"
              xmlns:lay="using:CircuitRF.Ui.Layout"
              xmlns:em="using:CircuitRF.Ui.Layout.Em"
@@ -90,6 +92,10 @@
 
         <DataTemplate DataType="{x:Type em:EmSetupDocument}">
             <layv:EmSetupEditorView/>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wb:WBondDocument}">
+            <wbv:WBondEditorView/>
         </DataTemplate>
     </Application.DataTemplates>
 

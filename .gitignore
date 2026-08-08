@@ -36,3 +36,11 @@ tools/netlist-worker/.wineprefix/
 # Python bytecode from the PCell tooling
 __pycache__/
 *.py[cod]
+
+# Application icons — BUILD PRODUCTS, rasterised from the committed SVG in Assets/artwork/ (.icns by
+# each bundleFor*MacOS.sh; .ico for the Windows PE resource, not yet produced by any script — see
+# src/Ui/CLAUDE.md). The repository holds circuitRF's brand artwork as SVG and never as a binary,
+# which is why nothing under Assets/ has ever been tracked; this states it rather than leaving it to
+# the first person who runs a bundle script and sees an untracked binary.
+src/Ui/Assets/*.icns
+src/Ui/Assets/*.ico

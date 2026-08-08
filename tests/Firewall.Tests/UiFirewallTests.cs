@@ -20,6 +20,11 @@ public class UiFirewallTests
         // standalone binary too, which does NOT weaken this: the standalone app is src/Ui with a
         // different Main, and src/Harmonica stays on this side of the wall.
         { "CircuitRF.Harmonica", "CircuitRF.Harmonica.dll" },
+        // wBond's framework-free half (docs/design/wbond.md §11). Note that src/Ui/Layout's
+        // model/units/persistence files contain no Avalonia in their SOURCE but live in
+        // CircuitRF.Ui, which does — so src/WBond carries its own units table rather than
+        // referencing LayoutUnits. This assertion is what enforces that.
+        { "CircuitRF.WBond", "CircuitRF.WBond.dll" },
     };
 
     [Theory, MemberData(nameof(NonUiAssemblies))]

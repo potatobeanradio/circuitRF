@@ -8,7 +8,14 @@ public static class Units
 {
     private static readonly Dictionary<string, double> _scales = new(StringComparer.Ordinal)
     {
-        // SI prefixes (standalone, e.g. "M" as a multiplier)
+        // SI prefixes (standalone, e.g. "M" as a multiplier).
+        //
+        // "m" is MILLI here, not the metre — a deliberate decision (brief-core-length-units §5 q1,
+        // owner's call). Re-pointing it at 1.0 was the obvious fix for the length table below and
+        // was rejected: a bare-prefix value in a hand-authored .cnl ("C=1m" meaning one millifarad)
+        // would silently become a thousand times larger, with nothing anywhere reporting it. The
+        // metre therefore gets its own symbol, "metre", in the Length block. Do NOT "tidy" these
+        // into agreement.
         { "T",   1e12  },
         { "G",   1e9   },
         { "M",   1e6   },
@@ -49,10 +56,17 @@ public static class Units
         // resistors, which then had no constraint of its own and made the whole matrix singular.
         { "TOhm", 1e12 },
         { "mOhm", 1e-3 },   // the other end of the same series, absent for the same reason
-        // Length
+        // Length. "metre" is the scale-1 BASE symbol (see the SI-prefix note above for why it is not
+        // "m"); it is what BaseUnit returns for every unit in this block, which is the property
+        // ParametricSweepEngine's own re-attach depends on.
+        { "metre", 1.0 },
         { "mm",  1e-3  },
         { "um",  1e-6  },
+        { "cm",  1e-2  },
+        { "nm",  1e-9  },
         { "mil", 2.54e-5 },
+        { "in",   2.54e-2 },
+        { "inch", 2.54e-2 },
         // Angle
         { "deg", Math.PI / 180.0 },
         { "rad", 1.0   },
@@ -75,8 +89,11 @@ public static class Units
         "A",  "mA", "uA", "nA",            // current
         "W",  "mW", "uW", "kW",            // power (linear)
         "dB", "dBm", "dBc", "dBW",         // logarithmic / measurement
-        "nm", "cm",                          // length not in linear table
         "%",                                 // percentage
+        // "nm" and "cm" USED to sit here, with the comment "length not in linear table". That was
+        // never true of the physics — a nanometre is 1e-9 metres, not a dimensionless marker — and
+        // it made Scale("nm") return null, which Evaluator.ApplyUnit turns into a multiplier of
+        // exactly 1. They now live in _scales with their real values.
     };
 
     /// <summary>
@@ -107,8 +124,14 @@ public static class Units
         { "mA", "A" }, { "uA", "A" }, { "nA", "A" },
         // Power
         { "mW", "W" }, { "uW", "W" }, { "kW", "W" },
-        // Length (scaled variants; mm/um/mil are in _scales)
-        { "mm", "m" }, { "um", "m" }, { "nm", "m" }, { "cm", "m" },
+        // Length. Every one of these maps to "metre" — the scale-1 base symbol — INCLUDING "mil",
+        // "in" and "inch", which are not SI-prefixed but are still lengths and still need a base
+        // whose scale is 1.0. "mil" was absent from this map entirely, so BaseUnit("mil") returned
+        // "mil" and Scale of that is 2.54e-5, not 1.0.
+        //
+        // "m" is deliberately NOT here: it is the SI prefix milli, not a length (see _scales).
+        { "mm",  "metre" }, { "um",   "metre" }, { "nm", "metre" }, { "cm", "metre" },
+        { "mil", "metre" }, { "in",   "metre" }, { "inch", "metre" },
     };
 
     /// <summary>

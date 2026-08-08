@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wb="clr-namespace:CircuitRF.Ui.WBond"
+             x:Class="CircuitRF.Ui.Views.Properties.WBondWirePropertiesView"
+             x:DataType="wb:WBondWirePropertiesViewModel">
+
+    <UserControl.Styles>
+        <!-- The shared error cue, same as the layout shape inspector's own. -->
+        <Style Selector="TextBox.error">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="*">
+        <TextBlock Text="{Binding EmptyMessage}" IsVisible="{Binding IsEmptyState}"
+                   Margin="8" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+        <Grid IsVisible="{Binding !IsEmptyState}" RowDefinitions="Auto,*">
+
+            <!-- Read-only identity + editable properties -->
+            <StackPanel Grid.Row="0" Margin="6,4" Spacing="4">
+
+                <!-- SelectableTextBlock throughout for the read-only values: a readout you cannot
+                     copy is one you retype by hand into a report. -->
+                <!-- Group: pick an existing one, or the trailing "New Group Name…" entry, which the
+                     code-behind resolves to a real name by prompting. -->
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Group" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <ComboBox Grid.Column="1" x:Name="GroupCombo"
+                              ItemsSource="{Binding AvailableGroups}"
+                              SelectionChanged="OnGroupChanged"
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Profile" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <SelectableTextBlock Grid.Column="1" Text="{Binding ProfileBinding}"
+                                         VerticalAlignment="Center" FontSize="11"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Diameter" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBox Grid.Column="1" Text="{Binding DiameterText}" Tag="Diameter"
+                             Classes.error="{Binding HasDiameterError}" ToolTip.Tip="{Binding DiameterError}"
+                             GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Material" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <ComboBox Grid.Column="1" x:Name="MaterialCombo"
+                              ItemsSource="{Binding Materials}" SelectedItem="{Binding Material}"
+                              SelectionChanged="OnMaterialChanged"
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </Grid>
+
+                <!-- Loop height (max z − min z, §3.0) and span, both editable. Setting the height on
+                     a wire bound to a shared profile DETACHES it — one wire cannot both follow a
+                     shared shape and stand at its own height; the Profile row above flips to "(free)"
+                     when it happens. -->
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Loop ht" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBox Grid.Column="1" Text="{Binding LoopHeightText}" Tag="LoopHeight"
+                             Classes.error="{Binding HasLoopHeightError}" ToolTip.Tip="{Binding LoopHeightError}"
+                             GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Span" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBox Grid.Column="1" Text="{Binding SpanText}" Tag="Span"
+                             Classes.error="{Binding HasSpanError}" ToolTip.Tip="{Binding SpanError}"
+                             GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+            </StackPanel>
+
+            <!-- Coordinates. ListBox (not ItemsControl): the bare ItemsControl Fluent template does
+                 not wire scrolling, and the explicit ScrollViewer attached properties are what keep
+                 virtualization real on a long wire. -->
+            <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="6,2,6,4" MinHeight="60">
+                <Grid Grid.Row="0" ColumnDefinitions="22,*,*,*,26">
+                    <TextBlock Grid.Column="0" Text="#" FontSize="10" Opacity="0.6"/>
+                    <TextBlock Grid.Column="1" Text="X" FontSize="10" Opacity="0.6" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="Y" FontSize="10" Opacity="0.6" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="3" Text="Z" FontSize="10" Opacity="0.6" HorizontalAlignment="Center"/>
+                </Grid>
+
+                <ListBox Grid.Row="1" ItemsSource="{Binding VertexRows}"
+                         Background="Transparent" BorderThickness="0" Padding="0"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="wb:WireVertexRowViewModel">
+                            <Grid ColumnDefinitions="22,*,*,*,26" Margin="0,1" ToolTip.Tip="{Binding Error}">
+                                <TextBlock Grid.Column="0" Text="{Binding PointIndex}" FontSize="10"
+                                           Opacity="0.6" VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1" Text="{Binding XText}" Tag="X"
+                                         Classes.error="{Binding HasError}"
+                                         GotFocus="OnVertexGotFocus" LostFocus="OnVertexLostFocus"
+                                         KeyDown="OnVertexKeyDown" FontSize="10" Padding="3,1"/>
+                                <TextBox Grid.Column="2" Text="{Binding YText}" Tag="Y"
+                                         Classes.error="{Binding HasError}"
+                                         GotFocus="OnVertexGotFocus" LostFocus="OnVertexLostFocus"
+                                         KeyDown="OnVertexKeyDown" FontSize="10" Padding="3,1"/>
+                                <TextBox Grid.Column="3" Text="{Binding ZText}" Tag="Z"
+                                         Classes.error="{Binding HasError}"
+                                         GotFocus="OnVertexGotFocus" LostFocus="OnVertexLostFocus"
+                                         KeyDown="OnVertexKeyDown" FontSize="10" Padding="3,1"/>
+                                <TextBlock Grid.Column="4" Text="{Binding RoleText}" FontSize="9"
+                                           Opacity="0.55" VerticalAlignment="Center"
+                                           HorizontalAlignment="Center"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -6,6 +6,10 @@ Icon=circuitrf
 Terminal=false
 Type=Application
 Categories=Science;Engineering;Electronics;
-MimeType=application/x-circuitrf-workspace;
+MimeType=application/x-circuitrf-workspace;application/x-harmonicarf-document;application/x-wbond-design;
 Keywords=RF;simulation;S-parameters;harmonic balance;loadpull;
 StartupWMClass=circuitRF
+
+# circuitRF opens all three types (the Viewer role its Info.plist declares for .charm and
+# .wBond), so it lists all three here. harmonicaRF and wBond each list only their own — an
+# application offered in "Open With" for a document it cannot open is a lie on any platform.

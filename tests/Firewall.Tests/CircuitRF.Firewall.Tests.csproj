@@ -29,6 +29,7 @@
     <ProjectReference Include="../../src/Engine/CircuitRF.Engine.csproj" />
     <ProjectReference Include="../../src/Cli/CircuitRF.Cli.csproj" />
     <ProjectReference Include="../../src/Harmonica/CircuitRF.Harmonica.csproj" />
+    <ProjectReference Include="../../src/WBond/CircuitRF.WBond.csproj" />
   </ItemGroup>
 
 </Project>

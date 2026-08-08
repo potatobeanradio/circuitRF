@@ -35,6 +35,14 @@
                 <symInsp:LayoutShapePropertiesView DataContext="{Binding LayoutInspectorVm}"/>
             </Panel>
 
+            <!-- Bond wire (wbond.md §6.9) — one selected wire's group, diameter, material and
+                 coordinates. Mutually exclusive with the layout panel above: a wBond document has
+                 both contexts available, and two coordinate lists on screen would leave no way to
+                 tell which one an edit lands in. -->
+            <Panel IsVisible="{Binding IsWireActive}">
+                <symInsp:WBondWirePropertiesView DataContext="{Binding WireInspectorVm}"/>
+            </Panel>
+
             <!-- Data Display: Datasets list (document-level, R-dd-4/5) + Plot Inspector
                  (shown when a data display document is active; the inspector portion is only
                  rendered once a single plot is also selected — HasSelectedPlot, not just

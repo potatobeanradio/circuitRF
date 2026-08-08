@@ -1,0 +1,212 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wb="using:CircuitRF.Ui.WBond"
+             xmlns:ctrl="using:CircuitRF.Ui.Controls"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.WBond.WBondEditorView"
+             x:DataType="wb:WBondDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- wbond.md §6.1: the inductance panel is docked LEFT at full window height; the profile view
+         sits above the layout view, and either split is user-adjustable. -->
+    <Grid ColumnDefinitions="260,4,*">
+
+        <!-- ── The inductance panel (§6.8) ─────────────────────────────────────────────── -->
+        <Border Grid.Column="0" Background="{DynamicResource SystemChromeMediumLowColor}"
+                BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel DataContext="{Binding ViewModel.Panel}">
+                <StackPanel DockPanel.Dock="Top" Margin="10,10,10,6" Spacing="3">
+                    <TextBlock Text="Array inductance" FontWeight="SemiBold"/>
+
+                    <!-- WB20/RW13: the active return path is stated at all times — an inductance
+                         without a stated return is not a number anyone can act on. -->
+                    <SelectableTextBlock Text="{Binding ReturnPath}" FontSize="11" TextWrapping="Wrap"
+                                         Opacity="0.75"/>
+                    <SelectableTextBlock Text="{Binding ReturnPath}" FontSize="11" TextWrapping="Wrap"
+                                         Foreground="{DynamicResource CrfWarningBrush}"
+                                         IsVisible="{Binding ReturnPathUndeclared}"/>
+                    <SelectableTextBlock Text="{Binding CouplingWarning}" FontSize="11" TextWrapping="Wrap"
+                                         Foreground="{DynamicResource CrfWarningBrush}"
+                                         IsVisible="{Binding CouplingWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </StackPanel>
+
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Rows}" Margin="10,0,10,10">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="wb:WBondArrayRowViewModel">
+                                <Border Background="{DynamicResource SystemChromeLowColor}"
+                                        BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                                        CornerRadius="6" Padding="8,6" Margin="0,0,0,6">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                        <SelectableTextBlock Text="{Binding Self}" FontSize="12"/>
+
+                                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Wires" FontSize="10" Opacity="0.6"/>
+                                            <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Wires}"
+                                                                 FontSize="10" HorizontalAlignment="Right"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Total length" FontSize="10" Opacity="0.6"/>
+                                            <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TotalLength}"
+                                                                 FontSize="10" HorizontalAlignment="Right"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Landing span" FontSize="10" Opacity="0.6"/>
+                                            <SelectableTextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LandingSpan}"
+                                                                 FontSize="10" HorizontalAlignment="Right"/>
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding Mutuals}" Margin="0,4,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="x:String">
+                                                    <SelectableTextBlock Text="{Binding}" FontSize="10" Opacity="0.8"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns"/>
+
+        <!-- ── The two canvases ────────────────────────────────────────────────────────── -->
+        <DockPanel Grid.Column="2">
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SystemChromeMediumLowColor}"
+                    BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal" Margin="6,4" Spacing="4">
+                    <!-- §6.4: click the start point, click the end point, with a live ghost of the
+                         full generated loop in between. -->
+                    <ToggleButton x:Name="DrawWireToggle" ToolTip.Tip="Draw wire (click start, click end; Shift constrains)"
+                                  IsCheckedChanged="OnDrawWireChanged">
+                        <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
+                    </ToggleButton>
+
+                    <Button x:Name="FitProfileBtn" ToolTip.Tip="Fit profile view" Click="OnFitProfile"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="ArrowExpandVertical" Width="16" Height="16"/>
+                    </Button>
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+
+                    <!-- §6.5: independent of the .ctech display unit, by the owner's requirement.
+                         Storage stays in DBU, so switching is lossless and free. -->
+                    <ComboBox x:Name="UnitCombo" Width="72" FontSize="11"
+                              ToolTip.Tip="Display unit (independent of the layout's own)"
+                              SelectionChanged="OnUnitChanged"/>
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+
+                    <!-- WB22a: true-diameter mode is what makes wire-to-wire and wire-to-pad
+                         clearance judgeable by eye before the DRC is run. -->
+                    <ToggleButton x:Name="TrueDiameterToggle" Content="Ø" FontSize="12"
+                                  ToolTip.Tip="Draw wires at their true diameter"
+                                  IsCheckedChanged="OnThicknessModeChanged"/>
+                    <ToggleButton x:Name="SnapToggle" IsChecked="True" ToolTip.Tip="Snap wire points to layout geometry"
+                                  IsCheckedChanged="OnSnapChanged">
+                        <mi:MaterialIcon Kind="MagnetOn" Width="16" Height="16"/>
+                    </ToggleButton>
+
+                    <!-- Two marquees want the same gesture; this says which one gets it. -->
+                    <ToggleButton x:Name="WireMarqueeToggle" IsChecked="True"
+                                  ToolTip.Tip="Marquee selects wires (off: selects layout shapes)"
+                                  IsCheckedChanged="OnWireMarqueeChanged">
+                        <mi:MaterialIcon Kind="SelectionDrag" Width="16" Height="16"/>
+                    </ToggleButton>
+
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+
+                    <!-- §6.4 transforms. The parameterless ones are buttons; the four that need
+                         numbers share one dialog. -->
+                    <ToggleButton x:Name="RotateToolToggle"
+                                  ToolTip.Tip="Rotate about end point — grab near the end you want to move (Shift: 45° steps)"
+                                  IsCheckedChanged="OnRotateToolChanged">
+                        <mi:MaterialIcon Kind="RotateRight" Width="16" Height="16"/>
+                    </ToggleButton>
+                    <Button x:Name="ReverseBtn" ToolTip.Tip="Reverse wire direction" Click="OnReverse"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="StraightenBtn" ToolTip.Tip="Straighten (keeps the point count)" Click="OnStraighten"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="ReapplyProfileBtn" ToolTip.Tip="Re-apply the bound loop profile" Click="OnReapplyProfile"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="TransformBtn" ToolTip.Tip="Mirror, duplicate with pitch, bend, extend…"
+                            Click="OnTransform" Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="AxisArrow" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="DetachBtn" ToolTip.Tip="Detach from loop profile" Click="OnDetach"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="LinkOff" Width="16" Height="16"/>
+                    </Button>
+
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+
+                    <!-- §6.7 "to other applications": PDF + SVG + bitmap at once, through the same
+                         PlotExporter clipboard path the schematic and data display already use. -->
+                    <!-- §9.4 — the assembly-house bridge. Export writes the layout AND the wires;
+                         Import Wires reads only 3D polylines into THIS document. -->
+                    <Button x:Name="ExportDxfBtn" Click="OnExportDxf"
+                            ToolTip.Tip="Export DXF (layout and wires)"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
+                    </Button>
+
+                    <Button x:Name="ImportWiresBtn" Click="OnImportWires"
+                            ToolTip.Tip="Import Wires from a DXF (3D polylines on Wires_* layers)"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="FileImportOutline" Width="16" Height="16"/>
+                    </Button>
+
+                    <!-- §11 — a wBond publishes its own network: one port per wire array, the
+                         off-diagonals carrying the coupling. Reachable here as well as from the
+                         standalone binary's File ▸ Export, through the same one method. -->
+                    <Button x:Name="ExportTouchstoneBtn" Click="OnExportTouchstone"
+                            ToolTip.Tip="Export Touchstone (one port per wire array)"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                    </Button>
+
+                    <Button x:Name="CopyGraphicBtn" Click="OnCopyGraphic"
+                            ToolTip.Tip="Copy as a graphic (⇧⌘C / Ctrl+Shift+C)"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="ImageOutline" Width="16" Height="16"/>
+                    </Button>
+
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+                    <TextBlock x:Name="QualityText" VerticalAlignment="Center" FontSize="11" Opacity="0.7"/>
+                </StackPanel>
+            </Border>
+
+            <Grid RowDefinitions="2*,4,3*">
+                <Border Grid.Row="0" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
+                    <ctrl:WBondProfileCanvas x:Name="ProfileCanvas"
+                                             ViewModel="{Binding ViewModel.Editor}">
+                        <!-- ONE menu instance, rebuilt on Opening (Pattern B). Constructing a fresh
+                             ContextMenu per right-click is the stacking bug already fixed twice in
+                             this codebase — see src/Ui/CLAUDE.md. -->
+                        <ctrl:WBondProfileCanvas.ContextMenu>
+                            <ContextMenu Opening="OnProfileContextMenuOpening"/>
+                        </ctrl:WBondProfileCanvas.ContextMenu>
+                    </ctrl:WBondProfileCanvas>
+                </Border>
+
+                <GridSplitter Grid.Row="1" Background="Transparent" ResizeDirection="Rows"/>
+
+                <!-- The layout view IS the layout editor's own canvas; the wires ride over it as an
+                     overlay (WB23), so a wire drag never invalidates the layout's path cache. -->
+                <ctrl:LayoutCanvas Grid.Row="2" x:Name="LayoutCanvasCtrl"
+                                   ViewModel="{Binding ViewModel.ReferenceLayout}">
+                    <!-- One menu instance, rebuilt on Opening (Pattern B) — same reason as the
+                         profile canvas above: a per-click `new ContextMenu` stacks. -->
+                    <ctrl:LayoutCanvas.ContextMenu>
+                        <ContextMenu Opening="OnWireSelectionMenuOpening"/>
+                    </ctrl:LayoutCanvas.ContextMenu>
+                </ctrl:LayoutCanvas>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</UserControl>

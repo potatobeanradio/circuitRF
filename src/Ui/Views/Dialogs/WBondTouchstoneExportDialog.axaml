@@ -1,0 +1,104 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.WBondTouchstoneExportDialog"
+        Title="Export Touchstone"
+        Width="520" SizeToContent="Height"
+        MinWidth="460"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    brief-wbond-wbe M3. The PORT LIST is read-only and is the point of the dialog as much as the
+    numbers are: a Touchstone whose port order is undocumented is a file somebody wires backwards, so
+    the mapping is visible BEFORE the file is written rather than discoverable afterwards from the
+    comments.
+  -->
+
+  <StackPanel Margin="16" Spacing="12">
+
+    <TextBlock Text="Export the array network" FontWeight="SemiBold" FontSize="14"/>
+    <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="11"
+               Text="One port per wire array — port k is that array's own two terminals. The off-diagonals are the coupling between arrays, which is the whole reason to export the array rather than the wires."/>
+
+    <!-- Ports -->
+    <Border Background="{DynamicResource SystemChromeLowColor}"
+            BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+            CornerRadius="6" Padding="10,8">
+      <StackPanel Spacing="4">
+        <TextBlock Text="Ports" FontSize="10" Opacity="0.6"/>
+        <ItemsControl x:Name="PortList">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <SelectableTextBlock Text="{Binding}" FontSize="11" FontFamily="{DynamicResource IBMPlexSans}"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
+    <!-- Reference impedance -->
+    <Grid ColumnDefinitions="150,*" VerticalAlignment="Center">
+      <TextBlock Grid.Column="0" Text="Reference impedance:" VerticalAlignment="Center" FontSize="12"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+        <NumericUpDown x:Name="Z0Box" Width="120" Minimum="0.001" Maximum="100000"
+                       Increment="1" FormatString="0.####" Value="50"/>
+        <TextBlock Text="Ω" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
+      </StackPanel>
+    </Grid>
+
+    <!-- Frequency grid -->
+    <Border Background="{DynamicResource SystemChromeLowColor}"
+            BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+            CornerRadius="6" Padding="10,8">
+      <StackPanel Spacing="8">
+        <TextBlock Text="Frequency grid" FontSize="10" Opacity="0.6"/>
+        <TextBlock TextWrapping="Wrap" FontSize="10" Opacity="0.6"
+                   Text="A bond array is broadband and has no natural band, so the grid is yours to state rather than something the design implies."/>
+
+        <Grid ColumnDefinitions="70,*,70,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="6">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Start (GHz)" VerticalAlignment="Center" FontSize="11"/>
+          <NumericUpDown Grid.Row="0" Grid.Column="1" x:Name="StartBox" Minimum="0.000001" Maximum="10000"
+                         Increment="0.1" FormatString="0.######" Value="0.1"/>
+          <TextBlock Grid.Row="0" Grid.Column="2" Text="Stop (GHz)" VerticalAlignment="Center" FontSize="11"/>
+          <NumericUpDown Grid.Row="0" Grid.Column="3" x:Name="StopBox" Minimum="0.000001" Maximum="10000"
+                         Increment="1" FormatString="0.######" Value="20"/>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Points" VerticalAlignment="Center" FontSize="11"/>
+          <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="PointsBox" Minimum="1" Maximum="100000"
+                         Increment="10" FormatString="0" Value="201"/>
+          <StackPanel Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Orientation="Horizontal"
+                      Spacing="10" VerticalAlignment="Center">
+            <RadioButton x:Name="LinRadio" GroupName="Spacing" Content="Linear" IsChecked="True" FontSize="11"/>
+            <RadioButton x:Name="LogRadio" GroupName="Spacing" Content="Log" FontSize="11"/>
+          </StackPanel>
+        </Grid>
+
+        <TextBlock x:Name="CostNote" TextWrapping="Wrap" FontSize="10" Opacity="0.6"/>
+      </StackPanel>
+    </Border>
+
+    <!-- Number format -->
+    <Grid ColumnDefinitions="150,*" VerticalAlignment="Center">
+      <TextBlock Grid.Column="0" Text="Format:" VerticalAlignment="Center" FontSize="12"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+        <RadioButton x:Name="RiRadio" GroupName="Format" Content="RI" IsChecked="True" FontSize="11"
+                     ToolTip.Tip="Real / imaginary"/>
+        <RadioButton x:Name="MaRadio" GroupName="Format" Content="MA" FontSize="11"
+                     ToolTip.Tip="Magnitude / angle in degrees"/>
+        <RadioButton x:Name="DbRadio" GroupName="Format" Content="DB" FontSize="11"
+                     ToolTip.Tip="dB / angle in degrees"/>
+      </StackPanel>
+    </Grid>
+
+    <TextBlock x:Name="ErrorText" TextWrapping="Wrap" FontSize="11"
+               Foreground="{DynamicResource CrfWarningBrush}" IsVisible="False"/>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,4,0,0">
+      <Button x:Name="CancelButton" Content="Cancel" Width="96" IsCancel="True"
+              HorizontalContentAlignment="Center" Click="OnCancel"/>
+      <Button x:Name="ExportButton" Content="Export…" Width="96" IsDefault="True"
+              HorizontalContentAlignment="Center" Click="OnExport"/>
+    </StackPanel>
+
+  </StackPanel>
+</Window>

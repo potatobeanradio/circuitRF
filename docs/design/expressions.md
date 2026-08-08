@@ -153,8 +153,32 @@ A representative scale table (extensible):
 | Inductance | `H`=1, `mH`, `uH`, `nH`, `pH`, `fH` |
 | Capacitance | `F`=1, `mF`, `uF`, `nF`, `pF`, `fF` |
 | Resistance | `Ohm`=1, `kOhm`, `MOhm` |
-| Length (TLIN) | `m`=1, `mm`, `um`, `mil`=2.54e-5 |
+| Length | `metre`=1, `mm`, `um`, `cm`, `nm`, `mil`=2.54e-5, `in`/`inch`=2.54e-2 |
 | Angle | `deg`=π/180, `rad`=1 |
+
+**The length base symbol is `metre`, NOT `m` — and this table used to say otherwise, which is where
+the bug came from.** The SI-prefix row and the length row live in **one flat dictionary**
+(`Units._scales`), so a length row claiming `m`=1 collided head-on with the prefix row's `m`=1e-3. The
+implementation resolved the collision in favour of milli and left length with no scale-1 symbol at all
+— so `BaseUnit("mm")` returned `"m"`, whose scale is 1e-3, and the "reduce a unit to a scale-1 base"
+property that `ParametricSweepEngine` relies on was false for every length. Fixed 2026-08-07
+(brief-core-length-units.md): **`m` stays milli**, because a hand-authored `C=1m` must keep meaning one
+millifarad in every netlist dialect there is; the metre gets its own spelling. `nm` and `cm` were also
+absent from this table entirely and had been parked in `_identityUnits` (multiplier exactly 1), so
+`L = 1 cm` evaluated to 1.0. See `src/Core/CLAUDE.md` for the measured before/after table.
+
+**Adding a length unit is one row in `_scales` plus one row in `_baseUnitMap` mapping it to `metre`.**
+Forgetting the second is silent: the unit scales correctly at a use site and then re-scales itself on a
+parametric sweep's re-attach. That is exactly what happened to `mil`.
+
+**This is not the only unit system in circuitRF, and the others are deliberately separate — do not
+unify them.** `LayoutUnits` (`layout-view.md` §1.1, DBU-based, `decimal` arithmetic, `1 mil = 25400 DBU`
+exactly) and `WBondUnits` (nanometre-based, same discipline) are **integer/decimal** systems answering a
+different question — *exact database coordinates* — while this table is a **double-precision multiplier**
+applied to a resolved expression value. Neither routes through `Units`. Consolidating them would trade a
+fixable bug for an unfixable rounding class. `MicrostripSubstrateInjection.SchematicLengthUnit` is the
+one sanctioned translation point between the two vocabularies, and it is a **name** mapping, not a
+numeric conversion.
 
 **Logarithmic units are not unit-suffixes.** `dB`/`dBm` are not linear scale factors, so they are handled by functions (`dB(...)`, `dBm(...)`), never as a trailing unit on a value.
 
@@ -324,3 +348,10 @@ Per PRD §7's "built to extend without breaking v1 files": units *inside* expres
 1. FD step policy — absolute `1e-4` (prototype) vs relative-to-operating-point — confirm during Phase 3 against the hero SDD.
 2. **Resolved** in `harmonic-balance.md` (§16, behavior specified in §4/§11): `log`/`sqrt`/etc. domain errors in an SDD during an overshooting HB iterate **clamp and warn** rather than hard-erroring, so continuation is not killed by a transient out-of-domain iterate; the warning is surfaced obviously to the user, naming the model and the offending operation.
 3. Exact units table contents (§8) — the list is representative; finalize the full set when the `.cnl` reader is built.
+   **Length is now settled** (brief-core-length-units.md, 2026-08-07): base symbol `metre`, with
+   `nm`/`cm`/`mil`/`in`/`inch` all carried and all mapped to it, and `m` reserved to the SI prefix milli.
+   Every other domain is still "representative" — and the lesson from length generalises: **a domain
+   needs a scale-1 base symbol that is not also an SI prefix, plus a `_baseUnitMap` row for every
+   non-prefixed member of that domain** (`mil` had neither and re-scaled itself on every parametric
+   sweep). `Ohm`/`Hz`/`H`/`F`/`V`/`A`/`W` are all safe on the first count; the second is worth checking
+   before any new non-prefixed unit is added anywhere.

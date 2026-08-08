@@ -12,6 +12,8 @@
 // second set of bugs, to express something the format already expresses. "Export my rules" writes a
 // `.ctech`; "import just the rules" reads one and takes one section.
 
+using CircuitRF.Ui.Layout.Assembly;
+
 namespace CircuitRF.Ui.Layout;
 
 /// <summary>Which parts of a technology an operation applies to.</summary>
@@ -22,6 +24,17 @@ public enum TechSection
     Layers    = 1,
     Stackup   = 2,
     DrcRules  = 4,
+
+    /// <summary>
+    /// A `.wasm`'s assembly rules (wbond.md §8, WB31). Deliberately NOT part of
+    /// <see cref="All"/> — a <see cref="Technology"/> holds none of these, and folding them into the
+    /// "everything" flag would make every existing technology merge ask a question about a document
+    /// it has no relationship to. It is the same enum because it is the same operation with the same
+    /// modes, the same conflict record and the same report; it is a separate FLAG because assembly
+    /// rules live in a separate document, which is the whole of WB31.
+    /// </summary>
+    AssemblyRules = 8,
+
     All       = Layers | Stackup | DrcRules,
 }
 
@@ -78,7 +91,10 @@ public sealed record TechMergeReport(
     public bool ChangedNothing => TotalAdded == 0 && TotalReplaced == 0;
 
     /// <summary>A one-line summary in the user's own terms.</summary>
-    public string Summary()
+    /// <param name="ruleNoun">What the rules are called on this side of the merge. Defaults to the
+    /// technology's own wording; an assembly merge passes "assembly rule" so the same report type
+    /// reads correctly for both without a second report type existing.</param>
+    public string Summary(string ruleNoun = "DRC rule")
     {
         if (ChangedNothing) return "Nothing changed — every incoming item was already present.";
 
@@ -88,7 +104,7 @@ public sealed record TechMergeReport(
         if (StackupAdded + StackupReplaced > 0)
             parts.Add($"{StackupAdded} stackup entr(ies) added, {StackupReplaced} replaced");
         if (RulesAdded + RulesReplaced > 0)
-            parts.Add($"{RulesAdded} DRC rule(s) added, {RulesReplaced} replaced");
+            parts.Add($"{RulesAdded} {ruleNoun}(s) added, {RulesReplaced} replaced");
 
         string kept = TotalKept > 0 ? $"; {TotalKept} existing item(s) kept" : "";
         return string.Join("; ", parts) + kept + ".";
@@ -353,6 +369,150 @@ public static class TechnologyMerge
         }
     }
 
+    // ── Assembly rules (wbond.md §8) ────────────────────────────────────────────
+    //
+    // The SAME operation, widened rather than forked (brief-wbond-wbd §1.2). Identity is a rule's
+    // Name, exactly as it is for a DRC rule and for the same reason: the name is what a violation
+    // traces back to. The section is part of the key, because WB32 makes the section meaningful — a
+    // machine limit and a process preference may legitimately share a name and are not the same rule.
+
+    private static string AssemblyKeyOf(WasmSection section, string name) => $"AssemblyRules|{section}|{name}";
+
+    private static string Describe(WasmRule r) =>
+        r.Expression.Length > 60 ? r.Expression[..57] + "…" : r.Expression;
+
+    /// <summary>Every assembly rule present in BOTH rule sets, so a caller can choose per item.</summary>
+    public static IReadOnlyList<TechMergeConflict> FindAssemblyConflicts(WasmFile target, WasmFile source)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(source);
+
+        var found = new List<TechMergeConflict>();
+
+        foreach (var section in new[] { WasmSection.Machine, WasmSection.Process, WasmSection.Material })
+        {
+            var byName = new Dictionary<string, WasmRule>(StringComparer.Ordinal);
+            foreach (var r in target.RulesOf(section)) byName.TryAdd(r.Name, r);
+
+            foreach (var incoming in source.RulesOf(section))
+                if (byName.TryGetValue(incoming.Name, out var mine))
+                    found.Add(new TechMergeConflict(
+                        TechSection.AssemblyRules, AssemblyKeyOf(section, incoming.Name),
+                        $"{section} rule \"{incoming.Name}\"",
+                        Describe(mine), Describe(incoming)));
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Merges <paramref name="source"/>'s assembly rules, envelopes and material lists into
+    /// <paramref name="target"/>, in place — the same modes, the same conflict keys and the same
+    /// report as a technology merge.
+    /// </summary>
+    public static TechMergeReport MergeAssembly(
+        WasmFile target, WasmFile source, TechMergeMode mode, IReadOnlySet<string>? replaceKeys = null)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(source);
+
+        var warnings = new List<string>();
+        int added = 0, replaced = 0, kept = 0;
+
+        foreach (var section in new[] { WasmSection.Machine, WasmSection.Process, WasmSection.Material })
+        {
+            var targetRules = target.RulesOf(section);
+            var byName = new Dictionary<string, WasmRule>(StringComparer.Ordinal);
+            foreach (var r in targetRules) byName.TryAdd(r.Name, r);
+
+            foreach (var incoming in source.RulesOf(section))
+            {
+                if (!byName.TryGetValue(incoming.Name, out var existing))
+                {
+                    targetRules.Add(Clone(incoming));
+                    byName[incoming.Name] = incoming;
+                    added++;
+                    continue;
+                }
+
+                if (!WantsReplace(mode, replaceKeys, AssemblyKeyOf(section, incoming.Name))) { kept++; continue; }
+                targetRules[targetRules.IndexOf(existing)] = Clone(incoming);
+                replaced++;
+            }
+        }
+
+        // Envelopes ride along with the rules that look them up. Bringing rules without their tables
+        // is the assembly-side twin of importing DRC rules without their layers — the rule looks
+        // perfectly healthy and measures against a limit that does not exist — so a missing table is
+        // said at merge time, where the user can still act on it.
+        var envByName = new Dictionary<string, WasmEnvelope>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in target.Envelopes) envByName.TryAdd(e.Name, e);
+
+        foreach (var incoming in source.Envelopes)
+        {
+            if (!envByName.TryGetValue(incoming.Name, out var existing))
+            {
+                target.Envelopes.Add(Clone(incoming));
+                envByName[incoming.Name] = incoming;
+                continue;
+            }
+
+            if (!WantsReplace(mode, replaceKeys, $"AssemblyRules|Envelope|{incoming.Name}")) continue;
+            target.Envelopes[target.Envelopes.IndexOf(existing)] = Clone(incoming);
+        }
+
+        foreach (long d in source.AllowedDiametersNm)
+            if (!target.AllowedDiametersNm.Contains(d)) target.AllowedDiametersNm.Add(d);
+
+        foreach (string m in source.AllowedMetals)
+            if (!target.AllowedMetals.Contains(m, StringComparer.OrdinalIgnoreCase))
+                target.AllowedMetals.Add(m);
+
+        var known = target.Envelopes.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        int dangling = target.AllRules().Count(t =>
+            Drc.DrcPredicateParser.TryParse(t.Rule.Expression, out var p, out _) && p is not null &&
+            p.ReferencedEnvelopes().Any(n => !known.Contains(n)));
+
+        if (dangling > 0)
+            warnings.Add($"{dangling} assembly rule(s) look up envelope tables this rule set does not " +
+                         "declare, so they will measure against nothing.");
+
+        return new TechMergeReport(0, 0, 0, 0, 0, 0, added, replaced, kept, warnings);
+    }
+
+    /// <summary>
+    /// The union the DRC actually evaluates: a technology's die-side rules and a `.wasm`'s
+    /// assembly-side rules, together, with any NAME shared between the two sides listed.
+    ///
+    /// <para><b>The two lists stay separate rather than being concatenated, and that is the honest
+    /// shape.</b> A <see cref="DrcRule"/> is a measurement kind applied to a region; a
+    /// <see cref="WasmRule"/> is a predicate over wires. Flattening them into one list would need a
+    /// discriminated wrapper that every consumer would immediately unwrap again. "Union" here means
+    /// what §8 means by it — the check evaluates both sets in one run and reports into one panel.</para>
+    ///
+    /// <para><b>Why a shared name is a collision worth reporting.</b> A violation names its rule, and
+    /// that name is also the waiver's own record of what was waived. Two rules called
+    /// "MinWireSpacing" — one from the process, one from the house — make both of those ambiguous.
+    /// Neither side is modified: the collision is reported and both rules still run.</para>
+    /// </summary>
+    public static IReadOnlyList<TechMergeConflict> FindCheckUnionCollisions(Technology? tech, WasmFile? wasm)
+    {
+        if (tech is null || wasm is null) return [];
+
+        var byName = new Dictionary<string, DrcRule>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in tech.DrcRules) byName.TryAdd(r.Name, r);
+
+        var found = new List<TechMergeConflict>();
+        foreach (var (section, rule) in wasm.AllRules())
+            if (byName.TryGetValue(rule.Name, out var mine))
+                found.Add(new TechMergeConflict(
+                    TechSection.AssemblyRules, AssemblyKeyOf(section, rule.Name),
+                    $"Rule name \"{rule.Name}\" is used by both the technology and the assembly rules",
+                    Describe(mine), Describe(rule)));
+
+        return found;
+    }
+
     // ── Clones ──────────────────────────────────────────────────────────────────
     // Merging must never alias the source's objects into the target: the two technologies outlive the
     // merge independently, and a later edit to one would otherwise silently change the other.
@@ -371,6 +531,16 @@ public static class TechnologyMerge
         DrawingLayers = [.. s.DrawingLayers], IsGroundReference = s.IsGroundReference,
         Fill = s.Fill, WallThicknessDbu = s.WallThicknessDbu,
         SpanFromLayer = s.SpanFromLayer, SpanToLayer = s.SpanToLayer,
+    };
+
+    private static WasmRule Clone(WasmRule r) => new()
+    {
+        Name = r.Name, Expression = r.Expression, Description = r.Description, Severity = r.Severity,
+    };
+
+    private static WasmEnvelope Clone(WasmEnvelope e) => new()
+    {
+        Name = e.Name, Points = [.. e.Points],
     };
 
     private static DrcRule Clone(DrcRule r) => new()

@@ -62,6 +62,7 @@
 // an anonymous/system block.
 
 using CircuitRF.Ui.Theming;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Layout.Interchange;
 
@@ -80,6 +81,10 @@ public sealed record DxfExportSummary(
     /// text a user did not knowingly place (an invisible, sub-pixel label authored by accident) is
     /// exactly what an export report should surface, never leave silent.</summary>
     int LabelRecordsWritten = 0,
+    /// <summary>wbond.md §9.4: bond wires written as 3D polylines on <c>Wires_*</c> layers. Reported
+    /// so an export that silently carried no wires — the design had none, or none were supplied — is
+    /// distinguishable from one that did.</summary>
+    int WiresWritten = 0,
     /// <summary>§4.3/R-via-9 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): a
     /// <see cref="ViaShape"/> part (barrel or pad) whose layer has no <c>.ctech</c>-known name (or, for
     /// the pad, no <see cref="ViaShape.LandingLayer"/> set at all) is skipped and named in
@@ -114,7 +119,7 @@ public sealed record DxfExportOptions(
 /// <summary>Assigns every handle (group 5) this writer needs — every table, table record, BLOCK/ENDBLK,
 /// and entity in an AC1015+ file must carry one, and every one in the file must be unique. Starts past
 /// the low single-digit values convention reserves for a few fixed system objects.</summary>
-internal sealed class DxfHandles
+public sealed class DxfHandles
 {
     private int _next = 0x10;
     public string Next() => (_next++).ToString("X");
@@ -167,7 +172,8 @@ public static class DxfWriter
         string rootStructureName,
         Technology? tech,
         int dbuPerMicron,
-        DxfExportOptions options)
+        DxfExportOptions options,
+        WBondDesign? wires = null)
     {
         double dbuToDrawingUnit = 1.0 / (double)DxfUnits.DbuPerDrawingUnit(options.InsUnits, dbuPerMicron);
 
@@ -184,7 +190,12 @@ public static class DxfWriter
 
         WriteHeader(w, bbox, dbuToDrawingUnit, options);
 
-        var blockRecordHandles = WriteTablesSection(w, handles, layerNames, tech, blockNames.Values, bbox, dbuToDrawingUnit, options);
+        // Wire layers are named after wBond ARRAYS, not technology layers, so they cannot come out of
+        // layerNames — they are supplied alongside it or the LAYER table would be missing records the
+        // wire entities reference, which a strict reader rejects the whole file over.
+        var wireLayerNames = wires is null ? null : DxfWireIo.LayerNames(wires);
+
+        var blockRecordHandles = WriteTablesSection(w, handles, layerNames, tech, blockNames.Values, bbox, dbuToDrawingUnit, options, wireLayerNames);
 
         // ── BLOCKS ────────────────────────────────────────────────────────────
         WriteSectionStart(w, "BLOCKS");
@@ -213,15 +224,25 @@ public static class DxfWriter
         w.WriteDouble(41, 1.0);
         w.WriteDouble(42, 1.0);
         w.WriteDouble(50, 0.0);
+
+        // Wires live in MODEL SPACE beside the root INSERT, not inside a block: they are absolute
+        // geometry belonging to the assembly, not part of any cell's own definition, and an assembly
+        // house opening the file expects to see them without descending into a block.
+        int wiresWritten = wires is null
+            ? 0
+            : DxfWireIo.WriteWires(w, wires, dbuToDrawingUnit, dbuPerMicron, handles, modelSpaceHandle);
+
         WriteSectionEnd(w);
 
         w.WriteString(0, "EOF");
+
+        counts.WiresWritten = wiresWritten;
 
         return new DxfExportSummary(
             counts.CurveFlattened, counts.HolesAsHatch, counts.BitmapsSkipped,
             counts.MixedArcCubicApproximated, counts.PathsFlattenedForCubic,
             counts.SplineFlattenedToPolyline, w.EscapedTextCount, diagnostics,
-            counts.LabelsWritten, counts.ViaPartsSkipped);
+            counts.LabelsWritten, counts.WiresWritten, counts.ViaPartsSkipped);
     }
 
     private sealed class Counts
@@ -234,6 +255,7 @@ public static class DxfWriter
         public bool SplineFlattenedToPolyline;
         public int LabelsWritten;
         public int ViaPartsSkipped;
+        public int WiresWritten;
     }
 
     // ── HEADER ───────────────────────────────────────────────────────────────
@@ -288,13 +310,14 @@ public static class DxfWriter
 
     private static IReadOnlyDictionary<string, string> WriteTablesSection(
         DxfGroupWriter w, DxfHandles handles, IReadOnlyDictionary<LayerKey, string> layerNames, Technology? tech,
-        IEnumerable<string> blockNames, Bbox bbox, double dbuToDrawingUnit, DxfExportOptions options)
+        IEnumerable<string> blockNames, Bbox bbox, double dbuToDrawingUnit, DxfExportOptions options,
+        IReadOnlyList<string>? extraLayerNames = null)
     {
         WriteSectionStart(w, "TABLES");
 
         WriteVportTable(w, handles, bbox, dbuToDrawingUnit, options);
         WriteLtypeTable(w, handles);
-        WriteLayerTable(w, handles, layerNames, tech, options);
+        WriteLayerTable(w, handles, layerNames, tech, options, extraLayerNames);
         WriteStyleTable(w, handles);
         WriteEmptyTable(w, handles, "VIEW");
         WriteEmptyTable(w, handles, "UCS");
@@ -377,10 +400,18 @@ public static class DxfWriter
     /// the brief's own diagnosis.</summary>
     private static void WriteLayerTable(
         DxfGroupWriter w, DxfHandles handles, IReadOnlyDictionary<LayerKey, string> layerNames,
-        Technology? tech, DxfExportOptions options)
+        Technology? tech, DxfExportOptions options, IReadOnlyList<string>? extraLayerNames = null)
     {
         var names = new List<string> { "0" };
         names.AddRange(layerNames.Values.Distinct(StringComparer.OrdinalIgnoreCase).Where(n => n != "0"));
+
+        // Wire layers (Wires_<group>) carry no LayerKey — they are named after a wBond array, not after
+        // a technology layer — so they cannot come from layerNames and are supplied alongside it. They
+        // still need a real LAYER record or a strict reader rejects every entity that references them.
+        if (extraLayerNames is not null)
+            foreach (string extra in extraLayerNames)
+                if (!names.Contains(extra, StringComparer.OrdinalIgnoreCase))
+                    names.Add(extra);
 
         // Multiple LayerKeys can sanitize to the same DXF name (a rare collision) — the layer table has
         // only one record per name, so the FIRST key to claim a name supplies its colour; this mirrors
@@ -582,7 +613,12 @@ public static class DxfWriter
     /// <summary>The common entity preamble every AC1015+ entity needs: handle, owner (the containing
     /// block's own BLOCK_RECORD handle), the "AcDbEntity" subclass marker, layer, then the entity's OWN
     /// specific subclass marker — after this, only the entity-specific fields follow.</summary>
-    private static void WriteEntityHeader(DxfGroupWriter w, string type, DxfHandles handles, string ownerHandle, string layer, string subclass)
+    /// <summary>
+    /// The five groups every entity opens with. <c>internal</c> so <see cref="DxfWireIo"/> shares it —
+    /// a second copy of the handle/owner/subclass preamble is exactly how an entity ends up missing
+    /// one of them, which is the class of bug a strict reader rejects the whole file over.
+    /// </summary>
+    internal static void WriteEntityHeader(DxfGroupWriter w, string type, DxfHandles handles, string ownerHandle, string layer, string subclass)
     {
         w.WriteString(0, type);
         w.WriteString(5, handles.Next());

@@ -15,7 +15,18 @@ namespace CircuitRF.Ui.Layout.Drc;
 /// <param name="RuleName">The <see cref="DrcRule.Name"/> as the technology states it.</param>
 /// <param name="Kind">Which check produced it.</param>
 /// <param name="Severity">The rule's own severity, carried through unchanged.</param>
-/// <param name="Layer">The drawing layer checked.</param>
+/// <param name="Layer">
+/// The drawing layer checked, or <b>null for a wire violation</b>, which has none.
+///
+/// <para><b>Why nullable and not a reserved synthetic key</b> (brief-wbond-wbd §5 open question 2,
+/// answered). A bond wire is not on a drawing layer — it is a piece of metal in space above them —
+/// and the panel groups and colours by this field. A reserved key would make every wire violation
+/// group under a layer that means nothing, and the layer of the pad a wire happens to land on would
+/// be worse still: it reads as a claim about where the violation IS. Null is the honest answer, and
+/// it costs one nullable field on a record every existing violation already uses. Every consumer
+/// sorts and displays wire violations after layer-bearing ones, which is also the order a user wants
+/// them in.</para>
+/// </param>
 /// <param name="RequiredDbu">The rule's value — what the geometry had to satisfy and did not.</param>
 /// <param name="MarkerRings">
 /// The violating REGION, as flat implicitly-closed DBU vertex lists in the design's own world
@@ -37,7 +48,7 @@ public sealed record DrcViolation(
     string                RuleName,
     DrcRuleKind           Kind,
     DrcSeverity           Severity,
-    LayerKey              Layer,
+    LayerKey?             Layer,
     long                  RequiredDbu,
     IReadOnlyList<long[]> MarkerRings,
     Bbox                  Marker,
@@ -52,6 +63,35 @@ public sealed record DrcViolation(
 
     /// <summary>The waiver's own reason, when <see cref="Waived"/>. Null when none was given.</summary>
     public string? WaiverReason { get; init; }
+
+    /// <summary>
+    /// Which `.wasm` section an assembly rule came from (WB32), or null for a die-side rule.
+    ///
+    /// <para>Reported because "your bonder cannot do this" and "your assembly house prefers not to"
+    /// have very different answers — a machine limit is a redesign, a process preference is a phone
+    /// call. A panel that showed only the rule name would leave the user unable to tell which
+    /// conversation they are in.</para>
+    /// </summary>
+    public Assembly.WasmSection? Section { get; init; }
+
+    /// <summary>
+    /// The wire GROUPS (array names) that participate, for a wire violation — one for a per-wire
+    /// rule, two for a pair rule. Empty for a die-side violation.
+    ///
+    /// <para>Part of the waiver key, and the reason it is groups rather than wire indices: see
+    /// <see cref="Key"/>.</para>
+    /// </summary>
+    public IReadOnlyList<string> WireGroups { get; init; } = [];
+
+    /// <summary>
+    /// The measured value that failed the rule, formatted by whoever produced it — "3.2 mil" against
+    /// a 4 mil limit. Null for a die-side violation, whose measurement is
+    /// <see cref="RequiredDbu"/> and whose <see cref="Kind"/> already says what was measured.
+    /// </summary>
+    public string? MeasuredText { get; init; }
+
+    /// <summary>True when this violation came from an assembly rule rather than the technology.</summary>
+    public bool IsAssembly => Section is not null;
 }
 
 /// <summary>
@@ -83,7 +123,16 @@ public sealed class DrcWaiver
 /// than a person expects. Above this the run refuses rather than hanging; the default is L3c's own
 /// flatten ceiling, reused rather than re-derived because it guards the identical risk.
 /// </param>
-public sealed record DrcRunSettings(int MaxShapes = DrcEngine.DefaultMaxShapes)
+/// <param name="MaxWires">
+/// The wire-count ceiling for the assembly half (brief-wbond-wbd R-wbd-4). Wire-to-wire clearance is
+/// quadratic in wires before the broad phase prunes it, so a pathological design must cost a message
+/// rather than a hang — the same bargain <paramref name="MaxShapes"/> already strikes for artwork.
+/// It rides on this record rather than a second settings type for the same reason: one place a
+/// caller states how far a check is allowed to go.
+/// </param>
+public sealed record DrcRunSettings(
+    int MaxShapes = DrcEngine.DefaultMaxShapes,
+    int MaxWires  = DrcEngine.DefaultMaxWires)
 {
     public static readonly DrcRunSettings Default = new();
 }

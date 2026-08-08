@@ -9,6 +9,8 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Theming;
+using CircuitRF.Ui.WBond;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
@@ -84,6 +86,14 @@ public partial class SettingsView : Window
             MsgTimestampCombo.ItemsSource   = new[] { "Time", "Date + Time", "Hidden" };
             MsgTimestampCombo.SelectedIndex = (int)(prefs.MessageTimestamp ?? MessageTimestampMode.Time);
 
+            // wbond.md §6.4. Diameter is shown in mil because that is the unit a bonder is specified
+            // in; it is stored in nanometres like every other wBond dimension.
+            WBondPointsUpDown.Value = WBondDefaults.Points;
+            WBondDiameterUpDown.Value = (decimal)WBondUnits.FromNm(WBondDefaults.DiameterNm, WBondUnit.Mil);
+
+            WBondMaterialCombo.ItemsSource = WireMaterials.All.Select(m => m.Name).ToArray();
+            WBondMaterialCombo.SelectedItem = WBondDefaults.Material;
+
             UpdatePCellTrustStatus(prefs.PCellTrust?.Count ?? 0);
         }
         finally { _updatingGeneral = false; }
@@ -117,6 +127,24 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.CheckDrcOnExport = CheckDrcOnExportCheck.IsChecked);
+    }
+
+    private void OnWBondPointsChanged(object? sender, NumericUpDownValueChangedEventArgs e)
+    {
+        if (_updatingGeneral || WBondPointsUpDown.Value is not { } points) return;
+        AppPreferencesIo.Update(p => p.WBondWirePoints = (int)points);
+    }
+
+    private void OnWBondDiameterChanged(object? sender, NumericUpDownValueChangedEventArgs e)
+    {
+        if (_updatingGeneral || WBondDiameterUpDown.Value is not { } mils || mils <= 0) return;
+        AppPreferencesIo.Update(p => p.WBondWireDiameterNm = WBondUnits.ToNm((double)mils, WBondUnit.Mil));
+    }
+
+    private void OnWBondMaterialChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingGeneral || WBondMaterialCombo.SelectedItem is not string material) return;
+        AppPreferencesIo.Update(p => p.WBondWireMaterial = material);
     }
 
     private void OnMsgTimestampChanged(object? sender, SelectionChangedEventArgs e)

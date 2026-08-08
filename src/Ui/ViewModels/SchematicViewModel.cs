@@ -2777,6 +2777,46 @@ public sealed partial class SchematicViewModel : ObservableObject
     }
 
     /// <summary>
+    /// wbond.md §9.2 route 2 — places a <c>.wBond</c> design as a component (M3).
+    ///
+    /// <para>Goes through the same <see cref="PlaceComponentCommand"/> every other placement uses,
+    /// so it is one undo entry and the on-P connectivity union runs unchanged. Returns false and
+    /// reports BY NAME when the design cannot be placed — a design with no arrays has no pins, and
+    /// placing something with none is worse than saying so.</para>
+    /// </summary>
+    /// <param name="wbondAbsolutePath">Absolute path of the <c>.wBond</c> design.</param>
+    /// <param name="worldX">World X, or null to pick a free spot beside what is already placed.</param>
+    /// <param name="worldY">World Y, or null (see <paramref name="worldX"/>).</param>
+    public bool CommitWBondPlacement(string wbondAbsolutePath, double? worldX = null, double? worldY = null)
+    {
+        // R-wbb2-3: the stored File value resolves against the WORKSPACE ROOT, which is the
+        // schematic's own ancestor workspace — not the currently-open one and not the schematic's
+        // directory. A scratch schematic has neither, so the path is stored absolute.
+        string? workspaceRoot = WBondSymbolProvider.WorkspaceRootOf(EditModel.SchematicDirectory);
+
+        var built = WBondPlacement.TryBuild(
+            wbondAbsolutePath, workspaceRoot, GenerateInstanceName(SymbolKind.WBond));
+
+        if (built.Component is not { } comp)
+        {
+            _messageSink?.Warning(built.Error ?? "That wirebond design could not be placed.");
+            return false;
+        }
+
+        var (px, py) = worldX is { } wx && worldY is { } wy
+            ? (wx, wy)
+            : WBondPlacement.SuggestPlacementPoint(EditModel);
+
+        comp.X = EditModel.SnapToGrid(px);
+        comp.Y = EditModel.SnapToGrid(py);
+
+        Execute(new PlaceComponentCommand(EditModel, comp));
+        Selection.SelectOne(comp.Id);
+        ComponentPlaced?.Invoke(SymbolKind.WBond);
+        return true;
+    }
+
+    /// <summary>
     /// Places a cell reference at the snapped world position.  Called by the canvas drop handler.
     /// Mirrors <see cref="CommitPlacement"/> but uses the cell folder as the component source
     /// instead of a built-in SymbolKind.  One undoable <see cref="PlaceComponentCommand"/>.

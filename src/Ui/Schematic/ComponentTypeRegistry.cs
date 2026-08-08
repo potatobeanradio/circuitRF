@@ -111,7 +111,12 @@ public static class ComponentTypeRegistry
         [UnitDimension.Voltage]     = ["None", "nV", "µV", "mV", "V", "kV"],
         [UnitDimension.Current]     = ["None", "nA", "µA", "mA", "A"],
         [UnitDimension.Power]       = ["None", "fW", "pW", "nW", "µW", "mW", "W", "dBm"],
-        [UnitDimension.Length]      = ["None", "nm", "µm", "mm", "cm", "m", "mil"],
+        // "metre" and not "m" — deliberately, and it is the ONE user-visible consequence of
+        // brief-core-length-units §5 q1. The expression engine keeps "m" as the SI prefix MILLI, so
+        // offering it here for a LENGTH would hand the user a value a thousand times too small with
+        // nothing reporting it. "metre" is the engine's own scale-1 length symbol; the two spellings
+        // now agree everywhere rather than meaning different things in two places.
+        [UnitDimension.Length]      = ["None", "nm", "µm", "mm", "cm", "metre", "mil"],
         [UnitDimension.Angle]       = ["None", "deg", "rad"],
     };
 
@@ -209,6 +214,20 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
             IsCommon: true),
+        // wBond — a wirebond design placed as a component. ONE tile, not one per `.wBond` in the
+        // workspace (§5 question 4): a wBond is like SnP — one component type with a file parameter
+        // — rather than like a PDK part, where one tile per part is the point. Surfacing a
+        // workspace's `.wBond` files as separate palette entries is a bigger idea and deserves its
+        // own decision rather than arriving as a side effect of making the component placeable.
+        //
+        // ComponentCategory.Other, per the brief's own instruction not to invent a category for one
+        // component. It is neither a data file (the `.wBond` is a design, not measured data) nor a
+        // lumped element, and a "Packaging" category with a single member reads as an oversight.
+        [SymbolKind.WBond]         = new("wBond", "W",
+            Category: ComponentCategory.Other,
+            SearchTerms: ["wBond", "wirebond", "wire bond", "bondwire", "bond wire", "wire",
+                          "package", "packaging", "inductance", "mutual", "array"],
+            IsCommon: false),
         [SymbolKind.NonlinearC]    = new("NonlinearC",   "C",
             Category: ComponentCategory.Lumped,
             SearchTerms: ["NLC", "NonlinearC", "nonlinear capacitor", "nonlinear", "varactor", "varicap", "CV", "C(V)"],
@@ -394,6 +413,10 @@ public static class ComponentTypeRegistry
         SymbolKind.Mklopf        => "MKLOPF",
         SymbolKind.Diode         => "Diode",
         SymbolKind.VerilogA      => "VerilogA",
+        // Lower-case 'w' on purpose: ComponentModelFactory registers the type as "wBond" and its
+        // own lookup is case-insensitive, but the .cnl a user reads should spell it the way the
+        // document format and the editor both do.
+        SymbolKind.WBond         => "wBond",
         // One engine component per law — deliberately NOT one "FET" with a mode parameter.
         SymbolKind.FetCurtice      => "FET_Curtice",
         SymbolKind.FetCurticeCubic => "FET_CurticeCubic",
@@ -412,7 +435,7 @@ public static class ComponentTypeRegistry
     /// mistyped one fails much later with a worse message.</para>
     /// </summary>
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
-        => kind == SymbolKind.VerilogA
+        => kind is SymbolKind.VerilogA or SymbolKind.WBond
         && parameterName.Equals("File", StringComparison.Ordinal);
 
     /// <summary>
@@ -563,6 +586,28 @@ public static class ComponentTypeRegistry
                     new("File",  "",  "", true,  UnitDimension.None),
                     new("Model", "",  "", false, UnitDimension.None),
                     new("Pins",  "2", "", false, UnitDimension.None),
+                ];
+
+            // wBond: `File` names the .wBond design — everything else about the component (its pin
+            // count, its pin names, its wires, its arrays) is IN that file, so there is nothing
+            // else the placement path can usefully seed.
+            //
+            // `Arrays` is circuitRF's own bookkeeping, not an engine parameter: it records the array
+            // list this instance's wiring was drawn against, so a later REORDER of the referenced
+            // design's arrays can be reported instead of silently re-pointing every wire (§5
+            // question 3 / M2). Hidden by default — it is a record, not a value to read on a page —
+            // and editable in the parameter dialog, which is how a user acknowledges a change after
+            // re-checking the wiring. It is filtered out of the extracted netlist by NetExtractor.
+            //
+            // `Temp` and `GroundPlane` are real engine overrides (ComponentModelFactory reads both)
+            // and are deliberately left BLANK: blank means "use the design's own value", and a
+            // seeded default here would silently override what the .wBond itself states.
+            case SymbolKind.WBond:
+                return [
+                    new("File",        "", "", true,  UnitDimension.None),
+                    new("Arrays",      "", "", false, UnitDimension.None),
+                    new("Temp",        "", "", false, UnitDimension.None),
+                    new("GroundPlane", "", "", false, UnitDimension.None),
                 ];
 
             // ── Semiconductor devices ────────────────────────────────────────
@@ -853,6 +898,8 @@ public static class ComponentTypeRegistry
             // removed with no compatibility alias) — they fall through to Enum.TryParse below,
             // which fails since "FetSdd" no longer exists, so a typed "FET" correctly does not parse.
             case "SDD":    kind = SymbolKind.Sdd;            return true;  // bare SDD → portCount=0 (2-port default)
+            case "WBOND":
+            case "WB":     kind = SymbolKind.WBond;         return true;
             case "X":      kind = SymbolKind.Generic;       return true;
 
             default:

@@ -195,7 +195,7 @@ public static class MicrostripSubstrateInjection
         "nm"  => 10.0,
         "mm"  => 0.1,        // 2.9 mm, not 2.8734 mm
         "cm"  => 0.01,
-        "m"   => 0.0001,
+        "metre" => 0.0001,
         _     => 0.01,
     };
 
@@ -307,7 +307,7 @@ public static class MicrostripSubstrateInjection
         "µm"  => mm * 1_000.0,
         "mm"  => mm,
         "cm"  => mm / 10.0,
-        "m"   => mm / 1000.0,
+        "metre" => mm / 1000.0,
         "mil" => mm / 0.0254,
         _     => mm,
     };

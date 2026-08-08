@@ -60,7 +60,7 @@ public static class CellSymbolResolver
     /// the three-state result.  On cache hit (same primary filename + mtime) returns immediately
     /// without touching the filesystem beyond the existence check.
     /// </summary>
-    public static CellSymbolResolution Resolve(string cellRef, string baseDir)
+    public static CellSymbolResolution Resolve(string cellRef, string? baseDir)
     {
         // 0. A kit part lives in memory, not on disk — checked FIRST, and never falling through to
         //    the path branch. Falling through would resolve "pdk://…" against baseDir, producing a
@@ -72,7 +72,16 @@ public static class CellSymbolResolver
                 ? new CellSymbolResolution { State = CellSymbolState.Resolved, Symbol = part.Symbol }
                 : CellSymbolResolution.NotFoundResult;
 
-        // 1. Resolve path.
+        // 0b. A wBond's symbol is GENERATED from the .wBond file it names — checked here for exactly
+        //     the same reason, and resolved against the WORKSPACE ROOT rather than baseDir (R-wbb2-3).
+        //     See WBondSymbolProvider for why this is a fourth mechanism rather than a .csym on disk.
+        if (WBondSymbolProvider.IsWBondRef(cellRef))
+            return WBondSymbolProvider.Resolve(cellRef, baseDir);
+
+        // 1. Resolve path. A cell reference is relative to the schematic's own directory, so an
+        //    unsaved schematic has nothing to resolve it against — NotFound, not a crash.
+        if (baseDir is null) return CellSymbolResolution.NotFoundResult;
+
         string cellAbsDir;
         try
         {
@@ -159,6 +168,11 @@ public static class CellSymbolResolver
     {
         if (PdkKitRegistry.IsKitRef(cellRef))
             return PdkKitRegistry.Find(cellRef)?.Ccell;
+
+        // A wBond is a built-in primitive whose SYMBOL happens to come from a file; it has no cell
+        // and therefore no published parameter interface. Answered here rather than left to fall
+        // through, so the path branch is never handed a reference that is not a path.
+        if (WBondSymbolProvider.IsWBondRef(cellRef)) return null;
 
         try
         {

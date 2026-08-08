@@ -8,7 +8,9 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Ui.Layout.Assembly;
 using CircuitRF.Ui.Layout.Drc;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Layout;
 
@@ -27,6 +29,37 @@ public sealed partial class LayoutEditorViewModel
 
     /// <summary>One row per violation, waived ones included and marked (§9A.1).</summary>
     public ObservableCollection<DrcViolationRow> DrcViolations { get; } = [];
+
+    /// <summary>
+    /// The wBond design whose wires ride over this layout, when there is one — installed by the wBond
+    /// editor's document, never persisted in the `.clay`.
+    ///
+    /// <para>Session state, like <see cref="ShowDrcMarkers"/>: which wires are over a layout is a
+    /// property of what is open, not of the artwork. A layout with no wires checks exactly as it did
+    /// before WB-D, by construction — the wire half of the run is reached only when this is non-null.</para>
+    /// </summary>
+    [ObservableProperty] private WBondDesign? _wireDesign;
+
+    /// <summary>The resolved `.wasm` assembly rules, or null. Null is not an error (§M1).</summary>
+    [ObservableProperty] private WasmResolution? _assemblyRules;
+
+    /// <summary>Which assembly rule set the last check ran against, named rather than assumed — the
+    /// same argument as <see cref="DrcTechnologyText"/>, applied to the second rule file.</summary>
+    public string DrcAssemblyText => WireDesign is null
+        ? ""
+        : AssemblyRules?.Describe() ?? "No assembly rules.";
+
+    partial void OnWireDesignChanged(WBondDesign? value)
+    {
+        OnPropertyChanged(nameof(DrcAssemblyText));
+        OnPropertyChanged(nameof(HasWireDesign));
+    }
+
+    partial void OnAssemblyRulesChanged(WasmResolution? value) =>
+        OnPropertyChanged(nameof(DrcAssemblyText));
+
+    /// <summary>True when this layout has wires riding over it — drives the panel's wire column.</summary>
+    public bool HasWireDesign => WireDesign is not null;
 
     [ObservableProperty] private DrcViolationRow? _selectedDrcViolation;
 
@@ -111,10 +144,31 @@ public sealed partial class LayoutEditorViewModel
                             "technology and its layers have not been mapped onto this one, so it was not " +
                             "checked. Flatten it (or place it once) to resolve the mapping first.");
 
-        var result = DrcEngine.Run(flat.Shapes, Technology, Model.DrcWaivers);
+        // The assembly half rides in the SAME run, so a wire violation lands in the same panel, sorts
+        // into the same list and waives through the same store as a die-side one. Null when there are
+        // no wires, which is what keeps a plain layout's result byte-identical to before WB-D.
+        WBondCheckContext? wires = WireDesign is { } design
+            ? new WBondCheckContext(
+                design,
+                AssemblyRules?.Rules,
+                Technology,
+                Model.DbuPerMicron,
+                RegionOf: null,                       // supplied by DrcEngine from its own evaluator
+                LayoutExtent: ExtentOf(flat.Shapes))
+            : null;
+
+        var result = DrcEngine.Run(flat.Shapes, Technology, Model.DrcWaivers, settings: null, wires);
 
         DrcResult = result with { Diagnostics = [.. diagnostics, .. result.Diagnostics] };
         return DrcResult;
+    }
+
+    /// <summary>The artwork's overall extent — what <c>dist_to_edge</c> measures against.</summary>
+    private static Bbox ExtentOf(IReadOnlyList<LayoutShape> shapes)
+    {
+        var box = Bbox.Empty;
+        foreach (var s in shapes) box = box.Union(LayoutGeometry.BboxOf(s));
+        return box;
     }
 
     /// <summary>Waives (or un-waives) one violation. Marks the document dirty so the decision is
@@ -206,10 +260,43 @@ public sealed partial class DrcViolationRow : ObservableObject
 
     public string RuleText => Violation.RuleName;
 
+    /// <summary>True for a violation about a bond wire rather than about artwork.</summary>
+    public bool IsWireViolation => Violation.WireGroups.Count > 0;
+
+    /// <summary>
+    /// Which `.wasm` section the rule came from — "Machine", "Process" or "Material" (WB32). Empty
+    /// for a die-side rule and for the structural wire-geometry checks, which belong to no house.
+    /// </summary>
+    public string SectionText => Violation.Section?.ToString() ?? "";
+
+    public bool HasSection => Violation.Section is not null;
+
+    /// <summary>
+    /// The note that stops a wire marker reading as wrong.
+    ///
+    /// <para><b>A 3D clearance drawn as a 2D marker will otherwise be misread, and predictably so.</b>
+    /// Two wires that look far apart in plan can be a diameter apart in space, and two that cross in
+    /// plan can clear each other by twenty mil — so a user looking at the marker and at the artwork
+    /// will see a violation "in the wrong place" unless the panel says the marker is a projection.</para>
+    /// </summary>
+    public string ProjectionNote => IsWireViolation
+        ? "Marker is a projection into the layout plane — the clearance is measured in 3D."
+        : "";
+
     public string DetailText
     {
         get
         {
+            // A wire violation carries its own measured-vs-limit text, in the unit the rule was
+            // written in (mil) — see DrcWireCheck.FormatMil.
+            if (Violation.MeasuredText is { Length: > 0 } measured)
+            {
+                string groups = Violation.WireGroups.Count > 0
+                    ? $"  ({string.Join(" ↔ ", Violation.WireGroups)})"
+                    : "";
+                return $"{measured}{groups}";
+            }
+
             long   dbu    = Violation.RequiredDbu;
             var    model  = _owner.Model;
             string value  = $"{LayoutUnits.Format(dbu, model.DisplayUnit, model.DbuPerMicron)} " +

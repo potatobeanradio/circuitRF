@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  wBond's application icon.
+
+  DELIBERATELY NOT circuitRF's and not harmonicaRF's, for the reason R-h8-9 gives: macOS will not
+  tolerate two applications sharing an identifier, and two applications sharing an ICON is its own
+  kind of wrong — a user picking between them in a Dock has only the picture to go on.
+
+  It shares the family (the same rounded square, the same accent pair) so the three read as one
+  product, and differs in the one thing this tool is about: circuitRF's mark is the nested arcs of a
+  Smith chart, harmonicaRF's is a harmonic comb on a Smith rim, and wBond's is what a bond wire
+  actually looks like from the side — a loop rising off two pads over a ground plane. The plate is
+  cooler than harmonicaRF's so the two are distinguishable at a glance rather than only side by side.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect x="0" y="0" width="512" height="512" rx="114" fill="#101C2E"/>
+
+  <g transform="translate(256,300)">
+
+    <!-- The ground plane. It is the RETURN PATH, which is the one thing a bondwire inductance is
+         meaningless without (WB20) — so it is drawn, not implied. -->
+    <line x1="-168" y1="86" x2="168" y2="86" stroke="#FFFFFF" stroke-width="14"
+          stroke-linecap="round" opacity="0.30"/>
+    <g stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" opacity="0.18">
+      <line x1="-132" y1="86" x2="-158" y2="118"/>
+      <line x1="-66"  y1="86" x2="-92"  y2="118"/>
+      <line x1="0"    y1="86" x2="-26"  y2="118"/>
+      <line x1="66"   y1="86" x2="40"   y2="118"/>
+      <line x1="132"  y1="86" x2="106"  y2="118"/>
+    </g>
+
+    <!-- The two bond pads. -->
+    <rect x="-172" y="18" width="80" height="26" rx="7" fill="#22D3EE" opacity="0.55"/>
+    <rect x="92"   y="18" width="80" height="26" rx="7" fill="#22D3EE" opacity="0.55"/>
+
+    <!-- The array: two coupled wires behind, one in front. The pair behind is why the off-diagonals
+         of the exported network exist at all. -->
+    <g fill="none" stroke-linecap="round">
+      <path d="M -140 18 C -110 -104, 110 -104, 140 18" stroke="#22D3EE" stroke-width="12" opacity="0.38"/>
+      <path d="M -128 22 C -98 -86, 98 -86, 128 22"     stroke="#22D3EE" stroke-width="12" opacity="0.60"/>
+      <path d="M -132 20 C -102 -150, 102 -150, 132 20" stroke="#FF6A3D" stroke-width="20"/>
+    </g>
+
+    <!-- The two feet, where the loop height is measured from (WB §3.0: max z minus min z). -->
+    <circle cx="-132" cy="20" r="12" fill="#FF6A3D"/>
+    <circle cx="132"  cy="20" r="12" fill="#FF6A3D"/>
+  </g>
+</svg>

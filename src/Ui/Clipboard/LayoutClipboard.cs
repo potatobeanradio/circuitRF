@@ -10,6 +10,7 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Theming;
 using SkiaSharp;
+using CircuitRF.Ui.WBond;
 
 namespace CircuitRF.Ui.Clipboard;
 
@@ -108,7 +109,13 @@ public static class LayoutClipboard
         try { text = await clipboard.TryGetTextAsync(); }
         catch { return null; }
 
-        return LayoutFragment.TryDeserialize(text, out var payload) ? payload : null;
+        // "Paste whatever is on the clipboard": a copy made in the wBond editor from a MIXED
+        // selection arrives wrapped, and the layout half has to come back out of it here or a paste
+        // into this editor silently does nothing. The Layout Editor cannot hold wires, so the wire
+        // half is simply not asked for — each editor takes the part it understands.
+        var (_, layoutJson) = WBondMixedClipboard.Unwrap(text);
+
+        return LayoutFragment.TryDeserialize(layoutJson, out var payload) ? payload : null;
     }
 
     // ── Private rendering helpers ────────────────────────────────────────────

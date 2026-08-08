@@ -1,17 +1,34 @@
 #!/bin/sh
 # circuitRF post-install script (Debian/Ubuntu)
+#
+# ONE package, THREE applications. circuitRF, harmonicaRF and wBond are the same assembly built three
+# times (WB40 — the assembly name must stay CircuitRF.Ui), so every publish produces a binary called
+# `CircuitRF.Ui`. The packaging step MUST rename them apart into /usr/bin/circuitrf,
+# /usr/bin/harmonicarf and /usr/bin/wbond, which is what the three .desktop files' Exec= lines assume.
+# On macOS the .app bundle name does this job; on Linux nothing does it for you.
 set -e
 
-# Register MIME type
+# Register MIME types. All three are defined in one file, because circuitRF owns the formats — the
+# same split its Info.plist makes by EXPORTING every UTI while the siblings only import theirs.
 xdg-mime install /usr/share/mime/packages/circuitrf-mime.xml || true
 update-mime-database /usr/share/mime 2>/dev/null || true
 
-# Register desktop entry
-xdg-desktop-menu install /usr/share/applications/circuitrf.desktop || true
+# Register desktop entries — one per application, or only circuitRF appears in the menu and only
+# .crfw opens by double-click.
+for APP in circuitrf harmonicarf wbond; do
+    if [ -f "/usr/share/applications/${APP}.desktop" ]; then
+        xdg-desktop-menu install "/usr/share/applications/${APP}.desktop" || true
+    fi
+done
 update-desktop-database /usr/share/applications 2>/dev/null || true
 
-# Register icon
-xdg-icon-resource install --novendor --size 256 /usr/share/pixmaps/circuitrf.png || true
+# Register icons. Each application has its own, for R-h8-9's reason: two applications sharing an icon
+# leaves a user picking between them with only the picture to go on.
+for APP in circuitrf harmonicarf wbond; do
+    if [ -f "/usr/share/pixmaps/${APP}.png" ]; then
+        xdg-icon-resource install --novendor --size 256 "/usr/share/pixmaps/${APP}.png" || true
+    fi
+done
 gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
 
 #DEBHELPER#

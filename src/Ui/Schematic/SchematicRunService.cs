@@ -101,6 +101,28 @@ public static class SchematicRunService
             return new RunResult(RunStatus.EngineError, $"Elaboration failed: {ex.Message}");
         }
 
+        // ── 3b. wBond coupling audit (WB30 / WB30a, R-wbb2-4) ──────────────────
+        //
+        // Coupling is computed only WITHIN a wBond, so two components mean the mutual inductance
+        // between their wires is silently zero. With CouplingDomain deferred to v2 this audit is the
+        // whole of the v1 safety mechanism, and its only remedy is manual — which is exactly why it
+        // has to fire from the run rather than sit as a library anyone could forget to call.
+        //
+        // WB-B built and tested the audit, but NOTHING in the product called it: it was reachable
+        // only from a hand-constructed netlist in a test. That was harmless while a wBond could not
+        // be placed at all; placing a SECOND one is the moment it becomes reachable by an ordinary
+        // user, which is this phase. It reports and never refuses — two wBonds that genuinely do not
+        // interact are a legitimate design.
+        try
+        {
+            CircuitRF.Core.Devices.WBondCouplingAudit.AuditAndWarn(nl);
+        }
+        catch
+        {
+            // An audit is advisory. It must never be the reason a run that would otherwise have
+            // produced results does not.
+        }
+
         // ── 4. Dispatch each analysis ──────────────────────────────────────────
         var results   = new List<AnalysisResult>();
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

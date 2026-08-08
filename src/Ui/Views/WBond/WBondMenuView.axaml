@@ -1,0 +1,145 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:CircuitRF.Ui.WBond"
+             x:Class="CircuitRF.Ui.Views.WBond.WBondMenuView"
+             x:DataType="vm:WBondMenuViewModel"
+             x:CompileBindings="True">
+
+  <!--
+    wbond.md §11 / brief-wbond-wbe M2 — the standalone binary's own menu set.
+
+    TWO SURFACES, HAND-MIRRORED, exactly as WorkspaceWindow.axaml and HarmonicaMenuView already
+    maintain their own bars:
+      (1) the macOS NativeMenu, attached below via NativeMenu.Menu on THIS control — which is what
+          gives its bindings a DataContext to resolve against. The code-behind hands it to the
+          hosting Window, because R-wbe-4's fact is that NativeMenu.Menu is a per-AvaloniaObject
+          attached property and Avalonia does NOT fall back to an application-scope menu for a key
+          window that has none.
+      (2) the in-window Menu, which is this control's content, for Windows and Linux.
+
+    Anything added here must go on BOTH, or it exists on one platform only.
+
+    There is deliberately no Simulate menu and no project tree: this binary has no workspace to
+    simulate against, which is the whole point of it.
+  -->
+
+  <NativeMenu.Menu>
+    <NativeMenu>
+
+      <NativeMenuItem Header="File">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="New"          Command="{Binding NewDocumentCommand}"/>
+            <NativeMenuItem Header="Open .wBond…" Command="{Binding OpenDocumentCommand}"/>
+            <NativeMenuItem Header="Save"         Command="{Binding SaveDocumentCommand}"   Gesture="Meta+S"/>
+            <NativeMenuItem Header="Save As…"     Command="{Binding SaveDocumentAsCommand}" Gesture="Meta+Shift+S"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Import">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="Wirebond Table…" Command="{Binding ImportWireTableCommand}"/>
+                  <NativeMenuItem Header="Wires from DXF…" Command="{Binding ImportWiresDxfCommand}"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItem Header="Export">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="DXF…"        Command="{Binding ExportDxfCommand}"/>
+                  <NativeMenuItem Header="Touchstone…" Command="{Binding ExportTouchstoneCommand}"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Close Window" Command="{Binding CloseWindowCommand}" Gesture="Meta+W"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <NativeMenuItem Header="Edit">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Undo" Command="{Binding UndoCommand}" Gesture="Meta+Z"/>
+            <NativeMenuItem Header="Redo" Command="{Binding RedoCommand}" Gesture="Meta+Shift+Z"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Copy"             Command="{Binding CopyCommand}"        Gesture="Meta+C"/>
+            <NativeMenuItem Header="Copy as Graphic"  Command="{Binding CopyGraphicCommand}" Gesture="Meta+Shift+C"/>
+            <NativeMenuItem Header="Paste"            Command="{Binding PasteCommand}"       Gesture="Meta+V"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Select All Wires" Command="{Binding SelectAllWiresCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Preferences…"     Command="{Binding PreferencesCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <NativeMenuItem Header="Design">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Check Assembly Rules" Command="{Binding CheckDesignRulesCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <NativeMenuItem Header="Help">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="wBond Documentation" Command="{Binding HelpCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+    </NativeMenu>
+  </NativeMenu.Menu>
+
+  <!-- ── Surface 2: the in-window Menu, hand-mirrored with the NativeMenu above ──
+       Hidden on macOS, where the native bar above already carries it — the same
+       IsVisible="{OnPlatform True, macOS=False}" rule WorkspaceWindow's own in-window Menu uses. -->
+  <Menu x:Name="InWindowMenu" IsVisible="{OnPlatform True, macOS=False}">
+
+    <MenuItem Header="_File" Padding="8,4">
+      <MenuItem Header="_New"          Command="{Binding NewDocumentCommand}"    InputGesture="Ctrl+N"/>
+      <MenuItem Header="_Open .wBond…" Command="{Binding OpenDocumentCommand}"   InputGesture="Ctrl+O"/>
+      <MenuItem Header="_Save"         Command="{Binding SaveDocumentCommand}"   InputGesture="Ctrl+S"/>
+      <MenuItem Header="Save _As…"     Command="{Binding SaveDocumentAsCommand}" InputGesture="Ctrl+Shift+S"/>
+      <Separator/>
+      <MenuItem Header="_Import">
+        <MenuItem Header="_Wirebond Table…" Command="{Binding ImportWireTableCommand}"
+                  ToolTip.Tip="Read a packaging flow's own bond list (array, x1, y1, z1, x2, y2, z2)."/>
+        <MenuItem Header="Wires from _DXF…" Command="{Binding ImportWiresDxfCommand}"
+                  ToolTip.Tip="Read only the 3D polylines on Wires_* layers into this design."/>
+      </MenuItem>
+      <MenuItem Header="_Export">
+        <MenuItem Header="_DXF…"        Command="{Binding ExportDxfCommand}"
+                  ToolTip.Tip="The assembly-house bridge: the reference layout AND the wires."/>
+        <MenuItem Header="_Touchstone…" Command="{Binding ExportTouchstoneCommand}"
+                  ToolTip.Tip="Publish the array network — one port per wire array."/>
+      </MenuItem>
+      <Separator/>
+      <MenuItem Header="_Close Window" Command="{Binding CloseWindowCommand}" InputGesture="Ctrl+W"/>
+    </MenuItem>
+
+    <MenuItem Header="_Edit" Padding="8,4">
+      <MenuItem Header="_Undo" Command="{Binding UndoCommand}" InputGesture="Ctrl+Z"/>
+      <MenuItem Header="_Redo" Command="{Binding RedoCommand}" InputGesture="Ctrl+Shift+Z"/>
+      <Separator/>
+      <MenuItem Header="_Copy"            Command="{Binding CopyCommand}"        InputGesture="Ctrl+C"/>
+      <MenuItem Header="Copy as _Graphic" Command="{Binding CopyGraphicCommand}" InputGesture="Ctrl+Shift+C"/>
+      <MenuItem Header="_Paste"           Command="{Binding PasteCommand}"       InputGesture="Ctrl+V"/>
+      <Separator/>
+      <MenuItem Header="Select _All Wires" Command="{Binding SelectAllWiresCommand}"/>
+      <Separator/>
+      <MenuItem Header="P_references…"    Command="{Binding PreferencesCommand}"/>
+    </MenuItem>
+
+    <MenuItem Header="_Design" Padding="8,4">
+      <MenuItem Header="Check _Assembly Rules" Command="{Binding CheckDesignRulesCommand}"
+                ToolTip.Tip="Check the wires against this design's own .wasm rule file."/>
+    </MenuItem>
+
+    <MenuItem Header="_Help" Padding="8,4">
+      <MenuItem Header="wBond _Documentation" Command="{Binding HelpCommand}"/>
+    </MenuItem>
+
+  </Menu>
+</UserControl>
