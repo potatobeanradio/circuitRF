@@ -1,5 +1,33 @@
 # Engine — local conventions
 
+## `RunControl` — cancellation and progress, at a POINT BOUNDARY (2026-08-09)
+
+`src/Engine/RunControl.cs` is the one object an engine takes for both concerns, so a caller wires
+them once instead of threading two parameters through every signature. Every entry point that gained
+it takes it as a trailing optional argument defaulting to null, so **a null control reproduces the
+pre-cancellation behaviour exactly** and no existing caller changed.
+
+**Where each engine checks, and why there is no finer granularity.** `ParametricSweepEngine` per
+sweep point, `SParameterEngine` per frequency (both the wave and legacy paths),
+`LoadpullEngine` per grid termination, `LoadpullPursuitEngine` per cache-miss query. **None of them
+checks inside a factorization, a back-substitution or a Newton loop** — that is precisely where this
+engine cannot afford a check, and it is what keeps cancellation cheap enough to be always on. The
+cost is that Stop is answered within one point rather than instantly: a 20,301-point sweep stops in
+the time one point takes, while a lone HB solve runs to completion. `HbEngine` and
+`NonlinearDcEngine` therefore take no control at all — a single solve has no boundary to offer.
+
+**Cancelling abandons the run; it does not produce a partial result.** The per-point DataSets are
+stacked along an axis of known length, so there is no shape a half-finished sweep could be published
+in. Engines throw `OperationCanceledException`; the caller catches it and publishes nothing.
+
+**Progress counts LEAF work units, and only the innermost countable loop counts them.** A sweep hands
+a non-sweep inner analysis a `Child()` — same token, no progress sink — so an inner s-parameter's own
+frequency loop cannot also tick and double the numerator; a nested PARAMETRIC sweep is handed the
+full control so the innermost sweep is the one counting. Reports are throttled (default ~25/s, the
+final tick of a known total always delivered), because every delivered observation is a post onto the
+caller's UI thread and unthrottled reporting costs more than the arithmetic it reports on.
+
+
 ## Batched external-device evaluation in the HB inner loop (brief-harmonicarf-h0-h3 M1, 2026-08-06)
 
 `HbNewton` now gathers a device's whole time grid and asks for it in ONE call when the model says an

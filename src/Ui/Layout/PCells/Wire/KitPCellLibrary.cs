@@ -200,8 +200,13 @@ public static class KitPCellLibrary
     /// <param name="problem">Non-null when nothing could be written. Never thrown: a declaration that
     /// could not be written costs the kit's layout artwork, not the import.</param>
     /// <returns>The folder holding the declaration, or null when it could not be written.</returns>
+    /// <param name="kitRoot">
+    /// The kit's own folder, so declared paths can be anchored on it (<c>${kit}/…</c>) instead of
+    /// written out absolute. Null keeps the pre-anchor behaviour — absolute paths, nothing to repoint.
+    /// </param>
     public static string? EnsureDeclared(
-        string workspaceRootDir, string kitName, KitPCellPackage pkg, out string? problem, out bool created)
+        string workspaceRootDir, string kitName, KitPCellPackage pkg, out string? problem, out bool created,
+        string? kitRoot = null)
     {
         problem = null;
         created = false;
@@ -218,15 +223,28 @@ public static class KitPCellLibrary
 
         try
         {
-            if (File.Exists(manifestPath)) return dir;   // the user's, now — leave it alone
+            if (File.Exists(manifestPath))
+            {
+                // The user's, now — never overwritten. The ONE thing that is re-pointed is where the
+                // kit is, and only when it has actually moved: that is a fact about the machine, not
+                // about the declaration, and leaving it stale is what made repairing a kit reference
+                // fix the parts and silently not the artwork.
+                if (kitRoot is { Length: > 0 })
+                    PCellGeneratorManifest.TryRepointKitRoot(dir, kitRoot, out _);
+                return dir;
+            }
 
             Directory.CreateDirectory(dir);
 
+            // Paths are anchored on the KIT rather than written out absolute. The manifest lives in
+            // the workspace and the kit usually does not, so an unanchored path is a second copy of
+            // what `.cws` already records — and the two then drift the moment either moves.
             var manifest = new PCellGeneratorManifest
             {
                 Entry      = EntryScriptName,
-                PythonPath = [StoreRef(pkg.PythonPathRoot, dir)],
-                Sources    = [StoreRef(Path.Combine(pkg.PythonPathRoot, pkg.PackageName.Replace('.', Path.DirectorySeparatorChar)), dir)],
+                KitRoot    = kitRoot is { Length: > 0 } ? PCellGeneratorManifest.StoreRef(kitRoot, dir) : null,
+                PythonPath = [KitRef(pkg.PythonPathRoot, kitRoot, dir)],
+                Sources    = [KitRef(Path.Combine(pkg.PythonPathRoot, pkg.PackageName.Replace('.', Path.DirectorySeparatorChar)), kitRoot, dir)],
             };
 
             File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, WriteOpts));
@@ -247,6 +265,26 @@ public static class KitPCellLibrary
     /// reason — a relative reference survives the tree being moved, and nothing makes a reference to
     /// somewhere else portable, so storing it plainly is the honest option.
     /// </summary>
+    /// <summary>
+    /// A path inside the kit, written as <c>${kit}/…</c> so it follows the kit wherever it goes.
+    /// Falls back to the ordinary manifest-relative/absolute form when the target is not under the
+    /// kit (or no kit root is known) — a token that cannot be anchored would be worse than a plain path.
+    /// </summary>
+    private static string KitRef(string target, string? kitRoot, string manifestDir)
+    {
+        if (kitRoot is { Length: > 0 })
+        {
+            try
+            {
+                string rel = Path.GetRelativePath(kitRoot, target);
+                if (!rel.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(rel))
+                    return PCellGeneratorManifest.KitToken + "/" + rel.Replace(Path.DirectorySeparatorChar, '/');
+            }
+            catch (ArgumentException) { /* fall through */ }
+        }
+        return StoreRef(target, manifestDir);
+    }
+
     private static string StoreRef(string target, string manifestDir)
     {
         try

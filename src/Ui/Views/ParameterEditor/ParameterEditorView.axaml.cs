@@ -26,6 +26,7 @@ public partial class ParameterEditorView : UserControl
         {
             vm.PickSnpFileAsync       = PickSnpFileAsync;
             vm.PickModelFileAsync     = PickModelFileAsync;
+            vm.PickModelParameterAsync = PickModelParameterAsync;
             vm.RevealFileAsync        = RevealFileAsync;
             vm.OpenCvEditorDialogAsync = OpenCvEditorDialogAsync;
         }
@@ -222,5 +223,22 @@ public partial class ParameterEditorView : UserControl
     {
         if (sender is Avalonia.Controls.Control { DataContext: ViewModels.ParameterRowViewModel row })
             await row.BrowseForFileAsync();
+    }
+
+    /// <summary>Shows the model's own declared parameters and returns the chosen one, or null.</summary>
+    private async Task<CircuitRF.Ui.Schematic.VerilogAParameterInfo?> PickModelParameterAsync(
+        string modelName,
+        IReadOnlyList<CircuitRF.Ui.Schematic.VerilogAParameterInfo> declared,
+        IReadOnlyCollection<string> alreadyPresent)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return null;
+        var dlg = new ModelParameterPickerDialog(modelName, declared, alreadyPresent);
+        return await dlg.ShowDialog<CircuitRF.Ui.Schematic.VerilogAParameterInfo?>(owner);
+    }
+
+    private void OnParamRemoveClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { DataContext: ViewModels.ParameterRowViewModel row })
+            row.RemoveSelf();
     }
 }

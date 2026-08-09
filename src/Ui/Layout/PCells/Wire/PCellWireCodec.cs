@@ -215,6 +215,8 @@ public static class PCellWireCodec
                     CrossMin       = h.Cross?.Min,
                     CrossMax       = h.Cross?.Max,
                     KeepAnchorFixed = h.KeepAnchorFixed,
+                    Quantity        = PCellWireHandleQuantity.Encode(h.Quantity),
+                    CrossQuantity   = h.Cross is null ? null : PCellWireHandleQuantity.Encode(h.Cross.Quantity),
                 });
         }
 
@@ -512,11 +514,13 @@ public static class PCellWireCodec
             }
 
             var cross = h.CrossParameter is { Length: > 0 } cp
-                ? new PCellHandleCrossAxis(cp, h.CrossLabel, h.CrossMin, h.CrossMax)
+                ? new PCellHandleCrossAxis(cp, h.CrossLabel, h.CrossMin, h.CrossMax,
+                                           PCellWireHandleQuantity.Decode(h.CrossQuantity))
                 : null;
             var c = Read(h.Span, payload, 4, "handle");
             list.Add(new PCellHandle(h.Parameter, c[0], c[1], c[2], c[3], h.AxisDeg, kind,
-                                     h.Label, h.Min, h.Max, cross, h.KeepAnchorFixed));
+                                     h.Label, h.Min, h.Max, cross, h.KeepAnchorFixed,
+                                     PCellWireHandleQuantity.Decode(h.Quantity)));
         }
 
         // Once per distinct kind, not once per handle — a cell declaring twelve grips of one unknown

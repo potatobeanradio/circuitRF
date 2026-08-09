@@ -134,6 +134,25 @@ public static class CellHierarchy
         return ArrayExpand(transformed, inst);
     }
 
+    /// <summary>
+    /// <see cref="InstanceBbox"/> against a caller-supplied cell view instead of the one on disk —
+    /// for a live PCell grip drag, whose regenerated artwork exists only in memory until the gesture
+    /// commits. Everything downstream of the resolve (recursive nested-instance union, the placement
+    /// transform, array expansion) is the SAME code, so a preview bbox and a committed one can never
+    /// disagree about anything except the geometry they were given.
+    /// </summary>
+    public static Bbox InstanceBboxOfView(LayoutView view, LayoutInstance inst, string baseDir)
+    {
+        var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var step = ResolveForWalk(inst, baseDir, visiting, 0);
+        string viewBaseDir = step.State == InstanceResolutionState.Resolved
+            ? LayoutBaseDirOf(step.ResolvedCellDir!) : baseDir;
+
+        var localBbox = CellBboxRecursive(view, viewBaseDir, visiting, 1);
+        if (localBbox.IsEmpty) return ArrayExpand(PlaceholderBbox(inst), inst);
+        return ArrayExpand(TransformBboxToParent(localBbox, inst), inst);
+    }
+
     /// <summary>Own shapes' bbox, unioned with every instance's (recursive) transformed bbox — the
     /// "effective bbox of a resolved cell" used both at the top level (via <see cref="InstanceBbox"/>)
     /// and recursively for nested instances.</summary>

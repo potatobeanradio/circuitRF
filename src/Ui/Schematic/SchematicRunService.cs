@@ -16,7 +16,7 @@ namespace CircuitRF.Ui.Schematic;
 /// <summary>
 /// Outcome of a <see cref="SchematicRunService.RunNetlist"/> call.
 /// </summary>
-public enum RunStatus { Success, NoAnalysis, EngineError }
+public enum RunStatus { Success, NoAnalysis, EngineError, Cancelled }
 
 /// <summary>
 /// A named DataSet produced by one analysis in a run.
@@ -56,6 +56,62 @@ public sealed class RunResult(
 }
 
 /// <summary>
+/// One analysis the run is going to dispatch, worked out by <see cref="SchematicRunService.Prepare"/>
+/// before anything runs.
+/// <para/>
+/// <see cref="SelfTicks"/> distinguishes an engine that reports its OWN progress (a sweep per point,
+/// an s-parameter per frequency, a loadpull per grid termination) from one that does not (a single HB
+/// or DC solve, a pursuit search whose query count is decided by the search). The executor ticks
+/// <see cref="WorkUnits"/> itself for the latter, so a run's total is reached either way.
+/// </summary>
+internal sealed record PlannedAnalysis(
+    Analysis? Typed,
+    string?   RawLine,
+    string    ResultName,
+    long      WorkUnits,
+    bool      SelfTicks);
+
+/// <summary>
+/// What a run WILL do, worked out before any of it runs: the netlist read, elaborated once, and every
+/// analysis that is going to be dispatched described in run order.
+/// <para/>
+/// <b>This exists so the user can read the plan and stop a wrong one before paying for it.</b> A
+/// nested sweep can be tens of thousands of points and tens of minutes; reporting "11 pt(s) over VGS x
+/// 101 pt(s) over VDS = 1,111 total pt(s)" only after those points have all been simulated is a
+/// receipt, not a decision the user can act on.
+/// <para/>
+/// A failed plan (unreadable netlist, failed elaboration, nothing to run) carries its own status and
+/// message; <see cref="SchematicRunService.Execute"/> passes it straight through, so a caller reports
+/// exactly one failure whichever half produced it.
+/// </summary>
+public sealed class RunPlan
+{
+    public RunStatus Status        { get; }
+    public string    StatusMessage { get; }
+
+    /// <summary>One line per analysis that will run, in run order — the pre-flight description.</summary>
+    public IReadOnlyList<string> Lines { get; }
+
+    /// <summary>Total leaf work units across every planned analysis. 0 = nothing countable.</summary>
+    public long TotalWorkUnits { get; }
+
+    internal Library?          Lib           { get; init; }
+    internal TestBench?        Tb            { get; init; }
+    internal ElaboratedNetlist? Nl           { get; init; }
+    internal string?           BaseDirectory { get; init; }
+    internal IReadOnlyList<PlannedAnalysis> Analyses { get; init; } = [];
+
+    internal RunPlan(RunStatus status, string message,
+                     IReadOnlyList<string>? lines = null, long totalWorkUnits = 0)
+    {
+        Status         = status;
+        StatusMessage  = message;
+        Lines          = lines ?? [];
+        TotalWorkUnits = totalWorkUnits;
+    }
+}
+
+/// <summary>
 /// Headless run service: reads a netlist.cnl → Elaborator → engine(s) → DataSet(s).
 /// Mirrors the CLI engine chain exactly:
 ///   CnlReader.ReadFile → new Elaborator(lib).Elaborate(tb) → engine → DataSet
@@ -65,11 +121,13 @@ public sealed class RunResult(
 public static class SchematicRunService
 {
     /// <summary>
-    /// Runs all analyses declared in the netlist at <paramref name="netlistPath"/>.
-    /// Returns Success with DataSets, NoAnalysis when nothing is declared,
-    /// or EngineError when an engine exception occurs.  Never throws.
+    /// Reads and elaborates the netlist and describes every analysis that will be dispatched, WITHOUT
+    /// running any of them. Cheap relative to the run (one parse plus one elaboration, against a sweep
+    /// that re-elaborates per point), and the elaborated netlist is handed to
+    /// <see cref="Execute"/> rather than being thrown away — so splitting the run in two costs nothing.
+    /// Never throws.
     /// </summary>
-    public static RunResult RunNetlist(string netlistPath, string? baseDirectory = null)
+    public static RunPlan Prepare(string netlistPath, string? baseDirectory = null)
     {
         // ── 1. Read ────────────────────────────────────────────────────────────
         Library  lib;
@@ -80,14 +138,14 @@ public static class SchematicRunService
         }
         catch (Exception ex)
         {
-            return new RunResult(RunStatus.EngineError, $"Netlist read failed: {ex.Message}");
+            return new RunPlan(RunStatus.EngineError, $"Netlist read failed: {ex.Message}");
         }
 
         // ── 2. Any analysis at all? ────────────────────────────────────────────
         bool hasTyped      = tb.Analyses.Count > 0;
         bool hasRawSparam  = HasRawSparamDirective(tb);
         if (!hasTyped && !hasRawSparam)
-            return new RunResult(RunStatus.NoAnalysis,
+            return new RunPlan(RunStatus.NoAnalysis,
                 "No analysis defined — add one to run.");
 
         // ── 3. Elaborate ───────────────────────────────────────────────────────
@@ -98,7 +156,7 @@ public static class SchematicRunService
         }
         catch (Exception ex)
         {
-            return new RunResult(RunStatus.EngineError, $"Elaboration failed: {ex.Message}");
+            return new RunPlan(RunStatus.EngineError, $"Elaboration failed: {ex.Message}");
         }
 
         // ── 3b. wBond coupling audit (WB30 / WB30a, R-wbb2-4) ──────────────────
@@ -123,11 +181,10 @@ public static class SchematicRunService
             // produced results does not.
         }
 
-        // ── 4. Dispatch each analysis ──────────────────────────────────────────
-        var results   = new List<AnalysisResult>();
+        // ── 4. Plan each analysis ──────────────────────────────────────────────
+        var planned   = new List<PlannedAnalysis>();
+        var lines     = new List<string>();
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var notes     = new List<string>();
-        var errors    = new List<string>();
 
         // A chain "root" is an analysis that no sweep references as its inner (the outermost level).
         // We dispatch exactly one effective top per chain; everything below runs via the engine.
@@ -145,36 +202,112 @@ public static class SchematicRunService
             if (top is null || !top.Enabled) continue;               // whole chain disabled
             if (!AnalysisChain.IsChainRunnable(top, tb)) continue;   // base analysis disabled → nothing runs
 
+            var resultName = DeduplicateName(
+                top is ParametricSweepAnalysis psa ? RootInnerName(psa, tb) : top.Name, usedNames);
+
+            // Describing resolves expressions, so it can fail the same way running would. That is not
+            // this method's error to report: plan the analysis anyway with a neutral line, and let
+            // Execute hit the same failure and report it per-analysis exactly as it always has.
+            string desc; long units; bool selfTicks;
             try
             {
-                var ds = RunTypedAnalysis(top, nl, tb, lib, notes, baseDirectory);
-                if (ds is not null)
-                {
-                    var resultName = top is ParametricSweepAnalysis psa
-                        ? RootInnerName(psa, tb)
-                        : top.Name;
-                    results.Add(new AnalysisResult(DeduplicateName(resultName, usedNames), ds));
-                }
+                (desc, units, selfTicks) = DescribePlanned(top, nl, tb);
             }
             catch (Exception ex)
             {
-                errors.Add($"'{top.Name}': {ex.Message}");
+                desc = $"{top.GetType().Name} '{top.Name}': cannot be described before running ({ex.Message})";
+                units = 1; selfTicks = false;
             }
+
+            planned.Add(new PlannedAnalysis(top, null, resultName, units, selfTicks));
+            lines.Add(desc);
         }
 
         foreach (var raw in tb.RawDirectives)
         {
-            if (raw.Kind != "analysis") continue;
+            if (raw.Kind != "analysis" || !IsSparamRaw(raw.RawLine)) continue;
             try
             {
-                var rawName = FirstToken(raw.RawLine);
-                if (TryRunRawSparam(raw.RawLine, nl, notes, out var ds) && ds is not null)
-                    results.Add(new AnalysisResult(DeduplicateName(rawName, usedNames), ds));
+                var (name, start, stop, step) = ParseSparamDirective(raw.RawLine);
+                var freqs = BuildFreqArrayFromBounds(start, stop, step);
+                planned.Add(new PlannedAnalysis(null, raw.RawLine,
+                    DeduplicateName(name, usedNames), freqs.Length, SelfTicks: true));
+                lines.Add($"S-param '{name}': {freqs.Length} pts, {start / 1e9:G4}–{stop / 1e9:G4} GHz");
             }
             catch (Exception ex)
             {
                 var label = FirstToken(raw.RawLine);
-                errors.Add($"'{label}': {ex.Message}");
+                planned.Add(new PlannedAnalysis(null, raw.RawLine,
+                    DeduplicateName(label, usedNames), 1, SelfTicks: false));
+                lines.Add($"S-param '{label}': cannot be described before running ({ex.Message})");
+            }
+        }
+
+        if (planned.Count == 0)
+            return new RunPlan(RunStatus.NoAnalysis, "No supported analysis dispatched.");
+
+        // Saturating, because a plan deep enough to overflow is one nobody is going to run and a
+        // negative denominator is a worse thing to show than a very large one.
+        long total = 0;
+        foreach (var p in planned)
+        {
+            if (p.WorkUnits <= 0) continue;
+            if (total > long.MaxValue - p.WorkUnits) { total = long.MaxValue; break; }
+            total += p.WorkUnits;
+        }
+
+        return new RunPlan(RunStatus.Success, $"{planned.Count} analysis run(s) planned", lines, total)
+        {
+            Lib = lib, Tb = tb, Nl = nl, BaseDirectory = baseDirectory, Analyses = planned,
+        };
+    }
+
+    /// <summary>
+    /// Runs the analyses a <see cref="Prepare"/> call planned. A failed plan is passed straight
+    /// through as the run's own outcome. Never throws — engine exceptions are captured into
+    /// EngineError, and a cancelled run comes back as <see cref="RunStatus.Cancelled"/> carrying no
+    /// results at all (see the remark below).
+    /// </summary>
+    public static RunResult Execute(RunPlan plan, RunControl? control = null)
+    {
+        if (plan.Status != RunStatus.Success
+            || plan.Nl is not { } nl || plan.Tb is not { } tb || plan.Lib is not { } lib)
+            return new RunResult(plan.Status, plan.StatusMessage);
+
+        var results = new List<AnalysisResult>();
+        var notes   = new List<string>();
+        var errors  = new List<string>();
+
+        foreach (var pa in plan.Analyses)
+        {
+            try
+            {
+                control?.ThrowIfCancellationRequested();
+                if (control is not null) control.Stage = pa.ResultName;
+
+                // An engine that reports its own progress gets the real control; everything else gets
+                // a cancellation-only child so nothing inside it counts work units twice, and this
+                // level ticks the whole analysis once it is done.
+                var inner = pa.SelfTicks ? control : control?.Child();
+
+                var ds = pa.Typed is not null
+                    ? RunTypedAnalysis(pa.Typed, nl, tb, lib, notes, plan.BaseDirectory, inner)
+                    : RunRawSparam(pa.RawLine!, nl, inner);
+
+                if (ds is not null) results.Add(new AnalysisResult(pa.ResultName, ds));
+                if (!pa.SelfTicks) control?.Tick(pa.WorkUnits);
+            }
+            catch (OperationCanceledException)
+            {
+                // NOTHING is published on cancel, including analyses that finished first. A run is
+                // one artifact — the grouped DataSet a Data Display opens — and half of one, silently
+                // missing whichever analyses had not started, is worse than none. The user asked to
+                // stop; stopping is the whole answer.
+                return new RunResult(RunStatus.Cancelled, "Run cancelled.", warnings: DrainWarnings(nl));
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"'{pa.ResultName}': {ex.Message}");
             }
         }
 
@@ -206,9 +339,7 @@ public static class SchematicRunService
 
         // ── 5. Build outcome ───────────────────────────────────────────────────
         // Drain elaboration + engine run-time warnings from the netlist.
-        IReadOnlyList<string> nlWarnings = nl.Warnings.Count > 0
-            ? [.. nl.Warnings]
-            : [];
+        IReadOnlyList<string> nlWarnings = DrainWarnings(nl);
 
         if (errors.Count > 0 && results.Count == 0)
             return new RunResult(RunStatus.EngineError,
@@ -228,6 +359,72 @@ public static class SchematicRunService
         return new RunResult(RunStatus.Success, summary, results, nlWarnings, grouped);
     }
 
+    /// <summary>
+    /// Plan + execute in one call — the shape every caller had before the two halves were split, kept
+    /// so a caller that has no use for the plan (a test, a headless driver) needs nothing new.
+    /// </summary>
+    public static RunResult RunNetlist(string netlistPath, string? baseDirectory = null,
+                                       RunControl? control = null)
+        => Execute(Prepare(netlistPath, baseDirectory), control);
+
+    private static IReadOnlyList<string> DrainWarnings(ElaboratedNetlist nl)
+        => nl.Warnings.Count > 0 ? [.. nl.Warnings] : [];
+
+    // ── Pre-flight description ────────────────────────────────────────────────
+
+    /// <summary>
+    /// One line describing what <paramref name="analysis"/> is about to do, plus its work-unit count
+    /// and whether its engine reports its own progress. Resolves expressions (frequency lists, tone
+    /// frequencies, grid sizes) but runs nothing.
+    /// </summary>
+    private static (string Description, long WorkUnits, bool SelfTicks) DescribePlanned(
+        Analysis analysis, ElaboratedNetlist nl, TestBench tb)
+    {
+        switch (analysis)
+        {
+            case SParameterAnalysis spa:
+            {
+                var freqs = spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                return ($"S-param '{spa.Name}': {freqs.Length} pts, " +
+                        $"{freqs[0] / 1e9:G4}–{freqs[^1] / 1e9:G4} GHz " +
+                        $"({spa.Sweeps.Count} segment(s))", freqs.Length, true);
+            }
+
+            case HarmonicBalanceAnalysis hba:
+            {
+                var p     = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                var sweep = p.HasSweep ? $", sweep {p.SweepVarName}" : "";
+                return ($"HB '{hba.Name}': f0={p.ToneHz / 1e9:G4} GHz, K={p.MaxHarmonic}{sweep}", 1, false);
+            }
+
+            case LoadpullAnalysis lpa:
+            {
+                var p = LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                return ($"Loadpull '{lpa.Name}': f0={p.ToneHz / 1e9:G4} GHz, " +
+                        $"{p.Grid.Points.Count} grid pts", p.Grid.Points.Count, true);
+            }
+
+            case LoadpullPursuitAnalysis lppa:
+            {
+                var p = LoadpullPursuitEngine.Resolve(lppa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                return ($"Loadpull-pursuit '{lppa.Name}': f0={p.LpParams.ToneHz / 1e9:G4} GHz", 1, false);
+            }
+
+            case ParametricSweepAnalysis psa:
+                // The WHOLE chain, not just this analysis: the sweeps below this one are run by
+                // ParametricSweepEngine's own re-elaboration loop and are never dispatched here, so
+                // describing the dispatched analysis alone reports one axis for a run with several.
+                return (ParametricSweepRunSummary.Describe(psa, tb),
+                        ParametricSweepRunSummary.TotalPoints(psa, tb), true);
+
+            case DcAnalysis:
+                return ($"DC '{analysis.Name}': operating point", 1, false);
+
+            default:
+                return ($"Analysis type '{analysis.GetType().Name}' is not dispatched.", 0, false);
+        }
+    }
+
     // ── Typed analysis dispatch ───────────────────────────────────────────────
 
     private static DataSet? RunTypedAnalysis(
@@ -236,35 +433,28 @@ public static class SchematicRunService
         TestBench         tb,
         Library           lib,
         List<string>      notes,
-        string?           baseDirectory)
+        string?           baseDirectory,
+        RunControl?       control)
     {
         switch (analysis)
         {
             case SParameterAnalysis spa:
-            {
-                var freqs = spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
-                notes.Add($"S-param '{spa.Name}': {freqs.Length} pts, " +
-                          $"{freqs[0] / 1e9:G4}–{freqs[^1] / 1e9:G4} GHz " +
-                          $"({spa.Sweeps.Count} segment(s))");
-                return SParameterEngine.Run(nl, freqs);
-            }
+                return SParameterEngine.Run(
+                    nl, spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit), null, control);
 
             case HarmonicBalanceAnalysis hba:
             {
-                var p     = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
-                var sweep = p.HasSweep ? $", sweep {p.SweepVarName}" : "";
-                notes.Add($"HB '{hba.Name}': f0={p.ToneHz / 1e9:G4} GHz, K={p.MaxHarmonic}{sweep}");
+                var p = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
                 return new HbEngine(nl, tb).Run(p).DataSet;
             }
 
             case LoadpullAnalysis lpa:
             {
                 var p = LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
-                notes.Add($"Loadpull '{lpa.Name}': f0={p.ToneHz / 1e9:G4} GHz, " +
-                          $"{p.Grid.Points.Count} grid pts");
                 // Post-process: add the derived display metrics (Pout_dBm, Zin, IRL, AMPM) so the
                 // Data Display renders the same contours as a measured .spl (loadpull-postprocessor.md).
-                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(new LoadpullEngine(nl, tb).Run(p));
+                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(
+                    new LoadpullEngine(nl, tb).Run(p, control));
             }
 
             case LoadpullPursuitAnalysis lppa:
@@ -272,15 +462,12 @@ public static class SchematicRunService
                 var lpEngine      = new LoadpullEngine(nl, tb);
                 var pursuitEngine = new LoadpullPursuitEngine(lpEngine);
                 var p             = LoadpullPursuitEngine.Resolve(lppa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
-                notes.Add($"Loadpull-pursuit '{lppa.Name}': f0={p.LpParams.ToneHz / 1e9:G4} GHz");
-                return pursuitEngine.Run(p);
+                return pursuitEngine.Run(p, control: control);
             }
 
             case ParametricSweepAnalysis psa:
-            {
-                notes.Add($"Parametric sweep '{psa.Name}': {psa.SweepValues.Length} pt(s) over {psa.SweepVarName}");
-                return ParametricSweepEngine.Run(psa, lib, tb, baseDirectory: baseDirectory);
-            }
+                return ParametricSweepEngine.Run(psa, lib, tb,
+                    baseDirectory: baseDirectory, control: control);
 
             case DcAnalysis:
             {
@@ -306,20 +493,12 @@ public static class SchematicRunService
         return false;
     }
 
-    private static bool TryRunRawSparam(
-        string            rawLine,
-        ElaboratedNetlist nl,
-        List<string>      notes,
-        out DataSet?      ds)
+    private static DataSet? RunRawSparam(string rawLine, ElaboratedNetlist nl, RunControl? control)
     {
-        ds = null;
-        if (!IsSparamRaw(rawLine)) return false;
+        if (!IsSparamRaw(rawLine)) return null;
 
-        var (name, start, stop, step) = ParseSparamDirective(rawLine);
-        var freqs = BuildFreqArrayFromBounds(start, stop, step);
-        notes.Add($"S-param '{name}': {freqs.Length} pts, {start / 1e9:G4}–{stop / 1e9:G4} GHz");
-        ds = SParameterEngine.Run(nl, freqs);
-        return true;
+        var (_, start, stop, step) = ParseSparamDirective(rawLine);
+        return SParameterEngine.Run(nl, BuildFreqArrayFromBounds(start, stop, step), null, control);
     }
 
     private static bool IsSparamRaw(string rawLine)

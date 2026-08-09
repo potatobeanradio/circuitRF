@@ -459,7 +459,13 @@ public static partial class LayoutRenderer
 
     /// <summary>Accent outline around each selected instance's overall (array-expanded) bbox —
     /// mirrors <see cref="DrawSelectionOutlines"/> for shapes, but a simple bbox rect rather than the
-    /// shape's own outline path, since R-L3a-5 selects the instance as a unit, not its contents.</summary>
+    /// shape's own outline path, since R-L3a-5 selects the instance as a unit, not its contents.
+    ///
+    /// <para>While a PCell parameter grip is being dragged the instance is drawing REGENERATED
+    /// artwork (<see cref="LayoutOverlay.PCellHandlePreview"/>), so the outline is measured from that
+    /// same preview rather than from the cell still on disk — otherwise the highlight keeps the
+    /// pre-drag shape's size while the artwork inside it grows or shrinks, which reads as the
+    /// selection having come loose from what is selected.</para></summary>
     private static void DrawInstanceSelectionOutlines(SKCanvas canvas, LayoutView view, IReadOnlyList<int> selected,
         IReadOnlyDictionary<int, LayoutInstance> dragOverrides, LayoutRenderOptions opts, LayoutRenderTheme theme,
         PathSpace ps, double scaleUm)
@@ -471,11 +477,14 @@ public static partial class LayoutRenderer
             StrokeWidth = DevicePixelsToPathSpace(scaleUm, SelectionStrokeDevicePixels),
             Color = theme.Selection,
         };
+        var handlePreview = opts.Overlay?.PCellHandlePreview;
         foreach (var idx in selected)
         {
             if (idx < 0 || idx >= view.Instances.Count) continue;
             var inst = dragOverrides.TryGetValue(idx, out var ov) ? ov : view.Instances[idx];
-            var bbox = CellHierarchy.InstanceBbox(inst, baseDir);
+            var bbox = handlePreview is { } preview && preview.InstanceIndex == idx
+                ? CellHierarchy.InstanceBboxOfView(preview.GhostView, inst, baseDir)
+                : CellHierarchy.InstanceBbox(inst, baseDir);
             if (bbox.IsEmpty) continue;
             var rect = NormalizedRect(ps.X(bbox.MinX), ps.Y(bbox.MinY), ps.X(bbox.MaxX), ps.Y(bbox.MaxY));
             canvas.DrawRect(rect, paint);

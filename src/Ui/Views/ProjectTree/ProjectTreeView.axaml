@@ -94,7 +94,19 @@
                                     Content="{Binding Name}"
                                     ToolTip.Tip="{Binding Path}"
                                     Command="{Binding $parent[ItemsControl].((vm:ProjectTreeTool)DataContext).OpenRecentCommand}"
-                                    CommandParameter="{Binding Path}"/>
+                                    CommandParameter="{Binding Path}">
+                                <!-- The menu's own DataContext is the RecentEntry — a ContextMenu is
+                                     a separate popup tree, so the $parent walk the Button above uses
+                                     to reach the tool VM does not resolve from in here. That is why
+                                     the entry carries its own label and command. -->
+                                <Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{Binding RevealLabel}"
+                                                  Command="{Binding RevealCommand}"
+                                                  CommandParameter="{Binding Path}"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

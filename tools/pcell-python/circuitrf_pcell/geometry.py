@@ -314,6 +314,10 @@ ANGULAR = "angular"
 AUTO = "auto"
 DEFERRED = "deferred"
 
+# A Handle's optional `quantity` reuses the SAME vocabulary a parameter's own dimension already uses
+# (circuitrf_pcell.LENGTH / ANGLE, defined in host.py — imported from there rather than redefined
+# here, so the two can never drift into meaning different strings).
+
 
 @dataclass(frozen=True)
 class CrossAxis:
@@ -332,6 +336,8 @@ class CrossAxis:
     label: str | None = None
     min: float | None = None
     max: float | None = None
+    #: ``circuitrf_pcell.LENGTH``, ``ANGLE``, or None. See :attr:`Handle.quantity`.
+    quantity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -386,6 +392,14 @@ class Handle:
     #: A no-op when the anchor does not move for that parameter, so it is safe to set on every grip
     #: of a set rather than only the ones that need it.
     keep_anchor_fixed: bool = False
+    #: ``circuitrf_pcell.LENGTH``, ``ANGLE``, or None (the default).
+    #:
+    #: Say what the parameter IS, if you can, so circuitRF can print a readout a person can read
+    #: ("W = 12 mil", not "W = 12000") and can round a length onto the layout's own snap grid — a user
+    #: who set 1 mil snapping expects the committed width to land on a whole mil. Saying nothing is
+    #: not a defect: the readout falls back to the raw number and the grid is not applied, which is
+    #: how every grip behaved before this existed.
+    quantity: str | None = None
 
     def to_json(self, payload: list[int]) -> dict[str, Any]:
         # The four coordinates ride in the binary payload like every other coordinate (schema §2), so
@@ -403,6 +417,8 @@ class Handle:
         }
         if self.keep_anchor_fixed:
             body["keepAnchorFixed"] = True
+        if self.quantity is not None:
+            body["quantity"] = self.quantity
         if self.label is not None:
             body["label"] = self.label
         if self.min is not None:
@@ -417,6 +433,8 @@ class Handle:
                 body["crossMin"] = self.cross.min
             if self.cross.max is not None:
                 body["crossMax"] = self.cross.max
+            if self.cross.quantity is not None:
+                body["crossQuantity"] = self.cross.quantity
         return body
 
 

@@ -222,7 +222,8 @@ public static class PCellHandleSolver
         int handleIndex,
         double targetProjection,
         double valuePerProjection,
-        string? matchParameter = null)
+        string? matchParameter = null,
+        Func<double, double>? quantize = null)
     {
         if (!baseParameters.TryGetValue(handle.Parameter, out var start))
             return PCellHandleSolveResult.Failed($"'{handle.Parameter}' is not a parameter of this cell.");
@@ -239,7 +240,7 @@ public static class PCellHandleSolver
         double previousValue = start.AsReal();
         double previousProjection = handle.ProjectedPosition;
         double value = Propose(previousValue, targetProjection - previousProjection,
-                               valuePerProjection, handle, isInt);
+                               valuePerProjection, handle, isInt, quantize);
         double achieved = previousProjection;
         PCellHandle? achievedHandle = null;
 
@@ -258,7 +259,7 @@ public static class PCellHandleSolver
             if (achieved != previousProjection && value != previousValue)
                 slope = (value - previousValue) / (achieved - previousProjection);
 
-            double next = Propose(value, error, slope, handle, isInt);
+            double next = Propose(value, error, slope, handle, isInt, quantize);
             previousValue = value;
             previousProjection = achieved;
             if (next == value) break;   // on the lattice, or pinned at a bound — no progress to make
@@ -273,11 +274,15 @@ public static class PCellHandleSolver
     // ── internals ──────────────────────────────────────────────────────────────
 
     private static double Propose(double from, double error, double valuePerProjection,
-                                  PCellHandle handle, bool isInt)
+                                  PCellHandle handle, bool isInt, Func<double, double>? quantize = null)
     {
         double v = from + error * valuePerProjection;
         if (handle.Min is { } lo) v = Math.Max(v, lo);
         if (handle.Max is { } hi) v = Math.Min(v, hi);
+        // The caller's own lattice (a snap grid) FIRST, then R-pch-11's determinism lattice — the
+        // second is far finer than any snap step, so it never moves an already-quantized value off
+        // the grid, it only rounds away the double noise the multiplication left behind.
+        if (quantize is not null) v = quantize(v);
         return Snap(v, isInt);
     }
 

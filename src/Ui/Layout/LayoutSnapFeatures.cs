@@ -101,21 +101,56 @@ public sealed class LayoutSnapFeatureIndex
         var (kx0, ky0) = KeyOf(x - r, y - r);
         var (kx1, ky1) = KeyOf(x + r, y + r);
 
+        long spanX = kx1 - kx0 + 1, spanY = ky1 - ky0 + 1;
+
+        // THE BUCKET SWEEP MUST BE BOUNDED BY THE FEATURE COUNT, NOT BY THE QUERY RADIUS. This was a
+        // hard hang, and the shape of it is worth keeping: the bucket size is derived from the cell's
+        // OWN extent (ComputeCellSize, span/64), so a cell whose features are all at ONE POINT gets
+        // the floor of 1 DBU per bucket. A single placed via is exactly that — its only intrinsic
+        // feature is its centre. The snap tolerance meanwhile is a few SCREEN pixels converted at the
+        // current zoom, so zoomed out on a board it is hundreds of thousands of DBU. The two together
+        // ask this loop for ~10^12 iterations over a dictionary holding one entry: 100% CPU, no
+        // progress, and only on a layout holding a single point-like shape — which is why it read as
+        // intermittent (any other shape gives a non-degenerate span, and the zoom decides the radius).
+        //
+        // The grid is an optimisation, and it stops being one the moment the query rect covers more
+        // buckets than the cell has features. Scanning the features directly is then both correct and
+        // strictly cheaper, and is bounded by something that cannot blow up.
+        long budget = _features.Count;
+        bool sweepIsWorthIt = spanX <= budget && spanY <= budget && spanX * spanY <= budget;
+
         List<IntrinsicSnapFeature>? result = null;
-        for (long kx = kx0; kx <= kx1; kx++)
-        for (long ky = ky0; ky <= ky1; ky++)
+        int examined = 0;
+
+        long probed = 0;
+
+        if (sweepIsWorthIt)
         {
-            if (!_grid.TryGetValue((kx, ky), out var bucket)) continue;
-            foreach (var idx in bucket)
+            for (long kx = kx0; kx <= kx1; kx++)
+            for (long ky = ky0; ky <= ky1; ky++)
             {
-                counters.FeaturesExamined++;
-                var f = _features[idx];
-                double dx = f.X - x, dy = f.Y - y;
-                if (dx * dx + dy * dy > (double)r * r) continue;
-                (result ??= []).Add(f);
+                probed++;
+                if (!_grid.TryGetValue((kx, ky), out var bucket)) continue;
+                foreach (var idx in bucket) Consider(idx);
             }
         }
+        else
+        {
+            for (int i = 0; i < _features.Count; i++) Consider(i);
+        }
+
+        counters.FeaturesExamined += examined;
+        counters.BucketsProbed += probed;
         return (IReadOnlyList<IntrinsicSnapFeature>?)result ?? [];
+
+        void Consider(int idx)
+        {
+            examined++;
+            var f = _features[idx];
+            double dx = f.X - x, dy = f.Y - y;
+            if (dx * dx + dy * dy > (double)r * r) return;
+            (result ??= []).Add(f);
+        }
     }
 
     // ── Build + cache ──────────────────────────────────────────────────────────
@@ -201,7 +236,13 @@ public sealed class LayoutSnapFeatureIndex
                 AddRingFeatures(features, path.Layer, path.Xy, path.Edges, closed: false, ownerIndex);
                 break;
             case ViaShape via:
-                features.Add(new IntrinsicSnapFeature(SnapFeatureKind.CornerEndpoint, via.X, via.Y, via.Layer, ownerIndex));
+                // A via has no corners: X/Y is its CENTRE, so it is a Centroid and draws the circle
+                // glyph. It was declared CornerEndpoint, which drew the square — "the rendered glyph
+                // is a square, which should mean corner" (owner report). The kind is not decoration:
+                // R-snp-5's priority order is what decides which feature wins when several are within
+                // tolerance, and a via's centre is exactly as intentional as a rect's centre, not as
+                // intentional as a drawn vertex.
+                features.Add(new IntrinsicSnapFeature(SnapFeatureKind.Centroid, via.X, via.Y, via.Layer, ownerIndex));
                 break;
             // LabelShape, BitmapShape: not real geometry — no snap features, mirrors LayoutHandles.Build's
             // own "not geometry-reshape targets" exclusion for the same two kinds.

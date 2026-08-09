@@ -5,10 +5,10 @@
              x:DataType="vm:ParameterEditorViewModel"
              Background="{DynamicResource SystemChromeLowColor}">
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
 
         <!-- Empty-state overlay: spans all rows, shown when IsEmptyState -->
-        <TextBlock Grid.Row="0" Grid.RowSpan="4"
+        <TextBlock Grid.Row="0" Grid.RowSpan="5"
                    IsVisible="{Binding IsEmptyState}"
                    Text="{Binding EmptyMessage}"
                    Foreground="{DynamicResource SystemBaseMediumColor}"
@@ -84,6 +84,7 @@
                                     <ColumnDefinition SharedSizeGroup="ParamUnit"    Width="Auto" MinWidth="60"/>
                                     <ColumnDefinition SharedSizeGroup="ParamPreview" Width="Auto"/>
                                     <ColumnDefinition SharedSizeGroup="ParamDisplay" Width="Auto"/>
+                                    <ColumnDefinition SharedSizeGroup="ParamRemove"  Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
                                 <TextBox Grid.Column="0"
@@ -100,6 +101,7 @@
                                 <TextBox Grid.Column="1"
                                          Text="{Binding StagedExpression}"
                                          IsVisible="{Binding ShowExpressionTextBox}"
+                                         IsReadOnly="{Binding ExpressionReadOnly}"
                                          FontSize="11"
                                          Padding="4,3"
                                          VerticalAlignment="Center"
@@ -191,6 +193,20 @@
                                           ToolTip.Tip="Show on schematic"
                                           Margin="6,0,2,0"
                                           VerticalAlignment="Center"/>
+                                <!-- Per-row remove. NOT the footer's "−", which removes the last
+                                     indexed GROUP — correct for P1Tone's Z[k] and ToneSource's
+                                     Freq[n]/V[n]/Phase[n], and no way at all to reach the first of a
+                                     hundred independent model parameters. Shown only on a row that
+                                     is genuinely independent of its neighbours. -->
+                                <Button Grid.Column="5"
+                                        Content="✕"
+                                        IsVisible="{Binding CanRemove}"
+                                        FontSize="10"
+                                        Padding="5,1"
+                                        Margin="2,0,0,0"
+                                        VerticalAlignment="Center"
+                                        ToolTip.Tip="Remove this parameter — the model's own default applies again"
+                                        Click="OnParamRemoveClick"/>
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -259,8 +275,26 @@
             </Panel>
         </ScrollViewer>
 
-        <!-- ── Row 3: Footer — +/- group buttons + Help + optional Close ───── -->
-        <StackPanel Grid.Row="3"
+        <!-- A compiled model file that could not be read, said at the moment it is chosen rather
+             than at Run — the parameters are left exactly as typed. -->
+        <TextBlock Grid.Row="3"
+                   Text="{Binding VerilogAFileNote}"
+                   IsVisible="{Binding HasVerilogAFileNote}"
+                   Foreground="{DynamicResource CrfWarningBrush}"
+                   FontSize="11"
+                   TextWrapping="Wrap"
+                   Margin="6,2,6,0"/>
+
+        <TextBlock Grid.Row="3"
+                   Text="{Binding VerilogAUnknownParamsNote}"
+                   IsVisible="{Binding HasVerilogAUnknownParamsNote}"
+                   Foreground="{DynamicResource CrfWarningBrush}"
+                   FontSize="11"
+                   TextWrapping="Wrap"
+                   Margin="6,2,6,0"/>
+
+        <!-- ── Row 4: Footer — +/- group buttons + Help + optional Close ───── -->
+        <StackPanel Grid.Row="4"
                     IsVisible="{Binding IsNotEmptyState}"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
@@ -281,6 +315,15 @@
                     IsVisible="{Binding AllowsAddParameter}"
                     ToolTip.Tip="Add parameter group"
                     Command="{Binding AddGroupCommand}"/>
+            <!-- The model's parameters are chosen from what the FILE declares, not typed from
+                 memory of it. A parameter not added stays absent, which already means "use the
+                 model's own default" — so this list is deliberately not materialised as rows. -->
+            <Button Content="Add Parameter…"
+                    FontSize="11"
+                    Padding="8,3"
+                    IsVisible="{Binding ShowAddModelParameter}"
+                    ToolTip.Tip="Choose one of the parameters this compiled model declares"
+                    Command="{Binding AddModelParameterCommand}"/>
             <Button Content="Edit CV..."
                     FontSize="11"
                     Padding="8,3"

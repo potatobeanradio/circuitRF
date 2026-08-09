@@ -20,8 +20,16 @@ public static class BuiltInSymbols
     // ── Font sizes (compile-time consts — safe to reference from field initializers) ──
     /// <summary>Font size for the +/− polarity marks on 2-terminal sources/terminations.</summary>
     public const double PolarityFontSize = 36.0;
-    /// <summary>Font size for SDD/ZPort port-number labels ("1+", "2−", …).</summary>
-    public const double SddPortLabelFontSize = 10.0;
+    /// <summary>
+    /// Font size for the port-number labels every dynamic symbol carries — SDD/ZPort's "1+"/"2−",
+    /// SnP's "1".."N" and "Ref". In symbol-local units, where one schematic grid square is 100 and
+    /// an SDD body is 180 tall, so the previous 10 rendered at roughly a twentieth of the body:
+    /// legible only when zoomed well in, on the ONE label that says which lead is which. Raised on
+    /// owner request. The bodies are 180–200 wide and the labels are inset 15–20 from the edge, so
+    /// even a three-character "10+" clears the opposite edge comfortably; the tightest vertical
+    /// case is SnP at Tight pitch, whose pins are a full grid square (100) apart.
+    /// </summary>
+    public const double SddPortLabelFontSize = 18.0;
     /// <summary>Font size for the "VAR" body label.</summary>
     public const double VarLabelFontSize = 48.0;
 
@@ -504,8 +512,19 @@ public static class BuiltInSymbols
 
         var prims = new List<SymbolPrimitive> { RRect(0, cy, halfW * 2, halfH * 2, 12) };
 
-        foreach (var (_, lx, ly) in ports)
-            prims.Add(L(lx < 0 ? -halfW : halfW, ly, lx, ly));
+        foreach (var (name, lx, ly) in ports)
+        {
+            bool onLeft = lx < 0;
+            prims.Add(L(onLeft ? -halfW : halfW, ly, lx, ly));
+
+            // The terminal numbers this symbol's own contract promises: with a deliberately generic
+            // body they are the ONLY thing telling a user which lead is which. They were described
+            // and never drawn.
+            prims.Add(Txt(name, onLeft ? -halfW + 15 : halfW - 15, ly,
+                fontSize: SddPortLabelFontSize,
+                align: onLeft ? SymbolTextAlign.Left : SymbolTextAlign.Right,
+                vAlign: SymbolTextVAlign.Middle));
+        }
 
         return Sym(prims, SymbolKind.VerilogA, n);
     }

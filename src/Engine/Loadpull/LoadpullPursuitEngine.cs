@@ -303,7 +303,13 @@ public sealed class LoadpullPursuitEngine
     /// When true, the OutputGrid <c>.gam</c> block is appended (freq-tagged) rather than truncating the
     /// file — used by a frequency-swept pursuit to accumulate one block per frequency.
     /// </param>
-    public DataSet Run(PursuitParams pp, bool appendOutputBlock = false)
+    /// <param name="control">
+    /// Optional cancellation. Checked once per QUERY — one cache-miss drive-to-compression run, which
+    /// is both the expensive unit here and the one every search path funnels through. There is no
+    /// progress tick: a pursuit's query count is decided by the search itself and is not known ahead
+    /// of time, so it has no honest denominator.
+    /// </param>
+    public DataSet Run(PursuitParams pp, bool appendOutputBlock = false, RunControl? control = null)
     {
         var lpp    = pp.LpParams;
         var ctx    = _lp.PrepareContext(lpp);
@@ -327,6 +333,7 @@ public sealed class LoadpullPursuitEngine
             }
 
             // Cache miss: run a full drive-to-compression sweep.
+            control?.ThrowIfCancellationRequested();
             queryCount++;
             Console.Error.WriteLine(
                 $"[Pursuit] Query {queryCount}: Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j Ω");

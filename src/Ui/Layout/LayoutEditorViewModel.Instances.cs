@@ -305,10 +305,24 @@ public sealed partial class LayoutEditorViewModel
     public LayoutInstance EffectiveInstanceAt(int index) =>
         Overlay.InstanceDragOverrides.TryGetValue(index, out var preview) ? preview : Model.Instances[index];
 
-    /// <summary>Non-null only when exactly one instance is selected and not mid-drag — the Properties
-    /// Inspector's single source for the instance property panel.</summary>
+    /// <summary>
+    /// Non-null only when exactly one instance is selected and not mid-MOVE — the Properties
+    /// Inspector's single source for the instance property panel.
+    ///
+    /// <para><b>A PCell grip drag is deliberately NOT excluded, and the distinction is the whole
+    /// point.</b> An ordinary move drag has nothing worth showing (the panel would be reading a
+    /// throwaway translated clone), so it blanks. A grip drag is the opposite: its live parameter
+    /// values are exactly what the panel exists to show, and R-pch-4b's anchor-pin translate puts an
+    /// entry in <c>InstanceDragOverrides</c> for every grip whose anchor moves. Testing that
+    /// dictionary alone therefore silently blanked the panel for three of MLIN's four grips — the
+    /// pinned ones — while the one grip whose anchor happens to sit at the cell origin updated
+    /// correctly, which is exactly what "only some of the grippers update the parameters" looked
+    /// like. Typed edits are still refused mid-drag, by <c>LayoutShapePropertiesViewModel</c>'s own
+    /// <c>DragBlocksEdits</c>, which already covers a grip drag on its own terms.</para>
+    /// </summary>
     public LayoutInstance? SingleSelectedInstance =>
-        _selectedInstanceIndices.Count == 1 && Overlay.InstanceDragOverrides.Count == 0
+        _selectedInstanceIndices.Count == 1 &&
+        (Overlay.InstanceDragOverrides.Count == 0 || _pcellHandleDrag is not null)
             ? Model.Instances[_selectedInstanceIndices[0]] : null;
 
     private void ReplaceSelectedInstance(Func<LayoutInstance, LayoutInstance> build)

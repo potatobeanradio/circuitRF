@@ -422,10 +422,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(ShowCvEditorButton));
+        OnPropertyChanged(nameof(ShowAddModelParameter));
         OnPropertyChanged(nameof(AllowsAddParameter));
         NotifyMklopfState();
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        SyncVerilogAFromModelFile();
     }
 
     /// <summary>
@@ -481,6 +483,216 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         }
     }
 
+
+    // ── VerilogA: the model file answers Model and Pins ───────────────────────
+
+    /// <summary>Non-empty when the chosen model file could not be read — shown under the rows so a
+    /// bad pick says so at the moment it is made, not at Run.</summary>
+    [ObservableProperty] private string _verilogAFileNote = "";
+
+    public bool HasVerilogAFileNote => VerilogAFileNote.Length > 0;
+    partial void OnVerilogAFileNoteChanged(string value) => OnPropertyChanged(nameof(HasVerilogAFileNote));
+
+    /// <summary>Guards the one place this makes an edit of its own, so committing Model/Pins cannot
+    /// re-enter through <c>EditModel.Changed</c>.</summary>
+    private bool _syncingVerilogA;
+
+    /// <summary>
+    /// Reads the component's chosen <c>.osdi</c> and lets it answer the two questions a user
+    /// otherwise has to answer from memory: which device type is in there (<c>Model</c>), and how
+    /// many terminals it has (<c>Pins</c>).
+    ///
+    /// <para><b>Autofill only fills in what the file settles, and never overrules the user.</b>
+    /// <c>Pins</c> is set from the selected model because the model states it and a wrong value
+    /// draws the wrong symbol; <c>Model</c> is filled in only when the file declares exactly ONE
+    /// type — with several, the choice is genuinely the user's and the row becomes a picker rather
+    /// than being decided for them.</para>
+    ///
+    /// <para>One <see cref="SetParametersCommand"/> so the autofill is a single undo entry, and only
+    /// when something actually differs — otherwise merely opening the dialog would dirty the
+    /// schematic.</para>
+    /// </summary>
+    private void SyncVerilogAFromModelFile()
+    {
+        if (_syncingVerilogA) return;
+        if (_target is null || _schematicVm is null || _target.Symbol != SymbolKind.VerilogA)
+        {
+            VerilogAFileNote = "";
+            VerilogAUnknownParamsNote = "";
+            return;
+        }
+
+        string file = ParamValue(_target, ComponentModelFactory.VerilogAFileParam);
+
+        // Describing starts the model-hosting worker; VerilogAModelIntrospection caches by path and
+        // mtime, so this is one launch per distinct file rather than one per model change.
+        var declared = VerilogAModelIntrospection.Describe(file, out string? error);
+        VerilogAFileNote = file.Trim().Length == 0 || error is null ? "" : error;
+
+        var modelRow = Rows.FirstOrDefault(r => r.Name.Equals(ComponentModelFactory.VerilogAModelParam, StringComparison.Ordinal));
+        // Offered whenever the file declares more than one: with exactly one there is nothing to
+        // choose between, and a one-entry picker is a control that cannot do anything.
+        modelRow?.SetRuntimeChoices(declared.Count > 1 ? [.. declared.Select(m => m.TypeId)] : []);
+
+        string modelValue = ParamValue(_target, ComponentModelFactory.VerilogAModelParam);
+        var selectedOrNull = VerilogAModelIntrospection.Select(declared, modelValue);
+
+        // Pins stops taking edits the moment a model is settled: the terminal count is the model's
+        // own statement about itself, so typing a different one only draws a symbol with leads the
+        // device does not have. It stays editable while no model is settled — a component whose file
+        // has not been chosen yet still has to be placeable and wireable.
+        Rows.FirstOrDefault(r => r.Name.Equals(ComponentModelFactory.VerilogAPinsParam, StringComparison.Ordinal))
+            ?.SetExpressionReadOnly(selectedOrNull is not null);
+
+        if (selectedOrNull is not { } selected)
+        {
+            VerilogAUnknownParamsNote = "";
+            return;
+        }
+
+        FlagUndeclaredParameters();
+
+        string desiredModel = declared.Count == 1 ? selected.TypeId : modelValue;
+        string desiredPins  = selected.PinCount.ToString(CultureInfo.InvariantCulture);
+
+        bool modelDiffers = declared.Count == 1 &&
+                            !modelValue.Equals(desiredModel, StringComparison.Ordinal);
+        bool pinsDiffers  = !ParamValue(_target, ComponentModelFactory.VerilogAPinsParam)
+                                .Equals(desiredPins, StringComparison.Ordinal);
+        if (!modelDiffers && !pinsDiffers) return;
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        foreach (var p in updated)
+        {
+            if (modelDiffers && p.Name.Equals(ComponentModelFactory.VerilogAModelParam, StringComparison.Ordinal))
+                p.Expression = desiredModel;
+            else if (pinsDiffers && p.Name.Equals(ComponentModelFactory.VerilogAPinsParam, StringComparison.Ordinal))
+                p.Expression = desiredPins;
+        }
+
+        // The rows this replaces are rebuilt by OnModelChanged's own stale-binding check — see there
+        // for why a same-name SetParametersCommand needs one. The guard below only stops THIS method
+        // re-entering; it deliberately does not stop the rebuild.
+        _syncingVerilogA = true;
+        try { _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated)); }
+        finally { _syncingVerilogA = false; }
+
+        // The rows that were on screen a moment ago are gone — the command replaced every parameter,
+        // so OnModelChanged's stale-binding check rebuilt them. Run once more against the fresh ones
+        // to re-apply the Pins read-only state that went with them. This cannot loop: nothing differs
+        // now, so it reaches the "no change" return above without executing anything.
+        SyncVerilogAFromModelFile();
+    }
+
+    /// <summary>True for a VerilogA component — the only one whose parameters come from a file.</summary>
+    public bool ShowAddModelParameter => _target?.Symbol == SymbolKind.VerilogA;
+
+    /// <summary>
+    /// Names on the component that the chosen model does not declare.
+    ///
+    /// <para>The worker refuses an unknown name outright rather than ignoring it — a model matches
+    /// by keyword and drops what it does not recognise, so a typo would otherwise present as a
+    /// device quietly running on a default, which converges and is wrong. That refusal is correct,
+    /// but it lands at Run; saying it here means it is seen while it can still be fixed.</para>
+    ///
+    /// <para>Reads the declared set, which stands a probe model up — so it runs only once the file
+    /// AND the model have both resolved, which is exactly where the caller invokes it.</para>
+    /// </summary>
+    private void FlagUndeclaredParameters()
+    {
+        if (_target is null) { VerilogAUnknownParamsNote = ""; return; }
+
+        var declaredNames = DeclaredModelParameters()
+            .Select(p => p.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (declaredNames.Count == 0) { VerilogAUnknownParamsNote = ""; return; }
+
+        var unknown = _target.Parameters
+            .Select(p => p.Name)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            // circuitRF's own three, plus the reserved temperature pair — none is forwarded to the
+            // model, so none of them being undeclared means anything.
+            .Where(n => n is not ("File" or "Model" or "Pins"))
+            .Where(n => !n.Equals(Temperature.AbsoluteParamName, StringComparison.Ordinal)
+                     && !n.Equals(Temperature.DeltaParamName,    StringComparison.Ordinal))
+            .Where(n => !declaredNames.Contains(n))
+            .ToArray();
+
+        VerilogAUnknownParamsNote = unknown.Length == 0
+            ? ""
+            : $"Not declared by this model: {string.Join(", ", unknown)} — these will be refused at Run.";
+    }
+
+    /// <summary>Non-empty when the component carries parameter names the chosen model does not
+    /// declare. The worker refuses an unknown name at Run, by name — saying so here means it is seen
+    /// while it can still be corrected rather than at the end of a simulation.</summary>
+    [ObservableProperty] private string _verilogAUnknownParamsNote = "";
+
+    public bool HasVerilogAUnknownParamsNote => VerilogAUnknownParamsNote.Length > 0;
+    partial void OnVerilogAUnknownParamsNoteChanged(string value)
+        => OnPropertyChanged(nameof(HasVerilogAUnknownParamsNote));
+
+    /// <summary>Supplied by the view: shows the picker over the model's declared parameters and
+    /// returns the chosen one, or null on cancel. Null in contexts with no UI.</summary>
+    public Func<string, IReadOnlyList<VerilogAParameterInfo>, IReadOnlyCollection<string>,
+                Task<VerilogAParameterInfo?>>? PickModelParameterAsync
+    { get; set; }
+
+    /// <summary>The parameters the currently chosen model declares. Read on demand — this stands a
+    /// probe model up inside the worker, so it is the picker's own cost, not the dialog's.</summary>
+    public IReadOnlyList<VerilogAParameterInfo> DeclaredModelParameters()
+    {
+        if (_target is null || _target.Symbol != SymbolKind.VerilogA) return [];
+        return VerilogAModelIntrospection.DescribeParameters(
+            ParamValue(_target, ComponentModelFactory.VerilogAFileParam),
+            ParamValue(_target, ComponentModelFactory.VerilogAModelParam),
+            out _);
+    }
+
+    /// <summary>
+    /// Adds one of the model's own parameters to the component, seeded at the model's own default.
+    ///
+    /// <para>Seeded rather than left blank because the point of adding one is to change it from the
+    /// default, and starting from the value the model actually uses is what makes the edit
+    /// meaningful — a blank box gives the user nothing to adjust away from. A parameter that is not
+    /// added stays absent, which already means "the model's own default".</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task AddModelParameter()
+    {
+        if (_target is null || _schematicVm is null || PickModelParameterAsync is null) return;
+        if (_target.Symbol != SymbolKind.VerilogA) return;
+
+        var declared = DeclaredModelParameters();
+        if (declared.Count == 0)
+        {
+            VerilogAFileNote = "Choose a compiled model file first — its parameters come from the file.";
+            return;
+        }
+
+        string modelName = ParamValue(_target, ComponentModelFactory.VerilogAModelParam);
+        if (modelName.Length == 0) modelName = "This model";
+
+        var present = _target.Parameters.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        var picked  = await PickModelParameterAsync(modelName, declared, present);
+        if (picked is null) return;
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        updated.Add(new EditableParameter
+        {
+            Name            = picked.Name,
+            Expression      = picked.DefaultText ?? "",
+            Unit            = "",   // the model's units are its own text, not one of circuitRF's
+                                    // dimensioned unit options — shown as the row's tooltip instead
+            Dimension       = UnitDimension.None,
+            ShowOnSchematic = false,   // a compact model has hundreds; none of them belong on the page
+        });
+
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
+
+    private static string ParamValue(EditableComponent comp, string name)
+        => comp.Parameters.FirstOrDefault(p => p.Name.Equals(name, StringComparison.Ordinal))?.Expression?.Trim() ?? "";
 
     private void NotifyMklopfState()
     {
@@ -791,15 +1003,35 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // (SetParametersCommand always clones fresh objects into comp.Parameters, even for
         // untouched params), so a same-count rename would silently leave a row's label AND value
         // bound to an object no longer in the model at all.
-        var visibleNames = VisibleParamNames(_target);
-        if (Rows.Count != visibleNames.Count || !Rows.Select(r => r.Name).SequenceEqual(visibleNames))
+        var visible = VisibleParams(_target);
+        if (Rows.Count != visible.Count ||
+            !Rows.Select(r => r.Name).SequenceEqual(visible.Select(p => p.Name)))
         {
             SetTarget(_target);
             return;
         }
 
+        // Same names is NOT the same thing as the same objects. SetParametersCommand always writes
+        // fresh clones — even for parameters it did not touch — so a same-NAME edit made that way
+        // leaves every row bound to an EditableParameter no longer in the component, and
+        // RefreshFromModel below then re-reads each row from its own orphan and puts the OLD values
+        // back on screen. That is what made browsing for a VerilogA model file appear to do nothing:
+        // Model and Pins were written correctly and the dialog went on showing what was there before.
+        // By MEMBERSHIP, not position: SetTarget groups rows (file-valued, then choice-valued, then
+        // the rest), so row order and model order legitimately differ and pairing them up by index
+        // would rebuild on every change for any component whose rows get reordered.
+        var live = new HashSet<EditableParameter>(visible, ReferenceEqualityComparer.Instance
+                                                           as IEqualityComparer<EditableParameter>);
+        foreach (var row in Rows)
+            if (!live.Contains(row.BoundParameter))
+            {
+                SetTarget(_target);
+                return;
+            }
+
         RefreshFromModel();
         UpdateCanRemoveTopGroup();
+        SyncVerilogAFromModelFile();
     }
 
     private void UpdateFromSelection()
@@ -1002,12 +1234,16 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     }
 
     private static List<string> VisibleParamNames(EditableComponent comp)
+        => VisibleParams(comp).Select(p => p.Name).ToList();
+
+    /// <summary>The parameters that get a row, in row order — the objects, not just their names, so
+    /// a caller can check a row is still bound to the live one.</summary>
+    private static List<EditableParameter> VisibleParams(EditableComponent comp)
     {
         // SnP uses a custom panel; generic rows are always empty.
         if (comp.Symbol == SymbolKind.Snp) return [];
         return comp.Parameters
             .Where(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name))
-            .Select(p => p.Name)
             .ToList();
     }
 

@@ -103,8 +103,19 @@ public static class DsnSymbolReader
     /// symbol library's y-up rule. That format is y-down, so every such part's pins were being
     /// mirrored vertically; correcting it moves them, which is precisely what this counter is for.
     /// Parts backed by a library or by a <c>.dsn</c> drawing are unaffected.</para>
+    ///
+    /// <para><b>3</b> — a kit's symbols are now scaled so its TYPICAL part matches circuitRF's own
+    /// symbol size (<c>KitTemplateSymbol.ReferenceSymbolExtent</c>) instead of being clamped into a
+    /// decade-wide legibility band by whichever of its parts happened to be largest. Measured on a
+    /// kit, that band left every part half again to twice the size of the circuitRF component
+    /// beside it. Rescaling moves pins, so it takes a bump.</para>
     /// </summary>
-    public const int TranslationVersion = 2;
+    /// <para><b>4</b> — a kit's one scale is normalised on its parts' median PIN SPAN instead of their
+    /// median DRAWING extent. The reference it is normalised against is itself a pin span, so the two
+    /// were incommensurable and every kit part came out smaller than the built-in beside it by however
+    /// far its artwork reached past its terminals. Correcting it changes the scale, and a scale change
+    /// moves pins.</para>
+    public const int TranslationVersion = 4;
 
     /// <summary>
     /// Target band for the symbol's larger dimension, in local units. A power-of-ten scale is
@@ -258,6 +269,25 @@ public static class DsnSymbolReader
         while (extent * scale < MinExtent && guard++ < 12) scale *= 10.0;
         guard = 0;
         while (extent * scale >= MaxExtent && guard++ < 12) scale /= 10.0;
+        return scale;
+    }
+
+    /// <summary>
+    /// Holds an already-chosen scale inside the legibility band for a drawing of
+    /// <paramref name="extent"/> local units, without moving it otherwise.
+    ///
+    /// <para>Separate from <see cref="ChooseScale"/> because the two answer different questions. That
+    /// one PICKS a scale for a drawing with nothing else to go on; this one is the guard rail for a
+    /// caller that has already decided on one for its own reasons (a kit normalising every part
+    /// against circuitRF's own symbol size) and only needs the result kept sane at the extremes.</para>
+    /// </summary>
+    internal static double ClampScaleForExtent(double scale, double extent)
+    {
+        if (!double.IsFinite(scale) || scale <= 0 || !double.IsFinite(extent) || extent <= 0) return scale;
+
+        double scaled = extent * scale;
+        if (scaled < MinExtent)  return MinExtent / extent;
+        if (scaled >= MaxExtent) return MaxExtent / extent;
         return scale;
     }
 

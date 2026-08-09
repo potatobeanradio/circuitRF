@@ -164,8 +164,66 @@ class Layer:
 # ── shapes: constructing one DRAWS it ────────────────────────────────────────────────────────
 
 
+class _PinEntry:
+    """A declared pin, and the figure that carries it once one is drawn.
+
+    **Why the figure and not just the box.** ``addPin`` is handed a box, and a kit habitually draws
+    the whole cell in whatever frame suited it and then MOVES every figure — most often to reset the
+    origin to the cell's lower-left corner, which is a one-line idiom at the end of a generator::
+
+        for id in self.getShapes():
+            dbMoveFig(id, Point(-xl, -yb), 'R0')
+
+    A pin recorded as a fixed box does not follow that, so every pin ends up offset by exactly the
+    reset — off its own metal, and (measured) outside the cell entirely for the two
+    pins whose frame coordinates were negative. It draws perfectly and connects to nothing.
+
+    So the box is a FALLBACK and the figure is the answer: whatever transforms a kit applies
+    afterwards, the pin is wherever its own artwork ended up.
+    """
+
+    __slots__ = ("name", "box", "layer", "figure")
+
+    def __init__(self, name: str, box: "Box", layer: "Layer"):
+        self.name = name
+        self.box = box
+        self.layer = layer
+        #: The figure carrying this pin, bound when one is drawn for it. None until then, and again
+        #: if that figure is destroyed — a pin whose artwork was consumed by a boolean keeps the last
+        #: box it was known at rather than losing its position altogether.
+        self.figure: "_Figure | None" = None
+
+    @property
+    def current_box(self) -> "Box":
+        """Where the pin is NOW: its figure's box when it has one, else what it was declared with."""
+        if self.figure is None:
+            return self.box
+        box = self.figure.getBBox()
+        return box if isinstance(box, Box) else self.box
+
+
 class _Figure:
     """Base for anything a cell draws. Registers itself with the cell being generated."""
+
+    def __init_subclass__(cls, **kwargs):
+        """Bind a pin to its artwork once the figure is FULLY built.
+
+        The obvious place for this is the base ``__init__`` — and it is the wrong one: that runs
+        before the subclass has set the geometry, so the figure cannot measure itself yet and every
+        match fails silently. Wrapping the concrete constructor instead means the check happens when
+        there is something to check. Wrapping twice through a subclass of a subclass is harmless:
+        binding is idempotent and the second call sees the pin already answered.
+        """
+        super().__init_subclass__(**kwargs)
+        inner = cls.__init__
+
+        def __init__(self, *args, **kw):
+            inner(self, *args, **kw)
+            ctx = current_context()
+            if ctx is not None:
+                _bind_pending_pin(ctx, self)
+
+        cls.__init__ = __init__
 
     def __init__(self, layer: Layer):
         self.layer = layer
@@ -207,7 +265,16 @@ class _Figure:
 
     def destroy(self):
         ctx = current_context()
-        if ctx is not None and self in ctx.figures:
+        if ctx is None:
+            return
+        # A pin whose artwork is being consumed keeps the box that artwork last had. Losing the
+        # binding without keeping the position would move the pin back to where the cell was drawn
+        # BEFORE any transform, which is worse than either answer on its own.
+        for entry in ctx.pins:
+            if entry.figure is self:
+                entry.box = self.getBBox()
+                entry.figure = None
+        if self in ctx.figures:
             ctx.figures.remove(self)
 
     def transform(self, t: "Transform", *_a, **_k) -> "_Figure":
@@ -619,7 +686,7 @@ class _Context:
     def __init__(self, technology: crf.Technology | None, dbu_per_micron: int,
                  kit_layers: dict[str, tuple[int, int]] | None = None):
         self.figures: list[_Figure] = []
-        self.pins: list[tuple[str, Box, Layer]] = []
+        self.pins: list[_PinEntry] = []
         self.technology = technology
         self.dbu_per_micron = dbu_per_micron
         # The kit's OWN name-to-stream-number map, when it publishes one. Preferred over circuitRF's
@@ -627,6 +694,52 @@ class _Context:
         # wrong, and it works even for a layer the current technology has never heard of.
         self.kit_layers = kit_layers or {}
         self.missing_layers: set[str] = set()
+
+
+def _bind_pending_pin(ctx: "_Context", fig: "_Figure") -> None:
+    """Tie a just-drawn figure to the pin it was drawn FOR, if it was.
+
+    **The rule is the kit's own idiom, read literally.** Declaring a pin and drawing its metal is one
+    action written as two lines, in this order and with the same box and layer both times::
+
+        self.addPin(termName, termName, bBox, layerId)
+        pcInst = dbCreateRect(self, layerId, bBox)
+
+    So a figure matches the pin declared immediately before it when it is on that pin's layer and
+    covers exactly that box. Deliberately narrow: only the LAST pin is considered, and only while it
+    is still unbound, so a cell that declares a pin and never draws it keeps the box it gave (which
+    is the behaviour every kit had before) and no later figure can drift onto an already-answered pin.
+
+    Matching on the box rather than on a handle is forced by the API: ``addPin`` is given geometry,
+    not a figure, and the figure does not exist yet when it is called.
+    """
+    if not ctx.pins:
+        return
+    entry = ctx.pins[-1]
+    if entry.figure is not None or entry.layer is None:
+        return
+    if getattr(fig.layer, "name", None) != getattr(entry.layer, "name", None):
+        return
+    if getattr(fig.layer, "purpose", None) != getattr(entry.layer, "purpose", None):
+        return
+    # A figure type that does not measure itself answers with the unset-attribute tag rather than
+    # raising, so the RESULT is what has to be checked — not just the call.
+    try:
+        box = fig.getBBox()
+    except Exception:
+        return
+    if not isinstance(box, Box) or not isinstance(entry.box, Box):
+        return
+    if _same_box(box, entry.box):
+        entry.figure = fig
+
+
+def _same_box(a: "Box", b: "Box") -> bool:
+    """Equal to within a database unit's worth of floating point. The two boxes come from the same
+    expression evaluated twice, so this is about float identity, not tolerance."""
+    eps = 1e-9
+    return (abs(a.left - b.left) < eps and abs(a.bottom - b.bottom) < eps
+            and abs(a.right - b.right) < eps and abs(a.top - b.top) < eps)
 
 
 _context: _Context | None = None
@@ -706,7 +819,7 @@ class DloGen:
         self.tech = technology if technology is not None else Tech.get()
         self.techparams = self.tech.getTechParams()
         self.grid = self.tech.getGridResolution()
-        self.pins: list[tuple[str, Box, Layer]] = []
+        self.pins: list[_PinEntry] = []
         #: Free-form per-instance bag. Several devices stash their own state here; the kit's API
         #: provides it and cells assume it exists.
         self.props: dict[str, Any] = {}
@@ -721,14 +834,15 @@ class DloGen:
 
     def addPin(self, pinName: str, termName: str, box: Box, layer: Layer, *_a, **_k) -> "_PinHandle":
         ctx = current_context()
-        entry = (str(pinName or termName), box if isinstance(box, Box) else Box(box), layer)
+        entry = _PinEntry(str(pinName or termName),
+                          box if isinstance(box, Box) else Box(box), layer)
         self.pins.append(entry)
         if ctx is not None:
             ctx.pins.append(entry)
         # A HANDLE, not the tuple: the kit keeps talking to a pin after declaring it — most often
         # pin.addShape(fig), tying artwork to the terminal. Returning the internal tuple made that a
         # crash on an ordinary line.
-        return _PinHandle(entry[0])
+        return _PinHandle(entry.name)
 
     def addTerm(self, name: str, termType: Any = None, *_a, **_k) -> Term:
         return Term(name, termType)
@@ -796,7 +910,8 @@ def _emit(ctx: _Context) -> crf.Result:
         shapes.extend(_convert(fig, layer, ctx))
 
     pins: list[crf.Pin] = []
-    for name, box, layer_spec in ctx.pins:
+    for entry in ctx.pins:
+        name, box, layer_spec = entry.name, entry.current_box, entry.layer
         layer = _resolve(layer_spec, ctx)
         if layer is None:
             continue

@@ -23,6 +23,17 @@ namespace CircuitRF.Ui.ViewModels;
 public sealed partial class ParameterRowViewModel : ObservableObject
 {
     private readonly EditableParameter  _param;
+
+    /// <summary>
+    /// The exact <see cref="EditableParameter"/> this row reads and writes.
+    ///
+    /// <para>Exposed so the owning editor can tell a row that is still bound to the live model from
+    /// one holding an object that has been replaced under it —
+    /// <c>SetParametersCommand</c> clones every parameter, so after one runs, a row whose NAME is
+    /// unchanged is nonetheless reading a value nothing else can see. See
+    /// <c>ParameterEditorViewModel.OnModelChanged</c> for what that looked like.</para>
+    /// </summary>
+    internal EditableParameter BoundParameter => _param;
     private readonly SchematicViewModel _schematicVm;
     private readonly SymbolKind         _ownerSymbol;
     private readonly EditableComponent? _ownerComp;
@@ -73,6 +84,27 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// doesn't offer (a custom or since-renamed layer name) sets it via the schematic canvas's own
     /// inline label text-edit instead — the same escape hatch every other parameter already has.</summary>
     public bool ShowExpressionTextBox => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam;
+
+    /// <summary>
+    /// True when the value is stated by something the user has already chosen, so the box shows it
+    /// but does not take an edit.
+    ///
+    /// <para>Set for a VerilogA component's <c>Pins</c> once its model file and model are settled:
+    /// the number of terminals is the model's own, not an opinion, and typing a different one draws a
+    /// symbol with leads the device does not have. It is shown rather than hidden because "how many
+    /// terminals does this model have" is exactly what a reader of the dialog wants to know.</para>
+    ///
+    /// <para>Read-only rather than disabled: a disabled box greys its text out, which reads as "this
+    /// does not apply" for a value that very much does.</para>
+    /// </summary>
+    public bool ExpressionReadOnly { get; private set; }
+
+    internal void SetExpressionReadOnly(bool readOnly)
+    {
+        if (ExpressionReadOnly == readOnly) return;
+        ExpressionReadOnly = readOnly;
+        OnPropertyChanged(nameof(ExpressionReadOnly));
+    }
 
     /// <summary>Gates the ordinary Unit combo (column 2) — hidden for a layer-choice parameter (its
     /// <see cref="UnitDimension"/> is always None, a single "None" entry would be clutter, exactly
@@ -211,6 +243,45 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     private IReadOnlyList<string> _unsupportedChoices = [];
 
     public bool IsChoiceParam => ChoiceOptions.Count > 0;
+
+    /// <summary>
+    /// Offers a closed set of choices worked out at RUNTIME rather than declared by a cell — today,
+    /// the device types a compiled model file turned out to declare.
+    ///
+    /// <para>Deliberately the same <see cref="ChoiceOptions"/> mechanism a kit part's declared
+    /// choices use, so the row renders and commits identically whichever way the set was arrived at.
+    /// The currently staged value is always included, for the reason that field already documents:
+    /// a ComboBox whose selection is absent from its items renders blank, which reads as the value
+    /// having been lost.</para>
+    /// </summary>
+    internal void SetRuntimeChoices(IReadOnlyList<string> choices)
+    {
+        if (choices.Count == 0)
+        {
+            if (ChoiceOptions.Count == 0) return;
+            ChoiceOptions = [];
+            RaiseChoiceState();
+            return;
+        }
+
+        var display = new List<string>(choices);
+        string current = StagedExpression.Trim();
+        if (current.Length > 0 && !display.Contains(current, StringComparer.Ordinal))
+            display.Add(current);
+
+        if (ChoiceOptions.SequenceEqual(display, StringComparer.Ordinal)) return;
+        ChoiceOptions = display;
+        RaiseChoiceState();
+    }
+
+    private void RaiseChoiceState()
+    {
+        OnPropertyChanged(nameof(ChoiceOptions));
+        OnPropertyChanged(nameof(IsChoiceParam));
+        OnPropertyChanged(nameof(ShowExpressionTextBox));
+        OnPropertyChanged(nameof(ShowUnitCombo));
+        OnPropertyChanged(nameof(SelectedChoice));
+    }
 
     /// <summary>
     /// True when the cell declares this parameter as naming a FILE — a model library, a data table.
@@ -410,6 +481,9 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         // states it. Set BEFORE the cell pass, which owns the answer for a kit part and leaves this
         // alone when there is no cell.
         IsFilePathParam = ComponentTypeRegistry.IsFilePathParameter(ownerSymbol, param.Name);
+        Description     = ComponentTypeRegistry.ParameterDescription(ownerSymbol, param.Name);
+        CanRemove       = ownerComp is not null
+                       && ComponentTypeRegistry.IsRemovableParameter(ownerSymbol, param.Name);
         LoadCellDeclaredChoices();
         _isRefreshing = false;
 
@@ -533,6 +607,34 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         if (expr == _param.Expression) return;
         if (expr.Length == 0 && !IsLayerChoiceParam) return;
         _schematicVm.Execute(new EditParameterCommand(_schematicVm.EditModel, _param, expr, _param.Unit));
+    }
+
+    /// <summary>
+    /// True when this row can be removed on its own — see
+    /// <see cref="ComponentTypeRegistry.IsRemovableParameter"/> for why this is a per-row "×" and
+    /// not the "−" button, which removes the last indexed GROUP and cannot reach the first of a
+    /// hundred independent names.
+    /// </summary>
+    public bool CanRemove { get; }
+
+    /// <summary>
+    /// Removes this one parameter from the component, as a single undo entry.
+    ///
+    /// <para>Removal is by REFERENCE, not by name: the row already holds the exact
+    /// <see cref="EditableParameter"/> it is bound to, so a component that somehow carries two rows
+    /// of the same name loses the one the user clicked rather than whichever matched first.</para>
+    /// </summary>
+    public void RemoveSelf()
+    {
+        if (!CanRemove || _ownerComp is null) return;
+
+        var updated = _ownerComp.Parameters
+                                .Where(p => !ReferenceEquals(p, _param))
+                                .Select(p => p.Clone())
+                                .ToList();
+        if (updated.Count == _ownerComp.Parameters.Count) return;   // not ours — change nothing
+
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _ownerComp, updated));
     }
 
     /// <summary>Commit a unit selection to the model (no-op if unchanged).</summary>

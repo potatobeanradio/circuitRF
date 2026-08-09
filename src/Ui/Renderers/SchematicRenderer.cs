@@ -261,7 +261,7 @@ public static class SchematicRenderer
                 // Body + polarity marks: DrawSymbol dispatches per-primitive to the right paint.
                 // Plus-role primitives (e.g. VoltageSource +/−) are inside the same primitive list,
                 // so the separate ForSymbolPlusSegments path is gone.
-                DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol, c.Ports.Count / 2).Primitives,
+                DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol, PortCountOf(c)).Primitives,
                     cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
                     applyForceReadable: true);
                 DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
@@ -736,6 +736,29 @@ public static class SchematicRenderer
         path.Close();
         canvas.DrawPath(path, paint);
     }
+
+    /// <summary>
+    /// How many PORTS a placed component has, given how many PINS it draws — the number
+    /// <see cref="BuiltInSymbols.Primitives(SymbolKind, int)"/> wants, and not the same thing as
+    /// the pin count for every kind.
+    ///
+    /// <para>SDD and ZPort expose each port as a differential ± PAIR, so their pin count is 2N.
+    /// A compact model's terminals are not ports (a four-terminal MOSFET is not a four-port), so
+    /// <see cref="SymbolKind.VerilogA"/> is 1:1. Halving it — which this call site used to do for
+    /// every kind — produced the whole reported VerilogA defect at once: a body sized for half the
+    /// terminals, leads drawn only for the pins that half-sized symbol happens to have (so the rest
+    /// have none), and, for a one-terminal model, <c>1/2 == 0</c> falling through to the two-port
+    /// default and drawing a second lead to a pin that does not exist.</para>
+    ///
+    /// <para>Every non-variadic kind ignores the argument entirely, and SnP/Tuner never reach here
+    /// (they carry a per-instance <c>InstanceSymbol</c>), so the pin count is the right answer for
+    /// everything outside the one SDD/ZPort case.</para>
+    /// </summary>
+    private static int PortCountOf(SchematicComponent c) => PortCountOf(c.Symbol, c.Ports.Count);
+
+    /// <summary>The rule above, reachable by pin count alone so it can be tested directly.</summary>
+    internal static int PortCountOf(SymbolKind kind, int pinCount) =>
+        kind is SymbolKind.Sdd or SymbolKind.ZPort ? pinCount / 2 : pinCount;
 
     // ── Variadic port lead stubs (ZPort, Sdd) ────────────────────────────────
 

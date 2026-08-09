@@ -74,6 +74,9 @@ internal static class MessageTextSelection
 
         Add(entry.TimeText);
         Add(entry.Text);
+        // The live row's counter lives in its own element (it renders after the progress bar) — the
+        // clipboard has no bar to sit around, so it just follows the text.
+        Add(entry.ProgressText);
         Add(entry.FilePath);
         return sb.ToString();
     }

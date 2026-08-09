@@ -172,7 +172,7 @@ public static class PdkPartInstaller
         // question before answering it would tell the user something that stopped being true two
         // lines later. Both branches are stated, so the report answers either way.
         if (haveRoot && report.Parts.Count > 0)
-            notes.Add(DescribeSimulationSettings(kitManifest));
+            notes.Add(DescribeSimulationSettings(kitManifest, report));
 
         foreach (var part in report.Parts)
         {
@@ -980,13 +980,9 @@ public static class PdkPartInstaller
     /// other platforms is a completely ordinary thing to be holding and a completely useless one to
     /// press Run on, so it says so here rather than at Run.</para>
     /// </summary>
-    private static string DescribeSimulationSettings(DeviceWorkerManifest? manifest)
+    private static string DescribeSimulationSettings(DeviceWorkerManifest? manifest, PdkImportReport report)
     {
-        if (manifest is null)
-            return "This kit names no program to evaluate its devices. Its parts are still built " +
-                   "from the kit's own netlists; only devices needing an external model will say so " +
-                   "at Run. That one setting goes in this workspace's own folder for the kit — the " +
-                   "kit itself is left exactly as it was shipped.";
+        if (manifest is null) return DescribeNoProgram(report);
 
         var found = new List<string>();
 
@@ -1013,6 +1009,63 @@ public static class PdkPartInstaller
         return found.Count == 0
             ? "This kit's simulation settings declare nothing usable."
             : "Read this kit's simulation settings: " + string.Join("; ", found) + ".";
+    }
+
+    /// <summary>
+    /// What "no program to evaluate its devices" actually means for THIS kit.
+    ///
+    /// <para><b>Owner report: "it says the kit names no program to evaluate its devices — I thought we
+    /// were able to simulate some of these components."</b> The old wording was one fixed sentence
+    /// that went on to reassure the reader that "its parts are still built from the kit's own
+    /// netlists" — true of a kit that ships netlists, and a false comfort on one that does not. On a
+    /// kit whose parts are binary cell views and whose model data is a proprietary dataset format,
+    /// nothing is built from anything: the parts import as names, with no terminals and no behaviour,
+    /// and the message pointed at a fallback that was not there. Which of those two situations the
+    /// user is in is the whole content of the message, so it is read off the import rather than
+    /// asserted.</para>
+    ///
+    /// <para>The three cases are distinguished by what the import ACTUALLY produced, never by format
+    /// names: a part defined by a circuit is one carrying <see cref="PdkPart.DefinitionRelativePath"/>,
+    /// and a part that can be wired at all is one declaring terminals. A kit-specific rule here would
+    /// be exactly the kit knowledge the importer is built to avoid.</para>
+    /// </summary>
+    private static string DescribeNoProgram(PdkImportReport report)
+    {
+        const string whereItGoes =
+            " That one setting goes in this workspace's own folder for the kit — the kit itself is " +
+            "left exactly as it was shipped.";
+
+        bool anyCircuit  = report.Parts.Any(p => !string.IsNullOrEmpty(p.DefinitionRelativePath));
+        bool anyTerminal = report.Parts.Any(p => p.PinCount > 0);
+
+        if (anyCircuit)
+            return "This kit names no program to evaluate its devices. Its parts are still built " +
+                   "from the kit's own netlists; only devices needing an external model will say so " +
+                   "at Run." + whereItGoes;
+
+        // Nothing states how a part behaves. Name what is missing rather than implying a fallback.
+        var gaps = report.KnownGaps
+            .GroupBy(a => a.FormatName)
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Key} ({g.Count()})")
+            .ToList();
+
+        string gapText = gaps.Count == 0
+            ? ""
+            : " What it does hold, in formats circuitRF cannot read: " + string.Join(", ", gaps) + ".";
+
+        if (anyTerminal)
+            return "This kit names no program to evaluate its devices, and none of its parts is " +
+                   "defined by a netlist circuitRF can read — so they can be placed and wired, but " +
+                   "will not simulate until a device provider or a model file is supplied." +
+                   gapText + whereItGoes;
+
+        return "This kit names no program to evaluate its devices, none of its parts is defined by a " +
+               "netlist circuitRF can read, and none of them declares its terminals — so they import " +
+               "as names only: they cannot be wired and will not simulate." + gapText +
+               " If you have simulated parts from this vendor before, it will have been from a " +
+               "different build of the kit — one shipping network data or a model library rather " +
+               "than this one's binary cell views.";
     }
 
     /// <summary>The name circuitRF gives a formulation choice it found itself. A kit's own spelling

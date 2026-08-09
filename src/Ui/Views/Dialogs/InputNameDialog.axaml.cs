@@ -24,6 +24,40 @@ public partial class InputNameDialog : Window
         Opened += (_, _) => { NameBox.Focus(); NameBox.SelectAll(); };
     }
 
+    /// <summary>
+    /// The template the user chose, or null for "(Empty)" / a dialog that offered none. Read AFTER
+    /// <c>ShowDialog&lt;string?&gt;</c> returns a non-null name — the dialog's return contract is
+    /// still the name alone, so every existing caller is untouched.
+    /// </summary>
+    public ShippedSchematicTemplate? SelectedTemplate { get; private set; }
+
+    /// <summary>
+    /// Offers a template picker above the buttons. Call this ONLY where a new schematic is actually
+    /// being created; a picker on New Symbol or Duplicate Cell would offer a choice that does
+    /// nothing. Passing an empty list shows nothing, so a build that somehow shipped no templates
+    /// degrades to the plain name prompt rather than an empty combo.
+    /// </summary>
+    public void OfferSchematicTemplates(IReadOnlyList<ShippedSchematicTemplate> templates)
+    {
+        if (templates.Count == 0) return;
+
+        // "(Empty)" is first and pre-selected: a blank schematic is what New Cell has always
+        // produced, so a template is an opt-in and never a surprise.
+        var items = new List<TemplateChoice> { new("(Empty)", null) };
+        foreach (var t in templates) items.Add(new TemplateChoice(t.DisplayName, t));
+
+        TemplateBox.ItemsSource   = items;
+        TemplateBox.SelectedIndex = 0;
+        TemplateRow.IsVisible     = true;
+    }
+
+    // ToString is what the ComboBox renders — a record's own generated ToString would print the
+    // whole shape, which is why the label is carried rather than the template alone.
+    private sealed record TemplateChoice(string Label, ShippedSchematicTemplate? Template)
+    {
+        public override string ToString() => Label;
+    }
+
     private void OnOkClick(object? sender, RoutedEventArgs e) => TryCommit();
 
     private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(null);
@@ -52,6 +86,7 @@ public partial class InputNameDialog : Window
             ValidationMessage.IsVisible = true;
             return;
         }
+        SelectedTemplate = (TemplateBox.SelectedItem as TemplateChoice)?.Template;
         Close(name);
     }
 }

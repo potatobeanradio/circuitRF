@@ -160,6 +160,81 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
         return new DeviceWorkerInstance(_channel, handle, measured, nodeCount, delayPairs);
     }
 
+    /// <summary>
+    /// What one device type's parameters default to when nothing is set, keyed by the model's own
+    /// spelling — or null when this worker cannot answer.
+    ///
+    /// <para><b>A separate round trip, deliberately not folded into <see cref="Describe"/>.</b> A
+    /// default is not in the descriptor for this ABI: it is whatever the model writes during setup
+    /// for a parameter nobody gave, so learning one means the worker stands a probe model up and
+    /// reads it back. <c>Describe</c> runs on every worker launch — including the walk a PDK import
+    /// does across every artefact it finds — and answers from the descriptor alone. Charging that
+    /// import a model set-up per device type, for an answer it never asked for, is the trade this
+    /// split avoids.</para>
+    ///
+    /// <para><b>Null is the honest answer for a worker that does not implement it</b>, and it is the
+    /// ordinary case: only circuitRF's own OSDI worker does. A worker that does not know the command
+    /// refuses it, and a refusal here means "no defaults to show", never a failure the caller has to
+    /// handle — nothing about the device is wrong.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? DeclaredDefaults(string typeId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(typeId);
+        if (_disposed) return null;
+
+        lock (_defaultsGate)
+        {
+            if (_defaults.TryGetValue(typeId, out var cached)) return cached;
+
+            IReadOnlyDictionary<string, string>? result = null;
+            try
+            {
+                using var reply = _channel.Send(w =>
+                {
+                    w.WriteString("cmd", "defaults");
+                    w.WriteString("typeId", typeId);
+                });
+
+                if (reply.Root.TryGetProperty("params", out var array) &&
+                    array.ValueKind == JsonValueKind.Array)
+                {
+                    var map = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var p in array.EnumerateArray())
+                    {
+                        string name = ReadString(p, "name", "");
+                        if (name.Length == 0) continue;
+                        if (!p.TryGetProperty("value", out var v)) continue;
+
+                        // A default the model could not express (NaN, an infinity) arrives as null
+                        // and is OMITTED — the picker showing no default is honest; showing a zero
+                        // the model never chose is not.
+                        string? text = v.ValueKind switch
+                        {
+                            JsonValueKind.Number => v.GetRawText(),
+                            JsonValueKind.String => v.GetString(),
+                            JsonValueKind.True   => "1",
+                            JsonValueKind.False  => "0",
+                            _                    => null,
+                        };
+                        if (text is not null) map[name] = text;
+                    }
+                    result = map;
+                }
+            }
+            catch (ExternalDeviceException)
+            {
+                // A worker that does not implement the command, or a type it will not stand up.
+                // Neither is a problem with the device — there is simply nothing to show.
+            }
+
+            return _defaults[typeId] = result;
+        }
+    }
+
+    private readonly Lock _defaultsGate = new();
+    private readonly Dictionary<string, IReadOnlyDictionary<string, string>?> _defaults =
+        new(StringComparer.Ordinal);
+
     // ── describe ──────────────────────────────────────────────────────────────
 
     private static ExternalDeviceDescriptor ReadDescriptor(JsonElement element)
@@ -175,7 +250,12 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
             {
                 string pname = ReadString(p, "name", "");
                 if (pname.Length == 0) continue;
-                parameters.Add(new ExternalParamDescriptor(pname, ParseParamKind(ReadString(p, "kind", ""))));
+                parameters.Add(new ExternalParamDescriptor(
+                    pname,
+                    ParseParamKind(ReadString(p, "kind", "")),
+                    DefaultText: null,   // not in `describe` — see DeclaredDefaults below
+                    Units:       ReadString(p, "units", ""),
+                    Description: ReadString(p, "description", "")));
             }
         }
 

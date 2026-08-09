@@ -439,6 +439,52 @@ public static class ComponentTypeRegistry
         && parameterName.Equals("File", StringComparison.Ordinal);
 
     /// <summary>
+    /// A one-line explanation of a BUILT-IN primitive's parameter, shown as the row's tooltip, or ""
+    /// when there is nothing worth saying.
+    ///
+    /// <para>A kit part carries its own descriptions on the cell (<c>CcellParameter.Description</c>);
+    /// a built-in has no cell to carry one, so the few that genuinely need explaining are stated
+    /// here. Deliberately not a description for every parameter of every primitive — "R: the
+    /// resistance" is noise. These three are the ones a user cannot answer by reading the name,
+    /// because the answer is inside a file they just chose.</para>
+    /// </summary>
+    /// <summary>
+    /// True when this one parameter can be removed from a placed component on its own — the row
+    /// carries its own "×".
+    ///
+    /// <para><b>Why this is not the "−" button.</b> That button removes the LAST indexed GROUP
+    /// (P1Tone's <c>Z[k]</c>, ToneSource's <c>Freq[n]</c>/<c>V[n]</c>/<c>Phase[n]</c>), and
+    /// last-only is correct there for two reasons: the indices are a sequence, so removing from the
+    /// middle would leave a hole, and a group's members must go together or the tone is half
+    /// deleted. Neither applies to a compiled model's parameters — they are independent, unordered
+    /// names, and with hundreds available "remove the last one you happened to add" is not a way to
+    /// remove the first one. So they get per-row removal instead, and the two mechanisms stay
+    /// separate rather than one being bent to cover both.</para>
+    ///
+    /// <para>Scoped to VerilogA today, and to parameters the model itself declares: <c>File</c>,
+    /// <c>Model</c> and <c>Pins</c> are circuitRF's own and structural — the symbol cannot draw
+    /// without <c>Pins</c> — so they are not removable. Widening this to another component type is
+    /// a matter of adding it here, but only where a parameter is genuinely independent of its
+    /// neighbours.</para>
+    /// </summary>
+    public static bool IsRemovableParameter(SymbolKind kind, string parameterName)
+        => kind == SymbolKind.VerilogA
+        && parameterName is not ("File" or "Model" or "Pins")
+        && !string.IsNullOrWhiteSpace(parameterName);
+
+    public static string ParameterDescription(SymbolKind kind, string parameterName)
+        => kind is not SymbolKind.VerilogA ? "" : parameterName switch
+        {
+            "File"  => "The compiled model (.osdi) to load. circuitRF runs a model you built — it does "
+                     + "not compile Verilog-A itself. Choosing one fills in Model and Pins below.",
+            "Model" => "Which device type inside that file to place. A file usually declares one, and "
+                     + "then this can be left blank; when it declares several, pick the one you want.",
+            "Pins"  => "How many terminals the symbol draws. It is the model's own terminal count, "
+                     + "filled in from the file — change it only if you are drawing before choosing one.",
+            _       => "",
+        };
+
+    /// <summary>
     /// The gate-charge, gate-conduction and temperature parameters every built-in FET law shares.
     /// Factored out because they are genuinely the same parameters read by the same base class —
     /// unlike the drain-current parameters, which are per-law and must NOT be shared.

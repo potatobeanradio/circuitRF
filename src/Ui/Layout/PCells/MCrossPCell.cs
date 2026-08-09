@@ -51,16 +51,30 @@ public static class MCrossPCell
             new PCellPin("4",      0, -stub4, signalLayer, w4, 270.0),
         };
 
-        // pcell-parameter-handles.md — one width grip per arm, on that arm's own edge at its own
-        // midpoint. The four arms radiate from the origin along 0/90/180/270, so each grip measures
-        // its width across its own arm's direction: the +X and -X arms are edited vertically, the
-        // +Y and -Y arms horizontally.
+        // pcell-parameter-handles.md — EIGHT grips, ONE AT EACH CORNER OF THE METAL. A cross's
+        // outline has eight outward corners: two at each arm's own end cap. (The four where adjacent
+        // arms meet are re-entrant — inward folds, not something to grab.)
+        //
+        // Each pair drives its own arm's width and anchors on that arm's own end-cap CENTRE, so the
+        // projection is a half-width measured ACROSS that arm: the ±X arms are edited vertically, the
+        // ±Y arms horizontally. An anchor slides along its own arm as that width changes (the stub
+        // length is a multiple of the width), which the across-only projection ignores by
+        // construction.
+        const PCellHandleQuantity len = PCellHandleQuantity.Length;
         var handles = new[]
         {
-            new PCellHandle("W1",  stub1 / 2, 0,  stub1 / 2,  w1 / 2, AxisDeg: 90),
-            new PCellHandle("W2",  0,  stub2 / 2,  w2 / 2,  stub2 / 2, AxisDeg: 0),
-            new PCellHandle("W3", -stub3 / 2, 0, -stub3 / 2,  w3 / 2, AxisDeg: 90),
-            new PCellHandle("W4",  0, -stub4 / 2,  w4 / 2, -stub4 / 2, AxisDeg: 0),
+            // Arm 1 (+X) end cap.
+            new PCellHandle("W1",  stub1, 0,  stub1,  w1 / 2, AxisDeg: 90,  Quantity: len),
+            new PCellHandle("W1",  stub1, 0,  stub1, -w1 / 2, AxisDeg: 270, Quantity: len),
+            // Arm 2 (+Y) end cap.
+            new PCellHandle("W2",  0,  stub2,  w2 / 2,  stub2, AxisDeg: 0,   Quantity: len),
+            new PCellHandle("W2",  0,  stub2, -w2 / 2,  stub2, AxisDeg: 180, Quantity: len),
+            // Arm 3 (-X) end cap.
+            new PCellHandle("W3", -stub3, 0, -stub3,  w3 / 2, AxisDeg: 90,  Quantity: len),
+            new PCellHandle("W3", -stub3, 0, -stub3, -w3 / 2, AxisDeg: 270, Quantity: len),
+            // Arm 4 (-Y) end cap.
+            new PCellHandle("W4",  0, -stub4,  w4 / 2, -stub4, AxisDeg: 0,   Quantity: len),
+            new PCellHandle("W4",  0, -stub4, -w4 / 2, -stub4, AxisDeg: 180, Quantity: len),
         };
 
         return new PCellResult([merged], pins, Handles: handles);

@@ -40,7 +40,7 @@
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Border x:Name="ColorPreviewRect" Width="48" Height="24"
                   BorderThickness="1" BorderBrush="{DynamicResource CrfTileBorderBrush}"/>
-          <TextBox x:Name="HexBox" Width="110" Watermark="RRGGBBAA"
+          <TextBox x:Name="HexBox" Width="110" PlaceholderText="RRGGBBAA"
                    KeyDown="OnHexKeyDown" LostFocus="OnHexLostFocus"
                    ToolTip.Tip="RRGGBBAA. A six-digit entry is taken as fully opaque. Return applies, Escape reverts."/>
           <Button  x:Name="PickButton" Content="Pick…" Click="OnPickClick"/>

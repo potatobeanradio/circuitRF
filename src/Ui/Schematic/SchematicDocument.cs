@@ -259,7 +259,9 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
             _baseTitle = cellName;
             Id         = cellName;
         }
-        IsDirty = false; // triggers UpdateTitle() which now uses the updated _baseTitle
+        IsDirty = false;   // only calls UpdateTitle() when the flag actually CHANGES…
+        UpdateTitle();     // …so refresh unconditionally — a rename of an already-clean document
+                           // would otherwise leave the tab showing the old title.
     }
 
     /// <summary>

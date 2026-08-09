@@ -177,10 +177,19 @@ public sealed class MBendMiterResolutionTests : IDisposable
         Assert.True(optimalXy.Length / 2 > noneXy.Length / 2);
     }
 
-    /// <summary>R-L5h-7: a non-90° bend with a non-None Miter reports why it was skipped, and its
-    /// geometry stays unmitered (never silently extrapolated).</summary>
+    /// <summary>
+    /// A non-90° bend with a non-None Miter IS chamfered now — and says, every time, that the
+    /// magnitude is an extrapolation rather than the published fit.
+    ///
+    /// <para>This deliberately reverses R-L5h-7's original "report and stay unmitered." That rule was
+    /// right that Douville &amp; James is a right-angle formula and must not be silently extrapolated,
+    /// and wrong about the remedy: leaving the corner square makes an oblique bend render as two
+    /// merged stubs, which is a worse and less honest answer than a chamfer whose provenance is
+    /// stated. The no-silent-extrapolation half is kept exactly — the diagnostic fires on every
+    /// oblique bend, names the angle, and says what the number actually is.</para>
+    /// </summary>
     [Fact]
-    public void ObliqueBend_WithMiterSet_ReportsWhyAndStaysUnmitered()
+    public void ObliqueBend_WithMiterSet_IsChamfered_AndSaysTheMagnitudeIsAnExtrapolation()
     {
         var withoutMiter = MBendPCell.Generate(
             new Dictionary<string, PCellValue> { ["W"] = 0.0029, ["Angle"] = 45.0, ["Miter"] = 0.0 }, null, PCellLayerSelection.Default);
@@ -190,9 +199,16 @@ public sealed class MBendMiterResolutionTests : IDisposable
         var withoutXy = ((PolygonShape)withoutMiter.Shapes[0]).Xy;
         var withXy = ((PolygonShape)withMiter.Shapes[0]).Xy;
 
-        Assert.True(withoutXy.SequenceEqual(withXy)); // no silent extrapolation — geometry unchanged
+        // The unmitered oblique bend is a clean six-vertex outline (two end caps, a real outer corner
+        // and a real inner one) — never a union of two overlapping stubs.
+        Assert.Equal(6, withoutXy.Length / 2);
+        // The mitered one replaces that outer corner with two cut vertices, and is genuinely smaller.
+        Assert.Equal(7, withXy.Length / 2);
+        Assert.False(withoutXy.SequenceEqual(withXy));
+
         Assert.Null(withoutMiter.Diagnostics);
         Assert.NotNull(withMiter.Diagnostics);
-        Assert.Contains(withMiter.Diagnostics!, d => d.Contains("90°") && d.Contains("45"));
+        Assert.Contains(withMiter.Diagnostics!,
+            d => d.Contains("45") && d.Contains("extrapolation") && d.Contains("Douville"));
     }
 }

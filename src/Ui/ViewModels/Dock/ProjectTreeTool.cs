@@ -53,8 +53,23 @@ public partial class ProjectTreeTool : Tool
 
     // ── Recent workspaces (Item 1) ────────────────────────────────────────────
 
-    /// <summary>Name + path pair for the no-workspace recent list.</summary>
-    public sealed record RecentEntry(string Name, string Path);
+    /// <summary>
+    /// Name + path pair for the no-workspace recent list.
+    ///
+    /// <para><b>It carries its own reveal label and command, and that is a binding constraint rather
+    /// than a design preference.</b> A <c>ContextMenu</c> lives in its own popup visual tree, so an
+    /// <c>$parent[ItemsControl]</c> walk out to the tool VM — which is how the row's own Open button
+    /// reaches <see cref="OpenRecentCommand"/> — resolves to nothing from inside a menu item. What
+    /// the menu item CAN see is the entry it was opened on, so the entry is what carries them.</para>
+    /// </summary>
+    public sealed record RecentEntry(string Name, string Path)
+    {
+        /// <summary>Platform-correct "Reveal in …", supplied by the tool that built this entry so
+        /// there is one spelling of it per surface rather than one per row.</summary>
+        public string RevealLabel { get; init; } = "";
+
+        public IRelayCommand<string>? RevealCommand { get; init; }
+    }
 
     public ObservableCollection<RecentEntry> RecentWorkspaces { get; } = new();
     public bool HasRecentWorkspaces => RecentWorkspaces.Count > 0;
@@ -64,12 +79,31 @@ public partial class ProjectTreeTool : Tool
         RecentWorkspaces.Clear();
         if (_actions is not null)
             foreach (var (n, p) in _actions.GetRecentWorkspaces())
-                RecentWorkspaces.Add(new RecentEntry(n, p));
+                RecentWorkspaces.Add(new RecentEntry(n, p)
+                {
+                    RevealLabel   = RevealLabel,
+                    RevealCommand = RevealRecentCommand,
+                });
         OnPropertyChanged(nameof(HasRecentWorkspaces));
     }
 
     [RelayCommand]
     private void OpenRecent(string path) => _actions?.OpenWorkspacePath(path);
+
+    /// <summary>
+    /// Shows a recent workspace in the platform's file manager without opening it.
+    ///
+    /// <para>The FOLDER is revealed, not the <c>.cws</c> inside it: a workspace IS its folder, and
+    /// the file that marks one is a dotfile the file manager may well be configured not to show at
+    /// all — revealing it would open a window with nothing selected in it.</para>
+    /// </summary>
+    [RelayCommand]
+    private void RevealRecent(string? cwsPath)
+    {
+        if (string.IsNullOrWhiteSpace(cwsPath)) return;
+        string dir = Path.GetDirectoryName(cwsPath) ?? cwsPath;
+        _actions?.RevealPath(dir);
+    }
 
     [RelayCommand]
     private void ClearRecent()

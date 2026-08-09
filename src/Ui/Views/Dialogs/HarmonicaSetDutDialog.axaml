@@ -49,7 +49,7 @@
 
         <StackPanel Orientation="Horizontal" Spacing="8" x:Name="FileRow">
           <TextBox x:Name="ModelFileBox" Width="440" LostFocus="OnProviderCommitted"
-                   Watermark="Path to a compiled model file"/>
+                   PlaceholderText="Path to a compiled model file"/>
           <Button Content="Browse…" Width="90" HorizontalContentAlignment="Center"
                   Click="OnBrowseModelFileClick"/>
         </StackPanel>

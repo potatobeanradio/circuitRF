@@ -187,6 +187,12 @@ public sealed partial class LayoutEditorViewModel
     /// only the former persists a marker when the cursor is nowhere near a real feature.</summary>
     internal bool SnapDragActiveForTests => _snapDragActive;
 
+    /// <summary>Test/diagnostic-only: is a REAL snap target currently offered (as opposed to the
+    /// synthetic marker-persistence echo, or nothing at all)? This is the flag every drag consults to
+    /// decide whether geometry snap overrides grid snap, so a test can assert self-exclusion — "the
+    /// dragged thing offered nothing to attract to" — without reaching into the query.</summary>
+    internal bool HasSnapTargetForTests => _snapCandidateIsRealTarget && _currentSnapCandidate is not null;
+
     /// <summary>The ORIGINALLY-grabbed feature's own kind/layer, captured once at grab time — owner
     /// follow-up: "the glyph indicator should always be visible throughout the drag." While
     /// <see cref="_snapDragActive"/> and no OTHER feature is currently in range, <see cref="UpdateSnapMarker"/>
@@ -221,6 +227,12 @@ public sealed partial class LayoutEditorViewModel
     /// multi-shape/instance selection, not only a lone shape. Hover (no drag at all) excludes nothing.</summary>
     private (IReadOnlySet<int>? Shapes, IReadOnlySet<int>? Instances) ComputeSnapExclusions()
     {
+        // A PCell grip drag REGENERATES the instance under the cursor on every tick, so its own
+        // artwork is the one thing a grip must never attract to: the target would be the edge the
+        // grip is currently dragging, and the solve would chase a feature that moves with it.
+        if (PCellHandleDragInstanceIndex >= 0)
+            return (null, new HashSet<int> { PCellHandleDragInstanceIndex });
+
         if (_handleDragKind != HandleDragKind.None)
             return (new HashSet<int> { _handleDragShapeIndex }, null);
 
@@ -246,6 +258,20 @@ public sealed partial class LayoutEditorViewModel
     /// the ORIGINAL blanket "any handle or scale drag" early-out that disabled snap for every handle
     /// drag including Vertex/RectCorner/EdgeMidpoint/RectEdge, which is exactly what R-snpf-1 reports.</summary>
     private void UpdateSnapMarker(long px, long py, KeyModifiers mods, long snapTolDbu, long pixelDbu)
+    {
+        UpdateSnapMarkerCore(px, py, mods, snapTolDbu, pixelDbu);
+
+        // The X:/Y: readout reports the SNAPPED point when snap is on, so it has to be recomputed
+        // after the candidate for this tick is known. The canvas raises CursorWorldChanged (which
+        // stores the raw point) BEFORE it hands the move to the view model, so refreshing only there
+        // would leave the readout showing the PREVIOUS tick's candidate — visibly wrong on a fast
+        // drag. Every early return inside the core counts, hence the wrapper rather than a call at
+        // the bottom of it: two of those returns leave the candidate deliberately unchanged, and one
+        // clears it, and all three still need the raw position re-rendered.
+        RefreshCursorReadout();
+    }
+
+    private void UpdateSnapMarkerCore(long px, long py, KeyModifiers mods, long snapTolDbu, long pixelDbu)
     {
         _snapLastMods = mods;
 
@@ -288,17 +314,31 @@ public sealed partial class LayoutEditorViewModel
             ? candidates[0]
             // Owner follow-up: a grab-role drag keeps SOME marker showing throughout, even where the
             // cursor has moved away from every real feature — a synthetic echo of the ORIGINALLY-
-            // grabbed feature's own kind, tracking the cursor exactly like the grab point itself does
-            // (§2.3's own "tracks the cursor until a target attracts it"). Never applies to a plain
-            // body-drag (_snapDragActive is only ever true for a marker-initiated grab) and never
-            // applies here when snap is disabled/suppressed/out of tolerance — those already returned
-            // above with the candidate explicitly nulled. brief-snap-combobox-and-consistency.md
-            // R-cmb-4/5: this synthetic echo is DISPLAY ONLY — _snapCandidateIsRealTarget stays false
-            // for it, so RecomputeMoveDelta's absolute-position branch never fires off of it and grid
-            // snap still applies to the actual committed delta whenever nothing real is in range.
+            // grabbed feature's own kind, drawn where that feature has actually been moved to. Never
+            // applies to a plain body-drag (_snapDragActive is only ever true for a marker-initiated
+            // grab) and never applies here when snap is disabled/suppressed/out of tolerance — those
+            // already returned above with the candidate explicitly nulled.
+            // brief-snap-combobox-and-consistency.md R-cmb-4/5: this synthetic echo is DISPLAY ONLY —
+            // _snapCandidateIsRealTarget stays false for it, so RecomputeMoveDelta's absolute-position
+            // branch never fires off of it and grid snap still applies to the committed delta whenever
+            // nothing real is in range.
+            //
+            // OWNER REPORT ("the glyph follows the mouse and is not in the centre when grid snapping
+            // is on"): this used to be drawn at the RAW cursor, while the geometry under it moved by a
+            // GRID-SNAPPED delta — so the marker drifted off its own shape by up to half a snap step
+            // for the whole drag. Most visible on a via, whose one feature IS its centre, so the
+            // offset reads directly as "the glyph is not in the middle of the via". It is drawn at the
+            // grabbed feature's own snapped position now, computed by the same helper the commit uses.
             : _snapDragActive
-                ? new SnapCandidate(_snapDragOwnerKind, px, py, _snapDragOwnerLayer, _snapDragOwnerIsInstance, _snapDragOwnerIndex)
+                ? MakeGrabEcho(px, py)
                 : null;
+    }
+
+    private SnapCandidate MakeGrabEcho(long px, long py)
+    {
+        var (gx, gy) = SnappedGrabPoint(px, py);
+        return new SnapCandidate(_snapDragOwnerKind, gx, gy, _snapDragOwnerLayer,
+                                 _snapDragOwnerIsInstance, _snapDragOwnerIndex);
     }
 
     /// <summary>R-snp-8: the click-through headline behaviour. Consumes the press for the top-priority

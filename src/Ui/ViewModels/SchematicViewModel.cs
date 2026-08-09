@@ -2664,16 +2664,17 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             try
             {
-                string trimmed = cellDir.TrimEnd('/', '\\');
-                string? parent = Path.GetDirectoryName(trimmed);
-                if (!string.IsNullOrEmpty(parent))
+                // ResolveCellDirOrRef, never a hand-split into directory + name. A kit part's
+                // reference is VIRTUAL (pdk://kit/part), and GetDirectoryName mangles it into a path
+                // that resolves to nothing — so the ghost fell back to the placeholder glyph while the
+                // click placed the kit's real symbol. Drag-and-drop looked right only because it was
+                // already going through this one accessor. See src/Ui/CLAUDE.md: do not split that
+                // field by hand again.
+                var res = CellSymbolResolver.ResolveCellDirOrRef(cellDir);
+                if (res.State == CellSymbolState.Resolved)
                 {
-                    var res = CellSymbolResolver.Resolve(Path.GetFileName(trimmed), parent);
-                    if (res.State == CellSymbolState.Resolved)
-                    {
-                        prims = res.Symbol!.Primitives;
-                        pins  = res.Symbol.Pins;
-                    }
+                    prims = res.Symbol!.Primitives;
+                    pins  = res.Symbol.Pins;
                 }
             }
             catch { /* unresolvable — fall back to the placeholder glyph */ }

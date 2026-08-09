@@ -406,6 +406,21 @@ public sealed class PCellWireHandle
     /// reads as false — the pre-existing behaviour, so a wire-version-6 generator written before this
     /// field existed keeps working unchanged.</summary>
     public bool KeepAnchorFixed { get; set; }
+
+    /// <summary>
+    /// What kind of quantity the parameter is: "length", "angle", or absent. The host uses it for the
+    /// drag readout's units and for honouring the layout's own snap grid — never for the sensitivity,
+    /// which is still measured (R-pch-2).
+    ///
+    /// <para><b>Purely additive, and deliberately NOT a wire-version bump.</b> Absent decodes to
+    /// <see cref="PCellHandleQuantity.Unspecified"/>, which is exactly how every handle behaved before
+    /// this field existed — so a version-6 script that says nothing keeps working, and one that does
+    /// say something gets the better readout without either side having to negotiate.</para>
+    /// </summary>
+    public string? Quantity { get; set; }
+
+    /// <summary>The cross axis's own quantity — same vocabulary, same absent-means-nothing rule.</summary>
+    public string? CrossQuantity { get; set; }
 }
 
 /// <summary>The handle-kind vocabulary, in one place so the encoder and decoder cannot disagree.</summary>
@@ -413,6 +428,30 @@ public static class PCellWireHandleKind
 {
     public const string Linear  = "linear";
     public const string Angular = "angular";
+}
+
+/// <summary>The handle-quantity vocabulary, in one place for the same reason. An unrecognised value
+/// decodes as <see cref="PCellHandleQuantity.Unspecified"/> and is NOT reported: unlike an unknown
+/// handle KIND (which would silently drop a grip), an unknown quantity costs only a nicer readout,
+/// and a hint with no effect on the answer must not cost a working cell.</summary>
+public static class PCellWireHandleQuantity
+{
+    public const string Length = "length";
+    public const string Angle  = "angle";
+
+    public static string? Encode(PCellHandleQuantity q) => q switch
+    {
+        PCellHandleQuantity.Length => Length,
+        PCellHandleQuantity.Angle  => Angle,
+        _ => null,
+    };
+
+    public static PCellHandleQuantity Decode(string? s) => s switch
+    {
+        Length => PCellHandleQuantity.Length,
+        Angle  => PCellHandleQuantity.Angle,
+        _      => PCellHandleQuantity.Unspecified,
+    };
 }
 
 public sealed class PCellWireGenerateReply

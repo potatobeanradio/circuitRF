@@ -81,6 +81,35 @@ public enum PCellPreviewMode
 }
 
 /// <summary>
+/// What KIND of physical quantity a handle's parameter is — the one thing the host genuinely cannot
+/// measure for itself, and the only reason it needs to know.
+///
+/// <para><b>This does NOT reintroduce the declared <c>scale</c> R-pch-2 rejected.</b> That rule is
+/// about SENSITIVITY (how much the parameter changes per unit of travel), which is still measured by
+/// regenerating and is still unit-free. This says only what the parameter IS, which the host needs for
+/// two things it cannot do otherwise: printing a drag readout a human can read (a raw
+/// <c>0.0118872</c> is not a width), and honouring the layout's own snap grid (a user who set 1 mil
+/// snapping expects the committed width to land on a whole mil, not 468.00006 of one).</para>
+///
+/// <para><see cref="Unspecified"/> is the default and is not a defect: the readout falls back to the
+/// raw value and the grid is not applied, which is exactly how every handle behaved before this
+/// existed. A script-supplied handle that says nothing therefore keeps working unchanged.</para>
+/// </summary>
+public enum PCellHandleQuantity
+{
+    /// <summary>Nothing declared — raw readout, no grid snapping.</summary>
+    Unspecified,
+
+    /// <summary>A length. In-process that is SI metres (R-pc-6); the host converts for display and
+    /// quantizes to the layout's own snap step.</summary>
+    Length,
+
+    /// <summary>An angle in degrees. Displayed with a degree sign; never quantized to a length
+    /// grid.</summary>
+    Angle,
+}
+
+/// <summary>
 /// The parameter a <see cref="PCellHandle"/> drives when dragged PERPENDICULAR to its own axis
 /// (pcell-parameter-handles.md R-pch-4a). Null on an ordinary one-degree-of-freedom grip, which is
 /// the common case.
@@ -95,7 +124,8 @@ public sealed record PCellHandleCrossAxis(
     string Parameter,
     string? Label = null,
     double? Min = null,
-    double? Max = null);
+    double? Max = null,
+    PCellHandleQuantity Quantity = PCellHandleQuantity.Unspecified);
 
 /// <summary>
 /// One draggable grip on generated artwork — pcell-parameter-handles.md R-pch-1/R-pch-4.
@@ -130,7 +160,8 @@ public sealed record PCellHandle(
     double? Min = null,
     double? Max = null,
     PCellHandleCrossAxis? Cross = null,
-    bool KeepAnchorFixed = false)
+    bool KeepAnchorFixed = false,
+    PCellHandleQuantity Quantity = PCellHandleQuantity.Unspecified)
 {
     /// <summary>What the readout calls it — the generator's own <see cref="Label"/>, else the
     /// parameter name.</summary>
@@ -178,10 +209,16 @@ public sealed record PCellHandle(
     /// <para>Used by the solver so a two-axis grip needs no second code path anywhere: each axis is
     /// solved by the ordinary machinery, and the only new thing is that a drag does it twice.</para>
     /// </summary>
+    /// <para><b><see cref="KeepAnchorFixed"/> is carried across, and that is load-bearing.</b> A
+    /// pinned grip's CELL coordinates are the thing that stays still while its ANCHOR moves — the
+    /// solver's own R-pch-4b inversion (measure from the REGENERATED anchor) is what makes such a grip
+    /// measurable at all. Dropping the flag here made the cross axis of every pinned two-axis grip read
+    /// as dead and be silently dropped, while the primary axis kept working.</para>
     public PCellHandle AsCrossHandle() => Cross is null
         ? this
         : new PCellHandle(Cross.Parameter, AnchorX, AnchorY, X, Y, AxisDeg + 90.0, Kind,
-                          Cross.Label, Cross.Min, Cross.Max);
+                          Cross.Label, Cross.Min, Cross.Max,
+                          Cross: null, KeepAnchorFixed: KeepAnchorFixed, Quantity: Cross.Quantity);
 
     /// <summary>
     /// The scalar this handle measures at an arbitrary point, in the handle's own projection: DBU

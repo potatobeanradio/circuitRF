@@ -434,7 +434,8 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         });
         vm.SelectInstance(0);
 
-        Assert.Equal(3, vm.Overlay.PCellHandles.Count);
+        // Six: one at each corner of the metal (two per arm end cap).
+        Assert.Equal(6, vm.Overlay.PCellHandles.Count);
 
         double w2Before = ParametersOf(vm, 0).Real("W2");
         double w3Before = ParametersOf(vm, 0).Real("W3");
@@ -465,13 +466,25 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         return (vm, cellRef);
     }
 
+    /// <summary>
+    /// MKlopf's FAR middle grip — the two-axis one, identified by its anchor being pin 1 (the cell
+    /// origin, so (0,0) in world for an instance placed at the origin under any rotation). The NEAR
+    /// middle grip is the mirror image and anchors on the far end instead, so the two are told apart
+    /// by their anchor rather than by list position or by a screen direction that rotation changes.
+    /// </summary>
+    private static PCellHandleMarker MklopfFarGrip(LayoutEditorViewModel vm)
+        => Assert.Single(vm.Overlay.PCellHandles.Where(h => h.HasCrossAxis && h is { AnchorX: 0, AnchorY: 0 }));
+
     [Fact]
-    public void MKlopf_ShowsOneGrip_ThatAdvertisesBothAxes()
+    public void MKlopf_ShowsThreeGripsPerEnd_AndTheMiddleOneAdvertisesBothAxes()
     {
         var (vm, _) = PlaceMklopf();
 
-        var grip = Assert.Single(vm.Overlay.PCellHandles);
-        Assert.True(grip.HasCrossAxis, "the renderer needs to know to hint both directions");
+        Assert.Equal(6, vm.Overlay.PCellHandles.Count);
+        // Exactly the two middle grips hint both directions; the four edge grips drive one impedance
+        // each and must not advertise a second axis they do not have.
+        Assert.Equal(2, vm.Overlay.PCellHandles.Count(h => h.HasCrossAxis));
+        Assert.True(MklopfFarGrip(vm).HasCrossAxis, "the renderer needs to know to hint both directions");
     }
 
     [Fact]
@@ -479,7 +492,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     {
         var (vm, _) = PlaceMklopf();
         var before = ParametersOf(vm, 0);
-        var grip = Assert.Single(vm.Overlay.PCellHandles);
+        var grip = MklopfFarGrip(vm);
 
         // One drag, both axes: further along +X is a longer taper, further along +Y is more offset.
         Drag(vm, grip, toX: 8_000_000, toY: 1_500_000, tolDbu: 2_000_000);
@@ -497,7 +510,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         // Both axes commit together. Committing them separately would make a single drag two undo
         // steps, which is not what the user did.
         var (vm, cellRef) = PlaceMklopf();
-        var grip = Assert.Single(vm.Overlay.PCellHandles);
+        var grip = MklopfFarGrip(vm);
 
         Drag(vm, grip, toX: 8_000_000, toY: 1_500_000, tolDbu: 2_000_000);
         Assert.NotEqual(cellRef, vm.Model.Instances[0].CellRef);
@@ -513,7 +526,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         // The near end stays fixed and the taper stretches from it — what dragging a far corner
         // ought to do, and what the generator's own origin convention already guarantees.
         var (vm, _) = PlaceMklopf();
-        var grip = Assert.Single(vm.Overlay.PCellHandles);
+        var grip = MklopfFarGrip(vm);
 
         Drag(vm, grip, toX: 8_000_000, toY: 1_500_000, tolDbu: 2_000_000);
 
@@ -536,7 +549,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         // both axes. The unconditional version of this claim is covered by the synthetic two-axis
         // generator in PCellHandleDegradationTests, which cannot be slow.
         var (vm, _) = PlaceMklopf();
-        var grip = Assert.Single(vm.Overlay.PCellHandles);
+        var grip = MklopfFarGrip(vm);
 
         vm.OnPointerPressed(grip.X, grip.Y, KeyModifiers.None, hitTolDbu: 2_000_000);
         vm.OnPointerMoved(25_000_000, 1_500_000, leftDown: true, KeyModifiers.None, hitTolDbu: 2_000_000);
@@ -557,7 +570,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     public void ATwoAxisDrag_ReadsOutBothParameters()
     {
         var (vm, _) = PlaceMklopf();
-        var grip = Assert.Single(vm.Overlay.PCellHandles);
+        var grip = MklopfFarGrip(vm);
 
         vm.OnPointerPressed(grip.X, grip.Y, KeyModifiers.None, hitTolDbu: 2_000_000);
         vm.OnPointerMoved(8_000_000, 1_500_000, leftDown: true, KeyModifiers.None, hitTolDbu: 2_000_000);
@@ -576,7 +589,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         vm.Model.Instances[0].Rot = LayoutRotation.R90;
         vm.SelectInstance(0);
 
-        var grip = Assert.Single(vm.Overlay.PCellHandles);
+        var grip = MklopfFarGrip(vm);
         var inst = vm.Model.Instances[0];
         var (tx, ty) = LayoutInstanceTransform.TransformPoint(8_000_000, 1_500_000, inst, 0, 0);
 

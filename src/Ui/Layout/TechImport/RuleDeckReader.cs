@@ -96,7 +96,40 @@ public static partial class RuleDeckReader
         !string.IsNullOrWhiteSpace(text) &&
         (LayerBindRegex().IsMatch(text) ||
          QuotedLayerBindRegex().IsMatch(text) ||
-         ValueBindRegex().IsMatch(text));
+         ValueBindRegex().IsMatch(text) ||
+         LooksLikeDerivationFile(text));
+
+    /// <summary>
+    /// A FOURTH marker: the deck's own top-level file, which binds no drawn layer and reads no rule
+    /// value — it derives the shared layers every other file then measures, and `load`s them.
+    ///
+    /// <para><b>Why it has to be recognised.</b> On a real process this one file holds ~59 derived
+    /// layers (<c>cont_sq = cont_nseal.not(contbar)</c>) used across the whole deck. Missed, every rule
+    /// that measures one of them reports "region is not a drawn or derived layer" — measured, 26 rules
+    /// on top of the ones already read.</para>
+    ///
+    /// <para>Recognition is by GRAMMAR, like the other three, and deliberately narrow. A run of
+    /// derived-layer bindings alone is not enough — <c>x = y.join(z)</c> is also an ordinary list join
+    /// in the deck language — so the file must ALSO either state rules (<c>.output(…)</c>) or use the operations that have no
+    /// plausible non-layer reading (<c>not</c>, <c>interacting</c>, <c>covering</c>, <c>sized</c>,
+    /// <c>merged</c>, <c>xor</c>). The real process's top-level file clears both thresholds by a wide
+    /// margin: 43 derivations, of which most are that distinctive subset.</para>
+    ///
+    /// <para><b>The cost of getting this wrong is a phantom count, not a wrong rule.</b> A file wrongly
+    /// admitted contributes to the "further rules circuitRF cannot check" tally without contributing a
+    /// rule — which is why the bar is set on the vocabulary rather than on the count alone.</para>
+    /// </summary>
+    private static bool LooksLikeDerivationFile(string text)
+        => DerivationRegex().Matches(text).Count >= MinDerivationsForADeckFile &&
+           (OutputRegex().IsMatch(text) ||
+            LayerAlgebraRegex().Matches(text).Count >= MinLayerAlgebraForADeckFile);
+
+    /// <summary>One or two chained assignments are ordinary scripting; a run of them is a derivation
+    /// block. Set where a real process's top-level file clears it by an order of magnitude.</summary>
+    private const int MinDerivationsForADeckFile = 6;
+
+    /// <summary>How many of those must use an operation with no plausible non-layer meaning.</summary>
+    private const int MinLayerAlgebraForADeckFile = 3;
 
     /// <summary>
     /// True when the text is a rule-VALUE table: JSON carrying a top-level object of rule name →
@@ -157,6 +190,12 @@ public static partial class RuleDeckReader
     /// <summary>Below this a JSON object is some other configuration that happens to hold numbers.</summary>
     private const int MinValuesForATable = 8;
 
+    /// <summary>
+    /// How many times the derived-binding collection pass may re-run before giving up on reaching a
+    /// fixed point. Each pass costs one scan of the deck's text; a real process settles in two.
+    /// </summary>
+    private const int MaxBindingPasses = 4;
+
     // ── The read ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -205,8 +244,40 @@ public static partial class RuleDeckReader
         var unsupported = new Dictionary<string, int>(StringComparer.Ordinal);
         var seen        = new HashSet<string>(StringComparer.Ordinal);
 
+        // ── Derived-layer bindings are GLOBAL across the deck's files, unlike array bindings ────────
+        //
+        // A deck is ONE program: its host loads every file into a single shared scope, so a derived
+        // layer bound in the top-level file (`cont_sq = cont_nseal.not(contbar)`) is the same variable
+        // the per-table rule files then measure. Reading each file with its own derived map made every
+        // such rule unresolvable — measured on a real process, that alone was 26 rules, and it is why
+        // the top-level file being unreadable cost nothing until this changed: nothing downstream
+        // could have used what it binds.
+        //
+        // This is DELIBERATELY the opposite of the array rule below, which stays file-local. Arrays
+        // are loop-scoped working variables and two files routinely bind the same ordinary name ("the
+        // metals") to genuinely different lists; derived layers are top-level and unique by
+        // construction. Two different scoping questions, two different answers.
+        //
+        // The passes run to a FIXED POINT rather than a fixed count because derived layers chain
+        // across files in whatever order the reader happens to receive them, and file order here is
+        // the scan's, not the deck's own `load` order. Bounded so a deck that never settles costs a
+        // known amount of work rather than spinning.
+        var derived = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int pass = 0; pass < MaxBindingPasses; pass++)
+        {
+            int before = derived.Count;
+            var scratchRules = new List<RuleDeckRule>();
+            var scratchUnsup = new Dictionary<string, int>(StringComparer.Ordinal);
+            var scratchSeen  = new HashSet<string>(StringComparer.Ordinal);
+            var scratchNotes = new List<string>();
+            foreach (var text in texts)
+                ReadRules(text, layerByName, ruleValues,
+                          scratchRules, scratchUnsup, scratchSeen, scratchNotes, derived);
+            if (derived.Count == before) break;
+        }
+
         foreach (var text in texts)
-            ReadRules(text, layerByName, ruleValues, rules, unsupported, seen, notes);
+            ReadRules(text, layerByName, ruleValues, rules, unsupported, seen, notes, derived);
 
         var grouped = unsupported
             .OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
@@ -308,7 +379,8 @@ public static partial class RuleDeckReader
         List<RuleDeckRule>                           rules,
         Dictionary<string, int>                      unsupported,
         HashSet<string>                              seen,
-        List<string>                                 notes)
+        List<string>                                 notes,
+        Dictionary<string, string>?                  sharedDerived = null)
     {
         var lines       = text.Split('\n');
         var arrayByName = CollectArrayBindings(text);
@@ -320,7 +392,7 @@ public static partial class RuleDeckReader
         // This is what turned "a rule on a derived layer" from an unsupported category into a rule:
         // `m = metal.not(keepout)` followed by `m.width(x)` is one binding and one measurement, and
         // without the binding the measurement has no operand this model can name.
-        var derivedByName = new Dictionary<string, string>(StringComparer.Ordinal);
+        var derivedByName = sharedDerived ?? new Dictionary<string, string>(StringComparer.Ordinal);
 
         for (int i = 0; i < lines.Length; i++)
         {
@@ -739,4 +811,16 @@ public static partial class RuleDeckReader
 
     [GeneratedRegex(@"#\{[^}]*\}")]
     private static partial Regex InterpolationRegex();
+
+    /// <summary>`x = y.and(z)` / `.not(` / `.join(` … — one derived-layer binding. Used only to
+    /// RECOGNISE a derivation file; the bindings themselves are read by the statement scanner.</summary>
+    [GeneratedRegex(@"^\s*\w+\s*=\s*\w+\s*\.\s*(and|or|not|join|xor|interacting|not_interacting|inside|outside|covering|not_covering|sized|size|merged)\b",
+                    RegexOptions.Multiline)]
+    private static partial Regex DerivationRegex();
+
+    /// <summary>The subset of the above with no plausible reading outside layer algebra — `.join` and
+    /// `.or` have ordinary non-layer meanings in the deck language and are deliberately absent here.</summary>
+    [GeneratedRegex(@"^\s*\w+\s*=\s*\w+\s*\.\s*(not|xor|interacting|not_interacting|covering|not_covering|sized|merged)\b",
+                    RegexOptions.Multiline)]
+    private static partial Regex LayerAlgebraRegex();
 }

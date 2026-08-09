@@ -3,7 +3,7 @@
         x:Class="CircuitRF.Ui.Views.Dialogs.InputNameDialog"
         Title="Name"
         Width="360"
-        Height="160"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -21,6 +21,16 @@
                        Foreground="{DynamicResource CrfWarningBrush}"
                        IsVisible="False"
                        TextWrapping="Wrap"/>
+
+            <!-- Shown only when the caller supplies templates — i.e. only where a new SCHEMATIC is
+                 being created. Every other caller of this dialog (New Symbol, New Layout, Duplicate
+                 Cell, Save to Cell, …) sees the plain name field exactly as before. -->
+            <StackPanel x:Name="TemplateRow" Spacing="4" IsVisible="False" Margin="0,6,0,0">
+                <TextBlock Text="Template:" FontSize="12"/>
+                <ComboBox x:Name="TemplateBox"
+                          FontSize="12"
+                          HorizontalAlignment="Stretch"/>
+            </StackPanel>
         </StackPanel>
 
         <StackPanel Grid.Row="1"

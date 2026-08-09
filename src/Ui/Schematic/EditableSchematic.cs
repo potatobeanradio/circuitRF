@@ -258,8 +258,9 @@ public static class SymbolPortDefs
                 pins[1] = ("Ref", +bodyX, 0f);
             else
             {
+                // Legacy arithmetic on purpose — see LegacySnpBodyHalfH. A pin must not move.
                 float cy     = SnpBodyCenterY(n, cfg, pitch);
-                float halfH  = SnpBodyHalfH(n, cfg, p);
+                float halfH  = LegacySnpBodyHalfH(n, cfg, p);
                 float bottom = cy + halfH;
                 // n<=3: bottom is on grid → one full square of stem (bottom + 100).
                 // n>=4: the +50 padding makes bottom end in 50, so CeilG already lands one
@@ -284,14 +285,44 @@ public static class SymbolPortDefs
     private static float SnapG(float v) => (float)(Math.Round(v / 100.0) * 100.0);
     private static float CeilG(float v) => (float)(Math.Ceiling(v / 100.0) * 100.0);
 
-    // Half-height of the body, measured from the body center (= pin-span midpoint).
-    // Grid-aligned so body edges land on grid and the Ref pin sits one square below.
-    private static float SnpBodyHalfH(int n, SnpPinConfig cfg, float p)
+    // LEGACY body arithmetic, kept for ONE caller: the Ref pin's own position. It derives the body
+    // from the IDEAL centre-symmetric pin span rather than from where the pins were actually placed,
+    // which is exactly the defect SnpBodyGeometry below fixes — but the Ref pin is a PIN, and moving
+    // a pin silently disconnects whatever a user already wired to it. So the body is corrected and
+    // the Ref pin stays put; on the few layouts where the two now differ (Tight pitch with an even
+    // number of pins per side, from 7 ports up) the Ref simply gets a longer stem.
+    private static float LegacySnpBodyHalfH(int n, SnpPinConfig cfg, float p)
     {
         if (n <= 3) return 100f;   // 1/2/3-port: 200-tall square (unchanged)
         int nLeft = (n + 1) / 2;
         float halfSpan = (nLeft - 1) * 0.5f * p;
         return CeilG(halfSpan) + 50f;       // grid-aligned side-pin span, padded +50 each side
+    }
+
+    /// <summary>
+    /// The body rectangle, measured from the side pins AS PLACED — never from the ideal
+    /// centre-symmetric span the placement started with.
+    ///
+    /// <para>Those two disagree whenever snapping the top row to the connection grid shifts the
+    /// whole side by half a pitch, which is routine at Tight pitch (100): a 4-port's side pins land
+    /// at 0 and 100, not at ±50. The old arithmetic then rounded a 50-unit half-span UP to a
+    /// 100-unit one and centred the result on 0 — a body 300 tall instead of 200, sitting with both
+    /// its pins in the lower half. That is the reported S4P-at-Tight-pitch box.</para>
+    ///
+    /// <para>The centre is deliberately NOT snapped to the grid: a body is a drawn rectangle, not a
+    /// connection point, and forcing it onto the grid is what threw it off its own pins.</para>
+    /// </summary>
+    private static (float CenterY, float HalfH) SnpBodyGeometry(int n, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        if (n <= 3) return (SnpBodyCenterY(n, cfg, pitch), 100f);
+
+        var side = GenerateSnpPorts(n, refNode: false, cfg, pitch)
+            .Where(q => Math.Abs(q.LocalX) >= 199f)
+            .ToArray();
+        if (side.Length == 0) return (0f, 100f);
+
+        float minY = side.Min(q => q.LocalY), maxY = side.Max(q => q.LocalY);
+        return ((minY + maxY) * 0.5f, (maxY - minY) * 0.5f + 50f);   // +50 padding above and below
     }
 
     // Body center Y = midpoint of the SIDE pins only (left/right). Top/bottom pins (3-port's
@@ -307,14 +338,11 @@ public static class SymbolPortDefs
 
     /// <summary>Body center Y for the given SnP layout (signal pins only).</summary>
     public static float SnpBodyCenterYPublic(int n, SnpPinConfig cfg, SnpPitch pitch)
-        => SnpBodyCenterY(n, cfg, pitch);
+        => SnpBodyGeometry(n, cfg, pitch).CenterY;
 
     /// <summary>Returns the body rect (W, HalfH) for an SnP symbol.</summary>
     public static (float W, float HalfH) SnpBodyRect(int n, SnpPinConfig cfg, SnpPitch pitch)
-    {
-        float p = pitch == SnpPitch.Tight ? 100f : 200f;
-        return (200f, SnpBodyHalfH(n, cfg, p));
-    }
+        => (200f, SnpBodyGeometry(n, cfg, pitch).HalfH);
 
 }
 

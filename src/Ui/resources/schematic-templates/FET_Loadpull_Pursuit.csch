@@ -1,0 +1,415 @@
+{
+  "FormatVersion": 2,
+  "CellName": "FET_Loadpull_Pursuit.csch",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": -200,
+      "Y": 300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": -400,
+      "Y": -1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "VGS",
+          "Expression": "-2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "VDS",
+          "Expression": "48",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "RFfreq",
+          "Expression": "2 GHz",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "SourceTuner1",
+      "Symbol": "SourceTuner",
+      "X": -1000,
+      "Y": 100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Zdefault",
+          "Expression": "1e-6",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "BiasTee",
+          "Expression": "on",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vbias",
+          "Expression": "VGS",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "ShowBias",
+          "Expression": "true",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z[1]",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z[2]",
+          "Expression": "1e-6",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z[3]",
+          "Expression": "1e-6",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LoadTuner1",
+      "Symbol": "LoadTuner",
+      "X": 600,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Zdefault",
+          "Expression": "1e-6",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "BiasTee",
+          "Expression": "on",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vbias",
+          "Expression": "VDS",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "ShowBias",
+          "Expression": "on",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z[1]",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z[2]",
+          "Expression": "1e-6",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z[3]",
+          "Expression": "1e-6",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Q1",
+      "Symbol": "FetAngelov",
+      "X": -200,
+      "Y": 100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Ipk",
+          "Expression": "0.1",
+          "Unit": "A",
+          "ShowOnSchematic": true,
+          "Dimension": "Current"
+        },
+        {
+          "Name": "Vpk",
+          "Expression": "-1",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "P1",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P2",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Alpha",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Lambda",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Cgs",
+          "Expression": "0",
+          "Unit": "pF",
+          "ShowOnSchematic": false,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Cgd",
+          "Expression": "0",
+          "Unit": "pF",
+          "ShowOnSchematic": false,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "CapModel",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vbi",
+          "Expression": "1",
+          "Unit": "V",
+          "ShowOnSchematic": false,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "Mj",
+          "Expression": "0.5",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Fc",
+          "Expression": "0.5",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Is",
+          "Expression": "0",
+          "Unit": "A",
+          "ShowOnSchematic": false,
+          "Dimension": "Current"
+        },
+        {
+          "Name": "N",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Xti",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Eg",
+          "Expression": "1.16",
+          "Unit": "V",
+          "ShowOnSchematic": false,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "Temp",
+          "Expression": "26.85",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Tnom",
+          "Expression": "26.85",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Alphatc",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vtotc",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -200,
+          -100
+        ],
+        [
+          300,
+          -100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -400,
+          100
+        ],
+        [
+          -700,
+          100
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "lpp",
+      "Name": "LPP1",
+      "Enabled": true,
+      "LpLoadTunerName": "LoadTuner1",
+      "LpSourceTunerName": "SourceTuner1",
+      "LpToneExpr": "RFfreq",
+      "LpToneUnit": "GHz",
+      "LpPinStartExpr": "-20",
+      "LpPinMaxExpr": "10",
+      "LpPinStepExpr": "1",
+      "LpMaxHarmonicExpr": "5",
+      "LpSweepExpr": "Load",
+      "LpTuneHarmExpr": "1",
+      "LpCompressionExpr": "3",
+      "LpGainTypeExpr": "Gt",
+      "LpTickleExpr": "-50",
+      "LpMaxIterExpr": "100",
+      "LpFftOverSampleExpr": "1",
+      "LpTolExpr": "1e-6",
+      "LpDriveSteppingExpr": "IfNecessary",
+      "LpGuardHarmonicExpr": "0",
+      "LppEffType": "DE",
+      "LppZsourceOBO": "5",
+      "LppSearchMethod": "SteepestAscent",
+      "LppVswr1": "1.5",
+      "LppVswr1Resolution": "4",
+      "LppVswr2": "3",
+      "LppVswr2Resolution": "4",
+      "LppKeepNonconverging": "false",
+      "LppNonconvergentVswr": "1.05",
+      "LppCreateLoadpullResult": "true",
+      "LppLoadpullResultZsource": "MXE"
+    }
+  ]
+}

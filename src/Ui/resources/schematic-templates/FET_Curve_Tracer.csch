@@ -1,0 +1,193 @@
+{
+  "FormatVersion": 2,
+  "CellName": "FET_Curve_Tracer",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "V1",
+      "Symbol": "Vdc",
+      "X": -900,
+      "Y": -0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "VGS",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ]
+    },
+    {
+      "InstanceName": "V2",
+      "Symbol": "Vdc",
+      "X": 800,
+      "Y": -200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "VDS",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -900,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 800,
+      "Y": -0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 100,
+      "Y": -0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": -1200,
+      "Y": -800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "VGS",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "VDS",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "IDS",
+      "Symbol": "IProbe",
+      "X": 500,
+      "Y": -500,
+      "Rotation": "R0",
+      "MirrorX": true,
+      "Disable": "None",
+      "Parameters": []
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -100,
+          -200
+        ],
+        [
+          -900,
+          -200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          -400
+        ],
+        [
+          500,
+          -400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          100,
+          -400
+        ],
+        [
+          400,
+          -400
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "dc",
+      "Name": "DC1",
+      "Enabled": true
+    },
+    {
+      "Type": "sweep",
+      "Name": "DC1_sweep_VDS",
+      "Enabled": true,
+      "PsaVarName": "VDS",
+      "PsaInnerName": "DC1",
+      "PsaMode": "StepSize",
+      "PsaStart": 0,
+      "PsaStop": 100,
+      "PsaStepOrCount": 0.1,
+      "PsaKind": "Linear"
+    },
+    {
+      "Type": "sweep",
+      "Name": "DC1_sweep_VGS",
+      "Enabled": true,
+      "PsaVarName": "VGS",
+      "PsaInnerName": "DC1_sweep_VDS",
+      "PsaMode": "StepSize",
+      "PsaStart": -5,
+      "PsaStop": 1,
+      "PsaStepOrCount": 0.25,
+      "PsaKind": "Linear"
+    }
+  ]
+}

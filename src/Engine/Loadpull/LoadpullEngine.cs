@@ -255,7 +255,11 @@ public sealed class LoadpullEngine
 
     // ── Engine entry point ───────────────────────────────────────────────────
 
-    public DataSet Run(LoadpullAnalysisParams p)
+    /// <param name="control">
+    /// Optional cancellation + progress. Checked once per GRID TERMINATION — a whole Pin drive-up
+    /// runs inside one, and the adaptive ladder has no stable step count to subdivide progress by.
+    /// </param>
+    public DataSet Run(LoadpullAnalysisParams p, RunControl? control = null)
     {
         var ctx           = PrepareContext(p);
         var gridPoints    = new List<GridPointResult>();
@@ -264,6 +268,8 @@ public sealed class LoadpullEngine
 
         for (int gi = 0; gi < gridPointList.Count; gi++)
         {
+            control?.Tick();
+
             var gp    = gridPointList[gi];
             var gamma = gp.Gamma;
             var z     = gp.Z;

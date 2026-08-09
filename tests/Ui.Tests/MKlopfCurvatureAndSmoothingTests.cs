@@ -90,7 +90,11 @@ public sealed class MKlopfCurvatureAndSmoothingTests
 
         var result = MKlopfPCell.Generate(parms, null, PCellLayerSelection.Default);
 
-        Assert.True(result.Diagnostics is null or { Count: 0 });
+        // Specifically the CURVATURE warning — which is what this test is about. A 10 mm taper on the
+        // fallback 1.6 mm substrate is shorter than 3xW1 (~9 mm) allows, so SmoothSteps' own blend is
+        // clamped and reports that; see MKlopfEndStepTests for why. Asserting "no diagnostics at all"
+        // would make this test fail on an unrelated, correct report.
+        Assert.DoesNotContain(result.Diagnostics ?? [], d => d.Contains("R-klp-10"));
     }
 
     [Fact]

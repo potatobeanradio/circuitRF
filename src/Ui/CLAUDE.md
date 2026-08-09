@@ -1,3 +1,914 @@
+A Loadpull-Pursuit that found nothing finished in SILENCE (2026-08-09) — COMPLETE. Owner report: the
+`LPP1: 50 point(s) simulated · 36 reached compression · …` line appears on a good run and vanishes
+entirely when no point reaches compression, leaving only `Finished 'LPTest.csch'.`
+
+**The failure is a chain, and every link is working as designed — which is why it read as nothing
+happening at all.** A pursuit scores each candidate termination by extracting a
+**compression-referenced** criterion from that termination's own drive-up sweep, so a termination
+that never compresses is UNSCORABLE. Enough of those and neither optimum converges; the follow-on
+loadpull runs **only when both converged**, so no grid is swept; the grid is where `StopCode` comes
+from, and `StopCode` is what `LoadpullRunSummary.Describe` keyed on. No cube, no line. **The user is
+told nothing at precisely the moment the run needs the most explaining.**
+
+**`Describe` now dispatches**: a `StopCode` cube → the grid summary, unchanged byte for byte (the
+working case was never in question); otherwise a pursuit result → `DescribePursuit`, built from the
+`CacheCount`/`UnscorableCount`/`RecommTermCount`/`MXP_Converged`/`MXE_Converged` scalars
+`BuildPursuitDataSet` already publishes. **Nothing in `src/Engine` changed** — as with the original
+summary, this was a reporting gap, not a measurement one.
+
+**The three reasons a pursuit has no grid are reported SEPARATELY, because they call for three
+different responses** and collapsing them into one "no results" would repeat the original bug in a
+politer voice: an optimum did not converge (→ and, when *every* query was unscorable, name the real
+cause: nothing reached compression, raise the Pin drive level); the search recommended no
+terminations (→ widen the search); or the follow-on was simply switched off (→ `CreateLoadpullResult`
+is off — a normal choice, and it must not read like a failure).
+
+**The plain Loadpull path does NOT have this bug, and structurally cannot** — the engine writes one
+`StopCode` per grid point whatever the outcome, so the grid summary always has something to count.
+Checked rather than assumed, and pinned by `APlainLoadpullWhereNothingCompressed_StillReports`.
+
+**One prior test was UPDATED, not loosened:** `APursuitWithNoFollowOnLoadpull_ProducesNothing`
+asserted this exact silence on the reasoning "no grid was swept, so there is nothing to count — a
+null, never a row of zeros". That reasoning is wrong, because the commonest way to reach it is the
+one case most worth explaining. **Gate:** 5 new tests; the 4 pursuit ones were confirmed to turn red
+against a restored `return null`. Ui **5,970**.
+
+---
+
+The run says what it will do BEFORE doing it, Stop stops, and a grip snaps to geometry
+(2026-08-09) — COMPLETE. Five owner reports; the first three are one arc (a run the user can read,
+judge and abandon), the last two are the layout editor's own.
+
+**THE SWEEP MESSAGE ARRIVED AS A RECEIPT.** "11 pt(s) over VGS x 101 pt(s) over VDS = 1,111 total
+pt(s)" was posted from inside the dispatch loop, i.e. after every one of those points had been
+simulated — a statement of what just happened, at the one moment it can no longer be acted on. The
+run is split: **`SchematicRunService.Prepare` reads, elaborates ONCE and DESCRIBES every analysis
+that will be dispatched; `Execute` runs the plan it produced.** `RunNetlist` is now the two called
+together, so every existing caller and test is untouched. Splitting costs nothing — the elaborated
+netlist is handed to `Execute` rather than thrown away, and elaboration is one pass against a sweep
+that re-elaborates per point.
+
+**Describing and running are genuinely separate, and there is a test that can tell.** A "does
+Prepare return lines" assertion cannot distinguish the two; the gate uses a netlist that DESCRIBES
+perfectly and FAILS the moment it runs (an s-parameter sweep with no Port/Term), so a clean plan and
+an `EngineError` come from the same file.
+
+**`ParametricSweepRunSummary.TotalPoints` is the same walk `Describe` already made** — the progress
+denominator and the sentence describing the run cannot disagree about its size.
+
+**CANCELLATION IS AT A POINT BOUNDARY, AND THAT IS THE DESIGN RATHER THAN A LIMITATION.**
+`RunControl` (`src/Engine/`) carries the token and the progress sink; every engine with a countable
+loop checks it between the units it iterates over — a sweep point, an s-parameter frequency, a
+loadpull termination, a pursuit query — and **none of them checks inside a factorization or a Newton
+loop**, which is exactly where this engine cannot afford one. So Stop is answered within one point:
+a 20,301-point sweep stops in the time one point takes, and a lone HB solve still finishes. The Stop
+message says that rather than implying an instant halt.
+
+**A cancelled run publishes NOTHING, including analyses that already finished.** A sweep's per-point
+DataSets are stacked along an axis of known length, so a half-finished sweep has no shape to be
+published in — and a run is one artifact (the grouped DataSet a Data Display opens), so half of one,
+silently missing whichever analyses had not started, is worse than none. The user asked to stop.
+
+**Progress counts LEAF work units against one total for the whole run, and only the innermost loop
+counts.** A nested sweep hands its inner analysis a `RunControl.Child()` — same token, no progress —
+so an inner s-parameter's frequency loop cannot also count and double the numerator; a nested
+PARAMETRIC sweep gets the full control precisely so the innermost sweep is the one counting. An
+engine with no honest denominator (a single HB or DC solve, a pursuit search whose query count the
+search itself decides) does not tick at all and the executor ticks its units once when it finishes,
+so the bar reaches the end either way. **Observations are throttled to ~25/s** — every one is a post
+onto the UI thread, and unthrottled reporting costs more than the arithmetic it reports on — with
+the final tick of a known total always delivered so the throttle can never leave the bar short.
+
+**THE "Running…" MESSAGE IS NOW A LIVE ROW, rewritten in place.** `MessageEntry` stopped being a
+record and became an `ObservableObject` with a mutable `Text`/`Level` and an optional bar;
+`IMessageSink.BeginProgress` returns an `IProgressMessage` handle. A new entry per observation would
+scroll a fresh line into the log several times a second, and the thing a user wants to read is a
+value that changes, not a history of it. **The default `BeginProgress` degrades**: a sink with no
+live support posts the opening line, drops updates and posts the outcome — so the ~18 test fakes
+needed no changes and nothing swallows the result.
+
+**How that row reads — the layout is owner-specified and the ORDER is what makes it hold still:**
+
+`[icon] 11:18:59  Running 'Amp.csch'  ▓▓▓▓▓░░░░░   1,194 / 2,525`
+
+- **The bar is INLINE, immediately after the text, and the changing counter comes AFTER the bar.**
+  This is the whole mechanism. `MessageEntry.ProgressText` holds the counter as its own element,
+  separate from `Text`, precisely so nothing that grows sits to the bar's LEFT — the text before it
+  is the schematic name alone and is constant for the entire run. **Putting the counter back into
+  the message text re-breaks this**, and `ReportRunProgress_KeepsTheChangingCountOutOfTheText` is
+  the gate (confirmed to turn red against exactly that change).
+- **The stage (analysis) name is deliberately not shown**, on the owner's own instruction and for
+  the same reason: on a multi-analysis run it changes mid-row, which is another width change on the
+  bar's left. `RunProgress.Stage` is still carried and still forces an immediate report at each
+  analysis boundary — it simply has no display.
+- **Space-padding does NOT give a constant width, and that was the first attempt.** `FormatCounter`
+  used to `PadLeft` the numerator to the denominator's character count — but a space is roughly half
+  a digit in a proportional UI font, so each pad character that turned into a digit still widened
+  the line. The padding is gone; the row **right-aligns** the counter in a fixed-width box instead,
+  which pins the `/` and the denominator and lets the numerator grow leftwards into the gap. Do not
+  re-add a `PadLeft` — it fights the alignment. It still formats in the CURRENT culture, so its test
+  pins the culture rather than asserting separators that only hold in one country.
+- **`Finish` APPENDS the outcome to the END of the row** — after the counter when there is one,
+  falling back to the text when the work was indeterminate — where `Complete` replaces the text and
+  drops both bar and counter. A finished run reads
+  `Running 'Amp.csch' ▓▓▓ 2,525 / 2,525 - 1 analysis run(s) complete` with the bar full: the row
+  still names the schematic and the work it got through, which a separate "1 analysis run(s)
+  complete" line would say less than. A cancelled one keeps the count it reached. An indeterminate
+  bar is pinned full on finish, or a finished row shows a still-animating one. A short
+  `Finished '<schematic>'.` line follows purely for its **timestamp** — the live row's own is when
+  the run STARTED.
+
+**The marshaller is INJECTED into `LiveProgressMessage`, and that is a testability requirement
+rather than tidiness.** Avalonia's `Dispatcher.UIThread` binds to whichever thread touches it first,
+which under a full parallel test run is some other class's — so a test driving the real dispatcher
+queues its mutation onto a loop nobody is pumping, and **passes alone while failing in the suite**.
+It did, on the first version of these tests. Handing the marshaller in lets `MessagesTool` supply
+the dispatcher and a test supply "just run it".
+
+**A PCELL GRIP DID NOT GEOMETRY-SNAP** (owner report), so lining a microstrip's end up with the pad
+it has to meet meant zooming in and eyeballing it. The candidate was already being resolved for the
+tick — `UpdateSnapMarker` runs at the top of the move handler, ahead of the grip dispatch — and
+`UpdatePCellHandleDrag` simply never read it. It follows R-cmb-4/5's own rule now: **geometry snap
+overrides grid snap, and only when a REAL feature is in range**, never off the synthetic
+marker-persistence echo. Two things had to move together: **the length quantizer must be suspended
+for a geometry-snapped drag** (R-pch-11 rounds a committed length onto the snap lattice, which would
+drag the grip straight back off the off-grid edge it was aimed at), and **the dragged instance
+excludes itself** from candidates — it regenerates every tick, so its own edge is a target that
+moves with the cursor.
+
+**AN MKLOPF GRIP COULD DRAG THE TAPER THROUGH ITSELF** (owner report). Shorten an offset taper far
+enough and the centreline has to turn tighter than its own width allows, so the inner edge crosses
+the outer one. **Measured before anything was built** — on a 5 mm-offset 50→100 Ω taper the fold
+appears between L = 5 mm and L = 3 mm, and the threshold tracks Offset (a 2 mm offset folds below
+~3 mm) — which is what establishes that the overlap really is a SELF-INTERSECTION and that L1d's own
+`LayoutSelfIntersection` is the right predicate. The guard is therefore **general rather than
+MKlopf-specific**: it asks whether the outline that came out folds, not which parameter produced it.
+**The grip STOPS at the last value that did not fold** rather than the gesture being refused — a drag
+is a continuous search and the useful answer at the boundary is the boundary. **Scoped to the drag,
+deliberately**: a value typed into the Properties Inspector or the parameter dialog still goes
+through, per the owner's own instruction and this editor's standing rule to report a bad parameter
+rather than forbid one. Bounded by a 20,000-vertex budget per tick — past it the check is skipped and
+the move accepted, because a stuttering grip is a worse failure than an exotic cell reaching an
+overlapping value. **A fast flick past the boundary in one pointer move has no intermediate value to
+stop on, so the grip holds its start value until the cursor comes back**; a real pointer emits many
+small moves and resolves the boundary to well under a millimetre.
+
+**Gate:** 29 new tests (`RunPlanAndCancellationTests` 9, `PCellGripSnapAndOverlapTests` 7,
+`LiveProgressMessageTests` 13). Ui **5,965** · Core 1,238 · RfCore 281 · WBond 237 · Firewall 6 ·
+Engine 1,040 (+1 pre-existing skip). **Both layout fixes confirmed to turn their own test red when
+reverted** (self-exclusion, and the fold guard); the geometry-snap test proved it bites by failing
+with the grid-snapped value (3,330,000 against the corner's 3,333,000) before the tolerance was wired
+through. Two tests exist purely as non-vacuity guards: the taper fixture must actually fold at short
+L (or the guard test would pass against geometry that never overlapped), and a grip with nothing
+nearby must still land on the grid (or the snap test could pass by the grip following the raw
+cursor). Same pre-existing `Harmonica R11` failure this file already records at HEAD.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: the sweep's
+"= N total pt(s)" line appears BEFORE the run starts; Stop ends a long sweep promptly and reports
+that nothing was written; the "Running…" line shows a bar sitting just after the analysis name that
+fills without shifting, with a count to its right whose `/` and denominator stay put, then keeps its
+full bar and gains the outcome on the end with a "Finished" line under it; a grip dragged near
+another shape's corner lands exactly on it;
+and shortening an MKlopf by its grip stops before the taper folds while typing the same short L in
+the Properties Inspector still applies it.
+
+Grips that go stale mid-drag, a taper that collapses on a 0.2% impedance change, kit symbols at half
+size with detached pins, and a dialog that disagreed with its own model (2026-08-09) — COMPLETE.
+Five owner reports; four were real defects and every one of them was silent.
+
+**THE MKLOPF COLLAPSE IS AN acosh(x<1) RETURNING NaN, and it explains all three of the owner's taper
+reports at once.** Reported as "Z2=7.54845 works, Z2=7.56359 goes extremely thin in the middle — why
+does such a small change do that", plus "glitches out during a gripper drag" and "sometimes a very
+large Z". `KlopfensteinTaper.ComputeA` is `acosh(|½·ln(Z2/Z1)| / GammaMax)`, so the profile needs
+GammaMax strictly under `|½·ln(Z2/Z1)|`. For Z1=8.35209 that bound is **0.050583 at Z2=7.54845 and
+0.049581 at Z2=7.56359** — the owner's GammaMax of 0.05 sits between them. Past it the ratio drops
+below 1, `acosh` is NaN, and the failure is completely quiet: every interior station's impedance
+becomes NaN, `HammerstadJensen.SynthesizeWidth`'s bisection compares NaN (every comparison false) and
+walks to its own narrowest width, while **the two ends stay correct because they are synthesised from
+Z1/Z2 directly** — which is exactly the reported shape, correct ends and a collapsed middle. Nothing
+throws and nothing is reported. A Z1/Z2 grip drag crosses that boundary continuously, which is the
+"glitchy" half of the same report.
+
+**`MicrostripKlopfModel` was never exposed and that is worth knowing rather than assuming.** It calls
+`ValidateGammaMax`, whose bound is `|(Z2−Z1)/(Z2+Z1)|` — and since `½·ln(Z2/Z1) = artanh((Z2−Z1)/(Z2+Z1))`
+and `artanh(x) > x`, the electrical model's bound is always the STRICTER of the two. It throws before
+the profile could ever go NaN. **Only the PCell, which validated nothing, was reachable.**
+
+**Held just below the bound rather than refused, because the limit is continuous.** As GammaMax rises
+to it the taper degenerates smoothly into a uniform line at √(Z1·Z2) with the transformation happening
+as a step at each end — which is what asking for that much passband ripple means. **Z1 == Z2 is
+answered separately and no clamp can cover it**: the numerator is then zero, so the ratio is zero for
+every finite GammaMax and `acosh(0)` is NaN whatever is passed. `MKlopfPCell.BuildImpedanceProfile` is
+the one place both live, so `Generate` and `CheckCurvature` cannot disagree about what the profile is.
+
+**Negative `L` is closed at BOTH ends, deliberately.** The grips declare `Min` so the solver's own
+`Propose` clamps every candidate (the grip stops rather than the cell regenerating at a value that is
+not a length), and `ResolveLength` clamps-and-reports for a hand-typed one. Neither alone is enough:
+the handle bound does not exist for a value typed into the Properties Inspector, and a generator-side
+clamp alone would let the grip travel somewhere the committed value cannot follow.
+
+**GRIPS ONLY UPDATED THE ONE BEING DRAGGED.** `BuildPCellHandleMarkers` substituted the preview
+position for the ACTIVE grip and drew every other one against the COMMITTED parameters — so MKlopf's
+end-cap grips sat on the outline's pre-drag position for the whole gesture and snapped across on
+release, which is what the owner saw on "every microstrip component I checked". Every grip on a cell is
+a function of the same parameter set, so the whole regenerated list is kept now, filtered by the same
+`Validate` rule the drawn list was so the two stay index-parallel. **Deferred mode (R-pch-10) still
+follows only the dragged grip, and that is not an oversight** — its entire saving is not regenerating,
+so there is nothing to read the others from.
+
+**KIT SYMBOLS: "too small" and "pins in white space" are two separate bugs, and the second is the one
+that had to drive the fix.** Measured through the real reader against a real open kit, 110 parts:
+
+- **The size was a comparison of two different quantities.** `ReferenceSymbolExtent` (400) IS a pin
+  span — a built-in two-terminal part measures 400 pin to pin — and `ChooseKitScale` was normalising
+  the DRAWING extent against it. That kit's median drawing extent is 110 file units against a median
+  pin span of 55, so its parts landed at a **placed pin span of 200 against a built-in's 400: exactly
+  half**. Normalised on the pin span now, with the drawing extent kept as the legibility clamp.
+- **The snap detaches pins from artwork.** Pins snap to the connection grid and artwork does not —
+  they have to, or a wire will not attach. Measured: **372 of 374 pins move, the worst by 45 of a
+  100-unit step.** On that kit's own transistor the drain lead ends at x=72.7 while its pin sits at
+  100. Nothing is wrong with the drawing or the snap; they simply are not the same lattice.
+- **Scaling to make the lattices commensurate was measured and rejected.** Every pin coordinate in
+  that kit is a multiple of 10, so scale 10 lands all 374 exactly — and gives a median pin span of
+  800, twice a built-in, which is the oversize the owner had already reported once. **The fix is
+  instead to move the artwork with the pin**: 348 of 374 pins (93%) have a drawn vertex exactly on
+  them, so `PinFollow` carries that vertex to the snapped position, matched on the file's own
+  untouched coordinates rather than on scaled doubles. The remaining 7% — a pin on the INTERIOR of a
+  shape, at the base of a filled arrow — get a lead stub from the snapped position back to the
+  drawing's, which is the same affordance `BoxBodyFor` already draws for a library-backed part.
+  A rectangle and an arc are stated as a centre and a size, so they take no part: moving a "corner"
+  would resize the shape rather than reconnect it.
+
+**`DsnSymbolReader.TranslationVersion` 3 → 4** — the scale change moves pins, which is precisely what
+that counter is for.
+
+**"AFTER BROWSING FOR THE .OSDI, MODEL AND PINS DO NOT UPDATE" WAS NOT A VerilogA BUG.** The model was
+written correctly every time; the DIALOG disagreed with it. `SetParametersCommand` writes fresh clones
+of **every** parameter, even untouched ones, so once the autofill ran, every row was bound to an
+`EditableParameter` no longer in the component — and because the NAMES were unchanged,
+`OnModelChanged` took its same-name path and `RefreshFromModel` re-read each row from its own orphan,
+putting the old values straight back on screen. It surfaced on a single-model file because that is the
+one case where the editor writes anything unprompted. **Fixed generally, in `OnModelChanged`**, by
+checking that every row is still bound to a parameter the component holds — by MEMBERSHIP, not
+position, since `SetTarget` groups rows (file-valued, then choice-valued, then the rest) and pairing
+them up by index would rebuild on every change for any component whose rows get reordered.
+
+**`Pins` is read-only once a model is settled** (the owner's own follow-up ask): the terminal count is
+the model's statement about itself, and typing a different one draws a symbol with leads the device
+does not have. Read-only rather than disabled — greyed-out text reads as "does not apply" for a value
+that very much does — and still editable while no model is settled, so an unconfigured component stays
+placeable.
+
+**Recent Workspaces gained a Reveal item** (owner change request). The entry carries its own label and
+command rather than reaching the tool VM through `$parent[ItemsControl]` like the row's Open button
+does — **a `ContextMenu` is its own popup visual tree, so that walk resolves to nothing from inside a
+menu item.** It reveals the FOLDER, not the `.cws`: a workspace IS its folder, and the file that marks
+one is a dotfile the file manager may be configured not to show at all. A recent entry whose folder has
+since gone is reported rather than pruned — the user asked where it is.
+
+**A CLICK-ARMED PALETTE PLACEMENT DREW THE PLACEHOLDER GLYPH WHERE DRAG-AND-DROP DREW THE REAL
+SYMBOL** (owner report), and the cause is a rule this file already states. `BuildPlacementGhost` took
+the kit part's cell reference and split it with `Path.GetDirectoryName`/`GetFileName` before handing
+the halves to `CellSymbolResolver.Resolve`. That is right for an absolute cell folder and **destroys a
+virtual `pdk://` reference** — the exact mistake the earlier open-kit round fixed in
+`PaletteGlyphControl` and `SchematicCanvas.ResolveGhostSymbol`, and wrote `CellSymbolResolver.ResolveCellDirOrRef`
+to make unnecessary. Drag-and-drop looked correct only because it was already going through that one
+accessor. **Do not split that field by hand again** — there is now a source scan on the ghost builder
+saying so.
+
+**A PARAMETRIC SWEEP REPORTED ONE AXIS FOR A RUN WITH SEVERAL** (owner report: "the message doesn't
+seem to include nesting information"). Only the OUTERMOST sweep is dispatched — every sweep below it
+runs inside `ParametricSweepEngine`'s own re-elaboration loop and never reaches the dispatcher — so
+describing the dispatched analysis alone told a user sweeping VDS inside VGS the VGS count and gave no
+indication that each of those points is itself a whole VDS sweep. `ParametricSweepRunSummary` walks the
+chain: `11 pt(s) over VGS x 101 pt(s) over VDS = 1,111 total pt(s)`. **One axis reports no total** —
+"= 101 total" beside "101 pt(s)" is the same number said twice — and **a disabled sweep contributes
+nothing**, per `AnalysisChain`'s own rule that it collapses and its axis is dropped; counting it would
+report points that are never simulated.
+
+**Gate:** 20 new tests (`MKlopfGripAndProfileTests` 6, `KitSymbolPinAttachmentTests` 5,
+`ParameterRowStaleBindingTests` 3, `PalettePlacementGhostTests` 6). **Every fix confirmed to turn its own test red when reverted** —
+the grip-live list, the GammaMax clamp, the stale-binding check and the chain walk (4 of 4). Two tests exist purely as
+non-vacuity guards: the taper just INSIDE the bound must report nothing (a fix that clamped
+unconditionally would pass the collapse test and fail this one), and a pin the snap does not move must
+get no stub. The PCell geometry golden baseline is **unchanged** — no committed parameter set crosses
+the bound, so no existing design moved.
+
+Four owner reports: the taper's end step, the via's snap glyph, a hard hang, and a kit that says the
+wrong thing (2026-08-09) — COMPLETE. Independent items; three of them turned out to be real defects
+rather than the misunderstandings they were reported as.
+
+**MKLOPF — "are we using non-uniform step spacing? I still see a strange step at either end."
+Measured: the artwork's spacing was already uniform, and it is not the cause.** The two "step
+spacing" quantities are easy to conflate and are different things. The ELECTRICAL cascade
+(`MicrostripCascadeSectioning.NonUniformBoundaries`) is deliberately non-uniform — equal Δ(ln Z), so
+each section's own reflection contribution is bounded — and never reaches the outline. The ARTWORK
+samples the profile at stations **evenly spaced in x**, confirmed to the DBU. **The step is inherent
+to the Klopfenstein profile**: the Kajfez-Prewitt endpoint term is a Heaviside, so Z(0) is exactly Z1
+while Z(0⁺) is not — measured at **2.564 Ω** on the 50→100 Ω worked example, ≈0.27 mm of width on
+1.6 mm FR-4, and **it does not shrink with more stations** (the same 2.564 Ω at 24 stations and at
+4,096). Resampling was never going to fix it.
+
+**What WAS broken is `SmoothSteps`, whose entire job is to absorb that step.** Its blend length is
+3× the END WIDTH — a quantity of the cross-section, not of the taper — so on a taper short relative
+to its own end widths it exceeded the whole component, and `ApplyEndBlend`'s own "taper shorter than
+the blend length; skip rather than overreach" guard then declined to blend **at all**. A 50 Ω line is
+~3 mm wide on 1.6 mm FR-4, so 3×W1 ≈ 9 mm: **every transformer shorter than that was drawn with the
+full end step, silently.** Measured on a 5 mm 50→100 Ω taper, the first drawn half-width change was
+132,687 DBU against a 12,281 DBU mean — one visible step, then a smooth taper, which is exactly what
+was reported. The blend is **clamped to half the taper per end** now (the two blends may meet in the
+middle and never overlap or reach past a pin), and the clamp is reported, which the class's own doc
+comment had claimed since the feature landed without it ever being implemented.
+
+**The mirror-image regime is real too, and is fixed by adding stations — never by making them
+non-uniform.** A blend narrower than one station has nowhere to put its intermediate widths, so the
+end steps however correctly the blend is computed; that needs L > ~72×W, which a narrow
+high-impedance end on a long board taper reaches easily (a 150 Ω end is ~0.3 mm wide, so ~22 mm does
+it). `ResolveStationCount` raises the station count until the shorter blend spans six of them,
+capped at 1,024 — **the stations stay evenly spaced at every count**; what varies is how many, which
+is the same kind of decision the fixed 96 already was. Non-uniform stations were rejected
+deliberately: they would put vertex density in step with profile curvature, which is impossible to
+reason about the next time a step shows up, and establishing that the step is a property of the
+PROFILE rather than of the SAMPLING is the whole content of this investigation. Hitting the cap is
+reported rather than drawn as a step. Measured after: the 5 mm taper's end change goes 10.8× its
+neighbour → 0.4×; a 20 mm 50→12.5 Ω taper's far end 7.1× → under 1×; the default 20 mm 50→100 Ω taper
+is **byte-identical** (no clamp applies and the station count is unchanged), so no existing design
+moved for a reason it did not have.
+
+**`PCellRegistry` bumps MKLOPF to version 2** — the geometry output changed for existing parameter
+sets, which is precisely what that field is for. The golden baseline was re-recorded through its own
+`CIRCUITRF_RECORD_PCELL_GOLDEN` path; the diff shows only the two MKLOPF cases and their new clamp
+notes. Two tests were UPDATED, not loosened: `NoGeneratorsContentKeyWasBumpedForHandles` (which
+asserted MKLOPF was still 1 — it now asserts every generator's version BY NAME, so a bump for a real
+geometry change stays deliberate and visible instead of the test being deleted), and
+`ZeroOffset_NeverWarns_StraightCenterlineHasNoCurvature`, which asserted "no diagnostics at all" on a
+10 mm taper that legitimately reports a clamp — narrowed to the R-klp-10 curvature warning it is
+actually about.
+
+**THE VIA SNAP GLYPH — two bugs, exactly as the owner suspected ("perhaps there's two here to
+untangle?").** (1) A `ViaShape` registered its CENTRE under `SnapFeatureKind.CornerEndpoint`, which
+draws the square. A via has no corners — X/Y is the centre — so it is a `Centroid` and draws the
+circle. The kind is not decoration: R-snp-5's priority order is what decides which feature wins when
+several are in tolerance. (2) During a grab-role drag with nothing else in range, the marker fell back
+to a synthetic echo drawn at the **raw cursor**, while the geometry under it moved by a **grid-snapped
+delta** — so the marker drifted off its own shape by up to half a snap step for the whole drag. Most
+visible on a via, whose one feature IS its centre, so the offset reads directly as "the glyph is not
+in the middle". It is drawn at the grabbed feature's own snapped position now, via a new
+`GridSnappedDrag`/`SnappedGrabPoint` pair the commit path also uses — so the marker and the geometry
+cannot disagree about where the grab point ended up.
+
+**THE HANG — root-caused, not worked around, and confirmed by reproducing it.** Placing a via and
+then moving the pointer could peg a core at 100% with no progress. `LayoutSnapFeatureIndex` sizes its
+buckets from the cell's own extent (`span / 64`), **so a cell whose features are all at ONE POINT
+gets the floor of 1 DBU per bucket** — and a single placed via is exactly that. The snap tolerance is
+a few SCREEN pixels converted at the current zoom, so zoomed out on a board it is hundreds of
+thousands of DBU. The two together asked the bucket sweep for **~1.4 × 10¹² iterations over a
+dictionary holding one entry**. That is why it was intermittent and why only a via triggered it: any
+other shape has a non-degenerate span, and the zoom decides the radius. `QueryNear` falls back to a
+linear scan whenever the query rect covers more buckets than the cell has features — the grid is an
+optimisation and stops being one exactly there.
+
+**`SnapQueryCounters.BucketsProbed` was added specifically because `FeaturesExamined` could not see
+this**: the wasted work was empty-bucket probes, of which there was one feature's worth to find. The
+gate is that counter, not a wall-clock threshold. **Confirmed to bite**: reverting the guard makes
+`ASingleVia_QueriedAtABoardScaleTolerance_ReturnsPromptly` hang the test run outright, and reverting
+the marker fix fails `DraggingAVia_TheMarkerStaysOnTheViasSnappedCentre` with the raw cursor position
+(7400 where 7000 is expected).
+
+**A KIT THAT NAMES NO PROGRAM — the message was asserting a fallback that was not there.** Reported
+as "I thought we were able to simulate some of these components". Driving the real importer over the
+kit: **84 parts, every one with zero terminals, no artwork, no netlist and no readable model** — its
+symbols are binary cell views and its device data is a proprietary dataset format, all classified
+`RecognizedNotSupported`/`Unrecognized`. So the parts import as names and nothing else. The message
+meanwhile ended "its parts are still built from the kit's own netlists", which is true of a kit that
+ships netlists and a **false comfort** on one that does not, and pointed the reader at a fallback the
+kit does not have. `DescribeNoProgram` now reads the three cases off what the import ACTUALLY
+produced — a part carrying a definition path, a part declaring terminals, or neither — names the
+unreadable formats with their counts instead of leaving them as "unsupported", and in the
+names-only case says the thing the old message structurally could not: that parts simulated before
+came from a **different build of the same kit**. Verified by measurement, not inference — the same
+vendor's build for another tool imports 109 parts with real pin counts and **86 Touchstone files
+classified Supported**, which is what was being simulated. Nothing here keys on a format name or a
+vendor; the three cases are distinguished by what the report holds.
+
+**Named and NOT built, so it is not mistaken for done:** that second build sits on 86 supported
+Touchstone files beside 109 parts and circuitRF connects none of them — a part is not bound to the
+network data that describes it. Auto-binding by name would be a real capability and is a design
+decision, not a bug fix; it was out of scope here.
+
+**Gate:** Core 1,238 · RfCore 281 · WBond 237 · Firewall 6 · Ui **5,916** · Engine 1,040 (+1
+pre-existing skip) — green. 25 new tests (`MKlopfEndStepTests` 11, `LayoutViaSnapTests` 8,
+`PdkNoProgramMessageTests` 6). **One pre-existing failure, confirmed not this round's:**
+`Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`,
+which this file already records as failing deterministically at HEAD; nothing here touches
+`src/Harmonica`.
+
+**Not interactively verified** (no visual driver here, matching every prior round) — please confirm
+on your end: a short MKlopf transformer now tapers smoothly into both pins instead of stepping; a
+via's snap glyph is a circle at the via's centre and stays centred on it throughout a drag with grid
+snap on; placing a via on an empty layout and moving the pointer while zoomed out no longer freezes;
+and importing that kit now says what it actually holds rather than promising netlists.
+
+---
+
+A VerilogA model's own parameters, and how a user removes one (2026-08-09) — owner follow-up to the
+batch below, which had answered `Model`/`Pins` from the file but left the parameters unanswered.
+
+**A compiled model's parameters are DISCOVERED, never listed by hand, and the defaults are READ from
+the model rather than inferred.** `describe` already carried each parameter's name, kind and (now)
+its units and description; what it could not carry is a DEFAULT, because **the OSDI descriptor has no
+default field at all** — a parameter's default is whatever `setup_model`/`setup_instance` writes into
+the struct. So `tools/osdi-worker` gained a `defaults` command that instantiates a throwaway probe
+model at a fixed 300 K, runs both setups, and reads every non-op-var parameter back through
+`access()`. The probe is freed immediately and never occupies a `g_inst` slot, so asking for defaults
+cannot consume the worker's finite instance table (the 4,096-slot exhaustion this file already
+records is exactly the failure that rule exists to prevent). `DeviceWorkerProvider.DeclaredDefaults`
+caches the answer per typeId, so a dialog opened repeatedly costs one round trip.
+
+**The picker exists because materialising every parameter would be WRONG, not merely large.** A
+compiled MOSFET declares 809 of them; writing them all onto the instance turns each into an explicit
+override, which freezes the model's own defaults at the moment of placement — recompile the `.va`
+with a corrected default and the design silently keeps the old number. **Absent already means "use
+the model's own default"**, which is the behaviour a user wants and the one they would lose. So the
+component carries only what was deliberately set: `ParameterEditorViewModel.AddModelParameter` opens
+`ModelParameterPickerDialog` (searchable over name AND description, already-present parameters
+excluded, default shown per row) and adds one row, seeded with the model's own default value.
+A parameter present on the instance that the model does not declare is REPORTED, not deleted.
+
+**Removal is a per-row `✕`, and it is a SECOND mechanism on purpose.** The existing `−` button
+removes the last member of an INDEXED group (`Z[1]`, `Z[2]`… — a `UserParamTemplate` family where
+only the last index is removable without renumbering the rest). A model parameter is independent:
+there is no order, no index, and no reason the user's 1st of 100 should be less removable than their
+100th. `ComponentTypeRegistry.IsRemovableParameter` gates the `✕` to VerilogA rows other than
+`File`/`Model`/`Pins` (circuitRF's own routing rows, which are not the model's to remove), and
+`ParameterRowViewModel.RemoveSelf` filters by REFERENCE rather than by name, so two rows that
+somehow share a name cannot remove the wrong one. One `SetParametersCommand` — undoable, like every
+other parameter edit.
+
+**One new test is `Category=Benchmark` for a THIRD reason, and it is worth naming because the two
+already recorded in this file do not cover it.** `VerilogAModelIntrospectionTests.AFileThatIsNotACompiledModel_ReportsRatherThanThrowing`
+is neither slow (~ms) nor itself wall-clock-sensitive: it is the only test in that file that hands
+the REAL provider an existing file, so a worker is started to attempt the load, and that concurrent
+PROCESS load is what tips `Core.Tests`' `DeviceWorkerProcessTests.AWorkerThatDiesImmediately_StillReportsWhatItSaidOnTheWayOut`
+— a deliberate under-load race whose own comment forbids "stabilising" it by waiting longer, because
+that wait IS the grace period it exists to remove. **Measured: 4 full-solution runs clean with this
+work stashed, 2 failures in 3 runs with it.** The load is moved out of the routine gate rather than
+the other test's guarantee being weakened. **The cost is real and is not hidden: the routine gate no
+longer covers "picking the wrong file is reported, not thrown"** — what a file picker actually hands
+you — and it returns only under `--settings circuitrf.benchmark.runsettings`. Both filter directions
+were verified rather than assumed (routine 21 of 22; benchmark exactly 1), per this file's own
+standing warning about assuming VSTest filter semantics.
+
+---
+
+Fourteen owner reports in one batch (2026-08-09) — COMPLETE. Independent items; the four worth
+remembering are recorded here, the rest are one-liners at the end.
+
+**A dynamic symbol's port count was computed as `Ports.Count / 2` for EVERY kind, and that one
+expression produced all three VerilogA symptoms at once.** SDD and ZPort expose 2 pins per port, so
+halving is right for them and wrong for everything else — a 4-terminal VerilogA drew the 2-terminal
+symbol (no leads to most pins, a box that never grew), and a 1-terminal one halved to 0, fell
+through to the 2-port default, and drew a lead to a pin that does not exist. Fixed at the one place
+that asks: `SchematicRenderer.PortCountOf(kind, pinCount)` halves for `Sdd`/`ZPort` and nothing else.
+
+**The S4P Tight-pitch box was tall because the body was sized from an IDEAL span, not from its own
+pins**, and banker's rounding (`SnapG(-50) == 0`) then collapsed two pins onto one grid step while
+the box kept the ideal height. `SnpBodyGeometry` now measures the pins it actually generated.
+**The Ref pin deliberately still uses the OLD arithmetic** (`LegacySnpBodyHalfH`) — a body is drawn
+geometry, a pin is a connection point, and correcting the body must never relocate a pin and silently
+disconnect a wire. The (n, pitch) combinations that would otherwise have moved it were checked by
+hand (Tight, nLeft even ≥ 4 ⇒ n = 7, 8, 11, 12…), which is why the freeze is deliberate and not
+timidity.
+
+**A pinned plot axis printed its raw INDEX** — `DC1.I(VDS=240, branch=0)` names neither the value the
+user swept to nor the quantity they picked, and both answers are on the cube. A `Trace` deliberately
+never holds a `DataSet`, so the OWNER resolves it: `PlotInspectorViewModel.ApplyPinnedAxisDisplay`
+hands `Trace` the finished token per pinned axis, exactly mirroring the pinned-spectral pair that
+already worked this way. **The map holds the WHOLE token, not just the value**, because the two forms
+differ: a swept axis keeps its name and gains value+unit (`VDS=6 V`), while a labelled axis reads as
+its label alone (`IDS` — the label already names the quantity). The S/Y/Z port axes are excluded so
+`S(1,2)` stays positional. Absent ⇒ the raw index, so every hand-built trace is unchanged.
+
+**Interchange's "DXF and Gerber fields are scaffolding" text was stale — the fields were already
+live — but the feature had a real defect behind it: a duplicate alias silently MERGED geometry.**
+Two layers sharing a `GerberSuffix` overwrote each other's copper in the export (one file name,
+written twice); duplicate DXF names and duplicate fully-stated GDSII `(layer,datatype)` aliases are
+the same class. `TechValidation.ValidateInterchange` reports all three, and `GerberExport.Write`
+disambiguates a colliding file name instead of overwriting. A half-stated GDSII alias and a blank
+field are deliberately NOT collisions.
+
+**Two smaller findings worth keeping:** `Save As` did not retitle a schematic tab for two independent
+reasons — `SchematicDocument.Materialize` only refreshed the title when `IsDirty` actually CHANGED,
+and `SaveLooseSchematic` preferred any dirty scratch document over the active one; and the Layout
+X/Y readout tracked the raw cursor because `UpdateSnapMarker` has several early returns AND the
+canvas raises `CursorWorldChanged` BEFORE the VM sees the move, so the refresh had to be hoisted into
+a wrapper around it (`RefreshCursorReadout`, reading `_snapCandidateIsRealTarget` — the same flag that
+distinguishes a real snap target from the synthetic marker-persistence echo).
+
+**Templates ship EMBEDDED, not as a folder beside the executable.** `ShippedSchematicTemplates`
+mirrors `ShippedTechnologies` exactly (plain .NET `EmbeddedResource`, read through the SAME
+`SchematicPersistence.Deserialize` a user's own `.csch` goes through, discovered from the manifest
+rather than a hand-written list). A loose content folder does not survive `dotnet publish` without
+its own copy rule and would then be missing from the build a user actually runs. The picker is
+offered at the three prompts where a schematic is genuinely created — both New Cell paths and the
+tree's New Schematic — and nowhere else; `(Empty)` is first and pre-selected, so a template is an
+opt-in. A template that fails to parse is reported and the schematic is created empty rather than
+costing the user their cell.
+
+**VerilogA's `Model` and `Pins` are now answered by the file.** `VerilogAModelIntrospection` goes
+through the SAME provider the engine uses at Run (`ExternalDeviceRegistry.Find` over
+`VerilogAFileResolver`'s composed name), so the dialog cannot promise a device Run then refuses —
+and because the registry keeps a resolved provider, the worker started to answer the question is the
+one Run reuses rather than a second process. `Pins` is autofilled from the selected model's own
+terminal count; `Model` is autofilled ONLY when the file declares exactly one type — with several,
+the row becomes a picker (reusing the kit-part `ChoiceOptions` mechanism via `SetRuntimeChoices`)
+rather than the choice being made for the user. One `SetParametersCommand`, and only when something
+actually differs, so opening the dialog never dirties a schematic. All three parameters now carry a
+one-line description (`ComponentTypeRegistry.ParameterDescription`) — deliberately only these three,
+because "R: the resistance" is noise.
+
+**The rest, briefly:** `TextBox.Watermark` → `PlaceholderText` (5 × AVLN5001); `CloneAnalysis` gained
+full `Loadpull`/`LoadpullPursuit` arms plus the HB `ToneUnit`/`ToneUnits` it had been silently
+dropping, now guarded by a reflection test over every `Analysis` subtype; loadpull and LPP report
+`N point(s) simulated · N reached compression · …` from the `StopCode` cube the engine already
+publishes (nothing in `src/Engine` changed); port labels on every dynamic symbol went 10 → 18;
+Mirror Horizontal/Vertical joined the schematic component context menu; and the Layout Editor's
+"Place Parametric Cell" button is gone (PCells are placed by palette drag — the picker dialog and
+`BeginPCellPlacement` are retained).
+
+**Gate:** Core 1,238 · RfCore 281 · WBond 237 · Firewall 6 · Ui **5,886** · Engine 1,040 (+1
+pre-existing skip) — green. ~120 new tests across 11 files. **One pre-existing failure, confirmed not
+this batch's:** `Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`,
+which this file already records as failing deterministically at HEAD; nothing here touches
+`src/Harmonica`.
+
+**Not interactively verified** (no visual driver here, matching every prior round) — please confirm
+on your end: a 4-terminal VerilogA draws four leads and a body that grew, and a 1-terminal one draws
+exactly one; an S4P at Tight pitch has a box that hugs its pins with existing wires still attached;
+Save As retitles the tab; the Layout X/Y readout follows the snapped point with geometry snap on; a
+loadpull run reports its compression count in Messages; New Cell offers a Template dropdown and the
+new schematic opens populated; and choosing an `.osdi` fills in Pins (and Model, or a dropdown when
+the file holds several).
+
+PCell parameter handles — eleven owner reports on the grips (2026-08-09) — COMPLETE. Every one of
+them was in the layer BETWEEN the solver and what the user sees; the solver itself was right
+throughout, which is why each of these survived the phase's own gate tests.
+
+**The grips went stale whenever the artwork under them moved, and there were three separate ways for
+that to happen.** (1) `BuildPCellHandleMarkers` placed them against `Model.Instances[i]` — the
+COMMITTED position — so during an ordinary whole-instance move drag they sat on the artwork's old
+location and snapped across on release. It now reads `Overlay.InstanceDragOverrides` first, which
+subsumes the pinned-anchor case (R-pch-4b's own translate already rides that channel) rather than
+adding a second rule. (2) The instance SELECTION OUTLINE was measured from
+`CellHierarchy.InstanceBbox` — i.e. from the cell on disk — so during a grip drag it kept the pre-drag
+size while the artwork inside it grew; new `CellHierarchy.InstanceBboxOfView` measures the live
+preview through the SAME resolve/transform/array-expand path, so a preview bbox and a committed one
+can only ever differ by the geometry they were given. (3) **`Model.Changed` only rebuilt the overlay
+when the selection INDEX LIST changed** — and a parameter committed from the Properties Inspector
+re-points the instance at a different generated cell (copy-on-write) at the SAME index, so the guard
+never fired and the grips went on being drawn for a cell the instance no longer referenced. The
+rebuild is unconditional now; it is cheap (grips resolve through `PCellGeometryCache`) and being
+stale is not.
+
+**"Only some of the grippers update the parameters" was ONE line, and the mechanism it broke is worth
+remembering.** `SingleSelectedInstance` returns null whenever `Overlay.InstanceDragOverrides` is
+non-empty — right for a move drag (the panel would be reading a throwaway translated clone), and
+exactly wrong for a grip drag, whose live values are what the panel exists to show. R-pch-4b puts an
+entry in that dictionary for **every grip whose anchor actually moves**, which on MLIN is three of
+four — so the one grip anchored at the cell origin updated and the other three silently did not.
+**A drag-preview guard keyed on "is anything being previewed" cannot tell those two cases apart; it
+has to ask WHICH kind of drag.** Typed edits are still refused mid-drag by
+`LayoutShapePropertiesViewModel.DragBlocksEdits`, which already covers a grip drag on its own terms.
+
+**R-pch-12 — a handle may now declare WHAT KIND of quantity its parameter is (`PCellHandleQuantity`:
+Unspecified / Length / Angle), and this does NOT reintroduce the declared scale R-pch-2 rejected.**
+The SENSITIVITY is still measured and still unit-free. What the host cannot measure is what the number
+IS, and it needs that for exactly two things:
+
+- **The readout.** It printed `L = 0.0110236` — a bare SI-metres number with no unit. It now prints
+  `L = 434 mil`, in the document's own display unit, and an angle in degrees.
+- **The snap grid — and this is the one that was a real correctness bug, not a presentation one.**
+  The CURSOR was snapped all along; the solved PARAMETER never was, so it stopped wherever
+  convergence did. Dragging a width to 468 mil under 1 mil snapping committed **468.00006 mil**, and
+  that value is what "Update Schematic from Layout" and every later export then carry. The layout's
+  own snap step now becomes the solver's candidate lattice.
+
+Three things about the quantization are load-bearing. **It is applied INSIDE `Solve`'s own `Propose`,
+not to the answer afterwards** — the solver then regenerates AT the quantized value, so the grip is
+drawn where the committed value actually puts it and the anchor-pin translate is computed from that
+same geometry; quantizing afterwards leaves preview and commit up to half a snap step apart, which
+reads as the artwork jumping on release. **Only a LENGTH is quantized** — rounding an impedance
+(MKlopf's Z1/Z2 grips) or an angle onto a distance lattice is arithmetic with no meaning behind it.
+**Alt suspends it and snapping-off disables it**, like every other snapped gesture. `Unspecified` is
+the default and degrades to exactly the previous behaviour, so a script-supplied grip that says
+nothing is unaffected.
+
+**`quantity`/`crossQuantity` are additive on the wire and deliberately NOT a version bump.** R-pch-5's
+refuse-don't-negotiate rule is about a reply an older host cannot READ; an absent field decodes to
+`Unspecified`, which is what every handle already did. An unrecognised VALUE is silently
+`Unspecified` too — the opposite trade from an unknown handle `kind` (dropped and reported), because
+an unknown kind loses a grip while an unknown quantity costs only a nicer readout.
+
+**`AsCrossHandle()` was dropping `KeepAnchorFixed`, and the failure was half-silent.** A pinned grip's
+cross axis is solved through the ordinary machinery and needs the same inverted measurement frame the
+primary does (measure from the REGENERATED anchor — a pinned grip's cell coordinates do not move at
+all). Without the flag the cross axis reads as dead, is dropped and reported, and the primary axis
+goes on working — so the grip half-works rather than failing visibly. Only reachable once a pinned
+two-axis grip existed, which MKlopf's new near-end grip is.
+
+**The grip sets the owner asked for, all keyed to CORNERS OF THE METAL rather than edge midpoints.**
+MTaper 3 → **6** (length from either end, each width from either side of its own end cap; the
+near-end length grip is the R-pch-4b case). MTee 3 → **6** and MCross 4 → **8** — one at each of the
+outline's own outward corners (the re-entrant ones where arms meet are inward folds, not something to
+grab), each pair anchored on its arm's own end-cap centre so the anchor's slide ALONG the arm is
+ignored by the across-only projection rather than corrected for. MKlopf 1 → **6**, three at each end:
+a middle grip driving `L`+`Offset`, and top/bottom edge grips driving the terminating **impedance** —
+because a Klopfenstein taper's width at an end is a consequence of `Z`, not a parameter of its own.
+Those read their positions off the outline that was actually built, so a grip sits on the edge it
+appears to grab even when `SmoothSteps` has blended that end's width away from nominal.
+
+**MBEND: the outline is now built DIRECTLY as one polygon, and that is what fixes "a non-90° bend
+looks like two stubs merged together."** Two arm rectangles unioned meet in an overlap whose boundary
+carries each rectangle's own leftover corners — the 45° case in the geometry golden file came out as
+a self-overlapping **ten-vertex** outline. `BuildBendOutline` computes the two end caps, the real
+OUTER corner (where the arms' outer edge lines cross) and the real INNER corner, and emits the hexagon
+they define; the same 45° case is a clean seven-vertex chamfered bend now. **At exactly 90° the
+geometry is unchanged vertex for vertex** (same cycle, different start index — visible in the golden
+diff), so the shipped right-angle behaviour is untouched. Building it directly also removes the
+boolean `Difference` the miter used to need — the chamfer is two vertices in place of one, so there is
+no subtract step that can silently miss the geometry, which this file's own history records happening
+**twice**.
+
+**Does an optimal-miter algorithm exist for a non-90° bend? No — asked and answered, not assumed.**
+Douville & James 1978 fitted a RIGHT-ANGLE bend and states nothing about oblique ones, and no
+equivalently-validated published fit for arbitrary angles was found. **This reverses R-L5h-7's
+original "report and stay unmitered,"** which was right that the formula must not be silently
+extrapolated and wrong about the remedy: leaving an oblique corner square is what made the bend read
+as two merged stubs in the first place. What ships is the standard engineering generalisation — hold
+the FRACTION of the corner removed constant (the corner being the outer-to-inner diagonal), which
+reduces to the published leg at 90° by construction because the fraction is derived FROM it — clamped
+to the outer edge actually available so a shallow bend cannot fold the outline through itself. The
+no-silent-extrapolation half is kept exactly: **every oblique bend reports through
+`PCellResult.Diagnostics` that its chamfer is an engineering extrapolation, naming the angle and
+Douville & James**. `PCellRegistry` bumps **MBEND to version 2** — the geometry output changed for
+existing oblique parameter sets, which is precisely what that field is for (`GeneratedCellsLifecycle.
+Regenerate` repoints instances as it rebuilds, so a bump costs nothing in the field).
+
+**Gate:** 17 new tests (`PCellHandleFixesTests`), **every one of the six fixes confirmed to turn its
+own test red when reverted** — the grip-follows-a-move-drag, the three-of-four MLIN inspector rows,
+the overlay rebuild after a Properties-Inspector commit, the three-of-four on-grid commits, the
+selection-outline pixel oracle, and the pinned cross axis. **Fourteen pre-existing tests were UPDATED
+rather than loosened**, each having asserted something this round deliberately makes false (the old
+handle counts, `Assert.Single` on MKlopf's one grip, and R-L5h-7's stay-unmitered rule). The geometry
+golden baseline was re-recorded through its own `CIRCUITRF_RECORD_PCELL_GOLDEN` path so the diff is
+reviewable — it shows the 90° cases as an identical vertex cycle and the 45° case going from ten
+self-overlapping vertices to seven. Core 1,238 · RfCore 281 · WBond 237 · Firewall 6 · Ui **5,788** ·
+Engine 1,040 (+1 pre-existing skip) — green. **Two pre-existing failures, both confirmed not this
+round's:**
+`Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`,
+which this file already records as failing deterministically at HEAD (nothing here touches
+`src/Harmonica`), and `PerfBenchmarkTests.BuildRenderModel_10k_Under50ms` on one full-solution run —
+the wall-clock SCHEMATIC render benchmark this file already documents as a full-suite CPU-contention
+flake; it passed in the isolated `Ui.Tests` run, and nothing here touches the schematic render model.
+`python3 tools/pcell-python/verify.py` — all checks pass.
+
+**Not interactively verified** (no visual driver here, matching every prior Layout Editor phase) —
+please confirm on your end: dragging a placed PCell by its body carries its grips with it live; the
+toolbar readout during a grip drag reads in your document's own unit (e.g. `W = 154 mil`); a width
+dragged under 1 mil snapping comes back through "Update Schematic from Layout" as a whole number of
+mils; the selection box grows and shrinks with the artwork during a grip drag; editing a parameter in
+the Properties Inspector immediately moves the grips; MTaper/MTee show six grips, MCross eight and
+MKlopf six; and a non-90° MBend renders as one trace that turns rather than two overlapping stubs.
+
+WHICH deck a process's rules come from — and the 117 phantom rules that answer exposed (2026-08-09) —
+follow-up to the entry below, which reported the two-deck problem and did not fix it.
+
+**The open framework standard does not settle this, and that was checked rather than assumed.** It
+defines where a process's per-tool files live (`libs.tech/<tool>/`) and says nothing about which deck
+file is canonical, what a deck is called, or how a tool should discover one. **So there is no standard
+to follow, and none was invented.** What a process DOES state is its own include graph, and that is
+what is now followed.
+
+**`RuleDeckSelector` selects the deck rooted at the file that pulls the others in.** A file that
+`%include`s (or `load`s) others and is itself included by nobody is a deck ROOT; that file plus its
+transitive includes is one deck. Anything left over is a DIFFERENT deck — reported by name, never
+merged. No include graph anywhere means a flat deck, read whole, exactly as before.
+
+**Verified against a real process's own runner script, which this code never reads and does not know
+exists.** The set the include graph selects — one root plus 33 includes — is exactly the set that
+runner calls the main rule set, and the three files left over are exactly the three it launches as
+separate runs. That agreement is the evidence the include graph is the right signal; nothing here
+keys on a file name.
+
+**The reason this is a CORRECTNESS fix and not a tidy-up.** The alternative deck that process ships
+turns out to state **no reporting calls at all** — it redefines the reporting call as a method and
+defines its whole vocabulary as `def ext_*` helpers. So every "rule" read from it came from a line
+inside a method BODY. Measured: **117 phantom rules and 214 phantom unsupported entries**, each
+attributed to whatever layer its symbols happened to resolve to — and every one of those 117 would
+then have been **enforced against the user's artwork**. Merging two decks also crosses two independent
+symbol namespaces, so a derived layer named the same thing in both resolves against whichever was read
+last and a rule silently measures a region its own deck never meant.
+
+**The honest count on this process is now 51 rules read against 65 unsupported** — where it previously
+read 169 against 300. **The number went down and got better**: 116 rule-shaped statements, all of them
+real, against 469 of which two thirds were an artefact of reading a helper library.
+
+**And the corrected breakdown changes what the remaining work is.** Of the 65 now unsupported:
+**46 are operand resolution** (a `sep` whose second operand is a net-derived layer, a shape-property
+selection, a nested expression passed where a symbol was expected); **14 are edge-collection
+operations** (`with_angle` 9, `with_length` 4, `extended` 1); 2 are `area`; 3 are a value the rule
+table does not define. The earlier estimate of ~118 edge rules was measured on the merged read and was
+almost entirely the helper library's own method bodies. **Edge collections are worth 14 rules on this
+process, not 118** — the same piece of work, a much smaller prize, and operand resolution is now the
+larger one.
+
+**Density cannot be imported from this process at all, and that is a property of the deck rather than
+a gap here.** Its density rules are a separate deck (correctly left out by the selection) and are
+stated PROCEDURALLY — a function that loops windows accumulating areas and computes ratios in code.
+There is no declarative statement to read. `DrcRuleKind.Density` and its sliding-window check already
+exist and work; what is missing is something to read them FROM, and no parser short of an interpreter
+gets them out of that file. The 2 remaining `area` entries are property accesses feeding those sums,
+not rules. Authoring density by hand in the Technology Editor remains the route.
+
+**Also correctly excluded by the same rule: a file that is not a DRC deck at all.** The process's LVS
+layer definitions matched the deck recogniser (same language, same layer-binding grammar) and were
+being read as part of the rule deck. They root nothing and are included by nothing, so they now fall
+out as an alternate — which is the right answer for the right reason.
+
+**Gate:** Core 1,238 · RfCore 281 · WBond 237 · Firewall 6 · Ui **5,771** · Engine 1,040 (+1
+pre-existing skip) — green on a clean full run. 10 new tests (`RuleDeckSelectionTests`). Same single
+pre-existing `Harmonica R11` failure this file already records at HEAD. **Three further failures
+appeared in one full run and were each confirmed NOT regressions** — `PerfBenchmarkTests`
+(the documented full-suite CPU-contention flake), `ExternalDeviceLifetimeTests` and
+`WorkerBackedAnalysisTests` (the device-worker area this file already records by name); the last was
+additionally verified by stashing the whole change and by three consecutive clean runs with it
+restored. Nothing here touches `src/Engine` or `src/Harmonica`.
+
+Open-PDK bring-up round: the deck's own top-level file, an editor that could not open a real layer
+table, and a kit reference with two copies of the same path (2026-08-09) — five owner reports, four
+fixed and one answered with measurements.
+
+**1 — "321 rule(s) circuitRF cannot check yet." The number was inflated and the biggest single cause
+was one unread FILE.** A deck is ONE program: its host loads every file into a shared scope, and the
+top-level file derives the layers every per-table file then measures (`cont_sq = cont_nseal.not(...)`
+— 43 of them on the process measured). Two things kept that out: the file binds no drawn layer and
+reads no rule value, so all three recognition markers missed it; and derived bindings were
+**file-local**, so even reading it would have changed nothing. Both fixed — a fourth grammar marker
+(`LooksLikeDerivationFile`) and a shared derived map filled by fixed-point passes. **Measured through
+the real scan path on a real process: 143 → 169 rules read, 321 → 300 unsupported.**
+
+**Derived layers are GLOBAL; arrays stay FILE-LOCAL. The two rules are deliberately opposite** and
+`ArrayBindings_StayFileLocal_EvenThoughDerivedLayersDoNot` pins that they still are. Arrays are
+loop-scoped working variables and two files routinely bind the same ordinary name to different lists
+(this file already records that as a measured defect); derived layers are top-level and unique by
+construction. Do not "unify" them.
+
+**What is left is a long tail, and the honest breakdown is worth keeping so nobody re-derives it.**
+Of the remaining 300 on that process: ~108 are operand-resolution failures with no single cause
+(net-derived layers `x = y.nets`, shape-property selections `.non_squares`, nested expressions passed
+as an operand, and chained failures from those); ~118 are EDGE-collection operations (`with_length`,
+`with_coincident_edges`, `edges`, `with_angle`, `coincident_part`) which are not width/space
+measurements hiding behind an unsupported op — **verified by temporarily treating them as
+pass-through, which reclassified them without producing a single extra rule**; 21 are `area`
+(density); 17 are the universal `drc(...)` DSL. Supporting the edge family means a second, edge-valued
+kind alongside `DrcLayerExpr`'s region-valued one — a real piece of work, not a vocabulary addition.
+
+**And a structural finding that inflates every count on this kind of kit: a process may ship TWO
+COMPLETE, EQUIVALENT DECKS** — a modular one and a self-contained "maximal" one that reimplements the
+same rules through its own wrapper methods. circuitRF reads both and sums them. Measured: modular
+alone is 51 read / 87 unsupported; the maximal deck adds 118 / 214, and a large part of its 214 is
+lines inside `def` bodies — helper-library implementation counted as unenforced rules. **Not fixed
+here** (choosing between two decks needs a rule for deciding which is canonical), but it means the
+headline figure should be read as an upper bound, not as a rule count.
+
+**2 — the `.ctech` editor could not open a real layer table, and the cause is one this file already
+records.** A bare `ItemsControl` inside a `ScrollViewer` is **not virtualized** — Avalonia gives it a
+plain `StackPanel` and infinite measure height, so every item realizes. On an imported process (377
+layers, 28 stackup entries) that is ~377 rows on the Layers tab, another 377 on Interchange, and —
+the killer — **28 × 377 = 10,556 CheckBoxes** on Stackup, because each stackup row carried a
+`WrapPanel` of one checkbox per drawing layer. All four lists are now `ListBox` with explicit
+`ScrollViewer.*ScrollBarVisibility`, which is the identical fix and the identical reasoning as the
+L1j vertex-list post-ship fix further down this file. **Use `ListBox`, never a bare `ItemsControl`,
+for any row list that can grow with a technology.**
+
+**`SharedSizeGroup` had to go with it, and that is a REQUIREMENT of virtualizing rather than a
+simplification.** A shared size group is the maximum over the participants actually MEASURED; with
+virtualization only the on-screen rows are, so column widths would shift under the user while
+scrolling. Every column but Name holds fixed-width content already, so pinning them loses nothing.
+
+**3 — the drawing-layer selector now honours the two cardinalities §10.4 actually states.** A via or
+dielectric binds AT MOST ONE, so it gets a plain ComboBox with an explicit "(none)" — which is what
+the owner asked for and is the right control for a closed single choice. A conductor binds one or
+more, so it keeps a checkbox list, but filtered, height-capped and virtualized. **The gate test caught
+a real bug in the new path**: `DrawingLayerChoice.None` is a real object whose `Key` is `default`, so
+passing it through bound layer 0/0 instead of clearing — hence `IsNone`, asked rather than compared
+against `Key`.
+
+**4 — a via's SPAN was resolved correctly by the import and shown nowhere.** The owner reported "no
+vias between Metal1 and Metal2"; the `.ctech` in fact holds `Via1` with `SpanFromLayer = Metal1`,
+`SpanToLayer = Metal2`. The stackup list is in LIST order, which a via is deliberately outside of (it
+has no z band of its own), so it sits below every dielectric and the only thing that says which
+conductors it joins was not on screen. Span, fill and plated-wall thickness are now editable on a via
+row; span ends offer conductors only.
+
+**5 — Manage PDKs ▸ Add never offered the technology.** File ▸ Import ▸ PDK did; Add went straight to
+`PdkReferenceManager.AddOrRepair` and stopped at the parts. Both doors put the same kit into the same
+workspace, so they now share one `OfferTechnologyFromKitAsync`. **The offer is deferred until the
+modal closes** (`Context.KitAdded` reports; the caller acts) rather than stacking a second modal
+inside the first.
+
+**6 — a kit reference had TWO copies of the same path, and repairing one left the other stale.**
+`pcell-generators.json` is written into the WORKSPACE for a kit that is usually outside it, so its
+paths were unavoidably absolute — a second, independent copy of what `.cws` already records. A
+colleague who received the workspace and repaired the kit reference in Manage PDKs got their parts
+back and their **layout artwork silently still broken**. Declared paths are now anchored on
+`${kit}` against a single `KitRoot` field, and `TryRepointKitRoot` rewrites ONLY that field when the
+kit has moved — surgical, because the manifest and its entry script become the user's once written.
+**A manifest that declares no `KitRoot` is left completely alone**: hand-written or pre-anchor, its
+paths mean what they say, and re-anchoring them would move a working kit.
+
+**7 — kit symbols rendered larger than circuitRF's own, and a power-of-ten ladder could not have fixed
+it.** Measured: its two-terminal parts came out 600 local units against a built-in's
+400, its capacitor 750. The scale was chosen by clamping the kit's LARGEST part into a legibility band
+a full DECADE wide, so where a kit landed in that band was an accident of its biggest symbol — and the
+next rung down is 10×, which would have made the whole kit unreadable. The scale is now continuous and
+normalises the kit's **MEDIAN** part onto `KitTemplateSymbol.ReferenceSymbolExtent` (400 — a built-in
+two-terminal part's own pin span), still one scale per kit so relative sizes are preserved, still
+clamped at the extremes. Pins land on the connection grid because `PlacePins` snaps them there, which
+was never the scale's job. **`DsnSymbolReader.TranslationVersion` 2 → 3**, because rescaling moves
+pins — a workspace records the version its kits were translated under, so this is reported and refused
+rather than silently re-translated.
+
+**8 — the ground-reference question, answered rather than changed.** The inference is behaving as
+designed: this process's stack has no backside metal, its bottom boundary is already `Ground` (the
+bulk), and `Metal1` is the lowest conductor not marked as part of a device. For an RF design on this
+kind of substrate that is usually NOT what you want as the return path — the ground is normally one
+the designer builds (a lower-metal mesh, or a top-metal coplanar ground). Nothing was changed:
+the choice is stated, visible and overridable per §R-pc-9, which is what that mechanism is for.
+
+**Gate:** Core 1,238 · RfCore 281 · WBond 237 · Firewall 6 · Ui **5,761** · Engine 1,040 (+1
+pre-existing skip) — green. 27 new tests (`RuleDeckReaderTests` +5, `StackupEditorFieldsTests` 12,
+`KitSymbolScaleAndPortabilityTests` 10). **One pre-existing failure, confirmed not this round's:**
+`Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`,
+which this file already records as failing deterministically at HEAD; nothing here touches
+`src/Harmonica`.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: the `.ctech` editor's Layers, Stackup, Interchange and DRC tabs open promptly on the
+imported process; a via row shows its span, fill and wall thickness; a conductor's drawing-layer list
+filters and a via's is a single dropdown with "(none)"; Manage PDKs ▸ Add on a kit carrying process
+data offers to build a technology once the dialog closes; and kit symbols now sit at about the same
+size as circuitRF's own R/L/C beside them.
+
+A kit's pins follow its artwork (2026-08-09) — owner-reported and now fixed; the entry below recorded
+it as diagnosed-but-unfixed and that half of it was **wrong about where the fault was**.
+
+**The geometry was never missing.** That earlier note said the RF cells returned "zero shapes at
+negative x" and inferred lost artwork. They do return nothing at negative x — because the cell has
+MOVED. Dumped per layer: 79 shapes filling [0,0]..[3980,4600], guard ring and all, complete. What was
+wrong was only the pins, and the cause is one line at the end of the kit's base cell:
+
+```python
+# reset origin
+for id in self.getShapes():
+    dbMoveFig(id, Point(-xl, -yb), 'R0')
+```
+
+**Declaring a pin and drawing its metal is one action written as two lines** — `addPin(box, layer)`
+then a rectangle on that same box — and `addPin` recorded the BOX. So the origin reset moved every
+figure and left every pin in the frame the cell had been drawn in. All four pins were stale by the
+same offset; two of them (whose frame coordinates were negative) landed outside the cell, and the
+other two landed inside it by coincidence, off their own metal. **The tell was that four cells whose
+geometry differs in size by 40% reported pins at IDENTICAL absolute coordinates.**
+
+**A pin now binds to the figure that carries it and is read from that figure at emit time**
+(`_PinEntry` in `cni/dlo.py`), so it survives any number of later transforms rather than one
+particular one. The box remains as a fallback for a pin nobody draws — unchanged behaviour — and a
+pin whose artwork is consumed by a boolean keeps the box that artwork last had, which is better than
+snapping back to the pre-transform frame.
+
+**Two things about the binding are load-bearing:**
+
+- **It matches on layer and box because the API leaves nothing else to match on.** `addPin` is handed
+  geometry, not a figure, and the figure does not exist yet when it is called. So the rule is narrow:
+  only the pin declared IMMEDIATELY before, only while still unbound. A cell that declares a pin and
+  never draws it keeps exactly what it gave.
+- **The hook runs after the CONCRETE constructor, not in `_Figure.__init__`.** The base runs before
+  the subclass has set its geometry, so the figure cannot measure itself yet and every match fails —
+  silently, which is how the first version of this fix passed its build and changed nothing. It is
+  installed through `__init_subclass__` instead. A figure type that does not measure itself answers
+  with the unset-attribute tag rather than raising, so the RESULT is checked, not just the call.
+
+**Measured after: every pin of every RF cell inside its own artwork, each moved by exactly the
+translation its cell applies** (+1490, +1595 for one of them — the same for all four of its pins, which
+is what says the offset was the reset and nothing else). Every non-RF cell probed is byte-identical to
+before: the plain FET, the MIM capacitor, the resistor, the inductor and the bipolar all report the
+pins they always did.
+
+Gate: `PCellVendorBridgeTests.APinFollowsItsArtwork_WhenTheCellResetsItsOwnOrigin`, over a synthetic
+cell that draws in a negative frame, declares a pin there and then resets its own origin — the idiom,
+not the kit. `tools/pcell-python/verify.py` still passes.
+
 A kit's own number notation, and where `ModelLibrary` belongs (2026-08-09) — owner's follow-ups to the
 two entries below.
 

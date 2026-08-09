@@ -258,6 +258,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         RefreshTypedFieldDisplays();
         RefreshSnapDistanceDisplay();
         RebuildSnapLadderOptions();
+        RefreshCursorReadout();   // the X:/Y: readout is unit-formatted too — relabel it in place
     }
 
     partial void OnSnapDbuChanged(long value)
@@ -390,11 +391,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
             bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
             bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
-            if (shapesChanged || instancesChanged)
-            {
-                SelectionStatusText = ComputeGenericSelectionStatus();
-                RebuildOverlay();
-            }
+            if (shapesChanged || instancesChanged) SelectionStatusText = ComputeGenericSelectionStatus();
+
+            // Unconditionally, not only when the selection LIST changed. A PCell parameter committed
+            // from the Properties Inspector re-points the selected instance at a different generated
+            // cell (R-L5-2's copy-on-write) at the SAME index — the index list is untouched, so the
+            // old guard skipped the rebuild and the grips went on being drawn for the cell the
+            // instance no longer references. Every other overlay this method feeds (handles, scale
+            // handles, DRC markers) is derived from the model in the same way and has the same
+            // exposure; a rebuild is cheap (the grips resolve through PCellGeometryCache) and being
+            // stale is not.
+            RebuildOverlay();
         };
     }
 
@@ -407,19 +414,60 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     [ObservableProperty] private string _cursorXText = "—";
     [ObservableProperty] private string _cursorYText = "—";
 
+    /// <summary>The raw pointer position the view last reported, kept so the readout can be recomputed
+    /// without a pointer move — after the display unit changes, and (the reason it exists) after the
+    /// geometry-snap query for THIS tick has resolved.</summary>
+    private double? _cursorRawWorldX;
+    private double? _cursorRawWorldY;
+
     /// <summary>Called by the view on every pointer-move/exit over the canvas — §1 R6's "live
     /// physical readout." Null clears the readout (pointer left the canvas).</summary>
     public void SetCursorWorld(double? worldX, double? worldY)
     {
-        if (worldX is null || worldY is null)
+        _cursorRawWorldX = worldX;
+        _cursorRawWorldY = worldY;
+        RefreshCursorReadout();
+    }
+
+    /// <summary>Owner request: the X:/Y: readout traced the raw mouse position even with geometry snap
+    /// on, so it disagreed with where a click would actually land. With snap on and a REAL candidate
+    /// in range it now reports the snapped point instead.
+    /// <para/>
+    /// Gated on <c>_snapCandidateIsRealTarget</c>, not merely on a non-null candidate: during a
+    /// marker-initiated drag <c>UpdateSnapMarker</c> keeps a SYNTHETIC candidate alive that just
+    /// tracks the cursor, and reading that would dress the raw position up as a snapped one — the
+    /// exact claim this is meant to stop making. That flag is also what the committed-position path
+    /// (<c>RecomputeMoveDelta</c>) gates on, so the readout and the drag agree by construction.
+    /// <para/>
+    /// Grid snap (<see cref="SnapDbu"/>) is deliberately NOT folded in here. It applies to a
+    /// gesture's committed point, not to hovering, and a readout that quantised on hover would report
+    /// a coordinate no feature is at.</summary>
+    private void RefreshCursorReadout()
+    {
+        if (_cursorRawWorldX is not { } rawX || _cursorRawWorldY is not { } rawY)
         {
             CursorXText = "—";
             CursorYText = "—";
             return;
         }
-        CursorXText = LayoutUnits.Format((long)Math.Round(worldX.Value), DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
-        CursorYText = LayoutUnits.Format((long)Math.Round(worldY.Value), DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
+
+        long x = (long)Math.Round(rawX);
+        long y = (long)Math.Round(rawY);
+        if (GeometrySnapEnabled && _snapCandidateIsRealTarget && _currentSnapCandidate is { } snap)
+        {
+            x = snap.X;
+            y = snap.Y;
+        }
+
+        CursorXText = LayoutUnits.Format(x, DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
+        CursorYText = LayoutUnits.Format(y, DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
     }
+
+    /// <summary>Test/diagnostic-only — true when the readout is currently reporting a snapped feature
+    /// rather than the raw pointer position. A test asserting only on the formatted text cannot tell a
+    /// snapped value from a raw one that happens to round the same way.</summary>
+    internal bool CursorReadoutIsSnapped =>
+        _cursorRawWorldX is not null && GeometrySnapEnabled && _snapCandidateIsRealTarget && _currentSnapCandidate is not null;
 
     /// <summary>Posts a Messages summary (docs/sonnet-briefs/brief-L1g-technology-retarget.md §5 —
     /// "report what happened"). Used after a technology retarget and after a cross-tech paste, both
@@ -1596,11 +1644,26 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
         else
         {
-            dx = LayoutSnapping.SnapValue(px - _moveAnchorX, Model.SnapDbu, suspend);
-            dy = LayoutSnapping.SnapValue(py - _moveAnchorY, Model.SnapDbu, suspend);
+            (dx, dy) = GridSnappedDrag(px, py, suspend);
         }
         if (dx != _moveLiveDx || dy != _moveLiveDy) _moveHasMoved = true;
         _moveLiveDx = dx; _moveLiveDy = dy;
+    }
+
+    /// <summary>R-L1c-3's own rule in one place: a move snaps the DELTA, never each coordinate — so an
+    /// off-grid shape keeps its internal geometry. Shared by <see cref="RecomputeMoveDelta"/> (what the
+    /// drag actually commits) and by the snap marker's grab-role echo (where the grabbed feature now
+    /// IS), so the marker and the geometry cannot disagree about where the grab point ended up.</summary>
+    private (long Dx, long Dy) GridSnappedDrag(long px, long py, bool suspend) =>
+        (LayoutSnapping.SnapValue(px - _moveAnchorX, Model.SnapDbu, suspend),
+         LayoutSnapping.SnapValue(py - _moveAnchorY, Model.SnapDbu, suspend));
+
+    /// <summary>Where the feature grabbed at <see cref="_moveAnchorX"/>/<see cref="_moveAnchorY"/> has
+    /// been moved to by this tick, under the same grid snap the commit will use.</summary>
+    internal (long X, long Y) SnappedGrabPoint(long px, long py)
+    {
+        var (dx, dy) = GridSnappedDrag(px, py, suspend: false);
+        return (_moveAnchorX + dx, _moveAnchorY + dy);
     }
 
     /// <summary>brief-L3a-followups.md §2/R-fix-2: moves whichever of shapes/instances are currently
@@ -2466,7 +2529,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             DrcMarkers = BuildDrcMarkers(),
             // pcell-parameter-handles.md: the selected PCell instance's parameter grips, and — while
             // one is being dragged live — the regenerated artwork to draw in that instance's place.
-            PCellHandles = BuildPCellHandleMarkers(),
+            PCellHandles = BuildPCellHandleMarkers(instanceDragOverrides),
             PCellHandlePreview = _pcellHandleDrag is { PreviewView: { } handleGhost } dragging
                 ? (dragging.InstanceIndex, handleGhost) : null,
         };

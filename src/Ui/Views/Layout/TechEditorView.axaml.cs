@@ -59,6 +59,7 @@ public partial class TechEditorView : UserControl
                     case "TanD":      sr.CommitTanD();      break;
                     case "Mur":       sr.CommitMur();       break;
                     case "Sigma":     sr.CommitSigmaSm();   break;
+                    case "WallThickness": sr.CommitWallThickness(); break;
                 }
                 break;
 

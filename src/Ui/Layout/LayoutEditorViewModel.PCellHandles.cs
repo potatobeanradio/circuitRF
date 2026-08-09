@@ -88,23 +88,41 @@ public sealed partial class LayoutEditorViewModel
     /// parameter set, so every placement would show the same grips driving the same values — 2,500
     /// copies of them on a 50×50 array, all doing the same thing.</para>
     /// </summary>
-    private IReadOnlyList<PCellHandleMarker> BuildPCellHandleMarkers()
+    private IReadOnlyList<PCellHandleMarker> BuildPCellHandleMarkers(
+        IReadOnlyDictionary<int, LayoutInstance> instanceDragOverrides)
     {
-        var resolved = ResolveSelectedPCellHandles(out var inst, out _, out _, out _);
+        var resolved = ResolveSelectedPCellHandles(out var inst, out _, out _, out int instIdx);
         if (resolved.Count == 0 || inst is null) return [];
 
-        // While a pinned-anchor drag is live the cell is being drawn shifted, so the grips have to be
-        // placed against the shifted instance or they would float off the artwork they belong to.
-        if (_pcellHandleDrag is { } pinning) inst = PreviewInstance(pinning);
+        // Whenever the instance is being DRAWN somewhere other than where the model has it, the grips
+        // have to be placed against that same preview or they float off the artwork they belong to.
+        // Two independent cases arrive through the one channel: an ordinary whole-instance move drag,
+        // and a pinned-anchor grip drag's own R-pch-4b translate. Reading the override rather than
+        // re-deriving either is what keeps the grips and the geometry in step by construction.
+        if (instanceDragOverrides.TryGetValue(instIdx, out var previewInstance)) inst = previewInstance;
+        else if (_pcellHandleDrag is { } pinning) inst = PreviewInstance(pinning);
+
+        // EVERY grip is re-read from the drag's own regenerated cell, not just the one being dragged.
+        // A cell's grips are all functions of the same parameter set — MKlopf's end-cap grips sit on
+        // the outline whose width its impedances decide, and its far-end grips move with `L` — so
+        // drawing the dragged one against the preview and the rest against the COMMITTED parameters
+        // leaves the others sitting on artwork that is no longer under them, snapping into place only
+        // on release. Filtered the same way `resolved` was, so the two lists stay index-parallel; a
+        // count mismatch (a generator emitting a different number of grips at the dragged value)
+        // falls back to the committed positions rather than pairing grips up by luck.
+        var live = _pcellHandleDrag is { PreviewHandles: { } ph } d2
+            ? UsableHandles(ph, d2.Origin.Parameters)
+            : null;
+        if (live is not null && live.Count != resolved.Count) live = null;
 
         var markers = new List<PCellHandleMarker>(resolved.Count);
         for (int i = 0; i < resolved.Count; i++)
         {
-            var h = resolved[i];
             bool active = _pcellHandleDrag is { } d && d.HandleIndex == i;
-            // While a grip is being dragged it renders where the SOLVER put it, which is where the
-            // regenerated cell actually places it (R-pch-3) rather than where the cursor is.
-            var use = active && _pcellHandleDrag!.PreviewHandle is { } moved ? moved : h;
+            // While a grip is being dragged everything renders where the SOLVER put it, which is where
+            // the regenerated cell actually places it (R-pch-3) rather than where the cursor is.
+            var use = live?[i]
+                      ?? (active && _pcellHandleDrag!.PreviewHandle is { } moved ? moved : resolved[i]);
             markers.Add(ToMarker(use, inst, active));
         }
         return markers;
@@ -184,6 +202,22 @@ public sealed partial class LayoutEditorViewModel
         return usable;
     }
 
+    /// <summary>
+    /// The draggable subset of a handle list, by the SAME rule
+    /// <see cref="ResolveSelectedPCellHandles"/> applies — so a list regenerated mid-drag stays
+    /// index-parallel with the one the grips were built from. Silent: a declaration that is going to
+    /// be rejected has already been reported once by the resolution path, and repeating it per
+    /// pointer move would be noise.
+    /// </summary>
+    private static List<PCellHandle> UsableHandles(
+        IReadOnlyList<PCellHandle> handles, IReadOnlyDictionary<string, PCellValue> parameters)
+    {
+        var usable = new List<PCellHandle>(handles.Count);
+        foreach (var h in handles)
+            if (PCellHandleSolver.Validate(h, parameters) == PCellHandleRejection.None) usable.Add(h);
+        return usable;
+    }
+
     private void ReportHandleRejection(string generatorId, PCellHandle handle, PCellHandleRejection why)
     {
         if (!_reportedHandleRejections.Add($"{generatorId}|{handle.Parameter}|{why}")) return;
@@ -228,6 +262,12 @@ public sealed partial class LayoutEditorViewModel
         /// not to move.</summary>
         public long PendingDx, PendingDy;
         public PCellHandle? PreviewHandle;
+
+        /// <summary>EVERY grip the regenerated cell emitted, so the ones that are not being dragged
+        /// still follow the artwork they sit on. Null in deferred mode (R-pch-10 buys its saving by
+        /// not regenerating, so there is nothing to read the other grips from) and null before the
+        /// first solve — both fall back to the committed positions.</summary>
+        public IReadOnlyList<PCellHandle>? PreviewHandles;
         public LayoutView? PreviewView;
         public string Readout = "";
     }
@@ -317,7 +357,23 @@ public sealed partial class LayoutEditorViewModel
     {
         if (_pcellHandleDrag is not { } drag) return;
 
-        var (sx, sy) = LayoutSnapping.SnapPoint(px, py, SnapDbu, suspendSnap);
+        // Geometry snap overrides grid snap, and ONLY when a real feature is in range — the same rule
+        // every other drag in this editor follows (R-cmb-4/5). Without this a grip could only ever
+        // land on the grid, so lining a microstrip's end up with the pad or trace it has to meet was
+        // a matter of zooming in and eyeballing it. The synthetic "keep the marker visible" echo is
+        // deliberately NOT a target: _snapCandidateIsRealTarget is false for it, so a grip dragged
+        // through open space still snaps to the grid rather than freezing on its own grab point.
+        bool geometryTarget = !suspendSnap && _snapCandidateIsRealTarget && _currentSnapCandidate is not null;
+
+        var (sx, sy) = geometryTarget
+            ? (_currentSnapCandidate!.Value.X, _currentSnapCandidate!.Value.Y)
+            : LayoutSnapping.SnapPoint(px, py, SnapDbu, suspendSnap);
+
+        // R-pch-11 quantizes a LENGTH parameter onto the snap lattice so a committed value is a whole
+        // number of the document's own units. That is right for a grid-snapped drag and wrong for a
+        // geometry-snapped one: a real feature is under no obligation to sit on the grid, so rounding
+        // the solved length afterwards would drag the grip back off the very edge it was aimed at.
+        bool suspendQuantize = suspendSnap || geometryTarget;
         var (lx, ly) = LayoutInstanceTransform.InverseTransformPoint(sx, sy, drag.Instance, 0, 0);
         double target = drag.Handle.Project(lx, ly);
 
@@ -328,18 +384,25 @@ public sealed partial class LayoutEditorViewModel
                                             Technology, PCellLayerSelection.Default);
         }
 
+        // Where this tick backs out to if the value it reaches folds the artwork through itself
+        // (see the overlap guard below) — the last value that did not.
+        var priorValue   = drag.PendingValue;
+        var priorCross   = drag.PendingCrossValue;
+        var priorReadout = drag.Readout;
+
         // Time only a drag that is still deciding. A generator that DECLARED itself deferred is
         // believed without measuring — that is the whole saving.
         var stopwatch = drag.Moved || drag.Deferred ? null : Stopwatch.StartNew();
         var solved = PCellHandleSolver.Solve(Generate, drag.Origin.Parameters, drag.Handle,
-                                             drag.HandleIndex, target, drag.ValuePerProjection);
+                                             drag.HandleIndex, target, drag.ValuePerProjection,
+                                             quantize: MakeParameterQuantizer(drag.Handle.Quantity, suspendQuantize));
         stopwatch?.Stop();
 
         drag.Moved = true;
         if (!solved.Ok) return;   // the design is unchanged; the grip simply does not follow
 
         drag.PendingValue = solved.Value;
-        drag.Readout = $"{drag.Handle.DisplayLabel} = {PCellHandleSolver.FormatForReadout(solved.Value)}";
+        drag.Readout = $"{drag.Handle.DisplayLabel} = {FormatHandleValue(drag.Handle.Quantity, solved.Value)}";
 
         // R-pch-4a: the perpendicular axis, solved SECOND and against the parameters the first solve
         // already settled. Sequential rather than simultaneous because the two are only independent
@@ -353,12 +416,13 @@ public sealed partial class LayoutEditorViewModel
             baseForCross = MergedParameters(drag.Origin.Parameters, drag.Handle.Parameter, solved.Value);
             var crossSolved = PCellHandleSolver.Solve(Generate, baseForCross, cross,
                                                       drag.HandleIndex, crossTarget, drag.CrossValuePerProjection,
-                                                      matchParameter: drag.Handle.Parameter);
+                                                      matchParameter: drag.Handle.Parameter,
+                                                      quantize: MakeParameterQuantizer(cross.Quantity, suspendQuantize));
             if (crossSolved.Ok)
             {
                 crossAchieved = crossSolved.Achieved;
                 drag.PendingCrossValue = crossSolved.Value;
-                drag.Readout += $"   {cross.DisplayLabel} = {PCellHandleSolver.FormatForReadout(crossSolved.Value)}";
+                drag.Readout += $"   {cross.DisplayLabel} = {FormatHandleValue(cross.Quantity, crossSolved.Value)}";
             }
         }
 
@@ -375,6 +439,7 @@ public sealed partial class LayoutEditorViewModel
             // this value and hands back the handle the generator emitted, so the grip's real
             // position (and its real anchor) come for free rather than being reconstructed.
             drag.PreviewHandle = (drag.CrossHandle is not null ? crossAchieved : null) ?? solved.Achieved;
+            drag.PreviewHandles = null;
             drag.PreviewView = null;
             ApplyAnchorPin(drag);
             RebuildOverlay();
@@ -386,8 +451,30 @@ public sealed partial class LayoutEditorViewModel
         try { preview = Generate(merged); }
         catch (Exception) { return; }
 
-        // Where the generator ACTUALLY put the grip — the grip is drawn there, not under the cursor.
+        // OWNER REPORT (MKlopf, shortening L by its grip): the drag must not push the geometry through
+        // itself. Shrink an offset taper's length far enough and the centreline's curvature exceeds
+        // what its own trace width can turn through, so the inner edge crosses the outer one and the
+        // outline folds — a shape that is not manufacturable and does not mean anything electrically.
+        //
+        // The grip STOPS at the last value that did not fold, rather than refusing the whole gesture:
+        // a drag is a continuous search for a value, and the useful answer at the boundary is the
+        // boundary itself. Deliberately scoped to the DRAG — a value typed into the Properties
+        // Inspector or the parameter dialog still goes through, because that is a deliberate,
+        // reviewable act on a named number, and this editor's standing rule is to report a bad
+        // parameter rather than to forbid one.
+        if (PreviewFoldsThroughItself(preview))
+        {
+            drag.PendingValue      = priorValue;
+            drag.PendingCrossValue = priorCross;
+            drag.Readout           = priorReadout;
+            return;   // previous preview and grip position stand; the grip simply stops here
+        }
+
+        // Where the generator ACTUALLY put the grips — they are drawn there, not under the cursor.
+        // The whole list is kept, not only the dragged one: every grip on this cell moved when the
+        // cell regenerated, and BuildPCellHandleMarkers redraws all of them from it.
         drag.PreviewHandle = FindHandle(preview.Handles, drag.Handle, drag.HandleIndex);
+        drag.PreviewHandles = preview.Handles;
         ApplyAnchorPin(drag);
 
         var ghost = new LayoutView
@@ -400,6 +487,99 @@ public sealed partial class LayoutEditorViewModel
         drag.PreviewView = ghost;
 
         RebuildOverlay();
+    }
+
+    /// <summary>
+    /// Vertices this guard is willing to test in one pointer move. The sweep behind
+    /// <see cref="LayoutSelfIntersection.Test"/> is O(n²) per shape, which is nothing on a microstrip
+    /// outline (a couple of hundred vertices) and real money on a vendor cell with hundreds of shapes.
+    /// Past the budget the check is SKIPPED and the move accepted: a grip that stuttered would be a
+    /// worse failure than one that lets an exotic cell reach a self-overlapping value, and a generator
+    /// that big is not one whose overlap a per-frame geometric test was going to catch cheaply.
+    /// </summary>
+    private const int SelfOverlapVertexBudget = 20_000;
+
+    /// <summary>
+    /// True when any shape in <paramref name="preview"/> crosses itself. Reuses L1d's own
+    /// <see cref="LayoutSelfIntersection"/> rather than asking the generator, so it works for every
+    /// PCell — the question "did this outline fold through itself" is about the geometry that came
+    /// out, not about which parameter produced it.
+    /// </summary>
+    private bool PreviewFoldsThroughItself(PCellResult preview)
+    {
+        int budget = SelfOverlapVertexBudget;
+        foreach (var shape in preview.Shapes)
+        {
+            budget -= OutlineVertexCount(shape);
+            if (budget < 0) return false;   // too much geometry to test per frame — accept the move
+            if (LayoutSelfIntersection.Test(shape, Technology)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Vertices in a shape's own outline, for the budget above. Rect/Circle/RoundedRect/Via/
+    /// Label cannot self-intersect by construction and cost nothing to skip.</summary>
+    private static int OutlineVertexCount(LayoutShape shape) => shape switch
+    {
+        PolygonShape p => p.Xy.Length / 2,
+        CurveShape   c => c.Xy.Length / 2,
+        PathShape    p => p.Xy.Length / 2,
+        _              => 0,
+    };
+
+    // ── Units: the two things the host needs a declared quantity for ───────────
+    //
+    // R-pch-2 keeps the SENSITIVITY unit-free by measuring it, and that stays true. These two are a
+    // different question: what to PRINT, and which lattice the committed value must land on. Neither
+    // is derivable from a measurement, so both key off the generator's own PCellHandleQuantity and
+    // both degrade to the previous behaviour when it says nothing.
+
+    /// <summary>
+    /// One snap step expressed in the parameter's own SI units. A length parameter is metres
+    /// (R-pc-6) and one DBU is 1e-6/DbuPerMicron metres, so the layout's own <see cref="SnapDbu"/>
+    /// converts directly — no DBU round trip, and therefore no second rounding rule to disagree with
+    /// <see cref="PCellUnits.MetresToDbu"/>.
+    /// </summary>
+    private double SnapStepMetres => SnapDbu * 1e-6 / Math.Max(1, Model.DbuPerMicron);
+
+    /// <summary>
+    /// The lattice a solved value must land on, or null for "any value will do".
+    ///
+    /// <para>Only a LENGTH is quantized, and only when the user actually has snapping on and is not
+    /// holding Alt to suspend it — the same two conditions every other snapped gesture in this editor
+    /// already answers to. An angle is deliberately excluded: a degree is not a distance, and rounding
+    /// one onto a length grid would be arithmetic with no meaning behind it.</para>
+    /// </summary>
+    private Func<double, double>? MakeParameterQuantizer(PCellHandleQuantity quantity, bool suspendSnap)
+    {
+        if (quantity != PCellHandleQuantity.Length || suspendSnap) return null;
+        double step = SnapStepMetres;
+        if (step <= 0 || !double.IsFinite(step)) return null;
+        return v => Math.Round(v / step, MidpointRounding.AwayFromZero) * step;
+    }
+
+    /// <summary>
+    /// The drag readout's value, in terms a person reading a layout recognises: a length in the
+    /// document's own display unit (mil on a board, µm on a die), an angle in degrees, anything
+    /// undeclared exactly as before.
+    /// </summary>
+    private string FormatHandleValue(PCellHandleQuantity quantity, PCellValue value)
+    {
+        if (value.Kind != PCellValueKind.Real) return PCellHandleSolver.FormatForReadout(value);
+        double v = value.AsReal();
+
+        switch (quantity)
+        {
+            case PCellHandleQuantity.Length:
+            {
+                long dbu = PCellUnits.MetresToDbu(v, Model.DbuPerMicron);
+                return $"{LayoutUnits.Format(dbu, DisplayUnit, Model.DbuPerMicron)} {LayoutUnits.Suffix(DisplayUnit)}";
+            }
+            case PCellHandleQuantity.Angle:
+                return $"{v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}°";
+            default:
+                return PCellHandleSolver.FormatForReadout(value);
+        }
     }
 
     private void CommitPCellHandleDrag()

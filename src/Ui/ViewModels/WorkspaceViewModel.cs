@@ -2,11 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
+using CircuitRF.Engine;
 using Avalonia.Controls;
 using CircuitRF.Core.Pdk;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -2050,7 +2053,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// (CnlReader → Elaborator → analysis engine → DataSet) on a background thread.
     /// Reports progress and results via Messages; holds DataSets for Phase 7.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRunAnalysis))]
     private async Task RunAnalysis()
     {
         var doc = (_factory.DocumentDock?.ActiveDockable as SchematicDocument) ?? _lastActiveSchematicDoc;
@@ -2058,8 +2061,29 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         await RunSchematicDocAsync(doc);
     }
 
+    private bool CanRunAnalysis() => _runCts is null;
+
+    /// <summary>
+    /// Live cancellation source for the run in flight; null when nothing is running. It is what makes
+    /// Stop real — the engines check its token at every point boundary — and what gates Run/Stop
+    /// enablement, so the two can never both be available.
+    /// </summary>
+    private CancellationTokenSource? _runCts;
+
+    private void SetRunning(CancellationTokenSource? cts)
+    {
+        _runCts = cts;
+        RunAnalysisCommand.NotifyCanExecuteChanged();
+        StopAnalysisCommand.NotifyCanExecuteChanged();
+    }
+
     private async Task RunSchematicDocAsync(SchematicDocument activeDoc)
     {
+        // The Analyses panel's own Run button reaches this directly rather than through
+        // RunAnalysisCommand, so its CanExecute gate does not cover this path. One run at a time:
+        // two concurrent runs would write the same netlist.cnl and the same results file.
+        if (_runCts is not null) { Messages.Warning("Run: a simulation is already running."); return; }
+
         var testBenchName = activeDoc.Id;
 
         // Step 1: extract + write netlist.cnl (synchronous — fast).
@@ -2080,38 +2104,109 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        // Step 2: run the engine on a background thread so the UI stays responsive.
-        Messages.Info($"Running '{testBenchName}'…");
         string? workspaceRoot = CurrentWorkspacePath is not null
             ? Path.GetDirectoryName(CurrentWorkspacePath)
             : null;
-        RunResult result;
+
+        // Step 2: work out what the run WILL do, and say so BEFORE running any of it. This is the
+        // whole point of the plan/execute split — a nested sweep can be tens of thousands of points
+        // and many minutes, and "11 pt(s) over VGS x 101 pt(s) over VDS = 1,111 total pt(s)" is only
+        // actionable while there is still something to stop.
+        RunPlan plan;
         try
         {
-            result = await Task.Run(() => SchematicRunService.RunNetlist(netlistPath, baseDirectory: workspaceRoot));
+            plan = await Task.Run(() => SchematicRunService.Prepare(netlistPath, workspaceRoot));
         }
         catch (Exception ex)
         {
-            // Defensive — RunNetlist never throws, but guard anyway.
-            Messages.Error($"Run failed unexpectedly: {ex.Message}");
+            Messages.Error($"Run failed unexpectedly: {ex.Message}");   // defensive: Prepare never throws
             return;
         }
 
-        // Step 3: surface the result.
-        // Post engine/elaboration warnings first (present on Success and EngineError alike).
+        if (plan.Status != RunStatus.Success)
+        {
+            if (plan.Status == RunStatus.NoAnalysis) Messages.Info(plan.StatusMessage);
+            else                                     Messages.Error(plan.StatusMessage);
+            return;
+        }
+
+        foreach (var line in plan.Lines)
+            Messages.Info(line);
+
+        // Step 3: run the engine on a background thread so the UI stays responsive — and so Stop has
+        // a thread to interrupt.
+        var live = Messages.BeginProgress($"Running '{testBenchName}'…");
+
+        RunResult result;
+        using (var cts = new CancellationTokenSource())
+        {
+            var control = new RunControl
+            {
+                Token = cts.Token,
+                Total = plan.TotalWorkUnits,
+                // Progress<T> captures the UI SynchronizationContext here, so every observation lands
+                // on the UI thread without the engine knowing anything about threading.
+                Progress = new Progress<RunProgress>(p => ReportRunProgress(live, testBenchName, p)),
+            };
+
+            // Set INSIDE the try, so no path between here and the finally can leave the run flagged as
+            // in flight — which would disable Run and leave Stop pointing at a completed run forever.
+            try
+            {
+                SetRunning(cts);
+                result = await Task.Run(() => SchematicRunService.Execute(plan, control));
+            }
+            catch (Exception ex)
+            {
+                // Defensive — Execute never throws, but guard anyway.
+                live.Complete(MessageLevel.Error, $"Run failed unexpectedly: {ex.Message}");
+                return;
+            }
+            finally
+            {
+                SetRunning(null);
+            }
+        }
+
+        if (result.Status == RunStatus.Cancelled)
+        {
+            // Appended, not replaced: "…DC1  1,194 / 2,525 - cancelled" says how far it got, which is
+            // the one thing worth knowing about a run somebody stopped.
+            live.Finish(MessageLevel.Warning, "cancelled, no results written");
+            foreach (var w in result.Warnings) Messages.Warning(w);
+            Messages.Info($"Stopped '{testBenchName}'.");
+            return;
+        }
+
+        // Step 4: surface the result. The outcome is APPENDED to the run's own live row rather than
+        // written on a line of its own — the row already names the analysis and its point count, so a
+        // separate "1 analysis run(s) complete" would be a second line carrying less than the first.
+        // The bar stays at 100% on it. A short "Finished" line follows, purely for its timestamp:
+        // the live row's own timestamp is when the run STARTED.
         foreach (var w in result.Warnings)
             Messages.Warning(w);
 
         switch (result.Status)
         {
             case RunStatus.NoAnalysis:
-                Messages.Info(result.StatusMessage);
+                live.Finish(MessageLevel.Info, result.StatusMessage);
+                Messages.Info($"Finished '{testBenchName}'.");
                 break;
             case RunStatus.EngineError:
-                Messages.Error(result.StatusMessage);
+                live.Finish(MessageLevel.Error, result.StatusMessage);
+                Messages.Info($"Finished '{testBenchName}'.");
                 break;
             case RunStatus.Success:
-                Messages.Success(result.StatusMessage);
+                live.Finish(MessageLevel.Success, result.StatusMessage);
+                Messages.Info($"Finished '{testBenchName}'.");
+
+                // Loadpull / Loadpull-Pursuit outcome counts. Reported per analysis and only for the
+                // ones that actually swept a termination grid — Describe returns null for every other
+                // analysis type, so nothing else in the run gains a line.
+                foreach (var ar in result.Results)
+                    if (LoadpullRunSummary.Describe(ar.Data) is { } summary)
+                        Messages.Info($"{ar.Name}: {summary}");
+
                 var schematicKey = RunResultsWriter.SchematicKey(activeDoc.FilePath, activeDoc.Id);
                 var written = RunResultsWriter.WriteRun(
                     baseDir,
@@ -2129,13 +2224,56 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _lastRunDataSets = result.DataSets;
     }
 
-    [RelayCommand]
+    /// <summary>
+    /// Rewrites the live "Running…" line from one engine progress observation. Runs on the UI thread —
+    /// <see cref="Progress{T}"/> captured the context when it was constructed.
+    /// </summary>
+    internal static void ReportRunProgress(IProgressMessage live, string benchName, RunProgress p)
+    {
+        // The text is everything that stays PUT for the whole run; the counter — the only part that
+        // changes — goes to the row's own trailing element, after the bar. Move the counter back into
+        // the text and the bar starts moving with it again.
+        //
+        // p.Stage (the current analysis name) is deliberately NOT shown: on a multi-analysis run it
+        // changes mid-row, which is exactly the kind of width change this split exists to keep off
+        // the bar's left. It still drives an immediate progress report at each analysis boundary.
+        if (p.Total > 0)
+            live.Update($"Running '{benchName}'",
+                        FormatCounter(p.Completed, p.Total),
+                        100.0 * p.Completed / p.Total);
+        else
+            live.Update($"Running '{benchName}'…", indeterminate: true);
+    }
+
+    /// <summary>
+    /// "1,194 / 2,525" — the counter, formatted in the CURRENT culture (a German user reads "2.525").
+    ///
+    /// <para><b>Deliberately not padded.</b> Space-padding to a constant character count does NOT give
+    /// a constant WIDTH in a proportional UI font — a space is roughly half a digit — so the row still
+    /// twitched as pad characters turned into digits. The row keeps this steady by RIGHT-ALIGNING it
+    /// in a fixed-width box instead, which pins the "/" and the denominator and lets the numerator
+    /// grow leftwards into the gap. Re-adding a PadLeft here would fight that alignment.</para>
+    /// </summary>
+    internal static string FormatCounter(long completed, long total)
+        => $"{completed.ToString("N0", CultureInfo.CurrentCulture)} / {total.ToString("N0", CultureInfo.CurrentCulture)}";
+
+    [RelayCommand(CanExecute = nameof(CanStopAnalysis))]
     private void StopAnalysis()
     {
-        // Engine instances created by RunAnalysis are synchronous and do not expose
-        // CancellationToken.  Stop is informational for v1 — the run will complete.
-        Messages.Info("Stop: engine runs to completion (no cancellation support in v1).");
+        if (_runCts is not { } cts) { Messages.Info("Stop: nothing is running."); return; }
+        if (cts.IsCancellationRequested) return;
+
+        cts.Cancel();
+
+        // Says what actually happens rather than implying an instant halt: the engines check the token
+        // at point boundaries (a sweep point, a frequency, a loadpull termination), never inside a
+        // factorization or a Newton loop — so a sweep stops within one point while a lone HB solve
+        // still has to finish. That granularity is what makes cancellation cheap enough to be always
+        // on; checking inside the inner numerical loops is exactly what this engine cannot afford.
+        Messages.Info("Stopping — the run ends after the point in progress; no results will be written.");
     }
+
+    private bool CanStopAnalysis() => _runCts is not null;
 
     private void WireAnalysesRun()
     {
@@ -2842,6 +2980,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var cws  = TryLoadCws(CurrentWorkspacePath);
         var refs = cws.PdkRefs ?? [];
 
+        // Collected during the dialog and acted on after it closes — see Context.KitAdded for why the
+        // offer cannot be made from inside a modal.
+        var added = new List<(string Kit, string Path)>();
+
         await ManagePdksDialog.ShowAsync(window, new ManagePdksDialog.Context(
             WorkspaceRootDir: wsRoot,
             Refs:             refs,
@@ -2863,7 +3005,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             },
             Reveal:           RevealPathInFileManager,
             Loaded:           ReloadAllReferencedKits,
-            Report:           (level, text) => Messages.Post(level, text)));
+            Report:           (level, text) => Messages.Post(level, text),
+            KitAdded:         (kit, kitPath) => added.Add((kit, kitPath))));
+
+        foreach (var (kit, kitPath) in added)
+            await OfferTechnologyFromKitAsync(window, kit, kitPath);
     }
 
     private bool HasWorkspaceOpen() => CurrentWorkspacePath is not null;
@@ -2999,29 +3145,45 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private async Task OfferTechnologyFromKitAsync(Window window, PdkImportReport report)
     {
-        // An archive has no folder to scan, and a kit with no process data has nothing to offer.
+        // An archive has no folder to scan, and a kit whose import saw no layer data has nothing to
+        // offer. This is a cheap pre-filter on a fact the IMPORT already established; the Manage PDKs
+        // door has no report to consult and goes straight to the scan below, which is the real test.
         if (report.LayerTechnology is null) return;
-        if (string.IsNullOrEmpty(report.RootPath) || !Directory.Exists(report.RootPath)) return;
+        await OfferTechnologyFromKitAsync(window, report.KitName, report.RootPath);
+    }
+
+    /// <summary>
+    /// The one implementation behind both doors into a kit — File ▸ Import ▸ PDK and Manage PDKs ▸
+    /// Add. They put the same kit into the same workspace, so they must offer the same things; the
+    /// Add door offered only the parts, which left a repaired or newly-referenced kit with no
+    /// technology and nothing to say one was available.
+    /// </summary>
+    private async Task OfferTechnologyFromKitAsync(Window window, string kitName, string? rootPath)
+    {
+        if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath)) return;
 
         if (CurrentWorkspacePath is null)
         {
             Messages.Info(
-                $"\"{report.KitName}\" also carries process data. Open or create a workspace, then " +
+                $"\"{kitName}\" also carries process data. Open or create a workspace, then " +
                 "use File ▸ Import ▸ Technology on the kit's folder to build a technology from it.");
             return;
         }
 
         TechnologyScanResult scan;
-        try   { scan = await Task.Run(() => ProcessTechnologyImport.Scan(report.RootPath)); }
-        catch { return; }   // the kit imported; a failed look for something extra must not undo that
+        try   { scan = await Task.Run(() => ProcessTechnologyImport.Scan(rootPath)); }
+        catch { return; }   // the kit loaded; a failed look for something extra must not undo that
 
+        // Silent when there is nothing there at all. A kit with no process data is the ordinary case
+        // on this door (a model-library package, for one), and a line about it on every Add would be
+        // noise. The message below fires only for a kit that HAS layer data and still cannot be built
+        // from, which is the case worth explaining.
         if (!scan.HasStack)
         {
-            // Recognised process data that cannot be built from is worth one line — otherwise the
-            // import report's "layer technology found" reads as a promise nothing ever keeps.
-            Messages.Info(
-                $"\"{report.KitName}\" carries layer data but no process stack description, so a " +
-                "technology cannot be built from it automatically.");
+            if (scan.LayerTables.Count > 0)
+                Messages.Info(
+                    $"\"{kitName}\" carries layer data but no process stack description, so a " +
+                    "technology cannot be built from it automatically.");
             return;
         }
 
@@ -3030,7 +3192,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             : "a process stack";
 
         var answer = await new SaveChangesDialog(
-            $"\"{report.KitName}\" also carries {what}.\n\n" +
+            $"\"{kitName}\" also carries {what}.\n\n" +
             "Build a technology from it now? Layer names, colours, the stackup and any readable " +
             "design rules come across, and layouts in this workspace can then use them.",
             saveLabel:     "Build Technology…",
@@ -3040,7 +3202,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (answer != SaveChangesResult.Save) return;
 
-        await RunTechnologyImportAsync(window, report.RootPath);
+        await RunTechnologyImportAsync(window, rootPath);
     }
 
     /// <summary>Kits imported this session, newest last. The component palette reads this.</summary>
@@ -3393,8 +3555,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var pkg = CircuitRF.Ui.Layout.PCells.Wire.KitPCellLibrary.Find(kitPath, out var alsoFound);
             if (pkg is null) return;
 
+            // kitPath is passed so the declaration is anchored on the kit rather than written out as
+            // an absolute path. This is what makes repairing a moved kit in Manage PDKs repair its
+            // layout cells too — the parts and the artwork now follow ONE recorded location.
             string? dir = CircuitRF.Ui.Layout.PCells.Wire.KitPCellLibrary.EnsureDeclared(
-                workspaceRootDir, kitName, pkg, out string? problem, out bool created);
+                workspaceRootDir, kitName, pkg, out string? problem, out bool created,
+                kitRoot: kitPath);
 
             if (dir is null)
             {
@@ -6564,6 +6730,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public void Reveal(ProjectTreeNodeViewModel node) => RevealPathInFileManager(node.AbsolutePath);
 
+    public void RevealPath(string absolutePath)
+    {
+        // A recent workspace can have been moved or deleted since it was recorded, and the reveal
+        // itself would not say so — the file manager simply opens somewhere unhelpful. Checked here
+        // rather than pruning the entry: the user asked where it is, and "it is not there any more"
+        // is the answer to that question, not a reason to silently drop the row they clicked.
+        if (!Directory.Exists(absolutePath) && !File.Exists(absolutePath))
+        {
+            Messages.Error($"'{absolutePath}' is no longer there.");
+            return;
+        }
+        RevealPathInFileManager(absolutePath);
+    }
+
     /// <summary>
     /// Shows a path in the platform's own file manager. Extracted so every surface that offers
     /// "Reveal" goes through one implementation — the platform detection and the per-platform
@@ -6944,6 +7124,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (mainWindow is null) return;
 
         var dialog = new InputNameDialog("New Cell", "Cell name:");
+        // A New Cell always creates that cell's primary schematic (R-cc-1), so this IS a
+        // schematic-creation prompt and offers the shipped templates.
+        dialog.OfferSchematicTemplates(ShippedSchematicTemplates.All);
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
@@ -6975,7 +7158,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // R-cc-1: the cell already exists at this point regardless of what happens next — a failure
         // here is reported by CreateAndOpenSchematicFileAsync itself and never rolls the cell back.
-        await CreateAndOpenSchematicFileAsync(newCellDir, name, name);
+        await CreateAndOpenSchematicFileAsync(newCellDir, name, name, dialog.SelectedTemplate);
     }
 
     // ── New Cell in workspace root (File menu + tree-header button) ──────────────
@@ -6993,6 +7176,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (mainWindow is null) return;
 
         var dialog = new InputNameDialog("New Cell", "Cell name:");
+        // A New Cell always creates that cell's primary schematic (R-cc-1), so this IS a
+        // schematic-creation prompt and offers the shipped templates.
+        dialog.OfferSchematicTemplates(ShippedSchematicTemplates.All);
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
@@ -7023,7 +7209,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         // R-cc-1: same as NewCellAsync — the cell already exists regardless of what follows.
-        await CreateAndOpenSchematicFileAsync(newCellDir, name, name);
+        await CreateAndOpenSchematicFileAsync(newCellDir, name, name, dialog.SelectedTemplate);
     }
 
     /// <inheritdoc/>
@@ -7099,6 +7285,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         var suggested = ViewFileNameSuggestion.Suggest(cellDir, cellNode.Name, ViewType.Schematic);
         var dialog = new InputNameDialog("New Schematic", "Schematic file name (without extension):", suggested);
+        dialog.OfferSchematicTemplates(ShippedSchematicTemplates.All);
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
@@ -7109,7 +7296,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        await CreateAndOpenSchematicFileAsync(cellDir, cellNode.Name, name);
+        await CreateAndOpenSchematicFileAsync(cellDir, cellNode.Name, name, dialog.SelectedTemplate);
     }
 
     /// <summary>
@@ -7122,7 +7309,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// caller that already created something else (e.g. the cell folder itself) is never forced to
     /// roll that back just because this step failed.
     /// </summary>
-    private async Task<bool> CreateAndOpenSchematicFileAsync(string cellDir, string cellName, string fileNameWithoutExt)
+    private async Task<bool> CreateAndOpenSchematicFileAsync(
+        string cellDir, string cellName, string fileNameWithoutExt,
+        ShippedSchematicTemplate? template = null)
     {
         var schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
         if (!Directory.Exists(schematicDir))
@@ -7141,15 +7330,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
-            // Write an empty .csch, then open it for authoring.
-            var emptyModel = new SchematicEditModel();
-            SchematicPersistence.SaveToFile(filePath, emptyModel, cellName: cellName);
+            // Empty by default; a chosen template is parsed through the ordinary .csch reader, so
+            // what lands here is exactly what the editor would have loaded from such a file. The
+            // destination directory is supplied up front so any relative CellRef resolves from the
+            // moment the model exists rather than only after its first save.
+            //
+            // A template that fails to parse must not cost the user their cell: it is reported and
+            // the schematic is created empty, which is what they would have got without templates.
+            var model = new SchematicEditModel();
+            if (template is not null)
+            {
+                try
+                {
+                    model = ShippedSchematicTemplates.Load(template, schematicDir);
+                }
+                catch (Exception ex)
+                {
+                    Messages.Warning($"Template '{template.DisplayName}' could not be read ({ex.Message}) — created an empty schematic instead.");
+                }
+            }
+            SchematicPersistence.SaveToFile(filePath, model, cellName: cellName);
 
             _factory.ProjectTreeTool?.Refresh();
 
             // Open in a schematic content tab (materialized — has a real file path).
             // Use BuildSessionVm so wiring matches GetOrCreateSession exactly.
-            var vm  = BuildSessionVm(emptyModel);
+            var vm  = BuildSessionVm(model);
             RegisterSession(filePath, vm);
             var doc = new SchematicDocument(fileNameWithoutExt + ext, vm, filePath) { Messages = Messages, Hierarchy = this };
             _factory.OpenDocument(doc);
@@ -8920,16 +9126,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(owner);
         if (window is null) return;
 
-        // Prefer the active document (R-menu-4: per-window, not the shell's own ActiveDockable) if
-        // it's a scratch doc; else first dirty scratch doc. Also handle already-materialized docs
-        // (Save As to a new path).
-        var doc = ResolveActiveDocumentForCommands() as SchematicDocument;
-        if (doc is null || !doc.IsScratch)
-        {
-            var scratch = _scratchDocs.FirstOrDefault(d => d.IsDirty);
-            if (scratch is not null)
-                doc = scratch;
-        }
+        // The ACTIVE document (R-menu-4: per-window, not the shell's own ActiveDockable) always wins —
+        // "Save Schematic As…" means the one in front of the user, scratch or already-materialized.
+        // The dirty-scratch fallback is only for the case where nothing schematic-shaped is active at
+        // all; it used to run whenever the active document merely wasn't scratch, which silently
+        // re-targeted a Save As on a materialized schematic at some other, unrelated scratch tab.
+        var doc = ResolveActiveDocumentForCommands() as SchematicDocument
+                  ?? _scratchDocs.FirstOrDefault(d => d.IsDirty);
 
         if (doc is null)
         {
@@ -8974,10 +9177,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             if (doc.IsScratch)
             {
-                // Scratch → materialized transition.
+                // Scratch → materialized transition. The file stem is passed as the new base title:
+                // unlike LayoutDocument/SymbolEditorDocument, a SchematicDocument has no
+                // path-to-title subscription, so Materialize with no name would leave the tab reading
+                // "Untitled-Schematic-N" after the save.
                 _scratchDocs.Remove(doc);
                 _recovery.ClearDoc(doc);
-                doc.Materialize(filePath);
+                doc.Materialize(filePath, Path.GetFileNameWithoutExtension(filePath));
             }
             else
             {
@@ -9055,10 +9261,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             if (doc.IsScratch)
             {
-                // Materialize (plain — no workspace registration, no Known-File entry).
+                // Materialize (plain — no workspace registration, no Known-File entry). File stem as
+                // the base title, for the same reason as the tier-2 branch above.
                 _scratchDocs.Remove(doc);
                 _recovery.ClearDoc(doc);
-                doc.Materialize(filePath);
+                doc.Materialize(filePath, Path.GetFileNameWithoutExtension(filePath));
             }
             else
             {

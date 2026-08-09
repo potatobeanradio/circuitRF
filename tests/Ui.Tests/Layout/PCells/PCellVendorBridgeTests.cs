@@ -89,6 +89,32 @@ public sealed class PCellVendorBridgeTests
                     fgNot(big, cut)
             """);
 
+
+        // A cell that declares a pin on its own metal and THEN moves everything — the origin-reset
+        // idiom (see the pin test below for why it is the case that matters).
+        File.WriteAllText(Path.Combine(pkg, "moved_code.py"), """
+            from cni.dlo import Box, DloGen, Layer, Point, Rect
+
+            class moved(DloGen):
+                @classmethod
+                def defineParamSpecs(cls, specs):
+                    specs('shift', '4', 'How far the cell moves after it is drawn')
+
+                def setupParams(self, params):
+                    self.shift = float(params['shift'])
+
+                def genLayout(self):
+                    # Drawn in a frame with negative coordinates, exactly as a real cell does when it
+                    # builds outward from the device rather than from the cell's corner.
+                    body = Rect(Layer('M1'), Box(-self.shift, -self.shift, 6, 6))
+                    pinBox = Box(-self.shift, -self.shift, -self.shift + 1, -self.shift + 1)
+                    self.addPin('P', 'P', pinBox, Layer('M1', 'pin'))
+                    Rect(Layer('M1', 'pin'), pinBox)
+                    # ...then the origin is reset, which moves every figure drawn so far.
+                    for fig in self.getShapes():
+                        fig.moveBy(self.shift, self.shift)
+            """);
+
         // The additions folder: a small folder of one's own that NAMES the kit, rather than anything
         // written into the (usually read-only) kit itself — the same shape the PDK importer already
         // uses for a kit it must not modify.
@@ -125,7 +151,7 @@ public sealed class PCellVendorBridgeTests
         var (script, pythonPath) = WriteSyntheticKit();
         using var provider = StartProvider(script, pythonPath);
 
-        Assert.Equal(["pad", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["moved", "pad", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -209,7 +235,7 @@ public sealed class PCellVendorBridgeTests
 
         using var provider = StartProvider(script, pythonPath);
 
-        Assert.Equal(["pad", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["moved", "pad", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
         Assert.True(provider.TryGetGenerator("pad", out var generator));
         Assert.Single(generator(new Dictionary<string, PCellValue>(), Tech, NoLayers).Shapes);
     }
@@ -244,7 +270,7 @@ public sealed class PCellVendorBridgeTests
             report: problems.Add,
             trust: _ => PCellTrustDecision.Allowed);
 
-        Assert.Equal(["pad", "ring"], resolver.KnownGeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["moved", "pad", "ring"], resolver.KnownGeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
 
         var generator = resolver.Resolve("pad");
         Assert.NotNull(generator);
@@ -435,6 +461,51 @@ public sealed class PCellVendorBridgeTests
         Assert.Null(plain.CellDir);
     }
 
+
+    /// <summary>
+    /// <b>A pin follows the artwork it names, through whatever the cell does to itself afterwards.</b>
+    ///
+    /// <para>Declaring a pin and drawing its metal is one action written as two lines — <c>addPin</c>
+    /// with a box, then a rectangle on the same box — and a kit habitually draws the whole cell in
+    /// whatever frame suited it and THEN moves every figure, most often to put the origin at the
+    /// cell's lower-left corner. A pin recorded as a fixed box does not follow that move, so every pin
+    /// ends up offset by exactly the reset: off its own metal, and outside the cell entirely for any
+    /// pin whose frame coordinates were negative. It draws perfectly and connects to nothing, which is
+    /// why it survived until someone looked at where the pins had landed.</para>
+    ///
+    /// <para>Measured before the fix: four RF transistor cells reported pins at
+    /// IDENTICAL absolute coordinates despite their geometry differing in size by 40%, two of them
+    /// outside the cell's own bounding box. After: every pin inside, each moved by exactly the
+    /// translation its cell applies.</para>
+    /// </summary>
+    [PythonFact]
+    public void APinFollowsItsArtwork_WhenTheCellResetsItsOwnOrigin()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+
+        Assert.True(provider.TryGetGenerator("moved", out var generator));
+        var result = generator(new Dictionary<string, PCellValue> { ["shift"] = "4" },
+                               Tech, PCellLayerSelection.Default);
+
+        // The body was drawn at [-4,-4]..[6,6] and the cell then moved everything by +4, so the
+        // artwork now starts at the origin. That is the frame the pin has to be in.
+        var bbox = result.Shapes.Select(LayoutGeometry.BboxOf)
+                                .Aggregate(Bbox.Empty, (a, b) => a.Union(b));
+        Assert.Equal(0, bbox.MinX);
+        Assert.Equal(0, bbox.MinY);
+
+        var pin = Assert.Single(result.Pins);
+        Assert.Equal("P", pin.Name);
+
+        // Declared at [-4,-4]..[-3,-3], centre (-3.5, -3.5) µm; moved by +4 µm, centre (0.5, 0.5) µm.
+        // Before the fix this was (-3500, -3500) — outside the cell, in the frame it was drawn in.
+        Assert.Equal(500, pin.X);
+        Assert.Equal(500, pin.Y);
+        Assert.True(bbox.MinX <= pin.X && pin.X <= bbox.MaxX, "pin X is outside the artwork");
+        Assert.True(bbox.MinY <= pin.Y && pin.Y <= bbox.MaxY, "pin Y is outside the artwork");
+    }
+
     /// <summary>
     /// Dragging a kit's cell onto a layout places it — the drop path the canvas takes, driven end to
     /// end against a real generator over the real transport.
@@ -526,6 +597,7 @@ public sealed class PCellVendorBridgeTests
         // The kit's own folder name, the same identity its schematic parts are filed under.
         Assert.Equal("DemoKit", byKit["pad"]);
         Assert.Equal("DemoKit", byKit["ring"]);
-        Assert.Equal(2, byKit.Count);
+        Assert.Equal("DemoKit", byKit["moved"]);
+        Assert.Equal(3, byKit.Count);
     }
 }

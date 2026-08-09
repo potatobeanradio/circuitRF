@@ -19,6 +19,48 @@ def recv():
 send({"cmd":"describe"}); d,_=recv()
 print("DESCRIBE:", json.dumps(d, indent=None))
 
+# Units and descriptions ride on describe — they sit in the descriptor already, so they cost
+# nothing and a compact model's hundreds of parameters are unreadable without them.
+rc = next(t for t in d["types"] if t["typeId"] == "crf_rc")
+by_name = {p["name"]: p for p in rc["params"]}
+assert by_name["g0"]["units"] == "S", by_name["g0"]
+assert by_name["g0"]["description"] == "conductance at tnom", by_name["g0"]
+assert "temp" not in by_name, "op-vars are outputs and must not be offered as settable"
+print("DESCRIBE units/description: ok")
+
+# `defaults` is its own command, NOT part of describe: this ABI has no default field, so the only
+# way to learn one is to stand a probe model up and read it back — a cost describe must not carry,
+# because it runs on every worker launch including a PDK import's walk over every artefact.
+send({"cmd":"defaults","typeId":"crf_rc"}); dv,_=recv()
+dflt = {p["name"]: p["value"] for p in dv["params"]}
+# tnom is defaulted in setup_model, mult in setup_instance — both must be read back, which is what
+# proves the probe is genuinely SET UP and not just calloc'd.
+assert dflt["tnom"] == 300.0, dflt
+assert dflt["mult"] == 1.0,   dflt
+assert dflt["g0"]   == 0.0,   dflt          # the model defaults it to nothing; reported honestly
+assert "temp" not in dflt,    dflt          # op-var again
+print("DEFAULTS crf_rc:", dflt)
+
+send({"cmd":"defaults","typeId":"crf_fet"}); fv,_=recv()
+fd = {p["name"]: p["value"] for p in fv["params"]}
+assert fd["vth"] == -2.5 and fd["beta"] == 0.06, fd
+print("DEFAULTS crf_fet:", fd)
+
+# An unknown type is refused by name rather than answered with an empty set, which would read as
+# "this model declares nothing".
+send({"cmd":"defaults","typeId":"not_a_type"}); ev,_=recv()
+assert "error" in ev, ev
+print("DEFAULTS unknown-type refusal: ok")
+
+# The probe model must not occupy one of the finite instance slots — MAX_INSTANCES is small, and a
+# defaults call that leaked one would exhaust the table on a long editing session.
+for _ in range(64):
+    send({"cmd":"defaults","typeId":"crf_rc"}); recv()
+send({"cmd":"create","typeId":"crf_rc","params":{},"temperatureK":300.0}); probe,_=recv()
+assert "handle" in probe, probe
+send({"cmd":"destroy","handle":probe["handle"]}); recv()
+print("DEFAULTS leaks no instance slot: ok")
+
 send({"cmd":"create","typeId":"crf_rc",
       "params":{"g0":0.002,"c":1e-12,"tc":0.01,"tnom":300.0,"mult":1.0},
       "temperatureK":400.0})

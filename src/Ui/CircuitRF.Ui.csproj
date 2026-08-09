@@ -161,6 +161,17 @@
     <EmbeddedResource Include="resources\technologies\*.ctech" />
   </ItemGroup>
 
+  <!-- Shipped schematic templates — real, authored .csch files (resources\schematic-templates\),
+       embedded the same way and for the same reasons as the technologies above: read at runtime
+       through the SAME SchematicPersistence.Deserialize a user's own .csch goes through, so a
+       template can never drift from what the schematic editor actually reads, and readable via
+       Assembly.GetManifestResourceStream in headless tests (ShippedSchematicTemplates.cs is
+       framework-free). Embedding is also what makes them present in a compiled/published build —
+       a loose folder beside the executable would not survive `dotnet publish`. -->
+  <ItemGroup>
+    <EmbeddedResource Include="resources\schematic-templates\*.csch" />
+  </ItemGroup>
+
   <!-- Strip .pdb files from publish output -->
   <Target Name="RemovePdbsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>

@@ -61,12 +61,20 @@ public sealed class PCellHandleContractTests : IDisposable
     [Fact]
     public void NoGeneratorsContentKeyWasBumpedForHandles()
     {
-        // The direct statement of the rule the frozen name above enforces indirectly. MTEE is 2 for
-        // its own pre-existing reason (a branch-direction fix that genuinely moved geometry); every
-        // other built-in is still 1, and adding a handle to one must never change that.
+        // The direct statement of the rule the frozen name above enforces indirectly: adding a handle
+        // to a generator must never bump its content key.
+        //
+        // MTEE (branch direction), MBEND (the hexagon outline) and MKLOPF (SmoothSteps' end blend
+        // clamped rather than skipped) are each >1 for their own pre-existing reason — a fix that
+        // genuinely moved geometry, which is exactly what the field is for. They are asserted here by
+        // NAME so that a bump for a real geometry change stays deliberate and visible, rather than
+        // this test simply being deleted the first time one is needed.
         Assert.Equal("1", PCellRegistry.GeneratorContentKey("MLIN"));
         Assert.Equal("1", PCellRegistry.GeneratorContentKey("MTAPER"));
-        Assert.Equal("1", PCellRegistry.GeneratorContentKey("MKLOPF"));
+        Assert.Equal("1", PCellRegistry.GeneratorContentKey("MCROSS"));
+        Assert.Equal("2", PCellRegistry.GeneratorContentKey("MTEE"));
+        Assert.Equal("2", PCellRegistry.GeneratorContentKey("MBEND"));
+        Assert.Equal("2", PCellRegistry.GeneratorContentKey("MKLOPF"));
     }
 
     // ── The declarations themselves ──────────────────────────────────────────────────────────
@@ -107,25 +115,39 @@ public sealed class PCellHandleContractTests : IDisposable
     }
 
     [Fact]
-    public void MTaper_DeclaresTwoIndependentWidthGrips_EachOnItsOwnEnd()
+    public void MTaper_DeclaresSixGrips_LengthFromEitherEnd_AndEachWidthFromEitherSide()
     {
         var result = MTaperPCell.Generate(
             new Dictionary<string, PCellValue> { ["W1"] = 0.0003, ["W2"] = 0.001, ["L"] = 0.002 },
             technology: null, PCellLayerSelection.Default);
 
         var handles = result.Handles!;
-        Assert.Equal(3, handles.Count);
+        Assert.Equal(6, handles.Count);
+        Assert.Equal(6, handles.Select(h => (h.X, h.Y)).ToHashSet().Count);
 
-        var w1 = handles.Single(h => h.Parameter == "W1");
-        var w2 = handles.Single(h => h.Parameter == "W2");
-        Assert.Equal(0, w1.AnchorX);              // anchored on the centreline at its own end...
-        Assert.Equal(2_000_000, w2.AnchorX);      // ...so neither moves when the other is dragged
-        Assert.Equal(150_000, w1.Y);
-        Assert.Equal(500_000, w2.Y);
+        // Length from either end. Only the near-end grip needs the anchor pinned — `L` grows toward
+        // +X either way, so dragging the NEAR end is "grow, and hold the far end still".
+        var lengths = handles.Where(h => h.Parameter == "L").ToList();
+        Assert.Equal(2, lengths.Count);
+        Assert.Contains(lengths, h => h is { AxisDeg: 0, X: 2_000_000, KeepAnchorFixed: false });
+        Assert.Contains(lengths, h => h is { AxisDeg: 180, X: 0, KeepAnchorFixed: true });
+
+        // Each width from either side of its own end cap, anchored on the centreline there — so the
+        // two ends never interfere and the trapezoid stays centred on its own axis.
+        var w1 = handles.Where(h => h.Parameter == "W1").ToList();
+        var w2 = handles.Where(h => h.Parameter == "W2").ToList();
+        Assert.All(w1, h => Assert.Equal(0, h.AnchorX));
+        Assert.All(w2, h => Assert.Equal(2_000_000, h.AnchorX));
+        Assert.Equal([-150_000, 150_000], w1.Select(h => h.Y).Order().ToArray());
+        Assert.Equal([-500_000, 500_000], w2.Select(h => h.Y).Order().ToArray());
+
+        // Every one of them is a LENGTH, which is what lets the readout print millimetres and the
+        // committed value land on the layout's own snap grid.
+        Assert.All(handles, h => Assert.Equal(PCellHandleQuantity.Length, h.Quantity));
     }
 
     [Fact]
-    public void MKlopf_DeclaresOneTwoAxisGripAtItsFarEnd()
+    public void MKlopf_DeclaresThreeGripsAtEachEnd_MiddleShapesTheTaper_EdgesDriveTheImpedance()
     {
         var result = MKlopfPCell.Generate(
             new Dictionary<string, PCellValue>
@@ -135,19 +157,37 @@ public sealed class PCellHandleContractTests : IDisposable
             },
             technology: null, PCellLayerSelection.Default);
 
-        // R-pch-4a: the far end of a taper genuinely means two things at once — how long, and how
-        // far off axis — so it is ONE grip driving both rather than two grips at the same point
-        // (which is what an earlier draft had, and which made them impossible to tell apart under
-        // the cursor).
-        var grip = Assert.Single(result.Handles!);
-        Assert.Equal("L", grip.Parameter);
-        Assert.Equal("Offset", grip.Cross!.Parameter);
-        Assert.Equal(5_000_000, grip.X);
-        Assert.Equal(500_000, grip.Y);       // pin 2 sits at the full lateral offset
+        var handles = result.Handles!;
+        Assert.Equal(6, handles.Count);
+        Assert.Equal(6, handles.Select(h => (h.X, h.Y)).ToHashSet().Count);
 
-        // Each axis measures its own parameter and ignores the other's travel entirely.
-        Assert.Equal(5_000_000, grip.ProjectedPosition, 0);
-        Assert.Equal(500_000, grip.ProjectedCrossPosition, 0);
+        // R-pch-4a: the END of a taper genuinely means two things at once — how long, and how far off
+        // axis — so the MIDDLE grip is ONE grip driving both rather than two at the same point (which
+        // is what an earlier draft had, and which made them impossible to tell apart under the
+        // cursor). There is one at each end; the near one holds the far end still (R-pch-4b).
+        var middles = handles.Where(h => h.Parameter == "L").ToList();
+        Assert.Equal(2, middles.Count);
+        Assert.All(middles, h => Assert.Equal("Offset", h.Cross!.Parameter));
+
+        var far = middles.Single(h => h.AxisDeg == 0);
+        Assert.Equal(5_000_000, far.X);
+        Assert.Equal(500_000, far.Y);       // pin 2 sits at the full lateral offset
+        Assert.Equal(5_000_000, far.ProjectedPosition, 0);
+        Assert.Equal(500_000, far.ProjectedCrossPosition, 0);
+
+        var near = middles.Single(h => h.AxisDeg == 180);
+        Assert.Equal((0L, 0L), (near.X, near.Y));
+        Assert.True(near.KeepAnchorFixed);
+
+        // The edge grips drive the terminating IMPEDANCES, because a Klopfenstein taper's width at an
+        // end is a consequence of Z, not a parameter of its own. Neither is a length, so neither is
+        // snapped to the layout's distance grid.
+        Assert.Equal(2, handles.Count(h => h.Parameter == "Z1"));
+        Assert.Equal(2, handles.Count(h => h.Parameter == "Z2"));
+        Assert.All(handles.Where(h => h.Parameter is "Z1" or "Z2"),
+                   h => Assert.Equal(PCellHandleQuantity.Unspecified, h.Quantity));
+        Assert.All(middles, h => Assert.Equal(PCellHandleQuantity.Length, h.Quantity));
+        Assert.All(middles, h => Assert.Equal(PCellHandleQuantity.Length, h.Cross!.Quantity));
     }
 
     [Fact]
@@ -173,28 +213,37 @@ public sealed class PCellHandleContractTests : IDisposable
     }
 
     [Fact]
-    public void MTee_DeclaresAWidthGripPerArm_NoneCoincident()
+    public void MTee_DeclaresSixGrips_OneAtEachCornerOfTheMetal()
     {
         var result = MTeePCell.Generate(
             new Dictionary<string, PCellValue> { ["W1"] = 0.0003, ["W2"] = 0.0004, ["W3"] = 0.0005 },
             technology: null, PCellLayerSelection.Default);
 
         var handles = result.Handles!;
-        Assert.Equal(3, handles.Count);
-        Assert.Equal(["W1", "W2", "W3"], handles.Select(h => h.Parameter).Order().ToArray());
+        Assert.Equal(6, handles.Count);
 
         // Coincident grips would be indistinguishable under the cursor — the failure MKlopf's own
         // earlier draft had.
-        var positions = handles.Select(h => (h.X, h.Y)).ToHashSet();
-        Assert.Equal(3, positions.Count);
+        Assert.Equal(6, handles.Select(h => (h.X, h.Y)).ToHashSet().Count);
+
+        // Two per arm, at that arm's own end cap — the tee's six outward corners.
+        Assert.Equal(2, handles.Count(h => h.Parameter == "W1"));
+        Assert.Equal(2, handles.Count(h => h.Parameter == "W2"));
+        Assert.Equal(2, handles.Count(h => h.Parameter == "W3"));
 
         // The branch runs along -Y, so its width is measured across X, not with the through arms.
-        Assert.Equal(0, handles.Single(h => h.Parameter == "W3").AxisDeg);
-        Assert.Equal(90, handles.Single(h => h.Parameter == "W1").AxisDeg);
+        Assert.Equal([0d, 180d], handles.Where(h => h.Parameter == "W3").Select(h => h.AxisDeg).Order().ToArray());
+        Assert.Equal([90d, 270d], handles.Where(h => h.Parameter == "W1").Select(h => h.AxisDeg).Order().ToArray());
+
+        // Each pair sits on the SAME end cap, so both grips of a pair share their anchor.
+        foreach (string p in (string[])["W1", "W2", "W3"])
+            Assert.Single(handles.Where(h => h.Parameter == p).Select(h => (h.AnchorX, h.AnchorY)).ToHashSet());
+
+        Assert.All(handles, h => Assert.Equal(PCellHandleQuantity.Length, h.Quantity));
     }
 
     [Fact]
-    public void MCross_DeclaresAWidthGripPerArm_EachMeasuredAcrossItsOwnArm()
+    public void MCross_DeclaresEightGrips_OneAtEachCornerOfTheMetal()
     {
         var result = MCrossPCell.Generate(
             new Dictionary<string, PCellValue>
@@ -204,14 +253,20 @@ public sealed class PCellHandleContractTests : IDisposable
             technology: null, PCellLayerSelection.Default);
 
         var handles = result.Handles!;
-        Assert.Equal(4, handles.Count);
-        Assert.Equal(4, handles.Select(h => (h.X, h.Y)).ToHashSet().Count);
+        Assert.Equal(8, handles.Count);
+        Assert.Equal(8, handles.Select(h => (h.X, h.Y)).ToHashSet().Count);
+
+        // Two per arm, at that arm's own end cap — the cross's eight outward corners.
+        foreach (string p in (string[])["W1", "W2", "W3", "W4"])
+            Assert.Equal(2, handles.Count(h => h.Parameter == p));
 
         // The ±X arms are edited vertically; the ±Y arms horizontally.
-        Assert.Equal(90, handles.Single(h => h.Parameter == "W1").AxisDeg);
-        Assert.Equal(0,  handles.Single(h => h.Parameter == "W2").AxisDeg);
-        Assert.Equal(90, handles.Single(h => h.Parameter == "W3").AxisDeg);
-        Assert.Equal(0,  handles.Single(h => h.Parameter == "W4").AxisDeg);
+        Assert.Equal([90d, 270d], handles.Where(h => h.Parameter == "W1").Select(h => h.AxisDeg).Order().ToArray());
+        Assert.Equal([0d, 180d],  handles.Where(h => h.Parameter == "W2").Select(h => h.AxisDeg).Order().ToArray());
+        Assert.Equal([90d, 270d], handles.Where(h => h.Parameter == "W3").Select(h => h.AxisDeg).Order().ToArray());
+        Assert.Equal([0d, 180d],  handles.Where(h => h.Parameter == "W4").Select(h => h.AxisDeg).Order().ToArray());
+
+        Assert.All(handles, h => Assert.Equal(PCellHandleQuantity.Length, h.Quantity));
     }
 
     [Fact]

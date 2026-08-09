@@ -209,6 +209,14 @@ static void sb_json_str(Sb *s, const char *t) {
 }
 static void sb_int(Sb *s, long v) { char b[32]; snprintf(b, sizeof b, "%ld", v); sb_puts(s, b); }
 
+/* JSON has no NaN and no infinity, and a model legitimately uses one as a "nothing set" sentinel.
+ * Emitting `null` says exactly that — the host reads it as "this parameter has no default to show"
+ * rather than being handed a token no JSON reader accepts. %.17g round-trips a double exactly. */
+static void sb_double(Sb *s, double v) {
+    if (v != v || v > 1e308 || v < -1e308) { sb_puts(s, "null"); return; }
+    char b[64]; snprintf(b, sizeof b, "%.17g", v); sb_puts(s, b);
+}
+
 /* ── the loaded library ───────────────────────────────────────────────────── */
 
 typedef struct {
@@ -310,6 +318,12 @@ static void emit_describe(Sb *s) {
             first = false;
             sb_puts(s, "{\"name\":"); sb_json_str(s, p->name[0]);
             sb_puts(s, ",\"kind\":");  sb_json_str(s, param_kind_word(p->flags));
+            /* The model's own units and one-line description. Both sit in the descriptor already,
+             * so they cost nothing to report — and a compact model declares hundreds of parameters,
+             * which is unreadable without them. Emitted as "" when the model states nothing, so the
+             * host never has to distinguish absent from empty. */
+            sb_puts(s, ",\"units\":");       sb_json_str(s, p->units       ? p->units       : "");
+            sb_puts(s, ",\"description\":"); sb_json_str(s, p->description ? p->description : "");
             sb_puts(s, "}");
         }
         sb_puts(s, "]");
@@ -378,6 +392,97 @@ static long find_param(const OsdiDescriptor *d, const char *name, uint32_t *flag
         }
     }
     return -1;
+}
+
+/* ── defaults ─────────────────────────────────────────────────────────────── */
+
+/* The temperature a probe model is set up at. It matches `create`'s own default rather than being a
+ * second constant, because a default that depends on temperature (anything scaled from tnom) must
+ * read the same here as the value the device would actually take. */
+#define DEFAULTS_TEMPERATURE_K 300.0
+
+static void report_error(const char *msg);
+
+/* A parameter's default is NOT in the descriptor — this ABI has no field for one. The value is
+ * whatever the model writes during setup for a parameter nobody gave, so the only way to learn it
+ * is to stand a model up with nothing set and read it back. That is what this does: allocate,
+ * setup_model + setup_instance, read every non-opvar parameter through `access` WITHOUT
+ * ACCESS_FLAG_SET, then tear the probe down again.
+ *
+ * IT IS ITS OWN COMMAND, not part of `describe`, and that is deliberate. `describe` runs on every
+ * worker launch — including the walk a PDK import does over every .osdi it finds — and answers from
+ * the descriptor alone with nothing instantiated. Folding a model set-up per device type into it
+ * would put that cost on an import that never asked for a default. This runs only when the
+ * parameter picker is opened.
+ *
+ * A parameter `access` will not hand back is OMITTED rather than reported with an invented value:
+ * the picker showing no default is honest; showing a zero the model never chose is not. */
+static int cmd_defaults(const char *js, const char *js_end) {
+    char type[256];
+    if (!json_str(json_member(js, js_end, "typeId"), js_end, type, sizeof type)) {
+        report_error("defaults: no typeId"); return 0;
+    }
+
+    const OsdiDescriptor *d = NULL;
+    for (uint32_t t = 0; t < g_lib.num_descriptors; t++)
+        if (strcmp(descriptor_at(t)->name, type) == 0) { d = descriptor_at(t); break; }
+    if (!d) { report_error("defaults: no such device type in this library"); return 0; }
+
+    void *model = calloc(1, d->model_size);
+    void *inst  = calloc(1, d->instance_size);
+    if (!model || !inst) { free(model); free(inst); report_error("defaults: out of memory"); return 0; }
+
+    OsdiSimParas  sim  = sim_paras();
+    OsdiInitInfo  info = { 0, 0, NULL };
+
+    d->setup_model(NULL, model, &sim, &info);
+    if (info.num_errors) {
+        free(model); free(inst);
+        report_error("defaults: model setup reported errors"); return 0;
+    }
+    info.num_errors = 0;
+    d->setup_instance(NULL, inst, model, DEFAULTS_TEMPERATURE_K, d->num_terminals, &sim, &info);
+    if (info.num_errors) {
+        free(model); free(inst);
+        report_error("defaults: instance setup reported errors"); return 0;
+    }
+
+    Sb s = {0};
+    sb_puts(&s, "{\"params\":[");
+    bool first = true;
+    for (uint32_t i = 0; i < d->num_params; i++) {
+        const OsdiParamOpvar *p = &d->param_opvar[i];
+        if ((p->flags & KIND_MASK) == KIND_OPVAR) continue;
+        if (!p->name || !p->name[0]) continue;
+
+        bool  is_inst = (p->flags & KIND_MASK) == KIND_INST;
+        void *src = d->access(is_inst ? inst : NULL, is_inst ? NULL : model, i,
+                              ACCESS_FLAG_READ | (is_inst ? ACCESS_FLAG_INSTANCE : 0u));
+        if (!src) continue;
+
+        if (!first) sb_puts(&s, ",");
+        first = false;
+        sb_puts(&s, "{\"name\":"); sb_json_str(&s, p->name[0]);
+        sb_puts(&s, ",\"value\":");
+        if ((p->flags & PARA_TY_MASK) == PARA_TY_STR) {
+            char *sv = *(char **)src;
+            sb_json_str(&s, sv ? sv : "");
+        } else if ((p->flags & PARA_TY_MASK) == PARA_TY_INT) {
+            sb_int(&s, (long)*(int32_t *)src);
+        } else {
+            sb_double(&s, *(double *)src);
+        }
+        sb_puts(&s, "}");
+    }
+    sb_puts(&s, "]}");
+    write_frame(s.buf, NULL, 0);
+    free(s.buf);
+
+    /* The probe existed only to be read. It is NOT kept in g_inst — it holds no handle, occupies no
+     * slot, and a device the host never asked to create must not consume one of the finite few. */
+    free(model);
+    free(inst);
+    return 0;
 }
 
 static void report_error(const char *msg) {
@@ -666,6 +771,8 @@ int main(int argc, char **argv) {
 
         if (strcmp(cmd, "describe") == 0) {
             Sb s = {0}; emit_describe(&s); write_frame(s.buf, NULL, 0); free(s.buf);
+        } else if (strcmp(cmd, "defaults") == 0) {
+            cmd_defaults(js, js_end);
         } else if (strcmp(cmd, "create") == 0) {
             cmd_create(js, js_end);
         } else if (strcmp(cmd, "eval") == 0) {

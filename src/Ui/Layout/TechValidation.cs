@@ -97,7 +97,62 @@ public static class TechValidation
             problems.Add("Stackup has no conductor marked as a ground reference (Stackup tab) — " +
                          "microstrip components cannot resolve a ground plane.");
 
+        ValidateInterchange(tech, problems);
+
         return problems;
+    }
+
+    /// <summary>
+    /// The Interchange tab's fields decide what a layer is CALLED in an exported file, so two layers
+    /// claiming one name is not a cosmetic clash — it silently merges or destroys geometry:
+    /// <list type="bullet">
+    /// <item>Two Gerber suffixes agreeing means both layers write to <c>&lt;cell&gt;.&lt;suffix&gt;</c>
+    /// and the second overwrites the first. The exporter now disambiguates rather than clobbering,
+    /// but the resulting file names are then not the ones the technology asked for — which is a
+    /// technology problem, reported here, at its cause.</item>
+    /// <item>Two DXF layer names agreeing merges those layers on export, and on import there is no
+    /// way to tell which of them an incoming layer of that name belongs to.</item>
+    /// <item>Two GDSII aliases agreeing points two distinct layers at one (layer, datatype) — the
+    /// same collision the layer table's own key check catches for un-aliased layers.</item>
+    /// </list>
+    /// Blank is never a collision: it means "no alias", and every consumer has its own fallback.
+    /// </summary>
+    private static void ValidateInterchange(Technology tech, List<string> problems)
+    {
+        var gerber = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var dxf    = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var gdsii  = new Dictionary<(int Layer, int Datatype), string>();
+
+        foreach (var layer in tech.Layers)
+        {
+            if (layer.Interchange is not { } map) continue;
+
+            if (map.GerberSuffix is { Length: > 0 } suffix)
+            {
+                if (gerber.TryGetValue(suffix, out var first))
+                    problems.Add($"Layers \"{first}\" and \"{layer.Name}\" share the Gerber suffix \"{suffix}\" — " +
+                                 "they would write to the same file.");
+                else gerber[suffix] = layer.Name;
+            }
+
+            if (map.DxfLayerName is { Length: > 0 } dxfName)
+            {
+                if (dxf.TryGetValue(dxfName, out var first))
+                    problems.Add($"Layers \"{first}\" and \"{layer.Name}\" share the DXF layer name \"{dxfName}\" — " +
+                                 "they would merge on export and are indistinguishable on import.");
+                else dxf[dxfName] = layer.Name;
+            }
+
+            // A GDSII alias is only a collision when BOTH halves are stated: one half alone still
+            // falls back to the layer's own Layer/Datatype for the other, which the layer-table key
+            // check above already covers.
+            if (map.GdsiiLayer is { } gl && map.GdsiiDatatype is { } gd)
+            {
+                if (gdsii.TryGetValue((gl, gd), out var first))
+                    problems.Add($"Layers \"{first}\" and \"{layer.Name}\" share the GDSII alias ({gl},{gd}).");
+                else gdsii[(gl, gd)] = layer.Name;
+            }
+        }
     }
 
     /// <summary>

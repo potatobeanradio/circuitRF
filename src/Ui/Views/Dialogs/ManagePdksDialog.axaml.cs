@@ -36,7 +36,16 @@ public partial class ManagePdksDialog : Window
         Action<string> Reveal,
         /// <summary>Re-read every referenced kit. Called after ANY change to the reference set.</summary>
         Action Loaded,
-        Action<MessageLevel, string> Report);
+        Action<MessageLevel, string> Report,
+        /// <summary>
+        /// A kit was just added or repaired: its name and the folder it was read from.
+        ///
+        /// <para>Reported rather than acted on HERE because the follow-up a caller wants — offering to
+        /// build a technology from the kit's process data, exactly as File ▸ Import ▸ PDK does — opens
+        /// dialogs of its own, and this dialog is modal. The caller collects these and acts once this
+        /// one has closed, so two modals are never stacked.</para>
+        /// </summary>
+        Action<string, string>? KitAdded = null);
 
     private Context? _ctx;
     private IReadOnlyList<PdkReferenceManager.RefStatus> _rows = [];
@@ -208,6 +217,12 @@ public partial class ManagePdksDialog : Window
             $"Added '{outcome.KitName}' — " +
             $"{PdkPartInstaller.Plural(outcome.Items.Count, "placeable part", "placeable parts")}.",
             [.. (outcome.Notes ?? []).Concat(outcome.Diagnostics)]);
+
+        // The kit's SECOND half. Adding a reference here and importing through File ▸ Import ▸ PDK
+        // put exactly the same kit into the workspace, so they must offer exactly the same things —
+        // and this door offered only the parts, leaving a user who repaired or added a kit here with
+        // no technology and no indication one was available.
+        _ctx.KitAdded?.Invoke(outcome.KitName, path);
     }
 
     private async void OnRemoveClick(object? sender, RoutedEventArgs e)

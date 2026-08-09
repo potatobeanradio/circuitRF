@@ -67,6 +67,26 @@ Two flavours, and they are different claims: `{"node":n,"to":m}` is *follows nod
 `"to": -1` is *tied to the ground reference* — which cannot be spelled "follows node 0", since node 0
 is an ordinary pin. circuitRF keeps them apart as `SlavedTo` and `CollapsedToGround`.
 
+**6. Parameter DEFAULTS are not in the descriptor, so they get their own command.** `describe`
+answers from the descriptor alone: name, kind, and — since the parameter picker needed them — the
+model's own `units` and `description`, both of which sit there already and cost nothing. A *default*
+does not: this ABI has no field for one. The value is whatever the model writes during
+`setup_model`/`setup_instance` for a parameter nobody gave, so the only way to learn it is to stand a
+probe model up with nothing set and read every parameter back through `access` **without**
+`ACCESS_FLAG_SET`.
+
+That is `{"cmd":"defaults","typeId":"…"}`, and it is deliberately **not** folded into `describe`.
+`describe` runs on every worker launch — including the walk a PDK import does across every `.osdi` it
+finds — and instantiating a model per device type would charge that import for an answer it never
+asked for. `defaults` runs only when the parameter picker is opened.
+
+The probe is torn down immediately and **never occupies an instance slot**: `MAX_INSTANCES` is small,
+and a `defaults` call that leaked one would exhaust the table over a long editing session.
+`verify.py` calls it 64 times and then checks a `create` still succeeds. A parameter `access` will
+not hand back is omitted rather than reported with an invented value, and a default the model cannot
+express (NaN, an infinity — both used as "nothing set" sentinels) is emitted as JSON `null`, which
+the host reads as "no default to show".
+
 ## Temperature
 
 OSDI's `setup_instance` takes a temperature as a **required argument**, so circuitRF states it in

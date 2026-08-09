@@ -60,18 +60,29 @@ public static class MTeePCell
             new PCellPin("3", junctionX, -stub3, signalLayer, w3, 270.0),
         };
 
-        // pcell-parameter-handles.md — one width grip per arm, each on that arm's own edge at that
-        // arm's own midpoint, so the three never coincide and none of them moves when another is
-        // dragged. Note W1's grip travels in BOTH x and y as W1 changes (its arm's stub length is a
-        // multiple of the width, so the midpoint slides): the projection onto the declared axis
-        // ignores the x component entirely, which is exactly what a one-degree-of-freedom grip is
-        // for.
+        // pcell-parameter-handles.md — SIX grips, ONE AT EACH CORNER OF THE METAL. A tee's outline
+        // has exactly six outward corners: the two at each through-arm's own end cap, and the two at
+        // the branch tip. (The two where the branch meets the through line are re-entrant — they are
+        // where the metal folds inward, not a place anything is grabbed by.)
+        //
+        // Each pair drives its own arm's width and anchors on that arm's own end-cap CENTRE, so the
+        // projection is a half-width measured across that arm. Every anchor moves as widths change
+        // (each stub length is a multiple of its own width), but always ALONG the arm, never across
+        // it — and a one-degree-of-freedom grip's projection reads only the across component, so the
+        // sliding is ignored by construction rather than corrected for.
+        long throughEnd = junctionX + stub2;
+        const PCellHandleQuantity len = PCellHandleQuantity.Length;
         var handles = new[]
         {
-            new PCellHandle("W1", stub1 / 2, 0, stub1 / 2, w1 / 2, AxisDeg: 90),
-            new PCellHandle("W2", junctionX + stub2 / 2, 0, junctionX + stub2 / 2, w2 / 2, AxisDeg: 90),
-            // The branch runs along -Y, so its width is measured across X — on its own side edge.
-            new PCellHandle("W3", junctionX, -stub3 / 2, junctionX + w3 / 2, -stub3 / 2, AxisDeg: 0),
+            // Through arm 1's end cap (pin 1) — top and bottom corners.
+            new PCellHandle("W1", 0, 0, 0,  w1 / 2, AxisDeg: 90,  Quantity: len),
+            new PCellHandle("W1", 0, 0, 0, -w1 / 2, AxisDeg: 270, Quantity: len),
+            // Through arm 2's end cap (pin 2) — top and bottom corners.
+            new PCellHandle("W2", throughEnd, 0, throughEnd,  w2 / 2, AxisDeg: 90,  Quantity: len),
+            new PCellHandle("W2", throughEnd, 0, throughEnd, -w2 / 2, AxisDeg: 270, Quantity: len),
+            // The branch runs along -Y, so its width is measured across X — its two tip corners.
+            new PCellHandle("W3", junctionX, -stub3, junctionX + w3 / 2, -stub3, AxisDeg: 0,   Quantity: len),
+            new PCellHandle("W3", junctionX, -stub3, junctionX - w3 / 2, -stub3, AxisDeg: 180, Quantity: len),
         };
 
         return new PCellResult([merged], pins, Handles: handles);

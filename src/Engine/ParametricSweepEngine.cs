@@ -35,13 +35,21 @@ public static class ParametricSweepEngine
     /// </summary>
     private sealed class OutputWriteState { public bool FirstGamWriteDone; }
 
+    /// <param name="control">
+    /// Optional cancellation + progress. Cancellation is checked once per SWEEP POINT — the natural
+    /// boundary here, because a point is exactly one re-elaboration plus one inner run, and there is
+    /// nothing coherent to hand back from a half-finished one (the per-point DataSets are stacked
+    /// along an axis of known length). Progress is ticked only by the INNERMOST sweep of a chain, so
+    /// a nested sweep counts leaf points once rather than once per level.
+    /// </param>
     public static DataSet Run(
         ParametricSweepAnalysis sweep,
         Library lib,
         TestBench tb,
         AnalysisSettings? settings = null,
-        string? baseDirectory = null)
-        => Run(sweep, lib, tb, settings, baseDirectory, new OutputWriteState());
+        string? baseDirectory = null,
+        RunControl? control = null)
+        => Run(sweep, lib, tb, settings, baseDirectory, new OutputWriteState(), control);
 
     private static DataSet Run(
         ParametricSweepAnalysis sweep,
@@ -49,7 +57,8 @@ public static class ParametricSweepEngine
         TestBench tb,
         AnalysisSettings? settings,
         string? baseDirectory,
-        OutputWriteState writeState)
+        OutputWriteState writeState,
+        RunControl? control = null)
     {
         // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
         // transparent — its dimension is dropped and ITS inner runs here instead.
@@ -77,8 +86,16 @@ public static class ParametricSweepEngine
         bool warmStart = settings?.HbSweepWarmStart ?? true;
         Complex[,]? seed = null;
 
+        // A nested sweep is handed the FULL control so the innermost level is the one that counts leaf
+        // points; anything else — an inner HB/DC/S-param/loadpull — gets a cancellation-only child, or
+        // its own loop would count work units this level is already counting and overrun the total.
+        var innerControl = inner is ParametricSweepAnalysis ? control : control?.Child();
+        bool countsLeaves = inner is not ParametricSweepAnalysis;
+
         for (int si = 0; si < sweep.SweepValues.Length; si++)
         {
+            control?.ThrowIfCancellationRequested();
+
             double val = sweep.SweepValues[si];
             // SweepValues are already in base SI (scaled by ParametricSweepAnalysis spec ctor).
             // Attach the base unit (scale-1) so the Elaborator calls MarkGlobalHasUnit, which
@@ -113,7 +130,7 @@ public static class ParametricSweepEngine
                 // holds a model, and the warm-start seed is a plain complex array.
                 using var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
                 datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
-                    warmStart ? seed : null, out var nextSeed));
+                    warmStart ? seed : null, out var nextSeed, innerControl));
                 seed = warmStart ? nextSeed : null;
             }
             finally
@@ -127,6 +144,9 @@ public static class ParametricSweepEngine
                     varIdx = -1;  // re-search on next iteration if needed
                 }
             }
+
+            // Counted AFTER the point, so the numerator is work finished rather than work started.
+            if (countsLeaves) control?.Tick();
         }
 
         // Loadpull frequency sweep: when every per-point DataSet carries a __Freq tone carrier and the
@@ -292,7 +312,8 @@ public static class ParametricSweepEngine
         string? baseDirectory,
         OutputWriteState writeState,
         Complex[,]? hbWarmStart,
-        out Complex[,]? hbConvergedSeed)
+        out Complex[,]? hbConvergedSeed,
+        RunControl? control = null)
     {
         // Only a single-tone HB inner produces a chainable seed; every other inner leaves it null so
         // the sweep does not warm-start across it (continuation is innermost-axis only — §11).
@@ -311,7 +332,7 @@ public static class ParametricSweepEngine
             }
 
             case SParameterAnalysis spa:
-                return RunSParam(spa, netlist, settings);
+                return RunSParam(spa, netlist, settings, control);
 
             case DcAnalysis dca:
                 return RunDc(dca, netlist, settings);
@@ -320,7 +341,7 @@ public static class ParametricSweepEngine
                 // Recursive: outer override already injected in tb.GlobalVariables.
                 // This call re-elaborates for each of its own sweep values on top of that.
                 // Same writeState threads down so a nested sweep truncates the OutputGrid only once.
-                return Run(psa, lib, tb, settings, baseDirectory, writeState);
+                return Run(psa, lib, tb, settings, baseDirectory, writeState, control);
 
             case LoadpullAnalysis lpa:
             {
@@ -364,10 +385,11 @@ public static class ParametricSweepEngine
     private static DataSet RunSParam(
         SParameterAnalysis spa,
         ElaboratedNetlist  netlist,
-        AnalysisSettings?  settings)
+        AnalysisSettings?  settings,
+        RunControl?        control = null)
     {
         var freqs = spa.Expand(netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
-        return SParameterEngine.Run(netlist, freqs, settings);
+        return SParameterEngine.Run(netlist, freqs, settings, control);
     }
 
     private static DataSet RunDc(

@@ -165,6 +165,16 @@ public static class PCellRegistry
         {
             // R-L5f-5 (brief-L5-followups.md §2): branch direction flipped from +Y to -Y.
             { "MTEE", 2 },
+            // The bend outline is now built as one hexagon (two end caps + the real outer and inner
+            // corners) instead of a union of two overlapping arm rectangles, so an oblique bend stops
+            // rendering as two merged stubs. The 90° shape is unchanged, but the oblique ones are not,
+            // and a generated cell already on disk was written by the old algorithm.
+            { "MBEND", 2 },
+            // SmoothSteps' end blend is CLAMPED to half the taper instead of being skipped outright
+            // when 3x the end width exceeds the taper's own length. Every taper short relative to its
+            // end widths — an ordinary impedance transformer on a low-permittivity board — was
+            // therefore drawn with the full end step, and a generated cell already on disk carries it.
+            { "MKLOPF", 2 },
         };
 
     public static int GeneratorVersion(string generatorId)

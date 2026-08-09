@@ -37,10 +37,16 @@ public static class SParameterEngine
     /// <summary>gmin conductance added from every node to ground (§5).</summary>
     public const double DefaultGmin = 1e-12;
 
+    /// <param name="control">
+    /// Optional cancellation + progress. Checked (and, when it carries a progress sink, ticked) once
+    /// per FREQUENCY POINT — never inside a factorization or a port back-substitution. Null keeps the
+    /// pre-cancellation behaviour exactly.
+    /// </param>
     public static DataSet Run(
         ElaboratedNetlist netlist,
         double[]          freqsHz,
-        AnalysisSettings? settings = null)
+        AnalysisSettings? settings = null,
+        RunControl?       control  = null)
     {
         settings ??= AnalysisSettings.Default;
 
@@ -132,10 +138,10 @@ public static class SParameterEngine
 
         if (allPortsResistive)
             RunWavePath(netlist, freqsHz, settings, ports, N, mna, freqCount, sMatrices,
-                nodeNamer, branchNamer, canRetry, dcNodeVoltages);
+                nodeNamer, branchNamer, canRetry, dcNodeVoltages, control);
         else
             RunLegacyPath(netlist, freqsHz, settings, ports, N, z0PerPort, mna, freqCount, sMatrices,
-                nodeNamer, branchNamer, canRetry, dcNodeVoltages);
+                nodeNamer, branchNamer, canRetry, dcNodeVoltages, control);
 
         var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
         var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
@@ -158,12 +164,16 @@ public static class SParameterEngine
         Func<int, string>    nodeNamer,
         Func<int, string>    branchNamer,
         bool                 canRetry,
-        double[]?            dcNodeVoltages = null)
+        double[]?            dcNodeVoltages = null,
+        RunControl?          control        = null)
     {
         int nonGroundNodes = mna.NodeCount;
 
         for (int fi = 0; fi < freqCount; fi++)
         {
+            // One frequency is this loop's work unit and its cancellation boundary alike.
+            control?.Tick();
+
             double omega = 2.0 * Math.PI * freqsHz[fi];
 
             // Stamp network (ports contribute conductances, not 0 V branches).
@@ -252,12 +262,16 @@ public static class SParameterEngine
         Func<int, string>    nodeNamer,
         Func<int, string>    branchNamer,
         bool                 canRetry,
-        double[]?            dcNodeVoltages = null)
+        double[]?            dcNodeVoltages = null,
+        RunControl?          control        = null)
     {
         int nonGroundNodes = mna.NodeCount;
 
         for (int fi = 0; fi < freqCount; fi++)
         {
+            // One frequency is this loop's work unit and its cancellation boundary alike.
+            control?.Tick();
+
             double hz    = freqsHz[fi];
             double omega = 2.0 * Math.PI * hz;
 

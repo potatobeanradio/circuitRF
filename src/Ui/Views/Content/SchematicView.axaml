@@ -450,6 +450,25 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- Owner request: Mirror beside Rotate. Same commands, same icons and the
+                             same accelerators as the toolbar's own Mirror buttons — one mechanism,
+                             two surfaces, so the two can never disagree about what Mirror does. -->
+                        <MenuItem Header="Mirror Horizontal"
+                                  Click="OnMirrorH"
+                                  InputGesture="M">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="FlipHorizontal" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem Header="Mirror Vertical"
+                                  Click="OnMirrorV"
+                                  InputGesture="Shift+M">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="FlipVertical" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <MenuItem x:Name="CtxMoveLabels"
                                   Header="Move Labels"
                                   Click="OnCtxMoveLabels"

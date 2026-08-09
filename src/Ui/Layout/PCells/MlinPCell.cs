@@ -49,16 +49,17 @@ public static class MlinPCell
         // no-op there — set anyway, because a set of four edge grips that behaved as four different
         // rules would be worse than one that reads uniformly.
         long midX = l / 2, halfW = w / 2;
+        const PCellHandleQuantity len = PCellHandleQuantity.Length;
         var handles = new[]
         {
             // Right edge — anchored on the left edge (pin 1), which never moves anyway.
-            new PCellHandle("L", 0, 0, l, 0, AxisDeg: 0, KeepAnchorFixed: true),
+            new PCellHandle("L", 0, 0, l, 0, AxisDeg: 0, KeepAnchorFixed: true, Quantity: len),
             // Left edge — anchored on the right edge, which the host holds still.
-            new PCellHandle("L", l, 0, 0, 0, AxisDeg: 180, KeepAnchorFixed: true),
+            new PCellHandle("L", l, 0, 0, 0, AxisDeg: 180, KeepAnchorFixed: true, Quantity: len),
             // Top edge — anchored on the bottom edge.
-            new PCellHandle("W", midX, -halfW, midX, halfW, AxisDeg: 90, KeepAnchorFixed: true),
+            new PCellHandle("W", midX, -halfW, midX, halfW, AxisDeg: 90, KeepAnchorFixed: true, Quantity: len),
             // Bottom edge — anchored on the top edge.
-            new PCellHandle("W", midX, halfW, midX, -halfW, AxisDeg: 270, KeepAnchorFixed: true),
+            new PCellHandle("W", midX, halfW, midX, -halfW, AxisDeg: 270, KeepAnchorFixed: true, Quantity: len),
         };
 
         return new PCellResult([line], pins, Handles: handles);

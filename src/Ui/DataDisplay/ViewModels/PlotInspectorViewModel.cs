@@ -772,6 +772,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 // real result renders as-is (the transform combo must not double-apply on top of it).
                 t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels, transformBaked: true);
                 ApplyPinnedSpectral(t, ds);
+                ApplyPinnedAxisDisplay(t, ds);
             }
             else
             {
@@ -891,6 +892,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         t.SetCubeData(xAxis.Values, complexValues, realValues,
                       xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels);
         ApplyPinnedSpectral(t, ds);
+        ApplyPinnedAxisDisplay(t, ds);
     }
 
     private static void ResolveFamily(Trace t, DataCube cube, AxisSlice[] slice,
@@ -952,6 +954,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
         t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs2, slice, xVals.Length));
         t.SetFamilyData(xVals, xName, xUnit, fAxis.Name, curves, plotType, freqUnit,
                         familyAxisUnit: string.IsNullOrEmpty(fAxis.Unit) ? null : fAxis.Unit);
+        // A family trace has no pinned SPECTRAL line (each curve carries its own tag), but it can
+        // still carry ordinary pinned axes, and those appear in its label like any other trace's.
+        ApplyPinnedAxisDisplay(t, ds);
     }
 
     private static DataCube? GetToneFreqsCube(DataSet? ds, string? cubeName)
@@ -1003,6 +1008,54 @@ public partial class PlotInspectorViewModel : ViewModelBase
         }
 
         t.SetPinnedSpectral(pin.Value.AxisName, label, freqHz);
+    }
+
+    // A pinned axis used to read as its raw INDEX — "DC1.I(VDS=240, branch=0)" — which names neither
+    // the value the user swept to nor the quantity they picked. Both answers are on the cube, so the
+    // owner resolves them here and hands the finished tokens to the Trace (which never holds a
+    // DataSet). Mirrors ApplyPinnedSpectral exactly, including its clear-first contract.
+    //
+    // Two forms, and the difference is deliberate: a LABELLED axis reads as its label alone ("IDS")
+    // because the label already names the quantity, while a swept axis keeps its name and gains its
+    // value and unit ("VDS=3.5 V"). The S/Y/Z port axes are excluded — they are written positionally
+    // as "S(1,2)" by TraceLabeler and must stay that way.
+    internal static void ApplyPinnedAxisDisplay(Trace t, DataSet? ds)
+    {
+        t.SetPinnedAxisDisplay(null);
+        if (ds is null || t.CubeName is null || t.Slice is null || !ds.Contains(t.CubeName)) return;
+
+        var cube = ds[t.CubeName];
+        Dictionary<string, string>? map = null;
+
+        foreach (var s in t.Slice)
+        {
+            if (s.Role != AxisRole.PinToIndex) continue;
+            if (s.AxisName is "i" or "j") continue;   // positional port pair — TraceLabeler owns it
+
+            Axis? axis = null;
+            foreach (var a in cube.Axes) if (a.Name == s.AxisName) { axis = a; break; }
+            if (axis is null || axis.Length == 0) continue;
+
+            int idx = Math.Clamp(s.Index, 0, axis.Length - 1);
+
+            string token;
+            if (axis.Labels is not null && idx < axis.Labels.Length &&
+                !string.IsNullOrWhiteSpace(axis.Labels[idx]))
+            {
+                token = axis.Labels[idx];
+            }
+            else
+            {
+                string val = axis.Values[idx].ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
+                token = string.IsNullOrWhiteSpace(axis.Unit)
+                    ? $"{axis.Name}={val}"
+                    : $"{axis.Name}={val} {axis.Unit}";
+            }
+
+            (map ??= new Dictionary<string, string>(StringComparer.Ordinal))[s.AxisName] = token;
+        }
+
+        t.SetPinnedAxisDisplay(map);
     }
 
     private static double[]? ResolveFundamentalByX(DataCube? toneFreqs, AxisSlice[]? slice, int xAxisLength)

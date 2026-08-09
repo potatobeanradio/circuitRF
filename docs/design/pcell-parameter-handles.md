@@ -289,6 +289,45 @@ Four consequences, each of which was a real defect before it was written down:
 A no-op when the anchor does not move, so it is safe — and more readable — to set it on every grip of
 a set rather than only the ones that need it.
 
+**A pinned grip's CROSS axis is pinned too.** `AsCrossHandle()` carries `KeepAnchorFixed` across, and
+it has to: the cross axis is solved through the ordinary machinery, so it needs the same inverted
+measurement frame the primary does. Dropping the flag there makes a pinned two-axis grip's second
+axis read as dead — it is silently dropped and reported, while the primary axis goes on working, so
+the grip half-works rather than failing visibly.
+
+**R-pch-12. A handle may declare WHAT KIND of quantity its parameter is — and that does not
+reintroduce the declared scale R-pch-2 rejected.**
+
+`PCellHandleQuantity` is `Unspecified` (default), `Length`, or `Angle`. It says nothing about *how
+much* the parameter changes per unit of travel — that is still measured, still unit-free, and R-pch-2
+is untouched. It says only what the number IS, which the host needs for exactly two things it cannot
+work out for itself:
+
+- **The drag readout.** A width printed as `0.0039116` is not a width. With the quantity declared the
+  readout is `W = 154 mil` — the document's own display unit, the same one every other dimension in
+  the editor is shown in. An angle prints as degrees.
+- **The snap grid.** A user who sets 1 mil snapping means the committed *parameter*, not just the
+  cursor. Snapping the cursor alone (which is all that happened before) leaves the solver free to
+  stop anywhere inside its convergence tolerance, so a width dragged to 468 mil commits as
+  468.00006 mil — and that value is what a schematic push-back and every later export then carry.
+  With `Length` declared, the solver's own candidate lattice becomes the snap grid.
+
+Three things about the snapping are load-bearing:
+
+- **It is applied INSIDE the solve, not to the answer afterwards.** The solver then regenerates *at*
+  the quantized value, so the grip is drawn where the committed value actually puts it and the
+  anchor-pin translate is computed from that same geometry. Quantizing afterwards would leave the
+  preview and the commit up to half a snap step apart, which reads as the artwork jumping on release.
+- **Only a length is quantized.** Rounding an impedance or an angle onto a distance lattice is
+  arithmetic with no meaning behind it. MKlopf's edge grips drive `Z1`/`Z2` and are deliberately
+  exempt.
+- **Alt suspends it, and snapping off disables it**, exactly as for every other snapped gesture — or
+  "snapping is off" would only be half true.
+
+`Unspecified` is the default and is not a defect: the readout falls back to the raw value and no grid
+is applied, which is precisely how every handle behaved before this existed. A script-supplied grip
+that says nothing keeps working unchanged.
+
 ## 3. Wire format
 
 `pcell-wire-schema.md` §4.3's reply gains one optional array.
@@ -301,9 +340,20 @@ a set rather than only the ones that need it.
       { "parameter": "L", "kind": "linear",
         "span": { "at": 24, "count": 4 },     // anchorX, anchorY, x, y — int64 DBU in the payload
         "axisDeg": 0.0,
+        "quantity": "length",                 // optional — R-pch-12; absent = Unspecified
         "label": "Length", "min": 50000, "max": null }
     ] }
 ```
+
+**`quantity`/`crossQuantity` are additive and deliberately NOT a wire-version bump.** R-pch-5's rule
+(a version mismatch refuses rather than negotiating) is about a reply an older host cannot READ.
+This one it can: an absent field decodes to `Unspecified`, which is exactly the behaviour every
+handle had before the field existed, so a version-6 script that says nothing keeps working and one
+that does say something gets a better readout without either side negotiating. An unrecognised
+*value* is also silently `Unspecified` — the opposite trade from an unknown handle `kind` (dropped
+and reported), and deliberately so: an unknown kind would silently lose a grip, whereas an unknown
+quantity costs only a nicer readout, and a hint with no effect on the answer must not cost a working
+cell.
 
 **Coordinates ride in the binary payload, exactly like every other coordinate**
 (`pcell-wire-schema.md` §2: no coordinate ever appears in the JSON, so a fractional one is

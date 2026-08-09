@@ -414,6 +414,26 @@ namespace CircuitRF.Ui.DataDisplay
             _pinnedSpectralFreqHz = freqHz;
         }
 
+        // How each PINNED axis should READ in a label — the WHOLE token, not just the value:
+        // "VDS=3.5 V" for a swept axis (its own value and unit, never the bare index), or "IDS" for
+        // a labelled axis (the label names the quantity, so the axis name in front of it says
+        // nothing). Owner-supplied for the same reason as the spectral pair above: the axis values
+        // live on the cube and a Trace deliberately never holds one. Absent for an axis the owner
+        // could not resolve, which falls back to the raw index.
+        private IReadOnlyDictionary<string, string>? _pinnedAxisDisplay;
+
+        /// <summary>
+        /// Owner-supplied label token per pinned axis name, e.g. <c>{"VDS": "VDS=3.5 V", "branch": "IDS"}</c>.
+        /// Derived state: reset by <see cref="SetCubeData"/>/<see cref="SetFamilyData"/> exactly like
+        /// <see cref="SetPinnedSpectral"/>, and re-applied by the owner immediately afterwards.
+        /// </summary>
+        public void SetPinnedAxisDisplay(IReadOnlyDictionary<string, string>? map)
+            => _pinnedAxisDisplay = map;
+
+        /// <summary>The resolved display text for a pinned axis, or null when unresolved.</summary>
+        public string? PinnedAxisDisplay(string axisName)
+            => _pinnedAxisDisplay is { } m && m.TryGetValue(axisName, out var v) ? v : null;
+
         // Per-X fundamental (Hz) injected by the owner before SetCubeData/SetFamilyData.
         // Non-null only for single-tone HB spectrum traces; null for all other trace types.
         private double[]? _f0ByX;
@@ -667,6 +687,7 @@ namespace CircuitRF.Ui.DataDisplay
             _pinnedSpectralName   = src._pinnedSpectralName;
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;
+            _pinnedAxisDisplay    = src._pinnedAxisDisplay;
             _cubeIsScalar      = src._cubeIsScalar;
             _transformBaked    = src._transformBaked;
             _lastPlotType      = src._lastPlotType;
@@ -711,6 +732,8 @@ namespace CircuitRF.Ui.DataDisplay
             _transformBaked    = transformBaked;
             SetPinnedSpectral(null, null, double.NaN);   // derived state — reset on data-set (the VM
                                                          // re-applies it for a single-curve pinned trace)
+            SetPinnedAxisDisplay(null);                  // same contract: resolved from the cube, so it
+                                                         // cannot outlive the data it was resolved from
             // Two-tone spectrum is single-sided: each mixing product is shown at its ABSOLUTE
             // frequency |k1·f1+k2·f2| (negative-frequency reps fold onto the positive side, matching
             // single-tone). The "(k1,k2)" label still identifies the product. Magnitudes are unchanged
@@ -783,6 +806,7 @@ namespace CircuitRF.Ui.DataDisplay
             _transformBaked = false;
             SetPinnedSpectral(null, null, double.NaN);   // a family trace shows the per-curve tag, not a
                                                          // pinned line — clear any stale pinned context
+            SetPinnedAxisDisplay(null);                  // resolved from the cube — cannot outlive it
             _lastPlotType = plotType;
             _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
             _cubeComplexValues = null; _cubeRealValues = null;

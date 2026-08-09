@@ -43,15 +43,31 @@ public static class MTaperPCell
             new PCellPin("2", l, 0, signalLayer, w2,   0.0),
         };
 
-        // pcell-parameter-handles.md §2.2 — two INDEPENDENT widths on one cell, each with its own
-        // grip on its own end cap, plus the length. Both width grips anchor on the centreline at
-        // their own end (the trapezoid is centred on y = 0), so each measures its own half-width and
-        // neither moves when the other is dragged.
+        // pcell-parameter-handles.md §2.2 — SIX grips: the length from either end, and each of the
+        // two INDEPENDENT widths from either side of its own end cap.
+        //
+        // Both width grips at an end anchor on the CENTRELINE there (the trapezoid is centred on
+        // y = 0), so each measures its own half-width, neither moves when the other end is dragged,
+        // and dragging top or bottom grows the taper symmetrically about its axis — which is what
+        // a centred trapezoid can actually do. (MLIN's edge grips anchor on the OPPOSITE edge
+        // instead, because a straight line CAN hold one edge still by translating the instance; a
+        // taper cannot, since holding one end's edge would drag the other end with it.)
+        //
+        // The left-hand length grip is the R-pch-4b case: `L` can only grow toward +X (R4 pins pin 1
+        // at the origin), so dragging the near end leftward is expressed as "grow, and hold the far
+        // end where it is" — the host translates the instance to keep the anchor put.
+        const PCellHandleQuantity len = PCellHandleQuantity.Length;
         var handles = new[]
         {
-            new PCellHandle("L",  0, 0, l,     0,      AxisDeg: 0),
-            new PCellHandle("W1", 0, 0, 0,     w1 / 2, AxisDeg: 90),
-            new PCellHandle("W2", l, 0, l,     w2 / 2, AxisDeg: 90),
+            // Length, from the far end (anchor = pin 1, which never moves) and from the near end.
+            new PCellHandle("L",  0, 0, l, 0, AxisDeg: 0,   Quantity: len),
+            new PCellHandle("L",  l, 0, 0, 0, AxisDeg: 180, KeepAnchorFixed: true, Quantity: len),
+            // W1 — the near end cap, both sides.
+            new PCellHandle("W1", 0, 0, 0,  w1 / 2, AxisDeg: 90,  Quantity: len),
+            new PCellHandle("W1", 0, 0, 0, -w1 / 2, AxisDeg: 270, Quantity: len),
+            // W2 — the far end cap, both sides.
+            new PCellHandle("W2", l, 0, l,  w2 / 2, AxisDeg: 90,  Quantity: len),
+            new PCellHandle("W2", l, 0, l, -w2 / 2, AxisDeg: 270, Quantity: len),
         };
 
         return new PCellResult([trapezoid], pins, Handles: handles);

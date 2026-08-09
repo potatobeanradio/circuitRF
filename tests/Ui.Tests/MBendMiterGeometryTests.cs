@@ -126,7 +126,17 @@ public sealed class MBendMiterGeometryTests
             new Dictionary<string, PCellValue> { ["W"] = wMeters, ["Angle"] = 90.0, ["Miter"] = 0.0 },
             null, PCellLayerSelection.Default);
         var noneXy = ((PolygonShape)none.Shapes[0]).Xy;
-        long sharpCornerX = noneXy[0], sharpCornerY = noneXy[1]; // (cornerX+halfW, -halfW), the outer corner
+
+        // The sharp outer corner is, by definition, the one vertex the miter REPLACED — the only
+        // vertex of the unmitered outline that is absent from the mitered one. Found rather than
+        // indexed, so this keeps testing the miter rather than the vertex ORDER of the outline.
+        var mitredVerts = System.Linq.Enumerable.Range(0, xy.Length / 2)
+            .Select(i => (X: xy[i * 2], Y: xy[i * 2 + 1])).ToHashSet();
+        var replaced = System.Linq.Enumerable.Range(0, noneXy.Length / 2)
+            .Select(i => (X: noneXy[i * 2], Y: noneXy[i * 2 + 1]))
+            .Where(v => !mitredVerts.Contains(v)).ToList();
+        var sharp = Assert.Single(replaced);
+        long sharpCornerX = sharp.X, sharpCornerY = sharp.Y;
 
         // cut1 = sharpCorner - (leg, 0); cut2 = sharpCorner + (0, leg) for this 90° CCW example.
         Assert.Contains(System.Linq.Enumerable.Range(0, xy.Length / 2), i =>

@@ -182,14 +182,58 @@ public static class ProcessTechnologyImport
             catch (SystemException) { tables.Add(new Dictionary<string, double>()); }
         }
 
-        var texts = new List<string>(ruleDeckPaths.Count);
+        var loaded = new List<(string Path, string Text)>(ruleDeckPaths.Count);
         foreach (var p in ruleDeckPaths)
         {
-            try { texts.Add(File.ReadAllText(p)); }
+            try { loaded.Add((p, File.ReadAllText(p))); }
             catch (SystemException) { /* skip: see this method's own doc comment */ }
         }
 
-        return RuleDeckReader.Read(texts, tables);
+        // A scan FINDS deck files; it does not decide which of them are one deck. Merging a process's
+        // separate decks into one program crosses two symbol namespaces and, measured on a real
+        // process, reads a helper LIBRARY's method bodies as rules. See RuleDeckSelector.
+        var selection = RuleDeckSelector.Select(loaded);
+        var byPath    = loaded.ToDictionary(f => Path.GetFullPath(f.Path), f => f.Text);
+
+        var texts = new List<string>(selection.MainSet.Count);
+        foreach (var p in selection.MainSet)
+            if (byPath.TryGetValue(p, out var t)) texts.Add(t);
+
+        var deck = RuleDeckReader.Read(texts, tables);
+
+        if (selection.Alternates.Count == 0) return deck;
+
+        // Named, not silently dropped. A user who can see a deck file in their kit and no rules from
+        // it needs to be told which deck circuitRF read and why the others were left out.
+        var notes = new List<string>(deck.Notes)
+        {
+            $"This process ships more than one design-rule deck. circuitRF read the one rooted at " +
+            $"\"{Path.GetFileName(selection.RootPath)}\" ({selection.MainSet.Count} file(s)) and left " +
+            $"{selection.Alternates.Count} other deck file(s) out: " +
+            $"{string.Join(", ", selection.Alternates.Select(Path.GetFileName))}. " +
+            "They are separate decks, not more of this one — reading them together would mix two " +
+            "processes' own symbol names.",
+        };
+
+        return deck with { Notes = notes };
+    }
+
+    /// <summary>
+    /// Which deck files the scan would actually READ, for a caller that wants to say so before
+    /// importing. Same selection the import itself makes — never a second one.
+    /// </summary>
+    public static RuleDeckSelection SelectRuleDeck(IReadOnlyList<string> ruleDeckPaths)
+    {
+        ArgumentNullException.ThrowIfNull(ruleDeckPaths);
+
+        var loaded = new List<(string, string)>(ruleDeckPaths.Count);
+        foreach (var p in ruleDeckPaths)
+        {
+            try { loaded.Add((p, File.ReadAllText(p))); }
+            catch (SystemException) { /* an unreadable file cannot root or join a deck */ }
+        }
+
+        return RuleDeckSelector.Select(loaded);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

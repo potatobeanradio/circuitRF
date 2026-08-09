@@ -16,6 +16,14 @@ public interface ITreeActions
     /// <summary>Reveal in OS file manager (Finder / Explorer / xdg-open).</summary>
     void Reveal(ProjectTreeNodeViewModel node);
 
+    /// <summary>
+    /// The same reveal, for a surface that has a path but no tree node — the recent-workspaces list,
+    /// which is shown precisely when there is no tree. Routed through the one implementation
+    /// <see cref="Reveal"/> uses, because the per-platform argument forms are exactly what a second
+    /// copy gets subtly wrong.
+    /// </summary>
+    void RevealPath(string absolutePath);
+
     /// <summary>New Cell on workspace/library node — prompts for name, creates folder, Refresh.</summary>
     Task NewCellAsync(ProjectTreeNodeViewModel parentNode);
 

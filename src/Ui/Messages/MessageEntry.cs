@@ -1,4 +1,5 @@
 using System;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.Messages;
 
@@ -21,13 +22,86 @@ public static class MessageDisplay
 /// A single message in the Messages region. FilePath (nullable) enables the clickable
 /// "reveal in OS file manager" feature — any message with a file path shows it as an
 /// underlined link that opens the OS file manager (Finder/Explorer/xdg-open).
+///
+/// <para><b>Observable, not a record, because a message can be LIVE.</b> A long run's own line
+/// updates in place as it progresses (see <see cref="IProgressMessage"/>) — text, level and progress
+/// all change on the row that is already on screen. A new immutable entry per observation would
+/// scroll a fresh line into the log several times a second, which is a worse way to say the same
+/// thing. Every other message is posted once and never touched again, so it behaves exactly as the
+/// record did.</para>
 /// </summary>
-public sealed record MessageEntry(
-    MessageLevel Level,
-    string Text,
-    string? FilePath,
-    DateTime Timestamp)
+public sealed partial class MessageEntry : ObservableObject
 {
+    private MessageLevel _level;
+    private string       _text;
+    private string?      _progressText;
+    private double?      _progressPercent;
+    private bool         _progressIndeterminate;
+
+    public MessageEntry(MessageLevel level, string text, string? filePath, DateTime timestamp)
+    {
+        _level    = level;
+        _text     = text;
+        FilePath  = filePath;
+        Timestamp = timestamp;
+    }
+
+    public MessageLevel Level
+    {
+        get => _level;
+        internal set => SetProperty(ref _level, value);
+    }
+
+    public string Text
+    {
+        get => _text;
+        internal set { if (SetProperty(ref _text, value)) OnPropertyChanged(nameof(TextInline)); }
+    }
+
+    /// <summary>
+    /// The changing tail of a live message — the "1,194 / 2,525" counter — kept SEPARATE from
+    /// <see cref="Text"/> and rendered AFTER the progress bar.
+    ///
+    /// <para>This is what stops the bar moving. A counter inside <see cref="Text"/> sits before the
+    /// bar, so every time it grows it shoves the bar sideways; out here it is the last thing on the
+    /// row and its own width changes push nothing. Null on an ordinary message and on work with no
+    /// honest denominator.</para>
+    /// </summary>
+    public string? ProgressText
+    {
+        get => _progressText;
+        internal set { if (SetProperty(ref _progressText, value)) OnPropertyChanged(nameof(HasProgressText)); }
+    }
+
+    public bool HasProgressText => !string.IsNullOrEmpty(_progressText);
+
+    public string?  FilePath  { get; }
+    public DateTime Timestamp { get; }
+
+    /// <summary>0–100 while this message is showing progress; null for an ordinary message (and once
+    /// a live one completes, so a finished run's line carries no leftover bar).</summary>
+    public double? ProgressPercent
+    {
+        get => _progressPercent;
+        internal set
+        {
+            if (!SetProperty(ref _progressPercent, value)) return;
+            OnPropertyChanged(nameof(HasProgress));
+            OnPropertyChanged(nameof(ProgressValue));
+        }
+    }
+
+    /// <summary>True while the work has no honest denominator — a single HB solve is one Newton loop,
+    /// not N steps, and a bar that invents a fraction for it would be lying about the wait.</summary>
+    public bool ProgressIndeterminate
+    {
+        get => _progressIndeterminate;
+        internal set => SetProperty(ref _progressIndeterminate, value);
+    }
+
+    public bool   HasProgress   => _progressPercent is not null;
+    public double ProgressValue => _progressPercent ?? 0;
+
     public string TimeText => MessageDisplay.Mode switch
     {
         MessageTimestampMode.None     => "",

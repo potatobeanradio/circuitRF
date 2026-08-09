@@ -109,6 +109,22 @@ namespace CircuitRF.Ui.DataDisplay
                     if (s.Role != AxisRole.PinToIndex) continue;
                     bool isPort = s.AxisName is "i" or "j";
                     sb.Append(first ? '(' : ',');
+
+                    // The owner resolves what a pinned axis READS as, because that answer lives on
+                    // the cube and a Trace deliberately never holds one: the swept VALUE with its
+                    // unit ("VDS=3.5 V"), or a labelled axis's own label alone ("IDS" — the label
+                    // names the quantity, so repeating the axis name in front of it says nothing).
+                    // It is the WHOLE token, not just the value, so the owner owns that choice in
+                    // one place. Falling back to the raw index when the owner resolved nothing keeps
+                    // a hand-built trace — and every test that builds one directly — unchanged.
+                    string? display = isPort ? null : t.PinnedAxisDisplay(s.AxisName);
+                    if (display is not null)
+                    {
+                        sb.Append(display);
+                        first = false;
+                        continue;
+                    }
+
                     if (!(isPort && bothPortsPinned))
                     {
                         sb.Append(s.AxisName);

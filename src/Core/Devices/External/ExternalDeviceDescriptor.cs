@@ -26,11 +26,15 @@ public enum ExternalParamKind
 /// One parameter a device type declares. Names are opaque to circuitRF — they are rendered in the
 /// parameter editor and passed back verbatim, never interpreted.
 /// </summary>
+/// <param name="Description">The model's own one-line description, or "" when it states none.
+/// Additive and defaulted, so every existing construction site is unchanged — a compact model
+/// declares hundreds of parameters and is unreadable without it.</param>
 public sealed record ExternalParamDescriptor(
     string            Name,
     ExternalParamKind Kind,
     string?           DefaultText = null,
-    string            Units       = "");
+    string            Units       = "",
+    string            Description = "");
 
 /// <summary>
 /// One node of a device type. <paramref name="External"/> nodes bind to nets the user names in the

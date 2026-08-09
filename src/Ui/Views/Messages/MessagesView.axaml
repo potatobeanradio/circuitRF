@@ -53,6 +53,11 @@
 
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="msg:MessageEntry">
+                    <!-- The progress bar sits INLINE, immediately after the message text, and the
+                         changing counter comes AFTER the bar. That ordering is what keeps it still:
+                         the text before it is constant for the whole run (the analysis name), so
+                         there is nothing on the bar's left that can grow and shove it. Putting the
+                         counter back into the message text would undo this. -->
                     <Grid ColumnDefinitions="Auto,*" Margin="4,1">
 
                         <!-- Level icon (meaning, not color alone) -->
@@ -91,6 +96,36 @@
                                  Foreground="{DynamicResource SystemBaseMediumColor}"/>
                             <Run Text="{Binding TextInline}"
                                  Foreground="{DynamicResource SystemBaseHighColor}"/>
+
+                            <!-- Progress bar for a LIVE message (a running simulation). Absent — not
+                                 merely empty — on every ordinary message, so the log is unchanged
+                                 when nothing is running. Indeterminate while the work has no honest
+                                 denominator (a single HB solve is one Newton loop, not N steps). It
+                                 SURVIVES completion at 100%, so a finished run's own row still shows
+                                 how much work it was. -->
+                            <InlineUIContainer BaselineAlignment="Center">
+                                <ProgressBar Width="100"
+                                             Height="6"
+                                             Margin="2,0,2,0"
+                                             Minimum="0" Maximum="100"
+                                             Value="{Binding ProgressValue}"
+                                             IsIndeterminate="{Binding ProgressIndeterminate}"
+                                             IsVisible="{Binding HasProgress}"/>
+                            </InlineUIContainer>
+
+                            <!-- The counter, RIGHT-ALIGNED in a fixed-width box: the numerator grows
+                                 leftwards into the gap, so the "/" and the denominator — the parts
+                                 the eye actually tracks — never move. Left-aligning it here would
+                                 put the twitch back, just one element further along. -->
+                            <InlineUIContainer BaselineAlignment="Center">
+                                <TextBlock Text="{Binding ProgressText}"
+                                           IsVisible="{Binding HasProgressText}"
+                                           MinWidth="118"
+                                           TextAlignment="Right"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource SystemBaseHighColor}"/>
+                            </InlineUIContainer>
+
                             <InlineUIContainer BaselineAlignment="TextBottom">
                                 <SelectableTextBlock Text="{Binding FilePath}"
                                                      IsVisible="{Binding FilePath, Converter={StaticResource IsNotNull}}"

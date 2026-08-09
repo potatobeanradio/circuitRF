@@ -367,4 +367,111 @@ public class RuleDeckReaderTests
         var r = Assert.Single(result.Rules);
         Assert.Equal(0.25, r.ValueUm);
     }
+
+    // ── The deck's own top-level derivation file ───────────────────────────────
+    //
+    // A real process splits its deck across dozens of files loaded into ONE shared scope: a top-level
+    // file derives the layers every per-table file then measures. Both facts below were measured on a
+    // kit before being fixed, and each is worth ~26 rules on it.
+
+    /// <summary>A top-level file: derives shared layers, binds no drawn layer, reads no rule value,
+    /// states no rule of its own. Recognising it is the whole point.</summary>
+    private const string Derivations = """
+        # the deck's shared derivations
+        m1_no_fill  = metal1_drw.not(metal2_drw)
+        m1_core     = m1_no_fill.not_interacting(via1_drw)
+        m1_pads     = metal1_drw.interacting(via1_drw)
+        m1_merged   = m1_core.merged
+        m1_grown    = m1_core.sized(0.05.um)
+        m1_xor      = metal1_drw.xor(metal3_drw)
+        """;
+
+    [Fact]
+    public void TopLevelDerivationFile_IsRecognisedAsPartOfTheDeck()
+    {
+        // It binds no layer and reads no value, so the three original markers all miss it.
+        Assert.False(RuleDeckReader.LooksLikeRuleDeck("x = 1\ny = 2\n"));
+        Assert.True(RuleDeckReader.LooksLikeRuleDeck(Derivations));
+    }
+
+    [Fact]
+    public void OrdinaryScript_IsNotMistakenForADeck()
+    {
+        // The count threshold alone is not enough — `.join` and `.or` have ordinary meanings. A file
+        // wrongly admitted contributes phantom entries to the "cannot check yet" tally.
+        const string script = """
+            a = parts.join('/')
+            b = names.join(', ')
+            c = xs.or(ys)
+            d = ps.join('-')
+            e = qs.join('+')
+            f = rs.join(' ')
+            g = ss.join('_')
+            """;
+        Assert.False(RuleDeckReader.LooksLikeRuleDeck(script));
+    }
+
+    [Fact]
+    public void DerivedLayerBoundInOneFile_IsMeasurableFromAnother()
+    {
+        // The headline: a rule file measures a layer the TOP-LEVEL file derived. Read with a
+        // file-local derived map this resolves to nothing and is reported as unsupported.
+        const string rules = """
+            l = m1_core.width(0.16.um, euclidian)
+            l.output('M1.a', "min width")
+            """;
+
+        var result = RuleDeckReader.Read([LayersDef, Derivations, rules], [Values()]);
+
+        var r = Assert.Single(result.Rules);
+        Assert.Equal(DrcRuleKind.MinWidth, r.Kind);
+        Assert.NotNull(r.RegionA);
+        Assert.Contains("not", r.RegionA);
+        Assert.Empty(result.Unsupported);
+    }
+
+    [Fact]
+    public void ADerivedLayerChain_ResolvesRegardlessOfFileORDER()
+    {
+        // m1_core depends on m1_no_fill, both in a file presented AFTER the rule that uses them.
+        // File order here is the scan's, not the deck's own load order, so the read must not depend
+        // on it — which is what the fixed-point binding passes are for.
+        const string rules = """
+            l = m1_core.space(0.18.um, euclidian)
+            l.output('M1.b', "min space")
+            """;
+
+        var forward  = RuleDeckReader.Read([LayersDef, Derivations, rules], [Values()]);
+        var reversed = RuleDeckReader.Read([rules, Derivations, LayersDef], [Values()]);
+
+        Assert.Single(forward.Rules);
+        Assert.Single(reversed.Rules);
+        Assert.Equal(forward.Rules[0].RegionA, reversed.Rules[0].RegionA);
+    }
+
+    [Fact]
+    public void ArrayBindings_StayFileLocal_EvenThoughDerivedLayersDoNot()
+    {
+        // The two scoping rules are deliberately opposite; this pins that they still are. Two files
+        // bind the SAME list name to different lists, and each file's rule must use its own.
+        const string fileA = """
+            mets = [metal1_drw]
+            mets.each do |m|
+              l = m.width(0.16.um, euclidian)
+              l.output('A.w', "a")
+            end
+            """;
+        const string fileB = """
+            mets = [metal2_drw, metal3_drw]
+            mets.each do |m|
+              l = m.space(0.18.um, euclidian)
+              l.output('B.s', "b")
+            end
+            """;
+
+        var result = RuleDeckReader.Read([LayersDef, fileA, fileB], [Values()]);
+
+        Assert.Single(result.Rules.Where(r => r.Kind == DrcRuleKind.MinWidth));
+        Assert.Equal(2, result.Rules.Count(r => r.Kind == DrcRuleKind.MinSpacing));
+    }
 }

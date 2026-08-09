@@ -37,6 +37,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     /// <summary>Only a conductor may bind more than one drawing layer (§10.4).</summary>
     public bool AllowMultipleDrawingLayers => Kind == StackupKind.Conductor;
 
+    /// <summary>The complement — the kinds that get a plain ComboBox instead of a checkbox list.</summary>
+    public bool IsSingleDrawingLayer => !AllowMultipleDrawingLayers;
+
     public string DrawingLayersLabel => AllowMultipleDrawingLayers ? "Drawing layers:" : "Drawing layer:";
 
     /// <summary>Subtle units reminder shown next to the Thickness field — the technology's own
@@ -62,6 +65,111 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     [ObservableProperty] private bool _isGroundReference;
 
     public ObservableCollection<DrawingLayerCheckItem> DrawingLayerOptions { get; } = [];
+
+    /// <summary>
+    /// <see cref="DrawingLayerOptions"/> narrowed by <see cref="DrawingLayerFilter"/> — what the
+    /// conductor multi-select list actually binds to.
+    ///
+    /// <para>A real process carries several hundred drawing layers (an imported PDK measured
+    /// carries 377). The original selector was a WrapPanel of one CheckBox per layer, repeated for
+    /// every stackup entry: unusable to read, and ~10,000 realized controls on that one tab. Filtering
+    /// is what makes the list findable; the view virtualizes it, which is what makes it cheap.</para>
+    /// </summary>
+    public ObservableCollection<DrawingLayerCheckItem> FilteredDrawingLayerOptions { get; } = [];
+
+    [ObservableProperty] private string _drawingLayerFilter = "";
+
+    partial void OnDrawingLayerFilterChanged(string value) => ApplyDrawingLayerFilter();
+
+    /// <summary>
+    /// The single-selection face of the same data, for the kinds §10.4 binds to at most ONE drawing
+    /// layer (via, dielectric). A ComboBox is the right control for a closed single choice and is what
+    /// this now uses; the checkbox list is kept for the conductor case, which is genuinely multi.
+    /// </summary>
+    public ObservableCollection<DrawingLayerChoice> DrawingLayerChoices { get; } = [];
+
+    private DrawingLayerChoice? _selectedDrawingLayerChoice;
+    public DrawingLayerChoice? SelectedDrawingLayerChoice
+    {
+        get => _selectedDrawingLayerChoice;
+        set
+        {
+            if (!SetProperty(ref _selectedDrawingLayerChoice, value) || _isRefreshing) return;
+            // The sentinel is a real object with a default Key, so it must be turned into "no
+            // binding" here rather than passed through — binding it would silently record layer 0/0.
+            SetSingleDrawingLayer(value is null || value.IsNone ? null : value.Key);
+        }
+    }
+
+    /// <summary>What is currently bound, for the collapsed summary line above the conductor list.</summary>
+    public string DrawingLayerSummary =>
+        Layer.DrawingLayers.Count == 0
+            ? "none"
+            : string.Join(", ", Layer.DrawingLayers.Select(NameOf));
+
+    private string NameOf(LayerKey k)
+    {
+        foreach (var l in _owner.Working.Layers)
+            if (l.Key.Equals(k)) return l.Name;
+        return $"{k.Layer}/{k.Datatype}";
+    }
+
+    // ── Via span (R-via-3) ─────────────────────────────────────────────────────
+    // Shown because it was invisible: the stackup list keeps vias in list order, which is NOT the
+    // physical stack order (a via has no z band of its own), so a user scanning for "the via between
+    // Metal1 and Metal2" scrolls past the dielectric between them and finds nothing. The span is the
+    // only thing that says which two conductors a via actually joins, and it was already imported,
+    // already persisted, already validated — and shown nowhere.
+
+    /// <summary>Conductor names, the only legal values for a span end. "(none)" is index 0.</summary>
+    public IReadOnlyList<string> SpanChoices =>
+        [SpanNone, .. _owner.Working.Stackup.Layers
+                          .Where(l => l.Kind == StackupKind.Conductor)
+                          .Select(l => l.Name)];
+
+    internal const string SpanNone = "(none)";
+
+    private string _selectedSpanFrom = SpanNone;
+    public string SelectedSpanFrom
+    {
+        get => _selectedSpanFrom;
+        set
+        {
+            if (!SetProperty(ref _selectedSpanFrom, value) || _isRefreshing) return;
+            CommitSpan(from: true, value);
+        }
+    }
+
+    private string _selectedSpanTo = SpanNone;
+    public string SelectedSpanTo
+    {
+        get => _selectedSpanTo;
+        set
+        {
+            if (!SetProperty(ref _selectedSpanTo, value) || _isRefreshing) return;
+            CommitSpan(from: false, value);
+        }
+    }
+
+    public static IReadOnlyList<ViaFillKind> FillChoices { get; } = Enum.GetValues<ViaFillKind>();
+
+    private ViaFillKind _selectedFill = ViaFillKind.Plated;
+    public ViaFillKind SelectedFill
+    {
+        get => _selectedFill;
+        set
+        {
+            if (!SetProperty(ref _selectedFill, value) || _isRefreshing) return;
+            var before = _owner.SnapshotJson();
+            Layer.Fill = value;
+            _owner.CommitEdit(before, $"Set {Layer.Name} fill to {value}");
+            OnPropertyChanged(nameof(IsPlatedVia));
+        }
+    }
+
+    public bool IsPlatedVia => IsVia && SelectedFill == ViaFillKind.Plated;
+
+    [ObservableProperty] private string _stagedWallThickness = "";
 
     public IRelayCommand RemoveCommand   { get; }
     public IRelayCommand MoveUpCommand   { get; }
@@ -94,7 +202,94 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         DrawingLayerOptions.Clear();
         foreach (var l in _owner.Working.Layers)
             DrawingLayerOptions.Add(new DrawingLayerCheckItem(l.Key, l.Name, Layer.DrawingLayers.Contains(l.Key), this));
+
+        DrawingLayerChoices.Clear();
+        DrawingLayerChoices.Add(DrawingLayerChoice.None);
+        foreach (var l in _owner.Working.Layers)
+            DrawingLayerChoices.Add(new DrawingLayerChoice(l.Key, l.Name));
+
+        // The single-select face shows whatever the model actually holds. A row that (legally, from a
+        // hand-edited file) carries more than one while its kind allows one shows the FIRST rather
+        // than silently claiming "none" — the list below it still shows the truth.
+        // Skip(1) past the None sentinel deliberately: its Key is default(LayerKey), which a real
+        // layer at 0/0 would match, and the sentinel must never win that comparison.
+        SelectedDrawingLayerChoice = Layer.DrawingLayers.Count == 0
+            ? DrawingLayerChoice.None
+            : DrawingLayerChoices.Skip(1).FirstOrDefault(c => c.Key.Equals(Layer.DrawingLayers[0]))
+              ?? DrawingLayerChoice.None;
+
+        if (IsVia)
+        {
+            SelectedSpanFrom    = Layer.SpanFromLayer is { Length: > 0 } f ? f : SpanNone;
+            SelectedSpanTo      = Layer.SpanToLayer   is { Length: > 0 } t ? t : SpanNone;
+            SelectedFill        = Layer.Fill ?? ViaFillKind.Plated;
+            StagedWallThickness = Layer.WallThicknessDbu is { } w
+                ? LayoutUnits.Format(w, _owner.Working.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron)
+                : "";
+            OnPropertyChanged(nameof(SpanChoices));
+            OnPropertyChanged(nameof(IsPlatedVia));
+        }
+
         _isRefreshing = false;
+
+        ApplyDrawingLayerFilter();
+        OnPropertyChanged(nameof(DrawingLayerSummary));
+    }
+
+    private void ApplyDrawingLayerFilter()
+    {
+        FilteredDrawingLayerOptions.Clear();
+        string q = DrawingLayerFilter.Trim();
+        foreach (var o in DrawingLayerOptions)
+            if (q.Length == 0 || o.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
+                FilteredDrawingLayerOptions.Add(o);
+    }
+
+    /// <summary>Binds exactly one drawing layer (or none) — the single-select path.</summary>
+    private void SetSingleDrawingLayer(LayerKey? key)
+    {
+        bool same = key is { } k
+            ? Layer.DrawingLayers.Count == 1 && Layer.DrawingLayers[0].Equals(k)
+            : Layer.DrawingLayers.Count == 0;
+        if (same) return;
+
+        var before = _owner.SnapshotJson();
+        Layer.DrawingLayers.Clear();
+        if (key is { } kk) Layer.DrawingLayers.Add(kk);
+        _owner.CommitEdit(before, $"Set {Layer.Name} drawing layer");
+    }
+
+    private void CommitSpan(bool from, string value)
+    {
+        string? v = value == SpanNone ? null : value;
+        if (from ? Layer.SpanFromLayer == v : Layer.SpanToLayer == v) return;
+
+        var before = _owner.SnapshotJson();
+        if (from) Layer.SpanFromLayer = v; else Layer.SpanToLayer = v;
+        _owner.CommitEdit(before, $"Set {Layer.Name} span");
+    }
+
+    /// <summary>Commits the plated-wall thickness. Blank clears it — which is the correct value for a
+    /// solid via and for a plated one whose wall the process never stated.</summary>
+    public void CommitWallThickness()
+    {
+        string s = StagedWallThickness.Trim();
+        long? v = null;
+        if (s.Length > 0)
+        {
+            if (!LayoutUnits.TryParse(s, _owner.Working.DefaultDisplayUnit,
+                                      LayoutUnits.DefaultDbuPerMicron, out var dbu) || dbu <= 0)
+            {
+                RefreshFromModel();
+                return;
+            }
+            v = dbu;
+        }
+
+        if (Layer.WallThicknessDbu == v) { RefreshFromModel(); return; }
+        var before = _owner.SnapshotJson();
+        Layer.WallThicknessDbu = v;
+        _owner.CommitEdit(before, $"Set {Layer.Name} wall thickness");
     }
 
     public void CommitName()
@@ -186,7 +381,29 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             Layer.DrawingLayers.Remove(key);
         }
         _owner.CommitEdit(before, $"Set drawing layers of {Layer.Name}");
+        OnPropertyChanged(nameof(DrawingLayerSummary));
     }
+}
+
+/// <summary>
+/// One entry in the SINGLE-selection drawing-layer ComboBox (via, dielectric — §10.4's
+/// "bound to a drawing layer", singular). <see cref="None"/> is the explicit unbound choice, so
+/// clearing a binding is a selection rather than a checkbox the user has to find and untick.
+/// </summary>
+public sealed class DrawingLayerChoice(LayerKey key, string name)
+{
+    public LayerKey Key { get; } = key;
+    public string Name { get; } = name;
+
+    public static DrawingLayerChoice None { get; } = new(default, "(none)");
+
+    /// <summary>Whether this is the unbound sentinel. Asked rather than compared against
+    /// <see cref="Key"/>: the sentinel's key is <c>default</c>, which a real layer at 0/0 shares.</summary>
+    public bool IsNone => ReferenceEquals(this, None);
+
+    /// <summary>Bound directly by the ComboBox's default item template.</summary>
+    public override string ToString() =>
+        IsNone ? Name : $"{Name}  ({Key.Layer}/{Key.Datatype})";
 }
 
 /// <summary>One checkable row in a stackup layer's drawing-layer multi-select — a closed set

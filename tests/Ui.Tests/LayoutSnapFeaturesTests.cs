@@ -127,7 +127,7 @@ public class LayoutSnapFeaturesTests
     }
 
     [Fact]
-    public void Via_ContributesOneCornerEndpointFeature_AtItsCenter()
+    public void Via_ContributesOneCentroidFeature_AtItsCenter()
     {
         var model = FreshModel();
         model.Shapes.Add(new ViaShape { Layer = new LayerKey(1, 0), X = 2000, Y = 3000, PadSize = 1000, DrillSize = 500 });
@@ -136,7 +136,9 @@ public class LayoutSnapFeaturesTests
         var counters = new SnapQueryCounters();
         var near = idx.QueryNear(2000, 3000, 100, ref counters);
         var only = Assert.Single(near);
-        Assert.Equal(SnapFeatureKind.CornerEndpoint, only.Kind);
+        // Centroid, not CornerEndpoint: a via has no corners — X/Y IS its centre. Updated (not
+        // loosened) with the owner-reported glyph fix; see LayoutViaSnapTests for the report.
+        Assert.Equal(SnapFeatureKind.Centroid, only.Kind);
     }
 
     [Fact]

@@ -199,11 +199,22 @@ public static class GerberExport
         var jobEntries = new List<GerberJobFile.FileAttribute>();
         var now = DateTime.UtcNow;
 
+        // Two layers may name the same Gerber suffix — the technology's own problem, reported by
+        // TechValidation — but the export must not silently write one layer's copper over another's.
+        // A collision is disambiguated with the layer's own key and the file still written; both
+        // files reach the fab, and the .gbrjob names both.
+        var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var (key, shapes) in GroupByLayer(plan.Shapes))
         {
             var layerDef = plan.Tech?.Layers.FirstOrDefault(l => l.Key == key);
             string suffix = layerDef?.Interchange?.GerberSuffix is { Length: > 0 } s ? s : $"G{key.Layer}_{key.Datatype}";
             string fileName = $"{cellName}.{suffix}";
+            if (!usedFileNames.Add(fileName))
+            {
+                fileName = $"{cellName}.{suffix}_{key.Layer}_{key.Datatype}";
+                usedFileNames.Add(fileName);
+            }
             string path = Path.Combine(outputFolderDir, fileName);
 
             using (var stream = File.Create(path))

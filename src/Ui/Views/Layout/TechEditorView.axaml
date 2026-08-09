@@ -26,6 +26,47 @@
             <Setter Property="Padding" Value="4,3"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+
+        <!-- ── The row lists ────────────────────────────────────────────────────
+             A bare ItemsControl inside a ScrollViewer is NOT virtualized: Avalonia's
+             ItemsControl defaults to a plain StackPanel and, given a ScrollViewer's
+             infinite measure height, realizes EVERY item. That is fine for a starter
+             technology's eight layers and lethal for a real process's several hundred
+             (an imported PDK measured carries 377), where the Layers and
+             Interchange tabs each realized ~377 rows of ten controls before the tab
+             could paint.
+
+             ListBox is the fix — its default ItemsPanel is a VirtualizingStackPanel —
+             and it is the SAME answer this codebase already settled on for the layout
+             editor's vertex list (see src/Ui/CLAUDE.md, "L1j post-ship fix"). The
+             scroll-bar visibilities are set EXPLICITLY there for the same reason they
+             are here: the theme's own default is not to be relied on.
+
+             `rows` flattens the selection chrome so a virtualized row still reads as a
+             row rather than a list item — these lists exist to hold editable fields,
+             not to be selected from. -->
+        <Style Selector="ListBox.rows">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
     </UserControl.Styles>
 
     <DockPanel>
@@ -133,23 +174,29 @@
                         <Button Content="＋ Add Layer" Command="{Binding ViewModel.AddLayerCommand}" FontSize="11" Padding="8,3"/>
                     </StackPanel>
 
-                    <!-- Both the header row and every item row below declare the SAME column list
-                         (SharedSizeGroup names, matching ColumnSpacing) so a header always sits
-                         exactly above its control — no per-cell margin drift between two
-                         independently-sized Grids. -->
-                    <Grid RowDefinitions="Auto,*" Grid.IsSharedSizeScope="True">
+                    <!-- Both the header row and every item row below declare the SAME column list, so
+                         a header always sits exactly above its control.
+
+                         FIXED widths, not `Auto` + SharedSizeGroup, and that is a REQUIREMENT of
+                         virtualizing the list below rather than a simplification. A shared size group
+                         is the maximum over the participants that were actually MEASURED — with
+                         virtualization only the rows on screen are, so the column widths would shift
+                         under the user every time scrolling realized a wider row. Every column here
+                         except Name holds fixed-width content already (the widths below are the ones
+                         its own control declares), so pinning them loses nothing. -->
+                    <Grid RowDefinitions="Auto,*">
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"                                  MinWidth="110"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="34"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="34"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LColor"       MinWidth="60"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LFill"        MinWidth="44"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LZ"           MinWidth="70"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LVis"         MinWidth="28"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LSel"         MinWidth="28"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LPurpose"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LActions"/>
+                                <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="44"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="82"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Name"/>
                             <TextBlock Grid.Column="1" Classes="colhdr" Text="Layer"     HorizontalAlignment="Center"/>
@@ -162,23 +209,23 @@
                             <TextBlock Grid.Column="8" Classes="colhdr" Text="Purpose"   HorizontalAlignment="Center"/>
                         </Grid>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding ViewModel.Layers}" Margin="4,0,4,4">
-                                <ItemsControl.ItemTemplate>
+                        <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding ViewModel.Layers}"
+                                 Margin="4,0,4,4" SelectionMode="Single">
+                                <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="lay:LayerRowViewModel">
                                         <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1" Padding="0,3">
                                             <Grid ColumnSpacing="4">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"                                  MinWidth="110"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="34"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="34"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LColor"       MinWidth="60"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LFill"        MinWidth="44"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LZ"           MinWidth="70"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LVis"         MinWidth="28"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LSel"         MinWidth="28"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LPurpose"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LActions"/>
+                                                    <ColumnDefinition Width="*" MinWidth="110"/>
+                                                    <ColumnDefinition Width="48"/>
+                                                    <ColumnDefinition Width="48"/>
+                                                    <ColumnDefinition Width="60"/>
+                                                    <ColumnDefinition Width="44"/>
+                                                    <ColumnDefinition Width="70"/>
+                                                    <ColumnDefinition Width="30"/>
+                                                    <ColumnDefinition Width="30"/>
+                                                    <ColumnDefinition Width="140"/>
+                                                    <ColumnDefinition Width="82"/>
                                                 </Grid.ColumnDefinitions>
 
                                                 <TextBox Grid.Column="0" Classes="cell" Tag="Name"
@@ -220,7 +267,7 @@
                                                 </StackPanel>
                                                 <CheckBox Grid.Column="6" HorizontalAlignment="Center" IsChecked="{Binding Visible}"/>
                                                 <CheckBox Grid.Column="7" HorizontalAlignment="Center" IsChecked="{Binding Selectable}"/>
-                                                <TextBox Grid.Column="8" Classes="cell" Tag="Purpose" Width="140"
+                                                <TextBox Grid.Column="8" Classes="cell" Tag="Purpose"
                                                          Text="{Binding StagedPurpose}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="3">
@@ -234,9 +281,8 @@
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                                </ListBox.ItemTemplate>
+                        </ListBox>
                     </Grid>
                 </DockPanel>
             </TabItem>
@@ -261,9 +307,9 @@
                         <Button Content="＋ Via" Command="{Binding ViewModel.AddViaLayerCommand}" FontSize="11" Padding="8,3"/>
                     </StackPanel>
 
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding ViewModel.StackupLayers}" Margin="6,0">
-                            <ItemsControl.ItemTemplate>
+                    <ListBox Classes="rows" ItemsSource="{Binding ViewModel.StackupLayers}"
+                             Margin="6,0" SelectionMode="Single">
+                            <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="lay:StackupLayerRowViewModel">
                                     <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="4"
                                             Margin="0,3" Padding="8,6">
@@ -329,26 +375,89 @@
                                                 </StackPanel>
                                             </StackPanel>
 
-                                            <StackPanel Orientation="Horizontal" Spacing="0">
-                                                <TextBlock Text="{Binding DrawingLayersLabel}" FontSize="11" VerticalAlignment="Top" Margin="0,2,6,0"/>
-                                                <ItemsControl ItemsSource="{Binding DrawingLayerOptions}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
+                                            <!-- Via span (R-via-3). Shown ONLY for a via, and shown at
+                                                 all because the stackup list is in LIST order, which a
+                                                 via is deliberately outside of (it has no z band of its
+                                                 own). Without this, "which two conductors does this via
+                                                 join?" is unanswerable from the editor even though the
+                                                 import resolved it. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsVia}">
+                                                <TextBlock Text="Spans:" Width="70" FontSize="11" VerticalAlignment="Center"/>
+                                                <ComboBox Classes="cell" MinWidth="110"
+                                                          ItemsSource="{Binding SpanChoices}"
+                                                          SelectedItem="{Binding SelectedSpanFrom, Mode=TwoWay}"/>
+                                                <TextBlock Text="→" FontSize="11" VerticalAlignment="Center" Margin="2,0"/>
+                                                <ComboBox Classes="cell" MinWidth="110"
+                                                          ItemsSource="{Binding SpanChoices}"
+                                                          SelectedItem="{Binding SelectedSpanTo, Mode=TwoWay}"/>
+                                            </StackPanel>
+
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsVia}">
+                                                <TextBlock Text="Fill:" Width="70" FontSize="11" VerticalAlignment="Center"/>
+                                                <ComboBox Classes="cell" MinWidth="90"
+                                                          ItemsSource="{Binding FillChoices}"
+                                                          SelectedItem="{Binding SelectedFill, Mode=TwoWay}"/>
+                                                <TextBlock Text="Wall:" FontSize="11" VerticalAlignment="Center"
+                                                           Margin="8,0,0,0" IsVisible="{Binding IsPlatedVia}"/>
+                                                <TextBox Classes="cell" Width="60" Tag="WallThickness"
+                                                         IsVisible="{Binding IsPlatedVia}"
+                                                         Text="{Binding StagedWallThickness}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBlock Text="{Binding ThicknessUnitSuffix}" FontSize="10"
+                                                           VerticalAlignment="Center" Opacity="0.6"
+                                                           IsVisible="{Binding IsPlatedVia}"
+                                                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                            </StackPanel>
+
+                                            <!-- ── Drawing layers ───────────────────────────────────
+                                                 TWO controls, because §10.4 states two different
+                                                 cardinalities and one control cannot honestly serve
+                                                 both. A via or dielectric binds AT MOST ONE, so it gets
+                                                 a plain ComboBox with an explicit "(none)". A conductor
+                                                 binds one or more, so it keeps a checkbox list — but a
+                                                 FILTERED, bounded, virtualized one: a real process
+                                                 carries several hundred drawing layers, and the previous
+                                                 WrapPanel of one checkbox per layer neither fitted the
+                                                 pane nor could be found in. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4"
+                                                        IsVisible="{Binding IsSingleDrawingLayer}">
+                                                <TextBlock Text="{Binding DrawingLayersLabel}" Width="70"
+                                                           FontSize="11" VerticalAlignment="Center"/>
+                                                <ComboBox Classes="cell" MinWidth="220"
+                                                          ItemsSource="{Binding DrawingLayerChoices}"
+                                                          SelectedItem="{Binding SelectedDrawingLayerChoice, Mode=TwoWay}"/>
+                                            </StackPanel>
+
+                                            <StackPanel Spacing="3" IsVisible="{Binding AllowMultipleDrawingLayers}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock Text="{Binding DrawingLayersLabel}" Width="70"
+                                                               FontSize="11" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding DrawingLayerSummary}" FontSize="11"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                               MaxWidth="260"
+                                                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="4" Margin="70,0,0,0">
+                                                    <TextBox Classes="cell" Width="160"
+                                                             PlaceholderText="Filter layers…"
+                                                             Text="{Binding DrawingLayerFilter, Mode=TwoWay}"/>
+                                                </StackPanel>
+                                                <ListBox Classes="rows" Margin="70,0,0,0" MaxHeight="140"
+                                                         SelectionMode="Single"
+                                                         ItemsSource="{Binding FilteredDrawingLayerOptions}">
+                                                    <ListBox.ItemTemplate>
                                                         <DataTemplate x:DataType="lay:DrawingLayerCheckItem">
                                                             <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked}"
-                                                                      FontSize="11" Margin="0,0,8,2"/>
+                                                                      FontSize="11" Margin="0,0,8,0"/>
                                                         </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
+                                                    </ListBox.ItemTemplate>
+                                                </ListBox>
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                 </DockPanel>
             </TabItem>
 
@@ -359,17 +468,18 @@
                         <Button Content="＋ Add Rule" Command="{Binding ViewModel.AddDrcRuleCommand}" FontSize="11" Padding="8,3"/>
                     </StackPanel>
 
-                    <!-- Same shared-column convention as the Layers tab — header and row Grids
-                         declare identical ColumnDefinitions so nothing drifts out of alignment. -->
-                    <Grid RowDefinitions="Auto,*" Grid.IsSharedSizeScope="True">
+                    <!-- Same fixed-column convention as the Layers tab, and for the same reason:
+                         the list below is virtualized, and a SharedSizeGroup is the max over the
+                         participants actually measured, so shared widths would shift while scrolling. -->
+                    <Grid RowDefinitions="Auto,*">
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"    SharedSizeGroup="DName"     MinWidth="120"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="DKind"     MinWidth="100"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="DLayer"    MinWidth="140"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="DValue"    MinWidth="90"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="DSeverity" MinWidth="80"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="DActions"/>
+                                <ColumnDefinition Width="*" MinWidth="120"/>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="34"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Name"/>
                             <TextBlock Grid.Column="1" Classes="colhdr" Text="Kind"     HorizontalAlignment="Center"/>
@@ -378,19 +488,19 @@
                             <TextBlock Grid.Column="4" Classes="colhdr" Text="Severity" HorizontalAlignment="Center"/>
                         </Grid>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding ViewModel.DrcRules}" Margin="4,0,4,4">
-                                <ItemsControl.ItemTemplate>
+                        <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding ViewModel.DrcRules}"
+                                 Margin="4,0,4,4" SelectionMode="Single">
+                                <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="lay:DrcRuleRowViewModel">
                                         <StackPanel Margin="0,3" Spacing="2">
                                         <Grid ColumnSpacing="4">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"    SharedSizeGroup="DName"     MinWidth="120"/>
-                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DKind"     MinWidth="100"/>
-                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DLayer"    MinWidth="140"/>
-                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DValue"    MinWidth="90"/>
-                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DSeverity" MinWidth="80"/>
-                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DActions"/>
+                                                <ColumnDefinition Width="*" MinWidth="120"/>
+                                                <ColumnDefinition Width="100"/>
+                                                <ColumnDefinition Width="140"/>
+                                                <ColumnDefinition Width="90"/>
+                                                <ColumnDefinition Width="80"/>
+                                                <ColumnDefinition Width="34"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Classes="cell" Tag="Name" HorizontalAlignment="Stretch"
                                                      Text="{Binding StagedName}"
@@ -441,7 +551,7 @@
                                                        VerticalAlignment="Center"/>
                                             <TextBox Grid.Column="1" Classes="cell" Tag="RegionA"
                                                      HorizontalAlignment="Stretch"
-                                                     Watermark="this rule's own layer"
+                                                     PlaceholderText="this rule&apos;s own layer"
                                                      Text="{Binding StagedRegionA}"
                                                      ToolTip.Tip="{x:Static lay:DrcRuleRowViewModel.RegionHint}"
                                                      LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
@@ -452,7 +562,7 @@
                                             <TextBox Grid.Column="3" Classes="cell" Tag="RegionB"
                                                      HorizontalAlignment="Stretch"
                                                      IsVisible="{Binding ShowRegionB}"
-                                                     Watermark="second region, e.g. 10/0"
+                                                     PlaceholderText="second region, e.g. 10/0"
                                                      Text="{Binding StagedRegionB}"
                                                      ToolTip.Tip="{x:Static lay:DrcRuleRowViewModel.RegionHint}"
                                                      LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
@@ -476,7 +586,7 @@
                                                      LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                             <TextBlock Classes="label" Text="Min:" VerticalAlignment="Center"/>
                                             <TextBox Classes="cell" Width="60" Tag="MinRatio"
-                                                     Watermark="0..1"
+                                                     PlaceholderText="0..1"
                                                      Text="{Binding StagedMinRatioText}"
                                                      LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                         </StackPanel>
@@ -499,9 +609,8 @@
                                         </StackPanel>
                                         </StackPanel>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                                </ListBox.ItemTemplate>
+                        </ListBox>
                     </Grid>
                 </DockPanel>
             </TabItem>
@@ -511,17 +620,17 @@
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Margin="6,6,6,0" FontSize="10" TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemBaseMediumColor}"
-                               Text="GDSII layer/datatype alias, DXF layer name, and Gerber suffix/X2 file function per layer. Blank GDSII fields use the layer's own Layer/Datatype above. Only the GDSII fields are used by import/export today; DXF and Gerber fields are scaffolding for later phases."/>
+                               Text="How each layer is named in an exported file. GDSII layer/datatype alias — blank uses the layer's own Layer/Datatype above. DXF layer name — used on export, and matched on import so an incoming DXF layer lands here. Gerber suffix — the exported file is named &lt;cell&gt;.&lt;suffix&gt;; blank falls back to a synthetic one. Gerber X2 file function — written into the file and its .gbrjob so a fab can identify it. All four are live; a duplicate suffix or name is reported below."/>
 
-                    <Grid RowDefinitions="Auto,*" Grid.IsSharedSizeScope="True" Margin="0,4,0,0">
+                    <Grid RowDefinitions="Auto,*" Margin="0,4,0,0">
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"    SharedSizeGroup="IName"    MinWidth="110"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="34"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="34"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="IDxf"      MinWidth="110"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberSuffix" MinWidth="90"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberFn" MinWidth="110"/>
+                                <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="110"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Name"/>
                             <TextBlock Grid.Column="1" Classes="colhdr" Text="GDSII Layer"    HorizontalAlignment="Center"/>
@@ -531,19 +640,19 @@
                             <TextBlock Grid.Column="5" Classes="colhdr" Text="Gerber X2 Function" HorizontalAlignment="Center"/>
                         </Grid>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding ViewModel.Layers}" Margin="4,0,4,4">
-                                <ItemsControl.ItemTemplate>
+                        <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding ViewModel.Layers}"
+                                 Margin="4,0,4,4" SelectionMode="Single">
+                                <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="lay:LayerRowViewModel">
                                         <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1" Padding="0,3">
                                             <Grid ColumnSpacing="4">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"    SharedSizeGroup="IName"    MinWidth="110"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="34"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="34"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IDxf"      MinWidth="110"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberSuffix" MinWidth="90"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberFn" MinWidth="110"/>
+                                                    <ColumnDefinition Width="*" MinWidth="110"/>
+                                                    <ColumnDefinition Width="48"/>
+                                                    <ColumnDefinition Width="48"/>
+                                                    <ColumnDefinition Width="110"/>
+                                                    <ColumnDefinition Width="90"/>
+                                                    <ColumnDefinition Width="110"/>
                                                 </Grid.ColumnDefinitions>
 
                                                 <TextBlock Grid.Column="0" Text="{Binding StagedName}" VerticalAlignment="Center" FontSize="11"/>
@@ -565,9 +674,8 @@
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                                </ListBox.ItemTemplate>
+                        </ListBox>
                     </Grid>
                 </DockPanel>
             </TabItem>

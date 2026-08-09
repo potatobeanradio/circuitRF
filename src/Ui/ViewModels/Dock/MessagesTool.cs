@@ -37,6 +37,31 @@ public partial class MessagesTool : Tool, IMessageSink
             Dispatcher.UIThread.Post(() => Messages.Add(entry));
     }
 
+    /// <summary>
+    /// The live-message implementation: one real <see cref="MessageEntry"/> in the list, rewritten in
+    /// place. Every mutation is marshalled to the UI thread exactly like <see cref="Post"/>, because
+    /// the engine reports progress from the background thread it is running on.
+    /// </summary>
+    public IProgressMessage BeginProgress(string text)
+    {
+        var entry = new MessageEntry(MessageLevel.Info, text, null, System.DateTime.Now)
+        {
+            // Starts indeterminate: at the moment the run is announced nothing has reported a
+            // denominator yet, and a bar sitting at 0% reads as stalled rather than starting.
+            ProgressIndeterminate = true,
+            ProgressPercent       = 0,
+        };
+
+        OnUi(() => Messages.Add(entry));
+        return new LiveProgressMessage(entry, OnUi);
+    }
+
+    private static void OnUi(System.Action action)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) action();
+        else Dispatcher.UIThread.Post(action);
+    }
+
     public void Clear()
     {
         if (Dispatcher.UIThread.CheckAccess())
