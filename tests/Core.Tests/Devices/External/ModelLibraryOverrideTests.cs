@@ -60,6 +60,28 @@ public sealed class ModelLibraryOverrideTests : IDisposable
         Assert.Contains("--quiet", args);          // every other argument is left as the kit wrote it
     }
 
+    /// <summary>
+    /// A COMPILED VERILOG-A ARTEFACT COUNTS AS A MODEL LIBRARY, which is what lets one provider serve
+    /// a kit with a different <c>.osdi</c> per model without a second routing mechanism. It genuinely
+    /// is one — the loader's own format under another extension — and it is exactly "which model
+    /// library the worker should load", the case this substitution was built for.
+    /// </summary>
+    [Fact]
+    public void AnOsdiArtefact_IsSubstitutedLikeAnyOtherModelLibrary()
+    {
+        File.WriteAllText(Path.Combine(KitDir, DeviceWorkerManifest.FileName), """
+            { "workers": [ { "platform": "any", "command": "worker",
+                             "arguments": ["default.osdi", "--quiet"] } ] }
+            """);
+
+        var (_, args) = Launched(
+            DeviceWorkerProviderResolver.ComposeOverride("SampleKit", "/models/mdla.osdi"));
+
+        Assert.Contains("/models/mdla.osdi", args);
+        Assert.DoesNotContain("default.osdi", args);
+        Assert.Contains("--quiet", args);
+    }
+
     [Fact]
     public void TwoInstancesNamingDifferentLibraries_AreTwoProviders()
     {

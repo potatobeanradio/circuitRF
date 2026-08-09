@@ -672,16 +672,28 @@ public sealed class Elaborator
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         result["__instanceLabel"] = new Value(inst.InstanceName);
 
+        // WHICH KEYS ARE THE SELECTORS IS DECIDED ONCE, OVER THE WHOLE INSTANCE — not per override
+        // by a case-blind comparison. A compiled model may declare a parameter of its own that
+        // differs from a selector only in case (a real MOS model's `TYPE` is its channel polarity),
+        // and treating that as a selector both drops it from what reaches the model and stops it
+        // being evaluated. Same rule as ComponentModelFactory.ReservedKey, and it must agree with it.
+        var names = inst.Overrides.Select(o => o.Name).ToList();
+        var selectors = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string reserved in new[]
+                 {
+                     "Provider", "Type",
+                     Devices.ComponentModelFactory.VerilogAFileParam,
+                     Devices.ComponentModelFactory.VerilogAModelParam,
+                 })
+            if (Devices.ComponentModelFactory.ReservedKey(names, reserved) is { } key) selectors.Add(key);
+
         foreach (var ov in inst.Overrides)
         {
             // The selectors are ALWAYS verbatim, never tried as an expression first. Provider and
             // Type name things; File is a path and Model is a name inside it. Falling back to
             // verbatim only when evaluation throws is not enough for these: a path that happens to
             // parse as arithmetic would be silently turned into a number.
-            if (ov.Name.Equals("Provider", StringComparison.OrdinalIgnoreCase) ||
-                ov.Name.Equals("Type",     StringComparison.OrdinalIgnoreCase) ||
-                ov.Name.Equals(Devices.ComponentModelFactory.VerilogAFileParam,  StringComparison.OrdinalIgnoreCase) ||
-                ov.Name.Equals(Devices.ComponentModelFactory.VerilogAModelParam, StringComparison.OrdinalIgnoreCase))
+            if (selectors.Contains(ov.Name))
             {
                 result[ov.Name] = new Value(ov.Expression.Trim().Trim('"'));
                 continue;

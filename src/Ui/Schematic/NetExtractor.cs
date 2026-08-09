@@ -3,6 +3,7 @@ using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Netlist;
+using CircuitRF.Core.Netlist.Spice;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -38,8 +39,22 @@ public static class NetExtractor
         public Library Library { get; init; } = new("netlist");
     }
 
+    /// <param name="cornerVariables">
+    /// Process constants the selected corners bind, already resolved by the caller (see
+    /// <see cref="WorkspaceCorners.BindingsFor"/>).
+    ///
+    /// <para>Resolved OUTSIDE, deliberately: which corners a design is set to is workspace knowledge
+    /// (which kits are referenced, and where they are on this machine), and extraction has no business
+    /// holding any of it. What arrives here is just a list of variables.</para>
+    ///
+    /// <para>They are merged on the same terms as a kit netlist's own declarations — the design's own
+    /// VAR of the same name wins, and the collision is reported. A corner constant is a kit's
+    /// statement about its process; a variable the user wrote is a statement about their design, and
+    /// the design is the thing being simulated.</para>
+    /// </param>
     public static ExtractionResult Extract(
-        SchematicEditModel model, string testBenchName = "tb", ICellResolver? cells = null)
+        SchematicEditModel model, string testBenchName = "tb", ICellResolver? cells = null,
+        IReadOnlyList<Variable>? cornerVariables = null)
     {
         var lib        = new Library("netlist");
         var imports    = new NetlistImports();
@@ -58,6 +73,31 @@ public static class NetExtractor
         // user declaration of the same name is left standing: the design the user wrote wins over
         // one a kit happened to ship.
         imports.MergeInto(tb, conflicts);
+
+        if (cornerVariables is { Count: > 0 })
+        {
+            foreach (var v in cornerVariables)
+            {
+                var existing = tb.GlobalVariables
+                    .FirstOrDefault(e => e.Name.Equals(v.Name, StringComparison.Ordinal));
+
+                if (existing is not null)
+                {
+                    // Only when the two actually DISAGREE. Most of what is already in scope here
+                    // came out of the kit's own netlists a moment ago, and a kit routinely states a
+                    // shared switch both at the top of a model library and inside every corner
+                    // section — so the common case is the design and the corner saying the same
+                    // thing, which is agreement rather than a collision to report on every run.
+                    if (!string.Equals(existing.Expression?.Trim(), v.Expression?.Trim(), StringComparison.Ordinal))
+                        conflicts.Add($"Corner constant '{v.Name}' is also declared in this design " +
+                                      $"as '{existing.Expression}' rather than '{v.Expression}'; the " +
+                                      $"design's own definition is used.");
+                    continue;
+                }
+                tb.GlobalVariables.Add(v);
+            }
+        }
+
         tb.Measurements.AddRange(topMeas);
         foreach (var name in labeled)
             tb.LabeledNets.Add(name);
@@ -350,6 +390,8 @@ public static class NetExtractor
             return null;
         }
 
+        SayIfTheKitHasNoModelForThisPart(comp, ccell, conflicts);
+
         var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
                           .OrderBy(d => d.PortIndex)
                           .ToList();
@@ -405,6 +447,42 @@ public static class NetExtractor
         return new Instance(comp.InstanceName, "ExtDevice", nets, overrides);
     }
 
+    /// <summary>
+    /// Says so when a kit whose devices are compiled Verilog-A offers this part no model at all.
+    ///
+    /// <para><b>Why the failure needs explaining rather than merely happening.</b> On a kit of this
+    /// shape a part's device type is never the part's own name — it is a module named by a
+    /// <c>.model</c> card inside the kit's netlist, resolved by <see cref="RouteToCompiledModel"/>.
+    /// A part with no netlist definition therefore reaches the provider under its own id, which no
+    /// artefact declares, and the failure at Run reads <i>"provider does not expose a device type
+    /// 'inductor'. Available: auxmodel"</i> — where <c>auxmodel</c> is simply whichever artefact the
+    /// manifest names by default and has nothing to do with the question. Measured:
+    /// its inductors are layout PCells with no simulation model anywhere in the netlists, so this is
+    /// an ordinary state for a user to be in and a terrible thing to have to work out from that
+    /// message.</para>
+    ///
+    /// <para><b>Reported, and the instance still emitted.</b> Skipping it would leave a run that
+    /// produces numbers for a circuit missing a component the user placed, which is the one outcome
+    /// worse than failing — so the run still stops at elaboration, and this is what says why.</para>
+    /// </summary>
+    private static void SayIfTheKitHasNoModelForThisPart(
+        EditableComponent comp, CcellFile ccell, List<string> conflicts)
+    {
+        var models = PdkKitRegistry.OsdiModelsOf(ccell.ExternalProvider);
+        if (models.Count == 0) return;   // not a compiled-Verilog-A kit: this rule says nothing
+
+        var declared = models.SelectMany(m => m.TypeIds).ToList();
+        if (declared.Contains(ccell.ExternalType!, StringComparer.OrdinalIgnoreCase)) return;
+
+        conflicts.Add(
+            $"Instance '{comp.InstanceName}' is '{ccell.ExternalType}' from kit " +
+            $"'{ccell.ExternalProvider}'. That kit supplies no circuit for this part and none of the " +
+            $"compiled models built for it implements a '{ccell.ExternalType}', so there is nothing " +
+            $"to simulate it with. Compiled models available: {string.Join(", ", declared)}. A part " +
+            $"like this is usually one the kit draws but does not model — replace it with an ideal " +
+            $"component, or with a network you extracted yourself.");
+    }
+
     // ── Netlist-backed cells ──────────────────────────────────────────────────
 
     /// <summary>
@@ -416,14 +494,28 @@ public static class NetExtractor
     /// </summary>
     private sealed class NetlistImports
     {
-        private readonly Dictionary<string, (Library Library, TestBench TestBench)> _byPath =
+        /// <summary>
+        /// One netlist, read.
+        ///
+        /// <para><b><see cref="ModelCards"/> is why this is a record rather than the pair it used to
+        /// be.</b> A card is the parameter block of whatever device implements its type, and a device
+        /// instance in this dialect names the CARD, not the model — so without the cards in hand the
+        /// only thing an extraction has to go on is a name that identifies nothing. Empty for every
+        /// format but the SPICE dialect, which is the only one that has them.</para>
+        /// </summary>
+        public sealed record Netlist(
+            Library                        Library,
+            TestBench                      TestBench,
+            IReadOnlyList<SpiceModelCard>  ModelCards);
+
+        private readonly Dictionary<string, Netlist> _byPath =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly List<UserFunction> _functions = [];
         private readonly List<Variable>     _variables = [];
         private readonly HashSet<string>    _merged    = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Reads a netlist, or returns null with a reason. Never throws.</summary>
-        public (Library Library, TestBench TestBench)? Load(string path, out string? problem)
+        public Netlist? Load(string path, out string? problem)
         {
             problem = null;
             if (_byPath.TryGetValue(path, out var hit)) return hit;
@@ -432,9 +524,13 @@ public static class NetExtractor
             {
                 if (!File.Exists(path)) { problem = $"'{path}' does not exist"; return null; }
 
-                var read = path.EndsWith(".cnl", StringComparison.OrdinalIgnoreCase)
-                    ? CnlReader.ReadFile(path)
-                    : ReadKitNetlists(path);
+                Netlist read;
+                if (path.EndsWith(".cnl", StringComparison.OrdinalIgnoreCase))
+                {
+                    var (library, bench) = CnlReader.ReadFile(path);
+                    read = new Netlist(library, bench, []);
+                }
+                else read = LooksLikeSpice(path) ? ReadSpiceNetlist(path) : ReadKitNetlists(path);
 
                 _byPath[path] = read;
                 CollectDeclarations(path, read.TestBench);
@@ -448,12 +544,62 @@ public static class NetExtractor
         }
 
         /// <summary>
+        /// Whether this file is in the SPICE dialect rather than the record-based vendor format.
+        ///
+        /// <para>Decided from CONTENT, never the extension: both formats use <c>.lib</c>/<c>.sp</c>
+        /// freely, and handing one to the other's reader produces cells that are silently wrong
+        /// rather than a failure. A <c>.subckt</c> at the start of a line is the one marker only this
+        /// dialect has.</para>
+        /// </summary>
+        private static bool LooksLikeSpice(string path)
+        {
+            try
+            {
+                if (new FileInfo(path).Length > 32L * 1024 * 1024) return false;
+                foreach (var line in File.ReadLines(path))
+                    if (line.TrimStart().StartsWith(".subckt", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                return false;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Reads a SPICE-dialect netlist into the same shape the other readers return.
+        ///
+        /// <para>The reader follows this dialect's own <c>.include</c>, so the model cards and shared
+        /// libraries a subcircuit depends on come with it — there is no sibling-file sweep to do here,
+        /// unlike the record format, which states no inclusions.</para>
+        ///
+        /// <para><b>The file's own top-level bindings become testbench globals, and are then OUTRANKED
+        /// by whatever is already there.</b> That ordering is the whole point: a kit's corner file
+        /// binds its process constants at top level too, so a corner the user selected must win over
+        /// the nominal value the model library happens to declare beside it. `CollectDeclarations`
+        /// keeps the first definition of a name, and the corner's is merged first.</para>
+        /// </summary>
+        /// <para><b>The model cards are carried out, not dropped.</b> This dialect instantiates a
+        /// compiled device by naming a <c>.model</c> card — <c>Nhv_nmos d g s b
+        /// hv_nmos_card</c> — so the instance's reference is the CARD's name, and the card is
+        /// the only thing that says which model implements it and with what parameters. Reading them
+        /// and then throwing them away leaves an instance pointing at a name nothing can resolve.</para>
+        private static Netlist ReadSpiceNetlist(string path)
+        {
+            var read  = SpiceNetlistReader.ReadFile(path);
+            var bench = new TestBench("kit");
+
+            foreach (var v in read.Variables)     bench.GlobalVariables.Add(v);
+            foreach (var f in read.Functions)     bench.Functions.Add(f);
+
+            return new Netlist(read.Library, bench, read.ModelCards);
+        }
+
+        /// <summary>
         /// Reads a kit's own netlist — and every netlist beside it. A kit splits one library across
         /// several files: the file defining a part instantiates cells declared in another, and its
         /// process constants live in a third. Reading only the named file gives a definition whose
         /// own contents do not resolve.
         /// </summary>
-        private static (Library Library, TestBench TestBench) ReadKitNetlists(string path)
+        private static Netlist ReadKitNetlists(string path)
         {
             var library = new Library("kit");
             var bench   = new TestBench("kit");
@@ -486,7 +632,7 @@ public static class NetExtractor
                         bench.Functions.Add(f);
             }
 
-            return (library, bench);
+            return new Netlist(library, bench, []);
         }
 
         private static bool LooksLikeNetlist(string path)
@@ -544,10 +690,20 @@ public static class NetExtractor
     /// read) also lands here, and that is the better outcome: the provider is the authority on what
     /// it serves, so it refuses by name — which says more than "cell not found" ever could.</para>
     ///
+    /// <para><b>A reference that names a <c>.model</c> CARD is a fourth kind, and it is the one this
+    /// classification cannot see on its own.</b> In the SPICE dialect a compiled device is written
+    /// <c>Nhv_nmos d g s b hv_nmos_card</c> — the last word is a card, not a model, and no
+    /// provider has ever heard of it. The card is what says which MODULE implements it
+    /// (<c>mdla_va</c>) and with what parameters, so a card-backed instance is routed to the compiled
+    /// artefact declaring that module instead. See <see cref="RouteToCompiledModel"/>.</para>
+    ///
     /// <para>Idempotent, because the netlist read is cached and the same <see cref="Cell"/> objects
     /// are shared by every instance of the part.</para>
     /// </summary>
-    private static void BindNativeDeviceTypes(Library kitLibrary, string provider, EditableComponent comp)
+    private static void BindNativeDeviceTypes(
+        Library kitLibrary, string provider, EditableComponent comp,
+        IReadOnlyList<SpiceModelCard> modelCards, IReadOnlyList<OsdiModel> osdiModels,
+        List<string> conflicts)
     {
         // The per-instance model-library override travels in the provider NAME, because that is what
         // the registry keys on — the same rule the leaf provider-backed path follows.
@@ -566,14 +722,14 @@ public static class NetExtractor
                 if (CircuitRF.Core.Devices.ComponentModelFactory.IsPrimitive(inst.Reference)) continue;
                 if (kitLibrary.Find(inst.Reference) is not null)        continue;
 
-                var overrides = new List<ParameterAssignment>(inst.Overrides.Count + 2)
-                {
-                    new("Provider", providerRef,     null),
-                    new("Type",     inst.Reference,  null),
-                };
-                // Every other parameter is the kit's own and is forwarded verbatim, for the provider
-                // to match against the names its descriptor declares.
-                overrides.AddRange(inst.Overrides.Where(o => o.Name is not ("Provider" or "Type")));
+                var card = modelCards.FirstOrDefault(
+                    c => c.Name.Equals(inst.Reference, StringComparison.OrdinalIgnoreCase));
+
+                var overrides = card is null
+                    ? BindByTypeName(inst, providerRef)
+                    : RouteToCompiledModel(inst, card, provider, modelLibrary, osdiModels, conflicts);
+
+                if (overrides is null) continue;   // reported; left as written so the failure names it
 
                 cell.Instances[i] = new Instance(
                     inst.InstanceName, ExtDeviceReference, inst.NetBindings, overrides)
@@ -582,6 +738,99 @@ public static class NetExtractor
                 };
             }
         }
+    }
+
+    /// <summary>
+    /// The original rule: the instance's reference IS the device type, and the kit's own provider
+    /// serves it. This is the record-format kit's shape, where a netlist names a compiled device
+    /// family directly.
+    /// </summary>
+    private static List<ParameterAssignment> BindByTypeName(Instance inst, string providerRef)
+    {
+        var overrides = new List<ParameterAssignment>(inst.Overrides.Count + 2)
+        {
+            new("Provider", providerRef,     null),
+            new("Type",     inst.Reference,  null),
+        };
+        // Every other parameter is the kit's own and is forwarded verbatim, for the provider to
+        // match against the names its descriptor declares.
+        overrides.AddRange(inst.Overrides.Where(o => o.Name is not ("Provider" or "Type")));
+        return overrides;
+    }
+
+    /// <summary>
+    /// Routes a device that references a <c>.model</c> card to the compiled artefact implementing the
+    /// card's type, or reports why it cannot and returns null.
+    ///
+    /// <para><b>Three separate facts have to travel, and each is taken from the one place that knows
+    /// it.</b> WHICH FILE comes from the artefact that declares the card's module — carried in the
+    /// provider name, which is what the registry keys on, so two models in one design get two workers
+    /// rather than the second being silently evaluated by the first's. WHICH MODULE is the artefact's
+    /// own spelling of it, never the card's, because the descriptor is matched ordinally downstream.
+    /// And the PARAMETERS are the card's, under the instance's — the card is the model's
+    /// parameterisation and the instance line is the geometry, so an instance value beats a card
+    /// value and the card fills in everything the instance did not state.</para>
+    ///
+    /// <para><b>The names are respelled the way the artefact declares them</b>, which is not tidying:
+    /// the dialect is case-insensitive and a kit writes <c>level</c>, while the module declares
+    /// <c>LEVEL</c> and the worker matches with <c>strcmp</c>. Measured directly — <c>level</c> is
+    /// refused by name. Only names the module declares a match for are respelled, so a genuine typo is
+    /// still refused rather than being turned into something the model happens to accept.</para>
+    ///
+    /// <para><b>A model-library chosen on the instance still wins</b>, because that is a user saying
+    /// "evaluate this one against that file" and it can only mean the file it names.</para>
+    /// </summary>
+    private static List<ParameterAssignment>? RouteToCompiledModel(
+        Instance inst, SpiceModelCard card, string provider, string? modelLibrary,
+        IReadOnlyList<OsdiModel> osdiModels, List<string> conflicts)
+    {
+        var implementor = OsdiModelDiscovery.ImplementorOf(osdiModels, card.ModelType);
+        if (implementor is null)
+        {
+            conflicts.Add(
+                $"'{inst.InstanceName}' is a '{card.ModelType}' model (from the card " +
+                $"'{card.Name}'), and no compiled model implementing it was found for kit " +
+                $"'{provider}'. These are built from the kit's own Verilog-A sources with a " +
+                $"Verilog-A compiler; compile them, then add the folder holding the resulting " +
+                $"'.osdi' files in File ▸ Manage PDKs.");
+            return null;
+        }
+
+        var declared = implementor.Parameters;
+
+        // BLANK IS NOT UNSET HERE. `ModelLibrary` is declared on every kit part and defaults to an
+        // empty string, so a null-coalesce keeps the empty string and composes the BARE kit name —
+        // the artefact is then never named, the worker loads whatever the manifest's default argument
+        // happens to be, and every device reports that the provider does not expose its type while
+        // listing a model from some other file.
+        string library = string.IsNullOrWhiteSpace(modelLibrary) ? implementor.FilePath : modelLibrary!;
+
+        var overrides = new List<ParameterAssignment>(card.Parameters.Count + inst.Overrides.Count + 2)
+        {
+            new("Provider", DeviceWorkerProviderResolver.ComposeOverride(provider, library), null),
+            new("Type", implementor.TypeId, null),
+        };
+
+        var placed = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        void Put(string name, string expression, string? unit)
+        {
+            string spelling = OsdiModelDiscovery.AlignParameterCase(declared, name);
+
+            // Never let a kit's own parameter shadow the two selectors above — the device would then
+            // be created from a name the netlist did not choose. Aligned first, so a model parameter
+            // that merely differs in CASE from a selector (a MOS model's `TYPE` is its channel
+            // polarity) keeps its own spelling and is forwarded rather than mistaken for one.
+            if (spelling is "Provider" or "Type") return;
+
+            if (placed.TryGetValue(spelling, out int at)) overrides[at] = new(spelling, expression, unit);
+            else { placed[spelling] = overrides.Count; overrides.Add(new(spelling, expression, unit)); }
+        }
+
+        foreach (var (name, value) in card.Parameters) Put(name, value, null);
+        foreach (var ov in inst.Overrides)             Put(ov.Name, ov.Expression, ov.Unit);
+
+        return overrides;
     }
 
     /// <summary>Emitted reference for a device an external provider evaluates.</summary>
@@ -634,7 +883,7 @@ public static class NetExtractor
         }
 
         string wanted = SubstituteParameters(ccell.ExternalNetlistCell!, comp, ccell);
-        var definition = read.Value.Library.Find(wanted);
+        var definition = read.Library.Find(wanted);
         if (definition is null)
         {
             conflicts.Add($"Instance '{comp.InstanceName}': '{wanted}' is not defined in the kit's " +
@@ -648,12 +897,15 @@ public static class NetExtractor
         // it still resolve to the provider. Bind them before the cells are copied, so what lands in
         // the library is already expressed in terms every downstream layer understands.
         if (!string.IsNullOrWhiteSpace(ccell.ExternalProvider))
-            BindNativeDeviceTypes(read.Value.Library, ccell.ExternalProvider!, comp);
+            BindNativeDeviceTypes(read.Library, ccell.ExternalProvider!, comp,
+                                  read.ModelCards,
+                                  PdkKitRegistry.OsdiModelsOf(ccell.ExternalProvider),
+                                  conflicts);
 
         // Copy the whole file's cells, not just the one named: the definition instantiates others
         // beside it, and walking the dependency graph would re-derive what reading the file already
         // told us. Names already present win — a design's own cell is never replaced by a kit's.
-        foreach (var cell in read.Value.Library.Cells)
+        foreach (var cell in read.Library.Cells)
             if (lib.Find(cell.Name) is null) lib.Cells.Add(cell);
 
         var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
@@ -1422,8 +1674,10 @@ public static class NetExtractor
         {
             if (comp.ExternalSymbolRef is not { } symRef) continue;
             // Mirrors BuildRenderModel.ResolveAllCellRefs: a CellRef needs the schematic's own
-            // directory; a wBond reference carries its own resolution rule and does not.
-            if (model.SchematicDirectory is null && !WBondSymbolProvider.IsWBondRef(symRef)) continue;
+            // directory; a VIRTUAL reference carries its own resolution rule and does not. The
+            // resolver owns that list — extracting an unsaved schematic must see exactly the same
+            // pins the canvas drew, or a kit part would extract with the wrong terminal count.
+            if (model.SchematicDirectory is null && !CellSymbolResolver.NeedsNoBaseDirectory(symRef)) continue;
             result ??= new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal);
             result[comp.Id] = CellSymbolResolver.Resolve(symRef, model.SchematicDirectory);
         }

@@ -105,6 +105,11 @@ public static class PCellRegistry
     public static IReadOnlyDictionary<string, PCellValue>? DeclaredDefaults(string generatorId)
     {
         if (string.IsNullOrEmpty(generatorId)) return null;
+        // A built-in wins outright, exactly as it does in TryGet — a kit that happens to name a cell
+        // MLIN gets its cell listed under its own kit, never asked about a built-in id. Without this
+        // the two disagree, and a caller reading the declaration to decide how to feed the generator
+        // would describe one cell while generating another.
+        if (_generators.ContainsKey(generatorId)) return null;
         lock (_resolverGate)
             foreach (var resolver in _resolvers)
                 try { if (resolver.DeclaredDefaults(generatorId) is { } d) return d; }

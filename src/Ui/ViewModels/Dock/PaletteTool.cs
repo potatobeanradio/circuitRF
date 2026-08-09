@@ -62,6 +62,12 @@ public sealed class PaletteCategoryEntry
     /// <summary>Kit name this entry filters to; null for every non-kit entry.</summary>
     internal string? KitName { get; private init; }
 
+    /// <summary>
+    /// The kit's own sub-category this entry narrows to, or null for the kit's own entry — which
+    /// shows everything the kit offers.
+    /// </summary>
+    internal string? KitCategory { get; private init; }
+
     internal static PaletteCategoryEntry ForAll()          => new("All",           PaletteCategoryKind.All);
     internal static PaletteCategoryEntry ForCommon()       => new("Common",        PaletteCategoryKind.Common);
     internal static PaletteCategoryEntry ForRecentlyUsed() => new("Recently Used", PaletteCategoryKind.RecentlyUsed);
@@ -69,9 +75,21 @@ public sealed class PaletteCategoryEntry
     internal static PaletteCategoryEntry ForReal(ComponentCategory cat) =>
         new(RealDisplayName(cat), PaletteCategoryKind.Real, cat);
 
-    /// <summary>One imported kit, listed under its own name.</summary>
+    /// <summary>One imported kit, listed under its own name. Shows every part the kit offers.</summary>
     internal static PaletteCategoryEntry ForKit(string kitName) =>
         new(kitName, PaletteCategoryKind.Kit) { KitName = kitName };
+
+    /// <summary>
+    /// One of a kit's OWN groupings, listed directly beneath that kit and indented so the nesting
+    /// reads at a glance — a flat combo cannot show a tree, and a kit with a hundred parts is
+    /// unbrowsable without one.
+    /// </summary>
+    internal static PaletteCategoryEntry ForKitCategory(string kitName, string category) =>
+        new(SubEntryIndent + category, PaletteCategoryKind.Kit)
+        { KitName = kitName, KitCategory = category };
+
+    /// <summary>Leading spaces that make a sub-entry read as nested under the kit above it.</summary>
+    private const string SubEntryIndent = "    ";
 
     private static string RealDisplayName(ComponentCategory c) => c switch
     {
@@ -189,6 +207,21 @@ public sealed partial class PaletteTool : Tool
                      .OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
         {
             list.Add(PaletteCategoryEntry.ForKit(kit));
+
+            // The kit's own groupings, immediately beneath it. Only where the kit states more than
+            // one: a single sub-category would just repeat the kit entry above it in different
+            // words, and every part of that kit is already reachable from the kit itself.
+            var subs = pdkItems
+                .Where(i => string.Equals(i.Pdk?.KitName, kit, StringComparison.Ordinal))
+                .Select(i => i.Pdk!.Category)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (subs.Count > 1)
+                foreach (var sub in subs)
+                    list.Add(PaletteCategoryEntry.ForKitCategory(kit, sub));
         }
 
         return list.AsReadOnly();
@@ -210,6 +243,7 @@ public sealed partial class PaletteTool : Tool
         _pdkItems = items ?? [];
 
         string? keepKit  = SelectedCategory?.KitName;
+        string? keepSub  = SelectedCategory?.KitCategory;
         var     keepKind = SelectedCategory?.Kind;
         var     keepReal = SelectedCategory?.Real;
 
@@ -218,7 +252,8 @@ public sealed partial class PaletteTool : Tool
         var restored = Categories.FirstOrDefault(c =>
             c.Kind == keepKind &&
             c.Real == keepReal &&
-            string.Equals(c.KitName, keepKit, StringComparison.Ordinal));
+            string.Equals(c.KitName, keepKit, StringComparison.Ordinal) &&
+            string.Equals(c.KitCategory, keepSub, StringComparison.Ordinal));
 
         // Assigning SelectedCategory rebuilds the tiles via its partial callback; when the selection
         // is unchanged that callback does not fire, so rebuild explicitly in that case.
@@ -272,11 +307,14 @@ public sealed partial class PaletteTool : Tool
 
         var q = SearchQuery?.Trim() ?? "";
 
-        // A kit category shows that kit's parts only — never the built-ins.
+        // A kit category shows that kit's parts only — never the built-ins. A sub-category narrows
+        // further to the kit's own grouping; the kit's own entry carries none and shows all of them.
         if (SelectedCategory.Kind == PaletteCategoryKind.Kit)
         {
             var mine = _pdkItems
                 .Where(i => string.Equals(i.Pdk?.KitName, SelectedCategory.KitName, StringComparison.Ordinal))
+                .Where(i => SelectedCategory.KitCategory is not { } sub ||
+                            string.Equals(i.Pdk!.Category, sub, StringComparison.OrdinalIgnoreCase))
                 .ToList();
             return string.IsNullOrWhiteSpace(q) ? mine : FilterBySearch(mine, q);
         }

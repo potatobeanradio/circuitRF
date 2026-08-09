@@ -56,6 +56,22 @@ public static class CellSymbolResolver
     // ── Resolve ───────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Whether this reference resolves WITHOUT a base directory.
+    ///
+    /// <para>A plain cell reference is a path relative to the schematic's own directory, so an
+    /// unsaved schematic has no base for it and callers skip it. The two VIRTUAL forms below carry
+    /// their own resolution rule and need none — which is what lets one dropped into a scratch
+    /// schematic still draw its real pins.</para>
+    ///
+    /// <para><b>Ask here, never re-derive the list at a call site.</b> The exemption used to be
+    /// spelled <c>!IsWBondRef(...)</c> in two places, so a kit part dropped on an unsaved schematic
+    /// silently resolved to nothing and rendered as a pin-less placeholder — reading exactly like
+    /// the drop having done nothing at all. A third virtual form must not be able to repeat that.</para>
+    /// </summary>
+    public static bool NeedsNoBaseDirectory(string cellRef)
+        => PdkKitRegistry.IsKitRef(cellRef) || WBondSymbolProvider.IsWBondRef(cellRef);
+
+    /// <summary>
     /// Resolves <paramref name="cellRef"/> relative to <paramref name="baseDir"/> and returns
     /// the three-state result.  On cache hit (same primary filename + mtime) returns immediately
     /// without touching the filesystem beyond the existence check.
@@ -145,6 +161,38 @@ public static class CellSymbolResolver
         catch
         {
             return CellSymbolResolution.PrimaryMissingResult;
+        }
+    }
+
+    // ── Resolution from a palette / drag payload ──────────────────────────────
+
+    /// <summary>
+    /// Resolves the value a palette tile and a drag payload carry, which is EITHER a virtual
+    /// reference or an ABSOLUTE cell folder — the two forms one field has always held.
+    ///
+    /// <para><b>This exists because splitting the field is only correct for one of them.</b> Both
+    /// call sites used to do <c>GetDirectoryName</c>/<c>GetFileName</c> and hand the halves to
+    /// <see cref="Resolve"/>. That is right for a folder and destroys a virtual reference — a kit
+    /// part's tile and its drag ghost both fell back to the placeholder glyph, so every part in an
+    /// imported kit looked generic in the palette. Ask this instead of splitting by hand.</para>
+    /// </summary>
+    public static CellSymbolResolution ResolveCellDirOrRef(string? cellDirOrRef)
+    {
+        if (string.IsNullOrEmpty(cellDirOrRef)) return CellSymbolResolution.NotFoundResult;
+
+        // A virtual reference is not a path and must never be taken apart as one.
+        if (NeedsNoBaseDirectory(cellDirOrRef)) return Resolve(cellDirOrRef, null);
+
+        try
+        {
+            string trimmed = cellDirOrRef.TrimEnd('/', '\\');
+            string? parent = Path.GetDirectoryName(trimmed);
+            if (string.IsNullOrEmpty(parent)) return CellSymbolResolution.NotFoundResult;
+            return Resolve(Path.GetFileName(trimmed), parent);
+        }
+        catch
+        {
+            return CellSymbolResolution.NotFoundResult;
         }
     }
 

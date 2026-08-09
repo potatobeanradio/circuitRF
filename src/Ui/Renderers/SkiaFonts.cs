@@ -83,10 +83,37 @@ internal static class SkiaFonts
     public static SKTypeface PlexLight    => TestOverrideTypeface ?? _plexLight.Value;
 
     // ── Helper ────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// <b>Falls back to the platform default when there is no Avalonia host to ask</b>, rather than
+    /// throwing out of whatever was drawing.
+    ///
+    /// <para>The override above is a STATIC field, set by a test class's constructor and cleared by
+    /// its <c>Dispose</c> — and xUnit runs test classes in PARALLEL, so one class clearing it while
+    /// another is mid-render drops that render through to here, in a process with no asset loader.
+    /// It surfaced as <c>Unable to locate 'Avalonia.Platform.IAssetLoader'</c> from a 500,000-shape
+    /// render, at roughly 3 runs in 10, moving between tests as the suite grew. Policing every caller
+    /// of a shared mutable static is the fragile way to fix that; not exploding when the host is
+    /// absent is the robust one.</para>
+    ///
+    /// <para><b>Production is unaffected and is not silently degraded.</b> A running application
+    /// always has the host, so every real frame draws with the exact embedded typeface it always did.
+    /// Only the specific "there is no asset system here" failure is caught — an asset that is present
+    /// but unreadable still throws, because that is a broken build and worth failing on. And the
+    /// alternative in the no-host case is not "the right font": it is an exception escaping a paint,
+    /// which loses the whole frame rather than one typeface.</para>
+    /// </summary>
     private static SKTypeface Load(string assetRelativePath)
     {
-        using var stream = AssetLoader.Open(
-            new Uri($"avares://CircuitRF.Ui/{assetRelativePath}"));
-        return SKTypeface.FromStream(stream) ?? SKTypeface.Default;
+        try
+        {
+            using var stream = AssetLoader.Open(
+                new Uri($"avares://CircuitRF.Ui/{assetRelativePath}"));
+            return SKTypeface.FromStream(stream) ?? SKTypeface.Default;
+        }
+        catch (InvalidOperationException)
+        {
+            // Avalonia's own locator failure — "Unable to locate 'Avalonia.Platform.IAssetLoader'".
+            return SKTypeface.Default;
+        }
     }
 }

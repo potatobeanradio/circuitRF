@@ -25,4 +25,9 @@ public sealed partial class AnalysesTool : Tool
 
     /// <summary>Called by WorkspaceViewModel when the open workspace changes (or is cleared).</summary>
     public void SetWorkspaceDir(string? workspaceDir) => ListVm.SetWorkspaceDir(workspaceDir);
+
+    /// <summary>Called by WorkspaceViewModel whenever the referenced kits are (re)loaded. Empty for
+    /// every workspace whose kits declare no corners, which keeps the block out of the panel.</summary>
+    public void SetCornerAxes(System.Collections.Generic.IReadOnlyList<Schematic.WorkspaceCornerAxis> axes)
+        => ListVm.SetCornerAxes(axes);
 }

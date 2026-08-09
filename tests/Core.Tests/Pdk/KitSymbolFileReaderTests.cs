@@ -240,4 +240,135 @@ public sealed class KitSymbolFileReaderTests
 
         Assert.Equal(["model", "w"], s!.Parameters.Select(p => p.Name));
     }
+
+    // ── K13-K19 — the drawn body ──────────────────────────────────────────────
+
+    /// <summary>
+    /// The artwork is read, not only the terminals. Before this, every part of a kit of this shape
+    /// arrived as a plain box with pins on it — every device in the palette looking alike.
+    /// </summary>
+    [Fact]
+    public void K13_DrawnGeometryIsRead()
+    {
+        var s = KitSymbolFileReader.Read(ThreeTerminal);
+
+        var lines = s!.Body.OfType<KitSymbolLine>().ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.Equal((-20, -20, -20, 20), (lines[0].X1, lines[0].Y1, lines[0].X2, lines[0].Y2));
+        Assert.Equal((-20, 0, -40, 0),    (lines[1].X1, lines[1].Y1, lines[1].X2, lines[1].Y2));
+    }
+
+    /// <summary>
+    /// A rectangle that names a terminal is a PIN and must never also be drawn as artwork; one that
+    /// names none is a body box and used to be dropped on the floor.
+    /// </summary>
+    [Fact]
+    public void K14_ARectangleIsEitherATerminalOrArtwork_NeverBoth()
+    {
+        var s = KitSymbolFileReader.Read("""
+            K {type=block}
+            B 4 -30 -20 30 20 {}
+            B 5 -32.5 -2.5 -27.5 2.5 {name=in}
+            B 5 27.5 -2.5 32.5 2.5 {name=out}
+            """);
+
+        Assert.Equal(["in", "out"], s!.Pins.Select(p => p.Name));
+
+        var box = Assert.IsType<KitSymbolRectangle>(Assert.Single(s.Body));
+        Assert.Equal((-30, -20, 30, 20), (box.X1, box.Y1, box.X2, box.Y2));
+        Assert.False(box.Filled);
+    }
+
+    /// <summary>
+    /// This format states closure by REPEATING the first point. The repeat is dropped so a consumer
+    /// never has to know that convention, and an unrepeated run stays open — a bent lead is not a
+    /// triangle.
+    /// </summary>
+    [Fact]
+    public void K15_AClosedRunIsRecognisedByItsRepeatedFirstPoint()
+    {
+        var s = KitSymbolFileReader.Read("""
+            K {type=block}
+            P 4 4 0 -5 -10 5 10 5 0 -5 {fill=true}
+            P 4 3 0 0 10 0 10 10 {}
+            B 5 0 0 5 5 {name=a}
+            """);
+
+        var paths = s!.Body.OfType<KitSymbolPath>().ToList();
+        Assert.Equal(2, paths.Count);
+
+        Assert.True(paths[0].Closed);
+        Assert.True(paths[0].Filled);
+        Assert.Equal([0, -5, -10, 5, 10, 5], paths[0].Xy);   // the repeat is gone
+
+        Assert.False(paths[1].Closed);
+        Assert.False(paths[1].Filled);
+        Assert.Equal([0, 0, 10, 0, 10, 10], paths[1].Xy);
+    }
+
+    /// <summary>An arc keeps the file's own angles — converting them is the consumer's job.</summary>
+    [Fact]
+    public void K16_ArcAnglesAreCarriedThroughUnchanged()
+    {
+        var s = KitSymbolFileReader.Read("""
+            K {type=block}
+            A 4 0 15 7.5 90 180 {}
+            B 5 0 0 5 5 {name=a}
+            """);
+
+        var arc = Assert.IsType<KitSymbolArc>(Assert.Single(s!.Body));
+        Assert.Equal((0.0, 15.0, 7.5, 90.0, 180.0),
+                     (arc.Cx, arc.Cy, arc.Radius, arc.StartDeg, arc.SweepDeg));
+    }
+
+    /// <summary>
+    /// TEXT is deliberately not artwork here. In this format a symbol's text is almost entirely
+    /// substitution placeholders that circuitRF already draws itself from the placed instance;
+    /// drawing them would put the placeholder tokens on the schematic beside the real labels.
+    /// </summary>
+    [Fact]
+    public void K17_TextRecordsAreNotDrawn()
+    {
+        var s = KitSymbolFileReader.Read(ThreeTerminal);
+
+        Assert.DoesNotContain(s!.Body, b => b.GetType().Name.Contains("Text"));
+    }
+
+    /// <summary>
+    /// A damaged record costs itself and nothing else. A kit does carry the occasional bad
+    /// line, and losing the whole symbol over one of them is a far worse answer.
+    /// </summary>
+    [Fact]
+    public void K18_AMalformedDrawingRecordCostsOnlyItself()
+    {
+        var s = KitSymbolFileReader.Read("""
+            K {type=block}
+            L 4 0 0 10 x {}
+            L 4 0 0 10 10 {}
+            A 4 0 0 0 0 90 {}
+            B 5 0 0 5 5 {name=a}
+            """);
+
+        // The good line survives; the unreadable one and the zero-radius arc do not.
+        var line = Assert.IsType<KitSymbolLine>(Assert.Single(s!.Body));
+        Assert.Equal((0, 0, 10, 10), (line.X1, line.Y1, line.X2, line.Y2));
+        Assert.Single(s.Pins);
+    }
+
+    /// <summary>
+    /// A symbol that draws nothing still reports a body — an EMPTY one, not null. Null is reserved
+    /// for a part that has no drawing at all (its terminals came from a symbol library), and the two
+    /// are placed under different axis conventions, so conflating them mirrors a part vertically.
+    /// </summary>
+    [Fact]
+    public void K19_ASymbolThatDrawsNothingStillReportsABody()
+    {
+        var s = KitSymbolFileReader.Read("""
+            K {type=block}
+            B 5 0 0 5 5 {name=a}
+            """);
+
+        Assert.NotNull(s!.Body);
+        Assert.Empty(s.Body);
+    }
 }

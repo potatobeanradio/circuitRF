@@ -401,9 +401,21 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             // anything once the earlier ones are settled — and it puts the two a user of an imported kit
             // reaches for at the top instead of buried among a dozen numbers. Stable within each group,
             // so the kit's own ordering survives.
-            foreach (var row in built.Where(r => r.IsFilePathParam)) Rows.Add(row);
+            //
+            // ModelLibrary is the exception, and it goes LAST (owner-reported). It is file-valued, so
+            // the rule above put it first on EVERY kit part — the very top of the dialog, on all 110 of
+            // them — while being an override almost nobody ever sets and one that does nothing at all
+            // on a part the kit defines with its own netlist. A row that leads every part and applies
+            // to few reads as a required first step, which is precisely how it came to be filled in
+            // with a path that then failed to parse. The rule it is an exception to is about a file the
+            // KIT asked for; this one is circuitRF's own.
+            bool IsOwnOverride(ParameterRowViewModel r) =>
+                r.Name.Equals(PdkPartInstaller.ModelLibraryParameter, StringComparison.Ordinal);
+
+            foreach (var row in built.Where(r => r.IsFilePathParam && !IsOwnOverride(r))) Rows.Add(row);
             foreach (var row in built.Where(r => !r.IsFilePathParam && r.IsChoiceParam)) Rows.Add(row);
             foreach (var row in built.Where(r => !r.IsFilePathParam && !r.IsChoiceParam)) Rows.Add(row);
+            foreach (var row in built.Where(IsOwnOverride)) Rows.Add(row);
         }
 
         _isRefreshing = false;

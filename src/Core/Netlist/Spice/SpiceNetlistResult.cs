@@ -67,7 +67,28 @@ public sealed record SpiceNetlistResult(
     /// definition read without them does not resolve.
     /// </summary>
     public IReadOnlyList<UserFunction> Functions { get; init; } = [];
+
+    /// <summary>
+    /// The <c>.lib</c> sections each file declares — the ALTERNATIVES it offers, in the order
+    /// declared. This is what a kit's corners are: a section binds a few process parameters and
+    /// includes the same shared model file every other section does.
+    ///
+    /// <para><b>Grouped by FILE, which is structural rather than a naming convention.</b> A kit
+    /// states its corners one file per device family, so the file IS the axis: choosing a capacitor
+    /// corner and a resistor corner are two independent choices, and flattening them into one list
+    /// would offer a single pick where the kit offers several.</para>
+    ///
+    /// <para><b>No section is filtered out for not looking like a corner.</b> The kit declaring them
+    /// as alternatives is the whole semantic; matching names against <c>_typ</c>/<c>_wcs</c> would
+    /// encode one supplier's habits and break on the next kit.</para>
+    /// </summary>
+    public IReadOnlyList<SpiceSectionSet> Sections { get; init; } = [];
 }
+
+/// <summary>The alternatives one file offers, in declaration order.</summary>
+/// <param name="File">The file that declared them, as it was read.</param>
+/// <param name="Names">Section names, verbatim and in order — the kit's own vocabulary.</param>
+public sealed record SpiceSectionSet(string File, IReadOnlyList<string> Names);
 
 /// <summary>Raised when the file's structure is broken in a way that cannot be read past.</summary>
 public sealed class SpiceNetlistException(string file, int line, string message)

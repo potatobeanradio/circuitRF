@@ -319,11 +319,26 @@ public static class PdkReferenceManager
             Provider           = outcome.KitName,
             TranslationVersion = DsnSymbolReader.TranslationVersion,
             Settings           = outcome.Settings,
+            Corners            = ToStoredCorners(outcome.CornerAxes),
         });
 
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
         return outcome;
     }
+
+    /// <summary>
+    /// The recorded form of a kit's corner axes, or null when it declares none — which is the
+    /// overwhelming majority of kits, and the case whose <c>.cws</c> must stay byte-identical.
+    /// </summary>
+    public static List<CwsCornerAxis>? ToStoredCorners(IReadOnlyList<PdkCornerAxis>? axes)
+        => axes is null || axes.Count == 0
+            ? null
+            : [.. axes.Select(a => new CwsCornerAxis
+              {
+                  AxisId      = a.AxisId,
+                  DisplayName = a.DisplayName,
+                  Options     = [.. a.Options],
+              })];
 
     /// <summary>
     /// Drops a reference. Nothing is deleted from any schematic — parts placed from it keep their

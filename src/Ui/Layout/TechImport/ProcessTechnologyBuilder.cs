@@ -74,16 +74,68 @@ public static class ProcessTechnologyBuilder
             DrcRules              = BuildDrcRules(stack, byName, ruleDeck, layerTable, notes),
         };
 
-        // A process states no ground plane — every conductor in a back-end stack is a signal layer
-        // until a design says otherwise — so the choice is the user's and has to be made before a
-        // microstrip component can resolve a substrate. Said here, at import, rather than left for
-        // each component to fail independently much later.
-        if (stackup.Layers.Any(l => l.Kind == StackupKind.Conductor))
-            notes.Add("No conductor is marked as the ground reference — a process file does not state " +
-                      "one. Pick the layer this design uses as its return path in the Technology " +
-                      "Editor's Stackup tab before placing microstrip components.");
+        ChooseGroundReference(stack, stackup, notes);
 
         return new TechnologyImportResult(tech, notes);
+    }
+
+    /// <summary>
+    /// Roles a process file gives a conductor that is part of a DEVICE rather than of the
+    /// interconnect. Matched on the file's own vocabulary, not on any layer's name.
+    /// </summary>
+    private static readonly string[] DeviceLayerTypes = ["GATE", "DIFFUSION"];
+
+    /// <summary>
+    /// Marks the conductor a design's currents most likely return through, and says so.
+    ///
+    /// <para><b>Why circuitRF picks one at all, having previously refused to.</b> A process file
+    /// genuinely does not state a ground plane, and every conductor in a stack really is a signal
+    /// layer until a design says otherwise — so the earlier refusal was correct about the evidence.
+    /// What it left the user with was a technology that validates as broken and stops every microstrip
+    /// component dead, with no indication of which of nine conductors to choose. So a choice is made
+    /// AND STATED, with its reasoning and how to change it, which is a better trade than a correct
+    /// silence: an inference the user can see and overrule beats a blank they cannot resolve.</para>
+    ///
+    /// <para><b>What the choice actually rests on.</b> The bottom boundary of a stack read from a
+    /// process file is already a ground plane (<see cref="BoundaryCondition.Ground"/>, set above) —
+    /// the semiconducting bulk the whole stack is built on. The lowest conductor is the one closest to
+    /// it, so it is the layer a design uses as its local return path, and the format's own
+    /// <c>LAYER_TYPE</c> is what excludes the sheets that are parts of a transistor rather than layers
+    /// anything routes on. Both facts come out of the file; neither is a name convention.</para>
+    ///
+    /// <para>Silent when the file already marks one — nothing to decide — and when there are no
+    /// conductors at all.</para>
+    /// </summary>
+    private static void ChooseGroundReference(
+        ProcessStackDescription stack, Stackup stackup, List<string> notes)
+    {
+        var conductors = stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        if (conductors.Count == 0) return;
+        if (conductors.Any(l => l.IsGroundReference)) return;
+
+        var deviceLayers = new HashSet<string>(
+            stack.Entries
+                 .Where(e => e.Kind == ProcessStackEntryKind.Conductor
+                          && DeviceLayerTypes.Contains(e.LayerType.Trim(), StringComparer.OrdinalIgnoreCase))
+                 .Select(e => e.Name),
+            StringComparer.Ordinal);
+
+        // Slabs are built top-down, so the last conductor is the lowest.
+        var routing = conductors.Where(l => !deviceLayers.Contains(l.Name)).ToList();
+        var chosen  = (routing.Count > 0 ? routing : conductors)[^1];
+
+        chosen.IsGroundReference = true;
+
+        string why = routing.Count > 0 && routing.Count < conductors.Count
+            ? $" It is the lowest conductor the file does not mark as part of a device " +
+              $"({string.Join(", ", deviceLayers.Take(3))}{(deviceLayers.Count > 3 ? ", …" : "")} are)."
+            : " It is the lowest conductor in the stack.";
+
+        notes.Add(
+            $"No conductor was marked as the ground reference — a process file does not state one — so " +
+            $"\"{chosen.Name}\" was chosen as the return path.{why} Change it in the Technology " +
+            $"Editor's Stackup tab if this design returns through a different layer; every microstrip " +
+            $"component resolves its substrate against whatever is marked here.");
     }
 
     // ── the layer table ───────────────────────────────────────────────────────

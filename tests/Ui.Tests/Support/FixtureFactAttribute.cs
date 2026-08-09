@@ -53,4 +53,25 @@ internal static class FixturePaths
         }
         return false;
     }
+
+    /// <summary>
+    /// The resolved absolute path, or null. Same walk as <see cref="Exists"/> — derived rather than
+    /// a fixed number of "../", which is what keeps it working when the output layout changes.
+    /// </summary>
+    public static string? Find(string relativePath)
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null)
+        {
+            var cand = Path.Combine(dir, relativePath);
+            if (Directory.Exists(cand) || File.Exists(cand)) return Path.GetFullPath(cand);
+            dir = Path.GetDirectoryName(dir);
+        }
+        return null;
+    }
+
+    /// <summary>Same as <see cref="Find"/>, but asserts — for a body already gated by the attribute.</summary>
+    public static string Require(string relativePath)
+        => Find(relativePath) ?? throw new FileNotFoundException(
+               $"'{relativePath}' was not found walking up from {AppContext.BaseDirectory}");
 }

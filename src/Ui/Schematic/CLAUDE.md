@@ -1,5 +1,48 @@
 # Schematic — local conventions for `src/Ui/Schematic/`
 
+## A kit's DRAWN symbol, and the three traps in reading one (2026-08-08)
+
+`KitSymbolFileReader` used to read a record symbol file's terminals and parameter template and skip
+its **artwork**, so `KitTemplateSymbol` gave every part of such a kit the same box-with-pins — a
+palette of a hundred components that all looked alike. It reads the drawing now, into a neutral
+framework-free vocabulary (`KitSymbolShape`) that the UI turns into primitives, the same split the
+terminals already followed.
+
+**Three things here are wrong in a way that still draws a symbol, which is the only kind of wrong
+that survives review.**
+
+- **The axis. This format is y-DOWN; a symbol LIBRARY is y-up.** Running a drawing through the
+  library's flip mirrors every part vertically — it still places, still connects, still looks like a
+  symbol, and is upside down everywhere. That is why `Build` (library) and `BuildFromDrawing`
+  (drawing) are two entry points and not one with a flag, and why `PdkPart.Body` is non-null-but-
+  possibly-empty for a drawing and null for a library: the flag that picks the convention IS the
+  presence of a drawing, so the two facts cannot disagree. **Settled by evidence, not by convention**
+  — in this format's own schematics the ground symbols and the title block carry the LARGEST y, and a
+  ground marker hangs below its pin at increasing y.
+- **The arc angles.** The file measures counter-clockwise on screen; circuitRF's arc primitive
+  measures clockwise, matching Skia beneath it. The conversion is a sign flip on **both** start and
+  sweep. Flipping only the sweep draws the correct span from the wrong end — a mirrored arc that is
+  still an arc.
+- **The scale is chosen ONCE PER KIT, from its largest part.** A kit draws every symbol in one
+  coordinate system, so their relative sizes are a choice its author made. Scaling each part into the
+  legibility band independently throws that away and lands a ground marker on the schematic bigger
+  than the transistor beside it. Measured over the pins **and** the artwork: a symbol whose drawing
+  reaches past its terminals — or which has one pin and no span at all — is otherwise scaled by the
+  wrong decade or not at all.
+
+**TEXT records are deliberately not drawn.** In this format a symbol's text is almost entirely
+substitution placeholders — the instance name, the model name, one row per parameter — which
+circuitRF already draws itself from the placed instance. Rendering them would put the placeholder
+tokens on the schematic beside circuitRF's own correct labels, saying the same things twice and one
+of them wrong. The geometry is the kit's; the lettering is circuitRF's.
+
+**A rectangle is either a terminal or artwork, never both**, and a malformed record costs itself and
+nothing else — a kit does carry the occasional damaged line, and losing the whole symbol over
+one is a far worse answer.
+
+**`DsnSymbolReader.TranslationVersion` is 2** because the axis fix MOVES pins on parts backed by this
+format. Anything here that could move a pin needs the next bump.
+
 ## Imported kit parts: symbol reader + palette (2026-07-30)
 
 **`DsnSymbolReader`** reads the record-based ASCII symbol-description format (`.dsn`) into a

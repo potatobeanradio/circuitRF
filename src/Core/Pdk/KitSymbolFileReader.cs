@@ -10,10 +10,17 @@ namespace CircuitRF.Core.Pdk;
 /// The kit's own word for what kind of device this is, or empty. Used as the palette category,
 /// because it is the kit's grouping rather than one circuitRF invents.
 /// </param>
+/// <param name="Body">
+/// The DRAWN artwork, in the file's own coordinates. Possibly empty — a symbol may declare
+/// terminals and nothing else — but never null for a file this reader recognised, which is what
+/// lets a consumer tell a part that came from a drawing apart from one that came from a symbol
+/// library and has no drawing at all.
+/// </param>
 public sealed record KitSymbolFile(
     IReadOnlyList<KitSymbolPin>      Pins,
     IReadOnlyList<PdkPartParameter>  Parameters,
-    string                           TypeWord);
+    string                           TypeWord,
+    IReadOnlyList<KitSymbolShape>    Body);
 
 /// <summary>
 /// Reads a schematic symbol from a plain-text RECORD format: one symbol per file, each line a
@@ -25,9 +32,17 @@ public sealed record KitSymbolFile(
 /// fixture that exercises it is synthetic.</para>
 ///
 /// <para><b>It is simpler than the drawing formats beside it, and that is the point.</b> The whole
-/// of what circuitRF needs — the terminals, their names, and the part's parameter interface with the
-/// kit's own defaults — is stated in plain text with no compilation and no binary records to walk.
-/// So this reader is small, and what it recovers is complete rather than best-effort.</para>
+/// of what circuitRF needs — the terminals, their names, the part's parameter interface with the
+/// kit's own defaults, and the drawn body — is stated in plain text with no compilation and no
+/// binary records to walk. So this reader is small, and what it recovers is complete rather than
+/// best-effort.</para>
+///
+/// <para><b>The drawn body IS read, and TEXT records deliberately are not.</b> A symbol's text in
+/// this format is almost entirely SUBSTITUTION PLACEHOLDERS — the instance name, the model name,
+/// one row per parameter — which circuitRF already draws itself from the placed instance. Rendering
+/// them would put the placeholder tokens themselves on the schematic beside circuitRF's own correct
+/// labels, saying the same things twice and one of them wrong. So the geometry is the kit's and the
+/// lettering is circuitRF's.</para>
 ///
 /// <para><b>A terminal is a rectangle record whose attributes declare a NAME, not one on a
 /// particular layer.</b> The layer number is the format's display convention: it decides what colour
@@ -44,8 +59,23 @@ public sealed record KitSymbolFile(
 /// </summary>
 public static class KitSymbolFileReader
 {
-    /// <summary>A rectangle. Carries a terminal when its attributes name one.</summary>
+    /// <summary>A rectangle. Carries a terminal when its attributes name one, artwork otherwise.</summary>
     private const char RectangleRecord = 'B';
+
+    /// <summary>A straight segment: <c>&lt;layer&gt; &lt;x1&gt; &lt;y1&gt; &lt;x2&gt; &lt;y2&gt;</c>.</summary>
+    private const char LineRecord = 'L';
+
+    /// <summary>
+    /// A run of points: <c>&lt;layer&gt; &lt;count&gt; &lt;x1&gt; &lt;y1&gt; …</c>. Closed when it
+    /// repeats its first point at the end, which is how this format states closure.
+    /// </summary>
+    private const char PathRecord = 'P';
+
+    /// <summary>
+    /// A circular arc: <c>&lt;layer&gt; &lt;cx&gt; &lt;cy&gt; &lt;r&gt; &lt;start&gt; &lt;sweep&gt;</c>,
+    /// angles in degrees.
+    /// </summary>
+    private const char ArcRecord = 'A';
 
     /// <summary>The symbol's global attribute block: its type word and its default template.</summary>
     private const char GlobalRecord = 'K';
@@ -69,6 +99,9 @@ public static class KitSymbolFileReader
 
     /// <summary>Attribute carrying the kit's own word for what kind of device this is.</summary>
     private const string TypeAttribute = "type";
+
+    /// <summary>Attribute marking a closed shape as solid rather than outlined.</summary>
+    private const string FillAttribute = "fill";
 
     /// <summary>
     /// Template keys describing how an instance is WRITTEN INTO A NETLIST rather than what the
@@ -104,6 +137,7 @@ public static class KitSymbolFileReader
 
         var pins       = new List<(KitSymbolPin Pin, int Order)>();
         var parameters = new List<PdkPartParameter>();
+        var body       = new List<KitSymbolShape>();
         string typeWord = "";
         bool sawRecord  = false;
         bool everyPinOrdered = true;
@@ -121,10 +155,24 @@ public static class KitSymbolFileReader
                 continue;
             }
 
+            if (letter is LineRecord or PathRecord or ArcRecord)
+            {
+                if (ReadBodyShape(letter, fields, attributes) is { } drawn) body.Add(drawn);
+                continue;
+            }
+
             if (letter != RectangleRecord) continue;
 
             var rect = ParseAttributes(attributes);
-            if (!rect.TryGetValue(PinNameAttribute, out var name) || name.Value.Length == 0) continue;
+
+            // A rectangle with no terminal name is ARTWORK. Reading it as a pin-less pin would lose
+            // it; skipping it entirely used to lose it too — this is where a box drawn as part of
+            // the body finally lands.
+            if (!rect.TryGetValue(PinNameAttribute, out var name) || name.Value.Length == 0)
+            {
+                if (ReadBodyShape(letter, fields, attributes) is { } box) body.Add(box);
+                continue;
+            }
 
             // Fields are <layer> <x1> <y1> <x2> <y2>. The terminal sits at the rectangle's centre,
             // which is where a wire is expected to meet it.
@@ -155,8 +203,89 @@ public static class KitSymbolFileReader
         // No records at all means this is not the format. No PINS, though, is a real symbol that
         // happens to declare none — a title block, a decoration — and is reported as such rather
         // than as a parse failure, so the caller can tell the two apart.
-        return sawRecord ? new KitSymbolFile(ordered, parameters, typeWord) : null;
+        return sawRecord ? new KitSymbolFile(ordered, parameters, typeWord, body) : null;
     }
+
+    /// <summary>
+    /// One drawn record as a neutral shape, or null when its fields do not read as numbers.
+    ///
+    /// <para>A malformed record costs ITSELF and nothing else — the rest of the symbol still
+    /// imports. That is the same bargain the attribute reader already strikes, and it matters
+    /// because a kit does contain the occasional damaged line.</para>
+    /// </summary>
+    private static KitSymbolShape? ReadBodyShape(char letter, List<string> fields, string attributes)
+    {
+        // Field 0 is the display layer on every one of these records. It decides what colour the
+        // authoring editor drew it in and carries no meaning here — circuitRF draws a symbol in its
+        // own theme colour, so the number is read past rather than kept.
+        switch (letter)
+        {
+            case LineRecord when fields.Count >= 5:
+                return TryNumber(fields[1], out double lx1) && TryNumber(fields[2], out double ly1) &&
+                       TryNumber(fields[3], out double lx2) && TryNumber(fields[4], out double ly2)
+                    ? new KitSymbolLine(lx1, ly1, lx2, ly2)
+                    : null;
+
+            case RectangleRecord when fields.Count >= 5:
+                return TryNumber(fields[1], out double bx1) && TryNumber(fields[2], out double by1) &&
+                       TryNumber(fields[3], out double bx2) && TryNumber(fields[4], out double by2)
+                    ? new KitSymbolRectangle(bx1, by1, bx2, by2, IsFilled(attributes))
+                    : null;
+
+            case ArcRecord when fields.Count >= 6:
+                return TryNumber(fields[1], out double cx) && TryNumber(fields[2], out double cy) &&
+                       TryNumber(fields[3], out double r)  && TryNumber(fields[4], out double start) &&
+                       TryNumber(fields[5], out double sweep) && r > 0
+                    ? new KitSymbolArc(cx, cy, r, start, sweep)
+                    : null;
+
+            case PathRecord when fields.Count >= 4:
+                return ReadPath(fields, attributes);
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// A point run. The declared count is trusted only as far as the fields actually present, so a
+    /// truncated record yields the points it really has instead of being thrown away whole.
+    /// </summary>
+    private static KitSymbolShape? ReadPath(List<string> fields, string attributes)
+    {
+        if (!int.TryParse(fields[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int declared))
+            return null;
+
+        int available = (fields.Count - 2) / 2;
+        int count     = Math.Min(declared, available);
+        if (count < 2) return null;
+
+        var xy = new List<double>(count * 2);
+        for (int i = 0; i < count; i++)
+        {
+            if (!TryNumber(fields[2 + i * 2], out double x) ||
+                !TryNumber(fields[3 + i * 2], out double y)) return null;
+            xy.Add(x);
+            xy.Add(y);
+        }
+
+        // This format states closure by REPEATING the first point, so a run whose ends coincide is
+        // closed and the duplicate is dropped. Comparing the numbers rather than trusting a flag is
+        // what makes an open run — a bent lead, say — come out open.
+        bool closed = xy.Count >= 6 &&
+                      NearlyEqual(xy[0], xy[^2]) && NearlyEqual(xy[1], xy[^1]);
+        if (closed) xy.RemoveRange(xy.Count - 2, 2);
+        if (xy.Count < 4) return null;
+
+        return new KitSymbolPath(xy, closed, closed && IsFilled(attributes));
+    }
+
+    /// <summary>Coordinates are drawing units, so a hair's-breadth tolerance is all this needs.</summary>
+    private static bool NearlyEqual(double a, double b) => Math.Abs(a - b) < 1e-9;
+
+    private static bool IsFilled(string attributes)
+        => ParseAttributes(attributes).TryGetValue(FillAttribute, out var f) &&
+           f.Value.Equals("true", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// True when the text reads as this format. Structural: a record grammar plus at least one

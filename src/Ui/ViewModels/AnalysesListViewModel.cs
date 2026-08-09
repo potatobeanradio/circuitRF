@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input.Platform;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -116,6 +117,93 @@ public sealed partial class AnalysesListViewModel : ObservableObject
 
         RefreshResultsFileNameText();
         RebuildRows();
+        RebuildCornerRows();
+    }
+
+    // ── Corners ───────────────────────────────────────────────────────────────
+    //
+    // Per testbench, like the results-file field beside it: a corner is a statement about THIS run.
+    // The block is absent — not greyed — when no referenced kit declares a corner, which is the
+    // ordinary case; a permanently-empty picker in front of every user who will never need one is
+    // clutter, not information.
+
+    /// <summary>The axes the workspace offers. Set by <see cref="Dock.AnalysesTool.SetCornerAxes"/>.</summary>
+    private IReadOnlyList<WorkspaceCornerAxis> _cornerAxes = [];
+
+    public ObservableCollection<CornerAxisRowViewModel> CornerRows { get; } = new();
+
+    /// <summary>True when the workspace offers at least one corner axis AND a schematic is open to
+    /// set it on. Drives the block's visibility — absent, never disabled.</summary>
+    public bool HasCorners => !NoActiveSchematic && CornerRows.Count > 0;
+
+    /// <summary>
+    /// Whether the corner rows are showing. <b>Collapsed by default, and that is the point.</b> A kit
+    /// declares one corner file per device family per simulator flavour — a real one ships twelve —
+    /// so an always-open block pushes the analyses themselves off the panel, which is exactly what it
+    /// did. Session state only: which corners are SET belongs to the design, whether the list is open
+    /// does not.
+    /// </summary>
+    [ObservableProperty] private bool _cornersExpanded;
+
+    /// <summary>One line standing in for the collapsed rows, so the header still answers "is anything
+    /// set here?" without being expanded.</summary>
+    public string CornersSummaryText
+    {
+        get
+        {
+            int set   = CornerRows.Count(r => r.SelectedOption?.Section is not null);
+            int stale = CornerRows.Count(r => r.IsStale);
+
+            string head = set == 0
+                ? $"{CornerRows.Count} available · using kit defaults"
+                : $"{CornerRows.Count} available · {set} set";
+
+            return stale > 0 ? $"{head} · {stale} no longer offered" : head;
+        }
+    }
+
+    /// <summary>
+    /// How the panel body scrolls. <b>Enabled only when there are corners</b>, which is what keeps
+    /// the ordinary case free of a scroller wrapping the analyses list's own one.
+    ///
+    /// <para><c>Disabled</c> is not "no scrolling" — it constrains the body to the viewport height,
+    /// so the list area's star row still works and the list scrolls itself, exactly as it did before
+    /// corners existed. <c>Auto</c> measures the body at its natural height instead, so an expanded
+    /// corner list and the analyses below it are both reachable by scrolling the panel.</para>
+    /// </summary>
+    public ScrollBarVisibility BodyScrollMode =>
+        HasCorners ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+
+    public void SetCornerAxes(IReadOnlyList<WorkspaceCornerAxis> axes)
+    {
+        _cornerAxes = axes ?? [];
+        RebuildCornerRows();
+    }
+
+    private void RebuildCornerRows()
+    {
+        CornerRows.Clear();
+
+        if (_schematicVm is not null)
+            foreach (var axis in _cornerAxes)
+                CornerRows.Add(new CornerAxisRowViewModel(
+                    axis,
+                    _schematicVm.EditModel.CornerSelections.TryGetValue(axis.Key, out var sel) ? sel : null,
+                    CommitCornerSelection));
+
+        OnPropertyChanged(nameof(HasCorners));
+        OnPropertyChanged(nameof(BodyScrollMode));
+        OnPropertyChanged(nameof(CornersSummaryText));
+    }
+
+    private void CommitCornerSelection(string axisKey, string? section)
+    {
+        if (_schematicVm is null) return;
+
+        var current = _schematicVm.EditModel.CornerSelections.TryGetValue(axisKey, out var v) ? v : null;
+        if (string.Equals(current, section, StringComparison.Ordinal)) return;
+
+        _schematicVm.Execute(new SetCornerSelectionCommand(_schematicVm.EditModel, axisKey, section));
     }
 
     private void OnModelChanged(object? sender, EventArgs e)
@@ -125,6 +213,15 @@ public sealed partial class AnalysesListViewModel : ObservableObject
         // focus guard) — an unrelated edit (add/remove analysis, undo elsewhere) still refreshes it.
         if (!ResultsFileNameFocused)
             RefreshResultsFileNameText();
+
+        // In place, not rebuilt: this is what makes Undo of a corner change move the combo, without
+        // the row being torn down underneath the user mid-selection.
+        if (_schematicVm is not null)
+            foreach (var row in CornerRows)
+                row.SyncFromModel(
+                    _schematicVm.EditModel.CornerSelections.TryGetValue(row.Axis.Key, out var sel) ? sel : null);
+
+        OnPropertyChanged(nameof(CornersSummaryText));
     }
 
     private void RebuildRows()

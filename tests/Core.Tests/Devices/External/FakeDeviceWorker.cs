@@ -15,6 +15,11 @@ namespace CircuitRF.Core.Tests.Devices.External;
 ///
 /// <para>Its device behaviour is chosen to make a wrong decode visible rather than plausible — see
 /// <see cref="EvaluateModel"/>.</para>
+///
+/// <para>It deliberately declares a parameter called <c>TYPE</c>, which differs from circuitRF's own
+/// <c>Type</c> selector only in case. Real compact models do — a MOS model's <c>TYPE</c> is its
+/// channel polarity — and a case-blind reading of the selector eats it, leaving a device that builds,
+/// solves, and is the wrong transistor.</para>
 /// </summary>
 public sealed class FakeDeviceWorker : IDeviceWorkerTransport
 {
@@ -127,7 +132,8 @@ public sealed class FakeDeviceWorker : IDeviceWorkerTransport
            "externalPinCount":{{ExternalPins}},"internalNodeCount":{{InternalNodes}},
            "nonlinear":true,"linear":true,
            "params":[{"name":"Scale","kind":"double"},{"name":"Fingers","kind":"int"},
-                     {"name":"File","kind":"filePath"},{"name":"Note","kind":"whatIsThis"}],
+                     {"name":"File","kind":"filePath"},{"name":"Note","kind":"whatIsThis"},
+                     {"name":"TYPE","kind":"int"}],
            "nodes":[{{nodes}}]},
           {"typeId":"{{LinearOnlyType}}","displayName":"{{LinearOnlyType}}",
            "externalPinCount":4,"internalNodeCount":0,"nonlinear":false,"linear":true,

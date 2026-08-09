@@ -394,9 +394,17 @@ public sealed class PCellWorkerHostTests : IDisposable
 /// <see cref="PCellRegistry"/>'s resolver list is process-wide static, so classes that touch it must
 /// not run concurrently — the same hazard (and the same fix) as the other process-wide caches this
 /// codebase serialises.
+///
+/// <para><b>It names the SAME collection as <see cref="PdkToolsDirectoryCollection"/>, deliberately.</b>
+/// A test that places a KIT part and generates its artwork mutates both statics at once — the kit
+/// registry to have a part to place, the resolver list to have a cell to draw it with — and a class
+/// can only belong to one xUnit collection. Two collections would leave exactly that class racing
+/// against one of them whichever it picked: measured, as a resolver cleared out from under a test
+/// mid-run, showing up as an empty parameter set here and a stale content hash over there. Both names
+/// are kept because both say a true thing about what is being serialised.</para>
 /// </summary>
 [CollectionDefinition(Name)]
 public sealed class PCellResolverCollection
 {
-    public const string Name = "PCellRegistry resolvers (process-wide static)";
+    public const string Name = PdkToolsDirectoryCollection.Name;
 }

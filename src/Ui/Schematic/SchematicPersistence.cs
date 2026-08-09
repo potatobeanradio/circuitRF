@@ -40,6 +40,11 @@ public sealed class CschFile
     /// <summary>User override for the run's results file name (blank/absent = default
     /// &lt;schematicKey&gt;.npy). See SchematicEditModel.ResultsFileName.</summary>
     public string? ResultsFileName { get; set; }
+
+    /// <summary>Corner selections, keyed by <c>&lt;kit&gt;|&lt;kit-relative corner file&gt;</c>.
+    /// Absent (null) when no corner is selected — the case for every design that never opens the
+    /// Corners block. See SchematicEditModel.CornerSelections.</summary>
+    public Dictionary<string, string>? CornerSelections { get; set; }
 }
 
 public sealed class CschComponent
@@ -395,6 +400,11 @@ public static class SchematicPersistence
 
         file.ResultsFileName = string.IsNullOrEmpty(m.ResultsFileName) ? null : m.ResultsFileName;
 
+        // Written only when a corner is actually selected, so a design that never touched the
+        // Corners block re-serializes byte-identically.
+        if (m.CornerSelections.Count > 0)
+            file.CornerSelections = new Dictionary<string, string>(m.CornerSelections, StringComparer.Ordinal);
+
         return file;
     }
 
@@ -478,6 +488,11 @@ public static class SchematicPersistence
                 m.Measurements.Add(AnalysisSerialization.FromDto(dto));
 
         m.ResultsFileName = string.IsNullOrEmpty(file.ResultsFileName) ? null : file.ResultsFileName;
+
+        if (file.CornerSelections is not null)
+            foreach (var (key, section) in file.CornerSelections)
+                if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(section))
+                    m.CornerSelections[key] = section;
 
         return m;
     }

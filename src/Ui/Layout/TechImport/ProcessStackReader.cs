@@ -39,6 +39,14 @@ public enum ProcessStackEntryKind
 /// <param name="SheetResistanceOhmPerSquare">Conductor only. 0 when unstated.</param>
 /// <param name="MinWidthUm">Conductor only — the process minimum drawn width. 0 when unstated.</param>
 /// <param name="MinSpacingUm">Conductor only — the process minimum drawn spacing. 0 when unstated.</param>
+/// <param name="LayerType">
+/// Conductor only — the ROLE the file gives this sheet, verbatim, or empty when it states none.
+///
+/// <para>The format uses it to mark the sheets that are part of a DEVICE rather than of the
+/// interconnect. Carried because that distinction is the only thing in a process file that separates
+/// "a layer signals route on" from "a layer a transistor is made of", and nothing else circuitRF can
+/// read says it. Interpreted in one place — <see cref="ProcessTechnologyBuilder"/> — never here.</para>
+/// </param>
 /// <param name="SpanFrom">Via only — the conductor at one end, by name.</param>
 /// <param name="SpanTo">Via only — the conductor at the other end, by name.</param>
 /// <param name="CrossSectionUm2">Via only — one connector's cross-sectional area, µm².</param>
@@ -51,6 +59,7 @@ public sealed record ProcessStackEntry(
     double                SheetResistanceOhmPerSquare = 0,
     double                MinWidthUm                  = 0,
     double                MinSpacingUm                = 0,
+    string                LayerType                   = "",
     string?               SpanFrom                    = null,
     string?               SpanTo                      = null,
     double                CrossSectionUm2             = 0,
@@ -141,7 +150,8 @@ public static class ProcessStackReader
                         ThicknessUm:                 Num(body, "THICKNESS"),
                         SheetResistanceOhmPerSquare: Num(body, "RPSQ"),
                         MinWidthUm:                  Num(body, "WMIN"),
-                        MinSpacingUm:                Num(body, "SMIN")));
+                        MinSpacingUm:                Num(body, "SMIN"),
+                        LayerType:                   Str(body, "LAYER_TYPE") ?? ""));
                     if (!seenNames.Add(name))
                         notes.Add($"Two conductors are both named \"{name}\"; a via naming it as an " +
                                   "endpoint cannot say which one it means.");

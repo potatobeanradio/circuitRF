@@ -844,6 +844,21 @@ public sealed class SchematicEditModel
     /// </summary>
     public string? ResultsFileName { get; set; }
 
+    /// <summary>
+    /// Which corner is selected on each axis a referenced kit offers, keyed by
+    /// <see cref="WorkspaceCornerAxis.Key"/> (kit + kit-relative file). Empty means "the kit's own
+    /// defaults", which is what every design that never opens the Corners block stays at.
+    ///
+    /// <para><b>Per testbench, deliberately.</b> A corner is a statement about the run, and two
+    /// schematics in one workspace legitimately want different ones — an amplifier checked at slow
+    /// and a bias network left at typical. Putting it on the workspace would make that unsayable.</para>
+    ///
+    /// <para>The KEY is recorded, never a resolved path: the selection has to outlive the kit moving.
+    /// A key the workspace no longer offers is reported at run time rather than dropped on load — see
+    /// <see cref="WorkspaceCorners.BindingsFor"/>.</para>
+    /// </summary>
+    public Dictionary<string, string> CornerSelections { get; } = new(StringComparer.Ordinal);
+
     public double GridSize          { get; set; } = 100.0;
     public bool   GridSnap          { get; set; } = true;
     /// <summary>Fine authoring grid divisor k: p = P/k (default k=20 → p=5).
@@ -996,10 +1011,10 @@ public sealed class SchematicEditModel
         {
             if (comp.ExternalSymbolRef is not { } symRef) continue;
             // A cell reference is relative to the schematic's own directory, so an unsaved schematic
-            // has no base for it. A wBond reference carries its own resolution rule (absolute, or
-            // relative to the workspace root) and needs none — which is what lets a wBond dropped
-            // into a scratch schematic still draw its real pins.
-            if (SchematicDirectory is null && !WBondSymbolProvider.IsWBondRef(symRef)) continue;
+            // has no base for it. A VIRTUAL reference carries its own resolution rule and needs
+            // none — which is what lets one dropped into a scratch schematic still draw its real
+            // pins. Which forms those are is the resolver's own question, never re-derived here.
+            if (SchematicDirectory is null && !CellSymbolResolver.NeedsNoBaseDirectory(symRef)) continue;
             result ??= new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal);
             result[comp.Id] = CellSymbolResolver.Resolve(symRef, SchematicDirectory);
         }

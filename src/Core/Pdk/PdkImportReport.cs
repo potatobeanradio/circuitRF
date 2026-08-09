@@ -33,7 +33,29 @@ public sealed record PdkPart(
     PdkAsset?                         LayoutArtwork = null,
     IReadOnlyList<PdkPartParameter>?  Parameters = null,
     int                               PinCount = 0,
-    IReadOnlyList<KitSymbolPin>?      Pins = null);
+    IReadOnlyList<KitSymbolPin>?      Pins = null,
+    /// <summary>
+    /// The artwork the kit DREW for this part, when it came from a source that states one.
+    ///
+    /// <para>Non-null (possibly empty) marks a part that came from a DRAWING; null marks one whose
+    /// terminals came from a symbol library, which states positions and no artwork at all. The two
+    /// place their pins under different axis conventions, so this is the flag that decides which —
+    /// getting it from the presence of a body rather than from a separate "which reader" field
+    /// keeps the two facts from ever disagreeing.</para>
+    /// </summary>
+    IReadOnlyList<KitSymbolShape>?    Body = null,
+
+    /// <summary>
+    /// The kit netlist that DEFINES this part's behaviour, kit-relative, and the cell within it.
+    ///
+    /// <para>Both null when the kit does not define the part as a circuit — its behaviour then comes
+    /// from a compiled model instead, and nothing here should pretend otherwise. When they are set,
+    /// they are what lets a placed part be built from the kit's own subcircuit, which is in turn what
+    /// makes a corner's process constants reach anything: the subcircuit names a model card, the card
+    /// states its value in terms of those constants.</para>
+    /// </summary>
+    string?                           DefinitionRelativePath = null,
+    string?                           DefinitionCell = null);
 
 /// <summary>
 /// One parameter a part declares, and the kit's own default for it.
@@ -81,6 +103,16 @@ public sealed class PdkImportReport
 
     /// <summary>Layer technology discovered in the kit, if any — the Layout Editor's entry point.</summary>
     public PdkAsset? LayerTechnology { get; set; }
+
+    /// <summary>
+    /// The corner choices this kit offers — one axis per file that declares sections, its
+    /// <see cref="PdkCornerAxis.AxisId"/> being that file's own kit-relative path.
+    ///
+    /// <para>Empty for the overwhelming majority of kits, which state no corners at all. That is why
+    /// nothing downstream may assume a corner exists: a picker offered where the kit offers nothing
+    /// is clutter in front of every user who will never need one.</para>
+    /// </summary>
+    public List<PdkCornerAxis> CornerAxes { get; } = [];
 
     public IEnumerable<PdkAsset> Supported    => Assets.Where(a => a.Support == PdkAssetSupport.Supported);
     public IEnumerable<PdkAsset> KnownGaps    => Assets.Where(a => a.Support == PdkAssetSupport.RecognizedNotSupported);

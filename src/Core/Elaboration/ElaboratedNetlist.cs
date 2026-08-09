@@ -7,7 +7,7 @@ namespace CircuitRF.Core.Elaboration;
 /// The flattened, resolved result of elaborating a TestBench.
 /// This is what the engine consumes. Nothing here is symbolic.
 /// </summary>
-public sealed class ElaboratedNetlist
+public sealed class ElaboratedNetlist : IDisposable
 {
     public List<ElaboratedComponent> Components { get; } = [];
     public NodeMap                   Nodes      { get; } = new();
@@ -92,4 +92,37 @@ public sealed class ElaboratedNetlist
             foreach (var (key, message) in rw.DrainWarnings())
                 AddWarningOnce(key, message);
     }
+
+    /// <summary>
+    /// Releases anything a model of this netlist is holding OUTSIDE this process.
+    ///
+    /// <para><b>Almost every model needs nothing here</b> — a resistor is a few doubles the garbage
+    /// collector reclaims on its own, and a netlist that is never disposed is no worse off than it was
+    /// before this existed. The one that does need it is a device an external provider supplies: its
+    /// instance lives in a WORKER process, which the collector cannot see and which outlives the run.
+    /// A sweep re-elaborates once per point by design, so an undisposed netlist there leaks one such
+    /// instance per point until the worker refuses to make another.</para>
+    ///
+    /// <para><b>Disposing does not invalidate a result.</b> What an analysis returns is a
+    /// <c>DataSet</c> of numbers; nothing downstream holds a model. So a caller that runs a netlist
+    /// and keeps the answer may dispose it the moment the run returns, which is what the sweep
+    /// does.</para>
+    ///
+    /// <para>Idempotent, and one model failing to release does not stop the others — this runs while
+    /// something is being thrown away, and a half-completed clean-up is worse than a slow one.</para>
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        foreach (var component in Components)
+            if (component.Model is IDisposable d)
+            {
+                try { d.Dispose(); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { /* see remarks */ }
+            }
+    }
+
+    private bool _disposed;
 }

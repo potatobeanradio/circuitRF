@@ -20,7 +20,22 @@ public static class PdkImporter
 {
     /// <summary>Files bigger than this are classified by name only; nothing peeks inside them.</summary>
     private const long PeekLimitBytes = 512 * 1024;
-    private const int  PeekChars      = 4096;
+    /// <summary>
+    /// How much of a candidate file a recogniser gets to look at.
+    ///
+    /// <para><b>Raised from 4,096 after it misclassified real files by eighteen bytes.</b> Two of a
+    /// kit's corner files declare their first <c>.lib</c> at byte 4,114 and 4,184 — behind a
+    /// license header and a long parameter block — so a 4,096-byte window ended just short of the one
+    /// marker that identifies them, and the corners they declare were invisible to the import. The
+    /// same shape of mistake as reading a network's port labels off a capped read: a format's marker
+    /// is wherever the file puts it, and a cap chosen for cost quietly becomes a correctness rule.</para>
+    ///
+    /// <para><b>Cost is bounded by <see cref="PeekLimitBytes"/>, not by this.</b> A file larger than
+    /// that is classified by name and never opened at all, so this only widens the window on files
+    /// already deemed cheap to read — and the read stops at end of file, which nearly every one of
+    /// them reaches first.</para>
+    /// </summary>
+    private const int  PeekChars      = 64 * 1024;
 
     public static PdkImportReport Import(string path)
     {
@@ -171,8 +186,90 @@ public static class PdkImporter
         }
 
         DiscoverParts(report);
+        DiscoverCorners(report);
         Summarize(report);
         return report;
+    }
+
+    /// <summary>
+    /// Learns which corner choices the kit offers, from the netlists it already recognised.
+    ///
+    /// <para>Recorded against each file's own KIT-RELATIVE path, never an absolute one: a design's
+    /// recorded corner has to survive the kit being moved, re-cloned, or referenced from a different
+    /// machine, and the only stable identity a corner file has is where it sits inside its kit.</para>
+    /// </summary>
+    private static void DiscoverCorners(PdkImportReport report)
+    {
+        var candidates = new List<(string AbsolutePath, string AxisId)>();
+        foreach (var net in report.Assets.Where(a => a.Kind == PdkAssetKind.Netlist))
+        {
+            string? full = ResolveAssetPath(report.RootPath, report.KitRoot, net.RelativePath);
+            if (full is not null) candidates.Add((full, net.RelativePath));
+        }
+
+        if (candidates.Count == 0) return;
+
+        IReadOnlyList<PdkCornerAxis> axes;
+        try { axes = PdkCorners.Discover(candidates); }
+        catch { return; }                 // a kit that will not yield corners still imports
+
+        report.CornerAxes.AddRange(RestrictToUsedFlavours(axes, report));
+    }
+
+    /// <summary>
+    /// Keeps only the corner files that sit beside a subcircuit some part is actually built from.
+    ///
+    /// <para><b>Which "flavour" of a corner applies is DERIVED, never offered as a choice.</b> A kit
+    /// that supports several simulators files a complete set of corner files per simulator — one real
+    /// one ships twelve for six device families — and they are not interchangeable: measured on that
+    /// kit, both MOS families differ between flavours by a parameter NAME, so the wrong one binds a
+    /// name the model never reads. The user cannot be expected to answer that, and should not be
+    /// asked to: the corner that applies is the one in the same directory as the subcircuit circuitRF
+    /// resolved the part to. Anything else is a corner for a simulator that is not running.</para>
+    ///
+    /// <para>A kit whose parts are all compiled models defines no subcircuits, so there is nothing to
+    /// derive from — every axis is kept rather than silently dropping the lot.</para>
+    /// </summary>
+    private static IReadOnlyList<PdkCornerAxis> RestrictToUsedFlavours(
+        IReadOnlyList<PdkCornerAxis> axes, PdkImportReport report)
+    {
+        var usedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in report.Parts)
+            if (part.DefinitionRelativePath is { Length: > 0 } rel)
+                usedDirs.Add(DirectoryOf(rel));
+
+        if (usedDirs.Count == 0) return axes;
+
+        var kept = axes.Where(a => usedDirs.Contains(DirectoryOf(a.AxisId))).ToList();
+
+        // A kit that files its corners apart from its subcircuits would otherwise lose all of them,
+        // which is a worse answer than showing more than are strictly relevant.
+        return kept.Count > 0 ? kept : axes;
+    }
+
+    private static string DirectoryOf(string relativePath)
+    {
+        int slash = relativePath.LastIndexOf('/');
+        return slash <= 0 ? "" : relativePath[..slash];
+    }
+
+    /// <summary>
+    /// Where an asset's kit-relative path actually lands on disk. An imported "additions" folder is
+    /// read together with the kit it names, so a relative path belongs to one root or the other.
+    /// </summary>
+    private static string? ResolveAssetPath(string root, string? kitRoot, string relativePath)
+    {
+        string rel  = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        string full = Path.Combine(root, rel);
+        if (File.Exists(full)) return full;
+
+        if (kitRoot is { Length: > 0 })
+        {
+            full = Path.Combine(kitRoot, rel);
+            if (File.Exists(full)) return full;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -204,6 +301,8 @@ public static class PdkImporter
         foreach (var net in report.Assets.Where(a => a.Kind == PdkAssetKind.Netlist))
             foreach (var sub in SubcircuitsIn(report.RootPath, report.KitRoot, net.RelativePath))
                 subcircuits.Add(sub);
+
+        subcircuits = PreferTheKitsMainLibrary(subcircuits, report);
 
         // ── The parts a CATALOG declares ─────────────────────────────────────
         //
@@ -248,7 +347,9 @@ public static class PdkImporter
                     // The symbol is the better authority on terminals than a name-matched subcircuit:
                     // the kit DREW it, and a part that names one is telling us how many pins it has.
                     PinCount:         tpl?.Pins.Count ?? sub?.PinCount ?? 0,
-                    Pins:             tpl?.Pins));
+                    Pins:             tpl?.Pins,
+                    DefinitionRelativePath: sub?.SourceRelativePath,
+                    DefinitionCell:         sub?.Name));
             }
 
         if (report.Parts.Count > 0) return;
@@ -291,7 +392,13 @@ public static class PdkImporter
                 // when the symbol declares no template.
                 Parameters: symbol.Parameters.Count > 0 ? symbol.Parameters : sub?.Parameters,
                 PinCount:   symbol.Pins.Count,
-                Pins:       symbol.Pins));
+                Pins:       symbol.Pins,
+                DefinitionRelativePath: sub?.SourceRelativePath,
+                DefinitionCell:         sub?.Name,
+                // The kit's own drawing. Non-null even when empty — see PdkPart.Body for why the
+                // distinction between "drew nothing" and "has no drawing" is load-bearing: the two
+                // sources place their pins under different axis conventions.
+                Body:       symbol.Body));
         }
 
         if (report.Parts.Count > 0) return;
@@ -318,7 +425,9 @@ public static class PdkImporter
                 SymbolArtwork:    FindArtworkFor(cell, artwork, PdkAssetKind.SymbolArtwork),
                 LayoutArtwork:    FindArtworkFor(cell, artwork, PdkAssetKind.LayoutArtwork),
                 Parameters:       match?.Parameters,
-                PinCount:         match?.PinCount ?? 0));
+                PinCount:         match?.PinCount ?? 0,
+                DefinitionRelativePath: match?.SourceRelativePath,
+                DefinitionCell:         match?.Name));
         }
 
         // A kit that ships no cell database at all still has to yield something placeable, so its
@@ -340,7 +449,9 @@ public static class PdkImporter
                 SymbolArtwork:    sym,
                 LayoutArtwork:    FindArtworkFor(sub.Name, artwork, PdkAssetKind.LayoutArtwork),
                 Parameters:       sub.Parameters,
-                PinCount:         sub.PinCount));
+                PinCount:         sub.PinCount,
+                DefinitionRelativePath: sub.SourceRelativePath,
+                DefinitionCell:         sub.Name));
         }
     }
 
@@ -359,6 +470,104 @@ public static class PdkImporter
     private static bool IsNumericText(string s)
         => s.Length > 0 && double.TryParse(s, System.Globalization.NumberStyles.Float,
                                            System.Globalization.CultureInfo.InvariantCulture, out _);
+
+    /// <summary>
+    /// Orders the kit's subcircuits so its MAIN library comes first, because the matcher below keeps
+    /// the first of equally-good candidates.
+    ///
+    /// <para><b>Why this is needed at all.</b> A kit that supports several simulators defines the same
+    /// subcircuit once per simulator, and beside each main library sits a handful of small variant
+    /// files. Left in directory-walk order, one part binds to one flavour and the next part to
+    /// another — and a part can land on a variant file rather than the library it belongs to. Every
+    /// one of those still reads, still places, and quietly pairs the part with process constants from
+    /// a corner set that is not the one being applied.</para>
+    ///
+    /// <para><b>The order is derived from the kit, not from any name.</b> The directory defining the
+    /// most subcircuits is that kit's main library tree; within a directory, the file defining the
+    /// most is the main library rather than a variant of it. Both are facts about how the kit is
+    /// built, so this carries no knowledge of any supplier's folder or file naming.</para>
+    /// </summary>
+    private static List<SubcircuitDef> PreferTheKitsMainLibrary(
+        List<SubcircuitDef> subcircuits, PdkImportReport report)
+    {
+        if (subcircuits.Count < 2) return subcircuits;
+
+        var canonical = CanonicalLibraries(report);
+
+        var perDir  = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var perFile = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var sub in subcircuits)
+        {
+            string dir = DirectoryOf(sub.SourceRelativePath);
+            perDir[dir]  = perDir.TryGetValue(dir, out var d) ? d + 1 : 1;
+            perFile[sub.SourceRelativePath] =
+                perFile.TryGetValue(sub.SourceRelativePath, out var f) ? f + 1 : 1;
+        }
+
+        // OrderBy is stable, so anything the counts do not separate keeps the order it was found in.
+        return [.. subcircuits
+            .OrderByDescending(x => canonical.Contains(FileNameOf(x.SourceRelativePath)))
+            .ThenByDescending(x => perDir[DirectoryOf(x.SourceRelativePath)])
+            .ThenByDescending(x => perFile[x.SourceRelativePath])];
+    }
+
+    /// <summary>
+    /// The model libraries the kit's own corner files name as their NOMINAL pairing.
+    ///
+    /// <para>A corner file's first section is the kit listing its ordinary alternative first, and that
+    /// section says which library it goes with — the later sections point at statistical and mismatch
+    /// variants of the same library instead. So the kit itself states which file is the canonical one,
+    /// and nothing here has to recognise a variant by its name. That matters: a variant library
+    /// declares extra process constants of its own, so a part bound to one is silently paired with a
+    /// model the selected corner never configures.</para>
+    /// </summary>
+    private static HashSet<string> CanonicalLibraries(PdkImportReport report)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var net in report.Assets.Where(a => a.Kind == PdkAssetKind.Netlist))
+        {
+            string? full = ResolveAssetPath(report.RootPath, report.KitRoot, net.RelativePath);
+            if (full is null) continue;
+
+            string[] lines;
+            try
+            {
+                if (new FileInfo(full).Length > PeekLimitBytes * 8) continue;
+                lines = File.ReadAllLines(full);
+            }
+            catch { continue; }
+
+            bool inFirst = false, sawFirst = false;
+            foreach (var raw in lines)
+            {
+                string ln = raw.Trim();
+                if (ln.StartsWith(".lib", StringComparison.OrdinalIgnoreCase) && !sawFirst)
+                {
+                    // A '.lib' with exactly one word after it OPENS a section; two words REQUESTS one.
+                    var w = ln.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                    if (w.Length == 2) { inFirst = true; sawFirst = true; }
+                    continue;
+                }
+                if (ln.StartsWith(".endl", StringComparison.OrdinalIgnoreCase)) { inFirst = false; continue; }
+
+                if (inFirst && ln.StartsWith(".include", StringComparison.OrdinalIgnoreCase))
+                {
+                    var w = ln.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                    if (w.Length >= 2) result.Add(FileNameOf(w[1].Trim('"')));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static string FileNameOf(string path)
+    {
+        int slash = path.LastIndexOfAny(['/', '\\']);
+        return slash < 0 ? path : path[(slash + 1)..];
+    }
 
     /// <summary>
     /// The subcircuit that supplies a cell's parameter interface: the one sharing the most name
@@ -449,7 +658,8 @@ public static class PdkImporter
     }
 
     /// <summary>One subcircuit a netlist declares: its name, terminals and declared parameters.</summary>
-    private sealed record SubcircuitDef(string Name, int PinCount, IReadOnlyList<PdkPartParameter> Parameters);
+    private sealed record SubcircuitDef(string Name, int PinCount, IReadOnlyList<PdkPartParameter> Parameters,
+                                        string SourceRelativePath = "");
 
     /// <summary>One part a catalog declares.</summary>
     /// <param name="Symbol">The symbol it references, as "&lt;name&gt;@&lt;library&gt;", or empty.</param>
@@ -586,7 +796,8 @@ public static class PdkImporter
                         cell.Name,
                         cell.Ports.Count,
                         [.. cell.Parameters.Select(p => new PdkPartParameter(
-                            p.Name, p.DefaultExpression, IsText: !IsNumericText(p.DefaultExpression)))]);
+                            p.Name, p.DefaultExpression, IsText: !IsNumericText(p.DefaultExpression)))],
+                        relativePath);
                 yield break;
             }
         }
@@ -600,7 +811,8 @@ public static class PdkImporter
                 : 0;
 
             var declared = ParametersAfter(text, m.Index + m.Length);
-            yield return new SubcircuitDef(name, pins, ResolveSentinels(text, m.Index + m.Length, declared));
+            yield return new SubcircuitDef(name, pins, ResolveSentinels(text, m.Index + m.Length, declared),
+                                          relativePath);
         }
     }
 

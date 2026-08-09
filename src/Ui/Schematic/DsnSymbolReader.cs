@@ -98,8 +98,13 @@ public static class DsnSymbolReader
     ///
     /// <para>A change that cannot move a pin — a rendering-only fix to text or an arc — does not
     /// need a bump, and bumping for one costs every user a re-import for nothing.</para>
+    ///
+    /// <para><b>2</b> — a part backed by a record symbol FILE stopped being translated under the
+    /// symbol library's y-up rule. That format is y-down, so every such part's pins were being
+    /// mirrored vertically; correcting it moves them, which is precisely what this counter is for.
+    /// Parts backed by a library or by a <c>.dsn</c> drawing are unaffected.</para>
     /// </summary>
-    public const int TranslationVersion = 1;
+    public const int TranslationVersion = 2;
 
     /// <summary>
     /// Target band for the symbol's larger dimension, in local units. A power-of-ten scale is

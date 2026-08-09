@@ -768,11 +768,18 @@ public sealed class PdkPartVariantTests : IDisposable
         """;
 
     [Fact]
-    public void TheDialogAsksWhichFileFirst_ThenWhichFormulation_ThenTheValues()
+    public void TheDialogAsksWhichFileFirst_ThenWhichFormulation_ThenTheValues_AndCircuitRfsOwnOverrideLast()
     {
         // That is the order the questions actually arrive in — the later answers only mean anything
         // once the earlier ones are settled — and it puts the two a user of an imported kit reaches
         // for at the top instead of buried among a dozen numbers.
+        //
+        // ModelLibrary is the exception and goes LAST (owner-reported). It is file-valued, so the rule
+        // above put it first on EVERY kit part — the top of the dialog, on all of them — while being
+        // an override almost nobody sets, and one that does nothing at all on a part the kit defines
+        // with its own netlist. A row that leads every part and applies to few reads as a required
+        // first step, which is how it came to be filled in with a path that then failed to parse. The
+        // rule it is an exception to is about a file the KIT asked for; this one is circuitRF's own.
         string cellDir = InstallPart(ManifestWithFileParam,
                                      new PdkPartParameter("Rth", "-1"),
                                      new PdkPartParameter("ModelFile", ""));
@@ -781,7 +788,11 @@ public sealed class PdkPartVariantTests : IDisposable
         var editor = new ParameterEditorViewModel();
         editor.SetTargetDirect(new SchematicViewModel(model), comp, showClose: false);
 
-        Assert.Equal(["ModelLibrary", "ModelFile", "ModelAs", "Rth"], editor.Rows.Select(r => r.Name));
+        Assert.Equal(["ModelFile", "ModelAs", "Rth", "ModelLibrary"], editor.Rows.Select(r => r.Name));
+
+        // Still a file row with a picker — moved, not demoted to a text box, because it is still a
+        // path and still the thing that makes two revisions of a library comparable side by side.
+        Assert.True(editor.Rows.Single(r => r.Name == "ModelLibrary").IsFilePathParam);
     }
 
     [Fact]

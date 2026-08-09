@@ -55,8 +55,20 @@ public static class SchematicToLayoutGenerator
     // Excluded from the parameter dict handed to a PCell generator — layer-selection inputs
     // (consumed separately, below) and non-numeric/UI-only fields, mirroring NetExtractor.EmitInstance's
     // own exclusion set exactly so the artwork and electrical sides never disagree about "the one list."
+    //
+    // ModelLibrary is circuitRF's OWN routing parameter — "evaluate this instance with a different
+    // model library" — and it is a FILE PATH, on every kit part, blank by default. It has nothing to
+    // do with artwork, so a generator must never be shown it. Feeding it to the numeric resolver is
+    // what produced "parameter 'ModelLibrary': no value set — skipped" for every placed kit part, and
+    // then "Parse error at position 0: Unexpected token '/'" for anyone who tried to make that message
+    // go away by filling the row in. NetExtractor.EmitInstance skips it for the same reason on the
+    // electrical side ("rides in the provider name"), which is the exclusion set this one mirrors.
     private static readonly HashSet<string> NonPCellParamNames =
-        new(StringComparer.Ordinal) { "SignalLayer", "GroundReference", "CvData", "ShowBias" };
+        new(StringComparer.Ordinal)
+        {
+            "SignalLayer", "GroundReference", "CvData", "ShowBias",
+            PdkPartInstaller.ModelLibraryParameter,
+        };
 
     private const int GridCols = 8;
     // 10 mm at the app-wide fixed 1 DBU = 1 nm resolution (LayoutUnits.DefaultDbuPerMicron) — crude
@@ -300,7 +312,45 @@ public static class SchematicToLayoutGenerator
         resolveWarning = null;
         pcellDiagnostics = null;
 
-        if (comp.CellRef is not null)
+        // An imported kit's part is a VIRTUAL reference, and treating it as a path is what made this
+        // report "referenced cell not found" for every one of them — which is false and sends the
+        // user looking for a missing folder. The part IS loaded; what it may lack is a layout
+        // generator, and that is a different sentence with a different answer.
+        string? kitGeneratorId = null;
+        if (comp.CellRef is { } kitRef && PdkKitRegistry.IsKitRef(kitRef))
+        {
+            if (!PdkKitRegistry.TryParse(kitRef, out string kitName, out string partId))
+            {
+                resolveWarning = "kit reference could not be read";
+                return null;
+            }
+
+            if (PdkKitRegistry.Find(kitRef) is null)
+            {
+                resolveWarning = $"the kit \"{kitName}\" is not loaded in this workspace";
+                return null;
+            }
+
+            // Which of a kit's layout cells is THIS part's is settled once, by the palette, and read
+            // here — never worked out a second time. A kit names its schematic part and its layout
+            // cell independently, so the answer is not always the part id, and two derivations of it
+            // are how a tile and a design come to disagree about a part's artwork.
+            // See KitPaletteMerge for the rules and KitLayoutGenerators for why it is published.
+            string kitGenerator = KitLayoutGenerators.For(kitName, partId) ?? partId;
+
+            if (!PCellRegistry.TryGet(kitGenerator, out _))
+            {
+                resolveWarning = $"the kit \"{kitName}\" supplies a schematic symbol for \"{partId}\" " +
+                                 "but does not say which of its layout cells that part is, so the " +
+                                 "artwork cannot be chosen for you — drop the one you want from the " +
+                                 "Library palette, where the kit's layout cells are listed under its " +
+                                 "own heading";
+                return null;
+            }
+
+            kitGeneratorId = kitGenerator;
+        }
+        else if (comp.CellRef is not null)
         {
             string cellAbsDir;
             try { cellAbsDir = Path.GetFullPath(Path.Combine(schematicDir, comp.CellRef)); }
@@ -318,15 +368,42 @@ public static class SchematicToLayoutGenerator
             return ToRelative(targetLayoutBaseDir, cellAbsDir);
         }
 
-        string reference = ComponentTypeRegistry.EngineReference(comp.Symbol, comp.PortCount);
+        string reference = kitGeneratorId
+                        ?? ComponentTypeRegistry.EngineReference(comp.Symbol, comp.PortCount);
         if (!PCellRegistry.TryGet(reference, out var generator))
             return null; // no PCell generator and no CellRef — an ordinary electrical-only component
 
-        var resolved = new Dictionary<string, PCellValue>(StringComparer.Ordinal);
+        // What THIS generator says its parameters are, and what KIND each one is. Null for a built-in,
+        // which declares its interface in code and is left exactly as it was. See DeclaredInterface.
+        var declared = PCellRegistry.DeclaredDefaults(reference);
+
+        // Seeded from the declaration, so an instance that states three of a cell's fourteen
+        // parameters produces the SAME cell as dropping that cell from the palette and editing those
+        // three — one artwork per parameter set, not two identical ones under different names.
+        var resolved = declared is null
+            ? new Dictionary<string, PCellValue>(StringComparer.Ordinal)
+            : new Dictionary<string, PCellValue>(declared, StringComparer.Ordinal);
+
+        List<string>? paramNotes = null;
+
         foreach (var p in comp.Parameters)
         {
             if (NonPCellParamNames.Contains(p.Name)) continue;
             if (IsInactiveMklopfEntryParam(comp, p.Name)) continue; // R-L5f-3
+
+            // A parameter this generator does not declare is not its parameter. A kit part carries
+            // circuitRF's own routing rows and the kit's model-selection rows alongside the dimensions,
+            // and every one of them used to be pushed through the numeric resolver — where the first
+            // that is not a number takes the whole instance's artwork down with it.
+            if (declared is not null && !declared.ContainsKey(p.Name)) continue;
+
+            if (declared is not null && declared[p.Name].Kind == PCellValueKind.String)
+            {
+                resolved[p.Name] = PCellValue.Text(TextForDeclaredString(p, scope, evaluator, out string? note));
+                if (note is not null) (paramNotes ??= []).Add($"{p.Name}: {note}");
+                continue;
+            }
+
             if (!TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out var value, out var error))
             {
                 resolveWarning = $"parameter '{p.Name}': {error}";
@@ -362,6 +439,12 @@ public static class SchematicToLayoutGenerator
             resolveWarning = $"PCell generation failed: {ex.Message}";
             return null;
         }
+
+        // Said alongside the generator's own diagnostics, on the instance that has the row — not as a
+        // failure, because the artwork was still produced. See TextForDeclaredString for why an
+        // unevaluable row is worth a line rather than silence.
+        if (paramNotes is { Count: > 0 })
+            pcellDiagnostics = pcellDiagnostics is null ? paramNotes : [.. paramNotes, .. pcellDiagnostics];
 
         pcellParams = resolved;
         generatorId = reference;
@@ -440,6 +523,69 @@ public static class SchematicToLayoutGenerator
         }
     }
 
+    /// <summary>
+    /// A schematic parameter as a generator that declared it a STRING has to receive it.
+    ///
+    /// <para><b>Why this is not a detail, measured.</b> A vendor cell library
+    /// routinely declares every parameter as text — the kit's own defaults are written <c>6.99u</c>,
+    /// <c>600n</c>, <c>1</c> — and a NUMBER sent to such a parameter is <b>silently ignored</b>: the
+    /// generator falls back to its own default, emits no diagnostic, and draws perfectly. Measured on
+    /// the owner's kit: a capacitor cell asked for 30 µm × 30 µm came back as the 6.99 µm default
+    /// (28 shapes, 8,190 DBU across) when the value went as a Real, and as the size actually asked
+    /// for (532 shapes, 31,200 DBU) when it went as text. Same for a transistor cell — w = 5 µm with
+    /// 4 gate fingers drew the 0.6 µm single-finger default. So "resolve everything to a double" does
+    /// not merely fail loudly on the odd parameter; it quietly produces a layout that does not match
+    /// the schematic it was generated from.</para>
+    ///
+    /// <para><b>The expression is still EVALUATED, and the result is still SI.</b> A schematic value
+    /// may be <c>2*Wg</c> or carry a unit glyph, and a generator must not be handed the source text
+    /// of an expression to parse. So this evaluates exactly as <see cref="TryResolveSiValue"/> does —
+    /// same scope, same unit normalization, same engine base units — and formats the answer as a
+    /// round-trippable invariant decimal. Metres are what such a kit reads a bare number as: the same
+    /// capacitor cell given the text <c>7e-06</c> reproduces its own <c>6.99u</c> default artwork.</para>
+    ///
+    /// <para>Falls back to the raw text when the expression is not numeric at all, which is what a
+    /// genuine word-valued parameter (a display mode, a model name, a calculation route) is.</para>
+    ///
+    /// <para><b><paramref name="note"/> is set for the third case, and it is the one worth saying out
+    /// loud.</b> A kit spells its values the way its own simulator does — <c>60u</c>, <c>1.5p</c> —
+    /// and circuitRF's expression engine does not read engineering suffixes: a value's unit is a
+    /// FIELD on the row, not a letter on the number (measured: <c>60u</c> is
+    /// <c>Parse error at position 2</c>, while <c>60</c> with the unit µm resolves). Such a row still
+    /// reaches the cell verbatim and the artwork still comes out right, because the kit's own cell
+    /// parses its own spelling — so this is not a failure and must not cost the instance its layout.
+    /// But nothing else in circuitRF can read it: the same row goes to the simulator as an expression
+    /// and fails there, a long way from here, with a message about a token. Saying it at the point the
+    /// value is used is the difference between a fixable row and a mystery at Run.</para>
+    /// </summary>
+    internal static string TextForDeclaredString(
+        EditableParameter p, Scope scope, Evaluator evaluator, out string? note)
+    {
+        note = null;
+        if (TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out double v, out _))
+            return v.ToString("R", CultureInfo.InvariantCulture);
+
+        string raw = p.Expression.Trim();
+        if (LooksLikeASuffixedNumber(raw))
+            note = $"\"{raw}\" was passed to the kit's cell as written — circuitRF cannot evaluate it, " +
+                   "because a unit belongs in the row's own unit field rather than as a letter after " +
+                   "the number. The artwork is correct; the same value will fail when this design is " +
+                   "simulated. Enter it as a number with a unit instead.";
+        return raw;
+    }
+
+    /// <summary>A number with an engineering suffix stuck to it — the spelling a SPICE-dialect kit
+    /// uses and circuitRF's expression engine does not read. Deliberately shape-based rather than a
+    /// list of suffixes: the point is to tell a MISTYPED DIMENSION apart from a word-valued parameter
+    /// ("Selected", a model name), not to decode the suffix.</summary>
+    private static bool LooksLikeASuffixedNumber(string text)
+    {
+        if (text.Length < 2 || !char.IsAsciiDigit(text[0])) return false;
+        int i = 0;
+        while (i < text.Length && (char.IsAsciiDigit(text[i]) || text[i] == '.')) i++;
+        return i > 0 && i < text.Length && char.IsAsciiLetter(text[i]);
+    }
+
     /// <summary>R-L5f-3: MKlopf's alternate entry routes (Z1/Z2 ⇄ W1/W2 impedance entry, L ⇄ F3db
     /// length entry — <c>ParameterEditorViewModel</c>'s own toggle) mean an instance may carry a
     /// parameter that is not the CURRENTLY active route for its pair — resolving it is meaningless and
@@ -498,22 +644,38 @@ public static class SchematicToLayoutGenerator
     internal static bool NearlyEqual(double a, double b) => Math.Abs(a - b) <= 1e-9 * Math.Max(1.0, Math.Max(Math.Abs(a), Math.Abs(b)));
 
     /// <summary>
-    /// "Did this parameter change" for the R-L5-9/10/11 overwrite classification, across kinds. Two
-    /// Reals compare with <see cref="NearlyEqual"/>'s tolerance — a value that has been through a
-    /// unit conversion and back is not bit-identical and must not read as an edit. Every other kind
-    /// compares exactly: there is no rounding to absorb in a model name, a finger count, or a flag,
-    /// and a tolerance there would only ever hide a real difference. A KIND change is a change.
+    /// "Did this parameter change" for the R-L5-9/10/11 overwrite classification, across kinds.
+    ///
+    /// <para>Anything that IS a number compares as one, with <see cref="NearlyEqual"/>'s tolerance — a
+    /// value that has been through a unit conversion and back is not bit-identical and must not read
+    /// as an edit. <b>A number spelled as text counts</b>, because a vendor cell library declares its
+    /// dimensions as text (see <see cref="TextForDeclaredString"/>) and the schematic side can only
+    /// ever produce a Real: without this, every parameter of every kit part reads as changed on every
+    /// push, in both directions, forever.</para>
+    ///
+    /// <para>A value that is not a number compares exactly: there is no rounding to absorb in a model
+    /// name or a display mode, and a tolerance there would only ever hide a real difference.</para>
     /// </summary>
     internal static bool SameParamValue(PCellValue a, PCellValue b)
-        => a.Kind == PCellValueKind.Real && b.Kind == PCellValueKind.Real
-            ? NearlyEqual(a.AsReal(), b.AsReal())
-            : a.Equals(b);
+    {
+        if (a.Kind == b.Kind && a.Equals(b)) return true;
+        return TryAsNumber(a, out double x) && TryAsNumber(b, out double y) && NearlyEqual(x, y);
+    }
 
-    /// <summary>A parameter value as a change report shows it: a Real through the same unit
-    /// conversion the schematic edits it in, anything else as its own text (a model name is not a
-    /// number and must not be formatted as one).</summary>
+    /// <summary>A parameter value as a number, whether it was sent as one or spelled as one.
+    /// False for text that is not a number, which is what a model name or a display mode is.</summary>
+    internal static bool TryAsNumber(PCellValue v, out double number)
+    {
+        if (v.Kind != PCellValueKind.String) { number = v.AsReal(); return true; }
+        return double.TryParse(v.AsText(), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+    }
+
+    /// <summary>A parameter value as a change report shows it: a number through the same unit
+    /// conversion the schematic edits it in — INCLUDING one spelled as text, which is how a vendor
+    /// cell states a dimension — and anything else as its own text (a model name is not a number and
+    /// must not be formatted as one).</summary>
     internal static string FormatParamValue(string? unit, PCellValue v)
-        => v.Kind == PCellValueKind.Real ? Fmt(ToDisplayValue(unit, v.AsReal())) : v.AsText();
+        => TryAsNumber(v, out double n) ? Fmt(ToDisplayValue(unit, n)) : v.AsText();
 
     internal static string Fmt(double d) => d.ToString("0.#####", CultureInfo.InvariantCulture);
 
@@ -525,9 +687,17 @@ public static class SchematicToLayoutGenerator
     /// formatting, so the two can never disagree about how a value is displayed.</summary>
     internal static double ToDisplayValue(string? unit, double siValue)
     {
-        if (!string.IsNullOrEmpty(unit) && !string.Equals(unit, "deg", StringComparison.Ordinal))
+        // NORMALIZED FIRST, exactly as TryResolveSiValue normalizes on the way in — this is supposed
+        // to be that function's inverse, and it was not. The editor stores a GLYPH ("µm", "Ω") while
+        // Units.Scale is ASCII-only ("um", "Ohm"), so an unnormalized glyph found no scale, fell
+        // through, and returned raw metres. Silent, and worst exactly where it matters most: "µm" is
+        // the length unit an MMIC technology hands a freshly-created row, so pushing a layout back to
+        // a schematic on a die wrote metres into a micron field — a factor of a million, from the one
+        // command whose purpose is to keep the two views agreeing. R-L5f-1/2's trap, on the way out.
+        string normalized = UnitNormalizer.ToEngineUnit(unit);
+        if (normalized.Length > 0 && !string.Equals(normalized, "deg", StringComparison.Ordinal))
         {
-            double? scale = Units.Scale(unit);
+            double? scale = Units.Scale(normalized);
             if (scale is > 0) return siValue / scale.Value;
         }
         return siValue;

@@ -128,6 +128,31 @@ public static class ComponentModelFactory
         => _registry[typeName] = factory;
 
     /// <summary>
+    /// Which key on an instance is circuitRF's reserved <paramref name="reserved"/> selector, or null
+    /// when nothing spells it. Exact spelling first, then a case-insensitive match.
+    ///
+    /// <para><b>Why the exact spelling has to win, rather than matching case-insensitively outright.</b>
+    /// A compiled model may genuinely declare a parameter called <c>TYPE</c> — a real MOS compact
+    /// model uses it for the channel polarity — and a case-blind rule then eats it as circuitRF's own
+    /// device-type selector. The device still builds, still solves, and is a different transistor.
+    /// Preferring the exact spelling keeps the two apart when both are present while leaving a design
+    /// that writes <c>type=</c> for the selector working exactly as before, since such a design has no
+    /// other parameter of that name for it to be confused with.</para>
+    /// </summary>
+    public static string? ReservedKey(IEnumerable<string> names, string reserved)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        string? loose = null;
+        foreach (string n in names)
+        {
+            if (string.Equals(n, reserved, StringComparison.Ordinal)) return n;
+            loose ??= string.Equals(n, reserved, StringComparison.OrdinalIgnoreCase) ? n : null;
+        }
+        return loose;
+    }
+
+    /// <summary>
     /// ExtDevice: a device supplied by a registered external provider.
     ///
     /// Two reserved parameter names — Provider (which registered provider) and Type (which device
@@ -138,11 +163,16 @@ public static class ComponentModelFactory
     private static ExternalDeviceModel CreateExternalDeviceModel(
         IReadOnlyDictionary<string, Value> parameters)
     {
-        if (!parameters.TryGetValue("Provider", out var pv) || pv.Kind != ValueKind.String)
+        // Resolved ONCE, by key, so that a model parameter which merely differs in case from a
+        // selector is forwarded rather than swallowed — see ReservedKey.
+        string? providerKey = ReservedKey(parameters.Keys, "Provider");
+        string? typeKey     = ReservedKey(parameters.Keys, "Type");
+
+        if (providerKey is null || !parameters.TryGetValue(providerKey, out var pv) || pv.Kind != ValueKind.String)
             throw new ExternalDeviceException(
                 "ExtDevice: the 'Provider' parameter is missing — it names the registered device " +
                 "provider to load this device from.");
-        if (!parameters.TryGetValue("Type", out var tv) || tv.Kind != ValueKind.String)
+        if (typeKey is null || !parameters.TryGetValue(typeKey, out var tv) || tv.Kind != ValueKind.String)
             throw new ExternalDeviceException(
                 "ExtDevice: the 'Type' parameter is missing — it names the device type to create.");
 
@@ -168,8 +198,8 @@ public static class ComponentModelFactory
         foreach (var (key, val) in parameters)
         {
             if (key.StartsWith("__", StringComparison.Ordinal)) continue;
-            if (key.Equals("Provider", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("Type",     StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(key, providerKey, StringComparison.Ordinal) ||
+                string.Equals(key, typeKey,     StringComparison.Ordinal)) continue;
             forwarded[key] = val.Kind == ValueKind.String
                 ? val.AsString()
                 : val.AsReal().ToString("R", System.Globalization.CultureInfo.InvariantCulture);

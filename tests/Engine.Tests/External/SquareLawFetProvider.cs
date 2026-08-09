@@ -68,11 +68,25 @@ public sealed class SquareLawFetProvider : IExternalDeviceProvider
 
     public IReadOnlyList<ExternalDeviceDescriptor> Describe() => [TypeDescriptor];
 
+    /// <summary>
+    /// How many instances have been asked for, and how many have not been given back.
+    ///
+    /// <para>Counted because an instance a real provider makes lives in ANOTHER PROCESS, where no
+    /// garbage collector reaches it and where a worker's own table is finite. A sweep re-elaborates
+    /// per point by design, so "did anything hand them back" is a property worth asserting and one
+    /// nothing else here would notice.</para>
+    /// </summary>
+    public int Created { get; private set; }
+    public int Live    { get; private set; }
+
     public IExternalDeviceInstance Create(string typeId, IReadOnlyDictionary<string, string> parameters)
     {
         if (!string.Equals(typeId, TypeName, StringComparison.Ordinal))
             throw new ExternalDeviceException($"Provider '{Name}' does not expose a type '{typeId}'.");
-        return new Instance(parameters);
+
+        Created++;
+        Live++;
+        return new Instance(parameters, this);
     }
 
     /// <summary>Parameters as this provider resolves them — public so tests can build the oracle.</summary>
@@ -117,7 +131,8 @@ public sealed class SquareLawFetProvider : IExternalDeviceProvider
         return (id, gm, gds, gT);
     }
 
-    private sealed class Instance(IReadOnlyDictionary<string, string> parameters) : IExternalDeviceInstance
+    private sealed class Instance(IReadOnlyDictionary<string, string> parameters, SquareLawFetProvider owner)
+        : IExternalDeviceInstance
     {
         private readonly Params _p = ReadParams(parameters);
 
@@ -176,6 +191,13 @@ public sealed class SquareLawFetProvider : IExternalDeviceProvider
             return new ExternalDeviceEvaluation(i, new double[NodeCount], g, new double[NodeCount, NodeCount]);
         }
 
-        public void Dispose() { }
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            owner.Live--;
+        }
     }
 }

@@ -1,3 +1,916 @@
+A kit's own number notation, and where `ModelLibrary` belongs (2026-08-09) — owner's follow-ups to the
+two entries below.
+
+**circuitRF already knew how to read `0.72u`; the schematic side was just never told.**
+`SpiceNumber` exists for exactly this and already carries the trap: that dialect is case-INsensitive
+and spells milli `M`, with mega as `MEG`, while circuitRF's own unit table is SI and case-SENSITIVE
+where `M` is mega — so reading a kit's suffix through the SI table turns one millifarad into one
+megafarad, a factor of 10⁹ in a value that still parses, still stamps and still converges.
+`PdkPartInstaller.InCircuitRfsOwnNotation` sends every kit-supplied default through that reader at the
+one boundary where the kit's dialect is being read anyway.
+
+**The kit is not consistent with itself, which is why nothing is detected and every default is simply
+read.** Its own symbol templates write `7.0e-6` for one part and `0.72u` for the next — measured, in
+one directory. A value circuitRF can already read is left EXACTLY as written; a word-valued default is
+not a number and passes through untouched. **Measured over the whole kit: 107 defaults, 0 still
+unevaluable.**
+
+**Why not teach the expression engine suffixes instead** (the owner asked): the engine's `M` is mega
+and the dialect's is milli, so a language where the same letter means two things depending on which
+dialog it was typed into is a worse problem than the one being solved. Normalising where the kit is
+read keeps the two scales from ever meeting — the same reason `SpiceNumber` exists at all.
+
+**This also removes the warning from where it was wrong.** The unevaluable-value note added below
+fired on values circuitRF itself had put on the instance — the kit's own defaults — which is circuitRF
+telling the user off for circuitRF's own number. It now fires only on a value a PERSON typed, which is
+the case it was written for.
+
+**`ModelLibrary` is kept and moved LAST in the parameter dialog.** It is still live — a leaf
+provider-backed part reads it, and so does the compiled-model routing, which is what makes two
+revisions of a library comparable side by side in one schematic. But it is file-valued, so the
+which-file-first rule put it at the TOP of every kit part, on all 110 of them, while doing nothing at
+all on a part the kit defines with its own netlist (measured: every part probed resolves
+`ExternalNetlistPath` to the kit's own subcircuit, which takes precedence). A row that leads every
+part and applies to few reads as a required first step — which is exactly how it came to be filled in
+with a path that then failed to parse. The rule it is now an exception to is about a file the KIT
+asked for; this one is circuitRF's own. Still a file row with a picker: moved, not demoted.
+
+**The RF FET cells' pins are the kit's own coordinates, and the artwork under them is what is
+missing** (owner-reported, time-boxed). All four RF FET cells report pins at IDENTICAL absolute
+coordinates despite geometry bounding boxes differing by 40% — G at −0.28 µm, which is exactly the
+`p1_x = -dgatx-wgat*0.5` its own code computes, and TIE on the guard ring below the device. So the pin
+positions are faithfully the kit's. What does not arrive is the geometry that should sit under them:
+those cells return **zero shapes at negative x**, while the non-RF cell of the same family does return
+negative-x geometry. The RF cells build their gate bar and guard ring through `MetalCont` and a
+boolean OR whose operands are then deleted; the bridge does implement `fgOr`, so this is a narrower
+gap than "booleans are missing" and was not chased further. **Not fixed — recorded so it is not
+re-diagnosed from scratch.**
+
+**Uncommitted work was scrubbed of supplier and PDK-specific identifiers** (owner-requested): part,
+cell, model, module and corner-file names, and one PDK's directory layout, replaced with neutral
+equivalents across the uncommitted source, tests and these notes. Two format MARKERS are deliberately
+kept because they are what the recogniser matches on — `.osdi` and `.spiceinit` — exactly as `.gds`
+and `.dsn` already are. Committed history was left alone.
+
+One model, several parts, several cells — the case that left every transistor without artwork
+(2026-08-09) — owner-reported, immediately after the entry below: *"for hv_rf_nmos I get: the kit
+supplies a schematic symbol but does not say which of its layout cells that part is"*.
+
+**The model step was right to refuse and the kit was stating the answer somewhere else.** That step
+requires exactly one claimant on each side, because "exactly one" is what makes it a reading rather
+than a guess. A kit offering one device in an RF and a plain form breaks that on both sides at once.
+Measured on the owner's kit — every ambiguous group has the identical shape, and there are four of
+them, costing **eight parts their artwork**:
+
+```
+model 'hv_nmos'  ← 2 cells and 2 parts
+  GEN  fetCellHv    : cdf_version, Display, model, w, ws, l, Wmin, Lmin, ng, m, trise
+  GEN  rfFetCellHv  : rfmode, model, w, ws, l, ng, calculate, cnt_rows, …, guard_ring, …
+  PART hv_nmos     : l, w, ng, m
+  PART hv_rf_nmos  : l, w, ng, m, rfmode
+```
+
+**`PairByParameterInterface` reads what each side ACCEPTS, and coverage is a requirement rather than a
+score.** A cell that does not declare a parameter the part HAS cannot be that part's layout view: the
+value would have nowhere to land, which is exactly the silent-default failure the entry below is
+about. **Propagated, not scored** — coverage forces the RF part (only the RF cell takes `rfmode`) but
+not the plain one (both cells accept everything it has); assigning the forced one and re-asking is
+what settles the rest, and it converges or stops, so a group it cannot decide is still left for the
+palette. Measured: **19 → 27 real parts with artwork, 15 → 7 leftover layout-only tiles, and not one
+existing pairing moved.** The kit's two Schottky cells declare identical parameter sets and are
+correctly left alone.
+
+**Nothing reads a NAME, and there is a test that crosses the names to prove it.** Pairing "rf" against
+"rf" would invent a convention the kit never stated, and the kit that spells it the other way round
+would silently get its artwork swapped — which draws perfectly and is wrong.
+
+**Compose now runs in TWO PASSES, and the ordering is load-bearing.** The three identity rules run to
+completion first; the fourth then sees only what they left. Written the obvious way — one loop, the
+new rule as a fallback inside it — the fourth reasons over a whole model GROUP and hands a cell to a
+part step one was about to claim by id, leaving that part with nothing. **Caught by a test written to
+pin the precedence, not by reading the code.**
+
+`PdkPartRef.ParameterNames` carries the part's side; `WorkspaceViewModel` reads the cells' side out of
+the SAME `DeclaredDefaults` call it already makes for the model name, so this costs no extra work.
+
+Gate: 6 tests in `KitLayoutArtworkTests`, including the crossed-names one and the precedence one.
+
+---
+
+**Two real defects found while stabilising the gate for the above, neither of them in this feature:**
+
+- **`OsdiModelDiscovery` could kill a PDK import outright.** `EnumerateFiles` is LAZY, so the `try`
+  around it guarded only the construction of the enumerable — the walk actually fails on the first
+  `MoveNext`, which the `OrderBy` triggered OUTSIDE the guard. An `UnauthorizedAccessException` from
+  any unreadable directory therefore escaped `PdkPartInstaller.Install`. Not hypothetical and not
+  test-only: the search WIDENS outward when the kit's own tree holds no compiled model, so it
+  routinely meets folders that are none of circuitRF's business — a mounted volume, a protected system
+  folder, another user's home. Found on macOS as *"Operation not permitted"* on the system's own
+  `TemporaryItems`. Now materialised inside the guard with `IgnoreInaccessible`. **No regression test,
+  and the code says so:** .NET's own walk already skips an ordinary permission denial, so a fixture
+  built from directory modes passes with and without the fix — verified, not assumed — and the escape
+  needs the transient sandbox refusal specifically. A defensive fix from a captured stack trace.
+- **`SkiaFonts.Load` threw out of a paint when no Avalonia host was present.** The test-only typeface
+  override is a static field set by a class's constructor and cleared by its `Dispose`, and xUnit runs
+  classes in PARALLEL — so one class clearing it mid-render dropped another's paint through to the
+  asset loader. It surfaced from a 500,000-shape render at roughly 3 runs in 10. Policing every caller
+  of a shared mutable static is the fragile fix; not exploding when the host is absent is the robust
+  one, and in production the alternative to a fallback face is an exception escaping a paint, which
+  loses the whole frame rather than one typeface.
+
+**And the collections had a hole this work walked straight into.** `PdkToolsDirectoryCollection`
+serialises the kit registries; `PCellResolverCollection` serialises the PCell resolver list; a class
+can belong to ONE. A test that places a kit part and generates its artwork mutates both at once, so
+whichever it picked it raced the other — measured, as a resolver cleared out from under a test
+mid-run, reading as an empty parameter set in one class and a stale content hash in another. The two
+now name the same collection. **The suite was genuinely unreliable before this and is not now: 10
+consecutive full runs of 5,716 clean, against 3 failures in 10 before.**
+
+A kit part's ARTWORK follows its schematic, and the reverse command reaches PDK parts at all
+(2026-08-09) — owner-reported, from the open-PDK bring-up: *"23:43:53 X1 (X): parameter 'ModelLibrary':
+no value set — skipped"* on Update Layout from Schematic, and then, after filling that row in to make
+it stop, *"Parse error at position 0: Unexpected token '/'"*.
+
+**The reported message was the small half.** `SchematicToLayoutGenerator` pushed EVERY parameter on a
+placed component through the numeric expression resolver, and the first one that is not a number
+returned null for the whole instance — no artwork, and a message about a model library on a command
+about geometry. `ModelLibrary` is circuitRF's own routing row: a FILE PATH, present and blank on every
+kit part, and it sorts first, so it was always the one that failed. It is now in
+`NonPCellParamNames` alongside `SignalLayer`/`GroundReference` — the same exclusion, for the same
+reason, that `NetExtractor.EmitInstance` already applies on the electrical side.
+
+**The half nobody had seen is the one that mattered, and it was silent.** A vendor cell library
+declares every parameter as TEXT — this kit's own defaults are written `6.99u`, `600n`, `1` — and a
+NUMBER sent to a text parameter is **discarded by the generator without a diagnostic**: it falls back
+to its own default and draws perfectly. Measured on the owner's kit, through the real transport:
+
+| what the schematic asked for | sent as | what came back |
+|---|---|---|
+| `mimCell` w = l = 30 µm | Real | **28 shapes, 8,190 DBU** — the 6.99 µm default |
+| `mimCell` w = l = 30 µm | Text | 532 shapes, 31,200 DBU |
+| `fetCellHv` w = 5 µm, ng = 4 | Real | **15 shapes, 1,670 DBU** — the 0.6 µm single-finger default |
+| `fetCellHv` w = 5 µm, ng = 4 | Text | 43 shapes, 4,160 DBU |
+
+So "resolve everything to a double" did not merely fail loudly on the odd row; every dimension the
+schematic stated was being thrown away, and the layout that came out looked right. The generator's own
+DECLARATION is now the contract: `PCellRegistry.DeclaredDefaults` says which parameters exist and what
+kind each is, a row the cell does not declare is not passed at all, and a text-declared row is
+EVALUATED (same scope, same unit normalization, same SI base units) and formatted round-trippably —
+metres, which is what such a kit reads a bare number as (`7e-06` reproduces the cell's own `6.99u`
+artwork). `resolved` is seeded from the declaration too, so an instance stating three of fourteen
+parameters produces the same cell a palette drop of that cell produces.
+
+**`PCellRegistry.DeclaredDefaults` did not give built-ins precedence and `TryGet` does.** Fixed at the
+source: a kit naming a cell `MLIN` could otherwise describe circuitRF's own generator while circuitRF
+generated a different one.
+
+**"Update Schematic from Layout" did nothing at all for a PDK component, silently** (owner's follow-up
+ask). It decides what a generated cell IS by looking the generator id up in a hardcoded table of the
+six built-in microstrip generators; a kit's cell is discovered at run time and is in no table, so
+every PDK instance failed the lookup and was `continue`d — no component created, no parameter pushed
+back onto one already linked, and nothing reported because nothing was treated as having happened.
+`KitLayoutGenerators` now publishes the inverse of what it already had (`PartRefFor`), and a kit cell
+creates the KIT's part — placeholder kind, virtual `pdk://` reference, an `X` name, and the part's own
+published interface — seeded through the same accessor `SchematicViewModel.CommitCellPlacementAsync`
+uses, so a component created from a layout and one dropped from the palette are the same component. A
+kit that is not loaded is REPORTED rather than skipped: its symbol and its rows both live in the kit.
+
+**Two more that only appear once a kit's values reach these paths:**
+
+- **`SameParamValue` compared by KIND, so a number spelled as text never equalled a Real.** With the
+  layout now holding text and the schematic only ever producing a Real, every parameter of every kit
+  part would have read as changed on every push, in both directions, forever — and every push would
+  have rewritten the schematic. Anything that IS a number now compares as one, with `NearlyEqual`'s
+  tolerance; anything that is not still compares exactly.
+- **`ToDisplayValue` did not normalize the unit glyph, and was supposed to be `TryResolveSiValue`'s
+  inverse.** `Units.Scale` is ASCII-only (`um`, `Ohm`) while the editor stores `µm`/`Ω`, so an
+  unnormalized glyph found no scale, fell through, and returned raw METRES. Pre-existing, silent, and
+  worst exactly where it matters most: `µm` is the length unit an MMIC technology hands a
+  freshly-created row, so pushing a layout back to a schematic on a die wrote metres into a micron
+  field — a factor of a million, from the one command whose purpose is to keep the two views agreeing.
+  The push-back format also drops to round-trip form when six decimal places cannot say the number:
+  `0.######` on 6.99 µm expressed in metres is `0.000007`, a different capacitor.
+
+**A kit's own spelling is now reported rather than swallowed.** circuitRF's expression engine reads no
+engineering suffixes — measured: `60u` is *Parse error at position 2*, `60` with the unit µm resolves —
+because a unit is a FIELD on the row. Such a row still reaches the cell verbatim and the artwork is
+still right, because the kit's own cell parses its own spelling; but the same row goes to the simulator
+as an expression and fails there, a long way away, with a message about a token. It is now said once,
+on the instance, as a note rather than a failure. `LooksLikeASuffixedNumber` is shape-based on purpose:
+the job is telling a mistyped dimension from a word-valued parameter (`Selected`, a model name), not
+decoding the suffix.
+
+Gate: `KitPartLayoutParametersTests` (12) and `KitPartLayoutToSchematicTests` (7). Full `Ui.Tests`
+5,710 green.
+
+Corners actually reach a model, and the simulator flavour stops being a question (2026-08-08) —
+follow-up to the corners entry below, from the owner's own "why is one simulator or another even an option?".
+
+**He was right, and the honest answer was that it should never have been a choice.** circuitRF runs
+one set of models; a corner file for a simulator that is not running is not an alternative, it is
+noise. It is now DERIVED, in three steps, none of which knows any supplier's folder or file names:
+
+1. **`PdkImporter.PreferTheKitsMainLibrary`** orders the kit's subcircuits before matching, so the
+   matcher's existing first-wins tie-break lands on the kit's MAIN library. Keys, in order: the file
+   is one a corner file's own FIRST section `.include`s (`CanonicalLibraries` — the kit listing its
+   nominal alternative first is the kit STATING which library is canonical, so a `_mismatch` variant
+   is never picked without recognising a variant by name); then the directory defining the most
+   subcircuits; then the file defining the most.
+2. **`PdkPart.DefinitionRelativePath`/`DefinitionCell`** carry the match, and
+   `PdkPartInstaller.DiscoveredDefinitionFor` turns it into `.ccell` `ExternalNetlistPath`/`Cell` —
+   checked LAST, so anything a manifest states explicitly still wins.
+3. **`PdkImporter.RestrictToUsedFlavours`** then keeps only the corner files sitting beside a
+   subcircuit some part is actually built from. A kit defining no subcircuits at all keeps every axis
+   rather than losing the lot.
+
+**Measured: 12 axes → 6, all one flavour, and 92 of 110 parts now bind to a
+subcircuit** — `cap_mim` → `capacitors.lib`, not the `_mismatch` variant it landed on before the
+canonical-library key was added. Import 285 ms.
+
+**`NetlistImports` grew a SPICE arm** (`LooksLikeSpice`/`ReadSpiceNetlist`), dispatched on CONTENT
+(a line-initial `.subckt`) rather than extension — both formats use `.lib` freely, and handing one to
+the other's reader yields cells that are silently wrong rather than a failure. A corner's constants
+outrank the model library's own nominal bindings because `CollectDeclarations` keeps the first
+definition of a name and the corner's is merged first.
+
+**The chain a corner now travels, end to end:** corner section binds `cap_carea` → reaches
+`TestBench.GlobalVariables` → the part's subcircuit `cap_mim` names `.model mim_core C (CJ=cap_carea)`
+→ `SpicePassiveModelBinding` binds that card onto a `SemiC` whose value is the card's area/perimeter
+coefficients against the instance geometry. The two gaps that entry lists as unbuilt — a subcircuit
+`.param` becoming a cell PARAMETER, and binding a passive model card — were already closed; **only the
+part→subcircuit link was missing, and it is what this adds.**
+
+**"(kit default)" now binds the kit's NOMINAL corner, and that was a real bug** — owner-reported:
+with capCorners left alone, elaboration failed with *Unresolved name 'cap_carea' in scope 'X1'*, while
+selecting `cap_typ` simulated. The diagnosis is the whole point: **this kit binds `cap_carea` nowhere
+except inside a corner section.** `capacitors.lib` reads `.model mim_core C (CJ=cap_carea …)` and
+never defines it, so "no corner chosen" left the model card pointing at a name no scope defined.
+"Leave this family at whatever the kit's own model files specify" described a default the kit does not
+have. `WorkspaceCorners.BindingsFor` now walks the AXES rather than the selections, and an axis with
+nothing chosen binds `Options[0]` — the section the kit lists first, which is its own nominal
+alternative (the same fact `CanonicalLibraries` already relies on). The picker names it,
+`(kit default: cap_typ)`, so the default is not a mystery.
+
+**A stale CHOICE is still refused rather than healed** (`S6b`): substituting the nominal corner for one
+the kit no longer offers would leave the design at a corner nobody chose with every number plausible —
+the one outcome this mechanism exists to prevent. The nominal fallback is not a choice, so it cannot be
+stale; the two cases are kept apart deliberately.
+
+**Corners are now confirmed working end to end by the owner** — `cap_typ` produces a real simulation
+through the whole chain (corner section → testbench globals → the part's subcircuit → its model card →
+`SemiC`). Tests updated, not weakened: `S5` asserted "no selection binds nothing", which this
+deliberately makes false, and is now the regression gate for the reported failure; `S6`'s two-case
+theory is split so the offered-axis half can assert the nominal still binds.
+
+**The Corners expander is full width open or shut** (owner report: it visibly changed width when
+toggled). Left to the theme, a collapsed Expander sizes to its header content and an expanded one to
+its wider body. Fixed with `HorizontalAlignment`/`HorizontalContentAlignment="Stretch"` on the control,
+a header `Grid` whose second column is `*` (so the summary takes the remaining width and trims rather
+than the header shrinking to its two labels), and two styles selecting **by TYPE inside the template**
+— `Expander.corners /template/ ToggleButton` and `… /template/ ContentPresenter`. **A guessed part name
+matches nothing and fails silently**, which is exactly the failure mode to avoid here; the Fluent
+theme's parts are compiled into the assembly and could not be read to confirm one. Scoped to the
+`corners` class so no other Expander in the application is affected.
+
+**A TRANSISTOR would not simulate, and the reason was precise rather than suspected. It does now — see
+the DONE block further down this entry; the diagnosis below is kept because it is what the fix follows.**
+`hv_rf_nmos` binds correctly — probed: `ExternalNetlistPath` points at
+`sim-a/models/hv_mos_models.lib`, cell `hv_nmos`, 4 ports — and the netlist-backed
+path is checked BEFORE the external-device one, so the circuit IS being read. What it bottoms out in is
+`Nhv_nmos d g s b hv_nmos_card`, a **MDLA compact model**. `BindNativeDeviceTypes`
+correctly classifies that as one of the kit's own compiled models and emits an `ExtDevice` against the
+kit's provider — which then has nothing to evaluate it, hence *"External device provider 'somekit'
+is not available"*. **The error is correct; the gap is the resolver.**
+
+**The `.osdi` files are OURS, not the kit's — corrected 2026-08-08 by the owner.** An earlier version
+of this paragraph said the kit "ships prebuilt `.osdi`" because four of them were sitting in
+`sim-a/compiled/`. They are there because a previous session **compiled the kit's Verilog-A
+sources with the kit's own script**, and the output happened to land inside the kit tree. **The kit
+ships none.** That distinction is load-bearing rather than pedantic: it means their location is a
+property of whoever built them, not of the kit, so nothing may resolve them by a kit-relative path —
+a second user of the same kit has no `.osdi` at all until they build, and may put the result anywhere.
+The original note further down this file ("Verilog-A sources it expects the user to compile") was right
+and this paragraph was wrong to contradict it.
+
+**THE MATCHING RULE, measured rather than assumed — an `.osdi` names its own module, and the FILENAME
+does not.** A `.model` card names a Verilog-A module as its type:
+
+```
+.model hv_nmos_card  mdla_va      ← card name, then the MODULE
+```
+
+and each compiled artefact carries that module name inside it:
+
+| file | module inside it |
+|---|---|
+| `mdla.osdi` | `MDLA_VA` |
+| `mdla_nqs.osdi` | `MDLANQS_VA` |
+| `auxmodel.osdi` | `auxmodel` |
+| `auxres.osdi` | `auxres` |
+
+**So the key is the module read FROM the file, compared case-insensitively — never the file's own
+name.** `mdla_nqs.osdi` → `MDLANQS_VA` is the case that proves it: nothing about that filename
+yields that module, so a filename-derived mapping silently fails to resolve a model that is sitting
+right there. Same byte-scan technique `DeviceLibraryDiscovery` already uses to recognise a proprietary
+library by its exported entry points, applied to a different marker.
+
+**`OsdiModelDiscovery` (new, `src/Core/Devices/External/`) is the finding half, and it is done.**
+`Find(roots, workerPath)` walks for `*.osdi` under caller-supplied roots — **caller-supplied because
+the artefacts are build output, so a kit-relative path is not a thing that exists** — and asks each one
+what it implements. **Asked, not parsed:** the descriptor table is an ABI detail and circuitRF already
+ships a worker that hosts that ABI and answers `describe`, so the module names come from the one piece
+of code that already has to understand them rather than from a second, drifting binary reader.
+`ImplementorOf(models, module)` is the card-type lookup, case-insensitive because the two sides
+genuinely differ (`mdla_va` on the card, `MDLA_VA` in the artefact). A file that will not load costs
+itself and is REPORTED — a model the user believes they compiled, silently absent, is the worst
+outcome available here. *(Amended when the routing landed: each module also carries the PARAMETER names
+the artefact declares, and `ImplementorOf` answers with an `OsdiImplementor` — file, module and
+spellings. All three are needed to route a card, and two of them exist nowhere but inside the file.)*
+
+**Verified against the owner's own build:** 4 artefacts found, `mdla.osdi → MDLA_VA`,
+`mdla_nqs.osdi → MDLANQS_VA`, `auxmodel.osdi → auxmodel`, `auxres.osdi → auxres`, and the card type
+`mdla_va` resolves to `mdla.osdi`. 5 tests, skipping with a reason where the native worker is not
+built.
+
+**What remains is the ROUTING, and the mechanism for it already exists** — `tools/osdi-worker/README.md`
+records that an ordinary `device-provider.json` names this worker by bare command plus the library as
+an argument, resolved by the existing manifest (gated by its own test `O7`). So the last step is to
+have the importer hand the discovered artefacts to `SynthesiseProviderManifest` as worker entries keyed
+by the modules each declares, and to give the user somewhere to say where they built them when that is
+not beside the kit.
+
+**THE ROUTING DESIGN IS SETTLED AND CONFIRMED IN CODE — it is the next piece, and it is small.** The
+awkward part looked like "one provider, four artefacts": a manifest declares ONE provider with ONE
+worker command, but this kit needs a different `.osdi` per model. That is already solved by a mechanism
+built for something else — `DeviceWorkerProviderResolver.ComposeOverride(kit, library)` carries a
+library in the provider NAME (`kit|/path/to/mdla.osdi`), and `Resolve` splits it back out and
+substitutes the library argument, replacing the argument that names a shared library **by checking the
+value rather than its position**. So per-artefact routing needs no new resolver concept at all.
+
+Three steps remain, in this order:
+1. `PdkImporter`/`PdkPartInstaller` run `OsdiModelDiscovery.Find` over the kit's neighbourhood plus any
+   declared folder, and keep the module→artefact index.
+2. `SynthesiseProviderManifest` declares `osdi-worker` as the kit's launch command (bare command plus a
+   library argument — the form `tools/osdi-worker/README.md` records and its own `O7` test already
+   gates) instead of only the proprietary `senior_worker` shape.
+3. Where a device instance references a `.model` card, resolve the card's TYPE through
+   `ImplementorOf` and emit `Provider = ComposeOverride(kit, artefactPath)`, `Type = <module>`, with the
+   card's parameters merged under the instance's. `SpiceNetlistResult.ModelCards` already carries what
+   is needed; `NetlistImports.ReadSpiceNetlist` currently drops it, which is the one place to change.
+
+> **DONE, and A KIT TRANSISTOR NOW SIMULATES (2026-08-08).** All three steps above landed as written;
+> what follows is what they cost and the four things that were not in the plan. The design above needed
+> no revision — the awkward "one provider, four artefacts" really is solved by `ComposeOverride`.
+
+**Measured, on the owner's own kit and build.** `hv_rf_nmos` → `hv_nmos` → the card
+`hv_nmos_card` → `mdla_va` → `mdla.osdi` / `MDLA_VA`, with **390 parameters** on the emitted
+`ExtDevice` (377 from the card, the instance's twelve on top of them, plus the two selectors). Solved
+by circuitRF's own DC engine as a common-source stage with a 1 kΩ drain load, through the real
+`.cnl` round trip:
+
+| Vgs | Id (slow, `mos_ss`) | Id (**kit default** = `mos_tt`) | Id (fast, `mos_ff`) |
+|---|---|---|---|
+| 0.0 – 0.6 V | off (2.8 pA — the engine's own gmin leak) | off | off |
+| 0.8 V | 3.68 µA | 7.73 µA | 13.75 µA |
+| 1.2 V | 41.1 µA | 54.3 µA | 69.8 µA |
+
+**The corner column is the vacuity guard, and it is the strongest one available here.** A corner reaches
+this device ONLY through card values like `vfbo='-0.89839*procName_hv_nmos_vfbo'`, so a model running on
+its own defaults would give one column three times. ss < tt < ff in the right direction, and
+"(kit default)" reproducing `mos_tt` exactly, is proof the card's parameters actually landed in the
+model — not merely that the routing produced a plausible-looking instance.
+
+**FIRST OWNER REPORT, and it caught a fifth: BLANK IS NOT UNSET (2026-08-08).** Both reported failures
+— *"provider 'somekit' does not expose a device type 'MDLA_VA'. Available: auxmodel"* — had one cause.
+`ModelLibrary` is declared on every kit part and defaults to an EMPTY STRING, so the per-instance
+override reads `""` rather than null, and `modelLibrary ?? implementor.FilePath` kept the empty string
+and composed the **bare** kit name. The artefact was then never named, the worker loaded whatever the
+manifest's default argument happened to be, and every device reported that the provider does not expose
+its type while listing a model from an unrelated file — which is exactly as confusing as it sounds.
+**The gate had missed it because the test placed a BARE component**, which carries no `ModelLibrary`
+parameter at all and so only ever exercised the null path. `Place()` now seeds every declared parameter
+the way placement does, and `ACardBackedDevice_…` is verified to go red against the old line.
+
+**The inductor was NOT this bug and is not a bug at all.** Measured: `hv_rf_nmos` binds
+`hv_mos_models.lib`, but `inductor` and `inductor3` bind **nothing** — this kit's inductors are
+the layout tool PCells and it ships no simulation model for them anywhere in its netlists. So the part reaches
+the provider under its own id, which no artefact declares. circuitRF refusing is correct; the MESSAGE
+was the defect, because "Available: auxmodel" names whichever artefact the manifest defaults to and has
+nothing to do with the question. `SayIfTheKitHasNoModelForThisPart` now states it at extraction —
+naming the part, that the kit supplies no circuit for it, and what the compiled models do offer. **The
+instance is still emitted**: skipping it would leave a run producing numbers for a circuit missing a
+component the user placed, which is the one outcome worse than failing.
+
+**Four more things the plan did not have, each found by running it:**
+
+- **A `.model` card's own bracket rule was wrong, and it was silent in BOTH halves at once.**
+  `SpiceNetlistReader.ReadModelCard` searched the whole card for its first `(` to find the parameter
+  block. A bracket-less card routinely carries one inside a VALUE hundreds of characters in
+  (`dlq='5.2e-08-((1-pre_layout)*0.0)'`), so everything before it became the "type" and the card was
+  left with **zero parameters**. Measured before the fix: `ModelType` = the whole rest of the line,
+  `Parameters.Count` = 0; after: `mdla_va` and **377**. The bracket now only opens the block when it
+  is part of the type's own word. This invalidates nothing recorded earlier about the reader's
+  real-kit run — 75 cards were read, and any of them carrying a bracketed value had a garbage type.
+  Gate `S13b`.
+- **The two sides disagree on CASE and the strict one is the model.** The dialect is case-insensitive
+  and the kit writes `level`; the artefact declares `LEVEL`; the worker matches with `strcmp`. Measured
+  directly against `mdla.osdi`: *'level' is not a parameter of this device type*, where `LEVEL` is
+  accepted. So `OsdiModel` carries the parameter spellings the artefact declares and the routing
+  respells the card's names into them — **only where the module declares a case-insensitive match**, so
+  an unknown name is left exactly as written and a genuine typo is still refused by name. Same rule and
+  the same reason as `AlignSubcircuitParameterCase` one level up. All 377 of the card's names are
+  declared by the module, so nothing is lost to this.
+- **`TYPE` is a real MOS parameter and circuitRF's `Type` selector was eating it.** MDLA's `TYPE` is
+  the channel polarity (`+1` n, `-1` p) and the card states it. Both `ExternalDeviceModel`'s forwarding
+  and `Elaborator.ResolveExtDeviceParameters` matched the selector case-INsensitively, so the card
+  entry was consumed as the device-type selector and dropped: **a p-channel device would have silently
+  become an n-channel one that converges perfectly.** `ComponentModelFactory.ReservedKey` now prefers
+  the EXACT spelling and only falls back to a case-insensitive match — a design writing `type=` for the
+  selector is unaffected, because such a design has no second parameter of that name.
+  Gate: `ReservedSelectorNameTests`, with `FakeDeviceWorker` now declaring a `TYPE` parameter for it.
+- **An `.osdi` had to count as a "model library" for the substitution to fire.**
+  `DeviceWorkerProviderResolver` replaced the argument whose extension is `.so`/`.dll`/`.dylib`. It IS
+  one — the loader's own format under another extension — so `.osdi` was added, and without that line
+  every routed provider name fails at launch with "names no model library to replace". Gate in
+  `ModelLibraryOverrideTests`.
+
+**The index is held for the SESSION and never written down** (`PdkKitRegistry.OsdiModelsOf`), unlike
+`Settings` and `Corners`. These artefacts are the user's BUILD OUTPUT: they can be rebuilt, moved or
+deleted without the kit changing at all, so a recorded index is the one thing in this area that could
+go stale in silence. Re-deriving costs **73 ms** for four artefacts (a `*.osdi` walk plus one worker
+`describe` each) against a **405 ms** import of the same kit — not a saving worth an answer that can be
+wrong. It is therefore found in `Install` itself rather than inside `SynthesiseProviderSettings`, which
+recorded settings skip entirely.
+
+**Where it looks: the kit's tree first, widening outward only if that finds nothing, then the folders
+the workspace was TOLD about** (`libraryRoots`, File ▸ Manage PDKs) — the same rule and the same reason
+as `DeviceLibraryDiscovery`. Adjacency to the kit is a coincidence for this user, whose build happened
+to land inside the kit tree; a second user of the same kit has no `.osdi` at all until they build.
+
+**A module nobody compiled is REPORTED, naming the module and the build step**, and the instance is left
+exactly as the kit wrote it. Routing it to the kit's provider under the card's name instead fails at Run
+naming a device type that appears nowhere, which sends the reader after a missing provider when what is
+missing is a compile they have not run.
+
+**The proprietary and the compiled-Verilog-A shapes are separate branches of the synthesis, not one
+search.** The first binds a device TYPE to a library exporting an entry point named after it; the second
+binds a `.model` card's MODULE to the one artefact declaring it, one artefact per model. They share no
+discriminator, so serving both from one search would have to guess which question it was answering.
+
+**No `generatedFormat` bump.** A kit of this shape previously produced NO settings at all (the synthesis
+returned null before reaching anything OSDI-shaped), so there is no older manifest to redo — an absent
+record is already re-derived at the next open.
+
+**CONFIRMED END TO END by the owner (2026-08-08):** selecting `cap_wcs` shifts the S-parameter result
+away from nominal. That closes the last open claim in this entry — a corner now demonstrably moves a
+published number, through corner section → testbench globals → the part's subcircuit → its model card →
+`SemiC`. **And the transistor now does the same thing through the compiled model**, per the table above.
+
+**SECOND OWNER REPORT: a 20,301-point sweep died part-way through, and the message named neither
+cause (2026-08-08).** *"'DC1_sweep_VDS': … created 'MDLA_VA' but did not say which instance it
+created."* Two independent defects, both of which had to be fixed to get one sentence that is true.
+
+- **EXTERNAL DEVICE INSTANCES WERE NEVER GIVEN BACK.** A provider's instance lives in the WORKER's
+  process — memory no garbage collector here can reach, in a table that is finite (this worker holds
+  4,096). `ParametricSweepEngine` re-elaborates once per point *by design*, because that is how a
+  swept variable reaches the circuit at all, so every point asked for a fresh device and nothing ever
+  released one. The owner's 201 × 101 curve tracer asks for **20,502** — the outer axis elaborates a
+  netlist per outer point that its own inner sweep then never uses, which is why the count exceeds
+  the product. `ExternalDeviceModel` and `ElaboratedNetlist` are `IDisposable` now and the sweep
+  disposes per point; **nothing downstream holds a model** (an analysis returns a `DataSet` of
+  numbers and the warm-start seed is a plain complex array), which is what makes that safe. Every
+  other model needs nothing here, and an undisposed netlist is no worse off than before.
+- **THE WORKER'S OWN EXPLANATION WAS BEING DISCARDED, and this one was live for every OSDI refusal
+  ever made.** `DeviceWorkerChannel` treated a reply as a refusal only when it carried `"ok": false`;
+  `tools/osdi-worker` writes refusals as a bare `{"error": "…"}`. So *every* one of its refusals read
+  as a normal reply carrying no data, and the caller reported whatever it made of the ABSENCE.
+  "create: too many live instances" became "did not say which instance it created". An `error` member
+  is now sufficient on its own — there is no reply in this protocol where it means anything else.
+  **Recorded because it invalidates an earlier claim in this file**: the OSDI worker's refusals were
+  never surfacing by name, so anywhere this entry says a bad parameter is "refused by name", that was
+  true of the worker and not of what the user saw.
+
+**The sweep now completes: 20,301 points in 38 s**, and produces a real curve-tracer family — off
+below ≈ 0.7 V, monotonic in both Vgs and Vds, with the steep rise past Vds ≈ 12 V that a HV NMOS
+driven well past its card's own `VDS_MAX = 3` should show. Gate:
+`tests/Engine.Tests/External/ExternalDeviceLifetimeTests.cs` asserts what is LIVE rather than what was
+created — creating one per point is correct and is not the defect — with the creation count asserted
+to actually grow, so it cannot pass by re-elaboration being optimised away.
+
+**THIRD OWNER REPORT, same day: 28 messages on every run of one transistor.** `PdkCorners.BindingsFor`
+turned **every reader note into a problem**. Applying a corner reads the kit's shared model library
+*through* the corner file, so every honest observation the SPICE reader makes about that library — a
+model the library itself defines twice, an `.ends` whose trailing name does not match — arrived as a
+problem with the corner. None is about the design, the axis or the section; none is actionable; and
+they arrive once per axis per run because every axis includes the same library. **Measured: 28 → 0,
+with the same 108 bindings.** Three rules, and each is gated in both directions because a build that
+has gone quiet about a real contradiction is the worse outcome:
+
+- **A reader note surfaces only when the corner bound NOTHING** — the one case where the reader's
+  account of what it could not read is exactly what the reader of the message needs. Same rule the
+  import report already follows in keeping its `Notes` apart from its `Diagnostics`.
+- **Two axes binding one name to the SAME value is agreement, not a collision.** A kit routinely
+  repeats a shared switch (`SWSOA`) in every family's corner file. Different values are still
+  reported, and now quote both.
+- **A design constant equal to the corner's is silent.** Most of what is in scope there came out of
+  the kit's own netlists a moment earlier, so the common case was the kit agreeing with itself.
+
+**Still open, deliberately.** A `.subckt`'s `.if` branches are resolved at READ time against the
+definition's default parameters, so a part placed with `ng=2` or `rfmode=1` gets the branch the
+defaults chose — visible on this kit, unrelated to OSDI, and its own piece of work.
+
+---
+
+Corners: choosing one, recording it, and applying it (2026-08-08) — COMPLETE except for the
+`Design ▸ PDK…` menu item, which is a second door onto a panel that now exists. Reads with
+`src/Core/CLAUDE.md`'s own corner entry, which covers the discovery half.
+
+**A corner is a named set of global variable bindings.** So choosing one is a substitution into
+`TestBench.GlobalVariables` — not a different netlist, not a re-import, not a variant of the parts.
+Everything below follows from that one fact.
+
+**Three places hold a piece of it, and which piece goes where is the load-bearing decision:**
+
+- **Availability is a property of the KIT**, so it lives in that kit's `.cws` reference
+  (`CwsPdkRef.Corners`), recorded at import. Working it out means reading every netlist in the kit;
+  a workspace open must not pay that to answer a question whose answer only changes when the kit
+  does — the same bargain `CwsPdkRef.Settings` already strikes, where the measured difference was
+  0.5 ms replayed against 199.8 ms derived. Absent on an older `.cws` reads as null; **no
+  `FormatVersion` bump.**
+- **The selection is a property of the TESTBENCH**, so it lives in `.csch`
+  (`SchematicEditModel.CornerSelections`). Two schematics in one workspace legitimately want
+  different corners — an amplifier checked at slow, a bias network left at typical — and putting it
+  on the workspace makes that unsayable. It is written only when a corner is actually selected, so a
+  design that never opens the block re-serializes byte-identically.
+- **What a selection resolves to is neither**, because it depends on where the kit is on THIS
+  machine. `WorkspaceCorners` is the bridge: `From` turns recorded axes into resolved ones, and
+  `BindingsFor` turns a design's selections into the variables that reach the run.
+
+**The recorded key is `<kit>|<kit-relative file>`, and the kit-relative half is what makes it
+survive.** A resolved path records where the kit happened to be that day. A design's corner has to
+outlive the kit moving, being re-cloned, or arriving on someone else's machine — so nothing absolute
+is ever written down.
+
+**Every way a selection can fail is REPORTED, never silently unbound.** A key the workspace no longer
+offers, a section the kit no longer declares, a corner file that has moved — each comes back as a
+conflict on the run. Silence there leaves the design at a corner nobody chose with every number still
+plausible, which is the one outcome the whole mechanism exists to prevent. The picker makes the same
+choice: a recorded corner the kit no longer offers is shown as a ghosted entry rather than quietly
+reverted to the default — the same reasoning the layer-choice picker already applies.
+
+**The design's own VAR wins over a corner constant, and the collision is reported.** A corner
+constant is a kit's statement about its process; a variable the user wrote is a statement about their
+design, and the design is the thing being simulated. Same rule an imported kit netlist's own
+declarations already follow (`NetlistImports.MergeInto`), applied at the same place.
+
+**The block is ABSENT, not greyed, when no kit declares a corner** — which is nearly every workspace.
+`AnalysesListViewModel.HasCorners` requires both an axis and an open schematic. A permanently-empty
+picker in front of every user who will never need one is clutter, not information. It sits beside the
+results-file field in the Analyses panel for the same reason that field is there: both are
+schematic-level statements about the run, not properties of any one analysis.
+
+**A kit ships TWO axes per device family** (one per simulator flavour — 12 over 6 families), so
+`WorkspaceCorners.From` qualifies a label only where the plain name repeats, and leaves a unique one
+alone. Qualifying every row would make the common case read worse to fix a case that is not there.
+
+> **CORRECTED 2026-08-08, from the owner's own report — "I see duplicate corners for everything".**
+> The qualifier was the folder LEAF, and that kit files its corners one directory per simulator
+> flavour with a `models` folder inside EACH — so every path ends in the same leaf and both rows read
+> `models · capCorners`. **A qualifier that does not distinguish is worse than none**: it looks like
+> the answer while leaving the user to guess. `WorkspaceCorners.DistinguishingSegments` now drops the
+> common leading AND trailing path segments and shows what is left — `capCorners (the kit's own simulator)` /
+> `capCorners (a second simulator)`. Gated by `S3b` (which additionally asserts the two labels are DISTINCT, so a
+> future qualifier cannot regress into being merely present) and the 5-case `S3c` theory.
+> **Confirmed to bite:** restoring the leaf-only rule turns `S3b` red.
+>
+> **The block is COLLAPSED by default now, and height-capped when open** (`CornersExpanded`,
+> `CornersSummaryText`, an `Expander` over a `MaxHeight="180"` `ScrollViewer`). Twelve always-open
+> rows pushed the analyses themselves off the panel — the owner's actual complaint. The header still
+> carries "N available · using kit defaults" / "· N set" / "· N no longer offered" so collapsing it
+> hides the rows, never the answer. Whether the list is open is session state; which corners are SET
+> stays in the design.
+>
+> **Two measurements that changed the design, both of which contradict a plausible-sounding shortcut:**
+> 1. **The flavours are NOT interchangeable, so they must NOT be merged into one axis.** `capCorners`,
+>    `dioCorners`, `hbtCorners` and `resCorners` do bind identically across the two — but **both MOS
+>    families differ**, and by a parameter NAME (`procName_lv_nmos_vfbo` vs `…_vfbo_mm`), not a value.
+>    Merging them would bind a name the model never reads, silently.
+> 2. **A `_mismatch` section is NOT a foldable duplicate of its base**, even though the corner file
+>    binds it byte-identical `.param` lines. Its `.include` pulls a different model library, and for
+>    MOS that library declares **8 top-level params of its own** — so the RESOLVED bindings genuinely
+>    differ. Folding on the corner file's own text would have been wrong. Deciding it properly means
+>    resolving every section (following includes), which is real cost for a small win, so **no section
+>    dedup is done** — every section the kit declares is offered, matching this file's own standing
+>    rule that nothing here decides which sections are "really" corners.
+
+**Gate:** 18 tests in `PdkCornerSelectionTests` (what the workspace offers incl. a moved kit and the
+ambiguous-name case; what choosing binds; every failure mode reported; `.csch` round-trip and the
+byte-identical no-corner case; undo/redo of a selection and the combo following it; a stale recorded
+corner shown; corner constants reaching the testbench and losing to the design's own VAR) and 4 in
+`PdkCornerImportTests` (kit-relative identity, two independent families, a kit declaring none, and
+the pre-filter not being fooled by a `.lib` REQUEST). Ui 5,673 after the 2026-08-08 correction above
+(+7: `S3b` rewritten to the kit's shape, the 5-case `S3c` theory, `S17`/`S18` for the collapsed
+default and its summary line), Core 1,221, RfCore 281, WBond 237, Firewall 6 — all green.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: with the kit imported, the Analyses panel shows a **Corners** block listing its axes;
+picking one is undoable and marks the schematic dirty; the choice survives save-and-reopen; a
+workspace with no corner-bearing kit shows no block at all; and a Run reports a corner that can no
+longer be resolved rather than quietly running at the default.
+
+---
+
+REGRESSION, self-inflicted: a kit's drawn symbols and its own groupings were lost, and the whole
+suite stayed green (2026-08-08) — FIXED, with the gate that should have existed.
+
+**What happened.** Reverting a speculative change with `git checkout --` on three files also discarded
+UNCOMMITTED work sitting in those same files. Two user-visible things went with it: every kit symbol
+fell back to the generic box-with-pins, and the kit's own sub-groupings vanished from the palette
+filter so all 110 parts filed under the kit heading alone.
+
+**Both had one cause — a fact the importer worked out never reaching the tile.**
+
+- `PdkPart.Body` (the kit's own drawing) was gone from the report, so `PdkPartInstaller` had nothing
+  to dispatch on and every part took the symbol-LIBRARY path, which states positions and no artwork.
+  The reader and `KitTemplateSymbol.BuildFromDrawing` both survived — only the plumbing between them
+  was missing, which is why it compiled.
+- `PdkPartRef` still HAD `Category` and `ModelName`, and `PaletteTool` still read them, but the
+  reverted installer built the reference POSITIONALLY with four arguments — so both defaulted to
+  empty. A defaulted field is not a compile error and not a crash; the sub-headings simply stopped
+  existing.
+
+**The lesson is the test gap, not the revert.** `dotnet test` reported **5,643 passing with both
+defects live**. Every test in this area checked one side or the other — the reader produces a drawing,
+`KitTemplateSymbol` turns one into primitives, the palette groups by a category string — and nothing
+checked that the installer carries either fact ACROSS. `KitPaletteWiringTests` (5) now does, and was
+**confirmed to bite**: neutering the body dispatch and defaulting the category turns 3 of its 5 red.
+
+**One test fixture had to be redesigned rather than trusted.** The first version asserted a drawn
+symbol has six primitives — which is exactly what the fallback box happens to produce for a two-pin
+part, so it compared equal and failed for the right reason by luck. The drawing is nine segments now,
+and the comment says why.
+
+**Measured after the fix, matching this file's own earlier numbers exactly:** 110 parts → 110 tiles,
+all 110 with drawn artwork, **17 distinct primitive counts** (all-generic is 1), **14 groupings**
+(capacitor, diode, esd, inductor, label, nmos, pad, pmos, pnp, primitive, res, symbols, vertical_npn,
+vsource), 35 tiles carrying a declared model name.
+
+**Standing rule this leaves behind: never `git checkout --` a file to undo one change when the file
+holds others.** Revert the specific edit.
+
+A kit's LAYOUT half: its own parametric cells, and the ground reference a process file never states
+(owner report from UI testing, 2026-08-08) — COMPLETE for two of three reports; the third is a
+diagnosis, not a fix, and is written up as such below.
+
+**1 — "no artwork generates in the Layout Editor." The mechanism to run a kit's layout cells already
+existed and was measured working; nothing could FIND them.** circuitRF has driven vendor parametric
+cells since C2 (`PCellWorkerResolver`, `tools/pcell-python/cni`) — and the only way to declare one was
+a `pcell-generators.json` a kit author writes by hand. A vendor kit knows nothing about circuitRF and
+ships none, so an imported kit's layout library was unreachable however complete it was. Confirmed by
+running the existing bridge against the reported kit before changing anything: **34 cells register and
+generate, out of the box.**
+
+`KitPCellLibrary` (new, framework-free) finds the library **structurally** — a Python package whose
+modules import the cell API's own module — and writes the declaration into the WORKSPACE, never into
+the kit, which is read-only and not ours to edit. It is ordinary, editable text in a named folder, and
+it is **only ever created, never overwritten**: a user who points it at a different interpreter or
+package keeps that. Discovery costs ~10 ms on the reported kit.
+
+**The rule that took a measurement to get right: a qualifying package is descended into, not returned.**
+A kit's cells live in a SUBpackage of a wrapper that holds a helper module or two of its own —
+registration walks one package's own modules, so the wrapper yields **zero** cells and the subpackage
+yields all 34. The richest candidate wins; a wrapper and the subpackage inside it are reported as one
+library, not two, because offering the loser as an alternative offers a choice that is not one.
+
+**2 — which of a kit's layout cells is a given schematic part.** Not the part id: a kit names its
+symbol file and its cell class independently — a capacitor's symbol and its cell differ by a prefix,
+a transistor's by a whole process-and-flavour qualifier, and neither is derivable from the other. What
+they DO share is the **device model each declares**, because that is what a netlist has to say — so
+`PdkPartRef.ModelName` carries it and `KitPaletteMerge` matches on it, third, after the two id rules.
+This is reading the kit's own statement; chopping prefixes off a name would be guessing, and a guess
+here draws perfectly and is wrong. **Applied only when exactly one cell and one part claim that model
+on each side** — this kit's ordinary and RF variants of one transistor share a model, and picking
+either would be a coin flip. Measured: 110 parts, 34 cells; the capacitors and the
+varicap matched by model where the part id could never have, and the transistor pairs correctly
+declined rather than guessing.
+
+**`KitLayoutGenerators` is the published answer, and exists so there is only one.** The palette already
+settles which cell is a part's layout view; Update-Layout-from-Schematic has to reach the same answer
+for a PLACED part, and deriving it twice is how a tile and a design come to disagree about a part's
+artwork. `SchematicToLayoutGenerator` reads it and falls back to the part id.
+
+**A part the kit does not disambiguate is now reported as what it is.** The message used to read "no
+layout generator", which is false for a kit shipping 34 of them — it now says the kit does not say
+which cell that part is, and points at the palette, where they are all listed under the kit's own
+heading. (One of the two reported parts is exactly this case: the kit ships two turn-count variants of
+that cell and never states which one its single symbol is.)
+
+**3 — "the .ctech says the stackup has no conductor marked as a ground reference. Can it be inferred?"
+Yes, and it now is — reversing a deliberate earlier refusal, on the owner's own request.** The refusal
+(C0: "a process file states none; picking one would put a guess inside every microstrip substrate,
+silently") was right about the evidence and wrong about the outcome: it left the user with a technology
+that validates as broken and stops every microstrip component dead, with no indication which of NINE
+conductors to choose. A choice is now made **and stated, with its reasoning and how to change it** —
+an inference the user can see and overrule beats a blank they cannot resolve.
+
+**What the choice rests on, and it comes out of the file both times.** The stack's bottom boundary is
+already a ground plane (`BoundaryCondition.Ground`) — the bulk the whole stack is built on — so the
+lowest conductor is the one closest to it. The format's own `LAYER_TYPE` (now parsed) is what excludes
+the sheets that are parts of a transistor rather than layers anything routes on. Neither is a name
+convention. On the reported kit this picks the lowest routing metal, which is exactly what that kit's
+own electromagnetic reference example uses as its ground plane — arrived at independently, which is the
+strongest check available here.
+`TechValidation` now finds **nothing at all** on an imported technology.
+
+**4 — "External device provider is not available" on an S-parameter run. STILL NOT FIXED, and a fix
+for it was written, tried and REVERTED in this same pass. The reverted design is recorded here because
+it looked right and was dangerous.**
+
+**What was built and then taken out.** A kit symbol declares what kind of device a part is, and a few
+parts also carry a value as an evaluatable formula over their own parameters. Reading both and building
+such a part as circuitRF's own `R`/`L`/`C` made the reported capacitor simulate, and the number even
+cross-checked against the kit's own layout cell to three figures. It was still wrong.
+
+**Why, in one line: the formula is what the kit DISPLAYS, and the model is somewhere else and richer.**
+That part's actual model in the kit is a subcircuit — a series resistance in front of a capacitor whose
+own model card carries temperature coefficients. Substituting an ideal capacitor drops the series
+resistance silently, which in an S-parameter sweep is exactly the difference between a real component
+and a perfect one: the Q goes to infinity. The result plots, looks plausible, and is not the device the
+kit describes. **Reading a display annotation as if it were a model is the same class of error as
+inferring a model from a part's name**, and the fact that the value agreed with another file in the kit
+made it more convincing, not more correct.
+
+**The rule this leaves behind: a kit part is evaluated by the kit's own model or not at all.** circuitRF
+may not stand a component of its own in for one. Where it cannot read the model, the honest outcome is
+to say so — which is what it now does, distinguishing a kit whose models are compiled from one whose
+models are SPICE text and naming the files it found, instead of claiming the devices "are compiled
+models" and sending the user after a package an openly-licensed kit never ships.
+
+**Two separate routes are needed, and neither is built.** A kit of this shape carries its models two
+ways: **Verilog-A sources it expects the user to compile** (its own script produces one shared object
+per model into a folder its simulator is configured to load) — this covers the transistors, the
+varactor and some resistors, and is the route circuitRF's existing compiled-model path is shaped for;
+and **plain SPICE subcircuits** for the passives, including the reported capacitor, which is not one of
+the compiled models and never will be. Reading those needs a SPICE subcircuit reader feeding the
+circuit-backed-part mechanism circuitRF already has (`ExternalNetlistPath`/`ExternalNetlistCell`) — that
+destination exists; only the reader is missing.
+
+**THE COMPILED ROUTE NOW WORKS, END TO END, AND WAS MEASURED RATHER THAN REASONED ABOUT.** The kit's
+own compile script was run against its own Verilog-A sources and circuitRF's shipped OSDI worker was
+driven against the result:
+
+| model | loads | describes | creates | evaluates |
+|---|---|---|---|---|
+| the compact MOS model | ✓ | 4 pins, 9 internal nodes, 809 parameters | ✓ | ✓ |
+| its non-quasi-static variant | ✓ | 4 pins, 45 internal nodes, 812 parameters | ✓ | ✓ |
+| the compact resistor | ✓ | 4 pins, 4 internal nodes, 129 parameters | ✓ | ✓ |
+| the varactor | ✓ | 3 pins, 5 internal nodes, 67 parameters | ✓ | ✓ |
+
+So `tools/osdi-worker` hosts a kit's real compiled models on this platform, natively, with no
+change to circuitRF at all. **The ABI half of the device story is not a gap.**
+
+- **The compiler binary needs an ad-hoc RE-SIGN after extraction on macOS** or it is killed on launch
+  (`SIGKILL`, no message). `codesign -f -s -` over its own libraries and then the executable fixes it.
+  Worth knowing because the failure looks like a broken download rather than a signature.
+- **The models are NATIVE to the host** — the same-architecture shared objects `osdi-worker` `dlopen()`s
+  directly. This is a different route from the one that runs a Linux worker in a VM, which exists for a
+  proprietary ABI; do not conflate them.
+
+**What is still missing is the WIRING, and it is now a specific thing rather than a suspicion.** A
+component the user points at a compiled model file already resolves (`VerilogAFileResolver`). A KIT
+PART does not: it carries the kit's provider name, and the library discovery behind that looks for the
+shapes a proprietary model library takes, not for an openly-specified compiled model — so a kit whose
+models are these never finds them. Closing that is a resolver-side change, and it is the next piece of
+work on this half.
+
+**The SPICE half: the reader ALREADY EXISTS and is better than the note above assumed.**
+`src/Core/Netlist/Spice/` reads a kit's `.subckt` definitions into ordinary circuitRF cells, and the
+import path already uses it — for DISCOVERY (a part's name, terminal count and parameter interface),
+not to build the circuit. Run against the reported kit's own capacitor library it reads **three
+subcircuits with zero skipped lines and nothing marked incomplete**, including corner-section selection
+across files: the reported part comes out as its series resistance plus a model-carded capacitor, and
+its RF sibling as a full eleven-element network with skin effect, oxide and substrate coupling. **The
+series resistance the reverted substitution dropped is right there, already read.**
+
+Three specific things stand between that and a part that simulates, and they are named here so nobody
+re-derives them:
+
+1. **A subcircuit-local `.param` becomes a cell VARIABLE, not a cell PARAMETER**, so a placed instance
+   cannot override the width and length — which for these parts is the entire point.
+2. **Nothing binds a `.model` card of a passive type to circuitRF's own built-in.** The capacitor's
+   value is the card's area and perimeter coefficients against the instance's geometry, scaled, with
+   the card's temperature coefficients. The units are confirmed twice over by two unrelated files in
+   the kit, so this is transcribable rather than guesswork — but it is exactly the kind of arithmetic
+   that is silently wrong if rushed, which is what the reverted work above already demonstrated.
+3. **The kit part is not pointed at the resulting cell.** The mechanism for that exists
+   (`ExternalNetlistPath`/`ExternalNetlistCell`); only the binding is missing.
+
+**None of the three is built.** Stopping short of them was deliberate: the second one is the same class
+of arithmetic that produced the reverted defect above, and doing it without room to check it against the
+kit's own independent statements of the same numbers would be repeating that mistake with a bigger
+blast radius.
+
+**Gate:** Firewall 6, Core 1,182, RfCore 281, WBond 237, Ui **5,643** (+11 `KitLayoutArtworkTests`; two
+pre-existing tests updated rather than loosened, each having asserted something this work deliberately
+makes false — the "no layout generator" wording, and the two ground-reference tests that asserted the
+refusal). Harmonica 93/94 — the same pre-existing deterministic
+`ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted` failure this file
+already records at HEAD; nothing here touches `src/Harmonica`.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm on
+your end: importing the kit reports that it found its parametric layout cells and where it recorded
+them; the palette lists them under the kit's own heading; Update Layout from Schematic now places
+artwork for a part the kit ties to a cell by model (the MIM capacitor) and, for one it does not (the
+inductor), says so and points at the palette; the imported technology opens with a conductor already
+marked as the ground reference and no validation problems. An S-parameter run on a kit part still asks
+for a device provider — see item 4 — and the next step there is to compile the kit's own models with
+its own script and test circuitRF against those, before any more code is written.
+
+Importing an openly-licensed kit: the drawn symbol, the virtual reference, and the kit's own
+groupings (owner report from UI testing, 2026-08-08) — COMPLETE. Five reports from importing one
+kit, and they were five separate defects, not one. Each is recorded here with what it actually
+turned out to be, because three of them were being read as something else.
+
+**1 — "every symbol renders as generic in the palette." TWO causes, and the second is the one that
+mattered.** The first is a one-line trap: `PaletteGlyphControl.ResolveCellPrimitives` and
+`SchematicCanvas.ResolveGhostSymbol` both took the field a tile carries and split it with
+`Path.GetDirectoryName`/`GetFileName` before handing the halves to `CellSymbolResolver.Resolve`. That
+is right for an absolute cell folder and **destroys a virtual `pdk://` reference** — so a kit part's
+tile and its drag ghost both fell through to the placeholder glyph. Now
+`CellSymbolResolver.ResolveCellDirOrRef` is the one place that knows which of the two forms it is
+looking at; **do not split that field by hand again.** The second cause is that there was nothing
+better to draw: `KitSymbolFileReader` read terminals and a parameter template and **skipped the
+drawn body**, so `KitTemplateSymbol` gave every part the same box-with-pins. It reads the artwork
+now — see `src/Ui/Schematic/CLAUDE.md` for the axis, the arc convention and the one-scale-per-kit
+rule, all three of which are silent-wrongness traps.
+
+**2 — "drag and drop does nothing." It placed correctly every time; it rendered as nothing.**
+`EditableSchematic.ResolveAllCellRefs` skipped resolution whenever `SchematicDirectory` was null
+unless the reference was a wBond one. A kit reference is virtual and needs no base directory either,
+so a part dropped on an **unsaved** schematic — the ordinary case, since `CommitCellPlacementAsync`
+deliberately does not require a saved schematic for a kit part — resolved to nothing and drew a
+pin-less placeholder. The exemption was spelled out at two call sites and a third form fell through
+both; it is now `CellSymbolResolver.NeedsNoBaseDirectory`, asked rather than re-derived, in
+`EditableSchematic` **and** `NetExtractor` (which must see the same pins the canvas drew, or an
+unsaved schematic extracts with the wrong terminal count).
+**Gate:** `KitPartOnCanvasTests.C5`, confirmed to fail against the pre-fix line.
+
+**3 — "no technology file was imported." Nothing was broken; nothing was offered.** The technology
+importer already reads this kit in full — measured: **377 layers, a 28-entry stackup, 141 design
+rules** — but only from File ▸ Import ▸ Technology, pointed by hand at the folder just imported. The
+kit import said "Layer technology found" and stopped, which reads as a promise nothing keeps.
+`OfferTechnologyFromKitAsync` now offers it where the kit import finishes, and both doors go through
+the SAME `RunTechnologyImportAsync` — a second flow is how the two would come to disagree about
+merging, defaults and reporting. Asked rather than done: a technology is workspace-scoped, may merge
+into one already there, and a kit may have been imported purely for its schematic parts. With no
+workspace open, or with process data that cannot be built from, it says so in one line instead of
+going quiet.
+
+**4 — "Update Layout from Schematic puts no PCells." True, and the message was false.**
+`SchematicToLayoutGenerator.ResolveComponentLayout` handed `pdk://…` to `Path.Combine` and reported
+**"referenced cell not found"** for every kit part — sending the user to look for a folder that was
+never supposed to exist, about a part that is loaded and drawing perfectly. It now recognises a kit
+reference and answers the question that is actually open: the kit is not loaded, or it **supplies a
+schematic symbol for this part but no layout generator**. A kit that DOES ship circuitRF layout
+generators now places them, matched by part id — the same identity `KitPaletteMerge` already merges a
+generator onto a part's tile by, so a part that places one view here places the other there. This
+particular kit ships its layout cells for a different tool, so it correctly still places nothing —
+and now says why. **Gate:** `KitPartToLayoutTests`.
+
+**5 — "the palette is full of components."** The kit states its own grouping per part and
+`PdkPartInstaller` was discarding it, filing all 110 under `Other`. `PdkPartRef.Category` carries it
+now — verbatim, never mapped onto a `ComponentCategory`, because translating a kit's own grouping
+into circuitRF's vocabulary is guessing at something the kit already stated. `PaletteTool` lists a
+kit's groupings indented directly beneath it (14 of them for this kit), the kit's own entry still
+showing everything, and a kit with only ONE grouping gets no sub-entry — it would repeat the entry
+above it in different words.
+
+**`DsnSymbolReader.TranslationVersion` is bumped to 2**, because fixing the axis MOVES pins on
+record-file-backed parts. That is exactly what the counter is for: a workspace records the version
+its kits were translated under and a mismatch is reported and refused, so the user asks for the
+upgrade instead of discovering it as broken connections. Parts backed by a symbol library or a
+`.dsn` drawing are unaffected.
+
+**Measured end to end:** 110 parts → 110 tiles, all 110 with drawn artwork (17
+distinct primitive counts, where all-generic is 1); a tile's glyph resolves to 9 primitives and 4
+pins; the same part dropped on an unsaved schematic renders with 4 ports; 14 sub-categories with
+`diode` narrowing to 8 parts; **every pin lands exactly on the connection grid with zero snap
+displacement and no collisions.**
+
+**Gate:** Firewall 6, Core **1,182** (+7), RfCore 281, WBond 237, Ui **5,631** (+21), Engine 1,034
+(+1 pre-existing skip) — green. **Two pre-existing failures, both confirmed by stashing this work and
+re-running:** `Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`
+(fails deterministically at HEAD, already recorded in the WB-E entry above) and
+`LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect(Mixed)`, which fails under
+full-solution load inside `SkiaFonts.PlexRegular` — the `LayoutTextOutlineTypefaceCollection` race
+this file already records — and passes in isolation. Nothing here touches the layout render path.
+
+**Not interactively verified** (no visual driver here, matching every prior phase) — please confirm
+on your end: an imported kit's palette tiles show the kit's own artwork rather than the generic box;
+dragging one onto a brand-new unsaved schematic shows the real symbol with its pins; the palette's
+filter lists the kit's own groupings indented beneath it; the import offers to build a technology;
+and Update Layout from Schematic names the kit and the part instead of claiming the cell is missing.
+
 wBond WB-E — the standalone application, and the Touchstone it has never been able to write
 (brief-wbond-wbe-standalone-app.md, 2026-08-07) — **COMPLETE (M1–M5). Phase WB-E is done, and with
 it §13's own last row before kernel W.** wBond stops being a tool inside circuitRF and becomes an

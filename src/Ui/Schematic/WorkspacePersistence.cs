@@ -229,6 +229,41 @@ public sealed class CwsPdkRef
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsLibraryOnly { get; set; }
+
+    /// <summary>
+    /// The corner choices this kit offers, as learned at import. Null or empty for the overwhelming
+    /// majority of kits, which state none.
+    ///
+    /// <para><b>Recorded rather than re-derived, for the same reason <see cref="Settings"/> is.</b>
+    /// Working it out means reading every netlist in the kit; a workspace open must not pay that to
+    /// answer a question whose answer only changes when the kit itself does. It is also what lets the
+    /// Analyses panel know whether to show a Corners block at all without loading anything.</para>
+    ///
+    /// <para>No <c>FormatVersion</c> bump — an absent field on an older <c>.cws</c> loads as null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CwsCornerAxis>? Corners { get; set; }
+}
+
+/// <summary>
+/// One axis of corner choice a kit offers, as recorded in <c>.cws</c>.
+///
+/// <para>The mirror of <see cref="CircuitRF.Core.Pdk.PdkCornerAxis"/> in the file format. It is a
+/// separate type on purpose: the recorded shape is a persistence contract that has to keep loading,
+/// and pinning the domain record straight into JSON would make every future field on it a format
+/// change.</para>
+/// </summary>
+public sealed class CwsCornerAxis
+{
+    /// <summary>The declaring file, KIT-RELATIVE. A design records its corner against this, so it must
+    /// survive the kit moving — which an absolute path would not.</summary>
+    public string AxisId { get; set; } = "";
+
+    /// <summary>The file's own stem — the only name the kit gives an axis.</summary>
+    public string DisplayName { get; set; } = "";
+
+    /// <summary>Section names, verbatim and in declaration order — the kit's own vocabulary.</summary>
+    public List<string> Options { get; set; } = [];
 }
 
 /// <summary>

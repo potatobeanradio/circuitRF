@@ -16,9 +16,22 @@
             <Setter Property="Padding" Value="0"/>
             <Setter Property="MinHeight" Value="0"/>
         </Style>
+
+        <!-- The Expander's header must span the panel whether it is open or shut. Left to the theme,
+             the collapsed control sizes to its header content and the expanded one to its (wider)
+             body, so the block visibly changes width as it is toggled. Selected by TYPE inside the
+             template rather than by a part name: a name that does not exist matches nothing and
+             fails silently. -->
+        <Style Selector="Expander.corners /template/ ToggleButton">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="Expander.corners /template/ ContentPresenter">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*">
 
         <!-- Schematic name + Run -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="4,4,4,1">
@@ -100,9 +113,19 @@
             </Button>
         </Grid>
 
+        <!-- Body — results file, corners, the analyses list, footer.
+
+             ONE ScrollViewer, whose scroll mode is conditional (AnalysesListViewModel.BodyScrollMode):
+             Disabled with no corners, so the body is constrained to the viewport and the analyses
+             ListBox scrolls itself exactly as before — no scroller inside a scroller. Auto once
+             corners exist, so an expanded corner list and the analyses below it are both reachable. -->
+        <ScrollViewer Grid.Row="2"
+                      VerticalScrollBarVisibility="{Binding BodyScrollMode}"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Results file override (R-res-2/3) — one file per RUN, so this is a single schematic-level
              field here, never a per-analysis-card field. -->
-        <Grid Grid.Row="2" ColumnDefinitions="Auto,*"
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*"
               IsVisible="{Binding !NoActiveSchematic}"
               Margin="4,0,4,4">
             <TextBlock Grid.Column="0" Text="Results file:"
@@ -120,8 +143,73 @@ here is how you preserve a baseline instead of the current results — either wa
 overwrites silently on every subsequent run under that same name."/>
         </Grid>
 
+        <!-- Corners — ABSENT, not greyed, when no referenced kit declares any. A corner is a
+             property of THIS testbench's run, which is why it sits beside the results-file field
+             rather than on a workspace-wide surface.
+
+             COLLAPSED by default, and height-capped when open: a kit declares one corner file
+             per device family per simulator flavour (twelve of them), which as an always-open list
+             pushed the analyses off the panel entirely. -->
+        <Expander Grid.Row="1"
+                  Classes="corners"
+                  IsVisible="{Binding HasCorners}"
+                  IsExpanded="{Binding CornersExpanded, Mode=TwoWay}"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch"
+                  Margin="4,0,4,4"
+                  Padding="0">
+            <Expander.Header>
+                <Grid ColumnDefinitions="Auto,*" HorizontalAlignment="Stretch">
+                    <TextBlock Grid.Column="0"
+                               Text="Corners" FontSize="11"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding CornersSummaryText}"
+                               FontSize="10" Opacity="0.55"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                </Grid>
+            </Expander.Header>
+
+            <StackPanel Spacing="4" Margin="0,2,0,0">
+                <TextBlock FontSize="10" Opacity="0.55" TextWrapping="Wrap"
+                           Text="A corner is a named set of process constants the kit ships (typical, slow, fast, …). Choosing one substitutes those values into this testbench before it runs; the kit's own default is used where nothing is chosen."/>
+
+                <!-- No scroller of its own: the panel body's single conditional ScrollViewer
+                     (above) is what makes an expanded list and the analyses below it both
+                     reachable, without one scroller nested inside another. -->
+                <ItemsControl ItemsSource="{Binding CornerRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CornerAxisRowViewModel">
+                                <Grid ColumnDefinitions="Auto,*" Margin="0,1"
+                                      ToolTip.Tip="{Binding ToolTip}">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Label}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0"
+                                               MinWidth="92" MaxWidth="132"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding Options}"
+                                              SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                              HorizontalAlignment="Stretch"
+                                              FontSize="11" Padding="4,2">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:CornerOption">
+                                                <TextBlock Text="{Binding Label}" FontSize="11"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Expander>
+
         <!-- List area -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="2">
 
             <!-- No active schematic -->
             <TextBlock Text="Open a schematic to set up analyses."
@@ -212,12 +300,14 @@ overwrites silently on every subsequent run under that same name."/>
         </Grid>
 
         <!-- Footer hint (only when rows exist) -->
-        <TextBlock Grid.Row="4"
+        <TextBlock Grid.Row="3"
                    Text="Analyses run in listed order."
                    IsVisible="{Binding !IsEmpty}"
                    Foreground="{DynamicResource SystemBaseMediumLowColor}"
                    FontSize="10"
                    Margin="6,2,6,4"/>
+            </Grid>
+        </ScrollViewer>
 
     </Grid>
 

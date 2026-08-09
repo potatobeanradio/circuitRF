@@ -91,29 +91,52 @@ public static class LayoutToSchematicGenerator
             if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
                 continue; // broken instance, or not PCell-backed — nothing this command can push (see scope note above)
 
-            if (!ReverseGeneratorMap.TryGetValue(origin.GeneratorId, out var kind))
-                continue; // a foreign/unknown generator id — nothing to map to a SymbolKind
+            // Which component this generated cell IS, on the schematic side. A built-in answers with
+            // its SymbolKind; a KIT's cell answers with the part reference the palette settled it
+            // draws (KitLayoutGenerators, read in reverse). Before this, a kit generator matched
+            // neither and every PDK component in a layout was silently passed over — no create, and
+            // no push-back onto one already linked.
+            bool builtIn = ReverseGeneratorMap.TryGetValue(origin.GeneratorId, out var kind);
+            string? kitRef = builtIn ? null : KitLayoutGenerators.PartRefFor(origin.GeneratorId);
+            if (!builtIn && kitRef is null)
+                continue; // a foreign generator no part claims — nothing to name it after
 
             bool linked = inst.SchematicId is { Length: > 0 } sid0 && bySchematicId.TryGetValue(sid0, out _);
             var comp = linked ? bySchematicId[inst.SchematicId!] : null;
 
             if (comp is null)
             {
-                // R-L5-20: create half — writes SchematicId as it goes.
-                comp = new EditableComponent
+                // A kit part cannot be created without its kit loaded: its symbol and its parameter
+                // interface both live in memory, in the kit, and a component referencing a kit that
+                // is not here would place as an unresolved box with no parameters at all.
+                if (kitRef is not null && PdkKitRegistry.Find(kitRef) is null)
                 {
-                    Symbol       = kind,
-                    InstanceName = SchematicEditModel.NextAvailableName(schematic.Components, kind),
-                    X            = (newSlot % GridCols) * GridPitchSchematic,
-                    Y            = (newSlot / GridCols) * GridPitchSchematic,
-                };
+                    PdkKitRegistry.TryParse(kitRef, out string kitName, out string partId);
+                    lines.Add(new SchematicToLayoutGenerator.ReportLine(inst.CellRef,
+                        $"\"{partId}\" was left alone — the kit \"{kitName}\" is not loaded in this " +
+                        "workspace, so there is no part to create.",
+                        SchematicToLayoutGenerator.ReportSeverity.Warning));
+                    continue;
+                }
+
+                // R-L5-20: create half — writes SchematicId as it goes.
+                comp = kitRef is not null
+                    ? NewKitComponent(kitRef, schematic)
+                    : new EditableComponent
+                      {
+                          Symbol       = kind,
+                          InstanceName = SchematicEditModel.NextAvailableName(schematic.Components, kind),
+                      };
+                comp.X = (newSlot % GridCols) * GridPitchSchematic;
+                comp.Y = (newSlot / GridCols) * GridPitchSchematic;
                 newSlot++;
-                foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
-                    comp.Parameters.Add(new EditableParameter
-                    {
-                        Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit,
-                        ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension,
-                    });
+                if (kitRef is null)
+                    foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
+                        comp.Parameters.Add(new EditableParameter
+                        {
+                            Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit,
+                            ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension,
+                        });
                 ApplyPCellParamsToComponent(comp, origin.Parameters, technology);
 
                 chain = Chain(chain, new Commands.Schematic.PlaceComponentCommand(schematic, comp));
@@ -188,6 +211,41 @@ public static class LayoutToSchematicGenerator
         return new GenerationResult(chain, lines, created, updated, unchanged, overwritten);
     }
 
+    /// <summary>
+    /// A brand-new schematic component for a kit part, seeded exactly as PLACING that part seeds one
+    /// (<c>SchematicViewModel.CommitCellPlacementAsync</c>): the placeholder kind every kit part
+    /// shares, the virtual reference that resolves its symbol, an "X" instance name, and the part's
+    /// own published parameter interface read through the one accessor.
+    ///
+    /// <para>Not a second seeding rule — a component created from a layout and one dropped from the
+    /// palette have to be the same component, or the same part means two different things depending
+    /// on which end of the flow it entered from.</para>
+    /// </summary>
+    private static EditableComponent NewKitComponent(string kitRef, SchematicEditModel schematic)
+    {
+        var comp = new EditableComponent
+        {
+            InstanceName     = SchematicEditModel.NextAvailableName(schematic.Components, "X"),
+            Symbol           = SymbolKind.Generic,   // placeholder; rendering uses CellRef when set
+            CellRef          = kitRef,
+            ShowTypeLabel    = true,
+            ShowInstanceName = true,
+        };
+
+        if (CellSymbolResolver.ResolveCcell(kitRef, schematic.SchematicDirectory ?? "") is { } ccell)
+            foreach (var cp in ccell.Parameters)
+                comp.Parameters.Add(new EditableParameter
+                {
+                    Name            = cp.Name,
+                    Expression      = cp.DefaultExpression,
+                    Unit            = cp.Unit,
+                    Dimension       = cp.Dimension,
+                    ShowOnSchematic = cp.ShowOnSchematic,
+                });
+
+        return comp;
+    }
+
     /// <summary>R-misc-3/4: writes coefficient AND unit for a freshly-created component's parameters
     /// — a Length-dimensioned field's <see cref="EditableParameter.Unit"/> is rewritten from
     /// <c>DefaultParameters</c>' hardcoded "mm" baseline to <paramref name="technology"/>'s own
@@ -209,14 +267,36 @@ public static class LayoutToSchematicGenerator
     /// <summary>Schematic Expression string for a PCell-SI value — <see cref="SchematicToLayoutGenerator.ToDisplayValue"/>
     /// (the shared inverse conversion) formatted the way an <see cref="EditableParameter.Expression"/>
     /// is stored: a bare number in the parameter's own unit.</summary>
-    /// <summary>A non-Real value is written as its own text rather than converted through a unit —
-    /// a schematic <c>Expression</c> is free-form, so a model name pushes back as that name. It will
-    /// not resolve to a number on the way FORWARD (<c>TryResolveSiValue</c> reports it), which is the
-    /// honest outcome until the schematic side carries kinded parameters of its own.</summary>
+    /// <summary>
+    /// A layout value as the schematic <c>Expression</c> that means the same thing.
+    ///
+    /// <para>Anything that IS a number goes back through the unit the schematic row is edited in —
+    /// <b>including a number spelled as text</b>, which is how a vendor cell states a dimension. That
+    /// clause is load-bearing rather than tidy: without it a cell reporting <c>3E-05</c> (metres, its
+    /// own declared kind) would be written verbatim into a row whose unit is µm, and the schematic
+    /// would read 30,000 µm on the way back — a silent factor of a million, from a command whose whole
+    /// purpose is to keep the two views agreeing.</para>
+    ///
+    /// <para>A value that is not a number is written as its own text: a schematic <c>Expression</c> is
+    /// free-form, so a model name pushes back as that name.</para>
+    /// </summary>
     private static string ToDisplayExpression(string? unit, PCellValue value)
-        => value.Kind == PCellValueKind.Real
-            ? SchematicToLayoutGenerator.ToDisplayValue(unit, value.AsReal()).ToString("0.######", CultureInfo.InvariantCulture)
-            : value.AsText();
+    {
+        if (!SchematicToLayoutGenerator.TryAsNumber(value, out double n)) return value.AsText();
+
+        double display = SchematicToLayoutGenerator.ToDisplayValue(unit, n);
+        string rounded = display.ToString("0.######", CultureInfo.InvariantCulture);
+
+        // Six decimal places is a readable number in the unit a row is normally edited in — 42 mil,
+        // 1.5 mm. A kit part's row carries NO unit, so the whole value sits after the decimal point
+        // and six places cannot say 6.99 µm: it becomes 0.000007, and the schematic quietly disagrees
+        // with the artwork it was just generated from. So the readable form is used only when it
+        // still means the same number, and the value itself is written when it does not.
+        return double.TryParse(rounded, NumberStyles.Float, CultureInfo.InvariantCulture, out double back)
+            && SchematicToLayoutGenerator.NearlyEqual(back, display)
+                ? rounded
+                : display.ToString("R", CultureInfo.InvariantCulture);
+    }
 
     private static Scope BuildVariableScope(SchematicEditModel schematic)
     {

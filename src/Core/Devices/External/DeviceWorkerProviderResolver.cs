@@ -252,6 +252,12 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
         string ext = Path.GetExtension(value);
         return ext.Equals(".so",    StringComparison.OrdinalIgnoreCase)
             || ext.Equals(".dll",   StringComparison.OrdinalIgnoreCase)
-            || ext.Equals(".dylib", StringComparison.OrdinalIgnoreCase);
+            || ext.Equals(".dylib", StringComparison.OrdinalIgnoreCase)
+            // A compiled Verilog-A artefact IS a shared library — the loader's own format, under a
+            // different extension — and it is exactly "which model library the worker should load".
+            // This is what lets one artefact per model be routed through the mechanism already here
+            // rather than through a second, OSDI-specific one: a kit's whole compiled model set is
+            // one provider whose library argument varies per device.
+            || ext.Equals(".osdi",  StringComparison.OrdinalIgnoreCase);
     }
 }

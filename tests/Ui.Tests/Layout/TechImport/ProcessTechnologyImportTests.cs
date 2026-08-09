@@ -409,26 +409,49 @@ public class ProcessTechnologyBuilderTests
     }
 
     [Fact]
-    public void NoGroundReferenceIsChosen_ItIsReported()
+    public void TheLowestConductorIsChosenAsTheGroundReference_AndSaidSo()
     {
-        // A process file states no ground plane — every conductor is a signal layer until a design
-        // says otherwise. Picking one would put a guess into the substrate every microstrip component
-        // resolves, and it would be silent.
+        // A process file states no ground plane, so this IS an inference — which is why it is stated
+        // rather than made quietly. The bottom boundary of the stack is already a ground plane (the
+        // bulk the stack is built on), so the lowest conductor is the one closest to it.
         var r = BuildFixture();
 
-        Assert.DoesNotContain(r.Technology.Stackup.Layers, l => l.IsGroundReference);
-        Assert.Contains(r.Notes, n => n.Contains("ground reference"));
+        var ground = Assert.Single(r.Technology.Stackup.Layers.Where(l => l.IsGroundReference));
+        Assert.Equal("MetalLow", ground.Name);
+        Assert.Contains(r.Notes, n => n.Contains("MetalLow") && n.Contains("return path"));
     }
 
     [Fact]
-    public void TheOnlyThingValidationFindsIsTheGroundReference()
+    public void ADeviceLayerIsNeverChosenAsTheGroundReference()
+    {
+        // The one thing a process file DOES say about a conductor's role: which sheets are parts of a
+        // transistor rather than layers anything routes on. Without it the lowest conductor in a
+        // front-end stack is a diffusion, and every microstrip component would resolve its substrate
+        // against a device layer while looking perfectly correct.
+        var r = ProcessTechnologyBuilder.Build(
+            ProcessStackReader.Read("""
+                TECHNOLOGY = FABY
+                DIELECTRIC ox     {THICKNESS=2.0 ER=4.0 }
+                CONDUCTOR  MetalA {THICKNESS=1.0 RPSQ=0.02 }
+                DIELECTRIC ox2    {THICKNESS=1.0 ER=4.0 }
+                CONDUCTOR  MetalB {THICKNESS=0.5 RPSQ=0.10 }
+                DIELECTRIC fox    {THICKNESS=0.4 ER=3.9 }
+                CONDUCTOR  Gate   {THICKNESS=0.2 RPSQ=7.0 LAYER_TYPE=GATE}
+                DIELECTRIC iso    {THICKNESS=0.4 ER=8.0 }
+                CONDUCTOR  Diff   {THICKNESS=0.4 RPSQ=1.0 LAYER_TYPE=DIFFUSION}
+                """), null, "fallback");
+
+        var ground = Assert.Single(r.Technology.Stackup.Layers.Where(l => l.IsGroundReference));
+        Assert.Equal("MetalB", ground.Name);
+        Assert.Contains(r.Notes, n => n.Contains("MetalB") && n.Contains("device"));
+    }
+
+    [Fact]
+    public void ValidationFindsNothingAtAll()
     {
         // The whole point of the conversion: what comes out is a technology the editor accepts, with
-        // exactly one thing left for the user to decide.
-        var problems = TechValidation.Validate(BuildFixture().Technology);
-
-        Assert.Single(problems);
-        Assert.Contains("ground reference", problems[0]);
+        // nothing left to fix before a microstrip component can resolve a substrate.
+        Assert.Empty(TechValidation.Validate(BuildFixture().Technology));
     }
 
     [Fact]

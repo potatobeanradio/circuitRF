@@ -706,20 +706,10 @@ public sealed class SchematicCanvas : Control
     /// </summary>
     private static (IReadOnlyList<SymbolPrimitive>?, IReadOnlyList<SymbolPin>?) ResolveGhostSymbol(string? cellDir)
     {
-        if (string.IsNullOrEmpty(cellDir)) return (null, null);
-
-        try
-        {
-            string trimmed = cellDir.TrimEnd('/', '\\');
-            string? parent = System.IO.Path.GetDirectoryName(trimmed);
-            if (string.IsNullOrEmpty(parent)) return (null, null);
-
-            var res = CellSymbolResolver.Resolve(System.IO.Path.GetFileName(trimmed), parent);
-            return res.State == CellSymbolState.Resolved
-                ? (res.Symbol!.Primitives, res.Symbol.Pins)
-                : (null, null);
-        }
-        catch { return (null, null); }
+        var res = CellSymbolResolver.ResolveCellDirOrRef(cellDir);
+        return res.State == CellSymbolState.Resolved
+            ? (res.Symbol!.Primitives, res.Symbol.Pins)
+            : (null, null);
     }
 
     private void OnPaletteDragLeave(object? sender, DragEventArgs e)

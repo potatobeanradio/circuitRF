@@ -1,3 +1,5 @@
+using CircuitRF.Core.Devices.External;
+
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
@@ -51,6 +53,23 @@ public static class PdkKitRegistry
     /// <summary>Kits currently loaded, in the order they were added. Rendered, never interpreted.</summary>
     private static readonly List<string> _kits = [];
 
+    /// <summary>
+    /// The compiled Verilog-A artefacts found for each kit, keyed by kit name.
+    ///
+    /// <para><b>A kit-level fact, so it is held once per kit rather than copied onto every part.</b>
+    /// It is what turns a <c>.model</c> card's type into the file that implements it at extraction
+    /// time, and every part of one kit resolves against the same set.</para>
+    ///
+    /// <para><b>Held for the session and never written down, deliberately.</b> These artefacts are
+    /// the USER'S build output, not kit content: they can be rebuilt, moved or deleted without the
+    /// kit changing at all, so a recorded index is the one thing here that could go stale in silence.
+    /// Re-establishing it costs a directory walk and one worker <c>describe</c> per artefact —
+    /// measured at 73 ms for the four a kit's owner had built, against a 405 ms import of the
+    /// same kit — which is not a saving worth trading for an answer that can be wrong.</para>
+    /// </summary>
+    private static readonly Dictionary<string, IReadOnlyList<OsdiModel>> _osdi =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly Lock _gate = new();
 
     // ── The reference form ────────────────────────────────────────────────────
@@ -88,7 +107,12 @@ public static class PdkKitRegistry
     /// or a repaired reference produce the kit as it is NOW, instead of the union of every version
     /// of it seen this session.
     /// </summary>
-    public static void SetKit(string kitName, IEnumerable<PdkKitPart> parts)
+    /// <param name="osdiModels">
+    /// The compiled Verilog-A artefacts found for this kit, if any. Replaced with the parts, for the
+    /// same reason: a re-import must produce the kit as it is NOW.
+    /// </param>
+    public static void SetKit(
+        string kitName, IEnumerable<PdkKitPart> parts, IReadOnlyList<OsdiModel>? osdiModels = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kitName);
         ArgumentNullException.ThrowIfNull(parts);
@@ -99,7 +123,19 @@ public static class PdkKitRegistry
             RemoveKitLocked(kitName);
             foreach (var p in fresh) _parts[RefFor(kitName, p.PartId)] = p;
             _kits.Add(kitName);
+            if (osdiModels is { Count: > 0 }) _osdi[kitName] = osdiModels;
         }
+    }
+
+    /// <summary>
+    /// The compiled Verilog-A artefacts this kit's devices resolve against. Empty for the ordinary
+    /// kit, which has none — and also for a kit whose models the user has not compiled yet, which is
+    /// why a device that finds no implementor must report rather than assume anything.
+    /// </summary>
+    public static IReadOnlyList<OsdiModel> OsdiModelsOf(string? kitName)
+    {
+        if (string.IsNullOrWhiteSpace(kitName)) return [];
+        lock (_gate) return _osdi.TryGetValue(kitName, out var hit) ? hit : [];
     }
 
     /// <summary>
@@ -118,7 +154,7 @@ public static class PdkKitRegistry
     /// </summary>
     public static void Clear()
     {
-        lock (_gate) { _parts.Clear(); _kits.Clear(); }
+        lock (_gate) { _parts.Clear(); _kits.Clear(); _osdi.Clear(); }
     }
 
     /// <summary>The part this reference names, or null when its kit is not loaded.</summary>
@@ -182,5 +218,6 @@ public static class PdkKitRegistry
             .ToList();
         foreach (var k in stale) _parts.Remove(k);
         _kits.RemoveAll(k => string.Equals(k, kitName, StringComparison.OrdinalIgnoreCase));
+        _osdi.Remove(kitName);
     }
 }

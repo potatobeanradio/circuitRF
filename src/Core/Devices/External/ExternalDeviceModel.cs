@@ -29,10 +29,11 @@ namespace CircuitRF.Core.Devices.External;
 /// master's column — which is precisely the chain rule that slaving requires. No special case here
 /// or in the engine.</para>
 /// </summary>
-public sealed class ExternalDeviceModel : ComponentModel
+public sealed class ExternalDeviceModel : ComponentModel, IDisposable
 {
     private readonly IExternalDeviceInstance _instance;
     private readonly double[]                _scratch;
+    private          bool                    _disposed;
 
     public ExternalDeviceModel(IExternalDeviceInstance instance, string providerName, string instanceLabel)
     {
@@ -143,6 +144,35 @@ public sealed class ExternalDeviceModel : ComponentModel
                 $"External device '{InstanceLabel}' (provider '{ProviderName}', type " +
                 $"'{Descriptor.TypeId}') failed during evaluation: {ex.Message}", ex);
         }
+    }
+
+    /// <summary>
+    /// Gives the device back to the provider that made it.
+    ///
+    /// <para><b>Why this has to exist, and it is not tidiness.</b> A provider's instance lives in the
+    /// WORKER's memory, not ours, and a worker is a long-lived process shared by every run in the
+    /// session. Every re-elaboration builds a fresh model — and a parametric sweep re-elaborates
+    /// once per point, deliberately (that is how a swept variable reaches the circuit at all). So a
+    /// model that never hands its instance back leaks one per point, in another process, where no
+    /// garbage collector can reach it.</para>
+    ///
+    /// <para>Measured: a 201 × 101 DC sweep asks for 20,502 instances of a compact
+    /// model whose worker holds 4,096, and the run dies part-way through with a message about the
+    /// 4,097th. The memory is the smaller half of it — a compact model's instance is not small, and
+    /// thousands of them are hundreds of megabytes of somebody else's process.</para>
+    ///
+    /// <para><b>Failure here is swallowed on purpose.</b> This runs while a netlist is being thrown
+    /// away, and a worker that has already gone is not a fault to report at that moment — it is the
+    /// ordinary end of a session. Reporting it would replace a completed run's result with an error
+    /// about cleaning up after it.</para>
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        try { (_instance as IDisposable)?.Dispose(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { /* see remarks */ }
     }
 
     private void Check(in ExternalDeviceEvaluation r, int n)

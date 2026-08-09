@@ -319,9 +319,14 @@ public sealed class SpiceNetlistReaderTests
         Assert.Equal("1.2", r.Variables[0].Expression);
         Assert.Equal("2.5E-09", r.Variables[1].Expression);
 
+        // A '.param' inside a subcircuit is a DECLARATION WITH A DEFAULT, not an internal variable:
+        // this dialect lets a call site override one, and reading it as a variable seals the value
+        // shut. The kit that made this matter states a capacitor's width and length exactly this way
+        // and has no other way to set them.
         var cell = Cell(r, "part");
-        Assert.Equal("wmin", Assert.Single(cell.Variables).Name);
-        Assert.Equal("tox*4", cell.Variables[0].Expression);
+        Assert.Empty(cell.Variables);
+        Assert.Equal("wmin", Assert.Single(cell.Parameters).Name);
+        Assert.Equal("tox*4", cell.Parameters[0].DefaultExpression);
         Assert.Equal("wmin*1000", Override(cell.Instances[0], "R"));
     }
 
@@ -410,6 +415,29 @@ public sealed class SpiceNetlistReaderTests
 
         Assert.Equal("r",    r.ModelCards[2].ModelType);
         Assert.Equal("1000", r.ModelCards[2].Parameters["rsh"]);
+    }
+
+    /// <summary>
+    /// A BRACKET INSIDE A PARAMETER VALUE DOES NOT OPEN THE PARAMETER BLOCK — and getting this wrong
+    /// is silent in both halves at once. Searching the whole card for its first <c>(</c> finds one
+    /// hundreds of characters in, hands everything before it back as the "type", and leaves the card
+    /// with NO parameters: a model reference that resolves to nothing, and a parameter set that
+    /// vanished, neither of which reports itself. Measured's MOS card, whose first
+    /// bracket is inside a geometry expression.
+    /// </summary>
+    [Fact]
+    public void S13b_ABracketInsideAValue_DoesNotSwallowTheCard()
+    {
+        var r = Read("""
+            .model mmod mdla_va  type = +1  level = 103.6
+            + dlq = '5.2e-08 - ((1-pre_layout)*0.0)'   tox = 7.4e-09
+            """);
+
+        var card = Assert.Single(r.ModelCards);
+        Assert.Equal("mdla_va", card.ModelType);
+        Assert.Equal(4, card.Parameters.Count);
+        Assert.Equal("+1", card.Parameters["type"]);
+        Assert.Equal("5.2E-08-((1-pre_layout)*0)", card.Parameters["dlq"]);
     }
 
     /// <summary>Two cards under one name are not necessarily the same parameter set, so the collision is reported.</summary>

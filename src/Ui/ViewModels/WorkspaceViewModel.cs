@@ -2234,7 +2234,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var targetPath = Path.Combine(destDir, "netlist.cnl");
         var tmpPath    = targetPath + ".tmp";
 
-        var result = NetExtractor.Extract(model, testBenchName, cells: this);
+        // The corners this design is set to, resolved through the kits the workspace references.
+        // Every way that can fail — a kit no longer referenced, a section it no longer declares, a
+        // file that has moved — comes back as a conflict rather than as silence, because a design
+        // running at a corner nobody chose produces numbers that are wrong and entirely plausible.
+        var cornerProblems = new List<string>();
+        var cornerVars = WorkspaceCorners.BindingsFor(
+            AvailableCornerAxes, model.CornerSelections, cornerProblems);
+
+        var result = NetExtractor.Extract(model, testBenchName, cells: this, cornerVariables: cornerVars);
+        var conflicts = cornerProblems.Count == 0
+            ? result.Conflicts
+            : (IReadOnlyList<string>)[.. cornerProblems, .. result.Conflicts];
+
         var header = $"netlist.cnl — generated from TestBench \"{testBenchName}\"" +
                      $" at {DateTime.UtcNow:O}";
         var text = CnlWriter.Write(result.TestBench, result.Library, header);
@@ -2242,7 +2254,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         File.WriteAllText(tmpPath, text, System.Text.Encoding.UTF8);
         File.Move(tmpPath, targetPath, overwrite: true);
 
-        return (targetPath, result.Conflicts);
+        return (targetPath, conflicts);
     }
 
     // ── ICellResolver implementation ──────────────────────────────────────────
@@ -2970,6 +2982,65 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ReportPdkPlaceability(report, outcome);
 
         await PdkImportReportDialog.ShowAsync(window, report);
+        await OfferTechnologyFromKitAsync(window, report);
+    }
+
+    /// <summary>
+    /// A kit that carries process data can build a technology; offer it as part of the import.
+    ///
+    /// <para><b>Why offering matters rather than just reporting.</b> The import already SAID it found
+    /// layer technology, and stopped there — leaving the user to know that File ▸ Import ▸ Technology
+    /// exists, that it applies to the folder they just imported, and to go and do it. Everything the
+    /// two halves of a kit are for — placing a part and drawing its artwork on that process's own
+    /// layers — needs both, so the second half is offered where the first one finished.</para>
+    ///
+    /// <para>Asked rather than done: a technology is workspace-scoped configuration, may merge into
+    /// one already there, and the user may be importing a kit purely for its schematic parts.</para>
+    /// </summary>
+    private async Task OfferTechnologyFromKitAsync(Window window, PdkImportReport report)
+    {
+        // An archive has no folder to scan, and a kit with no process data has nothing to offer.
+        if (report.LayerTechnology is null) return;
+        if (string.IsNullOrEmpty(report.RootPath) || !Directory.Exists(report.RootPath)) return;
+
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Info(
+                $"\"{report.KitName}\" also carries process data. Open or create a workspace, then " +
+                "use File ▸ Import ▸ Technology on the kit's folder to build a technology from it.");
+            return;
+        }
+
+        TechnologyScanResult scan;
+        try   { scan = await Task.Run(() => ProcessTechnologyImport.Scan(report.RootPath)); }
+        catch { return; }   // the kit imported; a failed look for something extra must not undo that
+
+        if (!scan.HasStack)
+        {
+            // Recognised process data that cannot be built from is worth one line — otherwise the
+            // import report's "layer technology found" reads as a promise nothing ever keeps.
+            Messages.Info(
+                $"\"{report.KitName}\" carries layer data but no process stack description, so a " +
+                "technology cannot be built from it automatically.");
+            return;
+        }
+
+        string what = scan.HasRuleDeck
+            ? "a process stack, layer table and design-rule deck"
+            : "a process stack";
+
+        var answer = await new SaveChangesDialog(
+            $"\"{report.KitName}\" also carries {what}.\n\n" +
+            "Build a technology from it now? Layer names, colours, the stackup and any readable " +
+            "design rules come across, and layouts in this workspace can then use them.",
+            saveLabel:     "Build Technology…",
+            dontSaveLabel: null,
+            cancelLabel:   "Not Now",
+            title:         "Import PDK").ShowDialog<SaveChangesResult>(window);
+
+        if (answer != SaveChangesResult.Save) return;
+
+        await RunTechnologyImportAsync(window, report.RootPath);
     }
 
     /// <summary>Kits imported this session, newest last. The component palette reads this.</summary>
@@ -2999,6 +3070,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         _pdkPaletteItems.Clear();
         PdkKitRegistry.Clear();     // kit references belong to the workspace that named them
+        KitLayoutGenerators.Clear();
         _kitManifests.Clear();
         // Generated wBond symbols are keyed by absolute path, so they are not workspace-scoped the
         // way a kit reference is — but a stale entry would survive a workspace's files being edited
@@ -3064,8 +3136,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         PublishKitPaletteItems();
 
         RegisterKitProviderResolver(wsRoot);
+        RefreshCornerAxes(wsRoot);
+
+        // The PCell resolver scans the workspace when the workspace PATH changes, which is before the
+        // kits are read — so a declaration just written for a kit is invisible to it until it looks
+        // again. Only when something was actually written: a rescan on every open would re-ask the
+        // trust question and re-pay the scan for nothing.
+        if (_pcellDeclarationsAdded)
+        {
+            _pcellDeclarationsAdded = false;
+            ReloadPCellGenerators();
+        }
     }
 
+
+    /// <summary>
+    /// The corner choices this workspace's referenced kits offer. Empty when no kit declares any —
+    /// which is the ordinary case, and is what keeps the Corners block out of the Analyses panel
+    /// entirely for every user who will never need one.
+    ///
+    /// <para>Read from what <c>.cws</c> recorded, so this costs no kit read. Rebuilt whenever the
+    /// referenced kits are.</para>
+    /// </summary>
+    public IReadOnlyList<WorkspaceCornerAxis> AvailableCornerAxes { get; private set; } = [];
+
+    private void RefreshCornerAxes(string? workspaceRootDir)
+    {
+        AvailableCornerAxes = workspaceRootDir is null || CurrentWorkspacePath is null
+            ? []
+            : WorkspaceCorners.From(workspaceRootDir, TryLoadCws(CurrentWorkspacePath).PdkRefs);
+
+        _factory.AnalysesTool?.SetCornerAxes(AvailableCornerAxes);
+    }
 
     /// <summary>
     /// Learns which parametric cells each kit offers, then republishes the palette.
@@ -3092,12 +3194,46 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var builtIn = new HashSet<string>(
                 CircuitRF.Ui.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
 
+            // Read on this thread, where a generator may still be asked to describe itself. A model
+            // name a generator does not declare is simply absent — most do not, and the match step
+            // that reads this is defined to do nothing without one.
+            var models = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            // What each cell ACCEPTS — read from the SAME declaration, so it costs nothing beyond the
+            // describe already being paid for. KitPaletteMerge's fourth step needs it; see there.
+            var declaredParams = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var gid in byKit.Keys)
+            {
+                if (builtIn.Contains(gid)) continue;
+                try
+                {
+                    if (resolver.DeclaredDefaults(gid) is not { } d) continue;
+
+                    declaredParams[gid] = [.. d.Keys];
+
+                    if (d.FirstOrDefault(kv => string.Equals(kv.Key, "model", StringComparison.OrdinalIgnoreCase))
+                           is { Key: not null } hit
+                        && hit.Value.ToString() is { Length: > 0 } raw)
+                    {
+                        // A declared default is a kinded value; the model name is its text.
+                        int colon = raw.IndexOf(':');
+                        models[gid] = (colon >= 0 ? raw[(colon + 1)..] : raw).Trim();
+                    }
+                }
+                catch { /* one generator that will not describe itself must not cost the others */ }
+            }
+
             Dispatcher.UIThread.Post(() =>
             {
                 _pcellGeneratorKits.Clear();
+                _pcellGeneratorModels.Clear();
                 foreach (var kv in byKit)
                     if (!builtIn.Contains(kv.Key))
                         _pcellGeneratorKits[kv.Key] = kv.Value;
+                foreach (var kv in models)
+                    _pcellGeneratorModels[kv.Key] = kv.Value;
+                _pcellGeneratorParameters.Clear();
+                foreach (var kv in declaredParams)
+                    _pcellGeneratorParameters[kv.Key] = kv.Value;
                 PublishKitPaletteItems();
             });
         });
@@ -3106,8 +3242,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>Publishes the kit section of the palette — one tile per part, carrying every view
     /// that part can be placed as. The matching rules live in <see cref="KitPaletteMerge"/>, which is
     /// framework-free and therefore testable on its own.</summary>
-    private void PublishKitPaletteItems() =>
-        _factory.PaletteTool?.SetPdkParts(KitPaletteMerge.Compose(_pdkPaletteItems, _pcellGeneratorKits));
+    private void PublishKitPaletteItems()
+    {
+        var composed = KitPaletteMerge.Compose(
+            _pdkPaletteItems, _pcellGeneratorKits, _pcellGeneratorModels, _pcellGeneratorParameters);
+        // The same answer, published for Update-Layout-from-Schematic, so a part that places one view
+        // from its tile places the other from the design.
+        KitLayoutGenerators.Publish(composed);
+        _factory.PaletteTool?.SetPdkParts(composed);
+    }
+
+    /// <summary>Each kit generator's own declared model name, when it declares one — the identity a
+    /// kit's schematic part and its layout cell share. See <see cref="KitPaletteMerge.Compose"/>.</summary>
+    private readonly Dictionary<string, string> _pcellGeneratorModels = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Each kit generator's own declared parameter names — the tie-break for a model claimed
+    /// by more than one cell. See <see cref="KitPaletteMerge.Compose"/>.</summary>
+    private readonly Dictionary<string, IReadOnlyList<string>> _pcellGeneratorParameters = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Kit-contributed generator ids and the kit each came from. Kept apart from
     /// <see cref="_pdkPaletteItems"/> so a kit re-import rebuilds one without discarding the other,
@@ -3125,12 +3276,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// saving still remembers a kit that was just imported — the import is not an edit to a document
     /// the user might reasonably discard.</para>
     /// </summary>
-    private void RecordPdkReference(string workspaceRootDir, string kitName, string kitPath, JsonNode? settings)
+    private void RecordPdkReference(string workspaceRootDir, string kitName, string kitPath,
+                                    JsonNode? settings, IReadOnlyList<PdkCornerAxis>? corners)
     {
         try
         {
             var cws  = TryLoadCws(CurrentWorkspacePath!);
             var refs = cws.PdkRefs ?? [];
+            // The corners this kit already had recorded, so a re-record that has not re-derived them
+            // (a settings-only write on open) never silently drops them.
+            var keptCorners = refs.FirstOrDefault(r =>
+                string.Equals(r.Provider, kitName, StringComparison.OrdinalIgnoreCase))?.Corners;
             refs.RemoveAll(r => string.Equals(r.Provider, kitName, StringComparison.OrdinalIgnoreCase));
             refs.Add(new CwsPdkRef
             {
@@ -3138,6 +3294,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 Provider           = kitName,
                 TranslationVersion = DsnSymbolReader.TranslationVersion,
                 Settings           = settings,
+                Corners            = PdkReferenceManager.ToStoredCorners(corners) ?? keptCorners,
             });
             cws.PdkRefs = refs;
             WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, cws);
@@ -3181,7 +3338,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var report  = PdkImporter.Import(kitPath);
         var outcome = PdkPartInstaller.Install(report, r.Settings, libraryRoots);
 
-        PdkKitRegistry.SetKit(r.Provider, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(r.Provider, outcome.Parts ?? [], outcome.OsdiModels);
 
         // From what the install SETTLED, never from what was recorded. They differ exactly when the
         // recorded settings were absent (or stale) and had to be derived — which is the case that
@@ -3194,10 +3351,80 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // again. Measured: ~0.5 ms replayed against ~200 ms derived, because discovery byte-scans
         // candidate builds across a multi-MB package. Only written when it actually changed, so an
         // ordinary open touches nothing.
-        if (outcome.Settings is not null && r.Settings is null)
-            RecordPdkReference(workspaceRootDir, r.Provider, kitPath, outcome.Settings);
+        //
+        // The corners are recorded on the same terms and for the same reason: learning them means
+        // reading every netlist in the kit, and the answer only changes when the kit does.
+        bool settingsAreNew = outcome.Settings is not null && r.Settings is null;
+        bool cornersAreNew  = (r.Corners is null || r.Corners.Count == 0)
+                              && outcome.CornerAxes is { Count: > 0 };
+        if (settingsAreNew || cornersAreNew)
+            RecordPdkReference(workspaceRootDir, r.Provider, kitPath,
+                               outcome.Settings ?? r.Settings, outcome.CornerAxes);
+
+        DeclareKitPCellLibrary(r.Provider, kitPath, workspaceRootDir);
 
         return outcome.Items;
+    }
+
+    /// <summary>
+    /// Set when a kit's parametric-cell library was declared for the first time during this load, so
+    /// the resolver — which scanned the workspace BEFORE the kits were read — is told to look again.
+    /// </summary>
+    private bool _pcellDeclarationsAdded;
+
+    /// <summary>
+    /// Makes a kit's own parametric cells reachable, if it has any.
+    ///
+    /// <para><b>The gap this closes.</b> circuitRF could already RUN a kit's cell scripts; the only way
+    /// to declare one was a <c>pcell-generators.json</c> written by hand, and a vendor kit knows nothing
+    /// about circuitRF and ships none — so an imported kit's layout artwork was unreachable however
+    /// complete its own cell library was. The library is found structurally (see
+    /// <see cref="KitPCellLibrary"/>) and the declaration is written into the WORKSPACE, where it is
+    /// ordinary, editable text rather than a decision buried in the product.</para>
+    ///
+    /// <para>Silent when the kit has no cell library — the ordinary case for a kit whose layouts are
+    /// fixed artwork — and never fatal: a declaration that could not be written costs that kit's
+    /// layout cells, not the import.</para>
+    /// </summary>
+    private void DeclareKitPCellLibrary(string kitName, string kitPath, string workspaceRootDir)
+    {
+        try
+        {
+            var pkg = CircuitRF.Ui.Layout.PCells.Wire.KitPCellLibrary.Find(kitPath, out var alsoFound);
+            if (pkg is null) return;
+
+            string? dir = CircuitRF.Ui.Layout.PCells.Wire.KitPCellLibrary.EnsureDeclared(
+                workspaceRootDir, kitName, pkg, out string? problem, out bool created);
+
+            if (dir is null)
+            {
+                Messages.Warning(
+                    $"'{kitName}' ships a parametric-cell library ({pkg.PackageName}), but circuitRF " +
+                    $"could not record it: {problem} Its parts still place and draw; only their layout " +
+                    $"artwork needs it.");
+                return;
+            }
+
+            if (!created) return;   // already declared — nothing changed, so nothing to say
+
+            _pcellDeclarationsAdded = true;
+
+            string extra = alsoFound.Count > 0
+                ? $" It also holds {alsoFound.Count} other cell package(s) " +
+                  $"({string.Join(", ", alsoFound.Take(3).Select(p => p.PackageName))}" +
+                  $"{(alsoFound.Count > 3 ? ", …" : "")}); edit that folder to register one instead."
+                : "";
+
+            Messages.Success(
+                $"'{kitName}' offers {pkg.CellModuleCount} parametric layout cell(s) " +
+                $"({pkg.PackageName}). circuitRF recorded how to run them in " +
+                $"'{Path.GetFileName(dir)}'.{extra}",
+                dir);
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"'{kitName}': its parametric-cell library could not be examined: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -3285,13 +3512,29 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Using the report's here would leave every reference pointing at a kit nobody registered.
         string kit = outcome.KitName;
 
-        PdkKitRegistry.SetKit(kit, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(kit, outcome.Parts ?? [], outcome.OsdiModels);
         _kitManifests.RemoveAll(k => string.Equals(k.Kit, kit, StringComparison.OrdinalIgnoreCase));
         if (PdkPartInstaller.ManifestFrom(outcome.Settings, report.RootPath, kit) is { } m)
             _kitManifests.Add((kit, m));
 
         if (wsRoot is not null)
-            RecordPdkReference(wsRoot, kit, report.RootPath, outcome.Settings);
+        {
+            RecordPdkReference(wsRoot, kit, report.RootPath, outcome.Settings, outcome.CornerAxes);
+
+            // The Corners block follows what the workspace references, so a kit that declares
+            // corners must make it appear the moment it is imported, not on the next open.
+            RefreshCornerAxes(wsRoot);
+
+            // Its layout cells, if it has any. Declared here as well as on a workspace open so the
+            // kit is complete the moment it is imported, rather than on the next open.
+            _pcellDeclarationsAdded = false;
+            DeclareKitPCellLibrary(kit, report.RootPath, wsRoot);
+            if (_pcellDeclarationsAdded)
+            {
+                _pcellDeclarationsAdded = false;
+                ReloadPCellGenerators();
+            }
+        }
 
         _pdkPaletteItems.RemoveAll(i => string.Equals(i.Pdk?.KitName, kit, StringComparison.Ordinal));
         _pdkPaletteItems.AddRange(outcome.Items);
@@ -3543,7 +3786,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         });
         if (folders.Count == 0) return;
 
-        string root = folders[0].Path.LocalPath;
+        await RunTechnologyImportAsync(window, folders[0].Path.LocalPath);
+    }
+
+    /// <summary>
+    /// Scans <paramref name="root"/> for process data and, if there is enough to build from, takes
+    /// the user through choosing and installing a technology.
+    ///
+    /// <para><b>Shared with the kit import deliberately.</b> A kit that carries process data is the
+    /// same job reached from a different door — offering it there and building a second, slightly
+    /// different flow is how the two would come to disagree about merging, defaults or reporting.</para>
+    /// </summary>
+    private async Task RunTechnologyImportAsync(Window window, string root)
+    {
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Info("Open or create a workspace first — an imported technology is saved into it.");
+            return;
+        }
 
         TechnologyScanResult scan;
         try

@@ -50,12 +50,48 @@ public sealed record PaletteItem(
 /// <param name="KitName">Display name of the kit this part came from; also its palette category.</param>
 /// <param name="PartId">Identifier, unique within the kit.</param>
 /// <param name="IconPath">Absolute path to the kit's palette icon, when it shipped one.</param>
-/// <param name="CellDir">Absolute path to the installed cell folder, when a symbol was readable.</param>
+/// <param name="CellDir">
+/// Where the part's symbol comes from: an absolute cell folder, or a virtual reference for a part
+/// held in memory. Never split this by hand — ask <c>CellSymbolResolver.ResolveCellDirOrRef</c>,
+/// which is the one place that knows which of the two forms it is looking at.
+/// </param>
+/// <param name="Category">
+/// The kit's OWN word for what kind of part this is, or empty when it states none.
+///
+/// <para>Kept verbatim rather than mapped onto a <see cref="ComponentCategory"/>: a kit groups its
+/// parts the way its own documentation does, and translating that into circuitRF's built-in
+/// vocabulary would be guessing at a grouping the kit already stated. It is what the palette offers
+/// as a sub-category under the kit — the difference between browsing a hundred parts and browsing
+/// the eight that are diodes.</para>
+/// </param>
+/// <param name="ModelName">
+/// The device model this part declares, verbatim from the kit, or empty when it declares none.
+///
+/// <para>Carried because it is the ONE identity a kit's schematic part and its layout cell reliably
+/// share. A kit routinely names the two differently — its schematic symbol is one file, its
+/// parametric layout cell is a class in a package, and neither is obliged to match the other — but
+/// both name the model, because that is what a netlist has to say. Matching on it is reading the
+/// kit's own statement; matching by chopping prefixes off a name would be guessing, and a guess here
+/// puts the wrong artwork on the design while looking perfectly correct.</para>
+/// </param>
+/// <param name="ParameterNames">
+/// The parameters this part declares, as the kit names them — circuitRF's own rows excluded, since a
+/// kit has never heard of those.
+///
+/// <para>Carried for the case <paramref name="ModelName"/> alone cannot settle: several parts and
+/// several layout cells all naming ONE model. That is the ordinary shape of a device offered in an
+/// RF and a non-RF form, and the kit does state which is which — in what each accepts. A cell that
+/// does not declare a parameter the part has cannot be that part's layout view, because the artwork
+/// could never follow the schematic. See <see cref="KitPaletteMerge"/>.</para>
+/// </param>
 public sealed record PdkPartRef(
     string  KitName,
     string  PartId,
-    string? IconPath = null,
-    string? CellDir  = null);
+    string? IconPath  = null,
+    string? CellDir   = null,
+    string  Category  = "",
+    string  ModelName = "",
+    IReadOnlyList<string>? ParameterNames = null);
 
 /// <summary>
 /// Projects <see cref="ComponentTypeRegistry"/> into an ordered, filterable list of

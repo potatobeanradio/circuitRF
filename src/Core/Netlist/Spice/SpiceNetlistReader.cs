@@ -76,6 +76,10 @@ public static class SpiceNetlistReader
         private readonly HashSet<string>            _incomplete = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<SpiceStatisticalUse>  _statistics = [];
         private readonly List<string>               _filesRead  = [];
+
+        /// <summary>Section names per file, in declaration order. See SpiceNetlistResult.Sections.</summary>
+        private readonly Dictionary<string, List<string>> _sections =
+            new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string>            _open       = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Open subcircuits, innermost last. The dialect permits nesting.</summary>
@@ -100,10 +104,22 @@ public static class SpiceNetlistReader
                     _filesRead.Count > 0 ? _filesRead[0] : "<text>", lastLine,
                     $"'{CurrentName}' has no '.ends'.");
 
+            // A card may be declared after — or in a different file from — the subcircuit that uses
+            // it, so this cannot be done at the element line without making the result depend on
+            // read order. See SpicePassiveModelBinding.
+            SpicePassiveModelBinding.Bind(
+                _library, _cards,
+                note:           m => Note(_filesRead.Count > 0 ? _filesRead[0] : "<text>", 0, m),
+                markIncomplete: n => _incomplete.Add(n));
+
+            SpicePassiveModelBinding.AlignSubcircuitParameterCase(_library);
+
             return new SpiceNetlistResult(
                 _library, _notes, _globals, _cards, _incomplete, _statistics, _filesRead)
             {
                 Functions = _functions,
+                Sections  = [.. _sections.Where(kv => kv.Value.Count > 0)
+                                         .Select(kv => new SpiceSectionSet(kv.Key, kv.Value))],
             };
         }
 
@@ -125,6 +141,12 @@ public static class SpiceNetlistReader
             bool inSomeSection  = false;
             bool inWantedSection = section is null;
 
+            // Whether the section the caller ASKED for was ever found. A request for one the file
+            // does not declare otherwise reads nothing at all and reports nothing at all — and a
+            // design elaborated with none of its process constants bound is not an error anywhere,
+            // just a set of plausible numbers computed from defaults nobody chose.
+            bool foundWanted = section is null;
+
             foreach (var (text, number) in Join(lines))
             {
                 string s = StripComment(text).Trim();
@@ -140,6 +162,18 @@ public static class SpiceNetlistReader
                 if (StartsWithWord(s, ".lib") && Words(s).Count == 2)
                 {
                     string named = Unquote(Words(s)[1]);
+                    if (section is not null &&
+                        named.Equals(section, StringComparison.OrdinalIgnoreCase)) foundWanted = true;
+
+                    // Recorded whether or not this is the section being read. A file read WHOLE skips
+                    // every section deliberately, and that is exactly the pass during which circuitRF
+                    // needs to learn what the alternatives ARE — so the names are collected here
+                    // rather than anywhere downstream of the skip.
+                    if (!_sections.TryGetValue(file, out var namesInFile))
+                        _sections[file] = namesInFile = [];
+                    if (!namesInFile.Contains(named, StringComparer.OrdinalIgnoreCase))
+                        namesInFile.Add(named);
+
                     inSomeSection = true;
                     inWantedSection = section is not null
                                    && named.Equals(section, StringComparison.OrdinalIgnoreCase);
@@ -161,6 +195,17 @@ public static class SpiceNetlistReader
                 if (conditions.Any(c => !c.Active)) continue;
 
                 Dispatch(s, file, number, directory, depth);
+            }
+
+            if (!foundWanted)
+            {
+                var offered = _sections.TryGetValue(file, out var names) && names.Count > 0
+                    ? $" It offers: {string.Join(", ", names)}."
+                    : " It declares no sections at all.";
+                Note(file, lines.Count,
+                     $"section '{section}' was requested and this file does not declare it, so nothing " +
+                     $"was read from it.{offered}");
+                MarkIncomplete();
             }
 
             if (conditions.Count > 0)
@@ -310,8 +355,26 @@ public static class SpiceNetlistReader
                 string expr = Rewrite(value);
                 _conditionScope.Bind(name, expr);
 
-                if (Current is null) _globals.Add(new Variable(name, expr));
-                else                 Current.Variables.Add(new Variable(name, expr));
+                if (Current is null) { _globals.Add(new Variable(name, expr)); continue; }
+
+                // A '.param' INSIDE a subcircuit is a declaration with a default, not an internal
+                // variable — this dialect lets a call site override one, and a kit relies on it: the
+                // MIM capacitor states its width and length exactly this way and there is no other
+                // way to set them. Read as a variable the geometry is sealed shut, so a placed part
+                // has one size forever, which is the whole point of the part gone.
+                //
+                // The '.subckt' line's own bindings are the more specific statement of the same
+                // thing and win; a name declared twice is the file's own contradiction and is said
+                // out loud rather than resolved silently.
+                if (Current.Parameters.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    Note(file, number,
+                         $"'{name}' was already declared on the '.subckt' line of '{CurrentName}'; " +
+                         "that declaration is the one kept.");
+                    continue;
+                }
+
+                Current.Parameters.Add(new ParameterDeclaration(name, expr));
             }
         }
 
@@ -372,19 +435,33 @@ public static class SpiceNetlistReader
             int nameAt = s.IndexOf(name, StringComparison.Ordinal);
             string rest = nameAt < 0 ? "" : s[(nameAt + name.Length)..].Trim();
 
+            // THE BRACKET ONLY OPENS THE PARAMETER BLOCK WHEN IT IS PART OF THE TYPE'S OWN WORD.
+            // Searching the whole line for the first '(' is what a bracket-less card gets wrong, and
+            // it gets it wrong silently: a kit writes `.model X mdla_va type=+1 … dlq =
+            // '5.2202e-08-((1-pre_layout)*0.0)'`, whose first bracket is hundreds of characters into
+            // a parameter VALUE. Everything before it then becomes the "type" and the card is left
+            // with NO parameters at all — a model reference that resolves to nothing and a parameter
+            // set that vanished, neither of which reports itself.
+            var parts = Words(rest);
+            string head = parts.Count > 0 ? parts[0] : "";
+
             string type, body;
-            int open = rest.IndexOf('(');
+            int    open = head.IndexOf('(');
             if (open >= 0)
             {
-                type = rest[..open].Trim();
-                body = rest[(open + 1)..].TrimEnd();
+                type = head[..open].Trim();
+                body = rest[(rest.IndexOf('(') + 1)..].TrimEnd();
                 if (body.EndsWith(')')) body = body[..^1];
             }
             else
             {
-                var parts = Words(rest);
                 type = parts.Count > 0 ? parts[0] : "";
                 body = parts.Count > 1 ? string.Join(' ', parts.Skip(1)) : "";
+
+                // `type (a=1 b=2)` — the bracket detached from the type. The tokeniser keeps a
+                // bracketed run whole, so it arrives as one word that no assignment split can read.
+                body = body.Trim();
+                if (body.StartsWith('(') && body.EndsWith(')')) body = body[1..^1];
             }
 
             if (type.Length == 0)
@@ -684,7 +761,11 @@ public static class SpiceNetlistReader
 
             if (area is not null) overrides.Add(new ParameterAssignment("area", area));
             foreach (var (k, v) in assignments)
-                overrides.Add(new ParameterAssignment(NormaliseInstanceParameter(k), Rewrite(v)));
+            {
+                string spelling = NormaliseInstanceParameter(k);
+                if (letter is 'R' or 'C' or 'L') spelling = NormalisePassiveParameter(letter, spelling);
+                overrides.Add(new ParameterAssignment(spelling, Rewrite(v)));
+            }
 
             Current!.Instances.Add(new Instance(name, reference, nets, overrides));
         }
@@ -727,6 +808,33 @@ public static class SpiceNetlistReader
             => name.Equals(Elaborator.MultiplierParamName, StringComparison.OrdinalIgnoreCase)
                 ? Elaborator.MultiplierParamName
                 : name;
+
+        /// <summary>
+        /// circuitRF's own spelling for a parameter of a passive it implements natively.
+        ///
+        /// <para><b>The same case-insensitivity trap as the multiplier, one letter along.</b> This
+        /// dialect writes <c>R1 a b r=55m</c> as readily as <c>R=55m</c>, and circuitRF's resistor
+        /// reads <c>R</c> ordinally — so passing the spelling through verbatim gives a resistor with
+        /// no value at all. Measured: its MIM capacitor's series resistance is written
+        /// lower-case, and every part built on it failed to elaborate.</para>
+        ///
+        /// <para>Applied to the PASSIVES only. A subcircuit's parameters are the subcircuit's own,
+        /// and are aligned to the spelling its definition declared instead — see
+        /// <see cref="SpicePassiveModelBinding"/>.</para>
+        /// </summary>
+        private static string NormalisePassiveParameter(char letter, string name)
+        {
+            if (name.Equals(letter.ToString(), StringComparison.OrdinalIgnoreCase))
+                return char.ToUpperInvariant(letter).ToString();
+
+            foreach (string canonical in NativePassiveParameters)
+                if (name.Equals(canonical, StringComparison.OrdinalIgnoreCase)) return canonical;
+
+            return name;
+        }
+
+        private static readonly string[] NativePassiveParameters =
+            ["TC1", "TC2", "Tnom", "Temp", "Dtemp"];
 
         // ── shared plumbing ───────────────────────────────────────────────────
 

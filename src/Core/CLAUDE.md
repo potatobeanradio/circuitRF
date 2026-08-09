@@ -1,3 +1,246 @@
+A compiled model stopped being reported as "unknown" (2026-08-09) — owner-reported, from the open-PDK
+bring-up: *"there's 503 unrecognized files in the PDK listed when I import it — could any of those files
+help us get the right ModelLibrary?"*
+
+**Two of them were circuitRF's OWN inputs, being called unrecognised.** `PdkFormatRegistry` now names
+both:
+
+- **`.osdi` is a compiled Verilog-A model** — the loader's own shared-object format under another
+  extension, and the thing circuitRF actually evaluates a kit of this shape's devices with
+  (`OsdiModelDiscovery` already finds them and routes a `.model` card to whichever one declares its
+  module; `DeviceWorkerProviderResolver` already substitutes one as a model library). Reporting it as
+  *unknown (.osdi)* told the user their models were unreadable at the moment those models were what
+  made the kit simulate. Now `Supported`, `ModelData`.
+- **`.spiceinit` is the other simulator's start-up file**, matched by NAME because it has no extension
+  at all. It is genuinely not circuitRF's to run — it names search paths and which compiled models to
+  load, both of which circuitRF works out for itself — but "unknown" invites the reader to go and make
+  it work. It now says what it is and that nothing there needs running.
+
+**The rest of the 503 are not circuitRF's business and should stay listed**: the bulk is
+four other tools' own setup trees (124, 107, 74 and 57 files) — in a directory layout the open-PDK convention
+puts there on purpose (one subdirectory per tool). Eight `.lib` files in the kit's model folder do land in
+the list — the `_stat`/`_mismatch` statistical variants, which hold only `.param` sections and match no
+netlist marker. They are alternatives to files already read, not gaps.
+
+**On the kit's `install.py`, which the owner asked whether the importer should run: no, and the reason
+is concrete.** It does exactly two things — compile the kit's Verilog-A sources to `.osdi` with a
+Verilog-A compiler, and symlink `.spiceinit` into `$HOME` for the simulator it was written for. circuitRF needs neither: it searches for
+the compiled artefacts itself (kit tree first, then the folders the workspace was told about), and it
+does not read `.spiceinit`. Running a kit's scripts on import is also the thing the PCell trust gate
+exists to prevent. The one genuinely useful fact in that file is that `.osdi` artefacts are BUILD
+OUTPUT — which is already why they are re-derived per session rather than recorded.
+
+Gate: `PdkImporterTests.ACompiledModelAndTheOtherSimulatorsSetup_AreNamedRatherThanCalledUnknown`.
+
+Which CORNERS a kit offers is now discoverable (2026-08-08) — the foundation only; the choice, the
+panel and the elaboration half are NOT built and are named at the end.
+
+**A corner is a named set of global variable bindings — nothing else.** Verified across a kit's
+capacitor, resistor and MOS corner files: every one is `.LIB <name>` / a handful of `.param` / an
+`.include` of the SAME shared model file / `.ENDL`. The subcircuits and model cards are identical
+across corners. That is what makes corner selection a substitution into `TestBench.GlobalVariables`
+rather than a different netlist, a re-import, or a variant of the parts.
+
+**It was not discoverable at all, and the reason was two capped windows.**
+
+- **The classifier keyed on `.subckt|.model`, and a corner file has NEITHER.** It is nothing but
+  sections binding parameters and including the shared file, so it classified as unrecognised and its
+  corners were invisible. `.lib` is now a third marker — deliberately not `.param` or `.include`,
+  which would also match and are far likelier to head a line in something that is not a netlist at
+  all. `.lib` is the one that means "this file participates in this dialect's section mechanism",
+  which is precisely the thing being recognised.
+- **`PeekChars` was 4,096 and two of that kit's corner files declare their first `.lib` at byte 4,114
+  and 4,184** — eighteen bytes past the window, behind a license header and a long parameter block.
+  Raised to 64 KB. **The saving was never real**: `PeekLimitBytes` (512 KB) is what bounds cost by
+  refusing to open a large file at all, so this only widened the window on files already deemed cheap,
+  and the read stops at end of file, which nearly all of them reach first. This is the same shape as
+  the note already in this file about a network's port labels: *a format's marker is wherever the file
+  puts it, and a cap chosen for cost quietly becomes a correctness rule.*
+
+**`SpiceNetlistResult.Sections` exposes what the reader already parsed and threw away as note text.**
+Grouped by FILE, which is structural rather than a naming convention: a kit states its corners one
+file per device family, so the file IS the axis — a capacitor corner and a resistor corner are two
+independent choices, and flattening them into one list would offer a single pick where the kit offers
+several. **Collected during the pass that deliberately SKIPS every section** (a file read whole
+chooses none, because choosing one nobody asked for is a guess) — anywhere downstream of that skip
+collects nothing.
+
+**No section is filtered for not looking like a corner.** The kit declaring them as alternatives is
+the whole semantic; matching names against `_typ`/`_wcs` encodes one supplier's habits and goes blank
+on the next kit.
+
+**Measured: 6 axes, 47 options**, all six corner files now recognised —
+`capCorners` (7), `dioCorners` (4), `hbtCorners` (7), `mosHvCorners` (11), `mosLvCorners` (11),
+`resCorners` (7).
+
+Gate: `SpiceCornerDiscoveryTests` (7, synthetic) — order preserved, no sections means no axis, the
+collected-while-skipped rule, no name filtering, a sections-only file recognised, a marker past the
+old 4,096-byte window found (with the fixture asserting it genuinely exceeds it, so the test cannot
+pass vacuously), and prose that merely mentions a directive still not read as a netlist.
+
+**`PdkCorners` is the model on top of that discovery** — `Discover` turns a set of netlists into one
+`PdkCornerAxis` per file that declares sections, and `BindingsFor(axisFile, section)` answers what
+choosing one actually binds.
+
+- **A corner is requested the way the dialect itself requests one** — `.lib <file> <section>` — never
+  by reaching into the file and reading its parameters directly. That is the format's own mechanism
+  for "read this one alternative", so the section's conditionals, nested includes and parameter forms
+  are handled by the one reader that already handles them rather than by a second grammar.
+- **What comes back is the section AND whatever it includes, deliberately.** A corner file's section
+  IS the entry point to the model library, so a caller uses this INSTEAD of reading that library
+  separately, never in addition, or the two reads bind the same names twice. **Measured: the overlap
+  is empty in practice** — the kit's model files declare every parameter inside a subcircuit, so a
+  corner's bindings are exactly its own process constants.
+- **A file that will not read declares no corners we can trust, and costs only itself.**
+- **A recorded selection outlives the kit it was made against**, so `Offers` exists to catch a stale
+  one. Silently binding nothing would leave a design at a corner nobody chose with every number still
+  plausible.
+
+**A real gap the gate caught, fixed in the reader rather than papered over:** requesting a section a
+file does not declare read nothing and reported nothing. That is the worst available outcome — the
+design elaborates with none of its process constants bound, which is not an error anywhere, just a set
+of plausible numbers computed from defaults nobody chose. It is now a note that names the section, says
+nothing was read, and lists what the file DOES offer; the cell is marked incomplete.
+
+**Measured: 6 axes, 47 options, bindings that genuinely differ per corner** — e.g. the
+Schottky saturation current is 1.28 at typical and 0.85 at slow; capacitor area capacitance is
+`1.5E-15` at typical against `0.9×` and `1.1×` at the two extremes. Binding counts run from 2
+(capacitor) to 125 (high-voltage MOS statistical).
+
+Gate: `PdkCornersTests` (10, synthetic but written in the SHAPE a kit uses) — one axis per
+declaring file and none for the rest, two families as two independent axes, an unreadable file costing
+only itself, a chosen section binding its own values **and the other corner binding genuinely
+different ones** (a picker that binds the same thing whatever you choose looks exactly like success),
+alternatives not bleeding into each other, the included library contributing no top-level binding, an
+unoffered section reported, a blank choice binding nothing, and a stale selection detectable.
+
+> **Superseded 2026-08-08, same day.** The "NOT BUILT" boundary that stood here — no recorded axes,
+> no selection, no picker, no elaboration — is closed. See `src/Ui/CLAUDE.md`'s own corner entry for
+> what was built on top of this. The only piece still outstanding is the `Design ▸ PDK…` menu item,
+> which is a second door onto a panel that already exists rather than a capability.
+
+**Discovery is now driven from the IMPORT, and it is cheap because of one pre-filter.**
+`PdkImporter` records what each netlist declares onto `PdkImportReport.CornerAxes`, identified by the
+file's own KIT-RELATIVE path — never an absolute one, because a design's recorded corner has to
+survive the kit being moved, re-cloned, or arriving on another machine.
+
+**`PdkCorners.Discover` scans before it parses.** A kit's netlists are mostly megabytes of model
+cards that declare no section at all; parsing every one to learn that would cost the whole import.
+The scan looks for the directive that OPENS a section — a `.lib` with exactly one word after it,
+since two words is a REQUEST for a section rather than a declaration of one — which is the same
+distinction the reader's own section handling already makes, so a file this skips is one the reader
+would have reported no sections for. **Measured: the entire import, corner discovery
+included, is 260 ms for 1,266 assets and 110 parts.**
+
+**A kit ships TWO axes per device family, not one, and that shaped the UI.** It carries one
+corner file per family per SIMULATOR FLAVOUR — 12 axes over 6 families — so the file stem alone lists
+`capCorners` twice with different option sets and no way to tell them apart. circuitRF states no
+preference between the flavours (it has no principle for one, and the constants agree), so both are
+offered and the LABEL is qualified where it is ambiguous — see `WorkspaceCorners.From`.
+
+A kit's passives, read from the SPICE dialect and SOLVED (2026-08-08) — COMPLETE for the reader; the
+part→circuit binding is deliberately NOT built, and the reason is a decision rather than a shortfall
+(bottom of this entry).
+
+**What was actually missing, measured rather than assumed.** `SpiceNetlistReader` already read a real
+kit's capacitor library completely — three subcircuits, zero skipped lines, nothing marked incomplete,
+including the series resistance and an eleven-element RF network. What stood between that and a part
+that runs was three things, each of which leaves a design that **simulates and is wrong**.
+
+- **A subcircuit-local `.param` was a cell VARIABLE, so the geometry was sealed shut.** This dialect
+  lets a call site override one, and a kit relies on it: the MIM capacitor states its width and length
+  exactly this way and has no other way to set them. It is a `ParameterDeclaration` now — the
+  `.subckt` line's own binding still wins, and a name declared twice is the file's own contradiction
+  and is said out loud. Every parameter default is unchanged, so nothing that read before reads
+  differently; only the interface widened.
+- **A `.model` card of a passive type reached nothing.** `SpicePassiveModelBinding` maps a `C` card
+  onto circuitRF's own `SemiC` — which already computes
+  `(Cfixed + Cj·area + Cjsw·perimeter)·(1 + TC1·ΔT + TC2·ΔT²)` — and an `R` card onto the sheet-
+  resistance ratio, with the coefficients handed to the resistor that already carries them. **This is
+  a mapping of names, not a second implementation of the arithmetic**, which is the whole reason it is
+  worth doing at all.
+- **The dialect is case-insensitive and circuitRF compares parameter names ordinally.** `R1 a b r=55m`
+  is how the kit writes its series resistance, and passed through verbatim it gives a resistor with no
+  value — every part built on it failed to elaborate. `NormalisePassiveParameter` spells a passive's
+  own value the way circuitRF does; `AlignSubcircuitParameterCase` does the same one level up, by
+  rewriting a call's parameter names into the spelling its DEFINITION declared. That direction is the
+  only one that cannot invent a parameter: an unmatched name is left exactly as written, so a genuine
+  typo is still refused by name.
+
+**Both new passes run AFTER the whole read, and that is not tidiness.** A card may be declared after —
+or in a different file from — the subcircuit that uses it; a definition may be read after the call. At
+the element line the result would depend on the order two files happen to be read in, which is the
+worst possible property for something whose failure is a component with no value.
+
+**Nothing is guessed.** A capacitor card carrying an area coefficient and no geometry to apply it to is
+REPORTED and left unbound — the alternative is a capacitance of zero, which simulates perfectly. A
+resistor card with no sheet resistance likewise. A card of any other type is left **entirely** alone:
+it is the parameter block of a device something else supplies, and marking it incomplete would report
+the working case as broken.
+
+**Two judgement calls, stated so they are not re-derived.** `scale` is folded into the COEFFICIENTS
+rather than the geometry, because it is documented to multiply the capacitance and folding it into W
+and L would square it — the two are indistinguishable at the `scale=1` every real card uses, which is
+exactly why it is pinned. And the units are the file's own and are never converted: a card's `CJ` is
+per unit area in whatever unit the instance states its geometry in, and rescaling either side would
+break the pairing the file itself set up.
+
+**Measured end to end.** Its capacitor library reads with **zero notes and zero
+incomplete cells**, and both the MIM capacitor and its RF sibling bind their plate to `SemiC` with the
+process coefficients and the instance geometry. Elaborated and solved as a two-port at 1 GHz:
+
+| geometry | solved | the kit's own arithmetic | ESR |
+|---|---|---|---|
+| 7 × 7 µm (the card's default) | 74.62 fF | 74.62 fF | 55 mΩ |
+| 20 × 30 µm (overridden) | 904 fF | 904 fF | 55 mΩ |
+
+The second row only exists because `.param` became a declaration; the ESR column is the series
+resistance a previous, reverted attempt at this dropped silently.
+
+**Gate.** `SpicePassiveModelBindingTests` (17, synthetic — this is format work and the repository
+commits no third-party kit data) covers the card mapping, `NARROW`, `scale`, instance-outranks-card,
+both refusals, the semiconductor card being untouched, a letter/type disagreement, both case-alignment
+rules including a definition read after the call that uses it, and the `.param` rule both ways.
+`SpiceModelCardSolveTests` (3, Engine) is the one that matters: it reads, elaborates and SOLVES, and
+recovers the capacitance from the solved two-port against the card's own arithmetic — because a part
+can be read perfectly and still be a different circuit by the time it reaches the matrix. Its second
+test guards the first against passing for the wrong reason, by requiring the two geometries to
+genuinely differ. One pre-existing test was UPDATED, not loosened: it asserted the `.param`-is-a-
+variable behaviour this deliberately makes false.
+
+**NOT BUILT, deliberately: pointing a kit part at its own subcircuit.** It was built, measured against
+the kit, and reverted. Automatic exact-name binding attached **70 of 110 parts to LVS test-case
+netlists** — files that share a name with a symbol and are regression data, not the kit's device
+models — and did not attach the capacitor at all. And even bound, it would not run: that subcircuit's
+area coefficient lives behind a **corner section** (`.LIB cap_typ` / `cap_bcs` / `cap_wcs`, with
+mismatch and statistical variants beside them), so the value is undefined until someone says which
+corner. **That is a user's decision the kit deliberately does not make**, and it needs a UI answer
+before any of the plumbing means anything. Shipping the heuristic would have bound most of a kit's
+palette to test data, silently — the same class of mistake as reading a display annotation as a model.
+
+A kit's record symbol file yields its DRAWN body, not just its terminals (2026-08-08) — COMPLETE.
+`KitSymbolFileReader` read terminals and a parameter template and skipped the artwork, so every part
+of such a kit reached the palette as the same box-with-pins. It now reports the drawing as well, in a
+neutral shape vocabulary (`src/Core/Pdk/KitSymbolShape.cs`: line, rectangle, path, arc) carrying the
+file's OWN coordinates and angles — no scale and no axis convention applied here, because both are
+rendering decisions and burying them in a format reader is how they stop being reviewable. The
+consumer's half, and the three ways it goes silently wrong, are in `src/Ui/Schematic/CLAUDE.md`.
+
+- **A rectangle is either a terminal or artwork, never both.** One naming a terminal is a pin; one
+  naming none used to be dropped on the floor and is a body box.
+- **Closure is stated by REPEATING the first point**, so a run whose ends coincide is closed and the
+  repeat is dropped — a consumer never has to know that convention, and a bent lead stays a polyline
+  rather than becoming a triangle.
+- **`KitSymbolFile.Body` is empty-but-never-null** for a file this reader recognised. Null means "no
+  drawing at all" (the terminals came from a symbol library), and the two are placed under different
+  axis conventions — conflating them mirrors a part vertically.
+- **TEXT is deliberately not read**: in this format it is almost entirely substitution placeholders
+  that circuitRF already draws itself from the placed instance.
+- A malformed record costs ITSELF and nothing else; a kit carries the occasional damaged line.
+
+Gate: `KitSymbolFileReaderTests` K13-K19 (7 new, synthetic — the repository commits no third-party
+kit data). Core.Tests 1,182.
+
 # Core — local conventions
 
 A metre is representable (brief-core-length-units.md, 2026-08-07) — COMPLETE (M1–M4).
@@ -498,6 +741,16 @@ card's name, so it fails loudly until something answers to it rather than silent
 default. The type and its bracket are read off the RAW text, because the bracket is routinely glued
 (`nmos(level=54)`) and the tokeniser keeps a bracketed run whole — off the word list the type is
 spelled `nmos(level` on every such card.
+
+> **Corrected 2026-08-08.** That rule was implemented by searching the WHOLE card for its first `(`,
+> and a bracket-less card routinely carries one inside a parameter VALUE hundreds of characters in
+> (`dlq='5.2e-08-((1-pre_layout)*0.0)'`). Everything before it became the "type" and the card was left
+> with **zero parameters** — a model reference resolving to nothing and a parameter set that vanished,
+> neither of which reports itself. Measured's MOS card: `ModelType` was the whole rest of
+> the line and `Parameters.Count` was 0; it is now `mdla_va` and **377**. The bracket only opens the
+> block when it is part of the type's OWN word, and a detached `type (a=1 b=2)` is unwrapped in the
+> other arm. Gate `S13b`. **Any earlier real-kit measurement in this file that counts cards is still
+> right about the count and was wrong about the type of every card carrying a bracketed value.**
 
 **"Incomplete" means the DEFINITION was damaged, not that a type is unfamiliar.** A skipped analysis
 directive leaves the circuit exactly as written and does not mark anything; an unreadable line of the

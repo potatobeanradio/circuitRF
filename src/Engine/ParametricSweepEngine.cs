@@ -102,7 +102,16 @@ public static class ParametricSweepEngine
 
             try
             {
-                var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                // DISPOSED PER POINT, and that is a correctness requirement rather than hygiene.
+                // A device an external provider supplies lives in a WORKER process; re-elaborating
+                // per point — which is how a swept variable reaches the circuit at all — asks for a
+                // fresh one every time, and nothing else would ever give them back. Measured: a
+                // 201 × 101 DC sweep over a compiled compact model asks for 20,502 instances of a
+                // worker that holds 4,096, and the run dies part-way through.
+                //
+                // Safe because what RunInner returns is a DataSet of numbers: nothing downstream
+                // holds a model, and the warm-start seed is a plain complex array.
+                using var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
                 datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
                     warmStart ? seed : null, out var nextSeed));
                 seed = warmStart ? nextSeed : null;

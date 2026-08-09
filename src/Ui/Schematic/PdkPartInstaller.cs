@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
+using CircuitRF.Core.Netlist.Spice;
 using CircuitRF.Core.Pdk;
 
 namespace CircuitRF.Ui.Schematic;
@@ -70,7 +72,19 @@ public static class PdkPartInstaller
         IReadOnlyList<string>? Notes = null,
         IReadOnlyList<PdkKitPart>? Parts = null,
         JsonNode? Settings = null,
-        string KitName = "");
+        string KitName = "",
+        /// <summary>The corner choices the kit declares, for the workspace to record. Empty for the
+        /// overwhelming majority of kits, which declare none.</summary>
+        IReadOnlyList<PdkCornerAxis>? CornerAxes = null,
+
+        /// <summary>
+        /// The compiled Verilog-A artefacts found for this kit, and the modules each implements.
+        ///
+        /// <para>Handed to <see cref="PdkKitRegistry"/> rather than recorded: they are the user's own
+        /// build output and a kit-relative path to one is not a thing that exists. Empty for every
+        /// kit whose devices are not compiled Verilog-A, which is nearly all of them.</para>
+        /// </summary>
+        IReadOnlyList<OsdiModel>? OsdiModels = null);
 
     /// <summary>
     /// Install every part the report lists. Returns one palette entry per part — including parts
@@ -117,6 +131,23 @@ public static class PdkPartInstaller
         // still yields a working part. A manifest can still name things, and wins where it does.
         var discovered = haveRoot ? DiscoverFromKitNetlists(report, diags) : new KitDiscovery();
 
+        // ONE scale for the whole kit, from its largest drawing-backed part. A kit draws every symbol
+        // in one coordinate system, so their relative sizes are the author's choice; scaling each
+        // part into the legibility band on its own throws that away and lands a ground marker bigger
+        // than the transistor beside it. Zero when no part carries a drawing, and the per-part
+        // fallback then applies — which is the symbol-library path throughout.
+        double kitScale = KitTemplateSymbol.ChooseKitScale(
+            report.Parts.Select(p => (p.Pins, p.Body)));
+
+        // THE COMPILED VERILOG-A ARTEFACTS, FOUND BEFORE THE SETTINGS AND INDEPENDENTLY OF THEM.
+        //
+        // Not inside the synthesis below, because recorded settings SKIP the synthesis entirely — and
+        // the index has to be in hand on a workspace open just as much as on a fresh import, since it
+        // is what turns a .model card into the file implementing it every time a design is run.
+        var osdiModels = haveRoot
+            ? FindCompiledModels(report.RootPath, libraryRoots, notes, diags)
+            : [];
+
         // Settled settings, in priority order. The workspace's own recorded ones win outright on an
         // open — that is the whole point of recording them — then whatever the kit itself ships,
         // and finally what can be derived. A kit shipping no description of how to simulate its
@@ -126,7 +157,8 @@ public static class PdkPartInstaller
         JsonNode? settings = KeepIfStillCurrent(recordedSettings)
                           ?? (haveRoot ? TryReadKitSettings(report.RootPath, diags) : null)
                           ?? (haveRoot ? SynthesiseProviderSettings(report, kit, discovered, diags, notes,
-                                                                     libraryRoots: libraryRoots) : null);
+                                                                     libraryRoots: libraryRoots,
+                                                                     osdiModels: osdiModels) : null);
 
         // Whatever the settings call themselves, they answer to the KIT's name. Each part records
         // Provider = the kit name and a netlist asks for that, so settings answering to anything else
@@ -157,17 +189,30 @@ public static class PdkPartInstaller
                 // A manifest naming this part wins; otherwise what the kit's own netlist showed.
                 var declared  = (kitManifest?.Variants ?? []).Where(v => v.AppliesTo(part.Id)).ToList();
                 var variants  = declared.Count > 0 ? declared : discovered.VariantsFor(part.Id);
-                var netlist   = NetlistPartFor(part.Id, kitManifest, diags) ?? discovered.NetlistFor(part.Id);
+                var netlist   = NetlistPartFor(part.Id, kitManifest, diags)
+                                ?? discovered.NetlistFor(part.Id)
+                                ?? DiscoveredDefinitionFor(report, part);
 
                 if (part.SymbolArtwork is { } art)
                     built = TryBuildPart(kit, part, Resolve(report, art.RelativePath), diags, notes,
                                          iconPath, variants, fileParams, netlist);
 
-                // A kit whose symbols live in a LIBRARY has no per-part drawing to point at: several
-                // parts share one template, which the importer already resolved and attached. Tried
-                // second so a part that has its own drawing keeps it.
-                if (built is null && KitTemplateSymbol.Build(part.Pins) is { } fromTemplate)
-                    built = MakeKitPart(kit, part, fromTemplate, iconPath, variants, fileParams, netlist);
+                // Terminals the importer already resolved and attached. WHICH builder they go to is
+                // decided by whether the part carries a DRAWING: one that does states its own artwork
+                // and its own axis sense; one that does not came from a symbol library, which states
+                // positions only. Reading a drawing under the library's convention mirrors every
+                // symbol vertically — it still places, still connects, and is upside down.
+                //
+                // Tried after a per-part drawing file so a part that has one keeps it.
+                if (built is null)
+                {
+                    var fromTemplate = part.Body is not null
+                        ? KitTemplateSymbol.BuildFromDrawing(part.Pins, part.Body, kitScale)
+                        : KitTemplateSymbol.Build(part.Pins);
+
+                    if (fromTemplate is not null)
+                        built = MakeKitPart(kit, part, fromTemplate, iconPath, variants, fileParams, netlist);
+                }
 
                 if (built is not null) syms++;
             }
@@ -189,10 +234,115 @@ public static class PdkPartInstaller
                 // The reference a placed instance carries. Virtual, not a path: the part exists in
                 // memory only, so there is nothing for a relative path to be relative to.
                 Pdk:             new PdkPartRef(kit, part.Id, iconPath,
-                                                PdkKitRegistry.RefFor(kit, part.Id))));
+                                                PdkKitRegistry.RefFor(kit, part.Id),
+                                                // The kit's OWN grouping, verbatim — never mapped onto
+                                                // a ComponentCategory, because translating a kit's
+                                                // vocabulary into circuitRF's is guessing at something
+                                                // the kit already stated. This is what the palette
+                                                // filter lists indented beneath the kit.
+                                                Category:  part.Category,
+                                                // The one identity a kit's schematic part and its
+                                                // layout cell reliably share; KitPaletteMerge matches
+                                                // on it when neither id rule can.
+                                                ModelName: DeclaredModelName(part),
+                                                // What the part ACCEPTS — the tie-break for the case
+                                                // the model cannot settle, where a kit offers one
+                                                // device as both an RF and a plain part and its two
+                                                // layout cells name the same model. See
+                                                // KitPaletteMerge.PairByParameterInterface.
+                                                ParameterNames: [.. built.Ccell.Parameters.Select(p => p.Name)])));
         }
 
-        return new InstallOutcome(items, syms, icons, diags, omitted, notes, parts, settings, kit);
+        return new InstallOutcome(items, syms, icons, diags, omitted, notes, parts, settings, kit,
+                                  report.CornerAxes, osdiModels);
+    }
+
+    /// <summary>
+    /// The compiled Verilog-A artefacts this kit's devices can be evaluated by — the kit's own tree
+    /// first, widening outward only if that finds nothing, and finally the folders the workspace has
+    /// been TOLD hold model libraries.
+    ///
+    /// <para><b>Nothing here resolves an artefact by a kit-relative path, and that is the load-bearing
+    /// rule.</b> A kit of this shape ships Verilog-A SOURCES and expects them compiled; where the
+    /// output lands is a property of whoever ran the compiler. One user's build happens to sit inside
+    /// the kit tree, a second user of the same kit has none at all until they build, and a third may
+    /// put theirs anywhere — so adjacency to the kit is a coincidence to exploit when it holds, never
+    /// a fact to depend on. Being told is what covers the rest, which is the same bargain
+    /// <see cref="DeviceLibraryDiscovery"/> already strikes for the other worker's libraries.</para>
+    ///
+    /// <para><b>Widening only when the narrower search found nothing</b> is that class's rule too, and
+    /// for its reason: the further out the walk goes the less that territory has to do with this kit,
+    /// and eventually it matches by accident.</para>
+    /// </summary>
+    private static IReadOnlyList<OsdiModel> FindCompiledModels(
+        string kitRoot, IReadOnlyList<string>? libraryRoots,
+        List<string> notes, List<string> diags, int ancestorLevels = 2)
+    {
+        string? worker = ShippedOsdiWorker();
+        if (worker is null) return [];   // this build ships no OSDI worker: nothing to ask.
+
+        foreach (string root in SearchRoots(kitRoot, ancestorLevels).Concat(libraryRoots ?? []))
+        {
+            var problems = new List<string>();
+            var found    = OsdiModelDiscovery.Find([root], worker, problems);
+
+            // A file that would not load is reported even when others in the same folder did: a model
+            // the user believes they compiled, silently absent, is the worst outcome available here.
+            foreach (string p in problems) diags.Add(p);
+
+            if (found.Count == 0) continue;
+
+            notes.Add($"Found {Plural(found.Count, "compiled model", "compiled models")} for this kit " +
+                      $"in {root} — " +
+                      string.Join(", ", found.Select(m => $"{Path.GetFileName(m.FilePath)} " +
+                                                          $"({string.Join(", ", m.TypeIds)})")) + ".");
+            return found;
+        }
+
+        return [];
+    }
+
+    /// <summary>A folder, then each ancestor up to <paramref name="levels"/>; deepest first.</summary>
+    private static IEnumerable<string> SearchRoots(string root, int levels)
+    {
+        DirectoryInfo? dir;
+        try { dir = new DirectoryInfo(Path.GetFullPath(root)); }
+        catch (Exception ex) when (ex is ArgumentException or IOException) { yield break; }
+
+        for (int i = 0; dir is not null && i <= Math.Max(0, levels); i++)
+        {
+            if (dir.Exists) yield return dir.FullName;
+            dir = dir.Parent;
+        }
+    }
+
+    /// <summary>
+    /// The worker circuitRF ships for the openly-specified compiled-model ABI, named so
+    /// <c>DeviceWorkerManifest.ResolveCommand</c> finds it in circuitRF's own tools folder wherever
+    /// the design is eventually run — never as a path, which would record this machine's install.
+    /// </summary>
+    private const string OsdiWorkerCommand = "osdi-worker";
+
+    /// <summary>
+    /// Where that worker actually is on THIS machine, or null when this build does not ship it.
+    ///
+    /// <para>Only circuitRF's own tools folder is searched, unlike the proprietary worker's rule that
+    /// also looks near the kit. This worker hosts an OPEN ABI and is entirely ours; a copy sitting in
+    /// a kit would be someone else's build of our program, which is not a thing to run.</para>
+    /// </summary>
+    private static string? ShippedOsdiWorker()
+    {
+        foreach (string name in new[] { OsdiWorkerCommand, OsdiWorkerCommand + ".exe" })
+        {
+            if (string.IsNullOrEmpty(DeviceWorkerManifest.ToolsDirectory)) return null;
+
+            string candidate;
+            try { candidate = Path.GetFullPath(Path.Combine(DeviceWorkerManifest.ToolsDirectory, name)); }
+            catch (Exception ex) when (ex is ArgumentException or IOException) { continue; }
+
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
     }
 
     /// <summary>
@@ -293,9 +443,19 @@ public static class PdkPartInstaller
     private static JsonNode? SynthesiseProviderSettings(
         PdkImportReport report, string kitName,
         KitDiscovery discovery, List<string> diags, List<string> notes, int ancestorLevels = 2,
-        IReadOnlyList<string>? libraryRoots = null)
+        IReadOnlyList<string>? libraryRoots = null,
+        IReadOnlyList<OsdiModel>? osdiModels = null)
     {
         var types = discovery.NativeDeviceTypes;
+
+        // A KIT WHOSE DEVICES ARE COMPILED VERILOG-A IS ITS OWN SHAPE, not a variant of the one
+        // below. The proprietary path binds a device TYPE to a library that exports an entry point
+        // named after it; this one binds a `.model` card's MODULE to the one artefact declaring it,
+        // and there is an artefact per model rather than one library serving all of them. The two
+        // share no discriminator, so trying to serve both from one search would have to guess which
+        // question it was answering.
+        if (osdiModels is { Count: > 0 }) return OsdiProviderSettings(kitName, report, osdiModels, notes);
+
         if (types.Count == 0) return null;   // nothing compiled to serve — a purely schematic kit
 
         // One search PER TARGET, not one for the host. A vendor ships a build per platform side by
@@ -456,6 +616,57 @@ public static class PdkPartInstaller
             ["command"]   = command,
             ["arguments"] = new JsonArray(arguments.Select(a => (JsonNode)JsonValue.Create(a)!).ToArray()),
         };
+    }
+
+    /// <summary>
+    /// Settings for a kit whose devices are compiled Verilog-A: <c>osdi-worker</c>, by bare command
+    /// plus the artefact as its one argument — the form <c>tools/osdi-worker/README.md</c> records and
+    /// its own <c>O7</c> test already gates.
+    ///
+    /// <para><b>One provider, several artefacts, and no new resolver concept.</b> A manifest declares
+    /// one worker command, while a kit of this shape needs a different <c>.osdi</c> per model. That is
+    /// already solved: <see cref="DeviceWorkerProviderResolver.ComposeOverride"/> carries a library in
+    /// the PROVIDER NAME, and <c>Resolve</c> splits it back out and substitutes the argument that
+    /// names a library — chosen by checking the value rather than its position. So the entry below
+    /// carries one artefact as the default and every device the extractor routes replaces it with its
+    /// own.</para>
+    ///
+    /// <para><b>Platform <c>any</c>, deliberately.</b> Unlike the proprietary worker there is no
+    /// foreign binary to bridge: a user compiles these natively with their own toolchain, so the
+    /// artefact and the worker are always built for the machine they are on. A per-platform entry
+    /// would be describing a difference that does not exist here.</para>
+    /// </summary>
+    private static JsonNode? OsdiProviderSettings(
+        string kitName, PdkImportReport report, IReadOnlyList<OsdiModel> models, List<string> notes)
+    {
+        // The default artefact, for a device that names no model card and so composes no override of
+        // its own. Ordinal-first rather than "whichever the walk happened to yield" so two imports of
+        // one kit settle on the same one; the routing overrides it for everything card-backed anyway.
+        string first = models.Select(m => m.FilePath).OrderBy(p => p, StringComparer.Ordinal).First();
+
+        var manifest = new JsonObject
+        {
+            ["provider"]        = kitName,
+            ["baseDirectory"]   = Path.GetFullPath(report.RootPath),
+            ["generatedBy"]     = GeneratedMarker,
+            ["generatedFormat"] = GeneratedFormat,
+            ["_note"]           = "Written by circuitRF when this kit was imported. Its devices are " +
+                                  "compiled Verilog-A models, one file per model; the file below is " +
+                                  "the default, and each device selects its own from the .model card " +
+                                  "it names. Edit freely — this file is circuitRF's own, not the kit's.",
+            ["workers"]         = new JsonArray(new JsonObject
+            {
+                ["platform"]  = "any",
+                ["command"]   = OsdiWorkerCommand,
+                ["arguments"] = new JsonArray(JsonValue.Create(first)!),
+            }),
+        };
+
+        notes.Add($"Devices in this kit will be evaluated by circuitRF's compiled-model worker " +
+                  $"('{OsdiWorkerCommand}') against the models you compiled: " +
+                  string.Join(", ", models.SelectMany(m => m.TypeIds)) + ".");
+
+        return manifest;
     }
 
     /// <summary>
@@ -725,7 +936,7 @@ public static class PdkPartInstaller
             list.Add(new CcellParameter
             {
                 Name              = p.Name,
-                DefaultExpression = p.DefaultExpression ?? "",
+                DefaultExpression = InCircuitRfsOwnNotation(p.DefaultExpression),
                 Unit              = "",
                 ShowOnSchematic   = false,
             });
@@ -993,6 +1204,67 @@ public static class PdkPartInstaller
     /// editable interface (a user pointing one instance at a different data folder is a mistake, not
     /// a design choice) but still emitted, so the provider receives what the kit specified.
     /// </summary>
+    /// <summary>
+    /// A value the kit wrote in ITS OWN notation, as an expression circuitRF can evaluate.
+    ///
+    /// <para><b>A kit spells a number the way its own simulator reads one</b> — <c>0.72u</c>,
+    /// <c>600n</c>, <c>1.5p</c> — and circuitRF's expression engine reads no engineering suffixes,
+    /// because a value's unit is a FIELD on the row rather than a letter on the number (measured:
+    /// <c>0.72u</c> is <i>Parse error at position 2</i>). This kit is not even consistent with itself:
+    /// its own symbol templates write <c>7.0e-6</c> for one part and <c>0.72u</c> for the next, so
+    /// there is nothing to detect and no assumption to make — every default is simply read in the
+    /// dialect it was written in.</para>
+    ///
+    /// <para><b>Resolved with <see cref="SpiceNumber"/>, which already exists for exactly this and
+    /// already knows the trap.</b> That dialect is case-insensitive and spells milli <c>M</c> with
+    /// mega as <c>MEG</c>, while circuitRF's own unit table is SI and case-sensitive — so reading a
+    /// kit's suffix through the SI table turns one millifarad into one megafarad, a factor of 10⁹ in
+    /// a value that still parses and still converges. Sending it through the reader's own table is
+    /// what keeps the two scales from ever meeting.</para>
+    ///
+    /// <para><b>Anything circuitRF can already read is left EXACTLY as the kit wrote it.</b> Rewriting
+    /// a value that was already fine would replace the kit's own spelling with a formatting of it, for
+    /// no gain — and a word-valued default (a model name, a display mode) is not a number at all and
+    /// passes straight through.</para>
+    ///
+    /// <para>Doing this here rather than teaching the expression engine suffixes is deliberate: the
+    /// engine's <c>M</c> is mega and this dialect's is milli, and a language where the same letter
+    /// means two things depending on which dialog it was typed into is a worse problem than the one
+    /// being solved.</para>
+    /// </summary>
+    internal static string InCircuitRfsOwnNotation(string? raw)
+    {
+        string text = (raw ?? "").Trim();
+        if (text.Length == 0) return "";
+
+        // Already an ordinary literal — the kit and circuitRF agree, so change nothing.
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _)) return text;
+
+        return SpiceNumber.TryParse(text, out double value)
+            ? value.ToString("R", CultureInfo.InvariantCulture)
+            : text;
+    }
+
+    /// <summary>
+    /// The device model this part declares, or empty.
+    ///
+    /// <para><b>Read from the REPORT-side part, never from the built <c>.ccell</c>.</b> The cell
+    /// deliberately drops a kit's infrastructure parameters from its published interface, and the
+    /// model name is one of them — reading it there returns empty for every part, silently, and the
+    /// only symptom is a layout that never matches a schematic part.</para>
+    ///
+    /// <para>This is the one identity a kit's schematic part and its layout cell reliably share: a
+    /// kit names the two independently, but both have to say what device they are, because that is
+    /// what a netlist has to carry.</para>
+    /// </summary>
+    private static string DeclaredModelName(PdkPart part)
+    {
+        var declared = part.Parameters?.FirstOrDefault(
+            p => p.Name.Equals("model", StringComparison.OrdinalIgnoreCase));
+
+        return declared?.DefaultExpression?.Trim() ?? "";
+    }
+
     private static Dictionary<string, string>? BuildFixedParameters(PdkPart part)
     {
         if (part.Parameters is null) return null;
@@ -1019,6 +1291,29 @@ public static class PdkPartInstaller
 
         string second = Path.Combine(kitRoot, rel);
         return File.Exists(second) ? second : first;
+    }
+
+    /// <summary>
+    /// The kit's OWN subcircuit for a part, when the kit ships no manifest saying so — which is the
+    /// ordinary case for an unmodified vendor kit. The importer already worked out which subcircuit
+    /// defines the part; this only turns its kit-relative path into one that survives the cell being
+    /// installed into the workspace.
+    ///
+    /// <para><b>This is what makes a corner change a number.</b> The subcircuit names a <c>.model</c>
+    /// card, the card states its value in terms of the kit's process constants, and a corner is
+    /// exactly a binding of those constants. Without it the constants reach the testbench and nothing
+    /// reads them — the part having no circuit to resolve them against.</para>
+    ///
+    /// <para>Checked LAST, so anything the kit states explicitly still wins over what was inferred.</para>
+    /// </summary>
+    private static (string AbsoluteNetlistPath, string CellName)? DiscoveredDefinitionFor(
+        PdkImportReport report, PdkPart part)
+    {
+        if (part.DefinitionRelativePath is not { Length: > 0 } rel ||
+            part.DefinitionCell         is not { Length: > 0 } cell) return null;
+
+        string abs = Resolve(report, rel);
+        return File.Exists(abs) ? (abs, cell) : null;
     }
 
     private static IReadOnlyList<string> BuildSearchTerms(PdkPart part, string kit)

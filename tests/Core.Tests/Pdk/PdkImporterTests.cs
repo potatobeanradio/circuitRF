@@ -237,6 +237,44 @@ public sealed class PdkImporterTests : IDisposable
         Assert.Contains(r.Findings, f => f.Summary.Contains("Layer technology found"));
     }
 
+    /// <summary>
+    /// The two files an open-source kit ships for the simulator it was written for. Both were being
+    /// reported as "unknown", which is wrong in opposite directions.
+    ///
+    /// <para>The <c>.osdi</c> is a COMPILED MODEL — the loader's own shared-object format under
+    /// another extension, and the thing circuitRF actually evaluates the kit's devices with. Calling
+    /// it unrecognised told the user their models were unreadable at the moment those models were
+    /// what made the kit simulate.</para>
+    ///
+    /// <para>The <c>.spiceinit</c> is the other simulator's start-up file. It is genuinely not
+    /// circuitRF's to run — it names search paths and which compiled models to load, both of which
+    /// circuitRF works out for itself — but "unknown" invites the reader to go and make it work.
+    /// Naming it and saying nothing needs running is the answer to the question it raises.</para>
+    /// </summary>
+    [Fact]
+    public void ACompiledModelAndTheOtherSimulatorsSetup_AreNamedRatherThanCalledUnknown()
+    {
+        Write("models/parts.net", "define P ( a b )\n  R:R1 a b R=1 Ohm\nend P\n");
+        WriteBinary("models/osdi/psp.osdi", 512);
+        Write("models/.spiceinit", "osdi 'psp.osdi'\nsetcs sourcepath = ( $sourcepath ./models )\n");
+
+        var r = PdkImporter.Import(_root);
+
+        var osdi = r.Assets.Single(a => a.RelativePath.EndsWith("psp.osdi"));
+        Assert.Equal(PdkAssetSupport.Supported, osdi.Support);
+        Assert.Equal(PdkAssetKind.ModelData, osdi.Kind);
+        Assert.Contains("Verilog-A", osdi.FormatName);
+
+        var init = r.Assets.Single(a => a.RelativePath.EndsWith(".spiceinit"));
+        Assert.NotEqual(PdkAssetSupport.Unrecognized, init.Support);
+        Assert.Contains("start-up", init.FormatName);
+        // It says the thing a reader needs: there is nothing here for them to run.
+        Assert.Contains("needs running", init.Detail);
+
+        Assert.DoesNotContain(r.Unrecognized, a => a.RelativePath.EndsWith(".osdi")
+                                                || a.RelativePath.EndsWith(".spiceinit"));
+    }
+
     [Fact]
     public void MapFileThatIsNotALayerMap_IsNotMistakenForOne()
     {

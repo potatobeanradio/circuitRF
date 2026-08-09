@@ -123,8 +123,27 @@ internal sealed class ExtensionRecognizer : IPdkFormatRecognizer
                     "The parts' behaviour is compiled into this library. It is evaluated by a " +
                     "device provider in a separate process, never loaded by circuitRF itself."),
 
+            // The SAME thing under another extension: an .osdi is the loader's own shared-object
+            // format, holding one or more compiled Verilog-A modules. circuitRF already finds these
+            // (OsdiModelDiscovery) and routes a .model card to whichever one implements it, so
+            // reporting them as "unknown (.osdi)" told the user their kit's models were unrecognised
+            // at the very moment those models were what made the kit simulate.
+            ".osdi" =>
+                new(path, PdkAssetKind.ModelData, PdkAssetSupport.Supported,
+                    "compiled Verilog-A model",
+                    "Built from the kit's own Verilog-A sources. circuitRF matches the modules it " +
+                    "declares against the model cards this kit's devices name, and evaluates them in " +
+                    "a separate process — it is never loaded into circuitRF itself."),
+
             ".pdf" or ".txt" or ".md" or ".html" or ".htm" =>
                 new(path, PdkAssetKind.Documentation, PdkAssetSupport.Supported, "documentation"),
+
+            _ when name.Equals(".spiceinit", StringComparison.OrdinalIgnoreCase) =>
+                new(path, PdkAssetKind.Other, PdkAssetSupport.RecognizedNotSupported,
+                    "simulator start-up file",
+                    "Set-up for the simulator this kit was written for — search paths, and which " +
+                    "compiled models to load. circuitRF works those out for itself from the kit's own " +
+                    "netlists and artefacts, so nothing here needs running."),
 
             _ => null,
         };
@@ -185,8 +204,23 @@ internal sealed class SpiceNetlistRecognizer : IPdkFormatRecognizer
 {
     public int Priority => 15;
 
+    /// <summary>
+    /// The directives that mark a file as this dialect's, at line start.
+    ///
+    /// <para><b><c>.lib</c> is here for a reason worth stating.</b> A file that declares CORNERS
+    /// contains no subcircuit and no model card at all — it is nothing but <c>.lib</c> sections, each
+    /// binding a few parameters and including the shared model file. Keyed on the first two markers
+    /// alone such a file classifies as unrecognised, so the corners it declares are invisible to the
+    /// import and there is no way to know a kit offers any. Measured: several of its
+    /// corner files were landing in the import as unrecognised for exactly this reason.</para>
+    ///
+    /// <para>Deliberately not widened further. <c>.param</c> and <c>.include</c> would also match a
+    /// corner file, and both are far likelier to appear at line start in something that is not a
+    /// netlist at all — <c>.lib</c> is the one that means "this file participates in this dialect's
+    /// own section mechanism", which is the thing being recognised.</para>
+    /// </summary>
     private static readonly Regex Directive =
-        new(@"^\s*\.(subckt|model)\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled);
+        new(@"^\s*\.(subckt|model|lib)\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled);
 
     public PdkAsset? Recognize(string path, Func<string> peek)
     {
@@ -195,8 +229,9 @@ internal sealed class SpiceNetlistRecognizer : IPdkFormatRecognizer
 
         return new PdkAsset(path, PdkAssetKind.Netlist, PdkAssetSupport.Supported,
                             "subcircuit netlist (SPICE dialect)",
-                            "circuitRF reads its subcircuits as ordinary cells, and its model cards " +
-                            "as the parameter sets the devices in them refer to.");
+                            "circuitRF reads its subcircuits as ordinary cells, its model cards as " +
+                            "the parameter sets the devices in them refer to, and its .lib sections " +
+                            "as the alternatives — corners — the kit offers.");
     }
 }
 

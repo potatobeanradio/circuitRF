@@ -93,13 +93,23 @@ public sealed class DeviceWorkerChannel(IDeviceWorkerTransport transport) : IDis
 
             // A worker reports refusal in-band — an unknown type, a bad handle, a parameter it will
             // not take. That is a normal answer on the wire and a hard failure to the caller.
-            if (document.RootElement.TryGetProperty("ok", out var ok) &&
-                ok.ValueKind == JsonValueKind.False)
+            //
+            // AN `error` MEMBER IS ENOUGH ON ITS OWN, and requiring `ok: false` beside it was a real
+            // defect rather than strictness. A worker circuitRF ships writes refusals as plain
+            // `{"error": "…"}` with no `ok` at all, so every one of its refusals was read as a normal
+            // reply carrying no data — and the caller then reported whatever it made of the absence.
+            // Measured: "create: too many live instances" surfaced as *"created 'MDLA_VA' but did
+            // not say which instance it created"*, which names neither the cause nor anything the
+            // reader could act on. There is no reply where an `error` member means anything else.
+            bool refused = document.RootElement.TryGetProperty("ok", out var ok)
+                        && ok.ValueKind == JsonValueKind.False;
+
+            bool named = document.RootElement.TryGetProperty("error", out var e)
+                      && e.ValueKind == JsonValueKind.String;
+
+            if (refused || named)
             {
-                string detail = document.RootElement.TryGetProperty("error", out var e)
-                             && e.ValueKind == JsonValueKind.String
-                    ? e.GetString() ?? "no reason given"
-                    : "no reason given";
+                string detail = named ? e.GetString() ?? "no reason given" : "no reason given";
                 document.Dispose();
                 throw Failed(detail);
             }

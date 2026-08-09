@@ -132,18 +132,8 @@ public sealed class PaletteGlyphControl : Control
     /// </summary>
     private IReadOnlyList<SymbolPrimitive>? ResolveCellPrimitives()
     {
-        string? dir = SymbolCellDir;
-        if (string.IsNullOrEmpty(dir)) return null;
-
-        try
-        {
-            var parent = System.IO.Path.GetDirectoryName(dir.TrimEnd('/', '\\'));
-            if (string.IsNullOrEmpty(parent)) return null;
-
-            var res = CellSymbolResolver.Resolve(System.IO.Path.GetFileName(dir.TrimEnd('/', '\\')), parent);
-            return res.State == CellSymbolState.Resolved ? res.Symbol!.Primitives : null;
-        }
-        catch { return null; }
+        var res = CellSymbolResolver.ResolveCellDirOrRef(SymbolCellDir);
+        return res.State == CellSymbolState.Resolved ? res.Symbol!.Primitives : null;
     }
 
     // ── ICustomDrawOperation ─────────────────────────────────────────────────
