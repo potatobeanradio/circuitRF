@@ -21,12 +21,22 @@ namespace CircuitRF.Engine.Mom;
 /// R-msh-2's ordering and the adjacency that produces <see cref="PlanarBasis"/> are exact integer
 /// questions rather than floating-point ones.</para>
 ///
-/// <para><b>D8 forward note.</b> The cell is described by its own four coordinates rather than only
-/// by its grid indices, so a future conformal or diagonal boundary cell — one straight cut through
-/// an otherwise rectangular cell, which is a far smaller commitment than a triangulator and
-/// addresses the mitre directly — can be added as an extra field here without reshaping the type or
-/// the report. It is explicitly NOT built in L8b.</para>
+/// <para><b>D8's forward note, now taken up.</b> The cell is described by its own four coordinates
+/// rather than only by its grid indices, so a conformal boundary cell could be "added as an extra
+/// field here without reshaping the type or the report". <see cref="Region"/> is that field. Null —
+/// the whole rectangle — is the pre-conformal case and is what every Manhattan cell still is, so
+/// R-cut-2's bit-identity holds by construction: the same expressions produce the same numbers.</para>
 /// </summary>
+/// <param name="XMin">The cell's GRID rectangle. For a cut cell this BOUNDS the metal rather than
+/// equalling it, and for a merged cell (R-cut-3) it is the bounding box of the two grid positions the
+/// cell now covers. <see cref="Area"/>, <see cref="CentroidX"/> and every integral are asked of
+/// <see cref="Region"/>; only the quadrature's own frame and the λ_g cap are asked of the
+/// rectangle.</param>
+/// <param name="Region">
+/// <b>Conformal boundary cells — the part of the rectangle that is actually metal.</b> Null means the
+/// whole rectangle, which is the only thing L8b could produce and is what a Manhattan mesh is made
+/// entirely of. See <see cref="PlanarCellRegion"/>.
+/// </param>
 public sealed record PlanarCell(
     int    LayerIndex,
     int    IX,
@@ -34,13 +44,35 @@ public sealed record PlanarCell(
     double XMin,
     double YMin,
     double XMax,
-    double YMax)
+    double YMax,
+    PlanarCellRegion? Region = null)
 {
+    /// <summary>The GRID rectangle's width — the quadrature's own frame and the λ_g cap's subject.
+    /// <b>Not</b> the metal's extent when <see cref="Region"/> is set.</summary>
     public double Width   => XMax - XMin;
+    /// <inheritdoc cref="Width"/>
     public double Height  => YMax - YMin;
-    public double Area    => Width * Height;
+
+    /// <summary><b>The METAL's area</b> — the region's when there is one, the rectangle's otherwise.
+    /// This is what the basis is normalised by (1/Area), so it is the one place a cut has to be
+    /// honoured or the divergence pulse stops integrating to ±1.</summary>
+    public double Area    => Region?.Area ?? Width * Height;
+
+    /// <summary>The grid rectangle's centre — the frame the tensor quadrature rule is written in.
+    /// Equal to <see cref="CentroidX"/> for an uncut cell, and deliberately NOT the metal's centroid
+    /// for a cut one.</summary>
     public double CenterX => 0.5 * (XMin + XMax);
+    /// <inheritdoc cref="CenterX"/>
     public double CenterY => 0.5 * (YMin + YMax);
+
+    /// <summary>The METAL's centroid — what "how far apart are these two cells" means once a cell is
+    /// not its own rectangle, and therefore what the fill's rule selection keys off.</summary>
+    public double CentroidX => Region?.CentroidX ?? CenterX;
+    /// <inheritdoc cref="CentroidX"/>
+    public double CentroidY => Region?.CentroidY ?? CenterY;
+
+    /// <summary>True when the cell follows the metal rather than the grid.</summary>
+    public bool IsCut => Region is not null;
 
     /// <summary>The longer of the two edges — what the λ_g/N cap is checked against (R-msh-3).</summary>
     public double LongestEdge => Math.Max(Width, Height);

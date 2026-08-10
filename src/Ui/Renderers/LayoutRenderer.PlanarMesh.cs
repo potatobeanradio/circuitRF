@@ -101,12 +101,7 @@ public static partial class LayoutRenderer
             // One batched path for every cell boundary — the same batching rule DrawLayer's opaque
             // stroke pass uses, and for the same reason: overlapping identical strokes are idempotent.
             using var path = new SKPath();
-            foreach (var c in cells)
-            {
-                float x0 = ps.X(c.XMin * toDbu), x1 = ps.X(c.XMax * toDbu);
-                float y0 = ps.Y(c.YMax * toDbu), y1 = ps.Y(c.YMin * toDbu);   // Y is flipped in path space
-                path.AddRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0));
-            }
+            foreach (var c in cells) AddCell(path, c, ps, toDbu);
             canvas.DrawPath(path, cellPaint);
             return;
         }
@@ -117,9 +112,42 @@ public static partial class LayoutRenderer
         {
             var c = cells[i];
             fill.Color = HeatColor(cellScalar(i), theme);
+            if (c.Region is null)
+            {
+                float x0 = ps.X(c.XMin * toDbu), x1 = ps.X(c.XMax * toDbu);
+                float y0 = ps.Y(c.YMax * toDbu), y1 = ps.Y(c.YMin * toDbu);
+                canvas.DrawRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), fill);
+                continue;
+            }
+            using var cellPath = new SKPath();
+            AddCell(cellPath, c, ps, toDbu);
+            canvas.DrawPath(cellPath, fill);
+        }
+    }
+
+    /// <summary>
+    /// One cell's outline. <b>A CONFORMAL boundary cell is a polygon, not an <c>SKRect</c></b>, and
+    /// the overlay is the only place a user can SEE that the mesh followed the metal — so this is the
+    /// feature's own evidence rather than a cosmetic detail. A whole rectangle still takes
+    /// <c>AddRect</c>, so a Manhattan overlay is drawn by exactly the call that drew it before.
+    /// </summary>
+    private static void AddCell(SKPath path, PlanarCell c, PathSpace ps, double toDbu)
+    {
+        if (c.Region is null)
+        {
             float x0 = ps.X(c.XMin * toDbu), x1 = ps.X(c.XMax * toDbu);
-            float y0 = ps.Y(c.YMax * toDbu), y1 = ps.Y(c.YMin * toDbu);
-            canvas.DrawRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), fill);
+            float y0 = ps.Y(c.YMax * toDbu), y1 = ps.Y(c.YMin * toDbu);   // Y is flipped in path space
+            path.AddRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0));
+            return;
+        }
+
+        foreach (var piece in c.Region.Pieces)
+        {
+            if (piece.Count < 3) continue;
+            path.MoveTo(ps.X(piece[0].X * toDbu), ps.Y(piece[0].Y * toDbu));
+            for (int k = 1; k < piece.Count; k++)
+                path.LineTo(ps.X(piece[k].X * toDbu), ps.Y(piece[k].Y * toDbu));
+            path.Close();
         }
     }
 
@@ -198,6 +226,11 @@ public static partial class LayoutRenderer
     ///
     /// <para>Emitting the cells' own edges also means a mesh with a HOLE in it reads as one, rather
     /// than having the gap bridged by a line no cell shares.</para>
+    ///
+    /// <para><b>This branch draws the GRID rectangle even for a conformal boundary cell</b>, and that
+    /// is deliberate: it only fires when a cell is smaller than a few device pixels, where the cut is
+    /// sub-pixel and the thing being conveyed is the grid's density rather than any one cell's shape.
+    /// Zooming in leaves this branch and every cut cell is then drawn as the polygon it is.</para>
     /// </summary>
     private static void DrawDecimatedGrid(
         SKCanvas canvas, IReadOnlyList<PlanarCell> cells,

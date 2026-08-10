@@ -172,6 +172,34 @@ public static class PlanarBasisFunctions
     public static bool IsVertical(PlanarBasis basis) => basis.Direction == PlanarBasisDirection.Z;
 
     /// <summary>
+    /// <b>The two halves' SUPPORTS — the domain each half is integrated over and the affine weight on
+    /// it.</b> This is the conformal-cell generalisation of <see cref="Halves"/>: for a whole
+    /// rectangle it is the one strip carrying L8c's own <c>ξ/Area</c> ramp, and for a cut cell it is
+    /// the piecewise ramp measured from the METAL's own outer boundary. See
+    /// <see cref="RooftopSupport"/>'s header for why the ramp had to move and for what it buys.
+    ///
+    /// <para>Refuses a vertical basis by name: a via's weight is uniform over its footprint and has no
+    /// outer edge to ramp from, so asking this of one would return a plausible ramp for a current that
+    /// does not have one.</para>
+    /// </summary>
+    public static (RooftopSupport A, RooftopSupport B) Supports(PlanarMesh mesh, PlanarBasis basis)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(basis);
+        if (basis.Direction == PlanarBasisDirection.Z)
+            throw new ArgumentException(
+                "A vertical (via) basis has no in-plane ramp: its current crosses the shared FOOTPRINT " +
+                "with a uniform 1/Area density, so there is no outer edge for a weight to vanish on. " +
+                "Use VerticalWeight.", nameof(basis));
+
+        var a = mesh.Cells[basis.CellA];
+        var b = mesh.Cells[basis.CellB];
+        double shared = basis.Direction == PlanarBasisDirection.X ? a.XMax : a.YMax;
+        return (RooftopSupport.Build(a, basis.Direction, sharedIsHigh: true,  shared),
+                RooftopSupport.Build(b, basis.Direction, sharedIsHigh: false, shared));
+    }
+
+    /// <summary>
     /// <b><c>∫∇·f dS</c> over the basis's whole support</b> — the sum of its divergence pulses, each
     /// integrating to exactly its own sign. <b>0 for every rooftop and every interior via</b> (L9c's
     /// D5, unchanged and still an equality); <b>−1 for a ground-attachment basis</b>, whose return
@@ -188,6 +216,12 @@ public static class PlanarBasisFunctions
     /// The scalar weight <c>ξ/Area</c> at a point of one half's cell — the magnitude of <c>f</c>
     /// there, its direction being <see cref="PlanarBasis.Direction"/>. Always ≥ 0; the sign that
     /// distinguishes the two halves belongs to the DIVERGENCE, not to the current.
+    ///
+    /// <para><b>This is the WHOLE-RECTANGLE form and it stays exactly as L8c wrote it.</b> On a cut
+    /// cell <c>ξ</c> is measured from the metal's own outer boundary, which is not a single coordinate
+    /// and therefore not expressible as a <see cref="RooftopHalf.OuterEdge"/> — ask
+    /// <see cref="Supports"/> instead. Nothing calls this with a cut cell; the fill takes its weights
+    /// from the support.</para>
     /// </summary>
     public static double Weight(PlanarCell cell, RooftopHalf half, PlanarBasisDirection direction,
                                 double x, double y)
@@ -213,13 +247,29 @@ public static class PlanarBasisFunctions
         var (ha, hb) = Halves(mesh, basis);
 
         var ca = mesh.Cells[ha.CellIndex];
+        var cb = mesh.Cells[hb.CellIndex];
+
+        // A cut pair's ramp is measured from the METAL's own outer boundary and is piecewise affine,
+        // so it is read off the support rather than from one OuterEdge coordinate.
+        if (ca.IsCut || cb.IsCut)
+        {
+            var (sa, sb) = Supports(mesh, basis);
+            foreach (var (cell, support) in new[] { (ca, sa), (cb, sb) })
+                foreach (var strip in support.Strips)
+                    if (InStrip(strip, x, y))
+                    {
+                        double ws = Math.Max(strip.At(x, y), 0.0) / cell.Area;
+                        return basis.Direction == PlanarBasisDirection.X ? (ws, 0.0) : (0.0, ws);
+                    }
+            return (0.0, 0.0);
+        }
+
         if (Inside(ca, x, y))
         {
             double w = Weight(ca, ha, basis.Direction, x, y);
             return basis.Direction == PlanarBasisDirection.X ? (w, 0.0) : (0.0, w);
         }
 
-        var cb = mesh.Cells[hb.CellIndex];
         if (Inside(cb, x, y))
         {
             double w = Weight(cb, hb, basis.Direction, x, y);
@@ -307,7 +357,30 @@ public static class PlanarBasisFunctions
     /// Half-open containment, so a point on a shared gridline belongs to exactly one cell. The
     /// upper edges of the whole pair are closed, so the pair's own outer boundary is included — which
     /// matters only because <c>f</c> is zero there anyway.
+    ///
+    /// <para><b>The METAL, not the rectangle, once a cell is cut.</b> A rectangle test would report a
+    /// divergence pulse at a point of the cell that carries no conductor, which is exactly the class
+    /// of silent error the conformal phase exists to remove.</para>
     /// </summary>
     private static bool Inside(PlanarCell c, double x, double y) =>
-        x >= c.XMin && x <= c.XMax && y >= c.YMin && y <= c.YMax;
+        c.Region is { } r ? r.Contains(x, y)
+                          : x >= c.XMin && x <= c.XMax && y >= c.YMin && y <= c.YMax;
+
+    /// <summary>Convex, counter-clockwise containment for one weight strip.</summary>
+    private static bool InStrip(WeightStrip strip, double x, double y)
+    {
+        var ring = strip.Ring;
+        double scale = 0;
+        for (int i = 0, n = ring.Length, j = n - 1; i < n; j = i++)
+            scale = Math.Max(scale, Math.Abs(ring[i].X - ring[j].X) + Math.Abs(ring[i].Y - ring[j].Y));
+        double tol = 1e-9 * scale * scale;
+
+        for (int i = 0, n = ring.Length, j = n - 1; i < n; j = i++)
+        {
+            double cross = (ring[i].X - ring[j].X) * (y - ring[j].Y)
+                         - (ring[i].Y - ring[j].Y) * (x - ring[j].X);
+            if (cross < -tol) return false;
+        }
+        return true;
+    }
 }

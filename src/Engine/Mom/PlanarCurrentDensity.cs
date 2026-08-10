@@ -184,8 +184,18 @@ public static class PlanarCurrentDensity
         {
             var cell = mesh.Cells[c];
             // A current flowing in x spreads across the cell's y extent, and vice versa.
-            jx[c] = cell.Height > 0 ? ix[c] / cell.Height : Complex.Zero;
-            jy[c] = cell.Width  > 0 ? iy[c] / cell.Width  : Complex.Zero;
+            //
+            // §4 — ON A CUT CELL THAT EXTENT IS NOT Height, AND THE HEAT MAP IS EXACTLY WHERE THAT
+            // WOULD SHOW. A conformal boundary cell's transverse extent varies along the flow, so the
+            // honest single number is its MEAN: Area ÷ (the longitudinal extent). It reduces to
+            // Height on a whole rectangle — Area/Width = (W·H)/W — so nothing in the shipped path
+            // moves, and on a cut cell it stops reporting a density spread over metal that is not
+            // there. Getting this wrong is wrong precisely on the RIM, which is the part anyone looks
+            // at.
+            double tranY = cell.Width  > 0 ? cell.Area / cell.Width  : 0.0;   // extent across x-flow
+            double tranX = cell.Height > 0 ? cell.Area / cell.Height : 0.0;   // extent across y-flow
+            jx[c] = tranY > 0 ? ix[c] / tranY : Complex.Zero;
+            jy[c] = tranX > 0 ? iy[c] / tranX : Complex.Zero;
 
             double m = Math.Sqrt(jx[c].Magnitude * jx[c].Magnitude + jy[c].Magnitude * jy[c].Magnitude);
             mag[c] = m;
@@ -221,9 +231,11 @@ public static class PlanarCurrentDensity
         foreach (int c in cells)
         {
             var cell = mesh.Cells[c];
+            // The same mean transverse extent the density was formed with, so the two are exact
+            // inverses on a cut cell as well as on a whole one.
             sum += direction == PlanarBasisDirection.X
-                ? map.Jx[c] * cell.Height
-                : map.Jy[c] * cell.Width;
+                ? map.Jx[c] * (cell.Width  > 0 ? cell.Area / cell.Width  : 0.0)
+                : map.Jy[c] * (cell.Height > 0 ? cell.Area / cell.Height : 0.0);
         }
         return sum;
     }

@@ -399,11 +399,11 @@ ArgumentNullException.ThrowIfNull(mesh);
 
         ForRows(st, m, a =>
         {
-            var wa = Pulse(a);
+            var wa = Pulse(mesh, a);
             for (int b = a; b < m; b++)
             {
                 long k = Packed(a, b, m);
-                var (c0, cl, cr) = PairCores(mesh, wa, Pulse(b), PlanarBasisDirection.X, wantRad, st);
+                var (c0, cl, cr) = PairCores(mesh, wa, Pulse(mesh, b), PlanarBasisDirection.X, wantRad, st);
                 s0[k] = c0; sLog[k] = cl;
                 if (sRad is not null) sRad[k] = cr;
             }
@@ -449,14 +449,19 @@ ArgumentNullException.ThrowIfNull(mesh);
         for (int i = 0; i < k; i++)
         {
             var basis = mesh.Bases[idx[i]];
-            var (ha, hb) = PlanarBasisFunctions.Halves(mesh, basis);
-            var ca = mesh.Cells[ha.CellIndex];
-            var cb = mesh.Cells[hb.CellIndex];
+            var (wa, wb) = RampHalves(mesh, basis);
+            var ca = mesh.Cells[wa.CellIndex];
+            var cb = mesh.Cells[wb.CellIndex];
             // ∫ w dS over a half is (its extent along the flow direction)/2 — see the file header.
-            double moment = 0.5 * (Extent(ca, dir) + Extent(cb, dir));
-            halves[i] = (new CellWeight(ha.CellIndex, +1.0, ha.OuterEdge, true),
-                         new CellWeight(hb.CellIndex, -1.0, hb.OuterEdge, true),
-                         moment);
+            // On a CUT cell that is no longer the rectangle's own extent, because the ramp is measured
+            // from the metal's boundary: the honest quantity is the first moment of the weight itself,
+            // and it is taken from the strips rather than from Width/Height. The whole-rectangle
+            // expression is left LITERALLY as L8c wrote it, so R-cut-2's bit-identity survives an
+            // association that would otherwise move the last bit.
+            double moment = !ca.IsCut && !cb.IsCut
+                ? 0.5 * (Extent(ca, dir) + Extent(cb, dir))
+                : WeightMoment(ca, wa, dir) + WeightMoment(cb, wb, dir);
+            halves[i] = (wa, wb, moment);
         }
 
         ForRows(st, k, i =>
@@ -510,14 +515,14 @@ ArgumentNullException.ThrowIfNull(mesh);
         var p = new Mat<Complex>(m, m);
         ForRows(st, m, a =>
         {
-            var wa = Pulse(a);
+            var wa = Pulse(mesh, a);
             for (int b = a; b < m; b++)
             {
                 long k = Packed(a, b, m);
                 Complex v = terms.Inverse * cores.S0[k] + terms.Log * cores.SLog[k];
                 if (terms.ExtractsConstant) v += terms.Constant;               // area-normalised ⇒ core = 1
                 if (terms.ExtractsLinear && cores.SRad is not null) v += terms.Linear * cores.SRad[k];
-                v += PairRemainder(mesh, wa, Pulse(b), PlanarBasisDirection.X, rem, st);
+                v += PairRemainder(mesh, wa, Pulse(mesh, b), PlanarBasisDirection.X, rem, st);
                 p[a, b] = v;
                 p[b, a] = v;                                                    // R-fil-2, structurally
             }
@@ -595,12 +600,7 @@ ArgumentNullException.ThrowIfNull(mesh);
         int k    = idx.Length;
 
         var halves = new (CellWeight A, CellWeight B)[k];
-        for (int i = 0; i < k; i++)
-        {
-            var (ha, hb) = PlanarBasisFunctions.Halves(mesh, mesh.Bases[idx[i]]);
-            halves[i] = (new CellWeight(ha.CellIndex, +1.0, ha.OuterEdge, true),
-                         new CellWeight(hb.CellIndex, -1.0, hb.OuterEdge, true));
-        }
+        for (int i = 0; i < k; i++) halves[i] = RampHalves(mesh, mesh.Bases[idx[i]]);
 
         ForRows(st, k, i =>
         {
@@ -688,7 +688,7 @@ ArgumentNullException.ThrowIfNull(mesh);
 
         ForRows(st, m, a =>
         {
-            var wa = Pulse(a);
+            var wa = Pulse(mesh, a);
             double za = levels.Of(mesh.Cells[a].LayerIndex);
             for (int b = a; b < m; b++)
             {
@@ -699,7 +699,7 @@ ArgumentNullException.ThrowIfNull(mesh);
                 Complex v = terms.Inverse * cores.S0[k] + terms.Log * cores.SLog[k];
                 if (terms.ExtractsConstant) v += terms.Constant;
                 if (terms.ExtractsLinear && cores.SRad is not null) v += terms.Linear * cores.SRad[k];
-                v += PairRemainder(mesh, wa, Pulse(b), PlanarBasisDirection.X,
+                v += PairRemainder(mesh, wa, Pulse(mesh, b), PlanarBasisDirection.X,
                                    RemFor(GreensKernel.ScalarPotential, za, zb), st);
                 p[a, b] = v;
                 p[b, a] = v;
@@ -923,12 +923,8 @@ ArgumentNullException.ThrowIfNull(mesh);
                                                  PlanarFillSettings st)
     {
         var dir = bi.Direction;
-        var (ia, ib) = PlanarBasisFunctions.Halves(mesh, bi);
-        var (ja, jb) = PlanarBasisFunctions.Halves(mesh, bj);
-        var ma = new CellWeight(ia.CellIndex, +1.0, ia.OuterEdge, true);
-        var mb = new CellWeight(ib.CellIndex, -1.0, ib.OuterEdge, true);
-        var na = new CellWeight(ja.CellIndex, +1.0, ja.OuterEdge, true);
-        var nb = new CellWeight(jb.CellIndex, -1.0, jb.OuterEdge, true);
+        var (ma, mb) = RampHalves(mesh, bi);
+        var (na, nb) = RampHalves(mesh, bj);
 
         // ── L9d: D6's cached geometric cores, which are the SAME numbers this used to re-integrate.
         //
@@ -965,7 +961,7 @@ ArgumentNullException.ThrowIfNull(mesh);
         Complex v = terms.Inverse * cores.S0[k] + terms.Log * cores.SLog[k];
         if (terms.ExtractsConstant) v += terms.Constant;
         if (terms.ExtractsLinear && cores.SRad is not null) v += terms.Linear * cores.SRad[k];
-        v += PairRemainder(mesh, Pulse(a), Pulse(b), PlanarBasisDirection.X, rem, st);
+        v += PairRemainder(mesh, Pulse(mesh, a), Pulse(mesh, b), PlanarBasisDirection.X, rem, st);
         return v;
     }
 
@@ -985,7 +981,7 @@ ArgumentNullException.ThrowIfNull(mesh);
                                       double rhoFloor, PlanarFillSettings st)
     {
         var v = mesh.Cells[vertical.CellA];
-        var (ha, hb) = PlanarBasisFunctions.Halves(mesh, horizontal);
+        var (wha, whb) = RampHalves(mesh, horizontal);
         bool alongX = horizontal.Direction == PlanarBasisDirection.X;
         double floor = Math.Max(rhoFloor, 1e-30);
 
@@ -993,7 +989,7 @@ ArgumentNullException.ThrowIfNull(mesh);
         // BOTH halves add with the SAME sign, and that is worth stating because the divergence's do
         // not: a rooftop's current flows one way through both of its cells and the ± distinction
         // belongs to ∇·f. Getting it wrong here cancels the block instead of assembling it.
-        foreach (var half in new[] { ha, hb })
+        foreach (var half in new[] { wha, whb })
         {
             var c = mesh.Cells[half.CellIndex];
             double tau = SeparationRatio(v, c);
@@ -1003,9 +999,13 @@ ArgumentNullException.ThrowIfNull(mesh);
             var (gx, gw) = Legendre.Nodes(nodes);
             var t = PanelEdges(panels);
 
-            double invAv = 1.0 / v.Area, invAc = 1.0 / c.Area;
+            double invAv = 1.0 / v.Area;
             Complex sum = Complex.Zero;
 
+            // The VIA cell's footprint is Manhattan by construction (L9c), so its own quadrature stays
+            // the rectangle's; only the HORIZONTAL half can be cut, and it takes the shared node
+            // enumerator — which is what keeps a conformal mesh with a via from silently integrating
+            // the rooftop over metal that is not there.
             for (int px = 0; px < panels; px++)
             for (int py = 0; py < panels; py++)
             {
@@ -1020,25 +1020,12 @@ ArgumentNullException.ThrowIfNull(mesh);
                     double x = cx + hx * gx[i], y = cy + hy * gx[j];
                     double wq = gw[i] * gw[j] * hx * hy * invAv;
 
-                    for (int qx = 0; qx < panels; qx++)
-                    for (int qy = 0; qy < panels; qy++)
+                    foreach (var (xp, yp, wc) in OuterNodes(c, half, horizontal.Direction, panels, nodes))
                     {
-                        double xa2 = c.XMin + t[qx] * c.Width,  xb2 = c.XMin + t[qx + 1] * c.Width;
-                        double ya2 = c.YMin + t[qy] * c.Height, yb2 = c.YMin + t[qy + 1] * c.Height;
-                        double dx = 0.5 * (xb2 - xa2), dy = 0.5 * (yb2 - ya2);
-                        double mx = 0.5 * (xa2 + xb2), my = 0.5 * (ya2 + yb2);
-
-                        for (int a = 0; a < nodes; a++)
-                        for (int b = 0; b < nodes; b++)
-                        {
-                            double xp = mx + dx * gx[a], yp = my + dy * gx[b];
-                            double rho = Math.Sqrt((x - xp) * (x - xp) + (y - yp) * (y - yp));
-                            if (rho <= floor) continue;         // the integrand is ODD; the limit is 0
-                            double weight = Math.Abs((alongX ? xp : yp) - half.OuterEdge) * invAc;
-                            double du = (alongX ? x - xp : y - yp) / rho;
-                            sum += gw[a] * gw[b] * dx * dy * wq * weight
-                                 * Complex.ImaginaryOne * dG(rho) * du;
-                        }
+                        double rho = Math.Sqrt((x - xp) * (x - xp) + (y - yp) * (y - yp));
+                        if (rho <= floor) continue;         // the integrand is ODD; the limit is 0
+                        double du = (alongX ? x - xp : y - yp) / rho;
+                        sum += wc * wq * Complex.ImaginaryOne * dG(rho) * du;
                     }
                 }
             }
@@ -1053,10 +1040,63 @@ ArgumentNullException.ThrowIfNull(mesh);
 
     /// <summary>One cell of one basis's support, as the quadrature needs it: the cell, the sign that
     /// makes <c>ξ = Sigma·(coord − Edge)</c> non-negative, and whether the weight is the rooftop's
-    /// linear ramp or the divergence pulse.</summary>
-    internal readonly record struct CellWeight(int CellIndex, double Sigma, double Edge, bool Ramp);
+    /// linear ramp or the divergence pulse.
+    ///
+    /// <para><b><see cref="Strips"/> is the conformal generalisation and NULL is the whole
+    /// rectangle.</b> On a cut cell neither the domain nor the weight is expressible as a rectangle
+    /// plus one edge coordinate — see <see cref="RooftopSupport"/> — so the strips carry both, and
+    /// <c>Sigma</c>/<c>Edge</c>/<c>Ramp</c> are then unused. Keeping the rectangle fields rather than
+    /// replacing them is what lets the fill run L8c's own expressions, unchanged, whenever both cells
+    /// of a pair are whole (R-cut-2).</para></summary>
+    internal readonly record struct CellWeight(int CellIndex, double Sigma, double Edge, bool Ramp,
+                                               IReadOnlyList<WeightStrip>? Strips = null);
 
-    private static CellWeight Pulse(int cellIndex) => new(cellIndex, 1.0, 0.0, false);
+    private static CellWeight Pulse(PlanarMesh mesh, int cellIndex) =>
+        new(cellIndex, 1.0, 0.0, false, RooftopSupport.Tiles(mesh.Cells[cellIndex]));
+
+    /// <summary>
+    /// A rooftop's two halves as the quadrature wants them. <b>A pair of whole rectangles comes back
+    /// with no strips at all</b>, which is what puts it on L8c's own code path; only a half that is
+    /// actually cut carries the piecewise ramp, so a MIXED pair pays for one side and not both.
+    /// </summary>
+    private static (CellWeight A, CellWeight B) RampHalves(PlanarMesh mesh, PlanarBasis basis)
+    {
+        var (ha, hb) = PlanarBasisFunctions.Halves(mesh, basis);
+        var ca = mesh.Cells[ha.CellIndex];
+        var cb = mesh.Cells[hb.CellIndex];
+
+        if (!ca.IsCut && !cb.IsCut)
+            return (new CellWeight(ha.CellIndex, +1.0, ha.OuterEdge, true),
+                    new CellWeight(hb.CellIndex, -1.0, hb.OuterEdge, true));
+
+        var (sa, sb) = PlanarBasisFunctions.Supports(mesh, basis);
+        return (new CellWeight(ha.CellIndex, +1.0, ha.OuterEdge, true,
+                               sa.IsWholeRectangle ? null : sa.Strips),
+                new CellWeight(hb.CellIndex, -1.0, hb.OuterEdge, true,
+                               sb.IsWholeRectangle ? null : sb.Strips));
+    }
+
+    /// <summary>
+    /// <c>∫ w dS / Area</c> over one half — the "area" core D6 factors the CONSTANT extracted term
+    /// against. For a whole rectangle it is the cell's extent along the flow direction over two, which
+    /// is what L8c wrote; for a cut cell the ramp is measured from the metal's own boundary and the
+    /// two are different numbers, so it is integrated from the strips rather than assumed.
+    /// </summary>
+    private static double WeightMoment(PlanarCell cell, CellWeight w, PlanarBasisDirection dir)
+    {
+        if (w.Strips is null) return 0.5 * Extent(cell, dir);
+
+        // ∫∫(αx + βy + γ) dS over a polygon, from the area and its two first moments about any point.
+        double total = 0;
+        foreach (var strip in w.Strips)
+        {
+            double area = PolygonIntegrals.Area(strip.Ring, 0, 0);
+            total += strip.Alpha * PolygonIntegrals.AreaMoment(strip.Ring, 0, 0, true)
+                   + strip.Beta  * PolygonIntegrals.AreaMoment(strip.Ring, 0, 0, false)
+                   + strip.Gamma * area;
+        }
+        return total / cell.Area;
+    }
 
     private static double Extent(PlanarCell c, PlanarBasisDirection d) =>
         d == PlanarBasisDirection.X ? c.Width : c.Height;
@@ -1073,6 +1113,11 @@ ArgumentNullException.ThrowIfNull(mesh);
         PlanarMesh mesh, CellWeight wa, CellWeight wb, PlanarBasisDirection dir,
         bool wantRad, PlanarFillSettings st)
     {
+        // R-cut-2: a pair of whole rectangles takes L8c's own expressions in L8c's own order, so every
+        // pre-conformal number in this repository is reproduced bit for bit rather than to a tolerance.
+        if (wa.Strips is not null || wb.Strips is not null)
+            return PairCoresConformal(mesh, wa, wb, dir, wantRad, st);
+
         var a = mesh.Cells[wa.CellIndex];
         var b = mesh.Cells[wb.CellIndex];
         var (nodes, panels) = RuleFor(a, b, st);
@@ -1143,6 +1188,162 @@ ArgumentNullException.ThrowIfNull(mesh);
         return (s0, sl, sr);
     }
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // CONFORMAL (CUT) CELLS — the same two integrals over a polygon rather than over a rectangle
+    //
+    // §3 named three routes and asked for the measurement that chooses. This is (a), and M2 is what
+    // forces it: a cut cell's ramp vanishes on the METAL's own outer boundary, so it is affine in
+    // BOTH coordinates rather than linear in one, and route (c) — the rectangle's closed form scaled
+    // by the area fraction — cannot express it even in principle. Route (b), a numerical inner
+    // integral, is measured against this one rather than shipped; see the phase note.
+    //
+    // THE INNER INTEGRAL STAYS CLOSED FORM, which is the whole point. PolygonIntegrals gives the same
+    // six over an arbitrary polygon, and an affine weight α·x + β·y + γ resolves into
+    // α·(moment in u) + β·(moment in v) + (αx+βy+γ)·(plain), i.e. exactly the cores it returns. So
+    // L8c's own statement — "the classic near-singular difficulty comes from doing BOTH integrals
+    // numerically, and here only one of them is" — survives the cut untouched.
+    //
+    // THE OUTER INTEGRAL keeps its clustered panels. Each strip is a convex quadrilateral, and the
+    // bilinear map from the unit square carries the Chebyshev clustering onto it unchanged — which
+    // matters for exactly the reason L8c measured it: the outer integrand's gradient is log-divergent
+    // on ∂b, and for a self or touching pair that line lies on the outer domain's own boundary.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    private static (double C0, double CLog, double CRad) PairCoresConformal(
+        PlanarMesh mesh, CellWeight wa, CellWeight wb, PlanarBasisDirection dir,
+        bool wantRad, PlanarFillSettings st)
+    {
+        var a = mesh.Cells[wa.CellIndex];
+        var b = mesh.Cells[wb.CellIndex];
+        var (nodes, panels) = RuleFor(a, b, st);
+
+        double s0 = 0, sl = 0, sr = 0;
+        foreach (var (x, y, w) in OuterNodes(a, wa, dir, panels, nodes))
+        {
+            var (i0, il, ir) = InnerCores(b, wb, dir, x, y, wantRad);
+            s0 += w * i0;
+            sl += w * il;
+            if (wantRad) sr += w * ir;
+        }
+        return (s0, sl, sr);
+    }
+
+    /// <summary>
+    /// The inner integral over cell <paramref name="b"/>'s own domain — the rectangle's closed form
+    /// when it is whole, the polygon's when it is cut. Both are closed forms; nothing here is a
+    /// quadrature.
+    /// </summary>
+    private static (double I0, double ILog, double IRad) InnerCores(
+        PlanarCell b, CellWeight wb, PlanarBasisDirection dir, double x, double y, bool wantRad)
+    {
+        bool alongX = dir == PlanarBasisDirection.X;
+        double invAb = 1.0 / b.Area;
+
+        if (wb.Strips is null)
+        {
+            double x1 = b.XMin - x, x2 = b.XMax - x;
+            double y1 = b.YMin - y, y2 = b.YMax - y;
+            if (!wb.Ramp)
+                return (RectangleIntegrals.Inverse(x1, x2, y1, y2) * invAb,
+                        RectangleIntegrals.Log(x1, x2, y1, y2) * invAb,
+                        wantRad ? RectangleIntegrals.Radius(x1, x2, y1, y2) * invAb : 0.0);
+
+            double c  = (alongX ? x : y) - wb.Edge;
+            double sg = wb.Sigma * invAb;
+            return (sg * ((alongX ? RectangleIntegrals.InverseMomentU(x1, x2, y1, y2)
+                                  : RectangleIntegrals.InverseMomentV(x1, x2, y1, y2))
+                          + c * RectangleIntegrals.Inverse(x1, x2, y1, y2)),
+                    sg * ((alongX ? RectangleIntegrals.LogMomentU(x1, x2, y1, y2)
+                                  : RectangleIntegrals.LogMomentV(x1, x2, y1, y2))
+                          + c * RectangleIntegrals.Log(x1, x2, y1, y2)),
+                    wantRad
+                        ? sg * ((alongX ? RectangleIntegrals.RadiusMomentU(x1, x2, y1, y2)
+                                        : RectangleIntegrals.RadiusMomentV(x1, x2, y1, y2))
+                                + c * RectangleIntegrals.Radius(x1, x2, y1, y2))
+                        : 0.0);
+        }
+
+        double i0 = 0, il = 0, ir = 0;
+        foreach (var strip in wb.Strips)
+        {
+            var c = PolygonIntegrals.CoresXY(strip.Ring, x, y, wantRad);
+            // w(r′) = α·u + β·v + (α·x + β·y + γ), with (u, v) measured from the observation point.
+            double g = strip.Alpha * x + strip.Beta * y + strip.Gamma;
+            i0 += strip.Alpha * c.InverseU + strip.Beta * c.InverseV + g * c.Inverse;
+            il += strip.Alpha * c.LogU     + strip.Beta * c.LogV     + g * c.Log;
+            if (wantRad) ir += strip.Alpha * c.RadiusU + strip.Beta * c.RadiusV + g * c.Radius;
+        }
+        return (i0 * invAb, il * invAb, wantRad ? ir * invAb : 0.0);
+    }
+
+    /// <summary>
+    /// The OUTER quadrature nodes over one cell's own domain, each already carrying the basis weight
+    /// and the 1/Area normalisation. A whole rectangle takes the tensor rule over clustered panels;
+    /// a cut cell takes the same rule over each strip through the bilinear quadrilateral map.
+    /// </summary>
+    private static IEnumerable<(double X, double Y, double W)> OuterNodes(
+        PlanarCell a, CellWeight wa, PlanarBasisDirection dir, int panels, int nodes)
+    {
+        bool alongX = dir == PlanarBasisDirection.X;
+        double invAa = 1.0 / a.Area;
+        var (gx, gw) = Legendre.Nodes(nodes);
+        var t = PanelEdges(panels);
+
+        if (wa.Strips is null)
+        {
+            for (int qx = 0; qx < panels; qx++)
+                for (int qy = 0; qy < panels; qy++)
+                {
+                    double xa = a.XMin + t[qx] * a.Width,  xb = a.XMin + t[qx + 1] * a.Width;
+                    double ya = a.YMin + t[qy] * a.Height, yb = a.YMin + t[qy + 1] * a.Height;
+                    double cx = 0.5 * (xa + xb), hx = 0.5 * (xb - xa);
+                    double cy = 0.5 * (ya + yb), hy = 0.5 * (yb - ya);
+
+                    for (int i = 0; i < nodes; i++)
+                        for (int j = 0; j < nodes; j++)
+                        {
+                            double x = cx + hx * gx[i], y = cy + hy * gx[j];
+                            double weight = wa.Ramp ? Math.Abs((alongX ? x : y) - wa.Edge) * invAa : invAa;
+                            if (weight == 0) continue;
+                            yield return (x, y, gw[i] * gw[j] * hx * hy * weight);
+                        }
+                }
+            yield break;
+        }
+
+        foreach (var strip in wa.Strips)
+        {
+            var q = strip.Ring;
+            for (int px = 0; px < panels; px++)
+                for (int py = 0; py < panels; py++)
+                    for (int i = 0; i < nodes; i++)
+                        for (int j = 0; j < nodes; j++)
+                        {
+                            double xi = t[px] + 0.5 * (t[px + 1] - t[px]) * (1.0 + gx[i]);
+                            double et = t[py] + 0.5 * (t[py + 1] - t[py]) * (1.0 + gx[j]);
+                            double jw = 0.25 * (t[px + 1] - t[px]) * (t[py + 1] - t[py]) * gw[i] * gw[j];
+
+                            // The bilinear map of the unit square onto the (convex, possibly
+                            // degenerate) quadrilateral, and its Jacobian.
+                            double n0 = (1 - xi) * (1 - et), n1 = xi * (1 - et);
+                            double n2 = xi * et,             n3 = (1 - xi) * et;
+                            double x = n0 * q[0].X + n1 * q[1].X + n2 * q[2].X + n3 * q[3].X;
+                            double y = n0 * q[0].Y + n1 * q[1].Y + n2 * q[2].Y + n3 * q[3].Y;
+
+                            double dxu = (1 - et) * (q[1].X - q[0].X) + et * (q[2].X - q[3].X);
+                            double dyu = (1 - et) * (q[1].Y - q[0].Y) + et * (q[2].Y - q[3].Y);
+                            double dxv = (1 - xi) * (q[3].X - q[0].X) + xi * (q[2].X - q[1].X);
+                            double dyv = (1 - xi) * (q[3].Y - q[0].Y) + xi * (q[2].Y - q[1].Y);
+                            double jac = dxu * dyv - dyu * dxv;
+                            if (jac == 0) continue;
+
+                            double weight = strip.At(x, y) * invAa;
+                            if (weight == 0) continue;
+                            yield return (x, y, jw * Math.Abs(jac) * weight);
+                        }
+        }
+    }
+
     /// <summary>
     /// The smooth remainder over one ordered cell pair — plain double quadrature, because after the
     /// extraction the integrand is bounded and has no singularity at all. This is the ONLY part of
@@ -1152,6 +1353,9 @@ ArgumentNullException.ThrowIfNull(mesh);
                                          PlanarBasisDirection dir, Func<double, Complex> rem,
                                          PlanarFillSettings st)
     {
+        if (wa.Strips is not null || wb.Strips is not null)
+            return PairRemainderConformal(mesh, wa, wb, dir, rem, st);
+
         var a = mesh.Cells[wa.CellIndex];
         var b = mesh.Cells[wb.CellIndex];
         double tau = SeparationRatio(a, b);
@@ -1193,6 +1397,33 @@ ArgumentNullException.ThrowIfNull(mesh);
                 }
                 total += wOuter * inner * hbx * hby;
             }
+        }
+        return total;
+    }
+
+    /// <summary>The remainder over a pair with at least one cut cell — the same rule, over the
+    /// strips. No extraction is involved, so the only thing the cut changes is the domain.</summary>
+    private static Complex PairRemainderConformal(PlanarMesh mesh, CellWeight wa, CellWeight wb,
+                                                  PlanarBasisDirection dir, Func<double, Complex> rem,
+                                                  PlanarFillSettings st)
+    {
+        var a = mesh.Cells[wa.CellIndex];
+        var b = mesh.Cells[wb.CellIndex];
+        double tau = SeparationRatio(a, b);
+        int nodes = tau < st.NearRatio ? st.RemainderNodesNear
+                  : tau < st.FarRatio  ? st.RemainderNodesMid
+                                       : st.RemainderNodesFar;
+
+        Complex total = Complex.Zero;
+        foreach (var (x, y, wOuter) in OuterNodes(a, wa, dir, 1, nodes))
+        {
+            Complex inner = Complex.Zero;
+            foreach (var (xp, yp, wInner) in OuterNodes(b, wb, dir, 1, nodes))
+            {
+                double dx = x - xp, dy = y - yp;
+                inner += wInner * rem(Math.Sqrt(dx * dx + dy * dy));
+            }
+            total += wOuter * inner;
         }
         return total;
     }
@@ -1245,7 +1476,9 @@ ArgumentNullException.ThrowIfNull(mesh);
     /// ratio", the one number every rule below keys off.</summary>
     private static double SeparationRatio(PlanarCell a, PlanarCell b)
     {
-        double dx = a.CenterX - b.CenterX, dy = a.CenterY - b.CenterY;
+        // The METAL's centroid, which is the cell's own centre until a cut moves it. Identical for
+        // every uncut cell, so no rule selection anywhere in the shipped path changes.
+        double dx = a.CentroidX - b.CentroidX, dy = a.CentroidY - b.CentroidY;
         double d  = Math.Sqrt(dx * dx + dy * dy);
         double s  = Math.Max(Math.Sqrt(a.Width * a.Width + a.Height * a.Height),
                              Math.Sqrt(b.Width * b.Width + b.Height * b.Height));

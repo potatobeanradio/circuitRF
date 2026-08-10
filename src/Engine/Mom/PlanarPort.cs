@@ -363,6 +363,30 @@ public static class PlanarPorts
         while (lo - 1 >= 0     && CellAt(outer, lo - 1) >= 0 && CellAt(inner, lo - 1) >= 0) lo--;
         while (hi + 1 < nTran  && CellAt(outer, hi + 1) >= 0 && CellAt(inner, hi + 1) >= 0) hi++;
 
+        // ── §4 — A PORT ON A CUT CELL IS A DIFFERENT PORT, and is refused by name ────────────────
+        //
+        // D2 puts the reference plane on the shared edge of the two OUTERMOST cells, and R-prt's whole
+        // error-box argument is about a uniform feed whose width is the sum of the transverse cell
+        // extents. A cut cell's transverse extent is not its grid extent; its shared edge is shorter
+        // than the gridline; and the calibration standard built for it (D4) is a uniform rectangle
+        // that does not have any of that. None of it is wrong in a way anything would notice — it is a
+        // smooth, plausible, wrong s-parameter, which is the failure this whole area is organised
+        // against. A port belongs on a drawn feed, which is Manhattan, so this should never fire.
+        for (int t = lo; t <= hi; t++)
+            foreach (int c in new[] { CellAt(outer, t), CellAt(inner, t) })
+                if (c >= 0 && mesh.Cells[c].IsCut)
+                {
+                    refusal =
+                        $"Port {port.Number} lands on a CONFORMAL boundary cell — one the mesher cut to " +
+                        "follow the metal rather than the grid. The port's reference plane is the shared " +
+                        "edge of its two outermost cells and its width is the sum of their transverse " +
+                        "extents, and neither of those is the cell's grid extent once it is cut; the " +
+                        "calibration standard built for it is a uniform rectangle that has no cut cell " +
+                        "in it at all. Put the port on a straight, axis-aligned feed — which is what a " +
+                        "port is for — or set Boundary cells back to \"Staircase\" for this run.";
+                    return false;
+                }
+
         // ── Basis lookup. Built by ONE forward pass over Bases; queried, never iterated. ─────────
         var byPair = new Dictionary<(int A, int B, PlanarBasisDirection D), int>(mesh.Bases.Count);
         for (int b = 0; b < mesh.Bases.Count; b++)

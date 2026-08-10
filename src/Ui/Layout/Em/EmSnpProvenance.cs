@@ -158,8 +158,15 @@ public static class EmSnpProvenance
         return Sha(sb.ToString());
     }
 
+    /// <summary>
+    /// <b>The BOUNDARY-CELL model is in the hash, and leaving it out would have been the exact
+    /// staleness failure R-em-20 exists to prevent.</b> A staircased disc and a conformal disc are
+    /// different geometry, so an <c>.snp</c> produced with one boundary model is not current for the
+    /// other — and without this term the stamp would go on saying it was, silently. One line, and
+    /// easy to forget.
+    /// </summary>
     public static string MeshHash(PlanarMeshSettings m)
-        => Sha($"{m.Auto}|{m.CellsPerWavelength}|{m.EdgeMesh}|{m.EdgeCells}");
+        => Sha($"{m.Auto}|{m.CellsPerWavelength}|{m.EdgeMesh}|{m.EdgeCells}|{m.BoundaryCells}");
 
     /// <summary>
     /// A port's identity for staleness purposes is its number, its POSITION, its inferred side and

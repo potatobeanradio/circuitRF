@@ -44,6 +44,13 @@ public sealed class CemPlanarMesh
     public int  CellsPerWavelength { get; set; } = PlanarMeshSettings.DefaultCellsPerWavelength;
     public bool EdgeMesh           { get; set; } = PlanarMeshSettings.DefaultEdgeMesh;
     public int  EdgeCells          { get; set; } = PlanarMeshSettings.DefaultEdgeCells;
+
+    /// <summary>
+    /// Conformal (cut) boundary cells. <b>Nullable, and omitted at the default</b>, so a <c>.cem</c>
+    /// written before this phase round-trips byte-identically — the same omit-at-default rule
+    /// <see cref="CemFile.DirectVerticalKernel"/> follows, and for the same reason.
+    /// </summary>
+    public PlanarBoundaryCells? BoundaryCells { get; set; }
 }
 
 public sealed class CemFile
@@ -194,6 +201,8 @@ public static class EmSetupPersistence
             CellsPerWavelength = s.PlanarMesh.CellsPerWavelength,
             EdgeMesh           = s.PlanarMesh.EdgeMesh,
             EdgeCells          = s.PlanarMesh.EdgeCells,
+            BoundaryCells      = s.PlanarMesh.BoundaryCells == PlanarMeshSettings.DefaultBoundaryCells
+                                     ? null : s.PlanarMesh.BoundaryCells,
         },
     };
 
@@ -220,7 +229,8 @@ public static class EmSetupPersistence
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         PlanarMesh            = f.PlanarMesh is { } pm
-            ? new PlanarMeshSettings(pm.Auto, pm.CellsPerWavelength, pm.EdgeMesh, pm.EdgeCells)
+            ? new PlanarMeshSettings(pm.Auto, pm.CellsPerWavelength, pm.EdgeMesh, pm.EdgeCells,
+                                     pm.BoundaryCells ?? PlanarMeshSettings.DefaultBoundaryCells)
             : PlanarMeshSettings.Default,
     };
 

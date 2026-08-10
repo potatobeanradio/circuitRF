@@ -120,12 +120,16 @@ public static class SurfaceMesher
     /// ticks go, and cancellation is answered there too.</para></param>
     /// <param name="rimGrading">brief-edge-mesh-on-curved-geometry.md's measurement seam — leave at
     /// the default. See <see cref="PlanarRimGrading"/> for why the default is the one it is.</param>
+    /// <param name="sliverAreaFraction">R-cut-3's MEASURED threshold — the fraction of a grid
+    /// rectangle below which a cut cell is absorbed into a neighbour rather than solved. Only reachable
+    /// so the sweep that chose it can be re-run; see <see cref="DefaultSliverAreaFraction"/>.</param>
     public static PlanarMeshReport Mesh(
         PlanarProblem       problem,
         PlanarMeshSettings? settings      = null,
         PlanarEdgeReference edgeReference = PlanarEdgeReference.ConductorWidth,
         RunControl?         control       = null,
-        PlanarRimGrading    rimGrading    = PlanarRimGrading.None)
+        PlanarRimGrading    rimGrading    = PlanarRimGrading.None,
+        double              sliverAreaFraction = DefaultSliverAreaFraction)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
@@ -218,6 +222,7 @@ public static class SurfaceMesher
         control?.BeginStage($"testing {ny:N0} row(s) against the metal", scanRows);
 
         var cellAtPerLayer = new int[problem.Layers.Count][];
+        var conformal = new ConformalCounts();
         for (int li = 0; li < problem.Layers.Count; li++)
         {
             var layer = problem.Layers[li];
@@ -231,38 +236,67 @@ public static class SurfaceMesher
             cellAtPerLayer[li] = cellAt;
 
             int firstCell = cells.Count;
-            for (int iy = 0; iy < ny; iy++)
+            if (s.BoundaryCells == PlanarBoundaryCells.Conformal)
             {
-                control?.TickStage();
-                double yc = 0.5 * (gy[iy] + gy[iy + 1]);
-                var spans = RowSpans(layer, yc);
-                if (spans.Count == 0) continue;
-
-                int si = 0;
-                for (int ix = 0; ix < nx; ix++)
+                BuildConformalCells(layer, li, gx, gy, nx, ny, sliverAreaFraction,
+                                    cells, cellAt, conformal, control);
+            }
+            else
+            {
+                // L8b's own loop, unchanged and deliberately not merged with the conformal one:
+                // R-cut-2 asks for a Manhattan mesh to be BIT-IDENTICAL, and the cheapest way to
+                // promise that is for the shipped path to be the same expressions in the same order.
+                for (int iy = 0; iy < ny; iy++)
                 {
-                    double xc = 0.5 * (gx[ix] + gx[ix + 1]);
-                    while (si < spans.Count && spans[si].Hi < xc) si++;
-                    if (si >= spans.Count) break;
-                    if (xc < spans[si].Lo) continue;
+                    control?.TickStage();
+                    double yc = 0.5 * (gy[iy] + gy[iy + 1]);
+                    var spans = RowSpans(layer, yc);
+                    if (spans.Count == 0) continue;
 
-                    cellAt[iy * nx + ix] = cells.Count;
-                    cells.Add(new PlanarCell(li, ix, iy, gx[ix], gy[iy], gx[ix + 1], gy[iy + 1]));
+                    int si = 0;
+                    for (int ix = 0; ix < nx; ix++)
+                    {
+                        double xc = 0.5 * (gx[ix] + gx[ix + 1]);
+                        while (si < spans.Count && spans[si].Hi < xc) si++;
+                        if (si >= spans.Count) break;
+                        if (xc < spans[si].Lo) continue;
+
+                        cellAt[iy * nx + ix] = cells.Count;
+                        cells.Add(new PlanarCell(li, ix, iy, gx[ix], gy[iy], gx[ix + 1], gy[iy + 1]));
+                    }
                 }
             }
             perLayerCells[li] = cells.Count - firstCell;
 
             // R-msh-6: N is the number of SHARED INTERNAL EDGES — one rooftop per adjacent pair.
+            //
+            // R-cut-4 — TWO THINGS A MERGED CELL BREAKS, and both are decided HERE, in the mesher,
+            // where the basis set is built, rather than in the fill where they would be a guard on a
+            // division. A cell that absorbed a sliver covers TWO grid positions, so (a) the two can be
+            // "adjacent" to each other, which is a rooftop from a cell to itself and is not a basis at
+            // all; and (b) both can be adjacent to the same third cell, which would be the SAME
+            // unknown counted twice and a singular matrix. The `seen` set is a MEMBERSHIP test only —
+            // it is never iterated, so R-msh-2's ordering contract is untouched — and it is allocated
+            // only when a merge actually happened.
+            var seen = conformal.Merged > 0 ? new HashSet<(int, int, int)>() : null;
             int firstBasis = bases.Count;
             for (int iy = 0; iy < ny; iy++)
                 for (int ix = 0; ix < nx; ix++)
                 {
                     int a = cellAt[iy * nx + ix];
                     if (a < 0) continue;
-                    if (ix + 1 < nx && cellAt[iy * nx + ix + 1] is var bx && bx >= 0)
-                        bases.Add(new PlanarBasis(li, a, bx, PlanarBasisDirection.X));
-                    if (iy + 1 < ny && cellAt[(iy + 1) * nx + ix] is var by && by >= 0)
-                        bases.Add(new PlanarBasis(li, a, by, PlanarBasisDirection.Y));
+                    if (ix + 1 < nx && cellAt[iy * nx + ix + 1] is var bx && bx >= 0 && bx != a &&
+                        (seen is null || seen.Add((Math.Min(a, bx), Math.Max(a, bx), 0))))
+                    {
+                        if (FaceCarriesABasis(cells[a], cells[bx], PlanarBasisDirection.X, gx[ix + 1], conformal))
+                            bases.Add(new PlanarBasis(li, a, bx, PlanarBasisDirection.X));
+                    }
+                    if (iy + 1 < ny && cellAt[(iy + 1) * nx + ix] is var by && by >= 0 && by != a &&
+                        (seen is null || seen.Add((Math.Min(a, by), Math.Max(a, by), 1))))
+                    {
+                        if (FaceCarriesABasis(cells[a], cells[by], PlanarBasisDirection.Y, gy[iy + 1], conformal))
+                            bases.Add(new PlanarBasis(li, a, by, PlanarBasisDirection.Y));
+                    }
                 }
             perLayerUnknowns[li] = bases.Count - firstBasis;
         }
@@ -360,11 +394,16 @@ public static class SurfaceMesher
 
         var mesh = new PlanarMesh(cells, bases, layerNames, gx, gy);
 
-        double minEdge = double.PositiveInfinity, maxEdge = 0;
+        double minEdge = double.PositiveInfinity, maxEdge = 0, meshedArea = 0;
         foreach (var c in cells)
         {
+            // R-msh's own quantities are asked of the GRID rectangle even for a cut cell: they exist
+            // to police the λ_g/N cap and the transverse resolution, and both are properties of the
+            // grid the cell was carved out of. The METAL's own extent is PlanarCell.Area, and it is
+            // what MeshedAreaM2 sums — the tiling gate's quantity, kept separate on purpose.
             minEdge = Math.Min(minEdge, Math.Min(c.Width, c.Height));
             maxEdge = Math.Max(maxEdge, c.LongestEdge);
+            meshedArea += c.Area;
         }
         if (cells.Count == 0) { minEdge = 0; maxEdge = 0; }
 
@@ -403,7 +442,11 @@ public static class SurfaceMesher
                 notes.Add($"…but NO edge grading was actually applied {where}: no conductor edge on " +
                           "this artwork is both axis-parallel and long enough to carry the 1/√d edge " +
                           "current. An oblique or curved outline contributes NEITHER a gridline nor a " +
-                          "graded fan — it is approximated by a staircase instead" +
+                          "graded fan" +
+                          (s.BoundaryCells == PlanarBoundaryCells.Conformal
+                              ? " — the boundary CELLS follow it, but their sizes still come from the "
+                                + "λ_g marcher alone"
+                              : " — it is approximated by a staircase instead") +
                           (staircased > 0 ? " (see below)" : "") + ". " +
                           (neither ? "Raising Edge cells will not change this mesh at all."
                                    : "Raising Edge cells acts on the other direction only."));
@@ -431,11 +474,56 @@ public static class SurfaceMesher
             notes.Add("Edge mesh off — the 1/√d edge current is not resolved, so loss and Z₀ will read low.");
         }
 
-        if (staircased > 0)
+        // ── The boundary model, said in the notes because this phase's whole visible effect is here
+        //    and in the overlay. StaircasedPolygons must stop CLAIMING a staircase once the cells are
+        //    conformal — the count still means "polygons that are not axis-aligned", but what happens
+        //    to them is now the opposite of what the old wording said.
+        if (staircased > 0 && s.BoundaryCells == PlanarBoundaryCells.Staircase)
             notes.Add($"{staircased} polygon(s) are not axis-aligned and are approximated by a " +
-                      "STAIRCASE — this mesher builds rectangular cells only (D2). A mitred bend, a " +
+                      "STAIRCASE — this mesh builds rectangular cells only (D2). A mitred bend, a " +
                       "taper or a curve therefore carries a quantisation error that scales with the " +
-                      "cell size; conformal cells and triangles are not built in this phase.");
+                      "cell size. Turn Boundary cells to \"Conformal\" to cut the boundary cells to " +
+                      "the metal instead.");
+        else if (s.BoundaryCells == PlanarBoundaryCells.Conformal)
+        {
+            notes.Add(staircased > 0
+                ? $"Boundary cells are CONFORMAL: {conformal.Cut} cell(s) on {staircased} " +
+                  "non-axis-aligned polygon(s) are cut to follow the metal rather than staircased, so " +
+                  "the union of the cells is the drawn outline to round-off rather than to the cell " +
+                  "size. The interior of the mesh is unchanged."
+                : "Boundary cells are CONFORMAL, but this artwork is entirely axis-aligned so no cell " +
+                  "needed cutting — the mesh is identical to the staircased one, which is what an " +
+                  "axis-aligned outline means.");
+
+            if (conformal.Merged > 0)
+                notes.Add($"{conformal.Merged} sliver cell(s) were absorbed into the neighbour they " +
+                          $"share their largest face with (below {DefaultSliverAreaFraction:P0} of a " +
+                          "grid cell's area). A sliver is normalised by its own area, so leaving one " +
+                          "in puts an enormous row in the matrix and destroys the conditioning " +
+                          "silently — the matrix stays symmetric and still factors.");
+
+            if (conformal.UnmergedSlivers > 0)
+                notes.Add($"{conformal.UnmergedSlivers} sliver cell(s) had no ordinary neighbour to be " +
+                          "absorbed into and were kept as they are. Their rows are poorly scaled; " +
+                          "raising Cells per wavelength moves the grid off the outline and usually " +
+                          "removes them.");
+
+            if (conformal.RefusedFaces > 0)
+                notes.Add($"{conformal.RefusedFaces} grid adjacency(ies) carry NO basis function: the " +
+                          "two cells touch on the grid but their shared edge is outside the metal, or " +
+                          "one of them is not swept by that edge — a rooftop there would push its unit " +
+                          "current out through the metal's rim rather than across the edge. The " +
+                          "unknown count already excludes them.");
+
+            if (conformal.Fallback > 0)
+                notes.Add($"{conformal.Fallback} cell(s) could NOT be cut and are staircased: " +
+                          $"{conformal.FallbackMultiPolygon} touched by more than one drawn shape, " +
+                          $"{conformal.FallbackHole} touched by a hole, {conformal.FallbackNonConvex} " +
+                          "containing a sharp corner of the outline. One straight boundary per cell is " +
+                          "what a cut cell can express; a cell crossed twice is a mesh that is too " +
+                          "coarse for its own artwork, so raise Cells per wavelength and this count " +
+                          "falls to zero.");
+        }
 
         foreach (var alt in problem.Alternatives)
             notes.Add($"{alt.Subject} already has a validated analytic model ({alt.ModelName}), which " +
@@ -473,7 +561,12 @@ public static class SurfaceMesher
             ViaUnknownCount:               viaUnknowns,
             Verdict:                       verdict,
             Refusal:                       refusal,
-            Notes:                         notes);
+            Notes:                         notes,
+            BoundaryCells:                 s.BoundaryCells,
+            CutCellCount:                  conformal.Cut,
+            MergedSliverCount:             conformal.Merged,
+            StaircaseFallbackCells:        conformal.Fallback,
+            MeshedAreaM2:                  meshedArea);
     }
 
     /// <summary>
@@ -490,6 +583,315 @@ public static class SurfaceMesher
            "not built.";
 
     private static double MatrixMegabytes(int n) => (double)n * n * 16.0 / (1024.0 * 1024.0);
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // CONFORMAL (CUT) BOUNDARY CELLS — brief-conformal-boundary-cells.md, M1
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>R-cut-3's sliver threshold, as a fraction of the grid rectangle's area.</b>
+    ///
+    /// <para>A cut that leaves a vanishing fraction of a cell is the classic cut-cell failure: the
+    /// basis normalisation is 1/Area, so a sliver puts an enormous row in the matrix and destroys the
+    /// conditioning — <i>silently</i>, because the matrix is still symmetric and still factors. Below
+    /// this fraction the sliver is absorbed into the neighbour it shares its largest face with, giving
+    /// one cell whose region has two pieces rather than two cells one of which is degenerate.</para>
+    ///
+    /// <para><b>The value is a MEASUREMENT, not a taste</b> — see
+    /// <c>ConformalSliverTests</c>, which sweeps it and reports the matrix condition number and the
+    /// answer either side, and this directory's <c>CLAUDE.md</c> for the table.</para>
+    /// </summary>
+    public const double DefaultSliverAreaFraction = 0.05;
+
+    /// <summary>What the conformal pass did, carried out of the per-layer loop so the notes and the
+    /// report say it once. Mutable and single-threaded on purpose — the cell scan is sequential.</summary>
+    internal sealed class ConformalCounts
+    {
+        public int Cut;
+        public int Merged;
+        public int UnmergedSlivers;
+        public int FallbackMultiPolygon;
+        public int FallbackHole;
+        public int FallbackNonConvex;
+        public int RefusedFaces;
+        public int Fallback => FallbackMultiPolygon + FallbackHole + FallbackNonConvex;
+    }
+
+    /// <summary>
+    /// One conductor level's cells, following the METAL rather than the grid.
+    ///
+    /// <para>Three passes, and the middle one is the reason it cannot be a single scan: cells are
+    /// CLASSIFIED, then slivers are ABSORBED into neighbours (R-cut-3), then the survivors are EMITTED
+    /// in (IY, IX) order — R-msh-2's contract, which an in-place merge would break by removing a cell
+    /// that had already been numbered.</para>
+    /// </summary>
+    private static void BuildConformalCells(
+        PlanarConductorLayer layer, int li,
+        double[] gx, double[] gy, int nx, int ny, double sliverFraction,
+        List<PlanarCell> cells, int[] cellAt, ConformalCounts counts, RunControl? control)
+    {
+        const byte Absent = 0, Whole = 1, Cut = 2;
+
+        var kind    = new byte[nx * ny];
+        var regions = new PlanarCellRegion?[nx * ny];
+
+        var polys  = layer.Polygons;
+        var bounds = new (double X0, double Y0, double X1, double Y1)[polys.Count];
+        for (int p = 0; p < polys.Count; p++) bounds[p] = polys[p].Bounds();
+
+        // ── Pass 1: classify every grid position ──────────────────────────────────────────────
+        for (int iy = 0; iy < ny; iy++)
+        {
+            control?.TickStage();
+            double ry0 = gy[iy], ry1 = gy[iy + 1];
+
+            for (int ix = 0; ix < nx; ix++)
+            {
+                double rx0 = gx[ix], rx1 = gx[ix + 1];
+                double xc = 0.5 * (rx0 + rx1), yc = 0.5 * (ry0 + ry1);
+                double rectArea = (rx1 - rx0) * (ry1 - ry0);
+                double tol      = 1e-9 * Math.Min(rx1 - rx0, ry1 - ry0);
+
+                int touching = 0, touchIndex = -1;
+                bool holeTouched = false, coveredWhole = false;
+
+                for (int p = 0; p < polys.Count; p++)
+                {
+                    var (bx0, by0, bx1, by1) = bounds[p];
+                    if (bx1 < rx0 || bx0 > rx1 || by1 < ry0 || by0 > ry1) continue;
+
+                    bool touches = RingTouchesRect(polys[p].Outer, rx0, ry0, rx1, ry1);
+                    bool hole    = false;
+                    foreach (var h in polys[p].HoleRings)
+                        if (RingTouchesRect(h, rx0, ry0, rx1, ry1)) { hole = true; break; }
+
+                    if (touches || hole)
+                    {
+                        touching++;
+                        touchIndex  = p;
+                        holeTouched |= hole;
+                    }
+                    else if (polys[p].Contains(xc, yc))
+                    {
+                        // No boundary of this polygon meets the rectangle and its centre is inside, so
+                        // the WHOLE rectangle is inside it — whatever else touches, the union covers
+                        // the cell and there is nothing to cut.
+                        coveredWhole = true;
+                        break;
+                    }
+                }
+
+                int q = iy * nx + ix;
+
+                if (coveredWhole) { kind[q] = Whole; continue; }
+                if (touching == 0) { kind[q] = Absent; continue; }
+
+                // ── The three configurations §2 requires be a refinement instruction rather than a
+                //    silently-wrong cell. All fall back to L8b's own staircase decision for this cell
+                //    alone, and all are counted so a user can refine and watch the count reach zero.
+                if (touching > 1 || holeTouched)
+                {
+                    if (touching > 1) counts.FallbackMultiPolygon++;
+                    else              counts.FallbackHole++;
+                    kind[q] = InMetal(polys, xc, yc) ? Whole : Absent;
+                    continue;
+                }
+
+                var clipped = PlanarCellRegion.Simplify(
+                    PlanarCellRegion.ClipToRect(polys[touchIndex].Outer, rx0, ry0, rx1, ry1), tol);
+                if (clipped.Count < 3) { kind[q] = Absent; continue; }
+
+                var region = PlanarCellRegion.FromPiece(clipped);
+                double area = Math.Abs(region.Area);
+
+                // Round-off either way is the UNCUT answer, and taking it keeps the interior of the
+                // mesh bit-identical to the staircase's — an edge that runs exactly along a gridline
+                // (every Manhattan edge does) clips to the whole rectangle.
+                if (area <= 1e-12 * rectArea) { kind[q] = Absent; continue; }
+                if (area >= (1.0 - 1e-12) * rectArea) { kind[q] = Whole; continue; }
+
+                if (!PlanarCellRegion.IsConvex(clipped, 1e-9 * rectArea))
+                {
+                    counts.FallbackNonConvex++;
+                    kind[q] = InMetal(polys, xc, yc) ? Whole : Absent;
+                    continue;
+                }
+
+                kind[q]    = Cut;
+                regions[q] = region;
+            }
+        }
+
+        // ── Pass 2: R-cut-3 — absorb slivers ──────────────────────────────────────────────────
+        //
+        // A sliver merges only into a NON-sliver neighbour, which is what keeps a chain of slivers
+        // from collapsing into one enormous cell: at most one absorption per surviving cell per side,
+        // and a sliver with no ordinary neighbour is left alone and REPORTED rather than dropped.
+        var absorbedInto = new int[nx * ny];
+        Array.Fill(absorbedInto, -1);
+
+        for (int iy = 0; iy < ny; iy++)
+            for (int ix = 0; ix < nx; ix++)
+            {
+                int q = iy * nx + ix;
+                if (kind[q] != Cut) continue;
+                double rectArea = (gx[ix + 1] - gx[ix]) * (gy[iy + 1] - gy[iy]);
+                if (regions[q]!.Area >= sliverFraction * rectArea) continue;
+
+                double tol = 1e-9 * Math.Min(gx[ix + 1] - gx[ix], gy[iy + 1] - gy[iy]);
+                int best = -1; double bestFace = 0;
+                Consider(ix - 1, iy, true,  gx[ix]);
+                Consider(ix + 1, iy, true,  gx[ix + 1]);
+                Consider(ix, iy - 1, false, gy[iy]);
+                Consider(ix, iy + 1, false, gy[iy + 1]);
+
+                if (best < 0) { counts.UnmergedSlivers++; continue; }
+                absorbedInto[q] = best;
+                counts.Merged++;
+
+                void Consider(int jx, int jy, bool vertical, double line)
+                {
+                    if (jx < 0 || jy < 0 || jx >= nx || jy >= ny) return;
+                    int t = jy * nx + jx;
+                    if (kind[t] == Absent) return;
+                    // Only into an ORDINARY cell: a sliver absorbing a sliver is a chain.
+                    if (kind[t] == Cut)
+                    {
+                        double ta = (gx[jx + 1] - gx[jx]) * (gy[jy + 1] - gy[jy]);
+                        if (regions[t]!.Area < sliverFraction * ta) return;
+                    }
+                    double face = FaceLength(regions[q]!, vertical, line, tol);
+                    if (face > bestFace) { bestFace = face; best = t; }
+                }
+            }
+
+        // ── Pass 3: emit, in (IY, IX) order ───────────────────────────────────────────────────
+        for (int iy = 0; iy < ny; iy++)
+            for (int ix = 0; ix < nx; ix++)
+            {
+                int q = iy * nx + ix;
+                if (kind[q] == Absent || absorbedInto[q] >= 0) continue;
+
+                double x0 = gx[ix], y0 = gy[iy], x1 = gx[ix + 1], y1 = gy[iy + 1];
+                var region = kind[q] == Cut ? regions[q] : null;
+
+                // The four neighbours are the only positions that could have chosen this cell.
+                for (int side = 0; side < 4; side++)
+                {
+                    int tx = ix + (side == 0 ? -1 : side == 1 ? 1 : 0);
+                    int ty = iy + (side == 2 ? -1 : side == 3 ? 1 : 0);
+                    if (tx < 0 || ty < 0 || tx >= nx || ty >= ny) continue;
+                    int t = ty * nx + tx;
+                    if (absorbedInto[t] != q) continue;
+
+                    region = (region ?? PlanarCellRegion.WholeRectangle(x0, y0, x1, y1))
+                             .Absorb(regions[t], gx[tx], gy[ty], gx[tx + 1], gy[ty + 1]);
+                    x0 = Math.Min(x0, gx[tx]); y0 = Math.Min(y0, gy[ty]);
+                    x1 = Math.Max(x1, gx[tx + 1]); y1 = Math.Max(y1, gy[ty + 1]);
+                    cellAt[t] = cells.Count;
+                }
+
+                if (region is not null) counts.Cut++;
+
+                cellAt[q] = cells.Count;
+                cells.Add(new PlanarCell(li, ix, iy, x0, y0, x1, y1, region));
+            }
+    }
+
+    /// <summary>
+    /// <b>R-cut-4, decided in the MESHER because that is where the basis set is built.</b>
+    ///
+    /// <para>Three ways a grid adjacency fails to be a rooftop once cells follow the metal, and all
+    /// three are silent if they are not asked here: the shared edge can be entirely outside the metal
+    /// (adjacent on the grid, not connected on the conductor); it can be a sliver, which is R-cut-3's
+    /// problem in the other axis; and a half can fail to be SWEPT by the face, in which case the unit
+    /// current leaks out through the rim instead of crossing the edge — see
+    /// <see cref="RooftopSupport"/>'s header. A whole-rectangle pair passes all three by construction,
+    /// which is why the staircase path does not pay for this at all.</para>
+    /// </summary>
+    private static bool FaceCarriesABasis(PlanarCell a, PlanarCell b, PlanarBasisDirection dir,
+                                          double sharedCoord, ConformalCounts counts)
+    {
+        if (a.Region is null && b.Region is null) return true;
+
+        var sa = RooftopSupport.Build(a, dir, sharedIsHigh: true,  sharedCoord);
+        var sb = RooftopSupport.Build(b, dir, sharedIsHigh: false, sharedCoord);
+
+        double face = Math.Min(sa.SharedFaceLength, sb.SharedFaceLength);
+        double refLen = dir == PlanarBasisDirection.X
+            ? Math.Min(a.Height, b.Height) : Math.Min(a.Width, b.Width);
+
+        bool sound = sa.Anchored && sb.Anchored
+                  && face > 1e-9 * refLen
+                  && Math.Abs(sa.Area - a.Area) <= 1e-9 * a.Area
+                  && Math.Abs(sb.Area - b.Area) <= 1e-9 * b.Area;
+
+        if (!sound) counts.RefusedFaces++;
+        return sound;
+    }
+
+    private static bool InMetal(IReadOnlyList<PlanarPolygon> polys, double x, double y)
+    {
+        foreach (var p in polys) if (p.Contains(x, y)) return true;
+        return false;
+    }
+
+    /// <summary>The length of the region's boundary lying on one grid line — R-cut-3's "the face it
+    /// shares". Because the cells tile, this same segment IS the neighbour's face, so only one of the
+    /// two has to be measured.</summary>
+    private static double FaceLength(PlanarCellRegion region, bool vertical, double line, double tol)
+    {
+        double total = 0;
+        foreach (var piece in region.Pieces)
+            for (int i = 0, n = piece.Count, j = n - 1; i < n; j = i++)
+            {
+                var a = piece[j];
+                var b = piece[i];
+                double ca = vertical ? a.X : a.Y, cb = vertical ? b.X : b.Y;
+                if (Math.Abs(ca - line) > tol || Math.Abs(cb - line) > tol) continue;
+                total += vertical ? Math.Abs(b.Y - a.Y) : Math.Abs(b.X - a.X);
+            }
+        return total;
+    }
+
+    /// <summary>
+    /// Whether any part of the ring lies in or on the rectangle: a vertex inside, or an edge crossing
+    /// it. <b>Both halves are needed</b> — an edge can cross a cell with neither endpoint in it, and a
+    /// whole hole ring can sit inside a cell with no edge crossing its sides.
+    /// </summary>
+    private static bool RingTouchesRect(IReadOnlyList<EmPoint> ring,
+                                        double x0, double y0, double x1, double y1)
+    {
+        int n = ring.Count;
+        for (int i = 0; i < n; i++)
+        {
+            var p = ring[i];
+            if (p.X >= x0 && p.X <= x1 && p.Y >= y0 && p.Y <= y1) return true;
+        }
+        for (int i = 0, j = n - 1; i < n; j = i++)
+            if (SegmentMeetsRect(ring[j].X, ring[j].Y, ring[i].X, ring[i].Y, x0, y0, x1, y1))
+                return true;
+        return false;
+    }
+
+    /// <summary>Liang–Barsky: does the segment intersect the closed rectangle?</summary>
+    private static bool SegmentMeetsRect(double ax, double ay, double bx, double by,
+                                         double x0, double y0, double x1, double y1)
+    {
+        double dx = bx - ax, dy = by - ay;
+        double t0 = 0, t1 = 1;
+
+        return Clip(-dx, ax - x0) && Clip(dx, x1 - ax) && Clip(-dy, ay - y0) && Clip(dy, y1 - ay);
+
+        bool Clip(double p, double q)
+        {
+            if (p == 0) return q >= 0;
+            double r = q / p;
+            if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+            else       { if (r < t0) return false; if (r < t1) t1 = r; }
+            return true;
+        }
+    }
 
     // ── R-msh-5: the reference length ─────────────────────────────────────────────────────────
 

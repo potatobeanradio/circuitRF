@@ -44,8 +44,11 @@ public enum PlanarBudgetVerdict
 /// <param name="GuidedWavelengthM">λ_g in the local dielectric at that frequency.</param>
 /// <param name="MaxCellSizeM">The λ_g/N cap that produced <paramref name="MaxCellEdgeM"/>.</param>
 /// <param name="EdgeReferenceLengthM">R-msh-5 — the length the edge cell is a fraction OF.</param>
-/// <param name="StaircasedPolygons">How many input polygons were not Manhattan and are therefore
-/// approximated by a staircase (D2). Zero means the mesh tiles its input exactly.</param>
+/// <param name="StaircasedPolygons">How many input polygons were not Manhattan. <b>Under
+/// <see cref="PlanarBoundaryCells.Staircase"/> they are approximated by a staircase (D2) and zero
+/// means the mesh tiles its input exactly; under <see cref="PlanarBoundaryCells.Conformal"/> they are
+/// CUT rather than staircased, so this counts the polygons the cut cells were built for</b> and the
+/// tiling question is answered by <paramref name="StaircaseFallbackCells"/> instead.</param>
 /// <param name="ViaUnknownCount">L9c — how many of <paramref name="UnknownCount"/> are VERTICAL
 /// (via) bases. They sit at the END of the unknown vector (R-via-5), so the horizontal unknowns are
 /// <c>UnknownCount − ViaUnknownCount</c> and their indices are unchanged by adding a via.</param>
@@ -54,6 +57,25 @@ public enum PlanarBudgetVerdict
 /// <see cref="PlanarBudgetVerdict.Refused"/>. Names the predicted N, the ceiling, and what to change.</param>
 /// <param name="Notes">Human-readable remarks: the staircasing note, the R-msh-8a analytic-model
 /// notes, the warning band, anything auto-derived a user would otherwise have to guess at.</param>
+/// <param name="BoundaryCells">
+/// <b>Which boundary model produced this mesh.</b> Reported rather than inferred, because every
+/// number in this report means a different thing under the two and a <c>.snp</c> produced under one
+/// is not current for the other (<c>EmSnpProvenance.MeshHash</c> hashes it for exactly that reason).
+/// </param>
+/// <param name="CutCellCount">How many cells follow the metal rather than the grid — i.e. carry a
+/// <see cref="PlanarCell.Region"/>. Zero on a Manhattan layout under either model.</param>
+/// <param name="MergedSliverCount">R-cut-3 — how many sliver cells were absorbed into a neighbour. A
+/// mesher that silently re-shapes cells is worse than one that says it did.</param>
+/// <param name="StaircaseFallbackCells">
+/// <b>How many cells the conformal pass refused to cut and left on L8b's staircase decision</b> —
+/// a cell touched by two drawn shapes, by a hole ring, or whose clipped region is not convex (a
+/// reflex vertex of the artwork inside one cell). §2 requires each of those be a refusal or a
+/// refinement instruction and never a silently-wrong cell; this is the count that makes it the
+/// latter, and refining the mesh drives it to zero.
+/// </param>
+/// <param name="MeshedAreaM2">Σ of the cells' areas — <b>the tiling gate's own quantity</b> (R-cut-1).
+/// Against the drawn artwork's area it is the mesh's area error, which L8b measured at 0.47–0.59% on
+/// the shipping tapers and which conformal cells are meant to take to round-off.</param>
 public sealed record PlanarMeshReport(
     PlanarMesh            Mesh,
     int                   CellCount,
@@ -72,7 +94,12 @@ public sealed record PlanarMeshReport(
     int                   ViaUnknownCount,
     PlanarBudgetVerdict   Verdict,
     string?               Refusal,
-    IReadOnlyList<string> Notes)
+    IReadOnlyList<string> Notes,
+    PlanarBoundaryCells   BoundaryCells          = PlanarBoundaryCells.Staircase,
+    int                   CutCellCount           = 0,
+    int                   MergedSliverCount      = 0,
+    int                   StaircaseFallbackCells = 0,
+    double                MeshedAreaM2           = 0)
 {
     /// <summary>True when the problem may be handed to a solver — R17's gate, asked once.</summary>
     public bool CanSolve => Verdict != PlanarBudgetVerdict.Refused;
