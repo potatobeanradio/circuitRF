@@ -230,7 +230,7 @@ public class EmAcceptanceBudgetTests(Xunit.Abstractions.ITestOutputHelper output
         int total = Budget.Sum(b => b.Seconds);
         output.WriteLine($"R18 (kernel B, bend) — {interactions} interactions, budget {total} s");
         foreach (var (step, s) in Budget) output.WriteLine($"    {s,2} s  {step}");
-        string why = result.Warnings.First(n => n.Contains("kernel", StringComparison.OrdinalIgnoreCase));
+        string why = (result.Notes ?? []).First(n => n.Contains("kernel", StringComparison.OrdinalIgnoreCase));
         output.WriteLine("    -- analysis kind: 0 interactions (Auto refuses A, picks B, and SAYS SO)");
         output.WriteLine("       " + why);
         output.WriteLine($"    AFTER Simulate the user waits {sw.Elapsed.TotalSeconds:F1} s " +

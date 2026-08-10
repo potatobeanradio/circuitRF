@@ -585,6 +585,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     // ── Port tool (L8e D3) ──────────────────────────────────────────────────────────────────────
 
+    /// <summary>The live Port-tool ghost: exactly what a click at the current cursor would place,
+    /// or null when the cursor is off every conductor (where a click places nothing). Built by
+    /// <see cref="TryBuildPortPlacement"/> — the same method the commit uses — so the ghost's
+    /// snapped position, inferred direction and resolved width are the ones that will land.</summary>
+    private LabelShape? _portGhost;
+
     /// <summary>
     /// §10.6's "click an edge, get P1", and <b>the tool sets the port flag and nothing else</b>.
     ///
@@ -598,32 +604,78 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// shape would give one quantity two homes, and the layout is the wrong one: the same artwork can
     /// legitimately be analysed by two EM setups at two reference impedances.</para>
     ///
-    /// <para><b>The SIDE is not here either.</b> Which end of a conductor a port names is inferred
-    /// from the geometry at extraction time, reported, and refused when ambiguous
-    /// (<c>EmPortExtraction</c>, R-res-5) — a side stored on the shape would go stale the moment the
-    /// artwork moved under it.</para>
+    /// <para><b>The DIRECTION is seeded here and is then the user's</b> (owner report, 2026-08-09).
+    /// It was previously inferred at extraction time and nowhere else, so nothing on screen said
+    /// which way a port faced and there was nothing to rotate. The tool now infers it once, at
+    /// placement, from the artwork under the click, and stores it in
+    /// <see cref="LabelShape.PortDirection"/>; Rotate advances it from there. A port placed on bare
+    /// dielectric gets no direction at all rather than a guessed one — null still means "infer it",
+    /// which is exactly what every pre-existing <c>.clay</c> carries.</para>
     /// </summary>
-    private void CommitPortPlacement(double wx, double wy, KeyModifiers mods, double zoomPxPerDbu)
+    private void CommitPortPlacement(double wx, double wy, KeyModifiers mods, double zoomPxPerDbu, long snapTolDbu)
+    {
+        if (TryBuildPortPlacement(wx, wy, mods, snapTolDbu, zoomPxPerDbu) is not { } label)
+        {
+            // Owner report, 2026-08-09: "in place-port mode, when I clicked away from the metal, a
+            // port was created." A port names an END OF A CONDUCTOR — off the metal there is no end
+            // to name, no direction to face and no width to be. Refused with a reason rather than
+            // placed as a label that looks like a port and is refused much later, at Simulate.
+            ReportWarning("Port: click on a conductor — a port names the end of a piece of metal, " +
+                          "so there is nothing to place one on here.");
+            return;
+        }
+
+        _portGhost = null;
+        Execute(new AddShapeCommand(Model, label));
+        RebuildOverlay();
+    }
+
+    /// <summary>
+    /// The ONE place a Port-tool placement is decided — snap point, conductor, direction, name — used
+    /// by BOTH the hover ghost and the click that commits, so <b>what the ghost shows is what lands</b>
+    /// rather than two independently-computed answers that can disagree (owner request, 2026-08-09:
+    /// "the port needs a ghost rendering… the ghost's snapping and sizes also need to render live").
+    /// Returns null exactly when the point is off every conductor — which is what makes the ghost
+    /// VANISH there, saying "clicking here creates nothing" before the click rather than after it.
+    ///
+    /// <para>R-snpf-4's own rule, applied to the Port tool: geometry snap overrides grid snap only
+    /// when it genuinely has a REAL feature to offer. A port wants to land exactly on a conductor's
+    /// corner or edge midpoint far more often than on the grid, and the alternative — zoom in and
+    /// eyeball it — is what the marker is for.</para>
+    /// </summary>
+    private LabelShape? TryBuildPortPlacement(double wx, double wy, KeyModifiers mods, long snapTolDbu, double zoomPxPerDbu)
     {
         bool suspend = (mods & KeyModifiers.Alt) != 0;
-        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+
+        UpdateSnapMarker((long)Math.Round(wx), (long)Math.Round(wy), mods, Math.Max(snapTolDbu, 0), 1);
+        var (sx, sy) = _snapCandidateIsRealTarget && _currentSnapCandidate is { } target
+            ? (target.X, target.Y)
+            : LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+
+        var conductorAt = LayoutPortDirection.LookupFor(Model, Technology, InstanceBaseDir);
+        if (conductorAt(sx, sy) is not { } conductor) return null;
 
         // The same visibility floor an ordinary committed label gets — a port marker that renders
         // sub-pixel is a port the user cannot see they placed (the L1-fix default-zoom lesson).
-        long height = Renderers.LayoutRenderer.EffectiveVisibleLabelHeightDbu(_labelHeightDbu, zoomPxPerDbu);
+        long height = zoomPxPerDbu > 0
+            ? Renderers.LayoutRenderer.EffectiveVisibleLabelHeightDbu(_labelHeightDbu, zoomPxPerDbu)
+            : _labelHeightDbu;
 
-        var label = new LabelShape
+        return new LabelShape
         {
-            Layer    = CurrentLayerKey,
-            X        = sx,
-            Y        = sy,
-            Text     = NextPortName(),
-            Height   = height,
-            Rotation = LayoutRotation.R0,
-            IsPort   = true,
+            Layer         = CurrentLayerKey,
+            X             = sx,
+            Y             = sy,
+            Text          = NextPortName(),
+            Height        = height,
+            Rotation      = LayoutRotation.R0,
+            IsPort        = true,
+            // The SAME answer Resolve would infer — a pin's own inward direction when the point
+            // names one, the box's nearest-side inference otherwise. Re-deriving it here from the
+            // box alone (as this did) is what let a port on a tapered PCell be stamped with a
+            // direction its own marker then disagreed with.
+            PortDirection = LayoutPortDirection.DirectionAt(conductor, sx, sy),
         };
-        Execute(new AddShapeCommand(Model, label));
-        RebuildOverlay();
     }
 
     /// <summary>
@@ -1322,10 +1374,44 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         SelectionStatusText = ComputeGenericSelectionStatus();
     }
 
+    /// <summary>True while the current move drag is a lone POINT-LIKE shape — today, an EM port —
+    /// which geometry snap may attract to an absolute target the same way a grab-role drag can.
+    ///
+    /// <para><b>Owner report, 2026-08-09: "the port won't snap until it's over metal. I'd like it to
+    /// snap to the spot even while dragging over white space, if it's within the threshold."</b>
+    /// Target attraction was gated on <see cref="_snapDragActive"/>, which is set only when the PRESS
+    /// itself landed on a snap marker — and a <c>LabelShape</c> contributes no snap features, so a
+    /// port pressed over empty space began an ordinary body drag and geometry snap never engaged for
+    /// the rest of the gesture. Over metal the press happened to find the CONDUCTOR's own feature, so
+    /// snap worked there and nowhere else: exactly the reported asymmetry.</para>
+    ///
+    /// <para><b>Why a port may do this when an ordinary shape may not.</b> R-cmb-4/5's gate exists so
+    /// a body drag keeps snapping the DELTA — an off-grid shape must not have its internal geometry
+    /// re-quantised by being moved (R-L1c-3). A port is a single anchor point: it HAS no internal
+    /// geometry to preserve, and landing exactly on a conductor's corner or edge midpoint is the
+    /// entire reason it is being dragged. So the absolute branch is not a relaxation of that rule, it
+    /// is the same rule with nothing left for it to protect.</para></summary>
+    private bool _pointSnapDragActive;
+
     private void BeginMoveDrag(long px, long py)
     {
         if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return;
         _selectDragKind = SelectDragKind.Move;
+
+        // A lone port anchors the drag at its OWN anchor rather than at the raw click, so what lands
+        // on the snap target is the port itself — not wherever within its pick region the user
+        // happened to press. (The pick region is deliberately generous; see LayoutHitTest.)
+        _pointSnapDragActive = false;
+        if (!_snapDragActive && _selectedInstanceIndices.Count == 0 && _selectedIndices.Count == 1)
+        {
+            int i = _selectedIndices[0];
+            if (i >= 0 && i < Model.Shapes.Count && Model.Shapes[i] is LabelShape { IsPort: true } port)
+            {
+                _pointSnapDragActive = true;
+                px = port.X; py = port.Y;
+            }
+        }
+
         _moveAnchorX = px; _moveAnchorY = py;
         _moveLiveDx = 0; _moveLiveDy = 0;
         _moveHasMoved = false;
@@ -1530,6 +1616,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 _selectDragKind = SelectDragKind.None;
                 _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
                 _snapDragActive = false;
+                _pointSnapDragActive = false;
             }
             // brief-geometry-snap-followups.md R-snpf-7/8: this is the plain-hover path (no button
             // down, no drag). UpdateSnapMarker above already ran the query and refreshed
@@ -1637,7 +1724,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void RecomputeMoveDelta(long px, long py, bool suspend)
     {
         long dx, dy;
-        if (_snapDragActive && !suspend && _snapCandidateIsRealTarget && _currentSnapCandidate is { } target)
+        if ((_snapDragActive || _pointSnapDragActive) && !suspend
+            && _snapCandidateIsRealTarget && _currentSnapCandidate is { } target)
         {
             dx = target.X - _moveAnchorX;
             dy = target.Y - _moveAnchorY;
@@ -1688,6 +1776,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         _snapDragActive = false;
+        _pointSnapDragActive = false;
     }
 
     /// <summary>R-L1i-1, extended by R-fix-3: commit is just "settle on whatever the shared compute
@@ -1993,7 +2082,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (ActiveTool == Tool.Via) { CommitViaPlacement(wx, wy, mods); return; }
 
-        if (ActiveTool == Tool.Port) { CommitPortPlacement(wx, wy, mods, zoomPxPerDbu); return; }
+        if (ActiveTool == Tool.Port) { CommitPortPlacement(wx, wy, mods, zoomPxPerDbu, Math.Max(snapTolDbu, 0)); return; }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 
@@ -2059,6 +2148,20 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             bool instanceSuspend = (mods & KeyModifiers.Alt) != 0;
             UpdateInstancePlacementCursor(wx, wy, instanceSuspend);
+            return;
+        }
+
+        // The Port tool snaps to geometry (see CommitPortPlacement), so the marker has to be live
+        // while hovering — otherwise the point the click lands on is invisible until after the fact.
+        if (ActiveTool == Tool.Port)
+        {
+            // TryBuildPortPlacement runs UpdateSnapMarker itself (it has to — the snap candidate is
+            // what decides where the port lands), so the marker stays live for free and the ghost is
+            // built from the same answer. A null result means "off metal": the ghost vanishes while
+            // the snap marker stays, which is the affordance for "clicking here creates nothing".
+            _portGhost = TryBuildPortPlacement(wx, wy, mods, Math.Max(snapTolDbu, 0),
+                                               pixelDbu > 0 ? 1.0 / pixelDbu : 0);
+            RebuildOverlay();
             return;
         }
 
@@ -2212,10 +2315,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _labelBuffer     = "";
         _typedWidthDbu   = null;
         _typedHeightDbu  = null;
+        _portGhost       = null;
         CancelMarqueeIfActive(); // gate 7: leaves _selectedIndices untouched, clears the preview
         _selectDragKind  = SelectDragKind.None;
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         _snapDragActive = false;
+        _pointSnapDragActive = false;
         ResetHandleDragState();
         ResetScaleDragState();
         // Escape mid-drag: nothing committed, no undo entry — the parameters were never touched,
@@ -2418,6 +2523,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             };
             DrawReadoutText = BuildLabelTypingStatus();
         }
+        else if (_portGhost is { } portGhost)
+        {
+            inProgress = portGhost;
+            DrawReadoutText = $"Port {portGhost.Text} — click to place";
+        }
         else
         {
             // A parameter-handle drag owns the readout for its whole gesture — it is set INSIDE the
@@ -2489,11 +2599,27 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
 
         IReadOnlyList<LayoutShape>? pastePreview = null;
-        if (_pastePlacementShapes is { Count: > 0 } pasteShapes)
+        IReadOnlyList<LayoutOverlay.GhostInstance>? pasteInstancePreview = null;
+        if (_pastePlacementShapes is { } pasteShapes)
         {
             long dx = _pasteCursorX - _pastePlacementAnchorX;
             long dy = _pasteCursorY - _pastePlacementAnchorY;
-            pastePreview = LayoutFragment.Translate(pasteShapes, dx, dy);
+            if (pasteShapes.Count > 0) pastePreview = LayoutFragment.Translate(pasteShapes, dx, dy);
+
+            // The instance half of the ghost (owner report: the ports followed the cursor and the
+            // MLIN did not). Translated the same way and by the same delta as the shapes, so the two
+            // halves of one fragment can never drift apart mid-gesture.
+            if (_pastePlacementInstances.Count > 0)
+            {
+                var moved = LayoutFragment.Translate(_pastePlacementInstances, dx, dy);
+                var ghosts = new List<LayoutOverlay.GhostInstance>(moved.Count);
+                for (int i = 0; i < moved.Count; i++)
+                    ghosts.Add(new LayoutOverlay.GhostInstance(
+                        moved[i],
+                        CellHierarchy.InstanceBbox(moved[i], InstanceBaseDir),
+                        i < _pastePlacementInstanceBoxOnly.Length && _pastePlacementInstanceBoxOnly[i]));
+                pasteInstancePreview = ghosts;
+            }
         }
 
         // L1i: one highlight path, not a committed one and a preview one — the marquee preview IS the
@@ -2518,6 +2644,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             DragOverrides = dragOverrides,
             InstanceDragOverrides = instanceDragOverrides,
             PastePreview = pastePreview,
+            PastePreviewInstances = pasteInstancePreview,
             // brief-L3a-followups.md §4: the Instance tool's own ghost and the drag-and-drop ghost are
             // two independent state machines (see LayoutEditorViewModel.Instances.cs's own header) that
             // are never simultaneously active in normal use — one overlay slot serves both.

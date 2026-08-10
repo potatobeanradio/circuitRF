@@ -984,6 +984,14 @@ public sealed class LayoutCanvas : Control
 
         void Sep() { if (items.Count > 0) items.Add(new Separator()); }
 
+        // Rotate is reachable from the keyboard already, and was reachable from nowhere else — which
+        // is how an EM port, whose whole direction IS its rotation, could look like it had none
+        // (owner report, 2026-08-09). Same disabled-with-a-reason rule as everything below it.
+        Sep();
+        var rotAvail = _viewModel.RotateAvailability;
+        AddAvailItem("Rotate 90° CCW", rotAvail).Click += (_, _) => { _viewModel.RotateSelection(clockwise: false); InvalidateVisual(); };
+        AddAvailItem("Rotate 90° CW", rotAvail).Click  += (_, _) => { _viewModel.RotateSelection(clockwise: true);  InvalidateVisual(); };
+
         Sep();
         var boolAvail = _viewModel.BooleanOpAvailability;
         AddAvailItem("Union", boolAvail).Click      += (_, _) => { _viewModel.ApplyUnion(); InvalidateVisual(); };

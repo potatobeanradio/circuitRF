@@ -61,10 +61,13 @@ public sealed partial class LayoutEditorViewModel
     }
 
     /// <summary>R-L3c-1a's outcome preview — "→ 2,500 instances" for an array, "→ 20 shapes" for a
-    /// plain instance — computed from the SAME <see cref="LayoutFlatten.FlattenOneLevel"/> path the
-    /// commit itself uses, so the preview can never drift from the real outcome (it does not
-    /// re-derive the count some other way). Null when nothing is selected or the instance does not
-    /// resolve — the enablement gate already reports those cases on its own.</summary>
+    /// plain instance. The shape count comes from <see cref="LayoutFlatten.CountOneLevelShapes"/>,
+    /// which shares its "does this survive a flatten" predicate with the emit loop itself — this
+    /// getter previously read <c>res.View.Shapes.Count</c> directly and claimed in this very comment
+    /// not to re-derive the count, which is exactly what it was doing; the day the emit learned to
+    /// drop a sub-cell's own port labels, the menu went on promising three shapes for a one-shape
+    /// result. Null when nothing is selected or the instance does not resolve — the enablement gate
+    /// already reports those cases on its own.</summary>
     public string? FlattenOneLevelOutcomeText
     {
         get
@@ -73,8 +76,9 @@ public sealed partial class LayoutEditorViewModel
             var inst = Model.Instances[_selectedInstanceIndices[0]];
             if (inst.Rows > 1 || inst.Cols > 1)
                 return $"→ {(long)Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols):N0} instance(s)";
-            var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
-            return res.State == CellLayoutState.Resolved ? $"→ {res.View!.Shapes.Count:N0} shape(s)" : null;
+            return LayoutFlatten.CountOneLevelShapes(inst, InstanceBaseDir) is { } n
+                ? $"→ {n:N0} shape(s)"
+                : null;
         }
     }
 
@@ -104,8 +108,9 @@ public sealed partial class LayoutEditorViewModel
             var inst = Model.Instances[_selectedInstanceIndices[0]];
             if (inst.Rows > 1 || inst.Cols > 1)
                 return (long)Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols) > FlattenConfirmThreshold;
-            var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
-            return res.State == CellLayoutState.Resolved && res.View!.Shapes.Count > FlattenConfirmThreshold;
+            // Same count the menu label shows — a confirm dialog that fires on a threshold the
+            // preview beside it never crossed reads as the app disagreeing with itself.
+            return LayoutFlatten.CountOneLevelShapes(inst, InstanceBaseDir) > FlattenConfirmThreshold;
         }
     }
 

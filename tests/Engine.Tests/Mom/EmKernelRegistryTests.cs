@@ -61,9 +61,13 @@ public class EmKernelRegistryTests
         Assert.True(c.Ok);
         Assert.Equal(EmAnalysisKind.CrossSection, c.Kind);
         Assert.Equal(QuasiStaticKernel.KernelName, c.KernelName);
-        Assert.Contains("Auto chose", c.Reason, StringComparison.Ordinal);
+        // Owner request (2026-08-09): the reason names the analysis the way the DROPDOWN does, so
+        // these assert against EmKernelRegistry's own labels rather than a hand-typed copy — a
+        // reason that says "set Analysis to X" when the dropdown offers "Y" is worse than none.
+        Assert.Contains(EmKernelRegistry.AutoChoiceLabel + " chose", c.Reason, StringComparison.Ordinal);
         // R-msh-8a's shape: name the thing, name the alternative.
-        Assert.Contains("Planar", c.Reason, StringComparison.Ordinal);
+        Assert.Contains(EmKernelRegistry.UniformLineChoiceLabel, c.Reason, StringComparison.Ordinal);
+        Assert.Contains(EmKernelRegistry.PlanarChoiceLabel, c.Reason, StringComparison.Ordinal);
     }
 
     /// <summary>R-res-3's second half: auto never silently picks the SLOWER kernel when the cheaper
@@ -111,7 +115,8 @@ public class EmKernelRegistryTests
         Assert.Equal(EmAnalysisKind.Planar, c.Kind);
         Assert.Contains("explicitly", c.Reason, StringComparison.Ordinal);
         // …and the panel is told what Auto WOULD have done, so the cost is a choice, not a surprise.
-        Assert.Contains("Auto would have picked it", c.Reason, StringComparison.Ordinal);
+        Assert.Contains($"{EmKernelRegistry.AutoChoiceLabel} would have picked it", c.Reason,
+                        StringComparison.Ordinal);
     }
 
     [Fact]
@@ -133,7 +138,8 @@ public class EmKernelRegistryTests
         Assert.False(c.Ok);
         Assert.Equal(EmAnalysisKind.CrossSection, c.Kind);
         Assert.Contains(a.Refusal!, c.Refusal!, StringComparison.Ordinal);
-        Assert.Contains("set this EM setup's analysis to Planar", c.Refusal!, StringComparison.Ordinal);
+        Assert.Contains($"set Analysis to \"{EmKernelRegistry.PlanarChoiceLabel}\"", c.Refusal!,
+                        StringComparison.Ordinal);
     }
 
     [Fact]
@@ -145,7 +151,8 @@ public class EmKernelRegistryTests
         Assert.False(c.Ok);
         Assert.Equal(EmAnalysisKind.Planar, c.Kind);
         Assert.Contains(b.Refusal!, c.Refusal!, StringComparison.Ordinal);
-        Assert.Contains("Cross-section", c.Refusal!, StringComparison.Ordinal);
+        Assert.Contains($"set Analysis to \"{EmKernelRegistry.UniformLineChoiceLabel}\"", c.Refusal!,
+                        StringComparison.Ordinal);
     }
 
     [Fact]

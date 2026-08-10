@@ -189,6 +189,30 @@ public sealed class LabelShape : LayoutShape
     public LayoutRotation Rotation { get; set; } = LayoutRotation.R0;
     public bool IsPort { get; set; }
 
+    /// <summary>
+    /// <b>An EM port's direction — the way current flows INTO the structure — when it is stated
+    /// rather than inferred.</b> Meaningful only when <see cref="IsPort"/>; ignored otherwise.
+    ///
+    /// <para><c>R0</c> = +x̂, <c>R90</c> = +ŷ, <c>R180</c> = −x̂, <c>R270</c> = −ŷ, i.e. the usual
+    /// counter-clockwise convention in layout's y-up world. <c>EmPortExtraction</c> maps that onto
+    /// the conductor END the port names (a port whose current flows +x̂ sits on the conductor's
+    /// low-x end), so this is the same quantity <c>PlanarPortSide</c> carries, expressed the way a
+    /// user points at it.</para>
+    ///
+    /// <para><b>null means "infer it from the geometry", which is exactly what every port did before
+    /// this field existed (owner report, 2026-08-09).</b> That is deliberate and is what makes the
+    /// field additive in behaviour as well as in schema: every <c>.clay</c> written before today has
+    /// null here and extracts precisely as it did, ambiguity refusals included. The Port tool seeds
+    /// it at placement so a new port's direction is visible and editable from the moment it lands,
+    /// and Rotate advances it — for a port label Rotate turns the ARROW and leaves the text upright,
+    /// because a right-hand port would otherwise be legible only upside down.</para>
+    ///
+    /// <para>Additive: no <c>.clay</c> <c>FormatVersion</c> bump, and omitted from the file entirely
+    /// when null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LayoutRotation? PortDirection { get; set; }
+
     /// <summary>Additive (no <c>.clay</c> <c>FormatVersion</c> bump) — a newly-placed label always
     /// defaults to Regular; edited via the Properties Inspector.</summary>
     public LabelFontStyle Style { get; set; } = LabelFontStyle.Regular;

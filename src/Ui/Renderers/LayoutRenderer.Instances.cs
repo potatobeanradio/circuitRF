@@ -291,99 +291,42 @@ public static partial class LayoutRenderer
         }
     }
 
-    /// <summary>Live-resolved pin cache, keyed by the resolved sub-cell's <see cref="LayoutView"/>
-    /// REFERENCE — mirrors <see cref="_cellCompileCache"/>'s own self-invalidating lifecycle (a file
-    /// or in-session edit produces a NEW reference on the next resolve, which is simply a cache miss
-    /// here; the old entry becomes unreachable and is reclaimed with no explicit eviction call
-    /// needed). A PCell generator is a PURE function of its inputs (pcell-contract.md R5), so calling
-    /// it fresh here — rather than trying to recover direction/width from the persisted <c>IsPort</c>
-    /// <see cref="LabelShape"/>s <see cref="PCells.GeneratedCellStore.GetOrCreate"/> already writes,
-    /// which only carry name/position/layer — is exact and needs no new persisted state at all.</summary>
-    private static readonly ConditionalWeakTable<LayoutView, PinCacheEntry> _pcellPinCache = new();
+    /// <summary>Half-side of a pin marker, in DEVICE pixels — constant on screen at any zoom.</summary>
+    private const double PinMarkerHalfDevicePixels = 3.0;
 
-    private sealed class PinCacheEntry
-    {
-        public required IReadOnlyList<PCellPin> Pins;
-    }
-
-    private static IReadOnlyList<PCellPin> ResolvePins(LayoutView subView, Technology? tech)
-    {
-        // The cell's OWN persisted pins first. This is what makes the overlay work for a cell that
-        // was IMPORTED rather than generated — it has no generator to re-invoke, and before pins were
-        // persisted it could never show one. A generated cell lands here too, since its pins are
-        // written at generation.
-        if (subView.Pins.Count > 0)
-            return [.. subView.Pins.Select(p => new PCellPin(p.Name, p.X, p.Y, p.Layer, p.WidthDbu, p.OutwardDeg))];
-
-        // Nothing persisted, but the view knows what generated it: a PCell generator is a pure
-        // function of its inputs (pcell-contract.md R5), so calling it fresh is exact. Reached by a
-        // generated cell written before pins were persisted — a pure cache, so this heals on the next
-        // regeneration rather than needing a migration.
-        if (subView.PCellOrigin is not { } origin) return [];
-        if (_pcellPinCache.TryGetValue(subView, out var cached)) return cached.Pins;
-
-        // A generator can now be a script in another process, so this call can FAIL — which a
-        // built-in never could. This is the render path: a failure here must cost the pin overlay,
-        // never the frame. Cached either way (as an empty list) so a broken generator is asked once
-        // per resolved cell rather than on every repaint.
-        IReadOnlyList<PCellPin> pins = [];
-        if (PCellRegistry.TryGet(origin.GeneratorId, out var generator))
-        {
-            try { pins = generator(origin.Parameters, tech, PCellLayerSelection.Default).Pins; }
-            catch (Layout.PCells.Wire.PCellWireException) { pins = []; }
-        }
-        _pcellPinCache.AddOrUpdate(subView, new PinCacheEntry { Pins = pins });
-        return pins;
-    }
-
-    private const double PinDotRadiusDevicePixels = 3.0;
-    private const double PinTickLengthDevicePixels = 9.0;
-    private const long PinDirectionSampleDbu = 100_000; // 100 um at the default 1 DBU = 1 nm resolution
-
-    /// <summary>Draws <paramref name="subView"/>'s pins (via <see cref="ResolvePins"/>) at every one of
-    /// <paramref name="inst"/>'s array placements — a constant-pixel-size filled dot at the pin
-    /// position plus a short outward-direction tick (R-L5g-13's "a bare dot cannot say which way a
-    /// pin faces"). The tick direction is derived by transforming a SECOND cell-local sample point
-    /// (offset from the pin along its own <see cref="PCellPin.OutwardDirectionDeg"/>) through the
-    /// SAME <see cref="LayoutInstanceTransform.TransformPoint"/> math the geometry itself uses, then
-    /// normalizing the resulting screen-space vector — this is what makes the tick correctly follow
-    /// the instance's own rotation/mirror (and even a reflected array cell) without a second,
-    /// direction-specific transform to keep in sync with the position one.</summary>
+    /// <summary>Draws <paramref name="subView"/>'s pins (via <see cref="Layout.CellPins"/>) at every one of
+    /// <paramref name="inst"/>'s array placements — a constant-pixel-size filled SQUARE at the pin
+    /// position, and nothing else.
+    ///
+    /// <para><b>A square, not a circle (owner request, 2026-08-09):</b> it matches the schematic
+    /// editor's own port marker (<c>SchematicRenderer</c>'s <c>PortBoxHalf</c> box), so a connection
+    /// point reads the same way in both editors. It also keeps a pin visually distinct from an EM
+    /// PORT, which draws an arrow-and-width-bar in world space rather than a screen-space glyph.</para>
+    ///
+    /// <para><b>No outward-direction tick, deliberately (owner report, 2026-08-09).</b> R-L5g-13
+    /// originally added a short line from the dot along the pin's own
+    /// <see cref="PCellPin.OutwardDirectionDeg"/> on the reasoning that "a bare dot cannot say which
+    /// way a pin faces". In practice that line reads as an EM PORT direction indicator — a genuinely
+    /// different concept that now has its own rendering — so the two were being confused on screen.
+    /// A cell pin is a connection point; which way it faces is carried by
+    /// <see cref="LayoutPin.OutwardDeg"/> in the model and consumed by connectivity, not by this
+    /// overlay. <b>Do not re-add a line here.</b></para></summary>
     private static void DrawPCellPinOverlay(SKCanvas canvas, LayoutInstance inst, LayoutView subView, Technology? tech,
         PathSpace ps, double scaleUm, LayoutRenderTheme theme, int rows, int cols)
     {
-        var pins = ResolvePins(subView, tech);
+        var pins = Layout.CellPins.Resolve(subView, tech);
         if (pins.Count == 0) return;
 
-        float dotRadius = DevicePixelsToPathSpace(scaleUm, PinDotRadiusDevicePixels);
-        float tickLen = DevicePixelsToPathSpace(scaleUm, PinTickLengthDevicePixels);
+        float half = DevicePixelsToPathSpace(scaleUm, PinMarkerHalfDevicePixels);
         using var dotPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.PCellPin };
-        using var tickPaint = new SKPaint
-        {
-            IsAntialias = true, Style = SKPaintStyle.Stroke,
-            StrokeWidth = DevicePixelsToPathSpace(scaleUm, 1.5), Color = theme.PCellPin,
-        };
 
         for (int r = 0; r < rows; r++)
         for (int col = 0; col < cols; col++)
         foreach (var pin in pins)
         {
-            double dirRad = pin.OutwardDirectionDeg * Math.PI / 180.0;
-            long sampleLx = pin.X + (long)Math.Round(Math.Cos(dirRad) * PinDirectionSampleDbu);
-            long sampleLy = pin.Y + (long)Math.Round(Math.Sin(dirRad) * PinDirectionSampleDbu);
-
             var (wx, wy) = LayoutInstanceTransform.TransformPoint(pin.X, pin.Y, inst, r, col);
-            var (swx, swy) = LayoutInstanceTransform.TransformPoint(sampleLx, sampleLy, inst, r, col);
-
-            float px = ps.X(wx), py = ps.Y(wy);
-            double ddx = ps.X(swx) - px, ddy = ps.Y(swy) - py;
-            double dlen = Math.Sqrt(ddx * ddx + ddy * ddy);
-            if (dlen < 1e-6) { ddx = 1; ddy = 0; dlen = 1; } // degenerate direction — draw the dot only, pointing +X
-            float tx = px + (float)(ddx / dlen * tickLen);
-            float ty = py + (float)(ddy / dlen * tickLen);
-
-            canvas.DrawLine(px, py, tx, ty, tickPaint);
-            canvas.DrawCircle(px, py, dotRadius, dotPaint);
+            float cx = ps.X(wx), cy = ps.Y(wy);
+            canvas.DrawRect(cx - half, cy - half, half * 2, half * 2, dotPaint);
         }
     }
 
@@ -504,6 +447,39 @@ public static partial class LayoutRenderer
     /// cell-picker dialog) always hits this same method — the box-only behavior it originally had is
     /// gone, not preserved as a separate code path, since a resolved cell's real geometry is strictly
     /// more informative for both entry points.</summary>
+    /// <summary>
+    /// A pasted instance whose resolved geometry is too large to redraw every pointer move: a dashed
+    /// accent box at its array-expanded extent, in the SAME visual language as the real ghost, so the
+    /// user is still aiming at something with the right size and position.
+    ///
+    /// <para>The owner's own rule ("if the geometry is too complicated for live rendering, then just
+    /// render a box, but keep the port rendering live") — the shape half of the paste ghost is
+    /// untouched by this, so ports stay live regardless of how heavy the instance beside them is.</para>
+    /// </summary>
+    private static void DrawGhostInstanceBox(SKCanvas canvas, Bbox bb, LayoutRenderTheme theme,
+        PathSpace ps, double scaleUm, LayoutFrameCounters counters)
+    {
+        if (bb.IsEmpty) return;
+
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
+            Color = theme.Selection, PathEffect = SKPathEffect.CreateDash([6f, 4f], 0),
+        };
+        using var fill = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Selection.WithAlpha(40),
+        };
+
+        float x0 = ps.X(bb.MinX), x1 = ps.X(bb.MaxX);
+        float y0 = ps.Y(bb.MaxY), y1 = ps.Y(bb.MinY);   // path space is Y-down
+        var rect = SKRect.Create(x0, y0, x1 - x0, y1 - y0);
+        canvas.DrawRect(rect, fill);
+        canvas.DrawRect(rect, stroke);
+        counters.DrawCalls += 2;
+    }
+
     private static void DrawPendingInstancePlacement(SKCanvas canvas, (LayoutInstance Instance, Bbox Bbox) pending,
         Technology? tech, string baseDir, LayoutRenderTheme theme, PathSpace ps, double scaleUm, LayoutFrameCounters counters)
     {

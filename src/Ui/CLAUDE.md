@@ -1,3 +1,850 @@
+A port on a tapered PCell measured the whole envelope instead of the pin it sat on (2026-08-09) —
+COMPLETE. Owner report: *"the Port snapping (and resultant port width) is incorrect with adding a port
+to Port1 of my MKLOPF component in my MLIN.clay."*
+
+**Confirmed against the owner's own design before anything was changed, and the numbers are the whole
+story.** `LayoutPortDirection.LookupFor`'s instance branch answered with
+`CellHierarchy.InstanceBbox` — the ARRAY-EXPANDED ENVELOPE — because a `Bbox` was the only thing the
+lookup could return. On a straight run of metal that is a fair approximation. On a TAPER it is not
+remotely one: that MKlopf's box spans 63 × 9 mm, and pin 1 is a 1 mm-wide end of it.
+
+| | reported | truth (the cell's own pin) |
+|---|---|---|
+| Port 1 width | 9.233 mm | **1.058 mm** — 8.7× too wide |
+| Port 1 reference plane | y = +3.833 mm | **y = −0.178 mm** — 4.01 mm adrift |
+| Port 2 width | 9.233 mm | **7.094 mm** |
+
+**The "snapping" half and the "width" half are the same bug.** The click DID snap onto the pin — pins
+have been snap features since C1↔C2. What moved was the MARKER: `PlaneOf` puts an R0 plane at
+`(MinX, midY)`, so the width bar was drawn at the envelope's mid-height, 4 mm from the pin the user had
+just snapped to. A marker that lands nowhere near the click reads as the snap having missed.
+
+**THE CELL ALREADY KNEW THE ANSWER, AND THAT IS THE POINT.** `LayoutPin` has carried `WidthDbu` and
+`OutwardDeg` since pins became first-class — the C1↔C2 note calls a pin "an edge, with a width and a
+direction", which is *precisely* what a port needs. Nothing had to be measured or inferred; the lookup
+had no way to say it. So `ConductorLookup` now returns `ConductorInfo(Box, PinFacts?)` and **a pin's
+own facts win where one is named** — exact width, exact plane, and the direction from
+`OutwardDeg + 180°` (current flows IN; outward points OUT). **A bbox is what you fall back to when
+there is no pin, not the thing you prefer.**
+
+**The fallback is kept deliberately, unchanged.** A port on the metal but NOT at a pin still resolves
+against the box — there is genuinely nothing better to say there, and returning nothing would lose the
+marker entirely. Its nearest-side inference is untouched; a gate asserts the box answer still comes
+back for a mid-taper point and that no pin is claimed for it.
+
+**Tolerance is ZERO by default, and that is the rule rather than a default worth widening.** A port
+snapped onto a pin coincides with it EXACTLY, so exact coincidence is the honest test for "this port
+names that pin" — and it correctly declines to claim a pin the user placed a port merely NEAR.
+
+**A pin's direction is carried through the instance's transform with the SAME mirror-then-rotate
+ordering `LayoutInstanceTransform.TransformPoint` uses**, not a second table. A direction that composed
+differently from the position it belongs to would put the arrow and the plane bar on opposite sides of
+one pin — invisible at R0, wrong at every other placement. Gated over all four rotations × mirror.
+Width scales with `Mag`.
+
+**THE PORT TOOL WAS DERIVING THE DIRECTION A SECOND WAY.** `TryBuildPortPlacement` STAMPS
+`PortDirection` at placement and called `FromBbox` directly to do it — so even with `Resolve` fixed, a
+placed port would carry a direction its own marker then disagreed with. It now calls the new
+`DirectionAt`, which is the same pin-first rule `Resolve` infers. That method's own doc comment already
+claimed to be "the ONE place a Port-tool placement is decided"; it now is. Pinned by a gate that
+compares the stamped answer against the inferred one at three points, including the fallback case.
+
+**A stated direction still overrules the geometry, with one added subtlety.** A pin's width is measured
+across the PIN's own axis, so it only answers the question being asked while the stated direction still
+agrees with it. A user who rotated the port has overruled the geometry — measuring the box across
+*their* axis is coarser but honest, and is what happens. Both branches gated.
+
+**One rule, three copies — now one.** The two-branch "what pins does this cell have?" answer (persisted
+`LayoutView.Pins` first, else re-invoke the generator) existed independently in the renderer's pin
+overlay and in `LayoutSnapFeatures`, and this fix needed a third. Extracted to `CellPins.Resolve`
+(framework-free, keeping the renderer's `ConditionalWeakTable` cache), and both prior copies now call
+it. **The second branch is the one that matters**: it only fires for a generated cell written before
+pins were persisted, so a copy that omits it looks correct on every freshly-regenerated cell and
+silently finds nothing on an older one.
+
+**`EmPortExtraction` was never affected and is untouched** — it re-derives the side and the width from
+exact FLATTENED geometry and does not read `LayoutPortDirection` at all. The simulated result was
+right; what was wrong was every number the user could see before running it (the drawn width bar, the
+plane position, the Properties Inspector's Port width).
+
+**Gate:** Ui **6129** (+17, `LayoutPortOnInstancePinTests`) · Core 1238 · Firewall 6 — green. Engine
+not re-run: every changed file is under `src/Ui`, which `Engine.Tests` does not reference. **Confirmed
+to bite:** restoring the bbox-only answer turns **9 of the 17** red. Verified end-to-end against the
+owner's own `MLin.clay` with a throwaway probe (removed): pin 1 now resolves R0 / 1.058 mm / plane
+exactly on the pin, pin 2 R180 / 7.094 mm — both matching the generated cell's declared pins to the DBU.
+
+**Not interactively verified** (no visual driver here) — please confirm: placing a port on Port 1 of
+your MKLOPF now draws its width bar ACROSS the narrow end, at the pin, with the arrow pointing into the
+taper; that Port 2 reads ~7 mm; and that the Properties Inspector's Port width matches the artwork
+rather than the bounding box.
+
+Every EM message was a warning, and the output file had no name (2026-08-09) — COMPLETE. Owner: "a lot
+of the Messages after the EM sim have the yellow warning icon, change those to info — perhaps some
+should be the green check mark, you decide"; and "EM Setup needs a TextEdit box and Browse button for
+the output file name and path… see how the Analysis editor does this, I like the way that one is done."
+
+**ONE LIST WAS DOING THREE JOBS, AND THE ICON IS THE PART THE USER READS.** `EmRunResult.Warnings` had
+accumulated everything the run had to say: the engine's own descriptive output ("Full-wave planar was
+chosen because…", the mesh's cell count, the RLGC notes, the per-port notes), genuine warnings (a stale
+`.snp` on disk), and outright failures (the file could not be written). All three arrived with the
+yellow triangle. **A channel that warns about everything teaches people to ignore it** — which is
+exactly the state the run was in, and the reason the one message that mattered (a write failure) had no
+way to stand out.
+
+**Split by WHAT THE READER MUST DO, not by how alarming the text sounds** — that is what makes the
+three channels decidable at the point each message is produced rather than by a later judgement call:
+- **`Notes`** (Info, ℹ) — the run describing itself. Nothing is wrong; nothing is required.
+- **`Warnings`** (Warning, ⚠) — it ran, but something about the result deserves a second look. Today
+  this is exactly one thing: **a stale `.snp` already on disk**.
+- **`Errors`** (Error, ✕) — a thing the user asked for did not happen. Today: the `.npy` or the `.snp`
+  could not be written. **The run may still have succeeded** — a solve that produced numbers but could
+  not write them is not a failed solve, and collapsing the two would be a worse lie than the one being
+  fixed.
+- **`Messages.Success`** (green ✓) for each artifact actually written (`Wrote s-parameters`,
+  `Wrote results`) — the check mark is what says "this produced something you can open."
+
+`Notes`/`Errors` are additive and default to null, so every existing `EmRunResult` construction site
+compiles unchanged and the host reads them as `?? []`. **A refusal keeps its notes**: every refusal path
+carries the accumulated `notes`/`errors` out with it, so being told WHY a kernel was passed over does
+not depend on the run getting far enough to succeed.
+
+**Five pre-existing tests were UPDATED, not loosened** — each asserted a genuinely note-class message
+(the mode-coupling residual, the kernel choice's reason, the quasi-static Zc caveat, the circle refusal,
+the acceptance budget's "why kernel B") sitting in `Warnings`, which is precisely what this change makes
+false. They now assert the same strings in `Notes`; the property each is about is unchanged.
+
+**THE OUTPUT FIELD WAS THE UI HALF OF A MODEL FIELD THAT ALREADY EXISTED.** `EmSetupModel.SnpOutputPathOverride`
+and `EmRunService.ResolveSnpBasePath`'s handling of it were already there and already correct
+(relative resolves against the results root, absolute is used as given, a typed `.sNp` is not doubled) —
+only the way to SET it was missing, so it could never be anything but the default. Nothing about the
+resolution rule changed; the gate asserts it end-to-end anyway, because a field the run ignores is
+decoration.
+
+**Blank means "follow the layout", and the default is a PLACEHOLDER, never pre-filled text.** The box
+shows `MLin.sNp` as a watermark derived live from the layout's own stem (falling back to the setup name
+when no layout is set). Pre-filling it would freeze that name into a literal the moment anything was
+renamed — the same trap `TechRef = null` avoids by meaning "the default" rather than naming one.
+
+**A browsed path inside the results folder is stored RELATIVE (with `/` separators), absolute
+otherwise** — `MakeOutputPathRef`. A setup that stays inside the workspace survives that workspace being
+moved; one pointed outside it cannot be made portable by any encoding, so it is stored plainly rather
+than as a `../../..` chain that breaks on the first move. Same rule, and the same reasoning, as
+`WorkspaceRefs` already applies to a referenced data source.
+
+**Staged, like every other typed field in this editor**: commit on LostFocus/Enter, Escape reverts, one
+undo entry per commit, a same-value commit pushes nothing. The picker itself lives in the view's
+code-behind because everything under `src/Ui/Layout/` is framework-free; `ShowOverwritePrompt = false`
+because this only NAMES the file — the run writes it.
+
+**Gate:** Ui **6112** (+13) · Core 1238 · Firewall 6 · Engine 1052 (+1 pre-existing skip) — green.
+**Confirmed to bite:** neutering `MakeOutputPathRef`'s relative form and re-routing notes back to
+`Messages.Warning` turn their own gates red. The routing itself is pinned by a source scan on
+`RunEmSetupAsync` — `WorkspaceViewModel` cannot be constructed headlessly — which is the same fallback
+this suite already uses for view-model-only wiring.
+
+**Not interactively verified** (no visual driver here) — please confirm: after an EM run the Messages
+panel shows the descriptive lines with the ℹ glyph, a stale `.snp` still shows ⚠, and the written
+`.snp`/`.npy` show ✓; and that EM Setup's new "Output file:" row sits under Layout / Change Layout,
+shows `<layout>.sNp` greyed until you type, and that Browse… + Simulate lands the file where the box
+says.
+
+An EM run says what it is doing, and can be stopped (2026-08-09) — COMPLETE. Owner: "the EM
+simulation needs to give more feedback during a run — add a progress bar to the Messages panel,
+reuse the same system we built for Schematic Analysis"; then "we need a Stop, just like circuit
+simulation — perhaps the Simulate button changes to Cancel?"; then "should Mesh also get a progress
+bar? How does the user cancel it?"
+
+**REUSED, NOT REBUILT.** `IMessageSink.BeginProgress` → `IProgressMessage` → `LiveProgressMessage`,
+`RunControl`, `RunProgress`, `FormatCounter` — every piece already existed for the schematic run.
+What EM needed was one genuinely new thing (below) and the plumbing to reach the kernel.
+
+**TWO ROWS, AND THE REASON IS ARITHMETIC RATHER THAN TASTE.** A full-wave frequency point costs tens
+of seconds at the shipping mesh — **L8d/L9d measured 48 s and 71.9 s de-embedded** — so a single bar
+over the point count advances once a MINUTE, which is indistinguishable from a hung run and is
+precisely the "no feedback" being reported. The sweep row answers *how far through the run*; the
+stage row answers *what is it doing right now* and moves WITHIN one point (Green's function →
+structure solve → each calibration standard, which L8d measured at 2.58× the DUT's own unknowns and
+is therefore the dominant term worth counting individually).
+
+**`RunControl` gained a SECOND counter, and that is the only new concept.** `BeginStage(name, total)`
+/ `TickStage(units, nextLabel)` / `SetStageLabel(name)`, surfaced as `RunProgress.StageCompleted` /
+`StageTotal` (optional positional params — every existing `new RunProgress(a,b,c)` compiles
+unchanged, and the schematic reporter ignores both). Two rules are load-bearing:
+- **A stage bar must be MONOTONE, so a rename rides on the TICK, not on `BeginStage`.** `BeginStage`
+  resets the sub-counter, so calling it mid-point to change the label would send the bar backwards
+  every time the label changed. `TickStage(nextLabel:)` advances and renames in one move;
+  `SetStageLabel` renames and touches neither counter.
+- **A label change is delivered even inside the throttle window.** The throttle exists so a fast loop
+  does not flood the UI thread; a stage rename is the one observation a user is always waiting on, so
+  it must not be the one the throttle eats.
+
+**THE MESHER REPORTS THROUGH THE STAGE COUNTER ONLY — NEVER THE OUTER ONE.** It runs inside a sweep
+as well as standalone, and the outer counter means "frequency points" there; ticking it from the
+mesher would count meshing as points solved. Pinned by its own test, because the two look identical
+at the call site.
+
+**Adaptive sampling reports INDETERMINATE with a live solved-count.** It decides how many points it
+solves as it goes (`budget = min(MaxSolves, freqs.Length)`), so there is no honest denominator — and
+a budget-based bar would usually stop well short of full and read as an unfinished run. It is ON by
+default, so this is the common case. `Finish` pins an indeterminate bar full, which is why this
+settles looking right.
+
+**STOP: the button that STARTED the work is the one that becomes Cancel.** Simulate↔Cancel and
+Mesh↔Cancel are two buttons per cell, mutually exclusive on `IsRunning`/`IsMeshing`; `CanRun`/
+`CanMesh` are both gated on `IsBusy`, so the two long operations can never overlap and mesh the same
+problem twice at once. **Two buttons rather than one with bound icon and label** because
+`MaterialIconKind` is an Avalonia type and nothing under `src/Ui/Layout/` may reference one — the
+swap lives in the view and the view model stays framework-free. The cancellation SOURCE stays with
+the host (`CancelRequested`/`CancelMeshRequested` are plain `Action`s the host sets and clears in a
+`finally`), for the same reason.
+
+**One token, not two.** `EmRunService.Run` prefers `control.Token` over its own `ct` parameter where
+a control is supplied — `RunControl` bundles cancellation WITH progress precisely so a caller wires
+both once, and a caller must not be able to point progress at one source and cancellation at another.
+
+**Cancellation lands at a work boundary, and a cancelled run writes NOTHING.** The token is checked
+between the Green's-function fit, the structure solve and each calibration standard — finer than the
+schematic engines' own point-boundary granularity, and far finer than "per frequency", which on a
+72-second point would make Stop useless. Nothing is half-written by construction: every file this
+path produces is written after the solve it belongs to. New `EmRunStatus.Cancelled` keeps it distinct
+from `EngineError` — **a stopped run is a normal outcome and must not be reported as a failure**.
+
+**THE MESH ANSWER, AND THE MEASUREMENT THAT WAS NOT GOOD ENOUGH.** Asked whether Mesh needs a bar, I
+measured first: **0.1 ms for the §10.7 hero (N = 552) and 0.4 ms at N = 6,497** — already past R17's
+5,000-unknown ceiling — and was about to answer "no, and there is nothing to cancel". The owner's
+reply is what corrected it: *"I've seen geometry in commercial MoM take 2 min to mesh or longer."*
+**The measurement was on a ONE-POLYGON line, and the mesher's dominant term is layers × grid rows ×
+POLYGONS in the span scan — R17's ceiling bounds the CELL count, not the polygon count.** So the
+fixture could not have shown the cost that matters, and Mesh got the same treatment: named stages
+("measuring the artwork" → "building the grid" → per-layer row scan → via footprints), a real
+denominator (grid rows × (layers + vias), declared once so the bar does not restart per layer and
+read as going backwards), and cancellation at the row.
+
+**AND MOVING MESH OFF THE UI THREAD BROKE IT — the fix is where the boundary goes, not whether to
+have one.** Owner: *"I pressed the mesh button but got: Meshing 'MLin' failed: The calling thread
+cannot access this object because a different thread owns it."* The first version pushed the whole of
+`BuildActiveMesh` onto the pool, and that method does far more than mesh: it writes
+`PlanarMeshNotes`/`PlanarProblem`/`PlanarMeshReport`, each of which raises `PropertyChanged` straight
+into bound Avalonia controls, and it fires `AnalysisRefreshed`, which the workspace turns into
+OPENING A LAYOUT DOCUMENT. **Three phases now, and every boundary is load-bearing:**
+1. **UI** — `Refresh` + resolve + flatten + extract (`PreparePlanarMesh`), and every state write they
+   imply. Returns the problem, or null when there is nothing to mesh (the state it just wrote already
+   says why, so the host offloads nothing).
+2. **POOL** — `ComputePlanarMesh` → `SurfaceMesher.Mesh` on the extracted snapshot. Pure, touches
+   nothing shared, and is the part that can take minutes.
+3. **UI** — `AdoptPlanarMeshReport`.
+
+**Flatten and extract stay on the UI thread deliberately, not out of laziness:** they read
+`source.View` — the LIVE `LayoutView` of an open layout document, which the user can be editing.
+Moving them off-thread would trade a crash for a data race, which is strictly worse. Only the mesher
+is offloaded, because a `PlanarProblem` is a snapshot nothing else can mutate. The cross-section
+mesher is not offloaded at all — a 1-D boundary discretisation is not worth a thread hop.
+
+**A cross-thread violation cannot be reproduced headlessly** (this suite owns no dispatcher), so the
+gates pin the two things that can be: the split composes to a result identical to the one-shot path
+(report AND notes), and a source scan on `MeshEmSetupAsync` asserts the `Task.Run` body calls
+`ComputePlanarMesh` and never `BuildActiveMesh`/`BuildPlanarMesh`. **Confirmed to bite:** restoring
+the whole-method offload turns that gate red.
+
+**Mesh gets ONE row, not two** — it is one pass with one honest denominator, so a second bar would be
+a second way of saying the same thing. The two-row split is earned by a frequency point being minutes
+long; a grid row is not. The Mesh button now runs off the UI thread; `Refresh()` stays ON it (it
+mutates view-model state) and only the mesher goes to the pool.
+
+**A test-side finding worth keeping:** on a fast mesh the default 40 ms throttle means **no scan tick
+is ever delivered** — `BeginStage` restarts the timer and the whole mesh finishes inside one window.
+That is correct in production (a mesh that fast needs no reporting) and useless as a way to reach the
+cancellation path, so the cancellation gate sets `MinReportIntervalMs = 0` rather than pretending the
+default reaches it.
+
+**A staleness my own gate caught, worth recording because it is the shape that recurs.**
+`PlanarSolveProgressTests` was written and green BEFORE the mesher reported anything; adding mesh
+progress made two of its assertions wrong, and only one of them failed in isolation at first — the
+other surfaced under full-suite load. Neither was a flake. (1) It asserted monotonicity keyed on the
+POINT index, but `BeginStage` legitimately restarts the sub-counter, and a run now has several
+stages before the first frequency point — the mesh scan ticked to 9 and the point's own `BeginStage`
+reset to 0, both at `Completed == 0`. **The invariant is monotone WITHIN A STAGE**, and the test says
+so now. (2) It asserted a stage label ("meshing the artwork") that the mesher's own labels replaced.
+**A progress test that names stage strings is coupled to them; when the engine learns to report
+something new, re-read the test rather than assuming contention.**
+
+**Gate:** Ui **6099** (+27) · Core 1238 · Firewall 6 · Engine **1051** (+10:
+`PlanarSolveProgressTests` 5, `SurfaceMesherProgressTests` 5 — 1,050 pass + 1 pre-existing skip) —
+green. One `Hero1BTests.Hero1B_ImportElaborateAndSolve_WithinBudgetAndConsistent` failure was seen
+and traced rather than waved off: it is the wall-clock BUDGET test this file already records as
+marginal on this machine, and it was failing because five concurrent test runs of my own were
+saturating the CPU. It passes on an unloaded machine. The engine gates drive the REAL solver and the REAL mesher,
+because a bar that is wired but never ticked and a token that is threaded but never observed both
+look exactly like working code from the call site; `ANullControl_…` pins that the no-progress path —
+which every existing caller takes — is unchanged.
+
+**Not interactively verified** (no visual driver here) — please confirm: a full-wave run shows two
+live rows, the lower one naming the frequency and the step and moving while the upper one holds; the
+Simulate button reads Cancel during a run and stopping it says "stopped — nothing was written" with
+no `.snp` produced; and the Mesh button reads Cancel while meshing.
+
+A port would not snap over white space, had no ghost, and a flatten dragged the cell's own ports
+up with it (2026-08-09) — COMPLETE. Three owner reports.
+
+**"THE PORT WON'T SNAP UNTIL IT'S OVER A METAL."** Target attraction during a move drag was gated on
+`_snapDragActive`, which is set only when the PRESS itself landed on a snap marker
+(`TryBeginSnapMarkerDrag`). **`LayoutSnapFeatures` emits no snap features for a `LabelShape` at all**
+("not real geometry"), so pressing a port that sits over empty space found no candidate, began an
+ordinary body drag, and geometry snap never engaged for the rest of the gesture — while a port sitting
+ON metal happened to have the CONDUCTOR's own feature under the press, so snap worked there and nowhere
+else. That is the reported "only over metal", exactly.
+
+**A lone port may take the absolute-position branch that an ordinary shape may not, and the reason is
+the whole distinction.** R-cmb-4/5 and R-L1c-3 snap a move's DELTA rather than each coordinate
+specifically to protect a shape's own INTERNAL geometry — an off-grid polygon must keep its vertex
+spacing when it moves. **A port is a single anchor point: it HAS no internal geometry to preserve**, so
+landing it exactly on a target costs nothing and is the entire point of dragging one. `_pointSnapDragActive`
+is therefore set only for a selection of exactly one `LabelShape { IsPort: true }` with no instances,
+and `BeginMoveDrag` re-anchors to the port's own X/Y so it lands ON the target rather than wherever
+inside its (deliberately generous, symmetric) pick region the press happened to fall.
+
+**Two test-fixture faults were caught by the bite check, not by review**, and both are the same class:
+a fixture whose "wrong" and "right" answers coincide. The port started at a round (5 mm, 10 mm), where
+an ordinary grid delta-snap ALSO lands on the corner — every assertion passed against the unfixed code.
+Off-grid, the two answers differ by the port's own fractional offset. Separately, the control test
+pressed the rect's own CENTRE — which IS a snap feature — so it exercised the grab-role path instead of
+the body-drag one it is about. **Confirmed to bite:** 4 of 5 red on revert.
+**Alt suspends snapping outright** (geometry AND grid), so the port follows the raw cursor — asserted
+directly rather than assumed to fall back to the grid.
+
+**THE PORT TOOL NOW HAS A LIVE GHOST** (owner request: "the ghost's snapping and sizes also need to
+render live"). It had a live snap MARKER while hovering but no port — so the inferred direction, the
+width bar spanning the metal and the arrow were all invisible until after the click.
+`TryBuildPortPlacement` is now the ONE place a placement is decided (snap point, conductor, direction,
+name), used by the hover ghost AND the click that commits, so **what the ghost shows is what lands**
+rather than two computations that can disagree. It returns null exactly when the point is off every
+conductor — which makes the ghost **VANISH** there, saying "clicking here creates nothing" BEFORE the
+click instead of a refusal message after it.
+
+**The ghost resolves against the SAME per-frame conductor lookup a committed port uses.**
+`DrawGhostShape` previously passed `conductorAt: null`, so a port ghost fell back to the no-conductor
+stand-in (`label.Height × 2`) — the marker was present but the wrong size, which is precisely the half
+of the request that says "sizes need to render live". The frame's own `conductorAt` (built once in
+`Draw`) is now threaded in, so the width bar spans the real metal and the arrow is clamped by the real
+conductor length. **Confirmed to bite:** 7 of 8 red when the ghost is suppressed.
+
+**A FLATTEN DRAGGED THE SUB-CELL'S OWN PORTS UP WITH IT** — "when I flatten an MLIN, ports appear in
+the flattened geometry and it says 3 shapes." Correct: `GeneratedCellStore` writes one `IsPort`
+`LabelShape` per pin beside the pin record, so a 1-rect MLIN flattened to 1 rect + 2 port labels.
+**This is not cosmetic.** `EmPortExtraction` reads the TOP LEVEL's own `IsPort` labels, so those two
+would have become EM ports of the parent, named "1" and "2" after the PCell's pins — colliding with
+the parent's own P1/P2 numbering, which is refused by name at Simulate, a long way from the Flatten
+that caused it.
+
+**`LayoutFlatten.IsCellBoundaryMarker` is the one rule, applied in the one place every flatten path
+funnels through** (interactive Flatten Hierarchy / Flatten All Levels, `EmGeometry.Flatten`,
+`LayoutDesignFlatten` for Gerber). A port is a statement about a cell's TERMINALS; flatten dissolves
+the cell, so its terminals stop existing as terminals. `CountResultingShapes` counts the same way it
+emits — a preview promising three shapes and delivering one would be a worse bug than the one fixed.
+
+**An ORDINARY label is deliberately NOT dropped, and that is a real trade rather than an oversight.**
+The owner's wording was "not any labels or ports", but an ordinary label is annotation the author drew
+and `GerberExport` converts one into **silkscreen artwork** — dropping it here would silently delete
+silkscreen text from every sub-cell on every Gerber export. A generated PCell cell contains no ordinary
+labels, so the reported case is fully fixed either way. Say so if you want ordinary labels dropped too;
+it is a one-line change to the predicate.
+
+**The side question, answered by reading rather than assumed: a sub-cell instance's ports are NOT used
+as EM ports today.** `EmSetupEditorViewModel` passes `source.View.Shapes` — the TOP-LEVEL list — to
+`EmPortExtraction.Extract`, never the flattened `EmGeometry.Flatten` result (which feeds the
+extractors' GEOMETRY only). So a port inside an instance is invisible to the EM setup: it is neither
+used nor in conflict. The conflict case is real but reachable only once such a port becomes top-level
+— which is exactly what the flatten bug was doing — and `EmPortExtraction` refuses it by name
+("Port numbers index the s-parameter matrix, so they have to be distinct — renumber one of them")
+rather than silently picking one.
+
+**AND THE MENU LABEL WAS RE-DERIVING THE COUNT A SECOND WAY** (owner follow-up: "Flatten Hierarchy
+says 3 shapes; Flatten All says 1"). `FlattenOneLevelOutcomeText` read `res.View.Shapes.Count`
+directly **while its own doc comment claimed it was "computed from the SAME `FlattenOneLevel` path the
+commit itself uses, so the preview can never drift from the real outcome (it does not re-derive the
+count some other way)"** — it was doing precisely that, and the day the emit gained the drop rule the
+two silently disagreed in the one place a user reads both numbers side by side.
+`FlattenOneLevelNeedsConfirmation` had the identical stale read, so a confirm dialog could fire on a
+threshold the label beside it never crossed. New `LayoutFlatten.CountOneLevelShapes` **shares
+`IsCellBoundaryMarker` with the emit loop**, which is the invariant that actually matters — any future
+rule about what survives a flatten now lands in the one predicate and both sides pick it up. **A
+comment asserting an invariant the code does not hold is worse than no comment**; both getters now say
+what they really do. **Confirmed to bite:** restoring the raw count turns 2 of the 8 gates red.
+
+**Gate:** Ui **6072** (+21) · Core 1238 · Firewall 6 — green. **One failure captured by name and
+confirmed NOT this work's:** `LayoutPerf.LayoutPerformanceBaselineTests.Baseline_1k(CurveHeavy, 1000)`
+failed once in one of four full runs — a wall-clock rendering-timing test in the default gate (only the
+50k/500k tiers carry `Category=Benchmark`), flaking under full-suite CPU contention; it passes in
+isolation and touches no port, flatten or overlay code.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: a port dragged
+across empty space snaps to a nearby corner from any side; the Port tool shows a live port ghost
+(arrow, width bar sized to the metal under the cursor) that vanishes when you move off the metal and
+lands exactly where the ghost sat; and flattening an MLIN reports 1 shape with no ports, with BOTH
+menu items ("Flatten Hierarchy" and "Flatten All Levels") saying 1.
+
+A port could be grabbed from ahead of it but not from behind (2026-08-09) — COMPLETE.
+
+**Owner report: "when dragging the port, the snap distance appears asymmetric — in the direction of
+the arrow it will snap farther than the opposite direction. Make them both the same (and the farther
+distance is working good right now for UX)."**
+
+**The asymmetry is exact and one-sided, not merely uneven.** `LayoutHitTest.LabelHitBbox` builds a
+label's pick region from its TEXT, and text runs one way from a baseline-left origin — so the anchor
+sits on the box's own CORNER. Measured on a 2-character port of height H: the box reaches **1.24·H in
+the text direction** (+x at R0, which is also where the arrow points) and **ZERO** the other way. The
+port could be grabbed from a long way ahead of it and only within the bare click tolerance behind it.
+
+**A port's region is now a square centred on the anchor, at the LARGER of the two former reaches** —
+the owner's own "the farther distance is working good", made uniform rather than reduced.
+
+**An ordinary label deliberately keeps its one-sided, text-shaped box, and the reason is the whole
+distinction.** An annotation's glyphs really are all on one side of its origin, so a text-shaped
+region is right there; making every label symmetric would grow every annotation's pick area for no
+reason. A PORT is a MARKER — what the user sees and aims at is the plane bar and the arrow, drawn
+about the conductor END, not the text that happens to name it. That control is a test, not a comment.
+
+**Gated at every text rotation, not just R0** — the old box's asymmetry pointed a different way per
+rotation, so a fix that only handled R0 would have left three quarters of the bug in place. The reach
+is measured by BISECTION through the real `HitStack`, so the assertions are exact to a DBU rather than
+dependent on a probe step size, plus an end-to-end press-from-behind test through the real pointer
+path. **Confirmed to bite:** removing the port branch turns 5 of the 6 gates red.
+
+**Gate:** Ui **6051** (+6) · Core 1238 · Firewall 6 — green.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: a port picks up
+from the same distance on every side, at the reach it previously had only in the arrow direction.
+
+The port arrow overran its own metal, and a label's font size was leaking into the port's width
+(2026-08-09) — COMPLETE. Two owner reports, one omission behind both: the marker was sized from
+things that are not the conductor.
+
+**"THE ARROW HEAD CAN SOMETIMES EXTEND BEYOND THE METAL SHAPE THE PORT IS CONNECTED TO... CAN THE
+ARROW NEVER EXTEND BEYOND THE METAL?"** It cannot now. The arrow was sized purely from the port's
+WIDTH (`reach = width × 0.66`, `barb = reach × 0.35`) and knew nothing about how much metal lay ahead
+of it — so on a pad wider than it is long, the reach ran straight out the far end with a head to
+match. `PortHint` gained **`LengthDbu`** (the conductor's extent ALONG the direction) and
+`PortArrowGeometry` clamps to `min(preferred, LengthDbu × 0.7)`. **Overrunning is now arithmetically
+impossible rather than merely unlikely**, and the ceiling is under 1 so the tip stops visibly short of
+the far edge instead of landing on it, where it would read as part of the outline.
+
+**"THE SIZE OF THE ARROW HEAD SEEMS TO BE A FUNCTION OF THE PORT WIDTH... TOO BIG FOR SHORT BUT WIDE
+EDGE SHAPES."** The head is tied to the arrow's FINAL reach, not to the width — so when a short
+conductor clamps the shaft, the head clamps with it and the arrow keeps its proportions instead of
+becoming a stub with a spearhead on it. A **second, independent** ceiling caps the barb at 0.22 of the
+width, because the reach-based rule alone still grows without bound on a conductor that is long AND
+wide, where the head starts rivalling the reference-plane bar — and a head that rivals the bar
+competes with the one mark that is load-bearing.
+
+`PortArrowGeometry` is pure and separate from the drawing so the claim is asserted directly rather
+than inferred from pixels — but there is a pixel oracle too (differential render, port-on minus
+port-off, so every differing pixel is marker-attributable over the metal it sits on), and it carries
+its own non-vacuity guard. **Confirmed to bite:** reverting to the pre-fix sizing turns 6 of the 11
+gates red.
+
+**"I MADE MY PORT TEXT SIZE 60 ON A 42 MIL WIDE MLIN, AND NOW THE PORT WIDTH SAYS 60."** Both
+`Resolve` branches floored the width at `label.Height` — a legibility hack for a marker that would
+otherwise draw thin — and **that floor leaked straight into the number the Properties Inspector
+reports AND into the width bar the marker draws.** So the same artwork reported two different
+excitation widths depending on how big someone typed the label, which is exactly the quantity the
+round above had just made read-only precisely because it is the metal's and not the user's. Removed
+from both branches. **A port's width is a property of the conductor, full stop; a marker too small to
+see is a zoom problem, not a data problem.** The no-conductor stand-in (`label.Height × 2`) survives
+because there is genuinely nothing else to use, and the Inspector already labels that case "(not on a
+conductor)". Gated on both branches, each with a smaller-text control so neither can pass by the
+floor simply never binding.
+
+**Gate:** Ui **6045** (+11) · Core 1238 · Firewall 6 — green.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: a port on a short
+wide pad draws an arrow that stops inside the metal with a proportionate head; the Properties
+Inspector's Port width now reads your MLIN's 42 mil however large the text size is; and a long thin
+line's arrow is unchanged.
+
+The paste ghost carried an instance but never drew one (2026-08-09) — COMPLETE.
+
+**Owner report: "the ports are rendered live when moving the mouse, but my MLIN object is not."**
+L1f shipped the paste ghost as shapes-only and said so in its own completion note — an instance
+travelled with the paste and committed correctly, it just was never in the picture the user was
+aiming with. **Which meant aiming a schematic-generated selection, whose metal is ALL instances, was
+aiming at two port glyphs and empty space.** Same family as the graphic-export bug next door: the
+paste path knew about instances everywhere except where it had to DRAW them.
+
+- **`LayoutOverlay.PastePreviewInstances`** carries one ghost per pasted instance, translated by the
+  SAME delta and in the SAME `RebuildOverlay` pass as the shapes — the two halves of one fragment
+  cannot drift apart mid-gesture, and a test asserts they move together rather than merely that each
+  moves.
+- **The renderer reuses `DrawPendingInstancePlacement`**, the Instance tool's own ghost — real
+  resolved geometry at reduced opacity with the labelled-placeholder fallback for a reference that
+  does not resolve. A pasted instance and a placed one are the same thing and must look the same;
+  a second ghost renderer would be a second thing to keep in step.
+
+**The complexity escape hatch is the owner's own rule** ("for small amounts of geometry it should
+render live; if too complicated, just render a box, but keep the port rendering live"), and the two
+halves degrade **independently**: `GhostInstance.BoxOnly` collapses only the instance to a dashed
+accent box at its array-expanded extent, and the shape half — the ports — is untouched however heavy
+the instance beside it is.
+
+- Budgeted at **5,000 flattened shapes**, measured with `LayoutFlatten.CountResultingShapes`, which is
+  exactly the right instrument: it honours the array-multiplies-a-level and depth-cap rules **without
+  ever materializing more than one array cell's worth of shapes**, so asking the question is cheap
+  even when the answer is "millions".
+- **Decided ONCE, when the placement is armed** — never per pointer move, so the ghost cannot flicker
+  between the two treatments as the cursor moves, and the count is never paid per frame.
+
+**A real sign error, caught by the gate rather than by review:** `CountResultingShapes` returns
+**NEGATIVE** when it exceeds its ceiling — it stops counting rather than finishing an arithmetic
+nobody needs the answer to. The first version read `n > budget`, so a 40,000-shape array came back as
+`-1` and was classified as *small*, i.e. the heaviest instances would have been the ones drawn live.
+The box-only test failed on exactly that fixture. **Any future caller of `CountResultingShapes` must
+treat a negative return as "over the ceiling", never as a count.**
+
+**Gate:** Ui **6034** (+3) · Core 1238 · Firewall 6 — green. The third test is a differential paint
+count (ports-only vs ports-plus-instance through the real renderer), so "the instance ghost adds
+pixels" is measured rather than inferred from the overlay's contents.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: pasting your
+ports-plus-MLIN selection now shows the trace following the cursor alongside the port markers, and a
+very large array pastes as a dashed box with its ports still drawn live.
+
+The mesh vanished when you zoomed out, and a copied selection lost its metal and cropped its ports
+(2026-08-09) — COMPLETE. Three owner reports; two of them had the same shape of cause.
+
+**"MESH DOES NOT RENDER AT LOW ZOOM LEVELS."** Below `PlanarMeshMinCellDevicePixels` (2.5 device px
+per cell) the overlay collapsed to the mesh's own bounding RECTANGLE — which lands exactly on the
+artwork's own outline and therefore reads as "the mesh did not render". **Measured, not assumed:
+13,085 differing pixels at 3e-5 zoom, then 610 one step out at 1e-5** — a cliff, not a degradation.
+And "the mesh drew nothing" is indistinguishable from "the Mesh button did nothing", which is the bug
+next door.
+
+**Fixed by DECIMATING the real grid rather than collapsing it.** The surface mesh is a
+tensor-product grid (L8b: per-axis spacing), so the honest reduction is to draw a SUBSET OF THE REAL
+LINES — every k-th distinct X and Y edge, k chosen per axis so consecutive drawn lines clear the
+pixel floor, with the outer boundary always drawn so the extent stays exact however hard the interior
+is thinned. **Every line drawn is a line that is really there; only some are omitted.** That degrades
+continuously all the way out. Measured after: **610 → 5,154** at 1e-5, 184 → 612 at 3e-6, and non-zero
+at every zoom tested. The gate is a differential render (mesh-on minus mesh-off, so every differing
+pixel is mesh-attributable by construction — a colour probe cannot do that, since the mesh is drawn
+over the metal it meshes) with the threshold set **far above a bounding rectangle's dashed perimeter
+and far below a grid**, so neither reading can be mistaken for the other.
+
+**"PASTING THE SELECTED GEOMETRY WITH PORTS HAS A GLITCH — I ONLY SEE PIECES OF THE PORTS (CUT OFF AT
+THE LOWER AREA) AND I DO NOT SEE MY MLIN GEOMETRY."** Two faults, one shape — the graphic export was
+reasoning about STORED geometry rather than PAINTED geometry:
+- **The MLIN was absent** because `BuildTransientView` was built from `payload.Shapes` alone. An
+  instance's geometry was a documented, deliberate limitation ("this file has no compiled-rendering
+  access to a resolved sub-cell") — which was true when written and stopped being true the moment
+  `LayoutRenderer.Draw` learned to render instances off a `LayoutView`. Passing the payload's
+  instances through, plus the `baseDir` their `CellRef`s resolve against, is the whole fix. **A
+  schematic-generated selection is ALL instances, so the old limitation meant copying such a layout
+  produced an empty picture.**
+- **The ports were cropped** because `ComputeSelectionBounds` unioned `LayoutGeometry.BboxOf`, and a
+  `LabelShape`'s stored bbox is a POINT. The page now spans what is actually painted: the label's own
+  measured glyphs (`MeasureLabelWorldBbox`), the port marker's width bar and arrow about its reference
+  plane, and every instance's resolved extent.
+
+**"MESH NEEDS TO BE INCLUDED IN THE BITMAP/PDF/EMF RENDERING TO CLIPBOARD."** It is, when one is
+showing — `ExportOptions` now carries `ShowPlanarMesh`/`PlanarMesh`/`PlanarCurrentDensity`, and the
+copy path passes them only while the layout's own toggle is on, so what lands on the clipboard is what
+was on screen. **Deliberately NOT in the JSON payload**, per the owner's own "it does not have to be
+copied to a new layout": a mesh belongs to an EM setup, not to geometry, so pasting into another
+layout must never bring one along. Asserted in both directions by one test.
+
+**The three renderers now take one `ExportContext`** rather than four loose arguments, so they cannot
+disagree about what is in the picture or how big the page is. The shapes-only overloads survive as
+thin shims because R-L1f-4's own gates ("the page is a pure function of the SELECTION") are about
+exactly that, and threading a context through them would test the plumbing instead of the framing rule.
+
+**Gate:** Ui **6031** (+8) · Core 1238 · Firewall 6 — green.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: the mesh stays
+visible as you zoom out (thinning rather than disappearing); copying a selection of ports plus your
+MLIN instance pastes into Keynote/PowerPoint showing the trace, both port markers complete, and the
+mesh over it; and pasting back into circuitRF still brings geometry only.
+
+The Mesh button was inert in full-wave mode, and the mesh it did produce had nowhere to be drawn
+(2026-08-09) — COMPLETE. Two owner reports, one arc.
+
+**"I PRESSED MESH FOR MY EM SETUP (FULL WAVE) BUT NOTHING HAPPENED AND NO MESSAGES WERE DISPLAYED."**
+The header button was bound to `BuildMeshCommand` — the CROSS-SECTION mesher — whose second line is
+`if (Problem is null) return;`. On a full-wave setup `Problem` is null **by construction** (the planar
+problem lives in `PlanarProblem`), so the most prominent button in the editor returned silently.
+Meanwhile the planar mesher sat on a SECOND button, **also labelled "Mesh"**, buried inside the
+Surface mesh group. Two identical labels, one of them inert in exactly the mode the user was in.
+
+- New `BuildActiveMeshCommand`: `Refresh()` first — that is what settles which kernel the registry
+  chose, and therefore which mesher this button MEANS — then dispatch. One button, one meaning:
+  "mesh this setup."
+- **The duplicate button in the Surface mesh group is gone.** Keeping it would have left two controls
+  with the same label doing different things, which is the confusion that produced the report.
+- **`BuildMesh`'s silent `return` is now a reported one.** It surfaces the extraction/kernel refusal
+  the panel already holds, or, failing that, a plain sentence. That silence is what made a working
+  button read as a dead one.
+- The gate's teeth are its **negative control**: a test proving `BuildMeshCommand` alone still
+  produces nothing on a full-wave setup. Without it the positive test would pass against a header
+  button that simply called both meshers.
+
+**"I WAS EXPECTING TO SEE A MESH RENDERED OVERTOP OF MY .CLAY FILE'S RENDERING."** `PushEmMeshToLayout`
+copies a `.cem`'s mesh onto the OPEN layout document it analyses — and returned silently when that
+layout was not open. So with only the `.cem` on screen, Mesh produced a correct mesh that had nowhere
+to be drawn and said nothing about it. **A mesh is a picture; producing one and showing nothing is
+indistinguishable from doing nothing.** It now opens the layout — once, and only when there is
+genuinely a non-null report to show, so an ordinary `Refresh` (which fires this on every committed
+field) can never yank a tab open behind the user.
+
+**The plan-view surface mesh had no toolbar toggle of its own** — `ShowEmMesh` had one, `ShowPlanarMesh`
+did not, so a full-wave mesh could only be turned off by closing the document. Added, with the same
+session-only, never-persisted, never-undoable contract, independent of the cross-section toggle
+(which overlay a document shows follows from which mesh was computed, not from a mode).
+
+**Also fixed in passing:** `BuildPlanarMesh` rebuilt `PlanarMeshNotes` on its success path from
+`extraction.Notes + report.Notes`, dropping the `EmGeometry.Flatten` notes it had already assigned —
+so the "N shape(s) came from N placed instance(s)" line vanished the moment the mesh succeeded, which
+is precisely when a user is deciding whether the mesh covers what they think it covers.
+
+**Gate:** Ui **6023** (+3) · Core 1238 · Firewall 6 — green.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: pressing Mesh on
+your full-wave MoMTest setup now reports an unknown count, opens `MLin.clay` if it is not already
+open, and draws the surface mesh over the artwork, with the new grid toggle in the layout toolbar
+turning it off and on.
+
+An EM setup could not see its own artwork, and the EM Setup Editor was a wall of full-width fields
+(2026-08-09) — COMPLETE. One real bug and a batch of UI work, all from the owner using the thing.
+
+**THE BUG: A SCHEMATIC-GENERATED LAYOUT EXTRACTED NOTHING, AND THE MESSAGE SAID SO IN A WAY NOBODY
+COULD ACT ON.** Reported as *"my EM setup says 'This EM setup is pointed at geometry with nothing on
+a layer bound to a signal conductor.' I don't know why."* The workspace's own `.clay` held two port
+labels and ONE instance of a generated MLIN cell — and **no top-level metal at all**, which is what
+"Update Layout from Schematic" produces by construction. `CrossSectionExtractor.Extract` and
+`PlanarExtractor.Extract` were both handed `view.Shapes` directly, so they saw two labels, classified
+both as annotation, found zero conductor shapes and refused. **The artwork was on screen the whole
+time; nothing that read it could see it.** This is the same root cause as the Port tool's own
+"placing a port does not set a direction" from the round above — a layout's metal is not necessarily
+in `Shapes` — reached through a second door.
+
+**Fixed by FLATTENING, not by teaching each extractor to recurse.** New `EmGeometry.Flatten(view,
+clayPath)` drives L3c's own `LayoutFlatten.FlattenAllLevels` — the one tested affine flatten, mirror
+bulge-sign rule, array expansion and `CellHierarchy.MaxDepth` cap included. An EM problem is a set of
+polygons in world coordinates; hierarchy carries no meaning into it, and a second traversal inside the
+extractors would be a second chance to get that transform wrong in a place where wrong **draws
+perfectly and simulates something else**. Applied at all four call sites — both extractors in
+`EmSetupEditorViewModel.Refresh`, the planar mesh path, and `EmRunService` — so **the run and the
+panel cannot disagree about what geometry the setup is pointed at.** An instance that does not resolve
+is REPORTED (it is invisible to the solver even though its placeholder is drawn), and a layout with no
+instances is returned by reference with no notes and no copy. The gate's teeth are its **negative
+control**: a test asserting the unflattened list genuinely has no conductor, so the positive test
+cannot pass against a flatten that did nothing useful.
+
+**"IS THE PORT `Height` THE TEXT FONT SIZE, OR THE WIDTH OF THE PORT'S EXCITATION?"** The text size —
+a port IS a `LabelShape` and `Height` is that label's font size, exactly as for any annotation. The
+caption now READS "Text size" for a port (`LabelHeightCaption`), and the excitation width sits
+directly beneath it as a read-only row. **It is read-only because the engine says so, not because a
+field is missing:** `PlanarPort` D2 — the port cut IS the outermost rooftop row of the feed, so it
+spans the whole conductor end by construction. **To change a port's width in the full-wave solver you
+change the width of the metal.** Same reasoning as the de-embedding distance from the round above: a
+separate knob would offer a way to get a different answer for the same structure.
+
+**PORT MARKERS NOW CONTRAST WITH THEIR OWN LAYER** — darker than the layer colour on a light canvas,
+lighter on a dark one, via `TintForContrast` (generalised from the snap marker's own use, keyed off
+the BACKGROUND's Rec. 601 luminance rather than off which built-in theme is active, so a custom
+background tints the right way). Deliberately a stronger blend than the snap marker's: a snap marker
+is transient, a port is permanent artwork the user has to pick out from the metal it sits on.
+
+**EM SETUP EDITOR — the panel is now readable.**
+- **Group boxes** (`Border.group` + `TextBlock.grouphdr`): Analysis · Cross-section · Conductors ·
+  Frequency · Ports · Mesh · Surface mesh · Solver options · Stackup. One card per concern, so the
+  eye finds Frequency and Mesh without reading every label between them.
+- **Numeric fields are 86 px, left-aligned** (`TextBox.num`), applied to both Z₀ fields, the per-port
+  rows and every field in both mesh blocks. A stretched box invites a sentence; a short one says what
+  the field is for. The frequency coefficients keep star sizing — they sit beside a unit combo that
+  has to stay adjacent.
+- **Adaptive sampling moved INTO the Frequency group** (owner request): it decides how many of *those*
+  points are actually solved, so it belongs beside the range being edited, not four sections away.
+- **Save As…** — `EmSetupEditorViewModel.SaveAs(path)` writes to a new `.cem` and follows it;
+  `FilePath` is the one piece of mutable identity and moves only there. The original file is left
+  exactly as it was — Save As is not a move. The picker is in the view's code-behind because
+  everything under `src/Ui/Layout/` is framework-free. `EmSetupDocument.OnSavedAs` retitles (may be
+  called any number of times, unlike `Materialize`), and `WorkspaceViewModel` **re-keys
+  `_openDocsByPath`** — without that, reopening the `.cem` from the tree would mint a second live view
+  of one file.
+- **Change Layout…** — a `.cem` references its layout by path and reads the geometry at run time, so
+  the reference is a first-class editable field rather than a fact fixed at creation.
+  `SetLayoutRef(absPath)` is undoable and runs the SAME `Refresh` a frequency edit does, so the
+  cross-section, ports and mesh all re-derive against the new artwork and a stale mesh is dropped
+  rather than left on screen belonging to a layout that is no longer the subject.
+  **`WorkspaceViewModel.MakeEmLayoutRef` is written directly beside its inverse `ResolveEmLayout`** so
+  the pair cannot drift — a Change Layout that wrote a reference the resolver could not read would
+  look like a corrupt file rather than a bad conversion. A path that climbs out of the workspace is
+  stored absolutely rather than as a `../../..` chain that breaks the moment the workspace moves.
+
+**Gate:** Ui **6020** (+4) · Core 1238 · Engine 1040 (+1 pre-existing skip) · Firewall 6 — green.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: your MoMTest
+setup now resolves its cross-section instead of refusing; the Properties Inspector reads "Text size"
+with a "Port width" row beneath it; port markers stand out from their layer in both themes; and the
+EM Setup Editor shows grouped cards with short numeric fields, Adaptive sampling beside the sweep, and
+working Save As… / Change Layout… buttons.
+
+Five owner follow-ups on the Port/pin work: the pin glyph, a port that got no direction, a port
+placed on nothing, geometry snap, and where the reference plane actually is (2026-08-09) — COMPLETE.
+The de-embed-distance ask is answered rather than built; see the end.
+
+**THE PIN MARKER IS A SQUARE.** It matches the schematic editor's own symbol port marker
+(`SchematicRenderer`'s `PortBoxHalf` box), so a connection point reads the same way in both editors,
+and it keeps a pin visually distinct from an EM PORT, which draws in WORLD space rather than as a
+screen-space glyph. `PinDotRadiusDevicePixels` is now `PinMarkerHalfDevicePixels` (same 3.0). The gate
+**counts strictly-interior painted pixels rather than probing one corner** — at a 3-px half-size a
+square fills all 25 of the 5×5 block and a circle ~20, while every pixel that separates the two shapes
+geometrically lies exactly on the square's own antialiased boundary. **Confirmed to bite:** reverting
+to `DrawCircle` reports 20 against the 22 threshold.
+
+**A PORT PLACED ON A PCELL GOT NO DIRECTION, AND THE CAUSE IS THE SHAPE OF A GENERATED LAYOUT.**
+`LayoutPortDirection.ConductorUnder` walked `LayoutView.Shapes` only — but a layout produced by
+"Update Layout from Schematic" holds **no top-level shapes at all**: every piece of metal is inside a
+placed `LayoutInstance`. So the tool found nothing beneath artwork the user could plainly see and
+silently seeded null. The lookup is now a `LayoutPortDirection.ConductorLookup` delegate with two
+sources — exact `LayoutHitTest.HitStack` over top-level shapes FIRST (so a click on an *edge* counts,
+and a hidden or non-selectable layer does not), then `LayoutHitTest.HitInstanceStack` +
+`CellHierarchy.InstanceBbox`. **The renderer uses the same lookup**, built once per frame in `Draw`
+rather than per port, so a port on an instance also draws its marker at the right width. An
+instance's bbox is the array-expanded extent and is therefore a coarse seed for anything that is not a
+straight run of metal — the same approximation the shapes-only path always made, and for the same
+reason: it only ever SEEDS a direction the user can rotate. `EmPortExtraction` still re-derives the
+side from exact geometry and refuses rather than guessing.
+
+**A CLICK OFF THE METAL NOW CREATES NOTHING.** A port names the END OF A CONDUCTOR; off the metal
+there is no end to name, no direction to face and no width to be. Refused with a reason at the moment
+of the click rather than accepted as a label that looks like a port and is refused much later, at
+Simulate. **One test was UPDATED, not loosened** — it asserted that a port on bare dielectric is
+created with a null direction, which this deliberately makes false. Null on an EXISTING `.clay` still
+means "infer it"; only PLACEMENT changed.
+
+**THE PORT TOOL GEOMETRY-SNAPS.** It follows R-snpf-4's own rule unchanged — geometry snap overrides
+grid snap only when it genuinely has a REAL feature to offer (`_snapCandidateIsRealTarget`), never
+merely because the mode is on — and `OnPointerMoved` now refreshes the marker in Port mode so the
+point the click will land on is visible *before* the click. A port wants a conductor's corner or edge
+midpoint far more often than a grid intersection, and the alternative was zooming in and eyeballing
+it. Gated both ways: near a corner it lands exactly on it, and with nothing in range it still lands on
+the grid (the non-vacuity guard — without it a port that merely followed the raw cursor would pass).
+
+**"I CAN'T TELL WHERE THE REFERENCE PLANE IS" — because the bar was drawn at the LABEL, not at the
+conductor end.** The two differ whenever the user clicked anywhere other than exactly the end of the
+metal, which is nearly always. `PortHint` now carries `PlaneX`/`PlaneY` (`LayoutPortDirection.PlaneOf`
+— the centre of the edge OPPOSITE the current direction), the bar is drawn there with a short serif
+turned back out of the metal at each end so it reads as a cut rather than as more copper, the arrow
+starts AT the bar, and a dashed leader joins the label to it when they differ. **The bar is the
+plane.** The kernel's own plane is one mesh cell further in (`PlanarPort` D2) — a sub-cell offset no
+drawn glyph can honestly resolve, which is why the post-run overlay (§10.6) draws the engine's real
+planes over its own coordinates.
+
+**THE DE-EMBED DISTANCE IS ANSWERED, NOT BUILT — and this is a deliberate refusal in the ENGINE, not
+a gap in the UI.** `PlanarPort` D2 states it directly: *"There is no port-offset setting, no
+reference-plane coordinate and no de-embedding distance to choose, because ALL of that is what the
+calibration removes — and offering a knob for it would offer a way to get a different answer for the
+same structure."* `EmPortExtraction` already says the same thing in its own per-port note. Adding a
+`.clay` field the solver ignores would be a silent lie, so nothing was added. **The legitimate way to
+build it, if it is wanted, is a POST-SOLVE reference-plane shift** — de-rotate the published S-matrix
+by `e^{-γℓ}` per port using the line's own γ, which `PlanarDeembed` already computes (D7) — leaving
+the calibration untouched and the offset honestly reversible. That is `src/Engine/Mom` work with its
+own gate, and it is the owner's call, not something to fold into a UI round.
+
+**Gate:** Ui **6016** (+10) · Core 1238 · Firewall 6 — green. `Harmonica R11` remains the one
+pre-existing failure this file already records at HEAD.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: a PCell's pins
+render as small squares; placing a port on PCell artwork now shows an arrow and a width bar; clicking
+off the metal reports "click on a conductor" and creates nothing; hovering in Port mode shows the snap
+marker and clicking near a corner lands exactly on it; and the width bar now sits at the end of the
+conductor with a dashed leader back to the label, so the plane's position is unambiguous.
+
+Four MoM/EM reports: the pin tick, the Port that was only a Label, no way to reach an EM run, and
+kernel jargon in the EM Setup (2026-08-09) — COMPLETE. Independent items; the second is the one with
+depth.
+
+**THE PIN TICK WAS RIGHT AND READ AS SOMETHING ELSE.** `DrawPCellPinOverlay` drew a short outward line
+per pin (R-L5g-13's own direction indicator). It reads as an EM PORT direction arrow, which is exactly
+what the layout editor now draws for a real port — so the two would have been indistinguishable. The
+tick is gone; the dot stays. **Do not re-add a line there**; the file says so and
+`PCellPinOverlayTests` probes 6-9 device px outward from MLIN's two pins to keep it gone.
+
+**AN EM PORT WAS A LABEL WITH A FLAG, AND ITS DIRECTION EXISTED NOWHERE ON THE SHAPE.** L8e/D3's "a
+port is a `LabelShape` with `IsPort` set — there is deliberately no `PortShape`" is unchanged and
+right. What was missing is that the SIDE was inferred at extraction time and nowhere else: nothing
+drew it, the Properties Inspector called it a Label, and there was nothing to rotate. New
+`LabelShape.PortDirection` (`LayoutRotation?`, `WhenWritingNull`, **no `.clay` FormatVersion bump**)
+is the direction current flows INTO the structure, and **null still means "infer it"** — which is what
+every pre-existing `.clay` carries, so this is additive in BEHAVIOUR as well as in schema.
+
+- **`LayoutPortDirection`** (framework-free, `src/Ui/Layout/`) is the one place the convention lives:
+  `R0` = +x̂, `R90` = +ŷ, `R180` = −x̂, `R270` = −ŷ, and a port whose current flows +x̂ sits on the
+  conductor's **LOW-x** end. **Both halves are inversions**, and either flipped is a hard π in S₂₁
+  that no magnitude plot shows — so the gate asserts the mapping against `PlanarPort`'s own
+  `Direction`/`IncidenceSign` rather than restating it.
+- **Rotate advances the DIRECTION and leaves the TEXT upright.** A right-hand port is `R180`; rotating
+  its glyph too would leave it legible only upside down, and the arrow is what the gesture is aimed
+  at. A port with no direction yet adopts the inferred one and advances from there — which is also
+  the moment "infer it" becomes "the user said so".
+- **Rotate was reachable from the keyboard and from NOWHERE ELSE.** That is how a port whose whole
+  direction IS its rotation could look like it had none. Rotate 90° CCW/CW are now context-menu items,
+  under the same disabled-with-a-reason rule as everything else there.
+- **The marker is drawn in WORLD space, unlike the PCell pin overlay's constant-pixel dot** — a bar
+  across the conductor (how wide the port is) and an arrow along the direction. A port's width IS a
+  physical dimension the user is judging; a pin's position is not. A port on no conductor with no
+  stated direction draws **nothing**: there is nothing to be a width of, and the extractor refuses it
+  by name anyway.
+- **`EmPortExtraction` takes a stated direction verbatim** and says so in its note; a null one takes
+  R-res-5's inference path unchanged, ambiguity refusal included — whose wording now names **rotating
+  the port** as the direct remedy alongside moving the label off the corner. One test was UPDATED, not
+  loosened, for exactly that (it asserted the old single remedy).
+- The Properties Inspector calls it a **Port** (`ShapeTypeName`'s new `LabelShape { IsPort: true }`
+  arm) and shows a Direction combo — the same value the canvas gesture advances, through the same
+  `ApplyToEach` path, so a typed change and a rotated one cannot disagree.
+
+**A PASTED PORT TAKES THE NEXT FREE NUMBER** (owner follow-up). A port number indexes the s-parameter
+matrix, so two ports naming the same one is not cosmetic — `EmPortExtraction` refuses the whole
+extraction — and copy/paste is the one gesture that produces it by construction.
+`ResolvePortNumbers` sits in `InsertPastedMixed`, the single funnel Paste / Paste in Place / Duplicate
+all go through, and is **the same shape as the schematic's own `SchematicPasteCommand.ResolveNums`**:
+the used set is seeded from the DESTINATION and updated between pasted ports, so an intra-batch
+collision is prevented too. The user's naming survives — the digit run is substituted, so `"Port 3"`
+becomes `"Port 5"`, not `"P5"` — and a port whose number is FREE keeps it (renumbering is a collision
+fix, not a rewrite). **Graphic export needed no change and is pinned anyway**: PDF/SVG/bitmap render
+through `LayoutRenderer.Draw` on a transient view, so the marker rides along — "for free" being
+exactly the kind of claim that stops being true silently.
+
+**THE EM RUN HAD NO ENTRY POINT FROM THE LAYOUT EDITOR.** New toolbar button; `.cem` named after the
+`.clay` stem, opened if it exists, created if not. **It lands in `<workspace>/em/`, not beside the
+`.clay`** — `WorkspaceScanner.BuildCellNode` enumerates a cell's view folders with
+`"*" + CellFolder.ViewExtension(vt)`, so a `.cem` sitting in `layout/` is **invisible in the project
+tree**. The naming rule the owner asked for is honoured; the folder is what makes it findable, and it
+matches File ▸ New ▸ EM Setup…'s own convention.
+
+**"KERNEL A/B" MEANT NOTHING TO A USER, AND THE CROSS-SECTION KERNEL STAYS.** It is what `Auto` picks
+for a uniform line, ~1000× cheaper, exact there, and the only producer of the `tline` group — so it
+was renamed rather than removed: **"Uniform transmission line"** vs **"Full-wave planar"** (the
+owner's own words, kept). `EmKernelRegistry.ChoiceLabel` is the single source of that naming, shared
+by the dropdown (via a new view-only converter) and by every `Choose` reason string, so the prose that
+tells a user to pick an analysis BY NAME cannot drift from what the dropdown says. Four
+`EmKernelRegistryTests` assertions were updated to reference the constants instead of hand-typed
+strings.
+
+**Gate:** `PCellPinOverlayTests` 7, `EmKernelRegistryTests` 16, new `LayoutPortDirectionTests` 35 —
+Ui **6,006**, Engine 1,040 (+1 pre-existing skip), Core 1,238, RfCore 281, WBond 237, Firewall 6, all
+green. **One pre-existing failure, confirmed not this round's by stashing the whole change and
+re-running:** `Harmonica.Tests.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`,
+which this file already records as failing deterministically at HEAD; nothing here touches
+`src/Harmonica`. One `MKlopfGripAndProfileTests` failure appeared in a single full-suite run and did
+not reproduce in the next one or in isolation — the documented full-suite contention flake, in an area
+this work does not touch.
+
+**Not interactively verified** (no visual driver here) — please confirm on your end: a PCell's pins
+show as dots with no tick; placing a port shows a width bar and an arrow pointing into the metal, and
+Rotate (or the new context-menu items) turns the arrow while the text stays upright; the Properties
+Inspector says "Port" with a Direction row; copying a port gives the copy the next free number; the
+new toolbar button opens the layout's own `.cem`; and the EM Setup's Analysis dropdown reads "Auto",
+"Uniform transmission line" and "Full-wave planar" with a one-line description under it.
+
 A Loadpull-Pursuit that found nothing finished in SILENCE (2026-08-09) — COMPLETE. Owner report: the
 `LPP1: 50 point(s) simulated · 36 reached compression · …` line appears on a good run and vanishes
 entirely when no point reaches compression, leaving only `Finished 'LPTest.csch'.`

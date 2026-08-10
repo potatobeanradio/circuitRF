@@ -199,13 +199,28 @@
                                       GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                       FontSize="11" Padding="4,2"/>
                         </Grid>
+                        <!-- The caption reads "Text size" for a port, "Height" otherwise: this is the
+                             LABEL's font size in both cases, and the owner could not tell that from the
+                             word "Height" on a port. The port's excitation width is the read-only row
+                             below, so the two quantities are never confused again. -->
                         <Grid ColumnDefinitions="56,*">
-                            <TextBlock Grid.Column="0" Text="Height" VerticalAlignment="Center" FontSize="11"
+                            <TextBlock Grid.Column="0" Text="{Binding LabelHeightCaption}" VerticalAlignment="Center" FontSize="11"
+                                       ToolTip.Tip="The height of the label's own text. It has nothing to do with the port's excitation width."
                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                             <TextBox Grid.Column="1" Text="{Binding LabelHeightText}" Tag="LabelHeight"
                                       Classes.error="{Binding HasLabelHeightError}" ToolTip.Tip="{Binding LabelHeightError}"
                                       GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                       FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <!-- Read-only: PlanarPort D2 — the port cut IS the outermost rooftop row of the
+                             feed, so it spans the whole conductor end by construction. Changing a port's
+                             width in the full-wave solver means changing the width of the metal. -->
+                        <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowPortDirection}">
+                            <TextBlock Grid.Column="0" Text="Port width" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <SelectableTextBlock Grid.Column="1" Text="{Binding PortWidthText}" VerticalAlignment="Center"
+                                       FontSize="11" Opacity="0.75"
+                                       ToolTip.Tip="The excitation width — the whole conductor end the port cuts across. Set by the artwork, not here: the full-wave port cut is the outermost row of cells on the feed, so widening a port means widening the metal."/>
                         </Grid>
                         <Grid ColumnDefinitions="56,*">
                             <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
@@ -213,6 +228,19 @@
                             <ComboBox Grid.Column="1"
                                       ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RotationOptions}"
                                       SelectedItem="{Binding LabelRotationValue, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <!-- An EM port's direction: the way current flows INTO the structure. Shown
+                             only for a selection that is entirely ports; the canvas Rotate gesture
+                             advances the same value. -->
+                        <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowPortDirection}">
+                            <TextBlock Grid.Column="0" Text="Direction" VerticalAlignment="Center" FontSize="11"
+                                       ToolTip.Tip="Which way current flows into the structure. Rotate the port to change it."
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RotationOptions}"
+                                      SelectedItem="{Binding PortDirectionValue, Mode=TwoWay}"
                                       HorizontalAlignment="Stretch"
                                       FontSize="11" Padding="4,2"/>
                         </Grid>

@@ -4151,3 +4151,155 @@ anywhere in the repository** — every site is `PlanarFillSettings.Default` plus
 `with { }` — and a future positional caller would bind an `int` to a `bool` and fail to compile rather
 than silently shift.
 
+
+## Edge mesh on CURVED geometry — a NEGATIVE RESULT (follow-up to L8b)
+
+**A FOLLOW-UP to L8b**, and it touches no Green's function, no fill and no solve. Brief:
+`docs/sonnet-briefs/brief-edge-mesh-on-curved-geometry.md`. **M0 and M1 are done; M2 was BUILT ONLY
+AS A MEASUREMENT SEAM and is NOT the default, because M1 says it does not pay.**
+
+```
+SurfaceMesher.cs   + PlanarRimGrading (None / PerRun / PerRunSampled), the oblique-RUN walker,
+                     Mesh's trailing `rimGrading` parameter, EdgeAttractors (D9's own quantity),
+                     and §5's "no edge grading was actually applied" note
+```
+
+Gate: **+4 routine tests in `tests/Engine.Tests/Mom/PlanarRimGradingTests.cs` (~0.2 s)**, plus **2
+tagged `Category=Benchmark`** (E3 3 m 8 s, E3a 1 m 44 s — the two convergence ladders). M0's own table
+is in `tests/Ui.Tests/Em/PlanarMeshPCellTests.cs`, because the shipping PCells are in `src/Ui`.
+
+### §0's finding reproduces exactly, and M0 says it is NARROWER than "smooth parts get nothing"
+
+`CollectBoundaryLines` classifies every ring edge as vertical, horizontal or oblique. An oblique edge
+contributes **neither** a hard gridline nor an edge attractor — D9's guarantee, by exclusion — so a
+96-point disc's mesh is the plain λ_g marcher and nothing else: **N = 248 at `EdgeCells` 0, 3, 10 and
+20 alike**, min cell flat at 223 µm, reproduced as `E1`.
+
+**M0's table on the shipping parts is the part that needed care, because TOTAL N IS THE WRONG
+STATISTIC AND SO IS THE MINIMUM CELL.** Every one of MBend / MTaper / MKlopf responds to `EdgeCells`
+in N, on both starters, and every one of them shows a min cell collapsing from ~176 µm to ~21 µm —
+which reads as "the rim responded" and is false. The fans come from the **axis-parallel end caps**,
+whose attractors refine whole grid columns; a taper's rim passes within a bulk cell of its own caps,
+so a minimum taken over the whole rim reports the cap's fan. The quantity that is actually about this
+brief is the **transverse grid spacing at the rim point FARTHEST from any axis-parallel edge**:
+
+| part (PCB 2-Layer, 10 GHz) | N at EdgeCells 0 → 20 | MID-RIM transverse spacing at 0 → 20 |
+|---|---|---|
+| MLIN straight (control) | 247 → 1,286 | — (no oblique edge) |
+| MBend mitred | 196 → 1,736 | 580 → 694 → 245 → 213 µm |
+| MTaper 2.9 → 1.0 mm | 657 → 851 | **263.64 µm, FLAT** |
+| MKlopf on-axis | 605 → 1,115 | **176.36 µm, FLAT** |
+| MKlopf Offset | 497 → 986 | **176.21 µm, FLAT** |
+
+and the MMIC starter is the same shape (MTaper flat at 6.59 µm, MKlopf flat at 1.55 µm). **MBend is
+the exception and not a counter-example**: its single oblique edge is the mitre, 1.2 mm from two long
+axis-parallel edges whose fans reach it — and even there the EdgeCells = 3 value (694 µm) is *worse*
+than EdgeCells = 0 (580 µm), which is the fan moving gridlines about rather than resolving anything.
+
+### §0.1 item 2 — the non-monotone 45° bend was an UNREPRESENTATIVE FIXTURE, measured
+
+A hand-built L-shape with a 45° chamfer measured N = 23,891 / 11,438 / 20,146 at EdgeCells 3 / 10 / 20
+— non-monotone and 4.8× over R17's ceiling. Asked of the **real** `MBendPCell` on the same technology
+(`E0b`), at 45°, 90° and 135°, N is monotone at every angle and inside the ceiling:
+
+| MBend angle | EdgeCells 0 / 3 / 10 / 20 |
+|---|---|
+| 45° | 1,190 / 1,799 / 2,840 / 3,616 |
+| 90° | 196 / 550 / 1,484 / 1,736 |
+| 135° | 2,363 / 2,856 / 3,879 / 4,176 (Warn) |
+
+**It is asserted rather than reported**, because if a shipping bend ever does go non-monotone that is
+the growth-ratio knife edge L8b's own notes describe and it outranks this brief.
+
+### THE FINDING: a graded fan on a STAIRCASED rim buys nothing, and the reason is measurable
+
+§2 is the question that decides the work, and it has to be answered with a converged physical
+quantity. The quantity is L8c's own Tier 5 harness — the static capacitance from
+`PlanarFill.ScalarPotentialMatrix` at ω → 0, at εᵣ = 1 so the kernel is closed form and only the mesh
+can be wrong — on a 96-point disc, r = 1.45 mm, over the FR-4 starter's ground plane.
+
+**The CONTROL first, and it is not optional** (`E3a`). On a Manhattan square, where the graded fan
+lands on a rim that is exactly where the metal is, the same harness and the same quantity:
+
+| | N = 40/144 | 180/264 | 760/840 | 1,624 | 3,280 |
+|---|---|---|---|---|---|
+| uniform (edge mesh off) | **4.437%** | 2.224% | 0.970% | 0.556% | 0.279% |
+| edge-graded (EdgeCells 3) | **0.431%** | 0.501% | 0.455% | 0.453% | 0.279% |
+
+**At the shipping mesh grading is 10× better for 3.6× the unknowns, and the uniform ladder needs
+~20× the unknowns to catch it.** So the harness sees edge grading perfectly well. (The graded
+ladder's flatness at ~0.45% is R-fil-12's own already-recorded mechanism: the conductor-width edge
+cell does not shrink with cells/λ, so its sequence is flat because it is at its own limit.)
+
+**Now the disc** (`E3`), three ladders, each refined along cells/λ:
+
+| ladder | N = ~250 | ~330 | ~670 | ~1,300 | best |
+|---|---|---|---|---|---|
+| shipped (no rim attractors) | 1.494% | 0.335% | 0.265% | 0.413% | **0.265%** |
+| `PerRun` | 0.331% | 0.447% | 0.588% | 0.478% | 0.331% |
+| `PerRunSampled` | 0.745% | 0.511% | 0.768% | 0.501% | 0.501% |
+
+**Rim attractors are not better; `PerRunSampled` is measurably worse.** And the reason is in the
+reference ladder itself: a uniformly refined disc does **not** converge monotonically — 137.48 /
+138.31 / 138.51 / 137.59 / 137.94 fF at N = 324 … 3,972, a **non-monotone band of 0.669%** which is
+*wider than every difference being compared*. The staircase's own area error, reported beside each
+rung, wanders over exactly the same range (0.16% … 1.13%) and in step with it.
+
+**That is the mechanism, and it is L8b's own already-recorded one seen on a smooth outline instead of
+a mitre:** the quantisation error depends on how the grid happens to *align* with an oblique edge and
+not only on how fine it is. Refining toward a *tread's* edge resolves the artifact, not the physics,
+and the artifact is an order of magnitude larger than anything the fan changes. **§2's instruction is
+"if it does not, stop and report that" — so `PlanarRimGrading.None` is the default, and the negative
+result is ASSERTED in `E3`** (rim grading is required NOT to beat the shipped mesh by 2×) so that a
+later change which made it genuinely pay turns the test red instead of quietly contradicting this
+note. **What curved geometry needs is conformal / cut boundary cells (§4), which is its own phase with
+its own brief** — a cut cell breaks the rooftop pairing L8c's fill and L9c's via basis both assume.
+
+**Three already on the record for the same shape of answer:** L7b-b's Route B, L9c's amplitude cap,
+L9e's ACA.
+
+### M2 — built as a SEAM, and D9 is preserved NUMERICALLY rather than by exclusion
+
+`PlanarRimGrading` is a measurement seam of exactly `PlanarEdgeReference`'s kind — **not a fourth user
+control** (D3 permits three). An oblique **run** is a maximal chain of consecutive oblique edges, so a
+96-point disc is ONE run and a taper is one per flank; attractors come from the run, at each end of its
+own coordinate range in each axis, filtered by the SAME "long enough to crowd" test the axis-parallel
+path uses (a fifth of the polygon's own extent), asked of the run. `PerRunSampled` adds three interior
+samples spread along the run's **arc length**, each contributing an attractor transverse to the local
+tangent — spreading by *coordinate* is wrong for a closed curve, since the midpoint of a disc's y-range
+is the disc's centre and not on the rim at all.
+
+**D9 is asserted on the ATTRACTOR COUNT and not on N** (`E1c`, via the new public
+`SurfaceMesher.EdgeAttractors`), because N is a consequence of the marcher, the growth ratio and the
+λ_g cap all at once. A 24-, 96- and 384-point disc each contribute **0 shipped, 4 `PerRun`, 7
+`PerRunSampled`** — unchanged as the tessellation is quadrupled, which is the property D9 is about.
+
+**A Manhattan mesh is BIT-IDENTICAL with the seam on** (`E2`): gridlines, cells and bases compared as
+equalities, at EdgeCells 0/3/10 and both modes, and §10.7's FR-4 hero is still exactly **N = 552**. It
+cannot move — a Manhattan polygon has no oblique edge and therefore no run — and that is asserted
+rather than argued.
+
+**One fixture trap, worth the sentence.** A disc built with its vertices offset by half a step —
+the obvious way to keep vertices off the axes — makes the four edges that STRADDLE each axis exactly
+axis-parallel to the mesher's own 1e-12 tolerance. The ring then splits into four runs and the
+fixture hands itself the very gridlines it exists not to have: **16 attractors instead of 4**. Put the
+vertices ON the axes; a vertex is geometry to be covered, never a gridline.
+
+### §5 — a control that silently does nothing now says so
+
+`SurfaceMesher`'s note read *"Edge mesh on: N graded cell(s) at every axis-parallel conductor edge…"*.
+That is accurate and nobody reads the qualifier, so on an all-curved part it reported an edge mesh
+that exists nowhere on the artwork. When an axis collects no attractor the report now adds *"…but NO
+edge grading was actually applied…"*, naming the axis and saying that raising Edge cells will not
+change the mesh. Same class as the `EffectiveEdgeCells` clamp note beside it. `E1b` asserts it fires
+on the disc and does **not** fire on the Manhattan hero.
+
+### Out of scope here, on purpose
+
+- **Conformal / cut boundary cells, and RWG triangles.** They address *staircasing*, which the
+  measurement above says is the binding term — and they are a much larger phase (a cut cell breaks
+  L8c's rooftop pairing and L9c's via basis; RWG replaces the basis outright).
+- **Any change to the fill, the kernel, ports, de-embedding or the solve.** None was made.
+- **`EdgeFractionOfReference` (0.03), `EdgeGrowthRatio` (1.7) and `EdgeReferenceLength`'s
+  conductor-width choice.** R-fil-12 closed that at 0.18% from the consensus limit; untouched.
+- **A fourth user control.** `PlanarMeshSettings` is unchanged.

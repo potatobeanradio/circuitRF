@@ -37,8 +37,11 @@ public sealed class QuasiStaticKernel : IEmKernel
     public QuasiStaticKernel(bool dispersionCorrection = false)
         => _dispersionCorrection = dispersionCorrection;
 
-    /// <summary>Worded once so the registry, the panel and the notes cannot drift.</summary>
-    public const string KernelName = "Quasi-static 2D (kernel A)";
+    /// <summary>Worded once so the registry, the panel and the notes cannot drift.
+    /// <b>No "kernel A" (owner request, 2026-08-09)</b> — this string is shown in the EM Setup panel
+    /// and stamped into every <c>.snp</c> header, and our own internal A/B shorthand means nothing to
+    /// the person reading either.</summary>
+    public const string KernelName = "Quasi-static cross-section";
 
     public string Name => KernelName;
 
@@ -105,7 +108,7 @@ public sealed class QuasiStaticKernel : IEmKernel
     {
         if (problem.Regions.Count == 0)
             return EmSuitability.No(
-                "This problem has no dielectric regions. Kernel A needs at least one — a single " +
+                "This problem has no dielectric regions. The uniform-line analysis needs at least one — a single " +
                 "air region spanning ±infinity is the free-space case.");
 
         for (int i = 0; i < problem.Regions.Count; i++)
@@ -128,9 +131,9 @@ public sealed class QuasiStaticKernel : IEmKernel
             string what = bot > top ? "a gap" : "an overlap";
             return EmSuitability.No(
                 $"Dielectric regions {i} and {i + 1} leave {what} between y = {top:G4} and " +
-                $"y = {bot:G4} m; regions must tile the y axis without gaps or overlap. Kernel A's " +
+                $"y = {bot:G4} m; regions must tile the y axis without gaps or overlap. This analysis's " +
                 "2.5D premise is horizontal, laterally infinite interfaces — a vertical or sloped " +
-                "dielectric boundary is out of scope. THE FULL-WAVE PLANAR KERNEL (B) DOES NOT HELP " +
+                "dielectric boundary is out of scope. THE FULL-WAVE PLANAR ANALYSIS DOES NOT HELP " +
                 "HERE EITHER, AND NOT BECAUSE IT IS UNFINISHED: it now takes an arbitrary stratified " +
                 "medium (LayerStack) with metal on many levels and vias between them, but \"a general " +
                 "layered stack\" means N HORIZONTAL layers. A sloped or vertical dielectric boundary " +
@@ -185,7 +188,7 @@ public sealed class QuasiStaticKernel : IEmKernel
 
         if (signalCount > MaxSignalConductors)
             return EmSuitability.No(
-                $"This cross-section has {signalCount} signal conductors; kernel A solves up to " +
+                $"This cross-section has {signalCount} signal conductors; the uniform-line analysis solves up to " +
                 $"{MaxSignalConductors}. {ConductorCeilingReason}");
 
         // Every signal conductor must own exactly two ports: its own two ends. This is the general

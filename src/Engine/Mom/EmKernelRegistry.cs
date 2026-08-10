@@ -121,6 +121,35 @@ public static class EmKernelRegistry
     /// </summary>
     private const string CheaperByRoughly = "about a thousand times cheaper";
 
+    // ── What a USER calls these (owner request, 2026-08-09) ──────────────────────────────────────
+    //
+    // "Kernel A" and "kernel B" are our own internal shorthand and mean nothing to anyone reading the
+    // EM Setup panel. Every string a user can see names the analysis by what it SOLVES instead, and
+    // the three labels below are the single source of that naming: the EM Setup dropdown renders
+    // them, and the prose in Choose() tells the user to pick one BY NAME. Keep the two in step — a
+    // message that says "set Analysis to X" when the dropdown offers "Y" is worse than no message.
+
+    /// <summary>The <see cref="EmAnalysisKind.Auto"/> choice, as the user sees it.</summary>
+    public const string AutoChoiceLabel = "Automatic";
+
+    /// <summary>The <see cref="EmAnalysisKind.CrossSection"/> choice, as the user sees it. Named for
+    /// the thing it solves, not for the method: a straight, constant-width line.</summary>
+    public const string UniformLineChoiceLabel = "Uniform transmission line";
+
+    /// <summary>The <see cref="EmAnalysisKind.Planar"/> choice, as the user sees it. Kept verbatim —
+    /// "full-wave planar" is a term an RF engineer already knows and it is the honest description.</summary>
+    public const string PlanarChoiceLabel = "Full-wave planar";
+
+    /// <summary>The display label for any resolved kind. <see cref="EmAnalysisKind.Auto"/> is a
+    /// request, not an outcome, so it is labelled but never resolves to a kernel.</summary>
+    public static string ChoiceLabel(EmAnalysisKind kind) => kind switch
+    {
+        EmAnalysisKind.Auto         => AutoChoiceLabel,
+        EmAnalysisKind.CrossSection => UniformLineChoiceLabel,
+        EmAnalysisKind.Planar       => PlanarChoiceLabel,
+        _                           => kind.ToString(),
+    };
+
     public static readonly EmKernelDescriptor CrossSection = new(
         EmAnalysisKind.CrossSection,
         QuasiStaticKernel.KernelName,
@@ -199,61 +228,62 @@ public static class EmKernelRegistry
         {
             case EmAnalysisKind.Auto when crossSection.Accepts:
                 return Ok(EmAnalysisKind.CrossSection,
-                    $"Auto chose the quasi-static cross-section kernel (A): this geometry reduces to " +
-                    $"a uniform cross-section, which A solves exactly and is {CheaperByRoughly} than " +
-                    "the full-wave planar kernel (B). Set this EM setup's analysis to Planar if you " +
-                    "want the full-wave answer anyway.");
+                    $"{AutoChoiceLabel} chose \"{UniformLineChoiceLabel}\": this geometry is a uniform " +
+                    $"cross-section, which that analysis solves exactly and is {CheaperByRoughly} than " +
+                    $"\"{PlanarChoiceLabel}\". Set Analysis to \"{PlanarChoiceLabel}\" if you want the " +
+                    "full-wave answer anyway.");
 
             case EmAnalysisKind.Auto when planar.Accepts:
                 return Ok(EmAnalysisKind.Planar,
-                    "Auto chose the full-wave planar kernel (B), because the quasi-static " +
-                    $"cross-section kernel (A) refused this geometry: {crossSection.Refusal}");
+                    $"{AutoChoiceLabel} chose \"{PlanarChoiceLabel}\", because this geometry is not a " +
+                    $"uniform cross-section: {crossSection.Refusal}");
 
             case EmAnalysisKind.Auto:
                 return Refuse(EmAnalysisKind.Planar,
-                    "Neither EM kernel can analyse this geometry. The quasi-static cross-section " +
-                    $"kernel (A) refused it: {crossSection.Refusal} The full-wave planar kernel (B) " +
-                    $"refused it too: {planar.Refusal}",
-                    "Auto could not choose a kernel: both refused this geometry.");
+                    "Neither EM analysis can handle this geometry. " +
+                    $"\"{UniformLineChoiceLabel}\" refused it: {crossSection.Refusal} " +
+                    $"\"{PlanarChoiceLabel}\" refused it too: {planar.Refusal}",
+                    $"{AutoChoiceLabel} could not choose an analysis: both refused this geometry.");
 
             case EmAnalysisKind.CrossSection when crossSection.Accepts:
                 return Ok(EmAnalysisKind.CrossSection,
-                    "This EM setup names the quasi-static cross-section kernel (A) explicitly, and " +
-                    "auto-selection never overrides that." +
+                    $"Analysis is set to \"{UniformLineChoiceLabel}\" explicitly, and " +
+                    $"{AutoChoiceLabel} never overrides that." +
                     (planar.Accepts
-                        ? " The full-wave planar kernel (B) would also accept this geometry, at " +
-                          "orders of magnitude more cost."
+                        ? $" \"{PlanarChoiceLabel}\" would also accept this geometry, at orders of " +
+                          "magnitude more cost."
                         : ""));
 
             case EmAnalysisKind.CrossSection:
                 return Refuse(EmAnalysisKind.CrossSection,
                     crossSection.Refusal +
                     (planar.Accepts
-                        ? " The full-wave planar kernel (B) does accept this geometry — set this EM " +
-                          "setup's analysis to Planar (or to Auto, which would pick it) to solve it."
+                        ? $" \"{PlanarChoiceLabel}\" does accept this geometry — set Analysis to " +
+                          $"\"{PlanarChoiceLabel}\" (or to \"{AutoChoiceLabel}\", which would pick it) " +
+                          "to solve it."
                         : ""),
-                    "This EM setup names the quasi-static cross-section kernel (A) explicitly, and " +
-                    "that kernel refused the geometry.");
+                    $"Analysis is set to \"{UniformLineChoiceLabel}\" explicitly, and that analysis " +
+                    "refused the geometry.");
 
             case EmAnalysisKind.Planar when planar.Accepts:
                 return Ok(EmAnalysisKind.Planar,
-                    "This EM setup names the full-wave planar kernel (B) explicitly, and " +
-                    "auto-selection never overrides that." +
+                    $"Analysis is set to \"{PlanarChoiceLabel}\" explicitly, and {AutoChoiceLabel} " +
+                    "never overrides that." +
                     (crossSection.Accepts
-                        ? " The quasi-static cross-section kernel (A) also accepts this geometry and " +
-                          $"is {CheaperByRoughly}; Auto would have picked it."
+                        ? $" \"{UniformLineChoiceLabel}\" also accepts this geometry and is " +
+                          $"{CheaperByRoughly}; {AutoChoiceLabel} would have picked it."
                         : ""));
 
             case EmAnalysisKind.Planar:
                 return Refuse(EmAnalysisKind.Planar,
                     planar.Refusal +
                     (crossSection.Accepts
-                        ? " The quasi-static cross-section kernel (A) does accept this geometry — set " +
-                          "this EM setup's analysis to Cross-section (or to Auto, which would pick " +
-                          "it) to solve it."
+                        ? $" \"{UniformLineChoiceLabel}\" does accept this geometry — set Analysis to " +
+                          $"\"{UniformLineChoiceLabel}\" (or to \"{AutoChoiceLabel}\", which would " +
+                          "pick it) to solve it."
                         : ""),
-                    "This EM setup names the full-wave planar kernel (B) explicitly, and that kernel " +
-                    "refused the geometry.");
+                    $"Analysis is set to \"{PlanarChoiceLabel}\" explicitly, and that analysis refused " +
+                    "the geometry.");
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(requested), requested, null);

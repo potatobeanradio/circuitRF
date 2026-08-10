@@ -146,6 +146,22 @@ public sealed partial class LayoutEditorViewModel
 
     private IReadOnlyList<LayoutShape>? _pastePlacementShapes;
     private IReadOnlyList<LayoutInstance> _pastePlacementInstances = [];
+
+    /// <summary>Per pasted instance: is its resolved geometry small enough to draw live? Decided ONCE,
+    /// when the placement is armed — see <see cref="LayoutOverlay.GhostInstance.BoxOnly"/>.</summary>
+    private bool[] _pastePlacementInstanceBoxOnly = [];
+
+    /// <summary>
+    /// How many flattened shapes a pasted instance may resolve to before its ghost degrades to a
+    /// plain box (owner's own rule: "for small amounts of geometry it should render live; if the
+    /// geometry is too complicated for live rendering, then just render a box").
+    ///
+    /// <para>Counted with <see cref="LayoutFlatten.CountResultingShapes"/>, which is exactly the
+    /// right instrument: it honours the array-multiplies-a-level and depth-cap rules WITHOUT ever
+    /// materializing more than one array cell's worth of shapes, so asking the question is cheap even
+    /// when the answer is "millions".</para>
+    /// </summary>
+    internal const long PasteGhostLiveShapeBudget = 5_000;
     private long _pastePlacementAnchorX;
     private long _pastePlacementAnchorY;
     private long _pasteCursorX;
@@ -171,6 +187,16 @@ public sealed partial class LayoutEditorViewModel
         if (shapes.Count == 0 && (instances is null || instances.Count == 0)) return;
         _pastePlacementShapes = shapes;
         _pastePlacementInstances = instances ?? [];
+        _pastePlacementInstanceBoxOnly = new bool[_pastePlacementInstances.Count];
+        for (int i = 0; i < _pastePlacementInstances.Count; i++)
+        {
+            // CountResultingShapes returns NEGATIVE when it exceeds the ceiling it was given — it
+            // stops counting rather than finishing an arithmetic nobody needs the answer to. Reading
+            // that as "small" is exactly backwards, and is what the box-only gate caught.
+            long n = LayoutFlatten.CountResultingShapes(
+                _pastePlacementInstances[i], InstanceBaseDir, PasteGhostLiveShapeBudget);
+            _pastePlacementInstanceBoxOnly[i] = n < 0 || n > PasteGhostLiveShapeBudget;
+        }
         _pastePlacementAnchorX = anchorX;
         _pastePlacementAnchorY = anchorY;
         _pasteCursorX = anchorX;
@@ -190,6 +216,7 @@ public sealed partial class LayoutEditorViewModel
     {
         _pastePlacementShapes = null;
         _pastePlacementInstances = [];
+        _pastePlacementInstanceBoxOnly = [];
         RebuildOverlay();
     }
 
@@ -203,6 +230,7 @@ public sealed partial class LayoutEditorViewModel
         var placedInstances = LayoutFragment.Translate(_pastePlacementInstances, dx, dy);
         _pastePlacementShapes = null;
         _pastePlacementInstances = [];
+        _pastePlacementInstanceBoxOnly = [];
         InsertPastedMixed(placedShapes, placedInstances, "Paste");
     }
 
@@ -264,6 +292,8 @@ public sealed partial class LayoutEditorViewModel
     {
         if (shapes.Count == 0 && instances.Count == 0) return;
 
+        ResolvePortNumbers(shapes);
+
         int shapeInsertAt = Model.Shapes.Count;
         int instanceInsertAt = Model.Instances.Count;
 
@@ -280,5 +310,65 @@ public sealed partial class LayoutEditorViewModel
         ReplaceMixedSelection(
             Enumerable.Range(shapeInsertAt, shapes.Count),
             Enumerable.Range(instanceInsertAt, instances.Count));
+    }
+
+    /// <summary>
+    /// Give every pasted EM port a free number (owner request, 2026-08-09). A port number indexes the
+    /// s-parameter matrix, so two ports naming the same one is not a cosmetic clash —
+    /// <c>EmPortExtraction</c> refuses the whole extraction by name — and copy/paste is the one
+    /// gesture that produces it by construction.
+    ///
+    /// <para><b>This is the same shape as the schematic's own <c>SchematicPasteCommand.ResolveNums</c></b>
+    /// and for the same reason: the used set is seeded from the DESTINATION and updated between
+    /// pasted ports, so an intra-batch collision (two ports copied together) is prevented as well as a
+    /// collision with what was already there. The lowest free number is taken, matching
+    /// <see cref="NextPortName"/> — a pasted port and a freshly placed one number identically.</para>
+    ///
+    /// <para>The user's own naming is preserved where it can be: the digit run inside the existing
+    /// text is substituted, so <c>"Port 3"</c> becomes <c>"Port 5"</c> rather than <c>"P5"</c>. An
+    /// UNNUMBERED port label is left alone — the extractor already assigns it the lowest free number,
+    /// so it cannot collide and rewriting it would be inventing a name the user did not type.</para>
+    ///
+    /// <para>Called from <see cref="InsertPastedMixed"/>, the one funnel Paste, Paste in Place and
+    /// Duplicate all go through, so the three cannot disagree. Safe to mutate in place: every caller
+    /// hands over fresh clones (<c>LayoutFragment.Translate</c> / the fragment reader), never a shape
+    /// the model still holds.</para>
+    /// </summary>
+    private void ResolvePortNumbers(IReadOnlyList<LayoutShape> shapes)
+    {
+        var pasted = shapes.OfType<LabelShape>().Where(l => l.IsPort).ToList();
+        if (pasted.Count == 0) return;
+
+        var used = new HashSet<int>();
+        foreach (var s in Model.Shapes)
+            if (s is LabelShape { IsPort: true } l && Em.EmPortExtraction.TryParseNumber(l.Text, out int n))
+                used.Add(n);
+
+        int next = 1;
+        foreach (var port in pasted)
+        {
+            if (!Em.EmPortExtraction.TryParseNumber(port.Text, out int number)) continue;
+            if (used.Add(number)) continue;                 // free in the destination — keep it
+
+            while (!used.Add(next)) next++;
+            port.Text = SubstitutePortNumber(port.Text, next);
+        }
+    }
+
+    /// <summary>Replace the digit run in a port label's text, preserving whatever prefix the user
+    /// typed. Falls back to the canonical <c>P{n}</c> form only when there is no digit run to
+    /// substitute, which <see cref="ResolvePortNumbers"/>'s own caller has already ruled out.</summary>
+    internal static string SubstitutePortNumber(string text, int number)
+    {
+        int start = -1, end = -1;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (!char.IsAsciiDigit(text[i])) continue;
+            if (start < 0) start = i;
+            end = i;
+        }
+        return start < 0
+            ? $"P{number}"
+            : text[..start] + number.ToString(System.Globalization.CultureInfo.InvariantCulture) + text[(end + 1)..];
     }
 }

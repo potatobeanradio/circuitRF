@@ -123,12 +123,21 @@ public static partial class LayoutRenderer
     /// name="background"/> reads as light or dark, then blends <paramref name="color"/> toward
     /// black (light background) or white (dark background) by <see cref="SnapMarkerContrastTintAmount"/>
     /// — alpha is left untouched.</summary>
-    private static SKColor TintForContrast(SKColor color, SKColor background)
+    private static SKColor TintForContrast(SKColor color, SKColor background) =>
+        TintForContrast(color, background, SnapMarkerContrastTintAmount);
+
+    /// <summary>
+    /// Push a layer colour AWAY from the canvas background so an annotation drawn in it reads as an
+    /// annotation rather than as more of the same metal: darker on a light background, lighter on a
+    /// dark one. Keyed off the background's own Rec. 601 luminance rather than off which built-in
+    /// theme happens to be active, so a custom or overridden background tints the right way too.
+    /// </summary>
+    internal static SKColor TintForContrast(SKColor color, SKColor background, double amount)
     {
         double luminance = 0.299 * background.Red + 0.587 * background.Green + 0.114 * background.Blue;
         return luminance > 127.5
-            ? Blend(color, 0, 0, 0, SnapMarkerContrastTintAmount)      // light background -> tint darker
-            : Blend(color, 255, 255, 255, SnapMarkerContrastTintAmount); // dark background -> tint lighter
+            ? Blend(color, 0, 0, 0, amount)        // light background -> tint darker
+            : Blend(color, 255, 255, 255, amount); // dark background -> tint lighter
     }
 
     private static SKColor Blend(SKColor color, double towardR, double towardG, double towardB, double amount) => new SKColor(

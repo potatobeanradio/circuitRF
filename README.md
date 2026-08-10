@@ -364,32 +364,32 @@ the `DataCube`-native Data Display with Smith/polar/rect/table plots; **end-to-e
 plotting** (engine → RBF surface fit → contour render, for simulated *and* measured data); and
 **interactive markers**, including markers that read and drag on the contour surface.
 
-**Also done — the layout half:** a full **layout editor** on an integer-DBU geometry model — drawing tools,
+**Done — the layout half:** a full **layout editor** on an integer-DBU geometry model — drawing tools,
 curves and holes, booleans and offsets, scale, technologies with layer tables and substrate **stackups**,
 hierarchy with instances and arrays, push-in/pop-out navigation, flatten and group-into-cell, a spatial index
 and LOD rendering for large designs, **GDSII / DXF / Gerber+Excellon interchange**, a **parametric cell
 (PCell)** mechanism, the **microstrip component family** with published discontinuity models, and
 **schematic↔layout generation** in both directions.
 
-**In progress — electromagnetic simulation.** A **2.5D method-of-moments** solver that analyses layout
+**Done — electromagnetic simulation.** A **2.5D method-of-moments** solver that analyses layout
 geometry against its technology stackup and returns S-parameters consumable anywhere a Touchstone block is:
-quasi-static per-unit-length first, then full-wave over a single dielectric, then the general layered stack
-with vias and z-directed current. Closed-form microstrip serves as the validation oracle for the first stage.
+quasi-static per-unit-length and full-wave over a general layered stack
+with vias and z-directed current.
+
 See [`docs/design/layout-view.md`](docs/design/layout-view.md) §10.
 
 What's left for the v1 release after that is **hardening** — installers for Windows/macOS/Linux, broader
 docs, and keeping the `testdata/` regression suite green in CI on all three OSes.
 
 **Deferred to v2:**
-- **Sparse block Jacobian for HB at scale.** v1 uses a dense per-block Jacobian; a sparse solve is the path
-  to very large nonlinear problems.
-- **Verilog-A / OSDI backend → ASM-HEMT.** v1 ships built-in models + the SDD; the device interface is
-  already designed to accept an OSDI/OpenVAF backend without redesign.
-- **Noise analysis — an open green field.** circuitRF v1 has **no** noise figure, phase noise, or
-  noise-parameter (Fmin, Γopt, Rn) extraction. This isn't a technical wall — the linear engine already
-  builds what a noise pass needs, and the `.spl`/`.lpcwave` importers already parse noise columns — it's
-  simply **unbuilt**, left open on purpose for a contributor (an LNA designer, a device-modeling expert) who
-  wants to own it. A solid noise pass is a strong candidate for a **major v2 feature**. If that's you, dig in.
+** open green fields for development**
+- **Noise analysis** — noise figure, phase noise, or noise-parameter (Fmin, Γopt, Rn) extraction. 
+- **Advanced stability** analysis (NDF, Winslow Probe etc)
+- **LVS**
+- **Transient Analysis**
+- **Envelope Analysis** for modulated waveforms
+- **FEM Analysis** (electromagnetic and thermal)
+- **Sparse block Jacobian for HB at scale.** v1 uses a dense per-block Jacobian; a sparse solve is the path to very large nonlinear problems.
 
 Full roadmap and current status: [`docs/Development_Plan.md`](docs/Development_Plan.md).
 

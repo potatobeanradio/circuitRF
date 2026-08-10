@@ -156,12 +156,26 @@ public static class EmPortExtraction
                     "check that the artwork it names is on a layer bound to a signal conductor in the " +
                     "technology's stackup.", notes);
 
-            if (!TryInferSide(poly, x, y, out var side, out string? ambiguity))
+            // The label's OWN direction wins when it has one, and it says so in the note. A port
+            // placed by the Port tool has carried one since 2026-08-09 (seeded from the artwork,
+            // then the user's to rotate); a null one is every .clay written before that field
+            // existed, and still means "infer it from the geometry" — the R-res-5 path below,
+            // unchanged, ambiguity refusal included.
+            PlanarPortSide side;
+            bool stated = label.PortDirection is not null;
+            if (stated)
+            {
+                side = SideFromDirection(label.PortDirection!.Value);
+            }
+            else if (!TryInferSide(poly, x, y, out side, out string? ambiguity))
+            {
                 return EmPortExtractionResult.No(
                     $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron)} " +
                     $"{ambiguity} Which end of the conductor a port names decides which way current " +
-                    "flows into the structure, so it is never guessed. Move the label to the middle " +
-                    "of the conductor end you mean, clear of the corner.", notes);
+                    "flows into the structure, so it is never guessed. Rotate the port to point the " +
+                    "way current should flow into the structure, or move the label to the middle of " +
+                    "the conductor end you mean, clear of the corner.", notes);
+            }
 
             var z0 = z0For?.Invoke(i) ?? new Complex(50, 0);
             ports.Add(new PlanarPort(number, new EmPoint(x, y), side, z0,
@@ -169,8 +183,8 @@ public static class EmPortExtraction
 
             notes.Add(
                 $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron)} was " +
-                $"taken to be on the conductor's {SideName(side)} end (inferred from the nearest " +
-                $"conductor boundary)" +
+                $"taken to be on the conductor's {SideName(side)} end " +
+                (stated ? "(the port's own direction)" : "(inferred from the nearest conductor boundary)") +
                 (problem.Layers.Count > 1 ? $" of level {level} ('{problem.Layers[level].Name}')" : "") +
                 $", driving current {CurrentDirection(side)}, at " +
                 $"{FormatOhms(z0)}. The de-embedding reference plane is fixed one mesh cell in from " +
@@ -293,6 +307,20 @@ public static class EmPortExtraction
         ambiguity = null;
         return true;
     }
+
+    /// <summary>
+    /// A port's stated DIRECTION — the way current flows INTO the structure — is the same quantity
+    /// <see cref="PlanarPortSide"/> carries, expressed the way a user points at it. A port whose
+    /// current flows +x̂ sits on the conductor's LOW-x end, so the two are inverses of each other and
+    /// this is the one place that inversion is written down.
+    /// </summary>
+    internal static PlanarPortSide SideFromDirection(LayoutRotation direction) => direction switch
+    {
+        LayoutRotation.R0   => PlanarPortSide.MinX,   // current +x̂ -> low-x end
+        LayoutRotation.R90  => PlanarPortSide.MinY,   // current +ŷ -> low-y end
+        LayoutRotation.R180 => PlanarPortSide.MaxX,   // current −x̂ -> high-x end
+        _                   => PlanarPortSide.MaxY,   // current −ŷ -> high-y end
+    };
 
     private static string SideName(PlanarPortSide s) => s switch
     {

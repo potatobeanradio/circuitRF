@@ -389,11 +389,16 @@ public static partial class LayoutRenderer
                 // visibility and paint order" every other shape follows.
                 DrawBitmapShapes(canvas, view, candidates, layerMap, unknownLayers, tech, dragOverrides, ps, theme, counters);
 
+                // Built once per frame, not per port: an EM port's marker needs the conductor it sits
+                // on, and that conductor may be a placed INSTANCE's artwork rather than a top-level
+                // shape (a schematic-generated layout has no top-level shapes at all).
+                var conductorAt = LayoutPortDirection.LookupFor(view, tech, opts.BaseDir ?? "");
+
                 foreach (var (def, shapes) in resolved)
                 {
                     if (!def.Visible) continue;
                     counters.LayersVisited++;
-                    DrawLayer(canvas, def, shapes, ps, dragOverrides, scaleUm, opts, counters);
+                    DrawLayer(canvas, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, counters);
                 }
 
                 // L3a — instances (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md). Culled the
@@ -427,11 +432,23 @@ public static partial class LayoutRenderer
                 }
 
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
-                    DrawGhostShape(canvas, ghost, layerMap, ps, scaleUm);
+                    DrawGhostShape(canvas, ghost, layerMap, conductorAt, ps, scaleUm, theme.Background);
 
                 if (opts.Overlay?.PastePreview is { Count: > 0 } pastePreview)
                     foreach (var previewShape in pastePreview)
-                        DrawGhostShape(canvas, previewShape, layerMap, ps, scaleUm);
+                        DrawGhostShape(canvas, previewShape, layerMap, conductorAt, ps, scaleUm, theme.Background);
+
+                // The instance half of the paste ghost. Reuses the Instance tool's OWN ghost drawing
+                // (real resolved geometry at reduced opacity, with the labelled placeholder fallback
+                // for a reference that does not resolve) rather than a second ghost renderer — a
+                // pasted instance and a placed one are the same thing and must look the same.
+                if (opts.Overlay?.PastePreviewInstances is { Count: > 0 } pasteInstances)
+                    foreach (var g in pasteInstances)
+                    {
+                        if (g.BoxOnly) DrawGhostInstanceBox(canvas, g.Bbox, theme, ps, scaleUm, counters);
+                        else DrawPendingInstancePlacement(canvas, (g.Instance, g.Bbox), tech,
+                                                          opts.BaseDir ?? "", theme, ps, scaleUm, counters);
+                    }
 
                 if (opts.Overlay?.PendingInstancePlacement is { } pendingInstance)
                     DrawPendingInstancePlacement(canvas, pendingInstance, tech, opts.BaseDir ?? "", theme, ps, scaleUm, counters);
@@ -649,7 +666,8 @@ public static partial class LayoutRenderer
     /// saturated) or theme (light or dark), i.e. the cause was opacity, not color as first suspected;
     /// the dashed outline (unchanged) is what marks a ghost as provisional, so the fill does not need
     /// to be faint to carry that meaning.</summary>
-    private static void DrawGhostShape(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap, PathSpace ps, double scaleUm)
+    private static void DrawGhostShape(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap,
+        LayoutPortDirection.ConductorLookup? conductorAt, PathSpace ps, double scaleUm, SKColor background)
     {
         LayerDef def = layerMap is not null && layerMap.TryGetValue(ghost.Layer, out var found)
             ? found
@@ -662,9 +680,17 @@ public static partial class LayoutRenderer
             LabelShape effective = effectiveHeight == label.Height ? label : new LabelShape
             {
                 Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
-                Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort, Style = label.Style,
+                Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort,
+                PortDirection = label.PortDirection, Style = label.Style,
             };
             DrawLabelText(canvas, effective, ps, color);
+            // A port ghost carries its own marker, so what the user is placing looks like what
+            // lands. It resolves against the SAME per-frame conductor lookup a committed port uses
+            // (owner request, 2026-08-09: "the ghost's snapping and sizes also need to render live"),
+            // so the width bar spans the real metal and the arrow's length is clamped by the real
+            // conductor — not the no-conductor stand-in a null lookup would fall back to.
+            if (label.IsPort)
+                DrawPortMarker(canvas, effective, conductorAt, ps, scaleUm, color, background, new LayoutFrameCounters());
             return;
         }
 
@@ -745,6 +771,7 @@ public static partial class LayoutRenderer
     internal const int DefaultMergeShapeCountThreshold = 2_000;
 
     private static void DrawLayer(SKCanvas canvas, LayerDef def, List<(int Index, LayoutShape Shape)> shapes,
+        LayoutPortDirection.ConductorLookup? conductorAt,
         PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm,
         LayoutRenderOptions opts, LayoutFrameCounters counters)
     {
@@ -789,9 +816,11 @@ public static partial class LayoutRenderer
                 LabelShape effective = effectiveHeight == label.Height ? label : new LabelShape
                 {
                     Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
-                    Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort, Style = label.Style,
+                    Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort,
+                    PortDirection = label.PortDirection, Style = label.Style,
                 };
                 DrawLabelText(canvas, effective, ps, color);
+                if (label.IsPort) DrawPortMarker(canvas, effective, conductorAt, ps, scaleUm, color, opts.Theme.Background, counters);
                 continue;
             }
 
@@ -1460,6 +1489,178 @@ public static partial class LayoutRenderer
     }
 
     // ── Label (annotation / port marker) — rendered as text, not fill+stroke ────
+
+    /// <summary>Stroke width of a port marker, in DEVICE pixels — constant on screen at any zoom, like
+    /// every other affordance in this editor, and deliberately heavier than the geometry hairline so a
+    /// port reads as an annotation rather than as more metal.</summary>
+    internal const float PortMarkerStrokeDevicePixels = 2.0f;
+
+    /// <summary>How far the direction arrow reaches into the metal, as a fraction of the port's own
+    /// width — the arrow's PREFERRED length, before the conductor gets a say.</summary>
+    private const double PortArrowLengthOverWidth = 0.66;
+
+    /// <summary>
+    /// The hard ceiling on the arrow's reach, as a fraction of the conductor's own extent ALONG the
+    /// direction. Owner report, 2026-08-09: <i>"the arrow head can sometimes extend beyond the metal
+    /// shape that the port is connected to... can the arrow never extend beyond the metal in the
+    /// direction it's pointing to?"</i> — it cannot, now: the reach is
+    /// <c>min(width-preferred, length × this)</c>, so a short line clamps the arrow instead of the
+    /// arrow overrunning the line. Under 1 so the tip stops visibly short of the far edge rather than
+    /// landing exactly on it, where it would read as part of the outline.
+    /// </summary>
+    private const double PortArrowMaxLengthOverConductorLength = 0.7;
+
+    /// <summary>
+    /// The arrowhead's barb length as a fraction of the arrow's FINAL reach — not of the port width.
+    /// That distinction is the second half of the same report (<i>"the size of the arrow head seems
+    /// to be a function of the port width; this makes the arrow appear too big for short but wide
+    /// edge shapes"</i>): tying the head to the reach means the whole arrow shrinks together the
+    /// moment a short conductor clamps it, instead of a stub with an enormous head on it.
+    /// </summary>
+    private const double PortArrowBarbOverReach = 0.35;
+
+    /// <summary>
+    /// A second, independent ceiling on the barb, as a fraction of the port WIDTH. The reach-based
+    /// rule alone still grows without bound on a conductor that is long AND wide, where the head can
+    /// get comparable to the reference-plane bar it sits against — and a head that rivals the bar
+    /// competes with the one mark that is load-bearing.
+    /// </summary>
+    private const double PortArrowMaxBarbOverWidth = 0.22;
+
+    /// <summary>Length of the serif turned back from each end of the reference-plane bar, as a
+    /// fraction of the port width. Small, and turned AWAY from the metal, so the bar reads as a
+    /// plane cutting the conductor rather than as one more piece of geometry lying on it.</summary>
+    private const double PortPlaneSerifOverWidth = 0.12;
+
+    /// <summary>How far a port marker's colour is pushed away from the canvas background, on top of
+    /// its layer's own colour (owner request, 2026-08-09: "make it darker than its layer color in
+    /// light mode and lighter than its layer color in dark mode"). Deliberately stronger than the
+    /// snap marker's own tint — a snap marker is transient and a port is permanent artwork the user
+    /// has to pick out from the metal it sits on.</summary>
+    private const double PortMarkerContrastTintAmount = 0.45;
+
+    /// <summary>
+    /// How long the direction arrow is, and how long its barbs are, in DBU.
+    ///
+    /// <para><b>The arrow is bounded by the metal it points into, never by its own preferred size.</b>
+    /// A wide, short pad used to get an arrow two thirds of its WIDTH long — which on a pad shorter
+    /// than it is wide runs straight out the far end, with a head sized to match (owner report,
+    /// 2026-08-09). <c>reach ≤ LengthDbu × PortArrowMaxLengthOverConductorLength &lt; LengthDbu</c>,
+    /// so overrunning the conductor is arithmetically impossible rather than merely unlikely.</para>
+    ///
+    /// <para>Pure and separate from the drawing so the claim can be asserted directly, not inferred
+    /// from pixels — though there is a pixel oracle for it too.</para>
+    /// </summary>
+    internal static (double Reach, double BarbLen) PortArrowGeometry(LayoutPortDirection.PortHint hint)
+    {
+        double preferred = hint.WidthDbu * PortArrowLengthOverWidth;
+        double available = hint.LengthDbu > 0
+            ? hint.LengthDbu * PortArrowMaxLengthOverConductorLength
+            : preferred;
+        double reach = System.Math.Min(preferred, available);
+
+        double barb = System.Math.Min(reach * PortArrowBarbOverReach,
+                                      hint.WidthDbu * PortArrowMaxBarbOverWidth);
+        return (reach, barb);
+    }
+
+    /// <summary>
+    /// An EM port's marker: a bar ACROSS the conductor (how wide the port is) and an arrow along the
+    /// direction current flows INTO the structure. Both are the answer to a question the port label's
+    /// text cannot carry, and before this a port drew as text alone (owner report, 2026-08-09).
+    ///
+    /// <para>Drawn in world/path space, so it pans and zooms with the artwork — unlike the PCell pin
+    /// overlay, which is a constant-pixel screen-space dot. A port's width IS a physical dimension
+    /// the user is judging; a pin's position is not.</para>
+    ///
+    /// <para>A port sitting on no conductor at all, with no direction stated, draws no marker — there
+    /// is nothing to be a width of and nothing to point along, and <c>EmPortExtraction</c> will refuse
+    /// it by name at run time. Drawing a guessed arrow there would be the one thing worse than
+    /// drawing none.</para>
+    /// </summary>
+    private static void DrawPortMarker(SKCanvas canvas, LabelShape label,
+        LayoutPortDirection.ConductorLookup? conductorAt,
+        PathSpace ps, double scaleUm, SKColor layerColor, SKColor background, LayoutFrameCounters counters)
+    {
+        if (LayoutPortDirection.Resolve(conductorAt, label) is not { } hint) return;
+
+        var color = TintForContrast(layerColor, background, PortMarkerContrastTintAmount);
+
+        var (ux, uy) = LayoutPortDirection.UnitVector(hint.Direction);
+        var (px, py) = LayoutPortDirection.PerpendicularVector(hint.Direction);
+
+        double half = hint.WidthDbu / 2.0;
+        var (reach, barbLen) = PortArrowGeometry(hint);
+        double serif = hint.WidthDbu * PortPlaneSerifOverWidth;
+
+        // The bar sits at the CONDUCTOR END, not at the label's own anchor — that is the whole point
+        // of hint.PlaneX/Y. See PortHint's own note: with the bar drawn wherever the user happened to
+        // click, "where is the reference plane" had no readable answer (owner report, 2026-08-09).
+        float bx0 = ps.X(hint.PlaneX), by0 = ps.Y(hint.PlaneY);
+        float ax = ps.X(label.X), ay = ps.Y(label.Y);
+
+        // Path space is Y-DOWN while DBU space is Y-up, so every world +y offset is SUBTRACTED here.
+        // Lengths themselves are unsigned and go through ps.Len; the flip lives in the call sites'
+        // signs, exactly as DrawLabelText's own rotation table handles it.
+        float DX(double d) => ps.Len(d);
+
+        using var paint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, PortMarkerStrokeDevicePixels),
+            StrokeCap = SKStrokeCap.Round, StrokeJoin = SKStrokeJoin.Round,
+            Color = color.WithAlpha(255),
+        };
+        using var path = new SKPath();
+
+        // The reference plane: a bar across the conductor at the end the port names, with a short
+        // serif turned back OUT of the metal at each end so the plane reads as a cut, not a trace.
+        float e1x = bx0 + DX(px * half), e1y = by0 - DX(py * half);
+        float e2x = bx0 - DX(px * half), e2y = by0 + DX(py * half);
+        path.MoveTo(e1x, e1y);
+        path.LineTo(e2x, e2y);
+        path.MoveTo(e1x, e1y);
+        path.LineTo(e1x - DX(ux * serif), e1y + DX(uy * serif));
+        path.MoveTo(e2x, e2y);
+        path.LineTo(e2x - DX(ux * serif), e2y + DX(uy * serif));
+
+        // The arrow: from the plane INTO the metal, with two barbs at the far end. Starting it at the
+        // plane rather than at the anchor is what makes the pair read as one statement — "current
+        // crosses HERE, flowing THAT way" — instead of two marks whose relationship is a guess.
+        float tipX = bx0 + DX(ux * reach), tipY = by0 - DX(uy * reach);
+        path.MoveTo(bx0, by0);
+        path.LineTo(tipX, tipY);
+        foreach (int s in new[] { 1, -1 })
+        {
+            double abx = -ux * barbLen + s * px * barbLen * 0.6;
+            double aby = -uy * barbLen + s * py * barbLen * 0.6;
+            path.MoveTo(tipX, tipY);
+            path.LineTo(tipX + DX(abx), tipY - DX(aby));
+        }
+
+        canvas.DrawPath(path, paint);
+        counters.DrawCalls++;
+
+        // A leader from the label's own anchor to the plane, drawn only when the two genuinely differ
+        // — otherwise the text would look unattached to the marker it names.
+        float dx = ax - bx0, dy = ay - by0;
+        if (dx * dx + dy * dy > 1e-6f)
+        {
+            using var leader = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke,
+                StrokeWidth = DevicePixelsToPathSpace(scaleUm, PortMarkerStrokeDevicePixels * 0.5f),
+                Color = color.WithAlpha(150),
+                PathEffect = SKPathEffect.CreateDash([DevicePixelsToPathSpace(scaleUm, 3f),
+                                                      DevicePixelsToPathSpace(scaleUm, 3f)], 0),
+            };
+            using var leaderPath = new SKPath();
+            leaderPath.MoveTo(ax, ay);
+            leaderPath.LineTo(bx0, by0);
+            canvas.DrawPath(leaderPath, leader);
+            counters.DrawCalls++;
+        }
+    }
 
     private static void DrawLabelText(SKCanvas canvas, LabelShape label, PathSpace ps, SKColor color)
     {

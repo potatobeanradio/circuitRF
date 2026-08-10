@@ -147,7 +147,23 @@ public partial class LayoutEditorViewModel
             if (flipsBulge) LayoutFlatten.FlipBulgeSigns(clone);
             NormalizeRectCorners(clone);
 
-            if (clone is LabelShape label) label.Rotation = labelRot(label.Rotation);
+            // A PORT label rotates its DIRECTION and leaves its text upright; an ordinary label
+            // rotates its text. Rotating a port's glyph too would leave a right-hand port (R180)
+            // legible only upside down, and the arrow is the thing the gesture is actually aimed at
+            // (owner report, 2026-08-09). A port whose direction is still null is being rotated for
+            // the first time, so it adopts the inferred direction and advances from there — which is
+            // also the moment "infer it" becomes "the user said so".
+            if (clone is LabelShape { IsPort: true } port)
+            {
+                var current = port.PortDirection
+                              ?? LayoutPortDirection.Resolve(Model.Shapes, port)?.Direction
+                              ?? LayoutRotation.R0;
+                port.PortDirection = labelRot(current);
+            }
+            else if (clone is LabelShape label)
+            {
+                label.Rotation = labelRot(label.Rotation);
+            }
 
             removed.Add((i, Model.Shapes[i]));
             result.Add(clone);

@@ -9,8 +9,10 @@ namespace CircuitRF.Ui.Tests;
 
 /// <summary>
 /// docs/sonnet-briefs/brief-L5-followups-2.md §6 (R-L5g-13/14/15): PCell pins render as a
-/// screen-space overlay — a constant-pixel-size dot plus an outward-direction tick, in a theme
-/// color distinct from every layer color — never as layer geometry, gated by
+/// screen-space overlay — a constant-pixel-size dot in a theme color distinct from every layer
+/// color, and NOTHING ELSE (the outward-direction tick R-L5g-13 originally drew was removed on
+/// 2026-08-09; it read as an EM port direction indicator — see
+/// <c>LayoutRenderer.DrawPCellPinOverlay</c>'s own doc comment) — never as layer geometry, gated by
 /// <see cref="LayoutRenderOptions.ShowPCellPins"/> (default off at the render-options layer, per
 /// its own doc comment; the interactive canvas opts in via <see cref="LayoutEditorViewModel.
 /// ShowPCellPins"/>, default ON, R-L5g-15).
@@ -69,6 +71,41 @@ public sealed class PCellPinOverlayTests : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// Owner request, 2026-08-09: "change the pin rendering geometry from circle to square (for
+    /// layout). This matches the pin shape for the symbols in the schematic editor."
+    ///
+    /// <para>Measured by COUNTING the strictly-interior painted pixels rather than probing one
+    /// corner: at a 3 device-pixel half-size, a square's fully-covered pixels number 25 (|dx|,|dy| ≤ 2)
+    /// while a circle's number ~17, so the two shapes separate cleanly with no reliance on how any
+    /// single antialiased edge pixel resolves. Probing a single corner does NOT separate them —
+    /// (2,2) is inside a radius-3 circle too, and every pixel that is not lies exactly on the
+    /// square's own antialiased boundary.</para>
+    /// </summary>
+    [Fact]
+    public void ThePinMarker_IsASquare_NotACircle()
+    {
+        var vmBaseDir = Path.Combine(_root, "doc-square");
+        Directory.CreateDirectory(vmBaseDir);
+        var (view, _, _) = BuildMlinInstance(vmBaseDir);
+
+        var vp = new LayoutViewport(-1_000_000, -1_000_000, 3e-5, 400, 400);
+        var opts = new LayoutRenderOptions { Theme = LayoutRenderTheme.Light, ShowGrid = false, ShowPCellPins = true, BaseDir = vmBaseDir };
+        using var surface = SKSurface.Create(new SKImageInfo(400, 400));
+        LayoutRenderer.Draw(surface.Canvas, view, null, vp, opts);
+
+        int cx = (int)vp.WorldToScreenX(0), cy = (int)vp.WorldToScreenY(0);
+
+        int interior = 0;
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++)
+                if (IsPinColor(PixelAt(surface, cx + dx, cy + dy))) interior++;
+
+        // A circle of the same half-size cannot fill this 5x5 block; a square fills it entirely.
+        Assert.True(interior >= 22,
+            $"expected a filled square pin marker (>= 22 of 25 interior pixels painted), got {interior}");
+    }
+
     [Fact]
     public void ShowPCellPins_True_PaintsADotAtEachResolvedInstancePin()
     {
@@ -87,6 +124,41 @@ public sealed class PCellPinOverlayTests : IDisposable
 
         Assert.True(PinColorNear(surface, sx1, sy1), "expected a pin marker at MLIN's pin 1 (0,0)");
         Assert.True(PinColorNear(surface, sx2, sy2), "expected a pin marker at MLIN's pin 2 (L,0)");
+    }
+
+    [Fact]
+    public void ShowPCellPins_True_DrawsNoOutwardDirectionTick_OnlyTheDot()
+    {
+        // Owner report (2026-08-09): the outward-direction line R-L5g-13 drew read as an EM PORT
+        // direction indicator. It is gone. MLIN's two pins face 180° (pin 1, at 0,0) and 0° (pin 2,
+        // at L,0) — both AWAY from the metal — so a tick would paint pin-coloured pixels in
+        // otherwise-empty space just outside each end. Probe there: the dot's own 3 px radius must
+        // not reach, and nothing else may.
+        var vmBaseDir = Path.Combine(_root, "doc");
+        Directory.CreateDirectory(vmBaseDir);
+        var (view, _, lMeters) = BuildMlinInstance(vmBaseDir);
+        long lDbu = (long)Math.Round(lMeters * 1_000_000_000);
+
+        var vp = new LayoutViewport(-1_000_000, -1_000_000, 3e-5, 400, 400);
+        var opts = new LayoutRenderOptions { Theme = LayoutRenderTheme.Light, ShowGrid = false, ShowPCellPins = true, BaseDir = vmBaseDir };
+        using var surface = SKSurface.Create(new SKImageInfo(400, 400));
+        LayoutRenderer.Draw(surface.Canvas, view, null, vp, opts);
+
+        int sx1 = (int)vp.WorldToScreenX(0), sy1 = (int)vp.WorldToScreenY(0);
+        int sx2 = (int)vp.WorldToScreenX(lDbu), sy2 = (int)vp.WorldToScreenY(0);
+
+        // Sanity: the dots themselves are still there (so a vacuous pass is impossible).
+        Assert.True(PinColorNear(surface, sx1, sy1), "the pin dot itself must still be drawn at pin 1");
+        Assert.True(PinColorNear(surface, sx2, sy2), "the pin dot itself must still be drawn at pin 2");
+
+        // The old tick ran 9 device px outward from the dot centre; the dot's radius is 3.
+        for (int d = 6; d <= 9; d++)
+        {
+            Assert.False(IsPinColor(PixelAt(surface, sx1 - d, sy1)),
+                $"no outward tick may be drawn from pin 1 (found pin colour {d} px to its left)");
+            Assert.False(IsPinColor(PixelAt(surface, sx2 + d, sy2)),
+                $"no outward tick may be drawn from pin 2 (found pin colour {d} px to its right)");
+        }
     }
 
     [Fact]

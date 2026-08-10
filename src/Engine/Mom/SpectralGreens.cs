@@ -164,7 +164,7 @@ public sealed class SpectralGreens
                 $"kernel's floor of {GroundedSlab.MinElectricalThickness:E0}. This is the quasi-static " +
                 $"regime, where the spectral function's structure is different and a fit tuned at " +
                 $"microwave frequencies does not hold; use StaticGreens, which is exact there, or " +
-                $"kernel A (QuasiStaticKernel) for a uniform cross-section.");
+                $"the quasi-static cross-section solve for a uniform cross-section.");
 
         return EmSuitability.Yes;
     }

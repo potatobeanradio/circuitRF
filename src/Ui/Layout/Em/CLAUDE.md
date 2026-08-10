@@ -301,6 +301,27 @@ round-trips byte-identically.
 The panel gained `BuildPlanarMesh` beside `BuildMesh` and surfaces `PlanarMeshSummary` +
 `PlanarMeshNotes`; it never solves, and there is no planar solve seam on the VM at all.
 
+### The edge mesh on a CURVED part — measured HERE, because the PCells are here (2026-08-09)
+
+Brief: `docs/sonnet-briefs/brief-edge-mesh-on-curved-geometry.md`; the finding and every engine-side
+table are in `src/Engine/Mom/CLAUDE.md`'s own section. **No `src/Ui` code changed** — the whole Ui
+half is `tests/Ui.Tests/Em/PlanarMeshPCellTests.cs`, which is where it has to be because
+`MBendPCell`/`MTaperPCell`/`MKlopfPCell` live in `src/Ui` and the reference graph is `Ui → Engine`.
+
+Two things a reader of the panel needs to know:
+
+- **`PlanarMeshNotes` now tells the user when Edge cells did nothing.** On an all-curved part the old
+  note claimed "N graded cell(s) at every axis-parallel conductor edge" and the qualifier is the whole
+  sentence. The report now adds *"…but NO edge grading was actually applied…"*, naming the axis. This
+  is the direct answer to the owner report of 2026-08-09 ("I set my Edge cells to 10 and expected the
+  mesh to increase near the edges, but it appeared the same") in the case the `EffectiveEdgeCells`
+  clamp note does **not** cover — there the control was clamped, here there is nothing for it to act on.
+- **Do not measure this with total N or with the minimum cell.** Both respond on every shipping PCell
+  and both are measuring the axis-parallel END CAPS: a taper's rim passes within one bulk cell of its
+  own caps, whose attractors refine whole grid columns. The quantity is the transverse grid spacing at
+  the rim point farthest from any axis-parallel edge, and for MTaper and both MKlopf variants it is
+  **dead flat** in `EdgeCells` on both starters.
+
 ## L7b-b — N conductors reach the schematic, and this half was almost free
 
 The general modal decomposition (`src/Engine/Mom/CLAUDE.md`'s L7b-b section) needed **no change to
@@ -507,10 +528,18 @@ The rules, and each one exists because its alternative fails silently:
   lowest free number; the layout editor's Port tool calls the *same* parser for its auto-name, so what
   the tool writes and what the extractor reads cannot disagree.
 - **Two labels naming port 1 is a refusal by name.** Picking one is a coin flip on which end is which.
-- **The side is inferred from the nearest conductor boundary, REPORTED, and refused when ambiguous.**
-  A label at a corner is equidistant from two edges. A wrong side reverses the direction of current
-  into the structure — a hard π in S₂₁, which is smooth, plausible, and invisible in a magnitude plot.
-  Every resolved port's note names its side *and* which way current flows in.
+- **The side is inferred from the nearest conductor boundary, REPORTED, and refused when ambiguous
+  — UNLESS the label states its own direction.** A label at a corner is equidistant from two edges. A
+  wrong side reverses the direction of current into the structure — a hard π in S₂₁, which is smooth,
+  plausible, and invisible in a magnitude plot. Every resolved port's note names its side, which way
+  current flows in, and **whether that came from the port itself or was inferred**.
+  `LabelShape.PortDirection` (2026-08-09) is the stated form: the Port tool seeds it from the artwork
+  at placement and Rotate advances it, so the direction is visible and editable rather than being a
+  fact only the extractor knew. `EmPortExtraction.SideFromDirection` is the one place the
+  direction↔side inversion is written down — see `LayoutPortDirection` for the convention itself.
+  **Null still means "infer it"**, which is what every `.clay` written before the field existed
+  carries, so the refusal path below is unchanged for those; its wording now names rotating the port
+  as the direct remedy.
 - **A label off the metal is refused by name**, and a layout with no port labels is refused with a
   pointer at the Port tool rather than a generic "no ports".
 - **Z₀ comes from the `.cem`**, per port. A layout is geometry; an impedance is an analysis setting.

@@ -78,24 +78,21 @@ public static partial class LayoutRenderer
 
         if (smallestCellPx < PlanarMeshMinCellDevicePixels && cellScalar is null)
         {
-            // Too dense to read. Draw the mesh's own extent rather than a wash that says nothing.
-            double ex0 = double.PositiveInfinity, ey0 = double.PositiveInfinity;
-            double ex1 = double.NegativeInfinity, ey1 = double.NegativeInfinity;
-            foreach (var c in cells)
-            {
-                ex0 = Math.Min(ex0, c.XMin); ey0 = Math.Min(ey0, c.YMin);
-                ex1 = Math.Max(ex1, c.XMax); ey1 = Math.Max(ey1, c.YMax);
-            }
-            using var dash = new SKPaint
-            {
-                Color = theme.PlanarMeshCell.WithAlpha(200), IsStroke = true, StrokeWidth = stroke,
-                IsAntialias = true, PathEffect = SKPathEffect.CreateDash([6f * stroke, 4f * stroke], 0),
-            };
-            canvas.DrawRect(
-                SKRect.Create(ps.X(ex0 * toDbu), ps.Y(ey1 * toDbu),
-                              (float)((ex1 - ex0) * toDbu * ps.DbuToUm),
-                              (float)((ey1 - ey0) * toDbu * ps.DbuToUm)),
-                dash);
+            // Too dense to draw every line — DECIMATE, do not collapse.
+            //
+            // Owner report, 2026-08-09: "Mesh does not render at low zoom levels. Need to see it at
+            // all zoom levels." This branch used to draw the mesh's own bounding rectangle and
+            // nothing else — which lands exactly on the artwork's own outline and therefore reads as
+            // "the mesh did not render", measured at 610 differing pixels against 13,085 one zoom
+            // step up. A mesh you cannot see is indistinguishable from a Mesh button that did
+            // nothing, which is the bug next door.
+            //
+            // The surface mesh is a TENSOR-PRODUCT grid (L8b: per-axis spacing), so the honest
+            // reduction is to draw a SUBSET OF THE REAL GRID LINES — every k-th distinct edge, with
+            // k chosen so the drawn spacing clears the pixel floor. Every line drawn is a line that
+            // is really there; only some are omitted. That degrades continuously all the way out and
+            // still reads as a mesh, which a rectangle does not.
+            DrawDecimatedGrid(canvas, cells, ps, toDbu, scaleUm, cellPaint);
             return;
         }
 
@@ -182,5 +179,82 @@ public static partial class LayoutRenderer
             else
                 canvas.DrawLine(ps.X(t0), ps.Y(plane), ps.X(t1), ps.Y(plane), paint);
         }
+    }
+
+    /// <summary>
+    /// Draw a readable subset of a tensor-product mesh's grid lines: every k-th distinct X edge and
+    /// every k-th distinct Y edge, k chosen per axis so consecutive drawn lines are at least
+    /// <see cref="PlanarMeshMinCellDevicePixels"/> apart on screen.
+    ///
+    /// <para><b>Every drawn segment is a REAL CELL EDGE, never a line spanning the mesh's extent</b>
+    /// (owner report, 2026-08-09: <i>"the mesh for the MKLOPF looks wrong when zoomed out — appears
+    /// as a rect — but appears correct when I zoom in a little"</i>). This used to emit each kept
+    /// vertical across the whole y-extent and each kept horizontal across the whole x-extent. For a
+    /// straight MLIN that is right by accident: its metal FILLS its own bounding box, so a full-span
+    /// line lies on real cell edges the whole way. A TAPER's cells occupy a wedge inside a far larger
+    /// box, so full-span lines painted the box — which is exactly the bounding rectangle this
+    /// decimation was introduced to stop drawing, arriving back through a different door. Zooming in
+    /// past the pixel floor leaves this branch entirely, which is why it "fixed itself".</para>
+    ///
+    /// <para>Emitting the cells' own edges also means a mesh with a HOLE in it reads as one, rather
+    /// than having the gap bridged by a line no cell shares.</para>
+    /// </summary>
+    private static void DrawDecimatedGrid(
+        SKCanvas canvas, IReadOnlyList<PlanarCell> cells,
+        PathSpace ps, double toDbu, double scaleUm, SKPaint paint)
+    {
+        var xs = new SortedSet<double>();
+        var ys = new SortedSet<double>();
+        foreach (var c in cells)
+        {
+            xs.Add(c.XMin); xs.Add(c.XMax);
+            ys.Add(c.YMin); ys.Add(c.YMax);
+        }
+        if (xs.Count < 2 || ys.Count < 2) return;
+
+        // Device pixels per metre — the same conversion the caller used for its own decision.
+        double pxPerMetre = scaleUm * 1e6;
+        double minStepM = PlanarMeshMinCellDevicePixels / Math.Max(pxPerMetre, 1e-30);
+
+        // Which edge values survive. Exact double equality is sound here and is the same comparison
+        // the previous version relied on: these values are the cells' own coordinates, put into the
+        // set and taken back out unmodified — never recomputed.
+        var keptX = Decimate(xs, minStepM);
+        var keptY = Decimate(ys, minStepM);
+
+        using var path = new SKPath();
+        foreach (var c in cells)
+        {
+            float cx0 = ps.X(c.XMin * toDbu), cx1 = ps.X(c.XMax * toDbu);
+            float cy0 = ps.Y(c.YMin * toDbu), cy1 = ps.Y(c.YMax * toDbu);
+
+            if (keptX.Contains(c.XMin)) { path.MoveTo(cx0, cy0); path.LineTo(cx0, cy1); }
+            if (keptX.Contains(c.XMax)) { path.MoveTo(cx1, cy0); path.LineTo(cx1, cy1); }
+            if (keptY.Contains(c.YMin)) { path.MoveTo(cx0, cy0); path.LineTo(cx1, cy0); }
+            if (keptY.Contains(c.YMax)) { path.MoveTo(cx0, cy1); path.LineTo(cx1, cy1); }
+        }
+
+        canvas.DrawPath(path, paint);
+    }
+
+    /// <summary>
+    /// Every k-th value from <paramref name="sorted"/>, k chosen so consecutive kept values are at
+    /// least <paramref name="minStep"/> apart. The FIRST and LAST are always kept, so the mesh's own
+    /// outer extent survives however hard the interior is thinned.
+    /// </summary>
+    private static HashSet<double> Decimate(SortedSet<double> sorted, double minStep)
+    {
+        var kept = new HashSet<double>();
+        double lastKept = double.NegativeInfinity;
+        double max = sorted.Max;
+
+        foreach (double v in sorted)
+            if (v - lastKept >= minStep || v == max)
+            {
+                kept.Add(v);
+                lastKept = v;
+            }
+
+        return kept;
     }
 }

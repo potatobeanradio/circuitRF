@@ -224,6 +224,15 @@
                             <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
                         </ToggleButton>
 
+                        <!-- The PLAN-VIEW surface mesh (L8b D5) had no toggle of its own, so a
+                             full-wave mesh could only be turned off by closing the document. Same
+                             session-only contract; independent of the cross-section toggle, because
+                             which overlay a document shows follows from which mesh was computed. -->
+                        <ToggleButton IsChecked="{Binding ActiveViewModel.ShowPlanarMesh}"
+                                      ToolTip.Tip="Show full-wave surface mesh" Padding="6,3">
+                            <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
+                        </ToggleButton>
+
                         <!-- Geometry snap toggles (docs/sonnet-briefs/brief-snap-distance-and-geometry-
                              snap.md R-snp-6/7) — exactly two, per the brief's own guardrail against a
                              per-feature-type settings thicket. F3/'s' also toggle the first; Alt
@@ -283,6 +292,16 @@
                                 ToolTip.Tip="Check Design Rules (Ctrl/⌘+Shift+K)"
                                 Padding="6,3">
                             <mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <!-- EM (owner request, 2026-08-09): the only EM entry point outside the .cem
+                             editor itself. Opens this layout's own EM setup, creating it (named after
+                             the layout file) the first time. Sits beside Check Design Rules because
+                             both are "run something over this whole layout" actions. -->
+                        <Button Click="OnOpenEmSetup"
+                                ToolTip.Tip="EM Setup for this layout — opens it, creating it the first time"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
                         </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"

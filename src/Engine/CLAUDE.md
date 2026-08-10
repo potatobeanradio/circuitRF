@@ -86,6 +86,45 @@ compute exactly what they did.
 The constructor also gained an optional `extraInterfaceNodes`. Null — the default — is the shipped
 behaviour exactly: the interface is the nonlinear-facing nodes and nothing else.
 
+## `Mom/` — edge mesh on CURVED geometry: a NEGATIVE result (brief-edge-mesh-on-curved-geometry, 2026-08-09) — **M0 + M1 done; M2 built as a SEAM only**
+
+**A FOLLOW-UP to L8b**, in `src/Engine/Mom/SurfaceMesher.cs`. No Green's function, no fill, no solve,
+no user control. **Read `src/Engine/Mom/CLAUDE.md`'s own "edge mesh on CURVED geometry" section before
+touching any of it**; every table lives there.
+
+The four things worth knowing from out here:
+
+- **A GRADED FAN ON A STAIRCASED RIM BUYS NOTHING, and that is the deliverable.** On a 96-point disc,
+  measured on a converged static capacitance (L8c's Tier 5 harness at εᵣ = 1), rim attractors reach
+  **0.331%** of the limit against the shipped mesh's own **0.265%** — no better, and the sampled
+  variant is worse at 0.501%. The reason is that a uniformly refined staircased disc does **not**
+  converge monotonically: its band across the last three rungs is **0.669%**, wider than every
+  difference being compared, and the staircase's own area error wanders over the same range in step
+  with it. Refining toward a *tread's* edge resolves the quantisation artifact, not the physics. **The
+  answer is that curved geometry needs conformal cells — its own phase, with its own brief.**
+- **The CONTROL is what makes that believable, and it is not optional.** On a Manhattan square, the
+  same harness and the same quantity, edge grading is **4.437% → 0.431%** at the shipping mesh and the
+  uniform ladder needs ~20× the unknowns to catch it. The harness sees grading perfectly well; the
+  staircase is what it cannot see through.
+- **M0 found that TOTAL N AND MINIMUM CELL BOTH LIE.** Every shipping PCell responds to `EdgeCells` in
+  N and shows its min cell collapse ~8×, which reads as "the rim responded" and is false — the fans
+  come from the axis-parallel END CAPS, and a taper's rim passes within a bulk cell of its own caps.
+  The honest quantity is the transverse grid spacing at the rim point farthest from any axis-parallel
+  edge, and it is **dead flat in `EdgeCells`** for MTaper and both MKlopf variants on both starters.
+- **§0.1's non-monotone 45° bend was an unrepresentative FIXTURE**, measured against the real
+  `MBendPCell` at 45/90/135°: monotone at every angle and inside R17's ceiling. It is asserted rather
+  than reported, because a shipping bend that did go non-monotone would outrank the whole brief.
+
+`PlanarRimGrading` ships as a measurement seam with `None` as the default — `PlanarEdgeReference`'s
+precedent — and **a Manhattan mesh is BIT-IDENTICAL with it on** (gridlines, cells and bases as
+equalities; §10.7's hero still exactly N = 552). One user-visible change: when an axis collects no
+attractor the mesh report now says **"…but NO edge grading was actually applied…"** instead of
+claiming a fan that exists nowhere on the artwork.
+
+Gate: **`tests/Engine.Tests` +4 routine (~0.2 s) and +2 `Category=Benchmark` (4 m 52 s together);
+`tests/Ui.Tests` +2 routine.** Nothing outside `src/Engine/Mom/SurfaceMesher.cs` and the two test
+files was touched.
+
 ## `Mom/` — G_A^zz's ceiling: M1 is a NEGATIVE result, M2 is the direct path (brief-gazz-accuracy-ceiling, 2026-08-06) — **M0+M1+M2+M4; M3 not started**
 
 Continues the M0 entry below. **Read `src/Engine/Mom/CLAUDE.md`'s own G_A^zz sections before touching

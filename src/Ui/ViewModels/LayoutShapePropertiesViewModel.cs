@@ -518,6 +518,16 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
     [ObservableProperty] private bool _showLabel;
     [ObservableProperty] private string _labelText = "";
+
+    /// <summary>
+    /// Owner report, 2026-08-09: "Is the port Height property for the text font size? Or is it the
+    /// width of the port's excitation? Not clear to me." It is the TEXT height — a port is a
+    /// <c>LabelShape</c>, and <c>Height</c> is that label's font size in database units, exactly as
+    /// it is for an ordinary annotation. The caption says so for a port so the question does not
+    /// have to be asked again; the excitation width is read-only and shown beneath it.
+    /// </summary>
+    public string LabelHeightCaption => ShowPortDirection ? "Text size" : "Height";
+
     [ObservableProperty] private string _labelHeightText = "";
     [ObservableProperty] private string? _labelHeightError;
     public bool HasLabelHeightError => LabelHeightError is not null;
@@ -579,6 +589,52 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         ApplyToEach<LayoutRotation>("Rotation", s => ((LabelShape)s).Rotation,
             (s, v) => ((LabelShape)s).Rotation = v, newValue.Value, s => s is LabelShape);
         RefreshFromVm();
+    }
+
+    /// <summary>
+    /// An EM PORT's direction — the way current flows INTO the structure — shown only for a
+    /// selection that is entirely ports. It is the same quantity the canvas Rotate gesture advances,
+    /// and it commits through the same <see cref="ApplyToEach{T}"/> path every other field here uses,
+    /// so a typed change and a rotated one are one undo entry apiece and cannot disagree.
+    ///
+    /// <para>Null means "infer it from the artwork at extraction time", which is what every
+    /// <c>.clay</c> written before the field existed carries — so the combo genuinely has a fifth
+    /// state and it is not a placeholder.</para>
+    /// </summary>
+    [ObservableProperty] private bool _showPortDirection;
+    [ObservableProperty] private LayoutRotation? _portDirectionValue;
+
+    partial void OnPortDirectionValueChanged(LayoutRotation? oldValue, LayoutRotation? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue) return;
+        if (DragBlocksEdits()) return;
+        ApplyToEach<LayoutRotation?>("PortDirection", s => ((LabelShape)s).PortDirection,
+            (s, v) => ((LabelShape)s).PortDirection = v, newValue.Value, s => s is LabelShape { IsPort: true });
+        RefreshFromVm();
+    }
+
+    /// <summary>
+    /// The port's EXCITATION width — how far the port cut spans across the conductor — shown
+    /// read-only beside the editable text size, because the owner's own question ("is Height the
+    /// text font size, or the width of the port's excitation?") had no answer on screen.
+    ///
+    /// <para><b>It is not editable, and that is the engine's decision rather than a missing
+    /// field.</b> <c>PlanarPort</c> D2: the port cut IS the outermost rooftop row of the feed, so it
+    /// spans the whole conductor end by construction. To change a port's width in the full-wave
+    /// solver you change the WIDTH OF THE METAL it sits on — there is no separate knob, deliberately,
+    /// for the same reason there is no de-embedding distance: it would offer a way to get a different
+    /// answer for the same structure.</para>
+    /// </summary>
+    [ObservableProperty] private string _portWidthText = "";
+
+    private void RefreshPortWidth(System.Collections.Generic.List<LabelShape> labels)
+    {
+        if (labels.Count != 1 || _vm is null) { PortWidthText = labels.Count > 1 ? "(multiple)" : ""; return; }
+
+        var lookup = LayoutPortDirection.LookupFor(_vm.Model, _vm.Technology, _vm.InstanceBaseDir);
+        PortWidthText = LayoutPortDirection.Resolve(lookup, labels[0]) is { } hint
+            ? LayoutUnits.Format(hint.WidthDbu, _vm.Model.DisplayUnit, _vm.Model.DbuPerMicron) + " " + LayoutUnits.Suffix(_vm.Model.DisplayUnit)
+            : "(not on a conductor)";
     }
 
     partial void OnLabelStyleValueChanged(LabelFontStyle? oldValue, LabelFontStyle? newValue)
@@ -1652,7 +1708,20 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             LabelStyleValue = styles.Count == 1 ? styles[0] : null;
             SetTextIfNotFocused("LabelX", FormatSharedDbu(labels.Select(l => (long?)l.X)), () => LabelXText, v => LabelXText = v);
             SetTextIfNotFocused("LabelY", FormatSharedDbu(labels.Select(l => (long?)l.Y)), () => LabelYText, v => LabelYText = v);
+
+            ShowPortDirection = labels.All(l => l.IsPort);
+            if (ShowPortDirection)
+            {
+                var dirs = labels.Select(l => l.PortDirection).Distinct().ToList();
+                PortDirectionValue = dirs.Count == 1 ? dirs[0] : null;
+                RefreshPortWidth(labels);
+            }
         }
+        else
+        {
+            ShowPortDirection = false;
+        }
+        OnPropertyChanged(nameof(LabelHeightCaption));
 
         ShowBitmap = _selected.All(s => s is BitmapShape);
         if (ShowBitmap)
@@ -1706,7 +1775,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         SelectionSummaryText = "";
         IsEditingEnabled = true;
         IsInstanceContext = false;
-        ShowRoundedRect = ShowCircle = ShowVia = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = false;
+        ShowRoundedRect = ShowCircle = ShowVia = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = ShowPortDirection = false;
+        PortWidthText = "";
+        OnPropertyChanged(nameof(LabelHeightCaption));
         ShowPCellParameterList = false;
         PCellParamRows = null; _pcellParamGeneratedCellDir = null;
         _pcellEntryModeSelectionIndex = null;
@@ -1776,6 +1847,10 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         CurveShape        => "Curve",
         PathShape         => "Path",
         ViaShape          => "Via",
+        // An EM port IS a LabelShape with IsPort set (L8e/D3 — there is deliberately no PortShape),
+        // but calling it "Label" here is what made the owner report the Port button as doing nothing:
+        // the Properties Inspector was the one place that could have said otherwise and did not.
+        LabelShape { IsPort: true } => "Port",
         LabelShape        => "Label",
         BitmapShape       => "Bitmap",
         _                 => shape.GetType().Name,

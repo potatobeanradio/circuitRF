@@ -12,7 +12,14 @@ namespace CircuitRF.Engine;
 /// points. A single harmonic-balance solve is one Newton loop, not N steps, and reporting a fake
 /// denominator for it would be worse than admitting there isn't one.
 /// </summary>
-public sealed record RunProgress(string Stage, long Completed, long Total);
+/// <param name="Stage">Which unit of work is running right now.</param>
+/// <param name="Completed">Leaf units finished across the whole run.</param>
+/// <param name="Total">Leaf units in the whole run; 0 = indeterminate.</param>
+/// <param name="StageCompleted">Sub-units finished WITHIN the current stage.</param>
+/// <param name="StageTotal">Sub-units in the current stage; 0 = the stage has no honest denominator,
+/// which is also what every caller that does not use stage progress leaves it at.</param>
+public sealed record RunProgress(
+    string Stage, long Completed, long Total, long StageCompleted = 0, long StageTotal = 0);
 
 /// <summary>
 /// Cancellation and progress for an engine run — the ONE object every engine takes, so a caller
@@ -41,6 +48,8 @@ public sealed record RunProgress(string Stage, long Completed, long Total);
 public sealed class RunControl
 {
     private long _completed;
+    private long _stageCompleted;
+    private long _stageTotal;
     private readonly Stopwatch _sinceLastReport = Stopwatch.StartNew();
     private string _stage = "";
 
@@ -75,6 +84,61 @@ public sealed class RunControl
     /// <summary>Units finished so far, across every analysis in the run.</summary>
     public long Completed => Interlocked.Read(ref _completed);
 
+    /// <summary>
+    /// Starts a new stage: names it, and declares how many sub-units it will do.
+    ///
+    /// <para><b>Why a SECOND counter exists at all.</b> The outer one answers "how far through the
+    /// run", which is the right question when a leaf unit is small — a sweep point, an s-parameter
+    /// frequency. It is the wrong question when one leaf unit is itself minutes long, which is
+    /// exactly a full-wave EM frequency point (L8d/L9d measured 48 s and 71.9 s per de-embedded
+    /// point at the shipping mesh). A bar that advances once a minute is indistinguishable from a
+    /// hung run, so the stage counter carries the movement WITHIN a point while the outer one still
+    /// answers where the run is overall. Two questions, two counters, one control object.</para>
+    ///
+    /// <para>Reports immediately: a stage change is the one event a user is always waiting to see.
+    /// <paramref name="stageTotal"/> of 0 leaves the stage indeterminate.</para>
+    /// </summary>
+    public void BeginStage(string name, long stageTotal = 0)
+    {
+        Interlocked.Exchange(ref _stageCompleted, 0);
+        Interlocked.Exchange(ref _stageTotal, Math.Max(stageTotal, 0));
+        _stage = name ?? "";
+        ReportNow();
+    }
+
+    /// <summary>
+    /// One sub-unit of the current stage finished. Subject to the SAME throttle as
+    /// <see cref="Tick"/> — and, like it, the last sub-unit of a known stage total is always
+    /// delivered, so a stage bar is never left short of its own end.
+    /// </summary>
+    /// <summary>Renames the current stage WITHOUT touching either counter — for a sub-step whose own
+    /// completion is counted when it finishes rather than when it starts, so the label says what is
+    /// running now and the bar still only moves on real progress.</summary>
+    public void SetStageLabel(string name)
+    {
+        _stage = name ?? "";
+        ReportNow();
+    }
+
+    /// <param name="units">Sub-units finished.</param>
+    /// <param name="nextLabel">What the stage is about to do, if it changed. Renaming through the
+    /// tick rather than through <see cref="BeginStage"/> is what keeps a stage bar MONOTONE: begin
+    /// resets the sub-counter to zero, so calling it mid-stage would send the bar backwards every
+    /// time the label changed.</param>
+    public void TickStage(long units = 1, string? nextLabel = null)
+    {
+        Token.ThrowIfCancellationRequested();
+        long done = Interlocked.Add(ref _stageCompleted, units);
+        if (nextLabel is not null) _stage = nextLabel;
+        if (Progress is null) return;
+
+        long total = Interlocked.Read(ref _stageTotal);
+        if (nextLabel is not null) { ReportNow(); return; }      // a label change is always worth showing
+        if (total > 0 && done >= total) { ReportNow(); return; }
+        if (_sinceLastReport.Elapsed.TotalMilliseconds < MinReportIntervalMs) return;
+        ReportNow();
+    }
+
     public void ThrowIfCancellationRequested() => Token.ThrowIfCancellationRequested();
 
     /// <summary>
@@ -105,6 +169,8 @@ public sealed class RunControl
     private void ReportNow(long done)
     {
         _sinceLastReport.Restart();
-        Progress?.Report(new RunProgress(_stage, done, Total));
+        Progress?.Report(new RunProgress(
+            _stage, done, Total,
+            Interlocked.Read(ref _stageCompleted), Interlocked.Read(ref _stageTotal)));
     }
 }

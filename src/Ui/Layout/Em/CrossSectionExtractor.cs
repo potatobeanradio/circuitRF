@@ -75,7 +75,7 @@ public static class CrossSectionExtractor
             return EmExtractionResult.No(
                 "This stackup is closed at the top (Stackup.Top = Ground), which makes it stripline " +
                 "rather than microstrip. Stripline needs an infinite image SERIES rather than the " +
-                "single image kernel A uses — a bounded extension that is not yet built.");
+                "single image this analysis uses — a bounded extension that is not yet built.");
 
         var stack = BuildStack(tech.Stackup);
         if (stack.Count == 0)
@@ -484,9 +484,9 @@ public static class CrossSectionExtractor
             notes.Add(
                 $"{ignoredGround} shape(s) on the ground-designated conductor layer" +
                 (groundLayerName is null ? "" : $" '{groundLayerName}'") +
-                " were ignored. Kernel A's ground plane is laterally infinite and is handled by an " +
+                " were ignored. The ground plane is laterally infinite and is handled by an " +
                 "exact image, never meshed — it cannot model a finite ground pour, so meshing one " +
-                "silently would be worse than saying so. The full-wave planar kernel (B) does not " +
+                "silently would be worse than saying so. The full-wave planar analysis does not " +
                 "model one either: its ground is the grounded slab's own infinite plane, handled " +
                 "analytically, and that is true of the GENERAL layered stack too — a LayerStack's " +
                 "PEC termination is an infinite plane by definition. A finite pour needs the ground " +
@@ -532,10 +532,11 @@ public static class CrossSectionExtractor
     {
         var names = bands.OrderBy(b => b.Index).Select(b => $"'{b.Layer.Name}'");
         return $"Geometry is drawn on {bands.Count} signal conductor layers ({string.Join(", ", names)}). " +
-               "Kernel A solves one uniform cross-section on one metal level. The full-wave planar " +
-               "kernel (B) carries z-directed current and multi-level stacks: switch this setup's " +
-               "analysis kind to Planar (or leave it on Auto). Otherwise pick which level is the " +
-               "signal in this EM setup, or move the geometry onto one layer.";
+               "The uniform-line analysis solves one cross-section on one metal level. " +
+               $"\"{EmKernelRegistry.PlanarChoiceLabel}\" carries z-directed current and multi-level " +
+               $"stacks: set Analysis to \"{EmKernelRegistry.PlanarChoiceLabel}\" (or leave it on " +
+               $"\"{EmKernelRegistry.AutoChoiceLabel}\"). Otherwise pick which level is the signal in " +
+               "this EM setup, or move the geometry onto one layer.";
     }
 
     // ── One conductor shape → its cross-section profile ───────────────────────────────────────

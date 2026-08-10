@@ -3891,6 +3891,62 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
+    /// <summary>
+    /// The Layout Editor's own EM button (owner request, 2026-08-09): <b>one gesture from a layout to
+    /// its EM setup.</b> The <c>.cem</c> is named after the layout file — <c>Amp.clay</c> → <c>Amp.cem</c>
+    /// — and if that setup already exists it is opened and focused rather than a second one being
+    /// created. This is the only EM entry point outside the <c>.cem</c> editor itself; before it, a
+    /// user had to know that File ▸ New ▸ EM Setup… existed at all.
+    ///
+    /// <para><b>Why <c>&lt;workspace&gt;/em/</c> and not beside the <c>.clay</c>.</b> The owner's
+    /// naming rule ("remove .clay, add .cem") is about the FILE NAME; the directory is ours to pick,
+    /// and beside the layout is the one place it must not go: a cell's <c>layout/</c> sub-folder is
+    /// enumerated by <c>WorkspaceScanner.BuildCellNode</c> with <c>"*" + ViewExtension(vt)</c>, i.e.
+    /// <c>*.clay</c> only — a <c>.cem</c> written there is INVISIBLE in the project tree. <c>em/</c>
+    /// is an ordinary user folder, listed by extension, and is where File ▸ New ▸ EM Setup… already
+    /// puts them, so both doors agree.</para>
+    /// </summary>
+    public void OpenOrCreateEmSetupForLayout(string clayPath)
+    {
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Info("Open or create a workspace first — an EM setup is workspace-scoped.");
+            return;
+        }
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        if (WorkspaceRootFinder.IsOutside(clayPath, workspaceDir))
+        {
+            Messages.Warning("This layout is outside the open workspace, so it has no EM setup here. " +
+                             "Save it into the workspace first.");
+            return;
+        }
+
+        string stem = Path.GetFileNameWithoutExtension(clayPath);
+        var    emDir = Path.Combine(workspaceDir, "em");
+        var    path  = Path.Combine(emDir, stem + EmSetupPersistence.Extension);
+
+        if (File.Exists(path))
+        {
+            OpenOrActivateEmSetup(path);
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(emDir);
+            var layoutRef = Path.GetRelativePath(workspaceDir, clayPath).Replace('\\', '/');
+            EmSetupPersistence.SaveToFile(path, new EmSetup { Name = stem, LayoutRef = layoutRef });
+            _factory.ProjectTreeTool?.Refresh();
+            OpenOrActivateEmSetup(path);
+            Messages.Success("Created EM setup", path);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to create EM setup: {ex.Message}");
+        }
+    }
+
     private static string NextFreeEmSetupName(string emDir, string stem)
     {
         string candidate = stem;
@@ -4269,7 +4325,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var vm = new EmSetupEditorViewModel(absolutePath, setup)
             {
                 ResolveLayout = r => ResolveEmLayout(absolutePath, r),
+                MakeLayoutRef = abs => MakeEmLayoutRef(absolutePath, abs),
                 RunRequested  = RunEmSetupAsync,
+                MeshRequested = MeshEmSetupAsync,
+                ResultsRootProvider = () => GetResultsRoot(),
             };
             vm.SaveError        += m => Messages.Error(m);
             vm.EmSetupSaved     += p => Messages.Success("Saved", p);
@@ -4279,6 +4338,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             vm.Refresh();
 
             var doc = new EmSetupDocument(Path.GetFileName(absolutePath), vm, absolutePath);
+
+            // Save As follows the new file, so the open-document map has to follow with it —
+            // otherwise reopening the .cem from the tree would mint a SECOND live view of one file.
+            // Subscribed after construction so the document's own OnSavedAs (which retitles) has
+            // already run by the time the key moves.
+            vm.EmSetupSavedAs += newPath =>
+            {
+                _openDocsByPath.Remove(absolutePath);
+                _openDocsByPath[newPath] = doc;
+                _factory.ProjectTreeTool?.Refresh();
+                Messages.Success("Saved", newPath);
+            };
+
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             HookEmSetupDirty(doc);
@@ -4296,6 +4368,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// analysed, otherwise a fresh read from disk. Re-running after a layout edit picks the edit up
     /// only because the geometry is read HERE, at use time, and never embedded in the <c>.cem</c>.
     /// </summary>
+    /// <summary>
+    /// The exact inverse of <see cref="ResolveEmLayout"/>'s own base-directory rule: relative to the
+    /// workspace root when the layout sits inside it, absolute otherwise. Written as one method
+    /// beside its inverse so the pair cannot drift — a Change Layout that wrote a reference the
+    /// resolver could not read would look like a corrupt file rather than a bad conversion.
+    /// </summary>
+    private string MakeEmLayoutRef(string cemPath, string absoluteClayPath)
+    {
+        string full = Path.GetFullPath(absoluteClayPath);
+        string baseDir = CurrentWorkspacePath is { } cws
+            ? Path.GetDirectoryName(cws)!
+            : Path.GetDirectoryName(cemPath)!;
+
+        string rel = Path.GetRelativePath(baseDir, full);
+        // A path that climbs out of the base is not usefully "relative to the workspace" — store it
+        // absolutely rather than as a ../../.. chain that breaks the moment the workspace moves.
+        return rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel) ? full : rel;
+    }
+
     private EmLayoutSource? ResolveEmLayout(string cemPath, string layoutRef)
     {
         if (layoutRef.Length == 0) return null;
@@ -4341,31 +4432,83 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var source = ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef);
         var setup  = vm.Working.Clone();
 
-        Messages.Info($"Running EM setup '{setup.Name}'…");
+        // TWO live rows, because an EM run has two questions with two different answers and one bar
+        // cannot carry both. A full-wave frequency point costs tens of seconds at the shipping mesh
+        // (L8d/L9d: 48 s and 71.9 s de-embedded), so a single bar over the point count would sit
+        // still for a minute at a time — indistinguishable from a hung run, which is the exact
+        // complaint this addresses. The sweep row answers "how far through the run"; the stage row
+        // answers "what is it doing right now", and moves within a single point.
+        int pointCount = ResolveEmPointCount(setup);
+        bool adaptive  = setup.AnalysisKind != Engine.Mom.EmAnalysisKind.CrossSection && setup.AdaptiveSampling;
+
+        var sweepLive = Messages.BeginProgress($"EM '{setup.Name}'");
+        var stageLive = Messages.BeginProgress($"EM '{setup.Name}' — starting");
 
         EmRunResult result;
-        try
+        using (var cts = new CancellationTokenSource())
         {
-            result = await Task.Run(() => EmRunService.Run(setup, source, resultsRoot));
-        }
-        catch (Exception ex)
-        {
-            Messages.Error($"The EM run failed: {ex.Message}");
-            return;
+            var control = new RunControl
+            {
+                Token = cts.Token,
+                // Adaptive sampling decides how many points it actually solves as it goes, so there
+                // is no honest denominator for it — it is reported indeterminate with a live count
+                // rather than against a budget the run will usually stop well short of.
+                Total    = adaptive ? 0 : pointCount,
+                Progress = new Progress<RunProgress>(
+                    p => ReportEmProgress(sweepLive, stageLive, setup.Name, p, adaptive)),
+            };
+
+            // Set INSIDE the try, so no path from here to the finally can leave the panel stuck
+            // showing Cancel for a run that is already over.
+            try
+            {
+                vm.CancelRequested = cts.Cancel;
+                vm.IsRunning       = true;
+                result = await Task.Run(() => EmRunService.Run(setup, source, resultsRoot, default, control));
+            }
+            catch (Exception ex)
+            {
+                stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — stopped");
+                sweepLive.Complete(MessageLevel.Error, $"The EM run failed: {ex.Message}");
+                return;
+            }
+            finally
+            {
+                vm.IsRunning       = false;
+                vm.CancelRequested = null;
+            }
         }
 
-        foreach (var w in result.Warnings) Messages.Warning(w);
+        // The stage row's job is over the moment the sweep is: it names a step, not an outcome, so
+        // it collapses to a plain line rather than being left with a half-finished bar on screen.
+        stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — solve finished");
+
+        // Three channels, three icons (owner report, 2026-08-09: "a lot of the Messages after the EM
+        // sim have the yellow warning icon; change those to info"). The engine's descriptive output —
+        // which kernel ran and why, the mesh's own sentences, RLGC, ports, how many shapes came from
+        // instances — is the run explaining itself, not a problem: Info. A channel that says
+        // "warning" about everything teaches people to ignore it, which costs the ones that matter.
+        foreach (var n in result.Notes ?? [])    Messages.Info(n);
+        foreach (var w in result.Warnings)       Messages.Warning(w);
+        foreach (var e in result.Errors ?? [])   Messages.Error(e);
 
         switch (result.Status)
         {
+            case EmRunStatus.Cancelled:
+                // Appended, not replaced: the row keeps the point count it reached, which is the one
+                // thing worth knowing about a run somebody stopped.
+                sweepLive.Finish(MessageLevel.Warning, "stopped — nothing was written");
+                return;
             case EmRunStatus.NoLayout:
             case EmRunStatus.Refused:
-                Messages.Error(result.Error ?? "The EM setup could not be solved.");
+                sweepLive.Finish(MessageLevel.Error, result.Error ?? "The EM setup could not be solved.");
                 return;
             case EmRunStatus.EngineError:
-                Messages.Error(result.Error ?? "The EM solve failed.");
+                sweepLive.Finish(MessageLevel.Error, result.Error ?? "The EM solve failed.");
                 return;
         }
+
+        sweepLive.Finish(MessageLevel.Success, EmRunSummary(result, adaptive, pointCount));
 
         if (result.MeshReport is { } meshReport) vm.AdoptMeshReport(meshReport);
         if (result.PlanarMesh is { } planarMesh)
@@ -4374,6 +4517,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             vm.AdoptCurrentDensity(result.CurrentDensity, result.PlanarPorts ?? []);
         }
         if (result.SnpPath is { } snp) Messages.Success("Wrote s-parameters", snp);
+        if (result.NpyPath is { } npyWritten) Messages.Success("Wrote results", npyWritten);
 
         if (result.NpyPath is { } npy)
         {
@@ -4382,11 +4526,186 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
-    /// <summary>Copies a <c>.cem</c>'s current mesh onto the open layout it analyses. A layout that
-    /// is not open simply has nowhere to draw it, which is not an error.</summary>
+    /// <summary>
+    /// The Mesh button, off the UI thread, with a live row and a Cancel.
+    ///
+    /// <para><b>One row, not two.</b> Meshing has no outer/inner split to carry — it is one pass with
+    /// one honest denominator (grid rows against the metal), so a second bar would be a second way of
+    /// saying the same thing. The sweep gets two rows because a frequency point is itself minutes
+    /// long; a mesh row is not.</para>
+    ///
+    /// <para>The MESH button is the one that turns into Cancel, because it is the one that started
+    /// the work — and Simulate is disabled meanwhile, so the two can never overlap and mesh the same
+    /// problem twice at once.</para>
+    /// </summary>
+    private async Task MeshEmSetupAsync(EmSetupEditorViewModel vm)
+    {
+        string name = vm.Working.Name;
+        var live = Messages.BeginProgress($"Meshing '{name}'");
+
+        using var cts = new CancellationTokenSource();
+        var control = new RunControl
+        {
+            Token    = cts.Token,
+            Progress = new Progress<RunProgress>(p => ReportEmMeshProgress(live, name, p)),
+        };
+
+        try
+        {
+            vm.CancelMeshRequested = cts.Cancel;
+            vm.IsMeshing           = true;
+
+            // THREE PHASES, and the boundaries are load-bearing (owner report, 2026-08-09: "I
+            // pressed the mesh button but got: the calling thread cannot access this object because a
+            // different thread owns it"). The first version pushed the whole of BuildActiveMesh onto
+            // the pool — but that method writes observable view-model properties, which raise
+            // PropertyChanged straight into bound Avalonia controls, and fires AnalysisRefreshed,
+            // which the workspace turns into opening a layout document. Only the MESHER is poolable.
+            //
+            //   1. UI    — Refresh + resolve + flatten + extract, and every state write they imply.
+            //              Flatten/extract read the LIVE LayoutView of an open document, so moving
+            //              them off-thread would trade a crash for a data race.
+            //   2. POOL  — SurfaceMesher.Mesh on the extracted snapshot. The part that can take
+            //              minutes, and the only part that touches nothing shared.
+            //   3. UI    — adopt the report.
+            vm.Refresh();
+
+            if (vm.IsPlanarAnalysis)
+            {
+                if (vm.PreparePlanarMesh() is { } problem)
+                {
+                    var report = await Task.Run(() => vm.ComputePlanarMesh(problem, control));
+                    vm.AdoptPlanarMeshReport(report);
+                }
+                // else: nothing to mesh, and Prepare already wrote the reason into the panel.
+            }
+            else
+            {
+                // The cross-section mesher is a 1-D boundary discretisation — orders of magnitude
+                // cheaper than the planar one, and not worth a thread hop of its own.
+                vm.BuildMesh();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            live.Finish(MessageLevel.Warning, "stopped");
+            return;
+        }
+        catch (Exception ex)
+        {
+            live.Complete(MessageLevel.Error, $"Meshing '{name}' failed: {ex.Message}");
+            return;
+        }
+        finally
+        {
+            vm.IsMeshing           = false;
+            vm.CancelMeshRequested = null;
+        }
+
+        live.Finish(MessageLevel.Success, vm.MeshOutcomeText());
+    }
+
+    /// <summary>Drives the mesh row. The mesher reports through the STAGE counter only (it also runs
+    /// inside a sweep, where the outer counter means frequency points), so the bar reads from there.</summary>
+    internal static void ReportEmMeshProgress(IProgressMessage live, string setupName, RunProgress p)
+    {
+        string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
+        if (p.StageTotal > 0)
+            live.Update($"Meshing '{setupName}' — {what}",
+                        FormatCounter(p.StageCompleted, p.StageTotal),
+                        100.0 * p.StageCompleted / p.StageTotal);
+        else
+            live.Update($"Meshing '{setupName}' — {what}", indeterminate: true);
+    }
+
+    /// <summary>
+    /// How many frequency points the sweep asked for — the sweep row's denominator. Never throws: an
+    /// unresolvable sweep is a refusal the run itself reports far better than a progress bar could,
+    /// so this falls back to indeterminate (0) and lets that happen.
+    /// </summary>
+    internal static int ResolveEmPointCount(EmSetup setup)
+    {
+        try { return setup.Frequency.Expand().Length; }
+        catch { return 0; }
+    }
+
+    /// <summary>
+    /// Drives BOTH EM rows from one observation. The sweep row carries the point count; the stage row
+    /// carries what the current point is doing.
+    ///
+    /// <para><b>Same split as <see cref="ReportRunProgress"/>, for the same reason:</b> everything
+    /// that changes goes in the trailing counter, after the bar, and the text before the bar is
+    /// constant for the whole run — anything that grows to the bar's LEFT moves the bar with it.
+    /// The stage row is the one exception and it is deliberate: its text is the changing part (it
+    /// IS the answer to "what is it doing"), so its own counter stays fixed-width instead.</para>
+    /// </summary>
+    internal static void ReportEmProgress(
+        IProgressMessage sweepLive, IProgressMessage stageLive,
+        string setupName, RunProgress p, bool adaptive)
+    {
+        if (p.Total > 0)
+            sweepLive.Update($"EM '{setupName}'",
+                             FormatCounter(p.Completed, p.Total),
+                             100.0 * p.Completed / p.Total);
+        else
+            sweepLive.Update($"EM '{setupName}'",
+                             adaptive
+                                 ? $"{p.Completed.ToString("N0", CultureInfo.CurrentCulture)} point(s) solved"
+                                 : null,
+                             indeterminate: true);
+
+        string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
+        if (p.StageTotal > 0)
+            stageLive.Update($"EM '{setupName}' — {what}",
+                             FormatCounter(p.StageCompleted, p.StageTotal),
+                             100.0 * p.StageCompleted / p.StageTotal);
+        else
+            stageLive.Update($"EM '{setupName}' — {what}", indeterminate: true);
+    }
+
+    /// <summary>The sweep row's own outcome, appended to the end of the row it already owns — so the
+    /// finished line still says which setup ran and how many points it got through.</summary>
+    internal static string EmRunSummary(EmRunResult result, bool adaptive, int requestedPoints)
+    {
+        string points = requestedPoints > 0
+            ? $"{requestedPoints.ToString("N0", CultureInfo.CurrentCulture)} frequency point(s)"
+            : "the frequency sweep";
+
+        // Adaptive publishes the user's whole grid but only SOLVES some of it, and saying so is the
+        // difference between a number a user can trust and one they have to go looking for.
+        if (adaptive && result.PlanarSolve is { } ps && ps.SolvedFrequencies.Count > 0)
+            return $"solved — {points}, {ps.SolvedFrequencies.Count:N0} solved and the rest interpolated";
+
+        return $"solved — {points}";
+    }
+
+    /// <summary>
+    /// Copies a <c>.cem</c>'s current mesh onto the layout it analyses.
+    ///
+    /// <para><b>Owner report, 2026-08-09: "I was expecting to see a mesh rendered overtop of my
+    /// .clay file's rendering."</b> The mesh has no home except an OPEN layout document, and this
+    /// used to return silently when that layout was not open — so pressing Mesh with only the
+    /// <c>.cem</c> on screen produced a correct mesh that had nowhere to be drawn and said nothing
+    /// about it. A mesh is a picture; producing one and showing nothing is indistinguishable from
+    /// doing nothing. It now OPENS the layout, once, when there is genuinely a mesh to show.</para>
+    ///
+    /// <para>Guarded on a non-null report so an ordinary <c>Refresh</c> (which fires this on every
+    /// keystroke-committed field) never yanks a tab open behind the user.</para>
+    /// </summary>
     private void PushEmMeshToLayout(EmSetupEditorViewModel vm)
     {
         if (ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef) is not { } source) return;
+
+        bool hasMesh = vm.MeshReport is not null || vm.PlanarMeshReport is not null;
+        bool anyOpen = _openDocsByPath.Values.OfType<LayoutDocument>().Any(d =>
+            d.FilePath is { } p && string.Equals(Path.GetFullPath(p), source.AbsolutePath, StringComparison.OrdinalIgnoreCase));
+
+        if (hasMesh && !anyOpen)
+        {
+            OpenOrActivateLayout(source.AbsolutePath);
+            Messages.Info("Opened the layout to show the mesh", source.AbsolutePath);
+        }
+
         foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
             if (open.FilePath is { } fp &&
                 string.Equals(Path.GetFullPath(fp), source.AbsolutePath, StringComparison.OrdinalIgnoreCase))

@@ -1,3 +1,4 @@
+using System.IO;
 using Dock.Model.Mvvm.Controls;
 using CircuitRF.Ui.Commands;
 
@@ -16,13 +17,13 @@ public sealed class EmSetupDocument : Document, IUndoableDocument, IActivatableD
     public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
     public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
 
-    private readonly string _baseTitle;
+    private string _baseTitle;
 
     public EmSetupEditorViewModel ViewModel { get; }
     public UndoRedoStack          UndoRedo  => ViewModel.UndoRedo;
 
     /// <summary>Absolute on-disk path of the <c>.cem</c>. Never null — see class header.</summary>
-    public string FilePath { get; }
+    public string FilePath { get; private set; }
 
     private bool _isDirty;
 
@@ -46,10 +47,22 @@ public sealed class EmSetupDocument : Document, IUndoableDocument, IActivatableD
         ViewModel  = viewModel;
         _isDirty   = false;
 
+        ViewModel.EmSetupSavedAs += OnSavedAs;
+
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(EmSetupEditorViewModel.IsDirty))
                 IsDirty = ViewModel.IsDirty;
         };
+    }
+
+    /// <summary>Save As landed: follow the new file. Mirrors <c>LayoutDocument.OnSavedAs</c> — unlike
+    /// <c>Materialize</c>, this may be called any number of times.</summary>
+    private void OnSavedAs(string newPath)
+    {
+        FilePath   = newPath;
+        _baseTitle = Path.GetFileName(newPath);
+        Id         = _baseTitle;
+        Title      = _isDirty ? $"• {_baseTitle}" : _baseTitle;
     }
 }

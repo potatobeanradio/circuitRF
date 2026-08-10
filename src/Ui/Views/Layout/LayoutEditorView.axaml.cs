@@ -306,6 +306,45 @@ public partial class LayoutEditorView : UserControl
     /// DataContext is a <c>LayoutDocument</c>, not the workspace. A torn-off window with no workspace
     /// shell reachable falls back to running the check directly, so the button never does nothing.</para>
     /// </summary>
+    /// <summary>
+    /// EM toolbar button — opens (creating on first use) the <c>.cem</c> EM setup for THIS layout.
+    /// Resolves the workspace by walking the application's own windows, exactly like
+    /// <see cref="OnCheckDesignRules"/> and for the same reason (this view's DataContext is a
+    /// <c>LayoutDocument</c>, not the workspace). A scratch layout with no path yet has no name to
+    /// derive the setup's from, so it is reported rather than silently doing nothing.
+    /// </summary>
+    private void OnOpenEmSetup(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LayoutDocument doc) return;
+
+        if (doc.FilePath is not { Length: > 0 } clayPath)
+        {
+            doc.ActiveViewModel.ReportWarning(
+                "Save this layout first — its EM setup is named after the layout file.");
+            return;
+        }
+
+        if (Avalonia.Application.Current?.ApplicationLifetime
+                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var workspace = desktop.Windows
+                .OfType<WorkspaceWindow>()
+                .Select(w => w.DataContext as WorkspaceViewModel)
+                .FirstOrDefault(v => v is not null);
+
+            if (workspace is not null)
+            {
+                workspace.OpenOrCreateEmSetupForLayout(clayPath);
+                return;
+            }
+        }
+
+        // A torn-off window with no workspace shell in reach — opening a document needs the shell,
+        // so say so rather than appearing to do nothing.
+        doc.ActiveViewModel.ReportWarning(
+            "Open the EM setup from the main window — a torn-off layout window cannot open documents.");
+    }
+
     private void OnCheckDesignRules(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LayoutDocument doc) return;
@@ -606,7 +645,15 @@ public partial class LayoutEditorView : UserControl
         if (clipboard is null) return;
 
         IntPtr ownerHwnd = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-        await LayoutClipboard.CopyAsync(clipboard, payload, vm.Technology, ownerHwnd);
+        // baseDir is what lets the graphic export resolve a placed instance's own cell — without it
+        // a schematic-generated selection copies as an empty picture. The mesh rides along when one
+        // is showing, in the graphic only: it belongs to an EM setup, not to geometry, so the JSON
+        // payload (what circuitRF's own paste reads) deliberately carries none.
+        await LayoutClipboard.CopyAsync(
+            clipboard, payload, vm.Technology, ownerHwnd,
+            vm.InstanceBaseDir,
+            vm.ShowPlanarMesh ? vm.PlanarMeshReport : null,
+            vm.ShowPlanarMesh ? vm.PlanarCurrentDensity : null);
     }
 
     private async Task OnClipboardCut()

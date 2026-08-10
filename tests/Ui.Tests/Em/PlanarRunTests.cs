@@ -186,17 +186,17 @@ public class PlanarRunTests(PlanarRunFixture fixture) : IClassFixture<PlanarRunF
     [Fact]
     public void TheKernelChoice_AndItsReason_AreInTheRunsNotes()
     {
-        Assert.Contains(fixture.Result.Warnings,
-                        w => w.Contains("explicitly", StringComparison.Ordinal));
+        Assert.Contains(fixture.Result.Notes ?? [],
+                        n => n.Contains("explicitly", StringComparison.Ordinal));
     }
 
     /// <summary>§0's third finding, surfaced rather than published as if it were dispersion.</summary>
     [Fact]
     public void TheQuasiStaticZcCaveat_IsInTheRunsNotes()
     {
-        Assert.Contains(fixture.Result.Warnings, w =>
-            w.Contains("QUASI-STATIC", StringComparison.Ordinal) &&
-            w.Contains("+6.3% at 20 GHz", StringComparison.Ordinal));
+        Assert.Contains(fixture.Result.Notes ?? [], n =>
+            n.Contains("QUASI-STATIC", StringComparison.Ordinal) &&
+            n.Contains("+6.3% at 20 GHz", StringComparison.Ordinal));
     }
 
     [Fact]

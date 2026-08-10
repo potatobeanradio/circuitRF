@@ -24,11 +24,15 @@
 using RfCore;
 using RfCore.Data;
 using RfCore.Export;
+using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Ui.Layout.Em;
 
-public enum EmRunStatus { Ok, Refused, NoLayout, EngineError }
+/// <summary><see cref="Cancelled"/> means the user pressed Cancel: the run was abandoned at a work
+/// boundary and NOTHING was written. It is deliberately distinct from <see cref="EngineError"/> —
+/// a stopped run is a normal outcome and must not be reported as a failure.</summary>
+public enum EmRunStatus { Ok, Refused, NoLayout, EngineError, Cancelled }
 
 public sealed record EmRunResult(
     EmRunStatus           Status,
@@ -38,6 +42,14 @@ public sealed record EmRunResult(
     string?               NpyPath,
     string?               SnpPath,
     string?               Error,
+    /// <summary><b>Genuine warnings only</b> — something the user should act on, shown with the
+    /// warning icon. Owner report, 2026-08-09: "a lot of the Messages after the EM sim have the
+    /// yellow warning icon; change those to info." They were all coming out of this one list, which
+    /// had become a grab-bag of the engine's own descriptive NOTES (which kernel ran and why, the
+    /// mesh's own sentences, RLGC, ports, how many shapes came from instances), a couple of real
+    /// warnings, and outright write FAILURES. A channel that says "warning" about everything teaches
+    /// people to ignore it, which costs exactly the ones that matter. Three lists now, by what the
+    /// reader is expected to DO about each.</summary>
     IReadOnlyList<string> Warnings,
     /// <summary>Which kernel actually ran (or was refused) — never
     /// <see cref="EmAnalysisKind.Auto"/>, which is a request rather than an outcome.</summary>
@@ -45,6 +57,13 @@ public sealed record EmRunResult(
     string                KernelName     = "",
     PlanarMeshReport?     PlanarMesh     = null,
     PlanarSolveResult?    PlanarSolve    = null,
+    /// <summary>The engine's own descriptive output — shown with the info icon. Not a problem, and
+    /// not something to act on: it is the run explaining itself.</summary>
+    IReadOnlyList<string>? Notes = null,
+    /// <summary>Things that genuinely failed while the run itself succeeded — a results file that
+    /// could not be written. Shown with the error icon, because the user asked for a file and did
+    /// not get one.</summary>
+    IReadOnlyList<string>? Errors = null,
     /// <summary>D5's heat map, when a planar run produced one — port 1 at the lowest swept
     /// frequency unless the setup asked for another.</summary>
     PlanarCurrentDensityMap? CurrentDensity = null,
@@ -92,13 +111,43 @@ public static class EmRunService
     /// Extract → CanSolve → Solve → write. Never throws: an engine failure is captured into
     /// <see cref="EmRunStatus.EngineError"/>, matching <c>SchematicRunService.RunNetlist</c>.
     /// </summary>
+    /// <param name="control">Progress and cancellation, or null for neither. Threaded straight
+    /// through to the kernel: a full-wave sweep is the longest thing this application does, so it
+    /// reports the point count AND what the current point is doing (see <see cref="RunControl"/>'s
+    /// own note on why one counter is not enough here).</param>
     public static EmRunResult Run(
         EmSetup            setup,
         EmLayoutSource?    source,
         string             resultsRoot,
-        CancellationToken  ct = default)
+        CancellationToken  ct = default,
+        RunControl?        control = null)
     {
+        try { return RunCore(setup, source, resultsRoot, ct, control); }
+        catch (OperationCanceledException)
+        {
+            // A stopped run is a normal outcome, not a failure — and it wrote nothing, because every
+            // write in this file happens after the solve it belongs to. Reported as its own status so
+            // the caller can say "stopped" rather than "the EM solve failed".
+            return new EmRunResult(EmRunStatus.Cancelled, null, null, null, null, null,
+                "The EM run was stopped. Nothing was written.", []);
+        }
+    }
+
+    private static EmRunResult RunCore(
+        EmSetup            setup,
+        EmLayoutSource?    source,
+        string             resultsRoot,
+        CancellationToken  ct,
+        RunControl?        control)
+    {
+        // One token, not two. RunControl bundles cancellation WITH progress precisely so a caller
+        // wires both once; where a control is supplied its token is authoritative and the bare `ct`
+        // parameter is the fallback for callers (tests, headless drivers) that pass neither.
+        if (control is { Token: var t } && t.CanBeCanceled) ct = t;
+
         var warnings = new List<string>();
+        var notes    = new List<string>();
+        var errors   = new List<string>();
 
         if (source is null)
             return new EmRunResult(EmRunStatus.NoLayout, null, null, null, null, null,
@@ -136,12 +185,17 @@ public static class EmRunService
         // planar kernel accepts the geometry, and an explicit planar one has to be told when the
         // cheap kernel would have done. Extraction is geometry-only and costs nothing next to a
         // solve; this is not the expensive half.
+        // Flattened, exactly as the editor's own Refresh does — the run and the panel must never
+        // disagree about what geometry the setup is pointed at.
+        var geometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
+        notes.AddRange(geometry.Notes);
+
         var crossSection = CrossSectionExtractor.Extract(
-            source.View.Shapes, source.Technology, source.DbuPerMicron,
+            geometry.Shapes, source.Technology, source.DbuPerMicron,
             setup.ToExtractionSettings(setup.LayoutRef));
 
         var planar = PlanarExtractor.Extract(
-            source.View.Shapes, source.Technology, source.DbuPerMicron, fMax,
+            geometry.Shapes, source.Technology, source.DbuPerMicron, fMax,
             setup.ToExtractionSettings(setup.LayoutRef));
 
         var choice = EmKernelRegistry.Choose(
@@ -149,18 +203,18 @@ public static class EmRunService
             crossSection.Ok ? EmExtractorVerdict.Yes : EmExtractorVerdict.No(crossSection.Refusal ?? ""),
             planar.Ok       ? EmExtractorVerdict.Yes : EmExtractorVerdict.No(planar.Refusal ?? ""));
 
-        warnings.Add(choice.Reason);
+        notes.Add(choice.Reason);
 
         // The CHOSEN extractor's notes, whichever way it went and whether or not it accepted — the
         // "N shapes were ignored" lines are as useful next to a refusal as next to an answer.
-        warnings.AddRange(choice.Kind == EmAnalysisKind.Planar ? planar.Notes : crossSection.Notes);
+        notes.AddRange(choice.Kind == EmAnalysisKind.Planar ? planar.Notes : crossSection.Notes);
 
         if (!choice.Ok)
             return new EmRunResult(EmRunStatus.Refused, null, crossSection.Readback, null, null, null,
-                choice.Refusal, warnings, choice.Kind, choice.KernelName);
+                choice.Refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
 
         if (choice.Kind == EmAnalysisKind.Planar)
-            return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, ct);
+            return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, notes, errors, ct, control);
 
         var extraction = crossSection;
         var problem = extraction.Problem!;
@@ -169,26 +223,28 @@ public static class EmRunService
         var verdict = kernel.CanSolve(problem);
         if (!verdict.Ok)
             return new EmRunResult(EmRunStatus.Refused, null, extraction.Readback, null, null, null,
-                verdict.Reason, warnings, choice.Kind, choice.KernelName);
+                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
 
         EmSolveResult solved;
         try
         {
+            control?.BeginStage("solving the cross-section");
             solved = kernel.SolveDetailed(problem, setup.Mesh, freqs, ct);
+            control?.Tick(freqs.Length);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             return new EmRunResult(EmRunStatus.EngineError, null, extraction.Readback, null, null, null,
-                $"The EM solve failed: {ex.Message}", warnings, choice.Kind, choice.KernelName);
+                $"The EM solve failed: {ex.Message}", warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
         }
 
         // R-em-16: the engine's own report is surfaced verbatim, never re-worded.
-        warnings.AddRange(solved.MeshReport.Notes);
-        warnings.AddRange(solved.Rlgc.Notes);
+        notes.AddRange(solved.MeshReport.Notes);
+        notes.AddRange(solved.Rlgc.Notes);
         // R-gen-5: the mode-coupling residual is a per-SOLVE number — the extractor could not have
         // made it, because it does not know the frequencies.
-        if (solved.SolveNotes is { } sn) warnings.AddRange(sn);
+        if (solved.SolveNotes is { } sn) notes.AddRange(sn);
 
         // R-em-20: compare BEFORE overwriting — the whole point is to tell the user their schematic
         // has been reading stale s-parameters, which is only knowable from the file about to be replaced.
@@ -209,7 +265,7 @@ public static class EmRunService
         }
         catch (Exception ex)
         {
-            warnings.Add($"The EM result could not be written to results/: {ex.Message}");
+            errors.Add($"The EM result could not be written to results/: {ex.Message}");
         }
 
         try
@@ -218,12 +274,12 @@ public static class EmRunService
         }
         catch (Exception ex)
         {
-            warnings.Add($"The .snp could not be written to '{snpPath}': {ex.Message}");
+            errors.Add($"The .snp could not be written to '{snpPath}': {ex.Message}");
             snpPath = null;
         }
 
         return new EmRunResult(EmRunStatus.Ok, solved.Data, extraction.Readback, solved.MeshReport,
-                               npyPath, snpPath, null, warnings, choice.Kind, choice.KernelName);
+                               npyPath, snpPath, null, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
     }
 
     // ── The planar branch, behind the registry (R-res-1) ───────────────────────────────────────
@@ -237,7 +293,8 @@ public static class EmRunService
     private static EmRunResult RunPlanar(
         EmSetup setup, EmLayoutSource source, string resultsRoot,
         PlanarExtractionResult extraction, double[] freqs, EmKernelChoice choice,
-        List<string> warnings, CancellationToken ct)
+        List<string> warnings, List<string> notes, List<string> errors,
+        CancellationToken ct, RunControl? control = null)
     {
         var problem = extraction.Problem!;
         var kernel  = new PlanarKernel();
@@ -245,17 +302,17 @@ public static class EmRunService
         var verdict = kernel.CanSolve(problem);
         if (!verdict.Ok)
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                verdict.Reason, warnings, choice.Kind, choice.KernelName);
+                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
 
         // D3 — the ports come from the layout's own IsPort labels, and an ambiguous one is refused
         // by name rather than guessed (R-res-5).
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0);
 
-        warnings.AddRange(ports.Notes);
+        notes.AddRange(ports.Notes);
         if (!ports.Ok)
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                ports.Refusal, warnings, choice.Kind, choice.KernelName);
+                ports.Refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
 
         PlanarKernelResult solved;
         try
@@ -273,17 +330,17 @@ public static class EmRunService
                       with { DirectVerticalKernel = true }
                     : PlanarSolveSettings.Default.Fill,
             };
-            solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, solveSettings, ct);
+            solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, solveSettings, ct, control);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             return new EmRunResult(EmRunStatus.EngineError, null, null, null, null, null,
-                $"The EM solve failed: {ex.Message}", warnings, choice.Kind, choice.KernelName);
+                $"The EM solve failed: {ex.Message}", warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
         }
 
         // R-em-16, unchanged for kernel B: the engine's own notes go out verbatim.
-        warnings.AddRange(solved.Notes);
+        notes.AddRange(solved.Notes);
 
         // D9/R-res-9 — compare BEFORE overwriting, exactly as kernel A does.
         string? snpPath = ResolveSnpPath(resultsRoot, setup, ports.Ports.Count);
@@ -301,7 +358,7 @@ public static class EmRunService
         }
         catch (Exception ex)
         {
-            warnings.Add($"The EM result could not be written to results/: {ex.Message}");
+            errors.Add($"The EM result could not be written to results/: {ex.Message}");
         }
 
         try
@@ -311,14 +368,15 @@ public static class EmRunService
         }
         catch (Exception ex)
         {
-            warnings.Add($"The .snp could not be written to '{snpPath}': {ex.Message}");
+            errors.Add($"The .snp could not be written to '{snpPath}': {ex.Message}");
             snpPath = null;
         }
 
         return new EmRunResult(EmRunStatus.Ok, solved.Data, null, null, npyPath, snpPath, null,
-                               warnings, choice.Kind, choice.KernelName,
-                               solved.MeshReport, solved.Solve,
-                               solved.CurrentDensity, solved.Ports);
+                               warnings, Notes: notes, Errors: errors,
+                               Kind: choice.Kind, KernelName: choice.KernelName,
+                               PlanarMesh: solved.MeshReport, PlanarSolve: solved.Solve,
+                               CurrentDensity: solved.CurrentDensity, PlanarPorts: solved.Ports);
     }
 
     /// <summary>The same exporter, the same options, the planar provenance stamp (D9).</summary>

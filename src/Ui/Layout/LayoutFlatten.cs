@@ -62,6 +62,7 @@ public static class LayoutFlatten
             m => (long)Math.Round(m * inst.Mag));
         foreach (var shape in subView.Shapes)
         {
+            if (IsCellBoundaryMarker(shape)) continue;
             var clone = LayoutGeometry.Clone(shape);
             LayoutCoordinateWalk.Transform(clone, pointTransform);
             if (inst.MirrorX) FlipBulgeSigns(clone);
@@ -188,7 +189,10 @@ public static class LayoutFlatten
         // reads FlattenOneLevel's ALREADY-REBASED oneLevel.Instances instead of these raw ones; this
         // count-only walk resolves the raw list directly, so it must rebase the base dir itself.
         string subBaseDir = CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir!);
-        long count = res.View!.Shapes.Count;
+        // Counted the same way FlattenOneLevel emits (below) — a preview that promised three shapes
+        // and produced one would be a worse bug than the one being fixed.
+        long count = 0;
+        foreach (var s in res.View!.Shapes) if (!IsCellBoundaryMarker(s)) count++;
         foreach (var subInst in res.View.Instances)
         {
             long sub = CountRecursive(subInst, subBaseDir, visiting, depth + 1, ceiling);
@@ -197,6 +201,55 @@ public static class LayoutFlatten
             if (count > ceiling) { visiting.Remove(res.ResolvedCellDir!); return -1; }
         }
         visiting.Remove(res.ResolvedCellDir!);
+        return count;
+    }
+
+    /// <summary>
+    /// A shape that describes the sub-cell's own BOUNDARY rather than its artwork, and therefore does
+    /// not survive the cell being dissolved (owner report, 2026-08-09: "when I flatten an MLIN
+    /// component, ports appear in the flattened geometry and it says 3 shapes — flattening only
+    /// creates geometry").
+    ///
+    /// <para>Today that is exactly one thing: an <see cref="LabelShape.IsPort"/> label. A port is a
+    /// statement about a cell's TERMINALS — where something connects to it. Flatten dissolves the
+    /// cell, so its terminals stop existing as terminals; carrying them up turns them into ports of
+    /// the PARENT, which is not merely untidy but actively wrong: <c>EmPortExtraction</c> reads the
+    /// top level's own <c>IsPort</c> labels, so a flattened MLIN would contribute two extra EM ports
+    /// named after its pins, and (because a generated PCell names its pins "1" and "2") collide with
+    /// the parent's own P1/P2 numbering — a collision that is refused by name at Simulate, far from
+    /// the Flatten that caused it.</para>
+    ///
+    /// <para><b>An ordinary (non-port) label is deliberately NOT dropped.</b> It is real annotation
+    /// the author drew, and <c>GerberExport</c> converts one into silkscreen artwork — dropping it
+    /// here would silently delete silkscreen text from every sub-cell on a Gerber export, which is a
+    /// worse failure than the one this fixes. A generated PCell cell contains no ordinary labels, so
+    /// this distinction costs the reported case nothing.</para>
+    /// </summary>
+    private static bool IsCellBoundaryMarker(LayoutShape shape) => shape is LabelShape { IsPort: true };
+
+    /// <summary>
+    /// How many shapes <see cref="FlattenOneLevel"/> would emit for a plain (non-array) instance —
+    /// the outcome preview R-L3c-1a bakes into the Flatten Hierarchy menu item's own label. Null when
+    /// the instance is an array (that preview counts INSTANCES, not shapes) or does not resolve.
+    ///
+    /// <para><b>It shares <see cref="IsCellBoundaryMarker"/> with the emit loop, and that is the whole
+    /// point of it existing</b> (owner report, 2026-08-09: "the Flatten Hierarchy menu says 3 shapes,
+    /// Flatten All says 1"). The preview previously read <c>subView.Shapes.Count</c> directly while its
+    /// own doc comment claimed to be "computed from the SAME FlattenOneLevel path the commit uses" — it
+    /// was re-deriving the count a second way, so the day the emit gained a rule the preview did not,
+    /// the two silently disagreed. Any future rule about what does or does not survive a flatten goes
+    /// in that one predicate and both sides pick it up.</para>
+    /// </summary>
+    public static long? CountOneLevelShapes(LayoutInstance inst, string parentBaseDir)
+    {
+        ArgumentNullException.ThrowIfNull(inst);
+        if (inst.Rows > 1 || inst.Cols > 1) return null;
+
+        var res = CellLayoutResolver.Resolve(inst.CellRef, parentBaseDir);
+        if (res.State != CellLayoutState.Resolved) return null;
+
+        long count = 0;
+        foreach (var shape in res.View!.Shapes) if (!IsCellBoundaryMarker(shape)) count++;
         return count;
     }
 

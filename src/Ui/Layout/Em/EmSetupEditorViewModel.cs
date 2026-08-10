@@ -14,6 +14,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Numerics;
+using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Commands;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -44,7 +45,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 {
     /// <summary>Absolute path of the <c>.cem</c>. Never null — R-em-9: a <c>.cem</c> is
     /// workspace-scoped and never scratch, mirroring <c>TechDocument</c>.</summary>
-    public string FilePath { get; }
+    public string FilePath { get; private set; }
 
     public EmSetup Working { get; private set; }
 
@@ -59,8 +60,27 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// degrades to a stated message, never a throw (Tier D).</summary>
     public Func<string, EmLayoutSource?>? ResolveLayout { get; set; }
 
+    /// <summary>
+    /// Turns an absolute <c>.clay</c> path into the form <see cref="EmSetup.LayoutRef"/> stores —
+    /// workspace-relative when the layout is inside the workspace, absolute otherwise. The rule is
+    /// the workspace's (it owns the root), and it must be the exact inverse of the resolution
+    /// <see cref="ResolveLayout"/> performs, or Change Layout would write a reference that then
+    /// fails to resolve. Unset falls back to the absolute path, which always resolves.
+    /// </summary>
+    public Func<string, string>? MakeLayoutRef { get; set; }
+
+    /// <summary>What <see cref="EmGeometry.Flatten"/> had to say about the last refresh's geometry —
+    /// carried on a field because <c>RefreshPlanar</c> builds its own note list and both paths must
+    /// report the same thing about the same artwork.</summary>
+    private IReadOnlyList<string> _geometryNotes = [];
+
     public event Action<string>? SaveError;
     public event Action<string>? EmSetupSaved;
+
+    /// <summary>Raised after a successful <see cref="SaveAs"/>, with the NEW absolute path. Distinct
+    /// from <see cref="EmSetupSaved"/> because the workspace has to re-key its open-document map and
+    /// the document has to retitle — neither is needed for an ordinary save.</summary>
+    public event Action<string>? EmSetupSavedAs;
 
     /// <summary>
     /// D2 — <b>Simulate</b> runs the EM simulation; <b>Mesh</b> computes the mesh only. The Mesh
@@ -69,6 +89,63 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// no dispatcher, no results writer and no Data Display.
     /// </summary>
     public Func<EmSetupEditorViewModel, Task>? RunRequested { get; set; }
+
+    /// <summary>
+    /// Cancels the run currently in flight. Set by the host alongside <see cref="IsRunning"/>, and
+    /// cleared with it — so the Cancel button can only ever exist while there is something to cancel.
+    ///
+    /// <para>The cancellation SOURCE stays with the host, not here: this view model has no business
+    /// owning a <c>CancellationTokenSource</c>, and keeping it out is what lets this whole file stay
+    /// framework-free.</para>
+    /// </summary>
+    public Action? CancelRequested { get; set; }
+
+    /// <summary>
+    /// Runs the Mesh button's work off the UI thread, with a progress row and a Cancel. Set by the
+    /// host; when it is null the command falls back to meshing synchronously, which is what every
+    /// headless caller and test does.
+    ///
+    /// <para><b>Why Mesh gets the same treatment as Simulate</b> (owner, 2026-08-09: "I've seen
+    /// geometry in commercial MoM take 2 min to mesh or longer — it depends on geometry"). Measured
+    /// on this codebase's own single-polygon line fixture, meshing is 0.1-0.4 ms — but that fixture
+    /// is one polygon, and the mesher's dominant term is layers x grid rows x POLYGONS in the span
+    /// scan. R17's ceiling bounds the cell count, not the polygon count, so real artwork is exactly
+    /// the case the measurement does not cover.</para>
+    /// </summary>
+    public Func<EmSetupEditorViewModel, Task>? MeshRequested { get; set; }
+
+    /// <summary>Cancels the mesh in flight. Set and cleared by the host alongside
+    /// <see cref="IsMeshing"/>.</summary>
+    public Action? CancelMeshRequested { get; set; }
+
+    /// <summary>True while a mesh is in flight. Drives the toolbar's Mesh/Cancel swap.</summary>
+    [ObservableProperty] private bool _isMeshing;
+
+    partial void OnIsMeshingChanged(bool value)
+    {
+        BuildActiveMeshCommand.NotifyCanExecuteChanged();
+        CancelMeshCommand.NotifyCanExecuteChanged();
+        SimulateCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>True while either long operation is in flight — the one gate that stops a Mesh and a
+    /// Simulate overlapping, which would have them both meshing the same problem at once.</summary>
+    public bool IsBusy => IsRunning || IsMeshing;
+
+    [RelayCommand(CanExecute = nameof(IsMeshing))]
+    public void CancelMesh() => CancelMeshRequested?.Invoke();
+
+    /// <summary>True while an EM run is in flight. Drives the toolbar's Simulate/Cancel swap and
+    /// gates both commands, so the two can never both be available.</summary>
+    [ObservableProperty] private bool _isRunning;
+
+    partial void OnIsRunningChanged(bool value)
+    {
+        SimulateCommand.NotifyCanExecuteChanged();
+        CancelSimulateCommand.NotifyCanExecuteChanged();
+        BuildActiveMeshCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(IsBusy));
+    }
 
     /// <summary>Raised when the extraction/mesh state changed — the layout canvas's cue to
     /// re-render (or drop) the mesh overlay (R-em-17).</summary>
@@ -110,6 +187,88 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <summary>R-msh-7 — the R17 verdict, surfaced so the panel can disable Simulate with the
     /// engine's own words rather than re-deriving the budget rule.</summary>
     public string? PlanarBudgetRefusal => PlanarMeshReport?.Refusal;
+
+    // ── Output file (owner request, 2026-08-09) ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Staged text for <see cref="EmSetupModel.SnpOutputPathOverride"/> — where the s-parameters land.
+    /// Committed on LostFocus/Enter like every other typed field in this panel, so a half-typed path
+    /// never reaches the model.
+    ///
+    /// <para><b>Blank means the default</b>, which is shown as the box's placeholder rather than
+    /// pre-filled: pre-filling would turn "follow the layout's name" into a frozen literal the moment
+    /// anyone renamed anything, which is the same trap <c>TechRef = null</c> avoids by meaning
+    /// "the workspace default" rather than a copied path.</para>
+    /// </summary>
+    [ObservableProperty] private string _snpOutputPathText = "";
+
+    /// <summary>What a blank box resolves to — the layout's own name with its <c>.clay</c> swapped
+    /// for <c>.sNp</c>, N being however many ports the run finds. Shown as the placeholder.</summary>
+    public string SnpOutputPlaceholder
+    {
+        get
+        {
+            string stem = Working.LayoutRef is { Length: > 0 } r
+                ? Path.GetFileNameWithoutExtension(r)
+                : Working.Name;
+            if (stem.Length == 0) stem = "results";
+            return $"{stem}.sNp";
+        }
+    }
+
+    /// <summary>Commits the staged path. Same value is a no-op, so tabbing through pushes no undo
+    /// entry.</summary>
+    public void CommitSnpOutputPath()
+    {
+        string v = (SnpOutputPathText ?? "").Trim();
+        if (v == Working.SnpOutputPathOverride) return;
+
+        var before = SnapshotJson();
+        Working.SnpOutputPathOverride = v;
+        CommitEdit(before, "Set output file");
+        SnpOutputPathText = Working.SnpOutputPathOverride;
+    }
+
+    /// <summary>Discards the staged text — Escape's half of the contract.</summary>
+    public void RevertSnpOutputPath() => SnpOutputPathText = Working.SnpOutputPathOverride;
+
+    /// <summary>Where this workspace writes results, supplied by the host (this file is
+    /// framework-free and has no workspace of its own). Null when no workspace is open.</summary>
+    public Func<string?>? ResultsRootProvider { get; set; }
+
+    /// <summary>
+    /// Turns a browsed absolute path into the form the setup stores: RELATIVE to the results folder
+    /// when it sits inside it, absolute otherwise.
+    ///
+    /// <para>Same rule <c>EmRunService.ResolveSnpBasePath</c> already reads it by, and the same
+    /// reasoning <c>WorkspaceRefs</c> applies to data sources: a path inside the workspace must
+    /// survive that workspace being moved, and one outside it cannot be made portable by any
+    /// encoding — so it is stored plainly rather than as a <c>../../..</c> chain that breaks on the
+    /// first move.</para>
+    /// </summary>
+    public string MakeOutputPathRef(string absolutePath)
+    {
+        if (ResultsRootProvider?.Invoke() is not { Length: > 0 } root) return absolutePath;
+        try
+        {
+            string rel = Path.GetRelativePath(root, absolutePath);
+            return rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel)
+                ? absolutePath
+                : rel.Replace(Path.DirectorySeparatorChar, '/');
+        }
+        catch { return absolutePath; }
+    }
+
+    /// <summary>The mesh row's own outcome, appended to the end of the row it already owns — so the
+    /// finished line still says WHAT was meshed rather than collapsing to a bare "done".</summary>
+    public string MeshOutcomeText()
+    {
+        if (PlanarMeshReport is { } pr)
+            return $"{pr.UnknownCount:N0} unknown(s) over {pr.CellCount:N0} cell(s)";
+        if (MeshReport is { } mr)
+            return $"{mr.UnknownCount:N0} unknown(s)";
+        return PlanarExtractionRefusal ?? ExtractionRefusal ?? "nothing to mesh";
+    }
 
     /// <summary>R-msh-8's numbers, in the engine's own units, formatted once. The panel prints this;
     /// it computes nothing.</summary>
@@ -159,6 +318,29 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     [ObservableProperty] private EmAnalysisKind _analysisKind = EmAnalysisKind.CrossSection;
 
+    /// <summary>
+    /// One line saying what the SELECTED analysis is for, in the user's terms rather than ours
+    /// (owner request, 2026-08-09). It answers the question the dropdown alone cannot — "why would
+    /// I ever pick the other one?" — which for the cross-section analysis has a concrete answer:
+    /// it is exact for a uniform line and roughly a thousand times faster, which on a 101-point
+    /// sweep is the difference between under a second and over an hour.
+    /// </summary>
+    public string AnalysisKindDescription => AnalysisKind switch
+    {
+        EmAnalysisKind.Auto =>
+            "Picks the analysis from the geometry, preferring the faster one whenever it applies, " +
+            "and always says which it picked and why.",
+        EmAnalysisKind.CrossSection =>
+            "For a straight, constant-width line: solves its cross-section for Z₀, ε_eff, " +
+            "loss and delay. Exact for that geometry and effectively instant, because the answer " +
+            "does not change with frequency.",
+        EmAnalysisKind.Planar =>
+            "For arbitrary artwork: bends, stubs, gaps, coupled structures and multi-level metal " +
+            "with vias. It sees discontinuities, coupling and radiation — and costs a full " +
+            "solve at every frequency.",
+        _ => "",
+    };
+
     public bool IsPlanarAnalysis => SelectedKernel == EmAnalysisKind.Planar;
 
     /// <summary>Latest successfully-extracted problem — the one thing Mesh and Simulate both
@@ -171,9 +353,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             : ExtractionRefusal ?? KernelRefusal;
 
     public bool CanRun =>
-        SelectedKernel == EmAnalysisKind.Planar
+        !IsBusy &&
+        (SelectedKernel == EmAnalysisKind.Planar
             ? PlanarProblem is not null && BlockingReason is null
-            : Problem is not null && BlockingReason is null;
+            : Problem is not null && BlockingReason is null);
 
     // ── Frequency (R-em-11: reuse FrequencySpecViewModel, never a second frequency editor) ─────
 
@@ -285,6 +468,32 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         EmSetupSaved?.Invoke(FilePath);
     }
 
+    /// <summary>
+    /// Write this setup to a DIFFERENT <c>.cem</c> and follow it from then on (owner request,
+    /// 2026-08-09). The original file is left exactly as it was on disk — Save As is not a move.
+    ///
+    /// <para>The file picker itself lives in the view's code-behind, not here: everything under
+    /// <c>src/Ui/Layout/</c> is framework-free, so this method takes a resolved path and does the
+    /// I/O. <see cref="FilePath"/> is the one piece of mutable identity, and it moves only here.
+    /// </para>
+    /// </summary>
+    public void SaveAs(string newPath)
+    {
+        if (string.IsNullOrWhiteSpace(newPath)) return;
+        try
+        {
+            EmSetupPersistence.SaveToFile(newPath, Working);
+        }
+        catch (Exception ex)
+        {
+            SaveError?.Invoke($"Couldn't save EM setup to '{newPath}': {ex.Message}");
+            return;
+        }
+        FilePath = newPath;
+        UndoRedo.MarkSaved();
+        EmSetupSavedAs?.Invoke(newPath);
+    }
+
     // ── Snapshot undo plumbing ─────────────────────────────────────────────────────────────────
 
     internal string SnapshotJson() => EmSetupPersistence.Serialize(Working);
@@ -313,6 +522,29 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var before = SnapshotJson();
         Working.Frequency = spec;
         CommitEdit(before, "Change EM frequency sweep");
+        Refresh();
+    }
+
+    /// <summary>
+    /// Point this setup at a different <c>.clay</c> (owner request, 2026-08-09: "user needs an
+    /// elegant way to change which .clay file the EM Setup is for").
+    ///
+    /// <para>Undoable like every other field here, and it runs the SAME <see cref="Refresh"/> a
+    /// frequency or port edit does — so the cross-section readback, the extraction refusal, the port
+    /// list and the mesh state all re-derive against the new artwork immediately, and a previously
+    /// computed mesh is dropped rather than left on screen belonging to a layout that is no longer
+    /// the subject.</para>
+    /// </summary>
+    public void SetLayoutRef(string absoluteClayPath)
+    {
+        if (_suppressCommit || string.IsNullOrWhiteSpace(absoluteClayPath)) return;
+
+        string layoutRef = MakeLayoutRef?.Invoke(absoluteClayPath) ?? absoluteClayPath;
+        if (string.Equals(layoutRef, Working.LayoutRef, StringComparison.Ordinal)) return;
+
+        var before = SnapshotJson();
+        Working.LayoutRef = layoutRef;
+        CommitEdit(before, "Change EM setup layout");
         Refresh();
     }
 
@@ -456,6 +688,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     partial void OnAnalysisKindChanged(EmAnalysisKind value)
     {
+        // The description follows the SELECTION, not the commit — a suppressed or no-op change
+        // still has to relabel the line under the dropdown.
+        OnPropertyChanged(nameof(AnalysisKindDescription));
+
         if (_suppressCommit) return;
         if (value == Working.AnalysisKind) return;
         var before = SnapshotJson();
@@ -529,6 +765,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         DirectVerticalKernel = Working.DirectVerticalKernel;
         AnalysisKind = Working.AnalysisKind;
         SignalLayerChoice = Working.SignalStackupLayerName is { Length: > 0 } s ? s : InferSignalLayer;
+        SnpOutputPathText = Working.SnpOutputPathOverride;
+        OnPropertyChanged(nameof(SnpOutputPlaceholder));
         RefreshMeshText();
         _suppressCommit = false;
         Refresh();
@@ -607,12 +845,17 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // ── R-res-1: the registry chooses, here as at run time, from the same two verdicts ─────
         double fMax = TryMaxFrequency();
 
+        // Flattened, not source.View.Shapes: a schematic-generated layout carries every piece of
+        // metal inside a placed instance and nothing at top level (owner report, 2026-08-09).
+        var geometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
+        _geometryNotes = geometry.Notes;
+
         var crossSection = CrossSectionExtractor.Extract(
-            source.View.Shapes, source.Technology, source.DbuPerMicron,
+            geometry.Shapes, source.Technology, source.DbuPerMicron,
             Working.ToExtractionSettings(Working.LayoutRef));
 
         var planar = PlanarExtractor.Extract(
-            source.View.Shapes, source.Technology, source.DbuPerMicron, fMax,
+            geometry.Shapes, source.Technology, source.DbuPerMicron, fMax,
             Working.ToExtractionSettings(Working.LayoutRef));
 
         var choice = EmKernelRegistry.Choose(
@@ -631,7 +874,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             return;
         }
 
-        Notes = [.. crossSection.Notes];
+        Notes = [.. _geometryNotes, .. crossSection.Notes];
 
         if (!choice.Ok)
         {
@@ -667,8 +910,9 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Notes         = [.. planar.Notes];
         PlanarPorts   = [];
         DispersionDisabledReason =
-            "The Kirschning–Jansen correction is kernel A's, applied on top of a quasi-static " +
-            "answer. Kernel B is full-wave: dispersion is in the solve, not bolted onto it.";
+            "The Kirschning–Jansen correction belongs to the cross-section analysis, where it is " +
+            "applied on top of a quasi-static answer. A full-wave planar solve has dispersion in " +
+            "the solve itself, so there is nothing to bolt on.";
 
         if (!choice.Ok)
         {
@@ -690,7 +934,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PortRefusal = ports.Ok ? null : ports.Refusal;
         PlanarPorts = ports.Ports;
 
-        var notes = new List<string>(planar.Notes);
+        var notes = new List<string>(_geometryNotes);
+        notes.AddRange(planar.Notes);
         notes.AddRange(ports.Notes);
         Notes = [.. notes];
 
@@ -785,7 +1030,37 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// must not leak into the mesher.</para>
     /// </summary>
     [RelayCommand]
-    public void BuildPlanarMesh()
+    public void BuildPlanarMesh() => BuildPlanarMesh(null);
+
+    /// <param name="control">Progress and cancellation for the mesher, or null for neither.</param>
+    public void BuildPlanarMesh(RunControl? control)
+    {
+        if (PreparePlanarMesh() is not { } problem) return;
+        AdoptPlanarMeshReport(ComputePlanarMesh(problem, control));
+    }
+
+    /// <summary>
+    /// The UI-THREAD half of a planar mesh: resolve the layout, flatten it, extract the problem, and
+    /// assign every piece of view-model state that follows from those. Returns the problem to mesh,
+    /// or null when there is nothing to mesh — in which case the state it just wrote already says why.
+    ///
+    /// <para><b>This split exists because of a real crash, and the boundary is where it is on purpose</b>
+    /// (owner report, 2026-08-09: <i>"I pressed the mesh button but got: the calling thread cannot
+    /// access this object because a different thread owns it"</i>). The Mesh button had been moved
+    /// onto the thread pool wholesale — but this method does far more than mesh: it writes
+    /// <see cref="PlanarMeshNotes"/>, <see cref="PlanarProblem"/> and friends, every one of which
+    /// raises <c>PropertyChanged</c> straight into bound Avalonia controls, and it fires
+    /// <see cref="AnalysisRefreshed"/>, which the workspace turns into opening a layout document.
+    /// None of that may happen off the UI thread.</para>
+    ///
+    /// <para><b>Flatten and extract stay HERE rather than joining the mesher on the pool, and that is
+    /// deliberate rather than laziness.</b> They read <c>source.View</c> — the LIVE
+    /// <see cref="LayoutView"/> of an open layout document, which the user can be editing. Reading it
+    /// from a background thread would be a data race, which is a worse bug than a button that is
+    /// briefly slow. Only <see cref="SurfaceMesher.Mesh"/> is offloaded, because it works on the
+    /// already-extracted <see cref="PlanarProblem"/> — a snapshot nothing else can mutate.</para>
+    /// </summary>
+    public PlanarProblem? PreparePlanarMesh()
     {
         PlanarMeshReport        = null;
         PlanarMeshNotes         = [];
@@ -801,7 +1076,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             OnPropertyChanged(nameof(PlanarMeshSummary));
             OnPropertyChanged(nameof(PlanarBudgetRefusal));
             AnalysisRefreshed?.Invoke();
-            return;
+            return null;
         }
 
         double fMax = 0;
@@ -817,27 +1092,43 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             fMax = 0;
         }
 
+        var meshGeometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
         var extraction = PlanarExtractor.Extract(
-            source.View.Shapes, source.Technology, source.DbuPerMicron, fMax, Working.ToExtractionSettings());
+            meshGeometry.Shapes, source.Technology, source.DbuPerMicron, fMax, Working.ToExtractionSettings());
 
-        PlanarMeshNotes = [.. extraction.Notes];
+        PlanarMeshNotes = [.. meshGeometry.Notes, .. extraction.Notes];
         if (!extraction.Ok)
         {
             PlanarExtractionRefusal = extraction.Refusal;
             OnPropertyChanged(nameof(PlanarMeshSummary));
             OnPropertyChanged(nameof(PlanarBudgetRefusal));
             AnalysisRefreshed?.Invoke();
-            return;
+            return null;
         }
 
         PlanarProblem = extraction.Problem;
-        var report = SurfaceMesher.Mesh(extraction.Problem!, Working.PlanarMesh);
+        // Held so AdoptPlanarMeshReport can prepend them to the mesher's own — the notes are built in
+        // two places and must read in one order.
+        _pendingPlanarNotes = [.. meshGeometry.Notes, .. extraction.Notes];
+        return extraction.Problem;
+    }
+
+    private IReadOnlyList<string> _pendingPlanarNotes = [];
+
+    /// <summary>The POOLABLE half: pure, and touches no view-model state. Safe on any thread because
+    /// <paramref name="problem"/> is an already-extracted snapshot.</summary>
+    public PlanarMeshReport ComputePlanarMesh(PlanarProblem problem, RunControl? control)
+        => SurfaceMesher.Mesh(problem, Working.PlanarMesh, PlanarEdgeReference.ConductorWidth, control);
+
+    /// <summary>The UI-THREAD half again: adopt the report and everything that follows from it.</summary>
+    public void AdoptPlanarMeshReport(PlanarMeshReport report)
+    {
         PlanarMeshReport = report;
 
         // R-em-16, unchanged for kernel B: surface the engine's own notes VERBATIM. The mesher wrote
         // the λ_g sentence, the staircasing sentence and the R-msh-8a analytic-model sentence
         // carefully; print them, do not re-word them.
-        var notes = new List<string>(extraction.Notes);
+        var notes = new List<string>(_pendingPlanarNotes);
         notes.AddRange(report.Notes);
         PlanarMeshNotes = [.. notes];
 
@@ -846,14 +1137,64 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         AnalysisRefreshed?.Invoke();
     }
 
+    /// <summary>
+    /// The header Mesh button: mesh whichever kernel this setup is ACTUALLY going to use.
+    ///
+    /// <para><b>Owner report, 2026-08-09: "I pressed Mesh for my EM Setup (full wave) but nothing
+    /// happened and no messages were displayed."</b> The header button was bound straight to
+    /// <see cref="BuildMesh"/> — the CROSS-SECTION mesher — whose second line is
+    /// <c>if (Problem is null) return;</c>. On a full-wave setup <c>Problem</c> is null by
+    /// construction (the planar problem lives in <see cref="PlanarProblem"/>), so the most prominent
+    /// button in the editor returned silently. Meanwhile the planar mesher sat on a SECOND button,
+    /// also labelled "Mesh", buried inside the Surface mesh group. Two identical labels, one of them
+    /// inert in the mode the user was in.</para>
+    ///
+    /// <para>Dispatch after <see cref="Refresh"/>, never before: the refresh is what settles which
+    /// kernel the registry chose, and therefore which mesher this button means.</para>
+    /// </summary>
+    /// <summary>
+    /// Dispatches to the host's background mesh when one is wired (progress row + Cancel button), and
+    /// meshes inline otherwise — so every headless caller and every existing test keeps the exact
+    /// synchronous behaviour it had.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanMesh))]
+    public async Task BuildActiveMesh()
+    {
+        if (MeshRequested is { } mesh) await mesh(this);
+        else BuildActiveMesh(null);
+    }
+
+    private bool CanMesh() => !IsBusy;
+
+    /// <param name="control">Progress and cancellation, or null. The host supplies one when it runs
+    /// this off the UI thread; a headless caller passes none and meshes inline exactly as before.</param>
+    public void BuildActiveMesh(RunControl? control)
+    {
+        Refresh();
+        if (IsPlanarAnalysis) BuildPlanarMesh(control);
+        else BuildMesh();
+    }
+
     /// <summary>R-em-14: the Mesh button calls <see cref="IEmKernel.Mesh"/> and nothing else. No
     /// solve, no RLGC, no s-parameters — the cheap "is my mesh sane?" answer §10.5 says should land
-    /// before the solver, and it must stay cheap enough to press repeatedly.</summary>
+    /// before the solver, and it must stay cheap enough to press repeatedly.
+    ///
+    /// <para>Reached through <see cref="BuildActiveMesh"/> for the cross-section kernel. A null
+    /// <see cref="Problem"/> here is REPORTED rather than returned from silently — that silence is
+    /// exactly what made the full-wave case above read as a dead button.</para></summary>
     [RelayCommand]
     public void BuildMesh()
     {
         Refresh();
-        if (Problem is null) return;
+        if (Problem is null)
+        {
+            MeshReport = null;
+            MeshNotes  = [ExtractionRefusal ?? KernelRefusal ??
+                "There is no cross-section to mesh yet. The panel above says why the geometry has " +
+                "not resolved; fix that and press Mesh again."];
+            AnalysisRefreshed?.Invoke();
+            return;
+        }
 
         var report = new QuasiStaticKernel().Mesh(Problem, Working.Mesh);
         MeshReport = report;
@@ -873,6 +1214,23 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         if (RunRequested is { } run) await run(this);
     }
+
+    /// <summary>
+    /// Stops the run in flight (owner request, 2026-08-09: "we need a Stop simulation for EM, just
+    /// like we have for circuit simulation. Perhaps the Simulate button changes to Cancel?").
+    ///
+    /// <para><b>Cancellation lands at a work boundary, never inside a solve</b> — the same contract
+    /// <c>RunControl</c> already states for the circuit engines. A full-wave point is checked between
+    /// the Green's-function fit, the structure solve and each calibration standard, so Cancel is
+    /// answered within one of those rather than instantly. Finer would mean a token check inside the
+    /// numerical loops, which is exactly where this engine cannot afford one.</para>
+    ///
+    /// <para><b>A cancelled run writes nothing.</b> Every file this run would produce is written
+    /// after the solve it belongs to, so abandoning the solve abandons the write by construction —
+    /// there is no half-written <c>.snp</c> to clean up.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsRunning))]
+    public void CancelSimulate() => CancelRequested?.Invoke();
 
     /// <summary>A Simulate run meshes as a side effect, so its report is adopted here rather than
     /// making the user press Mesh again to see the same mesh the answer came from.</summary>

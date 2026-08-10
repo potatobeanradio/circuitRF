@@ -236,7 +236,7 @@ public class EmCoSimulationTests : IDisposable
         Assert.False(cubes.ContainsKey("ZcEven"));
 
         // R-gen-5 — the residual is surfaced as a named number, not left as an internal step.
-        Assert.Contains(em.Warnings, w => w.Contains("mode-coupling residual", StringComparison.Ordinal));
+        Assert.Contains(em.Notes ?? [], n => n.Contains("mode-coupling residual", StringComparison.Ordinal));
 
         // 2 — back-annotate into a schematic.
         var m = Testbench(out var placeholder, ports: 6);

@@ -462,9 +462,10 @@ public static class PlanarSolve
     /// </summary>
     public static PlanarSolveResult Run(
         PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports, GroundedSlab slab,
-        IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings = null)
+        IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings = null,
+        RunControl? control = null)
         => Run(new PlanarProblem([new PlanarConductorLayer("Metal", [], 0, 0)], slab, 0),
-               mesh, ports, freqsHz, settings);
+               mesh, ports, freqsHz, settings, control);
 
     /// <summary>
     /// <b>L9d/M1 — the same sweep for a problem of any level count.</b> Which kernel each frequency
@@ -472,10 +473,16 @@ public static class PlanarSolve
     /// calibration standard are handed the SAME kernel instance at each frequency, so L8d's "fit once
     /// per frequency, share across the DUT and every standard" survives unchanged (D7).
     /// </summary>
+    /// <param name="control">Progress and cancellation, or null for neither. A full-wave point costs
+    /// tens of seconds (L8d/L9d: 48 s and 71.9 s de-embedded at the shipping mesh), so this reports
+    /// BOTH the point count and the sub-steps within the current point — a bar that moved once a
+    /// minute would be indistinguishable from a hung run. Cancellation is checked at the same
+    /// boundaries, which is the granularity <see cref="RunControl"/>'s own contract describes.</param>
     public static PlanarSolveResult Run(
         PlanarProblem problem,
         PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports,
-        IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings = null)
+        IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings = null,
+        RunControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
@@ -668,26 +675,47 @@ public static class PlanarSolve
         // ── One frequency's raw DUT solve, lifted out of the loop so the adaptive driver below
         //    reaches EXACTLY the same arithmetic. R-adf-1's bit-identity when adaptive is off is a
         //    property of this being one implementation, not of two that agree.
+        // Each PHASE owns its own stage bar rather than one bar spanning the whole point, and that
+        // is a bug fix rather than a refactor (owner report, 2026-08-09: the row read "11 / 4").
+        // A single per-point total cannot work, because the ADAPTIVE path replays de-embedding over
+        // every already-solved point after each insertion — those ticks landed on the stage the last
+        // raw solve had begun, so the numerator ran away from a denominator that only ever counted
+        // ONE point's worth of work. Two stages, each with a total it can actually reach.
+
+        // Engineering notation, because a stage label is read at a glance: "10 GHz", not "1E+10".
+        static string FormatHz(double f) =>
+            f >= 1e9  ? $"{f / 1e9:0.###} GHz" :
+            f >= 1e6  ? $"{f / 1e6:0.###} MHz" :
+            f >= 1e3  ? $"{f / 1e3:0.###} kHz" :
+                        $"{f:0.###} Hz";
+
         (PlanarFrequencyKernel Kernel, Mat<Complex> Raw, Vec<Complex>[] Currents, double KernelMs, double DutMs)
         SolveRawAt(double f)
         {
+            control?.BeginStage($"{FormatHz(f)} — Green's function", 2);
             sw.Restart();
             var k = PlanarFrequencyKernel.Fit(
                 problem, f, (st.Fill ?? PlanarFillSettings.Default).Order, st.Dcim);
             double kMs = sw.Elapsed.TotalMilliseconds;
+            control?.TickStage(nextLabel: $"{FormatHz(f)} — solving the structure");
 
             sw.Restart();
             var sol = dut.SolveAt(k, f);
             var r = PlanarExcitation.RawScattering(sol.Y, z0);
             double dMs = sw.Elapsed.TotalMilliseconds;
+            control?.TickStage();
 
             return (k, r, sol.Currents.ToArray(), kMs, dMs);
         }
 
         // ── The de-embedding half, likewise shared. `kernelFor` is lazy because a REPLAY (adaptive
         //    only) hits the calibrator's raw cache and needs no kernel at all.
+        // <param name="ownStage">True when this call is the whole of what is happening — it then
+        // begins its own stage. False during an adaptive REPLAY, where the caller owns one stage
+        // spanning every replayed point; ticking a per-point stage from inside that loop is exactly
+        // what produced the runaway numerator.</param>
         (Mat<Complex> S, List<PlanarPortCalibration> Cals, double CalMs)
-        DeembedAt(double f, Mat<Complex> raw, Func<PlanarFrequencyKernel> kernelFor)
+        DeembedAt(double f, Mat<Complex> raw, Func<PlanarFrequencyKernel> kernelFor, bool ownStage = true)
         {
             sw.Restart();
             Mat<Complex> s = raw;
@@ -695,8 +723,18 @@ public static class PlanarSolve
 
             if (st.Deembed)
             {
+                if (ownStage)
+                    control?.BeginStage($"{FormatHz(f)} — de-embedding", calibrators.Count);
+
                 var perCal = new PlanarPortCalibration[calibrators.Count];
-                for (int j = 0; j < calibrators.Count; j++) perCal[j] = calibrators[j].At(kernelFor, f);
+                for (int j = 0; j < calibrators.Count; j++)
+                {
+                    if (ownStage)
+                        control?.SetStageLabel(
+                            $"{FormatHz(f)} — calibration standard {j + 1} of {calibrators.Count}");
+                    perCal[j] = calibrators[j].At(kernelFor, f);
+                    if (ownStage) control?.TickStage();
+                }
 
                 var boxes = new PlanarErrorBox[ports.Count];
                 var zc    = new Complex[ports.Count];
@@ -733,6 +771,7 @@ public static class PlanarSolve
 
                 var (s, cals, calMs) = DeembedAt(f, raw, () => kernel);
                 points.Add(new PlanarFrequencyPoint(f, s, raw, cals, kernelMs, dutMs, calMs));
+                control?.Tick();
             }
         }
         else
@@ -750,6 +789,7 @@ public static class PlanarSolve
             {
                 if (!solved.Add(i)) return;
                 var r = SolveRawAt(freqs[i]);
+                control?.Tick();
                 rawByIndex[i]      = r.Raw;
                 kernelByIndex[i]   = r.Kernel;
                 timeByIndex[i]     = (r.KernelMs, r.DutMs);
@@ -765,8 +805,14 @@ public static class PlanarSolve
                 foreach (var c in calibrators) c.RestartBranchContinuation();
                 flaggedBand.Clear();
                 var outp = new Dictionary<int, (Mat<Complex>, List<PlanarPortCalibration>, double)>();
+                // One stage for the whole replay — most of it is cache hits, so per-point stages here
+                // would flicker through every frequency for no information.
+                control?.BeginStage("replaying calibration", solved.Count);
                 foreach (int i in solved)
-                    outp[i] = DeembedAt(freqs[i], rawByIndex[i], () => kernelByIndex[i]);
+                {
+                    outp[i] = DeembedAt(freqs[i], rawByIndex[i], () => kernelByIndex[i], ownStage: false);
+                    control?.TickStage();
+                }
                 return outp;
             }
 

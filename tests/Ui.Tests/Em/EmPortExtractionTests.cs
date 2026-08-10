@@ -130,8 +130,11 @@ public class EmPortExtractionTests
         Assert.False(r.Ok);
         Assert.Contains("Port 1", r.Refusal!, StringComparison.Ordinal);
         Assert.Contains("ambiguous", r.Refusal!, StringComparison.Ordinal);
-        // R-mom-17's shape: name the feature, name what to do about it.
-        Assert.Contains("Move the label", r.Refusal!, StringComparison.Ordinal);
+        // R-mom-17's shape: name the feature, name what to do about it. Since 2026-08-09 there are
+        // TWO remedies — a port carries its own direction now, so ROTATING it is the direct answer
+        // and moving the label off the corner is the other. Both must be named.
+        Assert.Contains("Rotate the port", r.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("move the label", r.Refusal!, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -295,15 +298,18 @@ public class EmPortExtractionTests
     public void ThePortTool_PlacesALabelWithTheFlagSet_AsOneUndoEntry()
     {
         var view = new LayoutView { DbuPerMicron = Dbu, SnapDbu = 0 };
+        // The Port tool refuses a click that is not on metal (owner report, 2026-08-09), so the
+        // conductor has to be here for this test to be about what it says it is about.
+        view.Shapes.Add(Line());
         var vm   = new LayoutEditorViewModel(view) { ActiveTool = LayoutEditorViewModel.Tool.Port };
 
         vm.OnPointerPressed(Mm(0), Mm(1.45), default);
 
-        var label = Assert.IsType<LabelShape>(Assert.Single(view.Shapes));
+        var label = Assert.IsType<LabelShape>(view.Shapes.OfType<LabelShape>().Single());
         Assert.True(label.IsPort);
         Assert.Equal("P1", label.Text);
 
         vm.UndoRedo.Undo();
-        Assert.Empty(view.Shapes);
+        Assert.Empty(view.Shapes.OfType<LabelShape>());
     }
 }

@@ -47,6 +47,41 @@ public enum PlanarEdgeReference
     CellSize,
 }
 
+/// <summary>
+/// Whether an OBLIQUE boundary run contributes edge attractors, and how many.
+///
+/// <para><b>Not a user control</b> — D3 permits exactly three and this is not a fourth. It is a
+/// measurement seam of the same kind as <see cref="PlanarEdgeReference"/>: brief-edge-mesh-on-curved-
+/// geometry.md §2 asks whether a graded fan on a STAIRCASED rim buys anything at all, and that
+/// question cannot be answered without being able to build both meshes.</para>
+///
+/// <para><b>The default is <see cref="None"/>, and that is a MEASURED answer rather than an
+/// omission</b> — see the "edge mesh on curved geometry" section of this directory's own
+/// <c>CLAUDE.md</c> for the convergence table that decided it.</para>
+/// </summary>
+public enum PlanarRimGrading
+{
+    /// <summary>L8b's rule as shipped: an oblique edge contributes neither a hard gridline nor an
+    /// attractor. D9's guarantee, by exclusion.</summary>
+    None,
+
+    /// <summary>
+    /// One attractor per oblique RUN per axis at each end of the run's own coordinate range in that
+    /// axis — a run being a maximal chain of consecutive oblique edges. D9 then holds NUMERICALLY:
+    /// a 96-point disc is one run and contributes at most four attractors however finely it was
+    /// tessellated.
+    /// </summary>
+    PerRun,
+
+    /// <summary>
+    /// <see cref="PerRun"/> plus three interior samples spread along the run's own ARC LENGTH, each
+    /// contributing one attractor in the axis TRANSVERSE to the local tangent. Spreading by
+    /// coordinate rather than by arc length is wrong for a closed curve — the midpoint of a disc's
+    /// y-range is the disc's centre, which is not on the rim at all.
+    /// </summary>
+    PerRunSampled,
+}
+
 public static class SurfaceMesher
 {
     /// <summary>
@@ -73,10 +108,24 @@ public static class SurfaceMesher
     /// Green's function.
     /// </summary>
     /// <param name="edgeReference">R-msh-5's measurement seam — leave at the default.</param>
+    /// <param name="control">Progress and cancellation, or null for neither.
+    ///
+    /// <para><b>The mesher reports through the STAGE counter only — never the outer one.</b> It runs
+    /// inside a sweep as well as on its own, and the outer counter means "frequency points" there;
+    /// ticking it from here would count meshing as points solved. Owner, 2026-08-09: "I've seen
+    /// geometry in commercial MoM take 2 min to mesh (or longer). It depends on geometry." Ours is
+    /// sub-millisecond on a single-polygon line (measured: 0.1-0.4 ms, N = 552 and N = 6,497), but
+    /// the dominant term is layers x grid rows x polygons in the span scan, and only the CELL count
+    /// is bounded by R17's unknown ceiling — the polygon count is not. So the row scan is where the
+    /// ticks go, and cancellation is answered there too.</para></param>
+    /// <param name="rimGrading">brief-edge-mesh-on-curved-geometry.md's measurement seam — leave at
+    /// the default. See <see cref="PlanarRimGrading"/> for why the default is the one it is.</param>
     public static PlanarMeshReport Mesh(
         PlanarProblem       problem,
         PlanarMeshSettings? settings      = null,
-        PlanarEdgeReference edgeReference = PlanarEdgeReference.ConductorWidth)
+        PlanarEdgeReference edgeReference = PlanarEdgeReference.ConductorWidth,
+        RunControl?         control       = null,
+        PlanarRimGrading    rimGrading    = PlanarRimGrading.None)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
@@ -102,6 +151,9 @@ public static class SurfaceMesher
             return Empty(layerNames, problem, lambdaG, hWave, notes);
         }
 
+        // Sampling every polygon on every layer — the one pre-grid pass whose cost scales with the
+        // ARTWORK rather than with the cell count, and therefore the one R17's ceiling does not bound.
+        control?.BeginStage("measuring the artwork");
         // ── R-msh-4: the transverse cell size, from the NARROWEST conductor, per axis ──────────
         var (narrowX, narrowY) = MeasureNarrowness(problem);
         double narrowest = Math.Min(narrowX, narrowY);
@@ -131,7 +183,9 @@ public static class SurfaceMesher
         double ratioY = GrowthRatioFor(c0, hy, s.EdgeCells);
 
         // ── The grid (D8: one tensor-product grid, shared by every layer) ─────────────────────
-        var (hardX, hardY, attractX, attractY, staircased) = CollectBoundaryLines(problem, x0, y0, x1, y1);
+        control?.BeginStage("building the grid");
+        var (hardX, hardY, attractX, attractY, staircased) =
+            CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading);
 
         long estX = EstimateLineCount(x0, x1, hardX, hx);
         long estY = EstimateLineCount(y0, y1, hardY, hy);
@@ -156,10 +210,18 @@ public static class SurfaceMesher
         var perLayerUnknowns = new int[problem.Layers.Count];
 
         int nx = gx.Length - 1, ny = gy.Length - 1;
+
+        // One continuous stage bar across the whole scan: every conductor layer's rows, then every
+        // via's. Declared up front so the bar is honest from the first row rather than restarting
+        // per layer, which would read as progress going backwards on a multi-level design.
+        long scanRows = (long)ny * (problem.Layers.Count + problem.ViaList.Count);
+        control?.BeginStage($"testing {ny:N0} row(s) against the metal", scanRows);
+
         var cellAtPerLayer = new int[problem.Layers.Count][];
         for (int li = 0; li < problem.Layers.Count; li++)
         {
             var layer = problem.Layers[li];
+            control?.SetStageLabel($"scanning '{layer.Name}' ({li + 1} of {problem.Layers.Count})");
 
             // cellAt is a plain int[] indexed by (iy * nx + ix), never a dictionary: R-msh-2 forbids
             // any set/dictionary ITERATION on this path, and an array also makes the adjacency scan
@@ -171,6 +233,7 @@ public static class SurfaceMesher
             int firstCell = cells.Count;
             for (int iy = 0; iy < ny; iy++)
             {
+                control?.TickStage();
                 double yc = 0.5 * (gy[iy] + gy[iy + 1]);
                 var spans = RowSpans(layer, yc);
                 if (spans.Count == 0) continue;
@@ -221,6 +284,7 @@ public static class SurfaceMesher
         int groundUnknowns = 0;
         foreach (var via in problem.ViaList)
         {
+            control?.SetStageLabel("scanning via footprints");
             // ── The GROUND-ATTACHMENT path (R-gv-5) ───────────────────────────────────────────
             //
             // A via to the plane has only ONE meshed foot, so the three-way coincidence above
@@ -239,6 +303,7 @@ public static class SurfaceMesher
 
             for (int iy = 0; iy < ny; iy++)
             {
+                control?.TickStage();
                 double yc = 0.5 * (gy[iy] + gy[iy + 1]);
                 for (int ix = 0; ix < nx; ix++)
                 {
@@ -318,11 +383,53 @@ public static class SurfaceMesher
         notes.Add($"Narrowest conductor dimension {Eng(narrowest)}m, meshed {across} cell(s) across " +
                   $"(target {PlanarMeshSettings.MinCellsAcrossConductor}).");
 
-        notes.Add(s.EdgeMesh && s.EdgeCells > 0
-            ? $"Edge mesh on: {s.EdgeCells} graded cell(s) at every axis-parallel conductor edge, " +
-              $"outermost {Eng(c0)}m ({PlanarMeshSettings.EdgeFractionOfReference:P0} of {Eng(edgeRef)}m, " +
-              $"{DescribeReference(edgeReference)}), growing by {ratioX:G3}× across and {ratioY:G3}× along."
-            : "Edge mesh off — the 1/√d edge current is not resolved, so loss and Z₀ will read low.");
+        if (s.EdgeMesh && s.EdgeCells > 0)
+        {
+            notes.Add($"Edge mesh on: {s.EdgeCells} graded cell(s) at every axis-parallel conductor edge, " +
+                      $"outermost {Eng(c0)}m ({PlanarMeshSettings.EdgeFractionOfReference:P0} of {Eng(edgeRef)}m, " +
+                      $"{DescribeReference(edgeReference)}), growing by {ratioX:G3}× across and {ratioY:G3}× along.");
+
+            // …and when there is no such edge, SAY SO. "at every axis-parallel conductor edge" is
+            // accurate and nobody reads the qualifier, so on an all-curved part the note above
+            // reports an edge mesh that does not exist anywhere on the artwork. Same class as the
+            // EffectiveEdgeCells clamp note below it: a control that silently does nothing is worse
+            // than one that says why.
+            if (attractX.Count == 0 || attractY.Count == 0)
+            {
+                bool neither = attractX.Count == 0 && attractY.Count == 0;
+                string where = neither             ? "in either direction"
+                             : attractX.Count == 0 ? "across (x)"
+                                                   : "along (y)";
+                notes.Add($"…but NO edge grading was actually applied {where}: no conductor edge on " +
+                          "this artwork is both axis-parallel and long enough to carry the 1/√d edge " +
+                          "current. An oblique or curved outline contributes NEITHER a gridline nor a " +
+                          "graded fan — it is approximated by a staircase instead" +
+                          (staircased > 0 ? " (see below)" : "") + ". " +
+                          (neither ? "Raising Edge cells will not change this mesh at all."
+                                   : "Raising Edge cells acts on the other direction only."));
+            }
+
+            // The growth ratio is CLAMPED (GrowthRatioFor), so past a geometry-dependent point the
+            // requested cell count cannot be honoured and raising it further changes nothing at all.
+            // Saying so is the difference between "this control does not do what I expected" and
+            // "this control did nothing and never told me" (owner report, 2026-08-09: "I set my Edge
+            // cells to 10 and expected the mesh to increase near the edges, but it appeared the same").
+            int usedX = EffectiveEdgeCells(c0, hx, ratioX);
+            int usedY = EffectiveEdgeCells(c0, hy, ratioY);
+            int used  = Math.Max(usedX, usedY);
+            if (used > 0 && used != s.EdgeCells)
+                notes.Add($"The edge grading ratio is bounded to {MinGrowthRatio:G3}–{MaxGrowthRatio:G3}×, so " +
+                          $"the ramp from {Eng(c0)}m to the bulk cell reaches it in about {used} cell(s), " +
+                          $"not the {s.EdgeCells} requested — on this geometry any value " +
+                          (used < s.EdgeCells ? "above" : "below") + $" ~{used} meshes the same. " +
+                          "Edge cells sets how far the refinement REACHES, never how fine the finest " +
+                          "cell is: that is fixed at " +
+                          $"{PlanarMeshSettings.EdgeFractionOfReference:P0} of the reference length.");
+        }
+        else
+        {
+            notes.Add("Edge mesh off — the 1/√d edge current is not resolved, so loss and Z₀ will read low.");
+        }
 
         if (staircased > 0)
             notes.Add($"{staircased} polygon(s) are not axis-aligned and are approximated by a " +
@@ -414,6 +521,24 @@ public static class SurfaceMesher
     /// </summary>
     public static double EdgeReferenceLength(PlanarEdgeReference kind, double narrowestWidthM, double cellSizeM)
         => Math.Max(kind == PlanarEdgeReference.ConductorWidth ? narrowestWidthM : cellSizeM, 1e-15);
+
+    /// <summary>
+    /// The edge ATTRACTOR coordinates this artwork contributes, per axis — the quantity D9 is
+    /// actually about.
+    ///
+    /// <para>Public because D9's guarantee ("a 96-point smooth outline cannot inflate the grid")
+    /// has to be asserted on the COUNT and not on N: N is a consequence of the marcher, the growth
+    /// ratio and the λ_g cap all at once, so a test written on it would pass or fail for reasons
+    /// that have nothing to do with how many fans the geometry demanded.</para>
+    /// </summary>
+    public static (IReadOnlyList<double> X, IReadOnlyList<double> Y) EdgeAttractors(
+        PlanarProblem problem, PlanarRimGrading rimGrading = PlanarRimGrading.None)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        var (x0, y0, x1, y1) = problem.Bounds();
+        var (_, _, attX, attY, _) = CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading);
+        return (attX, attY);
+    }
 
     private static string DescribeReference(PlanarEdgeReference kind) => kind switch
     {
@@ -550,7 +675,8 @@ public static class SurfaceMesher
     /// 96-point smooth outline cannot inflate the grid.</para>
     /// </summary>
     private static (List<double> HardX, List<double> HardY, List<double> AttractX, List<double> AttractY, int Staircased)
-        CollectBoundaryLines(PlanarProblem problem, double x0, double y0, double x1, double y1)
+        CollectBoundaryLines(PlanarProblem problem, double x0, double y0, double x1, double y1,
+                             PlanarRimGrading rimGrading = PlanarRimGrading.None)
     {
         var hardX = new List<double> { x0, x1 };
         var hardY = new List<double> { y0, y1 };
@@ -591,6 +717,7 @@ public static class SurfaceMesher
                 foreach (var ring in Rings(poly))
                 {
                     int n = ring.Count;
+                    var oblique = new bool[n];
                     for (int i = 0, j = n - 1; i < n; j = i++)
                     {
                         double ax = ring[j].X, ay = ring[j].Y, bx = ring[i].X, by = ring[i].Y;
@@ -612,9 +739,15 @@ public static class SurfaceMesher
                         }
                         else if (!horizontal && !vertical)
                         {
-                            anyOblique = true;
+                            anyOblique  = true;
+                            oblique[i]  = true;
                         }
                     }
+
+                    // Asked of THIS ring's own oblique flags, not of the polygon's `anyOblique` —
+                    // a hole ring must not inherit the outer ring's classification.
+                    if (grade && rimGrading != PlanarRimGrading.None)
+                        AddRunAttractors(ring, oblique, extX, extY, rimGrading, attX, attY);
                 }
 
                 if (anyOblique && grade) staircased++;
@@ -627,6 +760,106 @@ public static class SurfaceMesher
     {
         yield return poly.Outer;
         foreach (var h in poly.HoleRings) yield return h;
+    }
+
+    // ── Rim grading: attractors decimated by RUN rather than by VERTEX ────────────────────────
+
+    /// <summary>
+    /// Emits edge attractors for the ring's oblique RUNS — a run being a maximal chain of
+    /// consecutive oblique edges, so a 96-point disc is ONE run and a taper is one per flank.
+    ///
+    /// <para><b>This is what makes D9 hold numerically rather than by exclusion.</b> The rule it
+    /// replaces threw the physics out with the cost: a curved metal rim has the same 1/√d current
+    /// crowding a straight one has (R-msh-5), and an attractor per VERTEX would put 96 graded fans on
+    /// one part. An attractor per RUN is O(1) however finely the artwork was tessellated.</para>
+    ///
+    /// <para>The "long enough to crowd" filter is the SAME test the axis-parallel path applies, asked
+    /// of a run: an x-attractor is qualified by the run's own y-extent (that being the length of the
+    /// rim the fan has to serve) and a y-attractor by its x-extent, each against a fifth of the
+    /// polygon's own extent. A staircase tread cannot reach that, exactly as before.</para>
+    /// </summary>
+    private static void AddRunAttractors(
+        IReadOnlyList<EmPoint> ring, bool[] oblique, double extX, double extY,
+        PlanarRimGrading mode, List<double> attX, List<double> attY)
+    {
+        int n = ring.Count;
+        int count = 0;
+        for (int i = 0; i < n; i++) if (oblique[i]) count++;
+        if (count == 0) return;
+
+        // Edge i runs from ring[i-1] to ring[i]. A run is a maximal cyclic chain of oblique ones;
+        // when EVERY edge is oblique the ring is a single closed run (the 96-point disc's case).
+        if (count == n)
+        {
+            EmitRun(BuildRun(ring, 0, n), extX, extY, mode, attX, attY);
+            return;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            if (!oblique[i] || oblique[(i + n - 1) % n]) continue;   // not the START of a run
+            int len = 0;
+            while (len < n && oblique[(i + len) % n]) len++;
+            EmitRun(BuildRun(ring, i, len), extX, extY, mode, attX, attY);
+        }
+    }
+
+    /// <summary>The run's polyline: the first edge's start vertex, then every edge's end vertex.</summary>
+    private static List<EmPoint> BuildRun(IReadOnlyList<EmPoint> ring, int firstEdge, int edgeCount)
+    {
+        int n = ring.Count;
+        var pts = new List<EmPoint>(edgeCount + 1) { ring[(firstEdge + n - 1) % n] };
+        for (int k = 0; k < edgeCount; k++) pts.Add(ring[(firstEdge + k) % n]);
+        return pts;
+    }
+
+    private static void EmitRun(List<EmPoint> run, double extX, double extY,
+                                PlanarRimGrading mode, List<double> attX, List<double> attY)
+    {
+        double xMin = double.PositiveInfinity, xMax = double.NegativeInfinity;
+        double yMin = double.PositiveInfinity, yMax = double.NegativeInfinity;
+        foreach (var p in run)
+        {
+            xMin = Math.Min(xMin, p.X); xMax = Math.Max(xMax, p.X);
+            yMin = Math.Min(yMin, p.Y); yMax = Math.Max(yMax, p.Y);
+        }
+
+        bool gradeX = (yMax - yMin) >= 0.2 * extY;   // an x-attractor serves a rim of this y-extent
+        bool gradeY = (xMax - xMin) >= 0.2 * extX;
+
+        if (gradeX) { attX.Add(xMin); if (xMax > xMin) attX.Add(xMax); }
+        if (gradeY) { attY.Add(yMin); if (yMax > yMin) attY.Add(yMax); }
+
+        if (mode != PlanarRimGrading.PerRunSampled || (!gradeX && !gradeY)) return;
+
+        // Three interior samples spread along the run's own ARC LENGTH, each contributing one
+        // attractor in the axis TRANSVERSE to the local tangent — which is the direction the
+        // crowding has to be resolved in. Spreading by COORDINATE instead is wrong for a closed
+        // curve: the midpoint of a disc's y-range is the disc's centre, and not on the rim at all.
+        double total = 0;
+        for (int i = 1; i < run.Count; i++) total += Length(run[i - 1], run[i]);
+        if (!(total > 0)) return;
+
+        foreach (double f in new[] { 0.25, 0.5, 0.75 })
+        {
+            double want = f * total, walked = 0;
+            for (int i = 1; i < run.Count; i++)
+            {
+                double seg = Length(run[i - 1], run[i]);
+                if (walked + seg < want) { walked += seg; continue; }
+
+                double t  = seg > 0 ? (want - walked) / seg : 0;
+                double px = run[i - 1].X + t * (run[i].X - run[i - 1].X);
+                double py = run[i - 1].Y + t * (run[i].Y - run[i - 1].Y);
+                double tx = Math.Abs(run[i].X - run[i - 1].X), ty = Math.Abs(run[i].Y - run[i - 1].Y);
+
+                if (tx >= ty) { if (gradeY) attY.Add(py); }
+                else          { if (gradeX) attX.Add(px); }
+                break;
+            }
+        }
+
+        static double Length(EmPoint a, EmPoint b) => Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
     }
 
     private static long EstimateLineCount(double lo, double hi, List<double> hard, double h)
@@ -739,10 +972,27 @@ public static class SurfaceMesher
     /// keep it near §10.5's own "~1.5–2": below 1.2 the grading barely grades, above 3 it jumps.
     /// Returns 0 when there is no grading to do, which is what switches the field off.
     /// </summary>
+    /// <summary>Bounds on the derived grading ratio. Below the floor the ramp is so gentle it is not
+    /// grading at all; above the ceiling it jumps from the edge cell to the bulk in one step, which is
+    /// the discontinuity grading exists to remove.</summary>
+    public const double MinGrowthRatio = 1.2;
+    public const double MaxGrowthRatio = 3.0;
+
     private static double GrowthRatioFor(double c0, double hMax, int edgeCells)
     {
         if (!(c0 > 0) || edgeCells <= 0 || !(hMax > c0)) return 0.0;
-        return Math.Clamp(Math.Pow(hMax / c0, 1.0 / edgeCells), 1.2, 3.0);
+        return Math.Clamp(Math.Pow(hMax / c0, 1.0 / edgeCells), MinGrowthRatio, MaxGrowthRatio);
+    }
+
+    /// <summary>
+    /// How many cells the ramp from <paramref name="c0"/> actually takes to reach the bulk size at
+    /// the REALISED <paramref name="ratio"/> — which is the requested count only while the clamp in
+    /// <see cref="GrowthRatioFor"/> is not binding. Zero when nothing is being graded.
+    /// </summary>
+    public static int EffectiveEdgeCells(double c0, double hMax, double ratio)
+    {
+        if (!(c0 > 0) || !(hMax > c0) || !(ratio > 1.0)) return 0;
+        return Math.Max(1, (int)Math.Round(Math.Log(hMax / c0) / Math.Log(ratio)));
     }
 
     // ── Metrics ───────────────────────────────────────────────────────────────────────────────

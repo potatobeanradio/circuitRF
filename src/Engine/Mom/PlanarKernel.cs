@@ -49,8 +49,9 @@ public sealed record PlanarKernelResult(
 /// </summary>
 public sealed class PlanarKernel
 {
-    /// <summary>Worded once so the registry, the panel and the notes cannot drift.</summary>
-    public const string KernelName = "Full-wave planar (kernel B)";
+    /// <summary>Worded once so the registry, the panel and the notes cannot drift.
+    /// <b>No "kernel B" (owner request, 2026-08-09)</b> — see <see cref="QuasiStaticKernel.KernelName"/>.</summary>
+    public const string KernelName = "Full-wave planar";
 
     /// <summary>The diagnostics group D4 adds. <b>Not "tline"</b> — kernel A's eight scalars are
     /// per-unit-length properties of a uniform line, and a planar structure has none; overloading the
@@ -104,7 +105,7 @@ public sealed class PlanarKernel
             var host = GroundedSlab.CanHost(1, problem.Slab.HeightM, problem.Slab.HeightM);
             return host.Ok
                 ? EmSuitability.Yes
-                : EmSuitability.No(host.Reason ?? "This stackup is not one kernel B supports.");
+                : EmSuitability.No(host.Reason ?? "This stackup is not one the full-wave planar analysis supports.");
         }
 
         // ── The general path's own structural limits ──────────────────────────────────────────────
@@ -205,8 +206,9 @@ public sealed class PlanarKernel
 
     /// <summary>The pre-solve mesh and R17's verdict — §10.5's "report the unknown count before
     /// solving", which is L8b's own product and is simply forwarded.</summary>
-    public PlanarMeshReport Mesh(PlanarProblem problem, PlanarMeshSettings settings)
-        => SurfaceMesher.Mesh(problem, settings);
+    public PlanarMeshReport Mesh(PlanarProblem problem, PlanarMeshSettings settings,
+                                RunControl? control = null)
+        => SurfaceMesher.Mesh(problem, settings, PlanarEdgeReference.ConductorWidth, control);
 
     /// <summary>
     /// Mesh → resolve ports → sweep → <see cref="DataSet"/>.
@@ -224,7 +226,8 @@ public sealed class PlanarKernel
         IReadOnlyList<PlanarPort>  ports,
         IReadOnlyList<double>      freqsHz,
         PlanarSolveSettings?       settings = null,
-        CancellationToken          ct       = default)
+        CancellationToken          ct       = default,
+        RunControl?                control  = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
@@ -235,12 +238,16 @@ public sealed class PlanarKernel
                 "A planar solve needs at least one port. Place port labels on the conductor ends in " +
                 "the layout editor's Port tool, or check that they resolved onto the metal.");
 
-        var report = Mesh(problem, meshSettings);
+        // Meshing is fast next to the sweep but is not instant, and it is the first thing that
+        // happens after the user presses Simulate — so it gets its own named stage rather than
+        // leaving the row saying nothing until the first frequency lands.
+        var report = Mesh(problem, meshSettings, control);
         if (!report.CanSolve)
             throw new InvalidOperationException(report.Refusal ?? "The mesh is over the R17 budget.");
 
         ct.ThrowIfCancellationRequested();
 
+        control?.BeginStage("resolving ports onto the mesh");
         var resolved = PlanarPorts.ResolveAll(report.Mesh, ports);
 
         // D5 — the heat map rides along with the sweep the panel already pays for: default to port 1
@@ -256,7 +263,7 @@ public sealed class PlanarKernel
         var midpoint = MidpointRuleVerdict(problem, fHi);
         if (!midpoint.Ok) throw new InvalidOperationException(midpoint.Reason);
 
-        var sweep = PlanarSolve.Run(problem, report.Mesh, resolved, freqsHz, st);
+        var sweep = PlanarSolve.Run(problem, report.Mesh, resolved, freqsHz, st, control);
 
         var notes = new List<string>(report.Notes);
         notes.AddRange(sweep.Notes);
@@ -326,10 +333,10 @@ public sealed class PlanarKernel
     /// </summary>
     internal const string QuasiStaticNote =
         "The reported Z_c is γ/(jωC_pul) with C_pul held at its QUASI-STATIC value, so it rises with " +
-        "frequency as √ε_eff(f) rather than dispersing properly. Measured against kernel A's static " +
+        "frequency as √ε_eff(f) rather than dispersing properly. Measured against the quasi-static " +
         "answer on a 50 Ω FR-4 line: +0.4% at 1 GHz, +2.3% at 5 GHz, +6.3% at 20 GHz. The " +
         "s-parameters themselves are not affected — this is a limitation of the γ-and-C route used to " +
-        "REPORT Z_c, and a dispersive C needs a field integral kernel B does not have.";
+        "REPORT Z_c, and a dispersive C needs a field integral this analysis does not have.";
 
     // ── D4: the DataSet, in the house convention plus one diagnostics group ────────────────────
 

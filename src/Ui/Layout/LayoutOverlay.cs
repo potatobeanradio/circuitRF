@@ -53,6 +53,27 @@ public sealed record class LayoutOverlay
     /// commits.</summary>
     public IReadOnlyList<LayoutShape>? PastePreview { get; init; }
 
+    /// <summary>
+    /// One live ghost per INSTANCE in the fragment being pasted, already translated to the current
+    /// (snapped) cursor position.
+    ///
+    /// <para><b>Owner report, 2026-08-09: "the ports are rendered live when moving the mouse, but my
+    /// MLIN object is not."</b> L1f shipped the paste ghost as shapes-only and said so — an instance
+    /// travelled with the paste and committed correctly, it just was not in the picture the user was
+    /// aiming with. Which meant aiming a schematic-generated selection, whose metal is ALL instances,
+    /// was aiming at two port glyphs and empty space.</para>
+    ///
+    /// <para><see cref="GhostInstance.BoxOnly"/> is the owner's own escape hatch — "if the geometry
+    /// is too complicated for live rendering, then just render a box" — decided ONCE when the
+    /// placement is armed, never per pointer move, so the ghost cannot flicker between the two
+    /// treatments as the cursor moves.</para>
+    /// </summary>
+    public IReadOnlyList<GhostInstance>? PastePreviewInstances { get; init; }
+
+    /// <summary>A pasted instance's live ghost: what to place, its array-expanded extent, and whether
+    /// it is cheap enough to draw as real geometry.</summary>
+    public readonly record struct GhostInstance(LayoutInstance Instance, Bbox Bbox, bool BoxOnly);
+
     // ── L3a additions (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md) ────────────────────────
 
     /// <summary>Currently selected INSTANCE indices — rendered with an accent outline, same visual

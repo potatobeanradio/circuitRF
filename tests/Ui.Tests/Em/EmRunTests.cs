@@ -220,7 +220,7 @@ public class EmRunTests : IDisposable
         // either what to do or why the solver they expected was not the one that ran.
         Assert.Contains("port", result.Error!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Port tool", result.Error!, StringComparison.Ordinal);
-        Assert.Contains(result.Warnings, w => w.Contains("circle", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Notes ?? [], n => n.Contains("circle", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

@@ -238,7 +238,8 @@ public static class LayoutHitTest
     /// layer, so a label's hit box is a monospace-ish estimate from its character count and text
     /// height rather than an exact glyph measurement (that lives in the renderer, in Skia, at
     /// display time). Anchor convention matches <c>LayoutRenderer.DrawLabelText</c>: (X,Y) is the
-    /// baseline-left origin, the box extends right and up before rotation.</summary>
+    /// baseline-left origin, the box extends right and up before rotation — except for a PORT, whose
+    /// box is symmetric about the anchor (see the comment in the body).</summary>
     private const double LabelApproxCharWidthRatio = 0.62;
 
     private static Bbox LabelHitBbox(LabelShape label)
@@ -248,6 +249,26 @@ public static class LayoutHitTest
 
         long w = Math.Max(1, (long)Math.Round(label.Text.Length * label.Height * LabelApproxCharWidthRatio));
         long h = Math.Max(1, label.Height);
+
+        // A PORT's pick region is SYMMETRIC about its anchor; an ordinary label's is not.
+        //
+        // Owner report, 2026-08-09: "when dragging the port, the snap distance appears asymmetric —
+        // in the direction of the arrow it will snap farther than the opposite direction." Measured
+        // on a 2-character port label of height H, the box below reaches 1.24·H in the text direction
+        // (+x at R0, which is also where the arrow points) and ZERO the other way — the anchor sits on
+        // the box's own corner. So the port could be grabbed from a long way ahead of it and only
+        // within the click tolerance behind it.
+        //
+        // The asymmetry is CORRECT for an annotation, whose text genuinely runs one way from its
+        // baseline-left origin. It is wrong for a port, because a port is a MARKER: what the user sees
+        // and aims at is the plane bar and arrow, drawn about the conductor end, not the text. So a
+        // port gets a square centred on the anchor at the LARGER of the two reaches — the owner's own
+        // "the farther distance is working good right now for UX", made uniform rather than reduced.
+        if (label.IsPort)
+        {
+            long half = Math.Max(w, h);
+            return new Bbox(label.X - half, label.Y - half, label.X + half, label.Y + half);
+        }
 
         // Owner report: the R90/R270 selection box rendered in the completely wrong spot — this table
         // had the local "far corner" (the text's top-right in its own pre-rotation frame) landing on
