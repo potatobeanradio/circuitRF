@@ -4303,3 +4303,365 @@ on the disc and does **not** fire on the Manhattan hero.
 - **`EdgeFractionOfReference` (0.03), `EdgeGrowthRatio` (1.7) and `EdgeReferenceLength`'s
   conductor-width choice.** R-fil-12 closed that at 0.18% from the consensus limit; untouched.
 - **A fourth user control.** `PlanarMeshSettings` is unchanged.
+
+## Conformal (cut) boundary cells — the phase the negative result above scheduled
+
+**A FOLLOW-UP to L8b/L8c. It is NOT a slice of L9 and it touches no Green's function.** Brief:
+`docs/sonnet-briefs/brief-conformal-boundary-cells.md`. The section immediately above ends with
+"conformal / cut boundary cells" listed as out of scope and names staircasing as the binding term;
+this is that phase. **It ships OFF (`PlanarBoundaryCells.Staircase`), see "The default" below.**
+
+```
+PlanarCellRegion.cs   NEW — the cut cell as geometry: a list of CONVEX pieces, not a half-plane
+PolygonIntegrals.cs   NEW — the six closed forms over a convex piece (L8c's, generalised off the rectangle)
+RooftopSupport.cs     NEW — the ramp measured from the METAL's own boundary, as weighted strips
+SurfaceMesher.cs      + BuildConformalCells, the sliver merge, the three per-cell refusals, the notes
+PlanarFill.cs         + PairCoresConformal / InnerCores / WeightMoment — the cut-cell fill path
+PlanarMeshSettings.cs + PlanarBoundaryCells, the fourth user control (D3 reopened — see §5 below)
+PlanarPort.cs         + the refusal for a port that lands on a cut cell
+PlanarCurrentDensity  the transverse extent is Area/Width, not Height, once a cell is cut
+```
+
+Tests added closing out the phase: `ConformalDiscConvergenceTests` (gate 6, Benchmark, 2 m 35 s),
+`ConformalSliverTests` (gate 5 — one Benchmark `[Theory]` at two densities, one Benchmark density
+scan, one routine area check), `ConformalDownstreamTests` (§4, 4 routine tests, 20 ms), and Ui-side
+`ConformalBoundaryCellsUiTests` (§5's eight UI gates plus gate 1's shipping-PCell half and its two
+follow-ups, 11 routine tests, 0.8 s). **Every new ladder is `Category=Benchmark`** — §7 gate 8 asks
+that the routine `Engine.Tests` tier not grow a sweep, and it is already over its ~60 s ceiling.
+
+**Gate: `tests/Engine.Tests` 1,119 routine passed + 1 pre-existing skip, in 4 m 46 s taken ALONE;
+`tests/Ui.Tests` 6,145 in 23 s; `tests/Firewall.Tests` **6/6** — not the 4/4 every older entry above
+quotes, because that project has grown since; `tests/Core.Tests` 1,238.** Plus this
+phase's own opt-in tier: `ConformalFillOracleTests` **17 m 53 s** for its three Benchmark methods
+(T0's reference-rule convergence, T1's vector block, T2's scalar block), `ConformalDiscConvergence`
+2 m 35 s and `ConformalSliverTests`' two sweeps — so **~25 min added** to a repo tier that was
+already ~40 min, which is where the phase's cost actually landed.
+
+**§7 gate 8, answered with the measurement rather than by construction: this phase's whole routine
+contribution is 37 tests in 2 s** (`--filter FullyQualifiedName~Conformal`). The tier's 4 m 46 s is
+**not** this phase's — it stands at 1,119 tests against the 1,002 the G_A^zz entry above recorded,
+and the growth is spread across every phase since, not concentrated here. L9e already flagged the
+~60 s ceiling as breached and the reason it is left visible; nothing here improves or worsens it.
+
+### R-cut-1 IS EXACT, and the disc ladder is what says so
+
+Gate 6 — §7's own "single most important gate in the phase" — re-runs the edge-mesh brief's disc
+ladder with `PlanarBoundaryCells` as the ONLY variable
+(`tests/Engine.Tests/Mom/ConformalDiscConvergenceTests.cs`, `Category=Benchmark`, 2 m 35 s):
+
+| 96-point disc, static C at εᵣ=1, N = 316 … 3,972 | staircase | conformal |
+|---|---|---|
+| tiling error **against the DRAWN artwork** | 2.1e-3 … 8.3e-3, **wandering** | **7.7e-16 … 6.5e-15 at every rung** |
+| band of C over the last three rungs | 0.669% | **0.279%** |
+| monotone over the last three rungs | **NO** | **YES** |
+
+**The tiling row is the one that matters and it is exact, not merely improved.** R-msh-1's own
+argument is that a mesh which does not tile its input solves a slightly different structure and
+reports a smooth, plausible, wrong answer; L8b made that exact for Manhattan artwork only. The
+conformal mesh tiles a 96-gon to round-off at every rung, so refining no longer changes WHICH
+structure is being solved — which is precisely §0's "there is no converged value to aim at",
+removed. The staircase's own tiling error wanders with grid alignment and shows no trend.
+
+**AND A TRAP THIS GATE FELL INTO FIRST, worth keeping because it looks exactly like a mesher bug.**
+Measured against a TRUE DISC the conformal error is **7.138e-4 at every rung, flat to four
+figures** — which is exactly `(2π/96)²/6`, the inscribed 96-gon's own area deficit against the
+circle it approximates. The first version of this gate asserted `< 1e-12` against `πr²` and failed:
+it was measuring the FIXTURE's discretisation, not the mesher's. R-cut-1's claim is about the drawn
+artwork, so the drawn artwork is what it is measured against; the circle deficit is reported
+separately, and asserted to equal `(2π/n)²/6`, so it can never again be mistaken for an error.
+
+**The band fell by 2.4×, NOT by the order of magnitude an earlier draft of the gate demanded. That
+threshold was not met and is not asserted.** Said plainly rather than quietly relaxed: what the gate
+asserts instead is the pair of properties §0 actually claims — the sequence is monotone, and the
+tiling is exact at every rung — which say it far more directly than a band ratio does. Both
+non-vacuity guards are in place: the staircase must still be non-monotone AND its own area error
+must still wander, or the fixture is re-taken rather than read as a pass.
+
+### The representation is a LIST OF CONVEX PIECES — a deliberate deviation from the brief
+
+§2 suggests a half-plane `(nx, ny, d)` — "one straight cut" — and §8 flags that as a guess. Two
+things it cannot carry, both of which the brief itself asks for: **R-cut-3's sliver MERGE** produces
+an L-shaped or trapezoidal cell, which is not a rectangle minus a half-plane (a half-plane would
+have forced the sliver remedy to be a SNAP, trading R-cut-3 against R-cut-1 — the two gates the
+phase exists for); and **a cell the artwork crosses twice** is silently mis-described by a
+half-plane, where a piece list either describes it exactly or refuses. Every quantity the fill wants
+is additive over the pieces, so the list costs one loop and nothing else.
+
+**A whole rectangle is a NULL region, not a four-vertex piece.** That is what makes R-cut-2's
+bit-identity structural: `PairCores` dispatches to L8c's own expressions in L8c's own order unless a
+half genuinely carries strips, so every pre-conformal number in this repository is reproduced bit
+for bit rather than to a tolerance, and a MIXED pair pays the conformal path for one side only.
+
+**The fill keeps L8c's own shape: the inner integral is CLOSED FORM and only the outer one is a
+Gauss rule.** `PolygonIntegrals.CoresXY` generalises L8c's six rectangle forms onto a convex piece;
+that is the whole reason a cut cell is affordable, and it is what an RWG basis would have given back
+(L8c's own note: "the classic near-singular difficulty comes from doing BOTH integrals numerically,
+and here only one of them is").
+
+### Three per-cell configurations are REFUSED, and a refusal is a refinement instruction
+
+All three fall back to L8b's staircase decision **for that cell alone**, counted in the notes: more
+than one polygon of the layer touches the cell; a hole ring touches it; or the clipped region is not
+convex (a reflex vertex of the artwork inside one cell — "a cell straddling a sharp corner"). On
+Manhattan artwork none can fire, because every axis-parallel edge is already a hard gridline.
+
+**"Refine and watch the count go to zero" is TRUE OF THE FIRST TWO AND FALSE OF THE THIRD, and that
+is the phase's biggest limitation** — see "THE LIMITATION THAT MATTERS MOST" below. A reflex vertex
+of the ARTWORK does not go away when cells shrink; past a certain density each one simply owns a cell,
+and the count saturates. Measured on MKlopf: 126 reflex vertices, 126 fallback cells, permanently.
+
+### M4 — everything else keyed to a rectangular cell, and the one that was already right
+
+`tests/Engine.Tests/Mom/ConformalDownstreamTests.cs` (3 routine tests, 20 ms):
+
+- **A calibration standard carries NO cut cell**, asserted on a DUT that is full of them.
+  `PlanarCalibration.BuildLine` assembles from the DUT's own gridlines with the 6-arg `PlanarCell`
+  ctor and never runs the conformal pass — a standard that acquired cut cells would be calibrating
+  out something the DUT does not have.
+- **A via footprint is uncut and its hard gridlines still tile it exactly** (0.000E+000 area error
+  on the lower level). L9c measured that a via VANISHES silently without those gridlines; this is
+  the same failure returning with cut cells as the excuse.
+- **The reported cell extents are the GRID's own, never the cut region's**, and `MinCellEdgeM` /
+  `MaxCellEdgeM` match the staircase's EXACTLY on the same artwork. `MaxCellEdgeM` is what λ_g/N
+  caps and what λ_g/N caps is the grid pitch; `MinCellEdgeM` would otherwise report a sliver's
+  extent — which R-cut-3 already reports separately as a merge count — and make every conformal mesh
+  look far finer than it is, which is the wrong thing to tell a user deciding whether to refine.
+  **`CellsAcrossNarrowestConductor` IS allowed to differ** (5 → 6 on an earlier fixture, 6 → 6 on
+  the shipped one), because it counts cells covering metal and a conformal mesh genuinely covers
+  metal a staircase drops; it can only rise.
+
+**A finding rather than a fix: the §4 PORT refusal already existed and fired correctly**, on the
+first run, against a fixture whose chamfer reached the MaxX end. A port on a cut cell is a different
+port — its reference plane is the shared edge of two cells whose transverse extent is no longer the
+grid's — and `PlanarPorts` refuses it by name, naming the boundary-cell control as the way back. The
+fixture moved the obliquity to the middle of the part so both claims are testable at once.
+
+### §5 — THE FOURTH CONTROL, and D3 is reopened
+
+**D3 says `PlanarMeshSettings` carries "exactly three user controls, and no more"; this adds a
+fourth on the owner's explicit instruction.** Recorded rather than slipped in — D3's reasoning
+stands for everything else and is not generally relaxed. Why this one earns it: cells/λ and Edge
+cells change how FINELY the same structure is discretised; **Boundary cells changes WHICH STRUCTURE
+is discretised at all.** A staircased disc and a conformal disc are different geometry, not two
+resolutions of one, and that is a modelling decision. It also needs an off switch on evidence rather
+than taste: **every L8/L9 measurement in this repository was taken on the staircase**, and anyone
+reproducing one must be able to.
+
+Wired end to end, gated by `tests/Ui.Tests/Em/ConformalBoundaryCellsUiTests.cs` (8 tests, 0.3 s):
+
+- **The `.cem` follows the omit-at-default rule**, so a file written before this phase gains no byte
+  and re-serialises byte-identically — an asserted property of this format, not a nicety.
+- **`EmSnpProvenance.MeshHash` includes it**, and this is the load-bearing one: an `.snp` produced
+  under one boundary model is NOT current for the other, and the hash is the only thing that can say
+  so. Leaving it out would have been exactly the staleness failure R-em-20 exists to prevent — one
+  line, and easy to forget. The gate also asserts every other control still moves the hash, so the
+  new term did not displace one.
+- **It is ONE undo entry and it calls `InvalidateMesh()`** — the panel must not go on showing an N
+  produced under the other model. Deliberately NOT routed through `CommitMeshField`, which is for
+  staged TEXT fields; this commits on selection, like the edge-mesh checkbox.
+- **`Auto` does NOT throw it away.** The other three controls change how finely Auto's own sizing is
+  applied, so setting one by hand means "stop deciding this for me"; the boundary model is
+  orthogonal — Auto has no opinion about whether a cell follows the metal — so `Resolved` carries it
+  through. Clearing `Auto` here would silently pin the cell size the moment a user changed the
+  boundary model.
+- **The choice list is sourced from the enum**, so a third boundary model cannot silently fail to
+  appear in the panel.
+- **The notes name the model and the cut/merged counts**, and `StaircasedPolygons`' own note stops
+  claiming a staircase once the cells are conformal.
+
+### §3's own question, answered: the fill on a cut mesh, against an independent quadrature
+
+§3 sets the bar and the comparison in one sentence: *"L8c reached 5.0e-6 there; this phase must say
+what it reaches and whether the fill is still three decades more accurate than the kernel it fills
+from."* Both halves, measured 2026-08-11 on a chamfered fixture (46 cells, 75 bases, 5 cut):
+
+| | worst relative error vs the oracle |
+|---|---|
+| scalar block **P**, every NON-self entry (touching, cut↔cut, far) | **1.5e-12 … 1.1e-11** |
+| scalar block **P**, self entries | 7.1e-7, **1.35e-6** |
+| vector block **Z_A**, self rooftop pairs | 3.0e-8 … **2.34e-6** |
+
+**So the answers are 1.35e-6 and 2.34e-6, both BETTER than L8c's own 5.0e-6 on a rectangular mesh** —
+the conformal fill is not worse than the fill it generalises. And the kernel it fills from carries a
+scaled error of **≤ 6e-3 across the entire span** (R-lgf-4), so 2.34e-6 is a factor of ~2,560 below
+it: **~3.4 decades, so yes, the second half of §3's question is a yes too.**
+
+**Every non-self entry is exact to 1e-11 or better, and that is the structurally informative part.**
+The closed form and a direct 4-D quadrature that shares no line with it agree to round-off wherever
+the supports are disjoint. All of the disagreement is in SELF terms — which is where a cut cell's
+piecewise ramp and its own singular integral are actually being exercised, and exactly where an error
+would be expected to live.
+
+**PlanarPairOracle could NOT be extended to a cut support, and that is a fact about the oracle.** Its
+whole construction is the cross-correlation identity, which needs the weight to be SEPARABLE; a cut
+cell's ramp is measured from the metal's own oblique boundary, so it is affine in BOTH coordinates at
+once and the domain is not a product of intervals. The replacement is a direct 4-D quadrature with
+the sinh regularisation `(x − x₀) = |d|·sinh w` — the same substitution that fixed
+`PolygonIntegralTests`' own oracle — evaluating no antiderivative, no corner sum and no closed form.
+
+### The oracle was the harder half, and separating its two knobs overturned the obvious reading
+
+**T0 exists because this area has recorded ten occasions where the REFERENCE was the broken part.**
+It refines the quadrature and reports what it moves by, and nothing below it is believed until that
+number is smaller than the differences being measured. Getting it there took an isolation the first
+reading could not give:
+
+```
+  GRADING LEVELS, at 8 nodes:     L=2 → 3 → 4 → 5   moves 5.3e-8, 5.0e-9, 3.1e-10
+  OUTER nodes, at inner 8:        8 → 12 → 16 → 20  moves 8.0e-7, 1.3e-6, 9.7e-7      (misleading)
+  OUTER nodes, at inner 16:       8 → 16            moves 8.9e-8
+  INNER nodes, at outer 8:        8 → 12 → 16 → 24  moves 9.3e-6, 7.8e-7, 3.3e-7
+```
+
+The outer and inner rules shared one `nodes` parameter, so the first reading — 9.6e-6 between (2, 8)
+and (4, 14) — could not say which was open, and the obvious hypothesis (more grading levels) was
+wrong: **levels are converged by L=4 at ~1e-9.** Split, the **outer rule turns out to be converged at
+8 nodes** and only LOOKED like it was drifting: read at a badly-under-resolved inner it converges
+toward the wrong integrand, and that ~1e-6-per-step "drift" is the inner error being resolved. At a
+converged inner it moves 8.9e-8 and stops.
+
+**The whole residual is the INNER rule on the PULSE self term** — the one entry whose observation
+point lies inside its own domain — and it converges slowly, at ~n⁴ cost. The shipped reference rule
+is **(levels 3, outer 8, inner 24)**, whose own residuals are:
+
+| pulse self | outer knob | touching pair | ramp self |
+|---|---|---|---|
+| 3.3e-7 | 8.9e-8 | **2.3e-16** | **2.2e-11** |
+
+**T0's gate is therefore 1e-6, not the 1e-7 an earlier draft asserted.** That value was not met, is
+not claimed, and was in any case below what the reference can decide: asking the oracle to certify
+itself to 1e-7 when its own self-term residual is 3.3e-7 is asking it for a decision it cannot make.
+What T0 actually has to establish is that the reference's uncertainty is smaller than the differences
+being measured — and 3.3e-7 against a 5e-6 gate is a factor of 15.
+
+**The honest consequence for the self-term numbers above: the oracle is now the limiting instrument
+there.** 1.35e-6 and 2.34e-6 are 4× and 7× the reference's own 3.3e-7, so part of each is the
+reference rather than the fill, and the fill may well be better than measured. Every non-self entry
+is limited by neither.
+
+### R-cut-3's sliver threshold — MEASURED, and the measurement contradicts its own rationale
+
+`tests/Engine.Tests/Mom/ConformalSliverTests.cs`. §7 gate 5 asks for "conditioning and answer either
+side of it", and **that sweep did not exist**: `DefaultSliverAreaFraction`'s doc comment asserted the
+value "is a MEASUREMENT, not a taste — see `ConformalSliverTests`", naming a file that was never
+written. A constant claimed to be measured with no measurement behind it is worse than an admitted
+guess, so the sweep is here and the comment now says what it actually establishes.
+
+**Picking the density is the whole trick, and the first attempt got it wrong.** At cells/λ = 70 the
+disc's thinnest cut cell is 1.5e-2 of its grid rectangle — there is no sliver to absorb, so the table
+read "the threshold barely matters" for entirely the wrong reason. `G5c` then scanned cells/λ = 40 …
+400 with merging OFF and found the mesher genuinely produces slivers down to **4.4e-4 of a grid
+rectangle at cells/λ = 250** — a 1/Area factor of ~2,270. The sweep is run at densities that make one.
+
+Two densities, chosen so the sweep is run where a sliver actually exists:
+
+```
+  cells/λ = 130   (thinnest cut cell 4.1e-3 of its rectangle — a 1/Area factor of ~245)
+   frac    cells   cut  merged   min area/rect        κ(P)          C (fF)
+   0.000     613   104       0   4.087E-003   5.4406E+001   137.4644
+   0.001     613   104       0   4.087E-003   5.4406E+001   137.4644
+   0.005     609   100       4   6.614E-002   5.3754E+001   137.4585
+   0.020     609   100       4   6.614E-002   5.3754E+001   137.4585
+   0.050     609   100       4   6.614E-002   5.3754E+001   137.4585
+   0.100     593    84      20   2.760E-001   5.3027E+001   137.3518
+
+  cells/λ = 250   (4.4e-4 — the THINNEST any density in G5c's 40 … 400 scan produced, ~2,264x)
+   frac    cells   cut  merged   min area/rect        κ(P)          C (fF)
+   0.000    2133   200       0   4.418E-004   1.2755E+002   137.9251
+   0.001    2125   192       8   1.106E-002   1.0066E+002   137.9237
+   0.005    2125   192       8   1.106E-002   1.0066E+002   137.9237
+   0.020    2117   184      16   3.163E-002   1.0045E+002   137.9179
+   0.050    2101   168      32   5.930E-002   1.0010E+002   137.8923
+   0.100    2093   160      40   1.366E-001   9.9925E+001   137.8796
+```
+
+**R-cut-3 says a sliver "puts an enormous row in the matrix and destroys the conditioning". It does
+not.** The effect is real but modest, and it scales with how thin the sliver is: **1.01× at a 245×
+area ratio, 1.27× at a 2,264× one** (κ 127.55 → 100.10). κ never approaches anything dangerous in
+either case. The reason is structural rather than a property of this fixture: P is normalised
+1/(A_i·A_j) on BOTH sides, so it is a symmetric diagonal scaling D·P₀·D — but **a patch's
+self-potential grows as the inverse of its LINEAR size, not its area**, so a 2,264× area reduction
+buys a ~48× diagonal entry, not a 2,264× one. Most of the 1/Area blow-up the rule is written against
+is cancelled by the kernel's own scaling.
+
+**Almost all of the available improvement comes from absorbing the ONE thinnest cell.** At cells/λ =
+250 a threshold of 0.001 — merging 8 cells — already takes κ from 127.55 to 100.66; going all the way
+to 0.05 (32 cells) buys a further 0.6%. So the threshold's value is in catching the extreme tail, not
+in how much it absorbs.
+
+**So the honest claim for 0.05 is CONSERVATIVE, not optimal.** It sits on a plateau (0.005 … 0.05
+produce the identical mesh at cells/λ = 130) and comfortably above the thinnest sliver observed
+anywhere. Nothing here located a conditioning cliff, and the shipped doc comment no longer claims
+one — it previously said the value "is a MEASUREMENT, not a taste", which was true of neither.
+
+The answer moves 0.004% (cells/λ = 130) to 0.024% (250), and `G5b` asserts directly that merging
+never loses area at any threshold — the merged cell carries BOTH pieces, so R-cut-1 survives it — so
+that residual is a discretisation difference and not a tiling failure.
+
+### THE LIMITATION THAT MATTERS MOST, and it is on the part with the most to gain
+
+**Gate 1's own table, on the REAL library PCells** (`tests/Ui.Tests/Em/ConformalBoundaryCellsUiTests.cs`
+— they live in `src/Ui` and the reference graph is Ui → Engine, so an Engine test cannot reach them),
+cells/λ = 20, edge mesh on:
+
+| part | staircase area error | conformal | fallback cells |
+|---|---|---|---|
+| MBend mitred, PCB / MMIC | 0.096% / 0.112% | **1.3e-15 / 9.4e-16** | 0 |
+| MTaper 2.9→1.0 mm, PCB / MMIC | 0.465% / 0.465% | **3.5e-15 / 4.6e-15** | 0 |
+| **MKlopf on-axis, PCB** | 0.593% | **0.766% — WORSE** | 52 |
+| MKlopf Offset, PCB | 0.540% | 0.750% — worse | 50 |
+| MKlopf on-axis, MMIC | 0.278% | 0.189% | 90 |
+| MKlopf Offset, MMIC | 0.334% | 0.084% | 114 |
+
+**Bends and tapers are exact on both starters. MKlopf is not, and on the PCB starter it is worse than
+the staircase it replaced** — the opposite of the phase's headline claim, on the one part whose entire
+value is a controlled 0.05 equiripple. Reported rather than left as a footnote.
+
+**The cause is §2's case (c) — a non-convex clip — and it is a REFUSAL, not a representational
+limit.** `PlanarCellRegion` already holds a LIST of convex pieces, so a non-convex clipped region
+*could* be convex-decomposed; the mesher chooses to fall that cell back to a staircase instead. §1
+scopes this phase to "one straight cut per cell, and no more", so decomposing is out of scope — but
+it is the concrete fix, not a wall.
+
+**Refining does NOT clear it, and the reason is exact rather than approximate.** `G1b` walks
+cells/λ = 20 … 320 and the fallback count *saturates*:
+
+```
+  cells/λ      N    cut  fallback   conformal err   staircase err
+       20    745     56        52   7.663E-003       5.927E-003
+       40   1100     58        78   7.269E-004       5.436E-004
+       80   2098    110       126   3.397E-003       4.657E-004
+      160   8517    334       126   2.416E-004       2.544E-003
+      320  34292    780       126   7.745E-005       1.217E-004
+```
+
+A count that stops falling under refinement is a count of FEATURES OF THE ARTWORK, not of cells —
+and `G1c` closes it: **MKlopf's own outline has 194 vertices, 126 of them REFLEX, and the plateau is
+126.** One permanent fallback per concave vertex, once the mesh is fine enough that each sits in its
+own cell. `SmoothSteps` blends each end of the taper, which is what puts the inflections there.
+
+**So the honest scope of this phase's guarantee is: exact on artwork whose rim is convex where it is
+cut** — every bend, every straight taper, the disc — **and best-effort on artwork with a concave
+rim.** MKlopf's conformal answer does still beat the staircase at fine meshes (7.7e-5 vs 1.2e-4 at
+cells/λ = 320) and does so on MMIC at every density; it is the coarse PCB case that regresses.
+
+### The default, and what would flip it
+
+**Ships OFF.** §5 says to flip to `Conformal` only when §3's own gate passes — the fill's accuracy
+against the oracle, the tiling gate, the sliver gate, and a measured N against R17. **All four now
+pass**: the fill reaches 1.35e-6 / 2.34e-6 against L8c's own 5.0e-6, tiling is exact at every rung of
+the disc ladder, the sliver threshold is measured and conservative, and N is essentially unchanged
+(316 vs 324 and 3,964 vs 3,972 on the disc; 547 vs 550, 704 vs 714, 745 vs 743, 579 vs 590 on the
+shipping PCells — a conformal mesh is not more expensive).
+
+**It still ships off, for two reasons, and the second is the substantive one.**
+
+1. **Every accuracy figure recorded in this repository was taken on the staircase**, and anyone
+   reproducing one has to be able to. That alone makes flipping a separate, deliberate act.
+2. **MKlopf regresses at coarse PCB settings** — 0.77% against the staircase's 0.59%, because of the
+   reflex-vertex fallback above. Shipping a default that makes one shipping library part *worse* is
+   not defensible, however good it is on the other three. **The convex-decomposition follow-up is
+   what removes this objection**, and after it the case for flipping is straightforward.
+
+Flipping the default is a separate, deliberate act with its own line here, because it moves every
+number a user has previously recorded.

@@ -392,11 +392,23 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string _truncationHeightsText   = "";
     [ObservableProperty] private string _truncationTailCellsText = "";
 
-    // ── L8b's D3 planar mesh controls — THREE and no more, staged the same way ────────────────
+    // ── L8b's D3 planar mesh controls — THREE, plus the conformal FOURTH ──────────────────────
+    //
+    // D3 said "exactly three user controls, and no more"; the conformal-boundary-cells brief adds a
+    // fourth on the owner's explicit instruction, and D3's reasoning still stands for everything
+    // else. Cells per wavelength and Edge cells change how FINELY the same structure is discretised;
+    // Boundary cells changes WHICH STRUCTURE is discretised at all, which is a modelling decision.
 
     [ObservableProperty] private string _planarCellsPerWavelengthText = "";
     [ObservableProperty] private string _planarEdgeCellsText          = "";
     [ObservableProperty] private bool   _planarEdgeMesh;
+    [ObservableProperty] private PlanarBoundaryCells _planarBoundaryCells =
+        PlanarMeshSettings.DefaultBoundaryCells;
+
+    /// <summary>The two boundary models, for the panel's combo. Sourced from the enum rather than
+    /// hand-listed so a third member cannot silently fail to appear.</summary>
+    public static IReadOnlyList<PlanarBoundaryCells> BoundaryCellsChoices { get; } =
+        Enum.GetValues<PlanarBoundaryCells>();
 
     // ── Signal layer + dispersion ──────────────────────────────────────────────────────────────
 
@@ -674,6 +686,28 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>The conformal-boundary-cells control. Deliberately NOT routed through
+    /// <see cref="CommitMeshField"/> — that committer is for staged TEXT fields, and this is a
+    /// closed choice that commits on selection, exactly like the edge-mesh checkbox above.
+    ///
+    /// <para><b><see cref="PlanarMeshSettings.Auto"/> is NOT cleared here, unlike every sibling.</b>
+    /// The other three controls change how finely Auto's own sizing is applied, so setting one by
+    /// hand means "stop deciding this for me". The boundary model is orthogonal to sizing: Auto has
+    /// no opinion about whether a cell follows the metal, and <c>Resolved</c> carries it through
+    /// rather than throwing it away. Clearing Auto here would silently pin the cell size the moment
+    /// a user changed the boundary model, which is a different mesh for a reason they never
+    /// asked for.</para></summary>
+    partial void OnPlanarBoundaryCellsChanged(PlanarBoundaryCells value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.PlanarMesh.BoundaryCells) return;
+        var before = SnapshotJson();
+        Working.PlanarMesh = Working.PlanarMesh with { BoundaryCells = value };
+        CommitEdit(before, "Change planar boundary cells");
+        InvalidateMesh();
+        Refresh();
+    }
+
     partial void OnSignalLayerChoiceChanged(string value)
     {
         if (_suppressCommit) return;
@@ -787,6 +821,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarCellsPerWavelengthText = pm.CellsPerWavelength.ToString(CultureInfo.InvariantCulture);
         PlanarEdgeCellsText          = pm.EdgeCells.ToString(CultureInfo.InvariantCulture);
         PlanarEdgeMesh               = pm.EdgeMesh;
+        PlanarBoundaryCells          = pm.BoundaryCells;
         _suppressCommit = false;
     }
 

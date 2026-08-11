@@ -17,21 +17,21 @@
                    HorizontalAlignment="Center"/>
 
         <!-- Version -->
-        <TextBlock Text="Version 0.1.0 (Phase 6b)"
+        <TextBlock Text="Version 0.9.0 (Beta)"
                    FontSize="12"
                    HorizontalAlignment="Center"
                    Opacity="0.6"
                    Margin="0,4,0,16"/>
 
         <!-- Description -->
-        <TextBlock Text="Lightweight RF Circuit Simulator"
+        <TextBlock Text="Lightweight RF Circuit and EM Simulator"
                    FontSize="14"
                    FontWeight="SemiBold"
                    HorizontalAlignment="Center"
                    TextWrapping="Wrap"
                    TextAlignment="Center"/>
 
-        <TextBlock Text="DC, S-parameters, harmonic balance, loadpull/sourcepull."
+        <TextBlock Text="S-parameters, harmonic balance, loadpull, EM MoM."
                    FontSize="12"
                    HorizontalAlignment="Center"
                    Opacity="0.7"

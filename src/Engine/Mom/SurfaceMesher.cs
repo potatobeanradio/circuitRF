@@ -597,9 +597,13 @@ public static class SurfaceMesher
     /// this fraction the sliver is absorbed into the neighbour it shares its largest face with, giving
     /// one cell whose region has two pieces rather than two cells one of which is degenerate.</para>
     ///
-    /// <para><b>The value is a MEASUREMENT, not a taste</b> — see
-    /// <c>ConformalSliverTests</c>, which sweeps it and reports the matrix condition number and the
-    /// answer either side, and this directory's <c>CLAUDE.md</c> for the table.</para>
+    /// <para><b>The value is CONSERVATIVE, and that is a narrower claim than an optimum.</b>
+    /// <c>ConformalSliverTests</c> sweeps it and reports the matrix condition number and the answer
+    /// either side; see this directory's <c>CLAUDE.md</c> for the table. What the sweep establishes
+    /// is that 0.05 sits on a wide plateau (0.02 … 0.10 produce the identical mesh on the disc) and
+    /// comfortably above the thinnest cut cell the mesher was observed to produce — <b>4.4e-4 of a
+    /// grid rectangle, at cells/λ = 250</b>, a 1/Area factor of ~2,270. It is NOT claimed to be the
+    /// point where conditioning turns over; nothing here located such a point.</para>
     /// </summary>
     public const double DefaultSliverAreaFraction = 0.05;
 

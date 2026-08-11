@@ -37,7 +37,7 @@
         <Shortcut Id="StartMenuShortcut"
                   Directory="ApplicationProgramsFolder"
                   Name="circuitRF"
-                  Description="Lightweight RF Circuit Simulator"
+                  Description="Lightweight RF Circuit and Electromagnetic Simulator"
                   WorkingDirectory="INSTALLFOLDER"
                   Advertise="no"/>
       </Component>

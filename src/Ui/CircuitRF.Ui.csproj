@@ -118,19 +118,19 @@
   -->
   <PropertyGroup Condition="'$(CrfApp)' == 'circuitrf'">
     <Product>circuitRF</Product>
-    <Description>Lightweight cross-platform RF circuit simulator (DC, S-parameters, harmonic balance, loadpull/sourcepull)</Description>
+    <Description>Lightweight cross-platform RF circuit simulator and electromagnetic solver</Description>
     <PackageId>com.circuitRF.circuitRF</PackageId>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(CrfApp)' == 'harmonica'">
     <Product>harmonicaRF</Product>
-    <Description>harmonicaRF — an interactive load-pull instrument: drag a termination on a Smith chart and watch the design follow</Description>
+    <Description>harmonicaRF — interactive waveform engineering and load-pull instrument: drag a terminations on a Smith chart to investigate nonlinearities</Description>
     <PackageId>com.circuitRF.harmonicaRF</PackageId>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(CrfApp)' == 'wbond'">
     <Product>wBond</Product>
-    <Description>wBond — bond-wire design and assembly rule checking, with Touchstone export of the array network</Description>
+    <Description>wBond — layout-driver bond-wire design and assembly rule checking</Description>
     <PackageId>com.circuitRF.wBond</PackageId>
   </PropertyGroup>
 

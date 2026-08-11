@@ -351,10 +351,9 @@ the C#. Your job is the RF physics — the stamp, the model equations, the refer
 
 ## Roadmap & status
 
-circuitRF is **v1 alpha**. The engine and editors work; some features are still landing. The five "hero"
+circuitRF is **v1 beta**. The engine and editors work; The five "hero"
 circuits in [`docs/PRD.md`](docs/PRD.md) (a 4-port S-parameter network, a single-FET PA HB power sweep, a
-loadpull, a 2-stage PA, and a two-tone IM case) are the acceptance anchors, validated against other
-simulators' references.
+loadpull, a 2-stage PA, and a two-tone IM case) are the validated acceptance anchors.
 
 **Done:** S-parameters; nonlinear DC + diode/FET/BJT + the SDD with automatic differentiation; single- and
 two-tone harmonic balance with continuation; parametric sweeps; the `DataSet`/`DataCube` result model;
@@ -364,22 +363,23 @@ the `DataCube`-native Data Display with Smith/polar/rect/table plots; **end-to-e
 plotting** (engine → RBF surface fit → contour render, for simulated *and* measured data); and
 **interactive markers**, including markers that read and drag on the contour surface.
 
-**Done — the layout half:** a full **layout editor** on an integer-DBU geometry model — drawing tools,
+**Done:** **PDK Support** - see [`docs/design/pdk-external-devices.md`](docs/design/pdk-external-devices.md) and
+[`docs/design/pdk-import.md`](docs/design/pdk-import.md) 
+
+**Done: layout editor** based on an integer-DBU geometry model — drawing tools,
 curves and holes, booleans and offsets, scale, technologies with layer tables and substrate **stackups**,
 hierarchy with instances and arrays, push-in/pop-out navigation, flatten and group-into-cell, a spatial index
 and LOD rendering for large designs, **GDSII / DXF / Gerber+Excellon interchange**, a **parametric cell
-(PCell)** mechanism, the **microstrip component family** with published discontinuity models, and
-**schematic↔layout generation** in both directions.
+(PCell)** mechanism, the **microstrip component family** with published discontinuity models,
+**schematic↔layout generation** in both directions, and bondwire layout-driven design and modeling [`docs/design/wbond.md`](docs/design/wbond.md).
 
-**Done — electromagnetic simulation.** A **2.5D method-of-moments** solver that analyses layout
-geometry against its technology stackup and returns S-parameters consumable anywhere a Touchstone block is:
+**Done: electromagnetic simulation using MoM.** A **2.5D method-of-moments** solver that analyses layout
+geometry against its technology stackup and returns S-parameters:
 quasi-static per-unit-length and full-wave over a general layered stack
-with vias and z-directed current.
+with vias and z-directed current. See [`docs/design/layout-view.md`](docs/design/layout-view.md) §10.
 
-See [`docs/design/layout-view.md`](docs/design/layout-view.md) §10.
-
-What's left for the v1 release after that is **hardening** — installers for Windows/macOS/Linux, broader
-docs, and keeping the `testdata/` regression suite green in CI on all three OSes.
+What's left for the v1 release is **hardening** —  improved UX and broader
+docs.
 
 **Deferred to v2:**
 ** open green fields for development**

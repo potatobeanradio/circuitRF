@@ -566,3 +566,56 @@ ports" — because that is what a planar user would have to go and change.
 `density.Normalised(cell)` plus `ScaleCaption`. **The Ui does not decide what the colour means**: the
 reduction, the units, the normalisation, and the caption all come from the engine
 (`src/Engine/Mom/CLAUDE.md` §L8e D5). One port, one frequency; no sweep, no superposition.
+
+## Conformal (cut) boundary cells — the FOURTH mesh control
+
+The Ui half of `docs/sonnet-briefs/brief-conformal-boundary-cells.md`. The engine half — the cut
+cell as geometry, the fill, the sliver merge, the disc ladder — is in `src/Engine/Mom/CLAUDE.md`'s
+own section. **This half adds no physics either**; it stores the control, hashes it, and draws the
+cut edges.
+
+**D3 said `PlanarMeshSettings` carries "exactly three user controls, and no more". This is a fourth,
+on the owner's explicit instruction.** Recorded rather than slipped in, and it earns it for a reason
+the other three do not share: cells/λ and Edge cells change how FINELY the same structure is
+discretised; **Boundary cells changes WHICH STRUCTURE is discretised at all.** A staircased disc and
+a conformal disc are different geometry, not two resolutions of one — a modelling decision, and
+modelling decisions belong to the user. It also needs an off switch on evidence rather than taste:
+**every L8/L9 measurement in this repository was taken on the staircase**, and a user reproducing
+one must be able to.
+
+- **`.cem`** — `CemPlanarMesh.BoundaryCells` is nullable and omitted at its default, exactly like
+  `DirectVerticalKernel` beside it, so a file written before this phase gains no byte and
+  re-serialises byte-identically. That is an asserted property of this format, not a nicety.
+- **`EmSnpProvenance.MeshHash` includes it, and that is the load-bearing line.** An `.snp` produced
+  under one boundary model is NOT current for the other, and the hash is the only thing that can say
+  so — leaving it out would have been precisely the staleness failure R-em-20 exists to prevent, in
+  one line that is easy to forget. The gate asserts every OTHER control still moves the hash too, so
+  the new term did not displace one.
+- **`OnPlanarBoundaryCellsChanged` commits one undo entry and calls `InvalidateMesh()`** — the panel
+  must not go on reporting an N produced under the other model. **Deliberately NOT routed through
+  `CommitMeshField`**: that committer is for staged TEXT fields, and this is a closed choice that
+  commits on selection, like the edge-mesh checkbox.
+- **It does NOT clear `PlanarMeshSettings.Auto`, unlike every sibling.** The other three change how
+  finely Auto's own sizing is applied, so setting one by hand means "stop deciding this for me"; the
+  boundary model is orthogonal — Auto has no opinion about whether a cell follows the metal.
+  Clearing Auto here would silently pin the cell size the moment a user changed the boundary model.
+- **`BoundaryCellsChoices` comes from `Enum.GetValues`**, never a hand-written list, so a third
+  boundary model cannot silently fail to appear in the panel.
+- **The row is labelled for what it DOES, not for its implementation** — a user picks "follow the
+  metal", not "cut cells" — and the tooltip is written for the user rather than as a note to the
+  developer. It sits in the Surface-mesh group, so `IsVisible="{Binding ViewModel.IsPlanarAnalysis}"`
+  already keeps it off kernel A, which has its own six mesh controls in a different group.
+- **`LayoutRenderer.PlanarMesh.cs` draws a cut cell as an `SKPath`, not an `SKRect`.** This is not
+  cosmetic: the overlay is the only place a user can SEE that the mesh followed the metal, so it is
+  the feature's own evidence. A whole cell still takes the `SKRect` path (`c.Region is null`), so a
+  Manhattan layout's overlay is unchanged.
+
+Gate: `tests/Ui.Tests/Em/ConformalBoundaryCellsUiTests.cs` (8 tests, 0.3 s) — the byte-identical
+round trip at the default, the round trip when set (including `Clone`, which drives undo snapshots
+and would silently lose the field), the staleness hash both ways, one-undo-entry-plus-invalidate,
+same-value-pushes-nothing, the kernel-A gating, the enum-sourced choice list, and the notes naming
+the model and its cut count.
+
+**The default ships OFF (`Staircase`).** Flipping it is a separate, deliberate act, because it moves
+every number a user has previously recorded — see the engine note's own "The default" heading for
+what is still open.

@@ -294,7 +294,14 @@ still off, that is a legitimate outcome and the note must say so plainly.**
   what a positive result would look like: ~10× at the shipping mesh). **Re-take it after M3, not
   before.** It is the natural M6 and it may be free.
 - **RWG.** §1.
-- **More than one cut per cell.** §1, and §2's gate decides whether it is a refusal.
+- **More than one cut per cell.** §1, and §2's gate decides whether it is a refusal. **DECIDED, and
+  the gate's own answer is the phase's biggest limitation** — see RESULTS. It is a refusal today, and
+  on MKlopf that refusal is PERMANENT rather than a refinement instruction: its outline carries 126
+  reflex vertices, so once the mesh is fine enough for each to have a cell of its own the fallback
+  count saturates at exactly 126 and the tiling guarantee never arrives. **The concrete reopener is
+  CONVEX DECOMPOSITION, not a second cut**: `PlanarCellRegion` already holds a LIST of convex pieces,
+  so a non-convex clip is representable — the mesher declines to build it rather than being unable
+  to. That is the natural M7 and it is the difference between "exact on most parts" and "exact".
 - **The tensor grid's own cost** — "a fine row anywhere is a fine row everywhere" — is untouched by
   this phase and is a different problem (L8b D8 chose it deliberately and measured the alternative's
   cost as landing on L8c).
@@ -329,3 +336,166 @@ suggested half-plane representation in §2, and the ~70%-of-cells-are-whole figu
 (L7b-b's Route B, L9c's amplitude cap, L9e's ACA, and the edge-mesh brief this one follows) — if §3's
 oracle says a cut cell's fill cannot reach L8c's accuracy without RWG, that result plus its number is
 worth more than a shipped default nobody can justify.
+
+---
+
+## RESULTS — what this actually buys, in plain terms
+
+*Written for someone deciding whether to switch the control on, not for someone maintaining the
+mesher. Every number below is measured, and where something did not work it says so.*
+
+### The problem, without the jargon
+
+The solver covers your artwork with a grid of little rectangles and solves for the current in each
+one. That is fine while your artwork is made of horizontal and vertical edges — the rectangles land
+exactly on it. **The moment you draw a curve, a taper or a 45° bend, the rectangles cannot follow
+it**, so the solver builds a staircase approximation of your shape and simulates *that* instead.
+
+Two consequences, and the second is the one that actually hurts:
+
+1. **The simulator is not analysing the part you drew.** On the shipping microstrip tapers the
+   staircase gets the *local trace width* wrong by up to **17–24%** in places, even though the total
+   metal area is only about 0.5% off. For something like a Klopfenstein taper — whose entire value
+   is a carefully controlled reflection ripple of 0.05 — a 21% width error in the middle of it is
+   enormous.
+
+2. **Making the mesh finer does not reliably fix it.** This is the important one. With a staircase,
+   how wrong the answer is depends on *where the grid lines happen to fall across your curve*, not
+   just on how fine the grid is. Refine, and the answer can get worse before it gets better. So the
+   usual engineering move — "I'm not sure this is converged, let me spend more compute" — **does not
+   work on a curved part**. There is no settled answer to converge toward.
+
+**Conformal ("cut") boundary cells fix both.** The rectangles in the middle of the metal are left
+alone; only the ones on the rim are trimmed so their edge follows your artwork exactly.
+
+### What was measured
+
+A 96-sided disc, refined from 316 unknowns to 3,964, solving for its static capacitance at each step:
+
+| | staircase (today's default) | conformal |
+|---|---|---|
+| **Does the simulated shape match what you drew?** | No — between 0.2% and 0.8% of the area is wrong, and *the amount changes every time you refine* | **Yes, exactly** — to the last decimal place the computer can hold, at every refinement |
+| **Does refining converge on an answer?** | **No** — the value wanders up and down | **Yes** — it steps steadily toward a limit |
+| **Spread of the answer over the last three refinements** | 0.669% | **0.279%** |
+
+The first row is the real result. "Exactly" is not a figure of speech here: the trimmed cells tile
+your drawn outline to round-off, so refining the mesh no longer quietly changes *which shape* is
+being simulated. That is what makes the second row possible.
+
+*One caveat, spelled out below rather than buried: "exactly" holds for artwork whose edge curves
+consistently one way where the grid cuts it — which covers bends, tapers and the disc above. Artwork
+whose edge bends back on itself is a partial case; see "Which parts it works on".*
+
+### What it costs you
+
+**Essentially nothing.** At matched settings the conformal mesh was *slightly smaller* than the
+staircased one (316 unknowns vs 324 at the coarse end, 3,964 vs 3,972 at the fine end) — solve time
+is set by the unknown count, so there is no meaningful runtime penalty. Building the mesh does a
+little more geometry work, but meshing is milliseconds against a solve measured in seconds to
+minutes.
+
+### When it changes nothing at all
+
+**If your layout is all horizontal and vertical edges, this control does nothing whatsoever** — not
+"nearly nothing", literally nothing: the mesh is bit-for-bit identical to the one you get today, so
+every number you have previously recorded on such a part is unaffected. It only ever acts where the
+artwork is genuinely oblique or curved. The panel's own notes tell you which case you are in, and
+report how many cells were trimmed.
+
+### Which parts it works on, and the one it does not
+
+This was measured on the actual library parts, on both the PCB and MMIC starter technologies, rather
+than on test shapes. The result splits cleanly, and **the exception is the part you would most want
+it for**, so it is stated up front:
+
+| part | shape error today | with conformal cells |
+|---|---|---|
+| **Mitred bend** | 0.10% | **exact** |
+| **Linear taper** | 0.47% | **exact** |
+| **Klopfenstein taper (PCB)** | 0.59% | 0.77% — *worse* |
+| Klopfenstein taper (MMIC) | 0.28% | 0.19% — better, but not exact |
+
+"Exact" here means the simulated outline matches the drawn one to the last digit the computer holds.
+
+**Why the Klopfenstein taper misses out.** The trimming only handles a rim cell that the metal
+crosses *once*, leaving a simple wedge. A Klopfenstein taper's edge is not a simple curve — it has
+gentle S-bends (inflections), and the end-blending option adds more. Where the outline bends *back*
+inside a single cell, that cell cannot be described by one straight cut, so it falls back to the old
+staircase behaviour for that cell alone.
+
+**And refining does not fix it.** Normally "use a finer mesh" is the answer to this kind of thing.
+Here it is not: the number of fallback cells rises and then *sticks* at 126 no matter how fine the
+mesh gets — because that outline has exactly 126 inflection points, and once the mesh is fine enough
+each one has a cell to itself. It is one permanently-imperfect cell per inflection, not a resolution
+problem.
+
+The practical upshot for a Klopfenstein taper: conformal cells still beat the staircase at fine
+meshes (and at every mesh density on MMIC), but you do not get the exactness the other parts get, and
+at coarse PCB settings you are slightly worse off. **This is fixable** — the internal representation
+already supports splitting an awkward cell into several simple pieces; the mesher currently declines
+to rather than being unable to. It was out of scope for this round and is the obvious next step.
+
+### Does trimming a cell make the *maths* less accurate?
+
+No — this was the thing most likely to go wrong, so it was checked hardest. Trimming changes the
+shape the solver integrates over, and integrals over an odd-shaped cell are harder than over a neat
+rectangle. Checked against a completely independent calculation, written from scratch for the purpose
+and sharing no code with the solver, the trimmed-cell numbers agree to:
+
+- **around one part in a hundred billion** for the interaction between two *different* cells — which
+  is the overwhelming majority of the work; and
+- **one to two parts per million** for a cell's interaction with itself, which is the genuinely hard
+  case.
+
+Two comparisons put that in scale. The existing solver manages about **five parts per million** on
+ordinary rectangular cells, so trimmed cells are if anything *better*. And the underlying
+electromagnetic model — the physics the whole thing is built on — is itself good to about **six parts
+per thousand**, so the arithmetic here is roughly two and a half thousand times finer than the model
+it is feeding. **Trimming costs nothing in numerical quality.**
+
+(Worth knowing: the independent check is itself only good to about *three parts in ten million* on
+that hardest case, so the true agreement may well be better than the numbers above. At that point the
+yardstick is the limitation, not the thing being measured.)
+
+### Where it will refuse, and why that is deliberate
+
+- **A port must sit on a straight, axis-aligned feed.** If you put one on a chamfered or curved end,
+  the run stops and says so by name — naming both remedies — rather than quietly analysing a
+  differently-shaped port. Ports are for feeding the structure; that is what a feed line is for.
+- **A cell your artwork crosses twice** falls back to a staircase *for that one cell*, and the count
+  is reported in the panel. For most parts, refining makes that count go to zero; for the
+  Klopfenstein taper it does not, for the reason above.
+
+### Honest limitations
+
+- **The improvement in the spread was 2.4×, not the 10× this brief originally asked for.** That
+  target was not met and is not claimed. The claims that *are* made — the shape is now exact on most
+  parts, and refining now converges — are the ones the measurements support, and they are the ones
+  that matter for deciding whether to spend more compute.
+- **This does not make curved parts *accurate*, it makes them *convergent*.** Other error sources are
+  untouched: radiation loss in particular sits at a few parts in a thousand at 2 GHz and around a
+  percent at 10 GHz on 1.6 mm FR-4, and no mesh change of any kind affects it.
+- **The Klopfenstein taper is a partial case**, per the section above — and it is the one part where
+  a coarse PCB mesh comes out slightly *worse* than today.
+- **A sliver-cell safeguard exists and turned out to matter less than expected.** Where a grid line
+  clips a corner off a cell, a very thin remnant can be left; those are absorbed into a neighbour.
+  Measuring it showed the numerical harm from *not* doing so is much smaller than the design note
+  assumed (about 1% worse conditioning over a 245× size ratio, and a 0.004% change in the answer) —
+  so the safeguard is cheap insurance rather than a fix for a real cliff. That reversal is recorded
+  rather than glossed.
+
+### The default
+
+**It ships OFF**, for two reasons.
+
+The first is bookkeeping: **every accuracy figure recorded in this project so far was taken with the
+staircase**, and anyone reproducing one has to be able to.
+
+The second is the real one: **the Klopfenstein taper comes out slightly worse at coarse PCB
+settings**, per the section above. Making something worse by default is not defensible even when it
+is better in most cases, so it stays opt-in until the inflection handling is fixed — at which point
+turning it on by default becomes the obvious call.
+
+**Switch it on today** when you are simulating a bend, a linear taper, or any curved outline, and you
+want an answer you can refine toward with confidence. For a Klopfenstein taper, switch it on and use a
+fine mesh, or leave it off — the coarse setting is the one case that goes backwards.

@@ -498,7 +498,7 @@
                 <Border Classes="group" IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Surface mesh"/>
-                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto"
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto"
                       ColumnSpacing="6" RowSpacing="3">
                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="CellsPerWavelength"
@@ -512,6 +512,14 @@
                     <TextBox   Grid.Row="2" Grid.Column="1" Classes="num" Tag="PlanarEdgeCells"
                                Text="{Binding ViewModel.PlanarEdgeCellsText}"
                                LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                    <!-- The fourth control. Labelled for what it DOES, not for its implementation:
+                         a user picks "follow the metal", not "cut cells". -->
+                    <TextBlock Grid.Row="3" Grid.Column="0" Classes="colhdr" Text="Boundary cells" VerticalAlignment="Center"/>
+                    <ComboBox  Grid.Row="3" Grid.Column="1" Name="PlanarBoundaryCellsCombo" FontSize="11"
+                               HorizontalAlignment="Stretch"
+                               ItemsSource="{Binding ViewModel.BoundaryCellsChoices}"
+                               SelectedItem="{Binding ViewModel.PlanarBoundaryCells}"
+                               ToolTip.Tip="How the mesh treats curved and oblique conductor edges. Staircase approximates them with the rectangular grid. Conformal cuts the boundary cells to follow the metal, which is more accurate on tapers, bends and curves."/>
                 </Grid>
                 <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
                            Text="{Binding ViewModel.PlanarMeshSummary}"
