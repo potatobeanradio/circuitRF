@@ -120,6 +120,18 @@ public sealed class HarmonicaContext
     }
 
     /// <summary>
+    /// R-h9c-12 (R1C §6) — Refresh DUT: re-elaborates unconditionally, even though
+    /// <see cref="CircuitModel.StructuralKey"/> has not moved. A DUT can change on disk between Set
+    /// and Refresh (an external <c>.osdi</c> that was recompiled, a kit manifest that was edited) with
+    /// none of its OWN fields moving — <see cref="Apply"/>'s key comparison is exactly the wrong tool
+    /// for that, since it exists to AVOID a rebuild when nothing meaningful changed, and here the user
+    /// is explicitly asserting that something did. <see cref="RebuildCount"/> increments again, so the
+    /// same counter that gates "elaboration happens exactly once on Set" also gates "exactly once more
+    /// on Refresh" — one shape, two user actions.
+    /// </summary>
+    public void ForceRebuild() => Rebuild();
+
+    /// <summary>
     /// Moves the bias supplies in place. Their values are ordinary resolved parameters, so this is
     /// the one value change that has to reach a model object rather than an algebraic step — and the
     /// alternative, a global-variable override, re-elaborates the whole netlist.

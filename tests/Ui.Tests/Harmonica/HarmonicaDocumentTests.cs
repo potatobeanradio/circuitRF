@@ -275,12 +275,15 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             Assert.False(double.IsNaN(m.GammaIntrinsic.Real),
                 $"{m.Name}'s intrinsic Γ was never stamped from the Gamma_intr cube"));
 
-        // §7.5 — the readouts are populated, and every one carries a tooltip.
+        // §7.5 — the readouts are populated, and every one carries a tooltip — EXCEPT a column
+        // HEADER row (R-h9c-6: "MXP 1f0 Load", a plain "Source"/"Load" column title), which is
+        // label-only by design (empty Value, empty Tooltip) rather than a readout with nothing to say.
         Assert.NotEmpty(vm.Frame.Readouts);
         Assert.All(vm.Frame.Readouts, r =>
         {
             Assert.False(string.IsNullOrWhiteSpace(r.Label));
-            Assert.False(string.IsNullOrWhiteSpace(r.Tooltip));
+            bool isHeader = r.Value.Length == 0 && r.Tooltip.Length == 0;
+            if (!isHeader) Assert.False(string.IsNullOrWhiteSpace(r.Tooltip));
         });
 
         output.WriteLine($"{vm.LastSolveCount} HB solves · " +

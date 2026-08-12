@@ -38,6 +38,19 @@
                  SelectionChanged="OnLawChanged"
                  ToolTip.Tip="The five native large-signal laws are separate device TYPES, not variants — several reuse one spelling for different quantities, so each carries its own parameter set."/>
 
+      <!-- SDD: 2-port (the existing gate/drain-vs-source convention) or 3-port (adds the source
+           terminal against ground as its own port, R-h9c-11). -->
+      <StackPanel Grid.Column="1" x:Name="SddChooser" Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="14">
+          <RadioButton x:Name="SddPorts2" GroupName="SddPorts" Content="2-port (Vgs, Vds)"
+                       IsCheckedChanged="OnSddPortsChanged"/>
+          <RadioButton x:Name="SddPorts3" GroupName="SddPorts" Content="3-port (Vgs, Vds, Vs)"
+                       IsCheckedChanged="OnSddPortsChanged"/>
+        </StackPanel>
+        <TextBlock Opacity="0.65" TextWrapping="Wrap" MaxWidth="480"
+                   Text="Port 1 is gate-vs-source (_v1), port 2 is drain-vs-source (_v2). The 3-port form adds port 3, the source terminal against ground (_v3), so an equation can reference the source terminal's own current or voltage directly."/>
+      </StackPanel>
+
       <!-- External: a bare compiled model file, or a kit. -->
       <StackPanel Grid.Column="1" x:Name="ExternalChooser" Spacing="6">
         <StackPanel Orientation="Horizontal" Spacing="8">

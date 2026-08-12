@@ -27,59 +27,23 @@
          File / Edit / Markers / Display / Grid / Help. No Simulate menu, ever. ── -->
     <hv:HarmonicaMenuView x:Name="Menus" DockPanel.Dock="Top"/>
 
-    <!-- ── Toolbar. NO Simulate menu anywhere in harmonicaRF: it is always simulating (§7.6). ── -->
-    <Border DockPanel.Dock="Top"
-            Background="{DynamicResource SystemChromeLowColor}"
+    <!-- ── §2/§3 (R1C) — the bottom message line. Harmonica.Messages colours it; it shows the
+         LAST message only (no history, no scroll) and is selectable so it can be copied into a bug
+         report. A grid-solving frame appends an inline "Solving…" bar in Harmonica.ProgressBar,
+         width 75, BEFORE any changing counter — nothing that grows may sit to the bar's left or it
+         jitters. ── -->
+    <Border x:Name="MessageBar" DockPanel.Dock="Bottom"
             BorderBrush="{DynamicResource CrfTileBorderBrush}"
-            BorderThickness="0,0,0,1"
+            BorderThickness="0,1,0,0"
             Padding="6,3">
-      <StackPanel Orientation="Horizontal" Spacing="4">
-
-        <Button x:Name="SolveButton" Click="OnSolveClick"
-                ToolTip.Tip="Re-solve at the full grid. harmonicaRF solves continuously; this forces a full-quality refresh.">
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <mi:MaterialIcon Kind="Refresh" Width="15" Height="15"/>
-            <TextBlock Text="Solve" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Button>
-
-        <Border Width="1" Margin="4,2" Background="{DynamicResource CrfTileBorderBrush}"/>
-
-        <!-- §7.3: ONE toggle, moving the DCIV family and the loadline together. The persistent
-             indicator of which plane is shown lives on the panel itself and is never absent. -->
-        <ToggleButton x:Name="PlaneToggle"
-                      IsChecked="{Binding ViewModel.Harmonica.IntrinsicPlane, Mode=TwoWay}"
-                      ToolTip.Tip="Loadline plane. The DCIV family and the loadline move together, so the two curves are always in the same plane.">
-          <TextBlock x:Name="PlaneLabel" Text="intrinsic"/>
-        </ToggleButton>
-
-        <!-- §7.4: the X-axis unit is click-to-cycle on the axis itself; this is the same command,
-             reachable from the toolbar for discoverability. -->
-        <Button x:Name="XUnitButton" Click="OnCycleXUnitClick"
-                ToolTip.Tip="Cycle the power-sweep X axis: Pout (dBm) → Pout (W) → Pin available (dBm) → Pin available (W).">
-          <TextBlock x:Name="XUnitLabel" Text="Pout (dBm)"/>
-        </Button>
-
-        <!-- R-h6-11: the operating point the intrinsic glyphs and the inverse solve are posed at.
-             Intrinsic impedance is drive-dependent, so this is part of the question, not a detail. -->
-        <Button x:Name="CursorModeButton" Click="OnToggleCursorSnap"
-                ToolTip.Tip="Operating point for the glyphs and the inverse solve. Snap to compression follows the P-x dB point; otherwise the cursor stays where you put it.">
-          <TextBlock x:Name="CursorModeLabel" Text="cursor: compression"/>
-        </Button>
-
-        <!-- §7.7 — Edit Display's own toggle, beside the toolbar it unlocks. The menu item and this
-             run the same command; a modal state the user cannot see they are in is a trap. -->
-        <ToggleButton x:Name="EditDisplayToggle" Click="OnToggleEditDisplay"
-                      ToolTip.Tip="Edit Display: unlock the panel layout so panels can be moved, resized and removed. Re-locking restores the default arrangement.">
-          <TextBlock x:Name="EditDisplayLabel" Text="edit display"/>
-        </ToggleButton>
-
-        <Border Width="1" Margin="4,2" Background="{DynamicResource CrfTileBorderBrush}"/>
-
-        <!-- R-h6-5: FrameScheduler.StatusMessage lands HERE. A model that cannot hold the frame
-             target is told about, never silently stuttered at. -->
-        <TextBlock x:Name="StatusText" VerticalAlignment="Center" Opacity="0.7"
-                   ToolTip.Tip="Solve cost and status. Tier A is one Pin drive-up; the contour maps are tier B. When the ladder degrades or tier A alone misses the frame target, this says so."/>
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <SelectableTextBlock x:Name="MessageText" VerticalAlignment="Center" FontSize="11"/>
+        <TextBlock x:Name="SolvingText" Text="Solving…" VerticalAlignment="Center" FontSize="11"
+                   IsVisible="False"/>
+        <ProgressBar x:Name="SolveProgressBar" Width="75" Height="10" Minimum="0" Maximum="1"
+                     VerticalAlignment="Center" IsVisible="False"/>
+        <TextBlock x:Name="SolveProgressCounter" VerticalAlignment="Center" FontSize="11"
+                   IsVisible="False"/>
       </StackPanel>
     </Border>
 

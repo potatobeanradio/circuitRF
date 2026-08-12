@@ -124,7 +124,7 @@ public sealed class ContourGrid
     public void Build(HarmonicaContext ctx, TerminationSet terminations,
                       IReadOnlyList<Complex> gammaGrid, TerminationSide side = TerminationSide.Load,
                       int tuneHarmonic = 1, CancellationToken ct = default,
-                      bool reuseUnchanged = false)
+                      bool reuseUnchanged = false, Action<int, int>? onProgress = null)
     {
         // R-h9b-6 — this grid is a long-lived, per-worker object (§6.7); re-read Z0 from the document
         // on every build rather than freezing it at construction, or a Z0 change would silently keep
@@ -155,6 +155,12 @@ public sealed class ContourGrid
         var working = terminations.Clone();
         var converged = new List<(Complex Gamma, Complex[,] V, double? PinAtCompression)>();
 
+        // §3 (R1C) — one tick per Γ point, reused or freshly solved alike, so the fraction reflects
+        // total completion regardless of which path a point took. The FINAL point always ticks
+        // (there is no throttle here), which is what keeps the bar from ever landing short.
+        int total = gammaGrid.Count;
+        int done  = 0;
+
         foreach (Complex gamma in gammaGrid)
         {
             ct.ThrowIfCancellationRequested();
@@ -168,6 +174,7 @@ public sealed class ContourGrid
                 if (kept.Result.Steps.Count > 0)
                     converged.Add((gamma, kept.Result.Steps[^1].Point.V,
                                    kept.Result.AtCompression?.PavlDbm));
+                onProgress?.Invoke(++done, total);
                 continue;
             }
 
@@ -180,6 +187,8 @@ public sealed class ContourGrid
 
             if (result.Steps.Count > 0)
                 converged.Add((gamma, result.Steps[^1].Point.V, result.AtCompression?.PavlDbm));
+
+            onProgress?.Invoke(++done, total);
         }
 
         _reusableAgainst = StateKey(ctx, terminations, side, tuneHarmonic);

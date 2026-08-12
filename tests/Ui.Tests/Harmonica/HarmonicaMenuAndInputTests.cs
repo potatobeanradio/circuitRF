@@ -335,8 +335,10 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
         output.WriteLine("SDD: " + string.Join(", ", sddNames));
         output.WriteLine("FET_Angelov: " + string.Join(", ", fetNames));
 
-        // An SDD's parameters ARE its equations, keyed as the .cnl spells them.
-        Assert.Contains("I[2,0]", sddNames);
+        // R-h9c-5 (R1C §5) — an SDD's parameters ARE its equations, and the strip stops surfacing
+        // them now that Set DUT's own dialog edits them properly (they used to be keyed as the .cnl
+        // spells them, hundreds of characters of expression text in a 160 px box).
+        Assert.Empty(sddNames);
         Assert.DoesNotContain("Ipk", sddNames);
 
         // The Angelov law's own set — read from the registry the schematic editor renders, not from

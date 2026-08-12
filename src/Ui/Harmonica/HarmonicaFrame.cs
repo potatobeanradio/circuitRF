@@ -46,6 +46,57 @@ public sealed class HarmonicaMarker(TerminationSideKind side, int band)
 /// <c>TerminationSide</c> without src/Ui taking a dependency on its numbering.</summary>
 public enum TerminationSideKind { Source, Load }
 
+/// <summary>
+/// §5 (R1C) — which of the strip's four columns a readout belongs to. <c>General</c> is everything
+/// that stayed flat (§7.5's original wrapping run); the other three are R-h9c-6's new columns,
+/// left to right Source · Load · MXP · MXE — the editable termination columns nearest the charts
+/// they belong to, the read-only performance summaries beside them.
+/// </summary>
+public enum ReadoutColumn { General, Source, Load, Mxp, Mxe }
+
+/// <summary>
+/// One row of §7.5's strip (R-h9c-9). Replaces the old flat <c>(label, value, tooltip)</c> triple —
+/// columns, per-row format and editability do not fit in one, and <c>HarmonicaSolver.BuildReadouts</c>
+/// is where the numbers already are (§0.3 item 1: never recompute in a view model).
+/// </summary>
+/// <param name="Label">The row's own label — "ZL1", "Pout", "MXP 1f0 Load", …</param>
+/// <param name="Value">Formatted for display, in whichever format (<see cref="IsComplex"/> rows
+/// only) the row's own <see cref="FormatKey"/> currently resolves to.</param>
+/// <param name="Tooltip">§7.5's own concession to newcomers — every row carries one.</param>
+/// <param name="Column">Which of the four columns this row renders in.</param>
+/// <param name="IsComplex">True for a Z or Γ row — R-h9c-7's right-click format flyout applies to
+/// these and only these.</param>
+/// <param name="Editable">True for a row R-h9c-8's inline double-click editor may open. Only a
+/// termination row (Source/Load column) is ever true — an MXP/MXE row is a CONSEQUENCE of the
+/// solve and the owner says directly it "cannot be edited".</param>
+/// <param name="Side">The marker's side, for an editable termination row; null otherwise.</param>
+/// <param name="Band">The marker's band, for an editable termination row; 0 otherwise.</param>
+/// <param name="IsGamma">True when this complex row is the Γ half of a Z/Γ pair rather than the Z
+/// half — the two need independent format state and independent write-through calls
+/// (<c>SetMarkerImpedance</c> vs <c>SetMarkerGamma</c>).</param>
+public sealed record HarmonicaReadout(
+    string Label, string Value, string Tooltip, ReadoutColumn Column,
+    bool IsComplex = false, bool Editable = false,
+    TerminationSideKind? Side = null, int Band = 0, bool IsGamma = false)
+{
+    /// <summary>
+    /// R-h9c-7's persistence key for this row's format choice, or null for a row with no format
+    /// (every non-<see cref="IsComplex"/> row). Stable across a reload — it names the QUANTITY, not
+    /// a position in a list, so reordering or adding rows can never silently move a saved format onto
+    /// the wrong row.
+    /// </summary>
+    public string? FormatKey => !IsComplex ? null
+        : Side is { } side
+            ? $"{(side == TerminationSideKind.Source ? "S" : "L")}{Band}.{(IsGamma ? "Gamma" : "Z")}"
+        : Column is ReadoutColumn.Mxp or ReadoutColumn.Mxe
+            ? $"{(Column == ReadoutColumn.Mxp ? "MXP" : "MXE")}.Zin"
+        : null;
+}
+
+/// <summary>R-h9c-7's per-row format — real/imaginary or magnitude/angle. Display-only; never
+/// touches the model.</summary>
+public enum ReadoutFormat { RealImaginary, MagnitudeAngle }
+
 /// <summary>A Γ grid point as the Smith panel draws it (§6.3 / R-h45-5).</summary>
 /// <param name="Gamma">Where it is.</param>
 /// <param name="IsHole">
@@ -255,10 +306,13 @@ public sealed record HarmonicaFrame
     /// </summary>
     public RfCore.Data.DataSet? Published { get; init; }
 
-    /// <summary>The §7.5 readouts, as label/value pairs. Deliberately flat: §7.5 asks for "small
-    /// fonts, no section titles, no decoration", every element tooltipped and every value
-    /// selectable.</summary>
-    public IReadOnlyList<(string Label, string Value, string Tooltip)> Readouts { get; init; } = [];
+    /// <summary>
+    /// §7.5's readouts (R-h9c-9). Four columns now (General/Source/Load/MXP/MXE) rather than one
+    /// flat run — §7.5's own density constraint ("small fonts, no section titles, no decoration",
+    /// every element tooltipped and every value selectable) is unchanged, it just applies per
+    /// column instead of to one long wrap.
+    /// </summary>
+    public IReadOnlyList<HarmonicaReadout> Readouts { get; init; } = [];
 
     public static readonly HarmonicaFrame Empty = new();
 }

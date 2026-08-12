@@ -35,6 +35,15 @@ public static class HarmonicaTitles
         return $"{band} {plane} Plane, Z0={FormatZ0(z0)}Ω";
     }
 
+    /// <summary>
+    /// R-h9c-6 (R1C §5) — the MXP/MXE readout column header: "MXP 1f0 Load", "MXE 2f0 Source", …
+    /// <b>Literally as the owner specified</b> — always numeric ("1f0"), unlike <see cref="PlaneRow"/>'s
+    /// row 2, which spells band 1 as "Fundamental". Two different rows the owner asked to look
+    /// different are kept different rather than unified for tidiness.
+    /// </summary>
+    public static string MxHeaderRow(string label, TerminationSide side, int harmonic)
+        => $"{label} {harmonic}f0 {(side == TerminationSide.Source ? "Source" : "Load")}";
+
     private static string FormatTrim(double v)
         => v == Math.Floor(v)
             ? v.ToString("0", CultureInfo.InvariantCulture)

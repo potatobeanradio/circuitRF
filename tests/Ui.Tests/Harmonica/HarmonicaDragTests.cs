@@ -389,7 +389,51 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         // Avalonia host, so this asserts on the view's own source — the same route
         // HarmonicaPanelTests uses for "the renderer has no fill path".
         string src = ReadSource("src", "Ui", "Views", "Harmonica", "HarmonicaView.axaml.cs");
-        Assert.Contains("StatusText.Text = h.StatusMessage", src, StringComparison.Ordinal);
+        Assert.Contains("MessageText.Text = h.StatusMessage", src, StringComparison.Ordinal);
+    }
+
+    // ── §1/§2/§3 (R1C) — the toolbar is gone; the bottom message/progress line replaces it ────
+
+    [Fact]
+    public void Tier5b_TheToolbarIsGone_AndTheBottomMessageLineTakesItsPlace()
+    {
+        string axaml = ReadSource("src", "Ui", "Views", "Harmonica", "HarmonicaView.axaml");
+
+        // The toolbar's own named controls must not exist anywhere in this document any more —
+        // every one of them was either dropped for cause (§1's table) or moved to a menu command.
+        foreach (var gone in new[] { "SolveButton", "PlaneToggle", "XUnitButton", "CursorModeButton",
+                                     "EditDisplayToggle", "StatusText" })
+            Assert.DoesNotContain($"x:Name=\"{gone}\"", axaml, StringComparison.Ordinal);
+
+        // Its replacement: one line, selectable, at the bottom, with an inline progress bar per §3.
+        Assert.Contains("x:Name=\"MessageBar\"", axaml, StringComparison.Ordinal);
+        Assert.Contains("DockPanel.Dock=\"Bottom\"", axaml, StringComparison.Ordinal);
+        Assert.Contains("<SelectableTextBlock x:Name=\"MessageText\"", axaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"SolveProgressBar\" Width=\"75\"", axaml, StringComparison.Ordinal);
+
+        // The code-behind's handlers for the removed toolbar buttons are gone with them.
+        string cs = ReadSource("src", "Ui", "Views", "Harmonica", "HarmonicaView.axaml.cs");
+        foreach (var gone in new[] { "OnSolveClick", "OnCycleXUnitClick", "OnToggleCursorSnap",
+                                     "OnToggleEditDisplay" })
+            Assert.DoesNotContain(gone, cs, StringComparison.Ordinal);
+
+        // §2/§3 — the message and progress-bar roles are actually consumed, not merely projected.
+        Assert.Contains("h.RenderTheme.Messages", cs, StringComparison.Ordinal);
+        Assert.Contains("h.RenderTheme.ProgressBar", cs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Tier5c_TheirCapabilitiesSurviveOnAMenu()
+    {
+        // §1's own guardrail: "do not silently drop a capability with the button." Solve (full grid)
+        // and cursor snap-to-compression had no other affordance, so each needs a menu command now.
+        string vmSrc = ReadSource("src", "Ui", "Harmonica", "HarmonicaMenuViewModel.cs");
+        Assert.Contains("SolveNow", vmSrc, StringComparison.Ordinal);
+        Assert.Contains("ToggleCursorSnap", vmSrc, StringComparison.Ordinal);
+
+        string menuAxaml = ReadSource("src", "Ui", "Views", "Harmonica", "HarmonicaMenuView.axaml");
+        Assert.Contains("SolveNowCommand", menuAxaml, StringComparison.Ordinal);
+        Assert.Contains("ToggleCursorSnapCommand", menuAxaml, StringComparison.Ordinal);
     }
 
     private static string ReadSource(params string[] parts)

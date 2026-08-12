@@ -31,6 +31,7 @@ public sealed class HarmonicaDutEditor
         TypeName     = current.TypeName;
         Provider     = current.Provider;
         Multiplicity = current.Multiplicity;
+        SddPortCount = current.SddPortCount is 3 ? 3 : 2;
         GateNode     = current.IntrinsicMapping?.GateNode;
         DrainNode    = current.IntrinsicMapping?.DrainNode;
         SourcePin    = current.IntrinsicMapping?.SourcePin;
@@ -41,6 +42,11 @@ public sealed class HarmonicaDutEditor
     public string  TypeName     { get; private set; }
     public string? Provider     { get; private set; }
     public double  Multiplicity { get; set; }
+
+    /// <summary>R-h9c-11 — 2 or 3. Meaningful only while <see cref="Kind"/> is
+    /// <see cref="DutKind.Sdd"/>; carried regardless so re-selecting SDD after a detour through
+    /// another kind remembers the user's last choice.</summary>
+    public int SddPortCount { get; set; } = 2;
 
     public string? GateNode  { get; set; }
     public string? DrainNode { get; set; }
@@ -176,6 +182,7 @@ public sealed class HarmonicaDutEditor
         TypeName     = TypeName,
         Provider     = Kind == DutKind.External ? Provider : null,
         Multiplicity = Multiplicity,
+        SddPortCount = Kind == DutKind.Sdd && SddPortCount == 3 ? 3 : 2,
         Parameters   = new Dictionary<string, string>(_parameters, StringComparer.Ordinal),
         IntrinsicMapping =
             Kind == DutKind.External

@@ -50,13 +50,24 @@ public sealed record CharmAppearance
     /// <see cref="ShowIsoLineLabels"/>: null = the built-in default, which is OFF.</summary>
     public bool? ShowGridPoints { get; init; }
 
+    /// <summary>
+    /// R-h9c-7 (R1C §5) — the readout strip's per-row Z/Γ format, keyed by
+    /// <c>HarmonicaReadout.FormatKey</c> ("S1.Z", "L2.Gamma", "MXP.Zin", …), each value either
+    /// <c>"RealImaginary"</c> or <c>"MagnitudeAngle"</c>. Display-only — the same shape of setting as
+    /// <see cref="ShowGridPoints"/>, absent ⇒ default (real/imaginary). A missing or malformed entry
+    /// falls back to the default rather than failing the load, matching
+    /// <see cref="TryDecode"/>'s own "never guess, but never refuse to open" rule.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ReadoutFormats { get; init; }
+        = new Dictionary<string, string>(StringComparer.Ordinal);
+
     /// <summary>True when the document carries nothing worth writing — the ordinary case for a
     /// <c>.charm</c> nobody has recoloured. Used to omit the block entirely so an untouched file
     /// re-serialises byte-for-byte.</summary>
     public bool IsDefault
         => Light.Count == 0 && Dark.Count == 0
         && IsoAlphaFloor is null && IsoAlphaExponent is null && ShowIsoLineLabels is null
-        && ShowGridPoints is null;
+        && ShowGridPoints is null && ReadoutFormats.Count == 0;
 
     public static readonly CharmAppearance Default = new();
 

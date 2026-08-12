@@ -1,3 +1,246 @@
+harmonicaRF Round 1C — chrome, readouts, Set DUT, and Export Testbench → `.csch`
+(brief-harmonicarf-r1c-chrome-readouts-dut-and-export.md, 2026-08-12) — COMPLETE, all seven
+sections. The toolbar is gone, replaced by a one-line message strip and an inline solving bar; the
+readout font scales with the panel; the readouts are rebuilt into four columns (Source/Load/MXP/MXE)
+with live-editable terminations and an inline double-click editor; Set DUT gained SDD2/SDD3 and a
+Refresh action with a counter-gated elaboration guarantee; and Export Testbench now writes a
+**runnable `.csch`** — placed components, wires on the connection grid, matching bias/terminations
+and analysis — alongside the pre-existing `.cnl` path, chosen by the file extension in the same
+picker.
+
+## §1/§2/§3 — the toolbar is gone; a message line and an inline progress bar took its place
+
+The whole toolbar row (`Border DockPanel.Dock="Top"`) was removed. Every capability it carried has a
+new, named home — none was silently dropped:
+
+| Old toolbar control | New home |
+|---|---|
+| **Solve** button (forced full-quality re-solve) | `HarmonicaViewModel.SolveFullGrid()`, reached via **Grid ▸ Solve Now** on both menu surfaces |
+| **PlaneToggle** (intrinsic/extrinsic loadline) | `ToggleLoadlinePlane` — already reachable via **Display**, pre-dating this brief |
+| **XUnitButton** (cycle power-sweep X unit) | Click-to-cycle on the axis itself already existed; the toolbar button was a redundant second entry point, now gone |
+| **CursorModeButton** (cursor: compression) | `HarmonicaViewModel.ToggleCursorSnap()`, reached via **Display ▸ Cursor Snap to Compression** — freezes the cursor at its current reading rather than letting it silently jump when the toggle flips |
+| **EditDisplayToggle** | `ToggleEditDisplayCommand` was already reachable via **Display ▸ Edit Display**; the toolbar button was redundant |
+| **StatusText** (`FrameScheduler.StatusMessage`) | Folded into the new bottom message line's idle-state fallback (see below) |
+
+**The bottom message line** (`Harmonica.Messages`, `DockPanel.Dock="Bottom"`) is a
+`SelectableTextBlock` showing the LAST message only — no history, no scroll — so it can be copied
+into a bug report. R-h6-5's rule survives unchanged: the scheduler's own status message is never
+suppressed; when there is nothing to say, the idle line falls back to the same solve-cost summary
+the removed toolbar's `StatusText` showed (`"{N} HB solves · {M} Γ points · {H} holes · {quality}"`),
+recomputed once per published frame.
+
+**The inline "Solving…" bar** (`Harmonica.ProgressBar`, width 75, in the same message row) appears
+only for a frame that genuinely sweeps a grid — `HarmonicaViewModel.IsSolvingGrid`, a new observable
+distinct from `IsSolving`, true only while `!Options.SkipContours`. A tier-A-only frame (a marker
+drag, a bias edit) never sets it, so the bar cannot appear for a frame with nothing for it to track.
+`HarmonicaSolver.Solve` gained an optional `Action<int,int>? onGridProgress` threaded through
+`ContourGrid.Build`'s own `onProgress` parameter, fired once per Γ point **on the pool worker
+thread** — the view marshals to the UI thread, exactly like every other pool callback. The bar and
+its counter sit **before** any changing text, never after: nothing that grows may sit to its left or
+it jitters. `SolveProgressBar.Value = 0` / counter cleared to `""` on every non-grid frame so a later
+grid frame starts the bar at zero rather than showing the previous frame's leftover reading for one
+tick.
+
+## §4 — the readout strip's font tracks the panel size
+
+`ReadoutStripView.FontSizeFor(width, height)` — a pure, unit-testable function (this repo's
+`Ui.Tests` instantiate no live controls) — computes `Math.Clamp(Math.Min(width, height) * 0.03, 8,
+16)`. The `0.03` fraction mirrors `HarmonicaPanelRenderer.TitleBandHeight`'s own panel-relative
+convention, calibrated so the default §7.1 layout at an ordinary window size lands near the prior
+hardcoded 10 pt. The in-place update path (and its focused-editor skip, so a solve landing mid-typing
+never eats the caret) is unchanged — only the font size passed through it is now computed per frame
+instead of fixed.
+
+## §5 — the readouts, rebuilt into four columns
+
+`HarmonicaReadout` (a new record replacing the old flat `(Label, Value, Tooltip)` triple) carries
+`Column` (`General | Source | Load | Mxp | Mxe`), `IsComplex`, `Editable`, `Side`/`Band` (which
+marker a termination row edits), and `IsGamma` (Z-half vs. Γ-half of a pair — they need independent
+format state and independent write-through calls, `SetMarkerImpedance` vs. `SetMarkerGamma`).
+`FormatKey` is a stable per-QUANTITY persistence key (`"S1.Z"`, `"MXP.Zin"`, …), not a list position —
+reordering or adding rows can never silently move a saved format onto the wrong row.
+
+**Gone from the readouts, per the owner's own reasoning for each**: `compr`, `stop`, `K`, `solves`,
+`Gss`. `compr` and `K` survive as **inputs** (`HarmonicaInputs.KeyCompression`/`KeyHarmonicCount`,
+already existing, unaffected by this brief); the other three had no input twin and are simply
+removed. **SDD equation parameters no longer appear in the input row at all**
+(`HarmonicaInputs.DeclaredModelParameters`'s `DutKind.Sdd` arm now returns `[]`) — Set DUT's own
+dialog edits them properly (§6), so a second, redundant surface for hundreds of characters of
+expression text in a 160 px box was removed.
+
+**Four columns, left to right: Source · Load · MXP · MXE** — the editable termination columns sit
+nearest the Smith charts they belong to; the read-only performance summaries follow. Each
+Source/Load column emits one header row (label only, empty value — the same shape MXP/MXE's own
+header uses, one rendering path for both) then, per marker on that side, a `Z{name}` row and a
+`Γ{name}` row, both `IsComplex: true, Editable: true`. **A marker-less band contributes no row at
+all** — the loop is `markers.Where(m => m.Side == side).OrderBy(m => m.Band)`, so an unpopulated
+band is simply absent rather than shown as a blank/placeholder row.
+
+**MXP/MXE read R-h9b-17's already-solved `SmithPanelData.SmithOptimum` record and compute
+nothing** — the glyph on the chart and the column's numbers come from the identical record, so they
+can never describe two different states (this is asserted directly in tests, not eyeballed). **"no
+optimum" covers all three states the design predicts**: every grid point a hole (`Optimum` itself
+null), a degraded ladder rung, or a `SkipContours` frame — checked as
+`optimum is not { Solved: { } step, Published: { } ds }` in one guard, since `Optimum`'s position is
+cheap and updates every frame but `Solved`/`Published` (the figures of merit) are only set on a
+full-quality frame with a real solve there.
+
+**The intrinsic marker Γᵢ readout stays flat** (General column) — it moved nowhere, because it is a
+derived read-only physical quantity with no termination to write back through; only the EXTRINSIC Γ
+(the marker's actual termination) moved into the new Source/Load columns as an editable Z/Γ pair.
+
+**The inline editor** (R-h9c-8/9, gate 9): double-clicking an editable readout edits it in place,
+commits on Return and on LostFocus, reverts on Escape; every readout — editable or not — stays
+selectable (`SelectableTextBlock`). Right-click on a complex row switches its format
+(real/imaginary ⇄ magnitude/angle) per row, independently for the Z half and the Γ half of a pair;
+the choice survives a `.charm` round trip (`CharmAppearance.ReadoutFormats`, a
+`Dictionary<string,string>` keyed by the same stable `FormatKey`). Every write-through for a
+termination row goes through `SetMarkerImpedance`/`SetMarkerGamma` only — never a third path.
+
+## §6 — Set DUT: SDD2/SDD3, Refresh, and the counter-gated elaboration guarantee
+
+`DutSpec.SddPortCount` (2 default, or 3) is folded into `CircuitModel.StructuralKey`, so choosing
+3-port SDD is a structural change like any other DUT edit. Port 3, when chosen, adds the source
+terminal against ground (`_v3` = Vs) as its own port — the gate and drain ports (`_v1`/`_v2`) are
+unchanged either way, so `IntrinsicPortMap.TwoPort` stays correct for both 2- and 3-port SDD; the
+dialog states this convention directly in a subtitle under the radio pair rather than leaving it to
+be inferred.
+
+**File ▸ Refresh DUT** (`HarmonicaViewModel.RefreshDut`) re-elaborates the SAME DUT
+**unconditionally** — `HarmonicaContext.ForceRebuild()` / `SolveWorker.ForceRebuildContext`, a
+sibling of the ordinary `EnsureContext` path that always re-applies rather than trusting
+`CircuitModel.StructuralKey`. This is the explicit escape hatch for a kit or an external `.osdi` that
+changed on disk since Set DUT ran, with none of `DutSpec`'s own fields moving — exactly the case
+`StructuralKey` is built to be blind to. **Elaboration happens in exactly two places**: the ordinary
+`Set` commit path, and this Refresh path — never on a value change, a marker drag, or an ordinary
+frame. Gate 11 is counter-gated (`ContextRebuildCount`/`ContextCreateCount` on `SolveWorker`), not
+timed, so the guarantee is checked by counting real elaborations across a drag/bias-edit/frame
+sequence rather than inferred from wall-clock behavior.
+
+**Cell-backed DUT resolution across workspaces** (R-h9c-13, gate 12): a cell from a different
+workspace resolves its own kit, and every failure mode — missing cell, missing kit, a kit whose
+device provider fails to start — is reported by name with the document staying open and the
+previous DUT intact. Nothing here forces a document into an inconsistent or half-applied state on a
+failed Refresh/Set.
+
+## §7 — Export Testbench → `.csch`
+
+**The Tuner-vs-`P1Tone` question, resolved in writing before any code was built.** The owner asked
+for Tuner components in the exported schematic; `HarmonicaInterchange.ExportTestbench`'s own doc
+comment already recorded H7's finding that a `Tuner` is **inert** under a plain `type=hb` run
+(nothing in `HbEngine` calls `SetRole`/`SetTone`/`SetSourceDrive` — those are the loadpull engine's).
+Since this export carries an HB analysis (the owner's own "configured the same way as harmonicaRF"),
+a Tuner pair in THIS schematic would be inert for the identical reason — shipping one would be a
+schematic that runs and is silently wrong, which the brief explicitly forbids. **Resolution:**
+`HarmonicaSchematicExport` uses `P1Tone` (source) and `PnTone` (load) — the two components `HbEngine`
+DOES give a band ruler to — never a Tuner pair. "Copy termination set" is a *different* menu item and
+correctly stays a `Tuner`, since it is driven by the loadpull engine (§7.8).
+
+**`HarmonicaSchematicExport.Export(model, terminations, pavlDbm) → SchematicEditModel`**
+(`src/Ui/Harmonica/HarmonicaSchematicExport.cs`, new) builds the schematic left-to-right/best-effort:
+DUT → series lead/shunt embedding (both gate and drain sides, at the SAME plane a shunt is applied,
+never advancing the node — `HarmonicaNetlist.Shunt`'s own rule) → the two termination planes, each a
+three-way junction of bias choke, DC-blocked termination and the embedding chain, exactly mirroring
+`HarmonicaNetlist`/`HarmonicaInterchange`'s own `SourcePlane`/`LoadPlane` → an `HarmonicBalanceAnalysis`
+matching `Settings.FrequencyHz`/`HarmonicCount`, appended via `AnalysisSerialization` (the ONE
+encoder, per this file's own §5.4 rule — never a second one).
+
+**Refuses by name rather than silently omitting** what it cannot yet express: a Touchstone-embedded
+package (S2p/S4p) or an External DUT both throw `NotSupportedException` naming the specific gap and
+pointing at the `.cnl` path, which has neither limit.
+
+**Two real bugs were found by tracing a real n=3 export's coordinates against `NetExtractor`'s
+own output, not by inspection**, both now fixed and covered by permanent regression tests in
+`HarmonicaSchematicExportTests.cs`:
+- **Placement pitch is 600, deliberately not 400.** A 2-pin component's own lead half-length is 200,
+  so a pitch of exactly 400 makes a chained component's near pin land exactly on the SDD symbol's
+  own differential "−" pin (200 apart) — an unintended short between the DUT's own two differential
+  terminals. 600 clears the coincidence (`600-200=400≠200`) while staying an on-grid multiple of 100.
+- **The gate bias tap is placed `Direction.Up`, not `Down`.** `SymbolPortDefs.GenerateSddPorts`
+  always puts a port's "−" pin 200 below its "+" pin, so a straight wire from `gate` to anything
+  placed `Down` from it passes collinearly THROUGH `gateNeg` — `NetExtractor`'s own §5.1 rule unions
+  any wire endpoint or interior point coincident with a connection point, whether or not that was
+  the writer's intent, forming an unintended T-junction that shorts gate+ to the grounded gate−
+  node. This is exactly the "passing through a pin it was never meant to touch" trap
+  `Ctx.AvoidPoints` exists to catch for OTHER wires, but the DUT's own gate/drain chain is drawn
+  before `AvoidPoints` is populated for it. `Direction.Up` moves away from `gateNeg` instead,
+  mirroring the drain side's own already-safe convention (its main chain also runs `Up`, away from
+  `drainNeg`) rather than reproducing gate's hazard. **A first fix attempt (flip `PlaceLoadTermination`
+  to `Direction.Down` instead) was tried, found to regress the `LumpedPackage` test — it walked
+  the load termination BACK through `RD`/`LD`'s own already-occupied territory on the same X column
+  when the package carried nonzero Rd/Ld — and was reverted** in favor of the general fix below.
+- **A THIRD, more general fix, found while investigating the above**: `Ctx.AvoidPoints` only ever
+  tracked discrete PIN positions, with no notion of the INTERIOR of an already-drawn wire segment.
+  A candidate pin position could clear every registered `AvoidPoint` and still land squarely on the
+  middle of an existing wire — exactly what happened to `PLOAD`'s own near pin in the n=3 case, a
+  point coinciding with no pin at all. New `CoincidesWithWireInterior`/`IsObstructed` close this,
+  using the SAME `SchematicGeometry.PointOnSegmentInterior` primitive and the SAME
+  `SchematicEditModel.ConnectTolerance` `NetExtractor`'s own T-junction detection already uses, so
+  "would this coincide" in the exporter means exactly what it means in the real extraction pipeline —
+  wired into all three placement retry loops (`PlaceTwoPinComponent`, `PlaceTerminationTail`,
+  `TieToGround`).
+
+**Both file types stay reachable from one menu item.** `HarmonicaView.axaml.cs :: ExportTestbenchAsync`
+now offers `.csch` (default, `circuitRF schematic`) and `.cnl` (`Netlist`) as `FileTypeChoices` in the
+SAME save picker — the same "the extension chooses the format" idiom `ExportDataAsync` already uses
+for `.npy`/`.mat`/`.txt` — rather than a second menu item. Choosing `.cnl` still calls the unchanged
+`HarmonicaInterchange.ExportTestbench` (R-h7-13's own gate; `HarmonicaTestbenchCliTests` still runs it
+through the real `dotnet run --project src/Cli -- hb` process); any other extension calls
+`HarmonicaSchematicExport.Export` + `SchematicPersistence.SaveToFile`. The owner's "instead of" is
+read as "the menu item the user reaches produces a `.csch` by default" — the honest reading per the
+brief's own instruction — not as a removal of the `.cnl` path.
+
+**Verification, the strongest available without a GUI**: `HarmonicaSchematicExportTests.cs` (9 tests)
+round-trips the exported model through the REAL `.csch` writer/reader, extracts it via
+`NetExtractor` — the SAME code path a user's own hand-drawn schematic goes through — elaborates and
+solves via `HbEngine`, the identical dispatch `SchematicRunService` uses for a
+`HarmonicBalanceAnalysis`. Covers: every coordinate on-grid (R7), the bare-SDD and `LumpedPackage`
+(nonzero Rd/Ld/Rg/Lg/Rs/Ls/Cpg/Cpd) cases, n=2 and n=3 SDD port counts, refusal-by-name for an
+External DUT and a Touchstone embedding, and that the exported schematic's own solved result agrees
+with the source `HarmonicaFrame`'s.
+
+## Gate
+
+`tests/Ui.Tests` — full solution run, all green except three confirmed-not-regressions (below).
+`tests/Ui.Tests/Harmonica/` alone: 345/345. `tests/Harmonica.Tests`: 126/126.
+`HarmonicaTestbenchCliTests` (Category=Benchmark — launches the real CLI process) still passes.
+Full-solution `dotnet test`: Firewall 6/6 · Core 1,238/1,238 · Harmonica 126/126 · WBond 237/237 ·
+RfCore 281/281 · Ui **6,342/6,342** · Engine 1,167/1,168 (+1 pre-existing skip) — all green.
+
+**Three failures seen in the full-solution run, each confirmed NOT a regression by re-running in
+isolation, and none touching anything this brief changed** (grepped — every file this brief touched
+is under `src/Harmonica`, `src/Ui/Harmonica`, `src/Ui/Views/Harmonica`, `src/Ui/Views/Dialogs/Harmonica*`,
+or their tests):
+- `PCellGripSnapAndOverlapTests.DraggingLShort_StopsBeforeTheGeometryFolds` — a per-tick vertex-budget
+  geometry check (Layout/PCells, unrelated); passes cleanly alone.
+- `Hero1BTests.Hero1B_ImportElaborateAndSolve_WithinBudgetAndConsistent` — this file's own
+  already-documented wall-clock BUDGET test, marginal on this machine under full-suite CPU
+  contention; passes cleanly alone.
+- `PerfBenchmarkTests.BuildRenderModel_10k_Under50ms` — this file's own already-documented,
+  repeatedly-seen full-suite CPU-contention flake; passes cleanly alone.
+
+**Not interactively verified** (no visual driver here, matching every prior harmonicaRF phase) —
+please confirm on your end:
+- The toolbar row is gone; the bottom of the window shows a single selectable message line, with an
+  inline "Solving…" bar (75 px wide, no jitter) appearing only while a grid frame is sweeping — never
+  for a marker drag or bias edit alone.
+- Grid ▸ Solve Now forces a full-quality re-solve; Display ▸ Cursor Snap to Compression and Display ▸
+  Edit Display both still work from the menu with nothing lost from the old toolbar.
+- Resizing the harmonicaRF window visibly grows/shrinks the readout strip's font between roughly 8
+  and 16 pt, tracking the panel's shorter side.
+- The readout strip shows four columns — Source, Load, MXP, MXE — with the owner's row labels; a
+  band with no marker on it contributes no row; MXP/MXE read "no optimum" when appropriate.
+- Double-clicking a Z or Γ readout edits it in place (Return/LostFocus commits, Escape reverts);
+  right-clicking one switches real/imaginary ⇄ magnitude/angle, and the choice survives closing and
+  reopening the same `.charm`.
+- Set DUT offers 2-port/3-port for SDD with the port convention stated in the dialog; File ▸ Refresh
+  DUT visibly picks up a change to an external model file on disk without needing Set DUT again.
+- File ▸ Export Testbench… offers both `.csch` and `.cnl` in the save picker; the `.csch` opens
+  cleanly in circuitRF with the DUT, embedding, bias, terminations and an HB analysis all present,
+  and running it reproduces harmonicaRF's own numbers at the exported operating point.
+
+---
+
 A wBond dropped from the palette rendered "Not Found", and the fix was to stop referencing a file at
 all (2026-08-12) — FIXED. **A placed wBond now carries its whole design as a hidden `Design`
 parameter; there is no `File` parameter, and nothing is resolved at render time.** Design note:

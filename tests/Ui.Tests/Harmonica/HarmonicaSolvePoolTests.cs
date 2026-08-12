@@ -98,6 +98,62 @@ public sealed class HarmonicaSolvePoolTests(ITestOutputHelper output)
         output.WriteLine($"6 pooled frames → DcivComputeCount = {vm.DcivComputeCount}");
     }
 
+    // ── §3 (R1C) — the grid-solve progress signal ────────────────────────────
+
+    [Fact]
+    public async Task AGridFrame_SetsIsSolvingGridImmediately_AndTicksProgressToCompletion()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.Pool.Completed += (f, _) => vm.PublishFrame(f);
+
+        var ticks = new System.Collections.Generic.List<(int Done, int Total)>();
+        vm.GridSolveProgress += (done, total) => ticks.Add((done, total));
+
+        long seq = vm.RequestFrame(new HarmonicaSolver.Options
+        {
+            Rings = 2, Spokes = 6, MaxGamma = 0.6, RasterResolution = 96,
+        });
+
+        // §1's own replacement for the toolbar's Solve button sets this SYNCHRONOUSLY, on the calling
+        // thread, before the pooled work has even started — the bar must appear at the moment the
+        // request is made, not only once the grid starts producing points.
+        Assert.True(vm.IsSolvingGrid);
+
+        await vm.Pool.DrainAsync();
+
+        Assert.Equal(seq, vm.Pool.LastCompletedSequence);
+        Assert.NotEmpty(ticks);
+        // The FINAL tick always reaches the total — the bar can never land short.
+        Assert.Equal(ticks[^1].Total, ticks[^1].Done);
+        Assert.All(ticks, t => Assert.Equal(ticks[0].Total, t.Total));
+
+        // Publishing resets the flag — the bar disappears once the frame lands.
+        Assert.False(vm.IsSolvingGrid);
+    }
+
+    [Fact]
+    public async Task ASkipContoursFrame_NeverSetsIsSolvingGrid_AndReportsNoProgress()
+    {
+        // §3's own rule: "a frame with SkipContours solves no grid — it must not show a bar that
+        // never moves."
+        var vm = new HarmonicaViewModel();
+        vm.Pool.Completed += (f, _) => vm.PublishFrame(f);
+
+        int ticks = 0;
+        vm.GridSolveProgress += (_, _) => ticks++;
+
+        vm.RequestFrame(new HarmonicaSolver.Options
+        {
+            Rings = 1, Spokes = 4, MaxGamma = 0.4, SkipContours = true,
+        });
+        Assert.False(vm.IsSolvingGrid);
+
+        await vm.Pool.DrainAsync();
+
+        Assert.Equal(0, ticks);
+        Assert.False(vm.IsSolvingGrid);
+    }
+
     [Fact]
     public async Task ABadModel_LandsInSolveError_RatherThanKillingTheDocument()
     {

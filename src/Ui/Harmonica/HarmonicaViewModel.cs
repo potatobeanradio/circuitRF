@@ -124,6 +124,19 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>R-h45-12 — the stored appearance. Default until the user recolours.</summary>
     [ObservableProperty] private CharmAppearance _appearance = CharmAppearance.Default;
 
+    /// <summary>
+    /// R-h9c-7 (R1C §5) — snapshots <see cref="Appearance"/>'s persisted per-row formats into a
+    /// plain delegate, the shape a worker-thread solve needs (the same reason <see cref="RequestFrame"/>
+    /// snapshots <c>Model</c>/<c>Terminations</c>/<c>Markers</c> before submitting — this class's own
+    /// state must not be read from a pool worker thread).
+    /// </summary>
+    private Func<string, ReadoutFormat> ReadoutFormatLookup()
+    {
+        var formats = Appearance.ReadoutFormats;
+        return key => formats.TryGetValue(key, out var v) && Enum.TryParse<ReadoutFormat>(v, out var f)
+            ? f : ReadoutFormat.RealImaginary;
+    }
+
     /// <summary>The most recently solved frame. The panels render this and nothing else.</summary>
     [ObservableProperty] private HarmonicaFrame _frame = HarmonicaFrame.Empty;
 
@@ -132,6 +145,22 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     [ObservableProperty] private string? _solveError;
 
     [ObservableProperty] private bool _isSolving;
+
+    /// <summary>
+    /// §3 (R1C) — true while the IN-FLIGHT request includes a grid build (i.e. <c>!SkipContours</c>).
+    /// A tier-A-only frame never sets this, so the message line's "Solving…" bar cannot appear for a
+    /// frame that has nothing for it to track. Reset on publish, exactly like <see cref="IsSolving"/>.
+    /// </summary>
+    [ObservableProperty] private bool _isSolvingGrid;
+
+    partial void OnIsSolvingGridChanged(bool value) => RedrawRequested?.Invoke();
+
+    /// <summary>
+    /// §3 (R1C) — fires on a WORKER thread, once per Γ point, while a grid build is under way.
+    /// <b>This class raises nothing on the UI thread itself</b> (§6.7) — the view marshals, exactly as
+    /// it already does for <see cref="Pool"/>'s own <c>Completed</c>/<c>Failed</c> events.
+    /// </summary>
+    public event Action<int, int>? GridSolveProgress;
 
     /// <summary>§7.3's plane toggle — ONE toggle, moving the DCIV family and the loadline together.</summary>
     [ObservableProperty] private bool _intrinsicPlane = true;
@@ -391,6 +420,51 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     }
 
     /// <summary>
+    /// R-h9c-12 (R1C §6) — File ▸ Refresh DUT. Re-elaborates the SAME DUT unconditionally — the
+    /// removed toolbar left elaboration to happen only on Set or here, never on a value change, a
+    /// marker drag or a frame; this is the explicit "something on disk changed" escape hatch §6.1's
+    /// own rule does not otherwise offer. <b>Always re-reads</b>: a cell or an external model can
+    /// change between Set and Refresh with none of <c>DutSpec</c>'s own fields moving, which is
+    /// exactly the case <see cref="CircuitModel.StructuralKey"/> is built to be blind to.
+    /// </summary>
+    public void RefreshDut()
+    {
+        EnsureContext().ForceRebuild();
+
+        ResetSchedule();
+        ScheduleResetCount++;
+
+        DirtyChanged?.Invoke();
+        OnPropertyChanged(nameof(Inputs));
+        RequestForcedFrame();
+    }
+
+    /// <summary>
+    /// R-h9c-12's own pooled path — a sibling of <see cref="RequestFrame"/> that forces every worker
+    /// to re-elaborate rather than trust <see cref="CircuitModel.StructuralKey"/>. Kept separate
+    /// rather than a flag on <see cref="RequestFrame"/> because an ordinary frame must NEVER take
+    /// this branch by accident (§6.1's absolute rule) — the two call sites are the only two places
+    /// this method's name may appear.
+    /// </summary>
+    private long RequestForcedFrame()
+    {
+        var opt   = new HarmonicaSolver.Options { IntrinsicPlane = IntrinsicPlane };
+        var model = Model;
+        var terms = Terminations.Clone();
+        var marks = Markers.ToArray();
+
+        IsSolving     = true;
+        IsSolvingGrid = !opt.SkipContours;
+        var onProgress    = GridProgressReporter(opt);
+        var readoutFormat = ReadoutFormatLookup();
+        return _pool.Submit((worker, ct) =>
+        {
+            var ctx = worker.ForceRebuildContext(model);
+            return _solver.Solve(ctx, terms, marks, opt, worker.Grid, ct, onProgress, readoutFormat);
+        });
+    }
+
+    /// <summary>
     /// R-h9b-12 — the DCIV Sweeps dialog's write-back. <b>Invalid input keeps the old trace</b>: a
     /// rejected candidate does not touch <see cref="Model"/> at all, so whatever family the panel is
     /// currently showing stays exactly as it was.
@@ -486,7 +560,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         {
             var ctx = EnsureContext();
             var opt = (options ?? new HarmonicaSolver.Options()) with { IntrinsicPlane = IntrinsicPlane };
-            var frame = _solver.Solve(ctx, Terminations, [.. Markers], opt);
+            var frame = _solver.Solve(ctx, Terminations, [.. Markers], opt, readoutFormat: ReadoutFormatLookup());
             Frame      = frame with { PowerSweep = frame.PowerSweep with { XUnit = PowerSweepXUnit } };
             SolveError = null;
         }
@@ -524,13 +598,24 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var terms = Terminations.Clone();
         var marks = Markers.ToArray();
 
-        IsSolving = true;
+        IsSolving     = true;
+        IsSolvingGrid = !opt.SkipContours;
+        var onProgress    = GridProgressReporter(opt);
+        var readoutFormat = ReadoutFormatLookup();
         return _pool.Submit((worker, ct) =>
         {
             var ctx = worker.EnsureContext(model);
-            return _solver.Solve(ctx, terms, marks, opt, worker.Grid, ct);
+            return _solver.Solve(ctx, terms, marks, opt, worker.Grid, ct, onProgress, readoutFormat);
         });
     }
+
+    /// <summary>
+    /// §3's own guard: a frame with <c>SkipContours</c> sweeps no grid and must not report progress
+    /// against one — the caller (<see cref="RequestFrame"/>, <see cref="RequestInverseFrame"/>) would
+    /// otherwise have to remember the same check twice.
+    /// </summary>
+    private Action<int, int>? GridProgressReporter(HarmonicaSolver.Options opt)
+        => opt.SkipContours ? null : (done, total) => GridSolveProgress?.Invoke(done, total);
 
     /// <summary>
     /// Publishes a frame the pool completed. The caller marshals to the UI thread; this method
@@ -544,9 +629,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     {
         if (frame.Inverse is { } outcome) ApplyInverseOutcome(outcome);
 
-        Frame      = frame with { PowerSweep = frame.PowerSweep with { XUnit = PowerSweepXUnit } };
-        SolveError = null;
-        IsSolving  = false;
+        Frame         = frame with { PowerSweep = frame.PowerSweep with { XUnit = PowerSweepXUnit } };
+        SolveError    = null;
+        IsSolving     = false;
+        IsSolvingGrid = false;
 
         // The render cost is the PREVIOUS frame's, by one frame — the draw this frame provokes has
         // not happened yet. Said plainly rather than hidden: over a drag it is the right number, and
@@ -580,8 +666,9 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>Reports a pool failure without killing the document — same contract as <see cref="SolveFrame"/>.</summary>
     public void PublishFailure(Exception ex)
     {
-        SolveError = ex.Message;
-        IsSolving  = false;
+        SolveError    = ex.Message;
+        IsSolving     = false;
+        IsSolvingGrid = false;
     }
 
     // ── R-h45-10 — the scheduled path ────────────────────────────────────────
@@ -734,6 +821,17 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     public int LastGridPointsReused => _solver.LastGridPointsReused;
 
     /// <summary>
+    /// §1 (R1C) — Grid ▸ Solve Now. The removed toolbar's "Solve" button forced a full-quality
+    /// re-solve at the full user grid and raster, bypassing the ladder (§6.8's rungs are what the
+    /// scheduler picks on its own; this is the explicit override). Same mechanism, new home.
+    /// </summary>
+    public void SolveFullGrid() => RequestFrame(new HarmonicaSolver.Options
+    {
+        Rings = 5, Spokes = 12,
+        RasterResolution = HarmonicaSolver.Options.FullRasterResolution,
+    });
+
+    /// <summary>
     /// R-h7-11 — installs an arbitrary Γ scatter (an imported <c>.gam</c>, or a dragged ring set).
     /// The frame ladder is reset: a different point count is a different cost, and §6.8's rule is
     /// that the previous grid's measurement says nothing about this one's.
@@ -774,6 +872,19 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>Where the user has put the power-sweep cursor, dBm available. Ignored while
     /// <see cref="SnapCursorToCompression"/> is set.</summary>
     [ObservableProperty] private double _cursorPinDbm;
+
+    /// <summary>
+    /// §1 (R1C) — Display ▸ Cursor Snap to Compression. R-h6-11's own toggle, relocated from the
+    /// removed toolbar to a menu item since it had "nowhere else" per §1's own affordance check.
+    /// Turning snap OFF freezes the cursor where it currently reads, so the operating point does not
+    /// silently jump the instant the toggle changes.
+    /// </summary>
+    public void ToggleCursorSnap()
+    {
+        if (SnapCursorToCompression) CursorPinDbm = OperatingPointDbm;
+        SnapCursorToCompression = !SnapCursorToCompression;
+        RequestScheduledFrame(dragging: false);
+    }
 
     /// <summary>
     /// R-h6-11's <i>re-converge at compression</i>. <b>DEFAULT OFF</b>, per §6.6: it is ~10× the cost
@@ -917,8 +1028,11 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         bool wantReach = ShowReachableRegion;
         bool reconverge = ReconvergeAtCompression;
         var  solverOwn = solver;
+        var  onProgress    = GridProgressReporter(baseOptions);
+        var  readoutFormat = ReadoutFormatLookup();
 
-        IsSolving = true;
+        IsSolving     = true;
+        IsSolvingGrid = !baseOptions.SkipContours;
         return _pool.Submit((worker, ct) =>
         {
             var ctx = worker.EnsureContext(model);
@@ -958,7 +1072,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                     marks[i].Gamma = step.Gammas[i];
 
             var frame = _solver.Solve(ctx, terms, marks, baseOptions with { Reachable = reach },
-                                      worker.Grid, ct);
+                                      worker.Grid, ct, onProgress, readoutFormat);
 
             return frame with
             {

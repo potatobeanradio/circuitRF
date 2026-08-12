@@ -341,6 +341,50 @@ public sealed class ContourGridTests(ITestOutputHelper output)
         output.WriteLine("three metrics and a values-only invalidation: 1 factorization");
     }
 
+    // ── §3 (R1C) — the grid-build progress callback ────────────────────────────
+
+    [Fact]
+    public void Build_ReportsOneTickPerPoint_AndTheFinalTickReachesTheTotal()
+    {
+        var model = Model();
+        var ctx   = HarmonicaContext.Create(model, Settings);
+        var terms = Terms(model);
+        var scatter = ContourGrid.RingGrid(rings: 2, spokes: 6);   // 13 points
+
+        var ticks = new List<(int Done, int Total)>();
+        var grid = new ContourGrid();
+        grid.Build(ctx, terms, scatter, onProgress: (done, total) => ticks.Add((done, total)));
+
+        Assert.Equal(scatter.Length, ticks.Count);
+        for (int i = 0; i < ticks.Count; i++)
+        {
+            Assert.Equal(i + 1, ticks[i].Done);
+            Assert.Equal(scatter.Length, ticks[i].Total);
+        }
+
+        // The bar can never land short: the LAST point always ticks, unthrottled.
+        Assert.Equal((scatter.Length, scatter.Length), ticks[^1]);
+    }
+
+    [Fact]
+    public void Build_TicksAReusedPointToo_SoTheFractionReflectsTotalCompletionNotJustFreshSolves()
+    {
+        var model = Model();
+        var ctx   = HarmonicaContext.Create(model, Settings);
+        var terms = Terms(model);
+        var scatter = ContourGrid.RingGrid(rings: 2, spokes: 6).ToArray();
+
+        var grid = new ContourGrid();
+        grid.Build(ctx, terms, scatter, reuseUnchanged: true);   // seeds _reusableAgainst
+        grid.Build(ctx, terms, scatter, reuseUnchanged: true);   // every point now reusable
+
+        int ticks = 0;
+        grid.Build(ctx, terms, scatter, reuseUnchanged: true, onProgress: (_, _) => ticks++);
+
+        Assert.Equal(scatter.Length, grid.ReusedPointCount);
+        Assert.Equal(scatter.Length, ticks);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static int NearestIndex(double[] axis, double v)

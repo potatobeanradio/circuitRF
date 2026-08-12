@@ -28,7 +28,13 @@
     rule between so the two halves read as input and output rather than as one undifferentiated list.
   -->
 
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+  <!--
+    §5 (R1C) — "the owner is asking for COLUMNS". General stays a dense wrapping run (the original
+    §7.5 shape); Source · Load · MXP · MXE (R-h9c-6) are four vertical columns beside it, left to
+    right in that order — the editable termination columns nearest the charts they belong to, the
+    read-only performance summaries beside them.
+  -->
+  <ScrollViewer HorizontalScrollBarVisibility="Auto"
                 VerticalScrollBarVisibility="Auto"
                 Padding="6,4">
     <StackPanel Orientation="Vertical" Spacing="3">
@@ -36,6 +42,13 @@
       <Border    x:Name="InputRule" Height="1" Opacity="0.25" IsVisible="False"/>
       <TextBlock x:Name="InputError" FontSize="10" IsVisible="False" TextWrapping="Wrap"/>
       <WrapPanel x:Name="Items"  Orientation="Horizontal"/>
+      <Border    x:Name="ColumnRule" Height="1" Opacity="0.25" IsVisible="False"/>
+      <StackPanel x:Name="Columns" Orientation="Horizontal" Spacing="16">
+        <StackPanel x:Name="SourceColumn" Orientation="Vertical" Spacing="1"/>
+        <StackPanel x:Name="LoadColumn"   Orientation="Vertical" Spacing="1"/>
+        <StackPanel x:Name="MxpColumn"    Orientation="Vertical" Spacing="1"/>
+        <StackPanel x:Name="MxeColumn"    Orientation="Vertical" Spacing="1"/>
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

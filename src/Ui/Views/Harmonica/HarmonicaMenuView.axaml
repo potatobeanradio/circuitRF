@@ -37,6 +37,7 @@
             <NativeMenuItem Header="Save As…"     Command="{Binding SaveDocumentAsCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Set DUT…"     Command="{Binding SetDutCommand}"/>
+            <NativeMenuItem Header="Refresh DUT"  Command="{Binding RefreshDutCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Import .gam…" Command="{Binding ImportGamCommand}"/>
             <NativeMenuItem Header="Export .gam…" Command="{Binding ExportGamCommand}"/>
@@ -128,6 +129,7 @@
             </NativeMenuItem>
             <NativeMenuItem Header="Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"/>
             <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"/>
+            <NativeMenuItem Header="Cursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -135,6 +137,8 @@
       <NativeMenuItem Header="Grid">
         <NativeMenuItem.Menu>
           <NativeMenu>
+            <NativeMenuItem Header="Solve Now"    Command="{Binding SolveNowCommand}"/>
+            <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Grid Preset">
               <NativeMenuItem.Menu>
                 <NativeMenu>
@@ -178,6 +182,8 @@
       <Separator/>
       <MenuItem Header="Set _DUT…"      Command="{Binding SetDutCommand}"
                 ToolTip.Tip="Choose the device under test — an SDD, a built-in FET law, or an external model."/>
+      <MenuItem Header="_Refresh DUT"   Command="{Binding RefreshDutCommand}"
+                ToolTip.Tip="Re-elaborate the same DUT — for a kit or a .osdi that changed on disk since Set DUT. Elaboration happens only on Set and here, never on a value change or a frame."/>
       <Separator/>
       <MenuItem Header="_Import .gam…"  Command="{Binding ImportGamCommand}"
                 ToolTip.Tip="Read a Γ grid from a .gam file. An imported grid is an arbitrary scatter, not a ring set."/>
@@ -264,9 +270,16 @@
                 ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them, and labelling is the most expensive part of the extract."/>
       <MenuItem Header="_Grid Points" Command="{Binding ToggleShowGridPointsCommand}"
                 ToolTip.Tip="The Γ grid sample dots. Off by default; draggable once shown."/>
+      <MenuItem Header="C_ursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"
+                ToolTip.Tip="Operating point for the glyphs and the inverse solve. Snap to compression follows the P-x dB point; otherwise the cursor stays where you put it."/>
     </MenuItem>
 
     <MenuItem Header="_Grid" Padding="8,4">
+      <MenuItem Header="_Solve Now" Command="{Binding SolveNowCommand}"
+                ToolTip.Tip="Re-solve at the full grid. harmonicaRF solves continuously; this forces a full-quality refresh.">
+        <MenuItem.Icon><mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/></MenuItem.Icon>
+      </MenuItem>
+      <Separator/>
       <MenuItem Header="Grid _Preset">
         <MenuItem Header="3 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="3×12"/>
         <MenuItem Header="5 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="5×12"/>

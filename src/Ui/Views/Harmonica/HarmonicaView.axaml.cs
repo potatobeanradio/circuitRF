@@ -4,13 +4,14 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
-using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Harmonica;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Harmonica.Renderers;
+using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Views.Harmonica;
@@ -27,7 +28,10 @@ public partial class HarmonicaView : UserControl
         AttachedToVisualTree += (_, _) => Refresh();
         // §7.1's layout is in FRACTIONS, so the readout strip has to be re-placed whenever the
         // panel area resizes — one layout source (CharmLayout), two consumers (canvas + strip).
-        PanelHost.SizeChanged += (_, _) => PlaceReadoutStrip();
+        // §4 (R1C) — a resize also moves the strip's PIXEL size, and with it its font (ReadoutFontSize
+        // reads the same placement); Refresh() re-places AND re-fonts in one call, through the
+        // in-place update path so a resize mid-typing does not eat the caret.
+        PanelHost.SizeChanged += (_, _) => Refresh();
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -38,6 +42,7 @@ public partial class HarmonicaView : UserControl
             _doc.ViewModel.Harmonica.RedrawRequested -= OnRedraw;
             _doc.ViewModel.Harmonica.Pool.Completed -= OnFrameCompleted;
             _doc.ViewModel.Harmonica.Pool.Failed    -= OnFrameFailed;
+            _doc.ViewModel.Harmonica.GridSolveProgress -= OnGridSolveProgress;
             _doc.ViewModel.Harmonica.EditDisplay.UnlockedChanged -= OnRedraw;
             _doc.ViewModel.NativeMenuDockedFocusChanged = null;
             (Menus.DataContext as HarmonicaMenuViewModel)?.Detach();
@@ -69,6 +74,8 @@ public partial class HarmonicaView : UserControl
         // happen on the UI thread, so it is marshalled here rather than inside the view model.
         _doc.ViewModel.Harmonica.Pool.Completed += OnFrameCompleted;
         _doc.ViewModel.Harmonica.Pool.Failed    += OnFrameFailed;
+        // §3 (R1C) — fires on a worker thread; marshalled here exactly like Pool.Completed/Failed.
+        _doc.ViewModel.Harmonica.GridSolveProgress += OnGridSolveProgress;
 
         Canvas.ViewModel = _doc.ViewModel.Harmonica;
 
@@ -124,6 +131,19 @@ public partial class HarmonicaView : UserControl
         Refresh();
     }, DispatcherPriority.Background);
 
+    /// <summary>
+    /// §3 (R1C) — one Γ point ticked. <b>No throttle</b>: a grid is at most a few hundred points and
+    /// each tick is a cheap dispatcher post, so the ~25/s rule other progress bars in this codebase
+    /// need is already satisfied by the grid's own size — and the final point always ticks, so the
+    /// bar can never land short of full.
+    /// </summary>
+    private void OnGridSolveProgress(int done, int total) => Dispatcher.UIThread.Post(() =>
+    {
+        if (_doc is null || total <= 0) return;
+        SolveProgressBar.Value      = (double)done / total;
+        SolveProgressCounter.Text   = $"{done} / {total}";
+    }, DispatcherPriority.Background);
+
     /// <summary>The variant follows <c>ActualThemeVariant</c>, exactly as the schematic canvas already
     /// does (§7.9.3's closing sentence).</summary>
     private void ApplyVariant()
@@ -153,39 +173,120 @@ public partial class HarmonicaView : UserControl
 
         var h = _doc.ViewModel.Harmonica;
 
-        PlaneLabel.Text = h.IntrinsicPlane ? "intrinsic" : "extrinsic";
-        XUnitLabel.Text = h.PowerSweepXUnit.Label();
-
-        // R-h6-5 — FrameScheduler.StatusMessage reaches the strip, ALWAYS. D4's whole point is that a
-        // model which cannot hold the target is TOLD about, never silently stuttered at, and until
-        // this line existed the message was computed and displayed nowhere.
-        StatusText.Text = h.StatusMessage is { Length: > 0 } msg
+        // §2 (R1C) — the bottom message line. R-h6-5's rule survives unchanged: the scheduler's own
+        // message is never suppressed. When there is nothing to say, the idle line is the same
+        // solve-cost summary the removed toolbar's StatusText showed — it updates once per published
+        // frame, not continuously, so it is a populated line rather than a changing one.
+        var messagesBrush = ToBrush(h.RenderTheme.Messages);
+        MessageText.Foreground = messagesBrush;
+        MessageText.Text = h.StatusMessage is { Length: > 0 } msg
             ? msg
             : $"{h.LastSolveCount} HB solves · {h.Frame.SmithPower.GridPoints.Count} Γ points · " +
               $"{h.Frame.SmithPower.GridPoints.Count(p => p.IsHole)} holes · {h.Frame.Quality}";
 
-        CursorModeLabel.Text = h.SnapCursorToCompression
-            ? $"cursor: compression ({h.OperatingPointDbm:0.#} dBm)"
-            : $"cursor: {h.CursorPinDbm:0.#} dBm";
+        // §3 (R1C) — "Solving…" plus an inline bar, shown only for a frame that actually sweeps a
+        // grid (h.IsSolvingGrid). Reset to empty when idle so a later grid frame starts the bar at 0
+        // rather than showing the previous frame's leftover value for one tick.
+        bool solvingGrid = h.IsSolvingGrid;
+        var progressBrush = ToBrush(h.RenderTheme.ProgressBar);
+        SolvingText.IsVisible          = solvingGrid;
+        SolvingText.Foreground         = messagesBrush;
+        SolveProgressBar.IsVisible     = solvingGrid;
+        SolveProgressBar.Foreground    = progressBrush;
+        SolveProgressCounter.IsVisible = solvingGrid;
+        SolveProgressCounter.Foreground = messagesBrush;
+        if (!solvingGrid)
+        {
+            SolveProgressBar.Value    = 0;
+            SolveProgressCounter.Text = "";
+        }
 
-        EditDisplayToggle.IsChecked = h.EditDisplay.Unlocked;
-        EditDisplayLabel.Text = h.EditDisplay.Unlocked ? "editing layout" : "edit display";
-
-        var brush = ReadoutStripView.BrushFor(h.RenderTheme);
-        Readouts.SetInputs(h.Inputs, brush, (key, text) => h.ApplyInput(key, text));
-        Readouts.SetInputError(h.InputError, brush);
-        Readouts.SetItems(h.Frame.Readouts, brush);
+        var brush    = ReadoutStripView.BrushFor(h.RenderTheme);
+        double fontSize = ReadoutFontSize();
+        Readouts.SetInputs(h.Inputs, brush, (key, text) => h.ApplyInput(key, text), fontSize);
+        Readouts.SetInputError(h.InputError, brush, fontSize);
+        Readouts.SetItems(h.Frame.Readouts, brush, fontSize,
+                          ReadoutFormatFor, OnReadoutFormatChanged, OnReadoutCommitEdit, OnReadoutOpenSetDialog);
         PlaceReadoutStrip();
         Canvas.InvalidateVisual();
     }
 
-    private void OnToggleEditDisplay(object? sender, RoutedEventArgs e)
+    // ── §5 (R1C) — the readout strip's per-row format, inline editor and Set… dialog ────────────
+
+    /// <summary>R-h9c-7's persisted per-row format, absent ⇒ real/imaginary.</summary>
+    private ReadoutFormat ReadoutFormatFor(string key)
+        => Vm is { } h && h.Appearance.ReadoutFormats.TryGetValue(key, out var v)
+                        && Enum.TryParse<ReadoutFormat>(v, out var f)
+            ? f : ReadoutFormat.RealImaginary;
+
+    /// <summary>Display-only — writes ONLY <c>CharmAppearance.ReadoutFormats</c>, never the model
+    /// (R-h9c-7).</summary>
+    private void OnReadoutFormatChanged(string key, ReadoutFormat format)
     {
-        if (_doc is null) return;
-        var ed = _doc.ViewModel.Harmonica.EditDisplay;
-        ed.Unlocked = !ed.Unlocked;
+        if (Vm is not { } h) return;
+        var next = new Dictionary<string, string>(h.Appearance.ReadoutFormats, StringComparer.Ordinal)
+        {
+            [key] = format.ToString(),
+        };
+        h.Appearance = h.Appearance with { ReadoutFormats = next };
         Refresh();
     }
+
+    /// <summary>
+    /// R-h9c-8's inline editor commit. Parses the typed text in the row's OWN current format
+    /// (what-you-see-is-what-you-can-type-back), then writes through the SAME two calls a drag
+    /// uses — <c>SetMarkerImpedance</c>/<c>SetMarkerGamma</c> — never a third path.
+    /// </summary>
+    private bool OnReadoutCommitEdit(HarmonicaReadout row, string text)
+    {
+        if (Vm is not { } h || row.Side is not { } side || row.Band <= 0) return false;
+        var marker = h.Markers.FirstOrDefault(m => m.Side == side && m.Band == row.Band);
+        if (marker is null) return false;
+
+        var format = ReadoutFormatFor(row.FormatKey ?? "");
+        if (!HarmonicaReadoutFormatting.TryParse(text, format, out var value)) return false;
+
+        if (row.IsGamma) h.SetMarkerGamma(marker, value);
+        else             h.SetMarkerImpedance(marker, value);
+
+        h.RequestScheduledFrame(dragging: false);
+        return true;
+    }
+
+    /// <summary>R-h9c-7's "Set…" — the strip's own commit shape (see
+    /// <see cref="Dialogs.HarmonicaSetTerminationDialog"/>) over the SAME write-through as the
+    /// inline editor.</summary>
+    private async System.Threading.Tasks.Task OnReadoutOpenSetDialogAsync(HarmonicaReadout row)
+    {
+        if (Vm is not { } h || row.Side is not { } side || row.Band <= 0
+            || TopLevel.GetTopLevel(this) is not Window owner) return;
+        var marker = h.Markers.FirstOrDefault(m => m.Side == side && m.Band == row.Band);
+        if (marker is null) return;
+
+        double z0 = h.Model.Settings.Z0;
+        var result = await Dialogs.HarmonicaSetTerminationDialog.ShowAsync(owner, marker.Name, marker.Gamma, z0);
+        if (result is not { } edit) return;
+
+        // The SAME two calls a drag uses — whichever the user actually typed in last, never a
+        // converted-and-relabelled third path.
+        if (edit.Gamma is { } g) h.SetMarkerGamma(marker, g);
+        else if (edit.Impedance is { } z) h.SetMarkerImpedance(marker, z);
+        else return;
+
+        h.RequestScheduledFrame(dragging: false);
+        Refresh();
+    }
+
+    /// <summary>R-h9a-13's own rule applies here too — routed through <see cref="RunHook"/> rather
+    /// than a discarded Task, so a dialog-construction exception lands on the message line instead
+    /// of disappearing.</summary>
+    private void OnReadoutOpenSetDialog(HarmonicaReadout row) => RunHook(() => OnReadoutOpenSetDialogAsync(row));
+
+    /// <summary>§2/§3 (R1C) — projects a render-theme <c>SKColor</c> role to an Avalonia brush, the
+    /// same conversion <see cref="ReadoutStripView.BrushFor"/> already does for
+    /// <c>Harmonica.ReadoutText</c>.</summary>
+    private static IBrush ToBrush(SkiaSharp.SKColor c)
+        => new SolidColorBrush(Color.FromArgb(c.Alpha, c.Red, c.Green, c.Blue));
 
     // ── §7.6's document-scoped hooks ─────────────────────────────────────────
 
@@ -216,6 +317,7 @@ public partial class HarmonicaView : UserControl
         // H8 — the four H7 left deliberately null. An unwired hook is honest where a faked
         // implementation is not; this phase is what pays the debt.
         menus.SetDutHook          = () => RunHook(ShowSetDutAsync);
+        menus.RefreshDutHook      = OnRefreshDut;
         menus.ExportDataHook      = () => RunHook(ExportDataAsync);
         menus.CopyPlotHook        = () => RunHook(CopyPlotAsync);
         menus.HelpHook            = ShowHelp;
@@ -239,20 +341,46 @@ public partial class HarmonicaView : UserControl
         }
     }
 
-    /// <summary>§4.3's <i>Set DUT…</i>. The dialog produces a <c>DutSpec</c>; applying it is
-    /// <c>ApplyDut</c>'s job, which is H7's own structural write-back rather than a second one.</summary>
+    /// <summary>
+    /// §4.3's <i>Set DUT…</i>. The dialog produces a <c>DutSpec</c>; applying it is
+    /// <c>ApplyDut</c>'s job, which is H7's own structural write-back rather than a second one.
+    ///
+    /// <para><b>R-h9c-10 — "does nothing" traced to here.</b> This guard used to <c>return</c> on a
+    /// failed <c>Vm</c>/<c>TopLevel</c> resolution with no message at all — a SILENT no-op that 1A's
+    /// own RunHook fix (R-h9a-13) cannot help with, because there is no exception for it to catch: a
+    /// guarded early return throws nothing. Every OTHER dialog-opening hook in this file shares the
+    /// identical guard shape and is equally silent on the same failure; this one is fixed because it
+    /// is the one under report, and R-h9c-13's own rule ("every failure is reported by name") is what
+    /// closes it rather than papering over the specific case.</para>
+    /// </summary>
     private async System.Threading.Tasks.Task ShowSetDutAsync()
     {
-        if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
+        if (Vm is not { } h) return;   // no document attached — nothing to report against yet
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            h.SolveError = "Set DUT… could not find a window to open the dialog in.";
+            Refresh();
+            return;
+        }
 
         // The folder-based resolver is installed HERE rather than at startup, because installing it
         // is what makes a kit reachable and this is the first moment anything asks. It starts nothing.
         HarmonicaDutCatalog.RegisterKitResolver();
 
         var chosen = await Dialogs.HarmonicaSetDutDialog.ShowAsync(owner, h.Model.Dut);
-        if (chosen is null) return;
+        if (chosen is null) return;   // the dialog's own Cancel — not a failure
 
         h.ApplyDut(chosen);
+        Refresh();
+    }
+
+    /// <summary>§4.3's <i>Refresh DUT</i> (R-h9c-12) — re-elaborates the SAME DUT unconditionally.
+    /// A real menu affordance was required because the toolbar is gone (§1); it lives beside Set
+    /// DUT… on both menu surfaces.</summary>
+    private void OnRefreshDut()
+    {
+        if (Vm is not { } h) return;
+        h.RefreshDut();
         Refresh();
     }
 
@@ -419,25 +547,51 @@ public partial class HarmonicaView : UserControl
         catch (Exception ex) { h.SolveError = ex.Message; Refresh(); }
     }
 
+    /// <summary>
+    /// §7 (R-h9c-15). The default is now a runnable <c>.csch</c> — placed components, wires on the
+    /// connection grid, the same bias/terminations, and an HB analysis matching harmonicaRF's own —
+    /// built by <see cref="HarmonicaSchematicExport.Export"/>. The <c>.cnl</c> path stays reachable
+    /// (R-h7-13's own gate; <c>HarmonicaTestbenchCliTests</c> runs it through the real CLI process)
+    /// for the two DUT shapes <c>.csch</c> cannot yet express — an External DUT or a Touchstone-
+    /// embedded package — which is exactly why the format follows the EXTENSION the user picks
+    /// (the same "picker chooses the format" idiom <see cref="ExportDataAsync"/> already uses for
+    /// .npy/.mat/.txt) rather than a second menu item.
+    /// </summary>
     private async System.Threading.Tasks.Task ExportTestbenchAsync()
     {
         if (Vm is not { } h || TopLevel.GetTopLevel(this) is not { } top) return;
 
         var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Export testbench (.cnl)",
-            DefaultExtension = "cnl",
-            SuggestedFileName = "harmonica-testbench.cnl",
+            Title             = "Export testbench",
+            DefaultExtension  = "csch",
+            SuggestedFileName = "harmonica-testbench.csch",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("circuitRF schematic (.csch)") { Patterns = ["*.csch"] },
+                new FilePickerFileType("Netlist (.cnl)")              { Patterns = ["*.cnl"] },
+            ],
         });
         if (file is null) return;
 
+        string path = file.Path.LocalPath;
         try
         {
-            string text = HarmonicaInterchange.ExportTestbench(
-                h.Model, h.Terminations, h.OperatingPointDbm);
-            await System.IO.File.WriteAllTextAsync(file.Path.LocalPath, text);
+            if (System.IO.Path.GetExtension(path).Equals(".cnl", StringComparison.OrdinalIgnoreCase))
+            {
+                string text = HarmonicaInterchange.ExportTestbench(
+                    h.Model, h.Terminations, h.OperatingPointDbm);
+                await System.IO.File.WriteAllTextAsync(path, text);
+            }
+            else
+            {
+                var schematic = HarmonicaSchematicExport.Export(h.Model, h.Terminations, h.OperatingPointDbm);
+                SchematicPersistence.SaveToFile(path, schematic);
+            }
+            h.SolveError = null;
         }
-        catch (Exception ex) { h.SolveError = ex.Message; Refresh(); }
+        catch (Exception ex) { h.SolveError = ex.Message; }
+        Refresh();
     }
 
     private async System.Threading.Tasks.Task CopyTerminationsAsync()
@@ -515,12 +669,24 @@ public partial class HarmonicaView : UserControl
     /// Help button in the application opens it.</summary>
     private void ShowHelp() => DocLauncher.Open("index.html");
 
+    /// <summary>
+    /// §5 (R1C) — tab-separated, one row per readout, grouped under a column heading so the shape a
+    /// reader pastes into a spreadsheet still reads as four columns rather than one flattened run.
+    /// </summary>
     private async System.Threading.Tasks.Task CopyReadoutsAsync()
     {
         if (Vm is not { } h || TopLevel.GetTopLevel(this)?.Clipboard is not { } clip) return;
         var sb = new System.Text.StringBuilder();
-        foreach (var (label, value, _) in h.Frame.Readouts)
-            sb.Append(label).Append('\t').AppendLine(value);
+        foreach (var column in new[]
+                 { ReadoutColumn.General, ReadoutColumn.Source, ReadoutColumn.Load,
+                   ReadoutColumn.Mxp, ReadoutColumn.Mxe })
+        {
+            var rows = h.Frame.Readouts.Where(r => r.Column == column).ToList();
+            if (rows.Count == 0) continue;
+
+            sb.AppendLine($"[{column}]");
+            foreach (var r in rows) sb.Append(r.Label).Append('\t').AppendLine(r.Value);
+        }
         await clip.SetTextAsync(sb.ToString());
     }
 
@@ -545,25 +711,21 @@ public partial class HarmonicaView : UserControl
         ReadoutHost.Height = p.H * PanelHost.Bounds.Height;
     }
 
-    private void OnSolveClick(object? sender, RoutedEventArgs e)
+    /// <summary>
+    /// §4 (R1C) — the strip's font tracks its own PLACED pixel size, the same source
+    /// <see cref="PlaceReadoutStrip"/> reads, so it moves exactly when the strip's own box does —
+    /// on a window resize, and on an Edit Display drag/resize of the strip's panel. Mirrors the Smith
+    /// panels' own convention (<c>HarmonicaPanelRenderer.TitleBandHeight</c>): a fraction of the
+    /// panel's SHORTER side, clamped so the strip never goes unreadable (below
+    /// <see cref="ReadoutStripView.MinFontSize"/>) or stops being dense (above
+    /// <see cref="ReadoutStripView.MaxFontSize"/>).
+    /// </summary>
+    private double ReadoutFontSize()
     {
-        if (_doc is null) return;
-        // The toolbar's Solve is the FULL user grid at the full raster — the "on release" quality of
-        // D5, reachable explicitly while M6's scheduler does not exist yet to reach it automatically.
-        // The toolbar's Solve is the FULL user grid at the full raster — D5's "on release" quality,
-        // reachable explicitly while M6's scheduler does not exist yet to reach it automatically.
-        _doc.ViewModel.Harmonica.RequestFrame(new HarmonicaSolver.Options
-        {
-            Rings = 5, Spokes = 12,
-            RasterResolution = HarmonicaSolver.Options.FullRasterResolution,
-        });
-        Refresh();
-    }
+        if (_doc is null || PanelHost.Bounds.Width <= 0) return 10;
 
-    private void OnCycleXUnitClick(object? sender, RoutedEventArgs e)
-    {
-        _doc?.ViewModel.Harmonica.CyclePowerSweepXUnitCommand.Execute(null);
-        Refresh();
+        var p = _doc.ViewModel.Harmonica.Layout.PlacementOf(HarmonicaPanelId.ReadoutStrip);
+        return ReadoutStripView.FontSizeFor(p.W * PanelHost.Bounds.Width, p.H * PanelHost.Bounds.Height);
     }
 
     /// <summary>
@@ -618,19 +780,4 @@ public partial class HarmonicaView : UserControl
         if (sender is ContextMenu menu) menu.ItemsSource = items;
     }
 
-    /// <summary>
-    /// R-h6-11 — <i>snap to compression</i> is what makes "set the load at compression" expressible
-    /// without typing a drive level. Turning it off pins the cursor where the user put it; the
-    /// inverse solve is posed at whichever the toggle selects, because intrinsic impedance is
-    /// drive-dependent and the equation is only well-posed at a stated drive.
-    /// </summary>
-    private void OnToggleCursorSnap(object? sender, RoutedEventArgs e)
-    {
-        if (_doc is null) return;
-        var h = _doc.ViewModel.Harmonica;
-        if (h.SnapCursorToCompression) h.CursorPinDbm = h.OperatingPointDbm;   // keep it where it is
-        h.SnapCursorToCompression = !h.SnapCursorToCompression;
-        h.RequestScheduledFrame(dragging: false);
-        Refresh();
-    }
 }

@@ -69,6 +69,27 @@ public sealed class SolveWorker
         _ctx.Apply(model);
         return _ctx;
     }
+
+    /// <summary>
+    /// R-h9c-12 (R1C §6) — Refresh DUT's own worker-side entry point. Unlike
+    /// <see cref="EnsureContext"/>, this ALWAYS re-elaborates: a fresh context if this worker has
+    /// never solved yet, or <see cref="HarmonicaContext.ForceRebuild"/> on the one it already owns.
+    /// Runs on this worker's own thread inside a submitted job, exactly like every other
+    /// <see cref="EnsureContext"/> call site — no cross-thread mutation of <c>_ctx</c>.
+    /// </summary>
+    public HarmonicaContext ForceRebuildContext(CircuitModel model, AnalysisSettings? settings = null)
+    {
+        if (_ctx is null)
+        {
+            _ctx = HarmonicaContext.Create(model, settings);
+            ContextCreateCount++;
+            return _ctx;
+        }
+
+        _ctx.Apply(model);
+        _ctx.ForceRebuild();
+        return _ctx;
+    }
 }
 
 /// <summary>

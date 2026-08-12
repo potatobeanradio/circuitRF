@@ -41,6 +41,17 @@ public sealed record DutSpec
     public string? Provider { get; init; }
 
     /// <summary>
+    /// R-h9c-11 (R1C §6) — SDD2 vs SDD3, ignored for every other <see cref="Kind"/>. 2 (the default)
+    /// is the existing gate/drain-vs-source pair convention (<c>_v1</c> = Vgs, <c>_v2</c> = Vds); 3
+    /// adds a THIRD port pair, the source terminal against ground (<c>_v3</c> = Vs), so an equation
+    /// can reference the source terminal's own current or voltage directly rather than only through
+    /// the other two ports' shared reference. Both are still exactly the two-port intrinsic-plane
+    /// case (§4.5): the gate and drain ports are unchanged, so <c>IntrinsicPortMap.TwoPort</c> is
+    /// correct for either.
+    /// </summary>
+    public int SddPortCount { get; init; } = 2;
+
+    /// <summary>
     /// The model's own parameters, verbatim. For an SDD these are the equation strings keyed
     /// <c>I[1,0]</c>, <c>I[2,0]</c>, … exactly as a <c>.cnl</c> spells them; for everything else the
     /// names the model declares. Values are written into the netlist as-is.
@@ -331,7 +342,7 @@ public sealed record CircuitModel
     /// so bias is deliberately NOT part of this key.</para>
     /// </summary>
     public string StructuralKey => string.Join("|",
-        Dut.Kind, Dut.TypeName, Dut.Provider ?? "",
+        Dut.Kind, Dut.TypeName, Dut.Provider ?? "", Dut.SddPortCount,
         string.Join(",", Dut.Parameters.OrderBy(p => p.Key, StringComparer.Ordinal)
                                        .Select(p => $"{p.Key}={p.Value}")),
         Dut.Multiplicity,

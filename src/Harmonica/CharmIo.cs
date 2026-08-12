@@ -145,6 +145,10 @@ public static class CharmIo
             TypeName     = m.Dut.TypeName,
             Provider     = m.Dut.Provider,
             Multiplicity = m.Dut.Multiplicity,
+            // R-h9c-11 — additive, absent ⇒ 2 (CharmIo's own "no FormatVersion bump" rule): omitted
+            // entirely at the default so an SDD2 document written before this brief re-serialises
+            // byte-for-byte.
+            SddPortCount = m.Dut.SddPortCount == 3 ? 3 : (int?)null,
             // Embedded whole for an SDD or a built-in — equation text included. For an external
             // model these are the parameters the kit's own model declares, which are settings rather
             // than the artifact, so they travel too.
@@ -219,6 +223,7 @@ public static class CharmIo
                 TypeName     = dut?.TypeName ?? "FET_Angelov",
                 Provider     = dut?.Provider,
                 Multiplicity = dut?.Multiplicity ?? 1.0,
+                SddPortCount = dut?.SddPortCount == 3 ? 3 : 2,
                 Parameters   = dut?.Parameters is null
                     ? new Dictionary<string, string>(StringComparer.Ordinal)
                     : new Dictionary<string, string>(dut.Parameters, StringComparer.Ordinal),
@@ -316,6 +321,7 @@ public static class CharmIo
         public string? TypeName { get; set; }
         public string? Provider { get; set; }
         public double? Multiplicity { get; set; }
+        public int?    SddPortCount { get; set; }
         public Dictionary<string, string>? Parameters { get; set; }
         public string? ModelFile { get; set; }
         public string? IntrinsicGate { get; set; }
@@ -572,6 +578,7 @@ public static class CharmIo
             IsoAlphaExponent  = a.IsoAlphaExponent,
             ShowIsoLineLabels = a.ShowIsoLineLabels,
             ShowGridPoints    = a.ShowGridPoints,
+            ReadoutFormats    = Sorted(a.ReadoutFormats),
         };
 
         static Dictionary<string, string>? Sorted(IReadOnlyDictionary<string, string> src)
@@ -596,6 +603,9 @@ public static class CharmIo
                 IsoAlphaExponent  = b.IsoAlphaExponent,
                 ShowIsoLineLabels = b.ShowIsoLineLabels,
                 ShowGridPoints    = b.ShowGridPoints,
+                ReadoutFormats    = b.ReadoutFormats is null
+                    ? new Dictionary<string, string>(StringComparer.Ordinal)
+                    : new Dictionary<string, string>(b.ReadoutFormats, StringComparer.Ordinal),
             };
 
     private sealed class CharmAppearanceBlock
@@ -606,5 +616,6 @@ public static class CharmIo
         public double? IsoAlphaExponent  { get; set; }
         public bool?   ShowIsoLineLabels { get; set; }
         public bool?   ShowGridPoints    { get; set; }
+        public Dictionary<string, string>? ReadoutFormats { get; set; }
     }
 }

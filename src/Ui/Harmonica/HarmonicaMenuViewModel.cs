@@ -105,6 +105,7 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     public Action? SaveDocumentHook    { get; set; }
     public Action? SaveDocumentAsHook  { get; set; }
     public Action? SetDutHook          { get; set; }
+    public Action? RefreshDutHook      { get; set; }
     public Action? ImportGamHook       { get; set; }
     public Action? ExportGamHook       { get; set; }
     public Action? ExportDataHook      { get; set; }
@@ -122,6 +123,7 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     [RelayCommand] private void SaveDocument()    => SaveDocumentHook?.Invoke();
     [RelayCommand] private void SaveDocumentAs()  => SaveDocumentAsHook?.Invoke();
     [RelayCommand] private void SetDut()          => SetDutHook?.Invoke();
+    [RelayCommand] private void RefreshDut()      => RefreshDutHook?.Invoke();
     [RelayCommand] private void ImportGam()       => ImportGamHook?.Invoke();
     [RelayCommand] private void ExportGam()       => ExportGamHook?.Invoke();
     [RelayCommand] private void ExportData()      => ExportDataHook?.Invoke();
@@ -248,6 +250,9 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
 
     [RelayCommand] private void ToggleLoadlinePlane() => _vm.IntrinsicPlane = !_vm.IntrinsicPlane;
 
+    /// <summary>§1 (R1C) — the removed toolbar's cursor-snap button. §7.6.</summary>
+    [RelayCommand] private void ToggleCursorSnap() => _vm.ToggleCursorSnap();
+
     [RelayCommand]
     private void SetEfficiencyMetric(string? metric)
     {
@@ -310,4 +315,7 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     }
 
     [RelayCommand] private void ResetGrid() => _vm.ResetGrid();
+
+    /// <summary>§1 (R1C) — the removed toolbar's "Solve" button: a forced full-quality re-solve.</summary>
+    [RelayCommand] private void SolveNow() => _vm.SolveFullGrid();
 }

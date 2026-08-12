@@ -35,8 +35,8 @@ public static class HarmonicaClipboard
     private static string TextFor(HarmonicaViewModel vm)
     {
         var sb = new System.Text.StringBuilder();
-        foreach (var (label, value, _) in vm.Frame.Readouts)
-            sb.Append(label).Append('\t').AppendLine(value);
+        foreach (var r in vm.Frame.Readouts)
+            sb.Append(r.Label).Append('\t').AppendLine(r.Value);
         return sb.ToString();
     }
 

@@ -53,6 +53,96 @@ public sealed class HarmonicaSetDutTests(ITestOutputHelper output)
                          $"ladder resets {resetsBefore} → {vm.ScheduleResetCount}");
     }
 
+    // ══ R-h9c-12 (R1C §6) — Refresh DUT: elaboration happens exactly on Set and on Refresh ═══
+
+    [Fact]
+    public void RefreshDut_RebuildsTheContextEvenThoughTheDutSpecDidNotMove()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+        int rebuildsBefore = vm.ContextRebuildCount;
+
+        // The DutSpec is byte-identical — StructuralKey has not moved — but Refresh must rebuild
+        // anyway, because that is precisely the case it exists for (a kit/.osdi that changed on disk
+        // with none of DutSpec's own fields moving).
+        vm.RefreshDut();
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+
+        Assert.Equal(rebuildsBefore + 1, vm.ContextRebuildCount);
+    }
+
+    [Fact]
+    public void RefreshDut_ResetsTheLadder_LikeASetDutWould()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+        int resetsBefore = vm.ScheduleResetCount;
+
+        vm.RefreshDut();
+
+        Assert.Equal(resetsBefore + 1, vm.ScheduleResetCount);
+    }
+
+    [Fact]
+    public void OrdinaryValueChangesAndDrags_NeverRebuildTheContext_OnlySetAndRefreshDo()
+    {
+        // §6.1's absolute rule, stated as a counter rather than trusted: a termination move, a bias
+        // edit and a plain solved frame must not touch ContextRebuildCount at all.
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });   // first solve: builds once
+        Assert.Equal(1, vm.ContextRebuildCount);
+
+        vm.SetMarkerImpedance(vm.Markers[0], new System.Numerics.Complex(30, 5));
+        vm.ApplyInput(HarmonicaInputs.KeyVds, "30");
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+        Assert.Equal(1, vm.ContextRebuildCount);
+
+        // Set DUT — a genuine structural change — is the SECOND rebuild.
+        var editor = new HarmonicaDutEditor(vm.Model.Dut);
+        editor.SetKind(DutKind.NativeFet);
+        editor.SetNativeLaw("FET_Angelov");
+        vm.ApplyDut(editor.Build());
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+        Assert.Equal(2, vm.ContextRebuildCount);
+
+        // Refresh DUT is the THIRD — exactly one more, for exactly this one user action.
+        vm.RefreshDut();
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+        Assert.Equal(3, vm.ContextRebuildCount);
+    }
+
+    [Fact]
+    public void RefreshDutMenuItem_ExistsOnBothSurfaces_BesideSetDut()
+    {
+        string vmSrc = ReadSource("src", "Ui", "Harmonica", "HarmonicaMenuViewModel.cs");
+        Assert.Contains("RefreshDutHook", vmSrc, StringComparison.Ordinal);
+        Assert.Contains("RefreshDut()", vmSrc, StringComparison.Ordinal);
+
+        string menuAxaml = ReadSource("src", "Ui", "Views", "Harmonica", "HarmonicaMenuView.axaml");
+        Assert.Contains("RefreshDutCommand", menuAxaml, StringComparison.Ordinal);
+        // Both surfaces — native and in-window — must offer it, mirroring Set DUT's own two entries.
+        Assert.Equal(2, CountOccurrences(menuAxaml, "RefreshDutCommand"));
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        int count = 0, at = 0;
+        while ((at = haystack.IndexOf(needle, at, StringComparison.Ordinal)) >= 0) { count++; at += needle.Length; }
+        return count;
+    }
+
+    private static string ReadSource(params string[] parts)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "circuitRF.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        string path = Path.Combine([dir!.FullName, .. parts]);
+        Assert.True(File.Exists(path), $"source not found at {path}");
+        return File.ReadAllText(path);
+    }
+
     [Fact]
     public void ApplyingTheSameDut_IsANoOp_NotASecondRebuild()
     {
@@ -83,8 +173,13 @@ public sealed class HarmonicaSetDutTests(ITestOutputHelper output)
         var fetInputs = vm.Inputs.Select(i => i.Key).ToArray();
 
         Assert.NotEqual(sddInputs, fetInputs);
-        Assert.Contains(sddInputs, k => k.Contains("I[1,0]", StringComparison.Ordinal));
+
+        // R-h9c-5 (R1C §5) — an SDD's equations no longer surface in the strip at all (Set DUT's own
+        // dialog edits them); a native FET's scalar parameters still do, which is what draws the
+        // line on the DUT KIND rather than on the parameter name.
+        Assert.DoesNotContain(sddInputs, k => k.Contains("I[1,0]", StringComparison.Ordinal));
         Assert.DoesNotContain(fetInputs, k => k.Contains("I[1,0]", StringComparison.Ordinal));
+        Assert.Contains(fetInputs, k => k.Contains("Ipk", StringComparison.Ordinal));
     }
 
     // ══ R-h8-2 — the parameter list is READ from the model ═══════════════════

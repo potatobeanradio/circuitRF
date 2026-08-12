@@ -161,7 +161,12 @@ public sealed class HarmonicaNetlist
             DutKind.NativeFet => $"{dut.TypeName}:{Dut}  {gate} {drain} {source}{tail}",
 
             // 2N nets as ± pairs, so _v1 is Vgs and _v2 is Vds even with a lifted source.
-            DutKind.Sdd => $"SDD:{Dut}  {gate} {source}  {drain} {source}{tail}",
+            // R-h9c-11 — SDD3 adds a THIRD port pair, the source terminal against ground, so an
+            // equation can reference _v3/I[3,w] directly. The gate/drain ports are unchanged either
+            // way, which is what keeps IntrinsicPortMap.TwoPort correct for both.
+            DutKind.Sdd => dut.SddPortCount >= 3
+                ? $"SDD:{Dut}  {gate} {source}  {drain} {source}  {source} 0{tail}"
+                : $"SDD:{Dut}  {gate} {source}  {drain} {source}{tail}",
 
             // Every node its own ground-referenced port — the external-device convention.
             DutKind.External =>

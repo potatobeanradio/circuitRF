@@ -41,6 +41,9 @@ public partial class HarmonicaSetDutDialog : Window
         int law = IndexOfLaw(current.TypeName);
         LawCombo.SelectedIndex = law >= 0 ? law : 0;
 
+        SddPorts2.IsChecked = current.SddPortCount != 3;
+        SddPorts3.IsChecked = current.SddPortCount == 3;
+
         // A provider name is either the built-in file form or a kit name — the built-in resolver's
         // own spelling decides which, so there is no second rule for telling them apart.
         string? file = current.Provider is null ? null : VerilogAFileResolver.ModelFileIn(current.Provider);
@@ -90,14 +93,24 @@ public partial class HarmonicaSetDutDialog : Window
     {
         bool fet = _editor.Kind == DutKind.NativeFet;
         bool ext = _editor.Kind == DutKind.External;
+        bool sdd = _editor.Kind == DutKind.Sdd;
 
         LawLabel.IsVisible        = fet;
         LawCombo.IsVisible        = fet;
+        SddChooser.IsVisible      = sdd;
         ExternalChooser.IsVisible = ext;
         MappingPanel.IsVisible    = ext;
 
         FileRow.IsVisible = ext && SourceFile.IsChecked == true;
         KitRow.IsVisible  = ext && SourceKit.IsChecked  == true;
+    }
+
+    /// <summary>R-h9c-11 — SDD2 vs SDD3.</summary>
+    private void OnSddPortsChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_loading || !IsInitialized || _editor.Kind != DutKind.Sdd) return;
+        _editor.SddPortCount = SddPorts3.IsChecked == true ? 3 : 2;
+        RefreshStatus();
     }
 
     private void OnLawChanged(object? sender, SelectionChangedEventArgs e)

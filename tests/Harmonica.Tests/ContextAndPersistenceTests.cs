@@ -309,6 +309,30 @@ public sealed class ContextAndPersistenceTests(ITestOutputHelper output)
         finally { try { Directory.Delete(dir, true); } catch { /* best effort */ } }
     }
 
+    // ── R-h9c-11 (R1C §6) — SddPortCount round-trips, and an SDD2 document is unmoved ─────────
+
+    [Fact]
+    public void Sdd3_RoundTripsThroughACharmFile()
+    {
+        var model = Model() with { Dut = Model().Dut with { SddPortCount = 3 } };
+        string json = CharmIo.Write(model);
+        var back = CharmIo.Read(json, null, out var unresolved);
+
+        Assert.Empty(unresolved);
+        Assert.Equal(3, back.Dut.SddPortCount);
+    }
+
+    [Fact]
+    public void AnSdd2Document_WritesNoSddPortCountField_SoAnOldCharmReserialisesUnchanged()
+    {
+        // §8's own additive-with-a-default rule: the default (2) must not appear in the file at all.
+        string json = CharmIo.Write(Model());
+        Assert.DoesNotContain("SddPortCount", json, StringComparison.Ordinal);
+
+        var back = CharmIo.Read(json, null, out _);
+        Assert.Equal(2, back.Dut.SddPortCount);
+    }
+
     // ── R-hrf-12 — Touchstone coverage ────────────────────────────────────────
 
     [Fact]

@@ -158,11 +158,13 @@ public static class HarmonicaInputs
 
         var declared = dut.Kind switch
         {
-            // An SDD declares equations, not scalars; the document's own keys are the declaration.
-            DutKind.Sdd => dut.Parameters.Select(p =>
-                (Name: p.Key, Text: p.Value, Unit: "",
-                 Tip: $"SDD equation {p.Key}. Editing it is a STRUCTURAL change — the netlist is rebuilt.",
-                 Entry: HarmonicaInputEntry.Text)).ToList(),
+            // R-h9c-5 (R1C §5) — an SDD's parameters ARE its equations, hundreds of characters of
+            // expression text in a 160 px box, and §6's Set DUT dialog now edits them properly. So
+            // the strip stops surfacing them — the owner's own words: "Stop surfacing SDD equation
+            // parameters in the strip now that Set DUT's dialog edits them properly." The line is
+            // drawn on the DUT KIND, not the parameter name: a native FET's Ipk/Vpk (below) is
+            // exactly what this whole pass is for, and stays.
+            DutKind.Sdd => [],
 
             DutKind.NativeFet or DutKind.Diode => RegistryParameters(dut),
 
