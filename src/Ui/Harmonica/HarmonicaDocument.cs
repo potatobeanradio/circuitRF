@@ -15,6 +15,18 @@ public sealed partial class HarmonicaDocumentViewModel : ObservableObject
 
     public HarmonicaViewModel Harmonica { get; }
 
+    /// <summary>
+    /// R-h9a-3's action seam. <c>HarmonicaView</c> installs this in <c>OnDataContextChanged</c> — the
+    /// same "view injects a delegate into its VM" shape <c>DisplayWindowViewModel</c>'s own
+    /// <c>SetLoadRunResultsAction</c> already uses — so <c>WorkspaceViewModel</c>'s dock-level focus
+    /// tracking (which has no reference to this document's realized view) can tell it "you are now
+    /// the active docked tab" (<c>true</c>) or "you no longer are" (<c>false</c>) without either side
+    /// needing to know about Avalonia's <c>NativeMenu</c> type — that stays entirely inside the view.
+    /// Deliberately plain <c>Action&lt;bool&gt;</c>, not an Avalonia-typed signature, so this class
+    /// stays framework-free.
+    /// </summary>
+    public Action<bool>? NativeMenuDockedFocusChanged { get; set; }
+
     public HarmonicaDocumentViewModel(HarmonicaViewModel? vm = null)
     {
         Harmonica = vm ?? new HarmonicaViewModel();

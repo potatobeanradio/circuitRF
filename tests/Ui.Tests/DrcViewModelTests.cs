@@ -125,7 +125,7 @@ public class DrcViewModelTests
         Assert.All(vm.Overlay.DrcMarkers, m => Assert.False(m.Selected));
 
         vm.SelectedDrcViolation = vm.DrcViolations[0];
-        Assert.Single(vm.Overlay.DrcMarkers.Where(m => m.Selected));
+        Assert.Single(vm.Overlay.DrcMarkers, m => m.Selected);
     }
 
     [Fact]

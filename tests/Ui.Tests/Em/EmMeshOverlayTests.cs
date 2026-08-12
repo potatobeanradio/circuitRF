@@ -92,8 +92,8 @@ public class EmMeshOverlayTests
         Assert.InRange(vm.MeshReport!.UnknownCount, 30, 600);
         // D2: the Mesh button never solves. The VM holds no DataSet at all — Simulate is the only
         // path that produces one, which is what makes "never solves" structural rather than a claim.
-        Assert.Empty(typeof(EmSetupEditorViewModel).GetProperties()
-            .Where(p => p.PropertyType.Name == "DataSet"));
+        Assert.DoesNotContain(typeof(EmSetupEditorViewModel).GetProperties(),
+            p => p.PropertyType.Name == "DataSet");
     }
 
     [Fact]

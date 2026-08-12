@@ -264,7 +264,7 @@ public sealed class LayoutMixedSelectionTests : IDisposable
 
         vm.OnKeyDown(Key.Delete, KeyModifiers.None);
 
-        Assert.Equal(1, model.Shapes.Count);   // only the far shape remains
+        Assert.Single(model.Shapes);   // only the far shape remains
         Assert.Empty(model.Instances);
         Assert.Empty(vm.SelectedIndices);
         Assert.Empty(vm.SelectedInstanceIndices);
@@ -311,7 +311,7 @@ public sealed class LayoutMixedSelectionTests : IDisposable
 
         vm.CutSelectionAfterCopy();
 
-        Assert.Equal(1, model.Shapes.Count);
+        Assert.Single(model.Shapes);
         Assert.Empty(model.Instances);
         Assert.True(vm.UndoRedo.CanUndo);
 

@@ -58,6 +58,12 @@ public sealed class HarmonicaRenderTheme
     public SKColor OperatingCursor  { get; init; }
     public SKColor ReachableRegion  { get; init; }
     public SKColor EditChrome       { get; init; }
+    /// <summary>R-h9a-7: the message-strip text colour. Created here for brief 1C to consume; this
+    /// brief only projects the role, nothing draws with it yet.</summary>
+    public SKColor Messages         { get; init; }
+    /// <summary>R-h9a-7: the progress-bar fill colour — same consumption note as
+    /// <see cref="Messages"/> above.</summary>
+    public SKColor ProgressBar      { get; init; }
 
     /// <summary>The five-colour harmonic-identity cycle (§4.2), in band order. Band <c>n</c> uses
     /// <see cref="MarkerBand"/>, which wraps every five bands.</summary>
@@ -75,8 +81,27 @@ public sealed class HarmonicaRenderTheme
     /// <summary>The shaping exponent <c>p</c>. &gt; 1 pushes the fade toward the top levels.</summary>
     public double IsoAlphaExponent { get; init; } = DefaultIsoAlphaExponent;
 
-    public const double DefaultIsoAlphaFloor    = 0.25;
-    public const double DefaultIsoAlphaExponent = 1.5;
+    /// <summary>
+    /// R-h9a-11 — tuned from (0.25, 1.5). Read
+    /// <see cref="CircuitRF.Ui.Harmonica.IsoLineAlphaRamp.AlphaByte"/>'s actual shape
+    /// first, at the default D8 level count (10) both variants have shared since M4: with the OLD
+    /// numbers the ramp reached 0.25 / 0.28 / 0.33 / 0.39 / 0.47 / 0.56 / 0.66 / 0.76 / 0.88 / 1.00 —
+    /// the bottom level was already a full quarter-opaque and the MIDDLE of the stack (ranks 4–5) sat
+    /// at 0.47–0.56, roughly half the top contour's weight. That crowds "the top contour is the
+    /// answer" (this file's own §7.2 note, above) — half the level set reads as nearly as important as
+    /// the other half, which is the opposite of what a ranked fade is for.
+    ///
+    /// <para>(0.15, 2.0) reaches 0.15 / 0.16 / 0.19 / 0.24 / 0.32 / 0.41 / 0.53 / 0.66 / 0.82 / 1.00 —
+    /// the bottom QUARTER of ranks now stays under 0.25 (background context, not a competing answer)
+    /// and only the top quarter clears 0.65. The floor drop and the exponent rise are the SAME lever
+    /// pulled from both ends: a lower floor spends less opacity on rank 0 to begin with, and a steeper
+    /// exponent (t^p for p &gt; 1 shrinks every t &lt; 1 further as p grows) keeps every non-top rank
+    /// nearer that floor for longer before the curve climbs toward 1.0. Neither knob is removed —
+    /// both persist as nullable overrides in <c>CharmAppearance</c>, exactly as before; this only
+    /// moves the DEFAULT a user who has never touched the colour editor sees.</para>
+    /// </summary>
+    public const double DefaultIsoAlphaFloor    = 0.15;
+    public const double DefaultIsoAlphaExponent = 2.0;
 
     // ── Projection factory (L2) ───────────────────────────────────────────────
 
@@ -117,6 +142,8 @@ public sealed class HarmonicaRenderTheme
             OperatingCursor  = SK(ColorRole.HarmonicaOperatingCursor),
             ReachableRegion  = SK(ColorRole.HarmonicaReachableRegion),
             EditChrome       = SK(ColorRole.HarmonicaEditChrome),
+            Messages         = SK(ColorRole.HarmonicaMessages),
+            ProgressBar      = SK(ColorRole.HarmonicaProgressBar),
             MarkerBands =
             [
                 SK(ColorRole.HarmonicaMarkerBand1), SK(ColorRole.HarmonicaMarkerBand2),

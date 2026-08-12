@@ -354,7 +354,7 @@ public sealed class PCellHandleFixesTests : IDisposable
 
         var before = ParametersOf(vm);
         // The NEAR middle grip: two-axis, and the one whose anchor is the far end rather than pin 1.
-        var g = Assert.Single(vm.Overlay.PCellHandles.Where(h => h.HasCrossAxis && h.AnchorX != 0));
+        var g = Assert.Single(vm.Overlay.PCellHandles, h => h.HasCrossAxis && h.AnchorX != 0);
 
         vm.OnPointerPressed(g.X, g.Y, KeyModifiers.None, hitTolDbu: 200_000);
         vm.OnPointerMoved(g.X - 2_000_000, g.Y - 1_000_000, leftDown: true, KeyModifiers.None, hitTolDbu: 200_000);

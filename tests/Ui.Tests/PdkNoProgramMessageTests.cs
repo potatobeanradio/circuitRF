@@ -41,9 +41,12 @@ public sealed class PdkNoProgramMessageTests : IDisposable
 
     /// <summary>The note the installer emits about how a kit's devices get evaluated. There is exactly
     /// one, and it is the only note mentioning a program to evaluate devices.</summary>
-    private static string SimulationNote(PdkPartInstaller.InstallOutcome outcome) =>
-        Assert.Single(outcome.Notes, n => n.Contains("names no program", StringComparison.Ordinal)
-                                       || n.Contains("simulation settings", StringComparison.Ordinal));
+    private static string SimulationNote(PdkPartInstaller.InstallOutcome outcome)
+    {
+        Assert.NotNull(outcome.Notes);
+        return Assert.Single(outcome.Notes, n => n.Contains("names no program", StringComparison.Ordinal)
+                                              || n.Contains("simulation settings", StringComparison.Ordinal));
+    }
 
     private PdkImportReport Report() => new() { RootPath = KitDir, KitName = "SampleKit" };
 

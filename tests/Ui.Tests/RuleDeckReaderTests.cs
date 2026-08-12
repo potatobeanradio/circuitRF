@@ -471,7 +471,7 @@ public class RuleDeckReaderTests
 
         var result = RuleDeckReader.Read([LayersDef, fileA, fileB], [Values()]);
 
-        Assert.Single(result.Rules.Where(r => r.Kind == DrcRuleKind.MinWidth));
+        Assert.Single(result.Rules, r => r.Kind == DrcRuleKind.MinWidth);
         Assert.Equal(2, result.Rules.Count(r => r.Kind == DrcRuleKind.MinSpacing));
     }
 }

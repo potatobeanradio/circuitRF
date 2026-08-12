@@ -504,7 +504,7 @@ public class WBondWirePropertiesTests
         panel.CommitGroup("Vdd");
         vm.Undo();
 
-        Assert.Single(vm.Design.Arrays.Where(a => a.Wires.Count > 0));
+        Assert.Single(vm.Design.Arrays, a => a.Wires.Count > 0);
         Assert.Equal(2, vm.Design.Arrays.First(a => a.Name == "GND").Wires.Count);
     }
 

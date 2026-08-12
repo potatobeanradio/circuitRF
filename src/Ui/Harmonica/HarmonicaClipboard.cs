@@ -48,10 +48,14 @@ public static class HarmonicaClipboard
     {
         var snap = HarmonicaCanvasRenderer.Snapshot.Of(vm);
 
+        // R-h9a-12 — every export surface (PDF/SVG/bitmap) is transparent, never the phosphor-on-black
+        // panel background: the owner's own report was "the Copy/Paste rendering of the Smith Chart's
+        // need to have transparent background." The live canvas is untouched — this Render closure is
+        // reached only from the three export builders below, never from HarmonicaCanvas's own draw op.
         void Render(SKCanvas canvas)
         {
             HarmonicaCanvasRenderer.FillBackground(canvas, PlotExporter.PageW, PlotExporter.PageH,
-                                                   snap.Theme);
+                                                   snap.Theme, transparent: true);
             if (panelId is null)
                 HarmonicaCanvasRenderer.DrawAll(canvas, PlotExporter.PageW, PlotExporter.PageH, snap);
             else
@@ -80,6 +84,10 @@ public static class HarmonicaClipboard
             int h = (int)(PlotExporter.PageH * scale);
 
             using var bitmap = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul);
+            // R-h9a-12 — an SKBitmap's initial pixel content is not a documented guarantee; erase it
+            // to transparent explicitly rather than rely on a freshly-allocated buffer happening to be
+            // zeroed, the same belt-and-suspenders the layout editor's own bitmap export uses.
+            bitmap.Erase(SKColors.Transparent);
             using var canvas = new SKCanvas(bitmap);
             canvas.Scale(scale, scale);
             render(canvas);

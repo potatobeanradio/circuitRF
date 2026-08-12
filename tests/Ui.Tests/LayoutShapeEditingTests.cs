@@ -63,6 +63,7 @@ public class LayoutShapeEditingTests
         };
         var result = (CurveShape)LayoutShapeEditing.SetBulge(curve, 0, 0.5);
 
+        Assert.NotNull(result.Edges);
         Assert.Equal(EdgeKind.Arc, result.Edges[0].Kind);
         Assert.Equal(0.5, result.Edges[0].Bulge);
         Assert.Equal(EdgeKind.Line, result.Edges[1].Kind);
@@ -78,6 +79,7 @@ public class LayoutShapeEditingTests
         };
         var result = (CurveShape)LayoutShapeEditing.SetBulge(curve, 0, 0);
 
+        Assert.NotNull(result.Edges);
         Assert.Equal(EdgeKind.Arc, result.Edges[0].Kind);
         Assert.Equal(0, result.Edges[0].Bulge);
         var arc = LayoutArc.FromBulge(0, 0, 1000, 0, result.Edges[0].Bulge);
@@ -95,6 +97,8 @@ public class LayoutShapeEditingTests
         var pos = (CurveShape)LayoutShapeEditing.SetBulge(curve, 0, 0.6);
         var neg = (CurveShape)LayoutShapeEditing.SetBulge(curve, 0, -0.6);
 
+        Assert.NotNull(pos.Edges);
+        Assert.NotNull(neg.Edges);
         var arcPos = LayoutArc.FromBulge(0, 0, 1000, 0, pos.Edges[0].Bulge);
         var arcNeg = LayoutArc.FromBulge(0, 0, 1000, 0, neg.Edges[0].Bulge);
         Assert.Equal(Math.Abs(arcPos.Sweep), Math.Abs(arcNeg.Sweep), 6);
@@ -114,10 +118,12 @@ public class LayoutShapeEditingTests
             Edges = [new LayoutEdge { Kind = EdgeKind.Cubic, C1X = 300, C1Y = 0, C2X = 700, C2Y = 0 }, new LayoutEdge { Kind = EdgeKind.Line }, new LayoutEdge { Kind = EdgeKind.Line }],
         };
         var moved0 = (CurveShape)LayoutShapeEditing.SetCubicControl(curve, 0, 0, 300, 200);
+        Assert.NotNull(moved0.Edges);
         Assert.Equal(300, moved0.Edges[0].C1X); Assert.Equal(200, moved0.Edges[0].C1Y);
         Assert.Equal(700, moved0.Edges[0].C2X); Assert.Equal(0, moved0.Edges[0].C2Y); // untouched
 
         var moved1 = (CurveShape)LayoutShapeEditing.SetCubicControl(curve, 0, 1, 700, 200);
+        Assert.NotNull(moved1.Edges);
         Assert.Equal(300, moved1.Edges[0].C1X); Assert.Equal(0, moved1.Edges[0].C1Y); // untouched
         Assert.Equal(700, moved1.Edges[0].C2X); Assert.Equal(200, moved1.Edges[0].C2Y);
     }
@@ -312,6 +318,7 @@ public class LayoutShapeEditingTests
         var result = (CurveShape)LayoutShapeEditing.InsertVertexOnEdge(curve, 0, clickX, clickY, snapDbu: 100, suspendSnap: false);
 
         Assert.Equal(4, result.Xy.Length / 2); // one vertex added
+        Assert.NotNull(result.Edges);
         Assert.Equal(4, result.Edges.Count);   // one edge split into two
         Assert.Equal(EdgeKind.Arc, result.Edges[0].Kind);
         Assert.Equal(EdgeKind.Arc, result.Edges[1].Kind);
@@ -349,6 +356,7 @@ public class LayoutShapeEditingTests
         var result = (CurveShape)LayoutShapeEditing.InsertVertexOnEdge(curve, 0, 1500, 0, snapDbu: 100, suspendSnap: false);
 
         Assert.Equal(4, result.Xy.Length / 2);
+        Assert.NotNull(result.Edges);
         Assert.Equal(4, result.Edges.Count);
         Assert.Equal(EdgeKind.Cubic, result.Edges[0].Kind);
         Assert.Equal(EdgeKind.Cubic, result.Edges[1].Kind);
@@ -372,6 +380,7 @@ public class LayoutShapeEditingTests
         Assert.Equal(new LayerKey(2, 1), curve.Layer);
         Assert.Equal("NET1", curve.Net);
         Assert.Equal(poly.Xy, curve.Xy);
+        Assert.NotNull(curve.Edges);
         Assert.Equal(EdgeKind.Arc, curve.Edges[0].Kind);
         Assert.Equal(0, curve.Edges[0].Bulge); // "a straight arc" per the comment — visually unchanged
         for (int i = 1; i < curve.Edges.Count; i++) Assert.Equal(EdgeKind.Line, curve.Edges[i].Kind);
@@ -384,6 +393,7 @@ public class LayoutShapeEditingTests
         var result = LayoutShapeEditing.ConvertEdge(path, 0, EdgeKind.Cubic);
 
         var samePath = Assert.IsType<PathShape>(result);
+        Assert.NotNull(samePath.Edges);
         Assert.Equal(EdgeKind.Cubic, samePath.Edges[0].Kind);
         // 1/3 and 2/3 control points along the original straight edge -- initial shape unchanged.
         Assert.Equal(333, samePath.Edges[0].C1X);
@@ -400,6 +410,7 @@ public class LayoutShapeEditingTests
         };
         var result = (CurveShape)LayoutShapeEditing.ConvertEdge(curve, 0, EdgeKind.Line);
 
+        Assert.NotNull(result.Edges);
         Assert.Equal(EdgeKind.Line, result.Edges[0].Kind);
     }
 

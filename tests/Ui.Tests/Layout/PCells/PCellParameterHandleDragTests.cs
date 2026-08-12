@@ -79,8 +79,8 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     /// <summary>A grip picked by its own travel direction — the only thing that tells two grips
     /// sharing a label apart.</summary>
     private static PCellHandleMarker EdgeGrip(LayoutEditorViewModel vm, string label, double dx, double dy)
-        => Assert.Single(vm.Overlay.PCellHandles.Where(h =>
-               h.Label == label && Math.Abs(h.AxisDx - dx) < 1e-6 && Math.Abs(h.AxisDy - dy) < 1e-6));
+        => Assert.Single(vm.Overlay.PCellHandles, h =>
+               h.Label == label && Math.Abs(h.AxisDx - dx) < 1e-6 && Math.Abs(h.AxisDy - dy) < 1e-6);
 
     /// <summary>A whole drag, as the canvas performs one: press on the grip, move, release.</summary>
     private static void Drag(LayoutEditorViewModel vm, PCellHandleMarker grip, long toX, long toY,
@@ -473,7 +473,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     /// by their anchor rather than by list position or by a screen direction that rotation changes.
     /// </summary>
     private static PCellHandleMarker MklopfFarGrip(LayoutEditorViewModel vm)
-        => Assert.Single(vm.Overlay.PCellHandles.Where(h => h.HasCrossAxis && h is { AnchorX: 0, AnchorY: 0 }));
+        => Assert.Single(vm.Overlay.PCellHandles, h => h.HasCrossAxis && h is { AnchorX: 0, AnchorY: 0 });
 
     [Fact]
     public void MKlopf_ShowsThreeGripsPerEnd_AndTheMiddleOneAdvertisesBothAxes()
@@ -736,16 +736,16 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     private static PCellHandleMarker Pin1AngleGrip(LayoutEditorViewModel vm)
     {
         var inst = vm.Model.Instances[0];
-        return Assert.Single(vm.Overlay.PCellHandles.Where(
-            h => h.Label == "Angle" && h.X == inst.X && h.Y == inst.Y));
+        return Assert.Single(vm.Overlay.PCellHandles,
+            h => h.Label == "Angle" && h.X == inst.X && h.Y == inst.Y);
     }
 
     /// <summary>MBend's PIN-2 angle grip — the other one.</summary>
     private static PCellHandleMarker Pin2AngleGrip(LayoutEditorViewModel vm)
     {
         var pin1 = Pin1AngleGrip(vm);
-        return Assert.Single(vm.Overlay.PCellHandles.Where(
-            h => h.Label == "Angle" && (h.X != pin1.X || h.Y != pin1.Y)));
+        return Assert.Single(vm.Overlay.PCellHandles,
+            h => h.Label == "Angle" && (h.X != pin1.X || h.Y != pin1.Y));
     }
 
     [Fact]
@@ -832,7 +832,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         props.SetContext(vm);
         vm.SelectInstance(0);
 
-        var lengthRow = Assert.Single(props.PCellParamRows!.Where(r => r.Name == "L"));
+        var lengthRow = Assert.Single(props.PCellParamRows!, r => r.Name == "L");
         string before = lengthRow.ValueText;
 
         var grip = GripFor(vm, "L");

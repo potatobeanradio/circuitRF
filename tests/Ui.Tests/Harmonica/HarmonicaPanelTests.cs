@@ -198,14 +198,19 @@ public sealed class HarmonicaPanelTests : IDisposable
         var rimPt  = HarmonicaPanelRenderer.GammaToCanvas(Complex.One,  (W, H));
         float rimR = Math.Abs(rimPt.X - centre.X);
 
-        // The probe is SPECIFIC to the glyph, not merely "not background". Every colour the phosphor
-        // palette paints a Smith panel's chrome with — grid (0,90,30), axes (0,255,65), background
-        // (6,12,8) — has essentially no RED. The marker bands are the only roles that do, so a red
-        // channel above the background's own is the glyph and nothing else. The first version of
-        // this test probed for "not background" and its own negative control caught it picking up
-        // chart chrome instead; that is why the control is here.
+        // The probe is SPECIFIC to the glyph, not merely "not background". R-h9a-6 (brief-
+        // harmonicarf-r1a, 2026-08-12) moved MarkerBand1 to a pure (0,255,0) — it no longer carries
+        // any red at all, so the red-channel probe this test used before that change stopped working
+        // (found nothing, everywhere). BLUE is what still separates the glyph from every other
+        // Smith-panel role near the rim: grid (0,90,30) and axes (0,255,65) both carry real blue,
+        // while the glyph's own desaturated marker colour (blended 45% toward the near-black
+        // background, which is itself low-blue) stays near zero blue. Combined with the glyph's own
+        // green being far brighter than the background's, this is unique to the glyph and nothing
+        // else drawn near the rim. The first version of this test probed for "not background" and
+        // its own negative control caught it picking up chart chrome instead; that is why the
+        // control is here.
         var bg = theme.Background;
-        bool IsGlyphPixel(SKColor c) => c.Red >= bg.Red + 8;
+        bool IsGlyphPixel(SKColor c) => c.Green >= bg.Green + 50 && c.Blue <= bg.Blue + 12;
 
         int litBeyondRim = -1;
         for (int dx = 2; dx < (int)(rimR * 0.30) && litBeyondRim < 0; dx++)

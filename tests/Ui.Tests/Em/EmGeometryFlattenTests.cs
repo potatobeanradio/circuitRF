@@ -91,7 +91,7 @@ public class EmGeometryFlattenTests : IDisposable
         // nothing useful, because it would still find the label.
         var (parent, _) = BuildInstancedLayout();
 
-        Assert.Empty(parent.Shapes.Where(s => s is not LabelShape));
+        Assert.DoesNotContain(parent.Shapes, s => s is not LabelShape);
         Assert.NotEmpty(parent.Instances);
     }
 

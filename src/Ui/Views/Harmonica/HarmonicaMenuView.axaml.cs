@@ -28,19 +28,54 @@ public partial class HarmonicaMenuView : UserControl
 {
     private HarmonicaMenuViewModel? _vm;
 
+    /// <summary>The ONE <see cref="NativeMenu"/> instance this view owns — captured once, off XAML,
+    /// so later attach/detach calls never depend on re-reading it from whichever object currently
+    /// happens to carry the attached property (which is exactly the bug: reading it off <c>this</c>
+    /// after it had already been moved elsewhere returned null).</summary>
+    private NativeMenu? _ownMenu;
+
+    /// <summary>Whichever <see cref="AvaloniaObject"/> currently carries <see cref="_ownMenu"/> — at
+    /// most one, per R-h9a-1. Starts as <c>this</c>, since that is what the XAML's own
+    /// <c>&lt;NativeMenu.Menu&gt;</c> block attaches it to at load time.</summary>
+    private AvaloniaObject? _attachedTo;
+
+    /// <summary>
+    /// R-h9a-3 — true while this document is the ACTIVE tab in a workspace window's own DocumentDock.
+    /// Set by <see cref="SetDockedFocus"/>, called from <c>HarmonicaView</c>'s own action-seam wiring
+    /// (<c>HarmonicaDocumentViewModel.NativeMenuDockedFocusChanged</c>), which
+    /// <c>WorkspaceViewModel</c>'s dock-level focus tracking drives. Irrelevant for a torn-off or
+    /// standalone window — those already own the bar unconditionally via <see cref="RecomputeAttachment"/>.
+    /// </summary>
+    private bool _dockedHasFocus;
+
     public HarmonicaMenuView()
     {
         InitializeComponent();
-        DataContextChanged   += (_, _) => OnViewModelChanged();
-        AttachedToVisualTree += (_, _) => { AttachNativeMenuIfOwnWindow(); RebuildNativeBandMenus(); };
+        _ownMenu    = NativeMenu.GetMenu(this);
+        _attachedTo = this;
+        DataContextChanged     += (_, _) => OnViewModelChanged();
+        AttachedToVisualTree   += (_, _) => { RecomputeAttachment(); RebuildNativeBandMenus(); };
+        DetachedFromVisualTree += (_, _) => DetachNativeMenuFromWindow();
     }
 
     /// <summary>
-    /// The window a harmonicaRF document must NOT steal the menu bar from. Resolved by type NAME so
+    /// The window a harmonicaRF document does not own OUTRIGHT — a docked tab shares it with
+    /// circuitRF's own menu, taking it over only while focused (R-h9a-3). Resolved by type NAME so
     /// this view takes no dependency on the workspace shell — harmonicaRF ships standalone, where
     /// that type does not exist at all.
     /// </summary>
     private const string WorkspaceWindowTypeName = "WorkspaceWindow";
+
+    /// <summary>
+    /// R-h9a-3's own entry point — called by <c>HarmonicaView</c> whenever
+    /// <c>WorkspaceViewModel</c>'s dock-level focus tracking says this document became (<c>true</c>)
+    /// or stopped being (<c>false</c>) the active docked tab.
+    /// </summary>
+    public void SetDockedFocus(bool hasFocus)
+    {
+        _dockedHasFocus = hasFocus;
+        RecomputeAttachment();
+    }
 
     private void OnViewModelChanged()
     {
@@ -61,20 +96,63 @@ public partial class HarmonicaMenuView : UserControl
     private void OnBandsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         => RebuildNativeBandMenus();
 
-    private void AttachNativeMenuIfOwnWindow()
+    /// <summary>
+    /// R-h9a-2's whole policy in one place: decides which <see cref="AvaloniaObject"/> should carry
+    /// <see cref="_ownMenu"/> right now, and moves it there if it isn't already. Three cases —
+    /// <list type="bullet">
+    /// <item>torn-off document, or the standalone binary: always own the hosting window outright;</item>
+    /// <item>docked, and this document currently has focus (R-h9a-3): take over the SAME hosting
+    /// window (a <c>WorkspaceWindow</c>), which silently overwrites whatever it had attached —
+    /// circuitRF's own menu, restored by <c>WorkspaceViewModel</c>'s focus tracking on blur;</item>
+    /// <item>docked, no focus: stay attached to <c>this</c> — inert, exactly as XAML left it.</item>
+    /// </list>
+    /// </summary>
+    private void RecomputeAttachment()
     {
-        if (!OperatingSystem.IsMacOS()) return;
-
+        if (!OperatingSystem.IsMacOS() || _ownMenu is null) return;
         if (TopLevel.GetTopLevel(this) is not Window window) return;
-        if (window.GetType().Name == WorkspaceWindowTypeName) return;   // docked — leave the app bar alone
 
-        if (NativeMenu.GetMenu(this) is { } menu) NativeMenu.SetMenu(window, menu);
+        bool isWorkspaceWindow = window.GetType().Name == WorkspaceWindowTypeName;
+        AvaloniaObject desiredTarget =
+            !isWorkspaceWindow    ? window     // torn-off document window, or the standalone shell
+            : _dockedHasFocus     ? window     // docked WITH focus: take over the app menu bar
+            :                       this;      // docked, no focus: stay inert on the control
+
+        if (ReferenceEquals(_attachedTo, desiredTarget)) return;   // already there
+
+        // R-h9a-1: at any instant a given NativeMenu instance is set on at most one AvaloniaObject.
+        // Detach from wherever it currently is BEFORE attaching it elsewhere — attaching the SAME
+        // instance to two AvaloniaObjects at once is exactly what crashed AvaloniaNativeMenuExporter.
+        if (_attachedTo is { } current) NativeMenu.SetMenu(current, null);
+        NativeMenu.SetMenu(desiredTarget, _ownMenu);
+        _attachedTo = desiredTarget;
+    }
+
+    /// <summary>
+    /// Runs on <c>DetachedFromVisualTree</c> — a torn-off document window closing, or a docked tab
+    /// being removed. Only ever un-attaches from a WINDOW: the ordinary docked-and-unfocused case
+    /// (menu still sitting on <c>this</c>, per the XAML's own attach) needs no cleanup, since that
+    /// attachment never drove a real platform exporter in the first place (see
+    /// <see cref="RecomputeAttachment"/>'s own inert third case). A tab closed WHILE it held the
+    /// docked focus (<see cref="_dockedHasFocus"/>) also needs no restore of circuitRF's own menu here
+    /// — <c>WorkspaceViewModel</c>'s own dock-level focus tracking sees the tab disappear and does that
+    /// restore itself, from the one place that knows what circuitRF's own menu is. Leaving a closed
+    /// window holding this menu would leave it owned by a dead exporter — R-h9a-1's other half.
+    /// </summary>
+    private void DetachNativeMenuFromWindow()
+    {
+        if (_ownMenu is null || _attachedTo is not Window window) return;
+        NativeMenu.SetMenu(window, null);
+        _attachedTo = null;
     }
 
     /// <summary>Rebuilds the two native band submenus from the view model's own collections.</summary>
     private void RebuildNativeBandMenus()
     {
-        if (_vm is null || NativeMenu.GetMenu(this) is not { } root) return;
+        // Reads _ownMenu, not NativeMenu.GetMenu(this) — the instance may currently be attached to a
+        // hosting Window rather than to `this` (see RecomputeAttachment), and re-reading it off
+        // `this` after it has moved would silently find nothing.
+        if (_vm is null || _ownMenu is not { } root) return;
 
         Fill(FindByHeader(root, "Markers", "Source Bands"), _vm.SourceBands);
         Fill(FindByHeader(root, "Markers", "Load Bands"),   _vm.LoadBands);

@@ -122,6 +122,14 @@ public static class ColorRole
     public const string HarmonicaReachableRegion  = "Harmonica.ReachableRegion";
     public const string HarmonicaEditChrome       = "Harmonica.EditChrome";
 
+    /// <summary>brief-harmonicarf-r1a-crash-menus-and-colour.md §3 (R-h9a-7): the message strip
+    /// text colour — added here so it exists to be CONSUMED by brief 1C (the toolbar/readouts
+    /// brief); this brief only creates the role and its two defaults.</summary>
+    public const string HarmonicaMessages    = "Harmonica.Messages";
+    /// <summary>R-h9a-7: the progress-bar fill colour — same consumption note as
+    /// <see cref="HarmonicaMessages"/> above.</summary>
+    public const string HarmonicaProgressBar = "Harmonica.ProgressBar";
+
     // The five-colour harmonic-identity cycle (§4.2). Roles, so a user CAN change them — but their
     // defaults are IDENTICAL in both variants on purpose: which colour means "2f₀" is a convention,
     // not a theme choice, so it must survive a light/dark switch untouched.
@@ -166,6 +174,7 @@ public static class ColorRole
         HarmonicaLoadline, HarmonicaEfficiencyTrace,
         HarmonicaGridPoint, HarmonicaGridPointDropped,
         HarmonicaOperatingCursor, HarmonicaReachableRegion, HarmonicaEditChrome,
+        HarmonicaMessages, HarmonicaProgressBar,
         HarmonicaMarkerBand1, HarmonicaMarkerBand2, HarmonicaMarkerBand3,
         HarmonicaMarkerBand4, HarmonicaMarkerBand5,
     ];

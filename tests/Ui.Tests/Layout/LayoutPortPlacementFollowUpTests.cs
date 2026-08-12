@@ -78,7 +78,7 @@ public class LayoutPortPlacementFollowUpTests : IDisposable
         // Click on the low-x end of the instanced metal.
         vm.OnPointerPressed(0, 1_450 * Dbu, default);
 
-        var port = Assert.Single(view.Shapes.OfType<LabelShape>().Where(l => l.IsPort));
+        var port = Assert.Single(view.Shapes.OfType<LabelShape>(), l => l.IsPort);
         Assert.Equal(LayoutRotation.R0, port.PortDirection);   // low-x end -> current flows +x̂
     }
 
@@ -122,7 +122,7 @@ public class LayoutPortPlacementFollowUpTests : IDisposable
         vm.OnPointerMoved(305 * Dbu, 207 * Dbu, leftDown: false, default, snapTolDbu: 100 * Dbu);
         vm.OnPointerPressed(305 * Dbu, 207 * Dbu, default, 1, 0, 0, 100 * Dbu);
 
-        var port = Assert.Single(view.Shapes.OfType<LabelShape>().Where(l => l.IsPort));
+        var port = Assert.Single(view.Shapes.OfType<LabelShape>(), l => l.IsPort);
         Assert.Equal(300 * Dbu, port.X);
         Assert.Equal(200 * Dbu, port.Y);
     }
@@ -144,7 +144,7 @@ public class LayoutPortPlacementFollowUpTests : IDisposable
         vm.OnPointerMoved(10_400 * Dbu, 1_600 * Dbu, leftDown: false, default, snapTolDbu: 5 * Dbu);
         vm.OnPointerPressed(10_400 * Dbu, 1_600 * Dbu, default, 1, 0, 0, 5 * Dbu);
 
-        var port = Assert.Single(view.Shapes.OfType<LabelShape>().Where(l => l.IsPort));
+        var port = Assert.Single(view.Shapes.OfType<LabelShape>(), l => l.IsPort);
         Assert.Equal(10_000 * Dbu, port.X);
         Assert.Equal(2_000 * Dbu, port.Y);
     }

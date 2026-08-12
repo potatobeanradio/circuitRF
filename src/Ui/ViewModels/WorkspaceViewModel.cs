@@ -153,6 +153,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // data display / symbol / cell tab. Cleared when this doc is closed or the workspace changes.
     private SchematicDocument? _lastActiveSchematicDoc;
 
+    // R-h9a-3: the harmonicaRF document currently holding the docked macOS menu-bar takeover (null
+    // when none does). Tracked so a focus change or workspace reset can tell the OLD holder to give
+    // the menu bar back before anything else happens. Cleared alongside _lastActiveSchematicDoc at
+    // every workspace-lifecycle reset point and in OnDockableClosed.
+    private HarmonicaDocument? _harmonicaDockedFocusDoc;
+
     // Windows that already have undo/redo KeyBindings injected (Dock float support).
     private readonly HashSet<Window> _wiredHostWindows = [];
 
@@ -920,6 +926,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             SetActiveUndoTarget(null);
             _lastActiveSchematicDoc = null;
+            ResetHarmonicaDockedFocusTracking();
             // Same as the switch path: the workspace being left keeps its own session record.
             PersistOutgoingWorkspaceSession();
             // A torn-off document belonging to the OLD workspace closes with it; a foreign one
@@ -1320,6 +1327,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
+        ResetHarmonicaDockedFocusTracking();
         // Record the outgoing workspace's session (open tabs + dock arrangement) BEFORE anything is
         // torn down — nothing else on this path ever wrote it, so those tabs were simply forgotten.
         PersistOutgoingWorkspaceSession();
@@ -1698,6 +1706,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
+        ResetHarmonicaDockedFocusTracking();
 
         // Split every tracked MATERIALIZED document by docked-vs-floated; the docked ones close, and
         // so do the floated ones that BELONG to this workspace (see
@@ -8206,6 +8215,72 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// R-h9a-3 — on macOS, a DOCKED harmonicaRF document takes over the app menu bar while it is the
+    /// active dockable, and gives it back on blur. <paramref name="nowActive"/> is the harmonicaRF
+    /// document that is the active dockable right now (null when something else is). No-ops on
+    /// non-macOS and when nothing actually changed (both guards match every other per-window focus
+    /// hook in this file — see <see cref="TryWireWindowFocusTracking"/>'s own doc comment).
+    /// </summary>
+    /// <remarks>
+    /// The old holder is told first (<c>Invoke(false)</c>), then the new one (<c>Invoke(true)</c>) —
+    /// mirroring <see cref="HarmonicaMenuView.RecomputeAttachment"/>'s own detach-before-attach rule
+    /// (R-h9a-1): a stale holder must release the <c>NativeMenu</c> instance before anything else
+    /// claims the hosting window, or the platform exporter sees the same instance on two objects.
+    /// Restoring circuitRF's OWN menu on blur reads it back off <c>Application.Current</c> rather than
+    /// caching a second reference — <c>WorkspaceWindow.OnOpened</c> already captured the SAME instance
+    /// there via <c>AttachNativeMenuAtApplicationScope</c>, so this is guaranteed to be circuitRF's own
+    /// menu, never a rebuild, per the brief's own "must be the SAME reference" requirement.
+    /// </remarks>
+    private void UpdateHarmonicaDockedMenuFocus(HarmonicaDocument? nowActive)
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        if (ReferenceEquals(_harmonicaDockedFocusDoc, nowActive)) return;
+
+        _harmonicaDockedFocusDoc?.ViewModel.NativeMenuDockedFocusChanged?.Invoke(false);
+        _harmonicaDockedFocusDoc = nowActive;
+
+        if (nowActive is not null)
+        {
+            nowActive.ViewModel.NativeMenuDockedFocusChanged?.Invoke(true);
+        }
+        else
+        {
+            RestoreCircuitRfMenuBar();
+        }
+    }
+
+    /// <summary>
+    /// Re-attaches circuitRF's own <c>NativeMenu</c> (captured once, at startup, into
+    /// <c>Application.Current</c> by <c>WorkspaceWindow.AttachNativeMenuAtApplicationScope</c>) onto
+    /// the shell window — the harmonicaRF-takeover release path, and also a safe no-op to call
+    /// whenever nothing was ever taken over (both null-checks below simply fail quietly).
+    /// </summary>
+    private static void RestoreCircuitRfMenuBar()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime
+                is not IClassicDesktopStyleApplicationLifetime desktop) return;
+        if (desktop.Windows.OfType<Views.WorkspaceWindow>().FirstOrDefault() is not { } shell) return;
+        if (Avalonia.Controls.NativeMenu.GetMenu(Avalonia.Application.Current) is not { } appMenu) return;
+
+        Avalonia.Controls.NativeMenu.SetMenu(shell, appMenu);
+    }
+
+    /// <summary>
+    /// Called at every workspace-lifecycle reset point (new/switch/close) and when the docked-focus
+    /// holder's own dockable closes — the document that held the takeover is about to disappear
+    /// (torn down or force-closed) with no further <c>Activated</c>/dock-property-changed event to
+    /// drive <see cref="UpdateHarmonicaDockedMenuFocus"/> through its normal release path, so this
+    /// restores circuitRF's own menu bar directly rather than leaving it pointed at a menu whose
+    /// owning window is gone.
+    /// </summary>
+    private void ResetHarmonicaDockedFocusTracking()
+    {
+        if (_harmonicaDockedFocusDoc is null) return;
+        _harmonicaDockedFocusDoc = null;
+        if (OperatingSystem.IsMacOS()) RestoreCircuitRfMenuBar();
+    }
+
+    /// <summary>
     /// Cross-pane link: returns the open schematic whose base filename (sans extension) matches the
     /// focused Data Display's, so focusing a <c>.cdd</c> tab can show the like-named <c>.csch</c>'s
     /// analyses; null when none matches (the caller then retains the last schematic). Match is on the
@@ -8296,6 +8371,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             PointAnalysesAt(linked);
         }
+
+        // R-h9a-3: docked harmonicaRF menu-bar takeover follows the ACTIVE dockable, mirroring the
+        // Analyses/Properties routing just above.
+        UpdateHarmonicaDockedMenuFocus(activeDockable as HarmonicaDocument);
 
         // Undo routing — follows any IUndoableDocument for main-window tabs.
         SetActiveUndoTarget(activeDockable as IUndoableDocument);
@@ -8403,7 +8482,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // TOOL panel. Attaching the SAME NativeMenu instance (never a second, hand-built copy)
                 // is what already fixes this for torn-off document windows; the only bug was the
                 // `doc is not null` gate around it.
-                if (shellWindow is not null)
+                //
+                // Harmonica/WBond excluded: each owns its own per-window native-menu attach
+                // (HarmonicaMenuView.RecomputeAttachment et al.); attaching ours too races theirs and
+                // crashes the native exporter ("The menu being updated does not match.") on tear-off.
+                if (shellWindow is not null && doc is not HarmonicaDocument and not WBondDocument)
                     AttachSharedNativeMenuIfMacOS(shellWindow, window);
 
                 if (doc is not null)
@@ -8820,6 +8903,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _lastActiveSchematicDoc = null;
             _factory.AnalysesTool?.SetActiveSchematic(null);
         }
+
+        // R-h9a-3: a harmonicaRF document closing while it holds the docked menu-bar takeover must
+        // give circuitRF's own menu back — nothing else will, since the tab (and its dock-property-
+        // changed event) is gone.
+        if (ReferenceEquals(dockable, _harmonicaDockedFocusDoc))
+            ResetHarmonicaDockedFocusTracking();
     }
 
     // ---- Save All documents (⌘S / Ctrl+S) ----------------------------------

@@ -50,8 +50,8 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
     }
 
     private static PCellHandleMarker Grip(LayoutEditorViewModel vm, string label, double dx, double dy)
-        => Assert.Single(vm.Overlay.PCellHandles.Where(h =>
-               h.Label == label && Math.Abs(h.AxisDx - dx) < 1e-6 && Math.Abs(h.AxisDy - dy) < 1e-6));
+        => Assert.Single(vm.Overlay.PCellHandles, h =>
+               h.Label == label && Math.Abs(h.AxisDx - dx) < 1e-6 && Math.Abs(h.AxisDy - dy) < 1e-6);
 
     private static IReadOnlyDictionary<string, PCellValue> ParametersOf(LayoutEditorViewModel vm)
     {

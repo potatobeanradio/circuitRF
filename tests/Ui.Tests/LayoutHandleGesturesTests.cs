@@ -276,6 +276,7 @@ public class LayoutHandleGesturesTests
         vm.OnPointerReleased(handleX, -handleY, KeyModifiers.None);
 
         var result = (CurveShape)model.Shapes[0];
+        Assert.NotNull(result.Edges);
         Assert.Equal(EdgeKind.Arc, result.Edges[0].Kind);
         Assert.True(Math.Sign(result.Edges[0].Bulge) != Math.Sign(0.3));
     }
@@ -305,6 +306,7 @@ public class LayoutHandleGesturesTests
         vm.OnPointerReleased(1000, 0, KeyModifiers.None);
 
         var result = (CurveShape)model.Shapes[0];
+        Assert.NotNull(result.Edges);
         Assert.Equal(0, result.Edges[0].Bulge, 6);
         var straightArc = LayoutArc.FromBulge(0, 0, 2000, 0, result.Edges[0].Bulge);
         Assert.Equal(0, straightArc.Sweep, 6);

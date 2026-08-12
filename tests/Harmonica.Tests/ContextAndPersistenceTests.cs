@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Engine;
 using CircuitRF.Harmonica;
 using Xunit;
@@ -257,7 +258,10 @@ public sealed class ContextAndPersistenceTests(ITestOutputHelper output)
             Dut = new DutSpec
             {
                 Kind = DutKind.External, TypeName = "some_fet",
-                Provider = "/no/such/place/vendor-model.osdi",
+                // Provider must carry the "VerilogA|<path>" form CharmIo/VerilogAFileResolver expect
+                // for a user-named model file — a bare path is not a recognized provider shape and
+                // CharmIo.Read's FindUnresolved never even looks at it (ModelFileIn returns null).
+                Provider = VerilogAFileResolver.ProviderNameFor("/no/such/place/vendor-model.osdi"),
             },
         };
 

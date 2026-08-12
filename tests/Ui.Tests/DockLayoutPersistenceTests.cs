@@ -1251,10 +1251,10 @@ public sealed class DockLayoutPersistenceTests
 
         var layout = DockLayoutCapture.Capture(root, []);
 
-        var properties = Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.Properties));
+        var properties = Assert.Single(layout.Panels, p => p.Id == DockPanelIds.Properties);
         Assert.Equal(DockSide.Left, properties.Side);
 
-        var tree = Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.ProjectTree));
+        var tree = Assert.Single(layout.Panels, p => p.Id == DockPanelIds.ProjectTree);
         Assert.Equal(DockSide.Left, tree.Side);
 
         // Two separate docks in one column must stay two groups, or they would restore tabbed.
@@ -1270,7 +1270,7 @@ public sealed class DockLayoutPersistenceTests
         var layout = DockLayoutCapture.Capture(root, []);
 
         Assert.Equal(DockSide.Left,
-            Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.Properties)).Side);
+            Assert.Single(layout.Panels, p => p.Id == DockPanelIds.Properties).Side);
     }
 
     [Fact]
@@ -1300,6 +1300,6 @@ public sealed class DockLayoutPersistenceTests
 
         // The genuine Bottom case must keep working — this is the half a naive fix breaks.
         Assert.Equal(DockSide.Bottom,
-            Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.Messages)).Side);
+            Assert.Single(layout.Panels, p => p.Id == DockPanelIds.Messages).Side);
     }
 }

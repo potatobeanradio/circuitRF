@@ -36,7 +36,20 @@ public partial class HarmonicaView : UserControl
             _doc.ViewModel.Harmonica.Pool.Completed -= OnFrameCompleted;
             _doc.ViewModel.Harmonica.Pool.Failed    -= OnFrameFailed;
             _doc.ViewModel.Harmonica.EditDisplay.UnlockedChanged -= OnRedraw;
+            _doc.ViewModel.NativeMenuDockedFocusChanged = null;
             (Menus.DataContext as HarmonicaMenuViewModel)?.Detach();
+            // R-h9a-8 — ApplyVariant() used to run only here, at attach time, so an OS light/dark
+            // switch never reached an already-open document. Unsubscribe on detach so a closed/
+            // torn-down document's handler doesn't outlive it.
+            if (Application.Current is { } appDetach)
+                appDetach.ActualThemeVariantChanged -= OnActualThemeVariantChanged;
+
+            // R-h9a-9 — subscribed at attach, below. Unsubscribed here for the same reason as
+            // ActualThemeVariantChanged: ThemeService.ThemeChanged is a static, process-wide event,
+            // and HarmonicaViewModel has no IDisposable/teardown of its own to unsubscribe from it —
+            // the VIEW owns this subscription's lifetime, exactly like SchematicCanvas already does
+            // for the same event.
+            ThemeService.ThemeChanged -= OnThemeServiceChanged;
         }
 
         _doc = DataContext as HarmonicaDocument;
@@ -44,6 +57,10 @@ public partial class HarmonicaView : UserControl
 
         _doc.ActivationFocusRequested += OnActivationFocusRequested;
         _doc.ViewModel.Harmonica.RedrawRequested += OnRedraw;
+
+        // R-h9a-3's action seam — WorkspaceViewModel's dock-level focus tracking drives this without
+        // needing to know Menus is a HarmonicaMenuView, or that NativeMenu exists at all.
+        _doc.ViewModel.NativeMenuDockedFocusChanged = Menus.SetDockedFocus;
 
         // R-h45-8 — the pool completes on a worker thread; publishing is the ONE thing that must
         // happen on the UI thread, so it is marshalled here rather than inside the view model.
@@ -63,9 +80,27 @@ public partial class HarmonicaView : UserControl
         // own note on IActivatableDocument — so consume any pending request here too.
         if (_doc.ConsumeActivationFocus()) FocusCanvas();
 
+        // R-h9a-8 — subscribe to the SAME global event App itself already listens to for
+        // UpdateCrfWarningBrush, so a later OS light/dark switch re-applies to this document too,
+        // not just whichever document happened to be open at attach time.
+        if (Application.Current is { } appAttach)
+            appAttach.ActualThemeVariantChanged += OnActualThemeVariantChanged;
+
+        // R-h9a-9 — the same seam SchematicCanvas already uses for a Settings-dialog colour edit:
+        // ThemeService.ThemeChanged fires when ThemeService.Active is REPLACED (never on a mutation
+        // of the same instance), and HarmonicaViewModel.RenderTheme reads ThemeService.Active fresh on
+        // every access, so re-rendering is the whole of what this has to do.
+        ThemeService.ThemeChanged += OnThemeServiceChanged;
+
         ApplyVariant();
         Refresh();
     }
+
+    private void OnActualThemeVariantChanged(object? sender, EventArgs e)
+        => Dispatcher.UIThread.Post(() => { ApplyVariant(); Refresh(); }, DispatcherPriority.Background);
+
+    private void OnThemeServiceChanged(object? sender, EventArgs e)
+        => Dispatcher.UIThread.Post(Refresh, DispatcherPriority.Background);
 
     private void OnActivationFocusRequested() => FocusCanvas();
 
@@ -161,26 +196,44 @@ public partial class HarmonicaView : UserControl
         // §7.6's File menu. There is no workspace command for a `.charm` — H4–H6 built
         // HarmonicaDocument.OnSavedToPath and CharmIo but never a File route to them — so the
         // document serves its own open/save here. It needs no workspace to do it (§1.2).
-        menus.OpenDocumentHook    = () => _ = OpenCharmAsync();
-        menus.SaveDocumentHook    = () => _ = SaveCharmAsync(saveAs: false);
-        menus.SaveDocumentAsHook  = () => _ = SaveCharmAsync(saveAs: true);
+        menus.OpenDocumentHook    = () => RunHook(OpenCharmAsync);
+        menus.SaveDocumentHook    = () => RunHook(() => SaveCharmAsync(saveAs: false));
+        menus.SaveDocumentAsHook  = () => RunHook(() => SaveCharmAsync(saveAs: true));
         menus.NewDocumentHook     = NewDocument;
         menus.CloseDocumentHook   = CloseDocument;
 
-        menus.ImportGamHook       = () => _ = ImportGamAsync();
-        menus.ExportGamHook       = () => _ = ExportGamAsync();
-        menus.ExportTestbenchHook = () => _ = ExportTestbenchAsync();
-        menus.CopyTerminationsHook= () => _ = CopyTerminationsAsync();
-        menus.CopyReadoutsHook    = () => _ = CopyReadoutsAsync();
-        menus.PreferencesHook     = () => _ = ShowPreferencesAsync();
-        menus.AddTraceHook        = () => _ = ShowTracePickerAsync();
+        menus.ImportGamHook       = () => RunHook(ImportGamAsync);
+        menus.ExportGamHook       = () => RunHook(ExportGamAsync);
+        menus.ExportTestbenchHook = () => RunHook(ExportTestbenchAsync);
+        menus.CopyTerminationsHook= () => RunHook(CopyTerminationsAsync);
+        menus.CopyReadoutsHook    = () => RunHook(CopyReadoutsAsync);
+        menus.PreferencesHook     = () => RunHook(ShowPreferencesAsync);
+        menus.AddTraceHook        = () => RunHook(ShowTracePickerAsync);
 
         // H8 — the four H7 left deliberately null. An unwired hook is honest where a faked
         // implementation is not; this phase is what pays the debt.
-        menus.SetDutHook          = () => _ = ShowSetDutAsync();
-        menus.ExportDataHook      = () => _ = ExportDataAsync();
-        menus.CopyPlotHook        = () => _ = CopyPlotAsync();
+        menus.SetDutHook          = () => RunHook(ShowSetDutAsync);
+        menus.ExportDataHook      = () => RunHook(ExportDataAsync);
+        menus.CopyPlotHook        = () => RunHook(CopyPlotAsync);
         menus.HelpHook            = ShowHelp;
+    }
+
+    /// <summary>
+    /// R-h9a-13 — the ONE place a menu hook's own exception is actually observed. An `async Task`
+    /// method's compiler-generated state machine ALWAYS captures a thrown exception into the returned
+    /// Task rather than letting it escape synchronously — regardless of whether the throw happens
+    /// before or after the method's first `await` — so a discarded/unobserved Task
+    /// (`() => _ = SomeAsyncMethod();`, what every hook above used to be) loses that exception
+    /// permanently. Routing every hook through this instead means the next "menu item does nothing"
+    /// report arrives with the exception's own message in the readout strip, not silence.
+    /// </summary>
+    private async void RunHook(Func<System.Threading.Tasks.Task> op)
+    {
+        try { await op(); }
+        catch (Exception ex)
+        {
+            if (Vm is { } h) { h.SolveError = ex.Message; Refresh(); }
+        }
     }
 
     /// <summary>§4.3's <i>Set DUT…</i>. The dialog produces a <c>DutSpec</c>; applying it is

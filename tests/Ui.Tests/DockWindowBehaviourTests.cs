@@ -263,6 +263,45 @@ public sealed class DockWindowBehaviourTests
     }
 
     /// <summary>
+    /// Owner report: tearing a harmonicaRF document off its own tab crashed with
+    /// <c>ArgumentException: "The menu being updated does not match."</c>, thrown from Avalonia's native
+    /// menu exporter (<c>__MicroComIAvnMenuProxy.Update</c>) inside <c>HarmonicaMenuView.RecomputeAttachment</c>.
+    ///
+    /// <para>Root cause: <c>ApplyFocusedDocument</c> unconditionally attached circuitRF's OWN shared
+    /// <c>NativeMenu</c> to every torn-off window — including one hosting a <c>HarmonicaDocument</c> or a
+    /// <c>WBondDocument</c>, both of which independently manage their OWN per-window native-menu
+    /// attachment (<c>HarmonicaMenuView.RecomputeAttachment</c> / the structurally identical mechanism in
+    /// <c>WBondMenuView</c>). Two different <c>NativeMenu</c> C# instances being assigned to the SAME
+    /// window in close succession corrupts <c>AvaloniaNativeMenuExporter</c>'s native-side state — the
+    /// crash was a race between this call and the document's own attach, not a bug in either mechanism
+    /// alone.</para>
+    ///
+    /// <para>Fix: exclude both document types from the shared-menu attach, since neither needs it — each
+    /// already attaches its own menu to its own torn-off window.</para>
+    /// </summary>
+    [Fact]
+    public void HarmonicaAndWBondDocuments_AreExcludedFromTheSharedMenuAttach_TheyOwnTheirOwn()
+    {
+        var src = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs");
+        var i   = src.IndexOf("void ApplyFocusedDocument()");
+        Assert.True(i > 0);
+        var body = src[i..(i + 1600)];
+
+        var attachIndex = body.IndexOf("AttachSharedNativeMenuIfMacOS(shellWindow, window)");
+        Assert.True(attachIndex > 0, "the menu attach must still happen for every OTHER document type");
+
+        // The guard immediately preceding the attach call must exclude both document types by name —
+        // not merely "doc is not null", or the harmonicaRF tear-off crash reproduces immediately.
+        var guardStart = body.LastIndexOf("if (", attachIndex, StringComparison.Ordinal);
+        Assert.True(guardStart >= 0, "expected an `if (...)` guard directly ahead of the attach call");
+        var guardEnd = body.IndexOf(')', guardStart);
+        var guard    = body[guardStart..guardEnd];
+
+        Assert.Contains("HarmonicaDocument", guard, StringComparison.Ordinal);
+        Assert.Contains("WBondDocument", guard, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The wiring that installs the <c>Activated</c> handler used to run only off DocumentDock
     /// changes — which floating a TOOL never causes, so a torn-off tool window got no handler at all
     /// and could never attach its menu, whatever the gate above said.

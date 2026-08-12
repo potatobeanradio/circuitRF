@@ -145,9 +145,16 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// The Layer-2 tokens the panels draw with, re-projected on demand.
     /// <b>R-h45-11: this is the WHOLE cost of a colour change</b> — no re-solve, and specifically no
     /// contour-cache or RBF-factorization invalidation.
+    ///
+    /// <para><b>R-h9a-9 — the base theme is <see cref="ThemeService.Active"/>, not the built-in
+    /// default.</b> A circuitRF Settings-dialog colour edit changes <c>ThemeService.Active</c>; before
+    /// this, <see cref="HarmonicaAppearanceBridge.ToRenderTheme"/>'s <c>baseTheme</c> defaulted to
+    /// <see cref="ColorTheme.BuiltIn"/> here, so that edit was structurally invisible to harmonicaRF —
+    /// the app-wide theme and this document's own <c>Appearance</c> overrides now compose the same way
+    /// the schematic canvas already composes <c>ThemeService.Active</c> with its own local state.</para>
     /// </summary>
     public HarmonicaRenderTheme RenderTheme
-        => HarmonicaAppearanceBridge.ToRenderTheme(Appearance, Variant);
+        => HarmonicaAppearanceBridge.ToRenderTheme(Appearance, Variant, ThemeService.Active);
 
     /// <summary>§7.9.4's colour editor. It writes <see cref="Appearance"/> and nothing else, which is
     /// R-h7-16's guarantee expressed as a type rather than as a rule.</summary>

@@ -85,7 +85,7 @@ public sealed class LayoutGroupIntoCellTests : IDisposable
         vm.OnPointerMoved(2000, 2000, leftDown: true, Avalonia.Input.KeyModifiers.None);
         vm.OnPointerReleased(2000, 2000, Avalonia.Input.KeyModifiers.None);
         Assert.Equal(2, vm.SelectedIndices.Count);
-        Assert.Equal(1, vm.SelectedInstanceIndices.Count);
+        Assert.Single(vm.SelectedInstanceIndices);
         return (vm, model, sink);
     }
 
@@ -177,7 +177,7 @@ public sealed class LayoutGroupIntoCellTests : IDisposable
         Assert.Same(polyBefore, model.Shapes[1]);
         Assert.Single(model.Instances);
         Assert.Equal(instBefore.CellRef, model.Instances[0].CellRef);
-        Assert.Empty(model.Instances.Where(i => i.CellRef == "Grouped"));
+        Assert.DoesNotContain(model.Instances, i => i.CellRef == "Grouped");
 
         // R-L3c-6: undo does NOT delete the created cell folder.
         Assert.True(Directory.Exists(cellDir));

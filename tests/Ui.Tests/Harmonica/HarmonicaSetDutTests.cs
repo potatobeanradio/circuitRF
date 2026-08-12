@@ -206,14 +206,14 @@ public sealed class HarmonicaSetDutTests(ITestOutputHelper output)
             // Present: the reference resolves, nothing is reported.
             var ok = new HarmonicaViewModel();
             var unresolvedWhilePresent = ok.LoadCharm(json, dir);
-            Assert.Empty(unresolvedWhilePresent.Where(u => u.Kind == "model"));
+            Assert.DoesNotContain(unresolvedWhilePresent, u => u.Kind == "model");
 
             // Gone: NAMED, not substituted (§8.1). The document still opens so it can be re-pointed.
             File.Delete(osdi);
             var missing = new HarmonicaViewModel();
             var unresolved = missing.LoadCharm(json, dir);
 
-            var modelRef = Assert.Single(unresolved.Where(u => u.Kind == "model"));
+            var modelRef = Assert.Single(unresolved, u => u.Kind == "model");
             Assert.Contains("mymodel.osdi", modelRef.Message, StringComparison.Ordinal);
             Assert.Equal(DutKind.External, missing.Model.Dut.Kind);
             output.WriteLine(modelRef.Message);

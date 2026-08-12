@@ -796,7 +796,7 @@ public sealed class PdkPartVariantTests : IDisposable
     }
 
     [Fact]
-    public void AFileValuedParameter_OffersAPicker_AndCommitsWhatWasPicked()
+    public async Task AFileValuedParameter_OffersAPicker_AndCommitsWhatWasPicked()
     {
         // A path is exactly the kind of value nobody should be asked to type.
         string cellDir = InstallPart(ManifestWithFileParam, new PdkPartParameter("ModelFile", ""));
@@ -808,13 +808,13 @@ public sealed class PdkPartVariantTests : IDisposable
 
         row.PickFileAsync = () => Task.FromResult<string?>("/models/lib.so");
         Assert.True(row.ShowBrowseButton);
-        row.BrowseForFileAsync().GetAwaiter().GetResult();
+        await row.BrowseForFileAsync();
 
         Assert.Equal("/models/lib.so", comp.Parameters.Single(p => p.Name == "ModelFile").Expression);
     }
 
     [Fact]
-    public void ThePickerSuppliedAfterRowsAreBuilt_StillReachesTheRow()
+    public async Task ThePickerSuppliedAfterRowsAreBuilt_StillReachesTheRow()
     {
         // The ordering the real view actually uses, and the one that shipped broken: rows are built
         // by SetTargetDirect, and only THEN does the view's DataContextChanged supply the picker.
@@ -832,7 +832,7 @@ public sealed class PdkPartVariantTests : IDisposable
         editor.PickModelFileAsync = () => Task.FromResult<string?>("/models/lib.so");
 
         Assert.True(row.ShowBrowseButton);
-        row.BrowseForFileAsync().GetAwaiter().GetResult();
+        await row.BrowseForFileAsync();
         Assert.Equal("/models/lib.so", comp.Parameters.Single(p => p.Name == "ModelFile").Expression);
     }
 
@@ -901,14 +901,14 @@ public sealed class PdkPartVariantTests : IDisposable
     }
 
     [Fact]
-    public void ACancelledPick_ChangesNothing()
+    public async Task ACancelledPick_ChangesNothing()
     {
         string cellDir = InstallPart(ManifestWithFileParam, new PdkPartParameter("ModelFile", "/was/here.so"));
         var (model, comp) = Placed(cellDir);
 
         var row = Row(model, comp, "ModelFile");
         row.PickFileAsync = () => Task.FromResult<string?>(null);
-        row.BrowseForFileAsync().GetAwaiter().GetResult();
+        await row.BrowseForFileAsync();
 
         Assert.Equal("/was/here.so", comp.Parameters.Single(p => p.Name == "ModelFile").Expression);
     }

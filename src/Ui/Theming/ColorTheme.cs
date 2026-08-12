@@ -107,8 +107,19 @@ public sealed class ColorTheme
             [ColorRole.HarmonicaOperatingCursor]  = new(  0, 110,  40),
             [ColorRole.HarmonicaReachableRegion]  = new(  0, 110,  40,  40),
             [ColorRole.HarmonicaEditChrome]       = new(  0, 110,  40),
-            // §7.9.3: "MarkerBand1…5 | as §4.2" — IDENTICAL to the dark set below, on purpose.
-            [ColorRole.HarmonicaMarkerBand1]      = new( 34, 177,  76),   // f₀   green
+            // R-h9a-7: created here for brief 1C (toolbar/readouts) to consume — same defaults as
+            // Harmonica.GridLine/SmithGrid, since a message strip and the grid share the same
+            // deliberately-low-contrast-against-Background tone.
+            [ColorRole.HarmonicaMessages]         = new(170, 205, 180),
+            [ColorRole.HarmonicaProgressBar]      = new(170, 205, 180),
+            // R-h9a-6 (brief-harmonicarf-r1a, 2026-08-12): MarkerBand1 no longer matches the dark
+            // set — dark moved to a saturated (0,255,0) that would be illegible on a light canvas,
+            // so light needed its OWN brighter/more-saturated green, distinguishable from
+            // Harmonica.GridPoint (60,150,90) and Harmonica.Isoline (0,110,40) here in light mode.
+            // (0,200,83) is the well-known "Material Green A700" accent — vivid and saturated enough
+            // to read as "the marker", while its luminance still holds up against the near-white
+            // Harmonica.Background (246,250,246) the other two roles are also judged against.
+            [ColorRole.HarmonicaMarkerBand1]      = new(  0, 200,  83),   // f₀   green (light-only)
             [ColorRole.HarmonicaMarkerBand2]      = new(232, 106, 106),   // 2f₀  pastel red
             [ColorRole.HarmonicaMarkerBand3]      = new(214, 178,  54),   // 3f₀  pastel yellow
             [ColorRole.HarmonicaMarkerBand4]      = new(108, 152, 226),   // 4f₀  pastel blue
@@ -151,15 +162,19 @@ public sealed class ColorTheme
             // "Green is the default for everything textual and structural; red is reserved. Only the
             // loadline and the efficiency trace are red. That reservation is the point."
             [ColorRole.HarmonicaBackground]       = new(  6,  12,   8),   // near-black, faint green cast
-            [ColorRole.HarmonicaAxisLine]         = new(  0, 255,  65),   // phosphor green
-            [ColorRole.HarmonicaAxisText]         = new(  0, 255,  65),
-            [ColorRole.HarmonicaReadoutText]      = new(  0, 255,  65),
+            [ColorRole.HarmonicaAxisLine]         = new(  0, 255,  65),   // phosphor green (unchanged)
+            // R-h9a-6 (brief-harmonicarf-r1a, 2026-08-12): these five roles + MarkerBand1 below moved
+            // to a pure, fully-saturated (0,255,0) — the owner's own explicit request. AxisLine,
+            // GridLine/SmithGrid, and IsolineLabel are deliberately NOT in this set and keep their
+            // original phosphor tone (0,255,65) / low-contrast grid tone (0,90,30) unchanged.
+            [ColorRole.HarmonicaAxisText]         = new(  0, 255,   0),
+            [ColorRole.HarmonicaReadoutText]      = new(  0, 255,   0),
             [ColorRole.HarmonicaGridLine]         = new(  0,  90,  30),   // deliberately low contrast
             [ColorRole.HarmonicaSmithGrid]        = new(  0,  90,  30),
-            [ColorRole.HarmonicaIsoline]          = new(  0, 255,  65),
+            [ColorRole.HarmonicaIsoline]          = new(  0, 255,   0),
             [ColorRole.HarmonicaIsolineLabel]     = new(  0, 255,  65),
-            [ColorRole.HarmonicaGainTrace]        = new(  0, 255,  65),
-            [ColorRole.HarmonicaDcivFamily]       = new(  0, 200,  55),
+            [ColorRole.HarmonicaGainTrace]        = new(  0, 255,   0),
+            [ColorRole.HarmonicaDcivFamily]       = new(  0, 255,   0),
             [ColorRole.HarmonicaLoadline]         = new(255,  48,  48),   // reserved red
             [ColorRole.HarmonicaEfficiencyTrace]  = new(255,  48,  48),   // reserved red
             [ColorRole.HarmonicaGridPoint]        = new(  0, 160,  50),
@@ -167,7 +182,11 @@ public sealed class ColorTheme
             [ColorRole.HarmonicaOperatingCursor]  = new(  0, 255,  65),
             [ColorRole.HarmonicaReachableRegion]  = new(  0, 255,  65,  40),
             [ColorRole.HarmonicaEditChrome]       = new(  0, 255,  65),
-            [ColorRole.HarmonicaMarkerBand1]      = new( 34, 177,  76),
+            // R-h9a-7: created here for brief 1C (toolbar/readouts) to consume — same defaults as
+            // Harmonica.GridLine/SmithGrid (§ same reasoning as the light map above).
+            [ColorRole.HarmonicaMessages]         = new(  0,  90,  30),
+            [ColorRole.HarmonicaProgressBar]      = new(  0,  90,  30),
+            [ColorRole.HarmonicaMarkerBand1]      = new(  0, 255,   0),
             [ColorRole.HarmonicaMarkerBand2]      = new(232, 106, 106),
             [ColorRole.HarmonicaMarkerBand3]      = new(214, 178,  54),
             [ColorRole.HarmonicaMarkerBand4]      = new(108, 152, 226),

@@ -298,7 +298,7 @@ public sealed class WBondSchematicPlacementTests : IDisposable
 
         Assert.True(WBondEmbedding.TryDecode(payload, out var carried));
         Assert.Null(carried!.EmbeddedGeometryJson);
-        Assert.Equal(1, carried.Arrays.Count);
+        Assert.Single(carried.Arrays);
         Assert.Equal(2, carried.WireCount);
 
         // Encoding must not have edited the caller's own design — it strips a COPY.

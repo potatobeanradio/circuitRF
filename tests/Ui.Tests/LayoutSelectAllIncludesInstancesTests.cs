@@ -44,7 +44,7 @@ public sealed class LayoutSelectAllIncludesInstancesTests : IDisposable
         vm.SelectAllCommand.Execute(null);
 
         Assert.Equal(2, vm.SelectedIndices.Count);
-        Assert.Equal(1, vm.SelectedInstanceIndices.Count);
+        Assert.Single(vm.SelectedInstanceIndices);
     }
 
     [Fact]

@@ -140,7 +140,7 @@ public sealed class PCellDoubleClickDispatchTests : IDisposable
 
         // The PCell branch must return before falling through — DoPushInto's call in the body must
         // appear only once, in the non-PCell path (not duplicated/also called in the PCell branch).
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(body, "DoPushInto\\(").Count);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(body, "DoPushInto\\("));
     }
 
     [Fact]

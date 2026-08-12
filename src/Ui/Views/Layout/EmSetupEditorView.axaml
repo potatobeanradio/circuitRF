@@ -108,7 +108,7 @@
                         <TextBlock Text="Output file:" Classes="colhdr" VerticalAlignment="Center"/>
                         <TextBox Name="SnpOutputPathBox"
                                  Text="{Binding ViewModel.SnpOutputPathText}"
-                                 Watermark="{Binding ViewModel.SnpOutputPlaceholder}"
+                                 PlaceholderText="{Binding ViewModel.SnpOutputPlaceholder}"
                                  FontSize="11" Padding="4,2"
                                  MinWidth="120" MaxWidth="420"
                                  VerticalAlignment="Center"
@@ -612,7 +612,7 @@
                     <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="4">
                         <TextBox Classes="num" Tag="MeshFrequency" Width="110"
                                  Text="{Binding ViewModel.PlanarMeshFrequencyText}"
-                                 Watermark="{Binding ViewModel.MeshFrequencyPlaceholder}"
+                                 PlaceholderText="{Binding ViewModel.MeshFrequencyPlaceholder}"
                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                  ToolTip.Tip="The frequency the cell-size cap is sized at. Leave blank to use the maximum of the frequency sweep. Sizing the mesh lower than the sweep's max gives fewer unknowns and a faster run, at the cost of resolution at the top of the band — the notes below say what the trade actually is."/>
                         <TextBlock FontSize="11" VerticalAlignment="Center" Opacity="0.7"

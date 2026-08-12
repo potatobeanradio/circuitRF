@@ -162,8 +162,12 @@
     </NativeMenu>
   </NativeMenu.Menu>
 
-  <!-- ── Surface 2: the in-window Menu, hand-mirrored with the NativeMenu above ── -->
-  <Menu x:Name="InWindowMenu">
+  <!-- ── Surface 2: the in-window Menu, hand-mirrored with the NativeMenu above ──
+       Hidden on macOS, where the native bar above already carries it — the same
+       IsVisible="{OnPlatform True, macOS=False}" rule WorkspaceWindow's own in-window Menu uses
+       (R-h9a-2: on macOS the in-window Menu must never render at all — it was IsVisible="False" only
+       by accident of nothing setting it, not by design). -->
+  <Menu x:Name="InWindowMenu" IsVisible="{OnPlatform True, macOS=False}">
 
     <MenuItem Header="_File" Padding="8,4">
       <MenuItem Header="_New"           Command="{Binding NewDocumentCommand}"/>

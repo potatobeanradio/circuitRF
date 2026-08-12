@@ -43,9 +43,21 @@ public static class HarmonicaCanvasRenderer
     }
 
     /// <summary>Fills the target rect with the document background. Never <c>canvas.Clear</c>, which
-    /// uses Src blend and would replace the whole surface — this codebase has shipped that twice.</summary>
-    public static void FillBackground(SKCanvas canvas, double w, double h, HarmonicaRenderTheme theme)
+    /// uses Src blend and would replace the whole surface — this codebase has shipped that twice.
+    ///
+    /// <para><b>R-h9a-12 — <paramref name="transparent"/> skips the fill entirely, it never draws a
+    /// transparent rect.</b> Mirrors <c>LayoutRenderer</c>'s own <c>TransparentBackground</c> option
+    /// (R-L1f-5): the destination surface is expected to ARRIVE transparent (a fresh PDF page / SVG
+    /// canvas already does; <c>HarmonicaClipboard</c>'s bitmap path calls <c>SKBitmap.Erase(SKColors.
+    /// Transparent)</c> first) — drawing a rect with alpha-0 paint would still be a real draw call, and
+    /// a real draw call is exactly what a future accidental non-zero alpha would silently corrupt.
+    /// Defaults <c>false</c> so the live canvas — which must stay unaffected — needs no change at its
+    /// one call site.</para>
+    /// </summary>
+    public static void FillBackground(SKCanvas canvas, double w, double h, HarmonicaRenderTheme theme,
+                                      bool transparent = false)
     {
+        if (transparent) return;
         using var bg = new SKPaint { Color = theme.Background, IsAntialias = false };
         canvas.DrawRect(new SKRect(0, 0, (float)w, (float)h), bg);
     }

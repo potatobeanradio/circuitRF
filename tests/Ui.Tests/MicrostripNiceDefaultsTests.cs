@@ -31,7 +31,7 @@ public sealed class MicrostripNiceDefaultsTests
 
     private static (string Expr, string Unit) Param(List<EditableParameter> ps, string name)
     {
-        var p = Assert.Single(ps.Where(x => x.Name == name));
+        var p = Assert.Single(ps, x => x.Name == name);
         return (p.Expression, p.Unit);
     }
 

@@ -416,7 +416,7 @@ public class ProcessTechnologyBuilderTests
         // bulk the stack is built on), so the lowest conductor is the one closest to it.
         var r = BuildFixture();
 
-        var ground = Assert.Single(r.Technology.Stackup.Layers.Where(l => l.IsGroundReference));
+        var ground = Assert.Single(r.Technology.Stackup.Layers, l => l.IsGroundReference);
         Assert.Equal("MetalLow", ground.Name);
         Assert.Contains(r.Notes, n => n.Contains("MetalLow") && n.Contains("return path"));
     }
@@ -441,7 +441,7 @@ public class ProcessTechnologyBuilderTests
                 CONDUCTOR  Diff   {THICKNESS=0.4 RPSQ=1.0 LAYER_TYPE=DIFFUSION}
                 """), null, "fallback");
 
-        var ground = Assert.Single(r.Technology.Stackup.Layers.Where(l => l.IsGroundReference));
+        var ground = Assert.Single(r.Technology.Stackup.Layers, l => l.IsGroundReference);
         Assert.Equal("MetalB", ground.Name);
         Assert.Contains(r.Notes, n => n.Contains("MetalB") && n.Contains("device"));
     }

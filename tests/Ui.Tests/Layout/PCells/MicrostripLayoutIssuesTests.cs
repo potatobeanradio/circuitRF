@@ -168,7 +168,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
             })
             .ToList();
         MicrostripSubstrateInjection.ApplyTechnologyDefaults(schematicParams, tech, SymbolKind.Mlin);
-        var schematicW = Assert.Single(schematicParams.Where(p => p.Name == "W"));
+        var schematicW = Assert.Single(schematicParams, p => p.Name == "W");
         double schematicMetres =
             double.Parse(schematicW.Expression, System.Globalization.CultureInfo.InvariantCulture)
             * MetresPerMil;
@@ -331,8 +331,8 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     // ═════════════════════════════════════════════════════════════════════════
 
     private static PCellHandleMarker Grip(LayoutEditorViewModel vm, string label, double dx, double dy)
-        => Assert.Single(vm.Overlay.PCellHandles.Where(h =>
-               h.Label == label && Math.Abs(h.AxisDx - dx) < 1e-6 && Math.Abs(h.AxisDy - dy) < 1e-6));
+        => Assert.Single(vm.Overlay.PCellHandles, h =>
+               h.Label == label && Math.Abs(h.AxisDx - dx) < 1e-6 && Math.Abs(h.AxisDy - dy) < 1e-6);
 
     /// <summary>An MLIN plus a separate rect whose corner is something to snap to.</summary>
     private LayoutEditorViewModel PlaceMlinWithSnapTarget(long targetX, long targetY)

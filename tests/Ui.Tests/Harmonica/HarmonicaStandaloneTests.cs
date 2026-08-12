@@ -252,8 +252,14 @@ public sealed class HarmonicaStandaloneTests(ITestOutputHelper output)
         string code = Read("src/Ui/Views/Harmonica/HarmonicaMenuView.axaml.cs");
 
         Assert.Contains("WorkspaceWindowTypeName = \"WorkspaceWindow\"", code, StringComparison.Ordinal);
-        Assert.Contains("window.GetType().Name == WorkspaceWindowTypeName", code, StringComparison.Ordinal);
-        Assert.Contains("NativeMenu.SetMenu(window, menu)", code, StringComparison.Ordinal);
+        Assert.Contains("bool isWorkspaceWindow = window.GetType().Name == WorkspaceWindowTypeName;",
+            code, StringComparison.Ordinal);
+        // R-h9a-3's own RecomputeAttachment: a torn-off document window or the standalone shell
+        // (!isWorkspaceWindow) always owns the window outright — the same case this test's own name
+        // describes, just reached through the three-way desiredTarget decision rather than a
+        // standalone attach method.
+        Assert.Contains("!isWorkspaceWindow    ? window", code, StringComparison.Ordinal);
+        Assert.Contains("NativeMenu.SetMenu(desiredTarget, _ownMenu);", code, StringComparison.Ordinal);
 
         // The name it compares against must still be a real type, or the comparison is against a
         // string nothing answers to and every window would get the menu bar — including the shell.

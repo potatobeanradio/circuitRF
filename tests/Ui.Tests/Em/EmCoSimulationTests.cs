@@ -286,7 +286,7 @@ public class EmCoSimulationTests : IDisposable
         Assert.False(second.Created);
         second.Command!.Execute();
 
-        var snp = Assert.Single(m.Components.Where(c => c.Symbol == SymbolKind.Snp));
+        var snp = Assert.Single(m.Components, c => c.Symbol == SymbolKind.Snp);
         Assert.Equal("results/CoupledPair.s6p", snp.Parameters.First(p => p.Name == "File").Expression);
         Assert.Equal("6", snp.Parameters.First(p => p.Name == "NumPorts").Expression);
         Assert.Equal(6, snp.PortCount);
@@ -305,7 +305,7 @@ public class EmCoSimulationTests : IDisposable
 
         var first = EmBackAnnotation.Annotate(m, em.SnpPath!, 4, "CoupledPair", _ws);
         first.Command!.Execute();
-        Assert.Single(m.Components.Where(c => c.Symbol == SymbolKind.Snp));
+        Assert.Single(m.Components, c => c.Symbol == SymbolKind.Snp);
 
         // Re-run the EM setup — same geometry, same output path — and annotate again.
         var again  = RunEm(CoupledPairLayout());
@@ -315,7 +315,7 @@ public class EmCoSimulationTests : IDisposable
         Assert.Equal(first.ComponentName, second.ComponentName);
         Assert.True(second.NothingChanged,
             "nothing about the reference changed, so a re-annotation must not dirty the schematic");
-        Assert.Single(m.Components.Where(c => c.Symbol == SymbolKind.Snp));
+        Assert.Single(m.Components, c => c.Symbol == SymbolKind.Snp);
     }
 
     /// <summary>
@@ -339,7 +339,7 @@ public class EmCoSimulationTests : IDisposable
         Assert.False(second.Created);
         second.Command!.Execute();
 
-        var snp = Assert.Single(m.Components.Where(c => c.Symbol == SymbolKind.Snp));
+        var snp = Assert.Single(m.Components, c => c.Symbol == SymbolKind.Snp);
         Assert.Equal("results/CoupledPair.s2p", snp.Parameters.First(p => p.Name == "File").Expression);
         Assert.Equal("2", snp.Parameters.First(p => p.Name == "NumPorts").Expression);
         Assert.Equal(2, snp.PortCount);
@@ -360,7 +360,7 @@ public class EmCoSimulationTests : IDisposable
         var second = EmBackAnnotation.Annotate(m, em.SnpPath!, 4, "CoupledPair", _ws);
         Assert.False(second.Created);
         Assert.Equal("CouplerModel", second.ComponentName);
-        Assert.Single(m.Components.Where(c => c.Symbol == SymbolKind.Snp));
+        Assert.Single(m.Components, c => c.Symbol == SymbolKind.Snp);
     }
 
     /// <summary>

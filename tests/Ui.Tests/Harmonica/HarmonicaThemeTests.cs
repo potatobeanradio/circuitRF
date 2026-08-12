@@ -34,7 +34,9 @@ public sealed class HarmonicaThemeTests(ITestOutputHelper output)
     {
         // D7: "Harmonica.* roles go in the shared ColorRole.All. One vocabulary, one editor,
         // .ccolor interchange for free."
-        Assert.Equal(22, HarmonicaAppearanceBridge.Roles.Count);
+        // 22 was the count before R-h9a-7 (brief-harmonicarf-r1a) added Harmonica.Messages and
+        // Harmonica.ProgressBar for brief 1C to consume.
+        Assert.Equal(24, HarmonicaAppearanceBridge.Roles.Count);
         foreach (string role in HarmonicaAppearanceBridge.Roles)
             Assert.Contains(role, ColorRole.All);
 
@@ -62,18 +64,22 @@ public sealed class HarmonicaThemeTests(ITestOutputHelper output)
 
     // ── §7.9.2 / §7.9.3 verbatim ─────────────────────────────────────────────
 
+    // R-h9a-6 (brief-harmonicarf-r1a, 2026-08-12) revises six of the original §7.9.2 dark values —
+    // ReadoutText/AxisText/Isoline/GainTrace/DcivFamily/MarkerBand1 (below, separately) all moved to
+    // a pure (0,255,0). AxisLine, GridLine/SmithGrid, and IsolineLabel are UNCHANGED — this table
+    // states the revised set verbatim, not the original §7.9.2 text.
     public static TheoryData<string, byte, byte, byte, byte> DarkTable => new()
     {
         { ColorRole.HarmonicaBackground,         6,  12,   8, 255 },
         { ColorRole.HarmonicaAxisLine,           0, 255,  65, 255 },
-        { ColorRole.HarmonicaAxisText,           0, 255,  65, 255 },
-        { ColorRole.HarmonicaReadoutText,        0, 255,  65, 255 },
+        { ColorRole.HarmonicaAxisText,           0, 255,   0, 255 },
+        { ColorRole.HarmonicaReadoutText,        0, 255,   0, 255 },
         { ColorRole.HarmonicaGridLine,           0,  90,  30, 255 },
         { ColorRole.HarmonicaSmithGrid,          0,  90,  30, 255 },
-        { ColorRole.HarmonicaIsoline,            0, 255,  65, 255 },
+        { ColorRole.HarmonicaIsoline,            0, 255,   0, 255 },
         { ColorRole.HarmonicaIsolineLabel,       0, 255,  65, 255 },
-        { ColorRole.HarmonicaGainTrace,          0, 255,  65, 255 },
-        { ColorRole.HarmonicaDcivFamily,         0, 200,  55, 255 },
+        { ColorRole.HarmonicaGainTrace,          0, 255,   0, 255 },
+        { ColorRole.HarmonicaDcivFamily,         0, 255,   0, 255 },
         { ColorRole.HarmonicaLoadline,         255,  48,  48, 255 },
         { ColorRole.HarmonicaEfficiencyTrace,  255,  48,  48, 255 },
         { ColorRole.HarmonicaGridPoint,          0, 160,  50, 255 },
@@ -81,8 +87,12 @@ public sealed class HarmonicaThemeTests(ITestOutputHelper output)
         { ColorRole.HarmonicaOperatingCursor,    0, 255,  65, 255 },
         { ColorRole.HarmonicaReachableRegion,    0, 255,  65,  40 },
         { ColorRole.HarmonicaEditChrome,         0, 255,  65, 255 },
+        { ColorRole.HarmonicaMessages,           0,  90,  30, 255 },
+        { ColorRole.HarmonicaProgressBar,        0,  90,  30, 255 },
     };
 
+    // R-h9a-6 revises MarkerBand1 (below, separately) for LIGHT only — every other role in this table
+    // is the original §7.9.3 text, unchanged.
     public static TheoryData<string, byte, byte, byte, byte> LightTable => new()
     {
         { ColorRole.HarmonicaBackground,       246, 250, 246, 255 },
@@ -102,6 +112,8 @@ public sealed class HarmonicaThemeTests(ITestOutputHelper output)
         { ColorRole.HarmonicaOperatingCursor,    0, 110,  40, 255 },
         { ColorRole.HarmonicaReachableRegion,    0, 110,  40,  40 },
         { ColorRole.HarmonicaEditChrome,         0, 110,  40, 255 },
+        { ColorRole.HarmonicaMessages,         170, 205, 180, 255 },
+        { ColorRole.HarmonicaProgressBar,      170, 205, 180, 255 },
     };
 
     [Theory, MemberData(nameof(DarkTable))]
@@ -153,10 +165,25 @@ public sealed class HarmonicaThemeTests(ITestOutputHelper output)
     public void MarkerBandCycle_IsIdenticalInBothVariants_AndWrapsEveryFiveBands()
     {
         // §7.9.2: "the five-colour cycle is a harmonic-identity convention, not a theme choice, so
-        // it survives a theme switch untouched."
+        // it survives a theme switch untouched." — R-h9a-6 (brief-harmonicarf-r1a, 2026-08-12) makes
+        // MarkerBand1 a DELIBERATE exception: dark moved to a fully-saturated (0,255,0) that would be
+        // illegible on a light canvas, so light needed its own distinct, brighter/more-saturated
+        // green (0,200,83) — asserted explicitly below, non-vacuously, so this can't silently pass
+        // because BOTH happened to change to the same value. Bands 2-5 are still identical in both
+        // variants, exactly as before.
         foreach (string role in ColorRole.HarmonicaMarkerBands)
+        {
+            if (role == ColorRole.HarmonicaMarkerBand1) continue;
             Assert.Equal(ColorTheme.BuiltIn.Resolve(role, ColorVariant.Light),
                          ColorTheme.BuiltIn.Resolve(role, ColorVariant.Dark));
+        }
+
+        Assert.NotEqual(ColorTheme.BuiltIn.Resolve(ColorRole.HarmonicaMarkerBand1, ColorVariant.Light),
+                         ColorTheme.BuiltIn.Resolve(ColorRole.HarmonicaMarkerBand1, ColorVariant.Dark));
+        Assert.Equal(new Rgba(0, 255, 0),
+                     ColorTheme.BuiltIn.Resolve(ColorRole.HarmonicaMarkerBand1, ColorVariant.Dark));
+        Assert.Equal(new Rgba(0, 200, 83),
+                     ColorTheme.BuiltIn.Resolve(ColorRole.HarmonicaMarkerBand1, ColorVariant.Light));
 
         // §4.2: "6f₀+ | the five-colour cycle repeats".
         Assert.Equal(ColorRole.HarmonicaMarkerBand1, ColorRole.HarmonicaMarkerBand(1));
@@ -444,6 +471,68 @@ public sealed class HarmonicaThemeTests(ITestOutputHelper output)
         Assert.NotSame(fitP, grid.Fit(GridMetric.PoutDbm));
         output.WriteLine($"after:  {grid.FactorizationCount} factorization(s), {grid.SolveCount} HB solves " +
                          "— unchanged by the theme swap; the negative control shows they can move.");
+    }
+
+    [Fact]
+    public void Tier2_AThemeServiceActiveChangeAndAVariantChange_InvalidateNoContourCacheAndScheduleNoSolve()
+    {
+        // R-h9a-9's own extension of the R-h45-11 counter gate: HarmonicaViewModel.RenderTheme now
+        // composes ThemeService.Active (a circuitRF Settings-dialog colour edit) with the document's
+        // own Appearance — that composition must be just as free of engine side effects as a direct
+        // Appearance edit already is, and it must ACTUALLY be reachable through RenderTheme (not just
+        // theoretically wired), which is why this reads a genuinely different colour back rather than
+        // only asserting the counters.
+        var (ctx, terms) = TinyFixture();
+        var grid = new ContourGrid();
+        grid.Build(ctx, terms, ContourGrid.RingGrid(rings: 2, spokes: 6, maxGamma: 0.6));
+
+        var fitP = grid.Fit(GridMetric.PoutDbm);
+        int factorizationsBefore = grid.FactorizationCount;
+        int solvesBefore         = grid.SolveCount;
+        int pointsBefore         = grid.Points.Count;
+
+        var vm = new HarmonicaViewModel(HarmonicaViewModel.DefaultModel());
+
+        // Recoloured() overrides HarmonicaBackground in BOTH variants (unlike HarmonicaIsoline, which
+        // it only touches in Light) — Dark is the variant this test reads, so Background is the role
+        // that actually proves the composition happened.
+        var builtInDarkBackground = ColorTheme.BuiltIn.Resolve(ColorRole.HarmonicaBackground, ColorVariant.Dark);
+        var appTheme = Recoloured();   // the existing helper: every Harmonica.* role recoloured
+        var savedActive = ThemeService.Active;
+        try
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                // The app-wide theme is REPLACED (never mutated in place — ThemeService.Active's own
+                // setter is what fires ThemeChanged, and a replace is what a live app.axaml.cs Settings
+                // edit actually does).
+                ThemeService.Active = appTheme;
+                vm.Variant = ColorVariant.Light;
+                _ = vm.RenderTheme;
+                vm.Variant = ColorVariant.Dark;
+                var themed = vm.RenderTheme;
+
+                // The composition is real: RenderTheme reflects ThemeService.Active, not the built-in
+                // default it would still read if R-h9a-9's fix had not landed.
+                Assert.NotEqual(builtInDarkBackground.R, themed.Background.Red);
+
+                ThemeService.Active = ColorTheme.BuiltIn;
+            }
+        }
+        finally
+        {
+            ThemeService.Active = savedActive;
+        }
+
+        Assert.Equal(factorizationsBefore, grid.FactorizationCount);
+        Assert.Equal(solvesBefore,         grid.SolveCount);
+        Assert.Equal(pointsBefore,         grid.Points.Count);
+        Assert.Same(fitP, grid.Fit(GridMetric.PoutDbm));
+
+        // The negative control (kept intact, per the brief's own explicit requirement): the counters
+        // CAN move, so the assertions above are not vacuous.
+        grid.InvalidateValues();
+        Assert.NotSame(fitP, grid.Fit(GridMetric.PoutDbm));
     }
 
     [Fact]

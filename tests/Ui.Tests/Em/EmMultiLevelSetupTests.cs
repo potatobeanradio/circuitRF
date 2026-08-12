@@ -41,7 +41,9 @@ public sealed class EmMultiLevelSetupTests
 
         // …and they reach the extractor through the ONE place the two are married, so the panel and
         // the run service cannot disagree about them.
-        Assert.Equal(["Metal1", "Metal2"], back.ToExtractionSettings().AnalysisLevelNames);
+        var extraction = back.ToExtractionSettings();
+        Assert.NotNull(extraction.AnalysisLevelNames);
+        Assert.Equal(["Metal1", "Metal2"], extraction.AnalysisLevelNames);
     }
 
     [Fact]

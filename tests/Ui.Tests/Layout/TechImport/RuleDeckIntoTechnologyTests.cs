@@ -64,11 +64,11 @@ public class RuleDeckIntoTechnologyTests
 
         var top = new LayerKey(10, 0);
 
-        var width = Assert.Single(tech.DrcRules.Where(r => r.Kind == DrcRuleKind.MinWidth && r.Layer == top));
+        var width = Assert.Single(tech.DrcRules, r => r.Kind == DrcRuleKind.MinWidth && r.Layer == top);
         Assert.Equal("MT.a", width.Name);
         Assert.Equal(3000, width.ValueDbu);   // 3.0 µm at 1000 DBU/µm
 
-        var space = Assert.Single(tech.DrcRules.Where(r => r.Kind == DrcRuleKind.MinSpacing && r.Layer == top));
+        var space = Assert.Single(tech.DrcRules, r => r.Kind == DrcRuleKind.MinSpacing && r.Layer == top);
         Assert.Equal("MT.b", space.Name);
         Assert.Equal(4000, space.ValueDbu);
     }
@@ -86,8 +86,8 @@ public class RuleDeckIntoTechnologyTests
         var top = new LayerKey(10, 0);
 
         // The stack states MetalTop WMIN=1.0 / SMIN=1.2; the deck states 3.0 / 4.0.
-        Assert.Equal(1000, Assert.Single(without.DrcRules.Where(r => r.Kind == DrcRuleKind.MinWidth && r.Layer == top)).ValueDbu);
-        Assert.Equal(3000, Assert.Single(withDeck.DrcRules.Where(r => r.Kind == DrcRuleKind.MinWidth && r.Layer == top)).ValueDbu);
+        Assert.Equal(1000, Assert.Single(without.DrcRules, r => r.Kind == DrcRuleKind.MinWidth && r.Layer == top).ValueDbu);
+        Assert.Equal(3000, Assert.Single(withDeck.DrcRules, r => r.Kind == DrcRuleKind.MinWidth && r.Layer == top).ValueDbu);
 
         // MetalLow is in the stack but not in the deck — its stack-derived rules survive.
         var low = new LayerKey(5, 0);
