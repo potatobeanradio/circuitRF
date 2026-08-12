@@ -29,11 +29,11 @@ public class ConformalDownstreamTests(ITestOutputHelper output)
     ///
     /// <para><b>Both ENDS are deliberately straight and full-height.</b> The first version of this
     /// fixture chamfered the MaxX corner, and the run failed with the §4 port refusal firing on port
-    /// 2 — correctly. A port on a cut cell is a different port (its reference plane is the shared
-    /// edge of two cells whose transverse extent is no longer the grid's), and that refusal already
-    /// exists in <c>PlanarPorts</c>. This fixture is about what a STANDARD carries, so its ports
-    /// must be resolvable; putting the obliquity in the middle is what makes both claims testable at
-    /// once.</para>
+    /// 2. That refusal is GONE (see <c>ConformalPortTests</c> — its premise, "a port belongs on a
+    /// drawn feed, which is Manhattan", is false of every taper), and a port on a cut cell now
+    /// resolves with its width taken from the metal on the reference plane. This fixture is still
+    /// about what a STANDARD carries and keeps its straight ends anyway, so the DUT is cut in the
+    /// MIDDLE and the standard's own cross-section is not itself the thing under test.</para>
     /// </summary>
     private static PlanarProblem ChamferedLine()
         => new([new PlanarConductorLayer("Metal",

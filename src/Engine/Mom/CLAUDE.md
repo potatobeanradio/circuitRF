@@ -4665,3 +4665,209 @@ shipping PCells — a conformal mesh is not more expensive).
 
 Flipping the default is a separate, deliberate act with its own line here, because it moves every
 number a user has previously recorded.
+
+## Convex decomposition — M0 said the PREDICATE was wrong, so nothing was decomposed
+
+**A FOLLOW-UP to the conformal phase above, and the M7 its §6 named.** Brief:
+`docs/sonnet-briefs/brief-convex-decomposition.md`. **M0 and M1 are done; M2 (Route B, an actual
+decomposition) was NOT BUILT, because M0 measured it unnecessary.** It touches no Green's function,
+no DCIM, no kernel set, no de-embedding algebra and no solve — and, as §1 suspected, no closed-form
+integral either.
+
+```
+RooftopSupport.cs      + FlowSimple on the support, IsFlowSimple(region, alongX, tol), and the
+                         private Intervals() the two share with Extent's own crossing walk
+PlanarCellRegion.cs    + a per-piece convexity flag, so Contains keeps the half-plane test where it
+                         is valid and takes a ray cast only where M1 made one necessary
+ConformalDiagnostics.cs NEW — M0's instrument, optional and defaulted null
+SurfaceMesher.cs       the predicate swap, R-cvx-2's second count, and the notes
+PlanarMeshReport.cs    + OneDirectionCells
+```
+
+Gate: **`tests/Engine.Tests` 1,135 routine passed + 1 pre-existing skip, in 4 m 46 s** — the same
+wall clock the conformal phase recorded, so this phase's +17 routine tests cost nothing measurable.
+`tests/Ui.Tests` **6,173 and green**, `tests/Firewall.Tests` 6/6. **This phase's whole opt-in
+contribution is ONE method** (`ConformalFillOracleTests.T4`, 2 min) against the conformal phase's own
+~25 min, which is §7 gate 9's own request.
+
+### THE FINDING: `IsConvex` was a SUFFICIENT test being used as a NECESSARY one
+
+§1's guess, and the measurement confirms it. What `RooftopSupport.Build` actually needs is not
+convexity but
+
+> **FLOW-SIMPLICITY. At every transverse coordinate, the region's intersection with that line is a
+> single interval** — because `Extent` returns the outer HULL of the crossing set and `Build` spans
+> ONE trapezoid across it, so a region met twice has source integrated over a gap in the metal.
+
+Convexity implies it **in both directions**; flow-simplicity is much weaker and is **per direction**.
+The standing counter-example was already shipping: R-cut-3's merged cell is L-shaped, has never been
+convex, and has always worked — because two pieces sharing a face meet any line in one interval.
+
+**M0's table** (`ConvexDecompositionM0Tests`, three shipping PCells × two starters × cells/λ 20/80/
+320, with the 96-point disc as the zero-fallback control):
+
+| | refused cells | flow-simple in BOTH | in exactly ONE | in NEITHER |
+|---|---|---|---|---|
+| whole table | **1,158** | **1,152** | 6 | **0** |
+
+MBend and MTaper refuse nothing at any density; every refused cell is MKlopf's, 52/126/126 on the PCB
+starter and 90/90/114 on MMIC. The 6 one-direction cells are two distinct cells (one per starter) on
+MKlopf Offset, y-simple only. **The disc control refuses nothing at any density**, as §2 requires.
+
+**§2's outcome 1, so Route A alone**: the refusal moves from the CELL to the BASIS, and no
+decomposition is built. §4's Route B, R-cvx-6, R-cvx-8 and R-cvx-9 are all **measured deferrals** —
+the residue they exist for is empty. The precedents for that shape of answer are L7b-b's Route B,
+L9c's amplitude cap, L9e's ACA, the edge-mesh brief and the ground-via chain.
+
+### The prize, and it is the whole reason the phase existed
+
+Measured against the **DRAWN artwork** (the conformal phase's own recorded trap — measuring a 96-gon
+against a true disc reports the fixture's deficit, not the mesher's), cells/λ = 20:
+
+| part | staircase | conformal BEFORE M1 | conformal AFTER M1 |
+|---|---|---|---|
+| **MKlopf on-axis, PCB** | 0.593% | **0.766% — WORSE** | **5.4e-15** |
+| MKlopf Offset, PCB | 0.540% | 0.750% — worse | 1.5e-15 |
+| MKlopf on-axis, MMIC | 0.278% | 0.189% | 9.1e-15 |
+| MKlopf Offset, MMIC | 0.334% | 0.084% | 8.1e-15 |
+| MBend / MTaper, both starters | 0.10–0.47% | 1e-15 | 1e-15 (unmoved) |
+
+**And the saturation ladder is gone.** `G1b` re-runs cells/λ = 20 … 320 and the fallback count is
+**0 at every rung**, against the 52 / 78 / 126 / 126 / 126 plateau that was the signature this phase
+existed to remove. `G1c` is **updated rather than loosened**: the outline still has 194 vertices and
+**126 of them are still reflex** — the artwork did not change — and they now cost nothing. That is a
+stronger statement than the old count-matching one.
+
+### R-cvx-7's gate does not survive Route A, and saying so is part of the deliverable
+
+§7 gate 5 asks for **N as an EQUALITY** against the pre-M1 conformal counts (547 / 704 / 745 / 579).
+**It does not hold and asserting it would be asserting something Route A does not claim.** The gate
+is written for Route B, where a cell gains PIECES and must not gain CELLS. Route A never splits a
+cell; it changes which cells EXIST, because a cell the old predicate refused was rounded to
+whole-or-absent and is now cut — so a grid position that held no cell can hold one, and the adjacency
+count moves with it. **Measured, PCB starter: 547 / 704 / 745 → 761 / 579 → 577.** MBend and MTaper
+are unmoved; MKlopf on-axis gains 16 unknowns and MKlopf Offset loses 2.
+
+What IS asserted instead (`ConvexDecompositionTests`) is the invariant the gate is actually for:
+**at most one cell per (layer, IX, IY)**, and every basis joining two distinct cells exactly once —
+so nothing was subdivided and L8c's fill and L9c's via basis still index what they think they do.
+
+### What the swap cost elsewhere, enumerated rather than left to discovery (§5)
+
+- **`PlanarCellRegion.Contains` DID assume convexity**, exactly as §5 suspected. The half-plane test
+  it used is what produced every conformal number in this repository, so it is KEPT for a convex
+  piece — decided once at construction — and a genuinely non-convex piece takes a ray cast. Bit
+  identity where it matters, by construction rather than by care.
+- **`PolygonIntegrals` needed nothing.** Its edge reduction "needs neither convexity nor the
+  observation point being inside", and that claim holds: `T4`'s newly-admitted cells reproduce an
+  independent 4-D quadrature to **1.46e-6**, against T1's own 1.35e-6 on convex cut cells and L8c's
+  5.0e-6 benchmark for the whole fill. **§7 gate 7 is gated at 5e-6 and not tighter**, because the
+  reference's own residual on a pulse self term is 3.3e-7.
+- **`RooftopSupport.Tiles` had to choose a DIRECTION**, and that is the one place the swap could have
+  gone silently wrong. The tiles carry a unit weight so the direction looks free — but it is the
+  DIVERGENCE PULSE's own domain, and strips taken across the axis a one-direction cell is crossed
+  twice along would span the gap. It builds X and falls back to Y when X is not flow-simple.
+- **`PlanarCellRegion.Area`, `CentroidX/Y`** — signed-area formulas, exact for any simple polygon,
+  untouched. **`LayoutRenderer.PlanarMesh`** draws the region as an `SKPath`, which a non-convex ring
+  is fine as. **`PlanarCurrentDensity`** reads `Area / Width`, not `Height`, already.
+- **R-cvx-5, the strongest available regression check, passes**: every merged cell on the disc at
+  cells/λ = 130 and 250 is flow-simple in BOTH directions. (The counts are not equal and should not
+  be — `MergedSliverCount` counts ABSORPTIONS and one host takes up to four: 32 merges into 28 hosts.)
+- **Manhattan is BIT-IDENTICAL**, unchanged: `C1` compares gridlines, cells and bases as equalities
+  and §10.7's hero is still exactly **N = 552**. It cannot move — a Manhattan polygon has no oblique
+  edge, so no cell is cut and no predicate is asked.
+
+### R-cvx-2 — the refusal moved from the CELL to the BASIS, and the two counts are reported apart
+
+`StaircaseFallbackCells`' non-convex component NARROWED to "flow-simple in neither direction", which
+M0 measured at **zero** everywhere. `PlanarMeshReport.OneDirectionCells` is the new, different event:
+the cell is CUT and tiles the metal exactly, and one of its two bases is declined. Both have their
+own note. **A mesher that silently drops a basis is as bad as one that silently re-shapes a cell.**
+
+### THE LIMIT THIS DID NOT REMOVE, and it is now the binding one at a PORT
+
+§0's counter-measurement asked whether the area error is a proxy for the LOCAL WIDTH error a
+Klopfenstein actually cares about. It is not, and the honest answer arrived from the port side rather
+than from a width sweep: **R-cut-4's `Anchored` test is all-or-nothing over a support's strips.** A
+shallow oblique rim leaves a sliver strip at the top of the outermost cell whose metal does not reach
+the shared face, and the WHOLE rooftop is declined for it. On MKlopf's 50 Ω feed that is one cell at
+each end of the port's transverse run — **17.3% of the feed's width at cells/λ = 20, 11.4% at 40,
+5.0% at 80** (see `src/Ui/CLAUDE.md`'s own entry for the port half).
+
+**And the thing that does NOT go wrong, measured rather than assumed:** a cut cell that DOES survive
+R-cut-4 has a full shared face, so a conformal port's width is the grid extent to the last bit —
+short faces and un-swept halves are the same geometric condition, so the pair carrying one is already
+refused. `ConformalPortTests` shows it on a slanted-end fixture with 7 cut cells in the port's run.
+
+**The concrete way to close the undriven metal, deliberately not taken:** accept a nearly-swept
+support instead of refusing it. The unswept strip is **~0.56% of that cell's area**, so it would carry 0.994 A
+instead of 1.000 A — against losing 12.5% of a port's width by dropping it. The trade looks
+overwhelming and it is still a separate act, because it retires L8c's **exact** `∫f·û dℓ = 1 A`
+(gated at machine precision by `ConformalBasisTests.B3`) for a bounded one, and that needs its own
+measurement of what the deficit does to an s-parameter.
+
+### The default: the SECOND reason to keep it off is gone
+
+The conformal phase's own note gives two reasons for shipping `Staircase`, and says the second is the
+real one — MKlopf regressing. **That reason no longer exists**: MKlopf tiles to round-off on both
+starters at every density. What remains is the first, which is bookkeeping: every accuracy figure in
+this file was taken on the staircase and anyone reproducing one has to be able to. **Flipping the
+default is still its own deliberate act with its own line here**, and the undriven-metal limit above
+is what a reader should weigh before taking it.
+
+## "Long enough to crowd" — the edge attractor a two-scale part was denied (2026-08-11)
+
+**A follow-up to the port fix above, and the user found it by looking at the mesh overlay:** on the
+reported MKlopf the metal near port 2 was finely meshed and the metal near port 1 was not. Not
+boundary cells — the EDGE MESH.
+
+`CollectBoundaryLines` gives an axis-parallel boundary edge a graded fan when it is **at least a
+fifth of the polygon's own extent across it**. The purpose is to stop a drawn staircase demanding a
+fan per tread, and for that it works. **The yardstick is wrong for a part whose features differ in
+size**, measured on that taper:
+
+```
+  extent Y = 21.989 mm  ->  threshold 0.2 x extent = 4.398 mm
+    end cap x = 0.0  mm : 2.998 mm  <  4.398  ->  gridline only, NO fan
+    end cap x = 50.8 mm : 20.292 mm >= 4.398  ->  ATTRACTOR
+  x-cell widths from x = 0   : 356.9, 356.9, 356.9, 356.9 um
+  x-cell widths up to x=50.8 : 356.9, 237.1, 141.7,  94.3 um
+```
+
+**The 50 Ω end — where the crowding is strongest and where the port sits — was graded by nothing,
+because the OTHER end set the threshold.** L8b's own control measured what grading is worth on this
+quantity: 4.437% → 0.431% on a Manhattan square, ~10× for 3.6× the unknowns.
+
+### The second clause, and it is the statement the first one was reaching for
+
+**An edge that TERMINATES the conductor has both its corners convex; an edge that is part of a longer
+boundary chain does not.** A staircase alternates convex and reflex, so every tread and every riser
+has one of each and is still excluded — the property the first clause exists to protect, now held for
+a reason rather than by a proxy. O(1) per edge, purely local, and it is an **OR**: nothing that
+graded before can stop.
+
+**The floor is DERIVED.** R17 caps this kernel at ~5,000 unknowns ≈ 2,500 cells ≈ a 50 × 50 grid, so
+one cell is ~2% of the extent per axis at the finest mesh it can afford; an edge shorter than that is
+sub-cell however the mesh is refined, and grading it spends gridlines across the whole TENSOR grid on
+a feature the mesh cannot represent. `CapMinFractionOfExtent = 0.02`. It also bounds the one
+pathological case — artwork with hundreds of small Manhattan features would otherwise ask for four
+fans each.
+
+**Measured after: both caps grade, and the narrow end's fan MIRRORS the wide one's** —
+94.2 / 146.9 / 228.9 / 356.6 µm inward from x = 0 against 356.6 / 191.3 / 114.3 / 94.2 µm inward from
+x = 50.8, with the outermost cell equal to 12 figures.
+
+### What it is gated on, and what did NOT move
+
+`tests/Engine.Tests/Mom/EdgeAttractorCapTests.cs` (6 routine tests, **15 ms** — all meshing):
+
+- a narrow cap on a part whose other end is wide earns its fan, and the GRID responds;
+- **the floor brackets**: 1% of the extent does not qualify, 3% does — so the refusal above is about
+  the floor and not about the cap clause having quietly stopped working;
+- **a drawn staircase still contributes no fan per tread**, asserted the way D9's own guarantee is:
+  on the COUNT, held invariant at 10 / 20 / 40 steps (1 x-attractor and 2 y-attractors at every one);
+- **§10.7's hero is still exactly N = 552** and still has exactly 2 + 2 attractors — all four of its
+  edges already passed the first clause, so the second can only re-qualify them, never add a fifth.
+
+Blast radius run: `Engine.Tests/Mom` **563 passed in 4 m 44 s**, `Ui.Tests/Em` **293 in 8 s**,
+`Firewall` 6/6.

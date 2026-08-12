@@ -86,6 +86,72 @@ compute exactly what they did.
 The constructor also gained an optional `extraInterfaceNodes`. Null — the default — is the shipped
 behaviour exactly: the interface is the nonlinear-facing nodes and nothing else.
 
+## `Mom/` — "long enough to crowd": the edge attractor a two-scale part was denied (2026-08-11)
+
+**Found by the owner looking at the mesh overlay**, not by a test: on the reported MKlopf taper the
+metal near port 2 was finely meshed and the metal near port 1 was not. **Read `src/Engine/Mom/
+CLAUDE.md`'s own section before touching the attractor rule.** Two things from out here:
+
+- **An axis-parallel edge earned a graded fan only if it was a fifth of the POLYGON's own extent, and
+  that is the wrong yardstick for a part whose two ends differ in size.** The 12 Ω cap is 20.292 mm
+  and the 50 Ω cap 2.998 mm against a threshold of 4.398 mm set by the bounding box — so the narrow
+  end, where the crowding is strongest and where the port sits, got 356.9 µm cells all the way in
+  while the wide end got 356.9 / 237.1 / 141.7 / 94.3. L8b's own control measures grading at ~10× on
+  this quantity, so it is not cosmetic.
+- **The fix is the geometric statement the old test was reaching for: an edge that TERMINATES the
+  conductor has both corners convex; one that is part of a longer chain does not** — so a staircase,
+  which alternates convex and reflex, is still refused, and that is asserted on the COUNT held
+  invariant at 10 / 20 / 40 steps. It is an OR, so nothing that graded before can stop, and §10.7's
+  hero is still exactly **N = 552**. The floor below which a cap does not qualify is derived from
+  R17's own ceiling (~2% of the extent is one cell at the finest affordable mesh), not picked.
+
+Gate: `EdgeAttractorCapTests`, **6 routine tests in 15 ms** (all meshing). Blast radius:
+`Engine.Tests/Mom` 563 passed in 4 m 44 s, `Ui.Tests/Em` 293 in 8 s, `Firewall` 6/6.
+
+## `Mom/` — convex decomposition: M0 said the PREDICATE was wrong, so nothing was decomposed (brief-convex-decomposition, 2026-08-11) — **M0 + M1 done; M2 (Route B) a MEASURED DEFERRAL**
+
+**A FOLLOW-UP to the conformal boundary-cell phase**, and the M7 its §6 named. **Read
+`src/Engine/Mom/CLAUDE.md`'s own convex-decomposition section before touching any of it**; every
+table lives there. No Green's function, no DCIM, no kernel set, no de-embedding algebra, no solve —
+and, as the brief's §1 suspected, no closed-form integral either.
+
+The five things worth knowing from out here:
+
+- **`IsConvex` was a SUFFICIENT test being used as a NECESSARY one, and the measurement is what says
+  so.** What `RooftopSupport`'s strips need is FLOW-SIMPLICITY — one interval per transverse line —
+  which convexity implies in both directions and which is much weaker and PER DIRECTION. M0
+  classified all 1,158 refused cells over three shipping PCells × two starters × three densities:
+  **1,152 flow-simple in BOTH directions, 6 in exactly one, ZERO in neither.** So the fix is a
+  predicate swap and a per-direction basis refusal, and **Route B's decomposition was not built** —
+  the residue it exists for is empty. The standing counter-example was already shipping: R-cut-3's
+  merged cell is L-shaped, has never been convex, and has always worked.
+- **THE PRIZE: MKlopf now tiles to round-off, on the starter where it came out WORSE than the
+  staircase.** 0.593% (staircase) → 0.766% (conformal, before) → **5.4e-15** (after), measured
+  against the DRAWN artwork. And the saturation ladder is gone: the fallback count is **0 at every
+  rung of cells/λ = 20 … 320**, against the 52 / 78 / 126 / 126 / 126 plateau that was the signature
+  the phase existed to remove. The 126 reflex vertices are still there and now cost nothing.
+- **§7 gate 5's "N unchanged as an EQUALITY" does NOT survive Route A, and asserting it would be
+  asserting something Route A does not claim.** That gate is written for Route B, where a cell gains
+  pieces and must not gain cells. Route A never splits a cell; it changes which cells EXIST.
+  Measured, PCB starter: **547 / 704 / 745 → 761 / 579 → 577**. What is asserted instead is the
+  invariant the gate is for — at most one cell per (layer, IX, IY), one basis per distinct pair.
+- **`PlanarCellRegion.Contains` DID assume convexity**, exactly as the brief's §5 suspected, and it
+  keeps the half-plane test for a convex piece (decided once at construction) so every conformal
+  number already recorded is bit-identical by construction. `PolygonIntegrals` needed nothing — its
+  edge reduction was general from the start, and newly-admitted cells reproduce an independent 4-D
+  quadrature to **1.46e-6** against L8c's own 5.0e-6 benchmark.
+- **THE LIMIT THIS DID NOT REMOVE is now the binding one at a PORT: R-cut-4's `Anchored` is
+  all-or-nothing over a support's strips.** A shallow oblique rim leaves a sliver strip whose metal
+  does not reach the shared face, and the WHOLE rooftop is declined for it — costing a conformal port
+  one cell at each end of its transverse run. Accepting a nearly-swept support instead would cost
+  **0.994 A instead of 1.000 A** on that basis against **12.5% of a port's width**, and it is a
+  separate act because it retires an EXACT property. See `src/Ui/CLAUDE.md` for the port half.
+
+Gate: **`tests/Engine.Tests` 1,135 routine passed + 1 pre-existing skip in 4 m 46 s** — the same wall
+clock the conformal phase recorded, so +17 routine tests cost nothing measurable. `tests/Ui.Tests`
+**6,173 and green**; `tests/Firewall.Tests` 6/6. **The opt-in contribution is ONE method** (2 min)
+against the conformal phase's own ~25 min.
+
 ## `Mom/` — edge mesh on CURVED geometry: a NEGATIVE result (brief-edge-mesh-on-curved-geometry, 2026-08-09) — **M0 + M1 done; M2 built as a SEAM only**
 
 **A FOLLOW-UP to L8b**, in `src/Engine/Mom/SurfaceMesher.cs`. No Green's function, no fill, no solve,

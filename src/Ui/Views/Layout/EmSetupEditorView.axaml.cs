@@ -30,6 +30,62 @@ public partial class EmSetupEditorView : UserControl
         BrowseSnpOutputButton.Click += OnBrowseSnpOutputClick;
         SnpOutputPathBox.LostFocus  += (_, _) => Vm?.CommitSnpOutputPath();
         SnpOutputPathBox.KeyDown    += OnSnpOutputPathKeyDown;
+
+        AttachedToVisualTree   += OnAttachedToVisualTree;
+        DetachedFromVisualTree += OnDetachedFromVisualTree;
+    }
+
+    // ── Scroll position survives the window regaining focus ────────────────────────────────────
+    //
+    // Owner report, 2026-08-11: "whenever an EM Setup document gets focus, it scrolls to the top —
+    // only when it's docked, not as a torn-away document, and not when switching document tabs. It
+    // appears only when the workspace window gets focus."
+    //
+    // Activating a window makes the focus manager re-focus something inside it, and focusing a
+    // control raises RequestBringIntoView, which the enclosing ScrollViewer honours by scrolling to
+    // it. This panel is one long scrolling column whose first focusable control is the analysis combo
+    // at the very top, so "restore focus" and "scroll to the top" are the same gesture. It does not
+    // happen on a tab switch because the view is re-attached and re-laid-out there rather than
+    // re-focused into an existing scroll position.
+    //
+    // The fix is to capture the offset when the window loses focus and put it back when it regains
+    // it. That is deliberately narrower than cancelling BringIntoView outright: a genuine
+    // bring-into-view (tabbing to a field further down) must still work, and while the window is
+    // deactivated the user cannot scroll, so there is nothing a restore could overwrite.
+    private Window? _hostWindow;
+    private Avalonia.Vector _savedScroll;
+
+    private void OnAttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        DetachWindowHandlers();
+        if (TopLevel.GetTopLevel(this) is not Window w) return;
+        _hostWindow = w;
+        w.Deactivated += OnHostDeactivated;
+        w.Activated   += OnHostActivated;
+    }
+
+    private void OnDetachedFromVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
+        => DetachWindowHandlers();
+
+    private void DetachWindowHandlers()
+    {
+        if (_hostWindow is null) return;
+        _hostWindow.Deactivated -= OnHostDeactivated;
+        _hostWindow.Activated   -= OnHostActivated;
+        _hostWindow = null;
+    }
+
+    private void OnHostDeactivated(object? sender, EventArgs e) => _savedScroll = BodyScroll.Offset;
+
+    private void OnHostActivated(object? sender, EventArgs e)
+    {
+        if (_savedScroll.Y <= 0) return;
+        var wanted = _savedScroll;
+        // Background priority: the focus restoration (and the BringIntoView it provokes) has to have
+        // run before this, or it would simply scroll back over the top of us.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => { if (_hostWindow is not null) BodyScroll.Offset = wanted; },
+            Avalonia.Threading.DispatcherPriority.Background);
     }
 
     private EmSetupEditorViewModel? Vm =>

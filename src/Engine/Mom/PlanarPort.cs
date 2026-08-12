@@ -113,17 +113,34 @@ public sealed record PlanarPort(
 /// <see cref="PlanarCalibration"/> needs in order to rebuild the port's neighbourhood exactly (D4).
 /// </summary>
 /// <param name="BasisIndices">Indices into <see cref="PlanarMesh.Bases"/>, in transverse order.</param>
-/// <param name="WidthM">The resolved conductor width at the cut — the sum of the transverse cell
-/// extents, not the drawn width, so a staircased edge reports what was actually meshed.</param>
+/// <param name="WidthM">The resolved conductor width at the cut — <b>the metal actually on the
+/// reference plane</b>, not the drawn width, so a staircased edge reports what was meshed and a
+/// CONFORMAL boundary cell reports the metal rather than its grid rectangle. With no cut cell in the
+/// port's run the two are the same subtraction and the number is bit-identical to L8d's.</param>
 /// <param name="ReferencePlaneM">The coordinate of the shared edge the current crosses. D2.</param>
 /// <param name="OuterEdgeM">The metal's own outer edge — one cell further out.</param>
-/// <param name="TransverseLines">The gridlines across the port, <c>BasisIndices.Count + 1</c> of
-/// them. D4 copies these into the calibration standard verbatim.</param>
+/// <param name="TransverseLines">The port's own cross-section, <c>BasisIndices.Count + 1</c> lines.
+/// D4 copies these into the calibration standard verbatim, which is why they are the METAL's extents
+/// rather than the grid's whenever a boundary cell is cut: the standard is a uniform rectangle and it
+/// has to be a rectangle of the DUT's own cross-section or the error box is not the same object.
+/// Where nothing is cut they are the gridlines, copied verbatim as before.</param>
 /// <param name="LongitudinalRunM">Cell sizes marching INWARD from the outer edge along the port's
 /// own axis, as far as the conductor runs. D4 copies the first K of these.</param>
 /// <param name="LayerIndex">L9d — the conductor level the cut actually landed on, inferred or
 /// explicit. The de-embedding needs it (a standard is a single-level line on THIS level, D3) and so
 /// does anything that has to say which level a reported quantity belongs to.</param>
+/// <param name="CutCellCount">How many of the port's own cells the conformal mesher cut. Zero under
+/// the staircase and on any Manhattan feed; non-zero says the width below is a metal width rather
+/// than a grid one, and that the residual named in <see cref="PlanarPortResolution.Describe"/>
+/// applies.</param>
+/// <param name="GridWidthM">What the width WOULD have been on the grid — carried only so the report
+/// can state the deficit as a number instead of a caveat. Equal to <c>WidthM</c> when nothing is
+/// cut.</param>
+/// <param name="UndrivenMetalM">Metal on the reference plane, adjacent to the port's own run, that
+/// carries NO rooftop and is therefore not driven — R-cut-4 declining the outermost cell pair of a
+/// conformal feed. Zero under the staircase and on any Manhattan feed. It is reported rather than
+/// silently absorbed because it is the one thing a conformal port does WORSE than a staircased one,
+/// and refining the transverse mesh is what shrinks it.</param>
 public sealed record PlanarPortResolution(
     int                    Number,
     PlanarPortSide         Side,
@@ -136,7 +153,10 @@ public sealed record PlanarPortResolution(
     double                 OuterEdgeM,
     IReadOnlyList<double>  TransverseLines,
     IReadOnlyList<double>  LongitudinalRunM,
-    int                    LayerIndex = 0)
+    int                    LayerIndex     = 0,
+    int                    CutCellCount   = 0,
+    double                 GridWidthM     = 0,
+    double                 UndrivenMetalM = 0)
 {
     public int BasisCount => BasisIndices.Count;
 
@@ -157,7 +177,46 @@ public sealed record PlanarPortResolution(
         $"Port {Number} resolved to {BasisCount} basis function(s) across " +
         $"{SurfaceMesher.Eng(WidthM)}m of conductor; reference plane at " +
         $"{(Direction == PlanarBasisDirection.X ? "x" : "y")} = {SurfaceMesher.Eng(ReferencePlaneM)}m, " +
-        $"one cell in from the metal edge at {SurfaceMesher.Eng(OuterEdgeM)}m.";
+        $"one cell in from the metal edge at {SurfaceMesher.Eng(OuterEdgeM)}m." +
+        (CutCellCount == 0 && UndrivenMetalM <= 0 ? "" : ConformalNote());
+
+    /// <summary>
+    /// <b>What a CONFORMAL boundary cell at a port does and does not cost, as a number.</b>
+    ///
+    /// <para>This used to be a refusal. It is a note because the refusal's own premise — "a port
+    /// belongs on a drawn feed, which is Manhattan, so this should never fire" — is false of the
+    /// parts a user actually selects: a taper's flanks are oblique from its very first cell, so on
+    /// MKlopf and MTaper the outermost cell of the port's transverse run is cut and the whole run
+    /// was refused for it. What the cut actually changes is that the reference plane's own metal is
+    /// shorter than the gridline, and that is now MEASURED and carried into the calibration standard
+    /// (the standard is built from <see cref="TransverseLines"/>, which are the metal's extents) —
+    /// so the error box is the same object again and the residual is the one every port already has:
+    /// the feed is not perfectly uniform over the length the standard replaces.</para>
+    /// </summary>
+    private string ConformalNote()
+    {
+        string s = "";
+
+        if (CutCellCount > 0)
+            s += $" {CutCellCount} of its cell(s) follow the metal rather than the grid, so its " +
+                 $"width is the metal on the reference plane ({SurfaceMesher.Eng(WidthM)}m) rather " +
+                 $"than the grid extent ({SurfaceMesher.Eng(GridWidthM)}m) — and the calibration " +
+                 "standard is built to that same cross-section, so the error box is the same object. " +
+                 "What stays approximate is that a standard is a UNIFORM line while a cut feed is, " +
+                 "by construction, tapering.";
+
+        if (UndrivenMetalM > 0)
+            s += $" A further {SurfaceMesher.Eng(UndrivenMetalM)}m of metal beside the port " +
+                 $"({UndrivenMetalM / (UndrivenMetalM + WidthM):P1} of the feed at the plane) carries " +
+                 "NO rooftop and is not driven: the outline crosses those cells obliquely and their " +
+                 "shared edge does not sweep them, so a basis there would push current out through " +
+                 "the metal's rim. This is the one thing a conformal port does WORSE than a " +
+                 "staircased one, and raising Cells per wavelength is what shrinks it: the undriven " +
+                 "cells are the outermost of the transverse run, so their share of the width falls as " +
+                 "the run gets longer.";
+
+        return s;
+    }
 }
 
 /// <summary>
@@ -358,35 +417,6 @@ public static class PlanarPorts
             return false;
         }
 
-        // ── The contiguous transverse run of the conductor at that column ────────────────────────
-        int lo = seedT, hi = seedT;
-        while (lo - 1 >= 0     && CellAt(outer, lo - 1) >= 0 && CellAt(inner, lo - 1) >= 0) lo--;
-        while (hi + 1 < nTran  && CellAt(outer, hi + 1) >= 0 && CellAt(inner, hi + 1) >= 0) hi++;
-
-        // ── §4 — A PORT ON A CUT CELL IS A DIFFERENT PORT, and is refused by name ────────────────
-        //
-        // D2 puts the reference plane on the shared edge of the two OUTERMOST cells, and R-prt's whole
-        // error-box argument is about a uniform feed whose width is the sum of the transverse cell
-        // extents. A cut cell's transverse extent is not its grid extent; its shared edge is shorter
-        // than the gridline; and the calibration standard built for it (D4) is a uniform rectangle
-        // that does not have any of that. None of it is wrong in a way anything would notice — it is a
-        // smooth, plausible, wrong s-parameter, which is the failure this whole area is organised
-        // against. A port belongs on a drawn feed, which is Manhattan, so this should never fire.
-        for (int t = lo; t <= hi; t++)
-            foreach (int c in new[] { CellAt(outer, t), CellAt(inner, t) })
-                if (c >= 0 && mesh.Cells[c].IsCut)
-                {
-                    refusal =
-                        $"Port {port.Number} lands on a CONFORMAL boundary cell — one the mesher cut to " +
-                        "follow the metal rather than the grid. The port's reference plane is the shared " +
-                        "edge of its two outermost cells and its width is the sum of their transverse " +
-                        "extents, and neither of those is the cell's grid extent once it is cut; the " +
-                        "calibration standard built for it is a uniform rectangle that has no cut cell " +
-                        "in it at all. Put the port on a straight, axis-aligned feed — which is what a " +
-                        "port is for — or set Boundary cells back to \"Staircase\" for this run.";
-                    return false;
-                }
-
         // ── Basis lookup. Built by ONE forward pass over Bases; queried, never iterated. ─────────
         var byPair = new Dictionary<(int A, int B, PlanarBasisDirection D), int>(mesh.Bases.Count);
         for (int b = 0; b < mesh.Bases.Count; b++)
@@ -395,27 +425,135 @@ public static class PlanarPorts
             byPair[(bs.CellA, bs.CellB, bs.Direction)] = b;
         }
 
-        var indices = new List<int>(hi - lo + 1);
-        for (int t = lo; t <= hi; t++)
+        int lowCol = Math.Min(outer, inner), highCol = Math.Max(outer, inner);
+        double sharedCoord = gLong[highCol];
+
+        // ── §4 — A PORT ON A CUT CELL: THE RUN IS THE ROOFTOPS THAT EXIST, NOT THE METAL ─────────
+        //
+        // This used to be a blanket refusal, on the argument that "a port belongs on a drawn feed,
+        // which is Manhattan, so this should never fire". **That premise is false of the parts a user
+        // actually selects.** A taper's flanks are oblique from its very first cell, so on MKlopf and
+        // MTaper the outermost cell of the port's transverse run is cut and the whole port was
+        // refused for it — which made Boundary cells = Conformal unusable on the one part whose value
+        // is a controlled ripple.
+        //
+        // What a cut at the port genuinely costs is TWO different things, and only the first is a
+        // matter of bookkeeping:
+        //
+        //   (1) the reference plane's metal is shorter than the gridline, so the port's WIDTH is not
+        //       the grid extent. That is measured below and carried into the calibration standard
+        //       (D4 builds the standard from TransverseLines, and those are now the metal's own
+        //       extents), so the error box is the same object again — the property the refusal was
+        //       protecting.
+        //
+        //   (2) R-cut-4 can decline the outermost rooftop outright. Its Anchored test is all-or-
+        //       nothing over the strips, and a shallow oblique rim leaves a sliver strip at the top
+        //       of the cell whose metal does not reach the shared face — so the whole basis goes,
+        //       even though the strip is under a percent of the cell. **That is a real limitation and
+        //       it is NOT worked around here**: the run simply stops at the last cell pair that
+        //       carries a rooftop, and how much metal that leaves undriven is reported. Accepting
+        //       those bases instead would retire an EXACT property (L8c's ∫f·û dℓ = 1 A) for an
+        //       approximate one, which needs its own measurement and its own brief.
+        //
+        // Under the staircase every metal-bearing pair is paired, so this scan reproduces the old one
+        // cell for cell and every pre-conformal port is bit-identical.
+        bool HasBasis(int t)
         {
-            int a = CellAt(Math.Min(outer, inner), t);
-            int b = CellAt(Math.Max(outer, inner), t);
-            if (!byPair.TryGetValue((a, b, port.Direction), out int bi))
-            {
-                refusal = $"Port {port.Number} resolved onto a pair of cells that L8b's mesher did not " +
-                          "pair into a rooftop. This is an internal inconsistency, not a user error.";
-                return false;
-            }
-            indices.Add(bi);
+            int a = CellAt(lowCol, t), b = CellAt(highCol, t);
+            return a >= 0 && b >= 0 && byPair.ContainsKey((a, b, port.Direction));
         }
 
-        // ── The geometry the report and the calibration both need ────────────────────────────────
-        double width = gTran[hi + 1] - gTran[lo];
-        double plane = fromLow ? gLong[outer + 1] : gLong[outer];
-        double edge  = fromLow ? gLong[outer]     : gLong[outer + 1];
+        if (!HasBasis(seedT))
+        {
+            refusal =
+                $"Port {port.Number} sits on a cell pair the mesher did not pair into a rooftop, so " +
+                "there is nothing at the port's own location for it to drive. With conformal boundary " +
+                "cells that means the metal there follows an oblique outline and is not swept by the " +
+                "reference plane — a rooftop across it would push its current out through the " +
+                "conductor's rim instead. Move the port onto a straight, axis-aligned feed, raise " +
+                "Cells per wavelength, or set Boundary cells back to \"Staircase\" for this run.";
+            return false;
+        }
 
+        // The contiguous transverse run of ROOFTOPS at that column…
+        int lo = seedT, hi = seedT;
+        while (lo - 1 >= 0    && HasBasis(lo - 1)) lo--;
+        while (hi + 1 < nTran && HasBasis(hi + 1)) hi++;
+
+        // …and, separately, how far the METAL runs, so the note can say what was left out.
+        int mLo = lo, mHi = hi;
+        while (mLo - 1 >= 0    && CellAt(lowCol, mLo - 1) >= 0 && CellAt(highCol, mLo - 1) >= 0) mLo--;
+        while (mHi + 1 < nTran && CellAt(lowCol, mHi + 1) >= 0 && CellAt(highCol, mHi + 1) >= 0) mHi++;
+
+        double PlaneMetal(int t)
+        {
+            var ca = mesh.Cells[CellAt(lowCol, t)];
+            var cb = mesh.Cells[CellAt(highCol, t)];
+            // Both cells share that face, so the two lengths agree for a sound pair; the smaller is
+            // what a pair only one side reaches would report.
+            return Math.Min(
+                RooftopSupport.Build(ca, port.Direction, sharedIsHigh: true,  sharedCoord).SharedFaceLength,
+                RooftopSupport.Build(cb, port.Direction, sharedIsHigh: false, sharedCoord).SharedFaceLength);
+        }
+
+        int cutCells = 0;
+        var metal    = new double[hi - lo + 1];
+        for (int t = lo; t <= hi; t++)
+        {
+            if (mesh.Cells[CellAt(lowCol, t)].IsCut)  cutCells++;
+            if (mesh.Cells[CellAt(highCol, t)].IsCut) cutCells++;
+            metal[t - lo] = PlaneMetal(t);
+        }
+
+        double undriven = 0;
+        for (int t = mLo; t < lo; t++) undriven += PlaneMetal(t);
+        for (int t = hi + 1; t <= mHi; t++) undriven += PlaneMetal(t);
+
+        var indices = new List<int>(hi - lo + 1);
+        for (int t = lo; t <= hi; t++)
+            indices.Add(byPair[(CellAt(lowCol, t), CellAt(highCol, t), port.Direction)]);
+
+        // ── The geometry the report and the calibration both need ────────────────────────────────
+        double gridWidth = gTran[hi + 1] - gTran[lo];
+        double plane     = fromLow ? gLong[outer + 1] : gLong[outer];
+        double edge      = fromLow ? gLong[outer]     : gLong[outer + 1];
+
+        // ── The width, and the MEASUREMENT that says the two branches below are not both live ────
+        //
+        // The port's width is the metal ON the reference plane, which is the honest reading of what
+        // WidthM has always documented ("not the drawn width, so a staircased edge reports what was
+        // actually meshed"). **On real geometry that equals the grid extent even when the port's
+        // cells are cut, and the reason is structural rather than lucky:** the face is short only
+        // where the cell's metal is absent over a transverse band, and for a monotone rim the same
+        // band makes one of the two halves unanchored — so R-cut-4 has already refused that pair and
+        // it is not in the run. Measured on the slanted-end fixture in ConformalPortTests: 7 cut
+        // cells in the port's run, face metal equal to the grid extent to the last bit.
+        //
+        // So the branch is taken on the DIFFERENCE rather than on "is anything cut", and the verbatim
+        // path — L8d's own arithmetic, one subtraction for the width and the gridlines copied as they
+        // are — is what a staircased port AND an ordinary conformal port both take. R-prt-5 asserts
+        // the standard's coordinates as an EQUALITY, and rebuilding them from a running sum would
+        // move them in the last bit for no reason.
+        double metalWidth = 0;
+        foreach (double m in metal) metalWidth += m;
+
+        double width;
         var tLines = new double[hi - lo + 2];
-        for (int t = lo; t <= hi + 1; t++) tLines[t - lo] = gTran[t];
+        if (Math.Abs(metalWidth - gridWidth) <= 1e-12 * gridWidth)
+        {
+            width = gridWidth;
+            for (int t = lo; t <= hi + 1; t++) tLines[t - lo] = gTran[t];
+        }
+        else
+        {
+            // The port's own CROSS-SECTION: one line per basis, spaced by the metal that basis
+            // actually has on the reference plane, so D4's standard is a uniform rectangle OF THAT
+            // cross-section and the error box stays the same object. Centred on the grid run, because
+            // these lines are also what the mesh overlay draws the reference plane from.
+            width     = metalWidth;
+            tLines[0] = 0.5 * (gTran[lo] + gTran[hi + 1]) - 0.5 * width;
+            for (int k = 0; k < metal.Length; k++) tLines[k + 1] = tLines[k] + metal[k];
+        }
 
         var run = new List<double>();
         for (int k = 0; ; k++)
@@ -437,7 +575,10 @@ public static class PlanarPorts
             OuterEdgeM:        edge,
             TransverseLines:   tLines,
             LongitudinalRunM:  run,
-            LayerIndex:        layerIndex);
+            LayerIndex:        layerIndex,
+            CutCellCount:      cutCells,
+            GridWidthM:        gridWidth,
+            UndrivenMetalM:    undriven);
 
         refusal = null;
         return true;

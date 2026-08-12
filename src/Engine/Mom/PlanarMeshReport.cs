@@ -68,11 +68,20 @@ public enum PlanarBudgetVerdict
 /// mesher that silently re-shapes cells is worse than one that says it did.</param>
 /// <param name="StaircaseFallbackCells">
 /// <b>How many cells the conformal pass refused to cut and left on L8b's staircase decision</b> —
-/// a cell touched by two drawn shapes, by a hole ring, or whose clipped region is not convex (a
-/// reflex vertex of the artwork inside one cell). §2 requires each of those be a refusal or a
+/// a cell touched by two drawn shapes, by a hole ring, or whose clipped region is met by the outline
+/// in more than one run in BOTH directions at once. §2 requires each of those be a refusal or a
 /// refinement instruction and never a silently-wrong cell; this is the count that makes it the
 /// latter, and refining the mesh drives it to zero.
+///
+/// <para><b>Its meaning NARROWED at brief-convex-decomposition.md's M1</b> and the count is a
+/// strictly smaller set than before: it used to include every cell whose clipped region was
+/// non-convex, and convexity turned out to be a sufficient test being used as a necessary one. A
+/// cell that is describable in one direction only is now CUT and counted by
+/// <paramref name="OneDirectionCells"/> instead.</para>
 /// </param>
+/// <param name="OneDirectionCells">R-cvx-2 — cells that follow the metal but carry a basis in ONE
+/// current direction only, because the outline crosses them twice along the other axis. A different
+/// event from a staircased cell and reported apart from it.</param>
 /// <param name="MeshedAreaM2">Σ of the cells' areas — <b>the tiling gate's own quantity</b> (R-cut-1).
 /// Against the drawn artwork's area it is the mesh's area error, which L8b measured at 0.47–0.59% on
 /// the shipping tapers and which conformal cells are meant to take to round-off.</param>
@@ -99,7 +108,8 @@ public sealed record PlanarMeshReport(
     int                   CutCellCount           = 0,
     int                   MergedSliverCount      = 0,
     int                   StaircaseFallbackCells = 0,
-    double                MeshedAreaM2           = 0)
+    double                MeshedAreaM2           = 0,
+    int                   OneDirectionCells      = 0)
 {
     /// <summary>True when the problem may be handed to a solver — R17's gate, asked once.</summary>
     public bool CanSolve => Verdict != PlanarBudgetVerdict.Refused;

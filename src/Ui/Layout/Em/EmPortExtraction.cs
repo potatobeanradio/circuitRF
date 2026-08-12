@@ -71,11 +71,15 @@ public static class EmPortExtraction
     /// <param name="z0For">Reference impedance for the port at a given 0-based index in the final
     /// ordered list. <b>The impedance lives in the <c>.cem</c> (<c>EmSetup.PortZ0s</c>), never on the
     /// shape</b> — R-cpl-6's list is already per-port and already additive.</param>
+    /// <param name="displayUnit">The LAYOUT's own display unit, used for every coordinate this file
+    /// prints. Defaults to microns so a headless caller that has no layout to ask keeps the previous
+    /// wording exactly.</param>
     public static EmPortExtractionResult Extract(
         IReadOnlyList<LayoutShape> shapes,
         PlanarProblem              problem,
         int                        dbuPerMicron,
-        Func<int, Complex>?        z0For = null)
+        Func<int, Complex>?        z0For = null,
+        LayoutUnit                 displayUnit = LayoutUnit.Um)
     {
         ArgumentNullException.ThrowIfNull(shapes);
         ArgumentNullException.ThrowIfNull(problem);
@@ -109,8 +113,8 @@ public static class EmPortExtraction
                 if (explicitNumbers.TryGetValue(n, out var first))
                     return EmPortExtractionResult.No(
                         $"Two port labels both name port {n}: '{first.Text}' at " +
-                        $"{Coord(first.X, first.Y, dbuPerMicron)} and '{l.Text}' at " +
-                        $"{Coord(l.X, l.Y, dbuPerMicron)}. Port numbers index the s-parameter matrix, " +
+                        $"{Coord(first.X, first.Y, dbuPerMicron, displayUnit)} and '{l.Text}' at " +
+                        $"{Coord(l.X, l.Y, dbuPerMicron, displayUnit)}. Port numbers index the s-parameter matrix, " +
                         "so they have to be distinct — renumber one of them.");
                 explicitNumbers[n] = l;
             }
@@ -141,7 +145,7 @@ public static class EmPortExtraction
             var (poly, level, containing) = NearestPolygon(problem, x, y);
             if (poly is not null && containing > 1)
                 return EmPortExtractionResult.No(
-                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron)} " +
+                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
                     $"sits on metal on {containing} of this EM setup's {problem.Layers.Count} conductor " +
                     $"levels (" + string.Join(", ", problem.Layers.Select(l => $"'{l.Name}'")) + "). A " +
                     "port's LEVEL is part of its identity: driving the wrong one drives a different " +
@@ -151,7 +155,7 @@ public static class EmPortExtraction
 
             if (poly is null)
                 return EmPortExtractionResult.No(
-                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron)} " +
+                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
                     "is not on any conductor the EM setup's signal layer. Move it onto the metal, or " +
                     "check that the artwork it names is on a layer bound to a signal conductor in the " +
                     "technology's stackup.", notes);
@@ -170,7 +174,7 @@ public static class EmPortExtraction
             else if (!TryInferSide(poly, x, y, out side, out string? ambiguity))
             {
                 return EmPortExtractionResult.No(
-                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron)} " +
+                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
                     $"{ambiguity} Which end of the conductor a port names decides which way current " +
                     "flows into the structure, so it is never guessed. Rotate the port to point the " +
                     "way current should flow into the structure, or move the label to the middle of " +
@@ -182,13 +186,14 @@ public static class EmPortExtraction
                                      problem.Layers.Count > 1 ? level : null));
 
             notes.Add(
-                $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron)} was " +
+                $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} was " +
                 $"taken to be on the conductor's {SideName(side)} end " +
                 (stated ? "(the port's own direction)" : "(inferred from the nearest conductor boundary)") +
                 (problem.Layers.Count > 1 ? $" of level {level} ('{problem.Layers[level].Name}')" : "") +
-                $", driving current {CurrentDirection(side)}, at " +
-                $"{FormatOhms(z0)}. The de-embedding reference plane is fixed one mesh cell in from " +
-                "the drawn metal edge and is not adjustable.");
+                $", driving current {CurrentDirection(side)}, at {FormatOhms(z0)}.");
+            // The de-embedding reference plane's position used to be restated on EVERY port note.
+            // Dropped (owner request, 2026-08-11): it is a property of the method rather than
+            // anything about this port, it never varies, and it belongs in the documentation.
         }
 
         return new EmPortExtractionResult(ports, null, notes);
@@ -340,9 +345,14 @@ public static class EmPortExtraction
 
     private static string Describe(LabelShape l) => l.Text is { Length: > 0 } t ? t : "unnamed";
 
-    private static string Coord(long x, long y, int dbuPerMicron)
-        => $"({LayoutUnits.Format(x, LayoutUnit.Um, dbuPerMicron)}, " +
-           $"{LayoutUnits.Format(y, LayoutUnit.Um, dbuPerMicron)} µm)";
+    /// <summary>
+    /// A port's position in the LAYOUT's own display unit (owner request, 2026-08-11), not a fixed
+    /// micron. A user reading "(4496.85, 0 µm)" for a board drawn in mil has to convert before the
+    /// number means anything — and the coordinate is only there so they can go and find the label.
+    /// </summary>
+    private static string Coord(long x, long y, int dbuPerMicron, LayoutUnit unit)
+        => $"({LayoutUnits.Format(x, unit, dbuPerMicron)}, " +
+           $"{LayoutUnits.Format(y, unit, dbuPerMicron)} {LayoutUnits.Suffix(unit)})";
 
     private static string FormatOhms(Complex z)
         => z.Imaginary == 0

@@ -69,8 +69,11 @@ public static class EmGeometry
 
         int flattened = shapes.Count - view.Shapes.Count;
         if (flattened > 0)
+            // "The layout itself is unchanged" was dropped (owner request, 2026-08-11) — the user
+            // already expects a read not to edit their design, so the sentence only added length to
+            // a note whose useful half is the count.
             notes.Add($"{flattened} shape(s) came from {view.Instances.Count} placed instance(s), " +
-                      "flattened into world coordinates for extraction. The layout itself is unchanged.");
+                      "flattened into world coordinates for extraction.");
 
         return new Result(shapes, notes);
     }

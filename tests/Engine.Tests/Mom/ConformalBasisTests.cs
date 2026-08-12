@@ -37,12 +37,58 @@ public class ConformalBasisTests(ITestOutputHelper output)
                   5.8e7, 35e-6)],
                 GroundedSlab.Fr4Starter, 10e9);
 
+    /// <summary>
+    /// <b>brief-convex-decomposition.md §7 gate 6's fixture: a rim that is CONCAVE.</b>
+    ///
+    /// <para>The disc and the taper both have convex rims, so every cell either of them cuts was
+    /// already admitted before M1 and neither can say whether the rooftop's three properties survive
+    /// on a NEWLY-ADMITTED cell. A finely sampled convex arc with the metal below it puts several
+    /// reflex vertices inside each boundary cell — MKlopf's own case — and every rung below then runs
+    /// on it unchanged, which is worth more than one bespoke test.</para>
+    /// </summary>
+    private static PlanarProblem ConcaveArc(double len = 10e-3, int stations = 64)
+    {
+        var ring = new List<EmPoint> { new(0, 0), new(len, 0) };
+        for (int i = stations; i >= 0; i--)
+        {
+            double x = len * i / stations;
+            ring.Add(new EmPoint(x, 2.4e-3 + 0.5e-3 * (x / len) * (x / len)));
+        }
+        return new PlanarProblem(
+            [new PlanarConductorLayer("Metal", [new PlanarPolygon(ring)], 5.8e7, 35e-6)],
+            GroundedSlab.Fr4Starter, 10e9);
+    }
+
     private static PlanarMeshSettings Conformal =>
         new(Auto: false, CellsPerWavelength: 20, EdgeMesh: true, EdgeCells: 3,
             BoundaryCells: PlanarBoundaryCells.Conformal);
 
-    public static TheoryData<string> Parts() => new() { "disc", "taper" };
-    private static PlanarProblem PartNamed(string n) => n == "disc" ? Disc() : Taper();
+    public static TheoryData<string> Parts() => new() { "disc", "taper", "arc" };
+
+    private static PlanarProblem PartNamed(string n) => n switch
+    {
+        "disc" => Disc(),
+        "arc"  => ConcaveArc(),
+        _      => Taper(),
+    };
+
+    /// <summary>
+    /// NON-VACUITY for the "arc" rung of every Theory above: it has to actually contain cells the
+    /// pre-M1 convexity predicate refused, or those rungs are the taper again in another shape.
+    /// </summary>
+    [Fact]
+    public void B0_TheArcFixtureContainsCellsTheOldPredicateWouldHaveREFUSED()
+    {
+        var diag = new ConformalDiagnostics();
+        var rep  = SurfaceMesher.Mesh(ConcaveArc(), Conformal, diagnostics: diag);
+
+        _out.WriteLine($"arc: {rep.Mesh.Cells.Count} cells, {rep.CutCellCount} cut, " +
+                       $"{diag.AdmittedNonConvex.Count} of them NON-CONVEX (refused before M1), " +
+                       $"{rep.StaircaseFallbackCells} staircased, {rep.OneDirectionCells} one-direction.");
+
+        Assert.True(diag.AdmittedNonConvex.Count >= 3);
+        Assert.Equal(0, rep.StaircaseFallbackCells);
+    }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The three properties, as EQUALITIES

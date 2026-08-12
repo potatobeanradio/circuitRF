@@ -4441,6 +4441,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         int pointCount = ResolveEmPointCount(setup);
         bool adaptive  = setup.AnalysisKind != Engine.Mom.EmAnalysisKind.CrossSection && setup.AdaptiveSampling;
 
+        // Owner request, 2026-08-11: say what is starting BEFORE anything long begins. A full-wave
+        // point costs tens of seconds, so the first thing a user sees after pressing Simulate must
+        // not be an empty bar — the point count and whether adaptive sampling is in play are the two
+        // facts that tell them how long to expect and how to read the result.
+        Messages.Info(EmRunStartText(setup, pointCount, adaptive));
+
         var sweepLive = Messages.BeginProgress($"EM '{setup.Name}'");
         var stageLive = Messages.BeginProgress($"EM '{setup.Name}' — starting");
 
@@ -4462,7 +4468,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // showing Cancel for a run that is already over.
             try
             {
-                vm.CancelRequested = cts.Cancel;
+                // Owner request: pressing Cancel says so IMMEDIATELY, and says what "cancel" means
+                // here — cancellation lands at a work boundary, so a run mid-solve does not stop the
+                // instant the button is pressed and silence would read as the button doing nothing.
+                vm.CancelRequested = () =>
+                {
+                    Messages.Info("Stopping the EM analysis. It stops at the next work boundary.");
+                    cts.Cancel();
+                };
                 vm.IsRunning       = true;
                 result = await Task.Run(() => EmRunService.Run(setup, source, resultsRoot, default, control));
             }
@@ -4479,9 +4492,49 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
+        // ── A FAILED run: the error is the LAST line, and nothing follows it ───────────────────
+        //
+        // Owner report, 2026-08-11: "if there's an error I get many info messages after it. There's
+        // no need to send those — we want the user to focus on the error."
+        //
+        // Both live rows were posted BEFORE the run, so they sit near the top of the panel and
+        // whatever they are finished with lands there, not at the bottom. Finishing the sweep row
+        // with the error therefore put the error ABOVE the pile of notes rather than after it. So on
+        // a failure the error is posted as its OWN message, last, and the two progress rows settle
+        // quietly in place.
+        //
+        // The engine's descriptive NOTES are dropped entirely here rather than merely reordered.
+        // They are the run explaining what it did; a run that produced no answer has nothing to
+        // explain, and stacking a dozen of them around the one line that matters is what buried it.
+        // WARNINGS still go out — they are things to act on — and they go BEFORE the error so the
+        // error keeps the last position.
+        if (result.Status is EmRunStatus.NoLayout or EmRunStatus.Refused or EmRunStatus.EngineError)
+        {
+            // Two rows have to be resolved (each carries a bar), so they must say DIFFERENT things —
+            // the same sentence twice reads as a duplicated message, which is what the owner saw.
+            // Same split the exception path above already uses: the stage row says it stopped, the
+            // sweep row points at the error. Deliberately NOT "not solved" (owner request): the
+            // error below already says the run failed.
+            stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — stopped");
+            sweepLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — see the error below");
+
+            foreach (var w in result.Warnings)     Messages.Warning(w);
+            foreach (var e in result.Errors ?? []) Messages.Error(e);
+
+            Messages.Error(result.Error ?? "The EM solve failed.");
+            return;
+        }
+
         // The stage row's job is over the moment the sweep is: it names a step, not an outcome, so
         // it collapses to a plain line rather than being left with a half-finished bar on screen.
-        stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — solve finished");
+        //
+        // Owner report, 2026-08-11: this used to say "solve finished" UNCONDITIONALLY, above the
+        // status switch — so a run the user had just stopped ended with a line claiming the solve had
+        // finished. It reads as an answer having been produced, which is the one thing a stopped run
+        // must not imply.
+        stageLive.Complete(MessageLevel.Info, result.Status == EmRunStatus.Cancelled
+            ? $"EM '{setup.Name}' — stopped before a solution was reached"
+            : $"EM '{setup.Name}' — solve finished");
 
         // Three channels, three icons (owner report, 2026-08-09: "a lot of the Messages after the EM
         // sim have the yellow warning icon; change those to info"). The engine's descriptive output —
@@ -4492,20 +4545,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         foreach (var w in result.Warnings)       Messages.Warning(w);
         foreach (var e in result.Errors ?? [])   Messages.Error(e);
 
-        switch (result.Status)
+        if (result.Status == EmRunStatus.Cancelled)
         {
-            case EmRunStatus.Cancelled:
-                // Appended, not replaced: the row keeps the point count it reached, which is the one
-                // thing worth knowing about a run somebody stopped.
-                sweepLive.Finish(MessageLevel.Warning, "stopped — nothing was written");
-                return;
-            case EmRunStatus.NoLayout:
-            case EmRunStatus.Refused:
-                sweepLive.Finish(MessageLevel.Error, result.Error ?? "The EM setup could not be solved.");
-                return;
-            case EmRunStatus.EngineError:
-                sweepLive.Finish(MessageLevel.Error, result.Error ?? "The EM solve failed.");
-                return;
+            // Appended, not replaced: the row keeps the point count it reached, which is the one
+            // thing worth knowing about a run somebody stopped.
+            sweepLive.Finish(MessageLevel.Warning, "EM stopped — no solution was written");
+            if (adaptive)
+                Messages.Info(
+                    "Adaptive frequency sampling was on, so the points it had solved are not a " +
+                    "usable sweep on their own — the published grid is only complete once " +
+                    "refinement finishes. Nothing was written.");
+            return;
         }
 
         sweepLive.Finish(MessageLevel.Success, EmRunSummary(result, adaptive, pointCount));
@@ -4522,7 +4572,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result.NpyPath is { } npy)
         {
             await RefreshOpenDataDisplaysAsync([npy]);
-            await AutoOpenOrCreateDataDisplayAsync(baseDir, EmRunService.ResolveResultKey(setup), npy);
+            // ResolveNpyKey, not ResolveResultKey — the EM results file (and therefore the .cdd named
+            // after it) is deliberately distinct from the schematic's, or an EM run on cell "MLin"
+            // replaces MLin's schematic results and its Data Display. See EmRunService.NpyKeySuffix.
+            await AutoOpenOrCreateDataDisplayAsync(baseDir, EmRunService.ResolveNpyKey(setup), npy);
         }
     }
 
@@ -4663,6 +4716,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             stageLive.Update($"EM '{setupName}' — {what}", indeterminate: true);
     }
 
+    /// <summary>
+    /// The line posted the moment Simulate is pressed (owner request, 2026-08-11) — before the first
+    /// long piece of work, so it is genuinely immediate.
+    ///
+    /// <para><b>Whether adaptive sampling is ACTUALLY used is not simply the checkbox.</b> It applies
+    /// to the full-wave kernel only, and on <see cref="EmAnalysisKind.Auto"/> which kernel runs is not
+    /// settled until the registry has seen both extractors — so this deliberately hedges in that one
+    /// case rather than claiming something that may turn out to be false.</para>
+    /// </summary>
+    internal static string EmRunStartText(EmSetup setup, int pointCount, bool adaptive)
+    {
+        string points = pointCount > 0
+            ? $"{pointCount.ToString("N0", CultureInfo.CurrentCulture)} frequency point(s)"
+            : "a frequency sweep whose point count could not be resolved";
+
+        string sampling = setup.AnalysisKind == Engine.Mom.EmAnalysisKind.CrossSection
+            ? "adaptive frequency sampling does not apply to the cross-section analysis"
+            : !setup.AdaptiveSampling
+                ? "adaptive frequency sampling is off — every point is solved"
+                : setup.AnalysisKind == Engine.Mom.EmAnalysisKind.Auto
+                    ? "adaptive frequency sampling is on, and will be used if the full-wave analysis " +
+                      "is chosen — it solves a subset and models the rest"
+                    : "adaptive frequency sampling is on — it solves a subset and models the rest";
+
+        _ = adaptive;   // the caller's own precomputed flag; the wording above is the finer answer
+        return $"EM analysis started: '{setup.Name}' over {points}. {sampling}.";
+    }
+
     /// <summary>The sweep row's own outcome, appended to the end of the row it already owns — so the
     /// finished line still says which setup ran and how many points it got through.</summary>
     internal static string EmRunSummary(EmRunResult result, bool adaptive, int requestedPoints)
@@ -4674,7 +4755,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Adaptive publishes the user's whole grid but only SOLVES some of it, and saying so is the
         // difference between a number a user can trust and one they have to go looking for.
         if (adaptive && result.PlanarSolve is { } ps && ps.SolvedFrequencies.Count > 0)
-            return $"solved — {points}, {ps.SolvedFrequencies.Count:N0} solved and the rest interpolated";
+            return $"solved — {points}, {ps.SolvedFrequencies.Count:N0} solved by the full-wave " +
+                   "kernel and the rest modelled from those";
+
+        // Adaptive was ASKED for but the run did not report a solved set — which is what happens when
+        // the registry picked the cross-section kernel, where every point is closed-form anyway.
+        if (adaptive)
+            return $"solved — {points}, every point solved (adaptive sampling did not apply)";
 
         return $"solved — {points}";
     }

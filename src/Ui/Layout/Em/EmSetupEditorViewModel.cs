@@ -157,6 +157,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string? _extractionRefusal;
     [ObservableProperty] private string? _kernelRefusal;
     [ObservableProperty] private ObservableCollection<string> _notes = [];
+
+    /// <summary>Gates the Notes label AND its list together, so a heading is never left standing over
+    /// nothing — the failure a bare "Cross-section" heading over a null readback already produced
+    /// once (owner report, 2026-08-11).</summary>
+    public bool HasNotes => Notes.Count > 0;
+
+    partial void OnNotesChanged(ObservableCollection<string> value) => OnPropertyChanged(nameof(HasNotes));
     [ObservableProperty] private ObservableCollection<EmStackupRow> _stackupRows = [];
     [ObservableProperty] private string _layoutStatus = "";
     [ObservableProperty] private string _technologyName = "";
@@ -289,6 +296,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <see cref="EmAnalysisKind.Auto"/>, which is a request rather than an outcome.</summary>
     [ObservableProperty] private EmAnalysisKind _selectedKernel = EmAnalysisKind.CrossSection;
 
+    partial void OnSelectedKernelChanged(EmAnalysisKind value) => OnPropertyChanged(nameof(PortsHelpText));
+
     [ObservableProperty] private string _selectedKernelName = "";
 
     /// <summary>R-res-1 — the reason, in the registry's own words, shown as you type rather than
@@ -382,6 +391,42 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     /// <summary>True once the cross-section resolves to more than a single line's two ports.</summary>
     public bool ShowPortList => PortRows.Count > 2 || SelectedKernel == EmAnalysisKind.Planar;
+
+    /// <summary>
+    /// The Ports group's own explanation, shown as the header's tooltip rather than as two paragraphs
+    /// in the panel (owner request, 2026-08-11). It follows the CHOSEN kernel because the two
+    /// analyses answer "where is the port?" completely differently — one has no meshed port at all.
+    ///
+    /// <para>The de-embedding reference plane's position is deliberately NOT restated here: it is a
+    /// property of the method rather than a setting, so it belongs in the documentation, and every
+    /// resolved port already carries its own note.</para>
+    /// </summary>
+    public string PortsHelpText => SelectedKernel == EmAnalysisKind.Planar
+        ? "Each port is a port LABEL in the layout — place them with the layout editor's Port tool. " +
+          "Which end of a conductor a label names is inferred from the geometry and reported in the " +
+          "notes; an ambiguous one is refused rather than guessed.\n\n" +
+          "The list below sets each port's reference impedance individually. Ports may sit on " +
+          "different conductors — that is what a coupled or multi-port structure is."
+        : "The uniform-line analysis has no meshed port, so the ports ARE the ends of the extracted " +
+          "conductors by construction — there is nothing to place, and de-embedding is a no-op.\n\n" +
+          "Port 2k−1 is conductor k's near end and port 2k its far end, so two conductors give four " +
+          "ports. The list below sets each one's reference impedance individually.";
+
+    /// <summary>
+    /// The Analysis-levels expander's header — it answers the question the collapsed list would, so
+    /// the list itself only has to be opened when a level is actually being changed.
+    /// </summary>
+    public string AnalysisLevelsSummary
+    {
+        get
+        {
+            int total = AnalysisLevelRows.Count;
+            int on    = AnalysisLevelRows.Count(r => r.IsIncluded);
+            return on == 0
+                ? $"Analysis levels — every level with artwork ({total} available)"
+                : $"Analysis levels — {on} of {total} included";
+        }
+    }
 
     // ── Mesh settings, staged as text (all six — R-em-11) ──────────────────────────────────────
 
@@ -964,7 +1009,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         KernelRefusal = verdict.Ok ? null : verdict.Reason;
 
         var ports = EmPortExtraction.Extract(
-            source.View.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0);
+            source.View.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0,
+            source.View.DisplayUnit);
 
         PortRefusal = ports.Ok ? null : ports.Refusal;
         PlanarPorts = ports.Ports;
@@ -1392,6 +1438,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                 rows.Add(row);
             }
         AnalysisLevelRows = rows;
+        OnPropertyChanged(nameof(AnalysisLevelsSummary));
     }
 
     private void OnAnalysisLevelToggled(EmAnalysisLevelRow row)
@@ -1406,6 +1453,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         else Working.AnalysisLevelNames.RemoveAll(n => string.Equals(n, row.Name, StringComparison.Ordinal));
 
         CommitEdit(before, $"{(row.IsIncluded ? "Include" : "Exclude")} EM analysis level '{row.Name}'");
+        OnPropertyChanged(nameof(AnalysisLevelsSummary));
         InvalidateMesh();
         Refresh();
     }

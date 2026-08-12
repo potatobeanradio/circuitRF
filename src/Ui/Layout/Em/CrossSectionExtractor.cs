@@ -501,8 +501,13 @@ public static class CrossSectionExtractor
             notes.Add($"{ignoredDielectric} shape(s) on a layer bound only to a DIELECTRIC stackup " +
                       "entry were ignored — that binding marks a substrate extent, not metal.");
 
-        if (ignoredAnnotation > 0)
-            notes.Add($"{ignoredAnnotation} label/bitmap shape(s) were ignored — annotation is not artwork.");
+        // Labels and bitmaps are DELIBERATELY not reported (owner request, 2026-08-11: "too
+        // obvious/redundant to show users for every setup"). Every other ignored-shape note above
+        // describes something a user might reasonably have expected to simulate; annotation is not
+        // artwork by definition, and saying so on every single extraction is noise that crowds out
+        // the notes that do carry information. The counter stays so the classifier's own accounting
+        // is still complete.
+        _ = ignoredAnnotation;
 
         return new Classification(conductors, null);
     }

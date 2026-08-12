@@ -123,13 +123,16 @@ public static class SurfaceMesher
     /// <param name="sliverAreaFraction">R-cut-3's MEASURED threshold — the fraction of a grid
     /// rectangle below which a cut cell is absorbed into a neighbour rather than solved. Only reachable
     /// so the sweep that chose it can be re-run; see <see cref="DefaultSliverAreaFraction"/>.</param>
+    /// <param name="diagnostics">brief-convex-decomposition.md's M0 instrument, or null for none.
+    /// <b>The mesh is bit-identical either way</b> — nothing on it feeds back.</param>
     public static PlanarMeshReport Mesh(
         PlanarProblem       problem,
         PlanarMeshSettings? settings      = null,
         PlanarEdgeReference edgeReference = PlanarEdgeReference.ConductorWidth,
         RunControl?         control       = null,
         PlanarRimGrading    rimGrading    = PlanarRimGrading.None,
-        double              sliverAreaFraction = DefaultSliverAreaFraction)
+        double              sliverAreaFraction = DefaultSliverAreaFraction,
+        ConformalDiagnostics? diagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
@@ -239,7 +242,7 @@ public static class SurfaceMesher
             if (s.BoundaryCells == PlanarBoundaryCells.Conformal)
             {
                 BuildConformalCells(layer, li, gx, gy, nx, ny, sliverAreaFraction,
-                                    cells, cellAt, conformal, control);
+                                    cells, cellAt, conformal, control, diagnostics);
             }
             else
             {
@@ -518,11 +521,20 @@ public static class SurfaceMesher
             if (conformal.Fallback > 0)
                 notes.Add($"{conformal.Fallback} cell(s) could NOT be cut and are staircased: " +
                           $"{conformal.FallbackMultiPolygon} touched by more than one drawn shape, " +
-                          $"{conformal.FallbackHole} touched by a hole, {conformal.FallbackNonConvex} " +
-                          "containing a sharp corner of the outline. One straight boundary per cell is " +
-                          "what a cut cell can express; a cell crossed twice is a mesh that is too " +
-                          "coarse for its own artwork, so raise Cells per wavelength and this count " +
-                          "falls to zero.");
+                          $"{conformal.FallbackHole} touched by a hole, {conformal.FallbackNotFlowSimple} " +
+                          "met by the outline in more than one run in BOTH directions at once. A cell " +
+                          "crossed twice along every line through it is a mesh that is too coarse for " +
+                          "its own artwork, so raise Cells per wavelength and this count falls.");
+
+            // R-cvx-2 — the second count, kept separate from the first. A mesher that silently drops
+            // a basis is as bad as one that silently re-shapes a cell.
+            if (conformal.OneDirectionOnly > 0)
+                notes.Add($"{conformal.OneDirectionOnly} cell(s) follow the metal but are describable " +
+                          $"in ONE current direction only, and {conformal.RefusedFacesNotFlowSimple} " +
+                          "basis function(s) across them were declined on that. The cell itself is cut " +
+                          "and tiles the metal exactly — what it cannot carry is current running along " +
+                          "the axis in which the outline crosses it twice. Raising Cells per wavelength " +
+                          "separates the two crossings into different cells and the count falls.");
         }
 
         foreach (var alt in problem.Alternatives)
@@ -566,7 +578,8 @@ public static class SurfaceMesher
             CutCellCount:                  conformal.Cut,
             MergedSliverCount:             conformal.Merged,
             StaircaseFallbackCells:        conformal.Fallback,
-            MeshedAreaM2:                  meshedArea);
+            MeshedAreaM2:                  meshedArea,
+            OneDirectionCells:             conformal.OneDirectionOnly);
     }
 
     /// <summary>
@@ -616,9 +629,19 @@ public static class SurfaceMesher
         public int UnmergedSlivers;
         public int FallbackMultiPolygon;
         public int FallbackHole;
-        public int FallbackNonConvex;
+
+        /// <summary>M1's own meaning: the clipped region is flow-simple in NEITHER direction, so no
+        /// basis through it can be described by strips and the cell is staircased. This is what the
+        /// old <c>FallbackNonConvex</c> became, and it is a strictly smaller set.</summary>
+        public int FallbackNotFlowSimple;
+
+        /// <summary>R-cvx-2's SECOND count, and a different event: the cell is CUT and kept, but one
+        /// of its two directions is refused a basis. A user reading the notes needs the two apart.</summary>
+        public int OneDirectionOnly;
+
         public int RefusedFaces;
-        public int Fallback => FallbackMultiPolygon + FallbackHole + FallbackNonConvex;
+        public int RefusedFacesNotFlowSimple;
+        public int Fallback => FallbackMultiPolygon + FallbackHole + FallbackNotFlowSimple;
     }
 
     /// <summary>
@@ -632,7 +655,8 @@ public static class SurfaceMesher
     private static void BuildConformalCells(
         PlanarConductorLayer layer, int li,
         double[] gx, double[] gy, int nx, int ny, double sliverFraction,
-        List<PlanarCell> cells, int[] cellAt, ConformalCounts counts, RunControl? control)
+        List<PlanarCell> cells, int[] cellAt, ConformalCounts counts, RunControl? control,
+        ConformalDiagnostics? diagnostics = null)
     {
         const byte Absent = 0, Whole = 1, Cut = 2;
 
@@ -714,12 +738,43 @@ public static class SurfaceMesher
                 if (area <= 1e-12 * rectArea) { kind[q] = Absent; continue; }
                 if (area >= (1.0 - 1e-12) * rectArea) { kind[q] = Whole; continue; }
 
-                if (!PlanarCellRegion.IsConvex(clipped, 1e-9 * rectArea))
+                // ── M1 — THE PREDICATE IS FLOW-SIMPLICITY, NOT CONVEXITY ──────────────────────
+                //
+                // brief-convex-decomposition.md §1: what the strip construction in RooftopSupport
+                // needs is that the region meet EVERY transverse line in ONE interval, because Build
+                // spans one trapezoid from the crossing set's outer hull — a region that meets the
+                // line twice therefore carries source over a gap where there is no metal. Convexity
+                // implies that in both directions and is much stronger; a merged L-shaped cell has
+                // never been convex and has always worked, which is the standing counter-example.
+                //
+                // It is asked PER DIRECTION and the refusal moves with it: a cell simple in x only
+                // is CUT and contributes an x basis, and FaceCarriesABasis declines its y one. Only a
+                // cell simple in NEITHER direction is staircased, and M0 measured zero of those over
+                // three shipping PCells × two starters × three densities.
+                bool xSimple = RooftopSupport.IsFlowSimple(region, alongX: true,  tol);
+                bool ySimple = RooftopSupport.IsFlowSimple(region, alongX: false, tol);
+
+                if (!xSimple && !ySimple)
                 {
-                    counts.FallbackNonConvex++;
+                    counts.FallbackNotFlowSimple++;
+                    diagnostics?.Fallbacks.Add(Classify(li, ix, iy, "flow-simple in neither direction",
+                                                        region, clipped, area / rectArea, tol));
                     kind[q] = InMetal(polys, xc, yc) ? Whole : Absent;
                     continue;
                 }
+
+                if (!xSimple || !ySimple)
+                {
+                    counts.OneDirectionOnly++;
+                    diagnostics?.OneDirectionOnly.Add(Classify(li, ix, iy, "one direction only",
+                                                               region, clipped, area / rectArea, tol));
+                }
+
+                // M0's table, kept live: which of the admitted cells the OLD convexity predicate would
+                // have turned away. Computed only when the instrument is attached.
+                if (diagnostics is not null && !PlanarCellRegion.IsConvex(clipped, 1e-9 * rectArea))
+                    diagnostics.AdmittedNonConvex.Add(Classify(li, ix, iy, "non-convex, admitted",
+                                                               region, clipped, area / rectArea, tol));
 
                 kind[q]    = Cut;
                 regions[q] = region;
@@ -825,13 +880,43 @@ public static class SurfaceMesher
         double refLen = dir == PlanarBasisDirection.X
             ? Math.Min(a.Height, b.Height) : Math.Min(a.Width, b.Width);
 
-        bool sound = sa.Anchored && sb.Anchored
+        // M1's R-cvx-2 — the FOURTH way, and the one the predicate swap introduced. A cell may be cut
+        // and still be describable by strips in one direction only; the basis across the other one
+        // would integrate source over a gap in the metal. Counted apart from the other three,
+        // because "this cell was staircased" and "this cell kept one of its two bases" are different
+        // events and a user reading the notes has to be able to tell them apart.
+        bool simple = sa.FlowSimple && sb.FlowSimple;
+
+        bool sound = simple
+                  && sa.Anchored && sb.Anchored
                   && face > 1e-9 * refLen
                   && Math.Abs(sa.Area - a.Area) <= 1e-9 * a.Area
                   && Math.Abs(sb.Area - b.Area) <= 1e-9 * b.Area;
 
-        if (!sound) counts.RefusedFaces++;
+        if (!sound)
+        {
+            if (simple) counts.RefusedFaces++;
+            else        counts.RefusedFacesNotFlowSimple++;
+        }
         return sound;
+    }
+
+    /// <summary>M0's classification of one refused cell — see <see cref="ConformalFallbackCell"/>.</summary>
+    private static ConformalFallbackCell Classify(int li, int ix, int iy, string reason,
+                                                  PlanarCellRegion region,
+                                                  IReadOnlyList<EmPoint> ring,
+                                                  double areaFraction, double tol)
+    {
+        int reflex = 0;
+        for (int i = 0, n = ring.Count; i < n; i++)
+        {
+            var a = ring[i]; var b = ring[(i + 1) % n]; var c = ring[(i + 2) % n];
+            // ClipToRect returns counter-clockwise, so a NEGATIVE turn is the reflex one.
+            if ((b.X - a.X) * (c.Y - b.Y) - (b.Y - a.Y) * (c.X - b.X) < 0) reflex++;
+        }
+        return new ConformalFallbackCell(li, ix, iy, reason, areaFraction, reflex,
+                                         RooftopSupport.IsFlowSimple(region, alongX: true,  tol),
+                                         RooftopSupport.IsFlowSimple(region, alongX: false, tol));
     }
 
     private static bool InMetal(IReadOnlyList<PlanarPolygon> polys, double x, double y)
@@ -1124,24 +1209,25 @@ public static class SurfaceMesher
                 {
                     int n = ring.Count;
                     var oblique = new bool[n];
+                    var convex  = ConvexCorners(ring);
                     for (int i = 0, j = n - 1; i < n; j = i++)
                     {
                         double ax = ring[j].X, ay = ring[j].Y, bx = ring[i].X, by = ring[i].Y;
                         bool vertical   = Math.Abs(bx - ax) <= tolX;
                         bool horizontal = Math.Abs(by - ay) <= tolY;
+                        bool cap        = convex[j] && convex[i];
 
                         if (vertical && !horizontal)
                         {
                             hardX.Add(0.5 * (ax + bx));
-                            // "Long enough to crowd": at least a fifth of the region's own extent
-                            // across the edge. A staircase tread never reaches that; a real conductor
-                            // edge always does.
-                            if (grade && Math.Abs(by - ay) >= 0.2 * extY) attX.Add(0.5 * (ax + bx));
+                            if (grade && Crowds(Math.Abs(by - ay), extY, cap))
+                                attX.Add(0.5 * (ax + bx));
                         }
                         else if (horizontal && !vertical)
                         {
                             hardY.Add(0.5 * (ay + by));
-                            if (grade && Math.Abs(bx - ax) >= 0.2 * extX) attY.Add(0.5 * (ay + by));
+                            if (grade && Crowds(Math.Abs(bx - ax), extX, cap))
+                                attY.Add(0.5 * (ay + by));
                         }
                         else if (!horizontal && !vertical)
                         {
@@ -1160,6 +1246,76 @@ public static class SurfaceMesher
             }
 
         return (hardX, hardY, attX, attY, staircased);
+    }
+
+    /// <summary>
+    /// <b>"LONG ENOUGH TO CROWD" — and it is asked TWO ways, because one of them was measured wrong
+    /// on a part whose two ends differ in scale.</b>
+    ///
+    /// <para>The original test is the first clause: an axis-parallel edge earns a graded fan when it
+    /// is at least a fifth of the POLYGON's own extent across it. Its purpose is to stop a drawn
+    /// staircase from demanding a fan per tread, and for that it works. <b>But the polygon's extent is
+    /// the wrong yardstick for a part whose features differ in size, and a shipping PCell shows it:</b>
+    /// on the reported MKlopf (Z1 = 50 → Z2 = 12, offset), the 12 Ω end cap is 20.292 mm and the 50 Ω
+    /// end cap is 2.998 mm against a threshold of 0.2 × 21.989 = 4.398 mm — so the wide end got a
+    /// graded fan (357 → 237 → 142 → 94 µm) and the narrow end, where the crowding is STRONGEST and
+    /// where the user's port sits, got none. Same taper, same physics, opposite treatment, decided by
+    /// the bounding box of the other end.</para>
+    ///
+    /// <para><b>The second clause is the geometric statement the first one was reaching for: an edge
+    /// that terminates the conductor has BOTH its corners convex, and an edge that is part of a longer
+    /// boundary chain does not.</b> A staircase alternates convex and reflex, so every tread and every
+    /// riser has one of each and is still excluded — which is the property the first clause exists to
+    /// protect, now held for a reason rather than by a proxy. It is O(1) per edge and purely local.</para>
+    ///
+    /// <para><b>The floor on the second clause is DERIVED rather than picked.</b> R17 caps this kernel
+    /// at ~5,000 unknowns, i.e. ~2,500 cells, i.e. roughly a 50 × 50 grid — so one cell is about 2% of
+    /// the extent per axis at the finest mesh this kernel can afford, and an edge shorter than that is
+    /// sub-cell however the mesh is refined. Grading it would spend gridlines across the WHOLE tensor
+    /// grid on a feature the mesh cannot represent. It also bounds the one pathological case: artwork
+    /// with hundreds of small Manhattan features (a meshed pour, a via farm drawn as conductor) would
+    /// otherwise ask for four fans each.</para>
+    ///
+    /// <para><b>This can only ADD attractors, never remove one</b> — it is an OR — so no mesh loses
+    /// grading it had, and §10.7's hero is untouched because all four of its edges already pass the
+    /// first clause (2.9 mm ≥ 0.58 mm and 20 mm ≥ 4 mm). N = 552 is asserted, not assumed.</para>
+    /// </summary>
+    private static bool Crowds(double edgeLength, double extentAcross, bool cap)
+        => edgeLength >= 0.2 * extentAcross
+        || (cap && edgeLength >= CapMinFractionOfExtent * extentAcross);
+
+    /// <summary>See <see cref="Crowds"/> — one cell at R17's own ceiling, as a fraction of the part.</summary>
+    private const double CapMinFractionOfExtent = 0.02;
+
+    /// <summary>
+    /// Which of the ring's corners turn the same way the ring itself winds. <b>Collinear counts as NOT
+    /// a corner</b>, deliberately: a vertex sitting mid-edge means the edge either side of it is a
+    /// sub-segment of a longer straight boundary, which is exactly not a cap.
+    /// </summary>
+    private static bool[] ConvexCorners(IReadOnlyList<EmPoint> ring)
+    {
+        int n = ring.Count;
+        var convex = new bool[n];
+        if (n < 3) return convex;
+
+        double signed = 0, scale = 0;
+        for (int i = 0, j = n - 1; i < n; j = i++)
+        {
+            signed += ring[j].X * ring[i].Y - ring[i].X * ring[j].Y;
+            scale   = Math.Max(scale, Math.Abs(ring[i].X) + Math.Abs(ring[i].Y));
+        }
+        double sign = Math.Sign(signed);
+        double tol  = 1e-12 * scale * scale;
+
+        for (int i = 0; i < n; i++)
+        {
+            var p0 = ring[(i + n - 1) % n];
+            var p1 = ring[i];
+            var p2 = ring[(i + 1) % n];
+            double cross = (p1.X - p0.X) * (p2.Y - p1.Y) - (p1.Y - p0.Y) * (p2.X - p1.X);
+            convex[i] = cross * sign > tol;
+        }
+        return convex;
     }
 
     private static IEnumerable<IReadOnlyList<EmPoint>> Rings(PlanarPolygon poly)

@@ -266,6 +266,124 @@ public class ConformalFillOracleTests(ITestOutputHelper output)
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
+    // T4 — brief-convex-decomposition.md §7 gate 7: the fill on a mesh of NEWLY-ADMITTED cells
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// A rectangle whose top boundary is a finely sampled CONVEX arc, so the metal below it is
+    /// locally CONCAVE and every boundary cell's clipped region carries several reflex vertices.
+    ///
+    /// <para><b>This is MKlopf's own case in miniature and it is deliberately not a notch.</b> A
+    /// V-notch would put a single deep reflex vertex in one cell and make that cell flow-simple in
+    /// one direction only — a real case, but the rare one (M0 measured 6 of 1,158). What M1 actually
+    /// admits in bulk is a rim whose CURVATURE is concave: many shallow reflex vertices per cell,
+    /// flow-simple in both directions. The sag is kept to 0.2 mm of 2.6 so the shrinking horizontal
+    /// runs near the top do not drive R-msh-4's percentile and blow the cell count up — the same trap
+    /// the Wedge fixture's own comment records.</para>
+    ///
+    /// <para><b>24 stations, not 60, and the count is a COST decision that had to be measured.</b> A
+    /// non-convex cell's strip count is its vertex count, and the reference rule is ~n⁴ per strip
+    /// PAIR — so a self entry is quadratic in the sampling. At 60 stations (≈10 arc segments per
+    /// cell) T4 measured <b>7 m 30 s</b>; at 24 (≈4 per cell) it is a quarter of that and the answer
+    /// does not move. Refining the ARTWORK is not what this rung is testing.</para>
+    /// </summary>
+    private static PlanarProblem ConcaveArc()
+    {
+        var ring = new List<EmPoint> { new(0, 0), new(3.0e-3, 0) };
+        for (int i = 24; i >= 0; i--)
+        {
+            double x = 3.0e-3 * i / 24.0;
+            ring.Add(new EmPoint(x, 2.4e-3 + 0.2e-3 * (x / 3.0e-3) * (x / 3.0e-3)));
+        }
+        return new PlanarProblem(
+            [new PlanarConductorLayer("Metal", [new PlanarPolygon(ring)], 5.8e7, 35e-6)],
+            GroundedSlab.Fr4Starter, 10e9);
+    }
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void T4_TheFillOnAMeshContainingNEWLYADMITTEDCells()
+    {
+        var diag  = new ConformalDiagnostics();
+        var mesh  = SurfaceMesher.Mesh(ConcaveArc(), Coarse(PlanarBoundaryCells.Conformal),
+                                       diagnostics: diag).Mesh;
+        var st    = PlanarFillSettings.Default;
+        var cores = PlanarFill.BuildCores(mesh, st);
+        var p     = PlanarFill.ScalarPotentialMatrix(cores, Terms().With(st.Order, cores.RhoFloorM));
+
+        _out.WriteLine($"[T4] {mesh.Cells.Count} cells, {mesh.Bases.Count} bases, " +
+                       $"{diag.AdmittedNonConvex.Count} of them cut from a NON-CONVEX clip " +
+                       $"(the pre-M1 predicate refused every one), {diag.Fallbacks.Count} staircased.");
+
+        // NON-VACUITY, and it is the whole point of this rung: the cells being integrated over have
+        // to be the ones M1 admitted, or the gate is T1 again on a different shape.
+        Assert.True(diag.AdmittedNonConvex.Count >= 3,
+            $"only {diag.AdmittedNonConvex.Count} newly-admitted cell(s) — the fixture does not " +
+            "exercise what this gate is for");
+        Assert.Empty(diag.Fallbacks);
+
+        // The newly-admitted cells, and only those: a self term, its touching neighbour, and a far
+        // pair. Kept to four entries because the reference rule is ~n⁴ and §7 gate 9 asks this phase
+        // to be far smaller than the conformal phase's own ~25 minutes.
+        var admitted = new List<int>();
+        for (int i = 0; i < mesh.Cells.Count; i++)
+            if (mesh.Cells[i].IsCut && !PlanarCellRegion.IsConvex(mesh.Cells[i].Region!.Pieces[0],
+                                                                  1e-9 * mesh.Cells[i].Width * mesh.Cells[i].Height))
+                admitted.Add(i);
+        Assert.NotEmpty(admitted);
+
+        int a = admitted[0], b = admitted[^1];
+        int touching = -1;
+        for (int j = 0; j < mesh.Cells.Count; j++)
+            if (j != a && Touching(mesh.Cells[a], mesh.Cells[j])) { touching = j; break; }
+        Assert.True(touching >= 0);
+
+        double worst = 0;
+        foreach (var (i, j, name) in new[] { (a, a, "admitted self"),
+                                             (a, touching, "admitted ↔ touching"),
+                                             (a, b, "admitted ↔ admitted") })
+        {
+            double want = Entry(mesh, i, j, RefLevels, RefOuter, RefInner);
+            double got  = p[i, j].Real;
+            double err  = Math.Abs(got - want) / Math.Abs(want);
+            worst = Math.Max(worst, err);
+            _out.WriteLine($"  P[{i,3},{j,3}] {name,-22} closed {got:E10}  quad {want:E10}  rel {err:E2}");
+        }
+
+        _out.WriteLine($"[T4] WORST relative error on newly-admitted cells: {worst:E2}");
+
+        // §7 gate 7's own instruction: "Do not gate tighter than 5e-6 — that is L8c's own benchmark,
+        // and the oracle's own residual on the pulse self term is 3.3e-7, so a 1e-6 gate asks it for
+        // a decision it cannot make. That mistake was made once already."
+        Assert.True(worst < 5e-6,
+            $"the fill over newly-admitted (non-convex) cells is {worst:E2} from an independent " +
+            "quadrature, against L8c's own 5.0e-6");
+    }
+
+    /// <summary>
+    /// <b>The tiling gate is what says the newly-admitted cells are the RIGHT region</b>, and it costs
+    /// nothing, so it is routine rather than opt-in. A cell admitted with a wrong clip would still
+    /// integrate consistently against the oracle above and would still be wrong.
+    /// </summary>
+    [Fact]
+    public void T4b_TheNewlyAdmittedCellsTileTheDrawnArtworkExactly()
+    {
+        var problem = ConcaveArc();
+        var diag = new ConformalDiagnostics();
+        var rep  = SurfaceMesher.Mesh(problem, Coarse(PlanarBoundaryCells.Conformal), diagnostics: diag);
+
+        double drawn = problem.Layers[0].Polygons[0].Area();
+        double err   = Math.Abs(rep.MeshedAreaM2 - drawn) / drawn;
+
+        _out.WriteLine($"[T4b] drawn {drawn:E10} m², meshed {rep.MeshedAreaM2:E10} m², rel {err:E3}; " +
+                       $"{diag.AdmittedNonConvex.Count} newly-admitted cell(s), " +
+                       $"{rep.StaircaseFallbackCells} staircased, {rep.OneDirectionCells} one-direction.");
+
+        Assert.True(diag.AdmittedNonConvex.Count >= 3);
+        Assert.True(err < 1e-12, $"the conformal mesh's area error is {err:E3}, not round-off");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
     // T3 — D5 and D6 still hold on a cut mesh
     // ══════════════════════════════════════════════════════════════════════════════════════════
 

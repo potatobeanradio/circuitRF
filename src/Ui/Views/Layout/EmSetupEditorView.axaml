@@ -58,6 +58,21 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="0,0,0,6"/>
         </Style>
+
+        <!-- Owner request, 2026-08-11: the two "…" pickers in the header (Change Layout, and the
+             output file) must be the SAME size. One style rather than two hand-matched sets of
+             Width/Height/Padding, so they cannot drift apart the next time one is touched. -->
+        <Style Selector="Button.ellipsis">
+            <Setter Property="Content" Value="…"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
     </UserControl.Styles>
 
     <DockPanel>
@@ -74,48 +89,62 @@
                  block and the button cluster are two items that REFLOW, so a narrow window stacks
                  them rather than overlapping them. -->
             <WrapPanel Orientation="Horizontal">
-                <StackPanel Orientation="Vertical" Margin="0,0,12,0">
-                    <TextBlock Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold"/>
-                    <!-- Which .clay this setup is FOR, with the way to change it right beside it
-                         (owner request, 2026-08-09). A .cem references its layout by path and reads
-                         the geometry at run time, so the reference is a first-class, editable field
-                         rather than a fact fixed at creation. -->
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <TextBlock Text="{Binding ViewModel.LayoutStatus}" Classes="colhdr"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="420"/>
-                        <Button Name="ChangeLayoutButton" Content="Change Layout…"
-                                FontSize="10" Padding="6,1"
-                                ToolTip.Tip="Point this EM setup at a different .clay. The cross-section, ports and mesh all re-derive against the new artwork, and the change is undoable."/>
-                    </StackPanel>
-
-                    <!-- Where the s-parameters land (owner request, 2026-08-09), directly under the
-                         layout row it defaults from. Modelled on the Analyses panel's own "Results
-                         file:" field: staged text, committed on LostFocus/Enter, and BLANK MEANS THE
-                         DEFAULT — shown as the placeholder rather than pre-filled, so the default
-                         keeps tracking the layout's name instead of freezing into a literal the
-                         moment anything is renamed. -->
-                    <!-- Horizontal StackPanel, not a star-column Grid: Browse… must HUG the box
-                         (owner request) rather than being pushed to the panel's right edge. Same
-                         idiom, same spacing, as the Layout / Change Layout… row directly above. -->
-                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,3,0,0">
-                        <TextBlock Text="Output file:" Classes="colhdr"
+                <!-- TWO rows, not three (owner request, 2026-08-11). The name and the output file
+                     share a line; the layout reference gets the second one. That buys back a row of
+                     header height AND — the reason it is structured this way rather than by nudging
+                     margins — it makes the LAYOUT row the identity block's LAST row, so the button
+                     cluster bottom-aligning to the block lands exactly on the Change Layout button
+                     with no magic number to go stale. -->
+                <StackPanel Orientation="Vertical" Margin="0,0,14,0">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
+
+                        <!-- Where the s-parameters land (owner request, 2026-08-09). Modelled on the
+                             Analyses panel's own "Results file:" field: staged text, committed on
+                             LostFocus/Enter, and BLANK MEANS THE DEFAULT — shown as the placeholder
+                             rather than pre-filled, so the default keeps tracking the layout's name
+                             instead of freezing into a literal the moment anything is renamed. -->
+                        <TextBlock Text="Output file:" Classes="colhdr" VerticalAlignment="Center"/>
                         <TextBox Name="SnpOutputPathBox"
                                  Text="{Binding ViewModel.SnpOutputPathText}"
                                  Watermark="{Binding ViewModel.SnpOutputPlaceholder}"
                                  FontSize="11" Padding="4,2"
                                  MinWidth="120" MaxWidth="420"
+                                 VerticalAlignment="Center"
                                  ToolTip.Tip="Where the s-parameters are written. Blank uses the layout's own name with an .sNp suffix, in the workspace's results folder. A relative path is taken from there; an absolute path is used as given. The .sNp suffix is added from the port count, so you do not need to type it."/>
-                        <Button Name="BrowseSnpOutputButton" Content="Browse…"
-                                FontSize="10" Padding="6,1"
+                        <Button Name="BrowseSnpOutputButton" Classes="ellipsis" Content="…"
                                 ToolTip.Tip="Pick where the s-parameters are written."/>
+                    </StackPanel>
+
+                    <!-- Which .clay this setup is FOR, with the way to change it right beside it
+                         (owner request, 2026-08-09). A .cem references its layout by path and reads
+                         the geometry at run time, so the reference is a first-class, editable field
+                         rather than a fact fixed at creation. Labelled now that it has its own row.
+
+                         This row's height is the "…" button's height (every other child is shorter),
+                         so the bottom of the identity block IS the bottom of that button — which is
+                         what the bottom-aligned button cluster to the right lines up against. -->
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,3,0,0">
+                        <TextBlock Text="Layout:" Classes="colhdr" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding ViewModel.LayoutStatus}" Classes="colhdr"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+                        <Button Name="ChangeLayoutButton" Classes="ellipsis" Content="…"
+                                ToolTip.Tip="Point this EM setup at a different .clay. The cross-section, ports and mesh all re-derive against the new artwork, and the change is undoable."/>
                     </StackPanel>
                 </StackPanel>
 
                 <!-- The button cluster is ONE WrapPanel item, so it moves as a unit and the buttons
-                     never separate from each other. -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                     never separate from each other.
+
+                     BOTTOM-aligned (owner request, 2026-08-11): the identity block's last row is the
+                     Layout row, and that row's height is its "…" button's, so bottom-aligning here
+                     puts all six buttons on the same baseline as that button. No margin arithmetic —
+                     which is the point, since a margin would silently go stale the moment a font
+                     size or a row changed. When the WrapPanel reflows at a narrow width the cluster
+                     drops to its own line and the alignment is simply moot. -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
 
                 <!-- D2: Mesh computes the mesh ONLY and never solves. -->
                 <!-- One Mesh button, and it means "mesh THIS setup" — it dispatches to whichever
@@ -195,7 +224,9 @@
             <TextBlock Text="{Binding ViewModel.BlockingReason}" TextWrapping="Wrap" FontSize="11"/>
         </Border>
 
-        <ScrollViewer>
+        <!-- Named so the code-behind can restore its offset across a window activation — see
+             EmSetupEditorView.axaml.cs's own note on why focus restoration scrolls it to the top. -->
+        <ScrollViewer Name="BodyScroll">
             <StackPanel Margin="10,6,10,14" Spacing="2">
 
                 <!-- ── L8e: which analysis, and why (D2, R-res-1) ─────────────────
@@ -209,54 +240,86 @@
                      own ToString(): "Auto"/"CrossSection"/"Planar" are OUR spellings. The labels the
                      user sees come from EmKernelRegistry.ChoiceLabel, which is also what the reason
                      prose names — so a message saying "set Analysis to X" always names something
-                     this dropdown actually offers. -->
+                     this dropdown actually offers.
+
+                     TWO COLUMNS, and a real Grid rather than a WrapPanel (owner request,
+                     2026-08-11: "the whole point is to make the Analysis group occupy less vertical
+                     space"). A WrapPanel only saves height while both blocks happen to fit side by
+                     side — in a docked panel it reflowed to one column and the group came out
+                     TALLER than before, which is what the first attempt did. A 50/50 Grid always
+                     splits, so the group's height is max(left, right) rather than their sum.
+
+                     Left is the CHOICE (what to run, and why that kernel); right is the OUTCOME
+                     (what the geometry resolved to, and everything the extraction had to say).
+                     ColumnSpacing is the padding between them. -->
                 <Border Classes="group">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Analysis"/>
-                <ComboBox Classes="cell" HorizontalAlignment="Stretch"
-                          ItemsSource="{x:Static em:EmSetupEditorViewModel.AnalysisKindChoices}"
-                          SelectedItem="{Binding ViewModel.AnalysisKind}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Converter={x:Static conv:EmAnalysisKindNameConverter.Instance}}"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
-                           Text="{Binding ViewModel.AnalysisKindDescription}"/>
-                <TextBlock FontSize="11" Margin="0,4,0,0"
-                           Text="{Binding ViewModel.SelectedKernelName}" FontWeight="SemiBold"/>
-                <TextBlock Classes="colhdr" TextWrapping="Wrap"
-                           Text="{Binding ViewModel.KernelChoiceReason}"/>
-                  </StackPanel>
-                </Border>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
 
-                <!-- ── Cross-section readback (R-em-8: rendered, never recomputed) ── -->
-                <Border Classes="group">
-                  <StackPanel Spacing="2">
-                <TextBlock Classes="grouphdr" Text="Cross-section"/>
-                <TextBlock Text="{Binding ViewModel.Readback.Summary}" TextWrapping="Wrap"
-                           FontSize="11"
-                           IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <!-- Owner request: the analysis type never needs the full panel width. -->
+                        <ComboBox Classes="cell" MaxWidth="200" HorizontalAlignment="Left"
+                                  ItemsSource="{x:Static em:EmSetupEditorViewModel.AnalysisKindChoices}"
+                                  SelectedItem="{Binding ViewModel.AnalysisKind}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Converter={x:Static conv:EmAnalysisKindNameConverter.Instance}}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                                   Text="{Binding ViewModel.AnalysisKindDescription}"/>
+                        <TextBlock FontSize="11" Margin="0,4,0,0"
+                                   Text="{Binding ViewModel.SelectedKernelName}" FontWeight="SemiBold"/>
+                        <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                                   Text="{Binding ViewModel.KernelChoiceReason}"/>
+                    </StackPanel>
 
-                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto"
-                      IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}"
-                      Margin="0,4,0,0">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Propagation axis"/>
-                    <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.Axis}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Signal layer"/>
-                    <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.SignalLayerName}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Ground reference"/>
-                    <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.GroundLayerName}"/>
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <!-- ── Cross-section readback (R-em-8: rendered, never recomputed) ──
+                             The WHOLE block is gated on Readback, header included. Readback is the
+                             cross-section kernel's own product and is null for a full-wave setup, so
+                             without the gate a planar setup showed a "Cross-section" heading with
+                             nothing whatsoever under it (owner report, 2026-08-11). A heading with
+                             no content reads as a rendering failure, not as an empty section. -->
+                        <StackPanel Spacing="2"
+                                    IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <TextBlock Classes="colhdr" FontWeight="SemiBold" Text="Cross-section"/>
+                            <TextBlock Text="{Binding ViewModel.Readback.Summary}" TextWrapping="Wrap"
+                                       FontSize="11"/>
+
+                            <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Propagation axis"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.Axis}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Signal layer"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.SignalLayerName}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Ground reference"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.GroundLayerName}"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- The extraction notes — what geometry was seen, what was ignored and why,
+                             and where each port resolved to. They live in the RIGHT column with the
+                             readback, not full width below both, because that is what actually buys
+                             the height back: they are the tallest thing in the group, and beside the
+                             description they cost nothing instead of stacking under it.
+
+                             HasNotes gates the label AND the list together, so the heading can never
+                             be left standing over nothing — the exact failure the ungated
+                             "Cross-section" heading produced. -->
+                        <StackPanel IsVisible="{Binding ViewModel.HasNotes}" Margin="0,6,0,0" Spacing="2">
+                            <TextBlock Classes="colhdr" FontWeight="SemiBold" Text="Notes"/>
+                            <ItemsControl ItemsSource="{Binding ViewModel.Notes}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="10" Opacity="0.75"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
                 </Grid>
-
-                <ItemsControl ItemsSource="{Binding ViewModel.Notes}" Margin="0,4,0,0">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="10" Opacity="0.75"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
 
                   </StackPanel>
                 </Border>
@@ -275,19 +338,38 @@
                      kernel's own control and means a different thing (which single conductor a
                      uniform cross-section is about). Nothing checked = infer, which is every level
                      carrying artwork and is what every pre-L9d .cem asks for. -->
-                <StackPanel Spacing="2" IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
-                    <TextBlock Classes="colhdr" Margin="0,8,0,0" Text="Analysis levels"/>
-                    <TextBlock FontSize="10" Opacity="0.75" TextWrapping="Wrap"
-                               Text="Which conductor levels the full-wave solve meshes, bottom-to-top. Leave all unchecked to include every level that carries artwork."/>
-                    <ItemsControl ItemsSource="{Binding ViewModel.AnalysisLevelRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <CheckBox FontSize="11" Content="{Binding Name}"
-                                          IsChecked="{Binding IsIncluded}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+                <!-- Owner question, 2026-08-11: "will the Analysis levels listing grow to be extremely
+                     large if the .ctech has lots of conductors?" It can — an imported process ships
+                     hundreds of layers — so the list is COLLAPSED behind an Expander whose header
+                     already answers the question the list would ("3 of 6 included"), and is
+                     height-capped when open. Same shape as the Analyses panel's own Corners block.
+
+                     An ItemsControl rather than a ListBox (this repo's usual rule for growing row
+                     lists) because the rows are CHECKBOXES: a ListBox would add a selection highlight
+                     that means nothing here. The MaxHeight ScrollViewer is what bounds it instead —
+                     and only CONDUCTORS appear, which is a far smaller set than a layer table. -->
+                <Expander Margin="0,8,0,0" IsExpanded="False"
+                          IsVisible="{Binding ViewModel.IsPlanarAnalysis}"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander.Header>
+                        <TextBlock Classes="colhdr" Text="{Binding ViewModel.AnalysisLevelsSummary}"/>
+                    </Expander.Header>
+                    <StackPanel Spacing="2">
+                        <TextBlock FontSize="10" Opacity="0.75" TextWrapping="Wrap"
+                                   Text="Which conductor levels the full-wave solve meshes, bottom-to-top. Leave all unchecked to include every level that carries artwork."/>
+                        <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding ViewModel.AnalysisLevelRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox FontSize="11" Content="{Binding Name}"
+                                                  IsChecked="{Binding IsIncluded}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Expander>
 
                 <!-- ── Frequency sweep ──────────────────────────────────────────
                      R-em-11: the EXISTING FrequencySpecViewModel, never a second frequency editor.
@@ -380,7 +462,14 @@
                 <!-- ── Ports ───────────────────────────────────────────────── -->
                 <Border Classes="group">
                   <StackPanel Spacing="2">
-                <TextBlock Classes="grouphdr" Text="Ports"/>
+                <!-- Owner request, 2026-08-11: the two paragraphs that used to sit in this group are
+                     now the group header's TOOLTIP. They explain how ports WORK, which is worth one
+                     hover and is not worth the vertical space on every setup — the same trade the
+                     Adaptive-sampling checkbox already makes. The text follows the chosen kernel
+                     (PortsHelpText), because the two analyses answer "where is the port?" completely
+                     differently. -->
+                <TextBlock Classes="grouphdr" Text="Ports"
+                           ToolTip.Tip="{Binding ViewModel.PortsHelpText}"/>
                 <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="3">
                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Port 1 Z₀ (Ω)"
                                VerticalAlignment="Center"/>
@@ -404,7 +493,6 @@
                 <!-- R-cpl-6: per-port list, shown only once the cross-section has more than a
                      single line's two ports. D3 numbering: port 2k-1 is conductor k's near end. -->
                 <StackPanel IsVisible="{Binding ViewModel.ShowPortList}" Margin="0,6,0,0">
-                    <TextBlock Classes="colhdr" Text="Per-port reference impedance"/>
                     <ItemsControl ItemsSource="{Binding ViewModel.PortRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="em:EmPortZ0Row">
@@ -425,13 +513,6 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
-
-                <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
-                           IsVisible="{Binding !ViewModel.IsPlanarAnalysis}"
-                           Text="The uniform-line analysis has no meshed port, so the ports ARE the ends of the extracted conductors by construction — there is nothing to place, and de-embedding is a no-op."/>
-                <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
-                           IsVisible="{Binding ViewModel.IsPlanarAnalysis}"
-                           Text="The full-wave planar analysis meshes its ports, so each one is a port LABEL in the layout — place them with the layout editor's Port tool. Which end of a conductor a label names is inferred from the geometry and reported below; an ambiguous one is refused rather than guessed. The de-embedding reference plane is fixed one mesh cell in from the drawn metal edge and is deliberately not adjustable."/>
 
                   </StackPanel>
                 </Border>
@@ -515,8 +596,12 @@
                     <!-- The fourth control. Labelled for what it DOES, not for its implementation:
                          a user picks "follow the metal", not "cut cells". -->
                     <TextBlock Grid.Row="3" Grid.Column="0" Classes="colhdr" Text="Boundary cells" VerticalAlignment="Center"/>
+                    <!-- Width sized to the longest option ("Staircase") plus the chevron and a
+                         margin, not stretched (owner request, 2026-08-11): a two-item closed choice
+                         gains nothing from spanning the panel, and it made the group read as one
+                         wide control beside four short ones. -->
                     <ComboBox  Grid.Row="3" Grid.Column="1" Name="PlanarBoundaryCellsCombo" FontSize="11"
-                               HorizontalAlignment="Stretch"
+                               Width="110" HorizontalAlignment="Left"
                                ItemsSource="{Binding ViewModel.BoundaryCellsChoices}"
                                SelectedItem="{Binding ViewModel.PlanarBoundaryCells}"
                                ToolTip.Tip="How the mesh treats curved and oblique conductor edges. Staircase approximates them with the rectangular grid. Conformal cuts the boundary cells to follow the metal, which is more accurate on tapers, bends and curves."/>
@@ -582,7 +667,7 @@
                                Text="{Binding ViewModel.TechnologyName, StringFormat='Stackup — {0}'}"/>
                     <Button Grid.Column="1" Name="EditTechButton" FontSize="11" Padding="6,2"
                             Content="Edit technology…"
-                            ToolTip.Tip="Opens the .ctech. Process data has exactly one editor — two would diverge."/>
+                            ToolTip.Tip="Opens the .ctech."/>
                 </Grid>
                 <ItemsControl ItemsSource="{Binding ViewModel.StackupRows}">
                     <ItemsControl.ItemTemplate>

@@ -62,8 +62,16 @@ namespace CircuitRF.Engine.Mom;
 /// </summary>
 public sealed class PlanarCellRegion
 {
-    /// <summary>Convex, counter-clockwise, in metres. Additive: every quantity the fill asks of a
-    /// region is the sum over these.</summary>
+    /// <summary>
+    /// Simple, counter-clockwise, in metres. Additive: every quantity the fill asks of a region is
+    /// the sum over these.
+    ///
+    /// <para><b>They are no longer required to be CONVEX, and that is brief-convex-decomposition.md's
+    /// M1.</b> The property the strip construction actually needs is flow-simplicity, per direction
+    /// (<see cref="RooftopSupport.IsFlowSimple"/>); convexity implies it and is much stronger.
+    /// <see cref="PolygonIntegrals"/> was general from the start — its edge reduction "needs neither
+    /// convexity nor the observation point being inside" — so nothing downstream had to change.</para>
+    /// </summary>
     public IReadOnlyList<IReadOnlyList<EmPoint>> Pieces { get; }
 
     /// <summary>∫∫dS over the region — <b>this is what <see cref="PlanarCell.Area"/> reports</b>, and
@@ -85,6 +93,11 @@ public sealed class PlanarCellRegion
     /// covers two grid positions. Reported in the mesh notes — a mesher that silently re-shapes cells
     /// is worse than one that says it did.</summary>
     public bool Merged { get; }
+
+    /// <summary>Per piece: whether it is convex, decided ONCE here so <see cref="Contains"/> can keep
+    /// taking the half-plane test — bit for bit — where that test is valid, and take a ray cast only
+    /// where M1's non-convex cells made it necessary.</summary>
+    private readonly bool[] _convex;
 
     private PlanarCellRegion(IReadOnlyList<IReadOnlyList<EmPoint>> pieces, bool merged)
     {
@@ -129,6 +142,12 @@ public sealed class PlanarCellRegion
         CentroidX = Area != 0 ? mx / (6.0 * Area) : 0.5 * (x0 + x1);
         CentroidY = Area != 0 ? my / (6.0 * Area) : 0.5 * (y0 + y1);
         XMin = x0; YMin = y0; XMax = x1; YMax = y1;
+
+        // The same 1e-9-of-an-area tolerance the mesher's own convexity test used, so a piece that
+        // was called convex there is called convex here and keeps the half-plane path it always had.
+        _convex = new bool[pieces.Count];
+        double areaTol = 1e-9 * Math.Abs(Area);
+        for (int i = 0; i < pieces.Count; i++) _convex[i] = IsConvex(pieces[i], areaTol);
     }
 
     /// <summary>One convex piece.</summary>
@@ -136,11 +155,21 @@ public sealed class PlanarCellRegion
 
     /// <summary>Whether the point is inside (or on) the metal — the question
     /// <c>PlanarBasisFunctions.Divergence</c> has to ask once a cell is not its own rectangle, since
-    /// a rectangle test would report a divergence pulse where there is no conductor.</summary>
+    /// a rectangle test would report a divergence pulse where there is no conductor.
+    ///
+    /// <para><b>The convex fast path is kept, and that is the point rather than an optimisation.</b>
+    /// §5 of brief-convex-decomposition.md asks whether this implementation assumes convexity: it did,
+    /// and the half-plane test it used is exactly the one every conformal number in this repository
+    /// was produced by. Keeping it for a convex piece makes M1 bit-identical there by construction;
+    /// only a genuinely non-convex piece — which could not exist before M1 — takes the ray cast.</para>
+    /// </summary>
     public bool Contains(double x, double y)
     {
-        foreach (var piece in Pieces)
+        for (int p = 0; p < Pieces.Count; p++)
         {
+            var piece = Pieces[p];
+            if (!_convex[p]) { if (RayCast(piece, x, y)) return true; continue; }
+
             bool inside = true;
             for (int i = 0, n = piece.Count, j = n - 1; i < n && inside; j = i++)
             {
@@ -153,6 +182,22 @@ public sealed class PlanarCellRegion
             if (inside) return true;
         }
         return false;
+    }
+
+    /// <summary>Crossing number, for a piece that is simple but not convex. A point exactly ON the
+    /// boundary is answered either way and that is deliberate — a quadrature node never lands there,
+    /// and pretending to a tie-break the half-plane test does not have would be inventing one.</summary>
+    private static bool RayCast(IReadOnlyList<EmPoint> piece, double x, double y)
+    {
+        bool inside = false;
+        for (int i = 0, n = piece.Count, j = n - 1; i < n; j = i++)
+        {
+            double yi = piece[i].Y, yj = piece[j].Y;
+            if (yi > y == yj > y) continue;
+            double xc = piece[j].X + (y - yj) / (yi - yj) * (piece[i].X - piece[j].X);
+            if (x < xc) inside = !inside;
+        }
+        return inside;
     }
 
     /// <summary>R-cut-3's merged cell: this region's pieces plus the absorbed sliver's.</summary>

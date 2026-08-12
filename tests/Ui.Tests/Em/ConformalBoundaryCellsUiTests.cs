@@ -377,47 +377,55 @@ public class ConformalBoundaryCellsUiTests
         Assert.True(x.Ok, x.Refusal);
         double drawn = x.Problem!.Layers[0].Polygons[0].Area();
 
-        Console.WriteLine("[G1b] MKlopf on-axis, PCB 2-Layer — does refining clear the fallback?");
-        Console.WriteLine("  cells/λ      N    cut  fallback   conformal err   staircase err");
+        Console.WriteLine("[G1b] MKlopf on-axis, PCB 2-Layer — the saturation ladder, re-run after M1.");
+        Console.WriteLine("  cells/λ      N    cut  fallback  nonconvex-cut   conformal err   staircase err");
 
-        (int Cpw, int Fallback, double ECut)? best = null;
+        double worstCut = 0;
         foreach (int cpw in new[] { 20, 40, 80, 160, 320 })
         {
             var st = new PlanarMeshSettings(Auto: false, CellsPerWavelength: cpw,
                                             EdgeMesh: true, EdgeCells: 3,
                                             BoundaryCells: PlanarBoundaryCells.Conformal);
-            var cut   = SurfaceMesher.Mesh(x.Problem, st);
+            var diag  = new ConformalDiagnostics();
+            var cut   = SurfaceMesher.Mesh(x.Problem, st, diagnostics: diag);
             var stair = SurfaceMesher.Mesh(x.Problem, st with { BoundaryCells = PlanarBoundaryCells.Staircase });
 
             double eCut   = Math.Abs(cut.MeshedAreaM2   - drawn) / drawn;
             double eStair = Math.Abs(stair.MeshedAreaM2 - drawn) / drawn;
+            worstCut = Math.Max(worstCut, eCut);
 
             Console.WriteLine($"  {cpw,7}  {cut.UnknownCount,5}  {cut.CutCellCount,5}  " +
-                              $"{cut.StaircaseFallbackCells,8}   {eCut:E3}       {eStair:E3}");
+                              $"{cut.StaircaseFallbackCells,8}  {diag.AdmittedNonConvex.Count,13}   " +
+                              $"{eCut:E3}       {eStair:E3}");
 
-            if (best is null || cut.StaircaseFallbackCells < best.Value.Fallback)
-                best = (cpw, cut.StaircaseFallbackCells, eCut);
+            // §7 gate 3 — the plateau at 126 was the signature this phase exists to remove, so its
+            // ABSENCE is the proof. It is asserted at every rung, not just at the finest.
+            Assert.Equal(0, cut.StaircaseFallbackCells);
         }
 
-        Console.WriteLine($"[G1b] fewest fallback cells over the ladder: {best!.Value.Fallback} " +
-                          $"at cells/λ = {best.Value.Cpw}, area error {best.Value.ECut:E3}");
+        Console.WriteLine($"[G1b] worst conformal area error over the ladder: {worstCut:E3}");
 
-        // No assertion on the trend — this is a measurement, and pinning a fallback count would pin
-        // the mesher's own gridline placement against a 96-station outline. What IS asserted is that
-        // the part still meshes at every density, so the fallback is a fidelity limitation and never
-        // a failure to produce a mesh at all.
-        Assert.True(best.Value.Fallback >= 0);
+        // §7 gate 2 — MKlopf's own area error, at round-off, at every density on the starter where it
+        // used to come out WORSE than the staircase (0.766% against 0.593%). Measured against the
+        // DRAWN artwork, which is the conformal phase's own recorded trap.
+        Assert.True(worstCut < 1e-12, $"MKlopf's area error is {worstCut:E3}, not round-off");
     }
 
 
     /// <summary>
-    /// <b>WHY the fallback saturates at 126 rather than going to zero</b> — G1b's ladder shows it
-    /// plateauing, and a count that stops falling under refinement is a count of FEATURES OF THE
+    /// <b>WHY the fallback used to saturate at 126 rather than going to zero</b> — G1b's ladder showed
+    /// it plateauing, and a count that stops falling under refinement is a count of FEATURES OF THE
     /// ARTWORK, not of cells. This counts the reflex (concave) vertices of MKlopf's own outline and
     /// compares.
+    ///
+    /// <para><b>UPDATED at brief-convex-decomposition.md's M1, not loosened.</b> The 126 reflex
+    /// vertices are still there — the outline did not change — and the fallback count is now ZERO,
+    /// because the refusal they were tripping was convexity and the property the strips actually
+    /// need is flow-simplicity. So the claim inverts: the plateau's own cause survives and the
+    /// plateau does not, which is a much stronger statement than the count matching.</para>
     /// </summary>
     [Fact]
-    public void G1c_TheFallbackCountIsTheOutlinesOwnReflexVertexCount()
+    public void G1c_TheOutlinesReflexVerticesNoLongerCostAFallbackCell()
     {
         var tech = StarterTechnologies.Pcb2Layer();
         var shapes = ShippingParts(tech, PCellLayerSelection.Default, 1.0)
@@ -446,19 +454,26 @@ public class ConformalBoundaryCellsUiTests
             if (cross * sign < 0) reflex++;
         }
 
+        var diag = new ConformalDiagnostics();
         var fine = SurfaceMesher.Mesh(x.Problem, new PlanarMeshSettings(
             Auto: false, CellsPerWavelength: 320, EdgeMesh: true, EdgeCells: 3,
-            BoundaryCells: PlanarBoundaryCells.Conformal));
+            BoundaryCells: PlanarBoundaryCells.Conformal), diagnostics: diag);
 
         Console.WriteLine($"[G1c] MKlopf on-axis outline: {outer.Count} vertices, {reflex} of them " +
-                          $"REFLEX; the mesh's fallback count saturates at {fine.StaircaseFallbackCells}.");
+                          $"REFLEX. At cells/λ = 320 the mesh staircases {fine.StaircaseFallbackCells} " +
+                          $"cell(s) and CUTS {diag.AdmittedNonConvex.Count} non-convex one(s) that the " +
+                          $"pre-M1 predicate would have refused.");
 
-        // The claim is that the plateau is the artwork's own concavity, so the two must be the same
-        // order — a cell can hold more than one reflex vertex, so exact equality is not the claim.
+        // NON-VACUITY first: the artwork must still have the concavity whose fallback M1 removed, or
+        // the zero below is zero for the wrong reason.
         Assert.True(reflex > 0,
-            "MKlopf's outline has no reflex vertex at all, so §2 case (c) cannot be what is firing " +
-            "and the cause of the fallback is something else entirely");
-        Assert.InRange(fine.StaircaseFallbackCells, 1, reflex);
+            "MKlopf's outline has no reflex vertex at all, so the fallback this test is about could " +
+            "never have fired and the fixture no longer measures what it was built for");
+        Assert.True(diag.AdmittedNonConvex.Count > 0,
+            "no non-convex cell was cut, so the reflex vertices are landing somewhere else entirely " +
+            "and the zero below says nothing about the predicate swap");
+
+        Assert.Equal(0, fine.StaircaseFallbackCells);
     }
 
     private static PlanarMeshSettings Mesh(PlanarBoundaryCells cells) =>

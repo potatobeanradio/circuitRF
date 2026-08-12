@@ -107,6 +107,23 @@ public sealed class RooftopSupport
     /// pre-conformal case, which the fill takes on its own unchanged code path.</summary>
     public required bool IsWholeRectangle { get; init; }
 
+    /// <summary>
+    /// <b>FLOW-SIMPLICITY: at every transverse coordinate the region meets the line in exactly ONE
+    /// interval</b> — the property the strip construction actually needs, and the one the
+    /// convex-decomposition brief's §1 identifies as being weaker than convexity and PER DIRECTION.
+    ///
+    /// <para><see cref="Extent"/> returns the outer hull of the crossing set and <see cref="Build"/>
+    /// makes ONE trapezoid spanning it, so a region that meets the line twice has source integrated
+    /// over a gap where there is no metal. That — not non-convexity — is the sin. A merged L-shaped
+    /// cell is flow-simple in both directions (its pieces share a face, so the union at any line is
+    /// connected), which is why R-cut-3's merge works and has always worked.</para>
+    ///
+    /// <para>It is computed HERE rather than by a separate geometric predicate over the ring, from the
+    /// same crossing walk <see cref="Extent"/> uses, so there is no second implementation that has to
+    /// agree with what the strips actually do (L7b-b's D1 trap).</para>
+    /// </summary>
+    public required bool FlowSimple { get; init; }
+
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // Construction
     // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -140,6 +157,7 @@ public sealed class RooftopSupport
                 Anchored         = true,
                 SharedFaceLength = alongX ? cell.Height : cell.Width,
                 IsWholeRectangle = true,
+                FlowSimple       = true,
             };
         }
 
@@ -155,12 +173,18 @@ public sealed class RooftopSupport
 
         var strips = new List<WeightStrip>();
         double area = 0, faceLen = 0;
-        bool anchored = true;
+        bool anchored = true, flowSimple = true;
 
         for (int k = 0; k + 1 < breaks.Count; k++)
         {
             double ta = breaks[k], tb = breaks[k + 1];
             if (tb - ta <= tol) continue;
+
+            // FLOW-SIMPLICITY, asked at the strip's MIDPOINT rather than at its ends. Inside a strip
+            // no piece has a vertex, so the crossing structure is constant and unambiguous there; at
+            // a breakpoint it is degenerate by construction (that coordinate IS a vertex), and a
+            // count taken there would read a tangency as a second interval.
+            if (Intervals(cell.Region, alongX, 0.5 * (ta + tb), tol) > 1) flowSimple = false;
 
             // The region's own extent along the flow direction, at each end of the strip.
             var (loA, hiA) = Extent(cell.Region, alongX, ta, tol);
@@ -206,7 +230,81 @@ public sealed class RooftopSupport
             Anchored         = anchored && strips.Count > 0,
             SharedFaceLength = faceLen,
             IsWholeRectangle = false,
+            FlowSimple       = flowSimple,
         };
+    }
+
+    /// <summary>
+    /// <b>Whether the region is flow-simple in one direction</b> — the predicate
+    /// <see cref="SurfaceMesher"/> asks of a clipped cell, and the one <see cref="Build"/> reports on
+    /// the support it actually produced. Both go through <see cref="Intervals"/>, so there is exactly
+    /// one answer to "does the strip construction describe this region".
+    /// </summary>
+    public static bool IsFlowSimple(PlanarCellRegion region, bool alongX, double tol)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+
+        var breaks = new List<double>();
+        foreach (var piece in region.Pieces)
+            foreach (var v in piece) breaks.Add(alongX ? v.Y : v.X);
+        breaks.Sort();
+
+        for (int k = 0; k + 1 < breaks.Count; k++)
+        {
+            if (breaks[k + 1] - breaks[k] <= tol) continue;
+            if (Intervals(region, alongX, 0.5 * (breaks[k] + breaks[k + 1]), tol) > 1) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// How many disjoint intervals the region's intersection with the line at transverse coordinate
+    /// <paramref name="at"/> consists of.
+    ///
+    /// <para>The crossings are collected with a HALF-OPEN rule and a winding count rather than by
+    /// sorting raw hits, because both other readings are wrong on geometry this mesher actually
+    /// produces: a vertex sitting exactly on the line would be counted twice by a closed rule, and
+    /// the doubled-back chains Sutherland–Hodgman leaves when it clips a non-convex subject carry
+    /// two coincident crossings of OPPOSITE sign, which cancel in a winding count and do not in a
+    /// hit count. Intervals separated by less than <paramref name="tol"/> are merged — that is the
+    /// merged cell's own shared face, where two pieces abut and the union is connected.</para>
+    /// </summary>
+    private static int Intervals(PlanarCellRegion region, bool alongX, double at, double tol)
+    {
+        var hits = new List<(double V, int Dir)>();
+        foreach (var piece in region.Pieces)
+            for (int i = 0, n = piece.Count, j = n - 1; i < n; j = i++)
+            {
+                double ca = alongX ? piece[j].Y : piece[j].X;
+                double cb = alongX ? piece[i].Y : piece[i].X;
+                double va = alongX ? piece[j].X : piece[j].Y;
+                double vb = alongX ? piece[i].X : piece[i].Y;
+
+                int dir = ca <= at && cb > at ? +1 : cb <= at && ca > at ? -1 : 0;
+                if (dir == 0) continue;
+                double t = (at - ca) / (cb - ca);
+                hits.Add((va + t * (vb - va), dir));
+            }
+
+        if (hits.Count == 0) return 0;
+        hits.Sort((p, q) => p.V.CompareTo(q.V));
+
+        // Sweep to the covered intervals first, then merge — a gap shorter than tol is not a gap, it
+        // is two pieces meeting on their shared face, which is exactly R-cut-3's merged cell.
+        int count = 0, winding = 0;
+        double start = 0, hi = double.NegativeInfinity;
+        foreach (var (v, dir) in hits)
+        {
+            int before = winding;
+            winding += dir;
+            if (before == 0 && winding != 0) start = v;
+            else if (before != 0 && winding == 0 && v - start > tol)
+            {
+                if (count == 0 || start - hi > tol) count++;
+                hi = Math.Max(hi, v);
+            }
+        }
+        return count;
     }
 
     /// <summary>
@@ -222,7 +320,15 @@ public sealed class RooftopSupport
     {
         if (cell.Region is null) return null;
 
+        // The DIRECTION is a free choice here — the tiles carry a unit weight, so only the domain
+        // matters — but it is not an arbitrary one once M1 admits a cell that is flow-simple in one
+        // direction only. Strips taken across the axis the outline crosses twice would span the gap
+        // between the two runs, which is exactly the sin the predicate exists to catch, and it would
+        // land on the DIVERGENCE PULSE's domain where nothing downstream would notice.
         var support = Build(cell, PlanarBasisDirection.X, sharedIsHigh: true, double.NaN);
+        if (!support.FlowSimple)
+            support = Build(cell, PlanarBasisDirection.Y, sharedIsHigh: true, double.NaN);
+
         var tiles = new WeightStrip[support.Strips.Count];
         for (int i = 0; i < tiles.Length; i++) tiles[i] = support.Strips[i] with { Alpha = 0, Beta = 0, Gamma = 1 };
         return tiles;

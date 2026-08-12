@@ -1,3 +1,246 @@
+A PORT ON A CONFORMAL FEED — the refusal that made `Boundary cells = Conformal` unusable
+(2026-08-11) — FIXED, and the residual is MEASURED rather than hidden.
+
+**Reported on the simplest possible planar setup: one MKlopf taper on the PCB starter, a port label
+at each end, Boundary cells = Conformal. Every run ended in a refusal** — *"Port 1 lands on a
+CONFORMAL boundary cell … Put the port on a straight, axis-aligned feed … or set Boundary cells back
+to Staircase for this run."*
+
+**The refusal's own premise was false, and it is written in its own comment:** *"A port belongs on a
+drawn feed, which is Manhattan, so this should never fire."* A taper's flanks are oblique from its
+very first cell, so the outermost cell of a port's transverse run is cut on MKlopf and MTaper alike.
+The conformal boundary-cell control was therefore unusable end to end **on exactly the geometry it
+exists for**, and the only way to run was to turn it off.
+
+**What a cut at a port actually costs is TWO different things, and only the first is bookkeeping.**
+
+1. **The reference plane's metal can be shorter than the gridline**, so the port's width is not
+   necessarily the grid extent. That is now measured, and carried into the CALIBRATION STANDARD: D4
+   builds the standard from `PlanarPortResolution.TransverseLines`, which are the METAL's own extents
+   whenever they differ. **But the measurement says they do not differ on a pair that survives
+   R-cut-4, and the reason is structural rather than lucky:** the shared edge is short only where the
+   cell's metal is absent over a transverse band, and for a monotone rim that same band leaves one of
+   the two halves un-swept — so the pair was already refused and is not in the run. Measured on a
+   slanted-end fixture with **7 cut cells in the port's own run: the face metal equals the grid extent
+   to the last bit.** So the branch is taken on the DIFFERENCE rather than on "is anything cut", and a
+   conformal port takes L8d's own arithmetic exactly as a staircased one does — asserted as an
+   equality, along with R-prt-5's coordinates.
+
+2. **R-cut-4 can decline the outermost rooftop outright, and that limit is REAL.** Its `Anchored`
+   test is all-or-nothing over a support's strips, and a shallow oblique rim leaves a sliver strip at
+   the top of the outermost cell whose metal does not reach the shared face — so the whole basis
+   goes, though the strip is under a percent of the cell. **The port's run therefore stops at the
+   last cell pair that carries a rooftop**, and how much metal that leaves undriven is REPORTED on
+   the resolution and in the run notes rather than absorbed.
+
+**THE COST, measured on the reported setup** (`tests/Ui.Tests/Em/ConformalPortTests.cs`):
+
+| cells/λ | port 1 driven width | undriven | port 2 undriven |
+|---|---|---|---|
+| 20 (shipping) | 2.483 mm | **17.3%** | 2.1% |
+| 40 | 2.660 mm | 11.4% | 1.2% |
+| 80 | 2.849 mm | **5.0%** | 0.8% |
+
+Port 1 is the narrow 50 Ω end — 7 cells across at the shipping density — which is why it is the one
+that hurts. **This is the one thing a conformal port does WORSE than a staircased one** (whose own
+width is 2.837 mm against a drawn 3.0 mm), and it is an outermost-cell effect, so refining the
+transverse mesh shrinks it and the driven width converges upward past the staircase's by cells/λ = 80.
+The gate asserts the TREND, not a tolerance — a fixture where refining did not shrink it would mean
+the note's own advice is wrong.
+
+**The concrete way to close it, deliberately NOT taken here.** Accept a nearly-swept support instead
+of refusing it: the unswept strip is ~0.56% of that cell's area, so the basis would carry **0.994 A
+instead of 1.000 A** — against losing **12.5% of a port's width** by dropping it. The trade looks
+overwhelming and it is still a separate act, because it retires L8c's EXACT `∫f·û dℓ = 1 A` (gated at
+machine precision by `ConformalBasisTests.B3`) in favour of a bounded one, and that needs its own
+measurement of what the deficit does to an s-parameter.
+
+**Two refusals survive, both earned rather than inherited:** a port whose OWN cell pair carries no
+rooftop (there is nothing at its location to drive), and a port outside the metal. Both name the
+conformal cut, what to change, and the Staircase fallback.
+
+**AND THE SECOND THING THE REPORT TURNED UP, which is about the EDGE MESH rather than about boundary
+cells.** The user asked why the metal near port 2 is finely meshed and the metal near port 1 is not.
+Measured: the 12 Ω cap is 20.292 mm and the 50 Ω cap is 2.998 mm against a "long enough to crowd"
+threshold of 0.2 × the polygon's own 21.989 mm extent = 4.398 mm — so **the narrow end, where the
+crowding is strongest and where the port sits, was graded by nothing, because the OTHER end set the
+threshold.** An axis-parallel edge now also qualifies when it TERMINATES the conductor (both its
+corners convex), above a floor derived from R17's own ceiling; a drawn staircase still gets nothing.
+Both caps now grade and the fans mirror — 94.2 / 146.9 / 228.9 / 356.6 µm inward from x = 0 against
+356.6 / 191.3 / 114.3 / 94.2 µm from x = 50.8. See `src/Engine/Mom/CLAUDE.md`'s own
+"Long enough to crowd" section, and `EdgeAttractorCapTests` for the rule and the staircase it refuses.
+
+Gate: `tests/Ui.Tests/Em/ConformalPortTests.cs`, 6 routine tests, ~1 s — the reported setup resolves
+both ports with conformal cells on; the staircased port is bit-identical through the same code; the
+undriven fraction is reported and falls with refinement; and the run note names it. See
+`src/Engine/Mom/CLAUDE.md`'s convex-decomposition section for the mesher half.
+
+---
+
+The EM Setup panel says less, and an EM run stopped overwriting the schematic's results
+(2026-08-11) — COMPLETE. Ten owner items in one pass: a decluttering round, one real data-loss bug,
+one focus bug, and two questions answered.
+
+**THE BUG WORTH REMEMBERING: an EM run replaced the SCHEMATIC's `.npy`, and the mechanism is a name
+collision rather than anything EM-specific.** `results/` is one flat, shared folder (R-res-0); a
+schematic writes `results/<schematicKey>.npy`; an EM setup created beside a cell is named after that
+same cell — so cell `MLin`'s schematic and its EM setup both resolved to `results/MLin.npy`, and
+whichever ran second silently replaced the first (and its auto-created `.cdd` with it).
+`RunResultsWriter`'s own note records that its `.source` collision marker was dropped **because two
+SCHEMATICS can no longer collide**; an EM setup is a third producer that reasoning never covered.
+
+**The owner's question — "are there EM-specific results in that `.npy`? if not, stop writing it" —
+has a YES answer, so the file stays and the NAME moved.** Touchstone carries S and nothing else; the
+`.npy` carries the whole `DataSet`, including the diagnostics group that is the only thing making a
+wrong answer diagnosable — `tline`'s Zc/Gamma/Eeff/AttenDbPerM/Rpul/Lpul/Gpul/Cpul for the
+cross-section kernel, `planar`'s Cpul/CalElectricalDeg/DeembedResidual/DeembedRejected/
+CalibrationUsable for the full-wave one. Not writing it would lose every one of those. New
+`EmRunService.ResolveNpyKey` = `ResolveResultKey + "_em"`, used for the `.npy` and for the `.cdd`
+`AutoOpenOrCreateDataDisplayAsync` names after it. **The `.sNp` deliberately keeps its unsuffixed
+name** — it is the artifact a schematic REFERENCES by path (R-em-19), and renaming it would orphan
+every existing reference.
+
+**The three notes removed were each removed for a different reason, and one of them is a rule.**
+"N label/bitmap shape(s) were ignored — annotation is not artwork" is gone from
+`CrossSectionExtractor` (the counter stays, so the classifier's own accounting is still complete):
+every OTHER ignored-shape note there describes something a user might reasonably have expected to
+simulate, whereas annotation is not artwork *by definition* — saying so on every extraction crowds
+out the notes that carry information. "The layout itself is unchanged" is gone from `EmGeometry`
+(the user already expects a read not to edit their design). "The de-embedding reference plane is
+fixed one mesh cell in…" is gone from **every port note and from the Ports group's own prose** — it
+is a property of the METHOD rather than of any port, it never varies, and it belongs in the
+documentation.
+
+**A port's coordinate now prints in the LAYOUT's own `DisplayUnit`**, not a hardcoded micron —
+`EmPortExtraction.Extract` gained a trailing `displayUnit` parameter (defaulting to `Um`, so every
+headless caller and the 10 existing tests are unaffected) and both production call sites pass
+`source.View.DisplayUnit`. **`CrossSectionExtractor`'s own refusal coordinates were left alone** and
+are worth knowing about: they use `tech.DefaultDisplayUnit`, which is what the layout's unit is
+*seeded* from and therefore agrees in the ordinary case, but is not the same field. Threading the
+layout's unit there means widening `EmExtractionSettings` and every call site; it was not in this
+round's ask and is stated rather than done.
+
+**Layout: Cross-section is now a SUBGROUP of Analysis, not a peer card.** It says what the chosen
+analysis resolved the geometry to, so it belongs beside the choice. A `WrapPanel` of two blocks (not
+a Grid) so a narrow dock stacks them rather than crushing them — the same reflow the header and
+Frequency rows already use — and the analysis-kind combo is `Width="200"`, which is all it ever
+needed. The analysis NOTES stay full-width below both, because they are the analysis's, not the
+cross-section's.
+
+**"Per-port reference impedance" and the two Ports paragraphs became the group header's tooltip**
+(`EmSetupEditorViewModel.PortsHelpText`, which follows the CHOSEN kernel — the two analyses answer
+"where is the port?" completely differently, and one of them has no meshed port at all).
+
+**The Analysis-levels list is behind an Expander, collapsed, height-capped — and its header already
+answers the question the list would** (`AnalysisLevelsSummary`: "3 of 6 included" / "every level with
+artwork (6 available)"). Owner question — yes, it CAN grow: an imported process ships hundreds of
+layers. **An `ItemsControl` inside a `MaxHeight` `ScrollViewer` rather than this repo's usual
+`ListBox` rule for growing row lists**, because the rows are CHECKBOXES and a `ListBox` would add a
+selection highlight that means nothing here; only CONDUCTORS appear, which is a far smaller set than
+a layer table.
+
+**Two ports on two different conductors: supported, and the panel already expresses it.** For the
+full-wave kernel a port is a label and its conductor/level comes from the geometry under it — ports
+on different conductors is exactly what a coupled or multi-port structure IS, and the per-port Z₀
+list is derived from the extraction rather than typed. For the cross-section kernel D3 gives 2N ports
+for N conductors by construction (port 2k−1 is conductor k's near end). The ONE restriction is
+unchanged and is a refusal by name: a label sitting on metal on more than one LEVEL is refused rather
+than guessed, because driving the wrong level drives a different conductor with the same footprint.
+
+**Simulate and Cancel now say what is happening, and "solve finished" stopped being a lie.**
+`EmRunStartText` posts *before* the first long work: point count plus whether adaptive sampling is
+actually in play — which is **not simply the checkbox**, since it applies to the full-wave kernel only
+and on `Auto` which kernel runs is not settled until the registry has seen both extractors, so that
+one case hedges rather than claiming something that may turn out false. Cancel posts "Stopping the EM
+analysis. It stops at the next work boundary." from the host's own `CancelRequested` closure (the VM
+stays framework-free and owns no message sink). **The stage row used to say "solve finished"
+UNCONDITIONALLY, above the status switch** — so a run the user had just stopped, and one refused
+outright, both ended claiming a solve had finished; it now reads from the status, and a stopped run's
+sweep row reads "EM stopped — no solution was written" with an extra line about why a partially
+adaptive sweep is not usable on its own.
+
+**A FAILED run now ends on the error, and the reason it did not before is the message list's own
+ordering rule.** Owner report: *"if there's an error I get many info messages after it."* Both live
+rows are posted BEFORE the run, so they sit near the TOP of the panel and whatever they are finished
+with lands there — finishing the sweep row with the error therefore put the error ABOVE the dozen
+descriptive notes rather than after them. On a failure the error is now posted as its OWN message,
+LAST; the two progress rows settle quietly in place. **The engine's descriptive `Notes` are dropped
+entirely on that path rather than merely reordered** — they are the run explaining what it did, and a
+run that produced no answer has nothing to explain; stacking them around the one line that matters is
+what buried it. Warnings still go out (they are things to act on) and go BEFORE the error so the error
+keeps the last position. `Ok` and `Cancelled` are untouched — the owner scoped this to errors.
+**The two rows must say DIFFERENT things** (a follow-up report: the same sentence appeared twice) —
+both carry a bar and both must be resolved, so the stage row says "— stopped" and the sweep row
+"— see the error below", mirroring the exception path above it. The gate parses both `Complete` calls
+out of that block and asserts they differ; do not "tidy" them back into one shared string.
+
+**The scroll-to-top-on-window-focus bug.** Activating a window makes the focus manager re-focus
+something inside it; focusing a control raises `RequestBringIntoView`, which the enclosing
+`ScrollViewer` honours. This panel is one long scrolling column whose first focusable control is at
+the very top, so "restore focus" and "scroll to the top" are the same gesture — which is exactly why
+it did NOT happen on a tab switch (the view is re-attached and re-laid-out there, not re-focused into
+an existing scroll position) and why the owner only saw it when the workspace window regained focus.
+Fixed by capturing `BodyScroll.Offset` on the host window's `Deactivated` and restoring it on
+`Activated` at Background priority (after the focus restoration has run). **Deliberately narrower than
+cancelling `BringIntoView`**: tabbing to a field further down must still scroll to it, and while the
+window is deactivated the user cannot scroll, so there is nothing a restore could overwrite.
+
+Also: the output-file **Browse… button is now "…"**, and the Edit-technology tooltip lost its
+"Process data has exactly one editor — two would diverge" half.
+
+**The FIRST attempt at the two-column split did not save any height, and the reason is worth
+recording: a `WrapPanel` only saves height while both blocks happen to fit side by side.** In a
+docked panel it reflowed to a single column and the group came out TALLER than the two cards it
+replaced. It is a real 50/50 `Grid` with `ColumnSpacing` now, so the group's height is
+max(left, right) rather than their sum — **left is the CHOICE** (what to run, and why that kernel),
+**right is the OUTCOME** (what the geometry resolved to, plus the notes). The NOTES had to move into
+the right column rather than sit full width below both: they are the tallest thing in the group, so
+leaving them below is exactly the height the split was supposed to buy back.
+
+**The header lost a row, and that row order is now load-bearing rather than cosmetic.** Name and
+output file share the first line; the layout reference gets the second. That makes the LAYOUT row the
+identity block's LAST row — which is what lets the six-button cluster simply be `VerticalAlignment=
+"Bottom"` and land exactly on the Change Layout button, with **no margin arithmetic to go stale** the
+next time a font size or a row changes. Both `…` pickers wear one `Button.ellipsis` style rather than
+two hand-matched sets of Width/Height/Padding, for the same reason. The `WrapPanel` stays, so the
+2026-08-09 "the Mesh button collides with the Browse button at small widths" reflow is intact — at a
+narrow width the cluster drops to its own line and the alignment is simply moot.
+
+**A follow-up the owner caught immediately, and it is the same class of mistake twice.** The first
+version left the "Cross-section" subheading ungated: `Readback` is the CROSS-SECTION kernel's own
+product and is null for a full-wave setup, so a planar setup showed a heading with nothing whatsoever
+under it — which reads as a rendering failure, not as an empty section. The whole block (header,
+summary, grid) now hangs off one `Readback` gate. The extraction NOTES — what geometry was seen, what
+was ignored and why, where each port resolved to — stay full width below both columns rather than
+inside the cross-section one: they are the ANALYSIS's notes (a full-wave setup has no cross-section
+and still has every one of them), and they are prose, which a 230 px column wraps into a very tall
+thin ribbon. They are now labelled "Notes" and that label is gated by `HasNotes` **together with its
+own list**, so the heading-over-nothing failure cannot recur there either.
+
+**Gate:** `tests/Ui.Tests/Em/EmPanelDeclutterTests.cs` (21 tests) — each note-removal asserted as an
+ABSENCE with a non-vacuity guard beside it, so none can pass by nothing having been produced.
+**Confirmed to bite:** restoring the hardcoded micron coordinate, the de-embedding sentence and the
+old `.npy` key turns **5 of them** red; posting the notes on the failure path (or giving the two rows
+the same sentence) turns the error-ordering gate red. **That gate strips comment-only lines before its
+absence scan** — this repo has been caught by exactly this before: the code's own note explaining that
+a string is GONE contains the string. Ui **6166** · full solution green apart from three failures confirmed NOT this round's:
+`Harmonica.ContextAndPersistenceTests.R11_AMissingReferencedModelIsNamedRatherThanSubstituted`, which
+this file already records as failing deterministically at HEAD, plus one `Core.Tests` and one
+`Engine.Tests.External.WorkerBackedAnalysisTests.SeveralDevicesInOneDesign_ShareASingleWorker` that
+both pass cleanly in isolation — the device-worker/full-suite contention flakes this file already
+names. Every changed file is under `src/Ui`, which none of those three projects reference. **Not
+interactively verified** (no visual driver here, matching every prior EM phase) — please confirm on
+your end: the Analysis card is genuinely two columns (choice left, cross-section + notes right) and is
+SHORTER than it was; hovering "Ports" shows the explanation; Analysis levels
+is a collapsed expander whose header reads the selection count; both header "…" buttons are the same
+size and the six toolbar buttons sit on the Change Layout button's own baseline; the Cross-section
+subgroup is absent
+entirely on a full-wave setup rather than showing an empty heading; pressing Simulate posts the
+point-count line immediately and Cancel posts the stopping line immediately, with the finished row
+never claiming "solve finished" for a run you stopped; scrolling the panel down and clicking away to
+another application and back leaves it where you left it; and that an EM run now leaves the
+schematic's own `results/<cell>.npy` and Data Display untouched, writing `<cell>_em.npy` beside it.
+
 A port on a tapered PCell measured the whole envelope instead of the pin it sat on (2026-08-09) —
 COMPLETE. Owner report: *"the Port snapping (and resultant port width) is incorrect with adding a port
 to Port1 of my MKLOPF component in my MLIN.clay."*

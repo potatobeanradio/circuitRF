@@ -101,11 +101,39 @@ public static class EmRunService
         return Path.Combine(resultsRoot, ResolveResultKey(setup));
     }
 
-    /// <summary>The results-file stem the <c>.npy</c> uses — same key as the <c>.snp</c>, so a run's
-    /// two artifacts always name each other.</summary>
+    /// <summary>The <c>.snp</c>'s own stem, derived from the setup (or, failing that, the layout)
+    /// name — R-em-19's predictable path, so a schematic's SnP reference survives a re-run.</summary>
     public static string ResolveResultKey(EmSetup setup)
         => Schematic.RunResultsWriter.SanitizeFileNameComponent(
             setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(setup.LayoutRef));
+
+    /// <summary>
+    /// The <c>.npy</c>'s stem, and the reason it is NOT <see cref="ResolveResultKey"/>.
+    ///
+    /// <para><b>Owner report, 2026-08-11: "running an EM sim also over-writes the .npy file — that
+    /// file is for schematic simulation results, not EM results."</b> Correct, and the mechanism is a
+    /// NAME COLLISION rather than anything EM-specific. <c>results/</c> is one flat, shared folder
+    /// (R-res-0), a schematic writes <c>results/&lt;schematicKey&gt;.npy</c>, and an EM setup created
+    /// beside a cell is named after that same cell — so cell <c>MLin</c>'s schematic and its EM setup
+    /// both resolved to <c>results/MLin.npy</c> and the second run silently replaced the first.
+    /// <see cref="Schematic.RunResultsWriter"/>'s own note records that its <c>.source</c> collision
+    /// marker was dropped because two SCHEMATICS can no longer collide; an EM setup is a third
+    /// producer that convention never accounted for.</para>
+    ///
+    /// <para><b>The <c>.npy</c> is NOT dropped, because it carries results the <c>.sNp</c> cannot.</b>
+    /// Touchstone holds S and nothing else; the <c>.npy</c> holds the whole <c>DataSet</c> including
+    /// the diagnostics group that makes a wrong answer diagnosable — <c>tline</c>'s Zc / Gamma /
+    /// Eeff / AttenDbPerM / Rpul / Lpul / Gpul / Cpul for the cross-section kernel, and
+    /// <c>planar</c>'s Cpul / CalElectricalDeg / DeembedResidual / DeembedRejected /
+    /// CalibrationUsable for the full-wave one. Not writing it would lose every one of those.</para>
+    ///
+    /// <para>The <c>.sNp</c> keeps its own unsuffixed name deliberately: it is the artifact a
+    /// schematic REFERENCES by path, and renaming it would orphan every existing reference.</para>
+    /// </summary>
+    public const string NpyKeySuffix = "_em";
+
+    /// <inheritdoc cref="NpyKeySuffix"/>
+    public static string ResolveNpyKey(EmSetup setup) => ResolveResultKey(setup) + NpyKeySuffix;
 
     /// <summary>
     /// Extract → CanSolve → Solve → write. Never throws: an engine failure is captured into
@@ -260,7 +288,7 @@ public static class EmRunService
             var written = Schematic.RunResultsWriter.WriteRun(
                 Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar))
                     ?? resultsRoot,
-                ResolveResultKey(setup), solved.Data, null);
+                ResolveNpyKey(setup), solved.Data, null);
             npyPath = written.Count > 0 ? written[0] : null;
         }
         catch (Exception ex)
@@ -307,7 +335,8 @@ public static class EmRunService
         // D3 — the ports come from the layout's own IsPort labels, and an ambiguous one is refused
         // by name rather than guessed (R-res-5).
         var ports = EmPortExtraction.Extract(
-            source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0);
+            source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
+            source.View.DisplayUnit);
 
         notes.AddRange(ports.Notes);
         if (!ports.Ok)
@@ -353,7 +382,7 @@ public static class EmRunService
         {
             var written = Schematic.RunResultsWriter.WriteRun(
                 Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar)) ?? resultsRoot,
-                ResolveResultKey(setup), solved.Data, null);
+                ResolveNpyKey(setup), solved.Data, null);
             npyPath = written.Count > 0 ? written[0] : null;
         }
         catch (Exception ex)

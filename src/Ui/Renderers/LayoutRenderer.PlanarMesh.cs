@@ -64,10 +64,25 @@ public static partial class LayoutRenderer
 
         float stroke = DevicePixelsToPathSpace(scaleUm, PlanarMeshStrokeDevicePixels);
 
-        // Device pixels per metre = (device px per micron) × (microns per metre).
-        double pxPerMetre = scaleUm * 1e6;
-        double smallestCellPx = Math.Min(report.MinCellEdgeM, report.MaxCellEdgeM) * pxPerMetre;
-
+        // ── Which branch: ask the TYPICAL cell size, never the smallest ────────────────────────
+        //
+        // Owner report, 2026-08-11: "the mesh rendering with conformal boundary cells is wrong at
+        // some zoom levels — it certainly changes depending on zoom, and might be wrong at all of
+        // them." It was, and this line is why.
+        //
+        // The decision used to read report.MinCellEdgeM — the GLOBALLY SMALLEST cell edge. With edge
+        // meshing on (the default) the smallest cell is a refined sliver at a conductor rim and is a
+        // small fraction of the bulk pitch, so ONE refined row dragged the WHOLE overlay into the
+        // decimated branch — which draws grid rectangles and ignores every cut. Measured on a 20 mm
+        // taper on the PCB starter: smallest edge 42.1 µm against a median grid step of 350.8 µm,
+        // 8.3× — so the cut cells only appeared once the zoom was 8.3× past where they were already
+        // perfectly readable, and at the natural fit-the-design zoom the conformal mesh was drawn
+        // entirely as staircase rectangles. Staircase never showed it because for staircase the grid
+        // rectangle IS the cell, so the wrong branch draws the right picture.
+        //
+        // The honest question is "can a user read individual cell boundaries?", which is about the
+        // spacing they mostly see. The median of the mesh's own tensor grid steps answers it, and it
+        // comes from PlanarMesh.GridX/GridY — the gridlines, a far smaller array than the cells.
         using var cellPaint = new SKPaint
         {
             Color       = theme.PlanarMeshCell.WithAlpha(200),
@@ -76,7 +91,7 @@ public static partial class LayoutRenderer
             IsAntialias = true,
         };
 
-        if (smallestCellPx < PlanarMeshMinCellDevicePixels && cellScalar is null)
+        if (WouldDecimatePlanarMesh(report, scaleUm) && cellScalar is null)
         {
             // Too dense to draw every line — DECIMATE, do not collapse.
             //
@@ -123,6 +138,46 @@ public static partial class LayoutRenderer
             AddCell(cellPath, c, ps, toDbu);
             canvas.DrawPath(cellPath, fill);
         }
+    }
+
+    /// <summary>
+    /// Whether the overlay falls back to a decimated grid at this zoom — the ONE expression the
+    /// branch above is chosen by, exposed so it can be gated directly rather than inferred from
+    /// pixels. A pixel comparison cannot separate "the cuts were drawn" from "the cell set differs"
+    /// (conformal merges slivers, so even the decimated pictures differ) — which is exactly how the
+    /// first attempt at a gate for this passed against the unfixed code.
+    /// </summary>
+    /// <param name="scaleUm">Device pixels per micron — the canvas's own zoom.</param>
+    internal static bool WouldDecimatePlanarMesh(PlanarMeshReport report, double scaleUm)
+        => TypicalGridStepM(report) * scaleUm * 1e6 < PlanarMeshMinCellDevicePixels;
+
+    /// <summary>
+    /// The median step of the mesh's own tensor-product grid, metres — the size of cell a user mostly
+    /// sees, which is what decides whether individual boundaries are readable.
+    ///
+    /// <para><b>Deliberately NOT <c>PlanarMeshReport.MinCellEdgeM</c>.</b> That is the globally
+    /// smallest edge, which with edge meshing on belongs to a refined sliver at a conductor rim; using
+    /// it let one refined row decide the representation of the entire overlay. See the caller's own
+    /// note for the measurement that established the gap.</para>
+    ///
+    /// <para>Falls back to the smallest edge for a mesh with no usable grid — a degenerate case that
+    /// then behaves exactly as it did before.</para>
+    /// </summary>
+    private static double TypicalGridStepM(PlanarMeshReport report)
+    {
+        var gx = report.Mesh.GridX;
+        var gy = report.Mesh.GridY;
+
+        int n = Math.Max(gx.Count - 1, 0) + Math.Max(gy.Count - 1, 0);
+        if (n <= 0) return report.MinCellEdgeM;
+
+        var steps = new double[n];
+        int k = 0;
+        for (int i = 1; i < gx.Count; i++) steps[k++] = gx[i] - gx[i - 1];
+        for (int i = 1; i < gy.Count; i++) steps[k++] = gy[i] - gy[i - 1];
+
+        Array.Sort(steps);
+        return steps[steps.Length / 2];
     }
 
     /// <summary>
