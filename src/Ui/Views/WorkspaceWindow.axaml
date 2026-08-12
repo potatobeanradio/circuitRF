@@ -75,6 +75,8 @@
                                     <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Into Open Technology…" Command="{Binding ImportIntoTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Wirebond Table…" Command="{Binding ImportWireTableCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Wirebond Wires…" Command="{Binding ImportWirebondWiresCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Wirebond as Cell…" Command="{Binding ImportWirebondAsCellCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -397,6 +399,14 @@
                               Command="{Binding ImportWireTableCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="A from-pad / to-pad wirebond table, as every packaging flow already has."/>
+                    <MenuItem Header="Wirebond W_ires…"
+                              Command="{Binding ImportWirebondWiresCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="Bring a .wBond design's wires into the active schematic — into the selected wBond component, or as a new one. Artwork in the file is left behind. Requires an active schematic."/>
+                    <MenuItem Header="Wirebond as _Cell…"
+                              Command="{Binding ImportWirebondAsCellCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="Create a cell from a .wBond: its wires become the schematic view, its embedded artwork the layout view."/>
                 </MenuItem>
                 <MenuItem Header="_Export">
                     <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>

@@ -742,22 +742,12 @@ public sealed partial class WBondViewModel : ObservableObject
 
     // ---------------------------------------------------------------- helpers
 
-    /// <summary>A minimal valid design, so a blank editor has something to draw and validate.</summary>
-    private static WBondDesign EmptyDesign()
-    {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil));
-        var design = new WBondDesign();
-        design.Profiles.Add(profile);
-        design.Arrays.Add(new WireArray
-        {
-            Name = "G1",
-            Profile = profile.Name,
-            Wires =
-            {
-                profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
-                                   WBondUnits.ToNm(1.0, WBondUnit.Mil), WireMaterials.Default.Name),
-            },
-        });
-        return design;
-    }
+    /// <summary>
+    /// A minimal valid design, so a blank editor has something to draw and validate.
+    ///
+    /// <para>Delegates to <see cref="WBondEmbedding.DefaultDesign"/> rather than building its own:
+    /// a freshly-dropped schematic component starts from the same design, and two definitions of
+    /// "what a new wBond is" would drift the first time either changed.</para>
+    /// </summary>
+    private static WBondDesign EmptyDesign() => WBondEmbedding.DefaultDesign();
 }

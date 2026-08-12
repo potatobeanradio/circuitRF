@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.WBond;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -54,8 +53,6 @@ public partial class WBondSaveGeometryDialog : Window
                 : $"{kept.Count} circuitRF cells stay parametric.";
         }
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     public static async Task<Choice> ShowAsync(Window owner, WBondGeometryEmbedding.EmbedPlan plan)
     {

@@ -236,7 +236,15 @@ public class FileMenuRestructureTests
         // the other merges into the one being edited. The assertion stays exact
         // and ordered rather than loosened to "contains" — this is what keeps the in-window Menu and
         // the macOS NativeMenu, which are hand-mirrored, from drifting apart.
-        string[] expected = ["Data", "GDSII", "DXF", "PDK", "Technology", "Into Open Technology", "Wirebond Table"];
+        // "Wirebond Wires" / "Wirebond as Cell" joined with WB-B2's embedded-design model: a placed
+        // wBond carries its own wires, so a `.wBond` reaches a schematic by IMPORT rather than by
+        // reference. The two are separate entries because they have different destinations — one
+        // replaces a component's wires, the other unpacks the design's layout artwork as a new cell.
+        string[] expected =
+        [
+            "Data", "GDSII", "DXF", "PDK", "Technology", "Into Open Technology",
+            "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
+        ];
 
         foreach (var children in new[] { InWindowFileChildren(), NativeFileChildren() })
         {

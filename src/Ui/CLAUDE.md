@@ -1,3 +1,98 @@
+A wBond dropped from the palette rendered "Not Found", and the fix was to stop referencing a file at
+all (2026-08-12) — FIXED. **A placed wBond now carries its whole design as a hidden `Design`
+parameter; there is no `File` parameter, and nothing is resolved at render time.** Design note:
+`docs/design/wbond.md` §5.0 and §9.2.
+
+**Why the reported bug had no local fix.** A `.wBond` is wires PLUS, optionally, the layout artwork
+they were drawn over — cells, rectangles, MLINs. A schematic component has nowhere to put artwork, so
+pointing one at a whole `.wBond` asked it to reference something most of which it cannot express; and
+a freshly-dropped component referenced NOTHING, which is exactly what the placeholder was reporting —
+correctly, and uselessly. Seeding the `File` row with a path would have been inventing a file the user
+never made.
+
+- **"Not Found" is now unrepresentable, structurally** — a dropped wBond arrives carrying
+  `WBondEmbedding.DefaultDesign()` (one array, one wire), so it renders, wires up and simulates
+  immediately. There is nothing to find and therefore nothing to fail to find.
+- **The blank wBond editor starts from the SAME definition** (`WBondViewModel.EmptyDesign` delegates
+  to it), so "what a new wBond is" cannot come to mean two different things.
+- **A schematic is self-contained** — no workspace-relative path to break when a design is moved,
+  copied, or sent to someone else.
+- **`WBondSymbolProvider` resolves the symbol from the PAYLOAD, not a file.** The reference is
+  `wbond://` + the ordered array names, because that list is the whole of what
+  `WBondSymbolGenerator` reads — a compact cache key that cannot go stale, since it changes exactly
+  when the symbol would.
+
+**THE TRAP, and it cost a debugging session: the payload must carry NO base64 padding.** Base64 is
+right for the value (it must survive `.csch`'s JSON *and* `.cnl`, which has no way to escape a quote
+inside a quoted token, and a design's JSON is full of quotes). But standard base64 pads with `=`, and
+`CnlReader.MergeSpacedAssignments` reads a token ENDING in `=` as `name=` with an empty value and
+glues the NEXT token on as that value — the empty-parameter-value defect already recorded in
+`src/Core/CLAUDE.md`, reached from a new direction. So a padded payload is fine as the LAST parameter
+on an instance line and **silently swallows whichever parameter follows it** — which a swept
+`LoopHeight` always does. Symptom: the plain run passed while both parametric-sweep tests failed with
+"the 'Design' parameter could not be read", because in the passing case `Design=` happened to be
+last. `Encode` strips the padding; `TryDecode` re-pads, so an older or hand-authored padded payload
+still reads. **Do not "restore" the padding.** Gate:
+`TheEmbeddedPayload_CarriesNoBase64Padding_SoAFollowingParameterSurvivesTheCnl`, confirmed to turn
+red — along with both sweep tests — when the `TrimEnd('=')` is removed.
+
+**Array drift moved from load time to import time, because load time stopped being a thing that can
+change.** Nothing external can alter a placed component's wires any more, so the old on-save
+re-resolve check was meaningless. What CAN change them is a re-import, so `WBondPlacement.DriftBetween`
+now compares the incoming design against the hidden `Arrays` parameter (the array list the instance's
+wiring was drawn against) and **reports** — never repairs. Pin order IS array order, so a reorder
+re-points every wire while leaving every pin name correct; there is no re-mapping that keeps the
+user's wiring right without moving the artwork they drew, and a reorder is named as a reorder because
+"the array list changed" reads as harmless.
+
+**Two import routes, deliberately separate** (File ▸ Import, both surfaces): **Wirebond Wires…**
+replaces the selected component's wires (or places a new component when none is selected), and
+**Wirebond as Cell…** unpacks the `.wBond`'s embedded layout geometry as a new cell's layout view
+with the wBond as its schematic — reusing `WBondGeometryEmbedding.Unpack` and the project tree's own
+"Add as Cell…" path rather than a second unpacker. A design carrying no embedded geometry is diverted
+to the wires route with a message, not given an empty layout view.
+
+One pre-existing test was UPDATED, not loosened:
+`FileMenuRestructureTests.ImportSubmenu_ContainsExpectedFormats_NoGerber` still asserts the submenu
+exactly and in order — which is what keeps the hand-mirrored in-window and macOS menus from drifting —
+it simply now expects the two new entries.
+
+Tools ▸ wBond crashed, and the cause was a hand-written `InitializeComponent` in twelve views
+(2026-08-12) — FIXED. **The rule this leaves behind: a view code-behind must never declare its own
+`InitializeComponent`, and must never call `AvaloniaXamlLoader.Load(this)` at all.**
+
+**Why it looks harmless and is not.** Avalonia's name generator emits, per view, an `internal` field
+per `x:Name` PLUS `public void InitializeComponent(bool loadXaml = true)` whose body is
+`AvaloniaXamlLoader.Load(this)` **followed by one `Find<T>("Name")` assignment per field**. A
+code-behind that writes `private void InitializeComponent() => AvaloniaXamlLoader.Load(this);`
+compiles cleanly — different signature, no CS0111 — and C# overload resolution **prefers the
+parameterless one over the one with an optional argument**, so the hand-written method wins. The XAML
+loads and the view renders correctly; **every named field stays null**, and the failure surfaces much
+later as a `NullReferenceException` the first time the view touches one of its own controls. Nothing
+about the symptom points at the constructor.
+
+**The reported crash** was `WBondEditorView.OnDataContextChanged` → `LayoutCanvasCtrl.CanvasOverlay = …`
+on a null field, raised from `ContentPresenter.UpdateChild`'s inherited-DataContext push during the
+first measure pass — i.e. the moment the tab is created, which is why Tools ▸ wBond died immediately.
+**Ten views shadowed the method** (`WBondEditorView`, `WBondShellWindow`, `WBondMenuView`,
+`WBondWirePropertiesView`, `WBondTransformDialog`, `WBondValuePromptDialog`,
+`WBondTouchstoneExportDialog`, `WBondSaveGeometryDialog`, `HarmonicaShellWindow`,
+`HarmonicaSetDutDialog`) and **two dialogs called the loader straight from their constructor**
+(`TechnologyMergeDialog`, `TechnologyExportDialog` — both would have thrown on `HeaderText.Text`).
+Every one of them carries named fields; nine of the twelve had never been opened interactively, which
+is exactly how a whole family of this shipped at once. The fix is to delete the shadow — the generated
+method already loads the XAML.
+
+**Gate:** `tests/Ui.Tests/InitializeComponentShadowingTests.cs` — a source scan over every
+`*.axaml.cs` under `src/Ui` (the three `*App.axaml.cs` `Application` subclasses are the one exemption:
+they have no name scope and no generated method) asserting neither pattern remains, plus a named pin
+on `WBondEditorView`. **It strips comments before scanning** — this repo has been caught by exactly
+that before, since the code's own note explaining the thing is gone contains the thing. **Confirmed to
+bite:** reintroducing the shadow in one view turns both sweeps red naming that file. Ui **6217** ·
+Firewall 6 — green.
+
+---
+
 The EM Setup panel gained a Cores control, and fanning the solves out bought far less than expected
 (brief-em-sweep-performance M1/M2, 2026-08-11) — COMPLETE for M1 and M2; **M3 is a MEASURED
 DEFERRAL (its ceiling is 1.09-1.15x, measured before it was built); M4/M5 not started.**

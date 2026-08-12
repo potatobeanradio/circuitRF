@@ -545,6 +545,43 @@ overlay into a 500k-shape redraw.
 
 ## 5. The schematic component
 
+### 5.0 The component carries its design — it does not reference a `.wBond`
+
+**WB17b. A placed wBond stores the whole design as a hidden `Design` parameter; there is no `File`
+parameter, and nothing is resolved at render time.** *(Implemented 2026-08-12; supersedes any earlier
+reading of §9.2 route 2 as a file reference.)*
+
+A `.wBond` is wires **plus**, optionally, the layout artwork they were drawn over — cells, rectangles,
+MLINs. A schematic component has nowhere to put artwork, so pointing one at a whole `.wBond` asks it
+to reference something most of which it cannot express. It also made a freshly-dropped component
+reference nothing at all, which is what the "Not Found" placeholder was reporting: correctly, and
+uselessly.
+
+So the component owns its wires:
+
+- A dropped wBond arrives carrying `WBondEmbedding.DefaultDesign()` — one array, one wire — which
+  renders, wires up and simulates immediately. **"Not Found" is unrepresentable**, because there is
+  nothing to find.
+- The blank wBond editor starts from the **same** definition, so "what a new wBond is" cannot come to
+  mean two different things.
+- A schematic is self-contained: no workspace-relative path to break when a design is moved, copied
+  or sent to someone else.
+- **Layout artwork is deliberately dropped from the payload.** A schematic component is the wires;
+  carrying a copy of someone's artwork inside every placed instance is exactly what this avoids. The
+  artwork route is §9.2 route 3, which makes it a real layout view instead.
+
+The payload is **base64 with the padding stripped**. Base64 because the value must survive both
+`.csch` (a JSON string) and `.cnl` (whitespace-delimited, with no way to escape a quote inside a
+quoted token) — a design's JSON is full of quotes. **Unpadded** because `CnlReader` reads a token
+ending in `=` as `name=` with an empty value and glues the *next* token on as that value (the
+empty-parameter-value defect recorded in `src/Core/CLAUDE.md`); a padded payload therefore silently
+swallows whichever parameter follows it on the instance line — which a swept `LoopHeight` always
+does. `WBondEmbedding.TryDecode` re-pads on the way in, so a hand-authored or older padded payload
+still reads.
+
+**A hidden `Arrays` parameter records the array list the instance's wiring was drawn against**, so a
+re-import that reorders arrays is *reported* rather than silently re-pointing wires — see §9.2.
+
 ### 5.1 The dynamic symbol
 
 **WB18. The symbol has exactly two pins per array — input on the left, output on the right — and it is
@@ -1145,14 +1182,28 @@ a directly transferable warning for whoever writes `WBondIo`.
 
 ### 9.2 Bringing a `.wBond` into a design
 
-Three routes, all required by the owner:
+Three routes, all required by the owner. Routes 2 and 3 are **imports**, not references — per §5.0 a
+placed wBond carries its own design, so bringing a `.wBond` into a schematic copies its wires in
+rather than pointing at the file.
 
 1. **Open it standalone** and edit.
-2. **Add its wires as a component** to an existing schematic — creates a wBond instance with the
-   symbol generated from its arrays (§5.1).
-3. **Add wires *and* geometry as a new cell** with its own schematic view and layout view — the
-   embedded `.clay` becomes the layout view, the wBond becomes the schematic content. This is the path
-   for "someone sent me a package model".
+2. **File ▸ Import ▸ Wirebond Wires…** — replaces the selected wBond component's wires with the
+   file's, regenerating the symbol from the new array list (§5.1). With no wBond selected it places a
+   new one carrying those wires. The `.wBond`'s embedded layout artwork is **not** brought across;
+   that is route 3.
+3. **File ▸ Import ▸ Wirebond as Cell…** — creates a new workspace cell whose **layout view** is the
+   `.wBond`'s embedded geometry and whose **schematic view** is a wBond component carrying its wires.
+   This is the path for "someone sent me a package model". A design carrying no embedded geometry has
+   no layout view to make, so it is diverted to route 2 with a message rather than producing an empty
+   one.
+
+**WB35a. A re-import that changes the array list is REPORTED, never silently repaired.** Pin order
+*is* array order, so a reorder genuinely moves every pin: each keeps its position while its name moves
+to a different row, and a wire that was on `G1.i` is now on `G2.i` — correctly-named pins wired to the
+wrong nets. There is no re-mapping that keeps the user's wires correct without moving the artwork they
+drew, so the honest answer is to say so. The hidden `Arrays` parameter (§5.0) is what makes the
+comparison possible; a reorder is named as a reorder, because "the array list changed" reads as
+harmless.
 
 ### 9.3 Import
 

@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using CircuitRF.Ui.Layout.Assembly;
 using CircuitRF.Ui.Schematic;
@@ -61,8 +60,6 @@ public partial class WBondShellWindow : Window
         WireMenus();
         Adopt(document);
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     /// <summary>The one document this window shows.</summary>
     public WBondDocument Document => (WBondDocument)DataContext!;

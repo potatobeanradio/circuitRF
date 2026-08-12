@@ -1,5 +1,6 @@
 using System.Linq;
 using CircuitRF.Core.Design;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -383,7 +384,8 @@ public sealed class EditableComponent
     public string? ExternalSymbolRef =>
         CellRef
         ?? (Symbol == SymbolKind.WBond
-                ? WBondSymbolProvider.RefFor(Parameters.FirstOrDefault(p => p.Name == "File")?.Expression)
+                ? WBondSymbolProvider.RefFor(
+                      Parameters.FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression)
                 : null);
 
     public double         X            { get; set; }

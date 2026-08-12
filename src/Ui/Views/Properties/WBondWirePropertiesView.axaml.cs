@@ -2,7 +2,6 @@ using System;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.WBond;
 using CircuitRF.Ui.Views.Dialogs;
 
@@ -19,8 +18,6 @@ namespace CircuitRF.Ui.Views.Properties;
 public partial class WBondWirePropertiesView : UserControl
 {
     public WBondWirePropertiesView() => InitializeComponent();
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     private WBondWirePropertiesViewModel? Vm => DataContext as WBondWirePropertiesViewModel;
 

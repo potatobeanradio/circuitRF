@@ -915,9 +915,15 @@ public sealed class Elaborator
     // ── wBond parameter resolution ────────────────────────────────────────────
 
     /// <summary>
-    /// wBond stores <c>File</c> verbatim (resolved against the workspace root exactly as SnP's is)
-    /// and evaluates everything else — <c>Temp</c>, <c>GroundPlane</c> and any loop-height override —
-    /// as an ordinary expression, which is what makes a parametric sweep over a loop height work.
+    /// wBond stores <c>Design</c> (the embedded wires — see <c>WBondEmbedding</c>) and <c>File</c>
+    /// verbatim, and evaluates everything else — <c>Temp</c>, <c>GroundPlane</c> and any loop-height
+    /// override — as an ordinary expression, which is what makes a parametric sweep over a loop
+    /// height work.
+    ///
+    /// <para><c>Design</c> is a payload, not an expression: it must NOT go anywhere near the
+    /// evaluator, which would read it as an identifier and fail. <c>File</c> is still honoured (a
+    /// hand-authored <c>.cnl</c> may name a <c>.wBond</c> directly) and is resolved against the
+    /// workspace root exactly as SnP's is; a schematic no longer writes one.</para>
     /// </summary>
     private IReadOnlyDictionary<string, Value> ResolveWBondParameters(
         Instance inst, Scope parentScope)
@@ -925,7 +931,14 @@ public sealed class Elaborator
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
-            if (ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
+            if (ov.Name.Equals("Design", StringComparison.OrdinalIgnoreCase))
+            {
+                var payload = ov.Expression;
+                if (payload.Length >= 2 && payload[0] == '"' && payload[^1] == '"')
+                    payload = payload[1..^1];
+                result[ov.Name] = new Value(payload);
+            }
+            else if (ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
             {
                 var raw = ov.Expression;
                 if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')

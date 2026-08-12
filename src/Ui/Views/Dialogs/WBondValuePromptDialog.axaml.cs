@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -32,8 +31,6 @@ public partial class WBondValuePromptDialog : Window
 
     // Parameterless ctor satisfies the Avalonia XAML resource loader.
     public WBondValuePromptDialog() => InitializeComponent();
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     // ---------------------------------------------------------------- length
 

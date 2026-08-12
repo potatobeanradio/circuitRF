@@ -4,7 +4,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
@@ -177,8 +176,6 @@ public partial class WBondEditorView : UserControl
         layout.PasteInPlace(shapes, instances);
         return shapes.Count + instances.Count;
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {

@@ -57,9 +57,21 @@ internal static class WBondSymbolGenerator
     internal static Symbol? Build(WBondDesign design)
     {
         ArgumentNullException.ThrowIfNull(design);
-        if (design.Arrays.Count == 0) return null;
+        return Build([.. design.Arrays.Select(a => a.Name)]);
+    }
 
-        int m = design.Arrays.Count;
+    /// <summary>
+    /// Builds the symbol from the ordered array names alone — everything the artwork depends on.
+    ///
+    /// <para>This is the primary form: <see cref="WBondSymbolProvider"/> caches on exactly this list,
+    /// so the symbol never depends on decoding a whole design on a render pass.</para>
+    /// </summary>
+    internal static Symbol? Build(IReadOnlyList<string> arrayNames)
+    {
+        ArgumentNullException.ThrowIfNull(arrayNames);
+        if (arrayNames.Count == 0) return null;
+
+        int m = arrayNames.Count;
 
         // Rows are centred vertically, so a one-array wBond is not lopsided and an eight-array one
         // grows symmetrically about its origin.
@@ -79,7 +91,7 @@ internal static class WBondSymbolGenerator
 
         for (int k = 0; k < m; k++)
         {
-            string name = design.Arrays[k].Name;
+            string name = arrayNames[k];
             double y = DsnSymbolReader.SnapToPinGrid(firstRowY + k * RowPitch);
 
             double inX = DsnSymbolReader.SnapToPinGrid(-HalfWidth - LeadLength);

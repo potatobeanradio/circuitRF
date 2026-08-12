@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.Harmonica;
 
 namespace CircuitRF.Ui.Views.Harmonica;
@@ -31,8 +30,6 @@ public partial class HarmonicaShellWindow : Window
             if (e.PropertyName is nameof(HarmonicaDocumentViewModel.IsDirty)) UpdateTitle();
         };
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     /// <summary>The one document this window shows.</summary>
     public HarmonicaDocument Document => (HarmonicaDocument)DataContext!;

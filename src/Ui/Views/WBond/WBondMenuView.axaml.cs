@@ -1,7 +1,6 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.WBond;
 
 namespace CircuitRF.Ui.Views.WBond;
@@ -27,8 +26,6 @@ public partial class WBondMenuView : UserControl
         InitializeComponent();
         AttachedToVisualTree += (_, _) => AttachNativeMenuIfOwnWindow();
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     /// <summary>
     /// The window a wBond document must NOT steal the menu bar from. Resolved by type NAME so this

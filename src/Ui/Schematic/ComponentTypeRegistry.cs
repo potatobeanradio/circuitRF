@@ -1,4 +1,5 @@
 using System.Linq;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -434,8 +435,11 @@ public static class ComponentTypeRegistry
     /// it is stated here. A path is exactly the kind of value nobody should be asked to type, and a
     /// mistyped one fails much later with a worse message.</para>
     /// </summary>
+    /// <para>wBond is deliberately NOT here any more: it carries its wires rather than naming a file
+    /// (see <c>WBondEmbedding</c>), so there is no path to browse for. Bringing in a design is
+    /// File ▸ Import ▸ Wirebond Wires…, which has its own picker.</para>
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
-        => kind is SymbolKind.VerilogA or SymbolKind.WBond
+        => kind is SymbolKind.VerilogA
         && parameterName.Equals("File", StringComparison.Ordinal);
 
     /// <summary>
@@ -634,24 +638,28 @@ public static class ComponentTypeRegistry
                     new("Pins",  "2", "", false, UnitDimension.None),
                 ];
 
-            // wBond: `File` names the .wBond design — everything else about the component (its pin
-            // count, its pin names, its wires, its arrays) is IN that file, so there is nothing
-            // else the placement path can usefully seed.
+            // wBond: `Design` CARRIES the wires (WBondEmbedding) — it does not name a file. A .wBond
+            // may also hold layout artwork, which a schematic component has nowhere to put, so a
+            // component that referenced one would be pointing at something most of which it cannot
+            // express; a blank reference is what used to render the "Not Found" placeholder on every
+            // freshly-dropped wBond. Seeded with the ONE-ARRAY, ONE-WIRE default, so a dropped wBond
+            // renders, wires up and simulates with nothing to configure. It is hidden: the payload is
+            // machine-written, and File ▸ Import ▸ Wirebond Wires… is how it is replaced.
             //
             // `Arrays` is circuitRF's own bookkeeping, not an engine parameter: it records the array
-            // list this instance's wiring was drawn against, so a later REORDER of the referenced
-            // design's arrays can be reported instead of silently re-pointing every wire (§5
-            // question 3 / M2). Hidden by default — it is a record, not a value to read on a page —
-            // and editable in the parameter dialog, which is how a user acknowledges a change after
-            // re-checking the wiring. It is filtered out of the extracted netlist by NetExtractor.
+            // list this instance's wiring was drawn against, so an IMPORT that reorders the arrays can
+            // be reported instead of silently re-pointing every wire (§5 question 3 / M2). Hidden by
+            // default — it is a record, not a value to read on a page — and editable in the parameter
+            // dialog, which is how a user acknowledges a change after re-checking the wiring. It is
+            // filtered out of the extracted netlist by NetExtractor.
             //
             // `Temp` and `GroundPlane` are real engine overrides (ComponentModelFactory reads both)
             // and are deliberately left BLANK: blank means "use the design's own value", and a
-            // seeded default here would silently override what the .wBond itself states.
+            // seeded default here would silently override what the payload itself states.
             case SymbolKind.WBond:
                 return [
-                    new("File",        "", "", true,  UnitDimension.None),
-                    new("Arrays",      "", "", false, UnitDimension.None),
+                    new("Design",      WBondEmbedding.DefaultPayload, "", false, UnitDimension.None),
+                    new("Arrays",      WBondSymbolProvider.DefaultArraysKey, "", false, UnitDimension.None),
                     new("Temp",        "", "", false, UnitDimension.None),
                     new("GroundPlane", "", "", false, UnitDimension.None),
                 ];

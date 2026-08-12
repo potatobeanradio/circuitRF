@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.Layout;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -50,7 +49,12 @@ public partial class TechnologyMergeDialog : Window
     private readonly List<ConflictRow> _conflicts = [];
 
     // Parameterless ctor for the XAML loader only.
-    public TechnologyMergeDialog() => AvaloniaXamlLoader.Load(this);
+    //
+    // InitializeComponent(), NEVER AvaloniaXamlLoader.Load(this) directly: the generated
+    // InitializeComponent loads the XAML *and* assigns every x:Name field. Calling the loader alone
+    // leaves them all null, which surfaces as a NullReferenceException the first time this dialog
+    // touches one of its own controls. See src/Ui/CLAUDE.md.
+    public TechnologyMergeDialog() => InitializeComponent();
 
     public TechnologyMergeDialog(
         string sourceName, TechSection available, bool isReimport,

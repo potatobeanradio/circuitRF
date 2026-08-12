@@ -1292,21 +1292,43 @@ public static class ComponentModelFactory
     /// wBond: a wirebond component, read from a <c>.wBond</c> file
     /// (<c>docs/design/wbond.md</c> §5, brief-wbond-wbb R-wbb-1).
     ///
-    /// <para>Parameters: <c>File</c> names the design (required). <c>Temp</c> overrides the operating
-    /// temperature, which defaults to the file's own value and ultimately to 85 °C — load-bearing for
-    /// R, so it is overridable per instance. <c>GroundPlane</c> (0/1) overrides the plane.</para>
+    /// <para>Parameters: <c>Design</c> CARRIES the wires (what a schematic writes — see
+    /// <c>WBondEmbedding</c>), or <c>File</c> names a <c>.wBond</c> to load (what a hand-authored
+    /// netlist may still write). One of the two is required. <c>Temp</c> overrides the operating
+    /// temperature, which defaults to the design's own value and ultimately to 85 °C — load-bearing
+    /// for R, so it is overridable per instance. <c>GroundPlane</c> (0/1) overrides the plane.</para>
+    ///
+    /// <para><b><c>Design</c> wins where both are present.</b> An embedded payload is the component's
+    /// own wires and needs nothing from the filesystem; falling back to a path when one is right
+    /// there would make the answer depend on where the netlist happens to be sitting.</para>
     /// </summary>
     private static ComponentModel CreateWBondModel(IReadOnlyDictionary<string, Value> parameters)
     {
-        if (!parameters.TryGetValue("File", out var fileValue))
-            throw new InvalidOperationException(
-                "wBond: the 'File' parameter is missing — it names the .wBond design to load.");
+        string path = "";
+        WBondDesign design;
 
-        string path = fileValue.AsString();
-        if (!File.Exists(path))
-            throw new FileNotFoundException($"wBond: design file not found: '{path}'", path);
+        if (parameters.TryGetValue("Design", out var payload) &&
+            payload.Kind == ValueKind.String &&
+            !string.IsNullOrWhiteSpace(payload.AsString()))
+        {
+            if (!WBondEmbedding.TryDecode(payload.AsString(), out var embedded) || embedded is null)
+                throw new InvalidOperationException(
+                    "wBond: the 'Design' parameter could not be read as a wirebond design. Re-import " +
+                    "the wires (File ▸ Import ▸ Wirebond Wires…) to replace it.");
+            design = embedded;
+        }
+        else
+        {
+            if (!parameters.TryGetValue("File", out var fileValue))
+                throw new InvalidOperationException(
+                    "wBond: neither 'Design' (the embedded wires) nor 'File' (a .wBond to load) is set.");
 
-        var design = WBondIo.ReadFile(path);
+            path = fileValue.AsString();
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"wBond: design file not found: '{path}'", path);
+
+            design = WBondIo.ReadFile(path);
+        }
 
         if (parameters.TryGetValue("Temp", out var temp))
             design.OperatingTempC = temp.AsReal();

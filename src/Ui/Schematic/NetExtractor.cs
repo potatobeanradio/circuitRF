@@ -4,6 +4,7 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Core.Netlist.Spice;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -1548,10 +1549,12 @@ public static class NetExtractor
 
             if (wbDefs.Count == 0)
             {
-                string named = comp.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression ?? "";
-                warningsOut?.Add(string.IsNullOrWhiteSpace(named)
-                    ? $"wBond '{comp.InstanceName}' names no design file, so it has no pins; skipped."
-                    : $"wBond '{comp.InstanceName}': the design '{named}' could not be read, or declares "
+                string payload = comp.Parameters
+                    .FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression ?? "";
+                warningsOut?.Add(string.IsNullOrWhiteSpace(payload)
+                    ? $"wBond '{comp.InstanceName}' carries no wirebond design, so it has no pins; "
+                      + "skipped. Use File ▸ Import ▸ Wirebond Wires… to give it one."
+                    : $"wBond '{comp.InstanceName}': its embedded design could not be read, or declares "
                       + "no wire arrays, so it has no pins; skipped.");
                 return null;
             }

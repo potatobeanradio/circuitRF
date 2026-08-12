@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 
@@ -51,8 +50,6 @@ public partial class WBondTransformDialog : Window
             _ => wires.ToString(CultureInfo.InvariantCulture) + " wires selected.",
         };
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     /// <summary>Shows the dialog; returns how many wires the applied transform touched (0 on cancel).</summary>
     public static async Task<int> ShowAsync(Window? owner, WBondViewModel vm, WBondUnit unit)

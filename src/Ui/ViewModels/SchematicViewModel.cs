@@ -10,6 +10,7 @@ using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Renderers;
+using CircuitRF.WBond;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.ViewModels;
@@ -2788,6 +2789,66 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <param name="wbondAbsolutePath">Absolute path of the <c>.wBond</c> design.</param>
     /// <param name="worldX">World X, or null to pick a free spot beside what is already placed.</param>
     /// <param name="worldY">World Y, or null (see <paramref name="worldX"/>).</param>
+    /// <summary>
+    /// File ▸ Import ▸ Wirebond Wires… — brings a <c>.wBond</c>'s WIRES into this schematic.
+    ///
+    /// <para><b>Wires only, by construction:</b> <c>WBondEmbedding.Encode</c> drops any layout artwork
+    /// the file carried, so importing a design drawn over a board never drags that board into the
+    /// schematic. Artwork travels by File ▸ Import ▸ Wirebond as Cell…, which makes it a layout view.</para>
+    ///
+    /// <para><b>A selected wBond is REPLACED; otherwise a new one is placed.</b> Replacing keeps the
+    /// wiring the user already drew, which is the whole reason to import into an existing component —
+    /// so an import that MOVES the pins (a different or reordered array list) is reported first, per
+    /// §5 question 3: pin order IS array order, and a reorder re-points every wire.</para>
+    ///
+    /// <returns>The number of components the design was written to: 1, or 0 if nothing happened.</returns>
+    /// </summary>
+    public int ImportWBondWires(string wbondAbsolutePath)
+    {
+        WBondDesign design;
+        try { design = WBondIo.ReadFile(wbondAbsolutePath); }
+        catch (Exception ex)
+        {
+            _messageSink?.Error(
+                $"Could not read {Path.GetFileName(wbondAbsolutePath)}: {ex.Message}");
+            return 0;
+        }
+
+        if (design.Arrays.Count == 0)
+        {
+            _messageSink?.Warning(
+                $"\"{Path.GetFileName(wbondAbsolutePath)}\" declares no wire arrays, so it has no pins. " +
+                "Group its wires into at least one array first.");
+            return 0;
+        }
+
+        var target = EditModel.Components.FirstOrDefault(
+            c => c.Symbol == SymbolKind.WBond && Selection.Ids.Contains(c.Id));
+
+        if (target is null)
+        {
+            // Nothing selected to import INTO — this is an ordinary placement.
+            return CommitWBondPlacement(wbondAbsolutePath) ? 1 : 0;
+        }
+
+        string source = Path.GetFileName(wbondAbsolutePath);
+        var drift = WBondPlacement.DriftBetween(target, design, source);
+
+        // One SetParametersCommand, so the import is one undo entry that puts the previous wires back.
+        var updated = target.Parameters.Select(p => p.Clone()).ToList();
+        var scratch = new EditableComponent { Symbol = SymbolKind.WBond };
+        foreach (var p in updated) scratch.Parameters.Add(p);
+        WBondPlacement.ApplyDesign(scratch, design);
+
+        Execute(new SetParametersCommand(EditModel, target, scratch.Parameters));
+
+        if (drift is not null) _messageSink?.Warning(drift.Message);
+        _messageSink?.Success(
+            $"Imported {design.Arrays.Count} array(s), {design.WireCount} wire(s) from {source} " +
+            $"into {target.InstanceName}.", wbondAbsolutePath);
+        return 1;
+    }
+
     public bool CommitWBondPlacement(string wbondAbsolutePath, double? worldX = null, double? worldY = null)
     {
         // R-wbb2-3: the stored File value resolves against the WORKSPACE ROOT, which is the

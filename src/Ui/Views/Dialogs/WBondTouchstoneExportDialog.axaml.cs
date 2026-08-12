@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 using RfCore;
@@ -42,8 +41,6 @@ public partial class WBondTouchstoneExportDialog : Window
         PointsBox.ValueChanged += (_, _) => RefreshCost();
         RefreshCost();
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     /// <summary>
     /// Shows the dialog and returns the chosen options, or null when cancelled.

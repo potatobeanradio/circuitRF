@@ -3237,10 +3237,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Generated wBond symbols are keyed by absolute path, so they are not workspace-scoped the
         // way a kit reference is — but a stale entry would survive a workspace's files being edited
         // outside circuitRF, and this is the one moment the whole session's assumptions are already
-        // being rebuilt. The reported-drift set goes with it: a fresh workspace has not been told
-        // anything yet.
+        // being rebuilt.
         WBondSymbolProvider.InvalidateAll();
-        _reportedWBondDrift.Clear();
 
         string? wsRoot = CurrentWorkspacePath is null
             ? null
@@ -5255,6 +5253,59 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
+    /// <summary>
+    /// File ▸ Import ▸ Wirebond Wires… — brings a <c>.wBond</c>'s WIRES into the active schematic
+    /// (wbond.md §9.2 route 2, from a file picker rather than from the project tree).
+    ///
+    /// <para><b>Wires only.</b> A <c>.wBond</c> may also carry the layout artwork it was drawn over,
+    /// and a schematic has nowhere to put artwork — that is exactly why a placed wBond no longer
+    /// references the whole file. The artwork route is the sibling item below.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsSchematicDocumentActive))]
+    private async Task ImportWirebondWires(Window? window)
+    {
+        if (ResolveActiveDocumentForCommands() is not SchematicDocument sd)
+        {
+            Messages.Warning(
+                "Open the schematic you want the wires in first — Import Wires brings them into the " +
+                "schematic that is currently in front.");
+            return;
+        }
+
+        if (await PickWBondAsync(window, "Import Wirebond Wires") is not { } path) return;
+        sd.ViewModel.ImportWBondWires(path);
+    }
+
+    /// <summary>
+    /// File ▸ Import ▸ Wirebond as Cell… — wires AND artwork (wbond.md §9.2 route 3).
+    ///
+    /// <para>Same body as the project tree's own "Add as Cell…": the wires become the cell's schematic
+    /// view as a wBond component, and the design's embedded geometry becomes its layout view. One
+    /// implementation, two doors.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task ImportWirebondAsCell(Window? window)
+    {
+        if (await PickWBondAsync(window, "Import Wirebond as Cell") is not { } path) return;
+        await AddWBondAsCellFromPathAsync(path);
+    }
+
+    /// <summary>The one <c>.wBond</c> file picker — so every import door offers the same filter.</summary>
+    private async Task<string?> PickWBondAsync(Window? window, string title)
+    {
+        var owner = ResolveOwner(window);
+        if (owner?.StorageProvider is not { } storage) return null;
+
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("wBond design") { Patterns = ["*.wBond", "*.wbond"] }],
+        });
+
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
+
     [RelayCommand]
     private async Task OpenWBondFile(Window? window)
     {
@@ -5315,10 +5366,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             doc.Save(target, embed);
             _openDocsByPath[Path.GetFullPath(target)] = doc;
             Messages.Success($"Saved {Path.GetFileName(target)}", target);
-            // M2: a placed wBond's symbol is generated from this file, so a save is the moment every
-            // open schematic referencing it must re-generate. Nothing on disk holds a copy of the
-            // symbol, so this only has to drop a cache and ask for a rebuild.
-            OnWBondSaved(target);
+            // No live-update seam any more, deliberately: a placed wBond CARRIES its wires
+            // (WBondEmbedding), so saving a .wBond cannot change a schematic that was never pointed
+            // at it. Bringing new wires into a placed component is File > Import > Wirebond Wires...,
+            // which is an explicit act with its own array-drift check.
         }
         catch (Exception ex)
         {
@@ -5330,15 +5381,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>
     /// Route 2 (M3) — places this <c>.wBond</c>'s wires in the ACTIVE schematic as a component,
-    /// wired to nothing, with <c>File</c> already pointing at the design.
+    /// wired to nothing, CARRYING the design (<c>WBondEmbedding</c>) rather than referencing it.
     ///
-    /// <para><b>Why the project tree rather than the File menu or a palette drag.</b> Route 2 is
-    /// "this design, into that schematic", and the tree is where the user is already looking at the
-    /// design. The palette tile places a wBond with a blank <c>File</c> — one tile for the component
-    /// type, per §5 question 4 — and the file is then chosen in the parameter dialog's Browse…
-    /// picker; that path exists too, and is the one to reach for when the design has not been saved
-    /// into the workspace yet. A File-menu item would be a third spelling of the same action with
-    /// no schematic and no design in front of the user when they pick it.</para>
+    /// <para><b>Why the project tree as well as File ▸ Import.</b> Route 2 is "this design, into that
+    /// schematic", and the tree is where the user is already looking at the design; File ▸ Import ▸
+    /// Wirebond Wires… is the same act reached from a file picker, for a design that is not in the
+    /// workspace. Both land on <c>SchematicViewModel.CommitWBondPlacement</c>, so there is one
+    /// placement path and they cannot drift. The palette tile is the third door and needs no design
+    /// at all: it drops a component carrying the default one-array, one-wire design.</para>
     /// </summary>
     public Task AddWBondToSchematicAsync(ProjectTreeNodeViewModel node)
     {
@@ -5371,15 +5421,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// cell folders rather than an in-memory overlay because <c>CellLayoutResolver.Resolve</c>
     /// requires <c>Directory.Exists</c> — WB-C's own finding, unchanged here.</para>
     /// </summary>
-    public async Task AddWBondAsCellAsync(ProjectTreeNodeViewModel node)
+    public Task AddWBondAsCellAsync(ProjectTreeNodeViewModel node)
+        => AddWBondAsCellFromPathAsync(node.AbsolutePath);
+
+    /// <summary>Route 3, from a path — shared by the project tree and File ▸ Import.</summary>
+    public async Task AddWBondAsCellFromPathAsync(string wbondPath)
     {
         if (CurrentWorkspacePath is null)
         {
             Messages.Warning("Open a workspace first — a cell has to be created somewhere.");
             return;
         }
-
-        string wbondPath = node.AbsolutePath;
 
         WBondDesign design;
         try { design = WBondIo.ReadFile(wbondPath); }
@@ -6197,54 +6249,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
-    /// A <c>.wBond</c> design was written to disk — M2's live-update seam.
-    ///
-    /// <para>Drops the generated symbol cached for that file and rebuilds every open schematic, so a
-    /// placed wBond picks up an added, renamed or reordered array immediately rather than at the
-    /// next reopen. Then reports any instance whose wiring was drawn against a DIFFERENT array
-    /// list, which is the one change that would otherwise re-point wires in silence (§5 question 3).
-    /// </para>
-    /// </summary>
-    private void OnWBondSaved(string wbondPath)
-    {
-        try { WBondSymbolProvider.Invalidate(Path.GetFullPath(wbondPath)); }
-        catch { WBondSymbolProvider.InvalidateAll(); }
-
-        RebuildOpenSchematics();
-
-        foreach (var kv in _openDocsByPath)
-            if (kv.Value is SchematicDocument sd)
-                ReportWBondArrayDrift(sd.ViewModel.EditModel, kv.Key);
-        foreach (var doc in _scratchDocs)
-            ReportWBondArrayDrift(doc.ViewModel.EditModel, null);
-    }
-
-    // Deduped per (schematic, instance, new array list) so one saved reorder is one message, not one
-    // per rebuild. A warning that reappears on every render is one people learn to dismiss unread —
-    // and this is the single warning in the wBond path that must not be.
-    private readonly HashSet<string> _reportedWBondDrift = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// §5 question 3 / M2 — reports every placed wBond whose referenced design's array list has
-    /// changed since the instance was wired.
-    ///
-    /// <para><b>A reorder is REPORTED, never silently re-pointed, and never repaired.</b> Pin order
-    /// IS array order (R-wbb2-2's contract with <c>WBondModel</c>'s stamp), so a reorder genuinely
-    /// moves every pin; there is no re-mapping that keeps existing wires correct without moving the
-    /// artwork the user drew. Deciding that a reorder breaks the wiring is an acceptable answer —
-    /// letting it happen quietly is not.</para>
-    /// </summary>
-    private void ReportWBondArrayDrift(SchematicEditModel model, string? path)
-    {
-        foreach (var drift in WBondPlacement.CheckArrayDrift(model))
-        {
-            string key = $"{path ?? "<scratch>"}|{drift.InstanceName}|{drift.Current}";
-            if (!_reportedWBondDrift.Add(key)) continue;
-            Messages.Warning(drift.Message, path);
-        }
-    }
-
-    /// <summary>
     /// Calls TriggerRebuild() on every open SchematicDocument so cell-ref components
     /// re-resolve and re-render after a symbol save or Make-Primary change.
     /// </summary>
@@ -6295,10 +6299,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return existing!;
         var (editModel, _, _) = SchematicPersistence.LoadFromFile(key);
         ReportUnknownComponents(editModel, key);
-        // M2: a schematic saved with one array list and reopened after the design changed must show
-        // the NEW pins — which it does, because the symbol is generated on load — and must SAY that
-        // the wiring was drawn against a different list.
-        ReportWBondArrayDrift(editModel, key);
         return RegisterSession(key, BuildSessionVm(editModel));
     }
 
@@ -8333,6 +8333,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Design menu (L5): each is enabled only when its own document type is the active dockable —
         // same rule, same fan-out, as the Save-As commands just above.
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
+        ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
 
         // A dockable may have just been floated into a Dock-generated HostWindow.
@@ -8546,6 +8547,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
         CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
+        ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CloseWorkspaceOrWindowHeader));
     }

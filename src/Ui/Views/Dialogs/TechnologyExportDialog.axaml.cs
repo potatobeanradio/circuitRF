@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -8,7 +7,9 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// <summary>Picks which sections of the current technology to write to a portable `.ctech`.</summary>
 public partial class TechnologyExportDialog : Window
 {
-    public TechnologyExportDialog() => AvaloniaXamlLoader.Load(this);
+    // InitializeComponent(), NEVER AvaloniaXamlLoader.Load(this) directly — the generated method
+    // loads the XAML *and* assigns every x:Name field. See src/Ui/CLAUDE.md.
+    public TechnologyExportDialog() => InitializeComponent();
 
     public TechnologyExportDialog(string techName, TechSection available) : this()
     {

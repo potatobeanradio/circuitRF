@@ -3,6 +3,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 using Xunit;
@@ -12,10 +13,11 @@ namespace CircuitRF.Ui.Tests;
 /// <summary>
 /// brief-wbond-wbb2 — placing a wBond in a schematic.
 ///
-/// <para>Every fixture builds a REAL workspace on disk (a <c>.cws</c>, a cell, a <c>.wBond</c>),
-/// because the two things most likely to be wrong here are both about paths: the <c>File</c> value
-/// resolves against the WORKSPACE ROOT rather than the schematic's own directory (R-wbb2-3), and the
-/// symbol is generated from that file's current contents rather than from a copy (R-wbb2-1).</para>
+/// <para>A placed wBond CARRIES its wires (<c>WBondEmbedding</c>) rather than naming a <c>.wBond</c>:
+/// a design file may also hold layout artwork, which a schematic has nowhere to put, and a component
+/// that referenced one arrived pointing at nothing and drew the Not-Found placeholder. So the
+/// property most of these fixtures are about is that the payload travels IN the schematic — several
+/// of them delete the source file and assert the component still renders and runs.</para>
 /// </summary>
 public sealed class WBondSchematicPlacementTests : IDisposable
 {
@@ -69,7 +71,6 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         string abs = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(abs)!);
         WBondIo.WriteFile(abs, design);
-        WBondSymbolProvider.Invalidate(abs);
         return abs;
     }
 
@@ -84,18 +85,21 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         return new SchematicEditModel { SchematicDirectory = dir };
     }
 
-    private static EditableComponent WBondAt(string instanceName, string fileValue, double x, double y)
+    /// <summary>A placed wBond carrying <paramref name="design"/> — the production shape.</summary>
+    private static EditableComponent WBondAt(string instanceName, WBondDesign? design, double x, double y)
     {
-        var comp = new EditableComponent
-        {
-            InstanceName = instanceName,
-            Symbol       = SymbolKind.WBond,
-            X = x, Y = y,
-        };
-        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.WBond, 0))
-            comp.Parameters.Add(new EditableParameter
-                { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic });
-        comp.Parameters.First(p => p.Name == "File").Expression = fileValue;
+        var comp = WBondPlacement.BuildCarrying(design, instanceName);
+        comp.X = x; comp.Y = y;
+        return comp;
+    }
+
+    /// <summary>A placed wBond whose payload is set by hand — for the malformed/blank cases.</summary>
+    private static EditableComponent WBondCarryingRaw(string instanceName, string payload, double x, double y)
+    {
+        var comp = WBondPlacement.BuildCarrying(null, instanceName);
+        comp.X = x; comp.Y = y;
+        comp.Parameters.First(p => p.Name == WBondPlacement.DesignParameter).Expression = payload;
+        comp.Parameters.First(p => p.Name == WBondPlacement.ArraysParameter).Expression = "";
         return comp;
     }
 
@@ -138,11 +142,14 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.Equal(SymbolKind.WBond, kind);
 
         var defaults = ComponentTypeRegistry.DefaultParameters(SymbolKind.WBond, 0);
-        Assert.Contains(defaults, p => p.Name == "File");
+        Assert.Contains(defaults, p => p.Name == WBondPlacement.DesignParameter);
         Assert.Contains(defaults, p => p.Name == WBondPlacement.ArraysParameter);
 
-        // A path is exactly the kind of value nobody should be asked to type.
-        Assert.True(ComponentTypeRegistry.IsFilePathParameter(SymbolKind.WBond, "File"));
+        // There is no File parameter any more, and no path to browse for: a placed wBond carries its
+        // wires. A leftover Browse... row would invite pointing a component at a design whose artwork
+        // it cannot express, which is the state that produced the Not-Found placeholder.
+        Assert.DoesNotContain(defaults, p => p.Name == "File");
+        Assert.False(ComponentTypeRegistry.IsFilePathParameter(SymbolKind.WBond, "File"));
     }
 
     /// <summary>
@@ -155,10 +162,9 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     public void M1_APlacedWBond_ShowsTwoPinsPerArrayPlusRef_InArrayOrder(int arrays)
     {
         var names = Enumerable.Range(1, arrays).Select(i => $"G{i}").ToArray();
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, names));
 
         var model = NewSchematic();
-        model.Components.Add(WBondAt("W1", "bonds/pkg.wBond", 0, 0));
+        model.Components.Add(WBondAt("W1", MakeDesign(20.0, names), 0, 0));
 
         var (render, _) = model.BuildRenderModel();
         var comp = render.Components.Single();
@@ -192,159 +198,244 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     }
 
     /// <summary>
-    /// M1 — a missing or unreadable <c>File</c> draws the existing Not-Found placeholder and is
-    /// reported; nothing anywhere throws.
+    /// <b>The reported bug.</b> A wBond dropped from the palette — no file, no configuration — must
+    /// render a real symbol and extract, not the Not-Found placeholder.
+    ///
+    /// <para>It carries the default one-array, one-wire design, so it has G1.i / G1.o / REF from the
+    /// moment it lands.</para>
+    /// </summary>
+    [Fact]
+    public void APaletteDroppedWBond_RendersItsOwnSymbol_NotTheNotFoundPlaceholder()
+    {
+        var model = NewSchematic();
+
+        // Exactly what SchematicViewModel.CommitPlacement seeds a dropped component with.
+        var comp = new EditableComponent { InstanceName = "W1", Symbol = SymbolKind.WBond };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.WBond, 0))
+            comp.Parameters.Add(new EditableParameter
+                { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic });
+        model.Components.Add(comp);
+
+        var rendered = model.BuildRenderModel().Model.Components.Single();
+        Assert.Equal(3, rendered.Ports.Count);
+        Assert.Equal("G1.i", rendered.Ports[0].Name);
+        Assert.Equal("G1.o", rendered.Ports[1].Name);
+        Assert.Equal("REF",  rendered.Ports[^1].Name);
+
+        // Resolved, not the placeholder — the state the report was about.
+        Assert.Equal(CellSymbolState.Resolved,
+            WBondSymbolProvider.Resolve(comp.ExternalSymbolRef!, model.SchematicDirectory).State);
+
+        // And it is a real instance in the netlist rather than a refusal.
+        var result = NetExtractor.Extract(model, "tb");
+        Assert.Contains(result.TestBench.Instances, i => i.InstanceName == "W1");
+    }
+
+    /// <summary>
+    /// A blank or unreadable payload draws the existing placeholder and is reported; nothing throws.
+    ///
+    /// <para>Only a hand-edited <c>.csch</c> can reach either state now — the placement paths always
+    /// write a real payload — but the renderer must survive one, and the extractor must refuse it by
+    /// name rather than emit a pin-less instance.</para>
     /// </summary>
     [Theory]
-    [InlineData("")]                       // never configured
-    [InlineData("bonds/absent.wBond")]     // named, not there
-    [InlineData("bonds/garbage.wBond")]    // there, not a wBond
-    public void M1_AnUnresolvableFile_DrawsThePlaceholderAndReports_NeverThrows(string fileValue)
+    [InlineData("")]                       // hand-cleared
+    [InlineData("not a payload at all")]   // not base64, not JSON
+    [InlineData("{ \"FormatVersion\": 1 }")]  // readable, declares no arrays
+    public void AnUnreadablePayload_DrawsThePlaceholderAndReports_NeverThrows(string payload)
     {
-        Directory.CreateDirectory(Path.Combine(_root, "bonds"));
-        File.WriteAllText(Path.Combine(_root, "bonds", "garbage.wBond"), "not json at all");
-
         var model = NewSchematic();
-        model.Components.Add(WBondAt("W1", fileValue, 0, 0));
+        model.Components.Add(WBondCarryingRaw("W1", payload, 0, 0));
 
-        // Renders as a placeholder with no pins — the same three-state result a broken cell
-        // reference produces, so no wBond-specific render path was needed.
         var (render, _) = model.BuildRenderModel();
         Assert.Empty(render.Components.Single().Ports);
 
-        // And the extractor refuses it by name rather than emitting a pin-less instance.
         var result = NetExtractor.Extract(model, "tb");
         Assert.DoesNotContain(result.TestBench.Instances, i => i.InstanceName == "W1");
         Assert.Contains(result.Conflicts, c => c.Contains("W1", StringComparison.Ordinal));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    //  R-wbb2-3 — File resolves against the WORKSPACE ROOT
+    //  The payload travels IN the schematic
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// R-wbb2-3 — a RELATIVE <c>File</c> resolves against the workspace root, from a schematic that
-    /// is NOT at the workspace root. Resolving against the schematic's own directory (which is what
-    /// a <c>CellRef</c> does) would look right until someone put a schematic in a cell folder.
+    /// <b>The property the whole change rests on:</b> a placed wBond keeps working when the
+    /// <c>.wBond</c> it was imported from is DELETED. Nothing is resolved at render time, so there is
+    /// no path to break and no "Not Found" state to reach.
     /// </summary>
     [Fact]
-    public void RWbb23_ARelativeFile_ResolvesAgainstTheWorkspaceRoot_NotTheSchematicDirectory()
-    {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-
-        var model = NewSchematic();                       // <ws>/Amp/schematic
-        model.Components.Add(WBondAt("W1", "bonds/pkg.wBond", 0, 0));
-
-        var (render, _) = model.BuildRenderModel();
-        Assert.Equal(3, render.Components.Single().Ports.Count);
-
-        // The same value read against the schematic's own directory resolves to nothing — which is
-        // what makes the assertion above about the ROOT rather than about "a path that happens to
-        // work either way".
-        string wrong = Path.Combine(model.SchematicDirectory!, "bonds", "pkg.wBond");
-        Assert.False(File.Exists(wrong));
-    }
-
-    /// <summary>R-wbb2-3 — an ABSOLUTE <c>File</c> is used as written, from the same schematic.</summary>
-    [Fact]
-    public void RWbb23_AnAbsoluteFile_IsUsedAsWritten()
-    {
-        // Outside the workspace entirely: the case with no relative form that means anything.
-        string outside = Path.Combine(Path.GetTempPath(), $"wbond-outside-{Guid.NewGuid():N}.wBond");
-        WBondIo.WriteFile(outside, MakeDesign(20.0, "G1", "G2"));
-        try
-        {
-            var model = NewSchematic();
-            model.Components.Add(WBondAt("W1", outside, 0, 0));
-
-            var (render, _) = model.BuildRenderModel();
-            Assert.Equal(5, render.Components.Single().Ports.Count);
-
-            // §5 question 1 — outside the workspace is stored ABSOLUTE, inside it is stored relative.
-            Assert.Equal(outside, WBondSymbolProvider.StoredFileValueFor(outside, _root));
-            Assert.Equal("bonds/pkg.wBond",
-                WBondSymbolProvider.StoredFileValueFor(Path.Combine(_root, "bonds", "pkg.wBond"), _root));
-        }
-        finally { try { File.Delete(outside); } catch { /* best effort */ } }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    //  M2 — the symbol tracks its file
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// M2 — adding an array to the referenced design and saving updates the placed symbol, with no
-    /// reopen and nothing to invalidate by hand beyond the one cache the save drops.
-    ///
-    /// <para>This is R-wbb2-1's real gate: there is no on-disk copy of the symbol to go stale.</para>
-    /// </summary>
-    [Fact]
-    public void M2_AddingAnArrayAndSaving_UpdatesThePlacedSymbol()
-    {
-        string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-
-        var model = NewSchematic();
-        model.Components.Add(WBondAt("W1", "bonds/pkg.wBond", 0, 0));
-
-        Assert.Equal(3, model.BuildRenderModel().Model.Components.Single().Ports.Count);
-
-        // The wBond editor saves a design that now declares a second array.
-        WBondIo.WriteFile(abs, MakeDesign(20.0, "G1", "D1"));
-        WBondSymbolProvider.Invalidate(abs);
-
-        var comp = model.BuildRenderModel().Model.Components.Single();
-        Assert.Equal(5, comp.Ports.Count);
-        Assert.Equal("D1.i", comp.Ports[2].Name);
-        Assert.Equal("REF",  comp.Ports[^1].Name);
-    }
-
-    /// <summary>
-    /// M2 — RENAMING an array moves the name onto the pin, immediately.
-    /// </summary>
-    [Fact]
-    public void M2_RenamingAnArray_RenamesThePin()
+    public void APlacedWBond_StillRenders_AfterTheSourceDesignIsDeleted()
     {
         string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "G2"));
 
+        var built = WBondPlacement.TryBuild(abs, _root, "W1");
+        var comp  = Assert.IsType<EditableComponent>(built.Component);
+
         var model = NewSchematic();
-        model.Components.Add(WBondAt("W1", "bonds/pkg.wBond", 0, 0));
-        Assert.Equal("G2.i", model.BuildRenderModel().Model.Components.Single().Ports[2].Name);
+        model.Components.Add(comp);
+        Assert.Equal(5, model.BuildRenderModel().Model.Components.Single().Ports.Count);
 
-        WBondIo.WriteFile(abs, MakeDesign(20.0, "G1", "DRAIN"));
-        WBondSymbolProvider.Invalidate(abs);
+        File.Delete(abs);
 
-        Assert.Equal("DRAIN.i", model.BuildRenderModel().Model.Components.Single().Ports[2].Name);
+        Assert.Equal(5, model.BuildRenderModel().Model.Components.Single().Ports.Count);
+    }
+
+    /// <summary>
+    /// Importing a design that carries layout ARTWORK brings its wires only. A schematic has nowhere
+    /// to put artwork, and copying someone's board into every placed instance is precisely what
+    /// referencing a whole <c>.wBond</c> used to threaten.
+    /// </summary>
+    [Fact]
+    public void ImportingADesignWithEmbeddedArtwork_CarriesTheWiresOnly()
+    {
+        var design = MakeDesign(20.0, "G1");
+        design.EmbeddedGeometryJson = "{\"pretend\":\"a whole board\"}";
+        string abs = WriteDesign("bonds/withart.wBond", design);
+
+        var comp = Assert.IsType<EditableComponent>(WBondPlacement.TryBuild(abs, _root, "W1").Component);
+        string payload = comp.Parameters.First(p => p.Name == WBondPlacement.DesignParameter).Expression;
+
+        Assert.True(WBondEmbedding.TryDecode(payload, out var carried));
+        Assert.Null(carried!.EmbeddedGeometryJson);
+        Assert.Equal(1, carried.Arrays.Count);
+        Assert.Equal(2, carried.WireCount);
+
+        // Encoding must not have edited the caller's own design — it strips a COPY.
+        Assert.NotNull(design.EmbeddedGeometryJson);
+    }
+
+    /// <summary>
+    /// The payload survives a <c>.csch</c> round trip byte for byte, and the reloaded component still
+    /// resolves to the same pins. A payload that only worked in memory would be worse than a path.
+    /// </summary>
+    [Fact]
+    public void ThePayload_SurvivesASchematicRoundTrip()
+    {
+        var model = NewSchematic();
+        model.Components.Add(WBondAt("W1", MakeDesign(20.0, "G1", "D1"), 0, 0));
+
+        string schPath = Path.Combine(model.SchematicDirectory!, "Amp.csch");
+        SchematicPersistence.SaveToFile(schPath, model, cellName: "Amp");
+
+        var (reloaded, _, _) = SchematicPersistence.LoadFromFile(schPath);
+        var before = model.Components[0].Parameters.First(p => p.Name == WBondPlacement.DesignParameter).Expression;
+        var after  = reloaded.Components[0].Parameters.First(p => p.Name == WBondPlacement.DesignParameter).Expression;
+
+        Assert.Equal(before, after);
+        Assert.Equal(5, reloaded.BuildRenderModel().Model.Components.Single().Ports.Count);
+    }
+
+    /// <summary>
+    /// The payload is a single bare token — no quote, no space, no newline — which is what lets it
+    /// cross a <c>.cnl</c> line at all. The <c>.cnl</c> format has no way to escape a quote inside a
+    /// quoted string, so a raw-JSON payload could not be written there.
+    /// </summary>
+    [Fact]
+    public void ThePayload_IsASingleBareTokenSafeInACnlLine()
+    {
+        string payload = WBondEmbedding.Encode(MakeDesign(20.0, "G1", "G2"));
+
+        Assert.DoesNotContain(payload, char.IsWhiteSpace);
+        Assert.DoesNotContain('"', payload);
+
+        Assert.True(WBondEmbedding.TryDecode(payload, out var back));
+        Assert.Equal(["G1", "G2"], back!.Arrays.Select(a => a.Name));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  M2 — importing wires over a placed component
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// A design imported over a SELECTED wBond replaces its wires in place, so the wiring the user
+    /// already drew survives — which is the only reason to import into an existing component rather
+    /// than place a new one.
+    /// </summary>
+    [Fact]
+    public void Import_OverASelectedWBond_ReplacesItsWiresInPlace()
+    {
+        string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "D1"));
+
+        var model = NewSchematic();
+        var comp  = WBondAt("W1", MakeDesign(20.0, "G1"), 0, 0);
+        model.Components.Add(comp);
+
+        var vm = new SchematicViewModel(model);
+        vm.Selection.SelectOne(comp.Id);
+
+        Assert.Equal(1, vm.ImportWBondWires(abs));
+
+        // Same component — replaced, not duplicated — now showing the imported design's pins.
+        var only = Assert.Single(model.Components);
+        Assert.Same(comp, only);
+        Assert.Equal(5, model.BuildRenderModel().Model.Components.Single().Ports.Count);
+        Assert.Equal("G1|D1", comp.Parameters.First(p => p.Name == WBondPlacement.ArraysParameter).Expression);
+    }
+
+    /// <summary>An import with nothing selected places a new component instead of failing.</summary>
+    [Fact]
+    public void Import_WithNothingSelected_PlacesANewComponent()
+    {
+        string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "D1"));
+
+        var model = NewSchematic();
+        var vm = new SchematicViewModel(model);
+
+        Assert.Equal(1, vm.ImportWBondWires(abs));
+        var comp = Assert.Single(model.Components);
+        Assert.Equal(SymbolKind.WBond, comp.Symbol);
+        Assert.Equal(5, model.BuildRenderModel().Model.Components.Single().Ports.Count);
+    }
+
+    /// <summary>One import is ONE undo entry, and undo puts the previous wires back.</summary>
+    [Fact]
+    public void Import_IsOneUndoEntry_AndUndoRestoresThePreviousWires()
+    {
+        string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "D1"));
+
+        var model = NewSchematic();
+        var comp  = WBondAt("W1", MakeDesign(20.0, "G1"), 0, 0);
+        model.Components.Add(comp);
+        string before = comp.Parameters.First(p => p.Name == WBondPlacement.DesignParameter).Expression;
+
+        var vm = new SchematicViewModel(model);
+        vm.Selection.SelectOne(comp.Id);
+        vm.ImportWBondWires(abs);
+
+        vm.UndoRedo.Undo();
+
+        Assert.Equal(before,
+            model.Components[0].Parameters.First(p => p.Name == WBondPlacement.DesignParameter).Expression);
+        Assert.Equal(3, model.BuildRenderModel().Model.Components.Single().Ports.Count);
+        Assert.False(vm.UndoRedo.CanUndo);
     }
 
     /// <summary>
     /// M2's silent-failure gate, and the one this whole brief is built around —
-    /// <b>REORDERING two arrays is REPORTED, never applied in silence.</b>
+    /// <b>an import that REORDERS the arrays is REPORTED, never applied in silence.</b>
     ///
     /// <para>A reorder leaves every pin exactly where it was and moves its NAME to a different row,
     /// so a wire that was on <c>G1.i</c> is now on <c>G2.i</c>: correctly-named pins wired to the
     /// wrong nets. There is no re-mapping that keeps the user's wires correct without moving the
     /// artwork they drew, so the answer is to say so — and the message must name the reorder
     /// specifically, because "the array list changed" reads as something harmless.</para>
+    ///
+    /// <para>Now that the design travels inside the component, the import is the ONLY moment its pins
+    /// can move — which is why the check lives here rather than on every load.</para>
     /// </summary>
     [Fact]
-    public void M2_ReorderingTwoArrays_IsReportedRatherThanSilentlyRePointingTheWiring()
+    public void M2_ImportingAReorderedArrayList_IsReportedRatherThanSilentlyRePointingTheWiring()
     {
-        string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "G2"));
+        var comp = WBondAt("W1", MakeDesign(20.0, "G1", "G2"), 0, 0);
 
-        var model = NewSchematic();
-        var comp  = WBondAt("W1", "bonds/pkg.wBond", 0, 0);
-        comp.Parameters.First(p => p.Name == WBondPlacement.ArraysParameter).Expression = "G1|G2";
-        model.Components.Add(comp);
-
-        // Nothing to report while the design is what the wiring was drawn against.
-        Assert.Empty(WBondPlacement.CheckArrayDrift(model));
+        // Nothing to report while the incoming design is what the wiring was drawn against.
+        Assert.Null(WBondPlacement.DriftBetween(comp, MakeDesign(20.0, "G1", "G2"), "pkg.wBond"));
 
         // Same arrays, swapped order.
-        WBondIo.WriteFile(abs, MakeDesign(20.0, "G2", "G1"));
-        WBondSymbolProvider.Invalidate(abs);
-
-        var drift = Assert.Single(WBondPlacement.CheckArrayDrift(model));
-        Assert.Equal("W1", drift.InstanceName);
+        var drift = WBondPlacement.DriftBetween(comp, MakeDesign(20.0, "G2", "G1"), "pkg.wBond");
+        Assert.NotNull(drift);
+        Assert.Equal("W1", drift!.InstanceName);
         Assert.Equal("G1|G2", drift.Recorded);
         Assert.Equal("G2|G1", drift.Current);
         Assert.True(drift.IsReorder, "a same-set/different-order change must be recognised as a reorder");
@@ -352,9 +443,11 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         // WB30a's own rule, applied here: name the remedy, not only the problem.
         Assert.Contains("Check the wiring", drift.Message, StringComparison.Ordinal);
 
-        // And the pins really have moved, which is what makes the report worth making.
-        var rendered = model.BuildRenderModel().Model.Components.Single();
-        Assert.Equal("G2.i", rendered.Ports[0].Name);
+        // And the pins really do move, which is what makes the report worth making.
+        var model = NewSchematic();
+        model.Components.Add(comp);
+        WBondPlacement.ApplyDesign(comp, MakeDesign(20.0, "G2", "G1"));
+        Assert.Equal("G2.i", model.BuildRenderModel().Model.Components.Single().Ports[0].Name);
     }
 
     /// <summary>
@@ -365,61 +458,25 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void M2_AnAddedArray_IsReported_ButNotAsAReorder()
     {
-        string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
+        var comp  = WBondAt("W1", MakeDesign(20.0, "G1"), 0, 0);
+        var drift = WBondPlacement.DriftBetween(comp, MakeDesign(20.0, "G1", "D1"), "pkg.wBond");
 
-        var model = NewSchematic();
-        var comp  = WBondAt("W1", "bonds/pkg.wBond", 0, 0);
-        comp.Parameters.First(p => p.Name == WBondPlacement.ArraysParameter).Expression = "G1";
-        model.Components.Add(comp);
-
-        WBondIo.WriteFile(abs, MakeDesign(20.0, "G1", "D1"));
-        WBondSymbolProvider.Invalidate(abs);
-
-        var drift = Assert.Single(WBondPlacement.CheckArrayDrift(model));
-        Assert.False(drift.IsReorder);
+        Assert.NotNull(drift);
+        Assert.False(drift!.IsReorder);
         Assert.DoesNotContain("REORDER", drift.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// M2 — an instance with NO recorded array list (hand-authored, or placed before this existed)
-    /// is not reported. Nothing is known about what it was wired against, and a warning that cannot
-    /// be acted on is noise.
+    /// M2 — an instance with NO recorded array list (hand-authored) is not reported. Nothing is known
+    /// about what it was wired against, and a warning that cannot be acted on is noise.
     /// </summary>
     [Fact]
     public void M2_AnInstanceWithNoRecordedArrayList_IsNotReported()
     {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "G2"));
+        var comp = WBondAt("W1", MakeDesign(20.0, "G1"), 0, 0);
+        comp.Parameters.First(p => p.Name == WBondPlacement.ArraysParameter).Expression = "";
 
-        var model = NewSchematic();
-        model.Components.Add(WBondAt("W1", "bonds/pkg.wBond", 0, 0));   // Arrays left blank
-
-        Assert.Empty(WBondPlacement.CheckArrayDrift(model));
-    }
-
-    /// <summary>
-    /// M2 — a schematic SAVED with the old array list and reopened after the change shows the NEW
-    /// pins. The `.csch` carries no copy of the symbol, so this holds by construction; the test
-    /// exists because "by construction" stops being true the first time someone caches something.
-    /// </summary>
-    [Fact]
-    public void M2_ASchematicSavedWithTheOldArrayList_ReopensWithTheNewPins()
-    {
-        string abs = WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-
-        var model = NewSchematic();
-        model.Components.Add(WBondAt("W1", "bonds/pkg.wBond", 0, 0));
-
-        string schPath = Path.Combine(model.SchematicDirectory!, "Amp.csch");
-        SchematicPersistence.SaveToFile(schPath, model, cellName: "Amp");
-
-        WBondIo.WriteFile(abs, MakeDesign(20.0, "G1", "G2", "D1"));
-        WBondSymbolProvider.Invalidate(abs);
-
-        var (reloaded, _, _) = SchematicPersistence.LoadFromFile(schPath);
-        var comp = reloaded.BuildRenderModel().Model.Components.Single();
-
-        Assert.Equal(7, comp.Ports.Count);
-        Assert.Equal("D1.o", comp.Ports[5].Name);
+        Assert.Null(WBondPlacement.DriftBetween(comp, MakeDesign(20.0, "G2", "G1"), "pkg.wBond"));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -443,10 +500,10 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void RWbb22_NetBindings_ArriveInWBondModelsOwnTerminalOrder()
     {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "G2"));
+        var design = MakeDesign(20.0, "G1", "G2");
 
         var model = NewSchematic();
-        var comp  = WBondAt("W1", "bonds/pkg.wBond", 0, 0);
+        var comp  = WBondAt("W1", design, 0, 0);
         model.Components.Add(comp);
 
         // One labelled wire per pin, so every terminal lands on a distinguishable net.
@@ -470,7 +527,6 @@ public sealed class WBondSchematicPlacementTests : IDisposable
 
         // The same order WBondModel declares, read from the model itself rather than restated:
         // no independent list of terminal names to drift from the one the stamp uses.
-        var design = WBondIo.ReadFile(Path.Combine(_root, "bonds", "pkg.wBond"));
         var wbModel = new CircuitRF.Core.Devices.WBondModel(design);
         Assert.Equal(wbModel.PortCount, inst.NetBindings.Count);
         Assert.Equal("REF", wbModel.TerminalNames[^1]);
@@ -486,14 +542,13 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void RWbb22_PinsAreWalkedByPinNumber_NotByListPosition()
     {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1", "G2"));
-        var design = WBondIo.ReadFile(Path.Combine(_root, "bonds", "pkg.wBond"));
+        var design = MakeDesign(20.0, "G1", "G2");
 
         var symbol = WBondSymbolGenerator.Build(design)!;
         var shuffled = new Symbol(symbol.Primitives, [.. symbol.Pins.AsEnumerable().Reverse()]);
 
         var model = NewSchematic();
-        var comp  = WBondAt("W1", "bonds/pkg.wBond", 0, 0);
+        var comp  = WBondAt("W1", design, 0, 0);
         model.Components.Add(comp);
 
         var byId = new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal)
@@ -528,10 +583,10 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     }
 
     /// <summary>Two Terms across one array, REF grounded — the smallest thing that actually solves.</summary>
-    private SchematicEditModel OneArrayTestbench(string fileValue, params Analysis[] analyses)
+    private SchematicEditModel OneArrayTestbench(WBondDesign design, params Analysis[] analyses)
     {
         var model = NewSchematic();
-        var comp  = WBondAt("W1", fileValue, 0, 0);
+        var comp  = WBondAt("W1", design, 0, 0);
         model.Components.Add(comp);
 
         var (render, _) = model.BuildRenderModel();
@@ -574,12 +629,12 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void M3_APlacedWBond_RunsEndToEnd()
     {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-
         var sp = new SParameterAnalysis("SP1",
             new FrequencySpec("1", "5", "1", SweepKind.Linear, "GHz", "GHz", "GHz"));
 
-        var run = RunPlaced(OneArrayTestbench("bonds/pkg.wBond", sp));
+        // Nothing is written to disk anywhere: the .cnl carries the wires itself, which is the whole
+        // of what "self-contained" means for a run.
+        var run = RunPlaced(OneArrayTestbench(MakeDesign(20.0, "G1"), sp));
 
         Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
         Assert.Single(run.DataSets);
@@ -595,8 +650,6 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void M3_AParametricSweepOverLoopHeight_WorksFromAPlacedComponent()
     {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-
         // Both the base and the sweep stay ENABLED: a disabled base makes the whole chain inert
         // (AnalysisChain.IsChainRunnable), and the base is not dispatched standalone because a
         // sweep references it as its inner.
@@ -607,7 +660,7 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         // documents: 10 mil and 45 mil, expressed in metres.
         var sweep = new ParametricSweepAnalysis("SW1", "loopH", [10 * 25.4e-6, 45 * 25.4e-6], "SP1");
 
-        var model = OneArrayTestbench("bonds/pkg.wBond", sp, sweep);
+        var model = OneArrayTestbench(MakeDesign(20.0, "G1"), sp, sweep);
 
         // The loop height is an ordinary circuitRF expression bound to a global — which is exactly
         // what makes it sweepable (WB21).
@@ -711,8 +764,7 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         var sweep = new ParametricSweepAnalysis("SW1", "loopH",
             new SweepSpec(10, 45, 2, SweepAxisMode.PointCount, SweepKind.Linear, "mil"), "SP1");
 
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-        var sweptModel = OneArrayTestbench("bonds/pkg.wBond", sp, sweep);
+        var sweptModel = OneArrayTestbench(MakeDesign(20.0, "G1"), sp, sweep);
 
         var wb = sweptModel.Components.First(c => c.Symbol == SymbolKind.WBond);
         wb.Parameters.Add(new EditableParameter { Name = "LoopHeight", Expression = "loopH" });
@@ -745,7 +797,7 @@ public sealed class WBondSchematicPlacementTests : IDisposable
             var spOnly = new SParameterAnalysis("SP1",
                 new FrequencySpec("5", "5", "1", SweepKind.Linear, "GHz", "GHz", "GHz"));
 
-            var model = OneArrayTestbench("bonds/pkg.wBond", spOnly);
+            var model = OneArrayTestbench(MakeDesign(20.0, "G1"), spOnly);
             var comp  = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
             // A literal, in metres, with no unit and no variable — so this path shares no unit
@@ -802,16 +854,13 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void RWbb24_TwoPlacedWBonds_WarnFromTheRun_AndTheMessageNamesTheRemedy()
     {
-        WriteDesign("bonds/a.wBond", MakeDesign(20.0, "G1"));
-        WriteDesign("bonds/b.wBond", MakeDesign(20.0, "D1"));
-
         var sp = new SParameterAnalysis("SP1",
             new FrequencySpec("1", "2", "1", SweepKind.Linear, "GHz", "GHz", "GHz"));
 
-        var model = OneArrayTestbench("bonds/a.wBond", sp);
+        var model = OneArrayTestbench(MakeDesign(20.0, "G1"), sp);
 
         // A second wBond, its wires in the same place as the first's — the case the audit exists for.
-        var second = WBondAt("W2", "bonds/b.wBond", 2000, 2000);
+        var second = WBondAt("W2", MakeDesign(20.0, "D1"), 2000, 2000);
         model.Components.Add(second);
         var secondPorts = model.BuildRenderModel().Model.Components.First(c => c.Id == second.Id).Ports;
         for (int i = 0; i < secondPorts.Count; i++)
@@ -839,12 +888,10 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void RWbb24_OnePlacedWBond_WarnsAboutNoCoupling()
     {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-
         var sp = new SParameterAnalysis("SP1",
             new FrequencySpec("1", "2", "1", SweepKind.Linear, "GHz", "GHz", "GHz"));
 
-        var run = RunPlaced(OneArrayTestbench("bonds/pkg.wBond", sp));
+        var run = RunPlaced(OneArrayTestbench(MakeDesign(20.0, "G1"), sp));
 
         Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
         Assert.DoesNotContain(run.Warnings, w => w.Contains("coupling", StringComparison.OrdinalIgnoreCase));
@@ -969,8 +1016,9 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         var built = WBondPlacement.TryBuild(abs, _root, "W1");
         var comp  = Assert.IsType<EditableComponent>(built.Component);
 
-        Assert.Equal("bonds/pkg.wBond",
-            comp.Parameters.First(p => p.Name == "File").Expression);
+        Assert.True(WBondEmbedding.TryDecode(
+            comp.Parameters.First(p => p.Name == WBondPlacement.DesignParameter).Expression, out var carried));
+        Assert.Equal(["G1", "D1"], carried!.Arrays.Select(a => a.Name));
         Assert.Equal("G1|D1",
             comp.Parameters.First(p => p.Name == WBondPlacement.ArraysParameter).Expression);
     }
@@ -983,18 +1031,15 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     [Fact]
     public void Extraction_DropsTheArraysBookkeepingAndEveryBlankParameter()
     {
-        WriteDesign("bonds/pkg.wBond", MakeDesign(20.0, "G1"));
-
         var model = NewSchematic();
-        var comp  = WBondAt("W1", "bonds/pkg.wBond", 0, 0);
-        comp.Parameters.First(p => p.Name == WBondPlacement.ArraysParameter).Expression = "G1";
+        var comp  = WBondAt("W1", MakeDesign(20.0, "G1"), 0, 0);
         model.Components.Add(comp);
 
         var inst = InstanceOf(NetExtractor.Extract(model, "tb"), "W1");
 
         Assert.DoesNotContain(inst.Overrides, o => o.Name == WBondPlacement.ArraysParameter);
         Assert.DoesNotContain(inst.Overrides, o => string.IsNullOrWhiteSpace(o.Expression));
-        Assert.Contains(inst.Overrides, o => o.Name == "File");
+        Assert.Contains(inst.Overrides, o => o.Name == WBondPlacement.DesignParameter);
     }
 
     /// <summary>
@@ -1008,8 +1053,56 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.Empty(SymbolPortDefs.For(SymbolKind.WBond, 2));
 
         var model = NewSchematic();
-        model.Components.Add(WBondAt("W1", "bonds/nope.wBond", 0, 0));
+        model.Components.Add(WBondCarryingRaw("W1", "", 0, 0));
 
         Assert.Empty(model.PortDefsOf(model.Components[0]));
+    }
+
+    /// <summary>
+    /// The embedded payload must carry NO base64 padding.
+    ///
+    /// <para><c>CnlReader.MergeSpacedAssignments</c> reads a token ending in <c>=</c> as
+    /// <c>name=</c> with an empty value and glues the NEXT token on as that value — the known
+    /// empty-parameter-value defect recorded in <c>src/Core/CLAUDE.md</c>. A padded payload is
+    /// therefore fine as the LAST parameter on an instance line and silently swallows whichever
+    /// parameter follows it, so this asserts the round trip with a following parameter present.
+    /// That is exactly the shape a swept <c>LoopHeight</c> produces.</para>
+    /// </summary>
+    [Fact]
+    public void TheEmbeddedPayload_CarriesNoBase64Padding_SoAFollowingParameterSurvivesTheCnl()
+    {
+        string payload = WBondEmbedding.DefaultPayload;
+        Assert.DoesNotContain('=', payload);
+        Assert.True(WBondEmbedding.TryDecode(payload, out _));
+
+        // A padded payload still decodes — an older file, or a hand-authored one, must not break.
+        // Built as canonical base64 of the same bytes, so this is the exact form that used to ship.
+        string padded = Convert.ToBase64String(Convert.FromBase64String(
+            payload + new string('=', (4 - payload.Length % 4) % 4)));
+        Assert.EndsWith("=", padded);
+        Assert.True(WBondEmbedding.TryDecode(padded, out _));
+
+        var tb = new TestBench("TB");
+        tb.Instances.Add(new Instance("W1", "wBond", ["n1", "n2", "0"],
+        [
+            new ParameterAssignment(WBondPlacement.DesignParameter, payload),
+            new ParameterAssignment("LoopHeight", "loopH"),
+        ]));
+        tb.GlobalVariables.Add(new Variable("loopH", "0.000254"));
+
+        string cnlPath = Path.Combine(_root, "padding.cnl");
+        File.WriteAllText(cnlPath, CnlWriter.Write(tb, new Library("lib")));
+
+        var read = CnlReader.ReadFile(cnlPath);
+        var readInst = Assert.Single(read.TestBench.Instances);
+
+        // The parameter AFTER the payload is what the padding would have eaten.
+        var loop = Assert.Single(readInst.Overrides, o => o.Name == "LoopHeight");
+        Assert.Equal("loopH", loop.Expression);
+
+        var design = Assert.Single(readInst.Overrides, o => o.Name == WBondPlacement.DesignParameter);
+        Assert.True(WBondEmbedding.TryDecode(design.Expression.Trim('"'), out var decoded));
+        Assert.NotNull(decoded);
+        Assert.NotEmpty(decoded!.Arrays);
     }
 }

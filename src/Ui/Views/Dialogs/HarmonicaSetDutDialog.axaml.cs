@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Harmonica;
@@ -61,8 +60,6 @@ public partial class HarmonicaSetDutDialog : Window
         RefreshMapping();
         RefreshStatus();
     }
-
-    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     /// <summary>The DUT the user settled on, or null when the dialog was cancelled.</summary>
     public static async Task<DutSpec?> ShowAsync(Window owner, DutSpec current)

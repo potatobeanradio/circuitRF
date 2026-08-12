@@ -14,8 +14,8 @@ public static class WBondPlacement
     /// <summary>The parameter that records the array list an instance's wiring was drawn against.</summary>
     public const string ArraysParameter = "Arrays";
 
-    /// <summary>The parameter that names the design.</summary>
-    public const string FileParameter = "File";
+    /// <summary>The parameter that CARRIES the design (<see cref="WBondEmbedding"/>).</summary>
+    public const string DesignParameter = WBondEmbedding.DesignParameter;
 
     // ── Building the component ────────────────────────────────────────────────
 
@@ -23,20 +23,23 @@ public static class WBondPlacement
     public sealed record BuildResult(EditableComponent? Component, string? Error);
 
     /// <summary>
-    /// Builds a placeable wBond component for the design at <paramref name="absolutePath"/>.
+    /// Builds a placeable wBond component carrying the design read from <paramref name="absolutePath"/>.
+    ///
+    /// <para><b>The wires are EMBEDDED, not referenced</b> — <see cref="WBondEmbedding.Encode"/>, which
+    /// deliberately drops any layout artwork the file carried. A schematic component has nowhere to
+    /// put artwork, and a reference to a file that mostly holds artwork is what produced the
+    /// "Not Found" placeholder on every freshly-placed wBond. Artwork travels by
+    /// <c>AddWBondAsCell</c>, which makes it a real layout view.</para>
     ///
     /// <para><b>M1 — a design with no arrays is refused BY NAME, not placed with no pins.</b>
     /// <c>WBondSymbolGenerator.Build</c> returns null for such a design, so the component would have
     /// nothing to wire and nothing to stamp; a silent placeholder in the middle of a schematic is a
     /// worse answer than saying which file and why.</para>
-    ///
-    /// <para>The stored <c>File</c> value follows §5 question 1 —
-    /// <see cref="WBondSymbolProvider.StoredFileValueFor"/>: workspace-relative inside, absolute
-    /// outside, and it resolves against the WORKSPACE ROOT, not the schematic's own directory
-    /// (R-wbb2-3).</para>
     /// </summary>
     public static BuildResult TryBuild(string absolutePath, string? workspaceRootDir, string instanceName)
     {
+        _ = workspaceRootDir;   // nothing is stored as a path any more; kept so callers need no change
+
         if (string.IsNullOrWhiteSpace(absolutePath))
             return new BuildResult(null, "No wirebond design was named.");
 
@@ -59,6 +62,15 @@ public static class WBondPlacement
                 $"\"{Path.GetFileName(absolutePath)}\" declares no wire arrays, so it has no pins and " +
                 "cannot be placed. Group its wires into at least one array first.");
 
+        return new BuildResult(BuildCarrying(design, instanceName), null);
+    }
+
+    /// <summary>
+    /// Builds a wBond component carrying <paramref name="design"/>. With no design supplied the
+    /// registry's own default (one array, one wire) is what a dropped component arrives with.
+    /// </summary>
+    public static EditableComponent BuildCarrying(WBondDesign? design, string instanceName)
+    {
         var comp = new EditableComponent
         {
             InstanceName = instanceName,
@@ -76,11 +88,24 @@ public static class WBondPlacement
                 ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension,
             });
 
-        SetParameter(comp, FileParameter,
-            WBondSymbolProvider.StoredFileValueFor(absolutePath, workspaceRootDir));
-        SetParameter(comp, ArraysParameter, WBondSymbolProvider.ArraysKeyOf(design));
+        if (design is not null) ApplyDesign(comp, design);
+        return comp;
+    }
 
-        return new BuildResult(comp, null);
+    /// <summary>
+    /// Writes a design onto an existing component — the one place an import lands.
+    ///
+    /// <para><c>Arrays</c> is updated in step, so the recorded identity always describes the payload
+    /// that is actually there. Whether the arrays MOVED is the caller's question, asked BEFORE this
+    /// runs (<see cref="DriftBetween"/>).</para>
+    /// </summary>
+    public static void ApplyDesign(EditableComponent comp, WBondDesign design)
+    {
+        ArgumentNullException.ThrowIfNull(comp);
+        ArgumentNullException.ThrowIfNull(design);
+
+        SetParameter(comp, DesignParameter, WBondEmbedding.Encode(design));
+        SetParameter(comp, ArraysParameter, WBondSymbolProvider.ArraysKeyOf(design));
     }
 
     private static void SetParameter(EditableComponent comp, string name, string value)
@@ -113,10 +138,10 @@ public static class WBondPlacement
     /// placed (or since the user last acknowledged a change).
     /// </summary>
     /// <param name="InstanceName">The placed component, so the user can find it.</param>
-    /// <param name="File">The stored <c>File</c> value, as written on the component.</param>
+    /// <param name="Source">What the new arrays came from, for the message — usually a file name.</param>
     /// <param name="Recorded">The array list the wiring was drawn against.</param>
-    /// <param name="Current">The array list the design now declares.</param>
-    public sealed record ArrayDrift(string InstanceName, string File, string Recorded, string Current)
+    /// <param name="Current">The array list the incoming design declares.</param>
+    public sealed record ArrayDrift(string InstanceName, string Source, string Recorded, string Current)
     {
         /// <summary>
         /// True when the arrays are the same set in a different order — the case that silently
@@ -130,17 +155,16 @@ public static class WBondPlacement
         /// <summary>The message, naming the remedy rather than only the problem.</summary>
         public string Message =>
             IsReorder
-                ? $"wBond '{InstanceName}': the arrays in \"{File}\" have been REORDERED "
-                  + $"({Recorded} → {Current}). Every pin keeps its position while its name moves, so "
-                  + "the wires now connect to different arrays. Check the wiring, then update this "
-                  + "instance's 'Arrays' parameter to dismiss."
-                : $"wBond '{InstanceName}': the array list in \"{File}\" has changed "
-                  + $"({Recorded} → {Current}), so its pins have moved. Check the wiring, then update "
-                  + "this instance's 'Arrays' parameter to dismiss.";
+                ? $"wBond '{InstanceName}': the arrays in \"{Source}\" are REORDERED relative to what "
+                  + $"this instance was wired against ({Recorded} → {Current}). Every pin keeps its "
+                  + "position while its name moves, so the wires now connect to different arrays. "
+                  + "Check the wiring."
+                : $"wBond '{InstanceName}': the array list changed on import from \"{Source}\" "
+                  + $"({Recorded} → {Current}), so its pins have moved. Check the wiring.";
     }
 
     /// <summary>
-    /// Compares every placed wBond's recorded array list against the design it references.
+    /// Whether an incoming design's arrays differ from what a placed instance was wired against.
     ///
     /// <para><b>This is the whole of M2's silent-failure guard, and reporting is the answer rather
     /// than repair.</b> A wBond's pin ORDER is its array order — that is R-wbb2-2's contract with
@@ -148,32 +172,26 @@ public static class WBondPlacement
     /// keeps existing wires correct without moving the artwork the user drew. What must not happen
     /// is that it happens quietly.</para>
     ///
-    /// <para>An instance with no recorded list (placed before this existed, or hand-authored) is NOT
-    /// reported: nothing is known about what it was wired against, and a warning that cannot be
-    /// acted on is noise.</para>
+    /// <para>Now that the design travels INSIDE the component, this is an import-time question rather
+    /// than a load-time one: nothing external can change under a placed instance, so the only moment
+    /// its pins can move is the moment new wires are imported over them. Call it BEFORE
+    /// <see cref="ApplyDesign"/>.</para>
+    ///
+    /// <para>An instance with no recorded list (hand-authored, or placed before this existed) yields
+    /// null: nothing is known about what it was wired against, and a warning that cannot be acted on
+    /// is noise.</para>
     /// </summary>
-    public static IReadOnlyList<ArrayDrift> CheckArrayDrift(SchematicEditModel model)
+    public static ArrayDrift? DriftBetween(EditableComponent comp, WBondDesign incoming, string source)
     {
-        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(comp);
+        ArgumentNullException.ThrowIfNull(incoming);
 
-        List<ArrayDrift>? found = null;
-        foreach (var comp in model.Components)
-        {
-            if (comp.Symbol != SymbolKind.WBond) continue;
+        string recorded = comp.Parameters.FirstOrDefault(p => p.Name == ArraysParameter)?.Expression ?? "";
+        if (string.IsNullOrWhiteSpace(recorded)) return null;
 
-            string file     = comp.Parameters.FirstOrDefault(p => p.Name == FileParameter)?.Expression ?? "";
-            string recorded = comp.Parameters.FirstOrDefault(p => p.Name == ArraysParameter)?.Expression ?? "";
-            if (string.IsNullOrWhiteSpace(recorded)) continue;
+        string current = WBondSymbolProvider.ArraysKeyOf(incoming);
+        if (string.Equals(current, recorded, StringComparison.Ordinal)) return null;
 
-            string? abs = WBondSymbolProvider.ResolveFilePath(file, model.SchematicDirectory);
-            if (abs is null) continue;
-
-            var loaded = WBondSymbolProvider.Load(abs);
-            if (loaded is null) continue;              // unreadable is a different problem, reported elsewhere
-            if (string.Equals(loaded.ArraysKey, recorded, StringComparison.Ordinal)) continue;
-
-            (found ??= []).Add(new ArrayDrift(comp.InstanceName, file, recorded, loaded.ArraysKey));
-        }
-        return (IReadOnlyList<ArrayDrift>?)found ?? [];
+        return new ArrayDrift(comp.InstanceName, source, recorded, current);
     }
 }
