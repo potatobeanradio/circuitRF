@@ -192,6 +192,7 @@ public partial class App : Application
             var prefs = AppPreferencesIo.Load();
             vm.ApplyLaunchPane(prefs.LaunchPane ?? LaunchPane.Palette);
             await vm.ExecuteLaunchActionAsync(prefs.LaunchAction ?? LaunchAction.Welcome);
+            vm.ApplyShowDockersOnLaunchPreference(prefs.ShowDockersOnLaunch ?? true);
         }
         catch { /* non-critical — fall back to default startup state */ }
     }
@@ -429,15 +430,57 @@ public partial class App : Application
 
         if (_desktop is null) { Environment.Exit(0); return; }
         var windows = _desktop.Windows.OfType<WorkspaceWindow>().ToList();
-        if (windows.Count == 0) { Environment.Exit(0); return; }
+        if (windows.Count == 0) { CloseAllFloatingWindows(); Environment.Exit(0); return; }
         foreach (var w in windows) w.Close();
+    }
+
+    /// <summary>
+    /// Force-closes every floating (torn-off) tool/document window still open across every
+    /// WorkspaceWindow, so File->Quit actually terminates the app rather than leaving them running.
+    /// Tool floats have an inert OS close box (see CrfHostWindow) to avoid a Dock teardown crash;
+    /// CloseForLayoutRebuild bypasses that guard safely since the app is exiting, not rebuilding a
+    /// layout. Any dirty document content in a floated window was already offered a save/discard
+    /// prompt by the owning WorkspaceWindow's own OnClosing (HasAnyDirtyWork(includeFloated: true)),
+    /// so nothing here is unsaved by the time this runs.
+    /// </summary>
+    private void CloseAllFloatingWindows()
+    {
+        if (_desktop is null) return;
+        foreach (var w in _desktop.Windows.OfType<Window>().ToList())
+        {
+            if (w is WorkspaceWindow) continue;
+            if (ReferenceEquals(w, _bgMenuWindow)) continue;
+            try
+            {
+                if (w is CircuitRF.Ui.ViewModels.Dock.CrfHostWindow crf) crf.CloseForLayoutRebuild();
+                else w.Close();
+            }
+            catch { /* best-effort during shutdown */ }
+        }
     }
 
     internal void NotifyWindowCountChanged()
     {
-        if (!OperatingSystem.IsMacOS() || _desktop is null || _bgMenuWindow is null) return;
+        if (_desktop is null) return;
         bool anyOpen = _desktop.Windows.OfType<WorkspaceWindow>().Any();
-        if (_isShuttingDown) { if (!anyOpen) Environment.Exit(0); return; }
+
+        // Once File->Quit is in flight, finish the job the instant the last WorkspaceWindow has
+        // closed (every dirty-save prompt for it AND any floated content it owns has already run) —
+        // cross-platform, not just macOS: without this, a torn-off tool/document window (whose OS
+        // close box is deliberately inert, see CrfHostWindow) is never touched by anything else and
+        // the app never actually terminates.
+        if (_isShuttingDown)
+        {
+            if (!anyOpen)
+            {
+                CloseAllFloatingWindows();
+                Environment.Exit(0);
+            }
+            return;
+        }
+
+        // Below: macOS-only "stay resident with just the Dock icon" convention.
+        if (!OperatingSystem.IsMacOS() || _bgMenuWindow is null) return;
         if (!anyOpen) { if (!_bgMenuWindow.IsVisible) { _bgMenuWindow.Show(); _bgMenuWindow.Activate(); } }
         else { if (_bgMenuWindow.IsVisible) _bgMenuWindow.Hide(); }
     }

@@ -74,23 +74,44 @@ public partial class WorkspaceViewModel
     {
         try
         {
-            if (!DockersCollapsed)
-            {
-                _preCollapseLayout = CaptureDockLayout();
-                ApplyDockLayout(DockLayoutDefaults.Collapsed(_preCollapseLayout));
-                DockersCollapsed = true;
-            }
-            else
-            {
-                ApplyDockLayout(_preCollapseLayout ?? DockLayoutDefaults.Default());
-                _preCollapseLayout = null;
-                DockersCollapsed = false;
-            }
+            if (!DockersCollapsed) CollapseDockers();
+            else                   ExpandDockers();
         }
         catch (Exception ex)
         {
             // Same rule as restore: a layout operation never leaves the user stuck.
             Messages.Warning($"Could not toggle the dockers: {ex.Message}");
+        }
+    }
+
+    private void CollapseDockers()
+    {
+        _preCollapseLayout = CaptureDockLayout();
+        ApplyDockLayout(DockLayoutDefaults.Collapsed(_preCollapseLayout));
+        DockersCollapsed = true;
+    }
+
+    private void ExpandDockers()
+    {
+        ApplyDockLayout(_preCollapseLayout ?? DockLayoutDefaults.Default());
+        _preCollapseLayout = null;
+        DockersCollapsed = false;
+    }
+
+    /// <summary>
+    /// Applies the "Show Dockers" On Launch preference (default true = shown). Called once after
+    /// app launch and once after every new workspace is created. When <paramref name="showDockers"/>
+    /// is false, collapses the dockers exactly as View ▸ Hide Dockers would — but only when they are
+    /// not ALREADY collapsed, so this can never re-expand a session someone (or an earlier call to
+    /// this same method) already collapsed.
+    /// </summary>
+    internal void ApplyShowDockersOnLaunchPreference(bool showDockers)
+    {
+        if (showDockers || DockersCollapsed) return;
+        try { CollapseDockers(); }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not apply the Show Dockers preference: {ex.Message}");
         }
     }
 

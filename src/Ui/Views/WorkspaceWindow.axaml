@@ -135,7 +135,6 @@
                         </NativeMenuItem>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Zoom to Fit"      Command="{Binding ZoomToFitCommand}"   Gesture="Meta+D0"/>
-                        <NativeMenuItem Header="New Tab"          Command="{Binding NewTabCommand}"      Gesture="Meta+T"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Push Into Cell"       Command="{Binding HierarchyPushInCommand}"       Gesture="Meta+OemCloseBrackets"/>
                         <NativeMenuItem Header="Pop Out"              Command="{Binding HierarchyPopOutCommand}"       Gesture="Meta+OemOpenBrackets"/>
@@ -229,8 +228,6 @@
              being taken: H is completely unused app-wide. -->
         <KeyBinding Gesture="Ctrl+Shift+H"  Command="{Binding HideShowDockersCommand}"/>
         <KeyBinding Gesture="Meta+Shift+H"  Command="{Binding HideShowDockersCommand}"/>
-        <KeyBinding Gesture="Ctrl+T"        Command="{Binding NewTabCommand}"/>
-        <KeyBinding Gesture="Meta+T"        Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Ctrl+R"        Command="{Binding RunAnalysisCommand}"/>
         <KeyBinding Gesture="Meta+R"        Command="{Binding RunAnalysisCommand}"/>
         <KeyBinding Gesture="Ctrl+U"        Command="{Binding UpdateLayoutFromSchematicCommand}"/>
@@ -529,11 +526,6 @@
                           InputGesture="Ctrl+D0">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="New _Tab"
-                          Command="{Binding NewTabCommand}"
-                          InputGesture="Ctrl+T">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="TabPlus" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
                 <Separator/>
                 <MenuItem Header="Push _Into Cell"
                           Command="{Binding HierarchyPushInCommand}"
@@ -635,7 +627,8 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="InformationOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Post Test _Messages"
-                          Command="{Binding PostTestMessagesCommand}">
+                          Command="{Binding PostTestMessagesCommand}"
+                          IsVisible="{OnPlatform True, Windows=False}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="MessageTextOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>

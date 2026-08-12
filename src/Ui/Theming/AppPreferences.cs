@@ -7,7 +7,7 @@ using CircuitRF.Ui.Messages;
 
 namespace CircuitRF.Ui.Theming;
 
-public enum LaunchAction { Welcome, NewSchematic, NewWorkspace, OpenWorkspace, NewDataDisplay, NewSymbol }
+public enum LaunchAction { Welcome, NewSchematic, NewWorkspace, OpenWorkspace, NewDataDisplay, NewSymbol, NewLayout, NewHarmonica }
 public enum LaunchPane   { ProjectTree, Palette }
 
 public sealed class AppPreferences
@@ -43,6 +43,14 @@ public sealed class AppPreferences
     [JsonPropertyName("launch_pane")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LaunchPane? LaunchPane { get; set; }
+
+    // Whether the dockers (Project Tree, Library, Properties, Analyses, Messages) are shown at app
+    // launch and when a new workspace is created. Null means the default, which is ON (shown) — the
+    // same arrangement circuitRF has always opened with. When false, dockers are collapsed exactly as
+    // View ▸ Hide Dockers would collapse them (WorkspaceViewModel.ApplyShowDockersOnLaunchPreference).
+    [JsonPropertyName("show_dockers_on_launch")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ShowDockersOnLaunch { get; set; }
 
     // Which kits' PCell generator scripts this installation has agreed to run, keyed by the kit's
     // absolute directory. DELIBERATELY here and not in .cws: a decision recorded inside a shared

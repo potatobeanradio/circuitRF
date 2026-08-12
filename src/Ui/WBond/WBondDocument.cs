@@ -117,6 +117,18 @@ public sealed class WBondDocument : Document
 
     public WBondDocumentViewModel ViewModel { get; }
 
+    // ── Zoom To Fit request — see SchematicDocument.ZoomToFitRequested for the pattern this mirrors.
+    public event Action? ZoomToFitRequested;
+    public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
+
+    // ── Toolbar Cut/Copy/Paste — same pattern; the view runs the real wire/geometry clipboard ops.
+    public event Action? CutRequested;
+    public event Action? CopyRequested;
+    public event Action? PasteRequested;
+    public void RequestCut()   => CutRequested?.Invoke();
+    public void RequestCopy()  => CopyRequested?.Invoke();
+    public void RequestPaste() => PasteRequested?.Invoke();
+
     /// <summary>Absolute path of the <c>.wBond</c>, or null for a scratch document.</summary>
     public string? FilePath { get; private set; }
 

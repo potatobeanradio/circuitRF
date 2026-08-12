@@ -19,6 +19,10 @@ public sealed class SymbolEditorDocument : Document, IUndoableDocument, IActivat
     public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
     public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
 
+    // ── Zoom To Fit request — see SchematicDocument.ZoomToFitRequested for the pattern this mirrors.
+    public event Action? ZoomToFitRequested;
+    public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
+
     private string _baseTitle;
 
     public SymbolEditorViewModel ViewModel { get; }

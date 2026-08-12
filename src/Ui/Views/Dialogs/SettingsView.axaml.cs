@@ -69,12 +69,14 @@ public partial class SettingsView : Window
             LaunchActionCombo.ItemsSource = new[]
             {
                 "Welcome", "New Schematic", "New Workspace", "Open Workspace",
-                "New Data Display", "New Symbol",
+                "New Data Display", "New Symbol", "New Layout", "harmonicaRF",
             };
             LaunchActionCombo.SelectedIndex = (int)(prefs.LaunchAction ?? LaunchAction.Welcome);
 
             LaunchPaneCombo.ItemsSource   = new[] { "Project Tree", "Palette" };
             LaunchPaneCombo.SelectedIndex = (int)(prefs.LaunchPane ?? LaunchPane.Palette);
+
+            ShowDockersOnLaunchCheck.IsChecked = prefs.ShowDockersOnLaunch ?? true;
 
             CopyColorCombo.ItemsSource   = new[] { "Follow System", "Force Light", "Force Dark" };
             CopyColorCombo.SelectedIndex = (int)(prefs.CopyColorMode ?? CopyColorMode.FollowSystem);
@@ -109,6 +111,12 @@ public partial class SettingsView : Window
             if (LaunchPaneCombo.SelectedIndex >= 0)
                 p.LaunchPane = (LaunchPane)LaunchPaneCombo.SelectedIndex;
         });
+    }
+
+    private void OnShowDockersOnLaunchChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.ShowDockersOnLaunch = ShowDockersOnLaunchCheck.IsChecked);
     }
 
     private void OnCopyColorChanged(object? sender, SelectionChangedEventArgs e)

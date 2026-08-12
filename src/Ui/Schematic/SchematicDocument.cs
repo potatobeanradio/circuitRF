@@ -26,6 +26,12 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
     public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
     public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
 
+    // ── Zoom To Fit request — the View->Zoom to Fit workspace command has no canvas reference of its
+    // own, so it raises this and the already-subscribed view (see ActivationFocusRequested above) runs
+    // the real ZoomToFit() on its canvas.
+    public event Action? ZoomToFitRequested;
+    public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
+
     // ── Navigation frame ──────────────────────────────────────────────────────
 
     private readonly record struct NavFrame(SchematicViewModel Session, string Label);

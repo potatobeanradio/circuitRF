@@ -81,6 +81,7 @@ public partial class SchematicView : UserControl
         {
             _subscribedDoc.ActiveViewModelChanged   -= OnActiveViewModelChanged;
             _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+            _subscribedDoc.ZoomToFitRequested       -= OnZoomToFitRequestedFromMenu;
             _subscribedDoc = null;
         }
 
@@ -92,10 +93,14 @@ public partial class SchematicView : UserControl
             _subscribedDoc = doc;
             doc.ActiveViewModelChanged   += OnActiveViewModelChanged;
             doc.ActivationFocusRequested += OnActivationFocusRequested;
+            doc.ZoomToFitRequested       += OnZoomToFitRequestedFromMenu;
             // If this tab was activated before the view bound (first open), the request is pending.
             if (doc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
     }
+
+    // View->Zoom to Fit dispatches here from WorkspaceViewModel via SchematicDocument.RequestZoomToFit().
+    private void OnZoomToFitRequestedFromMenu() => SchematicCanvasCtrl.ZoomToFit();
 
     // Tab activated → grab keyboard focus so Select All / nudges work without a click.
     private void OnActivationFocusRequested()

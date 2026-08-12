@@ -244,6 +244,10 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportGdsiiRequested       -= OnExportGdsiiRequestedFromMenu;
             _subscribedDoc.ExportDxfRequested         -= OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      -= OnExportGerberRequestedFromMenu;
+            _subscribedDoc.ZoomToFitRequested         -= OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.CutRequested                -= OnCutRequestedFromMenu;
+            _subscribedDoc.CopyRequested                -= OnCopyRequestedFromMenu;
+            _subscribedDoc.PasteRequested                -= OnPasteRequestedFromMenu;
         }
         RebindDrcZoomSubscription(null);
         _subscribedDoc = DataContext as LayoutDocument;
@@ -254,6 +258,10 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportGdsiiRequested       += OnExportGdsiiRequestedFromMenu;
             _subscribedDoc.ExportDxfRequested         += OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      += OnExportGerberRequestedFromMenu;
+            _subscribedDoc.ZoomToFitRequested         += OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.CutRequested                += OnCutRequestedFromMenu;
+            _subscribedDoc.CopyRequested                += OnCopyRequestedFromMenu;
+            _subscribedDoc.PasteRequested                += OnPasteRequestedFromMenu;
             RebindDrcZoomSubscription(_subscribedDoc.ActiveViewModel);
             if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
@@ -426,6 +434,15 @@ public partial class LayoutEditorView : UserControl
     private void OnExportGdsiiRequestedFromMenu() => _ = OnExportGdsiiAsync();
     private void OnExportDxfRequestedFromMenu() => _ = OnExportDxfAsync();
     private void OnExportGerberRequestedFromMenu() => _ = OnExportGerberAsync();
+
+    // View->Zoom to Fit dispatches here from WorkspaceViewModel via LayoutDocument.RequestZoomToFit().
+    private void OnZoomToFitRequestedFromMenu() => LayoutCanvasCtrl.ZoomToFit();
+
+    // Workspace toolbar Cut/Copy/Paste dispatch here — the same OnClipboardCopy/Cut/Paste this view
+    // already wires to the canvas's own Ctrl+C/X/V events (see the constructor).
+    private void OnCutRequestedFromMenu()   => _ = OnClipboardCut();
+    private void OnCopyRequestedFromMenu()  => _ = OnClipboardCopy();
+    private void OnPasteRequestedFromMenu() => _ = OnClipboardPaste(inPlace: false);
 
     private void SyncRulers()
     {

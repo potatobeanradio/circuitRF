@@ -27,6 +27,7 @@ namespace CircuitRF.Ui.Views.WBond;
 public partial class WBondEditorView : UserControl
 {
     private WBondDocumentViewModel? _bound;
+    private WBondDocument? _subscribedDoc;
 
     public WBondEditorView()
     {
@@ -184,8 +185,24 @@ public partial class WBondEditorView : UserControl
             _bound.Overlay.OverlayChanged -= OnOverlayChanged;
             _bound.Editor.EditRefused -= OnEditRefused;
         }
+        if (_subscribedDoc is not null)
+        {
+            _subscribedDoc.ZoomToFitRequested -= OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.CutRequested       -= OnCutRequestedFromMenu;
+            _subscribedDoc.CopyRequested      -= OnCopyRequestedFromMenu;
+            _subscribedDoc.PasteRequested     -= OnPasteRequestedFromMenu;
+        }
 
-        _bound = (DataContext as WBondDocument)?.ViewModel;
+        _subscribedDoc = DataContext as WBondDocument;
+        if (_subscribedDoc is not null)
+        {
+            _subscribedDoc.ZoomToFitRequested += OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.CutRequested       += OnCutRequestedFromMenu;
+            _subscribedDoc.CopyRequested      += OnCopyRequestedFromMenu;
+            _subscribedDoc.PasteRequested     += OnPasteRequestedFromMenu;
+        }
+
+        _bound = _subscribedDoc?.ViewModel;
         if (_bound is null) return;
 
         _bound.Overlay.OverlayChanged += OnOverlayChanged;
@@ -243,6 +260,21 @@ public partial class WBondEditorView : UserControl
     private bool _refusalShowing;
 
     private void OnFitProfile(object? sender, RoutedEventArgs e) => ProfileCanvas.ZoomToFit();
+
+    // View->Zoom to Fit dispatches here from WorkspaceViewModel via WBondDocument.RequestZoomToFit().
+    // A wBond editor shows two canvases at once; fit both, mirroring the "Fit profile view" button
+    // for the profile side and the ordinary layout Zoom to Fit for the artwork side.
+    private void OnZoomToFitRequestedFromMenu()
+    {
+        ProfileCanvas.ZoomToFit();
+        LayoutCanvasCtrl.ZoomToFit();
+    }
+
+    // Workspace toolbar Cut/Copy/Paste dispatch here — mirrors OnViewKeyDownTunnel's Ctrl+C/X/V case
+    // exactly (the plain, non-Shift copy — the wire copy, not the "copy as graphic" one).
+    private async void OnCutRequestedFromMenu()   { if (await CopyAsync()) Cut(); }
+    private async void OnCopyRequestedFromMenu()  => await CopyAsync();
+    private async void OnPasteRequestedFromMenu() => await PasteAsync();
 
     private async void OnCopyGraphic(object? sender, RoutedEventArgs e) => await CopyGraphicAsync();
 

@@ -23,7 +23,7 @@
                         <!-- On Launch section -->
                         <TextBlock Text="On Launch" FontSize="11" FontWeight="SemiBold"
                                    Opacity="0.55" Margin="0,0,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto"
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto"
                               Margin="0,0,0,20">
                             <TextBlock Grid.Row="0" Grid.Column="0"
                                        Text="Action:" VerticalAlignment="Center" FontSize="12"/>
@@ -37,6 +37,10 @@
                                        Name="LaunchPaneCombo" FontSize="12" MinWidth="180"
                                        HorizontalAlignment="Left"
                                        SelectionChanged="OnLaunchSettingChanged"/>
+                            <CheckBox  Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Name="ShowDockersOnLaunchCheck" FontSize="12"
+                                       Content="Show Dockers"
+                                       IsCheckedChanged="OnShowDockersOnLaunchChanged"/>
                         </Grid>
 
                         <!-- Copy / Export section -->
@@ -70,11 +74,31 @@
                                        Text="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
                         </Grid>
 
-                        <!-- Wirebonds — wbond.md §6.4's creation defaults. Per USER, not per design:
-                             they describe how one shop's bonder is set up, and a .wBond arriving from
+                        <!-- Messages section -->
+                        <TextBlock Text="Messages" FontSize="11" FontWeight="SemiBold"
+                                   Opacity="0.55" Margin="0,20,0,6"/>
+                        <Grid ColumnDefinitions="130,*">
+                            <TextBlock Grid.Column="0" Text="Timestamps:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox  Grid.Column="1" Name="MsgTimestampCombo"
+                                       FontSize="12" MinWidth="180" HorizontalAlignment="Left"
+                                       SelectionChanged="OnMsgTimestampChanged"/>
+                        </Grid>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── Wirebonds tab ──────────────────────────────────────────── -->
+            <TabItem Header="Wirebonds">
+                <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="0">
+
+                        <!-- wbond.md §6.4's creation defaults. Per USER, not per design: they
+                             describe how one shop's bonder is set up, and a .wBond arriving from
                              someone else must not change what the next wire you draw looks like. -->
                         <TextBlock Text="Wirebonds" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
+                                   Opacity="0.55" Margin="0,0,0,6"/>
                         <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto,Auto">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Points per wire:"
                                        VerticalAlignment="Center" FontSize="12"/>
@@ -104,9 +128,18 @@
                                        Text="Applies to newly drawn wires. Existing wires keep whatever they were drawn with. Nudge steps stay 1 mil / 5 mil — those are bonder-process quantities, not display settings."/>
                         </Grid>
 
-                        <!-- Generated Artwork section — the one way back from "Don't Allow" -->
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── Generated Artwork tab ──────────────────────────────────── -->
+            <TabItem Header="Generated Artwork">
+                <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="0">
+
+                        <!-- The one way back from "Don't Allow" -->
                         <TextBlock Text="Generated Artwork" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
+                                   Opacity="0.55" Margin="0,0,0,6"/>
                         <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,4">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Kit permissions:"
                                        VerticalAlignment="Center" FontSize="12"/>
@@ -120,17 +153,6 @@
                             <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Opacity="0.6"
                                        TextWrapping="Wrap" Margin="0,4,0,0"
                                        Text="Forgets which kits are allowed to run their own artwork scripts, so circuitRF asks about each one again."/>
-                        </Grid>
-
-                        <!-- Messages section -->
-                        <TextBlock Text="Messages" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*">
-                            <TextBlock Grid.Column="0" Text="Timestamps:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox  Grid.Column="1" Name="MsgTimestampCombo"
-                                       FontSize="12" MinWidth="180" HorizontalAlignment="Left"
-                                       SelectionChanged="OnMsgTimestampChanged"/>
                         </Grid>
 
                     </StackPanel>

@@ -871,6 +871,62 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 _factory.RemoveWelcomeStub();
                 NewDataDisplay();
                 break;
+
+            case LaunchAction.NewLayout:
+                _factory.RemoveWelcomeStub();
+                NewLayout();
+                break;
+
+            case LaunchAction.NewHarmonica:
+                _factory.RemoveWelcomeStub();
+                NewHarmonica();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// After a new workspace is created, open whatever the On Launch preference names — New
+    /// Schematic, New Symbol, New Data Display, or nothing (Welcome stays). New Workspace / Open
+    /// Workspace fall back to New Schematic here — re-entering the New Workspace flow mid-creation
+    /// would recurse. This is what makes "New Schematic" as the configured On Launch action apply
+    /// consistently whether the user launches the app fresh or creates a workspace mid-session.
+    /// </summary>
+    private void ApplyOnLaunchActionForNewWorkspace()
+    {
+        var action = AppPreferencesIo.Load().LaunchAction ?? LaunchAction.Welcome;
+        if (action is LaunchAction.NewWorkspace or LaunchAction.OpenWorkspace)
+            action = LaunchAction.NewSchematic;
+
+        switch (action)
+        {
+            case LaunchAction.Welcome:
+                // Leave the fresh Welcome stub (from CreateDefaultLayout) showing.
+                break;
+
+            case LaunchAction.NewSchematic:
+                _factory.RemoveWelcomeStub();
+                NewScratchSchematic();
+                break;
+
+            case LaunchAction.NewSymbol:
+                _factory.RemoveWelcomeStub();
+                NewScratchSymbol();
+                break;
+
+            case LaunchAction.NewDataDisplay:
+                _factory.RemoveWelcomeStub();
+                NewDataDisplay();
+                break;
+
+            case LaunchAction.NewLayout:
+                _factory.RemoveWelcomeStub();
+                NewLayout();
+                break;
+
+            case LaunchAction.NewHarmonica:
+                _factory.RemoveWelcomeStub();
+                NewHarmonica();
+                break;
         }
     }
 
@@ -961,12 +1017,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
             WireAnalysesRun();
 
+            ApplyOnLaunchActionForNewWorkspace();
+
             PushRecent(cwsPath);
             Messages.Clear();
             Messages.Success($"New workspace '{result.Name}' created.");
 
             // R-dock-9: hiding the dockers is a view preference, so it survives a workspace switch.
             ReapplyCollapsedStateIfNeeded();
+            ApplyShowDockersOnLaunchPreference(AppPreferencesIo.Load().ShowDockersOnLaunch ?? true);
         }
         catch (Exception ex)
         {
@@ -1988,7 +2047,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         var clipboard = GetClipboard();
         if (clipboard is null) return;
-        var active = _factory.DocumentDock?.ActiveDockable;
+        // Per-window: a torn-off document window's own Cut/Copy/Paste must act on ITS document, never
+        // the main shell's — same rule as every other per-window command (see ResolveOwner/
+        // ResolveActiveDocumentForCommands's own note).
+        var active = ResolveActiveDocumentForCommands();
         if (active is SymbolEditorDocument symDoc)
         {
             if (paste) await symDoc.ViewModel.ClipboardPasteAsync(clipboard);
@@ -2006,6 +2068,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             else if (cut) await win.InvokeCutAsync();
             else          await win.InvokeCopyAsync();
         }
+        else if (active is Layout.LayoutDocument layDoc)
+        {
+            if (paste)    layDoc.RequestPaste();
+            else if (cut) layDoc.RequestCut();
+            else          layDoc.RequestCopy();
+        }
+        else if (active is WBond.WBondDocument wbDoc)
+        {
+            if (paste)    wbDoc.RequestPaste();
+            else if (cut) wbDoc.RequestCut();
+            else          wbDoc.RequestCopy();
+        }
     }
 
     private IClipboard? GetClipboard()
@@ -2017,7 +2091,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ---- View commands -------------------------------------------------------
 
     [RelayCommand]
-    private void ResetLayout()
+    private void ResetLayout() => PerformLayoutReset("Layout reset to default.");
+
+    // Per ui-design.md's own definition: "Fit Windows to Frame — reset/fit the dock layout to the
+    // frame." Shares ResetLayout's mechanism (re-host the existing panels into a fresh proportional
+    // skeleton, documents preserved) — the two toolbar affordances describe the same operation.
+    private void PerformLayoutReset(string message)
     {
         // Preserve documents: re-host the existing DocumentDock and tool instances
         // into a fresh proportional skeleton.  Documents, active tab, and per-document
@@ -2036,12 +2115,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         DockersCollapsed   = false;
         _preCollapseLayout = null;
 
-        Messages.Info("Layout reset to default.");
+        Messages.Info(message);
     }
 
-    [RelayCommand] private void ZoomToFit()        { Messages.Info("Zoom to Fit: not yet implemented (6c)."); }
+    // Dispatches to whichever document is currently focused (per-window, see
+    // ResolveActiveDocumentForCommands) — .csch, .clay, .csym, .wBond each raise their own
+    // ZoomToFitRequested event, which the already-subscribed view runs against its real canvas(es).
+    [RelayCommand]
+    private void ZoomToFit()
+    {
+        switch (ResolveActiveDocumentForCommands())
+        {
+            case SchematicDocument sd: sd.RequestZoomToFit(); break;
+            case Layout.LayoutDocument ld: ld.RequestZoomToFit(); break;
+            case SymbolEditorDocument symd: symd.RequestZoomToFit(); break;
+            case WBond.WBondDocument wbd: wbd.RequestZoomToFit(); break;
+            default: Messages.Info("Zoom to Fit: no document is focused."); break;
+        }
+    }
     // HideShowDockers lives in WorkspaceViewModel.Docking.cs — it is a real full-canvas toggle now.
-    [RelayCommand] private void FitWindowsToFrame() { Messages.Info("Fit Windows to Frame: not yet implemented."); }
+    [RelayCommand] private void FitWindowsToFrame() => PerformLayoutReset("Windows fit to frame.");
 
     [RelayCommand]
     private void ToggleMessagesRegion()
@@ -2070,7 +2163,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         await RunSchematicDocAsync(doc);
     }
 
-    private bool CanRunAnalysis() => _runCts is null;
+    // The Run/Stop toolbar buttons (and the Simulate menu / Ctrl+R sharing the same command) are
+    // greyed out whenever a .csch document is not the active dockable — not merely retained-schematic
+    // aware, per the owner's explicit request. This is distinct from the Analyses panel's own Run
+    // button, which deliberately keeps working off _lastActiveSchematicDoc (brief-analyses-toolbar-run-retain).
+    private bool CanRunAnalysis() =>
+        _runCts is null && _factory.DocumentDock?.ActiveDockable is SchematicDocument;
 
     /// <summary>
     /// Live cancellation source for the run in flight; null when nothing is running. It is what makes
@@ -2282,7 +2380,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Messages.Info("Stopping — the run ends after the point in progress; no results will be written.");
     }
 
-    private bool CanStopAnalysis() => _runCts is not null;
+    private bool CanStopAnalysis() =>
+        _runCts is not null && _factory.DocumentDock?.ActiveDockable is SchematicDocument;
 
     private void WireAnalysesRun()
     {
@@ -2451,29 +2550,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand]
     private async Task ShowAbout(Window? owner)
     {
-        if (owner is null) return;
-        await new Views.Dialogs.AboutWindow().ShowDialog(owner);
+        var resolved = ResolveOwner(owner);
+        if (resolved is null) return;
+        await new Views.Dialogs.AboutWindow().ShowDialog(resolved);
     }
 
     [RelayCommand]
     private async Task ShowSettings(Window? owner)
     {
-        if (owner is null) return;
+        var resolved = ResolveOwner(owner);
+        if (resolved is null) return;
         var workspaceDir = CurrentWorkspacePath is not null
             ? Path.GetDirectoryName(CurrentWorkspacePath)
             : null;
         var w = new Views.Dialogs.SettingsView(workspaceDir);
-        w.Show(owner);
+        w.Show(resolved);
         await Task.CompletedTask;
-    }
-
-    // ---- New Tab command (Ctrl+T) --------------------------------------------
-
-    [RelayCommand]
-    private void NewTab()
-    {
-        var doc = new StubDocument($"Tab {System.Guid.NewGuid().ToString("N")[..4]}");
-        _factory.OpenDocument(doc);
     }
 
     // ---- New Schematic (⇧⌘N / Ctrl+Shift+N) — scratch, no workspace needed --
@@ -8389,6 +8481,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Generate Netlist is enabled only when a schematic document is active.
         GenerateNetlistCommand.NotifyCanExecuteChanged();
+
+        // Run/Stop Analysis (toolbar + Simulate menu + Ctrl+R) are enabled only when a schematic
+        // document is the active dockable.
+        RunAnalysisCommand.NotifyCanExecuteChanged();
+        StopAnalysisCommand.NotifyCanExecuteChanged();
 
         // Design ▸ Check Design Rules is enabled only when a layout document is active.
         CheckDesignRulesCommand.NotifyCanExecuteChanged();

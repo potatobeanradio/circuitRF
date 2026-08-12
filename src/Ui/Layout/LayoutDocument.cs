@@ -52,6 +52,21 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     public void RequestExportDxf() => ExportDxfRequested?.Invoke();
     public void RequestExportGerber() => ExportGerberRequested?.Invoke();
 
+    // ── Zoom To Fit request (View->Zoom to Fit) — same shape as the export requests above: this VM
+    // layer has no canvas reference, so it raises the request for the already-subscribed view to run.
+    public event Action? ZoomToFitRequested;
+    public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
+
+    // ── Toolbar Cut/Copy/Paste — the workspace toolbar's Cut/Copy/Paste buttons have no direct
+    // reference to this document's canvas; the view (already wired to the canvas's own
+    // ClipboardCopy/Cut/PasteRequested events) runs the real operation.
+    public event Action? CutRequested;
+    public event Action? CopyRequested;
+    public event Action? PasteRequested;
+    public void RequestCut()   => CutRequested?.Invoke();
+    public void RequestCopy()  => CopyRequested?.Invoke();
+    public void RequestPaste() => PasteRequested?.Invoke();
+
     // ── Navigation frame ──────────────────────────────────────────────────────
 
     /// <summary><see cref="Viewport"/> is the last viewport CAPTURED for this frame (by the view,

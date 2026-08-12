@@ -180,14 +180,22 @@ public partial class SymbolEditorView : UserControl
         if (_subscribedVm is not null) _subscribedVm.TextEditRequested += OnTextEditRequested;
 
         // Tab activated → grab keyboard focus so Select All etc. work without a click.
-        if (_subscribedDoc is not null) _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+        if (_subscribedDoc is not null)
+        {
+            _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+            _subscribedDoc.ZoomToFitRequested       -= OnZoomToFitRequestedFromMenu;
+        }
         _subscribedDoc = DataContext as SymbolEditorDocument;
         if (_subscribedDoc is not null)
         {
             _subscribedDoc.ActivationFocusRequested += OnActivationFocusRequested;
+            _subscribedDoc.ZoomToFitRequested       += OnZoomToFitRequestedFromMenu;
             if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
     }
+
+    // View->Zoom to Fit dispatches here from WorkspaceViewModel via SymbolEditorDocument.RequestZoomToFit().
+    private void OnZoomToFitRequestedFromMenu() => SymbolEditorCanvasCtrl.ZoomToFit();
 
     private void OnActivationFocusRequested()
     {

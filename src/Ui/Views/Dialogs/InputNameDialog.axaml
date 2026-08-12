@@ -36,7 +36,8 @@
         <StackPanel Grid.Row="1"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
-                    Spacing="8">
+                    Spacing="8"
+                    Margin="0,16,0,0">
             <Button Content="Cancel"
                     Width="80"
                     FontSize="12"
