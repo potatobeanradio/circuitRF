@@ -59,6 +59,20 @@ public static class PlanarExcitation
     /// <see cref="PlanarSystem.Lu"/>'s, which is computed once and cached on the system.
     /// </summary>
     public static PlanarPortSolution Solve(PlanarSystem system, IReadOnlyList<PlanarPortResolution> ports)
+        => Solve((IPlanarOperator)system, ports);
+
+    /// <summary>
+    /// <b>M5 — the same port algebra against ANY operator</b>, so the dense LU and the accelerated
+    /// GMRES share one <c>Y = BᵀZ⁻¹B</c> rather than two copies of it. The comment at the top of this
+    /// file is about a sign convention that produces a plausible, wrong S₂₁ when it drifts; a second
+    /// copy of this loop is precisely where it would drift.
+    ///
+    /// <para>What DOES change with the operator is the strength of the reciprocity claim, and it is
+    /// already stated correctly above: Z is symmetric bit for bit, so Y is symmetric — through a
+    /// factorisation, hence to that routine's tolerance. Through GMRES it is to the ITERATIVE
+    /// tolerance instead, which is looser and is the honest thing to say about it.</para>
+    /// </summary>
+    public static PlanarPortSolution Solve(IPlanarOperator system, IReadOnlyList<PlanarPortResolution> ports)
     {
         ArgumentNullException.ThrowIfNull(system);
         ArgumentNullException.ThrowIfNull(ports);

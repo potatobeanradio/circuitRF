@@ -610,7 +610,7 @@
                          other dimensioned field here uses; blank means "max sweep". -->
                     <TextBlock Grid.Row="4" Grid.Column="0" Classes="colhdr" Text="Mesh frequency" VerticalAlignment="Center"/>
                     <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                        <TextBox Classes="num" Tag="MeshFrequency" Width="86"
+                        <TextBox Classes="num" Tag="MeshFrequency" Width="110"
                                  Text="{Binding ViewModel.PlanarMeshFrequencyText}"
                                  Watermark="{Binding ViewModel.MeshFrequencyPlaceholder}"
                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
@@ -678,7 +678,8 @@
                           ItemsSource="{Binding ViewModel.SolveCoreChoices}"
                           SelectedItem="{Binding ViewModel.SelectedSolveCores}"
                           DisplayMemberBinding="{Binding Label}"
-                          ToolTip.Tip="How many cores the full-wave solver may use at once. Automatic uses the whole machine, which is what every run did before this control existed. Lowering it leaves cores free for other work and makes the run slower; it never changes the answer."/>
+                          VerticalContentAlignment="Center"
+                          ToolTip.Tip="How many cores the full-wave solver may use at once. Automatic uses the whole machine. Lowering it leaves cores free for other work and makes the run slower; it never changes the answer."/>
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.SolveCoresNote}"/>
 

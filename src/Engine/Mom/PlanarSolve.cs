@@ -122,23 +122,54 @@ public sealed class PlanarSolveContext
         Ports    = ports;
         Levels   = levels;
         Settings = settings ?? PlanarFillSettings.Default;
-        PlanarSystem.GuardCeiling(mesh.Bases.Count);          // R-fil-10, before the core allocates
-        Cores    = PlanarFill.BuildCores(mesh, Settings);
+
+        // R-fil-10, before the core allocates. The accelerator holds no N×N anything, so the DENSE
+        // ceiling is the wrong question to ask of it — but the mesher's own N ceiling is still the
+        // ceiling, and widening it is a separate, measured act rather than a side effect of M5.
+        PlanarSystem.GuardCeiling(mesh.Bases.Count);
+
+        Cores = Settings.Aim is null
+            ? PlanarFill.BuildCores(mesh, Settings)
+            : PlanarFill.BuildGeometryOnlyCores(mesh, Settings);
     }
 
     /// <summary>Fill, factor, excite — the raw admittance at one frequency.</summary>
     public PlanarPortSolution SolveAt(PlanarKernelPair kernel, double fHz)
     {
         var k = kernel.For(Cores, Settings.Order);
-        var system = PlanarSystem.Build(Cores, k.VectorPotential, k.Scalar, 2.0 * Math.PI * fHz);
+        double omega = 2.0 * Math.PI * fHz;
+
+        if (Settings.Aim is { } aim)
+        {
+            LastAccelerator = PlanarAimOperator.Build(Cores, k.VectorPotential, k.Scalar, omega, aim);
+            return PlanarExcitation.Solve(LastAccelerator, Ports);
+        }
+
+        var system = PlanarSystem.Build(Cores, k.VectorPotential, k.Scalar, omega);
         return PlanarExcitation.Solve(system, Ports);
     }
+
+    /// <summary>
+    /// <b>M5 — the accelerator the last <see cref="SolveAt(PlanarKernelPair, double)"/> built</b>, or
+    /// null on the dense path. It carries <see cref="PlanarAimReport"/> and the iteration count, which
+    /// are what the cost gates read; keeping it is how a measurement gets at them without the driver
+    /// having to thread a diagnostics object through every call.
+    /// </summary>
+    public PlanarAimOperator? LastAccelerator { get; private set; }
 
     /// <summary>The same, for whichever kernel this frequency actually has (L9d/M1).</summary>
     public PlanarPortSolution SolveAt(PlanarFrequencyKernel kernel, double fHz)
     {
         ArgumentNullException.ThrowIfNull(kernel);
         if (kernel.Pair is { } pair) return SolveAt(pair, fHz);
+
+        if (Settings.Aim is not null)
+            throw new NotSupportedException(
+                "This problem needs the GENERAL (multi-level) kernel, and M5's accelerator models the " +
+                "single-level horizontal basis family only — a via's ẑ current needs its own grid " +
+                "kernel per height pairing and a projection carrying a ∂/∂x. Clear " +
+                "PlanarFillSettings.Aim to solve it densely, which is what every published " +
+                "multi-level number in this area was produced by.");
 
         if (Levels is null)
             throw new InvalidOperationException(
@@ -264,17 +295,21 @@ public sealed class PlanarPortCalibrator
             work.Commit();
         }
 
-        var (sShort, sLong) = _rawCache[fHz];
+        double expect = ExpectedBeta(fHz);
+        int    pick   = PlanarCalibration.SelectSeparation(_deltas, expect);
 
-        double expect = double.IsNaN(_prevBeta)
-            ? PlanarCalibration.EstimateBeta(_slab, fHz)
-            : _prevBeta * (fHz / _prevF);
+        var slots  = _rawCache[fHz];
+        var sShort = slots[0]!.Value;              // Mat<T> is a struct, so these are Nullable<Mat<T>>
+        var sLong  = slots[pick + 1]!.Value;
 
-        var g = PlanarCalibration.GammaBest(sShort, sLong, _deltas, expect, out int pick);
+        // Selected here rather than inside GammaBest, because PrepareAt has already solved exactly
+        // these two meshes and no others — asking GammaBest to re-select would mean handing it an
+        // array that is null everywhere except at `pick`. Same rule, same arithmetic, asked once.
+        var g = PlanarCalibration.Gamma(sShort, sLong, _deltas[pick], expect * _deltas[pick]);
         _prevBeta = g.Beta;
         _prevF    = fHz;
 
-        var box = PlanarDeembed.SolveErrorBox(sShort, sLong[pick], _shortLength,
+        var box = PlanarDeembed.SolveErrorBox(sShort, sLong, _shortLength,
                                               _shortLength + _deltas[pick], g.Gamma, _prevA21);
         _prevA21 = box.A21;
 
@@ -308,36 +343,97 @@ public sealed class PlanarPortCalibrator
     public PlanarCalibratorWork? PrepareAt(Func<PlanarFrequencyKernel> kernelFor, double fHz)
     {
         ArgumentNullException.ThrowIfNull(kernelFor);
-        if (_rawCache.ContainsKey(fHz)) return null;
 
+        var want = NeededAt(fHz);
+        if (_rawCache.TryGetValue(fHz, out var have)
+            && want.All(i => have[i] is not null)) return null;
+
+        var slots  = have ?? new Mat<Complex>?[_standards.Length];
+        var todo   = want.Where(i => slots[i] is null).ToArray();
         var kernel = kernelFor();
-        var raw    = new Mat<Complex>[_standards.Length];
-        var solves = new Action[_standards.Length];
-        for (int i = 0; i < _standards.Length; i++)
+
+        var solves = new Action[todo.Length];
+        var built  = new Mat<Complex>[todo.Length];
+        for (int j = 0; j < todo.Length; j++)
         {
-            int at = i;
-            solves[at] = () => raw[at] = _standards[at].RawScatteringAt(kernel, fHz);
+            int at = todo[j], slot = j;
+            solves[slot] = () => built[slot] = _standards[at].RawScatteringAt(kernel, fHz);
         }
 
         return new PlanarCalibratorWork(solves, () =>
         {
-            _rawCache[fHz] = (raw[0], raw[1..]);
-            SolveCount++;
+            for (int j = 0; j < todo.Length; j++) slots[todo[j]] = built[j];
+            _rawCache[fHz] = slots;
+            if (_solvedFrequencies.Add(fHz)) SolveCount++;
+            StandardSolveCount += todo.Length;
         });
     }
 
     /// <summary>
-    /// L9e/M1 — the standards' RAW scattering per frequency. Keyed by the exact <c>double</c> the
-    /// caller passed, which is safe because every frequency here came from the same array: a
-    /// tolerance would silently merge two genuinely distinct closely-spaced sweep points.
+    /// <b>The standards this frequency actually NEEDS: the short line, and the ONE long line the
+    /// prediction selects.</b> Never all of them.
+    ///
+    /// <para><b>This is the whole of the calibration saving, and it is a pure bookkeeping change: the
+    /// matrices no longer solved were never read.</b> <see cref="PlanarCalibration.GammaBest"/> reads
+    /// <c>sShort</c> and <c>sLong[pick]</c> and nothing else, and <c>pick</c> is a function of the Δℓ
+    /// set and the PREDICTED β alone — both known before any fill. Solving the rest and discarding
+    /// them was the single largest avoidable cost in a de-embedded sweep: the separations are sized
+    /// geometrically across the band, so at the top of a 1-20 GHz sweep the longest standard is
+    /// several times the DUT's own unknown count and is thrown away, and at the bottom the short ones
+    /// are.</para>
+    ///
+    /// <para>Deliberately NOT a narrowing of the standard SET — every separation is still built, so
+    /// <see cref="MeshCount"/>, the engine's own "N standard mesh(es)" note and R-prt-11's counter are
+    /// unchanged, and the per-frequency choice still ranges over all of them. What changed is only
+    /// which of them get filled at each frequency.</para>
     /// </summary>
-    private readonly Dictionary<double, (Mat<Complex> Short, Mat<Complex>[] Long)> _rawCache = new();
+    private int[] NeededAt(double fHz) =>
+        [0, 1 + PlanarCalibration.SelectSeparation(_deltas, ExpectedBeta(fHz))];
+
+    /// <summary>
+    /// How many standard meshes <see cref="PrepareAt"/> would fill at this frequency — 0 when it is
+    /// fully cached. The progress stage's own denominator: counting <see cref="MeshCount"/> there
+    /// would promise ticks that no longer happen and leave the bar permanently short.
+    /// </summary>
+    public int PlannedSolvesAt(double fHz)
+    {
+        var want = NeededAt(fHz);
+        if (!_rawCache.TryGetValue(fHz, out var have)) return want.Length;
+        return want.Count(i => have[i] is null);
+    }
+
+    /// <summary>The β this frequency's selection and branch continuation are predicted from — the
+    /// previous point's measured β scaled by frequency, or the pre-solve estimate at the first.</summary>
+    private double ExpectedBeta(double fHz) =>
+        double.IsNaN(_prevBeta) ? PlanarCalibration.EstimateBeta(_slab, fHz)
+                                : _prevBeta * (fHz / _prevF);
+
+    /// <summary>
+    /// L9e/M1 — the standards' RAW scattering per frequency, <b>one slot per standard, null where it
+    /// was never needed</b>. Keyed by the exact <c>double</c> the caller passed, which is safe because
+    /// every frequency here came from the same array: a tolerance would silently merge two genuinely
+    /// distinct closely-spaced sweep points.
+    /// </summary>
+    private readonly Dictionary<double, Mat<Complex>?[]> _rawCache = new();
+
+    private readonly HashSet<double> _solvedFrequencies = [];
 
     /// <summary>
     /// How many frequencies this calibrator has actually SOLVED, as against replayed — the counter
     /// that says the cache is doing its job. R-mom-11's pattern: assert the number, not a comment.
+    ///
+    /// <para>Counted per DISTINCT frequency, so a replay that re-predicts across a separation boundary
+    /// and needs one further mesh at an already-visited point does not read as a second solve of that
+    /// point. <see cref="StandardSolveCount"/> is where that extra mesh shows up.</para>
     /// </summary>
     public int SolveCount { get; private set; }
+
+    /// <summary>
+    /// How many standard MESHES have been filled, across every frequency — the honest work counter,
+    /// and the one that says the selection is doing its job. Two per frequency on a fresh sweep
+    /// however many separations the band asked for.
+    /// </summary>
+    public int StandardSolveCount { get; private set; }
 
     /// <summary>
     /// <b>Drop the branch state so the next <see cref="At"/> starts a fresh continuation.</b> The
@@ -782,8 +878,11 @@ public static class PlanarSolve
         {
             // The kernel fit is sequential and cheap (~0.2 s, L8c's Tier 8) and everything below
             // needs it, so it is not part of the fan-out.
+            // What will ACTUALLY be filled here, not how many standards exist: a calibrator solves the
+            // short line plus the one long line this frequency selects (PlanarPortCalibrator.NeededAt),
+            // so MeshCount would promise ticks that never arrive.
             int standardSolves = 0;
-            foreach (var cal in calibrators) standardSolves += cal.MeshCount;
+            foreach (var cal in calibrators) standardSolves += cal.PlannedSolvesAt(f);
 
             control?.BeginStage($"{FormatHz(f)} — Green's function", 2 + standardSolves);
             sw.Restart();

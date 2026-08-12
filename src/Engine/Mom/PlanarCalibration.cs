@@ -394,10 +394,34 @@ public static class PlanarCalibration
         if (sLong.Count == 0 || sLong.Count != deltaLM.Count)
             throw new ArgumentException("Each long standard needs its own Δℓ.", nameof(sLong));
 
+        index = SelectSeparation(deltaLM, expectedBetaPerMetre);
+        return Gamma(sShort, sLong[index], deltaLM[index], expectedBetaPerMetre * deltaLM[index]);
+    }
+
+    /// <summary>
+    /// Which separation <see cref="GammaBest"/> will choose — <b>a pure function of the Δℓ set and
+    /// the PREDICTED β, so it can be asked BEFORE any standard has been solved.</b>
+    ///
+    /// <para>That is the whole point of it being extracted rather than inlined. <see cref="GammaBest"/>
+    /// reads exactly two of the standards' raw matrices at any one frequency — the short line and the
+    /// one long line named here — so a driver that knows the answer in advance can solve two meshes
+    /// instead of all of them. <c>GammaBest</c>'s own doc comment used to say the selection "costs
+    /// nothing beyond the extra fill"; the extra fill turned out to be most of the run, and this is
+    /// what lets the sentence become true rather than remain a caveat.</para>
+    ///
+    /// <para>The scoring is unchanged and deliberately still keyed on the PREDICTION, never on an
+    /// extracted electrical length — see <see cref="GammaBest"/>'s own parameter note for the aliasing
+    /// reason. Moving it here changes no arithmetic; it changes only who may ask.</para>
+    /// </summary>
+    public static int SelectSeparation(IReadOnlyList<double> deltaLM, double expectedBetaPerMetre)
+    {
+        ArgumentNullException.ThrowIfNull(deltaLM);
+        if (deltaLM.Count == 0) throw new ArgumentException("No separations.", nameof(deltaLM));
+
         double centre = Math.Sqrt(PlanarCalibrationSettings.UsableLoDegrees *
                                   PlanarCalibrationSettings.UsableHiDegrees) * Math.PI / 180.0;
 
-        index = 0;
+        int index = 0;
         double bestScore = double.PositiveInfinity;
         for (int i = 0; i < deltaLM.Count; i++)
         {
@@ -405,8 +429,7 @@ public static class PlanarCalibration
             double score = Math.Abs(Math.Log(predicted / centre));
             if (score < bestScore) { bestScore = score; index = i; }
         }
-
-        return Gamma(sShort, sLong[index], deltaLM[index], expectedBetaPerMetre * deltaLM[index]);
+        return index;
     }
 
     /// <summary>

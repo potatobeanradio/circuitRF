@@ -1,5 +1,6 @@
 The EM Setup panel gained a Cores control, and fanning the solves out bought far less than expected
-(brief-em-sweep-performance M1/M2, 2026-08-11) — COMPLETE for M1 and M2; **M3–M5 not started.**
+(brief-em-sweep-performance M1/M2, 2026-08-11) — COMPLETE for M1 and M2; **M3 is a MEASURED
+DEFERRAL (its ceiling is 1.09-1.15x, measured before it was built); M4/M5 not started.**
 
 **What a user will notice: one new "Cores" control in the Solver options group, and nothing else.**
 It caps how many cores the full-wave solver may use at once; Automatic (the default) uses the whole
@@ -23,10 +24,20 @@ de-embedded point, 10 cores (twice, on separate runs, within 1%):
 The reason is in the design rather than in a defect: fanning out five fills does not make them
 finish sooner, because the fill already saturates the machine. What fanning out buys is the overlap
 of one solve's single-threaded LU with another's fill, and **the LU is about 1/114th of the fill**.
-**So the EM sweep's time is not somewhere M2 could reach it** — that is M3's ground (whole frequency
-points in parallel), and it is not started. M2 ships because it costs nothing measurable and its
-machinery — one budget, spent by the innermost work — is what M3 needs; it does not ship because it
-made anything faster.
+**So the EM sweep's time is not somewhere M2 could reach it — and M3 is not where it is either.**
+M3 (whole frequency points in parallel) was **measured before it was built, and was not built**: its
+premise is that a de-embedded point leaves cores idle, and one fill already scales **5.3x on this
+10-core box** while the whole point scales **5.4x**, so there is nothing left to overlap. Four
+independent frequency-shaped units run concurrently against one after another is **1.09x / 1.15x**
+on two runs — against 1.3-3.6 GB of concurrent working set and real races to introduce
+(`_rawCache`, `SolveCount`, the calibrator's branch continuations). `src/Engine/Mom/CLAUDE.md` §6
+records it with what would change the answer. **The sweep's time is in N (M0's own 2.76x) and in the
+calibration standards — about 75% of a real user's run, of which most has since been closed
+engine-side (`src/Engine/Mom/CLAUDE.md` §10: a point filled every standard and read two of them;
+filling only the two is 1.52x off a wide-port point, bit-identically, with no UI surface).** M2 ships
+because it costs nothing
+measurable and its machinery — one budget, spent by the innermost work — is what any future
+cross-frequency work would need; it does not ship because it made anything faster.
 
 **Three things worth knowing before touching the control:**
 
@@ -43,7 +54,10 @@ made anything faster.
 `tests/Engine.Tests/Mom/ParallelBudgetTests.cs` 3 routine (the fill filled at caps 1 / 2 / unbounded
 and through the shared budget is **bit-identical entry by entry**, and a cap of zero is refused by
 name) + 3 `Category=Benchmark` (the same de-embedded sweep at cap 1 and cap 8 with adaptive sampling
-off and on, and the cost table above — 6 min, opt-in). **Not interactively verified** (no visual
+off and on, and the cost table above — 6 min, opt-in), plus
+`tests/Engine.Tests/Mom/CrossFrequencyParallelismTests.cs` 2 `Category=Benchmark` (the M3
+measurement: the cap ladder one fill actually scales on, and four independent units concurrently
+against one after another). **Not interactively verified** (no visual
 driver here, matching every prior EM phase) — please confirm on your end: the Solver options group
 shows a "Cores" dropdown reading "Automatic (N cores)" plus 1/2/4/8/N, that choosing one sticks
 across reopening the setup and across restarting the app, and that a de-embedded planar run now

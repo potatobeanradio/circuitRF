@@ -227,6 +227,20 @@ public sealed record PlanarFillSettings(
     public PlanarParallelBudget? Budget { get; init; }
 
     /// <summary>
+    /// <b>M5 — non-null turns the AIM accelerator on for this mesh.</b> Null is the dense path, byte
+    /// for byte: <see cref="PlanarSolveContext"/> builds the full O(N²) cores, fills, factors and
+    /// back-substitutes exactly as L8c/L8d wrote it, and nothing on this object is read.
+    ///
+    /// <para>Deliberately outside the positional list, like <see cref="Budget"/>: it selects a
+    /// SOLVER, not a quantity, and it must not silently become part of a record's structural equality
+    /// where a comparison of two fill settings would start meaning "were these solved the same way".
+    /// It enters no provenance hash for the same reason the core cap does not (R-emp-7) — with the
+    /// accelerator's own accuracy gates passed, it changes how the answer is computed and not what it
+    /// is.</para>
+    /// </summary>
+    public PlanarAimSettings? Aim { get; init; }
+
+    /// <summary>
     /// <b>Refuse a setting that would silently produce a WRONG answer rather than an exception.</b>
     ///
     /// <para>These are not defensive checks against nonsense for its own sake — each one guards a
@@ -349,14 +363,27 @@ public sealed class PlanarFillCores
     internal readonly double[]? VXRad, VYRad;
     internal readonly double[] VXArea, VYArea;      // ∫w_m · ∫w_n, per pair — trivial but wanted per entry
 
+    /// <summary>
+    /// <b>M5 — false when the O(N²) pair arrays were deliberately not built.</b> The AIM accelerator
+    /// touches a vanishing fraction of the pairs and computes those on demand
+    /// (<see cref="PlanarEntryFill"/>), so building the cached triangles would be the very O(N²) cost
+    /// it exists to remove. Everything else on this object — the mesh, the settings, the ρ floor, the
+    /// extent, the per-direction index maps — is O(N) and is present either way.
+    ///
+    /// <para><see cref="PlanarFill.Fill"/> and <see cref="PlanarFill.FillMultiLevel"/> refuse a
+    /// geometry-only core by name rather than reading past the end of an empty array.</para>
+    /// </summary>
+    public bool HasPairCores { get; }
+
     internal PlanarFillCores(PlanarMesh mesh, PlanarFillSettings settings,
                              double minCellEdge, double extent, double rhoFloor,
                              double[] s0, double[] sLog, double[]? sRad,
                              int[] xBases, int[] yBases, int[] dirPos,
                              double[] vx0, double[] vxLog, double[]? vxRad, double[] vxArea,
                              double[] vy0, double[] vyLog, double[]? vyRad, double[] vyArea,
-                             long scalarPairs, long vectorPairs)
+                             long scalarPairs, long vectorPairs, bool hasPairCores = true)
     {
+        HasPairCores = hasPairCores;
         Mesh = mesh; Settings = settings;
         MinCellEdgeM = minCellEdge; ExtentM = extent; RhoFloorM = rhoFloor;
         S0 = s0; SLog = sLog; SRad = sRad;
@@ -375,6 +402,11 @@ public sealed class PlanarFillCores
     /// </summary>
     public (double Inverse, double Log, double Radius) ScalarCore(int cellA, int cellB)
     {
+        if (!HasPairCores)
+            throw new InvalidOperationException(
+                "These cores were built geometry-only (M5's accelerator path), so the cached cell-pair " +
+                "triangles do not exist. Ask PlanarEntryFill for the pair you want, or build the cores " +
+                "with PlanarFill.BuildCores.");
         int a = Math.Min(cellA, cellB), b = Math.Max(cellA, cellB);
         long k = (long)a * CellCount - (long)a * (a - 1) / 2 + (b - a);
         return (S0[k], SLog[k], SRad is null ? 0.0 : SRad[k]);
@@ -414,18 +446,7 @@ ArgumentNullException.ThrowIfNull(mesh);
         GuardCeiling(n);
 
         int m = mesh.Cells.Count;
-        double minEdge = double.PositiveInfinity;
-        double x0 = double.PositiveInfinity, y0 = double.PositiveInfinity;
-        double x1 = double.NegativeInfinity, y1 = double.NegativeInfinity;
-        foreach (var c in mesh.Cells)
-        {
-            minEdge = Math.Min(minEdge, Math.Min(c.Width, c.Height));
-            x0 = Math.Min(x0, c.XMin); y0 = Math.Min(y0, c.YMin);
-            x1 = Math.Max(x1, c.XMax); y1 = Math.Max(y1, c.YMax);
-        }
-        if (m == 0) { minEdge = 0; x0 = y0 = x1 = y1 = 0; }
-        double extent   = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
-        double rhoFloor = st.RhoFloorFraction * minEdge;
+        var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
 
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
 
@@ -469,6 +490,62 @@ ArgumentNullException.ThrowIfNull(mesh);
                                    vx0, vxLog, vxRad, vxArea,
                                    vy0, vyLog, vyRad, vyArea,
                                    sCount, vCount);
+    }
+
+    /// <summary>
+    /// <b>M5 — everything <see cref="BuildCores"/> produces EXCEPT the two O(N²) packed triangles.</b>
+    /// The ρ floor, the extent, the smallest cell edge and the per-direction index maps are all O(N)
+    /// and every consumer of them (the kernel's re-floor, the radial remainder table, the direction
+    /// split) works unchanged; what is absent is precisely the cached pair arithmetic that the AIM
+    /// accelerator never asks for, because it touches O(N) pairs and evaluates those on demand.
+    ///
+    /// <para>Building the full cores and then ignoring them would leave M5's whole cost claim resting
+    /// on an O(N²) build — which is the thing being removed. <see cref="PlanarFillCores.HasPairCores"/>
+    /// is false on the result and the dense fills refuse it by name.</para>
+    /// </summary>
+    public static PlanarFillCores BuildGeometryOnlyCores(PlanarMesh mesh, PlanarFillSettings? settings = null)
+    {
+        (settings ?? PlanarFillSettings.Default).Validate();
+        ArgumentNullException.ThrowIfNull(mesh);
+        var st = settings ?? PlanarFillSettings.Default;
+
+        int n = mesh.Bases.Count;
+        var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
+
+        var xb = new List<int>();
+        var yb = new List<int>();
+        for (int i = 0; i < n; i++)
+            (mesh.Bases[i].Direction == PlanarBasisDirection.X ? xb : yb).Add(i);
+
+        var dirPos = new int[n];
+        for (int i = 0; i < xb.Count; i++) dirPos[xb[i]] = i;
+        for (int i = 0; i < yb.Count; i++) dirPos[yb[i]] = i;
+
+        return new PlanarFillCores(mesh, st, minEdge, extent, rhoFloor,
+                                   [], [], null, [.. xb], [.. yb], dirPos,
+                                   [], [], null, [], [], [], null, [],
+                                   0, 0, hasPairCores: false);
+    }
+
+    /// <summary>The three mesh-wide scalars both core builders derive, in one place so the AIM path's
+    /// ρ floor and radial-table span are literally the dense path's rather than a second derivation
+    /// that can drift from it.</summary>
+    private static (double MinEdge, double Extent, double RhoFloor) MeshGeometry(
+        PlanarMesh mesh, PlanarFillSettings st)
+    {
+        double minEdge = double.PositiveInfinity;
+        double x0 = double.PositiveInfinity, y0 = double.PositiveInfinity;
+        double x1 = double.NegativeInfinity, y1 = double.NegativeInfinity;
+        foreach (var c in mesh.Cells)
+        {
+            minEdge = Math.Min(minEdge, Math.Min(c.Width, c.Height));
+            x0 = Math.Min(x0, c.XMin); y0 = Math.Min(y0, c.YMin);
+            x1 = Math.Max(x1, c.XMax); y1 = Math.Max(y1, c.YMax);
+        }
+        if (mesh.Cells.Count == 0) { minEdge = 0; x0 = y0 = x1 = y1 = 0; }
+        return (minEdge,
+                Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)),
+                st.RhoFloorFraction * minEdge);
     }
 
     private static (double[] C0, double[] CLog, double[]? CRad, double[] CArea) BuildDirectionCores(
@@ -543,6 +620,7 @@ ArgumentNullException.ThrowIfNull(mesh);
     {
         ArgumentNullException.ThrowIfNull(cores);
         ArgumentNullException.ThrowIfNull(termsQ);
+        RequirePairCores(cores);
 
         var mesh = cores.Mesh;
         int m = mesh.Cells.Count;
@@ -578,6 +656,7 @@ ArgumentNullException.ThrowIfNull(mesh);
                                   PlanarKernelTerms termsQ, double omega)
     {
         ArgumentNullException.ThrowIfNull(cores);
+        RequirePairCores(cores);
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
         GuardCeiling(n);
@@ -701,6 +780,7 @@ ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(cores);
         ArgumentNullException.ThrowIfNull(set);
         ArgumentNullException.ThrowIfNull(levels);
+        RequirePairCores(cores);
 
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
@@ -1550,6 +1630,60 @@ ArgumentNullException.ThrowIfNull(mesh);
     /// <summary>Packed upper-triangle index for <c>i ≤ j</c> in an <c>n×n</c> symmetric array.</summary>
     private static long Packed(int i, int j, int n) => (long)i * n - (long)i * (i - 1) / 2 + (j - i);
 
+    private static void RequirePairCores(PlanarFillCores cores)
+    {
+        if (cores.HasPairCores) return;
+        throw new InvalidOperationException(
+            "This fill needs the cached cell-pair and basis-pair cores, and these were built " +
+            "geometry-only by PlanarFill.BuildGeometryOnlyCores — the O(N) shape M5's accelerator " +
+            "uses. A DENSE fill of a geometry-only core would be silently building the O(N²) " +
+            "arithmetic that was deliberately skipped. Build the cores with PlanarFill.BuildCores if " +
+            "a dense matrix is what is wanted.");
+    }
+
+    // ── M5's per-entry seam ───────────────────────────────────────────────────────────────────
+    // PlanarEntryFill (below) is the only caller. These are wrappers rather than a widening of the
+    // helpers' own visibility, so the dense path's own call sites read exactly as L8c wrote them.
+
+    internal static CellWeight PulseAt(PlanarMesh mesh, int cellIndex) => Pulse(mesh, cellIndex);
+
+    internal static (CellWeight A, CellWeight B) RampHalvesOf(PlanarMesh mesh, PlanarBasis basis)
+        => RampHalves(mesh, basis);
+
+    internal static double WeightMomentOf(PlanarCell cell, CellWeight w, PlanarBasisDirection dir)
+        => WeightMoment(cell, w, dir);
+
+    internal static double ExtentOf(PlanarCell c, PlanarBasisDirection d) => Extent(c, d);
+
+    internal static (double C0, double CLog, double CRad) PairCoresOf(
+        PlanarMesh mesh, CellWeight wa, CellWeight wb, PlanarBasisDirection dir,
+        bool wantRad, PlanarFillSettings st) => PairCores(mesh, wa, wb, dir, wantRad, st);
+
+    internal static Complex PairRemainderOf(
+        PlanarMesh mesh, CellWeight wa, CellWeight wb, PlanarBasisDirection dir,
+        Func<double, Complex> rem, PlanarFillSettings st)
+        => PairRemainder(mesh, wa, wb, dir, rem, st);
+
+    internal static Func<double, Complex> RemainderOf(PlanarKernelTerms terms, PlanarFillCores cores)
+        => Remainder(terms, cores);
+
+    /// <summary>
+    /// <b>M5's projection reads the basis through the FILL'S OWN weight evaluation</b>, cut cells and
+    /// all, rather than re-deriving the rooftop from its geometry. A projection built on a second
+    /// reading of what the basis is would be an approximation of a different operator, and the
+    /// difference would show up as an accuracy floor nothing could explain.
+    /// </summary>
+    /// <summary>M5's near-field fill is row-parallel for exactly R-fil-11's reason — each row is
+    /// written by one iteration and nothing accumulates into shared state — so it goes through the
+    /// same budget-aware loop the dense fill does rather than a second <c>Parallel.For</c> that M1's
+    /// one cap would not bound.</summary>
+    internal static void ForRowsOf(PlanarFillSettings st, int count, Action<int> row)
+        => ForRows(st, count, row);
+
+    internal static IEnumerable<(double X, double Y, double W)> WeightNodes(
+        PlanarCell a, CellWeight wa, PlanarBasisDirection dir, int panels, int nodes)
+        => OuterNodes(a, wa, dir, panels, nodes);
+
     /// <summary>
     /// R-fil-11's parallelism: over ROWS, each written exactly once. Never over a shared accumulator,
     /// so the answer does not depend on how the scheduler happened to interleave.
@@ -1588,6 +1722,154 @@ ArgumentNullException.ThrowIfNull(mesh);
                 row);
         else
             System.Threading.Tasks.Parallel.For(0, count, row);
+    }
+}
+
+/// <summary>
+/// <b>M5 — ONE entry of the Galerkin matrix, computed on demand.</b> The dense fill's own arithmetic,
+/// in the dense fill's own order, for a single <c>(i, j)</c>: <see cref="At"/> is asserted BIT-IDENTICAL
+/// against <see cref="PlanarFill.Fill"/> entry by entry, which is what lets AIM's near-field correction
+/// be "the exact matrix, sparsely" rather than a second formulation of it.
+///
+/// <para><b>Why it exists at all.</b> AIM computes exact entries only for pairs inside its near field —
+/// O(N) of them, a few hundred per row — and <see cref="PlanarFill.BuildCores"/> is O(N²) in both time
+/// and memory. Filling the whole triangle and then reading a thin band out of it would leave the
+/// accelerator's cost claim resting on the very quadratic term it removes. So the cores are computed
+/// per pair here, from <see cref="PlanarFill.BuildGeometryOnlyCores"/>' O(N) geometry.</para>
+///
+/// <para><b>The cell-pair potential IS cached</b> (<see cref="_pCache"/>), because a rooftop's four
+/// signed halves are shared with every neighbouring rooftop and the scalar block would otherwise
+/// integrate the same cell pair up to sixteen times over one near-field row. That is a memoisation of
+/// an identical call, not a re-association: the cached value is the value the dense path computes.</para>
+///
+/// <para>Thread-safe: every field is read-only after construction, the remainder evaluators are the
+/// same shared radial tables the parallel dense fill already uses, and the cache is a
+/// <see cref="ConcurrentDictionary{TKey,TValue}"/>.</para>
+/// </summary>
+public sealed class PlanarEntryFill
+{
+    private readonly PlanarMesh         _mesh;
+    private readonly PlanarFillSettings _st;
+    private readonly PlanarKernelTerms  _termsA, _termsQ;
+    private readonly Func<double, Complex> _remA, _remQ;
+    private readonly Complex _scalarScale, _vectorScale;
+    private readonly bool    _wantRad;
+
+    private readonly (RooftopHalf A, RooftopHalf B)[]            _divHalves;
+    private readonly (PlanarFill.CellWeight A, PlanarFill.CellWeight B)[] _rampHalves;
+    private readonly double[] _moments;
+
+    private readonly ConcurrentDictionary<(int, int), Complex> _pCache = new();
+
+    /// <summary>How many distinct CELL pairs the scalar block has integrated — the counter that says
+    /// the near field really is O(N) and that the cache is doing what it is here for.</summary>
+    public int CellPairCount => _pCache.Count;
+
+    public PlanarEntryFill(PlanarFillCores cores, PlanarKernelTerms termsA, PlanarKernelTerms termsQ,
+                           double omega)
+    {
+        ArgumentNullException.ThrowIfNull(cores);
+        ArgumentNullException.ThrowIfNull(termsA);
+        ArgumentNullException.ThrowIfNull(termsQ);
+
+        _mesh = cores.Mesh;
+        _st   = cores.Settings;
+
+        // The dense path re-floors the terms for this mesh in exactly these two places
+        // (ScalarPotentialMatrix and Fill), so the entry evaluator does the same rather than trusting
+        // the caller to have done it.
+        _termsA = termsA.With(_st.Order, cores.RhoFloorM);
+        _termsQ = termsQ.With(_st.Order, cores.RhoFloorM);
+        _remA   = PlanarFill.RemainderOf(_termsA, cores);
+        _remQ   = PlanarFill.RemainderOf(_termsQ, cores);
+
+        _scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
+        _vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
+        _wantRad     = _st.Order >= PlanarExtractionOrder.Linear;
+
+        int n = _mesh.Bases.Count;
+        _divHalves  = new (RooftopHalf, RooftopHalf)[n];
+        _rampHalves = new (PlanarFill.CellWeight, PlanarFill.CellWeight)[n];
+        _moments    = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            var basis = _mesh.Bases[i];
+            _divHalves[i]  = PlanarBasisFunctions.Halves(_mesh, basis);
+            var (wa, wb)   = PlanarFill.RampHalvesOf(_mesh, basis);
+            _rampHalves[i] = (wa, wb);
+
+            var ca = _mesh.Cells[wa.CellIndex];
+            var cb = _mesh.Cells[wb.CellIndex];
+            var dir = basis.Direction;
+            _moments[i] = !ca.IsCut && !cb.IsCut
+                ? 0.5 * (PlanarFill.ExtentOf(ca, dir) + PlanarFill.ExtentOf(cb, dir))
+                : PlanarFill.WeightMomentOf(ca, wa, dir) + PlanarFill.WeightMomentOf(cb, wb, dir);
+        }
+    }
+
+    /// <summary>
+    /// <c>Z[i, j]</c>. Symmetric by construction, exactly as the dense fill is: the work is done on the
+    /// ordered pair <c>min ≤ max</c> and the other triangle is the same number, not a second
+    /// computation of it.
+    /// </summary>
+    public Complex At(int i, int j)
+    {
+        int a = Math.Min(i, j), b = Math.Max(i, j);
+
+        // ── the scalar block: the same signed sum of four cell-pair potentials (D4) ───────────
+        var (ma, mb) = _divHalves[a];
+        var (na, nb) = _divHalves[b];
+        Complex s = ma.Sign * na.Sign * P(ma.CellIndex, na.CellIndex)
+                  + ma.Sign * nb.Sign * P(ma.CellIndex, nb.CellIndex)
+                  + mb.Sign * na.Sign * P(mb.CellIndex, na.CellIndex)
+                  + mb.Sign * nb.Sign * P(mb.CellIndex, nb.CellIndex);
+        Complex z = _scalarScale * s;
+
+        // ── the vector block: same direction only (D5) ───────────────────────────────────────
+        var dirA = _mesh.Bases[a].Direction;
+        if (dirA != _mesh.Bases[b].Direction) return z;
+
+        var (ra, rb) = _rampHalves[a];
+        var (sa, sb) = _rampHalves[b];
+
+        var (t00, l00, r00) = PlanarFill.PairCoresOf(_mesh, ra, sa, dirA, _wantRad, _st);
+        var (t01, l01, r01) = PlanarFill.PairCoresOf(_mesh, ra, sb, dirA, _wantRad, _st);
+        var (t10, l10, r10) = PlanarFill.PairCoresOf(_mesh, rb, sa, dirA, _wantRad, _st);
+        var (t11, l11, r11) = PlanarFill.PairCoresOf(_mesh, rb, sb, dirA, _wantRad, _st);
+
+        Complex v = _termsA.Inverse * (t00 + t01 + t10 + t11)
+                  + _termsA.Log     * (l00 + l01 + l10 + l11);
+        if (_termsA.ExtractsConstant) v += _termsA.Constant * (_moments[a] * _moments[b]);
+        if (_termsA.ExtractsLinear)   v += _termsA.Linear   * (r00 + r01 + r10 + r11);
+
+        Complex r = PlanarFill.PairRemainderOf(_mesh, ra, sa, dirA, _remA, _st)
+                  + PlanarFill.PairRemainderOf(_mesh, ra, sb, dirA, _remA, _st)
+                  + PlanarFill.PairRemainderOf(_mesh, rb, sa, dirA, _remA, _st)
+                  + PlanarFill.PairRemainderOf(_mesh, rb, sb, dirA, _remA, _st);
+
+        return z + _vectorScale * (v + r);
+    }
+
+    /// <summary>D4's area-averaged scalar-potential coefficient for one CELL pair — the dense path's
+    /// <c>P[a, b]</c>, memoised.</summary>
+    private Complex P(int cellA, int cellB)
+    {
+        int a = Math.Min(cellA, cellB), b = Math.Max(cellA, cellB);
+        return _pCache.GetOrAdd((a, b), static (key, self) => self.ComputeP(key.Item1, key.Item2), this);
+    }
+
+    private Complex ComputeP(int a, int b)
+    {
+        var wa = PlanarFill.PulseAt(_mesh, a);
+        var wb = PlanarFill.PulseAt(_mesh, b);
+        var (c0, cl, cr) =
+            PlanarFill.PairCoresOf(_mesh, wa, wb, PlanarBasisDirection.X, _wantRad, _st);
+
+        Complex v = _termsQ.Inverse * c0 + _termsQ.Log * cl;
+        if (_termsQ.ExtractsConstant) v += _termsQ.Constant;          // area-normalised ⇒ core = 1
+        if (_termsQ.ExtractsLinear)   v += _termsQ.Linear * cr;
+        v += PlanarFill.PairRemainderOf(_mesh, wa, wb, PlanarBasisDirection.X, _remQ, _st);
+        return v;
     }
 }
 

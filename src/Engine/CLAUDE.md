@@ -86,7 +86,99 @@ compute exactly what they did.
 The constructor also gained an optional `extraInterfaceNodes`. Null — the default — is the shipped
 behaviour exactly: the interface is the nonlinear-facing nodes and nothing else.
 
-## `Mom/` — M1/M2: the core cap, and fanning the solves out bought nothing (brief-em-sweep-performance, 2026-08-11) — **M0–M2 done; M3–M5 not started**
+## `Mom/` — M5: the AIM accelerator is BUILT, and its win is MEMORY rather than time (brief-em-sweep-performance, 2026-08-12) — **ships OFF**
+
+**Read `src/Engine/Mom/CLAUDE.md` §12 before touching `PlanarAim.cs`, `PlanarGmres.cs` or the
+per-entry fill seam.** Every table lives there. `PlanarFillSettings.Aim` is null by default, so the
+dense L8c/L8d path and every published number in this area are untouched.
+
+The six things worth knowing from out here:
+
+- **THE FINDING, and it is not the one the entry count predicts: at N = 3,731 the accelerator touches
+  10.5% of the matrix and takes 96% of the dense path's wall clock.** The near field is genuinely
+  O(N) (290 → 392 entries per row over 12× N) and GMRES stays flat on the ACCELERATED product
+  (2 → 6 iterations, which is what §11 could not establish) — but **AIM's near field keeps precisely
+  the pairs L8c's singular extraction makes expensive and discards the cheap ones.** A near pair takes
+  a 900-point outer rule and a 4,096-node remainder; a far pair takes 9 and 16. **Do not read the
+  near-% column as a speed-up** — it is wrong by ten. Time crossover N ≈ 3,700.
+- **The MEMORY win is the real one, and it is measured: 53.3 MB against 212.4 MB at N = 3,731 (4.0×),
+  crossing over at N ≈ 900 — four times earlier than the time crossover.** R17 IS a memory ceiling, so
+  this is the milestone that could move it —
+  and `SurfaceMesher.UnknownCeiling` and `PlanarSystem.GuardCeiling` are deliberately byte-identical.
+  Widening them is a separate, measured act and the owner's call.
+- **R-emp-17 names two free parameters and the dominant one is NEITHER: the auxiliary PITCH.** The
+  stencil must resolve the KERNEL across its own width, not merely enclose the basis. Holding the near
+  radius fixed IN METRES so cost is the control: **0.235 λ_g → 5.69e-4, 0.117 λ_g → 5.52e-6,
+  0.059 λ_g → 8.72e-7** in the solved current, for the same entry count and the same build time — a
+  hundredfold for nothing. **And it turns back up at 0.029 λ_g**, where the moment system's own
+  conditioning becomes the error, so the curve has a floor and the default sits one step inside it.
+- **Its accuracy is governed by the MESH's resolution at the SOLVE frequency, so it inherits M0's
+  trade rather than adding one.** The pitch is half the largest basis support and the support is set by
+  the mesh, so a 10 GHz mesh run to 20 GHz degrades in step: |ΔS| 1.27e-7 at 2 GHz → 8.07e-4 at
+  20 GHz. **No new knob was added for it** — `MeshFrequencyHz` and `CellsPerWavelength` already are it.
+- **The near set is the UNION of a radius and STENCIL OVERLAP, and that is not belt-and-braces.** The
+  grid kernel needs a finite value at zero separation, and it is legitimate for that value to be
+  arbitrary ONLY because every pair that can see it is corrected exactly. Gated by moving the sentinel
+  10× and demanding the product not move (4.09e-16).
+- **The seam is asserted as BIT-IDENTITY.** `PlanarEntryFill` computes one entry in the dense fill's
+  own arithmetic and order, entry-by-entry equal to `PlanarFill.Fill`; and `BuildGeometryOnlyCores`
+  exists because filling the O(N²) cached triangles and reading a band out of them would leave the
+  whole cost claim resting on the quadratic term being removed. **The multi-level/via path is refused
+  by name** — a ẑ basis needs a different grid kernel per height pairing and a projection carrying a
+  ∂/∂x, which is a second phase.
+
+Gate: `AimAcceleratorTests` **9 routine (~2 s)** + `AimAccuracyTests` **5 `Category=Benchmark`
+(5.8 min)**. `tests/Engine.Tests/Mom` **589 routine passed in 4 m 48 s**.
+
+## `Mom/` — M5's decision gate is RUN, and the answer is BUILD IT (brief-em-sweep-performance gate 11, 2026-08-12)
+
+**Read `src/Engine/Mom/CLAUDE.md` §11 before starting M5 or re-opening the iterative-solver
+question.** Measured before a line of projection code exists, which was the point.
+
+- **The decision was never about the FFT.** AIM has no direct solve, so it needs an iterative one —
+  the same objection that deferred ACA. The brief's rule was "if GMRES needs O(N) iterations, AIM buys
+  nothing", and that is measurable today against the dense matrices this kernel already builds.
+- **With an 8-cell near-field preconditioner the iteration count is FLAT — 3 → 6 to a 1e-6 residual
+  over 6.7× N** — on the SHIPPING mesh (edge grading on, 8.3× cell spread) and a 2-D conductor. The
+  near field is genuinely O(N) (entries per row 227 → 273 while its nnz fraction falls 72% → 13%), and
+  its factorisation pulls away from the dense LU fast: parity at N = 579, **20× cheaper at N = 2,099**.
+- **The near-field RADIUS is the whole decision and the obvious choice is the wrong one.** 3 cells
+  degrades with N and on a refined mesh is beaten by no preconditioner at all; 8 cells is flat. Start
+  at 8 and measure down. **Jacobi is worthless here** — within a few percent of nothing at every N.
+- **The two ladders disagree, and that is the useful part**: growing the board is easy (flat), refining
+  the mesh is hard (a fixed stencil does not fix h → 0 conditioning). Edge grading IS local
+  refinement, which is why the product mesh needs the wider radius.
+- **What it does not establish**, stated so it is not over-read: the preconditioner measured is a full
+  sparse LU of the near field rather than the ILU a real AIM would use; the projection's own accuracy
+  (R-emp-16's two gates) is still entirely owed; and nothing was measured above 2,099 unknowns against
+  R17's 5,000 ceiling.
+
+## `Mom/` — the calibration standards: fill only the two that are read (brief-em-sweep-performance, 2026-08-11)
+
+**Read `src/Engine/Mom/CLAUDE.md` §10 before touching `PlanarPortCalibrator` or `GammaBest`.** Three
+things from out here:
+
+- **A de-embedded point solved EVERY calibration standard and read exactly TWO of them**, at every
+  frequency. `GammaBest` reads `sShort` and `sLong[pick]`, and `pick` is a function of the Δℓ set and
+  the PREDICTED β — both known before any fill. That scoring loop is now
+  `PlanarCalibration.SelectSeparation`, called by `GammaBest` unchanged and by the driver in advance.
+  **This is bookkeeping, not physics: the matrices no longer filled were never looked at.**
+- **1.52× off a whole de-embedded point across a 1–20 GHz band**, on a taper to 12 Ω whose wide port
+  is 20 cells across (DUT N = 3,005; its longest standard N = 2,515). 1.23× at the bottom of the band
+  and 1.80× at the top — **the saving is smallest at the bottom by construction**, because the
+  separations are sized geometrically and the longest standard is the one selected there.
+- **The standard SET is not narrowed.** Every separation is still built, so `MeshCount`, the
+  "N standard mesh(es)" note and R-prt-11's counter are unchanged, and the per-frequency choice still
+  ranges over all of them. A consequence worth knowing: this makes multiline TRL *cheaper as it
+  widens*, so the band ratio that decides the separation count is no longer a cost trade.
+- **Asserted as BIT-IDENTITY against the old path**, not a tolerance — the full set filled and
+  `GammaBest` run over it, compared entry by entry across a sweep with the branch continuation
+  stepped exactly as `At` steps it. `SolveCount` now counts distinct FREQUENCIES and
+  `StandardSolveCount` counts meshes; a replay may legitimately need one more mesh at an
+  already-visited point, and separating the two counters is what keeps L9e/M1's "the replay is free"
+  claim honest rather than quietly false.
+
+## `Mom/` — M1/M2: the core cap, and fanning the solves out bought nothing (brief-em-sweep-performance, 2026-08-11) — **M0–M2 done; M3 a MEASURED DEFERRAL; M4/M5 not started**
 
 **Read `src/Engine/Mom/CLAUDE.md` §9 before touching any parallelism here.** Three things from out
 here:
@@ -105,8 +197,13 @@ here:
   DUT and its calibration standards concurrently; measured, the fan-out's own gain is **1.18×** with
   row parallelism held off, and **1.00–1.06× in the shipped configuration** — inside
   process-to-process variation. The overlap it buys is one solve's single-threaded LU against
-  another's fill, and the LU is ~1/114th of the fill. The sweep's time is not there; M3 (whole
-  frequency points in parallel) is where a large multiple could still be.
+  another's fill, and the LU is ~1/114th of the fill.
+- **M3 was measured BEFORE it was built, and was not built.** Cross-frequency parallelism assumes a
+  point leaves cores idle; one fill scales 5.3× on this 10-core box and the whole point scales 5.4×,
+  so there is nothing to overlap. Four independent units concurrently against one after another:
+  **1.09–1.15×**, against 1.3–3.6 GB of concurrent working set and races to introduce into a shipped
+  solver. `Mom/CLAUDE.md` §6 records it, with what would change the answer. **The sweep's time is in
+  N (M0's own 2.76×) and in the calibration standards — ~75% of a real user's run — not in cores.**
 
 ## `Mom/` — M0: the mesh frequency, and the measurement that says how far it may be turned down (brief-em-sweep-performance, 2026-08-11)
 

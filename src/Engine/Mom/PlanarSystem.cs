@@ -21,10 +21,27 @@ using NumFlat;
 namespace CircuitRF.Engine.Mom;
 
 /// <summary>
+/// <b>M5 — what an excitation actually needs from a "system": a size and a solve.</b>
+///
+/// <para>The dense path satisfies it with an LU; the AIM accelerator satisfies it with GMRES against a
+/// product it never forms as a matrix. Introducing the seam here rather than branching inside
+/// <see cref="PlanarExcitation"/> is what keeps <c>Y = BᵀZ⁻¹B</c> one piece of code — the port
+/// algebra is identical either way, and a second copy of it is exactly where a sign convention drifts.</para>
+/// </summary>
+public interface IPlanarOperator
+{
+    /// <summary>N — the unknown count.</summary>
+    int Size { get; }
+
+    /// <summary>One right-hand side, solved.</summary>
+    Vec<Complex> Solve(Vec<Complex> rhs);
+}
+
+/// <summary>
 /// The dense complex system for one frequency: the matrix, its size, and its LU — with R17's refusal
 /// asked before the allocation rather than after it.
 /// </summary>
-public sealed class PlanarSystem
+public sealed class PlanarSystem : IPlanarOperator
 {
     public Mat<Complex> Matrix { get; }
     public int Size => Matrix.RowCount;
