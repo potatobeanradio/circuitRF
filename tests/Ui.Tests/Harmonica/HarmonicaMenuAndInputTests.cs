@@ -119,20 +119,22 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
     // ══ R-h7-2 — the Markers menu creates and removes bands ══════════════════
 
     [Fact]
-    public void AddingAnL2Marker_CreatesTheMarkerAndMarksTheBand_ThroughOneCall()
+    public void AddingAnS3Marker_CreatesTheMarkerAndMarksTheBand_ThroughOneCall()
     {
+        // R-h9b-14 — a new document's default set is S1, S2, L1, L2, L3, so S3 (not L2) is the band
+        // that starts genuinely unmarked on the default fixture (K = 3).
         var vm = new HarmonicaViewModel();
         var menus = new HarmonicaMenuViewModel(vm);
 
-        Assert.False(vm.Terminations.IsMarked(TerminationSide.Load, 2));
-        Assert.DoesNotContain(vm.Markers, m => m is { Side: TerminationSideKind.Load, Band: 2 });
+        Assert.False(vm.Terminations.IsMarked(TerminationSide.Source, 3));
+        Assert.DoesNotContain(vm.Markers, m => m is { Side: TerminationSideKind.Source, Band: 3 });
 
-        var band2 = menus.LoadBands.Single(b => b.Band == 2);
-        band2.IsPresent = true;                       // exactly what clicking the menu item does
+        var band3 = menus.SourceBands.Single(b => b.Band == 3);
+        band3.IsPresent = true;                       // exactly what clicking the menu item does
 
-        Assert.Contains(vm.Markers, m => m is { Side: TerminationSideKind.Load, Band: 2 });
-        Assert.True(vm.Terminations.IsMarked(TerminationSide.Load, 2),
-            "the marker exists but the band is unmarked — two sources for 'what is band 2 " +
+        Assert.Contains(vm.Markers, m => m is { Side: TerminationSideKind.Source, Band: 3 });
+        Assert.True(vm.Terminations.IsMarked(TerminationSide.Source, 3),
+            "the marker exists but the band is unmarked — two sources for 'what is band 3 " +
             "terminated in' have already drifted");
     }
 
@@ -186,9 +188,10 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
         var vm = new HarmonicaViewModel();
         var menus = new HarmonicaMenuViewModel(vm);
 
-        menus.LoadBands.Single(b => b.Band == 2).IsPresent = true;
+        // R-h9b-14's defaults are already S1, S2, L1, L2, L3 (5); Source band 3 is the one still
+        // unmarked, so adding it brings the count to 6.
         menus.SourceBands.Single(b => b.Band == 3).IsPresent = true;
-        Assert.Equal(4, vm.Markers.Count);
+        Assert.Equal(6, vm.Markers.Count);
 
         menus.ResetMarkersCommand.Execute(null);
 

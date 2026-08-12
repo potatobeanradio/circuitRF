@@ -98,7 +98,7 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
     {
         var vm = await DocumentAtTierAOnly();
 
-        var marker = vm.Markers[1];                       // L1
+        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
         Assert.NotEqual(Complex.Zero, marker.GammaIntrinsic);
         output.WriteLine($"before: {marker.Name} extrinsic Γ = {Fmt(marker.Gamma)}, " +
                          $"intrinsic Γ = {Fmt(marker.GammaIntrinsic)}");
@@ -162,7 +162,7 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
     {
         var vm = await DocumentAtTierAOnly();
 
-        var marker = vm.Markers[1];
+        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
         var extrinsicBefore = marker.Gamma;
         var termsBefore     = vm.Terminations.Z(TerminationSide.Load, 1);
         var glyphBefore     = marker.GammaIntrinsic;
@@ -196,7 +196,7 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
         var vm = await DocumentAtTierAOnly();
         int startedBefore = vm.Pool.StartedCount;
 
-        var marker = vm.Markers[1];
+        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
         var g = new HarmonicaGesture(vm);
         var (gx, gy) = OnPowerPanel(vm, marker.GammaIntrinsic);
         Assert.True(g.PointerDown(gx, gy, W, H));
@@ -233,7 +233,7 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
         Assert.True(vm.ShowReachableRegion);
         Assert.Equal(0, vm.ReachabilitySampleCount);
 
-        var marker = vm.Markers[1];
+        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
         var g = new HarmonicaGesture(vm);
         var (gx, gy) = OnPowerPanel(vm, marker.GammaIntrinsic);
         Assert.True(g.PointerDown(gx, gy, W, H));
@@ -271,7 +271,7 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
         var vm = await DocumentAtTierAOnly();
         vm.ShowReachableRegion = false;
 
-        var marker = vm.Markers[1];
+        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
         var g = new HarmonicaGesture(vm);
         var (gx, gy) = OnPowerPanel(vm, marker.GammaIntrinsic);
         Assert.True(g.PointerDown(gx, gy, W, H));

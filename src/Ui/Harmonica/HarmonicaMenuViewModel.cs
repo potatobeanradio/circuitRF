@@ -238,6 +238,14 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
         _vm.Appearance = _vm.Appearance with { ShowIsoLineLabels = _vm.ShowIsoLineLabels };
     }
 
+    /// <summary>R-h9b-7 — mirrors <see cref="ToggleIsoLineLabels"/> exactly.</summary>
+    [RelayCommand]
+    private void ToggleShowGridPoints()
+    {
+        _vm.ShowGridPoints = !_vm.ShowGridPoints;
+        _vm.Appearance = _vm.Appearance with { ShowGridPoints = _vm.ShowGridPoints };
+    }
+
     [RelayCommand] private void ToggleLoadlinePlane() => _vm.IntrinsicPlane = !_vm.IntrinsicPlane;
 
     [RelayCommand]

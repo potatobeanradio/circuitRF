@@ -193,6 +193,14 @@ public static class CharmIo
             ComputeCharge = m.Settings.ComputeCharge,
             BiasChokeH    = m.Settings.BiasChokeHenries,
             DcBlockF      = m.Settings.DcBlockFarads,
+            Z0            = m.Settings.Z0,
+            LoadlineSamples = m.Settings.LoadlineSamples,
+            DcivVgsMin    = m.Settings.DcivVgsMin,
+            DcivVgsMax    = m.Settings.DcivVgsMax,
+            DcivVgsSteps  = m.Settings.DcivVgsSteps,
+            DcivVdsMin    = m.Settings.DcivVdsMin,
+            DcivVdsMax    = m.Settings.DcivVdsMax,
+            DcivVdsSteps  = m.Settings.DcivVdsSteps,
         },
         PavlDbm = m.PavlDbm,
     };
@@ -255,6 +263,14 @@ public static class CharmIo
                 ComputeCharge = s?.ComputeCharge ?? defaults.ComputeCharge,
                 BiasChokeHenries = s?.BiasChokeH ?? defaults.BiasChokeHenries,
                 DcBlockFarads    = s?.DcBlockF   ?? defaults.DcBlockFarads,
+                Z0               = s?.Z0         ?? defaults.Z0,
+                LoadlineSamples  = s?.LoadlineSamples ?? defaults.LoadlineSamples,
+                DcivVgsMin       = s?.DcivVgsMin,
+                DcivVgsMax       = s?.DcivVgsMax,
+                DcivVgsSteps     = s?.DcivVgsSteps,
+                DcivVdsMin       = s?.DcivVdsMin,
+                DcivVdsMax       = s?.DcivVdsMax,
+                DcivVdsSteps     = s?.DcivVdsSteps,
             },
             PavlDbm = d.PavlDbm ?? 0.0,
         };
@@ -345,6 +361,23 @@ public static class CharmIo
         public bool?   ComputeCharge { get; set; }
         public double? BiasChokeH { get; set; }
         public double? DcBlockF { get; set; }
+
+        /// <summary>R-h9b-6 — absent on every .charm written before this setting existed; such a
+        /// file opens at the historical 50 Ω, no <c>FormatVersion</c> bump.</summary>
+        public double? Z0 { get; set; }
+
+        /// <summary>R-h9b-13 — absent on every .charm written before this setting existed; such a
+        /// file opens at the default 64 samples.</summary>
+        public int? LoadlineSamples { get; set; }
+
+        /// <summary>R-h9b-12 — the DCIV Sweeps dialog's override, all-or-nothing (see
+        /// <c>DcivFamily.OverrideOf</c>). Absent on every .charm written before the dialog existed.</summary>
+        public double? DcivVgsMin { get; set; }
+        public double? DcivVgsMax { get; set; }
+        public int?    DcivVgsSteps { get; set; }
+        public double? DcivVdsMin { get; set; }
+        public double? DcivVdsMax { get; set; }
+        public int?    DcivVdsSteps { get; set; }
     }
 
     // ── markers ───────────────────────────────────────────────────────────────
@@ -538,6 +571,7 @@ public static class CharmIo
             IsoAlphaFloor     = a.IsoAlphaFloor,
             IsoAlphaExponent  = a.IsoAlphaExponent,
             ShowIsoLineLabels = a.ShowIsoLineLabels,
+            ShowGridPoints    = a.ShowGridPoints,
         };
 
         static Dictionary<string, string>? Sorted(IReadOnlyDictionary<string, string> src)
@@ -561,6 +595,7 @@ public static class CharmIo
                 IsoAlphaFloor     = b.IsoAlphaFloor,
                 IsoAlphaExponent  = b.IsoAlphaExponent,
                 ShowIsoLineLabels = b.ShowIsoLineLabels,
+                ShowGridPoints    = b.ShowGridPoints,
             };
 
     private sealed class CharmAppearanceBlock
@@ -570,5 +605,6 @@ public static class CharmIo
         public double? IsoAlphaFloor     { get; set; }
         public double? IsoAlphaExponent  { get; set; }
         public bool?   ShowIsoLineLabels { get; set; }
+        public bool?   ShowGridPoints    { get; set; }
     }
 }

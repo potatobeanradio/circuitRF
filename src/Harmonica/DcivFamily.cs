@@ -51,6 +51,39 @@ public static class DcivFamily
     }
 
     /// <summary>
+    /// R-h9b-12 — the user's own VGS/VDS sweep from the DCIV Sweeps dialog, or null when nothing has
+    /// been set. <see cref="HarmonicaSettings"/>'s six fields are all-or-nothing: a partially-set
+    /// group (a document hand-edited outside the dialog) is treated as absent rather than filling the
+    /// gaps with <see cref="DefaultKey"/>'s own numbers, which would silently blend two windows into
+    /// one nobody chose.
+    /// </summary>
+    public static Key? OverrideOf(CircuitModel model)
+    {
+        var s = model.Settings;
+        if (s.DcivVgsMin is not { } vgsMin || s.DcivVgsMax is not { } vgsMax ||
+            s.DcivVgsSteps is not { } vgsSteps ||
+            s.DcivVdsMin is not { } vdsMin || s.DcivVdsMax is not { } vdsMax ||
+            s.DcivVdsSteps is not { } vdsSteps)
+            return null;
+
+        return new Key(model.StructuralKey, vgsMin, vgsMax, vgsSteps, vdsMin, vdsMax, vdsSteps,
+                       DrainPort: 1);
+    }
+
+    /// <summary>The key <see cref="HarmonicaSolver"/> actually solves against: the override when set,
+    /// else <see cref="DefaultKey"/>.</summary>
+    public static Key ResolvedKey(CircuitModel model) => OverrideOf(model) ?? DefaultKey(model);
+
+    /// <summary>
+    /// Validates a candidate override BEFORE it is written — R-h9b-12's "a robust validator so that a
+    /// DCIV trace is always shown". min &lt; max on both axes, steps ≥ 2 on both, everything finite.
+    /// </summary>
+    public static bool IsValidOverride(double vgsMin, double vgsMax, int vgsSteps,
+                                       double vdsMin, double vdsMax, int vdsSteps)
+        => double.IsFinite(vgsMin) && double.IsFinite(vgsMax) && vgsMin < vgsMax && vgsSteps >= 2
+        && double.IsFinite(vdsMin) && double.IsFinite(vdsMax) && vdsMin < vdsMax && vdsSteps >= 2;
+
+    /// <summary>
     /// Sweeps the DUT's static I–V. <paramref name="ctx"/> supplies the elaborated device; nothing
     /// about the context's terminations, drive or converged state is read, which is what makes the
     /// result termination-independent by construction rather than by promise.

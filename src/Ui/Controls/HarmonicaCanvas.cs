@@ -33,6 +33,12 @@ namespace CircuitRF.Ui.Controls;
 /// </summary>
 public sealed class HarmonicaCanvas : Control
 {
+    // R-h9b-2 — without this, OnKeyDown never fires: Escape-cancels-a-drag and Delete-removes-the-
+    // panel-under-the-pointer (§7.7) were both unreachable, and HarmonicaView.FocusCanvas()'s
+    // Canvas.Focus() was a no-op. SchematicCanvas / LayoutCanvas both set this in their constructors;
+    // this control had none at all.
+    public HarmonicaCanvas() => Focusable = true;
+
     public static readonly DirectProperty<HarmonicaCanvas, HarmonicaViewModel?> ViewModelProperty =
         AvaloniaProperty.RegisterDirect<HarmonicaCanvas, HarmonicaViewModel?>(
             nameof(ViewModel), o => o.ViewModel, (o, v) => o.ViewModel = v);
@@ -68,12 +74,41 @@ public sealed class HarmonicaCanvas : Control
     /// between a Retina display and an external monitor changes it mid-session.</summary>
     private double RenderScaling => TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
 
+    /// <summary>
+    /// R-h9b-10/12 — where the last right-click landed, in this canvas's own coordinates. Only
+    /// RECORDED here, mirroring <c>LayoutCanvas.ContextMenuTarget</c>'s own pattern: the single
+    /// <c>ContextMenu</c> declared once in <c>HarmonicaView.axaml</c> reads it via
+    /// <see cref="ConsumeContextMenuTarget"/> on <c>Opening</c> and builds its items fresh, so two
+    /// right-click gestures (the power-sweep X-axis unit picker and the DCIV Sweeps dialog) share one
+    /// context menu instance rather than each popping its own.
+    /// </summary>
+    public Avalonia.Point? ContextMenuTarget { get; private set; }
+
+    /// <summary>Consumes <see cref="ContextMenuTarget"/> — read once per menu opening, the same
+    /// one-shot contract <c>LayoutCanvas.ConsumeContextMenuTarget</c> uses.</summary>
+    public Avalonia.Point? ConsumeContextMenuTarget()
+    {
+        var t = ContextMenuTarget;
+        ContextMenuTarget = null;
+        return t;
+    }
+
     protected override void OnPointerPressed(Avalonia.Input.PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         if (Gesture is not { } g || Bounds.Width <= 0) return;
 
         var p = e.GetPosition(this);
+
+        // R-h9b-10 — a right-click must not begin a drag. Deliberately NOT e.Handled = true: that
+        // would risk suppressing Avalonia's own right-click-opens-ContextMenu gesture recognition,
+        // the same reason LayoutCanvas's own right-click branch leaves it unhandled.
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            ContextMenuTarget = p;
+            return;
+        }
+
         if (g.PointerDown(p.X, p.Y, Bounds.Width, Bounds.Height, RenderScaling))
         {
             e.Pointer.Capture(this);
@@ -90,7 +125,7 @@ public sealed class HarmonicaCanvas : Control
         // both of them the moment the pointer goes anywhere.
         _lastPointer = e.GetPosition(this);
 
-        if (Gesture is not { IsDragging: true } g) return;
+        if (Gesture is not { IsLive: true } g) return;
 
         var p = _lastPointer;
         g.PointerMoved(p.X, p.Y, Bounds.Width, Bounds.Height, RenderScaling);
@@ -100,7 +135,7 @@ public sealed class HarmonicaCanvas : Control
     protected override void OnPointerReleased(Avalonia.Input.PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (Gesture is not { IsDragging: true } g) return;
+        if (Gesture is not { IsLive: true } g) return;
 
         var p = e.GetPosition(this);
         g.PointerUp(p.X, p.Y, Bounds.Width, Bounds.Height, RenderScaling);

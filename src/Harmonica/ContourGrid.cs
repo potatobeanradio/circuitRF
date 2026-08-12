@@ -70,8 +70,12 @@ public sealed class ContourGrid
     private Rbf2D.Factored? _factor;
     private bool[]          _factorMask = [];
 
-    /// <summary>Reference impedance the Γ values are against.</summary>
-    public double Z0 { get; }
+    /// <summary>
+    /// Reference impedance the Γ values are against. Re-read from <c>ctx.Model.Settings.Z0</c> at the
+    /// START of every <see cref="Build"/> (R-h9b-6) — a worker's grid is a long-lived, reused object
+    /// (§6.7), so its Z0 must track the document's own live value rather than freeze at construction.
+    /// </summary>
+    public double Z0 { get; private set; }
 
     public ContourGrid(double z0 = 50.0) => Z0 = z0;
 
@@ -122,6 +126,11 @@ public sealed class ContourGrid
                       int tuneHarmonic = 1, CancellationToken ct = default,
                       bool reuseUnchanged = false)
     {
+        // R-h9b-6 — this grid is a long-lived, per-worker object (§6.7); re-read Z0 from the document
+        // on every build rather than freezing it at construction, or a Z0 change would silently keep
+        // sweeping the OLD reference on every worker until the process restarted.
+        Z0 = ctx.Model.Settings.Z0;
+
         // R-h7-12 — a DRAGGED grid point invalidates exactly one Γ sample. Everything else in the
         // scatter is at the identical Γ and was solved against the identical terminations, so its
         // PinSearch answer is bit-identical to what re-solving would produce. Keyed on the Γ value
@@ -198,6 +207,7 @@ public sealed class ContourGrid
           .Append('|').Append(ctx.Model.Settings.CompressionDb)
           .Append('|').Append(ctx.Model.Settings.PinStartDbm)
           .Append('|').Append(ctx.Model.Settings.PinMaxDbm)
+          .Append('|').Append(ctx.Model.Settings.Z0)
           .Append('|').Append(side).Append('|').Append(tuneHarmonic);
 
         for (int s = 0; s < 2; s++)
@@ -253,6 +263,90 @@ public sealed class ContourGrid
 
     /// <summary>MXE — the maximum-efficiency grid point, drain efficiency by default (§7.2).</summary>
     public GridExtremum? Mxe => Extremum(GridMetric.DrainEfficiency);
+
+    /// <summary>
+    /// R-h9b-15 — the argmax of a Γ and its metric value.
+    /// </summary>
+    public readonly record struct InterpolatedExtremum(Complex Gamma, double Value);
+
+    /// <summary>
+    /// R-h9b-15 — the argmax of the FITTED surface, not of the samples: seeded from
+    /// <paramref name="raster"/>'s own argmax cell (already computed once per panel per frame — this
+    /// does not raster again), then refined by a local, resolution-INDEPENDENT high-resolution search
+    /// on the same <see cref="Rbf2D"/> <see cref="Fit"/> the contours themselves are drawn from —
+    /// so the glyph, the iso-lines and this answer can never describe different objects.
+    ///
+    /// <para>This is the same technique <c>LoadpullSurface.GetMxx</c> already uses for the identical
+    /// problem (a local high-res grid search around the measured peak) — applied to a
+    /// <see cref="ContourGrid"/> scatter instead of a loadpull <c>DataSet</c>, because the two data
+    /// owners are not the same shape.</para>
+    ///
+    /// <para><b>Resolution-independent by construction, not by luck.</b> The refinement window's own
+    /// resolution (<see cref="RefineSamples"/>) is FIXED regardless of the raster's — only the SEED
+    /// (which cell to search near) comes from the raster, and a raster coarse enough to seed the wrong
+    /// local basin entirely is the one failure mode this cannot correct; §D5's 96/256 pair is far
+    /// finer than that in practice (state the measured agreement in the completion note).</para>
+    ///
+    /// <para><b>Respects the support mask.</b> Every candidate point is checked with
+    /// <see cref="InSupport"/> against the SAME hull/hole-radius the raster used, so refinement can
+    /// never wander into a region nothing converged.</para>
+    /// </summary>
+    public InterpolatedExtremum? InterpolatedArgmax(GridMetric metric, SurfaceGrid raster)
+    {
+        int nx = raster.XSpace.Length, ny = raster.YSpace.Length;
+        if (nx == 0 || ny == 0) return null;
+
+        int seedXi = -1, seedYi = -1;
+        double seedVal = double.NegativeInfinity;
+        for (int yi = 0; yi < ny; yi++)
+            for (int xi = 0; xi < nx; xi++)
+            {
+                double v = raster.Values[yi * nx + xi];
+                if (double.IsNaN(v) || v <= seedVal) continue;
+                seedVal = v; seedXi = xi; seedYi = yi;
+            }
+        if (seedXi < 0) return null;   // every raster cell is a hole — "no optimum", not the origin
+
+        var fit  = Fit(metric);
+        var hull = ConvexHull([.. _points.Where(p => !p.IsHole).Select(p => p.Gamma)]);
+        double holeRadius = HoleRadiusFactor * MeanNearestNeighbourSpacing();
+
+        double stepRe = nx > 1 ? raster.XSpace[1] - raster.XSpace[0] : 0.1;
+        double stepIm = ny > 1 ? raster.YSpace[1] - raster.YSpace[0] : 0.1;
+        double cx = raster.XSpace[seedXi], cy = raster.YSpace[seedYi];
+        double halfRe = Math.Max(Math.Abs(stepRe) * 2, 1e-6);
+        double halfIm = Math.Max(Math.Abs(stepIm) * 2, 1e-6);
+
+        var best = new Complex(cx, cy);
+        double bestVal = seedVal;
+
+        // A few zoom passes at a FIXED sample count each — the resolution independence claim.
+        for (int pass = 0; pass < RefinePasses; pass++)
+        {
+            double foundRe = best.Real, foundIm = best.Imaginary;
+            double localBest = double.NegativeInfinity;
+            for (int yi = 0; yi < RefineSamples; yi++)
+            {
+                double im = best.Imaginary - halfIm + 2 * halfIm * yi / (RefineSamples - 1);
+                for (int xi = 0; xi < RefineSamples; xi++)
+                {
+                    double re = best.Real - halfRe + 2 * halfRe * xi / (RefineSamples - 1);
+                    if (!InSupport(re, im, hull, holeRadius)) continue;
+                    double v = fit.Evaluate(re, im);
+                    if (v > localBest) { localBest = v; foundRe = re; foundIm = im; }
+                }
+            }
+            if (double.IsNegativeInfinity(localBest)) break;   // the window found nothing supported
+            best = new Complex(foundRe, foundIm);
+            bestVal = localBest;
+            halfRe /= 4; halfIm /= 4;
+        }
+
+        return new InterpolatedExtremum(best, bestVal);
+    }
+
+    private const int RefineSamples = 25;
+    private const int RefinePasses  = 3;
 
     // ── R-hrf-9 — the factorization cache ─────────────────────────────────────
 

@@ -127,6 +127,7 @@
               </NativeMenuItem.Menu>
             </NativeMenuItem>
             <NativeMenuItem Header="Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"/>
+            <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -261,6 +262,8 @@
       </MenuItem>
       <MenuItem Header="_Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"
                 ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them, and labelling is the most expensive part of the extract."/>
+      <MenuItem Header="_Grid Points" Command="{Binding ToggleShowGridPointsCommand}"
+                ToolTip.Tip="The Γ grid sample dots. Off by default; draggable once shown."/>
     </MenuItem>
 
     <MenuItem Header="_Grid" Padding="8,4">

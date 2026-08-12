@@ -32,14 +32,16 @@ public static class HarmonicaCanvasRenderer
         CharmLayout                       Layout,
         HarmonicaRenderTheme              Theme,
         bool                              Dark,
-        IReadOnlyList<HarmonicaPickedTrace> Picked)
+        IReadOnlyList<HarmonicaPickedTrace> Picked,
+        bool                              ShowGridPoints)
     {
         public static Snapshot Of(HarmonicaViewModel? vm) => new(
             vm?.Frame       ?? HarmonicaFrame.Empty,
             vm?.Layout      ?? CharmLayout.Default,
             vm?.RenderTheme ?? HarmonicaRenderTheme.Dark,
             vm?.Variant     != Theming.ColorVariant.Light,
-            vm is null ? [] : [.. vm.PickedTraces]);
+            vm is null ? [] : [.. vm.PickedTraces],
+            vm?.ShowGridPoints ?? false);
     }
 
     /// <summary>Fills the target rect with the document background. Never <c>canvas.Clear</c>, which
@@ -107,10 +109,12 @@ public static class HarmonicaCanvasRenderer
         switch (panelId)
         {
             case HarmonicaPanelId.SmithPower:
-                HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithPower, s.Theme, s.Dark);
+                HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithPower, s.Theme, s.Dark,
+                                                      s.ShowGridPoints);
                 return;
             case HarmonicaPanelId.SmithEfficiency:
-                HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithEfficiency, s.Theme, s.Dark);
+                HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithEfficiency, s.Theme, s.Dark,
+                                                      s.ShowGridPoints);
                 return;
             case HarmonicaPanelId.Loadline:
                 HarmonicaPanelRenderer.DrawLoadlinePanel(canvas, size, s.Frame.Loadline, s.Theme, s.Dark);

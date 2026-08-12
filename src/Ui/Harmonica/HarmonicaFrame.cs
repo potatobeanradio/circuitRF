@@ -62,8 +62,13 @@ public readonly record struct HarmonicaGridPoint(Complex Gamma, bool IsHole);
 /// </summary>
 public sealed record SmithPanelData
 {
-    /// <summary>Panel title, e.g. "Power @ P-3dB" / "Efficiency @ P-3dB".</summary>
+    /// <summary>R-h9b-4's row 1 — the metric, e.g. "P-3dB Power (dBm)" / "P-3dB Efficiency (%)".</summary>
     public string Title { get; init; } = "";
+
+    /// <summary>R-h9b-4's row 2 — the swept plane and band, e.g. "Fundamental Load Plane, Z0=50Ω".
+    /// Drawn beneath <see cref="Title"/>, centred with the chart; both rows are built by
+    /// <c>HarmonicaTitles</c> so the two charts cannot disagree about how a setting is spelled.</summary>
+    public string Subtitle { get; init; } = "";
 
     /// <summary>Iso-lines, already clipped to the support mask by <c>ContourGrid</c>.</summary>
     public IReadOnlyList<RfCore.Loadpull.IsoPolyline> Contours { get; init; } = [];
@@ -78,9 +83,32 @@ public sealed record SmithPanelData
     public IReadOnlyList<HarmonicaMarker> Markers { get; init; } = [];
 
     /// <summary>D6's argmax over the computed grid — never a search, so the readout beside it can
-    /// never disagree with what is drawn.</summary>
+    /// never disagree with what is drawn. Kept as the honest SAMPLE-based seed (R-h9b-15); the glyph
+    /// itself is drawn from <see cref="MxpOptimum"/>/<see cref="MxeOptimum"/> below.</summary>
     public Complex? Mxp { get; init; }
     public Complex? Mxe { get; init; }
+
+    /// <summary>
+    /// R-h9b-15/16/17 — THIS panel's resolved optimum (the Power panel's is its PoutDbm optimum; the
+    /// Efficiency panel's is its DE/PAE one): the interpolated argmax of the FITTED surface (never a
+    /// grid sample), and the figures of merit from ONE SOLVE at that state rather than from N
+    /// separately-interpolated surfaces. <see cref="Solved"/>/<see cref="Published"/> are null on a
+    /// degraded (dragging) rung or a <c>SkipContours</c> frame — the glyph still tracks
+    /// <see cref="Gamma"/> every frame (cheap, no HB solve), but its FOMs are only ever from a real
+    /// one. <b>The glyph and 1C's readout column read this SAME record</b> — the invariant R-h9b-17
+    /// exists to create.
+    /// </summary>
+    /// <param name="Gamma">The interpolated argmax.</param>
+    /// <param name="MetricValue">The fitted surface's value there.</param>
+    /// <param name="Solved">The Pin drive-up at this termination, or null (not solved this frame).</param>
+    /// <param name="Published">Zin/AM-PM and the rest of §5's cubes at that solve, or null.</param>
+    public sealed record SmithOptimum(
+        Complex Gamma, double MetricValue,
+        CircuitRF.Harmonica.PinStep? Solved, RfCore.Data.DataSet? Published);
+
+    /// <summary>This panel's own resolved optimum (R-h9b-15/16/17). Null means "no optimum" —
+    /// every grid point a hole, or a <c>SkipContours</c> frame — never a cross at the origin.</summary>
+    public SmithOptimum? Optimum { get; init; }
 
     /// <summary>
     /// R-h6-12 — the region the dragged glyph's intrinsic Γ can actually be put in, shaded during an
@@ -131,6 +159,13 @@ public sealed record PowerSweepPanelData
 
     /// <summary>§7.4 — the X-axis unit is CLICK-TO-CYCLE on the axis itself.</summary>
     public PowerSweepXUnit XUnit { get; init; } = PowerSweepXUnit.PoutDbm;
+
+    /// <summary>
+    /// R-h9b-8 — which metric the right axis is, so its label reads "Efficiency (%)" or "PAE (%)"
+    /// rather than falling back to the trace's own auto-derived label. The solver already has
+    /// <c>opt.EfficiencyMetric</c> in hand when it builds this panel.
+    /// </summary>
+    public CircuitRF.Harmonica.GridMetric EfficiencyMetric { get; init; } = CircuitRF.Harmonica.GridMetric.DrainEfficiency;
 }
 
 /// <summary>§7.4's click-to-cycle X-axis unit, in cycle order.</summary>

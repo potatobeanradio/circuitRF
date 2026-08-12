@@ -86,7 +86,16 @@
     <!-- ── The §7.1 panel area. The canvas fills it; the readout strip is overlaid at the
          placement CharmLayout gives it, so both read one layout source. ── -->
     <Panel x:Name="PanelHost">
-      <ctrl:HarmonicaCanvas x:Name="Canvas" ClipToBounds="True"/>
+      <ctrl:HarmonicaCanvas x:Name="Canvas" ClipToBounds="True">
+        <!-- R-h9b-10/12 — ONE ContextMenu instance, mirroring LayoutCanvas's own L1-fix pattern: the
+             canvas only RECORDS a right-click (ContextMenuTarget); this menu's Opening handler reads
+             it and rebuilds ItemsSource fresh, so the power-sweep X-unit picker and the DCIV Sweeps
+             trigger — two different right-click gestures on two different panels — share one menu
+             rather than each popping its own. -->
+        <ctrl:HarmonicaCanvas.ContextMenu>
+          <ContextMenu Opening="OnCanvasContextMenuOpening"/>
+        </ctrl:HarmonicaCanvas.ContextMenu>
+      </ctrl:HarmonicaCanvas>
 
       <Border x:Name="ReadoutHost"
               HorizontalAlignment="Left" VerticalAlignment="Top"

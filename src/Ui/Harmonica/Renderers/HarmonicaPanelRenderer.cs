@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using CircuitRF.Harmonica;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Renderers;
 using RfCore;
@@ -30,14 +31,43 @@ public static class HarmonicaPanelRenderer
     private static TransformSet GammaTransform(Plot plot, (double W, double H) size)
         => PlotRenderer.BuildTransforms(plot, size);
 
-    private static Plot NewSmithPlot(SmithPanelData d)
+    /// <summary>
+    /// R-h9b-1's ROOT CAUSE, found while diagnosing the dead marker/grid-point drags: this used to set
+    /// <c>CustomTitleOn</c>/<c>CustomTitle</c> from <see cref="SmithPanelData.Title"/>. A non-empty
+    /// <c>Plot.Title</c> makes <c>PlotRenderer.ComputeViewport</c> reserve extra top margin for it
+    /// (title-sized, via <c>topExtra</c>) — so the RENDERED chart sat shifted down from where
+    /// <see cref="HitTestTransform"/>'s bare, always-untitled plot placed it. Every marker and grid
+    /// point was therefore drawn in one place and hit-tested in another, offset by the reserved title
+    /// band — which is exactly "click on a visible marker, nothing grabs". <c>Title</c>/<c>Subtitle</c>
+    /// are drawn OURSELVES in <see cref="DrawSmithPanel"/> instead (R-h9b-4's two rows), reserved via
+    /// <see cref="TitleBandHeight"/> and folded into the SAME transform the hit test uses — so render
+    /// and hit-test can never disagree about where the chart's own viewport starts again.
+    /// </summary>
+    private static Plot NewSmithPlot() => new(PlotType.Smith, FreqUnit.GHz) { ShowWatermark = false };
+
+    /// <summary>R-h9b-5 — the title font shrinks by this factor from the size §7.9's Data Display
+    /// plots would otherwise use. Applied on harmonicaRF's side, never in <c>PlotRenderer</c> — every
+    /// Data Display Smith plot reads that renderer's own title font and must not move.</summary>
+    private const double TitleFontShrink = 0.8;
+
+    /// <summary>Row 1's base font size, as a fraction of the panel's shorter side, BEFORE R-h9b-5's
+    /// 0.8× — the same panel-relative sizing convention every other glyph/marker size in this file
+    /// uses.</summary>
+    private const double TitleRow1FontFraction = 0.052;
+    private const double TitleRow2FontFraction = TitleRow1FontFraction * 0.82;
+
+    /// <summary>
+    /// R-h9b-4 — how much of the panel's height the two title rows reserve, in PIXELS, given the row
+    /// font sizes above. Computed from the actual font metrics rather than a fixed fraction, so a very
+    /// short or very tall panel does not waste — or run out of — title space.
+    /// </summary>
+    private static double TitleBandHeight((double W, double H) size)
     {
-        var plot = new Plot(PlotType.Smith, FreqUnit.GHz)
-        {
-            ShowWatermark = false,
-        };
-        if (!string.IsNullOrEmpty(d.Title)) { plot.CustomTitleOn = true; plot.CustomTitle = d.Title; }
-        return plot;
+        double m = Math.Min(size.W, size.H);
+        double row1 = Math.Max(7.0, m * TitleRow1FontFraction * TitleFontShrink);
+        double row2 = Math.Max(6.0, m * TitleRow2FontFraction * TitleFontShrink);
+        // 1.3× line-height per row (ascender/descender headroom) plus a hair of padding above/below.
+        return row1 * 1.3 + row2 * 1.3 + m * 0.01;
     }
 
     // ── §7.2 — the Smith panels ──────────────────────────────────────────────
@@ -51,8 +81,23 @@ public static class HarmonicaPanelRenderer
     /// dragging.</para>
     /// </summary>
     public static void DrawSmithPanel(SKCanvas canvas, (double W, double H) size,
-                                      SmithPanelData d, HarmonicaRenderTheme theme, bool darkMode)
+                                      SmithPanelData d, HarmonicaRenderTheme theme, bool darkMode,
+                                      bool showGridPoints = true)
     {
+        // R-h9b-4 — the two title rows are drawn OURSELVES, in the panel's own top strip, BEFORE the
+        // chart transform below — never through PlotRenderer's CustomTitle (see NewSmithPlot's doc
+        // comment for why: that path used to shift the render out of step with the hit test).
+        double bandH = TitleBandHeight(size);
+        DrawTitleRows(canvas, size, bandH, d, theme);
+
+        // Everything below draws into the sub-rect BENEATH the title band. This is exactly the
+        // "chart size" GammaToCanvas/CanvasToGamma compute from the same TitleBandHeight, so a render
+        // position and a hit-tested position can never disagree about where the reserved band ends.
+        (double W, double H) chartSize = (size.W, size.H - bandH);
+
+        canvas.Save();
+        canvas.Translate(0, (float)bandH);
+
         // ── ANNULUS HEADROOM ─────────────────────────────────────────────────
         //
         // This is not cosmetic and it was found by a failing pixel oracle, not by inspection. The
@@ -71,39 +116,68 @@ public static class HarmonicaPanelRenderer
         // itself the moment a glyph crossed the rim would be far more disorienting than one that is
         // always the same size.
         float k = (float)(1.0 / (1.0 + AnnulusHeadroom));
-        float cx = (float)(size.W / 2), cy = (float)(size.H / 2);
+        float cx = (float)(chartSize.W / 2), cy = (float)(chartSize.H / 2);
 
         canvas.Save();
         canvas.Translate(cx, cy);
         canvas.Scale(k);
         canvas.Translate(-cx, -cy);
 
-        var plot = NewSmithPlot(d);
-        PlotRenderer.Draw(canvas, size, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
+        var plot = NewSmithPlot();
+        PlotRenderer.Draw(canvas, chartSize, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
                           watermarkOpacity: 0f);
 
-        var tf = GammaTransform(plot, size);
+        var tf = GammaTransform(plot, chartSize);
 
         canvas.Save();
-        canvas.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, size));
+        canvas.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
 
         // Beneath everything: R-h6-12's reachable region, so it reads as ground the data sits on
         // rather than as a mark competing with it.
         DrawReachableRegion(canvas, d, tf, theme);
 
         DrawContours(canvas, d, tf, theme);
-        DrawGridPoints(canvas, d, tf, theme, size);
-        DrawOptima(canvas, d, tf, theme, size);
+        if (showGridPoints) DrawGridPoints(canvas, d, tf, theme, chartSize);
+        DrawOptima(canvas, d, tf, theme, chartSize);
 
         canvas.Restore();
 
         // Glyphs and markers are drawn UNCLIPPED within the scaled frame: a glyph with |Γ_intr| > 1
         // lands in the compressed annulus just outside the rim, and clipping to the viewport would
         // hide exactly the case the compressed scale exists to show.
-        DrawIntrinsicGlyphs(canvas, d, tf, theme, size);
-        DrawMarkers(canvas, d, tf, theme, size);
+        DrawIntrinsicGlyphs(canvas, d, tf, theme, chartSize);
+        DrawMarkers(canvas, d, tf, theme, chartSize);
 
         canvas.Restore();
+        canvas.Restore();
+    }
+
+    /// <summary>
+    /// R-h9b-4/5 — the two title rows, centred with the CHART (not the raw panel): both rows share the
+    /// chart's own horizontal centre, which for a Smith panel is <c>size.W / 2</c> regardless of the
+    /// title band, since the band spans the panel's full width.
+    /// </summary>
+    private static void DrawTitleRows(SKCanvas canvas, (double W, double H) size, double bandH,
+                                      SmithPanelData d, HarmonicaRenderTheme theme)
+    {
+        if (string.IsNullOrEmpty(d.Title) && string.IsNullOrEmpty(d.Subtitle)) return;
+
+        double m = Math.Min(size.W, size.H);
+        float row1Size = (float)Math.Max(7.0, m * TitleRow1FontFraction * TitleFontShrink);
+        float row2Size = (float)Math.Max(6.0, m * TitleRow2FontFraction * TitleFontShrink);
+        float cx = (float)(size.W / 2);
+
+        using var font1 = new SKFont(SkiaFonts.PlexBold,    row1Size);
+        using var font2 = new SKFont(SkiaFonts.PlexRegular, row2Size);
+        using var paint = new SKPaint { Color = theme.AxisText, IsAntialias = true };
+
+        float y1 = row1Size * 1.05f;
+        float y2 = (float)(row1Size * 1.3 + row2Size * 1.05);
+
+        if (!string.IsNullOrEmpty(d.Title))
+            canvas.DrawText(d.Title, cx, y1, SKTextAlign.Center, font1, paint);
+        if (!string.IsNullOrEmpty(d.Subtitle))
+            canvas.DrawText(d.Subtitle, cx, y2, SKTextAlign.Center, font2, paint);
     }
 
     /// <summary>
@@ -114,23 +188,27 @@ public static class HarmonicaPanelRenderer
     public const double AnnulusHeadroom = IntrinsicGlyphScale.DefaultMargin;
 
     /// <summary>
-    /// Where a Γ value lands on a Smith panel of this size, INCLUDING the annulus headroom scale.
-    /// Callers that need to hit-test or overlay on a harmonicaRF Smith panel must use this rather
-    /// than <c>PlotRenderer.BuildTransforms</c> directly, or they will be off by the headroom factor.
+    /// Where a Γ value lands on a Smith panel of this size, INCLUDING the annulus headroom scale AND
+    /// R-h9b-4's reserved title band. Callers that need to hit-test or overlay on a harmonicaRF Smith
+    /// panel must use this rather than <c>PlotRenderer.BuildTransforms</c> directly, or they will be
+    /// off by the headroom factor and/or the title band — the exact bug R-h9b-1's diagnosis found.
     /// </summary>
     public static SKPoint GammaToCanvas(Complex gamma, (double W, double H) size)
     {
-        var tf   = HitTestTransform(size);
+        double bandH = TitleBandHeight(size);
+        (double W, double H) chartSize = (size.W, size.H - bandH);
+
+        var tf   = HitTestTransform(chartSize);
         var p    = tf.PrimaryToCanvas(gamma.Real, gamma.Imaginary);
 
         float k  = (float)(1.0 / (1.0 + AnnulusHeadroom));
-        float cx = (float)(size.W / 2), cy = (float)(size.H / 2);
-        return new SKPoint(cx + (p.X - cx) * k, cy + (p.Y - cy) * k);
+        float cx = (float)(chartSize.W / 2), cy = (float)(chartSize.H / 2);
+        return new SKPoint(cx + (p.X - cx) * k, (float)bandH + cy + (p.Y - cy) * k);
     }
 
     /// <summary>
     /// R-h6-1 — the exact inverse of <see cref="GammaToCanvas"/>, derived from the same
-    /// <see cref="AnnulusHeadroom"/> factor <c>k</c>.
+    /// <see cref="AnnulusHeadroom"/> factor <c>k</c> and the same title-band offset.
     ///
     /// <para><b>A hit-test that inverted <c>PlotRenderer</c>'s own transform would be off by that
     /// factor</b> — visibly, at the rim, which is exactly where markers sit. One transform pair, one
@@ -141,16 +219,20 @@ public static class HarmonicaPanelRenderer
     /// </summary>
     public static Complex CanvasToGamma(SKPoint canvas, (double W, double H) size)
     {
-        float k  = (float)(1.0 / (1.0 + AnnulusHeadroom));
-        float cx = (float)(size.W / 2), cy = (float)(size.H / 2);
+        double bandH = TitleBandHeight(size);
+        (double W, double H) chartSize = (size.W, size.H - bandH);
 
-        // Undo the headroom scale about the centre — the same two lines GammaToCanvas applies, run
-        // backwards.
-        var p = new SKPoint(cx + (canvas.X - cx) / k, cy + (canvas.Y - cy) / k);
+        float k  = (float)(1.0 / (1.0 + AnnulusHeadroom));
+        float cx = (float)(chartSize.W / 2), cy = (float)(chartSize.H / 2);
+
+        // Undo the title-band offset, then the headroom scale about the chart's own centre — the same
+        // lines GammaToCanvas applies, run backwards.
+        var local = new SKPoint(canvas.X, (float)(canvas.Y - bandH));
+        var p = new SKPoint(cx + (local.X - cx) / k, cy + (local.Y - cy) / k);
 
         // Invert the window map by measuring it, rather than reconstructing PlotRenderer's margin
         // arithmetic here: Γ = 0 and Γ = 1 pin the origin and the scale, and the map is affine.
-        var tf = HitTestTransform(size);
+        var tf = HitTestTransform(chartSize);
         var o  = tf.PrimaryToCanvas(0, 0);
         var xr = tf.PrimaryToCanvas(1, 0);
         var yi = tf.PrimaryToCanvas(0, 1);
@@ -161,12 +243,13 @@ public static class HarmonicaPanelRenderer
         return new Complex((p.X - o.X) / sx, (p.Y - o.Y) / sy);
     }
 
-    /// <summary>The bare Smith transform both directions are built on. Deliberately private: callers
-    /// go through <see cref="GammaToCanvas"/> / <see cref="CanvasToGamma"/>, which carry the annulus
-    /// headroom this one knows nothing about.</summary>
-    private static TransformSet HitTestTransform((double W, double H) size)
+    /// <summary>The bare Smith transform both directions are built on, over the CHART sub-rect (panel
+    /// minus the title band). Deliberately private: callers go through <see cref="GammaToCanvas"/> /
+    /// <see cref="CanvasToGamma"/>, which carry the annulus headroom and the title band this one knows
+    /// nothing about.</summary>
+    private static TransformSet HitTestTransform((double W, double H) chartSize)
         => PlotRenderer.BuildTransforms(new Plot(PlotType.Smith, FreqUnit.GHz)
-                                        { ShowWatermark = false }, size);
+                                        { ShowWatermark = false }, chartSize);
 
     /// <summary>
     /// Where a MARKER or an intrinsic GLYPH lands: the chart transform composed with
@@ -319,8 +402,9 @@ public static class HarmonicaPanelRenderer
             canvas.DrawLine(p.X, p.Y - s, p.X, p.Y + s, paint);
         }
 
-        Cross(d.Mxp);
-        Cross(d.Mxe);
+        // R-h9b-15 — the INTERPOLATED argmax, never the grid sample: null (no optimum — every point
+        // a hole, or a SkipContours frame) draws nothing, never a cross at the origin.
+        Cross(d.Optimum?.Gamma);
     }
 
     /// <summary>
@@ -482,7 +566,27 @@ public static class HarmonicaPanelRenderer
             plot.Traces.Add(NewRectTrace(d.LoadlineVds, d.LoadlineIds, theme.Loadline, width: 1.8));
 
         AutoScale(plot);
+        // R-h9b-11 — the loadline draws no secondary trace, so Plot.SetAxesViewport() (fired
+        // automatically when the traces above were added) reserved a NARROWER right margin than the
+        // power-sweep panel's own secondary-axis margin. Pinned to the same shape either draws.
+        plot.Axes.Viewport = PowerSweepShapedViewport();
         return plot;
+    }
+
+    /// <summary>
+    /// R-h9b-11's fix: the viewport fraction a plot shaped exactly like the power-sweep panel (one
+    /// left-axis trace, one right-axis trace) computes, through <c>Plot</c>'s own
+    /// <c>SetAxesViewport()</c> algorithm on a scratch probe — not a copy of its formula, so the two
+    /// panels cannot drift apart if that algorithm ever changes. Assigned to BOTH the loadline and the
+    /// power-sweep plots so their DATA rectangles are identical at every window size, not by
+    /// coincidence of two independently-derived margins happening to agree.
+    /// </summary>
+    private static Avalonia.Rect PowerSweepShapedViewport()
+    {
+        var probe = new Plot(PlotType.Rect, FreqUnit.GHz);
+        probe.Traces.Add(NewRectTrace([0, 1], [0, 1], SKColors.Black, width: 1));
+        probe.Traces.Add(NewRectTrace([0, 1], [0, 1], SKColors.Black, width: 1, secondary: true));
+        return probe.Axes.Viewport;
     }
 
     private static void DrawPlaneIndicator(SKCanvas canvas, (double W, double H) size,
@@ -506,8 +610,79 @@ public static class HarmonicaPanelRenderer
         var plot = BuildPowerSweepPlot(d, theme);
         PlotRenderer.Draw(canvas, size, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
                           watermarkOpacity: 0f);
+        DrawEfficiencyAxisOverlay(canvas, size, plot, theme);
         DrawOperatingCursor(canvas, size, plot, d, theme);
         if (!d.ReachedCompression) DrawDidNotCompressNote(canvas, size, theme);
+    }
+
+    /// <summary>
+    /// R-h9b-9 — the right (efficiency) axis's line, tick marks and tick NUMBERS redrawn in
+    /// <c>Harmonica.EfficiencyTrace</c>, over what <see cref="PlotRenderer.Draw"/> already drew in the
+    /// shared theme's ordinary axis colour.
+    ///
+    /// <para><b>Not a shared-renderer change.</b> <c>AxesRenderer</c> colours the primary and secondary
+    /// axes identically and has no per-axis colour capability — adding one there for a single
+    /// harmonicaRF panel is exactly what the <c>AnnulusHeadroom</c> precedent (§9) says not to do. This
+    /// duplicates the handful of lines of <c>AxesRenderer</c>'s own secondary-axis geometry rather than
+    /// widening it, using the SAME public <see cref="Axes.Ticks"/> data and the SAME
+    /// <see cref="TransformSet.SecondaryToCanvas"/>/<see cref="TransformSet.PrimaryToCanvas"/> calls, so
+    /// the redraw lands exactly on top of the original rather than beside it.</para>
+    /// </summary>
+    private static void DrawEfficiencyAxisOverlay(SKCanvas canvas, (double W, double H) size,
+                                                   Plot plot, HarmonicaRenderTheme theme)
+    {
+        var axes = plot.Axes;
+        if (!axes.ShowSecondary) return;
+
+        var tf = PlotRenderer.BuildTransforms(plot, size);
+        float lw = AxesRenderer.LineWidth(size);
+
+        using var linePaint = new SKPaint
+        {
+            Style = SKPaintStyle.Stroke, IsAntialias = false,
+            Color = theme.EfficiencyTrace, StrokeWidth = 2f * (float)axes.GridThicknessFactor * lw,
+        };
+        // The right border edge — positioned in the PRIMARY window, exactly as AxesRenderer.DrawBorder
+        // draws it (the border box itself does not depend on the secondary VALUE scale).
+        var br = tf.PrimaryToCanvas(axes.Window.Right, axes.Window.Top);
+        var tr = tf.PrimaryToCanvas(axes.Window.Right, axes.Window.Bottom);
+        canvas.DrawLine(tr, br, linePaint);
+
+        using var tickPaint = new SKPaint
+        {
+            Style = SKPaintStyle.Stroke, IsAntialias = false,
+            Color = theme.EfficiencyTrace, StrokeWidth = (float)axes.TickThicknessFactor * lw,
+        };
+        using var font  = new SKFont(SkiaFonts.PlexRegular, (float)(axes.FontSizeTicks * lw));
+        using var textPaint = new SKPaint { Color = theme.EfficiencyTrace, IsAntialias = true };
+
+        foreach (var (yPrimary, ySecondary) in axes.Ticks(minorTicks: false).MajorY)
+        {
+            if (!double.IsFinite(yPrimary)) continue;
+
+            // The tick MARK — on the shared grid line (AxesRenderer's default, SecondaryShareGrid),
+            // else on the secondary window's own position. Matches AxesRenderer's own branch exactly.
+            if (axes.SecondaryShareGrid)
+            {
+                var t0 = tf.PrimaryToCanvas(axes.Window.Right - axes.TickLengthX, yPrimary);
+                var t1 = tf.PrimaryToCanvas(axes.Window.Right,                    yPrimary);
+                canvas.DrawLine(t0, t1, tickPaint);
+            }
+            else if (double.IsFinite(ySecondary))
+            {
+                var t0 = tf.SecondaryToCanvas(axes.WindowSecondary.Right - axes.TickLengthX, ySecondary);
+                var t1 = tf.SecondaryToCanvas(axes.WindowSecondary.Right,                    ySecondary);
+                canvas.DrawLine(t0, t1, tickPaint);
+            }
+
+            // The tick NUMBER — always through the SECONDARY window, regardless of ShareGrid.
+            if (!double.IsFinite(ySecondary)) continue;
+            double v = Math.Abs(ySecondary) < 1e-12 ? 0 : ySecondary;
+            string label = v.ToString($"G{axes.NumDigitsRightY}");
+            var rPt = tf.SecondaryToCanvas(axes.WindowSecondary.Right, ySecondary);
+            canvas.DrawText(label, rPt.X + lw * 4f, rPt.Y + font.Size * 0.35f,
+                            SKTextAlign.Left, font, textPaint);
+        }
     }
 
     internal static Plot BuildPowerSweepPlot(PowerSweepPanelData d, HarmonicaRenderTheme theme)
@@ -518,6 +693,10 @@ public static class HarmonicaPanelRenderer
             CustomTitleOn = true, CustomTitle = "",
             CustomXLabelOn = true, CustomXLabel = d.XUnit.Label(),
             CustomYLabelOn = true, CustomYLabel = "Gain (dB)",
+            // R-h9b-8 — without this the right axis falls back to its trace's own auto-derived label
+            // ("real(S(1,1))" for the placeholder SNP-backed Trace this panel builds traces on).
+            CustomY2LabelOn = true,
+            CustomY2Label = d.EfficiencyMetric == GridMetric.Pae ? "PAE (%)" : "Efficiency (%)",
         };
 
         double[] x = d.XUnit.Values(d);
@@ -529,6 +708,10 @@ public static class HarmonicaPanelRenderer
         }
 
         AutoScale(plot);
+        // R-h9b-11 — pinned explicitly rather than left to the automatic computation, so a future
+        // change to Plot.SetAxesViewport()'s formula cannot silently re-open the mismatch with the
+        // loadline panel, which derives its own viewport from this SAME probe shape.
+        plot.Axes.Viewport = PowerSweepShapedViewport();
         return plot;
     }
 

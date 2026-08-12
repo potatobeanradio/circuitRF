@@ -4343,6 +4343,151 @@ position back; MBend shows an arc-hinted grip at BOTH pins and swinging either o
 other end stays put; and the Properties Inspector's parameter values count up and down live while any
 grip is dragged.
 
+harmonicaRF — closing a torn-off window crashed the app (owner-reported, 2026-08-12)
+
+`HarmonicaMenuView.DetachNativeMenuFromWindow` (`DetachedFromVisualTree`'s handler) called
+`NativeMenu.SetMenu(window, null)` unguarded. A torn-off window's own native teardown can already be
+under way by the time its content detaches from the visual tree, and `AvaloniaNativeMenuExporter` can
+then throw `ArgumentException("The menu being updated does not match.")` from deep inside
+Avalonia.Native's interop layer — unhandled, which took the whole application down over a window that
+was already closing. **The same exception text as R-h9a-1's own double-attach bug, from a different
+trigger**: that one was an attach ordering defect (fixed by detach-before-attach); this one is the
+plain detach-on-close call itself, which the native exporter can refuse depending on how far its own
+window-close sequence has already gotten. Fixed by wrapping the call in a `try`/`catch`: the window
+and its native menu bar are being destroyed regardless, so there is nothing left to clean up if the
+native call throws, and swallowing it is strictly safer than an unhandled exception. Cannot be driven
+through the real attach/detach machinery headlessly (`HarmonicaMenuView` is a `UserControl` with no
+Avalonia platform in this suite), so pinned by the same source-scan pattern
+`HarmonicaMenuNativeAttachTests` already uses for R-h9a-1.
+
+**Please confirm on your end** (no visual/native driver here): tear a harmonicaRF document off into
+its own window, then close that window — the app must not crash.
+
+harmonicaRF R1B — the panels, the charts, and the gestures
+(brief-harmonicarf-r1b-panels-charts-and-interaction.md, 2026-08-12) — **COMPLETE.**
+Read `src/Harmonica/CLAUDE.md`'s own R1B entry for the framework-free half (the title-band root
+cause, Z0 threading, the interpolated optimum, the direct loadline resample, the DCIV override).
+
+**§1's own diagnosis, since the brief made §1 a hard gate ("unusable in practice until dragging works
+again").** R-h9b-1 (Edit Display never reaching `PointerMoved`/`PointerReleased`) was exactly what the
+brief already knew: `HarmonicaGesture.IsDragging` is `Grab.IsGrab`, which stays false for the WHOLE of
+an edit grab (`EditGrab` is deliberately a separate field). Fixed with `HarmonicaGesture.IsLive`
+(`IsDragging || EditGrab != None`), and `HarmonicaCanvas`'s two gates re-pointed at it — pinned by a
+source-scan test so a regression back to `IsDragging` fails loudly rather than only failing
+interactively again. R-h9b-2 (`HarmonicaCanvas` never setting `Focusable = true`) was exactly what its
+own diagnosis said too — one line in a constructor, mirroring `SchematicCanvas`/`LayoutCanvas`.
+**R-h9b-3 (the marker/grid-point report) needed genuine diagnosis and the cause was NOT what either of
+the other two suggested** — see the Harmonica-side entry for the actual root cause (a title-driven
+viewport mismatch between render and hit-test) and how it was found by reading rather than by
+interactivity. `HarmonicaGesture.LastGrabKind` is the diagnosability the brief asked for regardless of
+cause: it survives `PointerUp`'s reset of `Grab`, so a released gesture still says what it grabbed.
+
+**R-h9b-4/5 — the two title rows, drawn by harmonicaRF itself rather than through `PlotRenderer`'s
+`CustomTitle`.** This was the fix for R-h9b-3's root cause AND the deliverable R-h9b-4 asked for, in
+one motion: `HarmonicaPanelRenderer.DrawTitleRows` draws "P-3dB Power (dBm)" / "Fundamental Load
+Plane, Z0=50Ω" (built by the new `HarmonicaTitles` formatter) into a band reserved by
+`TitleBandHeight(size)` — computed from panel-relative font metrics, at 0.8× (R-h9b-5) of the size the
+row fonts would otherwise use. `GammaToCanvas`/`CanvasToGamma`/`MarkerToCanvas`/`CanvasToMarker` all
+fold the SAME band into their arithmetic, UNCONDITIONALLY (not "when a title is present") — which is
+what makes the render/hit-test class of bug structurally unable to recur, rather than merely fixed for
+today's always-non-empty title.
+
+**R-h9b-6 — Z0 is a `settings.z0` strip input (§7.5), non-structural.** `HarmonicaSettings.Z0`
+(default 50) is excluded from `CircuitModel.StructuralKey` (a Z0 change moves no circuit — only the Γ
+parameterisation), so it re-solves through the ordinary value-input path without resetting the frame
+ladder. The one thing that needed care: `HarmonicaViewModel.ApplyInput` now re-derives every marker's
+`Gamma` from its (untouched) `TerminationSet` impedance against the NEW Z0 whenever the setting
+changes — `TerminationSet` itself never moves, pinned by a test that changes Z0 and asserts
+`Terminations.Z(...)` bit-identical while `marker.Gamma` moves to exactly `GammaOf(Z, newZ0)`.
+
+**R-h9b-7 — grid points default OFF**, mirroring `ShowIsoLineLabels`'s own shape exactly:
+`HarmonicaViewModel.ShowGridPoints` (`[ObservableProperty]`, false), `CharmAppearance.ShowGridPoints`
+(nullable bool, absent ⇒ default), `HarmonicaMenuViewModel.ToggleShowGridPointsCommand`, a Display-menu
+item on both hand-mirrored surfaces. **Hit-testing follows visibility by a THREADED FLAG, not a
+substituted null** — `HarmonicaHitTest.Resolve` gained `gridPointsVisible` (default true, so every
+direct test that doesn't care about visibility keeps today's behaviour) rather than having
+`HarmonicaGesture.PointerDown` pass `gridPoints: null` to mean "off", so the reason a point is
+untestable is legible at the call site. `LoadCharm` syncs the live toggle from the loaded
+`CharmAppearance` explicitly — the pattern `ShowIsoLineLabels` itself does NOT do today, which is a
+latent gap in that toggle (out of this brief's scope, left alone) rather than one repeated here.
+
+**R-h9b-8's label fix uncovered a DATA bug, not just a label bug.** `HarmonicaSolver.BuildPowerSweep`
+plotted `s.De * 100.0` for the right axis UNCONDITIONALLY — a "PAE (%)" label over drain-efficiency
+values would have been a wrong number under a right label, worse than the wrong label this section
+exists to fix. `PowerSweepPanelData.EfficiencyMetric` now travels with the data and
+`BuildPowerSweep(sweep, cursor, efficiencyMetric)` selects `s.Pae` when the setting says PAE. Measured
+on the shipped fixture: PAE is strictly less than DE at the cursor (PAE nets out drive power DE does
+not), proving the two really are different series rather than coincidentally equal.
+
+**R-h9b-9 — the right axis redrawn in `Harmonica.EfficiencyTrace`, deliberately NOT a shared-renderer
+change.** `AxesRenderer` colours the primary and secondary axes identically and has no per-axis
+capability (confirmed by reading it, not assumed) — widening it for one harmonicaRF panel is exactly
+what the `AnnulusHeadroom` precedent says not to do. `DrawEfficiencyAxisOverlay` duplicates the
+handful of lines of `AxesRenderer`'s own secondary-axis geometry (the border edge via
+`PrimaryToCanvas`, the tick marks via the SAME `SecondaryShareGrid` branch, the tick NUMBERS always
+via `SecondaryToCanvas` regardless of that flag) using the same public `Axes.Ticks()` data, so the
+redraw lands exactly on top of the original rather than beside it.
+
+**R-h9b-10/12 — one right-click mechanism, two consumers, mirroring `LayoutCanvas`'s own L1-fix
+pattern exactly.** `HarmonicaCanvas.OnPointerPressed` checks `IsLeftButtonPressed`; on a right-click it
+ONLY records `ContextMenuTarget` (deliberately not `e.Handled = true`, for the same reason
+`LayoutCanvas`'s own comment gives: it would risk suppressing Avalonia's own context-menu gesture) and
+starts no drag. A SINGLE `ContextMenu` in `HarmonicaView.axaml`'s `Opening` handler consumes the
+target, resolves the panel via `HarmonicaEditTarget.Resolve` (reused a third time, as the brief asks —
+already shared by the drag gesture and Copy Plot), and builds either the four `PowerSweepXUnit` items
+— gated to the EXACT X-axis-label rect, `AxesRenderer.ComputeLabelHitRects(plot, size)`, a standalone
+non-drawing accessor that already existed (checked before reaching for the brief's own named
+fallback, "a generous band along the bottom of the power-sweep panel", which turned out not to be
+needed) — or the "DCIV Sweeps…" item (anywhere on the loadline panel, which IS the DCIV panel — §7.1
+combines them into one rect).
+
+**R-h9b-11 — the loadline and power-sweep DATA rects, pinned to the SAME probe-derived viewport rather
+than to each other's numbers.** Confirmed by reading `Plot.SetAxesViewport()`: a Rect plot's right
+margin depends on whether it has a secondary-axis trace (`ShowSecondary`), and the power-sweep panel
+always has exactly one (`EfficiencyPct`) while the loadline panel has none — different margins,
+different data rects, exactly what the owner saw. Fixed by `PowerSweepShapedViewport()`: a scratch
+`Plot` shaped like the power-sweep panel (one left trace, one right trace) computes its OWN viewport
+through the real algorithm (not a copied formula, so the two panels cannot drift apart if that
+algorithm ever changes), and BOTH `BuildLoadlinePlot` and `BuildPowerSweepPlot` are pinned to it.
+Measured equal (3 decimal places) at three window sizes including two extreme aspect ratios.
+
+**R-h9b-12's dialog** (`HarmonicaDcivSweepsDialog`) is the strip's own commit shape (Return
+applies-and-handles, Escape reverts, LostFocus applies) over six numeric fields, validated by
+`DcivFamily.IsValidOverride` before `HarmonicaViewModel.ApplyDcivOverride` ever touches `Model` — so a
+bad candidate cannot even transiently reach the tier-C cache. `DrainPort` is not offered, per the
+brief's own instruction.
+
+**R-h9b-14 — the new defaults are NOT the unmarked near-short.** `HarmonicaViewModel`'s constructor
+adds S2 (30−j15 Ω), L2 (15+j20 Ω) and L3 (10−j10 Ω) via `AddMarkerBand` after S1/L1, asserting
+`Terminations.HarmonicCount` covers band 3 rather than relying on the default model's K=3. Band 1
+still refuses removal on both sides; `RebuildMarkersFromTerminations` (the `.charm` load path) is
+untouched, so a file that only ever marked S1/L1 still opens with exactly two markers — pinned by a
+round-trip test. **This one change had the widest blast radius of the whole brief**: many existing
+drag tests assumed `Markers[1]` was L1 (now S2) or that a fresh document carried exactly two markers;
+fixed by switching to `Markers.Single(m => ...)` lookups or stripping the three new defaults back off
+in the handful of tests that specifically wanted a two-marker fixture and would otherwise collide on
+canvas position with the new defaults' Γ values.
+
+**Gate:** `tests/Ui.Tests` **6,300** (+~590 over the pre-R1B baseline — the bulk pre-existing from
+between-phase work, this brief's own new tests are enumerated in the Harmonica-side entry's sibling Ui
+files), `tests/Harmonica.Tests` **117**, `tests/Firewall.Tests` **6** — all green. Full solution:
+`tests/Engine.Tests` **1,167 + 1 pre-existing skip**, `tests/Core.Tests` **1,238**,
+`tests/RfCore.Tests` **281**, `tests/WBond.Tests` **237** — all green, none of this brief's own.
+
+**Not interactively verified** (no visual driver here, matching every prior harmonicaRF phase) —
+please confirm on your end: Edit Display drags a panel body and resizes via its corner grip, with
+Escape reverting a live drag and Delete removing the panel under the pointer; a marker or grid-point
+drag now actually moves the marker/point on screen (the R-h9b-3 fix); the Smith chart title now shows
+two rows, smaller than before, that update live as compression/metric/Z0/plane change; the Z0 input
+row moves every marker's position on the chart while leaving termination impedances alone; Display ▸
+Grid Points is off by default and toggling it on both menu surfaces shows/hides the dots and makes
+them draggable; right-clicking the bottom of the power-sweep panel offers the four X-axis units and
+picking one relabels instantly; right-clicking anywhere on the DCIV/loadline panel opens "DCIV
+Sweeps…" and typing new Vgs/Vds ranges updates the curve family live, with an invalid entry (min ≥
+max, or steps < 2) leaving the previous family on screen; the loadline traces a visibly smoother loop
+than before; and a brand-new document's Smith charts show five markers (S1/S2/L1/L2/L3) at sensible
+starting positions rather than piled at the rim.
+
 harmonicaRF H8 — Set DUT, the standalone binary, packaging, and the four unwired hooks
 (brief-harmonicarf-h8-standalone-binary-and-set-dut.md, 2026-08-07) — **COMPLETE (M1–M5).**
 Read `src/Harmonica/CLAUDE.md`'s own H8 entry for the framework-free half (`IntrinsicPortMap`, and the

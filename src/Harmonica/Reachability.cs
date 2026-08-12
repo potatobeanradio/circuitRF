@@ -122,6 +122,7 @@ public static class Reachability
         if (boundarySamples < 3) return ReachableRegion.Empty;
 
         bool needsSource = band.Side == TerminationSide.Source;
+        double z0 = ctx.Model.Settings.Z0;
         int solves = 0;
         Complex[,]? warm = null;
 
@@ -129,7 +130,7 @@ public static class Reachability
         {
             ct.ThrowIfCancellationRequested();
 
-            var z = HarmonicaDataSet.ImpedanceOf(extrinsic);
+            var z = HarmonicaDataSet.ImpedanceOf(extrinsic, z0);
             // The same ill-posed case the inverse solve refuses: available power is undefined against
             // a source with Re Z ≤ 0, so such a point is not "unreachable", it is unaskable.
             if (band.Side == TerminationSide.Source && band.Band == 1 && z.Real <= 0) return null;
@@ -171,9 +172,12 @@ public static class Reachability
     }
 
     /// <summary>The cache key: everything a region depends on that the design note says invalidates
-    /// it. A termination move is deliberately NOT in it — see the class remarks.</summary>
-    public readonly record struct Key(string StructuralKey, TerminationSide Side, int Band, double PavlDbm);
+    /// it. A termination move is deliberately NOT in it — see the class remarks. Z0 IS in it: the
+    /// sampling circle is mapped through <c>ImpedanceOf</c> at the document's own reference, so a Z0
+    /// change genuinely moves the sampled shape even though it is not structural.</summary>
+    public readonly record struct Key(string StructuralKey, TerminationSide Side, int Band, double PavlDbm,
+                                      double Z0);
 
     public static Key KeyFor(CircuitModel model, InverseBand band, double pavlDbm)
-        => new(model.StructuralKey, band.Side, band.Band, Math.Round(pavlDbm, 3));
+        => new(model.StructuralKey, band.Side, band.Band, Math.Round(pavlDbm, 3), model.Settings.Z0);
 }

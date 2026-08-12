@@ -27,7 +27,77 @@ across the support mask into a hole **cannot bite harmonicaRF**, because nothing
 hole is guarded by the support mask on the ISO-LINE side alone, which is where Tier 8's pixel oracle
 looks.
 
-## Brief H8 (brief-harmonicarf-h8-standalone-binary-and-set-dut, 2026-08-07) — **COMPLETE (M1–M5)**
+## Brief R1B (brief-harmonicarf-r1b-panels-charts-and-interaction, 2026-08-12) — **COMPLETE**
+
+Read `src/Ui/CLAUDE.md`'s own R1B entry for the Ui half (the canvas gate fix, the title band, the
+context menus, the DCIV dialog). What lands in THIS project:
+
+- **THE ROOT CAUSE OF §1.3's "marker/grid-point drags don't work", found by reading, not by
+  interactivity.** `HarmonicaPanelRenderer.NewSmithPlot` used to set `CustomTitleOn`/`CustomTitle`
+  from `SmithPanelData.Title` — and `HarmonicaSolver` has ALWAYS given every panel a non-empty title
+  ("Power"/"Efficiency"). A non-empty `Plot.Title` makes `PlotRenderer.ComputeViewport` reserve extra
+  top margin for it — so the RENDERED chart sat shifted down from where `HarmonicaHitTest`'s
+  `HitTestTransform` (a bare, always-untitled probe plot) placed it. Every marker and grid point was
+  drawn in one place and hit-tested in another. **This has been live since H6** (every prior phase's
+  own notes say "not interactively verified... dragging a round marker" — nobody had). Fixed by no
+  longer routing the title through `PlotRenderer` at all: harmonicaRF draws its own two title rows
+  (R-h9b-4) in a reserved band, and `GammaToCanvas`/`CanvasToGamma` fold the SAME band into their
+  arithmetic unconditionally — so render and hit-test can never diverge on it again, regardless of
+  whether a future panel's title is empty or not.
+- **R-h9b-6 — Z0 threaded through `ContourGrid`/`InverseSolver`/`Reachability`, none of them
+  freezing it.** `ContourGrid.Z0` is now re-read from `ctx.Model.Settings.Z0` at the START of every
+  `Build` (a worker's grid is long-lived and reused across frames — freezing Z0 at construction would
+  have kept every worker on the OLD reference after a change). `InverseSolveOptions.Z0` and
+  `Reachability.Key` both carry it too — the reachable-region cache would otherwise show a stale
+  shape after a Z0 change, since the sampling circle maps through `ImpedanceOf` at the document's own
+  reference. `HarmonicaDataSet.GammaOf`/`ImpedanceOf` gained an optional `z0` parameter (default the
+  historical 50 Ω `Z0` const, kept for callers with no model in hand) rather than losing their
+  `const` — the const's shape is unchanged, only the API widened.
+- **R-h9b-15 — `ContourGrid.InterpolatedArgmax(metric, raster)`**: seeded from the ALREADY-COMPUTED
+  raster's own argmax cell (no second raster), refined by a fixed-resolution local search on the same
+  `Rbf2D` fit the contours are drawn from — the same technique `RfCore.Loadpull.LoadpullSurface.GetMxx`
+  already uses for the identical problem, applied to `ContourGrid`'s own scatter instead of a loadpull
+  `DataSet` (the two data owners are not the same shape, so this is a parallel implementation of the
+  same idea rather than a shared call). **Measured resolution independence: raster 96 and raster 256
+  agree to 6.4e-5 Γ and 7.0e-5 in the metric value** on a real 61-point-shaped grid — far tighter than
+  a raster-96 cell's own ~0.02 Γ width, which is what proves the refinement is real rather than a
+  dressed-up cell centre. Every candidate point is checked against the SAME support mask
+  (`InSupport`) the raster used, so refinement can never wander into an unconverged region; an
+  all-holes grid or an empty one returns null (`SmithPanelData.Optimum` is then null too — "no
+  optimum" is representable and is what the renderer draws as nothing, never a cross at the origin).
+- **R-h9b-16 — `HarmonicaSolver.SolveAtOptimum`**: one `PinSearch.Run` at the interpolated Γ
+  substituted into the swept band, then `HarmonicaDataSet.Build` there — never N independently
+  interpolated FOM surfaces, which the design note calls out as "wrong in a way that does not show"
+  (an interpolated Pout and Pdc need not satisfy the DE a third surface reports, and Zin/AM-PM have no
+  fitted surface at all). **Gated on `opt.Quality == FrameQuality.Full`** — the glyph's POSITION
+  still updates every frame (cheap, no HB solve, from `InterpolatedArgmax` alone), but its FOM numbers
+  are solved only on a full-quality frame; a degraded (dragging) rung's `Optimum.Solved`/`.Published`
+  are simply null rather than stale or fabricated. Measured: a tier-A-only (`SkipContours`) frame is
+  10 HB solves; a full grid with both optima resolved is 201 — the two extra drive-ups are real but
+  small next to the grid's own ~280.
+- **R-h9b-13 — `IntrinsicPlane.Loadline` no longer goes through `HbFft.Inverse`.** It evaluates the
+  truncated Fourier series directly (`ResampleSpectrum`: `v(t) = X[0] + Σ Re(X[h]·e^{jhθ})`, HbFft's
+  own full-amplitude convention — no factor of 2) at however many points the caller asks for, which is
+  exact at ANY count rather than tied to `HbFft.GridSize`'s power-of-two solve grid. Proven by a
+  public-API oracle rather than reimplementing internals in the test: a 64-sample and a 256-sample
+  loadline share every 4th time instant exactly (θ = 2π·i/64 = 2π·(4i)/256), and the two answers agree
+  there to < 1e-9 — an interpolation of one grid's samples onto the other would not do that in
+  general. **Cost measured, not assumed: 64 samples costs 3.96× a 16-sample grid** (K=3's own
+  `HbFft.GridSize`) — expected, since the cost is `dut.Evaluate` per sample and nothing else moved.
+  `HarmonicaSettings.LoadlineSamples` (default 64, clamped 8..2048) is the new setting; both the
+  loadline PANEL and the published `Vds_intr_t`/`Ids_intr_t` cubes use it, since they are the same
+  quantity and there was no reason to keep two densities for it.
+- **R-h9b-12 — `DcivFamily.OverrideOf`/`ResolvedKey`**: the DCIV Sweeps dialog's six numbers are
+  all-or-nothing on `HarmonicaSettings` (a partially-set group is treated as absent rather than
+  blending in `DefaultKey`'s numbers), validated by `IsValidOverride` BEFORE they are ever written —
+  "invalid input keeps the old trace" is enforced by never reaching `Model` at all on a bad candidate,
+  not by reverting after the fact. `DrainPort` is not in the override, matching R-h9b-12's own
+  instruction not to offer it.
+- **`HarmonicaTitles`** (new, framework-free) — the ONE formatter for R-h9b-4's two rows
+  (`MetricRow`/`PlaneRow`/`CompressionLabel`), so both Smith charts and any future readout of the same
+  numbers cannot disagree about how a compression setting, a metric or a Z0 is spelled.
+
+Gate: `tests/Harmonica.Tests` **117** (+23 over R1A's 94), all green.
 
 Read `src/Ui/CLAUDE.md`'s own H8 entry for the dialog, the standalone binary, the packaging and the
 four hooks. What lands in THIS project is two things, and one of them is a real bug.

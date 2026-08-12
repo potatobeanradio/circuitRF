@@ -42,6 +42,19 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         Markers.Add(new HarmonicaMarker(TerminationSideKind.Load,   1));
         SetMarkerImpedance(Markers[0], new Complex(25, 0));
         SetMarkerImpedance(Markers[1], new Complex(80, 10));
+
+        // R-h9b-14 — a new document's default marker set is S1, S2, L1, L2, L3. AddMarkerBand refuses
+        // a band above Terminations.HarmonicCount (asserted rather than relied on: DefaultModel's K=3
+        // is what makes all five fit). Sensible starting impedances, not D9's unmarked near-short — a
+        // marker sitting on the rim at Γ ≈ 1 on first open is not a useful default.
+        if (Terminations.HarmonicCount < 3)
+            throw new InvalidOperationException(
+                $"the default marker set needs harmonic bands 1..3, but this model's HarmonicCount is " +
+                $"only {Terminations.HarmonicCount}");
+
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Source, 2), new Complex(30, -15));
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   2), new Complex(15, 20));
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   3), new Complex(10, -10));
     }
 
     // ── the circuit ──────────────────────────────────────────────────────────
@@ -129,6 +142,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>D11 — iso-line labels default OFF. The default setting is also the fast one.</summary>
     [ObservableProperty] private bool _showIsoLineLabels;
 
+    /// <summary>R-h9b-7 — the Γ grid-point dots, default OFF. Display-only: hit-testing follows this
+    /// too (an invisible point must not be grabbable), and the drag still works once shown.</summary>
+    [ObservableProperty] private bool _showGridPoints;
+
     /// <summary>Raised whenever the frame, the theme or a marker changes and the canvas must repaint.</summary>
     public event Action? RedrawRequested;
 
@@ -183,6 +200,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>§7.4 — the X-axis unit cycles when the axis itself is clicked.</summary>
     [RelayCommand] private void CyclePowerSweepXUnit() => PowerSweepXUnit = PowerSweepXUnit.Next();
 
+    /// <summary>R-h9b-10 — the direct pick from the X-axis label's right-click menu. A relabel of data
+    /// already in hand, exactly like <see cref="CyclePowerSweepXUnit"/> — no re-solve.</summary>
+    [RelayCommand] private void SetPowerSweepXUnit(PowerSweepXUnit unit) => PowerSweepXUnit = unit;
+
     /// <summary>§7.3 — one toggle for both curves.</summary>
     [RelayCommand] private void ToggleLoadlinePlane() => IntrinsicPlane = !IntrinsicPlane;
 
@@ -198,7 +219,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         Terminations.Set(marker.Side == TerminationSideKind.Source
                              ? TerminationSide.Source : TerminationSide.Load,
                          marker.Band, z);
-        marker.Gamma = (z - 50.0) / (z + 50.0);
+        marker.Gamma = HarmonicaDataSet.GammaOf(z, Model.Settings.Z0);
         RedrawRequested?.Invoke();
         DirtyChanged?.Invoke();
     }
@@ -277,7 +298,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         // non-finite Z that would take the whole solve down.
         double mag = gamma.Magnitude;
         if (mag > 0.999) gamma = gamma / mag * 0.999;
-        SetMarkerImpedance(marker, 50.0 * (Complex.One + gamma) / (Complex.One - gamma));
+        SetMarkerImpedance(marker, HarmonicaDataSet.ImpedanceOf(gamma, Model.Settings.Z0));
     }
 
     // ── R-h7-3 — the §7.5 inputs ─────────────────────────────────────────────
@@ -314,6 +335,16 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         // bands the new K cannot address. Rebuild it, carrying every marked band that still fits.
         if (updated.Settings.HarmonicCount != Model.Settings.HarmonicCount)
             RetargetTerminations(updated.Settings.HarmonicCount);
+
+        // R-h9b-6 — "a Z0 change must not move any impedance": TerminationSet is untouched, but every
+        // marker's cached Gamma is a Z0-DERIVED value and has to be re-expressed against the new
+        // reference, or the chart would silently keep showing the old Z0's Γ for the same impedance.
+        if (updated.Settings.Z0 != Model.Settings.Z0)
+            foreach (var m in Markers)
+                m.Gamma = HarmonicaDataSet.GammaOf(
+                    Terminations.Z(m.Side == TerminationSideKind.Source
+                                       ? TerminationSide.Source : TerminationSide.Load, m.Band),
+                    updated.Settings.Z0);
 
         Model = updated;
 
@@ -357,6 +388,46 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         OnPropertyChanged(nameof(Inputs));
         RequestScheduledFrame(dragging: false);
         return true;
+    }
+
+    /// <summary>
+    /// R-h9b-12 — the DCIV Sweeps dialog's write-back. <b>Invalid input keeps the old trace</b>: a
+    /// rejected candidate does not touch <see cref="Model"/> at all, so whatever family the panel is
+    /// currently showing stays exactly as it was.
+    /// </summary>
+    /// <returns>False when the candidate fails <see cref="DcivFamily.IsValidOverride"/>.</returns>
+    public bool ApplyDcivOverride(double vgsMin, double vgsMax, int vgsSteps,
+                                  double vdsMin, double vdsMax, int vdsSteps)
+    {
+        if (!DcivFamily.IsValidOverride(vgsMin, vgsMax, vgsSteps, vdsMin, vdsMax, vdsSteps))
+            return false;
+
+        Model = Model with
+        {
+            Settings = Model.Settings with
+            {
+                DcivVgsMin = vgsMin, DcivVgsMax = vgsMax, DcivVgsSteps = vgsSteps,
+                DcivVdsMin = vdsMin, DcivVdsMax = vdsMax, DcivVdsSteps = vdsSteps,
+            },
+        };
+        DirtyChanged?.Invoke();
+        RequestScheduledFrame(dragging: false);
+        return true;
+    }
+
+    /// <summary>Clears the override — back to <see cref="DcivFamily.DefaultKey"/>.</summary>
+    public void ResetDcivOverride()
+    {
+        Model = Model with
+        {
+            Settings = Model.Settings with
+            {
+                DcivVgsMin = null, DcivVgsMax = null, DcivVgsSteps = null,
+                DcivVdsMin = null, DcivVdsMax = null, DcivVdsSteps = null,
+            },
+        };
+        DirtyChanged?.Invoke();
+        RequestScheduledFrame(dragging: false);
     }
 
     /// <summary>
@@ -787,13 +858,17 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         if (_inverseBands.Length == 0) { _inverse = null; return; }
 
         var start = _inverseBands
-            .Select(b => HarmonicaDataSet.GammaOf(Terminations.Z(b.Side, b.Band)))
+            .Select(b => HarmonicaDataSet.GammaOf(Terminations.Z(b.Side, b.Band), Model.Settings.Z0))
             .ToArray();
 
         _inverseTargets = [.. Markers.Select(m => m.GammaIntrinsic)];
         _inverseMarker  = marker;
         _inverse        = new InverseSolver(Terminations, _inverseBands, start,
-                                            new InverseSolveOptions { PavlDbm = OperatingPointDbm });
+                                            new InverseSolveOptions
+                                            {
+                                                PavlDbm = OperatingPointDbm,
+                                                Z0      = Model.Settings.Z0,
+                                            });
         InverseMessage  = null;
     }
 
@@ -929,7 +1004,8 @@ public sealed partial class HarmonicaViewModel : ObservableObject
             for (int i = 0; i < outcome.Bands.Length && i < outcome.Gammas.Length; i++)
             {
                 var b = outcome.Bands[i];
-                Terminations.Set(b.Side, b.Band, HarmonicaDataSet.ImpedanceOf(outcome.Gammas[i]));
+                Terminations.Set(b.Side, b.Band,
+                                 HarmonicaDataSet.ImpedanceOf(outcome.Gammas[i], Model.Settings.Z0));
                 var marker = Markers.FirstOrDefault(m => m.Band == b.Band &&
                     (m.Side == TerminationSideKind.Source) == (b.Side == TerminationSide.Source));
                 if (marker is not null) marker.Gamma = outcome.Gammas[i];
@@ -967,6 +1043,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     {
         var c = CharmIo.ReadAll(json, baseDirectory);
 
+        // R-h9b-7 — the live toggle is kept in step with the persisted appearance on load, so a
+        // reopened .charm shows grid points exactly as it was left rather than always at the default.
+        ShowGridPoints = c.Appearance.ShowGridPoints ?? false;
+
         Model = c.Model;
         _ctx  = null;                                   // structure may have changed entirely
 
@@ -1002,7 +1082,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
             {
                 var m = new HarmonicaMarker(side, band);
                 var z = Terminations.Z(engineSide, band);
-                m.Gamma = (z - 50.0) / (z + 50.0);
+                m.Gamma = HarmonicaDataSet.GammaOf(z, Model.Settings.Z0);
                 Markers.Add(m);
             }
         }

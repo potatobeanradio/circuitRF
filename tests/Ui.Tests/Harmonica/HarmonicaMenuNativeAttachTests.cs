@@ -57,6 +57,33 @@ public class HarmonicaMenuNativeAttachTests
             "(attaching first would recreate the exact 'owned by two AvaloniaObjects at once' crash).");
     }
 
+    // ── owner-reported: closing a TORN-OFF window crashed the app ───────────────────────────────────
+    //
+    // A window's own native teardown can already be under way by the time DetachedFromVisualTree fires
+    // on its content, so the SAME "menu being updated does not match" ArgumentException R-h9a-1's own
+    // double-attach bug threw can also come out of the plain detach-on-close call
+    // (DetachNativeMenuFromWindow's own NativeMenu.SetMenu(window, null)) — a different trigger of the
+    // identical native exporter defect, uncaught, killing the whole application over a window that was
+    // already closing.
+
+    [Fact]
+    public void DetachNativeMenuFromWindow_SwallowsTheNativeExporterException_SoAClosingWindowCannotCrashTheApp()
+    {
+        string src = CodeOnly();
+
+        int methodStart = src.IndexOf("private void DetachNativeMenuFromWindow()", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "Expected to find DetachNativeMenuFromWindow.");
+        int methodEnd = src.IndexOf("\n    }", methodStart, StringComparison.Ordinal);
+        Assert.True(methodEnd >= 0, "Expected DetachNativeMenuFromWindow's closing brace.");
+        string body = src[methodStart..methodEnd];
+
+        Assert.Contains("NativeMenu.SetMenu(window, null);", body, StringComparison.Ordinal);
+        // The detach call itself must be guarded — a closing window's native menu exporter can be in a
+        // state where this throws, and an unhandled exception here takes the whole app down with it.
+        Assert.Contains("try", body, StringComparison.Ordinal);
+        Assert.Contains("catch", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void DetachedFromVisualTree_ReleasesTheMenuFromAClosingWindow()
     {

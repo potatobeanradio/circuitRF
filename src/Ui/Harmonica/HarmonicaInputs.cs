@@ -75,6 +75,8 @@ public static class HarmonicaInputs
     public const string KeyFrequency     = "settings.f0";
     public const string KeyHarmonicCount = "settings.k";
     public const string KeyCompression   = "settings.compression";
+    public const string KeyZ0            = "settings.z0";
+    public const string KeyLoadlineSamples = "settings.loadline_samples";
     public const string KeyComputeCharge = "settings.charge";
     public const string KeyFftOverSample = "settings.fftoversample";
     public const string KeyMultiplicity  = "dut.m";
@@ -107,6 +109,16 @@ public static class HarmonicaInputs
             Make(model, KeyCompression, "compr", Num(model.Settings.CompressionDb), "dB",
                  "Compression target the contour grid is taken at.",
                  HarmonicaInputEntry.Number),
+            Make(model, KeyZ0, "Z0", Num(model.Settings.Z0), "Ω",
+                 "Smith-chart normalisation reference impedance. Terminations do not move — only " +
+                 "their Γ (and the grid) do. For best visualization, set Z0 = Ropt.",
+                 HarmonicaInputEntry.Number),
+            Make(model, KeyLoadlineSamples, "loadline pts",
+                 model.Settings.LoadlineSamples.ToString(CultureInfo.InvariantCulture), "",
+                 "Time samples the loadline is drawn at. Exact at any count — the spectrum carries " +
+                 $"every harmonic — not a solve setting. Clamped to " +
+                 $"{HarmonicaSettings.LoadlineSamplesMin}..{HarmonicaSettings.LoadlineSamplesMax}.",
+                 HarmonicaInputEntry.Integer),
             Make(model, KeyFftOverSample, "FFT×", model.Settings.FftOverSample.ToString(CultureInfo.InvariantCulture), "",
                  "FFT oversampling factor. Structural — the time grid changes size.",
                  HarmonicaInputEntry.Integer),
@@ -280,6 +292,8 @@ public static class HarmonicaInputs
             KeyFftOverSample => Num(model.Settings.FftOverSample + 1),
             KeyFrequency     => Num(model.Settings.FrequencyHz / 1e9 + 1.0),
             KeyCompression   => Num(model.Settings.CompressionDb + 1.0),
+            KeyZ0            => Num(model.Settings.Z0 + 1.0),
+            KeyLoadlineSamples => Num(model.Settings.LoadlineSamples + 1),
             KeyVgs           => Num((model.Bias.Vgs ?? 0.0) - 0.1),
             KeyIdq           => Num((model.Bias.Idq ?? 0.0) + 0.01),
             KeyVds           => Num(model.Bias.Vds + 1.0),
@@ -351,6 +365,21 @@ public static class HarmonicaInputs
                 if (!TryReal(text, out double cdb) || cdb <= 0)
                 { error = "The compression target must be a positive number of dB."; return null; }
                 return model with { Settings = model.Settings with { CompressionDb = cdb } };
+
+            case KeyZ0:
+                if (!TryReal(text, out double z0) || z0 <= 0)
+                { error = "Z0 must be a positive number of ohms."; return null; }
+                return model with { Settings = model.Settings with { Z0 = z0 } };
+
+            case KeyLoadlineSamples:
+                if (!TryInt(text, out int ls) ||
+                    ls < HarmonicaSettings.LoadlineSamplesMin || ls > HarmonicaSettings.LoadlineSamplesMax)
+                {
+                    error = $"Loadline sample count must be a whole number between " +
+                            $"{HarmonicaSettings.LoadlineSamplesMin} and {HarmonicaSettings.LoadlineSamplesMax}.";
+                    return null;
+                }
+                return model with { Settings = model.Settings with { LoadlineSamples = ls } };
 
             case KeyComputeCharge:
                 return model with

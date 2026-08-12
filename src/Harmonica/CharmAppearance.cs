@@ -46,12 +46,17 @@ public sealed record CharmAppearance
     /// <summary>D11 — iso-line labels default OFF. Null = the built-in default (false).</summary>
     public bool? ShowIsoLineLabels { get; init; }
 
+    /// <summary>R-h9b-7 — the Γ grid-point dots. Same shape of display-only toggle as
+    /// <see cref="ShowIsoLineLabels"/>: null = the built-in default, which is OFF.</summary>
+    public bool? ShowGridPoints { get; init; }
+
     /// <summary>True when the document carries nothing worth writing — the ordinary case for a
     /// <c>.charm</c> nobody has recoloured. Used to omit the block entirely so an untouched file
     /// re-serialises byte-for-byte.</summary>
     public bool IsDefault
         => Light.Count == 0 && Dark.Count == 0
-        && IsoAlphaFloor is null && IsoAlphaExponent is null && ShowIsoLineLabels is null;
+        && IsoAlphaFloor is null && IsoAlphaExponent is null && ShowIsoLineLabels is null
+        && ShowGridPoints is null;
 
     public static readonly CharmAppearance Default = new();
 

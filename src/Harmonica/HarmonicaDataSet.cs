@@ -20,21 +20,24 @@ namespace CircuitRF.Harmonica;
 /// </summary>
 public static class HarmonicaDataSet
 {
-    /// <summary>The reference impedance every Γ in the published cubes is against.</summary>
+    /// <summary>The DEFAULT reference impedance, used only where no document is in scope. R-h9b-6 —
+    /// a real document's own value is <c>CircuitModel.Settings.Z0</c>, threaded through explicitly
+    /// everywhere one is in scope; this const is the fallback the optional parameter below defaults
+    /// to, kept so a caller with no model in hand (a test, a tool) still gets the historical 50 Ω.</summary>
     public const double Z0 = 50.0;
 
-    public static Complex GammaOf(Complex z) => (z - Z0) / (z + Z0);
+    public static Complex GammaOf(Complex z, double z0 = Z0) => (z - z0) / (z + z0);
 
     /// <summary>
     /// Γ → Z. The pole at Γ = 1 is nudged rather than allowed to produce a non-finite impedance that
     /// would take the whole solve down; <c>|Γ| &gt; 1</c> is left alone, because an active termination
     /// is a legitimate thing for the inverse solve to land on (§6.6).
     /// </summary>
-    public static Complex ImpedanceOf(Complex gamma)
+    public static Complex ImpedanceOf(Complex gamma, double z0 = Z0)
     {
         var d = Complex.One - gamma;
         if (d.Magnitude < 1e-12) d = new Complex(1e-12, d.Imaginary);
-        return Z0 * (Complex.One + gamma) / d;
+        return z0 * (Complex.One + gamma) / d;
     }
 
     /// <summary>
@@ -57,6 +60,7 @@ public static class HarmonicaDataSet
                                             bool includeSource = true)
     {
         int k = ctx.Model.Settings.HarmonicCount;
+        double z0 = ctx.Model.Settings.Z0;
         var map = ctx.IntrinsicPorts;
 
         // R-h8-3 — an intrinsic plane nobody has located is left EMPTY (NaN), never guessed at. The
@@ -80,7 +84,7 @@ public static class HarmonicaDataSet
         }
         for (int s = 0; s < 2; s++)
             for (int h = 0; h <= k; h++)
-                gammaIntr[s, h] = GammaOf(zIntr[s, h]);
+                gammaIntr[s, h] = GammaOf(zIntr[s, h], z0);
 
         return new IntrinsicValues(zIntr, gammaIntr, zSrc);
     }
@@ -106,6 +110,12 @@ public static class HarmonicaDataSet
         int n     = ctx.Interface.InterfaceCount;
         int gridN = HbFft.GridSize(k, model.Settings.FftOverSample);
         double f0 = model.Settings.FrequencyHz;
+        double z0 = model.Settings.Z0;
+
+        // R-h9b-13 — the loadline's own sample count, independent of the solve's FFT grid (gridN,
+        // above): the spectrum carries every harmonic 0…K so it is re-evaluated exactly at whatever
+        // density the user asked for, never at gridN's power-of-two solve size.
+        int loadlineSamples = model.Settings.LoadlineSamples;
 
         var ds = new DataSet();
 
@@ -114,7 +124,8 @@ public static class HarmonicaDataSet
         // frequency as order × f0 exactly as it does for an ordinary HB run.
         var harmonic = new Axis("harmonic", [.. Enumerable.Range(0, k + 1).Select(i => (double)i)], "");
         var side     = new Axis("side", [0, 1], "", ["source", "load"]);
-        var tsample  = new Axis("tsample", [.. Enumerable.Range(0, gridN).Select(i => (double)i)], "");
+        var tsample  = new Axis("tsample",
+                                [.. Enumerable.Range(0, loadlineSamples).Select(i => (double)i)], "");
 
         var nodeNames = ctx.Interface.DeviceNodes.Select(ctx.Netlist.Nodes.NameOf).ToArray();
         var node = new Axis("node", [.. Enumerable.Range(0, n).Select(i => (double)i)], "", nodeNames);
@@ -139,9 +150,9 @@ public static class HarmonicaDataSet
         // port — the same refusal the glyphs make, so the two panels can never disagree about whether
         // the plane is known.
         var (vds, ids) = map.LoadAvailable
-            ? IntrinsicPlane.Loadline(dut, point.V, ctx.Interface.DeviceNodes, k, gridN,
+            ? IntrinsicPlane.Loadline(dut, point.V, ctx.Interface.DeviceNodes, k, loadlineSamples,
                                       map.DrainPort, map.SourcePort)
-            : (new double[gridN], new double[gridN]);
+            : (new double[loadlineSamples], new double[loadlineSamples]);
         if (map.LoadAvailable)
         {
             ds.Add("Vds_intr_t", new DataCube([tsample], vds));
@@ -156,7 +167,7 @@ public static class HarmonicaDataSet
             {
                 Complex z = h == 0 ? Complex.Zero : terminations.Z((TerminationSide)s, h);
                 zExt[s, h] = z;
-                gammaExt[s, h] = GammaOf(z);
+                gammaExt[s, h] = GammaOf(z, z0);
             }
         ds.Add("Z_ext",     Cube2(zExt,     side, harmonic));
         ds.Add("Gamma_ext", Cube2(gammaExt, side, harmonic));

@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaDcivSweepsDialog"
+        Title="DCIV Sweeps"
+        Width="340" Height="300"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    R-h9b-12 — the DCIV Curve Tracer evaluator dialog. Edits DcivFamily.Key's six sweep numbers
+    (VgsMin/Max/Steps, VdsMin/Max/Steps); DrainPort stays out (R-h9b-12 says offering it invites a
+    wrong answer that draws perfectly). Updates live as the user changes a value; invalid input keeps
+    the previous trace on screen rather than being applied.
+  -->
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14">
+
+    <TextBlock Grid.Row="0" Text="Gate sweep (Vgs)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,*,Auto,*" Margin="0,0,0,10">
+      <TextBlock Grid.Column="0" Text="min" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="VgsMinBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="2" Text="max" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="VgsMaxBox" Grid.Column="3" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="4" Text="steps" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="VgsStepsBox" Grid.Column="5"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <TextBlock Grid.Row="2" Text="Drain sweep (Vds)" FontWeight="SemiBold" Margin="0,0,0,4" VerticalAlignment="Top"/>
+
+    <StackPanel Grid.Row="3" Spacing="10">
+      <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*">
+        <TextBlock Grid.Column="0" Text="min" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+        <TextBox x:Name="VdsMinBox" Grid.Column="1" Margin="0,0,8,0"
+                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+        <TextBlock Grid.Column="2" Text="max" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+        <TextBox x:Name="VdsMaxBox" Grid.Column="3" Margin="0,0,8,0"
+                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+        <TextBlock Grid.Column="4" Text="steps" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+        <TextBox x:Name="VdsStepsBox" Grid.Column="5"
+                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      </Grid>
+
+      <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
+
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Content="Reset to Default" Click="OnResetClick"/>
+        <Button Content="Close" Click="OnCloseClick" IsDefault="True"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

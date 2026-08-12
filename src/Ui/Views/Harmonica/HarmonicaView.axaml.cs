@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -7,7 +8,9 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Harmonica;
+using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Harmonica;
+using CircuitRF.Ui.Harmonica.Renderers;
 using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Views.Harmonica;
@@ -257,6 +260,14 @@ public partial class HarmonicaView : UserControl
     {
         if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
         await new Dialogs.HarmonicaTracePickerDialog(h).ShowDialog<bool>(owner);
+        Refresh();
+    }
+
+    /// <summary>R-h9b-12 — right-click anywhere on the DCIV panel.</summary>
+    private async System.Threading.Tasks.Task ShowDcivSweepsAsync()
+    {
+        if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
+        await new Dialogs.HarmonicaDcivSweepsDialog(h).ShowDialog(owner);
         Refresh();
     }
 
@@ -553,6 +564,58 @@ public partial class HarmonicaView : UserControl
     {
         _doc?.ViewModel.Harmonica.CyclePowerSweepXUnitCommand.Execute(null);
         Refresh();
+    }
+
+    /// <summary>
+    /// R-h9b-10 / R-h9b-12 — the two panels' own right-click gestures. The target is only RECORDED by
+    /// <see cref="CircuitRF.Ui.Controls.HarmonicaCanvas"/> (L1-fix's pattern); this rebuilds the menu
+    /// fresh every time it opens, so it can never show stale items for a click that landed elsewhere.
+    /// </summary>
+    private void OnCanvasContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        var target = Canvas.ConsumeContextMenuTarget();
+        if (target is not { } p || _doc is null || Canvas.Bounds.Width <= 0)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        var h = _doc.ViewModel.Harmonica;
+        double w = Canvas.Bounds.Width, ht = Canvas.Bounds.Height;
+        var (kind, panelId) = HarmonicaEditTarget.Resolve(h.Layout, [.. h.PickedTraces], p.X, p.Y, w, ht);
+
+        var items = new List<object>();
+
+        if (panelId == HarmonicaPanelId.PowerSweep)
+        {
+            // R-h9b-10 — "right-clicking on the power sweep plot X-AXIS LABEL", resolved to the EXACT
+            // rect: AxesRenderer.ComputeLabelHitRects is a standalone (non-drawing) accessor for it,
+            // so this needs no "generous band" fallback. HarmonicaEditTarget resolves the whole panel,
+            // not the label sub-rect, so a click anywhere ELSE in the panel must NOT open this menu.
+            var (local, size) = HarmonicaHitTest.ToPanel(h.Layout, panelId, p.X, p.Y, w, ht);
+            var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(h.Frame.PowerSweep, h.RenderTheme);
+            var rects = AxesRenderer.ComputeLabelHitRects(plot, size);
+            if (rects.XLabel.Contains((float)local.X, (float)local.Y))
+            {
+                foreach (PowerSweepXUnit unit in Enum.GetValues<PowerSweepXUnit>())
+                {
+                    var mi = new MenuItem { Header = unit.Label(), IsChecked = h.PowerSweepXUnit == unit };
+                    mi.Click += (_, _) => { h.SetPowerSweepXUnitCommand.Execute(unit); Refresh(); };
+                    items.Add(mi);
+                }
+            }
+        }
+        else if (panelId == HarmonicaPanelId.Loadline)
+        {
+            // R-h9b-12 — "if user right-clicks ANYWHERE on the DCIV plot". The loadline panel IS the
+            // DCIV panel (§7.1's layout combines DCIV + loadline into one rect).
+            var dciv = new MenuItem { Header = "DCIV Sweeps…" };
+            dciv.Click += (_, _) => RunHook(ShowDcivSweepsAsync);
+            items.Add(dciv);
+        }
+
+        if (items.Count == 0) { e.Cancel = true; return; }
+        if (sender is ContextMenu menu) menu.ItemsSource = items;
     }
 
     /// <summary>

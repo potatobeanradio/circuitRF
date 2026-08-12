@@ -187,7 +187,7 @@ public sealed class HarmonicaSolver
         // The cache is guarded because ONE solver is shared across every pool worker, deliberately:
         // tier C depends only on the model, so computing it once per WORKER would be N times the
         // work for the same answer and would break Tier 6's "computed once across a drag".
-        var dcivKey = DcivFamily.DefaultKey(ctx.Model);
+        var dcivKey = DcivFamily.ResolvedKey(ctx.Model);
         lock (_dcivGate)
         {
             if (_dcivKey != dcivKey)
@@ -200,10 +200,18 @@ public sealed class HarmonicaSolver
 
         // ── the panels ────────────────────────────────────────────────────────
         var loadline = BuildLoadline(ctx, at, opt.IntrinsicPlane);
-        var power    = BuildPowerSweep(sweep, cursor);
+        var power    = BuildPowerSweep(sweep, cursor, opt.EfficiencyMetric);
 
-        SmithPanelData smithP = new() { Title = "Power",      Markers = markers };
-        SmithPanelData smithE = new() { Title = "Efficiency", Markers = markers };
+        // R-h9b-4 — both rows are built HERE, in one place, so the two charts cannot disagree about
+        // how the compression setting, the metric or Z0 is spelled. Live even on a SkipContours
+        // (tier-A-only) frame: the titles describe the SETTINGS, not the grid.
+        double z0 = ctx.Model.Settings.Z0, compressionDb = ctx.Model.Settings.CompressionDb;
+        string planeRow = HarmonicaTitles.PlaneRow(opt.GridSide, opt.GridHarmonic, z0);
+        string titleP = HarmonicaTitles.MetricRow(isPowerChart: true,  opt.EfficiencyMetric, compressionDb);
+        string titleE = HarmonicaTitles.MetricRow(isPowerChart: false, opt.EfficiencyMetric, compressionDb);
+
+        SmithPanelData smithP = new() { Title = titleP, Subtitle = planeRow, Markers = markers };
+        SmithPanelData smithE = new() { Title = titleE, Subtitle = planeRow, Markers = markers };
 
         if (!opt.SkipContours)
         {
@@ -217,8 +225,20 @@ public sealed class HarmonicaSolver
             LastGridPointsReused = grid.ReusedPointCount;
             gridSolveMs = stage.Elapsed.TotalMilliseconds;
 
-            smithP = BuildSmith("Power",      grid, GridMetric.PoutDbm,   markers, opt, ref fitMs, ref rasterMs);
-            smithE = BuildSmith("Efficiency", grid, opt.EfficiencyMetric, markers, opt, ref fitMs, ref rasterMs);
+            smithP = BuildSmith(titleP, planeRow, grid, GridMetric.PoutDbm,   markers, opt, ref fitMs, ref rasterMs);
+            smithE = BuildSmith(titleE, planeRow, grid, opt.EfficiencyMetric, markers, opt, ref fitMs, ref rasterMs);
+
+            // R-h9b-16 — the FOMs at each optimum come from ONE SOLVE there, never from N separately
+            // interpolated surfaces. Not while dragging (§6.8's whole reason to have a ladder) — only
+            // on a full-quality frame, so a coarse/frozen rung carries the glyph's POSITION (already
+            // set above, cheap) but not stale or fabricated numbers.
+            if (opt.Quality == FrameQuality.Full)
+            {
+                if (smithP.Optimum is { } sp)
+                    smithP = smithP with { Optimum = SolveAtOptimum(ctx, terminations, opt, sp) };
+                if (smithE.Optimum is { } se)
+                    smithE = smithE with { Optimum = SolveAtOptimum(ctx, terminations, opt, se) };
+            }
         }
 
         if (opt.Reachable is not null)
@@ -245,7 +265,7 @@ public sealed class HarmonicaSolver
 
     // ── the Smith panels ─────────────────────────────────────────────────────
 
-    private static SmithPanelData BuildSmith(string title, ContourGrid grid, GridMetric metric,
+    private static SmithPanelData BuildSmith(string title, string subtitle, ContourGrid grid, GridMetric metric,
                                              IReadOnlyList<HarmonicaMarker> markers, Options opt,
                                              ref double fitMs, ref double rasterMs)
     {
@@ -267,15 +287,22 @@ public sealed class HarmonicaSolver
         var polys  = ContourExtractor.Extract(raster, levels);
         rasterMs += sw.Elapsed.TotalMilliseconds;
 
+        // R-h9b-15 — seeded from the SAME raster (no second one), refined on the SAME fit the
+        // contours were drawn from. Cheap: no HB solve, just Rbf2D.Evaluate over a small window.
+        var interp = grid.InterpolatedArgmax(metric, raster);
+        var optimum = interp is { } ie ? new SmithPanelData.SmithOptimum(ie.Gamma, ie.Value, null, null) : null;
+
         return new SmithPanelData
         {
             Title      = title,
+            Subtitle   = subtitle,
             Contours   = polys,
             Levels     = [.. levels.Levels.OrderBy(v => v)],
             GridPoints = [.. grid.Points.Select(p => new HarmonicaGridPoint(p.Gamma, p.IsHole))],
             Markers    = markers,
             Mxp        = grid.Mxp?.Point.Gamma,
             Mxe        = grid.Mxe?.Point.Gamma,
+            Optimum    = optimum,
         };
     }
 
@@ -291,8 +318,7 @@ public sealed class HarmonicaSolver
             var (v, i) = IntrinsicPlane.Loadline(
                 ctx.DutComponent, at.Point.V, ctx.Interface.DeviceNodes,
                 ctx.Model.Settings.HarmonicCount,
-                CircuitRF.Engine.HarmonicBalance.HbFft.GridSize(
-                    ctx.Model.Settings.HarmonicCount, ctx.Model.Settings.FftOverSample),
+                ctx.Model.Settings.LoadlineSamples,
                 ctx.IntrinsicPorts.DrainPort, ctx.IntrinsicPorts.SourcePort);
 
             // Closed over one RF cycle: the last sample repeats the first, so the locus reads as a
@@ -312,7 +338,8 @@ public sealed class HarmonicaSolver
 
     // ── §7.4 — the power-sweep panel ─────────────────────────────────────────
 
-    private static PowerSweepPanelData BuildPowerSweep(PinSearchResult sweep, int cursor)
+    private static PowerSweepPanelData BuildPowerSweep(PinSearchResult sweep, int cursor,
+                                                        GridMetric efficiencyMetric)
     {
         // The steps come back in the order they were SOLVED — a doubling bracket then a secant — so
         // they are not monotone in Pin. A plot of them unsorted would zig-zag back on itself.
@@ -321,15 +348,47 @@ public sealed class HarmonicaSolver
             ? ordered.IndexOf(sweep.Steps[cursor])
             : -1;
 
+        // R-h9b-8 — the right axis follows the SAME DE/PAE setting its label now names; a "PAE (%)"
+        // label over drain-efficiency values would be a wrong number under a right label, which is
+        // worse than the wrong label this section was written to fix.
+        bool pae = efficiencyMetric == GridMetric.Pae;
+
         return new PowerSweepPanelData
         {
             PinAvailDbm   = [.. ordered.Select(s => s.PavlDbm)],
             PoutDbm       = [.. ordered.Select(s => s.PoutW > 0 ? 10 * Math.Log10(s.PoutW) + 30 : double.NaN)],
             GainDb        = [.. ordered.Select(s => s.GainDb)],
-            EfficiencyPct = [.. ordered.Select(s => s.De * 100.0)],
+            EfficiencyPct = [.. ordered.Select(s => (pae ? s.Pae : s.De) * 100.0)],
             CursorIndex   = orderedCursor,
             ReachedCompression = sweep.Compressed,
+            EfficiencyMetric = efficiencyMetric,
         };
+    }
+
+    /// <summary>
+    /// R-h9b-16 — solves ONE Pin drive-up at <paramref name="seed"/>'s interpolated Γ, substituted
+    /// into the band the contour grid swept (<c>opt.GridSide</c>/<c>GridHarmonic</c>), and publishes
+    /// §5's cubes there. This is the single defensible route: every number the caller reads off the
+    /// result — Pout, DE, PAE, Gain, Zin, AM-PM — is then the SAME state, consistently, rather than
+    /// values interpolated off N independently-fitted surfaces that need not even satisfy the DE that
+    /// a third surface reports.
+    /// </summary>
+    private SmithPanelData.SmithOptimum SolveAtOptimum(
+        HarmonicaContext ctx, TerminationSet terminations, Options opt, SmithPanelData.SmithOptimum seed)
+    {
+        var t = terminations.Clone();
+        t.Set(opt.GridSide, opt.GridHarmonic, HarmonicaDataSet.ImpedanceOf(seed.Gamma, ctx.Model.Settings.Z0));
+
+        var sweep = PinSearch.Run(ctx, t);
+        LastSolveCount += sweep.Solves;
+
+        int idx = sweep.AtCompression is null
+            ? sweep.Steps.Count - 1
+            : IndexOfNearestPin(sweep.Steps, sweep.AtCompression.PavlDbm);
+        var step = idx >= 0 && idx < sweep.Steps.Count ? sweep.Steps[idx] : null;
+
+        var published = step is not null ? HarmonicaDataSet.Build(ctx, step.Point, t) : null;
+        return seed with { Solved = step, Published = published };
     }
 
     private static int IndexOfNearestPin(IReadOnlyList<PinStep> steps, double pavlDbm)

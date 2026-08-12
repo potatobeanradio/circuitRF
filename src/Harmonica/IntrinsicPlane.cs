@@ -155,9 +155,16 @@ public static class IntrinsicPlane
     /// <summary>
     /// The time-domain loadline: <c>Vds_intr(t)</c> against <c>Ids_intr(t)</c>, conduction only
     /// (§7.3). Same evaluation as <see cref="Evaluate"/>, kept in the time domain.
+    ///
+    /// <para><b>R-h9b-13 — <paramref name="sampleCount"/> is a DISPLAY resolution, independent of the
+    /// solve's own FFT grid.</b> The spectrum carries every harmonic 0…K, so the inverse transform is
+    /// EXACT at any number of time points — not interpolation, and not tied to
+    /// <see cref="HbFft.GridSize"/>'s power-of-two constraint. This evaluates the truncated Fourier
+    /// series directly (<see cref="ResampleSpectrum"/>) rather than going through
+    /// <see cref="HbFft.Inverse"/>, which requires its output length to be that solve grid.</para>
     /// </summary>
     public static (double[] Vds, double[] Ids) Loadline(
-        ElaboratedComponent dut, Complex[,] v, int[] interfaceNodes, int k, int gridN,
+        ElaboratedComponent dut, Complex[,] v, int[] interfaceNodes, int k, int sampleCount,
         int drainPort = 1, int sourcePort = -1)
     {
         int n = interfaceNodes.Length;
@@ -166,17 +173,16 @@ public static class IntrinsicPlane
         var vTime = new double[n][];
         for (int i = 0; i < n; i++)
         {
-            vTime[i] = new double[gridN];
             var spec = new Complex[k + 1];
             for (int h = 0; h <= k; h++) spec[h] = v[i, h];
-            HbFft.Inverse(spec, k, vTime[i]);
+            vTime[i] = ResampleSpectrum(spec, k, sampleCount);
         }
 
         var (plus, minus) = PortNodeIndices(dut, interfaceNodes);
-        var vds = new double[gridN];
-        var ids = new double[gridN];
+        var vds = new double[sampleCount];
+        var ids = new double[sampleCount];
 
-        for (int t = 0; t < gridN; t++)
+        for (int t = 0; t < sampleCount; t++)
         {
             var pv = new double[p];
             for (int q = 0; q < p; q++)
@@ -190,6 +196,30 @@ public static class IntrinsicPlane
         }
 
         return (vds, ids);
+    }
+
+    /// <summary>
+    /// R-h9b-13 — evaluates the truncated Fourier series <c>x(t) = X[0] + Σ Re(X[h]·e^{jhθ})</c> at
+    /// <paramref name="sampleCount"/> uniformly-spaced points over one period. HbFft's convention is
+    /// FULL-amplitude (harmonic-balance.md §5.1's B1 note — no factor of 2), so this is the exact
+    /// inverse for any <paramref name="sampleCount"/>, not an interpolation of
+    /// <see cref="HbFft.Inverse"/>'s own fixed-N result.
+    /// </summary>
+    private static double[] ResampleSpectrum(Complex[] spec, int k, int sampleCount)
+    {
+        var x = new double[sampleCount];
+        for (int t = 0; t < sampleCount; t++)
+        {
+            double theta = 2.0 * Math.PI * t / sampleCount;
+            double v = spec[0].Real;
+            for (int h = 1; h <= k; h++)
+            {
+                double c = Math.Cos(h * theta), s = Math.Sin(h * theta);
+                v += spec[h].Real * c - spec[h].Imaginary * s;   // Re(X[h]·e^{jhθ})
+            }
+            x[t] = v;
+        }
+        return x;
     }
 
     /// <summary>

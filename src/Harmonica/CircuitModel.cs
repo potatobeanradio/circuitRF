@@ -228,6 +228,44 @@ public sealed record HarmonicaSettings
     /// <summary>Compression target in dB, the level the contour grid is taken at.</summary>
     public double CompressionDb { get; init; } = 3.0;
 
+    /// <summary>
+    /// R-h9b-6 — the Smith-chart Γ-normalisation reference impedance, Ω. Default 50, matching the
+    /// hardcoded value every chart used before this setting existed.
+    ///
+    /// <para><b>Not structural.</b> Γ is a display and grid parameterisation; the terminations the
+    /// engine reads are impedances, so a Z₀ change moves no circuit and must NOT touch
+    /// <see cref="CircuitModel.StructuralKey"/> (that would rebuild the context and reset the frame
+    /// ladder for a value nobody asked to re-solve for). It DOES change the Γ grid, so a change still
+    /// re-solves through the ordinary value-input path.</para>
+    /// </summary>
+    public double Z0 { get; init; } = 50.0;
+
+    // ── R-h9b-12 — the DCIV Sweeps dialog's override of DcivFamily.DefaultKey ────────────────
+    //
+    // All six or none: the dialog writes them together (DcivFamily.OverrideOf treats a partially-set
+    // group as absent), so a half-written override can never silently take effect. DrainPort is NOT
+    // here — R-h9b-12 says the dialog must not offer it, and DefaultKey's own DrainPort: 1 is what a
+    // resolved override still uses.
+    public double? DcivVgsMin   { get; init; }
+    public double? DcivVgsMax   { get; init; }
+    public int?    DcivVgsSteps { get; init; }
+    public double? DcivVdsMin   { get; init; }
+    public double? DcivVdsMax   { get; init; }
+    public int?    DcivVdsSteps { get; init; }
+
+    /// <summary>
+    /// R-h9b-13 — how many time samples the loadline is drawn at. A DISPLAY resolution, not a solve
+    /// parameter: the spectrum carries every harmonic 0…K, so re-evaluating it at any sample count is
+    /// exact rather than interpolated (§7.3), and this never changes <see cref="FftOverSample"/> or
+    /// the HB solve's own time grid. Default 64, per the owner's "try 64 for now".
+    /// </summary>
+    public int LoadlineSamples { get; init; } = 64;
+
+    /// <summary>Clamp for <see cref="LoadlineSamples"/> — sane at both ends: below this a locus
+    /// stops reading as a smooth loop, above it the per-frame device-evaluation cost (one
+    /// <c>dut.Evaluate</c> per sample) buys nothing a user can see.</summary>
+    public const int LoadlineSamplesMin = 8, LoadlineSamplesMax = 2048;
+
     /// <summary>Available-power ceiling for the Pin search, dBm (R-hrf-7's hard stop).</summary>
     public double PinMaxDbm { get; init; } = 30.0;
 

@@ -84,6 +84,10 @@ public sealed record InverseSolveOptions
     /// whether the residual stalled. 0 keeps the load side's stall-driven cadence for both.
     /// </summary>
     public int SourceFdRefreshEveryFrames { get; init; }
+
+    /// <summary>R-h9b-6 — the document's own Γ-normalisation reference impedance. Defaults to the
+    /// historical 50 Ω so an existing caller that never set this keeps its old behaviour.</summary>
+    public double Z0 { get; init; } = HarmonicaDataSet.Z0;
 }
 
 /// <summary>
@@ -203,7 +207,7 @@ public sealed class InverseSolver
     {
         var t = _baseline.Clone();
         for (int i = 0; i < _bands.Length; i++)
-            t.Set(_bands[i].Side, _bands[i].Band, HarmonicaDataSet.ImpedanceOf(gammas[i]));
+            t.Set(_bands[i].Side, _bands[i].Band, HarmonicaDataSet.ImpedanceOf(gammas[i], _opt.Z0));
         return t;
     }
 
@@ -379,7 +383,7 @@ public sealed class InverseSolver
         // operating point R-h6-11 rests on — would be meaningless rather than active.
         for (int i = 0; i < _bands.Length; i++)
             if (_bands[i].Side == TerminationSide.Source && _bands[i].Band == 1 &&
-                HarmonicaDataSet.ImpedanceOf(gammas[i]).Real <= 0)
+                HarmonicaDataSet.ImpedanceOf(gammas[i], _opt.Z0).Real <= 0)
                 return (null, InverseFailure.ActiveSourceFundamental);
 
         var terms = TerminationsFor(gammas);

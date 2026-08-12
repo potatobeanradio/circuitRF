@@ -109,13 +109,22 @@ public static class HarmonicaHitTest
     /// user cannot see. Their grab radius is deliberately SMALLER than a marker's — a grid can carry
     /// sixty of them and a marker-sized target would make the two indistinguishable.
     /// </param>
+    /// <param name="gridPointsVisible">
+    /// R-h9b-7 — grid points are draggable only while shown. Passed explicitly rather than the caller
+    /// substituting <c>null</c> for <paramref name="gridPoints"/> to mean "off", so the reason a point
+    /// is untestable is legible at the call site rather than indistinguishable from "no grid solved
+    /// yet". Defaults true so a caller with no visibility concept of its own (most direct tests) keeps
+    /// today's behaviour.
+    /// </param>
     public static HarmonicaGrab Resolve(CharmLayout layout, IReadOnlyList<HarmonicaMarker> markers,
                                         double x, double y, double w, double h,
                                         double renderScaling = 1.0,
                                         double grabRadiusDevicePixels = GrabRadiusDevicePixels,
-                                        IReadOnlyList<HarmonicaGridPoint>? gridPoints = null)
+                                        IReadOnlyList<HarmonicaGridPoint>? gridPoints = null,
+                                        bool gridPointsVisible = true)
     {
         if (w <= 0 || h <= 0) return HarmonicaGrab.None;
+        if (!gridPointsVisible) gridPoints = null;
         if (markers.Count == 0 && (gridPoints is null || gridPoints.Count == 0))
             return HarmonicaGrab.None;
 
@@ -207,8 +216,23 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
 
     public bool IsDragging => Grab.IsGrab;
 
+    /// <summary>
+    /// R-h9b-1 — "this gesture is live", for the canvas's pointer-moved/pointer-released gate. Deliberately
+    /// NOT folded into <see cref="IsDragging"/>: <see cref="HarmonicaHitTest"/>'s own callers and
+    /// <c>PointerUp</c>'s marker/glyph/grid branches read <c>Grab.Kind</c>, and making an edit grab
+    /// look like a marker drag to them would be a second, worse bug in the same place this one lived.
+    /// </summary>
+    public bool IsLive => IsDragging || EditGrab != HarmonicaEditGrab.None;
+
     /// <summary>How many pointer-moves this gesture has processed. A drag's own frame count.</summary>
     public int MoveCount { get; private set; }
+
+    /// <summary>
+    /// R-h9b-3's own diagnosability ask: what the last <see cref="PointerDown"/> resolved to, kept
+    /// after <see cref="PointerUp"/> resets <see cref="Grab"/> back to <c>None</c> — so "did the press
+    /// even grab anything" survives the gesture rather than only being observable mid-drag.
+    /// </summary>
+    public HarmonicaGrabKind LastGrabKind { get; private set; } = HarmonicaGrabKind.None;
 
     /// <summary>
     /// What an Edit Display drag is currently moving, or <see cref="HarmonicaEditGrab.None"/>. Kept
@@ -233,9 +257,10 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
             var (kind, panelId) = HarmonicaEditTarget.Resolve(
                 _vm.Layout, _vm.PickedTraces, x, y, w, h, renderScaling);
 
-            EditGrab    = kind;
-            EditPanelId = panelId;
-            Grab        = HarmonicaGrab.None;
+            EditGrab     = kind;
+            EditPanelId  = panelId;
+            Grab         = HarmonicaGrab.None;
+            LastGrabKind = HarmonicaGrabKind.None;
             if (kind == HarmonicaEditGrab.None) return false;
 
             _editAnchorX = x / w;
@@ -247,8 +272,9 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
 
         var grab = HarmonicaHitTest.Resolve(_vm.Layout, _vm.Markers, x, y, w, h,
                                             renderScaling, GrabRadiusDevicePixels,
-                                            GridPointsOf(_vm));
-        Grab      = grab;
+                                            GridPointsOf(_vm), _vm.ShowGridPoints);
+        Grab         = grab;
+        LastGrabKind = grab.Kind;
         if (!grab.IsGrab) return false;
 
         if (grab.Kind == HarmonicaGrabKind.IntrinsicGlyph)

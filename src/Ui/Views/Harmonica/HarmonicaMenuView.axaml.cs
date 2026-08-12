@@ -142,7 +142,19 @@ public partial class HarmonicaMenuView : UserControl
     private void DetachNativeMenuFromWindow()
     {
         if (_ownMenu is null || _attachedTo is not Window window) return;
-        NativeMenu.SetMenu(window, null);
+
+        // A torn-off window's own native teardown can already be under way by the time
+        // DetachedFromVisualTree fires here — closing a window detaches its content from the visual
+        // tree, but the platform's AvaloniaNativeMenuExporter for that window may by then have already
+        // released or reassigned its native menu state. Asking it to Update to null in that state
+        // throws ArgumentException("The menu being updated does not match.") from deep inside
+        // Avalonia.Native's interop layer (owner-reported: closing a torn-off harmonicaRF window
+        // crashed the whole app). The window and its native menu bar are being destroyed regardless,
+        // so there is nothing left to clean up if this throws — swallowing it here is strictly safer
+        // than an unhandled exception terminating the application over a window that was already
+        // closing.
+        try { NativeMenu.SetMenu(window, null); }
+        catch (Exception) { }
         _attachedTo = null;
     }
 

@@ -176,7 +176,7 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
     {
         // R-h45-4's z-order, enforced in the hit test: a hit test that disagreed with the z-order
         // would grab the thing the user cannot see.
-        var vm = new HarmonicaViewModel();
+        var vm = StripToS1L1(new HarmonicaViewModel());
         var m = vm.Markers[1];
         m.Gamma          = new Complex(0.20, 0.10);
         m.GammaIntrinsic = new Complex(0.20, 0.10);          // exactly underneath
@@ -344,7 +344,18 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         Assert.Equal(structureBefore, vm.Model.StructuralKey);
         Assert.Equal(rebuildsBefore,  vm.Pool.Workers[0].ContextRebuildCount);
         Assert.Equal(untouched,       vm.Markers[0].Gamma);           // the OTHER marker is untouched
-        Assert.Equal(2, vm.Markers.Count);                            // no marker was added or removed
+        Assert.Equal(5, vm.Markers.Count);                            // R-h9b-14's default set — no marker was added or removed
+    }
+
+    /// <summary>R-h9b-14 strips a fresh document's default marker set (S1, S2, L1, L2, L3) down to
+    /// just S1/L1, for the many drag tests here that want exactly two markers and do not care which
+    /// bands they are — so the added defaults cannot collide with a test-chosen probe position.</summary>
+    private static HarmonicaViewModel StripToS1L1(HarmonicaViewModel vm)
+    {
+        vm.RemoveMarkerBand(TerminationSideKind.Source, 2);
+        vm.RemoveMarkerBand(TerminationSideKind.Load,   2);
+        vm.RemoveMarkerBand(TerminationSideKind.Load,   3);
+        return vm;
     }
 
     // ══ R-h6-5 — StatusMessage reaches the strip ════════════════════════════
