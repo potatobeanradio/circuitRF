@@ -619,3 +619,86 @@ the model and its cut count.
 **The default ships OFF (`Staircase`).** Flipping it is a separate, deliberate act, because it moves
 every number a user has previously recorded — see the engine note's own "The default" heading for
 what is still open.
+
+## Mesh frequency — the FIFTH mesh control, and the first that is a PERFORMANCE knob
+
+The Ui half of `docs/sonnet-briefs/brief-em-sweep-performance.md`'s M0. The engine half — how λ_g is
+derived from it, both report notes, and **the accuracy table that decides whether the control is
+safe** — is in `src/Engine/Mom/CLAUDE.md`'s own M0 section. **Read that table before recommending a
+value to anyone**: halving the mesh frequency is defensible on the FR-4 hero (2.97e-3 below the mesh
+frequency, 1.50e-2 at the top of the band, for 2.76× the speed), quartering is not (1.58e-1).
+
+**D3 said `PlanarMeshSettings` carries "exactly three user controls"; conformal boundary cells made
+it four; this is the fifth.** It earns its place for a reason none of the other four share: cells/λ
+and edge cells change how FINELY a structure is discretised, boundary cells change WHICH STRUCTURE is
+discretised — and this one changes NEITHER. It changes what the resolution is measured against. That
+is why it behaves like `BoundaryCells` in the two places sizing controls differ (it survives `Auto`,
+and it does not clear it) while being a completely different kind of decision from either.
+
+- **`.cem`** — `CemPlanarMesh.MeshFrequencyHz` is a nullable double in HERTZ, omitted at its default,
+  exactly like `BoundaryCells` and `DirectVerticalKernel` beside it. A file written before this
+  phase gains no byte and re-serialises byte-identically; that is an asserted property of the format.
+- **`EmSnpProvenance.MeshHash` includes it, and that is the load-bearing line.** An `.snp` produced
+  with the mesh sized at 10 GHz is not current for one sized at 20 GHz, and the hash is the only
+  thing that can say so — the same one-line-easy-to-forget staleness failure R-em-20 exists to
+  prevent, now for the third control in a row. **`null` and an explicit value equal to the sweep's
+  top hash DIFFERENTLY**, deliberately: "max sweep" survives a later sweep edit and "pinned to
+  20 GHz" does not, so they are different states even while they produce the same mesh today.
+- **It does NOT clear `PlanarMeshSettings.Auto`**, unlike cells/λ and edge cells. Auto decides a
+  resolution; this decides where that resolution is applied. Clearing Auto here would silently pin
+  the cell size the moment a user touched a performance knob.
+- **Edited in the SWEEP's own top-frequency unit, stored in hertz**, through the existing staged-text
+  `CommitMeshField` committer — never a raw double and never a second unit selector of its own. The
+  trap that costs a factor of a thousand: **`CommitFrequency` must call `RefreshMeshText()`**, or a
+  stored 10 GHz goes on reading "10" beside an "MHz" label after the user changes the sweep's unit,
+  and is committed as 10 MHz the next time they tab through the field. Gated directly.
+- **Blank is a real VALUE (null = max sweep), not "leave it alone"** — the one case in
+  `CommitMeshField` where empty text commits rather than reverting. The placeholder says so and
+  quotes the sweep's own top so the user can see what blank currently means.
+- One undo entry per commit, and it calls `InvalidateMesh()` — the panel must not go on reporting an
+  N produced at another mesh frequency.
+
+Gate: `tests/Ui.Tests/Em/MeshFrequencyUiTests.cs` (9 tests, ~0.1 s) — the byte-identical round trip
+at the default, the round trip when set including `Clone` (which drives undo snapshots and would
+silently lose the field) and `Resolved`'s Auto collapse, the staleness hash both ways plus every
+OTHER mesh term still moving it, the unit round trip, blank-means-follow-the-sweep, the sweep-unit
+re-render, one-undo-entry-plus-invalidate-without-clearing-Auto, same-value-pushes-nothing, and
+unparseable/zero/negative text changing nothing.
+
+## The core cap — the ONE control in this panel that is not part of the design
+
+M1 of `brief-em-sweep-performance`. The engine half — the one budget, the bit-identity gates and the
+measurement — is `src/Engine/Mom/CLAUDE.md` §9. **This half stores it, shows it, and keeps it out of
+every hash.**
+
+**R-emp-6: STORED in `AppPreferences`, SHOWN in the EM Setup panel.** A core count is a property of
+the MACHINE, and a `.cem` travels with the workspace — opening a colleague's EM setup must not pin
+your core count to theirs, the same reasoning that keeps `HarmonicaKitFolders` and the wirebond
+defaults per-user. It is shown here because this is where the user is standing when the cost lands,
+with a one-line note saying it is a machine setting and is not saved in the `.cem`.
+
+- **`EmSolveCores`** is the whole mechanism: `Preferred` (get/set, null = Automatic), `Sanitise`,
+  `Choices`/`ChoiceRows`, `Label`. A stored value is **clamped rather than trusted** — a preferences
+  file copied from a bigger machine would otherwise ask for more cores than exist, and a hand-edited
+  `0` would reach `Parallel.For` as a framework exception with no mention of a core count in it.
+  Anything unusable reads as Automatic, which is always a working answer.
+- **`TestOverrideStore`/`TestOverrideActive`** are the `SkiaFonts.TestOverrideTypeface` seam again:
+  without them a test that exercises the control writes the developer's REAL preferences file.
+- **It carries no undo entry, does not dirty the document, and does NOT call `InvalidateMesh()`.**
+  Every other control in this panel does all three. This one changes no mesh and — R-emp-8, gated as
+  bit-identity engine-side — no answer, so an undo stack that could revert it would be undoing the
+  wrong kind of thing. Asserted, not merely arranged.
+- **It enters NO provenance hash (R-emp-7), and that is asserted as a NEGATIVE.** The arrangement
+  (the cap is not part of any model a hash is taken over) is exactly what a later refactor can
+  quietly undo, so `EmCoreCountTests` walks every cap and asserts `GeometryHash`/`MeshHash`/`PortHash`
+  are unchanged, plus that the string "core" appears nowhere in a serialised `.cem`.
+- **`EmRunService` is the one consumer**, one `with` term on `PlanarSolveSettings.Default`. A
+  preference nothing reads is decoration, so the wiring is pinned by a source scan — the same
+  fallback this suite already uses for view-model-only plumbing.
+
+**The run says what it did with it.** `PlanarSolve` adds a note naming the number of independent
+solves and the cap they ran across, and stating that the count changes no answer — a user who lowers
+a core count and sees a different number needs to be able to rule this out immediately. The note
+appears only when the run actually fans out (de-embedding on, cap ≠ 1).
+
+Gate: `tests/Ui.Tests/Em/EmCoreCountTests.cs` (12 tests, ~0.1 s).

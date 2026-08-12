@@ -351,9 +351,14 @@ public static class EmRunService
             // precisely so the default 101-point sweep is not 80 minutes to three hours (L8d/L9d
             // measured 48 s and 71.9 s per de-embedded point). It is ON by default; see
             // EmSetup.AdaptiveSampling for the accuracy measurement that makes that safe.
+            // M1 (R-emp-6): the core cap is a MACHINE preference, so it is read here rather than
+            // from the .cem — see EmSolveCores. Null (Automatic) reproduces the unbounded behaviour
+            // every run had before the control existed, and it enters no provenance hash (R-emp-7)
+            // because it cannot change an answer (R-emp-8).
             var solveSettings = PlanarSolveSettings.Default with
             {
                 Adaptive = setup.AdaptiveSampling ? PlanarAdaptiveSettings.Default : null,
+                MaxDegreeOfParallelism = EmSolveCores.Preferred,
                 Fill = setup.DirectVerticalKernel
                     ? (PlanarSolveSettings.Default.Fill ?? PlanarFillSettings.Default)
                       with { DirectVerticalKernel = true }

@@ -1,3 +1,199 @@
+The EM Setup panel gained a Cores control, and fanning the solves out bought far less than expected
+(brief-em-sweep-performance M1/M2, 2026-08-11) — COMPLETE for M1 and M2; **M3–M5 not started.**
+
+**What a user will notice: one new "Cores" control in the Solver options group, and nothing else.**
+It caps how many cores the full-wave solver may use at once; Automatic (the default) uses the whole
+machine, which is exactly what every run did before this control existed. Lowering it leaves cores
+free for other work and makes the run slower — **it never changes the answer**, and a run that fans
+out now says so in its own notes so a user who lowers it and sees a different number can rule this
+out immediately.
+
+**The headline measurement, and it is far short of what the brief predicted — this is the finding,
+not a footnote.** M2 solves the DUT and its calibration standards concurrently at each frequency;
+the brief estimated 3–4× on a 10-core box. Measured on the FR-4 hero at the shipping mesh, one
+de-embedded point, 10 cores (twice, on separate runs, within 1%):
+
+- **The fan-out's own gain, with the fill's row parallelism held off, is 1.18×** (123 s → 104 s).
+- **In the SHIPPED configuration it is worth essentially nothing** — measured against a temporary
+  local patch that skipped the fan-out, both timed in one process: **1.06× at N = 722 and 1.00× at
+  N = 1,810**, i.e. inside process-to-process variation.
+- The shipped run is **5.4× faster than fully serial, and almost all of that is the fill's own row
+  parallelism, which has been there since L8c** — not M2.
+
+The reason is in the design rather than in a defect: fanning out five fills does not make them
+finish sooner, because the fill already saturates the machine. What fanning out buys is the overlap
+of one solve's single-threaded LU with another's fill, and **the LU is about 1/114th of the fill**.
+**So the EM sweep's time is not somewhere M2 could reach it** — that is M3's ground (whole frequency
+points in parallel), and it is not started. M2 ships because it costs nothing measurable and its
+machinery — one budget, spent by the innermost work — is what M3 needs; it does not ship because it
+made anything faster.
+
+**Three things worth knowing before touching the control:**
+
+- **It is stored per USER, in `preferences.json`, never in the `.cem`.** A core count is a property
+  of the machine; a `.cem` travels with the workspace, and opening a colleague's setup must not pin
+  your machine to theirs. Same reasoning as the Harmonica kit folders and the wirebond defaults.
+- **It carries no undo entry and does not dirty the document**, unlike every other control in that
+  panel — it changes no mesh and no answer, so undoing it would be undoing the wrong kind of thing.
+- **It enters no provenance hash**, so an `.snp` produced at four cores is still current at eight.
+  That is asserted as a negative (`EmCoreCountTests`) rather than left to the arrangement, because
+  the arrangement is exactly what a later refactor can quietly undo.
+
+**Gate:** `tests/Ui.Tests/Em/EmCoreCountTests.cs` 12 routine tests;
+`tests/Engine.Tests/Mom/ParallelBudgetTests.cs` 3 routine (the fill filled at caps 1 / 2 / unbounded
+and through the shared budget is **bit-identical entry by entry**, and a cap of zero is refused by
+name) + 3 `Category=Benchmark` (the same de-embedded sweep at cap 1 and cap 8 with adaptive sampling
+off and on, and the cost table above — 6 min, opt-in). **Not interactively verified** (no visual
+driver here, matching every prior EM phase) — please confirm on your end: the Solver options group
+shows a "Cores" dropdown reading "Automatic (N cores)" plus 1/2/4/8/N, that choosing one sticks
+across reopening the setup and across restarting the app, and that a de-embedded planar run now
+reports the concurrent-solve line in its notes.
+
+The EM Setup panel gained a Mesh frequency field, and the measurement that says how far it may be
+turned down (brief-em-sweep-performance M0, 2026-08-11) — COMPLETE for M0.
+
+**What a user will notice: one new field in the Surface-mesh group, and a run that can be nearly 3×
+faster for a stated accuracy cost.** The full-wave mesh has always been sized at the top of the
+sweep, which is the most expensive frequency in the band; "Mesh frequency" lets it be sized lower.
+Blank means "max sweep" — every existing `.cem` behaves exactly as it did.
+
+**The number that decides how to use it, measured on §10.7's own FR-4 hero over 1–20 GHz** (the full
+table is in `src/Engine/Mom/CLAUDE.md`'s M0 section): sizing the mesh at **10 GHz instead of 20**
+takes N from 1,345 to 552 and the sweep from 352 s to 128 s, and costs worst |ΔS| of **2.97e-3 below
+10 GHz and 1.50e-2 above it**. At **5 GHz** it costs **1.58e-1 at the top of the band** — an order of
+magnitude past any residual this kernel has ever measured. **Halving is defensible; quartering is
+not.** No refusal was added: what the measurement supports is a note, not a limit, and the panel now
+prints one whenever the mesh is sized below the sweep's top, stating the trade in effective cells/λ.
+
+**The finding that reframes the control: it is Cells-per-wavelength re-parameterised.** The cell
+cap is `c / (mesh frequency × √ε × cells per wavelength)`, so only the PRODUCT matters — halving the
+mesh frequency and halving cells/λ produce bit-identical grids. **The panel therefore gained no mesh
+it could not already produce; what it gained is a parameterisation a user can reason about and a
+report that says WHERE in the band the resolution was spent**, which cells/λ alone cannot express
+because λ itself moves across the band.
+
+**That matters directly for the reported MKlopf setup.** On that exact taper, at its own cells/λ = 5,
+M0 saves nothing (N = 1,038 / 1,078 / 1,078) — because those settings had already taken the whole
+saving by hand. What the measurement says instead is that the setup is running at **effective λ_g/5
+at the top of its band, priced at ~1.6e-1 in |ΔS|**; the option M0 makes statable is cells/λ = 20
+with the mesh at 10 GHz — **N = 2,098, inside the 5,000-unknown ceiling that refuses cells/λ = 20 at
+the sweep top (8,418)** — buying λ_g/10 (~1.5e-2) for twice the unknowns.
+
+**And the finding that stops this being a one-way knob: on a narrow conductor, lowering the mesh
+frequency can RAISE the unknown count.** Measured on a 2 mm × 72 µm GaAs line: N = 773 / 705 / 2,014
+at 20 / 10 / 5 GHz — the outermost edge cell is anchored to the conductor WIDTH while the bulk cell
+is anchored to λ, so coarsening the λ cap widens the gap the graded fan has to bridge. The panel
+already reports the unknown count, which is how a user sees this. **Do not add a hint saying a lower
+mesh frequency is faster** — on a narrow-conductor MMIC it is not.
+
+**Four things about the control worth knowing before touching it:**
+
+- **It is edited in the SWEEP's own top-frequency unit and stored in HERTZ**, through the same
+  staged-text committer every other dimensioned field in that panel uses. The trap that costs a
+  factor of a thousand: `CommitFrequency` must call `RefreshMeshText()`, or a stored 10 GHz goes on
+  reading "10" beside an "MHz" label after the sweep's unit changes and is committed as 10 MHz the
+  next time the user tabs through it. Gated directly.
+- **Blank is a real value** (null = max sweep), not "leave it alone" — the one case in
+  `CommitMeshField` where empty text commits rather than reverting.
+- **It does NOT clear `PlanarMesh.Auto`**, unlike Cells per wavelength and Edge cells. Auto decides a
+  RESOLUTION; this decides which frequency that resolution is applied at, and Auto has no opinion
+  about it. Clearing Auto here would silently pin the cell size the moment a user touched a
+  performance knob.
+- **`EmSnpProvenance.MeshHash` includes it**, and that is the load-bearing line — an `.snp` produced
+  with the mesh sized at 10 GHz is not current for one sized at 20 GHz, and the hash is the only
+  thing that can say so. `null` and an explicit 20 GHz hash DIFFERENTLY on purpose: "follow the
+  sweep" survives a later sweep edit and "pinned to 20 GHz" does not.
+
+**Gate:** `tests/Ui.Tests/Em/MeshFrequencyUiTests.cs` 9 routine tests; `tests/Engine.Tests/Mom/MeshFrequencyTests.cs`
+6 routine + 2 `Category=Benchmark` (the FR-4 measurement is 9.7 min, opt-in). **Not interactively
+verified** (no visual driver here, matching every prior EM phase) — please confirm on your end: the
+Surface-mesh group shows a "Mesh frequency" row whose unit label follows the sweep's own Stop unit,
+that leaving it blank shows the sweep's top as a placeholder and changes nothing, and that entering
+half the sweep's top drops the reported unknown count and adds a note saying what the cells are at
+the top of the band.
+
+Three microstrip reports in the LAYOUT editor (2026-08-11) — COMPLETE. Independent items; two of them
+are the same shape of mistake — a rule keyed on a NAME where it should have been keyed on identity.
+
+**1 — A MICROSTRIP DROPPED FROM THE PALETTE IGNORED THE TECHNOLOGY.** The schematic editor has
+synthesised widths for 50 Ω on the placing workspace's own substrate since the "nice defaults" round —
+`SchematicViewModel.CommitPlacement` calls `MicrostripSubstrateInjection.ApplyTechnologyDefaults` right
+after materialising the registry defaults. `SchematicToLayoutGenerator.ResolveDefaultParameters` — the
+one method behind ALL THREE layout entry points (the drag ghost, the drop, and the generator picker's
+own list) — read `ComponentTypeRegistry.DefaultParameters` **verbatim** and converted straight to SI. So
+on the shipped RO4350B 20 mil PCB the same MLIN read **42 mil placed on a schematic and 114.1732 mil
+dropped on a layout** — the exact value `MicrostripNiceDefaultsTests.TheOldValue_IsGone` was written to
+prevent, reachable through a door that test never watched.
+
+**Fixed by routing the registry defaults through the SAME rewrite, not by adding a second synthesis** —
+`ResolveDefaultParameters` gained an optional `Technology?` (defaulting to null, so every pre-existing
+two-argument caller, and the ~40 tests using one, are untouched and still get the mm baseline) and calls
+`ApplyTechnologyDefaults` on cloned parameters before resolving to SI. There is one rule for what a
+freshly-placed microstrip's width is and both editors now read it from one place. **The defaults are
+CLONED first**: `DefaultParameters` splices in the shared static `SignalGroundLayerParams` array and the
+rewrite writes `Expression`/`Unit` in place — the same clone-then-rewrite `CommitPlacement` already does,
+for the same reason. **`Technology` was already in hand** at all three call sites (it is passed to
+`PCellGeometryCache.GetOrGenerate` and `GeneratedCellStore.GetOrCreate` on the very next line); only the
+parameter defaults bypassed it. **MKlopf was already correct by accident of its parameterisation** — its
+defaults are impedances and `MKlopfPCell.Generate` synthesises widths itself.
+
+**2 — MTEE's W1/W2/W3 BLANKED OUT, AND EDITING THEM GREW Z1/Z2 ROWS.** Three sites in
+`LayoutShapePropertiesViewModel` implemented MKlopf's Z1/Z2⇄W1/W2 entry-mode rewrite keyed on the raw
+parameter NAME with no `IsMklopfTarget` guard — `BuildPCellParamRow`'s pseudo-unit lookup,
+`PopulatePCellParamRow`'s read, and `CommitPCellParamField`'s write. **MTee, MTaper and MCross all
+declare real `W1`/`W2` parameters of their own**, so all three fell into MKlopf's conversion:
+
+- **Read, no technology:** the branch's first act is to demand a resolved substrate; failing that it
+  sets `ValueText = ""` and an error — the reported "the W fields are removed". `W3`/`W4`/`L` never
+  matched the name test, which is why only *some* rows misbehaved and it read as the panel corrupting
+  itself rather than as one branch firing wrongly.
+- **Read, with technology:** it reads `Z1`/`Z2` — absent on those cells, so silently **50 Ω/50 Ω** — and
+  displayed a synthesised 50 Ω width in place of the instance's real one. W1 and W2 therefore always
+  read EQUAL to each other and unrelated to the artwork.
+- **Write:** editing W1 ran the width→impedance conversion and **merged** Z1/Z2 into the cell
+  (`EditInstancePCellParameters` merges rather than replaces). `MTeePCell` ignores them, so the edit
+  appeared to do nothing — and `OrderedParamNames`' defensive tail loop then surfaced the two orphans as
+  new rows, which is the reported "it adds Z1/Z2 fields".
+
+The pseudo-name rewrite in `OrderedParamNames` was ALREADY gated on `IsMklopfTarget`; these three are its
+mirror and now carry the same gate. **A control test drives MKlopf's own toggle** so the guards cannot be
+"fixed" later by deleting the branch.
+
+**A residue, stated rather than papered over: an MTee cell already forked by the pre-fix write path still
+carries inert Z1/Z2, and still shows them as rows.** Filtering a built-in's row list down to its registry
+entry was tried and **REVERTED** — `PCellPropertiesInspectorParameterListTests` deliberately places
+non-registry parameters on a built-in-generator cell and expects them listed, so "a built-in's registry
+entry is its complete interface" is not an assumption this codebase holds, and making it one meant
+rewriting two unrelated pre-existing gates. The write path that mints them is fixed; cleaning an
+already-forked cell is a data migration and is not attempted. `OrderedParamNames` carries the note.
+
+**3 — THE GRIPPER GLYPHS HID THE SNAP GLYPH.** `LayoutRenderer.Draw` draws `DrawPCellHandles` directly
+after `DrawSnapMarker`, so the grips paint ON TOP — and a grip that has locked onto a feature sits exactly
+where that feature's own marker is, hiding the one mark saying WHICH feature is being snapped to at
+precisely the moment it is the only thing worth reading. `BuildPCellHandleMarkers` now returns empty while
+a grip drag has a snap glyph showing. **Gated on `_currentSnapCandidate is not null`, not on
+`_snapCandidateIsRealTarget`** — the former is what `RebuildOverlay` assigns to `SnapMarker` and therefore
+what decides whether a marker is DRAWN at all, which is the condition the report is about; the two agree
+during a grip drag regardless, since the synthetic grab echo needs `_snapDragActive`, which only a
+marker-initiated grab sets. **Scoped to an ACTIVE drag, not to "a snap marker exists"** — hovering near a
+feature with a PCell merely selected must keep its grips, or they would flicker away under the cursor with
+nothing being dragged. Both halves have their own test.
+
+**Gate:** `tests/Ui.Tests/Layout/PCells/MicrostripLayoutIssuesTests.cs` (18 tests). **Every fix confirmed
+to bite:** reverting the technology threading turns 7 red, the three `IsMklopfTarget` guards 3, the
+gripper suppression 1 (the other two gripper tests are deliberate controls asserting grips *are* shown, so
+they correctly survive). Ui **6193** · Firewall 6 — green. `src/Core`, `src/Engine`, `RfCore` untouched;
+every changed file is under `src/Ui`.
+
+**Not interactively verified** (no visual driver here, matching every prior layout round) — please confirm
+on your end: dropping an MLIN/MTee/MCross/MTaper/MBend from the palette into a layout on your PCB
+technology gives a 42 mil width rather than 114.1732; an MTee's Parameters dialog shows W1/W2/W3 with
+three independent values that survive opening and closing it, and editing one changes only that arm with
+no Z rows appearing; and dragging a PCell gripper near a corner shows only the snap glyph, with the grips
+returning on release or as soon as the cursor leaves the snap threshold.
+
+---
+
 A PORT ON A CONFORMAL FEED — the refusal that made `Boundary cells = Conformal` unusable
 (2026-08-11) — FIXED, and the residual is MEASURED rather than hidden.
 

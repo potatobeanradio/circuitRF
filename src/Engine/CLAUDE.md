@@ -86,6 +86,90 @@ compute exactly what they did.
 The constructor also gained an optional `extraInterfaceNodes`. Null — the default — is the shipped
 behaviour exactly: the interface is the nonlinear-facing nodes and nothing else.
 
+## `Mom/` — M1/M2: the core cap, and fanning the solves out bought nothing (brief-em-sweep-performance, 2026-08-11) — **M0–M2 done; M3–M5 not started**
+
+**Read `src/Engine/Mom/CLAUDE.md` §9 before touching any parallelism here.** Three things from out
+here:
+
+- **The fill was ALWAYS parallel** (`PlanarFill.ForRows`, since L8c, with no cap anywhere), so a
+  core-count control on its own can only ever make a run SLOWER. M1 threads ONE number —
+  `PlanarSolveSettings.MaxDegreeOfParallelism`, null = automatic — through both levels as a single
+  shared `PlanarParallelBudget` spent by the innermost work. **Do not add a second cap**: a cap on an
+  outer `Parallel.ForEach` does not bound the inner one, and two numbers a reader has to multiply in
+  their head is worse than either.
+- **It changes no answer, and that is asserted as BIT-IDENTITY**, entry by entry at caps 1 / 2 /
+  unbounded / budget and at the sweep level with adaptive sampling off and on
+  (`ParallelBudgetTests`). A tolerance would be the wrong gate — agreeing to 1e-12 is exactly what an
+  order-dependent accumulation produces. It therefore enters no provenance hash.
+- **M2 is a measured near-zero, and that is the finding.** The brief estimated 3–4× from solving the
+  DUT and its calibration standards concurrently; measured, the fan-out's own gain is **1.18×** with
+  row parallelism held off, and **1.00–1.06× in the shipped configuration** — inside
+  process-to-process variation. The overlap it buys is one solve's single-threaded LU against
+  another's fill, and the LU is ~1/114th of the fill. The sweep's time is not there; M3 (whole
+  frequency points in parallel) is where a large multiple could still be.
+
+## `Mom/` — M0: the mesh frequency, and the measurement that says how far it may be turned down (brief-em-sweep-performance, 2026-08-11)
+
+**A FOLLOW-UP to L8/L9 that adds no physics** — it touches no Green's function, no DCIM fit, no
+extraction algebra, no de-embedding algebra, no basis function and no closed-form integral. **Read
+`src/Engine/Mom/CLAUDE.md`'s own M0 section before touching any of it**; the accuracy table lives
+there, and `src/Ui/Layout/Em/CLAUDE.md` has the panel half.
+
+The four things worth knowing from out here:
+
+- **THE DELIVERABLE IS A MEASUREMENT, and it says halving is defensible and quartering is not.** On
+  §10.7's own FR-4 hero over 1–20 GHz, sizing the mesh at **10 GHz instead of 20** costs worst |ΔS|
+  of **2.97e-3 below the mesh frequency and 1.50e-2 above it**, for **N 1,345 → 552 and 352 s → 128 s
+  (2.76×)**. At **5 GHz** it costs **1.58e-1 at the top of the band** — an order of magnitude past
+  any residual this area has ever measured (L8d's 6.0e-3, L9d's ~1e-2), which is a different answer
+  rather than a knob setting. **A measured "not safe below X" outranks the saving**, and X is about
+  half the sweep top. **No refusal was added** — the brief forbids one without a measurement, and
+  what the measurement supports is a note the user can act on.
+- **The saving is AXIAL ONLY, and the numbers are what say so.** N falls 2.44× for a 2× drop and only
+  3.86× for 4× — nothing like quadratic, because `MinCellsAcrossConductor` sets the transverse pitch
+  and does not respond to λ at all. **Do not describe M0 as a quadratic saving.** Worth keeping for
+  its own sake: the 10 GHz row's N is exactly **552**, §10.7's own hero number, which has always been
+  measured at 10 GHz — a stronger cross-check on the plumbing than any routine assertion.
+- **THE OTHER FINDING, and it reframes the milestone: M0 is `CellsPerWavelength` RE-PARAMETERISED.**
+  The cap is `c / (f_mesh · √ε · N)`, so only the PRODUCT `MeshFrequencyHz × CellsPerWavelength`
+  matters — gated as **bit-identical grids**, not merely equal N. M0 therefore produces no mesh
+  cells/λ could not already produce; **what it buys is the parameterisation and the REPORT**, since
+  cells/λ alone cannot say WHERE in the band the resolution was spent. Read the FR-4 table as
+  effective cells/λ at the sweep top: **λ_g/10 costs 1.50e-2, λ_g/5 costs 1.58e-1.**
+- **And §0's own design does NOT behave as the brief predicted.** On that exact MKlopf fixture,
+  N = 1,038 / 1,078 / 1,078 at §0's own cells/λ = 5 — **M0 saves nothing there, because that user had
+  already taken the whole saving by hand.** At the shipped cells/λ = 20 the same design reads
+  8,418 / 2,098 / 1,038, and the two table corners agree exactly, which is the equivalence above.
+  **The useful half: the §0 setup is running at effective λ_g/5 at the top of its band, priced at
+  ~1.6e-1** — and the option M0 makes statable is cells/λ = 20 at 10 GHz, N = 2,098, inside R17's
+  ceiling where cells/λ = 20 at the sweep top (8,418) is refused outright. **A de-embedded accuracy
+  sweep on the §0 taper itself was NOT run** (~1 h, and the equivalence makes it a re-measurement of
+  what the FR-4 table already indexes) — said rather than implied.
+- **THE FINDING: on a narrow conductor, lowering the mesh frequency can RAISE N.** Measured on the
+  2 mm × 72 µm GaAs line: **N = 773 / 705 / 2,014** at 20 / 10 / 5 GHz. The outermost edge cell is
+  anchored to the conductor WIDTH and the bulk cell to λ, so coarsening the λ cap widens the gap the
+  graded fan must bridge, and past a point the fan costs more than the bulk saves. **The first
+  version of M0's own benchmark asserted N fell monotonically and was wrong** — it now reports N per
+  row and asserts nothing about its direction, and the behaviour is gated in the routine tier. Do not
+  add a UI hint that a lower mesh frequency is cheaper.
+- **`MaxFrequencyHz` still means THE SWEEP'S TOP, and keeping the two apart is load-bearing.** It used
+  to answer two unrelated questions; it now answers one, and its three consumers (R-via-6's electrical
+  via bound, the ρ/λ note, the geometry hash) still read it unchanged. Pointing any of them at the
+  mesh frequency would let a user **silently widen a PHYSICS refusal by turning down a PERFORMANCE
+  knob** — gated structurally rather than numerically, since `CanSolve` is handed a `PlanarProblem`
+  and never sees `PlanarMeshSettings` at all.
+- **The report had to move with it or become a lie.** `PlanarMeshReport.FrequencyHz` is the MESH
+  frequency now and the λ_g note quotes it; with the control unset that note still ends "the highest
+  frequency of the sweep", unchanged. Below the sweep's top a second note states the trade in
+  **effective cells/λ** — a physical quantity, never hertz — and it fires strictly below, never at or
+  above.
+
+Gate: `tests/Engine.Tests/Mom/MeshFrequencyTests.cs`, **6 routine tests in ~20 ms**, plus **2
+`Category=Benchmark`** measurement methods (the FR-4 one is **9.7 min**, which is why it is opt-in).
+`tests/Ui.Tests/Em/MeshFrequencyUiTests.cs` adds 9 routine. Nothing outside `PlanarMeshSettings`,
+`SurfaceMesher`, `PlanarMeshReport` and the Ui panel/persistence/hash was touched, and every existing
+number in `src/Engine/Mom/CLAUDE.md` is reproduced by leaving the control unset.
+
 ## `Mom/` — "long enough to crowd": the edge attractor a two-scale part was denied (2026-08-11)
 
 **Found by the owner looking at the mesh overlay**, not by a test: on the reported MKlopf taper the

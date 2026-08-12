@@ -278,13 +278,40 @@ public static class SchematicToLayoutGenerator
     /// component's real generated artwork at its default parameters") to the same SI values
     /// <see cref="ResolveComponentLayout"/> would compute for a schematic instance — default
     /// expressions are always plain literals (never variable references), so an empty <see cref="Scope"/>
-    /// is exact, not an approximation.</summary>
-    public static IReadOnlyDictionary<string, PCellValue> ResolveDefaultParameters(SymbolKind kind, int portCount)
+    /// is exact, not an approximation.
+    ///
+    /// <para><b>OWNER REPORT — a microstrip dropped from the palette into a LAYOUT ignored the
+    /// technology.</b> The registry's own microstrip widths are a fixed 2.9 mm baseline, rewritten for
+    /// the placing workspace's substrate (50 Ω synthesis, round lengths, the technology's own unit,
+    /// rounded there) by <see cref="MicrostripSubstrateInjection.ApplyTechnologyDefaults"/> — which
+    /// <c>SchematicViewModel.CommitPlacement</c> has always called and this path never did. So the
+    /// same MLIN read 42 mil placed on a schematic and 114.1732 mil dropped on a layout.</para>
+    ///
+    /// <para>Fixed by routing the registry defaults through that SAME method rather than adding a
+    /// second synthesis — there is one rule for what a freshly-placed microstrip's width is, and both
+    /// editors now read it from one place. <paramref name="technology"/> null (no technology resolves,
+    /// or a non-microstrip kind) leaves the mm baseline exactly as before.</para></summary>
+    public static IReadOnlyDictionary<string, PCellValue> ResolveDefaultParameters(
+        SymbolKind kind, int portCount, Technology? technology = null)
     {
+        // CLONED, never the registry's own instances: DefaultParameters splices in the shared static
+        // SignalGroundLayerParams array, and ApplyTechnologyDefaults writes Expression/Unit in place.
+        // Mirrors CommitPlacement's own clone-then-rewrite for the same reason.
+        var defaults = new List<EditableParameter>();
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, portCount))
+            defaults.Add(new EditableParameter
+            {
+                Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit,
+                ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension,
+            });
+
+        if (MicrostripSubstrateInjection.IsMicrostripKind(kind))
+            MicrostripSubstrateInjection.ApplyTechnologyDefaults(defaults, technology, kind);
+
         var scope = new Scope("global");
         var evaluator = new Evaluator();
         var resolved = new Dictionary<string, PCellValue>(StringComparer.Ordinal);
-        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, portCount))
+        foreach (var dp in defaults)
         {
             if (NonPCellParamNames.Contains(dp.Name)) continue;
             if (TryResolveSiValue(dp.Expression, dp.Unit, scope, evaluator, out var value, out _))

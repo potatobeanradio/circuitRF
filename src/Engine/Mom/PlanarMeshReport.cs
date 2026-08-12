@@ -40,6 +40,10 @@ public enum PlanarBudgetVerdict
 /// <param name="FrequencyHz">
 /// D4 — <b>the frequency λ_g was taken at, named in the report</b>, so a user who widens the sweep
 /// and sees N change is not left guessing why.
+///
+/// <para><b>This is the MESH frequency, not the sweep's top</b> — the two coincide only while
+/// <see cref="PlanarMeshSettings.MeshFrequencyHz"/> is unset (the default). Reporting the sweep's
+/// top once that control exists would claim a mesh was sized somewhere it was not.</para>
 /// </param>
 /// <param name="GuidedWavelengthM">λ_g in the local dielectric at that frequency.</param>
 /// <param name="MaxCellSizeM">The λ_g/N cap that produced <paramref name="MaxCellEdgeM"/>.</param>

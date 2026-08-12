@@ -447,6 +447,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string _planarCellsPerWavelengthText = "";
     [ObservableProperty] private string _planarEdgeCellsText          = "";
     [ObservableProperty] private bool   _planarEdgeMesh;
+
+    /// <summary>
+    /// M0's mesh-frequency control, staged as text like every other dimensioned field in this panel.
+    /// <b>Blank means "max sweep"</b> — the model stores <c>null</c>, the mesher sizes at the
+    /// sweep's own top, and that is exactly the behaviour every existing <c>.cem</c> already has.
+    /// </summary>
+    [ObservableProperty] private string _planarMeshFrequencyText = "";
     [ObservableProperty] private PlanarBoundaryCells _planarBoundaryCells =
         PlanarMeshSettings.DefaultBoundaryCells;
 
@@ -454,6 +461,27 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// hand-listed so a third member cannot silently fail to appear.</summary>
     public static IReadOnlyList<PlanarBoundaryCells> BoundaryCellsChoices { get; } =
         Enum.GetValues<PlanarBoundaryCells>();
+
+    /// <summary>
+    /// The unit the mesh-frequency field is edited in — <b>the sweep's own top-frequency unit</b>,
+    /// never a second unit choice of its own. The mesh frequency is only ever read against the
+    /// sweep's top, so giving it an independent unit selector would be one more thing to keep in
+    /// step for no gain.
+    /// </summary>
+    public string MeshFrequencyUnit => Frequency.StopUnit;
+
+    /// <summary>Blank means "max sweep", and the placeholder says so rather than leaving the
+    /// user to infer it from an empty box.</summary>
+    public string MeshFrequencyPlaceholder
+    {
+        get
+        {
+            double top = TryMaxFrequency();
+            if (!(top > 0)) return "max sweep";
+            double mult = ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit);
+            return $"max sweep ({(top / mult).ToString("G6", CultureInfo.InvariantCulture)})";
+        }
+    }
 
     // ── Signal layer + dispersion ──────────────────────────────────────────────────────────────
 
@@ -579,6 +607,12 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var before = SnapshotJson();
         Working.Frequency = spec;
         CommitEdit(before, "Change EM frequency sweep");
+
+        // The mesh-frequency field is edited in the SWEEP's own unit and stored in hertz, so a
+        // change to the sweep's top-frequency unit has to re-render it. Without this, a stored
+        // 10 GHz would silently read as "10" beside an "MHz" label — a factor of a thousand,
+        // reported by nothing.
+        RefreshMeshText();
         Refresh();
     }
 
@@ -708,6 +742,18 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                 => pm with { Auto = false, CellsPerWavelength = v },
             "PlanarEdgeCells" when TryInt(PlanarEdgeCellsText, 0, out int v)
                 => pm with { Auto = false, EdgeCells = v },
+
+            // M0 / R-emp-5 — the mesh frequency. Two things here are deliberate and easy to get
+            // wrong: BLANK is a real value (null = max sweep), not "leave it alone"; and this
+            // control does NOT clear Auto, unlike the two above it. Auto decides cells/λ and edge
+            // cells — a resolution — and has no opinion about which frequency that resolution is
+            // applied at. Clearing Auto here would silently pin the cell size the moment a user
+            // touched a performance knob.
+            "MeshFrequency" when PlanarMeshFrequencyText.Trim().Length == 0
+                => pm with { MeshFrequencyHz = null },
+            "MeshFrequency" when TryDouble(PlanarMeshFrequencyText, out double v) && v > 0
+                => pm with { MeshFrequencyHz = v * ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit) },
+
             _ => pm,
         };
 
@@ -832,6 +878,34 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                   "evaluated — this setting would change nothing."
                 : null;
 
+    // ── M1 — the solver's core cap: SHOWN here, STORED in AppPreferences (R-emp-6) ──────────────
+    //
+    // This is the one control in this panel that is NOT part of the design. A core count is a
+    // property of the MACHINE, and a `.cem` travels with the workspace — opening a colleague's EM
+    // setup must not pin your core count to theirs. So it carries no undo entry, does not dirty the
+    // document, and does not call InvalidateMesh(): it cannot change a mesh, and R-emp-8 asserts it
+    // cannot change an answer either. It is here because this is where the user is standing when the
+    // cost lands.
+
+    /// <summary>The machine's own choice list — Automatic, then powers of two up to the core count.</summary>
+    public IReadOnlyList<EmSolveCoreChoice> SolveCoreChoices { get; } = EmSolveCores.ChoiceRows();
+
+    [ObservableProperty] private EmSolveCoreChoice _selectedSolveCores =
+        EmSolveCores.ChoiceRows().FirstOrDefault(c => c.Cap == EmSolveCores.Preferred)
+        ?? EmSolveCores.ChoiceRows()[0];
+
+    partial void OnSelectedSolveCoresChanged(EmSolveCoreChoice value)
+    {
+        // Written straight to the preference. No CommitEdit, deliberately — see the block comment
+        // above; an undo stack that could revert a machine setting would be undoing the wrong thing.
+        if (EmSolveCores.Preferred != value.Cap) EmSolveCores.Preferred = value.Cap;
+    }
+
+    /// <summary>The one-line note R-emp-6 asks for: this is a machine setting, not part of the design.</summary>
+    public string SolveCoresNote =>
+        $"A machine setting, not part of this design — it is not saved in the .cem, and it changes no " +
+        $"answer. This machine reports {EmSolveCores.ProcessorCount} core(s).";
+
     // ── Refresh: extract, ask CanSolve, project the readback ───────────────────────────────────
 
     private void RebuildAll()
@@ -867,7 +941,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarEdgeCellsText          = pm.EdgeCells.ToString(CultureInfo.InvariantCulture);
         PlanarEdgeMesh               = pm.EdgeMesh;
         PlanarBoundaryCells          = pm.BoundaryCells;
+        PlanarMeshFrequencyText      = pm.MeshFrequencyHz is { } mf
+            ? (mf / ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit))
+                .ToString("G6", CultureInfo.InvariantCulture)
+            : "";
         _suppressCommit = false;
+        OnPropertyChanged(nameof(MeshFrequencyUnit));
+        OnPropertyChanged(nameof(MeshFrequencyPlaceholder));
     }
 
     /// <summary>Re-resolve the layout, re-extract, re-ask the kernel. Cheap enough to run on every

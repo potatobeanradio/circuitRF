@@ -55,12 +55,31 @@ public enum PlanarBoundaryCells
 /// <see cref="PlanarBoundaryCells"/> for why it is a control at all, and this directory's
 /// <c>CLAUDE.md</c> for the measurement that decides whether the default ever flips.
 /// </param>
+/// <param name="MeshFrequencyHz">
+/// <b>The frequency the λ_g/N cell-size cap is sized at — the FIFTH control, and the only one that
+/// is a PERFORMANCE knob rather than a resolution or a modelling choice.</b> <c>null</c> (the
+/// default) means <i>the sweep's own top frequency</i>, which is exactly what the mesher did before
+/// this parameter existed — so an unset value reproduces the shipped behaviour bit for bit.
+///
+/// <para><b>It is NOT <see cref="PlanarProblem.MaxFrequencyHz"/>, and the distinction is
+/// load-bearing.</b> That property answers <i>how high does this sweep go</i> and has three
+/// consumers that must keep reading it: <c>PlanarKernel.CanSolve</c>'s electrical via bound (a
+/// physics refusal, which a performance knob must never be able to widen), the ρ/λ validated-range
+/// note, and the geometry hash. This one answers only <i>what frequency was the mesh sized at</i>.
+/// Conflating them would let a user silently relax a refusal by turning down a mesh setting.</para>
+///
+/// <para><b>The saving is AXIAL ONLY.</b> The transverse pitch is normally set by
+/// <see cref="MinCellsAcrossConductor"/> rather than by λ, so halving the mesh frequency does not
+/// halve the unknown count in both directions — do not describe it as quadratic. See this
+/// directory's <c>CLAUDE.md</c> for the measured table.</para>
+/// </param>
 public sealed record PlanarMeshSettings(
     bool Auto               = true,
     int  CellsPerWavelength = 20,      // = DefaultCellsPerWavelength (a record's own const cannot
     bool EdgeMesh           = true,    //   be referenced from its primary-constructor defaults;
     int  EdgeCells          = 3,       //   DefaultsMatchLiterals pins the two together)
-    PlanarBoundaryCells BoundaryCells = PlanarBoundaryCells.Staircase)
+    PlanarBoundaryCells BoundaryCells = PlanarBoundaryCells.Staircase,
+    double? MeshFrequencyHz = null)
 {
     public const int  DefaultCellsPerWavelength = 20;
     public const bool DefaultEdgeMesh           = true;
@@ -98,9 +117,16 @@ public sealed record PlanarMeshSettings(
     /// all: Auto means "choose the RESOLUTION for me", and boundary cells are not a resolution. A
     /// user who asks for the metal to be followed is asking about the structure, and Auto has no
     /// opinion about the structure. Gated by <c>SurfaceMesherConformalTests</c>.</para>
+    ///
+    /// <para><b><see cref="MeshFrequencyHz"/> SURVIVES Auto too, for the same reason.</b> Auto decides
+    /// cells/λ and edge cells — a RESOLUTION. Which frequency that resolution is applied AT is a
+    /// different question, and Auto has no opinion about it. Throwing it away here would mean a user
+    /// who set a mesh frequency and left Auto on silently got the sweep's top instead — the exact
+    /// shape of failure the boundary-cell control above already had to be protected from.</para>
     /// </summary>
     public PlanarMeshSettings Resolved => Auto
-        ? new PlanarMeshSettings(Auto: false, BoundaryCells: BoundaryCells)
+        ? new PlanarMeshSettings(Auto: false, BoundaryCells: BoundaryCells,
+                                 MeshFrequencyHz: MeshFrequencyHz)
         : this with
         {
             CellsPerWavelength = Math.Max(2, CellsPerWavelength),

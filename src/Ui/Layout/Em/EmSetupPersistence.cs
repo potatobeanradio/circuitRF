@@ -51,6 +51,15 @@ public sealed class CemPlanarMesh
     /// <see cref="CemFile.DirectVerticalKernel"/> follows, and for the same reason.
     /// </summary>
     public PlanarBoundaryCells? BoundaryCells { get; set; }
+
+    /// <summary>
+    /// The frequency the mesh is sized at, in HERTZ. <b>Nullable, and omitted at its default</b>
+    /// (null = max sweep's own top), so every <c>.cem</c> written before this phase gains no
+    /// byte and re-serialises byte-identically — the same rule <see cref="BoundaryCells"/> and
+    /// <see cref="CemFile.DirectVerticalKernel"/> already follow. This is an asserted property of
+    /// the format, not a nicety.
+    /// </summary>
+    public double? MeshFrequencyHz { get; set; }
 }
 
 public sealed class CemFile
@@ -203,6 +212,7 @@ public static class EmSetupPersistence
             EdgeCells          = s.PlanarMesh.EdgeCells,
             BoundaryCells      = s.PlanarMesh.BoundaryCells == PlanarMeshSettings.DefaultBoundaryCells
                                      ? null : s.PlanarMesh.BoundaryCells,
+            MeshFrequencyHz    = s.PlanarMesh.MeshFrequencyHz,
         },
     };
 
@@ -230,7 +240,8 @@ public static class EmSetupPersistence
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         PlanarMesh            = f.PlanarMesh is { } pm
             ? new PlanarMeshSettings(pm.Auto, pm.CellsPerWavelength, pm.EdgeMesh, pm.EdgeCells,
-                                     pm.BoundaryCells ?? PlanarMeshSettings.DefaultBoundaryCells)
+                                     pm.BoundaryCells ?? PlanarMeshSettings.DefaultBoundaryCells,
+                                     pm.MeshFrequencyHz)
             : PlanarMeshSettings.Default,
     };
 

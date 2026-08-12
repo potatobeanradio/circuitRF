@@ -258,19 +258,13 @@ public sealed class PlanarPortCalibrator
     {
         ArgumentNullException.ThrowIfNull(kernelFor);
 
-        if (!_rawCache.TryGetValue(fHz, out var raw))
+        if (PrepareAt(kernelFor, fHz) is { } work)
         {
-            var kernel = kernelFor();
-            var s0 = _standards[0].RawScatteringAt(kernel, fHz);
-            var sl = new Mat<Complex>[_deltas.Length];
-            for (int i = 0; i < _deltas.Length; i++)
-                sl[i] = _standards[i + 1].RawScatteringAt(kernel, fHz);
-            raw = (s0, sl);
-            _rawCache[fHz] = raw;
-            SolveCount++;
+            foreach (var solve in work.Solves) solve();
+            work.Commit();
         }
 
-        var (sShort, sLong) = raw;
+        var (sShort, sLong) = _rawCache[fHz];
 
         double expect = double.IsNaN(_prevBeta)
             ? PlanarCalibration.EstimateBeta(_slab, fHz)
@@ -294,6 +288,43 @@ public sealed class PlanarPortCalibrator
     }
 
     private double _prevF;
+
+    /// <summary>
+    /// <b>M2/R-emp-9 — the independent RAW solves this calibrator owes at one frequency, handed back
+    /// as work items so the driver can schedule them ALONGSIDE the DUT's rather than after it.</b>
+    ///
+    /// <para>Null when the frequency is already cached, which is what a replay hits. Otherwise every
+    /// <see cref="Solves"/> entry is a fill + factorisation + back-substitution on one standard mesh
+    /// and they share nothing but the read-only kernel and their own read-only geometric cores;
+    /// <see cref="Commit"/> installs the cache and steps the solve counter, and is the part that must
+    /// run on ONE thread after they have all joined. Nothing order-dependent is in here — the branch
+    /// continuation stays in <see cref="PlanarPortCalibrator.At"/>, which is the separation L9e's own
+    /// M1 made so that a frequency could be solved out of order at all.</para>
+    /// </summary>
+    public sealed record PlanarCalibratorWork(IReadOnlyList<Action> Solves, Action Commit);
+
+    /// <inheritdoc cref="PlanarCalibratorWork"/>
+    /// <param name="kernelFor">Called ONLY on a cache miss, exactly as <see cref="At"/> calls it.</param>
+    public PlanarCalibratorWork? PrepareAt(Func<PlanarFrequencyKernel> kernelFor, double fHz)
+    {
+        ArgumentNullException.ThrowIfNull(kernelFor);
+        if (_rawCache.ContainsKey(fHz)) return null;
+
+        var kernel = kernelFor();
+        var raw    = new Mat<Complex>[_standards.Length];
+        var solves = new Action[_standards.Length];
+        for (int i = 0; i < _standards.Length; i++)
+        {
+            int at = i;
+            solves[at] = () => raw[at] = _standards[at].RawScatteringAt(kernel, fHz);
+        }
+
+        return new PlanarCalibratorWork(solves, () =>
+        {
+            _rawCache[fHz] = (raw[0], raw[1..]);
+            SolveCount++;
+        });
+    }
 
     /// <summary>
     /// L9e/M1 — the standards' RAW scattering per frequency. Keyed by the exact <c>double</c> the
@@ -356,7 +387,17 @@ public sealed class PlanarPortCalibrator
     }
 }
 
-/// <summary>What one de-embedded frequency point cost and produced.</summary>
+/// <summary>
+/// What one de-embedded frequency point cost and produced.
+///
+/// <para><b>M2 — these are PER-SOLVE times and they no longer sum to wall clock.</b> The DUT and the
+/// calibration standards are solved concurrently now (see <see cref="PlanarFanOut"/>), so
+/// <see cref="DutMs"/> is the DUT solve's own elapsed time, <see cref="CalibrationMs"/> is the
+/// standards' SUMMED elapsed time plus the de-embedding algebra, and the two overlap in real time by
+/// however much the parallel budget allowed. Keeping them separate is what makes the split still
+/// informative — L8d's own "the standards are 78% of it" is a statement about work, not about wall
+/// clock — but a caller adding them up and calling it a duration will overstate it.</para>
+/// </summary>
 public sealed record PlanarFrequencyPoint(
     double                               FrequencyHz,
     Mat<Complex>                         S,
@@ -434,6 +475,16 @@ public sealed class PlanarSolveResult
 /// the general capability is built alongside the shipped one and gated against it, never on top
 /// of it.
 /// </param>
+/// <param name="MaxDegreeOfParallelism">
+/// <b>M1 — the user's core cap, and ONE number drives both levels of parallelism.</b> Null means
+/// automatic; a user setting 4 means four cores TOTAL, not four per level of nesting. The driver
+/// materialises it as a single <see cref="PlanarParallelBudget"/> shared by every solve in flight
+/// and by every fill row inside them (R-emp-10) — see <see cref="PlanarFillSettings.Budget"/>.
+///
+/// <para><b>1 means strictly sequential, in the order the work was created</b>, which is what makes
+/// R-emp-13's "cap 1 and cap 8 produce bit-identical results" a statement about one implementation
+/// rather than about two that agree.</para>
+/// </param>
 public sealed record PlanarSolveSettings(
     PlanarFillSettings?        Fill        = null,
     PlanarCalibrationSettings? Calibration = null,
@@ -441,7 +492,8 @@ public sealed record PlanarSolveSettings(
     bool                       Deembed     = true,
     int                        CurrentDensityPortNumber  = 0,
     double                     CurrentDensityFrequencyHz = 0,
-    PlanarAdaptiveSettings?    Adaptive    = null)
+    PlanarAdaptiveSettings?    Adaptive    = null,
+    int?                       MaxDegreeOfParallelism = null)
 {
     public static readonly PlanarSolveSettings Default = new();
 }
@@ -549,8 +601,26 @@ public static class PlanarSolve
             notes.AddRange(scoped);
         }
 
+        // ── M1/M2 — ONE budget, decided here because every context is built against it ───────────
+        //
+        // A fan-out only exists when there is more than one mesh to solve at a frequency, i.e. when
+        // de-embedding is on. At cap 1 there is nothing to spend either, and the plain sequential
+        // path is taken so that "cap 1" means exactly what it says. Otherwise the budget carries the
+        // user's number, or ProcessorCount when they asked for automatic — which is what an
+        // unbounded Parallel.For would have used anyway, and which is what stops five concurrent
+        // fills each asking for a full machine's worth of workers.
+        int? cap = st.MaxDegreeOfParallelism;
+        var  parallelBudget = st.Deembed && cap != 1
+            ? new PlanarParallelBudget(cap ?? Environment.ProcessorCount)
+            : null;
+        var fillSt = (st.Fill ?? PlanarFillSettings.Default) with
+        {
+            MaxDegreeOfParallelism = cap,
+            Budget                 = parallelBudget,
+        };
+
         var sw    = Stopwatch.StartNew();
-        var dut   = new PlanarSolveContext(mesh, ports, st.Fill, levels);
+        var dut   = new PlanarSolveContext(mesh, ports, fillSt, levels);
         double coreMs = sw.Elapsed.TotalMilliseconds;
         int    cores  = 1;
 
@@ -610,7 +680,7 @@ public static class PlanarSolve
 
                     sw.Restart();
                     var cal = new PlanarPortCalibrator(
-                        ports[i], slab, fLo, fHi, st.Calibration, st.Fill,
+                        ports[i], slab, fLo, fHi, st.Calibration, fillSt,
                         standardLevelZ: general ? problem.LevelZ(ports[i].LayerIndex) : double.NaN);
                     coreMs += sw.Elapsed.TotalMilliseconds;
                     cores  += cal.MeshCount;
@@ -638,6 +708,19 @@ public static class PlanarSolve
             if (calibrators.Count < ports.Count)
                 notes.Add($"{ports.Count} port(s) share {calibrators.Count} calibration(s), because their " +
                           "cross-sections and port cells are identical — the standards are solved once each.");
+
+            // M2 — the user set a core count in the panel and it is a machine setting, not part of the
+            // design, so the run says what it actually did with it rather than leaving the user to
+            // infer it from a stopwatch. It names the SOLVES because that is the number the cap acts
+            // on; it deliberately does not promise a speed-up, which depends on how unbalanced the
+            // standards are (on the brief's own §0 design two of five solves are 96% of the work).
+            if (parallelBudget is not null)
+                notes.Add($"The DUT and its {standards} calibration standard(s) are solved concurrently at " +
+                          $"each frequency — {1 + standards} independent solves, across at most " +
+                          $"{parallelBudget.Cap} core(s)" +
+                          (cap is null ? $" (automatic, from this machine's {Environment.ProcessorCount})" : "") +
+                          ". The core count is a machine setting and changes no answer: the same sweep at " +
+                          "any cap produces bit-identical s-parameters.");
 
             if (general) notes.Add(GeneralStackCalibrationNote(problem, ports));
         }
@@ -689,23 +772,68 @@ public static class PlanarSolve
             f >= 1e3  ? $"{f / 1e3:0.###} kHz" :
                         $"{f:0.###} Hz";
 
-        (PlanarFrequencyKernel Kernel, Mat<Complex> Raw, Vec<Complex>[] Currents, double KernelMs, double DutMs)
+        // M2 — the return gained StandardsMs, because the standards are now solved HERE rather than
+        // inside DeembedAt. Their wall clock and the DUT's overlap once the cap allows it, so each is
+        // measured on its own Stopwatch and the two no longer sum to the point's elapsed time. Note
+        // that `sw` is the driver's SHARED stopwatch and must never be restarted from a work item.
+        (PlanarFrequencyKernel Kernel, Mat<Complex> Raw, Vec<Complex>[] Currents,
+         double KernelMs, double DutMs, double StandardsMs)
         SolveRawAt(double f)
         {
-            control?.BeginStage($"{FormatHz(f)} — Green's function", 2);
+            // The kernel fit is sequential and cheap (~0.2 s, L8c's Tier 8) and everything below
+            // needs it, so it is not part of the fan-out.
+            int standardSolves = 0;
+            foreach (var cal in calibrators) standardSolves += cal.MeshCount;
+
+            control?.BeginStage($"{FormatHz(f)} — Green's function", 2 + standardSolves);
             sw.Restart();
             var k = PlanarFrequencyKernel.Fit(
-                problem, f, (st.Fill ?? PlanarFillSettings.Default).Order, st.Dcim);
+                problem, f, fillSt.Order, st.Dcim);
             double kMs = sw.Elapsed.TotalMilliseconds;
             control?.TickStage(nextLabel: $"{FormatHz(f)} — solving the structure");
 
-            sw.Restart();
-            var sol = dut.SolveAt(k, f);
-            var r = PlanarExcitation.RawScattering(sol.Y, z0);
-            double dMs = sw.Elapsed.TotalMilliseconds;
-            control?.TickStage();
+            // ── M2/R-emp-9 — the DUT and every calibration STANDARD are independent solves at this
+            //    frequency, sharing only the read-only kernel and their own read-only cores. On the
+            //    brief's own §0 design that is five solves of which two are 96% of the work, so what
+            //    the fan-out buys is the OVERLAP (one solve's single-threaded LU running while
+            //    another fills) rather than more parallelism in any one fill — see
+            //    PlanarParallelBudget's own header.
+            PlanarPortSolution? sol = null;
+            double dMs = 0, sMs = 0;
+            var standardsClock = new object();
+            var solvesAtF = new List<Action>(1 + standardSolves);
+            var pending   = new List<PlanarPortCalibrator.PlanarCalibratorWork>(calibrators.Count);
 
-            return (k, r, sol.Currents.ToArray(), kMs, dMs);
+            solvesAtF.Add(() =>
+            {
+                var own = Stopwatch.StartNew();
+                sol = dut.SolveAt(k, f);
+                dMs = own.Elapsed.TotalMilliseconds;
+                control?.TickStage();
+            });
+
+            foreach (var cal in calibrators)
+                if (cal.PrepareAt(() => k, f) is { } w)
+                {
+                    pending.Add(w);
+                    foreach (var solve in w.Solves)
+                        solvesAtF.Add(() =>
+                        {
+                            var own = Stopwatch.StartNew();
+                            solve();
+                            lock (standardsClock) sMs += own.Elapsed.TotalMilliseconds;
+                            control?.TickStage();
+                        });
+                }
+
+            PlanarFanOut.Run(cap, solvesAtF);
+
+            // The cache writes and the branch continuation stay on ONE thread, exactly as before —
+            // R-emp-9's whole point is that only the SOLVES are order-independent.
+            foreach (var w in pending) w.Commit();
+
+            var r = PlanarExcitation.RawScattering(sol!.Y, z0);
+            return (k, r, sol.Currents.ToArray(), kMs, dMs, sMs);
         }
 
         // ── The de-embedding half, likewise shared. `kernelFor` is lazy because a REPLAY (adaptive
@@ -761,7 +889,7 @@ public static class PlanarSolve
             // L8d's own loop, untouched.
             foreach (double f in freqs)
             {
-                var (kernel, raw, currents, kernelMs, dutMs) = SolveRawAt(f);
+                var (kernel, raw, currents, kernelMs, dutMs, standardsMs) = SolveRawAt(f);
 
                 if (capturePort >= 0 && points.Count == captureAt)
                 {
@@ -770,7 +898,8 @@ public static class PlanarSolve
                 }
 
                 var (s, cals, calMs) = DeembedAt(f, raw, () => kernel);
-                points.Add(new PlanarFrequencyPoint(f, s, raw, cals, kernelMs, dutMs, calMs));
+                points.Add(new PlanarFrequencyPoint(
+                    f, s, raw, cals, kernelMs, dutMs, standardsMs + calMs));
                 control?.Tick();
             }
         }
@@ -781,7 +910,7 @@ public static class PlanarSolve
 
             var rawByIndex   = new Dictionary<int, Mat<Complex>>();
             var kernelByIndex = new Dictionary<int, PlanarFrequencyKernel>();
-            var timeByIndex  = new Dictionary<int, (double K, double D)>();
+            var timeByIndex  = new Dictionary<int, (double K, double D, double S)>();
             var currentsByIndex = new Dictionary<int, Vec<Complex>[]>();
             var solved = new SortedSet<int>();
 
@@ -792,7 +921,7 @@ public static class PlanarSolve
                 control?.Tick();
                 rawByIndex[i]      = r.Raw;
                 kernelByIndex[i]   = r.Kernel;
-                timeByIndex[i]     = (r.KernelMs, r.DutMs);
+                timeByIndex[i]     = (r.KernelMs, r.DutMs, r.StandardsMs);
                 currentsByIndex[i] = r.Currents;
             }
 
@@ -896,10 +1025,10 @@ public static class PlanarSolve
                 foreach (int j in solvedIdx)
                     if (Math.Abs(freqs[j] - freqs[i]) < Math.Abs(freqs[near] - freqs[i])) near = j;
 
-                var (kMs, dMs) = isSolved ? timeByIndex[i] : (0.0, 0.0);
+                var (kMs, dMs, sMs) = isSolved ? timeByIndex[i] : (0.0, 0.0, 0.0);
                 points.Add(new PlanarFrequencyPoint(
                     freqs[i], modelS[i], modelRaw[i], byIndex[near].Cals,
-                    kMs, dMs, isSolved ? byIndex[i].CalMs : 0.0));
+                    kMs, dMs, sMs + (isSolved ? byIndex[i].CalMs : 0.0)));
             }
 
             if (capturePort >= 0 && captureAt >= 0)

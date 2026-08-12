@@ -1266,7 +1266,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
                 if (origin.Parameters.ContainsKey(dp.Name) && !ordered.Contains(dp.Name))
                     ordered.Add(dp.Name);
-        foreach (var name in origin.Parameters.Keys) // defensive: any name the registry didn't name (shouldn't happen)
+        // Every remaining name is shown. Filtering a built-in's list down to its registry entry was
+        // TRIED here (to hide the inert Z1/Z2 a cell forked by the pre-guard MTee bug still carries)
+        // and REVERTED: PCellPropertiesInspectorParameterListTests deliberately places non-registry
+        // parameters on a built-in-generator cell and expects them listed, so "a built-in's registry
+        // entry is its complete interface" is not an assumption this codebase holds. The write path
+        // that minted those orphans is fixed below; an already-forked cell keeps showing them.
+        foreach (var name in origin.Parameters.Keys)
             if (!ordered.Contains(name)) ordered.Add(name);
 
         if (IsMklopfTarget)
@@ -1319,7 +1325,11 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private PCellParamRowViewModel BuildPCellParamRow(List<string> names, int index)
     {
         string name = names[index];
-        if (MklopfPseudoParamUnit(name) is { } pseudoUnit)
+        // IsMklopfTarget gate: MTee/MTaper/MCross declare real W1/W2 parameters of their own, and
+        // only MKlopf's entry-mode rewrite mints them as PSEUDO-names. Without the gate this
+        // short-circuits the registry unit lookup for those generators too (see the matching note
+        // in PopulatePCellParamRow).
+        if (IsMklopfTarget && MklopfPseudoParamUnit(name) is { } pseudoUnit)
             return new PCellParamRowViewModel(this, name, pseudoUnit);
 
         var comp = ResolveSelectedInstancePCellComponentName(); // just for the DefaultParameters unit lookup
@@ -1353,7 +1363,15 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
         if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin) return;
 
-        if (row.Name is "W1" or "W2" or "F3db")
+        // OWNER REPORT: this branch used to key on the NAME alone, with no IsMklopfTarget guard —
+        // so an MTee/MTaper/MCross W1 or W2 (three generators genuinely declare those names) fell
+        // into MKlopf's entry-mode conversion. With no technology it blanked the field and set an
+        // error (the reported "the W fields disappear"); with one it read Z1/Z2 — absent on those
+        // cells, so silently 50 Ω/50 Ω — and displayed a synthesized 50 Ω width in place of the
+        // instance's real one. W3/W4/L never matched, which is why only some rows misbehaved.
+        // The pseudo-name rewrite in OrderedParamNames is already gated on IsMklopfTarget; these
+        // consumers are the mirror of it and must carry the same gate.
+        if (IsMklopfTarget && row.Name is "W1" or "W2" or "F3db")
         {
             if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
             { row.ValueText = ""; row.Error = "No technology resolves — can't convert."; return; }
@@ -1523,7 +1541,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         var indices = _vm.SelectedInstanceIndices;
         if (indices.Count != 1) return;
 
-        if (row.Name is "W1" or "W2" or "F3db")
+        // IsMklopfTarget gate — the write half of the same defect. Editing an MTee's W1 used to run
+        // MKlopf's width→impedance conversion and MERGE Z1/Z2 into that cell's parameter set
+        // (EditInstancePCellParameters merges rather than replaces). MTeePCell ignores Z1/Z2, so the
+        // edit appeared to do nothing — and OrderedParamNames' defensive tail loop then surfaced the
+        // two orphans as new rows, which is the reported "it adds Z1/Z2 fields".
+        if (IsMklopfTarget && row.Name is "W1" or "W2" or "F3db")
         {
             CommitMklopfPseudoParamField(row, text, indices[0]);
             return;

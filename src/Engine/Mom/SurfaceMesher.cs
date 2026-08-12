@@ -138,7 +138,15 @@ public static class SurfaceMesher
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
 
         var notes = new List<string>();
-        double lambdaG = problem.GuidedWavelengthM;
+
+        // ── M0: the mesh is sized at MeshFrequencyHz, which defaults to the sweep's own top ───────
+        //
+        // The `with` pattern is PlanarKernel.cs:197's, reused rather than re-derived — there is one
+        // way to ask a problem for λ_g at some other frequency, and this is it.
+        double meshFreqHz = s.MeshFrequencyHz is { } mf && mf > 0 ? mf : problem.MaxFrequencyHz;
+        double lambdaG = meshFreqHz == problem.MaxFrequencyHz
+            ? problem.GuidedWavelengthM
+            : (problem with { MaxFrequencyHz = meshFreqHz }).GuidedWavelengthM;
         double hWave   = double.IsInfinity(lambdaG) ? double.PositiveInfinity
                                                     : lambdaG / s.CellsPerWavelength;
 
@@ -148,14 +156,14 @@ public static class SurfaceMesher
         if (problem.PolygonCount == 0)
         {
             notes.Add("This EM setup's layout holds no conductor artwork, so there is nothing to mesh.");
-            return Empty(layerNames, problem, lambdaG, hWave, notes);
+            return Empty(layerNames, meshFreqHz, lambdaG, hWave, notes);
         }
 
         var (x0, y0, x1, y1) = problem.Bounds();
         if (!(x1 > x0) || !(y1 > y0))
         {
             notes.Add("The conductor artwork has zero extent in x or y, so it encloses no area to mesh.");
-            return Empty(layerNames, problem, lambdaG, hWave, notes);
+            return Empty(layerNames, meshFreqHz, lambdaG, hWave, notes);
         }
 
         // Sampling every polygon on every layer — the one pre-grid pass whose cost scales with the
@@ -200,7 +208,7 @@ public static class SurfaceMesher
         {
             notes.Add($"The mesh this geometry demands is about {estX * estY:N0} grid cells before " +
                       "any of them are tested against the metal, which is past what can be built at all.");
-            return Refused(layerNames, problem, lambdaG, hWave, narrowest, edgeRef, staircased, notes,
+            return Refused(layerNames, meshFreqHz, lambdaG, hWave, narrowest, edgeRef, staircased, notes,
                 $"This geometry needs on the order of {estX * estY:N0} mesh cells at " +
                 $"{s.CellsPerWavelength} cells per wavelength, which is far past the {UnknownCeiling:N0}-unknown " +
                 "ceiling this kernel is built for. Lower Cells per wavelength, turn the edge mesh off, " +
@@ -417,10 +425,33 @@ public static class SurfaceMesher
             notes.Add("No sweep frequency was given, so the mesh is driven purely by geometry — " +
                       "the λ_g/N cell-size cap did not apply.");
         else
+        {
+            // R-emp-2 — the note quotes the MESH frequency, because that is what λ_g was taken at.
+            // Leaving it reading "the highest frequency of the sweep" once MeshFrequencyHz exists
+            // would produce a report claiming a mesh was sized at 20 GHz when it was sized at 10 —
+            // the exact class of silently wrong statement this area keeps finding.
+            bool sizedAtSweepTop = !(s.MeshFrequencyHz is { } setF && setF > 0)
+                                   || meshFreqHz >= problem.MaxFrequencyHz;
             notes.Add($"Cell size capped at λ_g/{s.CellsPerWavelength} = {Eng(hWave)}m — λ_g = {Eng(lambdaG)}m " +
-                      $"in εᵣ = {problem.Slab.Material.EpsR:G4} at {Eng(problem.MaxFrequencyHz)}Hz, the " +
-                      "highest frequency of the sweep. Widening the sweep upward will change this, and " +
-                      "with it the unknown count.");
+                      $"in εᵣ = {problem.Slab.Material.EpsR:G4} at {Eng(meshFreqHz)}Hz, " +
+                      (sizedAtSweepTop
+                          ? "the highest frequency of the sweep. Widening the sweep upward will change " +
+                            "this, and with it the unknown count."
+                          : "the frequency the mesh is sized at. Changing it changes the unknown count."));
+
+            // The second note quantifies the trade in the unit the user set, and fires ONLY below the
+            // sweep's top — at or above it there is nothing under-resolved to report.
+            if (!sizedAtSweepTop && problem.MaxFrequencyHz > 0)
+            {
+                double effCellsPerLambda =
+                    s.CellsPerWavelength * meshFreqHz / problem.MaxFrequencyHz;
+                notes.Add($"The mesh was sized at {Eng(meshFreqHz)}Hz, not at the sweep's " +
+                          $"{Eng(problem.MaxFrequencyHz)}Hz top. At {Eng(problem.MaxFrequencyHz)}Hz the " +
+                          $"cells are λ_g/{effCellsPerLambda:G3} rather than the λ_g/{s.CellsPerWavelength} " +
+                          "you asked for. Raise Mesh frequency, or raise Cells per wavelength, if the top " +
+                          "of the band matters.");
+            }
+        }
 
         notes.Add($"Narrowest conductor dimension {Eng(narrowest)}m, meshed {across} cell(s) across " +
                   $"(target {PlanarMeshSettings.MinCellsAcrossConductor}).");
@@ -565,7 +596,7 @@ public static class SurfaceMesher
             MaxCellEdgeM:                  maxEdge,
             CellsAcrossNarrowestConductor: across,
             NarrowestConductorWidthM:      narrowest,
-            FrequencyHz:                   problem.MaxFrequencyHz,
+            FrequencyHz:                   meshFreqHz,
             GuidedWavelengthM:             lambdaG,
             MaxCellSizeM:                  hWave,
             EdgeReferenceLengthM:          edgeRef,
@@ -1601,18 +1632,18 @@ public static class SurfaceMesher
     // ── Degenerate reports ────────────────────────────────────────────────────────────────────
 
     private static PlanarMeshReport Empty(
-        List<string> layerNames, PlanarProblem p, double lambdaG, double hWave, List<string> notes)
+        List<string> layerNames, double meshFreqHz, double lambdaG, double hWave, List<string> notes)
         => new(new PlanarMesh([], [], layerNames, [], []),
                0, 0, new int[layerNames.Count], new int[layerNames.Count],
-               0, 0, 0, 0, p.MaxFrequencyHz, lambdaG, hWave, 0, 0, 0,
+               0, 0, 0, 0, meshFreqHz, lambdaG, hWave, 0, 0, 0,
                PlanarBudgetVerdict.Ok, null, notes);
 
     private static PlanarMeshReport Refused(
-        List<string> layerNames, PlanarProblem p, double lambdaG, double hWave,
+        List<string> layerNames, double meshFreqHz, double lambdaG, double hWave,
         double narrowest, double edgeRef, int staircased, List<string> notes, string refusal)
         => new(new PlanarMesh([], [], layerNames, [], []),
                0, 0, new int[layerNames.Count], new int[layerNames.Count],
-               0, 0, 0, narrowest, p.MaxFrequencyHz, lambdaG, hWave, edgeRef, staircased, 0,
+               0, 0, 0, narrowest, meshFreqHz, lambdaG, hWave, edgeRef, staircased, 0,
                PlanarBudgetVerdict.Refused, refusal, notes);
 
     // ── Formatting ────────────────────────────────────────────────────────────────────────────

@@ -86,7 +86,7 @@ public sealed partial class LayoutEditorViewModel
 
         foreach (var kind in Enum.GetValues<SymbolKind>())
             if (SchematicToLayoutGenerator.HasPCellGenerator(kind, 0, out var builtInId))
-                byId[builtInId] = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0);
+                byId[builtInId] = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0, Technology);
 
         foreach (string id in PCellRegistry.AllKnownGeneratorIds())
             if (!byId.ContainsKey(id))
@@ -111,7 +111,7 @@ public sealed partial class LayoutEditorViewModel
         if (_paletteDragGhostView is null || !string.Equals(_paletteDragGeneratorId, generatorId, StringComparison.Ordinal))
         {
             if (!PCellRegistry.TryGet(generatorId, out var generator)) { CancelPaletteDragGhost(); return; }
-            var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount);
+            var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology);
             var result = _paletteDragGeometryCache.GetOrGenerate(generatorId, generator, defaults, Technology, PCellLayerSelection.Default);
 
             var ghostView = new LayoutView();
@@ -147,7 +147,7 @@ public sealed partial class LayoutEditorViewModel
         CancelPaletteDragGhost();
 
         return SchematicToLayoutGenerator.HasPCellGenerator(kind, portCount, out var generatorId)
-            && PlacePCell(generatorId, SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount), x, y);
+            && PlacePCell(generatorId, SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology), x, y);
     }
 
     /// <summary>

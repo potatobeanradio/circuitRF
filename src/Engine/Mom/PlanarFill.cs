@@ -172,6 +172,20 @@ public sealed class PlanarFillDiagnostics
 /// integrand is a piecewise-smooth product of a linear density and a bounded mean, so a modest rule
 /// converges; the convergence is reported rather than asserted.</param>
 /// <param name="Parallel">Fill rows concurrently. Does not change the answer — R-fil-11.</param>
+/// <param name="MaxDegreeOfParallelism">
+/// <b>M1 (brief-em-sweep-performance) — the ONE parallelism cap in this engine.</b> Null is
+/// unbounded, i.e. exactly what every fill did before that brief. There is deliberately no second
+/// cap anywhere: when <see cref="PlanarSolve"/> fans out the DUT and its calibration standards at
+/// one frequency (M2), it does NOT add an outer cap that a reader would have to multiply by this
+/// one — it materialises this same number as a shared <see cref="PlanarFillSettings.Budget"/>, which
+/// every fill-row worker draws a permit from. However many solves are in flight, the number of
+/// threads doing fill arithmetic at any instant is this number.
+///
+/// <para><b>It cannot change an answer</b> — R-fil-11: the parallelism is over ROWS of the packed
+/// upper triangle, every entry is written exactly once, and nothing accumulates into shared state.
+/// R-emp-8 asserts that as BIT-IDENTITY at caps 1, 2 and unbounded rather than leaving it as a
+/// claim, and it is why the core count is kept out of every provenance hash (R-emp-7).</para>
+/// </param>
 public sealed record PlanarFillSettings(
     PlanarExtractionOrder Order                   = PlanarExtractionOrder.Constant,
     int                   SelfPanels              = 4,
@@ -192,9 +206,25 @@ public sealed record PlanarFillSettings(
     int                   VerticalTableSamples    = 256,
     int                   ViaZNodes               = 2,
     int                   ViaZStaticNodes         = 10,
-    bool                  Parallel                = true)
+    bool                  Parallel                = true,
+    int?                  MaxDegreeOfParallelism  = null)
 {
     public static readonly PlanarFillSettings Default = new();
+
+    /// <summary>
+    /// <b>M2 — the shared meter <see cref="MaxDegreeOfParallelism"/> is spent through when more than
+    /// one solve is in flight.</b> This is NOT a second cap: it carries the same number, and it
+    /// exists because a cap on an outer <c>Parallel.ForEach</c> does not bound the inner
+    /// <c>Parallel.For</c> over rows. Non-null only on a run that fans out; null everywhere else, in
+    /// which case <see cref="MaxDegreeOfParallelism"/> is applied directly as a
+    /// <c>ParallelOptions</c> cap and a null cap reproduces today's unbounded <c>Parallel.For</c>
+    /// exactly.
+    ///
+    /// <para>Deliberately outside the positional list: it is a shared mutable object for the
+    /// duration of one run, not a setting a caller chooses, and it must not appear in the record's
+    /// own parameter list where someone would set it by hand.</para>
+    /// </summary>
+    public PlanarParallelBudget? Budget { get; init; }
 
     /// <summary>
     /// <b>Refuse a setting that would silently produce a WRONG answer rather than an exception.</b>
@@ -243,6 +273,14 @@ public sealed record PlanarFillSettings(
         if (RhoFloorFraction < 0)
             throw new ArgumentOutOfRangeException(nameof(RhoFloorFraction), RhoFloorFraction,
                 "The ρ floor is a non-negative fraction of the smallest cell edge.");
+
+        // M1. Zero or negative is the one value that would run NOTHING rather than run slowly, and
+        // `Parallel.For` would throw a framework exception with no mention of a core count in it.
+        // Null is how "no cap" is spelled.
+        if (MaxDegreeOfParallelism is { } dop && dop < 1)
+            throw new ArgumentOutOfRangeException(nameof(MaxDegreeOfParallelism), dop,
+                "A core cap of zero or fewer would run no fill rows at all. Use null for unbounded, " +
+                "which is the default and is what every fill did before the core-count control existed.");
     }
 
     /// <summary>A deliberately finer setting, for the "refine and it must converge" gate (Tier 6).</summary>
@@ -1515,11 +1553,41 @@ ArgumentNullException.ThrowIfNull(mesh);
     /// <summary>
     /// R-fil-11's parallelism: over ROWS, each written exactly once. Never over a shared accumulator,
     /// so the answer does not depend on how the scheduler happened to interleave.
+    ///
+    /// <para><b>M1/M2 — three shapes, and the first is the one every pre-brief caller still takes.</b>
+    /// No cap and no budget is L8c's own <c>Parallel.For</c>, unchanged. A plain cap is that plus a
+    /// <c>ParallelOptions</c>. A BUDGET is what a fanned-out run gets: each worker that joins the
+    /// loop takes one permit for as long as it participates and releases it when the loop ends, so
+    /// the cap bounds fill threads ACROSS every concurrent solve rather than within one. A solve
+    /// that has finished filling and gone into its single-threaded LU is holding no permits, which
+    /// is exactly the overlap M2 exists to buy — see <see cref="PlanarParallelBudget"/>.</para>
     /// </summary>
     private static void ForRows(PlanarFillSettings st, int count, Action<int> row)
     {
-        if (st.Parallel && count > 8) System.Threading.Tasks.Parallel.For(0, count, row);
-        else for (int i = 0; i < count; i++) row(i);
+        if (!st.Parallel || count <= 8)
+        {
+            for (int i = 0; i < count; i++) row(i);
+            return;
+        }
+
+        if (st.Budget is { } budget)
+        {
+            System.Threading.Tasks.Parallel.For(
+                0, count,
+                new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = budget.Cap },
+                () => { budget.Enter(); return true; },
+                (i, _, held) => { row(i); return held; },
+                _ => budget.Exit());
+            return;
+        }
+
+        if (st.MaxDegreeOfParallelism is { } cap)
+            System.Threading.Tasks.Parallel.For(
+                0, count,
+                new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = cap },
+                row);
+        else
+            System.Threading.Tasks.Parallel.For(0, count, row);
     }
 }
 

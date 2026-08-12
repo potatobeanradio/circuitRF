@@ -91,6 +91,23 @@ public sealed partial class LayoutEditorViewModel
     private IReadOnlyList<PCellHandleMarker> BuildPCellHandleMarkers(
         IReadOnlyDictionary<int, LayoutInstance> instanceDragOverrides)
     {
+        // OWNER REPORT: the grip glyphs are drawn ON TOP of the snap glyph (LayoutRenderer.Draw's own
+        // order), and a grip that has locked onto a feature sits exactly where that feature's marker
+        // is — so the amber square hid the one mark saying WHICH feature is being snapped to, at
+        // precisely the moment it is the only thing worth reading. While a grip drag has a snap glyph
+        // showing, the grips yield to it entirely.
+        //
+        // Gated on the candidate being non-null rather than on _snapCandidateIsRealTarget, because
+        // that field is what decides whether a marker is DRAWN at all (RebuildOverlay assigns
+        // SnapMarker = _currentSnapCandidate) — which is the condition the report is about. The two
+        // agree during a grip drag regardless: the synthetic grab echo needs _snapDragActive, which
+        // only a marker-initiated grab sets, never a grip drag.
+        //
+        // Scoped to an ACTIVE grip drag, not to "a snap marker exists": hovering near a feature with a
+        // PCell merely selected must keep showing its grips, or they would flicker away under the
+        // cursor with nothing being dragged.
+        if (_pcellHandleDrag is not null && _currentSnapCandidate is not null) return [];
+
         var resolved = ResolveSelectedPCellHandles(out var inst, out _, out _, out int instIdx);
         if (resolved.Count == 0 || inst is null) return [];
 

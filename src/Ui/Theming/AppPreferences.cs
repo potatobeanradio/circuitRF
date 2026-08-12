@@ -93,6 +93,17 @@ public sealed class AppPreferences
     [JsonPropertyName("wbond_wire_material")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? WBondWireMaterial { get; set; }
+
+    // R-emp-6: the EM solver's core cap. Null means automatic (unbounded, i.e. what every run did
+    // before it existed). DELIBERATELY here and not in the .cem: a core count is a property of the
+    // MACHINE, not of the design, and a .cem travels with the workspace — opening a colleague's EM
+    // setup must not pin your core count to theirs. Same reasoning as HarmonicaKitFolders and the
+    // wirebond defaults. It is SHOWN in the EM Setup panel, because that is where the user is
+    // standing when the cost lands, and it enters no provenance hash (R-emp-7) because it cannot
+    // change an answer.
+    [JsonPropertyName("em_max_cores")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? EmMaxCores { get; set; }
 }
 
 public static class AppPreferencesIo

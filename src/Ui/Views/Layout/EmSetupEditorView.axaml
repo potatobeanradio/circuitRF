@@ -579,7 +579,7 @@
                 <Border Classes="group" IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Surface mesh"/>
-                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
                       ColumnSpacing="6" RowSpacing="3">
                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="CellsPerWavelength"
@@ -605,6 +605,19 @@
                                ItemsSource="{Binding ViewModel.BoundaryCellsChoices}"
                                SelectedItem="{Binding ViewModel.PlanarBoundaryCells}"
                                ToolTip.Tip="How the mesh treats curved and oblique conductor edges. Staircase approximates them with the rectangular grid. Conformal cuts the boundary cells to follow the metal, which is more accurate on tapers, bends and curves."/>
+                    <!-- M0's fifth control, and the only one that is a PERFORMANCE knob. Edited in
+                         the sweep's own frequency unit through the same staged-text committer every
+                         other dimensioned field here uses; blank means "max sweep". -->
+                    <TextBlock Grid.Row="4" Grid.Column="0" Classes="colhdr" Text="Mesh frequency" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                        <TextBox Classes="num" Tag="MeshFrequency" Width="86"
+                                 Text="{Binding ViewModel.PlanarMeshFrequencyText}"
+                                 Watermark="{Binding ViewModel.MeshFrequencyPlaceholder}"
+                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                 ToolTip.Tip="The frequency the cell-size cap is sized at. Leave blank to use the maximum of the frequency sweep. Sizing the mesh lower than the sweep's max gives fewer unknowns and a faster run, at the cost of resolution at the top of the band — the notes below say what the trade actually is."/>
+                        <TextBlock FontSize="11" VerticalAlignment="Center" Opacity="0.7"
+                                   Text="{Binding ViewModel.MeshFrequencyUnit}"/>
+                    </StackPanel>
                 </Grid>
                 <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
                            Text="{Binding ViewModel.PlanarMeshSummary}"
@@ -655,6 +668,19 @@
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.DispersionDisabledReason}"
                            IsVisible="{Binding ViewModel.DispersionDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                <!-- ── M1's core cap — the ONE control here that is not part of the design ────
+                     R-emp-6: stored in AppPreferences, shown here because this is where the user
+                     is standing when the cost lands. Commits on selection like every other closed
+                     choice in this panel; no undo entry, and it can change no answer (R-emp-8). -->
+                <TextBlock Classes="colhdr" Margin="0,8,0,0" Text="Cores"/>
+                <ComboBox Width="200" FontSize="11"
+                          ItemsSource="{Binding ViewModel.SolveCoreChoices}"
+                          SelectedItem="{Binding ViewModel.SelectedSolveCores}"
+                          DisplayMemberBinding="{Binding Label}"
+                          ToolTip.Tip="How many cores the full-wave solver may use at once. Automatic uses the whole machine, which is what every run did before this control existed. Lowering it leaves cores free for other work and makes the run slower; it never changes the answer."/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.SolveCoresNote}"/>
 
                   </StackPanel>
                 </Border>
