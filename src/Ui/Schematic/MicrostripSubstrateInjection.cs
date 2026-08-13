@@ -228,6 +228,17 @@ public static class MicrostripSubstrateInjection
            && (name.Length == 1 || (name.Length == 2 && char.IsDigit(name[1])));
 
     /// <summary>
+    /// True for a JUNCTION arm-length name — MTee's L1/L2/L3 and MCross's L1-L4. Deliberately NOT the
+    /// bare <c>L</c>: an MLIN/MTaper/MKlopf <c>L</c> is a real transmission line whose length is the
+    /// user's design choice, so it gets <see cref="NiceLengthFor"/>'s round 400 mil / 10 mm. A junction
+    /// arm is a short stub whose only job is to give the junction pins at its own edge, so it defaults
+    /// to its own arm's width — square — on every technology, rather than a round line length.
+    /// </summary>
+    private static bool IsJunctionArmLengthParam(SymbolKind kind, string name)
+        => (kind is SymbolKind.MTee or SymbolKind.MCross)
+           && name.Length == 2 && name[0] == 'L' && char.IsDigit(name[1]);
+
+    /// <summary>
     /// Rewrites a freshly-placed microstrip component's Length defaults to values that suit the
     /// placing technology: widths SYNTHESISED for 50 Ω on that technology's own substrate, lengths
     /// set to a round number, everything rounded to a sensible step in the technology's own unit.
@@ -289,6 +300,16 @@ public static class MicrostripSubstrateInjection
             else if (p.Name == "L" && NiceLengthFor(targetUnit, kind) is { } nice)
             {
                 value = nice;
+            }
+            else if (IsJunctionArmLengthParam(kind, p.Name) && w50Mm is not null)
+            {
+                // L == W (owner's call, 2026-08-12): a square stub per arm. Synthesised, not carried
+                // over from the millimetre baseline, for the same reason the widths are — 7.25 mm of
+                // arm hanging off a 42 mil PCB line is arithmetically faithful and visually absurd.
+                //
+                // The registry's own L default is likewise its W default, so this stays consistent
+                // with a no-technology placement rather than being a second, technology-only rule.
+                value = ConvertMmTo(targetUnit, w50Mm.Value);
             }
             else
             {

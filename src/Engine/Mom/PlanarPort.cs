@@ -608,10 +608,30 @@ public static class PlanarPorts
             double t1 = alongX ? c.YMax : c.XMax;
             if (t1 > tLo + 1e-15 && t0 < tHi - 1e-15) continue;   // inside the feed's own width
 
+            // ── IS THIS CELL IN THE FEED REGION AT ALL? (fixed 2026-08-12) ──────────────────────
+            //
+            // `along` used to be measured to the cell's NEAR edge and then used only to skip cells
+            // BEHIND the port — there was no upper bound at all, so the scan ran to the far end of
+            // the structure and `nearest` came back as the smallest lateral gap ANYWHERE on the
+            // board. That is not the quantity this warning's own text describes ("inside the
+            // {required}m the calibration standard assumes is empty"), and the difference is not
+            // cosmetic: it fired on every part that is ever wider than its port — every taper, stub
+            // and tee — including feeds that are demonstrably clean. A warning that cannot be
+            // cleared is one users learn to skip, and this is the one that has to stay readable,
+            // because it is what R-fed-1's automatic lead CANNOT fix: a lead lengthens a feed, it
+            // cannot move a neighbour sideways.
+            //
+            // The station is the cell's MIDPOINT, not its near edge, and that is load-bearing rather
+            // than tidy. R-fed-1 sizes the lead so the feed is uniform for EXACTLY `requiredM`, so
+            // the DUT's own flare always begins at the region's far boundary and the cell straddling
+            // it always has a lateral gap of zero. On a near-edge test that cell re-fires the warning
+            // on every extended taper — reintroducing the unclearable warning one line below the fix
+            // for it. A cell is judged by where most of it sits.
             double l0 = alongX ? c.XMin : c.YMin;
             double l1 = alongX ? c.XMax : c.YMax;
-            double along = fromLow ? l0 - port.OuterEdgeM : port.OuterEdgeM - l1;
-            if (along < -requiredM) continue;                     // well behind the port
+            double mid = 0.5 * (l0 + l1);
+            double along = fromLow ? mid - port.OuterEdgeM : port.OuterEdgeM - mid;
+            if (along < -requiredM || along > requiredM) continue;
 
             double across = t0 >= tHi ? t0 - tHi : tLo - t1;
             nearest = Math.Min(nearest, Math.Max(across, 0));

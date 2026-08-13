@@ -1,3 +1,212 @@
+Four owner reports: EM Setup save/detach, layout-reset window duplication, and the microstrip junction
+gripper that moved the wrong end (2026-08-12) — COMPLETE. Two of the four are the same shape of bug in
+different places: a behaviour that only exists on the DETACHED path, because the docked path is served
+by something the shell owns.
+
+**1 — Ctrl+S did nothing for a detached `.cem`.** Ctrl/Meta+S is bound ONLY on `WorkspaceWindow`. A
+torn-off document lives in its own `CrfHostWindow`, and the only gestures `WorkspaceViewModel.
+WireWindowUndo` injects into one are **undo/redo** — so a detached EM Setup had no Save binding at all.
+(A menu item's `InputGesture` is display text, never a binding, so the menu could not supply it either.)
+`EmSetupEditorView.axaml` gained its own `<UserControl.KeyBindings>` — the same thing `DataDisplayView`
+already does, and the reason it works in both hosts: docked, the window-level Ctrl+S runs first and
+`SaveAllDocumentsCommand`'s SingleDoc branch already dispatches an `EmSetupDocument` to this same
+command; floating, there is no window binding and the control's own one fires. **Bound to
+`ViewModel.SaveCommand`, not `SaveAllDocumentsCommand`** — a floating window should never have to
+resolve "which document is active" to save the one it is showing.
+
+**The same view was also missing its File menu entirely, and that is fixed too** (owner follow-up).
+`EmSetupEditorView` was the one document view that never embedded `TornOffFileMenuView`, so a torn-off
+`.cem` had no Save, no Close Window — nothing — on Windows/Linux. macOS was unaffected either way: the
+shared `NativeMenu` is attached per-window by `AttachSharedNativeMenuIfMacOS`, which is
+document-type-agnostic.
+
+**How it survived, and the rule that now stops the next one:** `DockWindowBehaviourTests.
+TheInWindowTearOffMenu_IsEmbeddedInDocumentViewsOnly` enumerates document views by hand, and
+`EmSetupEditorView` was simply never added to that list when the document type shipped — so the gap
+failed nothing. It is in the list now. **Adding a document type means adding it there too.**
+
+**Found by the same audit and NOT fixed, so it is not mistaken for done:** `TechEditorView` (`.ctech`)
+has the identical pair of gaps — no `TornOffFileMenuView` and no `KeyBindings` — so a torn-off technology
+editor cannot save by keyboard and has no File menu on Windows/Linux. It is a different document type
+than the one reported and is left for its own decision. `HarmonicaView` and `WBondEditorView` are
+deliberately exempt: both are standalone applications carrying their own menu views.
+
+**2 — "Fit Windows to Frame" duplicated every detached document window, and so did every other layout
+rebuild.** Root-caused against decompiled Dock 12.0.0.2 rather than guessed. `FitWindowsToFrame` →
+`PerformLayoutReset` → `CreateLayoutPreservingContent` + `InitLayout`. `CarryOverDocumentWindows`
+deliberately moves a presented float onto the new root **with its live host intact** (its own note says
+why: passing null would drop the host of a window currently on screen). `FactoryBase.InitLayout` then
+walks `rootDock.Windows` calling the two-argument `InitDockWindow`, whose base body is
+`InitDockWindow(window, owner, GetHostWindow(window.Id))` — and `GetHostWindow` falls through to
+`DefaultHostWindowLocator`, i.e. `new CrfHostWindow()`, **unconditionally**. The three-argument form
+assigns `window.Host = host`, overwriting the live one; `InitLayout` finishes with `ShowWindows`, which
+presents the replacement. The original stays on screen, unreachable through the model — the duplicate,
+and also why it later turns up as a stale entry needing `PurgeClosedHostWindows`.
+
+**Fixed at the one place Dock asks for a host**, not at each caller: `CircuitRfDockFactory.
+InitDockWindow(IDockWindow, IDockable?)` now keeps an existing `Host` and only falls through to the base
+(locator) path when there is none. **Every `InitLayout` caller inherits the fix** — Fit Windows to Frame,
+Reset Layout, workspace switch/open/new, and `ApplyDockLayout`'s restore — and the restore path is
+unaffected because a freshly deserialized window carries no host, which is exactly what the locator is
+for. **Confirmed to bite:** removing the guard turns
+`EmSetupWindowFixesTests.InitDockWindow_KeepsAnAlreadyPresentedHost_InsteadOfBuildingASecond` red while
+its own control (a host-less window still gets one built) stays green.
+
+**3 — the EM Setup button cluster moved up to the Output-file row and hugs the right.** The header was a
+`WrapPanel`, chosen in 2026-08-09 to fix "the Mesh button collides with the Browse button at small
+widths" — but a `WrapPanel` has no notion of "the far side" and stacks its items top-aligned in source
+order, so it can do neither half of what was asked. It is a `Grid ColumnDefinitions="*,Auto"` again, with
+the cluster `HorizontalAlignment="Right" VerticalAlignment="Top"`. **The 2026-08-09 collision does not
+come back, and the reason is worth keeping:** what caused it was that the star column's minimum was its
+content's, because the identity row was a horizontal `StackPanel` and a StackPanel hands its children
+UNBOUNDED width along its own axis. That row is a Grid now with the output-file `TextBox` in the star
+column, so a squeeze lands on the TextBox (down to `MinWidth` 80) instead of on the far edge of a panel
+that had already decided how wide it was going to be. Top-alignment lands on the output-file row for the
+same no-magic-number reason bottom-alignment used to land on Change Layout: it is the block's FIRST row.
+`EmPanelDeclutterTests.TheButtonCluster_IsBottomAligned_…` was **updated, not loosened** — it asserted the
+arrangement this deliberately replaces.
+
+**4 — MTEE/MCROSS: a WIDTH gripper moved the far end of the component.** Owner report: "MTEE changes the
+length of its microstrip lines when the user changes the width — changing W1 with its gripper moves the
+end point in the opposite axis. Same for MCROSS." Confirmed exactly: every junction arm's drawn length was
+`PCellGeometryHelpers.StubLengthFactor` (2.5) × **that arm's own width**, so on MTee a W1 edit changed
+`stub1`, which IS `junctionX`, which moved pins 2 and 3 along +X. Defensible arithmetic; unusable gesture.
+
+**Each arm now declares its own length** — MTee `L1`/`L2`/`L3`, MCross `L1`-`L4`. **Each defaults to its
+own W** (owner's call): a square stub per arm, the smallest thing that still reads as a junction with pins
+at its own edge, leaving real line length to a user-placed MLIN. `MicrostripSubstrateInjection.
+ApplyTechnologyDefaults` keeps `L == W` against the technology's own synthesised 50 Ω width, so a tee
+dropped on a PCB gets ~42 mil arms rather than the millimetre baseline's 7.25 mm.
+
+**The lengths are ARTWORK, and that is unchanged rather than newly true:** `MicrostripTeeModel`/
+`MicrostripCrossModel` have no length term at all (the junction's reference planes are at the arm edges),
+so a longer arm draws longer and simulates identically — as the derived stub also did.
+
+**The grips drive BOTH axes, and the count is unchanged.** Owner follow-up: "those grippers should be able
+to modify W or L depending which direction the user drags." Each of MTee's six corner grips (MCross's
+eight) now carries a `PCellHandleCrossAxis`: **across the arm sets its width, along it sets its length**.
+That is R-pch-4a's orthogonal decomposition, not R-pch-4's forbidden apportioning — the two axes are
+independent scalars with one parameter each, so the split is unique and nothing is guessed. A separate
+length-only grip per arm was built first and then removed: it doubled the clutter to say what the corner
+already says.
+
+**Two mechanics make that work, both easy to get wrong:**
+- **The anchor moves to the junction (MTee) / the centre (MCross)**, which is what makes the along-axis
+  projection read as that arm's length. It does **not** disturb the width measurement, because every
+  anchor keeps the coordinate the width is measured on (`y = 0` for a through arm, `x = junctionX` for the
+  branch) — so a width drag measures exactly what it always did.
+- **`KeepAnchorFixed`**, because MTee's junction genuinely travels: R4 pins pin 1 at the cell origin, so
+  growing arm 1 can only push the junction along +X. The host translates the instance so the junction
+  holds its world position and pin 1 moves instead — MLIN's own left-edge gesture. MCross's anchor is the
+  cell origin and never moves, where the flag is a documented no-op.
+
+**A cell that does not declare its lengths is byte-identical — geometry AND grips — and that is why there
+is NO `PCellRegistry.GeneratorVersion` bump** (a bump renames every generated cell folder while every
+placed `CellRef` still names the old one, so every instance would render as the Not-Found placeholder).
+`ResolveArmLength` falls back to the 2.5× derivation for an absent or non-positive length, and the handle
+set falls back to the old end-cap anchors with no cross axis **and no pinning** — pinning matters just as
+much there, since on the derived path the junction moves WITH W1, so holding it fixed would make a plain
+width drag translate the instance. The cross-axis half is not optional either: R2's one list is what a
+handle may name and `PCellHandleSolver.Validate` refuses anything else, so a cross axis naming an absent
+`L` would be dropped and reported on every generate. Gating is all-or-nothing per cell; a hand-edited
+partial set gets width-only grips while still honouring whichever lengths it does declare.
+
+**A negative W or L survived a drag and glitched the render — the WIDTH axis is free and normalised at
+MOUSE UP; the LENGTH axis is CLAMPED during the drag.** Owner follow-ups, in order: "check for negative W
+or L and recalculate their values in the positive"; then "a negative value is OK during drag for MCROSS
+and MTEE, just not after mouse up"; then, after seeing it, "clamp the L parameters for MTEE and MCROSS so
+they never go negative during a drag. Keep W parameters untouched (I like how they are currently
+working.)" A grip can still be dragged past zero across its own arm's centreline — a WIDTH overshoot is
+free and recovers exactly on release. A LENGTH grip now stops at the crossing-width minimum instead, so
+the arm can never be drawn back over the one that belongs on that side (the reported glitch).
+
+**The asymmetry is deliberate and is what the two halves are for.** A width recovers EXACTLY at mouse up
+(`|W|` reproduces the identical rectangle, see below), so stopping the grip buys nothing. A length cannot
+recover exactly at all, so it is stopped. `PCellDimensionSign` still normalises BOTH at commit — for the
+width because that is the whole mechanism, and for the length because `PCellHandleSolver.Propose` applies
+the snap lattice AFTER the bound (a coarse snap step can round a clamped value back down) and because
+nothing outside the solver goes through `Propose` at all.
+
+**The length bound lives on the HANDLE, never inside the generator — that distinction is the part worth
+remembering.** `PCellHandleSolver` measures a grip's sensitivity ONCE, at the drag's starting value, and
+`Propose` clamps only the candidate it derives from it, so the map it measured stays intact and the grip
+stops cleanly at the floor. A clamp inside the generator would instead flatten that map below the floor,
+leaving the solver nothing to measure and the grip refusing to follow the cursor at all — which is
+exactly why MKlopf's own `Min` is NOT the precedent here (owner: "MKLOPF clamped it for other reasons (to
+prevent glitchy drags)"; its arc-length parameterisation genuinely degenerates at zero, so there is no
+drawable taper below the floor either way). Each junction generator's `Min` is derived from the SAME
+integer its own crossing-width clamp enforces and converted down through `PCellUnits.DbuToMetres`, so the
+grip stops exactly where the geometry stops changing rather than a DBU either side of it. The generator
+itself stays sign-transparent: it draws a negative length as asked, and the crossing-width clamp above is
+still gated on an already-POSITIVE stub, because a hand-typed number, a script or an older file does not
+go through the solver.
+
+**What "the same geometry" means differs by kind, and is stated rather than glossed.** A **width**
+recovers EXACTLY: `BuildArmRect` spans `origin ± width/2`, so a negative width names the same two
+coordinates in the other order — taking the magnitude reproduces the identical rectangle and fixes its
+winding, which matters because a backwards ring cancels against its own layer instead of filling it
+(`LayoutRenderer.NormalizeOuterWinding`). An **arm length** cannot: a negative one draws on the wrong
+side of the junction, and no positive parameter set reproduces that. The magnitude is used because it
+preserves the one thing the drag expressed — how far — and snaps the arm to its own side; holding it at
+zero throws that away, and falling back to the derived length would silently substitute a third,
+unrelated number.
+
+**Scoped by a TABLE, not a name-shaped rule** — MKlopf's `Offset` is a length whose sign is meaningful
+(off-axis either way) and MBend's `Angle` likewise, so "any parameter called L" would straighten every
+offset taper. MTEE and MCROSS are listed, being the two the report names. **Named and NOT widened:**
+MLIN, MTaper and MBend carry the same latent issue — their own width grips can be dragged past their
+anchor edge — and adding them is one line each in that table.
+
+**The pinning translate is re-measured when a sign flips**, which is the non-obvious half.
+R-pch-4b's `PendingDx/Dy` are measured against the geometry the PREVIEW drew, i.e. the value that just
+changed; on MTee arm 1 the anchor sits at `L1`, so a flip from −a to +a leaves the stale delta correcting
+for the wrong one of the two and the instance lands `2a` from where it belongs. `RemeasureAnchorPin`
+regenerates with the committed values and re-runs the SAME `ApplyAnchorPin` the move handler uses — the
+pin is still measured exactly one way, by reading the regenerated anchor rather than predicting it.
+
+**Test-side finding worth keeping: the first MTee drag test was VACUOUS and the bite check is what caught
+it.** It dragged arm 1's grip in −X expecting a negative L1 and asserted `L1 > 0`, which passed with the
+normalization removed — because arm 1 runs from pin 1 at the cell origin TO the junction and its grip is
+PINNED to the junction, so dragging pin 1 away LENGTHENS it (to 10.9 mm, measured). Turning L1 negative
+means dragging pin 1 THROUGH the junction, in +X. **On a pinned grip, work out which direction the
+gesture actually means before asserting on it** — the sign of the parameter is not the sign of the
+travel.
+
+**One clamp, applied only to an explicit length.** Below half the crossing arm's width, that arm overhangs
+this one's own end cap — clamped and reported through `PCellResult.Diagnostics`. The derived path is
+deliberately never clamped: clamping it too would move artwork already on disk whenever one arm is far
+wider than another, which is precisely what the no-bump claim rests on not happening. (The clamp fired
+unbidden while writing these tests, on a fixture that widened one arm past its neighbour's length — a good
+sign it works, and the reason the fixtures now state generously clear lengths.)
+
+**Gate:** `tests/Ui.Tests/Layout/PCells/JunctionArmLengthTests.cs` (23) and
+`tests/Ui.Tests/Em/EmSetupWindowFixesTests.cs` (3), plus `EmPanelDeclutterTests`' updated alignment test.
+**Confirmed to bite:** reverting MTee to the derived rule turns 4 of them red, including the headline
+"changing a width leaves every pin where it was"; its own control ("on the derived fallback it still
+moves") is what gives that test teeth. Removing the sign normalization turns the width drag-and-release
+case and the scoping table red.
+
+**The length-clamp tests assert the FLOOR, not merely "positive" — that is what makes them non-vacuous.**
+`MTee_ALengthGripDraggedPastTheJunction_StopsAtTheCrossingMinimum` and its MCross sibling drag a length
+grip far past the junction and assert the committed value lands exactly on the crossing-width minimum: a
+grip that had gone negative and been normalised at mouse up would land on the MAGNITUDE of a long drag,
+which is nowhere near it. `TheLengthAxisIsBoundedAndTheWidthAxisDeliberatelyIsNot` states the asymmetry
+directly (`Min` null on every primary axis, non-null on every cross axis) so it cannot be "tidied" into
+consistency later, and `TheLengthBoundMatchesTheGeneratorsOwnCrossingClamp_ToTheLastDbu` pins the bound
+to the generator's own integer.
+
+Ui **6,368** · Core 1,238 · Firewall 6 — green. `src/Core`, `src/Engine`, `RfCore` untouched.
+
+**Not interactively verified** (no visual driver here, matching every prior round) — please confirm on
+your end: Ctrl/⌘+S saves a `.cem` torn off into its own window; Fit Windows to Frame with a detached
+document open leaves exactly one window per document; the EM Setup header shows Mesh/Simulate/Undo/Redo/
+Save/Save As on the Output-file row against the right edge, still not colliding with Browse at a narrow
+width; and a freshly placed MTEE/MCROSS drags its corner gripper as width across the arm and length along
+it, with the other pins staying put either way — that dragging a WIDTH grip across its own arm is free
+while the button is down and comes back as a positive value the moment you let go, with the artwork
+intact — and that dragging a LENGTH grip toward the junction now STOPS at half the crossing arm's width
+instead of passing through it.
+
 harmonicaRF Round 1C — chrome, readouts, Set DUT, and Export Testbench → `.csch`
 (brief-harmonicarf-r1c-chrome-readouts-dut-and-export.md, 2026-08-12) — COMPLETE, all seven
 sections. The toolbar is gone, replaced by a one-line message strip and an inline solving bar; the

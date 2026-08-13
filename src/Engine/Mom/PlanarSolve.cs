@@ -15,6 +15,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using NumFlat;
+using RfCore;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -626,11 +627,16 @@ public static class PlanarSolve
     /// BOTH the point count and the sub-steps within the current point — a bar that moved once a
     /// minute would be indistinguishable from a hung run. Cancellation is checked at the same
     /// boundaries, which is the granularity <see cref="RunControl"/>'s own contract describes.</param>
+    /// <param name="leads">R-fed-1's automatically-grown uniform feeds, or null when the artwork
+    /// needed none. Each one is peeled back off the de-embedded matrix
+    /// (<see cref="PlanarFeedExtension.Peel"/>) so the published reference planes are the user's own
+    /// drawn metal edges.</param>
     public static PlanarSolveResult Run(
         PlanarProblem problem,
         PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports,
         IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings = null,
-        RunControl? control = null)
+        RunControl? control = null,
+        IReadOnlyList<PlanarFeedLead>? leads = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
@@ -727,6 +733,50 @@ public static class PlanarSolve
             string? warn = PlanarPorts.CheckFeedClearance(
                 mesh, p, (st.Calibration ?? PlanarCalibrationSettings.Default).EndRunHeights * slab.HeightM);
             if (warn is not null) notes.Add(warn);
+        }
+
+        // ── R-fed-2: how much of each auto-grown lead sits between the plane and the drawn edge ──
+        //
+        // The reference plane is one CELL in from the metal (D2), and the metal is now the lead's
+        // outer end, so what has to come back off is the lead MINUS that first cell — the half the
+        // error box already accounts for. Measured from the resolutions rather than assumed, because
+        // the outermost cell's size is the mesher's decision and edge grading makes it small.
+        var peelM = new double[ports.Count];
+        if (leads is { Count: > 0 })
+        {
+            var byNumber = leads.ToDictionary(l => l.PortNumber);
+            for (int i = 0; i < ports.Count; i++)
+            {
+                if (!byNumber.TryGetValue(ports[i].Number, out var lead)) continue;
+                bool fromLow = ports[i].Side is PlanarPortSide.MinX or PlanarPortSide.MinY;
+                double d = fromLow
+                    ? lead.DrawnEdgeM - ports[i].ReferencePlaneM
+                    : ports[i].ReferencePlaneM - lead.DrawnEdgeM;
+
+                // A negative value means the outermost cell is longer than the whole lead, so the
+                // plane landed INSIDE the user's own metal. Peeling a negative length would add line
+                // that is not uniform there; the honest answer is to peel nothing and say so.
+                if (d < 0)
+                {
+                    notes.Add(
+                        $"Port {ports[i].Number}'s automatic feed lead ({SurfaceMesher.Eng(lead.LengthM)}m) " +
+                        $"is shorter than the outermost mesh cell, so its reference plane sits " +
+                        $"{SurfaceMesher.Eng(-d)}m INSIDE your drawn metal rather than on its edge. Raise " +
+                        "Cells per wavelength — a finer mesh at the port puts the plane back on the edge.");
+                    continue;
+                }
+                peelM[i] = d;
+            }
+
+            var moved = new List<string>();
+            for (int i = 0; i < ports.Count; i++)
+                if (peelM[i] > 0)
+                    moved.Add($"port {ports[i].Number} by {SurfaceMesher.Eng(peelM[i])}m");
+            if (moved.Count > 0)
+                notes.Add("The automatic feed lead is peeled back off the de-embedded matrix as a " +
+                          "matched section in the line's own Z_c, using the γ the calibration measured " +
+                          "for that same cross-section: " + string.Join(", ", moved) +
+                          ". The published reference planes are your drawn metal edges.");
         }
 
         // ── One calibrator per distinct port cross-section, shared where they match (D4) ─────────
@@ -965,16 +1015,21 @@ public static class PlanarSolve
 
                 var boxes = new PlanarErrorBox[ports.Count];
                 var zc    = new Complex[ports.Count];
+                var gam   = new Complex[ports.Count];
                 for (int i = 0; i < ports.Count; i++)
                 {
                     var c = perCal[byPort[i]];
                     cals.Add(c with { PortNumber = ports[i].Number });
                     boxes[i] = c.Box;
                     zc[i]    = c.Zc;
+                    gam[i]   = c.Gamma.Gamma;
                     if (!c.Gamma.Usable) flaggedBand.Add(f);
                 }
 
-                s = PlanarDeembed.Renormalise(PlanarDeembed.Apply(raw, boxes), zc, z0);
+                // R-fed-2 — the lead comes off BEFORE renormalisation: "matched" means matched in
+                // Z_c, which is the reference Apply hands back and the one the section is uniform in.
+                var atZc = PlanarFeedExtension.Peel(PlanarDeembed.Apply(raw, boxes), peelM, gam);
+                s = PlanarDeembed.Renormalise(atZc, zc, z0);
             }
             return (s, cals, sw.Elapsed.TotalMilliseconds);
         }
@@ -1152,6 +1207,8 @@ public static class PlanarSolve
                       "carried from the nearest solved frequency rather than interpolated.");
         }
 
+        if (st.Deembed && PassivityNote(points, z0) is { } passivity) notes.Add(passivity);
+
         if (flaggedBand.Count > 0)
             notes.Add($"{flaggedBand.Count} of {freqs.Length} frequency point(s) fall outside the " +
                       $"[{PlanarCalibrationSettings.UsableLoDegrees:F0}°, " +
@@ -1174,6 +1231,74 @@ public static class PlanarSolve
             WorstAdaptiveDisagreement = worstAdaptive,
             SolvedFrequencies         = solvedList,
         };
+    }
+
+    /// <summary>
+    /// <b>R-prt-15 — σ_max(S) ≤ 1, checked on the answer that ships.</b>
+    ///
+    /// <para>The root <c>CLAUDE.md</c> has said since L6 that "reciprocity and passivity are gates;
+    /// losslessness is NOT", and passivity was gated in the TEST project only. It is the one property
+    /// that separates "this kernel is inaccurate here" from "this number cannot be a network", and
+    /// the failure it catches is not hypothetical: the owner's Klopfenstein taper shipped a `.s2p`
+    /// with σ_max = 1.03 and |S₂₁| = 0.0008 — a fake open circuit — with nothing said about it.
+    /// A structure that is genuinely passive cannot exceed 1, so any excess is the ANALYSIS, and the
+    /// user is the one who has to know that before reading the plot.</para>
+    ///
+    /// <para><b>A note carrying the worst measured value, not a refusal.</b> Refusing would throw an
+    /// entire sweep away for one bad point, and this area's standing habit is to report the number
+    /// rather than the verdict (<c>AsymmetryResidual</c>, <c>ModeCouplingResidual</c>,
+    /// <c>FitResidual</c>, <c>CheckFeedClearance</c>). The tolerance is 1e-3 rather than 0 because an
+    /// open structure's own discretisation noise lands there and a 1.0000004 would say nothing.</para>
+    ///
+    /// <para><b>Measured against a UNIFORM REAL reference</b>, which is what <c>RFNetwork.Passivity</c>
+    /// requires and what the published matrix is not: per-port Z₀ may differ (a 50 Ω port and a 12 Ω
+    /// port is the ordinary taper case) and may be complex. σ_max is reference-dependent, so asking
+    /// it of the shipped matrix directly would flag perfectly passive networks.</para>
+    /// </summary>
+    private static string? PassivityNote(
+        IReadOnlyList<PlanarFrequencyPoint> points, IReadOnlyList<Complex> z0)
+    {
+        const double Tolerance = 1e-3;
+
+        bool uniformReal = true;
+        foreach (var z in z0)
+            if (z.Imaginary != 0 || z != z0[0]) { uniformReal = false; break; }
+
+        var common = new Complex[z0.Count];
+        Array.Fill(common, new Complex(50.0, 0.0));
+
+        double worst = 0, atHz = 0;
+        int over = 0;
+        foreach (var pt in points)
+        {
+            double sigma;
+            try
+            {
+                var s = uniformReal ? pt.S : RFNetwork.SToS(pt.S, [.. z0], common);
+                sigma = RFNetwork.Passivity(s);
+            }
+            catch (Exception)
+            {
+                // A singular renormalisation says nothing about passivity; the point is skipped
+                // rather than reported as a violation it was never measured to have.
+                continue;
+            }
+
+            if (sigma <= 1.0 + Tolerance) continue;
+            over++;
+            if (sigma > worst) { worst = sigma; atHz = pt.FrequencyHz; }
+        }
+
+        if (over == 0) return null;
+
+        return $"NOT PASSIVE: {over} of {points.Count} de-embedded point(s) have σ_max(S) > 1, worst " +
+               $"{worst:F4} at {SurfaceMesher.Eng(atHz)}Hz. A passive structure cannot do that, so the " +
+               "excess is this analysis, not your design, and the s-parameters at those points should " +
+               "not be used. The usual cause is the de-embedding rather than the fill: D6's peel " +
+               "divides by a₂₁² (~1e4 at 1 GHz), so a small error in the error box becomes a large one " +
+               "in the answer. Check the port notes above for a feed the calibration could not be " +
+               "measured on, narrow the sweep to where the two-line calibration is well conditioned, " +
+               "or raise Cells per wavelength.";
     }
 
     /// <summary>

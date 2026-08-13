@@ -15,4 +15,19 @@ public static class PCellUnits
     /// at the given resolution.</summary>
     public static long MetresToDbu(double meters, int dbuPerMicron)
         => LayoutUnits.ToDbu((decimal)meters * 1000m, LayoutUnit.Mm, dbuPerMicron);
+
+    /// <summary>
+    /// The inverse: a DBU count back to SI metres, for a generator that has worked something out in
+    /// DBU and needs to state it as a PARAMETER value — a <see cref="PCellHandle"/>'s
+    /// <c>Min</c>/<c>Max</c> bound, which <c>PCellHandleSolver</c> compares against the parameter
+    /// itself and which is therefore in the parameter's own units (SI metres in-process).
+    ///
+    /// <para>Deriving the bound in DBU and converting DOWN, rather than computing it in metres
+    /// alongside, is what makes it agree with the generator's own geometry to the last DBU: both come
+    /// from the same integer. A bound computed independently in metres can land a DBU off after
+    /// <see cref="MetresToDbu"/> rounds it, and a grip that stops one DBU short of where the geometry
+    /// stops changing is a grip that visibly refuses to reach its own limit.</para>
+    /// </summary>
+    public static double DbuToMetres(long dbu, int dbuPerMicron)
+        => (double)((decimal)dbu / (dbuPerMicron * 1_000_000m));
 }

@@ -335,6 +335,26 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   the drawn metal; the half-cell beyond is error box. **Nothing user-positionable.** Ground reference
   is always the slab's ground plane. `PlanarPort.LayerIndex` is `int?` — null infers **one** candidate
   or refuses by name.
+- **R-fed-1. The solver grows its own calibration feed** (`PlanarFeedExtension`, 2026-08-12), before
+  meshing, by extruding each port's own polygon outward from its drawn end face by whatever uniform
+  line the calibration is short of. **The user never adds a feed line to their artwork** — §10.6 now
+  states that as a requirement. A feed that is already uniform grows nothing and the problem reaches
+  the mesher **by reference**, which is what keeps every number in `HISTORY.md` reproducible;
+  `Assert.Same` is the gate, because a vertex-count assertion would drift. **Running out of metal
+  counts as uniform** — a short line is a SHORT structure, not a flared one, and `EndRunCellsFor`
+  already clamps for it. Uniformity tolerance is **0.1% of the port width**, tight because the
+  quantity it protects is amplified by 1/a₂₁². Everything it is not sure of is DECLINED (end face not
+  a single straight segment, ambiguous level, lead would hit other metal) — a decline is the
+  pre-existing behaviour plus the pre-existing warning.
+- **R-fed-2. The lead is peeled EXACTLY, before renormalisation**: `S_ij *= exp(γ_iℓ_i + γ_jℓ_j)`,
+  with γ the value the two-line calibration measured **for that same cross-section**, and ℓ measured
+  from the resolutions as `|ReferencePlaneM − DrawnEdgeM|` (the lead **minus the outermost cell**, which
+  the error box already owns). "Matched" means matched in `Z_c`, so peeling after `Renormalise` puts
+  back a reflection that was never there. A port that grew nothing is **bit-identical** — no `exp(0)`.
+- **R-prt-15. σ_max(S) ≤ 1 is checked on the answer that ships**, per frequency, against a **uniform
+  real** reference (per-port Z₀ may differ and may be complex; σ_max is reference-dependent, so asking
+  it of the published matrix flags passive networks). A note carrying the worst value and its
+  frequency, tolerance 1e-3 — not a refusal, which would discard a whole sweep for one point.
 - **Two standards per port cross-section**; the count for a band is derived by `SuggestDeltas` (one
   separation covers a usable 8:1, designed to **4:1** for margin). `TargetElectricalDegrees = 60`.
   `SuggestLengths` returns a **separation**, never a second absolute length. `SameCrossSection`
@@ -417,6 +437,20 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   not match.
 
 **Ports / solve**
+- **Treating "the feed is not uniform at the plane" as an accuracy note.** It is not: D6's diagonal is
+  `(S_meas,ii − a₁₁)/a₂₁²`, a cancellation of two numbers within 1e-4 of unity divided by ~1e-4, so a
+  **0.1% error in the error box is a 10× error in the answer**. Measured on the owner's 2000 mil
+  50 → 12 Ω MKlopf on 0.508 mm RO4350B: `|S₁₁| = 1.0000`, `|S₂₁| = 0.0008`, σ_max = 1.06 — a
+  non-passive open circuit. R-fed-1 exists because of this, and R-prt-15 exists because it shipped.
+- **A small taper on a coarse mesh does NOT reproduce it, so do not size a gate that way.** The
+  amplification is set by a₂₁, and a₂₁ is set by the OUTERMOST CELL: with `EdgeMesh` off that cell is
+  a bulk cell and 1/a₂₁² is a few hundred; with edge grading on (the default) it is 3% of the width
+  and 1/a₂₁² reaches 1e4. Several 12–20 mm tapers at 1–5 GHz measured σ_max ≈ 0.99 either way.
+- **`CheckFeedClearance` had no upper bound on `along`** (fixed 2026-08-12) — it computed the distance
+  along the feed and then only used it to skip cells BEHIND the port, so `nearest` was the smallest
+  lateral gap anywhere on the board. It fired on every part ever wider than its port, could not be
+  cleared by any amount of feed, and was therefore the one warning nobody read. It is what R-fed-1
+  **cannot** fix: a lead lengthens a feed, it cannot move a neighbour sideways.
 - Excite and read back with the **same `B`**; a side-dependent sign gives a hard π in S₂₁, invisible
   in a magnitude plot.
 - **Do not negate γ on `Re γ < 0`** — it flips β too, and α's extracted sign is noise. **β selects

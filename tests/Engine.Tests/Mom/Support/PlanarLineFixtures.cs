@@ -45,6 +45,30 @@ public static class PlanarLineFixtures
     public static PlanarProblem Line(GroundedSlab slab, double widthM, double lengthM, double fHz) =>
         Problem(slab, fHz, Rect(0, -0.5 * widthM, lengthM, 0.5 * widthM));
 
+    /// <summary>
+    /// A straight-sided x-directed taper from <paramref name="w0"/> at x = 0 to <paramref name="w1"/>
+    /// at x = <paramref name="lengthM"/>, centred on y = 0 — the shape R-fed-1 exists for. Its metal
+    /// starts changing width at the very first cell of BOTH ports, which is what makes the error box
+    /// a measurement of the wrong structure.
+    /// </summary>
+    /// <param name="segments">Vertices per flank. Kept small on purpose: the flank only has to be
+    /// oblique, and a 200-vertex outline costs the mesher time without testing anything more.</param>
+    public static PlanarProblem Taper(GroundedSlab slab, double w0, double w1, double lengthM,
+                                      double fHz, int segments = 8)
+    {
+        var top = new List<EmPoint>();
+        var bot = new List<EmPoint>();
+        for (int i = 0; i <= segments; i++)
+        {
+            double t = (double)i / segments, x = lengthM * t, hw = 0.5 * (w0 + (w1 - w0) * t);
+            top.Add(new EmPoint(x, hw));
+            bot.Add(new EmPoint(x, -hw));
+        }
+        bot.Reverse();
+        top.AddRange(bot);
+        return Problem(slab, fHz, new PlanarPolygon(top));
+    }
+
     /// <summary>§10.7's own hero cross-section: 50 Ω on 1.6 mm FR-4 is W ≈ 2.9 mm.</summary>
     public const double Fr4HeroWidthM = 2.9e-3;
 

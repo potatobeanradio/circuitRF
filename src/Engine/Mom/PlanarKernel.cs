@@ -238,10 +238,24 @@ public sealed class PlanarKernel
                 "A planar solve needs at least one port. Place port labels on the conductor ends in " +
                 "the layout editor's Port tool, or check that they resolved onto the metal.");
 
+        var st = settings ?? PlanarSolveSettings.Default;
+
+        // ── R-fed-1 — grow whatever uniform feed the calibration needs, BEFORE meshing ───────────
+        //
+        // A port whose metal changes cross-section at the reference plane makes the error box a
+        // measurement of the wrong structure, and D6's peel divides that mismatch by a₂₁² (~10⁴ at
+        // 1 GHz). It is not a small error: the owner's Klopfenstein taper came back non-passive and
+        // reading as an open circuit. The lead is real metal for the solve and is removed exactly
+        // afterwards, so the user's reference planes stay on the user's own drawn edges — and a feed
+        // that is already uniform grows nothing, which is what keeps every recorded number
+        // reproducible. See PlanarFeedExtension's header.
+        var (meshed, leads, feedNotes) =
+            PlanarFeedExtension.Extend(problem, ports, st.Calibration);
+
         // Meshing is fast next to the sweep but is not instant, and it is the first thing that
         // happens after the user presses Simulate — so it gets its own named stage rather than
         // leaving the row saying nothing until the first frequency lands.
-        var report = Mesh(problem, meshSettings, control);
+        var report = Mesh(meshed, meshSettings, control);
         if (!report.CanSolve)
             throw new InvalidOperationException(report.Refusal ?? "The mesh is over the R17 budget.");
 
@@ -253,19 +267,19 @@ public sealed class PlanarKernel
         // D5 — the heat map rides along with the sweep the panel already pays for: default to port 1
         // at the lowest swept frequency, which is where a user starts looking. Both are selectable
         // (PlanarSolveSettings), and a caller that wants no map passes 0.
-        var st = settings ?? PlanarSolveSettings.Default;
         if (st.CurrentDensityPortNumber == 0)
             st = st with { CurrentDensityPortNumber = resolved[0].Number };
 
         // R-via-6 at the sweep's ACTUAL top, which CanSolve can only guess at from MaxFrequencyHz.
         double fHi = 0;
         foreach (double f in freqsHz) fHi = Math.Max(fHi, f);
-        var midpoint = MidpointRuleVerdict(problem, fHi);
+        var midpoint = MidpointRuleVerdict(meshed, fHi);
         if (!midpoint.Ok) throw new InvalidOperationException(midpoint.Reason);
 
-        var sweep = PlanarSolve.Run(problem, report.Mesh, resolved, freqsHz, st, control);
+        var sweep = PlanarSolve.Run(meshed, report.Mesh, resolved, freqsHz, st, control, leads);
 
         var notes = new List<string>(report.Notes);
+        notes.AddRange(feedNotes);
         notes.AddRange(sweep.Notes);
         notes.Add(QuasiStaticNote);
 
@@ -299,7 +313,15 @@ public sealed class PlanarKernel
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
 
-        var report   = Mesh(problem, meshSettings);
+        var st0 = settings ?? PlanarSolveSettings.Default;
+
+        // R-fed-1 applies HERE TOO, and leaving it out is how a heat map ends up being a map of a
+        // different structure than the sweep beside it: Solve() meshes the extended problem, so a
+        // recomputed map that meshed the drawn one would disagree with the currents the sweep kept,
+        // cell for cell, for no visible reason.
+        var meshed = PlanarFeedExtension.Extend(problem, ports, st0.Calibration).Problem;
+
+        var report   = Mesh(meshed, meshSettings);
         if (!report.CanSolve)
             throw new InvalidOperationException(report.Refusal ?? "The mesh is over the R17 budget.");
 
@@ -312,12 +334,12 @@ public sealed class PlanarKernel
                 $"This layout has no port {drivenPortNumber} to drive; it has " +
                 string.Join(", ", resolved.Select(p => p.Number)) + ".");
 
-        var st      = settings ?? PlanarSolveSettings.Default;
+        var st      = st0;
         var context = new PlanarSolveContext(
             report.Mesh, resolved, st.Fill,
-            problem.RequiresGeneralKernel ? PlanarLevels.From(problem) : null);
+            meshed.RequiresGeneralKernel ? PlanarLevels.From(meshed) : null);
         var kernel  = PlanarFrequencyKernel.Fit(
-            problem, fHz, (st.Fill ?? PlanarFillSettings.Default).Order, st.Dcim);
+            meshed, fHz, (st.Fill ?? PlanarFillSettings.Default).Order, st.Dcim);
 
         var solution = context.SolveAt(kernel, fHz);
         return PlanarCurrentDensity.Compute(report.Mesh, solution.Currents[j], drivenPortNumber, fHz);

@@ -849,6 +849,40 @@ public class CircuitRfDockFactory : Factory
         return window;
     }
 
+    /// <summary>
+    /// A floating window that ALREADY has a live host keeps it — never gets a second one built.
+    ///
+    /// <para>Owner report, 2026-08-12: "Fit Windows to Frame creates a duplicate document window for
+    /// any document detached from the dock." Confirmed against decompiled Dock 12.0.0.2:
+    /// <c>FactoryBase.InitLayout</c> walks <c>rootDock.Windows</c> calling this two-argument overload,
+    /// whose base implementation is <c>InitDockWindow(window, owner, GetHostWindow(window.Id))</c> —
+    /// and <c>GetHostWindow</c> falls through to <c>DefaultHostWindowLocator</c>, i.e.
+    /// <c>new CrfHostWindow()</c>, UNCONDITIONALLY. The three-argument form then assigns
+    /// <c>window.Host = host</c>, so the live host of a window that is currently on screen is
+    /// overwritten; <c>InitLayout</c> finishes with <c>ShowWindows</c>, which presents the brand-new
+    /// one. The original window is still on screen but no longer reachable through the model — the
+    /// duplicate.</para>
+    ///
+    /// <para>This is only reachable because <see cref="CarryOverDocumentWindows"/> deliberately moves
+    /// a presented float onto the new root <b>with its host intact</b> (see that method's own note),
+    /// which is what makes a layout rebuild keep torn-off documents open at all. Every
+    /// <c>InitLayout</c> caller inherits the bug — <c>FitWindowsToFrame</c>, <c>ResetLayout</c>,
+    /// workspace switch, <c>ApplyDockLayout</c> — so the fix belongs here, at the one place Dock asks
+    /// for a host, rather than at each of them.</para>
+    ///
+    /// <para>A window with no host yet (a freshly deserialized layout, a restore) still takes the base
+    /// path and gets one built, which is the case the locator exists for.</para>
+    /// </summary>
+    public override void InitDockWindow(IDockWindow window, IDockable? owner)
+    {
+        if (window.Host is not null)
+        {
+            InitDockWindow(window, owner, window.Host);
+            return;
+        }
+        base.InitDockWindow(window, owner);
+    }
+
     /// <summary>Tool floats are owned by the shell; document floats are peers. See <see cref="CreateWindowFrom"/>.</summary>
     internal static DockWindowOwnerMode OwnerModeFor(IDockable? dockable) =>
         ContainsTool(dockable) ? DockWindowOwnerMode.Default : DockWindowOwnerMode.None;

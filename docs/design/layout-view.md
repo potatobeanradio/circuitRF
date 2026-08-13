@@ -1359,6 +1359,50 @@ but wrong numbers.
 > The assumption that C is frequency-independent is the route's real cost, and it is 0.4% / 2.3% / 6.3%
 > at 1 / 5 / 20 GHz against kernel A's static value. Details in `src/Engine/Mom/CLAUDE.md` §L8d.
 
+> ### **Requirement, added 2026-08-12 (owner report): THE SOLVER BUILDS ITS OWN CALIBRATION FEED.**
+>
+> **A user places a port on the part they drew and presses Simulate. Nothing above that is their job.**
+> In particular, *the user must not have to add a uniform feed line to their artwork so that the
+> de-embedding has something to calibrate against* — circuitRF works out what calibration structure it
+> needs, and how much of it, on its own.
+>
+> **Why this had to become an explicit requirement.** L8d's calibration standard is an ISOLATED UNIFORM
+> LINE of the port's cross-section, and its `a₁₁` is only the DUT's `a₁₁` if the DUT's own metal looks
+> like that line for the distance the standard replaces. Drop a shipped `MKLOPF` PCell into a layout,
+> port its two ends, and it does not: a taper's flanks are oblique from the first cell. That is not a
+> mild inaccuracy, because D6's peel forms `(S_meas,ii − a₁₁)/a₂₁²` and `a₂₁ ∝ ω` — on 0.508 mm
+> RO4350B at 1 GHz `a₂₁² = 9.8e-5`, so a **0.1% error in the error box is a 10× error in the answer**.
+> The owner's 2000 mil, 50 → 12 Ω Klopfenstein taper came back as `|S₁₁| = 1.0000`, `|S₂₁| = 0.0008`
+> and `Σ|S|² = 1.06` — a **non-passive open circuit**, shipped to a `.s2p` with nothing but a note.
+>
+> **What v1 does about it (`PlanarFeedExtension`, R-fed-1/R-fed-2).** Before meshing, each port's own
+> polygon is extruded outward from its drawn end face by however much uniform line the calibration is
+> short of. The lead is real metal to the fill; afterwards it is removed EXACTLY, as a matched section
+> in the line's own `Z_c` using the γ the calibration already measured for that cross-section. Three
+> properties are load-bearing and are gated:
+>
+> - **The reference plane is still the user's drawn metal edge.** The lead moves where the error box is
+>   measured, never where the answer is reported — which is what keeps the paragraph above ("one mesh
+>   cell in from the drawn metal edge") true rather than quietly false.
+> - **A feed that is already uniform grows nothing**, and the problem reaches the mesher by reference,
+>   so every number recorded in `src/Engine/Mom/HISTORY.md` stays reproducible bit for bit. Running out
+>   of metal counts as uniform: a short line is a SHORT structure, not a flared one.
+> - **Every case it cannot be sure of is declined, not guessed** — an end face that is not a single
+>   straight segment, a port whose level is ambiguous, a lead that would run into other metal. A
+>   decline is the pre-existing behaviour plus the pre-existing warning, which is the honest fallback;
+>   moving metal the user drew would be a worse failure than the one being fixed.
+>
+> **And the answer is now checked before it ships.** σ_max(S) ≤ 1 was a gate in the test project only.
+> A de-embedded sweep that publishes σ_max > 1 now says so, at the frequency and by how much
+> (R-prt-15) — the excess is the analysis, never the design, and the user has to know that before
+> reading the plot.
+>
+> **What this does NOT fix, and it is the reason `CheckFeedClearance` still exists:** a lead lengthens a
+> feed, it cannot move a neighbour sideways. Metal running alongside the port inside the calibration's
+> own run is still a limitation and is still warned about — and that warning was itself wrong until
+> now (it scanned to the far end of the board, so it fired on every part wider than its port and could
+> never be cleared).
+
 ### 10.7 Solver and the size budget
 
 **v1 (quasi-static).** The matrix is **real, dense, and small** — a few hundred boundary segments, so

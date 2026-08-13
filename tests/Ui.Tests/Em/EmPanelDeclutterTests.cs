@@ -224,23 +224,33 @@ public class EmPanelDeclutterTests
     }
 
     [Fact]
-    public void TheButtonCluster_IsBottomAligned_SoItLandsOnTheChangeLayoutButton()
+    public void TheButtonCluster_IsTopRightAligned_SoItLandsOnTheOutputFileRow()
     {
-        // The identity block's LAST row is the Layout row, and that row's height is its "…" button's
-        // — so bottom-aligning the cluster puts all six buttons on that button's baseline with no
-        // margin arithmetic to go stale. Both halves of that are asserted: the alignment, and the
-        // row order it depends on.
+        // UPDATED, not loosened (owner request, 2026-08-12: "move the Mesh, Simulate, Undo, Redo,
+        // Save and Save As buttons up one row so they are on the same row as the Output file, and
+        // have them hug the right side"). This asserted BOTTOM alignment before, which put the
+        // cluster on the Change Layout button's baseline — the 2026-08-11 arrangement this replaces.
+        //
+        // The mechanism is the same trick against the other end: the identity block's FIRST row is
+        // the output-file row, so top-aligning the cluster lands on it with no margin arithmetic to
+        // go stale. Both halves are asserted — the alignment, and the row order it depends on.
         string xaml = File.ReadAllText(RepoFile("src/Ui/Views/Layout/EmSetupEditorView.axaml"));
 
-        int cluster = xaml.IndexOf("<StackPanel Orientation=\"Horizontal\" VerticalAlignment=\"Bottom\">",
-                                   StringComparison.Ordinal);
-        Assert.True(cluster > 0, "the button cluster is no longer bottom-aligned");
+        int cluster = xaml.IndexOf(
+            "<StackPanel Grid.Column=\"1\" Orientation=\"Horizontal\"", StringComparison.Ordinal);
+        Assert.True(cluster > 0, "the button cluster is no longer the header Grid's second column");
+
+        int clusterEnd = xaml.IndexOf('>', cluster);
+        string open = xaml[cluster..clusterEnd];
+        Assert.Contains("HorizontalAlignment=\"Right\"", open, StringComparison.Ordinal);
+        Assert.Contains("VerticalAlignment=\"Top\"", open, StringComparison.Ordinal);
         Assert.Contains("Name=\"MeshButton\"", xaml[cluster..], StringComparison.Ordinal);
 
-        // Output file above the layout reference — that ordering is what makes the alignment work.
+        // Output file ABOVE the layout reference — that ordering is what makes top-alignment land on
+        // the output-file row rather than on Change Layout.
         Assert.True(xaml.IndexOf("Name=\"BrowseSnpOutputButton\"", StringComparison.Ordinal)
                     < xaml.IndexOf("Name=\"ChangeLayoutButton\"", StringComparison.Ordinal),
-                    "the Layout row must be the identity block's LAST row");
+                    "the output-file row must be the identity block's FIRST row");
     }
 
     [Fact]

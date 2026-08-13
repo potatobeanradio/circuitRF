@@ -86,6 +86,56 @@ compute exactly what they did.
 The constructor also gained an optional `extraInterfaceNodes`. Null — the default — is the shipped
 behaviour exactly: the interface is the nonlinear-facing nodes and nothing else.
 
+## `Mom/` — a PCell taper de-embedded to an OPEN CIRCUIT: the solver now builds its own calibration feed (owner report, 2026-08-12)
+
+**A user dropped a shipped `MKLOPF` into a layout, ported its two ends, and got `|S₁₁| = 1.0000`,
+`|S₂₁| = 0.0008` and `Σ|S|² = 1.06` written to a `.s2p` — a non-passive open circuit, with nothing
+said about it.** `docs/design/layout-view.md` §10.6 now carries the requirement this closes; the
+invariants (R-fed-1, R-fed-2, R-prt-15) and the traps are in `src/Engine/Mom/CLAUDE.md` §3.4/§3.5.
+
+Five things worth knowing from out here:
+
+- **The kernel was never wrong. The DE-EMBEDDING was measuring the wrong structure.** D6's peel forms
+  `(S_meas,ii − a₁₁)/a₂₁²`, and `a₁₁` comes from a calibration standard that is an ISOLATED UNIFORM
+  LINE. A taper's flanks are oblique from the first cell, so `a₁₁` is wrong by ~0.1% — and with
+  `a₂₁² = 9.8e-5` on 0.508 mm RO4350B at 1 GHz **that 0.1% is a 10× error in the answer**. The
+  off-diagonal, which has no cancellation, stayed right the whole time; the diagonal is what
+  collapsed, and `S = Y(I+Γ_i Y)⁻¹` then mixed it into S₂₁.
+- **The fix is that the solver grows and peels its own feed** (`PlanarFeedExtension`), so the user's
+  artwork and reference planes are untouched. Owner's own part, same mesh settings, measured against
+  the shipped `MicrostripKlopfModel` at 50 Ω: **|S₁₁| 0.743 / 0.529 / 0.616 / 0.476 against the
+  model's 0.734 / 0.546 / 0.525 / 0.496** at 1 / 5 / 10 / 20 GHz, passive at every point. Before:
+  a flat open circuit. **The leads are small and targeted** — 1.405 mm at the narrow port, 619 µm at
+  the wide one, which already had 905 µm of near-uniform metal.
+- **A CHEAP FIXTURE CANNOT REPRODUCE IT, and that is worth knowing before sizing a gate.** The
+  amplification is set by the OUTERMOST CELL: with `EdgeMesh` off it is a bulk cell and 1/a₂₁² is a
+  few hundred; with edge grading on (the default) it is 3% of the width and reaches 1e4. Measured on
+  one fixture both ways: **σ_max 1.0075 with the edge mesh, 0.9962 without, and the un-extended and
+  extended answers agree to 3 decimal places in the second case.** Four smaller/faster fixtures were
+  tried (2.9 → 5 mm and 2.9 → 6 mm at 1 and 2 GHz; a 900 µm GaAs taper at 10 and 20 GHz) — all still
+  30–60 s per solve, none reproduced. **The cost is the calibration standards, whose length goes as
+  1/f, so cheap and low-frequency pull against each other.** The end-to-end proof is therefore
+  `Category=Benchmark` (~3 min alone) and the routine tier gates the mesh instead.
+- **The routine gate is a MESH-level one and it is not a proxy**: what the calibration needs is a port
+  whose cross-section IS the standard's. On a bare taper under conformal cells the outermost cells
+  follow the flank, R-cut-4 declines their rooftops, and **a quarter of the drawn face is not driven
+  at all** (2.182 mm of 2.9 mm; 44.9% on the owner's MKlopf). With the lead it is 0.000 µm undriven at
+  both ports. **Assert on `UndrivenMetalM`, not `CutCellCount`** — the counter reads zero on that
+  fixture while a quarter of the face goes undriven, and would have passed vacuously.
+- **`CheckFeedClearance` was measuring something else entirely** — it computed the distance along the
+  feed and never bounded it above, so it reported the smallest lateral gap ANYWHERE on the board. It
+  fired on every part wider than its port and could not be cleared by any amount of feed, which is why
+  it was ignorable. It is now bounded, and judged on the cell's MIDPOINT rather than its near edge:
+  R-fed-1 sizes the lead so the flare begins exactly at the region's far boundary, so a near-edge test
+  re-fires on every extended taper — the unclearable warning reintroduced one line below its own fix.
+
+Gate: `PlanarFeedExtensionTests` — **10 routine in 1 s** (geometry, the peel's closed form, the
+mesh-level port gate, both directions of the clearance warning) + **1 `Category=Benchmark`**. Full
+solution green (`Ui` 6,342, `Core` 1,238, `RfCore` 281, `Harmonica` 126, `WBond` 237, `Firewall` 6);
+`Engine` 1,176 + 1 skip, with only `Hero1BTests`' 10 s wall-clock budget failing under concurrent
+load — the flake the L8a entry below already records as marginal on this machine independently of any
+phase, and which passes alone in **1 s**.
+
 ## `Mom/` — M5: the AIM accelerator is BUILT, and its win is MEMORY rather than time (brief-em-sweep-performance, 2026-08-12) — **ships OFF**
 
 **Read `src/Engine/Mom/CLAUDE.md` §12 before touching `PlanarAim.cs`, `PlanarGmres.cs` or the

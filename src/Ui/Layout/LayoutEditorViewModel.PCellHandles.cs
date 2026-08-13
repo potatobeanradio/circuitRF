@@ -607,15 +607,39 @@ public sealed partial class LayoutEditorViewModel
         // and nothing to undo.
         if (drag.Moved && drag.PendingValue is { } value)
         {
+            // Owner report, 2026-08-12: a grip could be dragged past zero and LEFT there, persisting a
+            // negative width or arm length — which on MTee/MCross draws an arm back over the one that
+            // belongs on that side and reads as the render glitching out. A negative value is fine
+            // WHILE dragging (the owner's own call, and the generator stays sign-transparent so the
+            // grip keeps following the cursor); it is normalised here, at mouse up, which is the one
+            // moment a value stops being transient. PCellDimensionSign owns which parameters this
+            // applies to and why a width recovers exactly while a length only recovers its magnitude.
+            var normalizedValue = PCellDimensionSign.Normalize(
+                drag.Origin.GeneratorId, drag.Handle.Parameter, value);
+
             // Both axes of a two-axis grip commit TOGETHER, in one edit and therefore one undo
             // entry. Committing them separately would make a single drag two undo steps, which is
             // not what the user did.
             var edit = new Dictionary<string, PCellValue>(StringComparer.Ordinal)
             {
-                [drag.Handle.Parameter] = value,
+                [drag.Handle.Parameter] = normalizedValue,
             };
+            bool normalized = normalizedValue != value;
+
             if (drag.CrossHandle is { } cross && drag.PendingCrossValue is { } crossValue)
-                edit[cross.Parameter] = crossValue;
+            {
+                var normalizedCross = PCellDimensionSign.Normalize(
+                    drag.Origin.GeneratorId, cross.Parameter, crossValue);
+                edit[cross.Parameter] = normalizedCross;
+                normalized |= normalizedCross != crossValue;
+            }
+
+            // The pinning translate was measured against the geometry the PREVIEW drew, which is the
+            // geometry of the value we just changed. Re-measure it, or a pinned grip whose value
+            // flipped sign lands the instance twice the anchor's own travel away from where it should
+            // — the anchor moved to -a during the drag and to +a at commit, and the stale delta
+            // corrects for the wrong one of the two.
+            if (normalized) RemeasureAnchorPin(drag, edit);
 
             // R-pch-4b: the parameter edit and the anchor-pinning translate are ONE command, so a
             // pinned drag is still one undo entry. Two commands would let Undo put the geometry back
@@ -630,6 +654,39 @@ public sealed partial class LayoutEditorViewModel
     {
         _pcellHandleDrag = null;
         DrawReadoutText = "";
+    }
+
+    /// <summary>
+    /// Re-reads where the dragged grip's ANCHOR lands for a set of values that is no longer the one
+    /// the preview was drawn from, and recomputes the R-pch-4b pinning translate from it.
+    ///
+    /// <para>Only reached when <see cref="PCellDimensionSign"/> changed something at commit. Reuses
+    /// the drag's own preview cache and the same <see cref="ApplyAnchorPin"/> the move handler uses,
+    /// so the pin is measured exactly one way — reading the regenerated anchor, never predicting it
+    /// (see that method's own note on why prediction cannot work).</para>
+    ///
+    /// <para>A generator that throws, or a handle that vanished, leaves the existing translate in
+    /// place: a slightly-off pin is a far better outcome than losing the edit, and the value itself is
+    /// already correct either way.</para>
+    /// </summary>
+    private void RemeasureAnchorPin(PCellHandleDragState drag, IReadOnlyDictionary<string, PCellValue> edit)
+    {
+        if (!drag.Handle.KeepAnchorFixed) return;
+
+        var merged = new Dictionary<string, PCellValue>(drag.Origin.Parameters, StringComparer.Ordinal);
+        foreach (var (k, v) in edit) merged[k] = v;
+
+        try
+        {
+            var regenerated = drag.Cache.GetOrGenerate(
+                drag.Origin.GeneratorId, drag.Generator, merged, Technology, PCellLayerSelection.Default);
+            if (FindHandle(regenerated.Handles, drag.Handle, drag.HandleIndex) is { } moved)
+            {
+                drag.PreviewHandle = moved;
+                ApplyAnchorPin(drag);
+            }
+        }
+        catch (Exception) { /* keep the translate we have — the parameter edit still stands */ }
     }
 
     private static IReadOnlyDictionary<string, PCellValue> MergedParameters(

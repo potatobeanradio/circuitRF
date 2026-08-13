@@ -356,11 +356,17 @@ public sealed class DockWindowBehaviourTests
     [Fact]
     public void TheInWindowTearOffMenu_IsEmbeddedInDocumentViewsOnly()
     {
+        // This list is the reason the EM Setup gap survived: it enumerated four document views and
+        // EmSetupEditorView was never added when that document type shipped, so a torn-off .cem had
+        // no File menu at all on Windows/Linux and nothing failed. Adding a document type means
+        // adding it HERE too — or, if it deliberately carries its own menu (harmonicaRF and wBond
+        // both do, being standalone applications), to the exemption list below.
         string[] documentViews =
         [
             "src/Ui/Views/Content/SchematicView.axaml",
             "src/Ui/Views/Content/SymbolEditorView.axaml",
             "src/Ui/Views/Layout/LayoutEditorView.axaml",
+            "src/Ui/Views/Layout/EmSetupEditorView.axaml",
             "src/Ui/Views/DataDisplay/DataDisplayView.axaml",
         ];
         foreach (var v in documentViews)

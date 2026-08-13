@@ -3,10 +3,30 @@
              xmlns:em="using:CircuitRF.Ui.Layout.Em"
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
              xmlns:conv="using:CircuitRF.Ui.Converters"
+             xmlns:shared="using:CircuitRF.Ui.Views.Shared"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Layout.EmSetupEditorView"
              x:DataType="em:EmSetupDocument"
              Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- Owner report, 2026-08-12: "the .cem is not saved by the keyboard shortcut when the document
+         is detached from the dock (it does save when docked)."
+
+         Ctrl/Meta+S was bound ONLY on WorkspaceWindow. A torn-off document lives in its own
+         CrfHostWindow, and the only gestures WorkspaceViewModel.WireWindowUndo injects into one are
+         undo/redo — so a detached .cem had no Save binding at all. (An InputGesture on a menu item is
+         display text, never a binding, so the menu could not supply it either.)
+
+         Bound HERE, on the control, which is the same thing DataDisplayView does and works in both
+         hosts: while docked the window-level Ctrl+S is processed first and routes through
+         SaveAllDocumentsCommand, whose SingleDoc branch already dispatches an EmSetupDocument to this
+         same SaveCommand; while floating there is no window binding, so this one is what fires. Bound
+         to the document's OWN command rather than SaveAllDocuments so a floating window never has to
+         resolve "which document is active" to save the one it is showing. -->
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding ViewModel.SaveCommand}"/>
+        <KeyBinding Gesture="Meta+S" Command="{Binding ViewModel.SaveCommand}"/>
+    </UserControl.KeyBindings>
 
     <UserControl.Styles>
         <Style Selector="TextBlock.colhdr">
@@ -77,6 +97,14 @@
 
     <DockPanel>
 
+        <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off. The EM Setup
+             view was the ONE document view that never embedded it (found while fixing the detached-
+             Ctrl+S report above), so a torn-off .cem had no File menu at all on Windows/Linux — no
+             Save, no Close Window, nothing. macOS was unaffected either way: there the shared
+             NativeMenu is attached per-window by WorkspaceViewModel.AttachSharedNativeMenuIfMacOS,
+             which is document-type-agnostic. -->
+        <shared:TornOffFileMenuView DockPanel.Dock="Top"/>
+
         <!-- ── Header: identity + D2's two buttons ──────────────────────────── -->
         <Border DockPanel.Dock="Top"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
@@ -84,20 +112,25 @@
                 Padding="8,6">
             <!-- Owner report, 2026-08-09: "the Mesh button collides with the Browse button at small
                  widths." It was ONE Grid, `*,Auto,Auto,…`: the identity block sat in the star column
-                 and every button was Auto, so once the star column hit its own content's minimum it
-                 stopped yielding and the buttons ran into it. A WrapPanel instead — the identity
-                 block and the button cluster are two items that REFLOW, so a narrow window stacks
-                 them rather than overlapping them. -->
-            <WrapPanel Orientation="Horizontal">
+                 and every button was Auto, so once the star column hit its own content's MINIMUM it
+                 stopped yielding and the buttons ran into it. A WrapPanel fixed that by reflowing.
+
+                 Back to a Grid (owner request, 2026-08-12: the buttons belong on the Output-file row,
+                 hugging the right edge — a WrapPanel can do neither, since it has no notion of "the
+                 far side" and stacks its items top-aligned in source order). The 2026-08-09 collision
+                 does NOT come back, because what caused it is gone: the star column's minimum used to
+                 be its content's, since the identity row was a horizontal StackPanel and a StackPanel
+                 hands its children UNBOUNDED width along its own axis. That row is a Grid now, with
+                 the output-file TextBox in the star column — so the squeeze lands on the TextBox
+                 (down to MinWidth 80, then it clips inside its own box) instead of on the far edge of
+                 a StackPanel that had already decided how wide it was going to be. -->
+            <Grid ColumnDefinitions="*,Auto">
                 <!-- TWO rows, not three (owner request, 2026-08-11). The name and the output file
-                     share a line; the layout reference gets the second one. That buys back a row of
-                     header height AND — the reason it is structured this way rather than by nudging
-                     margins — it makes the LAYOUT row the identity block's LAST row, so the button
-                     cluster bottom-aligning to the block lands exactly on the Change Layout button
-                     with no magic number to go stale. -->
-                <StackPanel Orientation="Vertical" Margin="0,0,14,0">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <TextBlock Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold"
+                     share a line; the layout reference gets the second one. -->
+                <StackPanel Grid.Column="0" Orientation="Vertical" Margin="0,0,14,0">
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
 
                         <!-- Where the s-parameters land (owner request, 2026-08-09). Modelled on the
@@ -105,26 +138,26 @@
                              LostFocus/Enter, and BLANK MEANS THE DEFAULT — shown as the placeholder
                              rather than pre-filled, so the default keeps tracking the layout's name
                              instead of freezing into a literal the moment anything is renamed. -->
-                        <TextBlock Text="Output file:" Classes="colhdr" VerticalAlignment="Center"/>
-                        <TextBox Name="SnpOutputPathBox"
+                        <TextBlock Grid.Column="1"
+                                   Text="Output file:" Classes="colhdr" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="2" Name="SnpOutputPathBox"
                                  Text="{Binding ViewModel.SnpOutputPathText}"
                                  PlaceholderText="{Binding ViewModel.SnpOutputPlaceholder}"
                                  FontSize="11" Padding="4,2"
-                                 MinWidth="120" MaxWidth="420"
+                                 MinWidth="80" MaxWidth="420"
+                                 HorizontalAlignment="Left"
                                  VerticalAlignment="Center"
                                  ToolTip.Tip="Where the s-parameters are written. Blank uses the layout's own name with an .sNp suffix, in the workspace's results folder. A relative path is taken from there; an absolute path is used as given. The .sNp suffix is added from the port count, so you do not need to type it."/>
-                        <Button Name="BrowseSnpOutputButton" Classes="ellipsis" Content="…"
+                        <Button Grid.Column="3" Name="BrowseSnpOutputButton" Classes="ellipsis" Content="…"
                                 ToolTip.Tip="Pick where the s-parameters are written."/>
-                    </StackPanel>
+                    </Grid>
 
                     <!-- Which .clay this setup is FOR, with the way to change it right beside it
                          (owner request, 2026-08-09). A .cem references its layout by path and reads
                          the geometry at run time, so the reference is a first-class, editable field
                          rather than a fact fixed at creation. Labelled now that it has its own row.
 
-                         This row's height is the "…" button's height (every other child is shorter),
-                         so the bottom of the identity block IS the bottom of that button — which is
-                         what the bottom-aligned button cluster to the right lines up against. -->
+                         This row's height is the "…" button's height (every other child is shorter). -->
                     <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,3,0,0">
                         <TextBlock Text="Layout:" Classes="colhdr" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding ViewModel.LayoutStatus}" Classes="colhdr"
@@ -135,16 +168,18 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- The button cluster is ONE WrapPanel item, so it moves as a unit and the buttons
-                     never separate from each other.
+                <!-- The button cluster is ONE Grid cell, so it moves as a unit and the buttons never
+                     separate from each other.
 
-                     BOTTOM-aligned (owner request, 2026-08-11): the identity block's last row is the
-                     Layout row, and that row's height is its "…" button's, so bottom-aligning here
-                     puts all six buttons on the same baseline as that button. No margin arithmetic —
-                     which is the point, since a margin would silently go stale the moment a font
-                     size or a row changed. When the WrapPanel reflows at a narrow width the cluster
-                     drops to its own line and the alignment is simply moot. -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+                     TOP-aligned and in the Auto column (owner request, 2026-08-12: "move these
+                     buttons up one row so they are on the same row as the Output file, hugging the
+                     right side"). Top rather than a margin: the identity block's FIRST row is the
+                     output-file row, so aligning to the top of the block lands on it with no number
+                     to go stale the next time a font size or a row changes. It replaces the
+                     2026-08-11 bottom-alignment, which used the same trick against the block's LAST
+                     row to line up with Change Layout. -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            HorizontalAlignment="Right" VerticalAlignment="Top">
 
                 <!-- D2: Mesh computes the mesh ONLY and never solves. -->
                 <!-- One Mesh button, and it means "mesh THIS setup" — it dispatches to whichever
@@ -214,7 +249,7 @@
                 <Button Name="SaveAsButton" Margin="4,0,0,0" Content="Save As…"
                         ToolTip.Tip="Write this setup to a different .cem. The editor then follows the new file — the original is left exactly as it was on disk."/>
                 </StackPanel>
-            </WrapPanel>
+            </Grid>
         </Border>
 
         <!-- ── The blocking reason, shown LIVE (R-em-13) ────────────────────── -->

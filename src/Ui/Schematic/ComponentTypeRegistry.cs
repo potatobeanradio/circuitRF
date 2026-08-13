@@ -836,19 +836,41 @@ public static class ComponentTypeRegistry
                         new("Miter", "2",   "",    true, UnitDimension.None),
                         .. SignalGroundLayerParams];
 
-            // MTee: microstrip T-junction — W1/W2 (through arms, may differ), W3 (branch).
+            // MTee: microstrip T-junction — W1/W2 (through arms, may differ), W3 (branch), and each
+            // arm's own drawn length L1/L2/L3. The lengths are ARTWORK only (MicrostripTeeModel has
+            // no length term — the junction's reference planes are at the arm edges), but they must
+            // be declared rather than derived: deriving arm length from arm width, as this cell used
+            // to, makes a width gripper move the junction and the other two pins along the
+            // perpendicular axis.
+            //
+            // Each L defaults to its OWN W (owner's call, 2026-08-12) — a square stub per arm, which
+            // is the smallest thing that still reads as a junction with pins at its own edge, and
+            // leaves the user to add real line length as an MLIN rather than inheriting a stub they
+            // did not ask for. Note this is a SHORTER default than the pre-2026-08-12 derived stub
+            // (2.5× the width); that factor survives only as the fallback for a cell authored before
+            // these parameters existed, so nothing already drawn moves.
+            // MicrostripSubstrateInjection.ApplyTechnologyDefaults keeps L == W against the
+            // technology's own synthesised 50 Ω width at placement.
             case SymbolKind.MTee:
                 return [new("W1", "2.9", "mm", true, UnitDimension.Length),
                         new("W2", "2.9", "mm", true, UnitDimension.Length),
                         new("W3", "2.9", "mm", true, UnitDimension.Length),
+                        new("L1", "2.9", "mm", true, UnitDimension.Length),
+                        new("L2", "2.9", "mm", true, UnitDimension.Length),
+                        new("L3", "2.9", "mm", true, UnitDimension.Length),
                         .. SignalGroundLayerParams];
 
-            // MCross: microstrip cross-junction — W1-W4, one per arm.
+            // MCross: microstrip cross-junction — W1-W4 and L1-L4, one pair per arm. Same reasoning
+            // as MTee above, including L defaulting to its own W.
             case SymbolKind.MCross:
                 return [new("W1", "2.9", "mm", true, UnitDimension.Length),
                         new("W2", "2.9", "mm", true, UnitDimension.Length),
                         new("W3", "2.9", "mm", true, UnitDimension.Length),
                         new("W4", "2.9", "mm", true, UnitDimension.Length),
+                        new("L1", "2.9", "mm", true, UnitDimension.Length),
+                        new("L2", "2.9", "mm", true, UnitDimension.Length),
+                        new("L3", "2.9", "mm", true, UnitDimension.Length),
+                        new("L4", "2.9", "mm", true, UnitDimension.Length),
                         .. SignalGroundLayerParams];
 
             // MTaper: linear taper — W1 (pin 1 end), W2 (pin 2 end), L (length). N (section count
