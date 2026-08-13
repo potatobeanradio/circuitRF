@@ -43,18 +43,26 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         SetMarkerImpedance(Markers[0], new Complex(25, 0));
         SetMarkerImpedance(Markers[1], new Complex(80, 10));
 
-        // R-h9b-14 — a new document's default marker set is S1, S2, L1, L2, L3. AddMarkerBand refuses
-        // a band above Terminations.HarmonicCount (asserted rather than relied on: DefaultModel's K=3
-        // is what makes all five fit). Sensible starting impedances, not D9's unmarked near-short — a
-        // marker sitting on the rim at Γ ≈ 1 on first open is not a useful default.
+        // R-h9r2-1 (§2) — SUPERSEDES R-h9b-14's "sensible starting impedances" for S2/L2/L3. A new
+        // document's default marker set is still S1, S2, L1, L2, L3 (AddMarkerBand refuses a band
+        // above Terminations.HarmonicCount, asserted rather than relied on: DefaultModel's K=3 is
+        // what makes all five fit) — but S2/L2/L3 now default to the SAME unmarked-band epsilon
+        // TerminationSet itself already uses for "no marker at all" (Z = 1e-6 Ω), not a distinct
+        // hand-picked value. S1 and L1 are UNCHANGED (25 Ω and 80+j10 Ω) — they are always present
+        // and were never part of this brief's complaint.
+        //
+        // A LOADED .charm is completely unaffected: this only ever runs in the constructor's own
+        // default-model path, never on load — RebuildMarkersFromTerminations (the load path) replaces
+        // Markers wholesale from whatever TerminationSet the file actually carried.
         if (Terminations.HarmonicCount < 3)
             throw new InvalidOperationException(
                 $"the default marker set needs harmonic bands 1..3, but this model's HarmonicCount is " +
                 $"only {Terminations.HarmonicCount}");
 
-        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Source, 2), new Complex(30, -15));
-        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   2), new Complex(15, 20));
-        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   3), new Complex(10, -10));
+        var unmarked = new Complex(TerminationSet.UnmarkedBandOhms, 0);
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Source, 2), unmarked);
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   2), unmarked);
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   3), unmarked);
     }
 
     // ── the circuit ──────────────────────────────────────────────────────────
@@ -67,6 +75,25 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
     /// <summary>Every marker, once. Both Smith panels hold this same list (R-h45-3).</summary>
     public ObservableCollection<HarmonicaMarker> Markers { get; } = [];
+
+    /// <summary>
+    /// R-h9r2-5 (§3) — the marker promoted to the top of the z-order for THIS SESSION, by having been
+    /// successfully grabbed (its own round marker, or its intrinsic glyph — <see cref="HarmonicaGesture.
+    /// PointerDown"/> is the one place this is set). Consulted by both the renderer
+    /// (<see cref="HarmonicaMarkerZOrder"/>) and <see cref="HarmonicaHitTest.Resolve"/>, so a click and
+    /// what it visually promotes can never disagree. <b>Session state only — never persisted to
+    /// <c>.charm</c></b>: <c>CharmIo</c> has no field for it, and it is never re-seeded from a load.
+    /// </summary>
+    public HarmonicaMarker? TopmostMarker { get; private set; }
+
+    /// <summary>Promotes <paramref name="marker"/> to the top of the z-order (R-h9r2-5). A no-op if it
+    /// is already there — no redundant redraw for a marker the user is still dragging.</summary>
+    public void PromoteMarker(HarmonicaMarker marker)
+    {
+        if (ReferenceEquals(TopmostMarker, marker)) return;
+        TopmostMarker = marker;
+        RedrawRequested?.Invoke();
+    }
 
     /// <summary>
     /// R-h7-5/7 — the traces the user picked over the §5 <c>DataSet</c>. Each draws into its own
@@ -312,6 +339,21 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// R-h9r2-10 — the context menu's "Remove L2": removes the marker and lets the band fall back to
+    /// D9's unmarked near-short, as ONE frame request rather than a remove-then-set pair.
+    /// <see cref="TerminationSet.Z"/> already answers <c>UnmarkedBandOhms</c> for any band
+    /// <see cref="TerminationSet.Remove"/> has taken out — so "removed" and "set to Z = 1e-6" are the
+    /// same internal state (§2's own point) and there is nothing left to write before requesting the
+    /// re-solve. Refuses band 1 exactly as <see cref="RemoveMarkerBand"/> already does, on both sides.
+    /// </summary>
+    public bool RemoveMarkerAndShort(HarmonicaMarker marker)
+    {
+        if (!RemoveMarkerBand(marker.Side, marker.Band)) return false;
+        RequestScheduledFrame(dragging: false);
+        return true;
+    }
+
     /// <summary>Markers ▸ Reset to defaults — back to S1 and L1 alone, at 50 Ω.</summary>
     public void ResetMarkers()
     {
@@ -329,6 +371,37 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         if (mag > 0.999) gamma = gamma / mag * 0.999;
         SetMarkerImpedance(marker, HarmonicaDataSet.ImpedanceOf(gamma, Model.Settings.Z0));
     }
+
+    /// <summary>
+    /// R-h9r2-8 — writes a marker's VSWR-circle radius, from a drag on its handle.
+    ///
+    /// <para><b>No re-solve, unlike every other marker drag.</b> The overlay is a display annotation
+    /// over an already-solved termination (§9's own framing) — it neither reads nor writes anything the
+    /// circuit depends on, so there is no frame to request. <see cref="RedrawRequested"/> alone is
+    /// enough to move the circle on screen; <see cref="DirtyChanged"/> marks the document unsaved, the
+    /// same as every other <c>.charm</c>-persisted edit.</para>
+    /// </summary>
+    public void SetMarkerVswr(HarmonicaMarker marker, double vswr)
+    {
+        marker.VswrValue = HarmonicaVswrHandle.VswrOf(HarmonicaVswrHandle.RhoOf(vswr));
+        RedrawRequested?.Invoke();
+        DirtyChanged?.Invoke();
+    }
+
+    /// <summary>R-h9r2-8's context-menu toggle — flips the overlay on/off with the same no-re-solve
+    /// reasoning as <see cref="SetMarkerVswr"/>; <see cref="HarmonicaMarker.VswrValue"/> itself is
+    /// untouched, so re-enabling shows the last value rather than resetting to the 2.0 default.</summary>
+    public void ToggleMarkerVswrEnabled(HarmonicaMarker marker)
+    {
+        marker.VswrEnabled = !marker.VswrEnabled;
+        RedrawRequested?.Invoke();
+        DirtyChanged?.Invoke();
+    }
+
+    /// <summary>R-h9r2-9's context-menu toggle. Session state, like the field it flips — no
+    /// <see cref="DirtyChanged"/>, and no re-solve: nothing about the CIRCUIT changes until the next
+    /// drag actually lands somewhere different.</summary>
+    public void ToggleMarkerSnapToGrid(HarmonicaMarker marker) => marker.SnapToGridEnabled = !marker.SnapToGridEnabled;
 
     // ── R-h7-3 — the §7.5 inputs ─────────────────────────────────────────────
 
@@ -453,6 +526,11 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var terms = Terminations.Clone();
         var marks = Markers.ToArray();
 
+        // R-h9r2-1 — snapshotted on the UI thread, before submit, matching the pattern every other
+        // pool-submitting method already follows for Model/Terminations/Markers.
+        var prevPower = Frame.SmithPower;
+        var prevEff   = Frame.SmithEfficiency;
+
         IsSolving     = true;
         IsSolvingGrid = !opt.SkipContours;
         var onProgress    = GridProgressReporter(opt);
@@ -460,7 +538,8 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         return _pool.Submit((worker, ct) =>
         {
             var ctx = worker.ForceRebuildContext(model);
-            return _solver.Solve(ctx, terms, marks, opt, worker.Grid, ct, onProgress, readoutFormat);
+            return _solver.Solve(ctx, terms, marks, opt, worker.Grid, ct, onProgress, readoutFormat,
+                                  prevPower, prevEff);
         });
     }
 
@@ -482,6 +561,37 @@ public sealed partial class HarmonicaViewModel : ObservableObject
             {
                 DcivVgsMin = vgsMin, DcivVgsMax = vgsMax, DcivVgsSteps = vgsSteps,
                 DcivVdsMin = vdsMin, DcivVdsMax = vdsMax, DcivVdsSteps = vdsSteps,
+            },
+        };
+        DirtyChanged?.Invoke();
+        RequestScheduledFrame(dragging: false);
+        return true;
+    }
+
+    /// <summary>
+    /// R-h9r2-18/18a — the Power Sweep dialog's write-back: Start/Stop/Step, the tickle
+    /// (enabled + its absolute level), and <c>ExactCompressionSolve</c>, all together. <b>Validated
+    /// BEFORE anything is written</b> (R-h9b-12's own rule): an invalid candidate never touches
+    /// <see cref="Model"/>, so the sweep on screen stays exactly what it was rather than reverting
+    /// after the fact. Not structural — see <see cref="CircuitModel.StructuralKey"/>, which this
+    /// leaves untouched — so this is an ordinary value re-solve, no context rebuild.
+    /// </summary>
+    /// <returns>False when the range fails <see cref="PowerSweepValidation.IsValidRange"/> or the
+    /// tickle fails <see cref="PowerSweepValidation.IsValidTickle"/>.</returns>
+    public bool ApplyPowerSweepSettings(double start, double stop, double step,
+                                        bool tickleEnabled, double tickleDbm, bool exactCompressionSolve,
+                                        out int pointCount)
+    {
+        if (!PowerSweepValidation.IsValidRange(start, stop, step, out pointCount)) return false;
+        if (tickleEnabled && !PowerSweepValidation.IsValidTickle(tickleDbm, start)) return false;
+
+        Model = Model with
+        {
+            Settings = Model.Settings with
+            {
+                PinStartDbm = start, PinMaxDbm = stop, PinStepDbm = step,
+                TickleEnabled = tickleEnabled, TickleDbm = tickleDbm,
+                ExactCompressionSolve = exactCompressionSolve,
             },
         };
         DirtyChanged?.Invoke();
@@ -560,7 +670,8 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         {
             var ctx = EnsureContext();
             var opt = (options ?? new HarmonicaSolver.Options()) with { IntrinsicPlane = IntrinsicPlane };
-            var frame = _solver.Solve(ctx, Terminations, [.. Markers], opt, readoutFormat: ReadoutFormatLookup());
+            var frame = _solver.Solve(ctx, Terminations, [.. Markers], opt, readoutFormat: ReadoutFormatLookup(),
+                                      previousPower: Frame.SmithPower, previousEfficiency: Frame.SmithEfficiency);
             Frame      = frame with { PowerSweep = frame.PowerSweep with { XUnit = PowerSweepXUnit } };
             SolveError = null;
         }
@@ -591,12 +702,27 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// (D2). The solver itself IS shared, deliberately — tier C's DCIV cache lives on it and must be
     /// computed once, not once per worker.</para>
     /// </summary>
-    public long RequestFrame(HarmonicaSolver.Options? options = null)
+    /// <param name="gridPointOverride">
+    /// R-h9r2-4, Option 1 — while a single grid point is being dragged, the grid itself is frozen
+    /// (R-h9r2-2 forces every drag to <c>SkipContours</c>), so without this the dragged point's own
+    /// glyph would sit still until release. Splices <c>(Index, Gamma)</c> into the CARRIED
+    /// <c>GridPoints</c> list for display only — cheaper than giving the grid-point drag its own
+    /// live single-point solve, and it is what "contours stay frozen until release either way" means
+    /// in practice: the polylines/levels/optimum carried forward are untouched, only the one dot's
+    /// drawn position moves.
+    /// </param>
+    public long RequestFrame(HarmonicaSolver.Options? options = null,
+                             (int Index, Complex Gamma)? gridPointOverride = null)
     {
         var opt   = (options ?? new HarmonicaSolver.Options()) with { IntrinsicPlane = IntrinsicPlane };
         var model = Model;
         var terms = Terminations.Clone();
         var marks = Markers.ToArray();
+
+        // R-h9r2-1 — snapshotted on the UI thread, before submit, so a grid-less frame this request
+        // produces can carry the currently-displayed layer forward.
+        var prevPower = ApplyGridPointOverride(Frame.SmithPower,      gridPointOverride);
+        var prevEff   = ApplyGridPointOverride(Frame.SmithEfficiency, gridPointOverride);
 
         IsSolving     = true;
         IsSolvingGrid = !opt.SkipContours;
@@ -605,8 +731,21 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         return _pool.Submit((worker, ct) =>
         {
             var ctx = worker.EnsureContext(model);
-            return _solver.Solve(ctx, terms, marks, opt, worker.Grid, ct, onProgress, readoutFormat);
+            return _solver.Solve(ctx, terms, marks, opt, worker.Grid, ct, onProgress, readoutFormat,
+                                  prevPower, prevEff);
         });
+    }
+
+    /// <summary>See <see cref="RequestFrame"/>'s <c>gridPointOverride</c> parameter.</summary>
+    private static SmithPanelData? ApplyGridPointOverride(SmithPanelData? panel, (int Index, Complex Gamma)? o)
+    {
+        if (panel is null || o is null) return panel;
+        var (index, gamma) = o.Value;
+        if (index < 0 || index >= panel.GridPoints.Count) return panel;
+
+        var points = panel.GridPoints.ToArray();
+        points[index] = points[index] with { Gamma = gamma };
+        return panel with { GridPoints = points };
     }
 
     /// <summary>
@@ -696,17 +835,27 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     {
         var plan = Scheduler.NextPlan(dragging);
         LastPlan = plan;
-        return RequestFrame(OptionsFor(plan));
+        return RequestFrame(OptionsFor(plan, dragging));
     }
 
-    /// <summary>One place a <see cref="FramePlan"/> becomes solver options, so the scheduled path and
-    /// the inverse-drag path cannot drift apart about what a rung means.</summary>
-    private HarmonicaSolver.Options OptionsFor(FramePlan plan) => new()
+    /// <summary>
+    /// One place a <see cref="FramePlan"/> becomes solver options, so the scheduled path and the
+    /// inverse-drag path cannot drift apart about what a rung means.
+    /// </summary>
+    /// <param name="dragging">
+    /// R-h9r2-2 — a drag ALWAYS skips the grid, regardless of which ladder rung the scheduler picked.
+    /// §1.1's own finding is that live contour generation during a drag is too slow to be worth
+    /// having at all (report 2), and Finding A / R-h9r2-1's carry-forward is what keeps the previous
+    /// contour layer on screen instead of publishing empty lists while this is in effect. The
+    /// ladder's CoarseRaster/CoarseGrid rungs still exist (a released drag can still be mid-recovery
+    /// from one), but nothing dragging=true ever asks for them to run a grid.
+    /// </param>
+    private HarmonicaSolver.Options OptionsFor(FramePlan plan, bool dragging = false) => new()
     {
         Rings            = plan.Rings,
         Spokes           = plan.Spokes,
         RasterResolution = plan.RasterResolution,
-        SkipContours     = plan.SkipContours,
+        SkipContours     = dragging || plan.SkipContours,
         Quality          = plan.Quality,
         AtPavlDbm        = PlacedCursorPinDbm,
         EfficiencyMetric = EfficiencyMetric,
@@ -723,6 +872,40 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         // imported or hand-placed would silently answer a different question from the one they asked.
         GammaGrid        = CustomGrid,
     };
+
+    /// <summary>
+    /// Finding B (§1.1) — whether <paramref name="side"/>/<paramref name="band"/> is the plane/band
+    /// the contour grid currently sweeps (§6.5's document-wide selectors). <c>ContourGrid</c>'s own
+    /// <c>_reusableAgainst</c> state key deliberately excludes the swept band's OWN termination value
+    /// — "the band the grid sweeps is overwritten per point and says nothing about what a held point
+    /// was solved at" — so a release that only moved THAT band's termination is provably a contour
+    /// no-op: nothing the grid would recompute could have changed.
+    /// </summary>
+    private bool IsSweptBand(TerminationSideKind side, int band)
+    {
+        var mapped = side == TerminationSideKind.Source ? TerminationSide.Source : TerminationSide.Load;
+        return mapped == GridSide && band == GridHarmonic;
+    }
+
+    /// <summary>
+    /// R-h9r2-3 — the single routing point for a marker drag's RELEASE, used identically by
+    /// <c>HarmonicaGesture.Apply</c>'s <c>ExtrinsicMarker</c> branch and by
+    /// <see cref="DragIntrinsicGlyph"/>. R-h9r2-2's <see cref="OptionsFor"/> already forces
+    /// <c>SkipContours = true</c> for every <c>dragging: true</c> request; this covers the moment the
+    /// pointer comes up. When the released band IS the swept plane/band (Finding B, above), the grid
+    /// is skipped there too — carrying the pre-drag contour layer forward (R-h9r2-1) instead of
+    /// paying for a re-solve that would publish the identical result.
+    /// </summary>
+    public long RequestFrameOnMarkerRelease(TerminationSideKind side, int band, bool dragging)
+    {
+        if (!dragging && IsSweptBand(side, band))
+        {
+            var plan = Scheduler.NextPlan(dragging: false);
+            LastPlan = plan;
+            return RequestFrame(OptionsFor(plan, dragging: false) with { SkipContours = true });
+        }
+        return RequestScheduledFrame(dragging);
+    }
 
     // ── the Γ grid (§6.4 / R-h7-11) ──────────────────────────────────────────
 
@@ -788,8 +971,19 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     }
 
     /// <summary>
-    /// One frame of a grid-point drag: move sample <paramref name="index"/> to
-    /// <paramref name="gamma"/> and re-solve <b>only that point</b> (R-h7-12).
+    /// One frame of a grid-point drag. <b>R-h9r2-4, Option 1</b> — chosen over giving the drag its
+    /// own live single-point solve, because it is cheaper and R-h9r2-2 now forces every drag
+    /// (grid-point drags included) to <c>SkipContours</c>, so there is no grid build in flight to
+    /// attach a single-point solve to anyway:
+    ///
+    /// <para><b>Mid-drag</b> (<paramref name="dragging"/> true), <see cref="CustomGrid"/> is left
+    /// UNTOUCHED — the contour layer <see cref="RequestFrame"/>'s <c>gridPointOverride</c> carries
+    /// forward (R-h9r2-1) is exactly the pre-drag one, and the dragged point's own glyph moves live
+    /// by splicing <paramref name="gamma"/> into the CARRIED <c>GridPoints</c> for display only.</para>
+    ///
+    /// <para><b>On release</b>, the point is committed into <see cref="CustomGrid"/> for real and
+    /// resolved with <see cref="HarmonicaSolver.Options.ReuseUnchangedGridPoints"/> — R-h7-12's own
+    /// point reuse, which is what keeps this to ~1 Γ sample rather than the whole grid.</para>
     ///
     /// <para>Γ is clamped just inside the unit circle: the grid sweeps a passive load termination and
     /// Γ = 1 is an open, whose impedance the closure cannot represent.</para>
@@ -802,16 +996,21 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         double mag = gamma.Magnitude;
         if (mag > 0.995) gamma = gamma / mag * 0.995;
 
-        var next = grid.ToArray();
-        next[index] = gamma;
-        CustomGrid  = next;
-        DirtyChanged?.Invoke();
+        if (!dragging)
+        {
+            var next = grid.ToArray();
+            next[index] = gamma;
+            CustomGrid  = next;
+            DirtyChanged?.Invoke();
 
-        // The scheduler still owns the rung (R-h6-4); what this adds is the reuse flag, which is
-        // what makes the frame cost one Γ sample rather than the whole grid.
-        var plan = Scheduler.NextPlan(dragging);
+            var releasePlan = Scheduler.NextPlan(dragging: false);
+            LastPlan = releasePlan;
+            return RequestFrame(OptionsFor(releasePlan, dragging: false) with { ReuseUnchangedGridPoints = true });
+        }
+
+        var plan = Scheduler.NextPlan(dragging: true);
         LastPlan = plan;
-        return RequestFrame(OptionsFor(plan) with { ReuseUnchangedGridPoints = true });
+        return RequestFrame(OptionsFor(plan, dragging: true), gridPointOverride: (index, gamma));
     }
 
     /// <summary>Ends a grid-point drag.</summary>
@@ -994,7 +1193,12 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         int idx = Markers.IndexOf(marker);
         if (idx >= 0 && idx < _inverseTargets.Length) _inverseTargets[idx] = targetGamma;
 
-        return RequestInverseFrame(dragging);
+        // R-h9r2-3 — applies identically to the extrinsic case: on release, if the dragged marker's
+        // own band is the plane/band the contour grid currently sweeps (Finding B), the grid is
+        // skipped there too rather than re-solved for a result the swept band's own value could not
+        // have changed.
+        bool forceSkip = !dragging && IsSweptBand(marker.Side, marker.Band);
+        return RequestInverseFrame(dragging, forceSkip);
     }
 
     /// <summary>Ends the drag. The solver — and with it the Jacobian — is dropped; the next drag
@@ -1010,7 +1214,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// runs on a worker exactly as the forward one does, against that worker's own context, and the
     /// answer comes back on the frame for the view to apply.
     /// </summary>
-    private long RequestInverseFrame(bool dragging)
+    private long RequestInverseFrame(bool dragging, bool forceSkipContours = false)
     {
         var solver  = _inverse!;
         var targets = (Complex[])_inverseTargets.Clone();
@@ -1018,7 +1222,8 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var plan    = Scheduler.NextPlan(dragging);
         LastPlan    = plan;
 
-        var baseOptions = OptionsFor(plan);
+        var baseOptions = OptionsFor(plan, dragging);
+        if (forceSkipContours) baseOptions = baseOptions with { SkipContours = true };
         var model  = Model;
         var marks  = Markers.ToArray();
         var band   = _inverseMarker is { } m
@@ -1030,6 +1235,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var  solverOwn = solver;
         var  onProgress    = GridProgressReporter(baseOptions);
         var  readoutFormat = ReadoutFormatLookup();
+
+        // R-h9r2-1 — same snapshot-before-submit convention as RequestFrame/RequestForcedFrame.
+        var prevPower = Frame.SmithPower;
+        var prevEff   = Frame.SmithEfficiency;
 
         IsSolving     = true;
         IsSolvingGrid = !baseOptions.SkipContours;
@@ -1072,7 +1281,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                     marks[i].Gamma = step.Gammas[i];
 
             var frame = _solver.Solve(ctx, terms, marks, baseOptions with { Reachable = reach },
-                                      worker.Grid, ct, onProgress, readoutFormat);
+                                      worker.Grid, ct, onProgress, readoutFormat, prevPower, prevEff);
 
             return frame with
             {
@@ -1149,7 +1358,11 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
     public string ToCharmJson()
         => CharmIo.Write(Model, Terminations, Appearance, Layout,
-                         [.. PickedTraces.Select(t => new CharmIo.CharmTrace(t.Spec, t.PanelId, t.Label))]);
+                         [.. PickedTraces.Select(t => new CharmIo.CharmTrace(t.Spec, t.PanelId, t.Label))],
+                         [.. Markers.Where(m => m.VswrEnabled)
+                                    .Select(m => new CharmIo.CharmMarkerVswr(
+                                        m.Side == TerminationSideKind.Source ? TerminationSide.Source : TerminationSide.Load,
+                                        m.Band, m.VswrValue))]);
 
     /// <summary>Loads a <c>.charm</c>. Unresolved references come back so the caller can offer to
     /// re-point them rather than losing the document.</summary>
@@ -1166,6 +1379,19 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
         Terminations = c.Terminations;
         RebuildMarkersFromTerminations();
+
+        // R-h9r2-8 — VSWR overlay state is per-marker session state that RebuildMarkersFromTerminations
+        // just wiped (it rebuilds Markers wholesale); re-apply what was persisted, matched by Side/Band.
+        foreach (var entry in c.Vswr)
+        {
+            var side = entry.Side == TerminationSide.Source ? TerminationSideKind.Source : TerminationSideKind.Load;
+            var marker = Markers.FirstOrDefault(m => m.Side == side && m.Band == entry.Band);
+            if (marker is not null)
+            {
+                marker.VswrEnabled = true;
+                marker.VswrValue   = entry.Value;
+            }
+        }
 
         Appearance = c.Appearance;
         Layout     = c.Layout;

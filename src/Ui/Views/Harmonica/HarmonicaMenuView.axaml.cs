@@ -107,6 +107,23 @@ public partial class HarmonicaMenuView : UserControl
     /// <item>docked, no focus: stay attached to <c>this</c> — inert, exactly as XAML left it.</item>
     /// </list>
     /// </summary>
+    /// <remarks>
+    /// R-h9r2-12 — owner-reported: switching the OS colour theme to dark crashed the app with
+    /// <c>ArgumentException("The menu being updated does not match.")</c> out of
+    /// <c>AvaloniaNativeMenuExporter.Update</c>, thrown from the ATTACH call below (the same exception,
+    /// from the same interop layer, as <see cref="DetachNativeMenuFromWindow"/>'s own guarded case — see
+    /// that method's doc comment). A theme change fires <c>AttachedToVisualTree</c> here, and
+    /// <c>ReferenceEquals(_attachedTo, desiredTarget)</c> found them NOT equal, so this proceeded to
+    /// attach and the platform exporter refused it — meaning <c>_attachedTo</c> and what the exporter
+    /// itself currently holds had already diverged BEFORE this call, most likely because the OS
+    /// appearance-change notification and this view's own <c>AttachedToVisualTree</c>/
+    /// <c>ActualThemeVariantChanged</c> handling (R-h9a-8) both touch this window's native menu around
+    /// the same theme transition, on cocoa's own callback vs. Avalonia's dispatcher — a genuine
+    /// Avalonia.Native race this view cannot see into or repair by re-attaching harder (not headlessly
+    /// reproducible; not confirmed further than this). What this method controls is making sure that
+    /// divergence can never again take the application down with it, and clearing it once found rather
+    /// than trusting stale bookkeeping.
+    /// </remarks>
     private void RecomputeAttachment()
     {
         if (!OperatingSystem.IsMacOS() || _ownMenu is null) return;
@@ -123,9 +140,34 @@ public partial class HarmonicaMenuView : UserControl
         // R-h9a-1: at any instant a given NativeMenu instance is set on at most one AvaloniaObject.
         // Detach from wherever it currently is BEFORE attaching it elsewhere — attaching the SAME
         // instance to two AvaloniaObjects at once is exactly what crashed AvaloniaNativeMenuExporter.
-        if (_attachedTo is { } current) NativeMenu.SetMenu(current, null);
-        NativeMenu.SetMenu(desiredTarget, _ownMenu);
-        _attachedTo = desiredTarget;
+        //
+        // R-h9r2-12 — detach defensively, not only from where OUR bookkeeping thinks we are: after a
+        // visual-tree event our _attachedTo field can disagree with what the platform exporter
+        // believes it holds (that disagreement is the crash above), so clear the DESIRED target's menu
+        // too, before setting it — cheap, and it removes one more way for the two to disagree. Guarded
+        // exactly like the known-crashing detach in DetachNativeMenuFromWindow: a failed clear here
+        // costs nothing, an unhandled exception costs the whole application.
+        if (_attachedTo is { } current && !ReferenceEquals(current, desiredTarget))
+        {
+            try { NativeMenu.SetMenu(current, null); } catch (Exception) { }
+        }
+        try { NativeMenu.SetMenu(desiredTarget, null); } catch (Exception) { }
+
+        try
+        {
+            NativeMenu.SetMenu(desiredTarget, _ownMenu);
+            _attachedTo = desiredTarget;
+        }
+        catch (Exception)
+        {
+            // A failed menu-bar attach costs a menu bar; an unhandled exception here costs the whole
+            // application, and the two are not close (owner-reported crash, R-h9r2-12). Left cleared
+            // rather than restored to its old value: the old value is already known-stale the instant
+            // SetMenu refuses it (the exporter's own state no longer matches what we last set there),
+            // so keeping it would make the NEXT AttachedToVisualTree's ReferenceEquals early-return
+            // skip a retry this document actually needs.
+            _attachedTo = null;
+        }
     }
 
     /// <summary>

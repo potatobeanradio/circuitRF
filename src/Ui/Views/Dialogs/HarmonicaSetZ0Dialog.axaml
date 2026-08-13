@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaSetZ0Dialog"
+        Title="Set Z0"
+        Width="320" Height="150"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    R-h9r2-20 — a second SURFACE onto the same write §7.5's Z0 input row already makes: this dialog
+    calls HarmonicaViewModel.ApplyInput(HarmonicaInputs.KeyZ0, text) and nothing else, so the strip row
+    and this menu can never drift apart on validation, undo or structural classification.
+  -->
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14">
+
+    <TextBlock Grid.Row="0" Text="Smith-chart reference impedance (Z0)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+      <TextBox x:Name="Z0Box" Grid.Column="0" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="1" Text="Ω" VerticalAlignment="Center" Opacity="0.7"/>
+    </Grid>
+
+    <TextBlock Grid.Row="2" TextWrapping="Wrap" Opacity="0.7" FontSize="11"
+               Text="Changing Z0 moves no termination — every impedance is unchanged and every marker moves on the chart."/>
+
+    <StackPanel Grid.Row="3" Orientation="Vertical" Spacing="8" Margin="0,8,0,0">
+      <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Content="Close" Click="OnCloseClick" IsDefault="True"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

@@ -21,17 +21,26 @@ public partial class ReadoutStripView : UserControl
 {
     public ReadoutStripView() => InitializeComponent();
 
-    /// <summary>§4 (R1C) — the density floor/ceiling: below ~8 pt the strip is unreadable, above
-    /// ~16 pt it stops being dense, which is §7.5's whole design constraint.</summary>
-    public const double MinFontSize = 8.0;
-    public const double MaxFontSize = 16.0;
+    /// <summary>
+    /// §4 (R1C) — the density floor/ceiling, moved by R-h9r2-21's own +25%: below ~10 pt the strip is
+    /// unreadable, above ~20 pt it stops being dense, which is §7.5's whole design constraint.
+    ///
+    /// <para><b>R-h9r2-21 — "increase text font size by +25%… we may have to tweak this for visual
+    /// appeal, so make this text size a variable in the code."</b> The three constants already were
+    /// variables (this file's own <see cref="FontSizeFor"/> is a pure function of them, unit-testable
+    /// with no live control) — what changed is the NUMBERS: the fraction and both clamps all move by
+    /// 1.25×, or the increase evaporates the moment the strip is small (floor) or large (ceiling)
+    /// enough to be clamped, which at the default §7.1 layout it very nearly was at the top end.</para>
+    /// </summary>
+    public const double MinFontSize = 10.0;
+    public const double MaxFontSize = 20.0;
 
     /// <summary>The fraction of the strip's shorter side its font tracks — the same panel-relative
     /// convention <c>HarmonicaPanelRenderer.TitleBandHeight</c> uses for the Smith panels' title
     /// rows, so the whole document scales by one consistent rule rather than several ad hoc ones.
-    /// Calibrated so the default §7.1 layout at an ordinary window size lands near the old hardcoded
-    /// 10 pt (a ~910×342 px strip: 342 × 0.03 ≈ 10.3).</summary>
-    public const double FontSizeFraction = 0.03;
+    /// R-h9r2-21: 0.03 × 1.25 = 0.0375 (a ~910×342 px strip: 342 × 0.0375 ≈ 12.8, +25% on the old
+    /// ≈10.3).</summary>
+    public const double FontSizeFraction = 0.0375;
 
     /// <summary>
     /// §4 (R1C) — the font-size formula, factored out from <see cref="HarmonicaView"/> so it is
@@ -170,15 +179,34 @@ public partial class ReadoutStripView : UserControl
 
         if (isHeader) return pair;
 
-        // SelectableTextBlock — §7.5's "all text is selectable" survives the column rebuild too.
-        var valueBlock = new SelectableTextBlock
-        {
-            Text              = item.Value,
-            FontSize          = fontSize,
-            FontWeight        = FontWeight.SemiBold,
-            Foreground        = foreground,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        // R-h9r2-25 — rendered from RawValue at the CURRENT format, not from the solve-time Value, so
+        // a right-click format change repaints immediately with no re-solve (see DisplayValue).
+        string displayText = DisplayValue(item, formatFor);
+
+        // R-h9r2-15 — an EDITABLE row is plain TextBlock, never SelectableTextBlock: the latter
+        // consumes a double-tap as select-a-word before it ever reaches this pair's own
+        // DoubleTapped handler below, which is why the inline editor never engaged (owner-reported).
+        // Every other row (§7.5's "all text is selectable") keeps SelectableTextBlock — there is no
+        // competing gesture on them, and an editable row's own value is still reachable for
+        // selection one double-click away, inside the editor itself.
+        bool editable = item.Editable && onCommitEdit is not null;
+        Control valueBlock = editable
+            ? new TextBlock
+              {
+                  Text              = displayText,
+                  FontSize          = fontSize,
+                  FontWeight        = FontWeight.SemiBold,
+                  Foreground        = foreground,
+                  VerticalAlignment = VerticalAlignment.Center,
+              }
+            : new SelectableTextBlock
+              {
+                  Text              = displayText,
+                  FontSize          = fontSize,
+                  FontWeight        = FontWeight.SemiBold,
+                  Foreground        = foreground,
+                  VerticalAlignment = VerticalAlignment.Center,
+              };
         pair.Children.Add(valueBlock);
 
         if (item.Tooltip.Length > 0) ToolTip.SetTip(pair, item.Tooltip);
@@ -186,11 +214,32 @@ public partial class ReadoutStripView : UserControl
         if (item.IsComplex)
             pair.ContextMenu = BuildFormatMenu(item, formatFor, onFormatChanged, onOpenSetDialog);
 
-        if (item.Editable && onCommitEdit is not null)
+        if (editable)
             pair.DoubleTapped += (_, _) =>
-                BeginInlineEdit(pair, valueBlock, item, foreground, fontSize, onCommitEdit);
+                BeginInlineEdit(pair, valueBlock, item, foreground, fontSize, onCommitEdit!,
+                                DisplayValue(item, formatFor));
 
         return pair;
+    }
+
+    /// <summary>
+    /// R-h9r2-25 — the text a row ACTUALLY shows: for an <see cref="HarmonicaReadout.IsComplex"/> row
+    /// with a <see cref="HarmonicaReadout.RawValue"/>, reformatted through
+    /// <see cref="HarmonicaReadoutFormatting"/> at whatever format <paramref name="formatFor"/> says is
+    /// current RIGHT NOW — never the format that was current when <c>HarmonicaSolver.BuildReadouts</c>
+    /// ran. <c>HarmonicaReadoutFormatting</c> stays the ONE formatter; only WHEN it runs moved. Falls
+    /// back to <see cref="HarmonicaReadout.Value"/> for a row with no raw form.
+    /// </summary>
+    private static string DisplayValue(HarmonicaReadout item, Func<string, ReadoutFormat> formatFor)
+    {
+        if (item.IsComplex && item.RawValue is { } raw && item.FormatKey is { } key)
+        {
+            var format = formatFor(key);
+            return item.IsGamma
+                ? HarmonicaReadoutFormatting.FormatGamma(raw, format)
+                : HarmonicaReadoutFormatting.FormatZ(raw, format);
+        }
+        return item.Value;
     }
 
     /// <summary>R-h9c-7's right-click flyout: real/imaginary ⇄ magnitude/angle, plus "Set…" on an
@@ -246,15 +295,29 @@ public partial class ReadoutStripView : UserControl
     /// position; a strip row does not). Commits on Return and LostFocus, reverts on Escape,
     /// <c>e.Handled = true</c> on Return so the hosting window's default button does not take it —
     /// the three-key contract <see cref="SetInputs"/>'s own editors already use.
+    ///
+    /// <para><b>R-h9r2-16</b> — the box is seeded with exactly what the row is CURRENTLY showing (its
+    /// <paramref name="currentDisplayValue"/>, R-h9r2-25's own render-time text — never <c>item.
+    /// Value</c> directly, which after a right-click format change would be the STALE solve-time
+    /// string), unit included (<c>HarmonicaReadoutFormatting.FormatZ</c> always appends " Ω" to a
+    /// termination row; a Γ row carries no unit at all — either way "what's in the box is what the
+    /// row showed" holds without a special case here). Only the VALUE is pre-selected, mirroring the
+    /// schematic editor's own rule (<c>InlineEditSelLength = param.Expression.Length</c> when a unit
+    /// is present) — typing a fresh number replaces the number and leaves the unit in place, rather
+    /// than <c>SelectAll</c> eating it. <see cref="HarmonicaReadoutFormatting.TryParse"/> already
+    /// tolerates the trailing unit back (it strips a trailing 'Ω' before parsing), so committing needs
+    /// no second strip-the-unit step here — and it parses in the row's OWN CURRENT format, which
+    /// R-h9r2-25 makes unambiguous (<c>OnReadoutCommitEdit</c> reads it live, same as this seed does).</para>
     /// </summary>
     private static void BeginInlineEdit(StackPanel pair, Control valueControl, HarmonicaReadout item,
                                         IBrush foreground, double fontSize,
-                                        Func<HarmonicaReadout, string, bool> onCommitEdit)
+                                        Func<HarmonicaReadout, string, bool> onCommitEdit,
+                                        string currentDisplayValue)
     {
         int index = pair.Children.IndexOf(valueControl);
         if (index < 0) return;
 
-        string pristine = item.Value;
+        string pristine = currentDisplayValue;
         var box = new TextBox
         {
             Text              = pristine,
@@ -287,9 +350,22 @@ public partial class ReadoutStripView : UserControl
         box.LostFocus += (_, _) => EndEdit(true);
 
         box.Focus();
-        // A value-with-a-unit cell — select the whole thing, mirroring the schematic's own rule
-        // ("a value-with-a-unit row selects the value only", and here the value IS the whole box).
-        box.SelectAll();
+        box.SelectionStart = 0;
+        box.SelectionEnd   = ValueSelectionLength(pristine);
+    }
+
+    /// <summary>
+    /// R-h9r2-16 — how much of a seeded editor's text is the VALUE, as opposed to a trailing unit
+    /// token. Every editable row's <c>Value</c> carries at most one unit suffix, always a single space
+    /// then the unit itself (<c>HarmonicaReadoutFormatting.FormatZ</c>'s " Ω" is the only one an
+    /// editable row can show today) — neither real/imaginary nor magnitude/angle complex formatting
+    /// ever puts a space anywhere else, so the LAST space is unambiguously the value/unit boundary. A
+    /// Γ row (no unit) has no space at all, and the whole string is the value.
+    /// </summary>
+    private static int ValueSelectionLength(string text)
+    {
+        int space = text.LastIndexOf(' ');
+        return space > 0 ? space : text.Length;
     }
 
     /// <summary>Projects the theme's own readout role to a brush. §7.9.2: Harmonica.ReadoutText

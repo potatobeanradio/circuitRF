@@ -224,6 +224,111 @@ public sealed class HarmonicaPowerSweepAndDcivTests(ITestOutputHelper output)
         Assert.Equal(before + 1, vm.DcivComputeCount);
     }
 
+    // ══ R-h9r2-18 — Power Sweep settings: validated before write, value not structural ══════════
+
+    [Fact]
+    public void PowerSweepSettings_InvalidRange_IsRejected_AndModelIsUntouched()
+    {
+        var vm = new HarmonicaViewModel();
+        var before = vm.Model;
+
+        // start >= stop
+        Assert.False(vm.ApplyPowerSweepSettings(10, 5, 1, true, -50, false, out _));
+        Assert.Same(before, vm.Model);
+
+        // step <= 0
+        Assert.False(vm.ApplyPowerSweepSettings(-10, 50, 0, true, -50, false, out _));
+        Assert.Same(before, vm.Model);
+
+        // over MaxSweepPoints (0.001 dB steps across 60 dB is 60,001 points)
+        Assert.False(vm.ApplyPowerSweepSettings(-10, 50, 0.001, true, -50, false, out _));
+        Assert.Same(before, vm.Model);
+    }
+
+    [Fact]
+    public void PowerSweepSettings_TickleAtOrAboveStart_IsRejected()
+    {
+        var vm = new HarmonicaViewModel();
+        var before = vm.Model;
+
+        Assert.False(vm.ApplyPowerSweepSettings(-10, 50, 1, true, -10, false, out _));   // at Start
+        Assert.Same(before, vm.Model);
+        Assert.False(vm.ApplyPowerSweepSettings(-10, 50, 1, true, 0, false, out _));     // above Start
+        Assert.Same(before, vm.Model);
+
+        // A tickle above Start is fine when the tickle itself is OFF.
+        Assert.True(vm.ApplyPowerSweepSettings(-10, 50, 1, false, 0, false, out _));
+    }
+
+    [Fact]
+    public void PowerSweepSettings_ValidCandidate_IsApplied_AndIsNotStructural()
+    {
+        var vm = new HarmonicaViewModel();
+        Assert.True(vm.ApplyPowerSweepSettings(-6, 20, 2, true, -40, true, out int count));
+        Assert.Equal(14, count);   // (20-(-6))/2 + 1 = 14, exact multiple
+
+        Assert.Equal(-6, vm.Model.Settings.PinStartDbm);
+        Assert.Equal(20, vm.Model.Settings.PinMaxDbm);
+        Assert.Equal(2,  vm.Model.Settings.PinStepDbm);
+        Assert.True(vm.Model.Settings.TickleEnabled);
+        Assert.Equal(-40, vm.Model.Settings.TickleDbm);
+        Assert.True(vm.Model.Settings.ExactCompressionSolve);
+
+        // Not structural — the Pin range must not reset the frame ladder.
+        Assert.Equal(vm.Model.StructuralKey, HarmonicaViewModel.DefaultModel().StructuralKey);
+    }
+
+    [Fact]
+    public void PowerSweepSettings_RoundTripsThroughACharm()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.ApplyPowerSweepSettings(-6, 20, 2, false, -35, true, out _);
+        string json = vm.ToCharmJson();
+
+        var reopened = new HarmonicaViewModel();
+        reopened.LoadCharm(json, null);
+
+        Assert.Equal(-6, reopened.Model.Settings.PinStartDbm);
+        Assert.Equal(20, reopened.Model.Settings.PinMaxDbm);
+        Assert.Equal(2,  reopened.Model.Settings.PinStepDbm);
+        Assert.False(reopened.Model.Settings.TickleEnabled);
+        Assert.Equal(-35, reopened.Model.Settings.TickleDbm);
+        Assert.True(reopened.Model.Settings.ExactCompressionSolve);
+    }
+
+    // ══ R-h9r2-17/19 — the plotted sweep is exactly the ladder, every point, released AND dragging ══
+
+    [Fact]
+    public void SolvedFrame_PowerSweep_IsExactlyTheConfiguredLadder_BothEndpointsIncluded()
+    {
+        var vm = new HarmonicaViewModel();
+        Assert.True(vm.ApplyPowerSweepSettings(-10, 20, 1, true, -50, false, out int expectedCount));
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+
+        var pin = vm.Frame.PowerSweep.PinAvailDbm;
+        output.WriteLine($"{pin.Length} points, expected {expectedCount}: [{string.Join(", ", pin)}]");
+        Assert.Equal(expectedCount, pin.Length);
+        Assert.Equal(-10.0, pin[0], 6);
+        Assert.Equal(20.0,  pin[^1], 6);
+    }
+
+    [Fact]
+    public void SolvedFrame_PowerSweep_HasTheSamePointCount_DraggingOrReleased()
+    {
+        // R-h9r2-19's own gate: "a dragging frame's Steps.Count equals a released frame's."
+        var vm = new HarmonicaViewModel();
+        vm.ApplyPowerSweepSettings(-10, 20, 1, true, -50, false, out int expectedCount);
+
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true, Quality = FrameQuality.Full });
+        int released = vm.Frame.PowerSweep.PinAvailDbm.Length;
+
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true, Quality = FrameQuality.FrozenContours });
+        int dragging = vm.Frame.PowerSweep.PinAvailDbm.Length;
+
+        Assert.Equal(expectedCount, released);
+        Assert.Equal(expectedCount, dragging);
+    }
+
     private static string ReadSource(params string[] parts)
     {
         var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);

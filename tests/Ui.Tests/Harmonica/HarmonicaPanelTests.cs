@@ -717,6 +717,57 @@ public sealed class HarmonicaPanelTests : IDisposable
         Assert.Equal(1e-3,  watts[1], precision: 12);
     }
 
+    // ══ R-h9r2-23 — the "Efficiency (%)" / "PAE (%)" LABEL itself, not just the axis line/ticks ═════
+
+    [Theory]
+    [InlineData(GridMetric.DrainEfficiency)]
+    [InlineData(GridMetric.Pae)]
+    public void PowerSweepPanel_TheY2Label_RendersInEfficiencyTrace_ExactlyOverTheOriginal(GridMetric metric)
+    {
+        const int W = 480, H = 380;
+        var theme = HarmonicaRenderTheme.Dark;
+
+        int n = 33;
+        var pin  = Enumerable.Range(0, n).Select(i => -10.0 + i * 1.25).ToArray();
+        var gain = pin.Select(p => 14.5 - 4.0 * Math.Log(1 + Math.Exp((p - 18) * 0.45))).ToArray();
+        var d = new PowerSweepPanelData
+        {
+            PinAvailDbm   = pin,
+            PoutDbm       = pin.Zip(gain, (p, g) => p + g).ToArray(),
+            GainDb        = gain,
+            EfficiencyPct = pin.Select(p => 72.0 / (1 + Math.Exp(-(p - 14) * 0.30))).ToArray(),
+            CursorIndex   = 20,
+            EfficiencyMetric = metric,
+        };
+
+        var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(d, theme);
+        var rects = CircuitRF.Ui.DataDisplay.AxesRenderer.ComputeLabelHitRects(plot, (W, H));
+        Assert.True(rects.Y2Label.Width > 0 || rects.Y2Label.Height > 0, "expected a Y2 label rect");
+
+        using var surface = SKSurface.Create(new SKImageInfo(W, H));
+        surface.Canvas.Clear(theme.Background);
+        HarmonicaPanelRenderer.DrawPowerSweepPanel(surface.Canvas, (W, H), d, theme, darkMode: true);
+        using var bmp = SKBitmap.FromImage(surface.Snapshot());
+
+        // Sample WITHIN the label's own hit rect (inclusive, clamped to the bitmap) — this is
+        // specifically the LABEL region, not the axis line/ticks (which sit outside the viewport,
+        // to the label's own left, and were already covered by the pre-existing "efficiency trace
+        // renders somewhere" test).
+        int x0 = Math.Max(0, (int)Math.Floor(rects.Y2Label.Left));
+        int x1 = Math.Min(W - 1, (int)Math.Ceiling(rects.Y2Label.Right));
+        int y0 = Math.Max(0, (int)Math.Floor(rects.Y2Label.Top));
+        int y1 = Math.Min(H - 1, (int)Math.Ceiling(rects.Y2Label.Bottom));
+
+        bool found = false;
+        for (int y = y0; y <= y1 && !found; y++)
+        for (int x = x0; x <= x1 && !found; x++)
+            if (NearlySame(bmp.GetPixel(x, y), theme.EfficiencyTrace)) found = true;
+
+        Assert.True(found,
+            $"no {theme.EfficiencyTrace} pixel found within the Y2 label's own hit rect " +
+            $"({x0},{y0})-({x1},{y1}) — the label text must be drawn exactly there.");
+    }
+
     [Fact]
     public void SmithPanel_DrawsContoursWithTheRankedRamp_TopLevelOpaqueLowestFaded()
     {
@@ -752,6 +803,71 @@ public sealed class HarmonicaPanelTests : IDisposable
         Assert.True(innerDist > outerDist * 1.3,
             $"the top level must read as markedly more opaque than the lowest " +
             $"({innerDist:F1} vs {outerDist:F1})");
+    }
+
+    // ══ R-h9r2-13 — both title rows share one font size, and the chart still renders exactly where
+    //    MarkerToCanvas says it does, at more than one panel size ══════════════════════════════════
+
+    [Theory]
+    [InlineData(300, 300)]
+    [InlineData(460, 460)]
+    [InlineData(600, 380)]
+    public void TitledSmithPanel_MarkerStillPaintsExactlyAtMarkerToCanvas(int W, int H)
+    {
+        var theme = HarmonicaRenderTheme.Dark;
+        var marker = new HarmonicaMarker(TerminationSideKind.Load, 1) { Gamma = new Complex(0.35, -0.20) };
+        var data = new SmithPanelData
+        {
+            Title = "Power (dBm)", Subtitle = "Efficiency (%)", Markers = [marker],
+        };
+
+        using var surface = SKSurface.Create(new SKImageInfo(W, H));
+        surface.Canvas.Clear(theme.Background);
+        HarmonicaPanelRenderer.DrawSmithPanel(surface.Canvas, (W, H), data, theme, darkMode: true);
+        using var bmp = SKBitmap.FromImage(surface.Snapshot());
+
+        var at = HarmonicaPanelRenderer.MarkerToCanvas(marker.Gamma, (W, H));
+        int cx = (int)Math.Round(at.X), cy = (int)Math.Round(at.Y);
+
+        var expected = theme.MarkerBand(marker.Band);
+        bool found = false;
+        for (int dx = -1; dx <= 1 && !found; dx++)
+        for (int dy = -1; dy <= 1 && !found; dy++)
+            if (NearlySame(bmp.GetPixel(cx + dx, cy + dy), expected)) found = true;
+
+        Assert.True(found,
+            $"expected marker fill {expected} within 1px of MarkerToCanvas ({cx},{cy}) at {W}x{H} " +
+            "with both title rows drawn — render and the published transform must agree.");
+    }
+
+    [Fact]
+    public void TitleRows_BothUseTheSameFontSize_PerTheOwnersMatchRequest()
+    {
+        string src = ReadSourceFile("src", "Ui", "Harmonica", "Renderers", "HarmonicaPanelRenderer.cs");
+
+        // R-h9r2-13: "make the row 1 text size of the Smith Charts be the same as row 2" — the two
+        // separate fractions (row 1 at 0.052, row 2 at 0.82x that) are gone in favour of one.
+        Assert.DoesNotContain("TitleRow1FontFraction", src, StringComparison.Ordinal);
+        Assert.DoesNotContain("TitleRow2FontFraction", src, StringComparison.Ordinal);
+        Assert.Contains("TitleRowFontFraction", src, StringComparison.Ordinal);
+
+        // DrawTitleRows must build both fonts from the SAME rowSize variable.
+        int m = src.IndexOf("private static void DrawTitleRows(", StringComparison.Ordinal);
+        Assert.True(m >= 0);
+        int mEnd = src.IndexOf("\n    }", m, StringComparison.Ordinal);
+        string body = src[m..mEnd];
+        Assert.Contains("new SKFont(SkiaFonts.PlexBold,    rowSize)", body, StringComparison.Ordinal);
+        Assert.Contains("new SKFont(SkiaFonts.PlexRegular, rowSize)", body, StringComparison.Ordinal);
+    }
+
+    private static string ReadSourceFile(params string[] parts)
+    {
+        var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null &&
+               !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "circuitRF.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        return System.IO.File.ReadAllText(System.IO.Path.Combine([dir!.FullName, .. parts]));
     }
 
     private static IReadOnlyList<(double X, double Y)> Circle(double r, int n)

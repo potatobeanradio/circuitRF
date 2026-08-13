@@ -386,7 +386,7 @@
       "LpToneExpr": "RFfreq",
       "LpToneUnit": "GHz",
       "LpPinStartExpr": "-20",
-      "LpPinMaxExpr": "10",
+      "LpPinMaxExpr": "35",
       "LpPinStepExpr": "1",
       "LpMaxHarmonicExpr": "5",
       "LpSweepExpr": "Load",

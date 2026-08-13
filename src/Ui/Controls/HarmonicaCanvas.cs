@@ -71,8 +71,10 @@ public sealed class HarmonicaCanvas : Control
     public HarmonicaGesture? Gesture => _vm is null ? null : _gesture ??= new HarmonicaGesture(_vm);
 
     /// <summary>R-h6-2 — device pixels per DIP, read PER EVENT rather than cached. Moving a window
-    /// between a Retina display and an external monitor changes it mid-session.</summary>
-    private double RenderScaling => TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+    /// between a Retina display and an external monitor changes it mid-session. Public so the
+    /// context-menu builder (R-h9r2-6) can resolve a right-click through the SAME
+    /// <see cref="HarmonicaHitTest.Resolve"/> a drag uses, at the same radius.</summary>
+    public double RenderScaling => TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
 
     /// <summary>
     /// R-h9b-10/12 — where the last right-click landed, in this canvas's own coordinates. Only

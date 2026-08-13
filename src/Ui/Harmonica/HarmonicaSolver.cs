@@ -44,6 +44,16 @@ public sealed class HarmonicaSolver
     /// <summary>R-h7-12 — how many Γ points the last frame kept rather than re-solved.</summary>
     public int LastGridPointsReused { get; private set; }
 
+    /// <summary>
+    /// R-h9r2-19 lever 1 — the PREVIOUS frame's tier-A sweep, converged spectrum per Pin LEVEL
+    /// (keyed by the level itself, rounded). A marker drag perturbs the termination only slightly
+    /// between frames, so the prior frame's solution AT THE SAME Pin is a far better warm-start seed
+    /// than the ladder's own neighbouring rung — this is what lets every point stay a real solve on
+    /// every frame, drag included, without the frame rate collapsing. Belongs to this solver instance,
+    /// never static (src/Harmonica/CLAUDE.md: "H5 gives each worker its own context").
+    /// </summary>
+    private Dictionary<double, Complex[,]>? _lastSweepLevelSpectra;
+
     /// <summary>Options a frame is solved under. Defaults are the coarse ring set of §6.8, so the
     /// first frame after opening a document is fast rather than correct-and-slow.</summary>
     public sealed record Options
@@ -140,11 +150,21 @@ public sealed class HarmonicaSolver
     /// <param name="ct">
     /// R-h45-9. Threaded into the grid build, whose cancellation point is between Γ points.
     /// </param>
+    /// <param name="previousPower">
+    /// R-h9r2-1 — the PREDECESSOR frame's power-panel data, so a grid-less frame (<c>SkipContours</c>,
+    /// whatever produced it) can carry its <c>Contours</c>/<c>Levels</c>/<c>GridPoints</c>/<c>Optimum</c>
+    /// forward instead of publishing empty ones. Null on the very first frame of a session. Never
+    /// consulted when <c>!opt.SkipContours</c> — a frame that genuinely swept the grid needs nothing
+    /// carried into it.
+    /// </param>
+    /// <param name="previousEfficiency">The efficiency panel's own predecessor, same rule.</param>
     public HarmonicaFrame Solve(HarmonicaContext ctx, TerminationSet terminations,
                                 IReadOnlyList<HarmonicaMarker> markers, Options? options = null,
                                 ContourGrid? grid = null, CancellationToken ct = default,
                                 Action<int, int>? onGridProgress = null,
-                                Func<string, ReadoutFormat>? readoutFormat = null)
+                                Func<string, ReadoutFormat>? readoutFormat = null,
+                                SmithPanelData? previousPower = null,
+                                SmithPanelData? previousEfficiency = null)
     {
         var opt = options ?? new Options();
         LastSolveCount = 0;
@@ -154,22 +174,29 @@ public sealed class HarmonicaSolver
         var stage = System.Diagnostics.Stopwatch.StartNew();
         double tierAMs, gridSolveMs = 0, fitMs = 0, rasterMs = 0;
 
-        // ── tier A: one Pin drive-up at the current terminations ──────────────
+        // ── tier A: the EXPLICIT power sweep at the current terminations (R-h9r2-17/19) ────────
+        // PinSearch.Run stays the contour grid's alone (§5.1's own guardrail) — tier A always drives
+        // the user's own ladder now, every point a real solve, on every frame including a drag.
         ct.ThrowIfCancellationRequested();
-        var sweep = PinSearch.Run(ctx, terminations);
+        var s0 = ctx.Model.Settings;
+        var sweep = PinSearch.Sweep(ctx, terminations, s0.PinStartDbm, s0.PinMaxDbm, s0.PinStepDbm,
+                                    priorLevelSpectra: _lastSweepLevelSpectra);
         LastSolveCount += sweep.Solves;
+        _lastSweepLevelSpectra = sweep.Steps.Count > 0
+            ? sweep.Steps.ToDictionary(st => Math.Round(st.PavlDbm, 6), st => st.Point.V)
+            : _lastSweepLevelSpectra;
         tierAMs = stage.Elapsed.TotalMilliseconds;
 
         // The operating point the glyphs, the loadline and the readouts are all evaluated at: R-h6-11's
         // cursor — the compression point when the user has not placed it, else the nearest step to
-        // where they put it.
-        int cursor = opt.AtPavlDbm is { } placed
-            ? IndexOfNearestPin(sweep.Steps, placed)
-            : sweep.AtCompression is null
-                ? sweep.Steps.Count - 1
-                : IndexOfNearestPin(sweep.Steps, sweep.AtCompression.PavlDbm);
+        // where they put it. R-h9r2-17a: sweep.AtCompression already IS the right spectrum source
+        // (the nearest solved ladder point, or ExactCompressionSolve's one real extra solve) — read
+        // directly rather than round-tripping through Steps by index.
+        var at = opt.AtPavlDbm is { } placed
+            ? (IndexOfNearestPin(sweep.Steps, placed) is var pidx && pidx >= 0 ? sweep.Steps[pidx] : null)
+            : sweep.AtCompression ?? (sweep.Steps.Count > 0 ? sweep.Steps[^1] : null);
 
-        var at = cursor >= 0 && cursor < sweep.Steps.Count ? sweep.Steps[cursor] : null;
+        int cursor = at is null ? -1 : IndexOfNearestPin(sweep.Steps, at.PavlDbm);
 
         // ── the intrinsic plane, read from the published DataSet ──────────────
         //
@@ -212,8 +239,8 @@ public sealed class HarmonicaSolver
         string titleP = HarmonicaTitles.MetricRow(isPowerChart: true,  opt.EfficiencyMetric, compressionDb);
         string titleE = HarmonicaTitles.MetricRow(isPowerChart: false, opt.EfficiencyMetric, compressionDb);
 
-        SmithPanelData smithP = new() { Title = titleP, Subtitle = planeRow, Markers = markers };
-        SmithPanelData smithE = new() { Title = titleE, Subtitle = planeRow, Markers = markers };
+        SmithPanelData smithP = new() { Title = titleP, Subtitle = planeRow, Markers = markers, Z0 = z0 };
+        SmithPanelData smithE = new() { Title = titleE, Subtitle = planeRow, Markers = markers, Z0 = z0 };
 
         if (!opt.SkipContours)
         {
@@ -227,8 +254,13 @@ public sealed class HarmonicaSolver
             LastGridPointsReused = grid.ReusedPointCount;
             gridSolveMs = stage.Elapsed.TotalMilliseconds;
 
-            smithP = BuildSmith(titleP, planeRow, grid, GridMetric.PoutDbm,   markers, opt, ref fitMs, ref rasterMs);
-            smithE = BuildSmith(titleE, planeRow, grid, opt.EfficiencyMetric, markers, opt, ref fitMs, ref rasterMs);
+            smithP = BuildSmith(titleP, planeRow, grid, GridMetric.PoutDbm,   markers, opt, z0, ref fitMs, ref rasterMs);
+            smithE = BuildSmith(titleE, planeRow, grid, opt.EfficiencyMetric, markers, opt, z0, ref fitMs, ref rasterMs);
+
+            // R-h9r2-1 — stamp what this layer was actually solved for, so a LATER grid-less frame
+            // knows whether it may carry this one forward.
+            smithP = smithP with { ContourGridSide = opt.GridSide, ContourGridHarmonic = opt.GridHarmonic };
+            smithE = smithE with { ContourGridSide = opt.GridSide, ContourGridHarmonic = opt.GridHarmonic };
 
             // R-h9b-16 — the FOMs at each optimum come from ONE SOLVE there, never from N separately
             // interpolated surfaces. Not while dragging (§6.8's whole reason to have a ladder) — only
@@ -241,6 +273,17 @@ public sealed class HarmonicaSolver
                 if (smithE.Optimum is { } se)
                     smithE = smithE with { Optimum = SolveAtOptimum(ctx, terminations, opt, se) };
             }
+        }
+        else
+        {
+            // R-h9r2-1 — a grid-less frame (the FrozenContours rung, a drag that now always skips the
+            // grid, or an on-release skip-because-swept-band frame) carries its PREDECESSOR's contour
+            // layer forward rather than publishing empty lists. "FrozenContours means the previous
+            // frame's are ghosted" was the design note's own claim; before this, nothing ghosted them
+            // — they vanished, because Contours/GridPoints/Optimum were only ever filled inside the
+            // block above. One carry-forward path serves every grid-less rung, whatever produced it.
+            smithP = CarryForwardContourLayer(smithP, previousPower, opt);
+            smithE = CarryForwardContourLayer(smithE, previousEfficiency, opt);
         }
 
         if (opt.Reachable is not null)
@@ -265,10 +308,47 @@ public sealed class HarmonicaSolver
         };
     }
 
+    /// <summary>
+    /// R-h9r2-1 — carries a PREDECESSOR panel's contour layer onto <paramref name="current"/>, which
+    /// already carries this frame's own live Title/Subtitle/Markers (built above, before this is
+    /// called) and nothing else. <b>Refused, not defaulted, when the identity does not match</b> —
+    /// compared on <see cref="SmithPanelData.ContourGridSide"/>/<see cref="SmithPanelData.
+    /// ContourGridHarmonic"/> against THIS frame's own <c>opt.GridSide</c>/<c>GridHarmonic</c>, which
+    /// are the two fields <see cref="ContourGrid"/> itself keys reuse on (§6.5's document-wide plane
+    /// and harmonic selectors). A predecessor with no layer at all (never solved, e.g. the very first
+    /// frame of a session) has <c>ContourGridSide == null</c>, which can never equal a real
+    /// <see cref="TerminationSide"/> — so it never carries, and the panel is published empty exactly
+    /// as before this brief.
+    ///
+    /// <para><b>The whole layer or none of it</b> — Contours, Levels, GridPoints and Optimum (plus
+    /// Mxp/Mxe, the plain grid-sample argmax those numbers are drawn from) move together. Contours
+    /// without their own grid points, or an optimum whose surface is gone, is the half-updated
+    /// picture report (3) is about.</para>
+    /// </summary>
+    private static SmithPanelData CarryForwardContourLayer(
+        SmithPanelData current, SmithPanelData? previous, Options opt)
+    {
+        if (previous is null) return current;
+        if (previous.ContourGridSide != opt.GridSide || previous.ContourGridHarmonic != opt.GridHarmonic)
+            return current;
+
+        return current with
+        {
+            Contours            = previous.Contours,
+            Levels               = previous.Levels,
+            GridPoints           = previous.GridPoints,
+            Optimum              = previous.Optimum,
+            Mxp                  = previous.Mxp,
+            Mxe                  = previous.Mxe,
+            ContourGridSide      = previous.ContourGridSide,
+            ContourGridHarmonic  = previous.ContourGridHarmonic,
+        };
+    }
+
     // ── the Smith panels ─────────────────────────────────────────────────────
 
     private static SmithPanelData BuildSmith(string title, string subtitle, ContourGrid grid, GridMetric metric,
-                                             IReadOnlyList<HarmonicaMarker> markers, Options opt,
+                                             IReadOnlyList<HarmonicaMarker> markers, Options opt, double z0,
                                              ref double fitMs, ref double rasterMs)
     {
         // D6's split, taken where it actually happens: Fit is the RBF back-solve (the factorization is
@@ -305,6 +385,7 @@ public sealed class HarmonicaSolver
             Mxp        = grid.Mxp?.Point.Gamma,
             Mxe        = grid.Mxe?.Point.Gamma,
             Optimum    = optimum,
+            Z0         = z0,
         };
     }
 
@@ -458,23 +539,37 @@ public sealed class HarmonicaSolver
 
         if (at is not null)
         {
-            Add("Pin", $"{at.PavlDbm:0.##} dBm", "Available power at the operating point.");
-            Add("Pout", at.PoutW > 0 ? $"{10 * Math.Log10(at.PoutW) + 30:0.##} dBm" : "—",
+            // R-h9r2-17a — a sweep's SweepCompression carries the interpolated (or, with
+            // ExactCompressionSolve on, the one-real-solve) figures AT the compression target; `at`
+            // itself is only the nearest solved ladder point's SPECTRUM. Reading `at`'s own numbers
+            // here would round every figure to the nearest whole dB step — precisely the error
+            // interpolation exists to remove. Null for a Run() result (its own AtCompression already
+            // sits exactly on target), so the fallback is exactly the old behaviour there.
+            var sc = sweep.SweepCompression;
+            double pinDbm  = sc?.PinDbm  ?? at.PavlDbm;
+            double poutDbm = sc?.PoutDbm ?? (at.PoutW > 0 ? 10 * Math.Log10(at.PoutW) + 30 : double.NaN);
+            double gainDb  = sc?.GainDb  ?? at.GainDb;
+            double deFrac  = sc?.De      ?? at.De;
+            double paeFrac = sc?.Pae     ?? at.Pae;
+            double pdcW    = sc?.PdcW    ?? at.PdcW;
+
+            Add("Pin", $"{pinDbm:0.##} dBm", "Available power at the operating point.");
+            Add("Pout", double.IsNaN(poutDbm) ? "—" : $"{poutDbm:0.##} dBm",
                 "Output power at the operating point.");
-            Add("Gain", $"{at.GainDb:0.##} dB", "Transducer gain (Gt) — D9's default criterion.");
-            Add("DE",  $"{at.De * 100:0.#} %",  "Drain efficiency, Pout / Pdc.");
-            Add("PAE", $"{at.Pae * 100:0.#} %", "Power-added efficiency, (Pout − Pin_delivered) / Pdc.");
-            Add("Pdc", $"{at.PdcW:0.###} W", "DC power drawn at the operating point.");
+            Add("Gain", $"{gainDb:0.##} dB", "Transducer gain (Gt) — D9's default criterion.");
+            Add("DE",  $"{deFrac * 100:0.#} %",  "Drain efficiency, Pout / Pdc.");
+            Add("PAE", $"{paeFrac * 100:0.#} %", "Power-added efficiency, (Pout − Pin_delivered) / Pdc.");
+            Add("Pdc", $"{pdcW:0.###} W", "DC power drawn at the operating point.");
         }
 
-        // The marker's EXTRINSIC Γ moved into the Source/Load columns below (as a Z/Γ pair); the
-        // INTRINSIC one stays flat — it is a derived, read-only physical quantity the owner never
-        // asked to relocate, and it has no termination to write back through.
-        foreach (var m in markers)
-            Add($"{m.Name} Γᵢ", HarmonicaReadoutFormatting.FormatComplex(m.GammaIntrinsic, ReadoutFormat.MagnitudeAngle)
-                    + (m.IntrinsicIsOutsideUnitCircle ? "  (|Γ|>1)" : ""),
-                $"{m.Name}'s INTRINSIC reflection (§4.5). |Γ| > 1 is ordinary with conduction-only " +
-                "current, not an error — the glyph is drawn outside the chart on a compressed scale.");
+        // R-h9r2-24 — the per-marker INTRINSIC Γ rows that used to sit on this General line are GONE,
+        // per the owner's own literal request ("redundant because there is a Load column of data
+        // showing the same thing below"). Chosen disposition: REMOVED outright rather than relocated
+        // into the Source/Load columns — the simplest of the two options the brief allows, and the
+        // owner's own words ask for removal, not a move. The quantity is not lost: it is still the
+        // glyph on the chart (§4.5's whole intrinsic-plane machinery), and "intrinsic: not located"
+        // below still reports the one case (a FAILURE to locate the plane) that is not redundant with
+        // anything on screen.
 
         // R-h8-3 — "empty" and "broken" look identical on a panel, so the strip SAYS which it is. A
         // located plane adds no row at all: a permanent "intrinsic plane: fine" is noise.
@@ -499,17 +594,23 @@ public sealed class HarmonicaSolver
             {
                 var z = HarmonicaDataSet.ImpedanceOf(m.Gamma, z0);
 
+                // R-h9r2-25 — RawValue carried alongside the solve-time-formatted Value, so a later
+                // right-click format change repaints this row without a re-solve (ReadoutStripView
+                // reads RawValue through the CURRENT format at render time; Value is the fallback for
+                // a row with none).
                 r.Add(new HarmonicaReadout(
                     $"Z{m.Name}", HarmonicaReadoutFormatting.FormatZ(z, format($"{sideLetter}{m.Band}.Z")),
                     $"{m.Name}'s termination, as an impedance against Z0={FormatZ0(z0)} Ω. " +
                     "Double-click to edit; right-click to switch real/imaginary ⇄ magnitude/angle.",
-                    column, IsComplex: true, Editable: true, Side: side, Band: m.Band, IsGamma: false));
+                    column, IsComplex: true, Editable: true, Side: side, Band: m.Band, IsGamma: false,
+                    RawValue: z));
 
                 r.Add(new HarmonicaReadout(
                     $"Γ{m.Name}", HarmonicaReadoutFormatting.FormatGamma(m.Gamma, format($"{sideLetter}{m.Band}.Gamma")),
                     $"{m.Name}'s termination, as Γ against Z0={FormatZ0(z0)} Ω. " +
                     "Double-click to edit; right-click to switch real/imaginary ⇄ magnitude/angle.",
-                    column, IsComplex: true, Editable: true, Side: side, Band: m.Band, IsGamma: true));
+                    column, IsComplex: true, Editable: true, Side: side, Band: m.Band, IsGamma: true,
+                    RawValue: m.Gamma));
             }
         }
 
@@ -564,7 +665,7 @@ public sealed class HarmonicaSolver
             "delivered current, not the device's own intrinsic gate current. Moves with the load on " +
             "a non-unilateral device, which is why it is read at THIS optimum's own termination " +
             "rather than published as one document-wide number.",
-            column, IsComplex: true));
+            column, IsComplex: true, RawValue: zin));
 
         var vOutFund = ReadComplex(ds, "V_ext", (int)TerminationSide.Load, 1);
         string amPm = double.IsNaN(vOutFund.Real) ? "—" : $"{vOutFund.Phase * 180.0 / Math.PI:0.#}°";

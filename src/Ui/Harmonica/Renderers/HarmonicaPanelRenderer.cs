@@ -50,24 +50,36 @@ public static class HarmonicaPanelRenderer
     /// Data Display Smith plot reads that renderer's own title font and must not move.</summary>
     private const double TitleFontShrink = 0.8;
 
-    /// <summary>Row 1's base font size, as a fraction of the panel's shorter side, BEFORE R-h9b-5's
-    /// 0.8× — the same panel-relative sizing convention every other glyph/marker size in this file
-    /// uses.</summary>
-    private const double TitleRow1FontFraction = 0.052;
-    private const double TitleRow2FontFraction = TitleRow1FontFraction * 0.82;
+    /// <summary>Both title rows' base font size, as a fraction of the panel's shorter side, BEFORE
+    /// R-h9b-5's 0.8× — the same panel-relative sizing convention every other glyph/marker size in
+    /// this file uses.
+    ///
+    /// <para><b>R-h9r2-13 — row 2 used to be 0.82× row 1's fraction; the owner asked for the two rows
+    /// to MATCH ("make the row 1 text size of the Smith Charts be the same as row 2"), so there is now
+    /// only one fraction and one floor, shared by both rows and by <see cref="TitleBandHeight"/>.</b>
+    /// The 0.8× shrink itself (R-h9b-5) is untouched — the owner asked for the rows to match each
+    /// other, not for either to grow.</para>
+    /// </summary>
+    private const double TitleRowFontFraction = 0.052;
 
     /// <summary>
     /// R-h9b-4 — how much of the panel's height the two title rows reserve, in PIXELS, given the row
-    /// font sizes above. Computed from the actual font metrics rather than a fixed fraction, so a very
+    /// font size above. Computed from the actual font metrics rather than a fixed fraction, so a very
     /// short or very tall panel does not waste — or run out of — title space.
+    ///
+    /// <para><b>R-h9r2-13 — the band itself is UNCHANGED in shape (still 1.3× line-height per row plus
+    /// a hair of padding); only the two rows now share one font size instead of row 2 being smaller.
+    /// The chart below therefore shifts down slightly (a taller row 2) — that is the equalisation's own
+    /// footprint, not something hidden. The "too high" complaint is fixed separately, inside the band,
+    /// by <see cref="DrawTitleRows"/>'s own baselines below — moving the text down within an unchanged
+    /// band reduces the gap above the chart without costing any chart real estate.</b></para>
     /// </summary>
     private static double TitleBandHeight((double W, double H) size)
     {
         double m = Math.Min(size.W, size.H);
-        double row1 = Math.Max(7.0, m * TitleRow1FontFraction * TitleFontShrink);
-        double row2 = Math.Max(6.0, m * TitleRow2FontFraction * TitleFontShrink);
+        double row = Math.Max(7.0, m * TitleRowFontFraction * TitleFontShrink);
         // 1.3× line-height per row (ascender/descender headroom) plus a hair of padding above/below.
-        return row1 * 1.3 + row2 * 1.3 + m * 0.01;
+        return row * 1.3 + row * 1.3 + m * 0.01;
     }
 
     // ── §7.2 — the Smith panels ──────────────────────────────────────────────
@@ -82,7 +94,7 @@ public static class HarmonicaPanelRenderer
     /// </summary>
     public static void DrawSmithPanel(SKCanvas canvas, (double W, double H) size,
                                       SmithPanelData d, HarmonicaRenderTheme theme, bool darkMode,
-                                      bool showGridPoints = true)
+                                      bool showGridPoints = true, HarmonicaMarker? topmostMarker = null)
     {
         // R-h9b-4 — the two title rows are drawn OURSELVES, in the panel's own top strip, BEFORE the
         // chart transform below — never through PlotRenderer's CustomTitle (see NewSmithPlot's doc
@@ -146,7 +158,7 @@ public static class HarmonicaPanelRenderer
         // lands in the compressed annulus just outside the rim, and clipping to the viewport would
         // hide exactly the case the compressed scale exists to show.
         DrawIntrinsicGlyphs(canvas, d, tf, theme, chartSize);
-        DrawMarkers(canvas, d, tf, theme, chartSize);
+        DrawMarkers(canvas, d, tf, theme, chartSize, topmostMarker);
 
         canvas.Restore();
         canvas.Restore();
@@ -156,6 +168,16 @@ public static class HarmonicaPanelRenderer
     /// R-h9b-4/5 — the two title rows, centred with the CHART (not the raw panel): both rows share the
     /// chart's own horizontal centre, which for a Smith panel is <c>size.W / 2</c> regardless of the
     /// title band, since the band spans the panel's full width.
+    ///
+    /// <para><b>R-h9r2-13</b> — both rows now share one font size (<see cref="TitleRowFontFraction"/>,
+    /// see that constant's own note). The owner's OTHER complaint ("title text is rendered too high
+    /// above the Smith Chart plot") is fixed here, inside the unchanged band, by anchoring row 2's
+    /// baseline to the BAND'S OWN BOTTOM EDGE (minus the same hair of outer padding
+    /// <see cref="TitleBandHeight"/> reserves) rather than measuring forward from row 1 — that puts the
+    /// title block as close to the chart as the band allows, with row 1 sitting exactly one line-height
+    /// above row 2. Chosen over growing the band: growing it would buy the same closer-to-text look at
+    /// the cost of chart area; this way the chart's own size is untouched (see
+    /// <see cref="TitleBandHeight"/>'s own note on why the band's shape did not need to change).</para>
     /// </summary>
     private static void DrawTitleRows(SKCanvas canvas, (double W, double H) size, double bandH,
                                       SmithPanelData d, HarmonicaRenderTheme theme)
@@ -163,16 +185,15 @@ public static class HarmonicaPanelRenderer
         if (string.IsNullOrEmpty(d.Title) && string.IsNullOrEmpty(d.Subtitle)) return;
 
         double m = Math.Min(size.W, size.H);
-        float row1Size = (float)Math.Max(7.0, m * TitleRow1FontFraction * TitleFontShrink);
-        float row2Size = (float)Math.Max(6.0, m * TitleRow2FontFraction * TitleFontShrink);
+        float rowSize = (float)Math.Max(7.0, m * TitleRowFontFraction * TitleFontShrink);
         float cx = (float)(size.W / 2);
 
-        using var font1 = new SKFont(SkiaFonts.PlexBold,    row1Size);
-        using var font2 = new SKFont(SkiaFonts.PlexRegular, row2Size);
+        using var font1 = new SKFont(SkiaFonts.PlexBold,    rowSize);
+        using var font2 = new SKFont(SkiaFonts.PlexRegular, rowSize);
         using var paint = new SKPaint { Color = theme.AxisText, IsAntialias = true };
 
-        float y1 = row1Size * 1.05f;
-        float y2 = (float)(row1Size * 1.3 + row2Size * 1.05);
+        float y2 = (float)(bandH - m * 0.01);
+        float y1 = y2 - rowSize * 1.3f;
 
         if (!string.IsNullOrEmpty(d.Title))
             canvas.DrawText(d.Title, cx, y1, SKTextAlign.Center, font1, paint);
@@ -466,9 +487,15 @@ public static class HarmonicaPanelRenderer
     /// <summary>
     /// §4.2 — a marker is a filled circle with a thin outline and its name inside, in its BAND's
     /// colour from the five-colour cycle.
+    ///
+    /// <para><b>R-h9r2-5 — draw order is the z-order, lowest rank first</b>, so the highest-ranked
+    /// marker (L1 by default, or whichever one the session has promoted) is painted LAST and ends up
+    /// visually on top of every other marker it overlaps — the same rank
+    /// <see cref="HarmonicaHitTest.Resolve"/> uses to decide which marker a click actually grabs.</para>
     /// </summary>
     private static void DrawMarkers(SKCanvas canvas, SmithPanelData d, TransformSet tf,
-                                    HarmonicaRenderTheme theme, (double W, double H) size)
+                                    HarmonicaRenderTheme theme, (double W, double H) size,
+                                    HarmonicaMarker? topmostMarker = null)
     {
         float r  = (float)(Math.Min(size.W, size.H) * 0.020);
         r = Math.Max(6f, r);
@@ -479,8 +506,12 @@ public static class HarmonicaPanelRenderer
                                          Color = SKColors.Black, IsAntialias = true };
         using var label  = new SKPaint { Color = SKColors.Black, IsAntialias = true };
 
-        foreach (var m in d.Markers)
+        foreach (var m in HarmonicaMarkerZOrder.DrawOrder(d.Markers, topmostMarker))
         {
+            // R-h9r2-8 — drawn BENEATH the marker itself, so the round glyph and its name stay
+            // readable sitting on top of the circle rather than the circle competing with them.
+            DrawVswrLocus(canvas, m, tf, theme, d.Z0);
+
             // An ACTIVE termination is drawn where it actually is on the compressed radial scale —
             // the same scale the intrinsic glyph uses — rather than clamped to the rim (R-h6-10).
             // Clamping would put two quite different terminations on the same pixel.
@@ -495,6 +526,60 @@ public static class HarmonicaPanelRenderer
             float tw = font.MeasureText(m.Name);
             canvas.DrawText(m.Name, p.X - tw / 2f, p.Y + ts * 0.36f, SKTextAlign.Left, font, label);
         }
+    }
+
+    /// <summary>
+    /// R-h9r2-8 — the constant-VSWR locus around a marker's termination, reusing Data Display's
+    /// <c>RfCore.Loadpull.LoadpullSurface.VswrLocus</c> geometry (never its TYPES — harmonicaRF has
+    /// its own <see cref="HarmonicaMarker"/>, not Data Display's <c>Marker</c>).
+    ///
+    /// <para><b>Drawn through <paramref name="tf"/>, not the public <see cref="GammaToCanvas"/>.</b>
+    /// Within <see cref="DrawMarkers"/> the canvas already carries the title-band translate and the
+    /// annulus-headroom scale <see cref="DrawSmithPanel"/> pushed before calling it — exactly the
+    /// transforms <see cref="GammaToCanvas"/> itself applies analytically for a caller with no canvas
+    /// state of its own. Calling it again here would apply both a second time. <c>tf.PrimaryToCanvas</c>
+    /// is what the marker circle right below already uses for the identical reason.</para>
+    /// </summary>
+    private static void DrawVswrLocus(SKCanvas canvas, HarmonicaMarker m, TransformSet tf,
+                                      HarmonicaRenderTheme theme, double z0)
+    {
+        if (!m.VswrEnabled) return;
+
+        var pts = RfCore.Loadpull.LoadpullSurface.VswrLocus(
+            m.Gamma, m.VswrValue, RfCore.Loadpull.SurfacePlane.Gamma, new Complex(z0, 0));
+        if (pts is null || pts.Length < 2) return;
+
+        using var paint = new SKPaint
+        {
+            Style       = SKPaintStyle.Stroke,
+            StrokeWidth = 1.3f,
+            IsAntialias = true,
+            Color       = theme.MarkerBand(m.Band).WithAlpha(190),
+            PathEffect  = SKPathEffect.CreateDash([4f, 3f], 0),
+        };
+
+        using var path = new SKPath();
+        var p0 = tf.PrimaryToCanvas(pts[0].Real, pts[0].Imaginary);
+        path.MoveTo(p0);
+        for (int i = 1; i < pts.Length; i++)
+            path.LineTo(tf.PrimaryToCanvas(pts[i].Real, pts[i].Imaginary));
+        path.Close();
+        canvas.DrawPath(path, paint);
+
+        // R-h9r2-8's drag handle — a small square (never round, so it never reads as a marker or a
+        // grid point) at the locus's own θ = 0 sample. p0 above is exactly this point, in the SAME
+        // raw-Gamma space HarmonicaHitTest hit-tests it in (HarmonicaVswrHandle.HandleGamma) — drawn
+        // from it directly rather than recomputed, so render and hit-test cannot drift apart.
+        float hs = 3.2f;
+        using var handleFill = new SKPaint { Color = theme.MarkerBand(m.Band), IsAntialias = true };
+        using var handleEdge = new SKPaint
+        {
+            Style = SKPaintStyle.Stroke, StrokeWidth = 1.0f, IsAntialias = true,
+            Color = theme.Background,
+        };
+        var handleRect = new SKRect(p0.X - hs, p0.Y - hs, p0.X + hs, p0.Y + hs);
+        canvas.DrawRect(handleRect, handleFill);
+        canvas.DrawRect(handleRect, handleEdge);
     }
 
     /// <summary>
@@ -683,6 +768,48 @@ public static class HarmonicaPanelRenderer
             canvas.DrawText(label, rPt.X + lw * 4f, rPt.Y + font.Size * 0.35f,
                             SKTextAlign.Left, font, textPaint);
         }
+
+        DrawEfficiencyAxisLabel(canvas, size, plot, theme);
+    }
+
+    /// <summary>
+    /// R-h9r2-23 — "The 'Efficiency (%)' text label needs to be rendered in
+    /// Harmonica.EfficiencyTrace color." R-h9b-9 already redrew the axis's line, ticks and tick
+    /// NUMBERS; it did not redraw the axis LABEL itself, which <c>AxesRenderer.
+    /// DrawTitleAndAxisLabels</c> still draws in the shared theme's ordinary text colour.
+    ///
+    /// <para><b>Lands EXACTLY on top of the original</b>, using
+    /// <see cref="AxesRenderer.ComputeLabelHitRects"/>'s <c>Y2Label</c> rect — a standalone,
+    /// non-drawing geometry accessor R-h9b-10 already uses for the X-label context menu — rather than
+    /// a hand-derived guess at the label's position. Widening a non-drawing geometry accessor is the
+    /// one permitted exception to "never widen <c>AxesRenderer</c> for a harmonicaRF colour need"
+    /// (§9); <c>Y2Label</c> already existed on <c>LabelHitRects</c>, so nothing there needed widening
+    /// either. This duplicates the handful of lines that actually PAINT the rotated text, the same
+    /// shape the rest of this overlay already follows for the line/ticks/numbers.</para>
+    /// </summary>
+    private static void DrawEfficiencyAxisLabel(SKCanvas canvas, (double W, double H) size,
+                                                 Plot plot, HarmonicaRenderTheme theme)
+    {
+        string label = plot.Y2Label;
+        if (string.IsNullOrEmpty(label) || !plot.Axes.ShowSecondary) return;
+
+        var rects = AxesRenderer.ComputeLabelHitRects(plot, size);
+        var r = rects.Y2Label;
+        if (r.Width <= 0 && r.Height <= 0) return;   // no secondary label drawn — nothing to overlay
+
+        float lw = AxesRenderer.LineWidth(size);
+        using var font  = new SKFont(SkiaFonts.PlexRegular, (float)(plot.Axes.FontSizeTicks * 0.9f * lw));
+        using var paint = new SKPaint { Color = theme.EfficiencyTrace, IsAntialias = true };
+
+        float cx = r.MidX;
+        float cy = r.MidY;
+        float tw = font.MeasureText(label);
+
+        canvas.Save();
+        canvas.Translate(cx, cy);
+        canvas.RotateDegrees(90f);
+        canvas.DrawText(label, -tw / 2f, font.Size * 0.35f, SKTextAlign.Left, font, paint);
+        canvas.Restore();
     }
 
     internal static Plot BuildPowerSweepPlot(PowerSweepPanelData d, HarmonicaRenderTheme theme)

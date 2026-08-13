@@ -22,8 +22,12 @@ Standing instructions for both MoM kernels. Read with the root `CLAUDE.md` and
 > | Via z-integral · ground-via attachment basis | 3509–3918 |
 > | G_A^zz accuracy ceiling · curved-edge negative result | 3919–4306 |
 > | Conformal cut cells · convex decomposition · edge attractor · mesh frequency | 4307–5047 |
+> | M1/M2 parallelism · calibration-standard fill-two · M5 AIM decision gate + build (archived 2026-08-13, the maintenance rule below having lapsed once already) | 5048–5515 |
 >
-> **Maintenance rule, or this regrows.** A completed phase appends its narrative to `HISTORY.md`,
+> **Maintenance rule, or this regrows — and it already did once.** A completed phase appends its
+> narrative to `HISTORY.md`, not here. This file only *changes* — a new invariant, a moved default, a
+> new refusal, a trap that now has a name. If a phase adds nothing that is true of the code tomorrow,
+> it adds nothing here.
 > not here. This file only *changes* — a new invariant, a moved default, a new refusal, a trap that
 > now has a name. If a phase adds nothing that is true of the code tomorrow, it adds nothing here.
 
@@ -679,464 +683,41 @@ exactly the pairs L8c's singular-extraction machinery makes expensive. Time cros
 58 MB against 223 MB there. What M5 still owes is measurement above N = 3,731 and on a via-bearing or
 cut mesh, plus a decision on whether R17's ceiling moves.
 
----
-
-## 8. Cost and the test budget
-
-- **Cost is the fill, not the LU**, right to R17's ceiling (114× the LU at N = 552, still 1.8× at
-  N = 4,933). Memory at N = 4,933: 371 MB matrix + **188 MB cached cores (+51%)**.
-- Hero (§10.7 FR-4, N = 552): **1.73 s/frequency bare, 7.66 s/frequency de-embedded** — standards
-  were 78% of it, at 2.58× the DUT's unknowns, when every standard was filled at every frequency.
-  **§10 fills only the two that are read**; on a wide-port taper that is 1.52× off the whole point.
-- **General kernel: 71.9 s per de-embedded point at N = 514** (~73 min for 101 points), 9.4× L8d at
-  the same N — the per-entry cost of the general kernel, not N. Post-z-integral, 65.5 s.
-  Two levels with vias: **149.9 s** per de-embedded point.
-- N on the FR-4 hero: **552** one level, 1,104 two levels, 1,140 with a via (2.07×), against 5,000.
-- **`tests/Engine.Tests/Mom/` is 50 test files, 22 of which carry `Category=Benchmark` methods.**
-  Routine tier here: **589 tests in 4 m 48 s** (M5 added 9 routine, ~2 s, and 5 opt-in, 5.8 min).
-  The old claim in this file that "all 169 tests run in ~3 s; none is tagged Benchmark" was stale by
-  orders of magnitude. Routine gate is plain `dotnet test` (Benchmark excluded via
-  `circuitrf.runsettings`); the opt-in tier is
-  `dotnet test --settings circuitrf.benchmark.runsettings`, **never `--filter`** — see the root
-  `CLAUDE.md`. Engine.Tests is ~5 min of the routine gate on its own, most of it accumulated here
-  (~3 min 24 s at L9e; M0's own mesh-frequency tests and M1/M2's bit-identity gates are the rest).
 
 ---
 
-## 9. Parallelism — ONE budget, and what fanning out actually bought
-
-`brief-em-sweep-performance` M1/M2. **Read this before adding a second cap anywhere.**
-
-**The fill was ALWAYS parallel.** `PlanarFill.ForRows` has wrapped every one of its call sites in
-`Parallel.For` since L8c and there was no `MaxDegreeOfParallelism` anywhere in the repository, so a
-core-count control **on its own can only ever make a run slower** — it caps something that was
-already saturating the machine. M1 is the seam; M2 is the first thing worth capping.
-
-**ONE number, spent by the INNERMOST work (R-emp-10).** `PlanarSolveSettings.MaxDegreeOfParallelism`
-is materialised once per run as a `PlanarParallelBudget` — a `SemaphoreSlim` handed to every
-`PlanarSolveContext` through `PlanarFillSettings.Budget`; a fill-row worker takes one permit for as
-long as it participates in a `Parallel.For` and releases it when that loop ends. However many solves
-are in flight, the number of threads doing fill arithmetic at any instant is the cap. **A cap on an
-outer `Parallel.ForEach` does not bound the inner one** — that is the trap this shape exists to
-avoid, and a second independent cap a reader has to multiply in their head is worse than either.
-
-**It changes no answer, and that is asserted rather than argued.** R-fil-11 says the parallelism is
-over ROWS of the packed upper triangle with every entry written exactly once;
-`ParallelBudgetTests` turns that into **bit-identity** at caps 1 / 2 / unbounded / budget, entry by
-entry, and at the sweep level (cap 1 vs cap 8, adaptive on and off). **A tolerance would be the wrong
-gate** — two runs agreeing to 1e-12 is exactly what an order-dependent accumulation produces. It
-therefore enters **no provenance hash** (R-emp-7, gated Ui-side): marking an `.snp` stale because a
-user moved a slider would be a lie.
-
-**What M2 measured, and it is well short of the brief's own 3–4× estimate.** One de-embedded point,
-FR-4 hero cross-section at the shipping mesh (N = 722 DUT), 10 cores, `Category=Benchmark`, measured
-alone:
-
-| configuration | wall clock | vs. fully serial |
-|---|---|---|
-| fill serial, solves in order | 122.9 s | — |
-| fill serial, **solves fanned out (M2 alone)** | **103.9 s** | **1.18×** |
-| shipped (row parallelism + fan-out) | 22.7 s | 5.42× |
-
-(Measured twice on separate runs — 122.9 / 103.9 / 22.7 s and 123.7 / 103.9 / 22.8 s — so L8d's own
-"a benchmark sharing a run reads more than twice as slow" warning is not what these numbers are.)
-
-**The 5.42× is overwhelmingly the fill's own row parallelism, which predates this brief.** M2's own
-contribution is the 1.18×, and it is small for a reason the design predicted rather than a defect:
-fanning out five fills does not make them finish sooner — the fill already saturates the cores and
-the arithmetic is unchanged. What the budget buys is the **overlap** of one solve's single-threaded
-`PlanarSystem.Lu` with another's fill, and **§8's own first line says the LU is 1/114th of the fill
-at N = 552** — so the serial fraction available to overlap is nearly nothing.
-
-**And in the SHIPPED configuration M2 is worth essentially zero — measured, not inferred.** The
-pre-M2 shape (solves in order, each fill unbounded) is not reachable through the shipped settings,
-because a solve-level cap of 1 also caps the fill, so it was measured with a **temporary local
-patch** that skipped the budget: both configurations timed in ONE process, alternating, best of two.
-
-| | no fan-out | fan-out | ratio |
-|---|---|---|---|
-| N = 722 (1.5 λ line) | 25.7 s | 24.1 s | **1.06×** |
-| N = 1,810 (4 λ line) | 33.2 s | 33.3 s | **1.00×** |
-
-**Take the interleaved numbers, not a cross-process pair.** A first attempt compared two separate
-`dotnet test` invocations and read the fan-out as 7% SLOWER; running both in one process with the
-same warm state reversed the sign. The difference is at the level of process-to-process variation,
-which is exactly the point: **M2 neither helps nor hurts the shipped path at these N.**
-
-**Do not retry the brief's own sanctioned alternative** — capping each fill at `cap / solves` so no
-worker blocks on a permit, instead of the shared `SemaphoreSlim`. Measured at N = 722: **37.7 s
-against 24.1 s**, i.e. 1.6× WORSE. Static division starves the largest solve's fill, and the largest
-solve is the span. The blocking-permit design is the better of the two, by measurement.
-
-**So M2 is not where the sweep's time is, and M3 is not either — that is the finding.** M3 was the
-milestone expected to deliver the large multiple; its premise was measured before a line of it was
-written and it does not hold. **Ceiling 1.09–1.15×** — see §6, which records the measurement, the
-reason (the fall-off is core heterogeneity, not scheduling) and what would change the answer.
-
-**Where the sweep's time actually is, on the evidence in hand:**
-1. **N, through the mesh.** M0 is the shipped lever and it measured **2.76×** on §10.7's own hero
-   for a stated accuracy cost. Nothing here comes close to it.
-2. **The calibration standards** — the largest single term anyone had measured, and **§10 is
-   where most of it went**.
-3. **The fill's own per-entry cost** — M4's cell-pair moment cache, whose ~4× is still an estimate
-   rather than a measurement, and M5's accelerator behind its own GMRES decision gate.
-
----
-
-## 10. The calibration standards — fill only the two that are read
-
-**A de-embedded frequency point solved EVERY calibration standard and read exactly TWO of them.**
-That was the largest avoidable cost in this area, and closing it changes no published number: the
-matrices no longer filled were never looked at.
-
-### The mechanism, and why it was safe to take
-
-`PlanarCalibration.GammaBest` reads `sShort` and `sLong[pick]`. `pick` came from a scoring loop over
-the Δℓ set and the **predicted** β — deliberately the prediction and never an extracted electrical
-length, because an aliased separation reports a wrapped length that can score well by accident. Both
-of its inputs are known **before any fill**. That loop is now
-`PlanarCalibration.SelectSeparation(deltaLM, expectedBetaPerMetre)`, called by `GammaBest` exactly as
-before and — the point — callable by the driver in advance. `PlanarPortCalibrator.NeededAt` asks it
-and fills two meshes; `_rawCache` became one slot per standard, null where a standard was never
-wanted.
-
-**The set is NOT narrowed.** Every separation is still built, `MeshCount` and the engine's own
-"N standard mesh(es)" note are unchanged, and the per-frequency choice still ranges over all of them.
-Only which of them get filled changed — so this makes multiline TRL *cheaper as it widens*, and
-`GammaBest`'s own claim that "the selection costs nothing beyond the extra fill" stops being a
-caveat.
-
-### The measurement (`CalibrationStandardCostTests`, `Category=Benchmark`, taken alone)
-
-§0's own shape rather than the FR-4 hero, and **the shape is load-bearing**: a standard reproduces the
-DUT's transverse gridlines across the port **verbatim** (D4 — the error box has to be the same
-object), so the standards only dominate when a port is WIDE. A 50 Ω line's standards are four cells
-across and cost nothing. A taper to 12 Ω on RO4350B 20 mil, 1–20 GHz, DUT **N = 3,005**, 10 cores:
-
-| | port 1 (4 cells across) | port 2 (**20 cells across**) |
-|---|---|---|
-| standards' N | 94 / 451 / 227 / 143 | 526 / **2,515** / 1,267 / 799 |
-
-| | DUT | all standards | the two read | point |
-|---|---|---|---|---|
-| 1.00 GHz | 14.60 s | 18.91 s | 12.57 s | 33.51 → **27.16 s** (1.23×) |
-| 4.47 GHz | 14.92 s | 18.44 s | 5.26 s | 33.36 → **20.18 s** (1.65×) |
-| 20.0 GHz | 14.96 s | 18.41 s | 3.59 s | 33.37 → **18.54 s** (1.80×) |
-| **band** | | | | 100.23 → **65.88 s** (**1.52×**) |
-
-**The saving is smallest at the BOTTOM of the band and that is structural, not a shortfall.** The
-separations are sized geometrically, so the longest standard — the one that can exceed the DUT's own
-unknown count — is precisely the one selected at the bottom. At the top it is filled and discarded,
-which is where the 1.80× comes from. There is **no** frequency at which every standard is wanted.
-
-### What is asserted, and how
-
-`CalibrationStandardSelectionTests`, **6 routine tests, ~15 s**:
-
-- **T1 is the gate that matters**: the OLD path — every standard filled, `GammaBest` over the full
-  set — run alongside the new one over a 9-point 1–20 GHz sweep, comparing γ, βΔℓ, the unwrap count,
-  every error-box entry and the consistency residual **bit for bit**, with the branch continuation
-  stepped exactly as `At` steps it. **Confirmed to bite**: making the new path predict from the
-  pre-solve estimate instead of the continuation — the realistic regression — turns it red.
-- **T0** pins that the band genuinely asks for ≥ 4 standards, or every other assertion is vacuous;
-  **T3** pins that all three separations are genuinely used across the band, so "fill two" is not
-  secretly "build two".
-- **T2**: `StandardSolveCount == 2 × frequencies` while `MeshCount` is still the full set.
-- **T4**: L9e/M1's replay contract under selective filling. A replay re-predicts β from a different
-  neighbour, so it **may legitimately need one more mesh** at an already-visited frequency; what it
-  must never do is re-fill one it already has. `SolveCount` therefore counts **distinct frequencies**
-  (via `_solvedFrequencies`) and `StandardSolveCount` is where any extra mesh shows up — do not
-  collapse the two counters back together.
-
-### Two traps this left behind
-
-**`MeshCount` is no longer the per-frequency solve count.** `PlanarSolve`'s progress stage used it as
-its denominator; it now uses `PlannedSolvesAt(f)`, which reports what will actually be filled (0 when
-fully cached). Using `MeshCount` there promises ticks that never arrive and leaves the bar short.
-
-**`Mat<T>` is a struct**, so `Mat<Complex>?[]` is an array of `Nullable<Mat<T>>` and `!` does not
-unwrap it — `.Value` does. Worth knowing before the next nullable-slot cache in this area.
-
----
-
-## 11. M5's decision gate — the answer is BUILD IT, and the near-field radius is the whole decision
-
-`brief-em-sweep-performance` gate 11 / R-emp-15, run **before a line of projection code exists**,
-which is the point of it. `MomIterativeSolverDecisionTests`, 6 methods, all `Category=Benchmark`.
-
-**The decision was never about the FFT.** AIM has no direct solve, so it needs an iterative one — the
-same objection that deferred ACA at L9e. The brief's own rule: *if GMRES needs O(N) iterations, AIM
-buys nothing.* That is measurable today against the dense matrices this kernel already builds, and it
-is what these six gates measure.
-
-**Two choices that make it a fair test of AIM's premise, not a flattering one.** **FULL GMRES, not
-restarted** — restarting can only be slower, so this is an upper bound on any GMRES variant, and
-giving AIM the benefit of the doubt is deliberate. **RIGHT preconditioning**, so the Arnoldi residual
-*is* the true ‖b − Ax‖ and all three preconditioners are compared on the same quantity; left
-preconditioning would report ‖M⁻¹(b − Ax)‖ and flatter a strong preconditioner for free. The RHS is
-the **real port excitation**, not a random vector — MoM convergence is RHS-dependent and a port's
-incidence column is the only RHS this solver ever sees.
-
-### THE ANSWER, on the shipping mesh (edge grading ON) and a 2-D conductor
-
-§0's own 12 Ω cross-section — 6.71 mm wide, 10 cells across — at 6 GHz. Iterations to a **1e-6**
-relative residual:
-
-| L | N | none | near-3c | near-8c | near-8c nnz | near-8c LU | **dense LU** |
-|---|---|---|---|---|---|---|---|
-| 16 mm | 313 | 129 | 28 | **3** | 72.4% | 0.02 s | 0.01 s |
-| 32 mm | 579 | 176 | 66 | **4** | 43.8% | 0.04 s | 0.04 s |
-| 64 mm | 1,092 | 242 | 69 | **5** | 24.4% | 0.04 s | 0.24 s |
-| 128 mm | 2,099 | 341 | 178 | **6** | 13.0% | 0.10 s | **1.98 s** |
-
-**Three facts, and together they are the decision:**
-
-1. **With an 8-cell near-field preconditioner the iteration count is FLAT — 3 → 6 over 6.7× N.** Not
-   sublinear; flat. That is AIM's premise holding on the real product configuration.
-2. **The near field is genuinely O(N).** nnz falls 72.4% → 13.0%, i.e. entries *per row* stay
-   essentially constant (227 → 273). A near field that did not sparsify would make AIM pointless.
-3. **The preconditioner's own factorisation pulls away from the direct solve fast** — 5× growth
-   against the dense LU's 200× over the same span, from parity at N = 579 to 20× cheaper at
-   N = 2,099. It is still an honest cost and it is the one to keep watching.
-
-### R-emp-17 — the near-field radius is NOT a tuning nicety
-
-**It is the difference between working and not working, and the obvious choice is the wrong one.**
-3 cells — the natural first guess — *degrades* with N (28 → 66 → 69 → 178) and is beaten by nothing at
-all on a refined mesh. 8 cells is flat. Anyone starting M5 should start at 8 and measure down, never
-at 3 and measure up.
-
-**Unpreconditioned and Jacobi are not viable, and Jacobi is worthless.** Unpreconditioned grows as
-roughly N^0.5 on the shipping mesh (129 → 341) — sublinear, so not literally the brief's O(N)
-disqualifier, but 341 iterations of O(N log N) is no better than the direct solve. **Jacobi is within
-a few percent of no preconditioner at every N measured** (e.g. 137 vs 130 at N = 752) — a diagonal
-carries none of this operator's ill-conditioning.
-
-### The two ladders disagree, and the disagreement is the useful part
-
-| ladder | what moves | unpreconditioned @1e-6 | near-3c @1e-6 |
-|---|---|---|---|
-| **structure grows**, density fixed (coarse, 24 → 752) | N | 10 → 137 (~N^0.76) | **2 → 8, flat** |
-| **mesh refines**, structure fixed (16 mm, cells/λ 10 → 40) | h | 19 → 60 | **5 → 13 → 77** |
-
-**Growing the board is the easy direction; refining the mesh is the hard one.** A fixed-stencil near
-field does not fix the h → 0 conditioning of this operator, and at cells/λ 40 the 3-cell
-preconditioner is *worse than none*. This matters here specifically because **edge grading is local
-refinement** — the shipping mesh's own cell spread is **8.3×** — which is why the shipping-mesh rows
-above needed 8 cells where the smooth coarse mesh was happy with 3.
-
-**Frequency is not a factor** (45-unknown line at 1 / 6 / 20 GHz: 22 / 19 / 19 unpreconditioned).
-
-### What this gate does NOT establish, stated so nobody reads it as more than it is
-
-- **The preconditioner measured is a full sparse LU of the near field**, not the ILU or approximate
-  inverse a real AIM would likely use. A weaker preconditioner converges more slowly; the flat rows
-  above are the best case for a near-field-based scheme.
-- **The projection itself is unmeasured.** This gate says an iterative solve is viable on this
-  operator. It says nothing about AIM's own accuracy, which is R-emp-16's two gates and still owed —
-  and R-emp-16 is where the interpolation order and this same radius get their accuracy trade.
-- **Nothing above 2,099 unknowns**, against R17's 5,000 ceiling. The trends are clean and consistent
-  across four ladders, but they are trends.
-
----
-
-## 12. M5 — the AIM accelerator is BUILT, and the win is MEMORY rather than time
-
-`brief-em-sweep-performance` M5, taken up after §11's decision gate answered BUILD IT. It ships
-**OFF** — `PlanarFillSettings.Aim` is null by default and every published number in this file is
-still produced by L8c/L8d's dense path, byte for byte.
-
-Files: `PlanarAim.cs` (the accelerator), `PlanarGmres.cs` (the solver), `PlanarFill.PlanarEntryFill`
-+ `PlanarFill.BuildGeometryOnlyCores` (the seam), `IPlanarOperator` on `PlanarSystem`.
-Gates: `AimAcceleratorTests` (**9 routine, ~2 s**) and `AimAccuracyTests` (**5 `Category=Benchmark`,
-5.8 min**).
-
-### What it does, in one paragraph
-
-Each rooftop is replaced, for FAR-field purposes, by point sources on an (M+1)×(M+1) block of a
-separate UNIFORM auxiliary grid carrying the same multipole moments; the far field is then three FFT
-convolutions on that grid (x̂ current and ŷ current against `G_A`, the charge against `G_q`); and every
-pair inside a near radius is corrected with the EXACT entry. The mesh stays graded and conformally
-cut — only the auxiliary grid is uniform, which is the whole reason AIM fits here and raw Toeplitz
-does not (the brief's own §M5 correction).
-
-**Three projections, not one.** L8c's entry is `jωµ₀⟨f_m, G_A f_n⟩` (same direction only) plus
-`1/(jωε₀)⟨∇·f_m, G_q ∇·f_n⟩` (every pair). Projecting the current and not its divergence would
-accelerate half the operator and leave the other half dense.
-
-**The stencil is a TENSOR square, not the classic simplex.** Matching `a+b ≤ M` on an `(M+1)²`
-stencil is underdetermined and needs a minimum-norm solve; the full tensor set `a, b ≤ M` is square,
-solves by two Vandermonde inversions, and matches strictly MORE moments for the same node count. On a
-uniform grid every basis shares the same ξ, so **the inverse is computed once for the whole mesh**.
-
-### THE FINDING: the entry count falls 10×, the FILL TIME does not, and the reason is structural
-
-| L | N | near/row | near % | build s | iters | solve s | **dense s** | \|ΔI\| | **MB** | **dense MB** |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 16 mm | 314 | 290 | 92.2% | 2.65 | 2 | 0.01 | 1.02 | 4.90e-7 | 3.4 | 1.5 |
-| 32 mm | 535 | 334 | 62.3% | 3.98 | 4 | 0.01 | 1.57 | 8.69e-7 | 6.7 | 4.4 |
-| 64 mm | 994 | 365 | 36.7% | 7.14 | 5 | 0.02 | 2.99 | 5.52e-6 | 13.3 | 15.1 |
-| 128 mm | 1,912 | 383 | 20.0% | 13.44 | 5 | 0.05 | 6.69 | 3.98e-6 | 26.7 | 55.8 |
-| 256 mm | 3,731 | **392** | **10.5%** | **25.18** | **6** | 0.10 | **26.73** | 1.12e-5 | **53.3** | **212.4** |
-
-(FR-4 hero cross-section, 6 GHz, **shipping mesh** with edge grading on. `dense s` is one fill + one
-factorisation + one back-substitution. Neither column carries the radial remainder table, which BOTH
-paths build — it is timed apart on purpose, or every comparison would be flattered by a fixed amount
-belonging to neither.)
-
-**Two of those columns are exactly what §11 predicted and the third is not.** Near entries PER ROW are
-flat (290 → 392 over 12× N) — the near field is genuinely O(N), as §11's own nnz rows said. The
-iteration count is flat (2 → 6) — **and that now holds for the ACCELERATED product**, not merely for a
-dense product with a near-field preconditioner, which is the thing §11 could not establish.
-
-**What does not follow is the time.** At N = 3,731 the accelerator touches **10.5%** of the entries and
-takes **96%** of the dense path's wall clock. The reason is structural and is worth stating plainly:
-
-> **AIM's near field keeps precisely the pairs L8c's singular-extraction machinery makes expensive,
-> and discards the cheap ones.** A near pair takes `NearNodes = 10` over `TouchPanels = 3` panels
-> (900 outer points) and an `8⁴ = 4,096`-node remainder; a far pair takes `FarNodes = 3` over one
-> panel (9 points) and a `2⁴ = 16`-node remainder. The far field this removes is the part that was
-> already almost free.
-
-So **the time crossover is at N ≈ 3,700**, and up to R17's 5,000-unknown ceiling the saving on a single
-frequency point is of order 1.4×, not the order of magnitude an entry count suggests. Anyone reading
-the near-% column as a speed-up will be wrong by ten.
-
-**The MEMORY win is real, it is measured rather than counted from the entry table, and it is the one
-to quote.** The last two columns are the accelerator's WHOLE working set — sparse near field, grid
-kernels, the padded FFT arrays and the per-basis stencils — against the dense matrix alone:
-**53.3 MB against 212.4 MB at N = 3,731**, i.e. **4.0×**, and the crossover is at **N ≈ 900**, four
-times earlier than the time crossover. Extrapolating the flat per-row count to R17's 5,000 gives ~71 MB
-against 381 MB. R17 IS a memory ceiling (`PlanarSystem.MatrixBytes`), so this is the milestone that
-could move it — and moving it is a separate, measured act, deliberately not taken here.
-
-### THE THIRD KNOB — R-emp-17 names two and the dominant one is neither
-
-R-emp-17 asks for the projection order and the near-field radius. The N ladder found a third, and it
-outranks both: **the auxiliary PITCH**. The stencil has to resolve the KERNEL across its own width,
-not merely enclose the basis, and at a pitch of one whole basis support the stencil spans a quarter of
-a guided wavelength — across which `e^{−jk₀ρ}` and every surface wave turn appreciably.
-
-Measured on the 64 mm hero at 6 GHz (N = 994), **holding the near radius fixed IN METRES so the cost is
-the control**:
-
-| pitch / support | h/λ_g | stencil/λ_g | near/row | build s | \|ΔI\| |
-|---|---|---|---|---|---|
-| 1.00 | 0.078 | 0.235 | 365 | 8.14 | 5.69e-4 |
-| **0.50** | **0.039** | **0.117** | **365** | **7.31** | **5.52e-6** |
-| 0.25 | 0.020 | 0.059 | 365 | 7.59 | 8.72e-7 |
-| 0.125 | 0.010 | 0.029 | 365 | 7.60 | 4.72e-6 |
-
-**A hundredfold in accuracy for nothing.** The near-field entry count and the build time do not move —
-a finer pitch costs grid nodes and one FFT over them, and no near-field arithmetic at all. **And it
-turns back up at 0.125**: past about a quarter of a support the moment system's own conditioning is
-the error, so the curve has a floor rather than a slope, and 0.5 is chosen one step inside it.
-
-**This is why the radius is expressed in units of the LARGEST BASIS SUPPORT and not in pitches.** In
-pitches, halving the pitch would silently halve the near field, and every pitch measurement above
-would have been a radius measurement wearing a disguise.
-
-### R-emp-17's own table — order × radius, at the shipped pitch
-
-FR-4 hero cross-section, 32 mm, 6 GHz, shipping mesh, N = 535. `|ΔZ|` is against the dense matrix
-scaled by its largest entry; `|ΔI|` is the SOLVED current vector against the dense LU's, which is the
-quantity an s-parameter is read from.
-
-| order | radius | near/row | near % | worst \|ΔZ\| | iters | \|ΔI\| |
-|---|---|---|---|---|---|---|
-| 1 | 2 s | 126 | 23.6% | 8.92e-5 | 15 | 2.17e-2 |
-| 1 | 4 s | 240 | 44.8% | 5.04e-7 | 4 | 1.96e-4 |
-| 2 | 3 s | 186 | 34.8% | 3.10e-6 | 5 | 5.97e-4 |
-| 2 | 6 s | 334 | 62.3% | 1.63e-8 | 4 | 5.94e-6 |
-| 3 | 3 s | 186 | 34.8% | 7.79e-7 | 5 | 1.32e-4 |
-| 3 | 4 s | 240 | 44.8% | 7.46e-8 | 4 | 1.59e-5 |
-| **3** | **6 s** | **334** | **62.3%** | **1.72e-9** | **4** | **8.69e-7** |
-| 3 | 8 s | 410 | 76.6% | 5.80e-10 | 3 | 2.42e-7 |
-| 4 | 6 s | 334 | 62.3% | 1.28e-9 | 4 | 6.30e-7 |
-
-**Three readings.** (a) The RADIUS is what costs — `near/row` is a function of it alone — and it is
-also what most of the accuracy comes from. (b) The ORDER is nearly free (the build column is flat to
-within 10% across the whole table, because the near fill dominates and the `(M+1)⁴` AIM entries do
-not), so it should be spent: order 3 at radius 6 is 7× better than order 2 at the same cost, and
-order 4 buys nothing further. (c) **The matrix error is amplified ~50-500× into the solved current** —
-`|ΔZ| = 1.7e-9` becomes `|ΔI| = 8.7e-7`. Grading an accelerator on its matrix error alone would
-overstate it by two to three decades, which is why both columns are here.
-
-**Shipped defaults, taken from these two tables and not from a reference:** projection order **3**,
-pitch **0.5** of the largest basis support, near radius **6** supports. That lands `|ΔI|` at
-**8.7e-7** — inside L8c's own 5.0e-6 fill accuracy, which is the target R-emp-16 names.
-
-### R-emp-16 gate 2 — the de-embedded S across the band, and what it exposes
-
-20 mm FR-4 hero line, N = 94, three calibration standards, dense vs accelerated through the whole
-`PlanarSolve.Run` path:
-
-| f | worst \|ΔS\| de-embedded | worst \|ΔS\| raw |
-|---|---|---|
-| 2 GHz | 1.27e-7 | 1.79e-8 |
-| 5 GHz | 9.84e-8 | 9.27e-9 |
-| 10 GHz | 8.48e-7 | 3.95e-7 |
-| 15 GHz | 4.52e-5 | 2.31e-5 |
-| 20 GHz | **8.07e-4** | 3.33e-4 |
-
-Worst over the band **8.07e-4**, against L8d's own measured de-embedding residual of **6.0e-3** on
-1.6 mm FR-4 and L9d's ~1e-2 — so the accelerator is not the error budget, which is what the gate asks.
-
-**And the frequency dependence is not noise — it is M0's own trade, arriving through a second door.**
-The pitch is 0.5 of the largest basis support, and the largest basis support is set by the MESH. A mesh
-sized at 10 GHz run to 20 GHz has a support of 0.27 λ_g there, so the stencil spans a quarter of a
-wavelength and the pitch table above says exactly what that costs. **The accelerator's accuracy is
-therefore governed by the mesh's own resolution AT THE SOLVE FREQUENCY** — it inherits M0's trade
-rather than adding one, and above the mesh frequency it degrades in step with the mesh. No new knob was
-added for it: `MeshFrequencyHz` and `CellsPerWavelength` are already the controls, and inventing a
-third that means the same thing would be worse than the trade.
-
-### The one trap: G(0) is arbitrary, and that is only true if the NEAR SET says so
-
-The grid kernel needs a value at zero separation, where `1/ρ` is infinite. **Any finite value works —
-but only because every pair whose two stencils OVERLAP is corrected exactly.** Get the near set
-slightly wrong and the answer depends on a number that was picked arbitrarily: smooth, plausible, and
-unattributable.
-
-So the near set is deliberately the **UNION of two criteria** — a radius AND stencil overlap — rather
-than a radius chosen to be "wide enough". `T2` asserts the overlap criterion directly at radius ZERO,
-where the radius cannot mask it, and `T3` moves the sentinel by 10× and demands the product not move
-(measured: **4.09e-16**).
-
-### The seam, and why it had to be bit-identical
-
-`PlanarEntryFill` computes ONE entry on demand, in the dense fill's own arithmetic and the dense fill's
-own order, and `T1` asserts it **bit-identical** to `PlanarFill.Fill` entry by entry. Without that,
-"the near field is the exact matrix, sparsely" would be a claim, and every accuracy number above would
-be measuring two approximations at once. A tolerance would be the wrong gate for exactly the reason
-§9's own note gives: two orderings of the same sum agree to 1e-12 whether or not they are the same
-computation.
-
-`PlanarFill.BuildGeometryOnlyCores` is the other half. **Filling the O(N²) cached triangles and then
-reading a thin band out of them would leave the whole cost claim resting on the quadratic term being
-removed** — so the accelerator path never builds them, `PlanarFillCores.HasPairCores` is false, and the
-dense fills refuse such a core by name. The cell-pair potential IS memoised inside the entry filler,
-because a rooftop's four signed halves are shared with every neighbour; that is a memo of an identical
-call, not a re-association.
-
-### What it refuses, and what is still owed
-
-- **The MULTI-LEVEL / via path is refused by name**, in `PlanarAimOperator.Build` and again in
-  `PlanarSolveContext.SolveAt`. A ẑ basis carries `G_A^zz` plus a MIXED component whose dyadic entry is
-  a `∂/∂x` rather than a value, and its sources sit at a different height — a different grid kernel per
-  height PAIRING and a projection with a derivative in it. That is a second phase, not a widening.
-- **A non-converged GMRES throws**, it does not return. A half-converged current distribution produces
-  a smooth, plausible, wrong s-parameter, and this area has found that failure mode too often to
-  return one.
-- **The core cap and the accelerator both stay out of every provenance hash.** M5 changes how the
-  answer is computed and — with these gates passed — not what it is; marking an `.snp` stale because a
-  user turned an accelerator on would be R-emp-7's lie in a second place.
-- **Not measured above N = 3,731**, against R17's 5,000 ceiling, and **not measured on a via-bearing or
-  conformally-cut mesh** (the cut path is exercised only through the fill's own weight evaluation,
-  which the projection reads rather than re-deriving — see `PlanarFill.WeightNodes` — so it is
-  structurally right and numerically unmeasured).
-- **The memory ceiling is NOT widened.** `SurfaceMesher.UnknownCeiling` and
-  `PlanarSystem.GuardCeiling` are byte-identical, and the accelerator is still refused above them. The
-  measurement above is what a decision to widen them would be made from; making it is the owner's call.
-- **Restarted GMRES is untested.** `Restart` is a knob at 0 (full) because at 2-6 iterations there is
-  nothing to restart, and nothing here has been run at a count where it would matter.
+## 8. Performance — current shipped state
+
+- **Cost is the fill, not the LU**, right up to R17's ceiling (114× the LU at N = 552, still 1.8× at
+  N = 4,933).
+- **A de-embedded point fills only the TWO calibration standards `GammaBest` actually reads**
+  (`PlanarCalibration.SelectSeparation`, computable before any fill), not every standard built for the
+  band — 1.23–1.80× faster across a band, smallest saving at the band's bottom (structural: the
+  longest standard is always the one selected there). The standard *set* is unchanged; only what gets
+  filled is. `StandardSolveCount` counts distinct frequencies; a replay may legitimately need one more
+  mesh without it counting as a re-fill. `Mat<T>` is a **struct** — `Mat<Complex>?[]` is
+  `Nullable<Mat<T>>[]` and needs `.Value`, not `!`, to unwrap.
+- **Parallelism is ONE shared budget** (`PlanarSolveSettings.MaxDegreeOfParallelism`, default
+  `null` = automatic), spent by the innermost fill work via a single semaphore — never add a second,
+  independent cap. It changes no answer (gated as bit-identity at every cap) and therefore enters no
+  provenance hash. The fill's own row-parallelism (present since L8c) is where nearly all the
+  multi-core win already was (~5.4× on a 10-core box); fanning independent solves out on top of that
+  buys ~1.06–1.18× at best, and effectively **zero in the shipped configuration**. Cross-frequency
+  fan-out was measured and deliberately **not built** — see §6.
+- **`PlanarFillSettings.Aim` (default `null` = OFF).** An AIM (Adaptive Integral Method) accelerator
+  exists but ships disabled — every number elsewhere in this file is still the dense L8c/L8d path.
+  Its win is **memory, not time**: ~4× less working set at practical N (crossover ≈ N 900), while the
+  *time* crossover is much later (≈ N 3,700) and even past it the saving is only ~1.4× up to R17's
+  5,000-unknown ceiling — because AIM's near field keeps exactly the pairs L8c's singular-extraction
+  machinery already makes expensive, not the cheap far-field ones an entry-count reduction implies.
+  **The near-field radius must be 8 basis-supports, not the naive 3** — 3 cells degrades with N and
+  is beaten by no preconditioner at all on a refined mesh; 8 is flat (3–6 GMRES iterations across a
+  6.7× N range). Shipped defaults where it's turned on: projection order 3, auxiliary-grid pitch 0.5
+  of the largest basis support, near radius 6 supports. **Multi-level/via meshes are refused by
+  name** — a ẑ basis needs a different grid kernel per height pairing, a separate phase. A
+  non-converged GMRES throws rather than returning a smooth-but-wrong current distribution. Turning
+  it on changes no provenance hash, same reasoning as the parallelism cap above.
+
+Full derivations, every measured table, and the M3/Jacobi/3-cell negative results behind these
+numbers are in `HISTORY.md` §"Sections 8–12" — grep `AIM`, `MaxDegreeOfParallelism`, or
+`GammaBest`.

@@ -207,9 +207,19 @@ public sealed class HarmonicaGridPointDragTests(ITestOutputHelper output)
         Assert.NotNull(vm.CustomGrid);
         Assert.True(vm.IsGridPointDragging);
 
+        var before = vm.CustomGrid![3];
         var target = new Complex(0.45, -0.22);
+
+        // R-h9r2-4 (brief-harmonicarf-r2a) — mid-drag, CustomGrid is deliberately left untouched;
+        // only the live glyph moves (via the carried GridPoints, for display), and the moved point
+        // is committed into CustomGrid for real only on release.
         vm.DragGridPoint(3, target, dragging: true);
-        Assert.Equal(target.Real, vm.CustomGrid![3].Real, 9);
+        Assert.Equal(before.Real,      vm.CustomGrid![3].Real,      9);
+        Assert.Equal(before.Imaginary, vm.CustomGrid![3].Imaginary, 9);
+
+        vm.DragGridPoint(3, target, dragging: false);
+        Assert.Equal(target.Real,      vm.CustomGrid![3].Real,      9);
+        Assert.Equal(target.Imaginary, vm.CustomGrid![3].Imaginary, 9);
 
         vm.EndGridPointDrag();
         Assert.False(vm.IsGridPointDragging);

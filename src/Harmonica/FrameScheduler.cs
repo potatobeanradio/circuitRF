@@ -282,16 +282,19 @@ public sealed class FrameScheduler
         return true;
     }
 
+    /// <summary>
+    /// R-h9r2-2 — every tier-B rung's own contour-quality message is GONE (report 2: "live contour
+    /// generation is too slow — deactivate it during drags and remove all 'Contours frozen while
+    /// dragging' style messages"). The <see cref="FrameQuality"/> enum and the ladder ITSELF are
+    /// unchanged — a drag still degrades the raster and the grid for whatever cost tier A alone
+    /// leaves on the table — only the strings describing which rung it landed on are deleted.
+    /// D4's Tier-A health message is untouched: it is the one message this brief does not touch,
+    /// because a model that cannot hold the frame target on tier A ALONE is a fact the ladder cannot
+    /// fix and the user still needs to be told.
+    /// </summary>
     private void DescribeLadder(FrameTiming timing)
     {
         if (!TierAHealthy) return;                                    // D4's message outranks this
-        StatusMessage = _quality switch
-        {
-            FrameQuality.Full           => null,
-            FrameQuality.CoarseRaster   => $"Contours at reduced resolution while dragging ({timing.Dominant} dominates).",
-            FrameQuality.CoarseGrid     => $"Contours on the coarse grid while dragging ({timing.Dominant} dominates).",
-            FrameQuality.FrozenContours => "Contours frozen while dragging; they update on release.",
-            _ => null,
-        };
+        StatusMessage = null;
     }
 }

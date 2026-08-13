@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaPowerSweepDialog"
+        Title="Power Sweep"
+        Width="380" Height="330"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    R-h9r2-18/18a/17a — the EXPLICIT Pin sweep the user types exactly (Start/Stop/Step), the tickle
+    (on/off + its absolute level), and ExactCompressionSolve. Mirrors HarmonicaDcivSweepsDialog's own
+    shape: Return applies and handles the key, Escape reverts, LostFocus applies, invalid input never
+    reaches the model (validated in HarmonicaViewModel.ApplyPowerSweepSettings BEFORE any write).
+  -->
+
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="14">
+
+    <TextBlock Grid.Row="0" Text="Pin sweep" FontWeight="SemiBold" Margin="0,0,0,4"/>
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,*,Auto,*" Margin="0,0,0,4">
+      <TextBlock Grid.Column="0" Text="start" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="StartBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="2" Text="stop" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="StopBox" Grid.Column="3" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="4" Text="step" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="StepBox" Grid.Column="5"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+    <TextBlock Grid.Row="2" x:Name="PointCountText" Opacity="0.7" FontSize="11" Margin="0,0,0,10"/>
+
+    <StackPanel Grid.Row="3" Spacing="6" Margin="0,0,0,10">
+      <TextBlock Text="Tickle (small-signal reference)" FontWeight="SemiBold"/>
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+        <CheckBox x:Name="TickleEnabledCheck" Grid.Column="0" Content="Enabled"
+                  IsCheckedChanged="OnTickleEnabledChanged" Margin="0,0,12,0"/>
+        <TextBlock Grid.Column="1" Text="level" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+        <TextBox x:Name="TickleDbmBox" Grid.Column="2" Margin="0,0,4,0"
+                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+        <TextBlock Grid.Column="3" Text="dBm" VerticalAlignment="Center" Opacity="0.7"/>
+      </Grid>
+      <CheckBox x:Name="ExactCompressionSolveCheck" Content="Exact compression solve (one extra HB solve)"
+                IsCheckedChanged="OnExactChanged"/>
+    </StackPanel>
+
+    <TextBlock Grid.Row="4" TextWrapping="Wrap" Opacity="0.7" FontSize="11" VerticalAlignment="Top"
+               Text="The plot shows every point on this ladder, every frame. Compression is interpolated from it unless the exact solve above is on."/>
+
+    <StackPanel Grid.Row="5" Spacing="8">
+      <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Content="Close" Click="OnCloseClick" IsDefault="True"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

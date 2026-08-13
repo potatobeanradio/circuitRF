@@ -20,7 +20,9 @@ public partial class HarmonicaShellWindow : Window
     public HarmonicaShellWindow()
     {
         InitializeComponent();
-        DataContext = new HarmonicaDocument("harmonicaRF", new HarmonicaDocumentViewModel());
+        // R-h9r2-18a — a brand new document's tickle seeds from this installation's own preference.
+        DataContext = new HarmonicaDocument("harmonicaRF", new HarmonicaDocumentViewModel(
+            new HarmonicaViewModel(HarmonicaTickleDefaults.SeedModel())));
         UpdateTitle();
 
         // The document owns the dirty bullet; the window title mirrors it, the same way a docked tab

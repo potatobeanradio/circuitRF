@@ -55,17 +55,34 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
     /// package), so its glyph sits ~0.003 Γ from its marker and the z-ordered hit test correctly
     /// grabs the marker on top. A series Rd/Rs/Ls separates the two planes, which is both the
     /// realistic case and the only one where "grab the glyph" means anything.</para>
+    ///
+    /// <para><b>R-h9r2-19 note:</b> this fixture's own DUT equation GAIN-EXPANDS by ~3 dB before it
+    /// ever compresses (rises smoothly from Pin −10 to a peak of ~14.8 dB around +22 dBm, then rolls
+    /// over) — its own physics, unrelated to the package above. Before this brief, <c>PinSearch.Run</c>
+    /// silently gave up its bracket search a few solves in and fell back to whatever it had (a mild,
+    /// low-Pin point), which is why an inverse drag at "the compression point" here used to be
+    /// benign. <c>PinSearch.Sweep</c> now finds the genuine 3 dB-down-from-its-own-peak crossing
+    /// honestly — around +27 dBm, deep enough into this DUT's own saturation that a cold FD Jacobian
+    /// for an 0.05-Γ intrinsic drag no longer converges there. <c>PinMaxDbm</c> is capped well below
+    /// the peak so the sweep still (honestly) never reaches compression and falls back to its last
+    /// solved, well-behaved point — mirroring the operating point this test always exercised, without
+    /// relying on the old algorithm's silent early bail-out to get there.</para>
     /// </summary>
-    private static CircuitModel ModelWithAPackage() => HarmonicaViewModel.DefaultModel() with
+    private static CircuitModel ModelWithAPackage()
     {
-        Embedding = new EmbeddingStack
+        var m = HarmonicaViewModel.DefaultModel();
+        return m with
         {
-            // Deliberately exaggerated — a real GaN HEMT's Rd is an ohm or two. The separation
-            // between the two planes has to exceed the grab radius IN PIXELS for the gesture to be
-            // exercisable at all, and a realistic package puts the glyph ~10 px from its marker.
-            Package = new LumpedPackage { Rd = 20.0, Rs = 2.0, Ls = 100e-12 },
-        },
-    };
+            Embedding = new EmbeddingStack
+            {
+                // Deliberately exaggerated — a real GaN HEMT's Rd is an ohm or two. The separation
+                // between the two planes has to exceed the grab radius IN PIXELS for the gesture to be
+                // exercisable at all, and a realistic package puts the glyph ~10 px from its marker.
+                Package = new LumpedPackage { Rd = 20.0, Rs = 2.0, Ls = 100e-12 },
+            },
+            Settings = m.Settings with { PinMaxDbm = 15.0 },
+        };
+    }
 
     private static async Task<HarmonicaViewModel> DocumentAtTierAOnly()
     {

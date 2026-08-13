@@ -15,6 +15,16 @@ public sealed partial class HarmonicaDocumentViewModel : ObservableObject
 
     public HarmonicaViewModel Harmonica { get; }
 
+    /// <summary>R-h9r2-11 — the docked-focus state <see cref="SetNativeMenuDockedFocus"/> last reported,
+    /// held here even while <see cref="NativeMenuDockedFocusChanged"/> has no subscriber yet. A document
+    /// that is already the active dockable at the instant its view is first realized receives that
+    /// notification BEFORE <c>HarmonicaView.OnDataContextChanged</c> has wired the delegate — the same
+    /// race <c>ConsumeActivationFocus</c> exists to close for activation focus. Without this, the
+    /// notification is simply lost and the native menu never attaches until the user switches tabs away
+    /// and back.</summary>
+    private bool _nativeMenuDockedFocusPending;
+    private Action<bool>? _nativeMenuDockedFocusChanged;
+
     /// <summary>
     /// R-h9a-3's action seam. <c>HarmonicaView</c> installs this in <c>OnDataContextChanged</c> — the
     /// same "view injects a delegate into its VM" shape <c>DisplayWindowViewModel</c>'s own
@@ -24,8 +34,29 @@ public sealed partial class HarmonicaDocumentViewModel : ObservableObject
     /// needing to know about Avalonia's <c>NativeMenu</c> type — that stays entirely inside the view.
     /// Deliberately plain <c>Action&lt;bool&gt;</c>, not an Avalonia-typed signature, so this class
     /// stays framework-free.
+    ///
+    /// <para><b>R-h9r2-11:</b> setting this (view wiring up) immediately re-applies whatever docked-focus
+    /// state <see cref="SetNativeMenuDockedFocus"/> most recently reported, rather than waiting for the
+    /// next real focus change — closing the race described on <see cref="_nativeMenuDockedFocusPending"/>.</para>
     /// </summary>
-    public Action<bool>? NativeMenuDockedFocusChanged { get; set; }
+    public Action<bool>? NativeMenuDockedFocusChanged
+    {
+        get => _nativeMenuDockedFocusChanged;
+        set
+        {
+            _nativeMenuDockedFocusChanged = value;
+            value?.Invoke(_nativeMenuDockedFocusPending);
+        }
+    }
+
+    /// <summary>R-h9r2-11 — the ONE way <c>WorkspaceViewModel</c>'s dock-level focus tracking reports
+    /// docked-focus changes now; it must never invoke <see cref="NativeMenuDockedFocusChanged"/>
+    /// directly, or a state reported before the view wired up is lost rather than remembered here.</summary>
+    public void SetNativeMenuDockedFocus(bool hasFocus)
+    {
+        _nativeMenuDockedFocusPending = hasFocus;
+        _nativeMenuDockedFocusChanged?.Invoke(hasFocus);
+    }
 
     public HarmonicaDocumentViewModel(HarmonicaViewModel? vm = null)
     {

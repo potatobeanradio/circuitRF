@@ -35,18 +35,27 @@ public static class DcivFamily
         string StructuralKey, double VgsMin, double VgsMax, int VgsSteps,
         double VdsMin, double VdsMax, int VdsSteps, int DrainPort);
 
-    /// <summary>The default sweep: gate from pinch-off to a little past the operating bias, drain
-    /// from 0 to about 1.4× the supply, which is the window a loadline actually occupies.</summary>
-    public static Key DefaultKey(CircuitModel model, int vgsSteps = 9, int vdsSteps = 200)
+    /// <summary>
+    /// R-h9r2-14 — the default sweep: a FIXED window, Vgs −5 … 2.5 V in 16 steps and Vds 0 … 120 V in
+    /// 120 steps, chosen for the SDD equation this document ships with, not centred on this document's
+    /// own bias. <c>vgsSteps</c>/<c>vdsSteps</c> stay as parameters for a caller that wants a different
+    /// resolution at the same window — only the fallback numbers moved.
+    ///
+    /// <para><b>This is a real change in kind, not just in numbers.</b> Before this, the default
+    /// window followed the document's own bias (gate ±2 V around it, drain to 1.4× the supply) so a
+    /// fresh document's DCIV family always bracketed its own operating point. A document biased far
+    /// from Vgs −5…2.5 / Vds 0…120 now draws a family that does NOT bracket it. That is what the owner
+    /// asked for — these numbers are chosen for the shipped SDD, not derived from any one document's
+    /// bias — but it is the direct cost of dropping the old bias-centred behaviour. R-h9b-12's own
+    /// override (<see cref="OverrideOf"/>) is untouched and still wins wherever the user has set one.
+    /// </para>
+    /// </summary>
+    public static Key DefaultKey(CircuitModel model, int vgsSteps = 16, int vdsSteps = 120)
     {
-        // A current-biased document (Idq) has no Vgs to centre on until the DC solve has run, so
-        // the window falls back to a conventional depletion-FET span rather than guessing one.
-        double vgs = model.Bias.Vgs ?? -3.0;
-        double vds = model.Bias.Vds;
         return new Key(
             model.StructuralKey,
-            VgsMin: vgs - 2.0, VgsMax: vgs + 2.0, VgsSteps: Math.Max(2, vgsSteps),
-            VdsMin: 0.0,       VdsMax: Math.Max(1.0, vds * 1.4), VdsSteps: Math.Max(2, vdsSteps),
+            VgsMin: -5.0, VgsMax: 2.5, VgsSteps: Math.Max(2, vgsSteps),
+            VdsMin: 0.0,  VdsMax: 120.0, VdsSteps: Math.Max(2, vdsSteps),
             DrainPort: 1);
     }
 

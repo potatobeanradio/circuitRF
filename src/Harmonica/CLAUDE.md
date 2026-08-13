@@ -7,6 +7,28 @@ Standing instructions for `src/Harmonica`. Read with the root `CLAUDE.md` and
 `tests/Firewall.Tests` assertion alongside `RfCore`, `Core`, `Engine` and `Cli`. The standalone
 harmonicaRF binary (H8) does not weaken that: it is `src/Ui` with a different `Main`.
 
+## Round 2B — `PinSearch.Sweep`, the explicit tier-A ladder (2026-08-13)
+
+`PinSearch.Run`'s bracket-and-secant is UNCHANGED and stays what `ContourGrid` calls once per Γ point.
+**`PinSearch.Sweep`** (new, same file) is a structurally separate sibling — `HarmonicaSolver`'s tier-A
+drive-up now calls it instead of `Run` — that walks the EXPLICIT `Start, Start+Step, …, Stop` ladder
+`HarmonicaSettings.PinStartDbm/PinMaxDbm/PinStepDbm` name, inclusive at both ends, every point a real
+solve, never stopping early. Compression is found by the SAME incremental running-`gMax` rule `Run`'s
+own `CompressionAt` already uses (walked forward, in order) — computing `gMax` as the ladder's GLOBAL
+maximum and re-deriving every step's compression against it AFTER the walk is a different, wrong
+answer for a non-monotone (gain-expansion) device: measured directly, it moved a real fixture's
+compression point from single digits of dBm to 27 dBm. `PinSearchResult.SweepCompression` (new)
+carries the compression point's scalar figures — interpolated from the first bracketing pair by
+default, or from ONE real extra solve when `HarmonicaSettings.ExactCompressionSolve` (new, default
+off) is on — separately from `AtCompression` (the STEP whose spectrum every glyph/loadline/Zin reads).
+The tickle is now `HarmonicaSettings.TickleEnabled`/`TickleDbm` (an ABSOLUTE level, replacing the old
+`PinStartDbm − 30` relative offset baked into `Run`), read identically by both `Run` and `Sweep`; OFF
+means `PinSearchResult.SmallSignalGainDb` (now `double?`) is null rather than fabricated, and `gMax`
+seeds from the first solved point instead. `PowerSweepValidation` (new file) is the range/tickle
+validator both the Power Sweep dialog and any future caller share. None of this enters
+`CircuitModel.StructuralKey`. See `src/Ui/CLAUDE.md`'s own R2B entry for the dialog, the tickle
+preference resolver, and the frame-to-frame warm-start lever this unlocked in `HarmonicaSolver`.
+
 ## harmonicaRF NEVER FILLS ITS CONTOURS — owner ruling, 2026-08-06
 
 **Iso-lines only. There is no fill, there is no fill setting, and there is not going to be one.**

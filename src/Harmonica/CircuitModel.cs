@@ -277,11 +277,57 @@ public sealed record HarmonicaSettings
     /// <c>dut.Evaluate</c> per sample) buys nothing a user can see.</summary>
     public const int LoadlineSamplesMin = 8, LoadlineSamplesMax = 2048;
 
-    /// <summary>Available-power ceiling for the Pin search, dBm (R-hrf-7's hard stop).</summary>
-    public double PinMaxDbm { get; init; } = 30.0;
+    /// <summary>
+    /// R-h9r2-18 — the EXPLICIT power sweep's own Stop, dBm, AND (unchanged from before this brief)
+    /// <c>PinSearch.Run</c>'s hard bracket ceiling. One number for both, deliberately: a document
+    /// whose panel swept to a different ceiling than its grid's bracket would show a sweep reaching
+    /// further than the grid ever searches, with no way for the user to see why. Default raised from
+    /// 30 to 50 dBm (the owner's own "−10 dBm to 50 dBm") — the direct consequence is that grid points
+    /// which used to report a <c>PinMax</c> hole at 30 dBm now keep searching to 50, so a document may
+    /// show fewer holes at a higher solve cost than before this default moved.
+    /// </summary>
+    public double PinMaxDbm { get; init; } = 50.0;
 
-    /// <summary>Where the Pin search starts, dBm.</summary>
+    /// <summary>Where the Pin search starts, dBm — also the explicit sweep's own Start.</summary>
     public double PinStartDbm { get; init; } = -10.0;
+
+    /// <summary>R-h9r2-18 — the explicit power sweep's own step, dB. <c>PinSearch.Run</c>'s bracket
+    /// never reads this — its doubling strides are what keep a grid point to ~4.6 solves, and nothing
+    /// about this setting may touch that.</summary>
+    public double PinStepDbm { get; init; } = 1.0;
+
+    /// <summary>R-h9r2-18's own hard ceiling on the explicit sweep's point count, refused by the Power
+    /// Sweep dialog by name (never silently clamped) rather than a per-document setting.</summary>
+    public const int MaxSweepPoints = 1001;
+
+    /// <summary>
+    /// R-h9r2-18a — whether the tickle (the small-signal reference every compression measurement is
+    /// taken against) is solved at all. Default true. OFF means <c>gMax</c> seeds from the first
+    /// solved sweep/grid point instead and <c>SmallSignalGainDb</c> is null rather than fabricated —
+    /// see <c>PinSearch</c>'s own remarks. Read by BOTH drive-ups (<c>PinSearch.Run</c> and
+    /// <c>PinSearch.Sweep</c>), or the panel's compression cursor and the contour grid's compression
+    /// criterion would measure against two different references.
+    /// </summary>
+    public bool TickleEnabled { get; init; } = true;
+
+    /// <summary>
+    /// R-h9r2-18a — the tickle's own drive level, dBm available, as an ABSOLUTE figure replacing the
+    /// old <c>PinStartDbm − 30 dB</c> relative offset. Default −50 dBm, the owner's own number (at the
+    /// default Start of −10 dBm, the effective tickle moves from −40 to −50 dBm against the prior
+    /// behaviour). Deliberately absolute: the tickle no longer follows <see cref="PinStartDbm"/> when
+    /// Start moves, which is the whole point of naming a level rather than an offset. Must stay below
+    /// <see cref="PinStartDbm"/> — validated by the Power Sweep dialog, never here.
+    /// </summary>
+    public double TickleDbm { get; init; } = -50.0;
+
+    /// <summary>
+    /// R-h9r2-17a — off by default. When true, the explicit power sweep (<c>PinSearch.Sweep</c>) takes
+    /// ONE extra real HB solve at the interpolated compression Pin, and every figure at compression —
+    /// scalar and spectrum alike — comes from that one solved state instead of the default
+    /// interpolation. Never touches the contour grid's own <c>PinSearch.Run</c>, whose secant is
+    /// already exact and needs no such option.
+    /// </summary>
+    public bool ExactCompressionSolve { get; init; }
 
     /// <summary>Whether the DUT's charge terms are evaluated — the strip's compute-charge toggle.</summary>
     public bool ComputeCharge { get; init; } = true;

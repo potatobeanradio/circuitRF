@@ -37,6 +37,13 @@ public enum HarmonicaGrabKind
     /// a grid point sitting under a marker must never be grabbed in preference to it.
     /// </summary>
     GridPoint,
+
+    /// <summary>
+    /// R-h9r2-8's VSWR-circle drag handle. The circle is drawn beneath a marker's own round glyph, and
+    /// above the intrinsic glyphs — so it is tested after markers and intrinsic glyphs, ahead of grid
+    /// points (a handle sitting under a grid point must not lose to it).
+    /// </summary>
+    VswrHandle,
 }
 
 /// <summary>One resolved grab: what, on which panel.</summary>
@@ -116,12 +123,25 @@ public static class HarmonicaHitTest
     /// yet". Defaults true so a caller with no visibility concept of its own (most direct tests) keeps
     /// today's behaviour.
     /// </param>
+    /// <param name="topmost">
+    /// R-h9r2-5 — the session's promoted marker (<see cref="HarmonicaViewModel.TopmostMarker"/>), fed
+    /// straight to <see cref="HarmonicaMarkerZOrder.RankOf"/> so this hit test agrees with the
+    /// renderer about what is visually on top.
+    /// </param>
+    /// <param name="z0">
+    /// R-h9r2-8 — the panel's own reference impedance, needed to place a VSWR handle exactly:
+    /// <see cref="HarmonicaVswrHandle.HandleGamma"/> is only correct once it goes through the real
+    /// Möbius-circle geometry, which is Z0-dependent off the matched point. Defaults to 50 Ω for
+    /// callers with no panel context (most direct tests).
+    /// </param>
     public static HarmonicaGrab Resolve(CharmLayout layout, IReadOnlyList<HarmonicaMarker> markers,
                                         double x, double y, double w, double h,
                                         double renderScaling = 1.0,
                                         double grabRadiusDevicePixels = GrabRadiusDevicePixels,
                                         IReadOnlyList<HarmonicaGridPoint>? gridPoints = null,
-                                        bool gridPointsVisible = true)
+                                        bool gridPointsVisible = true,
+                                        HarmonicaMarker? topmost = null,
+                                        double z0 = 50.0)
     {
         if (w <= 0 || h <= 0) return HarmonicaGrab.None;
         if (!gridPointsVisible) gridPoints = null;
@@ -138,11 +158,22 @@ public static class HarmonicaHitTest
         HarmonicaMarker? best = null;
         double bestD2 = double.MaxValue;
 
-        // Pass 1 — the round termination markers, which are on top.
+        // Pass 1 — the round termination markers, which are on top. R-h9r2-5: prefer the TOPMOST-RANK
+        // candidate among everything within the grab radius (matching what the renderer actually
+        // painted last), falling back to nearest only to break a tie at equal rank.
+        int bestRank = int.MinValue;
         foreach (var m in markers)
         {
             double d2 = Distance2(HarmonicaPanelRenderer.MarkerToCanvas(m.Gamma, size), local);
-            if (d2 <= r2 && d2 < bestD2) { bestD2 = d2; best = m; }
+            if (d2 > r2) continue;
+
+            int rank = HarmonicaMarkerZOrder.RankOf(m, topmost);
+            if (rank > bestRank || (rank == bestRank && d2 < bestD2))
+            {
+                bestRank = rank;
+                bestD2   = d2;
+                best     = m;
+            }
         }
         if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.ExtrinsicMarker, best, panelId);
 
@@ -153,6 +184,21 @@ public static class HarmonicaHitTest
             if (d2 <= r2 && d2 < bestD2) { bestD2 = d2; best = m; }
         }
         if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.IntrinsicGlyph, best, panelId);
+
+        // Pass 2.5 — R-h9r2-8's VSWR-circle drag handles, one per marker with the overlay on. Tested
+        // through the SAME raw-Gamma transform DrawVswrLocus draws the locus with (GammaToCanvas, never
+        // MarkerToCanvas — the locus is not on the compressed intrinsic scale).
+        double vswrRadius = VswrHandleGrabRadiusDevicePixels / Math.Max(1e-9, renderScaling);
+        double v2 = vswrRadius * vswrRadius;
+        bestD2 = double.MaxValue;
+        foreach (var m in markers)
+        {
+            if (!m.VswrEnabled) continue;
+            var handle = HarmonicaVswrHandle.HandleGamma(m.Gamma, m.VswrValue, z0);
+            double d2 = Distance2(HarmonicaPanelRenderer.GammaToCanvas(handle, size), local);
+            if (d2 <= v2 && d2 < bestD2) { bestD2 = d2; best = m; }
+        }
+        if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.VswrHandle, best, panelId);
 
         // Pass 3 — the Γ grid samples, beneath everything.
         if (gridPoints is null) return HarmonicaGrab.None;
@@ -181,6 +227,10 @@ public static class HarmonicaHitTest
     /// a 61-point grid at a marker's 14 px would leave no gaps between targets at all.
     /// </summary>
     public const double GridPointGrabRadiusDevicePixels = 7.0;
+
+    /// <summary>R-h9r2-8's grab radius for a VSWR-circle drag handle, in DEVICE pixels. There is at
+    /// most one per marker, so it can be a comfortable size without any risk of crowding.</summary>
+    public const double VswrHandleGrabRadiusDevicePixels = 9.0;
 
     private static double Distance2(SKPoint a, SKPoint b)
     {
@@ -272,10 +322,18 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
 
         var grab = HarmonicaHitTest.Resolve(_vm.Layout, _vm.Markers, x, y, w, h,
                                             renderScaling, GrabRadiusDevicePixels,
-                                            GridPointsOf(_vm), _vm.ShowGridPoints);
+                                            GridPointsOf(_vm), _vm.ShowGridPoints, _vm.TopmostMarker,
+                                            _vm.Frame.SmithPower.Z0);
         Grab         = grab;
         LastGrabKind = grab.Kind;
         if (!grab.IsGrab) return false;
+
+        // R-h9r2-5 — a successful grab of a marker's own round glyph, its intrinsic glyph, or (R-h9r2-8)
+        // its VSWR-circle handle promotes that marker to the top of the z-order for the rest of the
+        // session — grabbing the handle is interacting with the marker, same as grabbing the marker.
+        if (grab.Kind is HarmonicaGrabKind.ExtrinsicMarker or HarmonicaGrabKind.IntrinsicGlyph
+                       or HarmonicaGrabKind.VswrHandle)
+            _vm.PromoteMarker(grab.Marker!);
 
         if (grab.Kind == HarmonicaGrabKind.IntrinsicGlyph)
             _vm.BeginIntrinsicDrag(grab.Marker!);
@@ -368,6 +426,21 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
         var (local, size) = HarmonicaHitTest.ToPanel(_vm.Layout, Grab.PanelId, x, y, w, h);
         var gamma = HarmonicaPanelRenderer.CanvasToMarker(local, size);
 
+        if (Grab.Kind == HarmonicaGrabKind.VswrHandle)
+        {
+            // R-h9r2-8 — the locus, like a grid point, lives on the raw chart transform, never the
+            // compressed intrinsic one (it is not drawn through IntrinsicGlyphScale). The circle this
+            // handle rides is a genuinely offset Möbius circle whenever the marker's own Γ is off the
+            // matched point (HarmonicaVswrHandle's own header) — there is no shortcut from "distance
+            // from the marker" to VSWR in general, so the drag point is inverted through the real
+            // geometry via bisection rather than approximated.
+            var rawGamma = HarmonicaPanelRenderer.CanvasToGamma(local, size);
+            double vswr = HarmonicaVswrHandle.VswrThrough(Grab.Marker!.Gamma, rawGamma,
+                                                           _vm.Frame.SmithPower.Z0);
+            _vm.SetMarkerVswr(Grab.Marker!, vswr);
+            return;
+        }
+
         if (Grab.Kind == HarmonicaGrabKind.GridPoint)
         {
             // R-h7-12 — a grid point is a Γ SAMPLE, not a marker, so it lives on the raw chart
@@ -379,10 +452,20 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
 
         if (Grab.Kind == HarmonicaGrabKind.ExtrinsicMarker)
         {
+            // R-h9r2-9 — Snap to Grid lands the marker on the nearest already-solved Γ sample instead
+            // of the raw cursor position. Applied on EVERY move, not only at release, so the marker
+            // never shows an unsnapped position that the eventual commit would then jump away from —
+            // R-h6-3's "the marker IS the live preview" rule extended to a snapped preview.
+            if (Grab.Marker!.SnapToGridEnabled)
+                gamma = SnapToNearestGridPoint(gamma, _vm.Frame.SmithPower.GridPoints);
+
             // R-h6-3 — the marker IS the live preview. Nothing else in the model is touched, and the
             // TerminationSet is not cloned per move: RequestFrame already snapshots what it needs.
             _vm.SetMarkerGamma(Grab.Marker!, gamma);
-            _vm.RequestScheduledFrame(dragging);
+
+            // R-h9r2-2/3 — dragging always skips the grid; on release, additionally skip it when the
+            // dragged band is the plane/band currently swept (Finding B).
+            _vm.RequestFrameOnMarkerRelease(Grab.Marker!.Side, Grab.Marker.Band, dragging);
         }
         else
         {
@@ -391,5 +474,24 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
             // message, not here, because it arrives with the frame rather than with the gesture.
             _vm.DragIntrinsicGlyph(Grab.Marker!, gamma, dragging);
         }
+    }
+
+    /// <summary>R-h9r2-9 — the nearest Γ sample in the currently-solved grid, or <paramref name="gamma"/>
+    /// unchanged when the grid is empty (no grid solved yet, or a <c>SkipContours</c> frame carrying
+    /// none forward). A no-op rather than an error: the toggle stays available and simply does nothing
+    /// until there is something to snap to.</summary>
+    private static Complex SnapToNearestGridPoint(Complex gamma, IReadOnlyList<HarmonicaGridPoint> gridPoints)
+    {
+        if (gridPoints.Count == 0) return gamma;
+
+        Complex best = gamma;
+        double bestD2 = double.MaxValue;
+        foreach (var gp in gridPoints)
+        {
+            var diff = gp.Gamma - gamma;
+            double d2 = diff.Real * diff.Real + diff.Imaginary * diff.Imaginary;
+            if (d2 < bestD2) { bestD2 = d2; best = gp.Gamma; }
+        }
+        return best;
     }
 }

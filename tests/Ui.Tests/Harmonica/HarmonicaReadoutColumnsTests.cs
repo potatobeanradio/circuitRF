@@ -47,6 +47,24 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
         output.WriteLine(string.Join(", ", labels));
     }
 
+    // ══ R-h9r2-24 — the per-marker intrinsic-Γ rows no longer crowd the General line ═══════════
+
+    [Fact]
+    public void GeneralColumn_NoLongerCarriesPerMarkerIntrinsicGammaRows()
+    {
+        var vm = NewSolvedVm();
+        var general = vm.Frame.Readouts.Where(r => r.Column == ReadoutColumn.General).ToArray();
+
+        // None of the 5 default markers' own "{Name} Γᵢ" rows survive — removed outright per the
+        // owner's own literal request, not relocated (the intrinsic Γ is still the glyph on the chart).
+        foreach (var m in vm.Markers)
+            Assert.DoesNotContain(general, r => r.Label == $"{m.Name} Γᵢ");
+
+        Assert.DoesNotContain(general, r => r.Label.EndsWith(" Γᵢ", StringComparison.Ordinal));
+
+        output.WriteLine(string.Join(", ", general.Select(r => r.Label)));
+    }
+
     [Fact]
     public void SourceAndLoadColumns_ListOneZGammaPairPerMarker_NoMarkerNoRow()
     {

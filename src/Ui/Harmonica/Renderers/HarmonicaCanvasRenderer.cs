@@ -27,13 +27,16 @@ public static class HarmonicaCanvasRenderer
     /// <param name="Theme">The resolved Layer-2 colour tokens.</param>
     /// <param name="Dark">Whether the dark variant is active — the renderers take it explicitly.</param>
     /// <param name="Picked">§7.7's picked traces, each with its own panel.</param>
+    /// <param name="TopmostMarker">R-h9r2-5 — the session's promoted marker, so the composed picture
+    /// agrees with the live canvas about which marker is drawn on top.</param>
     public readonly record struct Snapshot(
         HarmonicaFrame                    Frame,
         CharmLayout                       Layout,
         HarmonicaRenderTheme              Theme,
         bool                              Dark,
         IReadOnlyList<HarmonicaPickedTrace> Picked,
-        bool                              ShowGridPoints)
+        bool                              ShowGridPoints,
+        HarmonicaMarker?                  TopmostMarker = null)
     {
         public static Snapshot Of(HarmonicaViewModel? vm) => new(
             vm?.Frame       ?? HarmonicaFrame.Empty,
@@ -41,7 +44,8 @@ public static class HarmonicaCanvasRenderer
             vm?.RenderTheme ?? HarmonicaRenderTheme.Dark,
             vm?.Variant     != Theming.ColorVariant.Light,
             vm is null ? [] : [.. vm.PickedTraces],
-            vm?.ShowGridPoints ?? false);
+            vm?.ShowGridPoints ?? false,
+            vm?.TopmostMarker);
     }
 
     /// <summary>Fills the target rect with the document background. Never <c>canvas.Clear</c>, which
@@ -110,11 +114,11 @@ public static class HarmonicaCanvasRenderer
         {
             case HarmonicaPanelId.SmithPower:
                 HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithPower, s.Theme, s.Dark,
-                                                      s.ShowGridPoints);
+                                                      s.ShowGridPoints, s.TopmostMarker);
                 return;
             case HarmonicaPanelId.SmithEfficiency:
                 HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithEfficiency, s.Theme, s.Dark,
-                                                      s.ShowGridPoints);
+                                                      s.ShowGridPoints, s.TopmostMarker);
                 return;
             case HarmonicaPanelId.Loadline:
                 HarmonicaPanelRenderer.DrawLoadlinePanel(canvas, size, s.Frame.Loadline, s.Theme, s.Dark);

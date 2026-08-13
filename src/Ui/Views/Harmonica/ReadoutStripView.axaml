@@ -15,8 +15,19 @@
     All three of those are load-bearing and each is easy to lose:
       • NO section titles and NO decoration — a WrapPanel of label/value pairs, nothing more.
       • Every pair carries a ToolTip, set per item in code-behind from the frame's own tooltip text.
-      • SelectableTextBlock, not TextBlock. A readout you cannot copy is a readout you retype by
-        hand into a report, with the transcription errors that implies.
+      • SelectableTextBlock, not TextBlock — for every row EXCEPT an editable one (R-h9r2-15). A
+        readout you cannot copy is a readout you retype by hand into a report, with the transcription
+        errors that implies — but SelectableTextBlock consumes double-tap as select-a-word before it
+        ever reaches a parent's DoubleTapped handler, so an editable row (R-h9c-8's inline editor)
+        would never engage if it stayed selectable. An editable row's text is reachable for selection
+        one double-click away, inside the editor itself.
+  -->
+
+  <!--
+    R-h9r2-15/16 — CircuitRF.Ui.Tests.Harmonica.HarmonicaInlineEditSelectabilityTests pins both halves
+    of this: editable rows are plain TextBlock (so the inline editor's double-tap actually engages)
+    while every other row stays SelectableTextBlock; the editor itself seeds with the value AND its
+    unit and pre-selects only the value.
 
     Colours come from Harmonica.ReadoutText — §7.9.2 is explicit that this role covers ALL text in
     the strip — so the strip cannot drift away from the panels' own palette.

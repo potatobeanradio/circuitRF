@@ -49,13 +49,15 @@ public static class CharmIo
     /// <param name="Layout">R-h45-1's §7.1 panel placement.</param>
     /// <param name="Unresolved">Every referenced artifact that is not there.</param>
     /// <param name="Traces">R-h7-7's picked traces, as plain (spec, panel, label) data.</param>
+    /// <param name="Vswr">R-h9r2-8 — every marker whose VSWR-circle overlay is ON.</param>
     public readonly record struct CharmContents(
         CircuitModel                        Model,
         TerminationSet                      Terminations,
         CharmAppearance                     Appearance,
         CharmLayout                         Layout,
         IReadOnlyList<UnresolvedReference>  Unresolved,
-        IReadOnlyList<CharmTrace>           Traces);
+        IReadOnlyList<CharmTrace>           Traces,
+        IReadOnlyList<CharmMarkerVswr>      Vswr);
 
     /// <summary>
     /// R-h7-7 — one picked trace, as the <c>.charm</c> carries it.
@@ -66,6 +68,14 @@ public static class CharmIo
     /// dropped at load — the same courtesy an unresolved model reference gets.</para>
     /// </summary>
     public readonly record struct CharmTrace(string Spec, string PanelId, string? Label);
+
+    /// <summary>
+    /// R-h9r2-8 — one marker's VSWR-circle overlay, as the <c>.charm</c> carries it. Framework-free
+    /// (this project may not reference <c>HarmonicaMarker</c>, which lives in <c>src/Ui</c>), so the
+    /// caller supplies and reads a plain list of these rather than the marker objects themselves.
+    /// Only markers with the overlay ON are ever in this list — see <see cref="VswrToJson"/>.
+    /// </summary>
+    public readonly record struct CharmMarkerVswr(TerminationSide Side, int Band, double Value);
 
     public static string Write(CircuitModel model)
         => JsonSerializer.Serialize(ToDocument(model), Options);
@@ -205,6 +215,10 @@ public static class CharmIo
             DcivVdsMin    = m.Settings.DcivVdsMin,
             DcivVdsMax    = m.Settings.DcivVdsMax,
             DcivVdsSteps  = m.Settings.DcivVdsSteps,
+            PinStepDbm    = m.Settings.PinStepDbm,
+            TickleEnabled = m.Settings.TickleEnabled,
+            TickleDbm     = m.Settings.TickleDbm,
+            ExactCompressionSolve = m.Settings.ExactCompressionSolve,
         },
         PavlDbm = m.PavlDbm,
     };
@@ -276,6 +290,10 @@ public static class CharmIo
                 DcivVdsMin       = s?.DcivVdsMin,
                 DcivVdsMax       = s?.DcivVdsMax,
                 DcivVdsSteps     = s?.DcivVdsSteps,
+                PinStepDbm       = s?.PinStepDbm       ?? defaults.PinStepDbm,
+                TickleEnabled    = s?.TickleEnabled    ?? defaults.TickleEnabled,
+                TickleDbm        = s?.TickleDbm        ?? defaults.TickleDbm,
+                ExactCompressionSolve = s?.ExactCompressionSolve ?? defaults.ExactCompressionSolve,
             },
             PavlDbm = d.PavlDbm ?? 0.0,
         };
@@ -306,6 +324,10 @@ public static class CharmIo
         /// <summary>R-h7-7 — the picked traces (§7.7). Absent on every .charm written before H7 and
         /// on every one nobody has picked a trace in.</summary>
         public List<CharmTraceBlock>? Traces { get; set; }
+        /// <summary>R-h9r2-8 — VSWR-circle overlays, keyed "source:2"/"load:1" like
+        /// <see cref="Terminations"/>. Absent on every .charm written before this brief and on every
+        /// one nobody has turned the overlay on for.</summary>
+        public Dictionary<string, string>? Vswr { get; set; }
     }
 
     private sealed class CharmTraceBlock
@@ -384,6 +406,19 @@ public static class CharmIo
         public double? DcivVdsMin { get; set; }
         public double? DcivVdsMax { get; set; }
         public int?    DcivVdsSteps { get; set; }
+
+        /// <summary>R-h9r2-18 — the explicit power sweep's own Step. Absent on every .charm written
+        /// before this brief; such a file opens at the default 1 dB.</summary>
+        public double? PinStepDbm { get; set; }
+
+        /// <summary>R-h9r2-18a — absent on every .charm written before this brief; such a file opens
+        /// at the default (tickle on, −50 dBm).</summary>
+        public bool?   TickleEnabled { get; set; }
+        public double? TickleDbm { get; set; }
+
+        /// <summary>R-h9r2-17a — absent on every .charm written before this brief; such a file opens
+        /// with the option off (interpolated compression, no extra solve).</summary>
+        public bool?   ExactCompressionSolve { get; set; }
     }
 
     // ── markers ───────────────────────────────────────────────────────────────
@@ -436,7 +471,8 @@ public static class CharmIo
     /// </param>
     public static string Write(CircuitModel model, TerminationSet terminations,
                                CharmAppearance? appearance = null, CharmLayout? layout = null,
-                               IReadOnlyList<CharmTrace>? traces = null)
+                               IReadOnlyList<CharmTrace>? traces = null,
+                               IReadOnlyList<CharmMarkerVswr>? vswr = null)
     {
         var doc = ToDocument(model);
         doc.Terminations = TerminationsToJson(terminations);
@@ -451,13 +487,46 @@ public static class CharmIo
                     Spec = t.Spec, Panel = t.PanelId, Label = t.Label,
                 })]
             : null;
+        // R-h9r2-8 — same rule again: no marker has the overlay on ⇒ no block.
+        doc.Vswr         = VswrToJson(vswr);
         return JsonSerializer.Serialize(doc, Options);
     }
 
     public static void WriteFile(string path, CircuitModel model, TerminationSet terminations,
                                  CharmAppearance? appearance = null, CharmLayout? layout = null,
-                                 IReadOnlyList<CharmTrace>? traces = null)
-        => File.WriteAllText(path, Write(model, terminations, appearance, layout, traces));
+                                 IReadOnlyList<CharmTrace>? traces = null,
+                                 IReadOnlyList<CharmMarkerVswr>? vswr = null)
+        => File.WriteAllText(path, Write(model, terminations, appearance, layout, traces, vswr));
+
+    /// <summary>R-h9r2-8 — writes only the markers whose overlay is ON, keyed like
+    /// <see cref="TerminationsToJson"/>. Null/empty input ⇒ null block, so an untouched document
+    /// re-serialises byte-for-byte.</summary>
+    public static Dictionary<string, string>? VswrToJson(IReadOnlyList<CharmMarkerVswr>? vswr)
+    {
+        if (vswr is not { Count: > 0 }) return null;
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var e in vswr)
+            map[$"{e.Side}:{e.Band}".ToLowerInvariant()] =
+                e.Value.ToString("R", CultureInfo.InvariantCulture);
+        return map;
+    }
+
+    /// <inheritdoc cref="VswrToJson"/>
+    public static IReadOnlyList<CharmMarkerVswr> VswrFromJson(IReadOnlyDictionary<string, string>? map)
+    {
+        if (map is null) return [];
+        var list = new List<CharmMarkerVswr>();
+        foreach (var (key, value) in map)
+        {
+            string[] parts = key.Split(':');
+            if (parts.Length != 2) continue;
+            if (!Enum.TryParse<TerminationSide>(parts[0], ignoreCase: true, out var side)) continue;
+            if (!int.TryParse(parts[1], out int band)) continue;
+            if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) continue;
+            list.Add(new CharmMarkerVswr(side, band, v));
+        }
+        return list;
+    }
 
     /// <inheritdoc cref="Read(string, string?, out IReadOnlyList{UnresolvedReference})"/>
     public static (CircuitModel Model, TerminationSet Terminations) Read(
@@ -486,7 +555,8 @@ public static class CharmIo
             AppearanceFromJson(doc.Appearance),
             LayoutFromJson(doc.Layout),
             FindUnresolved(model, doc, baseDirectory),
-            TracesFromJson(doc.Traces));
+            TracesFromJson(doc.Traces),
+            VswrFromJson(doc.Vswr));
     }
 
     /// <summary>

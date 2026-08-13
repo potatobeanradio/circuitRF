@@ -112,6 +112,19 @@ public sealed class AppPreferences
     [JsonPropertyName("em_max_cores")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? EmMaxCores { get; set; }
+
+    // R-h9r2-18a: what a BRAND NEW harmonicaRF document's tickle starts at. Null means the shipped
+    // default (on, −50 dBm). Per USER, not per document — see HarmonicaTickleDefaults' own reasoning,
+    // the same "a .charm from someone else must not change your own working habit" rule
+    // WBondWirePoints etc. already follow above. HarmonicaSettings.TickleEnabled/TickleDbm are what a
+    // document was actually solved with and always win once one exists; this only seeds a new one.
+    [JsonPropertyName("harmonica_tickle_enabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? HarmonicaTickleEnabled { get; set; }
+
+    [JsonPropertyName("harmonica_tickle_dbm")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? HarmonicaTickleDbm { get; set; }
 }
 
 public static class AppPreferencesIo

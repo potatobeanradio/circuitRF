@@ -5140,7 +5140,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void NewHarmonica()
     {
         var title = NextHarmonicaTitle();
-        var vm    = new HarmonicaDocumentViewModel();
+        // R-h9r2-18a — a brand new document's tickle seeds from this installation's own preference.
+        var vm    = new HarmonicaDocumentViewModel(new HarmonicaViewModel(HarmonicaTickleDefaults.SeedModel()));
         var doc   = new HarmonicaDocument(title, vm);
         _scratchHarmonicas.Add(doc);
         _factory.OpenDocument(doc);
@@ -8328,12 +8329,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (!OperatingSystem.IsMacOS()) return;
         if (ReferenceEquals(_harmonicaDockedFocusDoc, nowActive)) return;
 
-        _harmonicaDockedFocusDoc?.ViewModel.NativeMenuDockedFocusChanged?.Invoke(false);
+        _harmonicaDockedFocusDoc?.ViewModel.SetNativeMenuDockedFocus(false);
         _harmonicaDockedFocusDoc = nowActive;
 
         if (nowActive is not null)
         {
-            nowActive.ViewModel.NativeMenuDockedFocusChanged?.Invoke(true);
+            nowActive.ViewModel.SetNativeMenuDockedFocus(true);
         }
         else
         {

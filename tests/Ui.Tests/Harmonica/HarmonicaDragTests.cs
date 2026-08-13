@@ -99,7 +99,11 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
     [Fact]
     public void Tier2_TheGrabRadiusIsTheSameNumberOfPixelsOnA300pxPanelAndA900pxOne()
     {
-        var vm = new HarmonicaViewModel();
+        // Stripped to S1/L1: at 300px the default-set S2/L2/L3 markers can land within the 14-device-
+        // pixel grab radius of a probe placed near L1's own default position, and R-h9r2-5's z-order
+        // rank (not proximity) decides ties — the wrong marker can then win at d=0, before this test's
+        // own walk-outward loop has anything to do with it.
+        var vm = StripToS1L1(new HarmonicaViewModel());
         var marker = vm.Markers[1];
         marker.Gamma = new Complex(0.35, 0.20);
 
@@ -130,7 +134,7 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
     [Fact]
     public void Tier2_TheRadiusIsDIVIDEDByRenderScaling_SoItStaysConstantInDEVICEPixels()
     {
-        var vm = new HarmonicaViewModel();
+        var vm = StripToS1L1(new HarmonicaViewModel());
         var marker = vm.Markers[1];
         marker.Gamma = new Complex(0.35, 0.20);
 
@@ -201,7 +205,10 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
     public async Task ASyntheticDrag_MovesTheMarkerToTheReleasePoint_AndSnapsWithONEFullFrame()
     {
         var clock = new Clock();
-        var vm = new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 33.3) };
+        // Stripped to S1/L1: the default S2/L2/L3 markers can otherwise collide with a probe placed
+        // near L1's own position (R-h9r2-5's z-order rank, not proximity, decides who wins a grab
+        // radius overlap) — see Tier2_TheGrabRadiusIsTheSameNumberOfPixelsOnA300pxPanelAndA900pxOne.
+        var vm = StripToS1L1(new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 33.3) });
         vm.Pool.Completed += (f, _) => vm.PublishFrame(f);
 
         const double W = 1200, H = 800;
@@ -268,10 +275,21 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
     public async Task TheSameSequenceWithAnOverBudgetFrameTiming_WalksTheLadderDown_AndStillSnaps()
     {
         var clock = new Clock();
-        var vm = new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 33.3) };
+        // Stripped to S1/L1 — see Tier2_TheGrabRadiusIsTheSameNumberOfPixelsOnA300pxPanelAndA900pxOne
+        // for why the default S2/L2/L3 markers cannot safely be left in for a fixture that grabs by
+        // canvas position near L1's own default Γ.
+        //
+        // Dragged marker is S1 (Markers[0]), deliberately NOT L1: R-h9r2-3's default GridSide/
+        // GridHarmonic is Load/1, i.e. L1 IS the swept band by default, and releasing a drag on the
+        // swept band correctly SKIPS the grid re-solve (carrying the pre-drag grid forward instead of
+        // paying for a re-solve that would publish the identical result) — which would leave
+        // GridPoints empty here for a reason this test isn't about. S1 is never the swept band
+        // (GridSide is a Load/Source discriminator), so it still exercises "release re-solves the
+        // grid at Full quality" cleanly, which is this test's own actual subject.
+        var vm = StripToS1L1(new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 33.3) });
         const double W = 1200, H = 800;
 
-        var marker = vm.Markers[1];
+        var marker = vm.Markers[0];
         var g = new HarmonicaGesture(vm);
         var (sx, sy) = OnPowerPanel(vm, marker.Gamma, W, H);
         Assert.True(g.PointerDown(sx, sy, W, H));
@@ -309,7 +327,7 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         // Freeze-and-snap: the release is at FULL, whatever the ladder said mid-drag.
         Assert.Equal(FrameQuality.Full, vm.LastPlan!.Value.Quality);
         Assert.NotEmpty(vm.Frame.SmithPower.GridPoints);
-        Assert.True((vm.Markers[1].Gamma - new Complex(0.4, 0.2)).Magnitude < 0.01);
+        Assert.True((vm.Markers[0].Gamma - new Complex(0.4, 0.2)).Magnitude < 0.01);
     }
 
     // ══ R-h6-3 — the drag writes nothing but the marker ══════════════════════

@@ -33,8 +33,21 @@ public sealed class HarmonicaScheduledFrameTests(ITestOutputHelper output)
     {
         // The scheduler is proven in isolation by FrameSchedulerTests; this proves the document
         // actually ASKS it — a policy nothing consults is a policy that does not exist.
+        //
+        // R-h9r2-2 (this brief) changed what there is to measure here: `HarmonicaViewModel.OptionsFor`
+        // now forces `SkipContours = true` for EVERY `dragging: true` request, regardless of which
+        // ladder rung the scheduler picked — so `GridSolveMs`/`FitMs`/`RasterMs` are all zero on every
+        // recorded frame in this loop (only `HarmonicaSolver`'s single tier-A Pin drive-up is ever
+        // costed while dragging). The ~400–600 ms contour-bearing-frame premise this test used to lean
+        // on for "obviously over budget" no longer exists during a drag — there is no contour cost left
+        // to record. `FrameScheduler.RecordFrame` still degrades on `TierAMs` alone, which is real but
+        // small (measured ~15–30 ms on this fixture) — so the target is set well under that instead of
+        // at the production 33.3 ms, to reliably force the SAME over-budget-every-frame walk the ladder
+        // has always been expected to make. This is deliberately about tier A now, not contours: the
+        // brief's own words are "[the ladder] still measures, still degrades, still recovers — it
+        // simply no longer has a contour rung to announce" while a drag is in progress.
         var clock = new Clock();
-        var vm = new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 33.3) };
+        var vm = new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 3.0) };
 
         // Stand in for the view: publishing is the ONE thing the view owns (it must happen on the UI
         // thread), so a headless test has to play that part or Frame never moves.
@@ -43,8 +56,7 @@ public sealed class HarmonicaScheduledFrameTests(ITestOutputHelper output)
         // loop self-feeding, because a ladder that is never told what a frame cost can never degrade
         // and D4's status message can never fire. So this loop no longer records a synthetic timing
         // of its own: it would be the SECOND record per frame and the ladder would fall two rungs an
-        // iteration. On this model a real contour-bearing frame is ~400–600 ms against a 33 ms
-        // target, so the walk below is over-budget by an order of magnitude and is not a close call.
+        // iteration.
         vm.Pool.Completed += (f, _) => vm.PublishFrame(f);
 
         var plans = new List<FramePlan>();
@@ -57,9 +69,14 @@ public sealed class HarmonicaScheduledFrameTests(ITestOutputHelper output)
 
             var plan = vm.LastPlan!.Value;
             plans.Add(plan);
+            output.WriteLine($"frame {i}: quality={plan.Quality} skip={plan.SkipContours} timing={vm.Frame.Timing}");
 
             // D4 through the document: tier A is in every plan the document actually solves.
             Assert.True(plan.IncludesTierA);
+
+            // R-h9r2-2's own invariant — OptionsFor forces SkipContours regardless of which rung the
+            // scheduler is actually on, so the solved frame never carries a fresh grid while dragging.
+            Assert.Empty(vm.Frame.SmithPower.GridPoints);
 
             clock.Advance(50);
         }

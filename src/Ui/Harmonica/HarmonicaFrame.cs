@@ -40,6 +40,26 @@ public sealed class HarmonicaMarker(TerminationSideKind side, int band)
     /// ordinary rather than notable — <c>IntrinsicGlyphScale</c> already handles that case.</para>
     /// </summary>
     public bool ExtrinsicIsOutsideUnitCircle => Gamma.Magnitude > 1.0;
+
+    /// <summary>
+    /// R-h9r2-8 — whether this marker's constant-VSWR locus is drawn. Persisted additively in
+    /// <c>.charm</c> (<c>CharmIo.VswrToJson</c>/<c>VswrFromJson</c>) — a marker nobody has turned this
+    /// on for is the absent state, so an untouched document re-serialises byte-for-byte.
+    /// </summary>
+    public bool VswrEnabled { get; set; }
+
+    /// <summary>The VSWR the locus is drawn for. Default 2.0, per R-h9r2-8. Persisted alongside
+    /// <see cref="VswrEnabled"/> — only when the overlay is actually on.</summary>
+    public double VswrValue { get; set; } = 2.0;
+
+    /// <summary>
+    /// R-h9r2-9 — "Snap to Grid": when true, releasing a drag on this marker snaps its Γ to the
+    /// nearest sample in <c>Frame.SmithPower.GridPoints</c> instead of landing wherever the pointer
+    /// was. <b>Session state only, like <see cref="HarmonicaViewModel.TopmostMarker"/></b> — the grid
+    /// itself is never persisted (a custom ring set is session state too), so there is nothing for
+    /// this to mean once the document is reopened.
+    /// </summary>
+    public bool SnapToGridEnabled { get; set; }
 }
 
 /// <summary>Which termination plane a marker belongs to. Mirrors the engine's own
@@ -60,8 +80,11 @@ public enum ReadoutColumn { General, Source, Load, Mxp, Mxe }
 /// is where the numbers already are (§0.3 item 1: never recompute in a view model).
 /// </summary>
 /// <param name="Label">The row's own label — "ZL1", "Pout", "MXP 1f0 Load", …</param>
-/// <param name="Value">Formatted for display, in whichever format (<see cref="IsComplex"/> rows
-/// only) the row's own <see cref="FormatKey"/> currently resolves to.</param>
+/// <param name="Value">Formatted for display AT SOLVE TIME, in whichever format was current then.
+/// <b>R-h9r2-25:</b> for an <see cref="IsComplex"/> row this is a FALLBACK only — the strip renders
+/// from <see cref="RawValue"/> at the CURRENT format instead, whenever both are available, which is
+/// what makes a right-click format change repaint immediately without a re-solve. This still holds
+/// the answer for a row with no raw form (headers, "no optimum", every scalar figure).</param>
 /// <param name="Tooltip">§7.5's own concession to newcomers — every row carries one.</param>
 /// <param name="Column">Which of the four columns this row renders in.</param>
 /// <param name="IsComplex">True for a Z or Γ row — R-h9c-7's right-click format flyout applies to
@@ -74,10 +97,17 @@ public enum ReadoutColumn { General, Source, Load, Mxp, Mxe }
 /// <param name="IsGamma">True when this complex row is the Γ half of a Z/Γ pair rather than the Z
 /// half — the two need independent format state and independent write-through calls
 /// (<c>SetMarkerImpedance</c> vs <c>SetMarkerGamma</c>).</param>
+/// <param name="RawValue">
+/// R-h9r2-25 — the UNFORMATTED value behind an <see cref="IsComplex"/> row, carried so
+/// <c>ReadoutStripView</c> can format it through <c>HarmonicaReadoutFormatting</c> at RENDER time
+/// using whatever format is current then, rather than baking in whatever format was current when
+/// <c>HarmonicaSolver.BuildReadouts</c> ran. Null for every row with no complex quantity behind it.
+/// </param>
 public sealed record HarmonicaReadout(
     string Label, string Value, string Tooltip, ReadoutColumn Column,
     bool IsComplex = false, bool Editable = false,
-    TerminationSideKind? Side = null, int Band = 0, bool IsGamma = false)
+    TerminationSideKind? Side = null, int Band = 0, bool IsGamma = false,
+    Complex? RawValue = null)
 {
     /// <summary>
     /// R-h9c-7's persistence key for this row's format choice, or null for a row with no format
@@ -133,6 +163,12 @@ public sealed record SmithPanelData
     /// <summary>The markers this chart shows. The SAME instances the other chart holds (R-h45-3).</summary>
     public IReadOnlyList<HarmonicaMarker> Markers { get; init; } = [];
 
+    /// <summary>The reference impedance this frame was solved against — R-h9r2-8's VSWR locus needs
+    /// it to turn a marker's Γ into the impedance the circle is really drawn around. Stamped by
+    /// <c>HarmonicaSolver</c> from <c>Model.Settings.Z0</c> on every frame (R-h9b-6: Z0 is a live
+    /// setting, never frozen).</summary>
+    public double Z0 { get; init; } = 50.0;
+
     /// <summary>D6's argmax over the computed grid — never a search, so the readout beside it can
     /// never disagree with what is drawn. Kept as the honest SAMPLE-based seed (R-h9b-15); the glyph
     /// itself is drawn from <see cref="MxpOptimum"/>/<see cref="MxeOptimum"/> below.</summary>
@@ -167,6 +203,20 @@ public sealed record SmithPanelData
     /// mean "no shading", which is the ordinary state.
     /// </summary>
     public CircuitRF.Harmonica.ReachableRegion? Reachable { get; init; }
+
+    /// <summary>
+    /// R-h9r2-1 — which plane/band this panel's <see cref="Contours"/>/<see cref="GridPoints"/>/
+    /// <see cref="Optimum"/> were actually SOLVED for. Null means this panel carries no contour layer
+    /// at all (never solved yet, or a grid-less frame that refused to carry one forward because the
+    /// identity did not match). Compared field-for-field against a frame's own
+    /// <c>Options.GridSide</c>/<c>GridHarmonic</c> before a grid-less frame is allowed to reuse a
+    /// PREDECESSOR's layer — carrying a Load-plane contour set into a frame the user has since
+    /// switched to the Source plane would draw a confident wrong picture.
+    /// </summary>
+    public CircuitRF.Harmonica.TerminationSide? ContourGridSide { get; init; }
+
+    /// <summary>The harmonic band half of <see cref="ContourGridSide"/>'s identity check.</summary>
+    public int? ContourGridHarmonic { get; init; }
 }
 
 /// <summary>§7.3 — the DCIV family with the time-domain loadline over it.</summary>

@@ -130,6 +130,9 @@
             <NativeMenuItem Header="Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"/>
             <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"/>
             <NativeMenuItem Header="Cursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Power Sweep…" Command="{Binding PowerSweepCommand}"/>
+            <NativeMenuItem Header="Set Z0…"      Command="{Binding SetZ0Command}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -272,6 +275,13 @@
                 ToolTip.Tip="The Γ grid sample dots. Off by default; draggable once shown."/>
       <MenuItem Header="C_ursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"
                 ToolTip.Tip="Operating point for the glyphs and the inverse solve. Snap to compression follows the P-x dB point; otherwise the cursor stays where you put it."/>
+      <Separator/>
+      <MenuItem Header="_Power Sweep…" Command="{Binding PowerSweepCommand}"
+                ToolTip.Tip="The explicit Pin Start/Stop/Step ladder, the tickle, and the exact-compression-solve option.">
+        <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
+      </MenuItem>
+      <MenuItem Header="Set _Z0…" Command="{Binding SetZ0Command}"
+                ToolTip.Tip="The Smith-chart reference impedance. Also settable from the readout strip's own Z0 field."/>
     </MenuItem>
 
     <MenuItem Header="_Grid" Padding="8,4">

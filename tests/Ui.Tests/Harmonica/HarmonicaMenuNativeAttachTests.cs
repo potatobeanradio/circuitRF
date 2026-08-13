@@ -109,4 +109,42 @@ public class HarmonicaMenuNativeAttachTests
             "consumer must use the captured _ownMenu field, or it will silently find nothing once the " +
             "menu has moved to a hosting window.");
     }
+
+    // ── R-h9r2-12 — owner-reported: switching the OS colour theme to dark crashed the app ──────────────
+    //
+    // Same exception, same interop layer, as the torn-off-window-close crash above — but thrown from the
+    // ATTACH call inside RecomputeAttachment instead of the detach inside DetachNativeMenuFromWindow. A
+    // failed attach must cost a menu bar, never the whole application.
+
+    [Fact]
+    public void RecomputeAttachment_GuardsTheAttachCall_SoAFailedAttachCannotCrashTheApp()
+    {
+        string src = CodeOnly();
+
+        int methodStart = src.IndexOf("private void RecomputeAttachment()", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "Expected to find RecomputeAttachment.");
+        int methodEnd = src.IndexOf("\n    }", methodStart, StringComparison.Ordinal);
+        Assert.True(methodEnd >= 0, "Expected RecomputeAttachment's closing brace.");
+        string body = src[methodStart..methodEnd];
+
+        int attachIdx = body.IndexOf("NativeMenu.SetMenu(desiredTarget, _ownMenu);", StringComparison.Ordinal);
+        Assert.True(attachIdx >= 0, "Expected the real attach call.");
+
+        // The attach call must sit inside a try whose catch clears _attachedTo.
+        Assert.True(
+            Regex.IsMatch(body, @"try\s*\{\s*NativeMenu\.SetMenu\(desiredTarget,\s*_ownMenu\);"),
+            "Expected the attach call to be the first statement inside a try block.");
+        string afterAttach = body[attachIdx..];
+        Assert.Contains("catch (Exception)", afterAttach, StringComparison.Ordinal);
+        Assert.Contains("_attachedTo = null;", afterAttach, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RecomputeAttachment_ClearsTheDesiredTargetDefensively_BeforeAttaching()
+    {
+        string src = CodeOnly();
+        // Detaching the desired target's own menu before setting ours removes one more way our
+        // bookkeeping (_attachedTo) can disagree with what the platform exporter actually holds.
+        Assert.Contains("NativeMenu.SetMenu(desiredTarget, null);", src, StringComparison.Ordinal);
+    }
 }

@@ -117,6 +117,8 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     public Action? PreferencesHook     { get; set; }
     public Action? HelpHook            { get; set; }
     public Action? AddTraceHook        { get; set; }
+    public Action? PowerSweepHook      { get; set; }
+    public Action? SetZ0Hook           { get; set; }
 
     [RelayCommand] private void NewDocument()     => NewDocumentHook?.Invoke();
     [RelayCommand] private void OpenDocument()    => OpenDocumentHook?.Invoke();
@@ -232,6 +234,14 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     {
         foreach (var t in _vm.PickedTraces.ToArray()) _vm.RemovePickedTrace(t);
     }
+
+    /// <summary>R-h9r2-18 — Display ▸ Power Sweep…, the explicit Start/Stop/Step ladder, the tickle
+    /// and ExactCompressionSolve.</summary>
+    [RelayCommand] private void PowerSweep() => PowerSweepHook?.Invoke();
+
+    /// <summary>R-h9r2-20 — Display ▸ Set Z0…, a second surface onto the SAME write the §7.5 input
+    /// row already makes.</summary>
+    [RelayCommand] private void SetZ0() => SetZ0Hook?.Invoke();
 
     [RelayCommand]
     private void ToggleIsoLineLabels()

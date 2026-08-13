@@ -202,6 +202,11 @@ public sealed class FrameSchedulerTests(ITestOutputHelper output)
     {
         // The negative control. Without it the test above would pass against a scheduler that calls
         // tier A unhealthy whenever ANY frame runs long, which would put a false claim on screen.
+        //
+        // R-h9r2-2 (brief-harmonicarf-r2a) — every tier-B rung's own contour-quality message is gone;
+        // DescribeLadder writes nothing once tier A is healthy. The ladder still degrades exactly as
+        // before (asserted below via Quality) — only the retired "Contours frozen while dragging"
+        // style string is gone, so StatusMessage stays null here.
         var clock = new Clock();
         var s = new FrameScheduler(clock.Read, targetFrameMs: 33.3);
 
@@ -214,7 +219,7 @@ public sealed class FrameSchedulerTests(ITestOutputHelper output)
 
         Assert.True(s.TierAHealthy);
         Assert.Equal(FrameQuality.FrozenContours, s.Quality);
-        Assert.Contains("frozen", s.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(s.StatusMessage);
     }
 
     [Fact]
@@ -259,16 +264,25 @@ public sealed class FrameSchedulerTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void D6_TheStatusMessageNamesWhatIsActuallyCosting()
+    public void D6_ADominantGridSolveFrame_DegradesWithNoStatusMessage_WhileTierAStaysHealthy()
     {
+        // R-h9r2-2 (brief-harmonicarf-r2a) supersedes this test's own original name/assertion: the
+        // status strip no longer names the dominant stage (that "GridSolve" string is one of the
+        // retired tier-B messages). Attribution itself still exists — it is what D6_TheDominantStage-
+        // AttributedCorrectly (above) pins directly against FrameTiming.Dominant — it simply no longer
+        // reaches StatusMessage. Tier A stays healthy here (3 ms << target), so DescribeLadder runs
+        // and leaves StatusMessage null.
         var clock = new Clock();
         var s = new FrameScheduler(clock.Read, targetFrameMs: 33.3);
 
-        s.RecordFrame(s.NextPlan(true), new FrameTiming(
-            TierAMs: 3, GridSolveMs: 400, FitMs: 2, RasterMs: 10, RenderMs: 5));
+        var timing = new FrameTiming(
+            TierAMs: 3, GridSolveMs: 400, FitMs: 2, RasterMs: 10, RenderMs: 5);
+        Assert.Equal(FrameStage.GridSolve, timing.Dominant);
 
-        Assert.Contains("GridSolve", s.StatusMessage);
-        output.WriteLine(s.StatusMessage!);
+        s.RecordFrame(s.NextPlan(true), timing);
+
+        Assert.True(s.TierAHealthy);
+        Assert.Null(s.StatusMessage);
     }
 
     // ── the plans themselves ─────────────────────────────────────────────────

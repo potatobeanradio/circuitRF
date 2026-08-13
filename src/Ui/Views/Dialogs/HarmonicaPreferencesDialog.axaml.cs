@@ -45,6 +45,7 @@ public partial class HarmonicaPreferencesDialog : Window
 
         PopulateRoles();
         LoadFade();
+        LoadTickleDefault();
         if (RoleList.ItemCount > 0) RoleList.SelectedIndex = 0;
     }
 
@@ -187,6 +188,54 @@ public partial class HarmonicaPreferencesDialog : Window
         if (_updating) return;
         _editor.ShowIsoLineLabels = IsoLabelsCheck.IsChecked == true;
         _vm.ShowIsoLineLabels     = _editor.ShowIsoLineLabels;
+    }
+
+    // ── R-h9r2-18a — the tickle default a brand new document seeds from ─────────
+
+    private void LoadTickleDefault()
+    {
+        _updating = true;
+        try
+        {
+            TickleDefaultEnabledCheck.IsChecked = HarmonicaTickleDefaults.Enabled;
+            TickleDefaultDbmBox.Text = HarmonicaTickleDefaults.Dbm.ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+            TickleDefaultDbmBox.IsEnabled = HarmonicaTickleDefaults.Enabled;
+        }
+        finally { _updating = false; }
+    }
+
+    private void OnTickleDefaultChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updating) return;
+        TickleDefaultDbmBox.IsEnabled = TickleDefaultEnabledCheck.IsChecked == true;
+        CommitTickleDefault();
+    }
+
+    private void OnTickleDefaultDbmLostFocus(object? sender, RoutedEventArgs e) => CommitTickleDefault();
+
+    private void OnTickleDefaultDbmKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Return) { CommitTickleDefault(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { LoadTickleDefault(); e.Handled = true; }
+    }
+
+    private void CommitTickleDefault()
+    {
+        if (_updating) return;
+        if (!double.TryParse(TickleDefaultDbmBox.Text, System.Globalization.NumberStyles.Float,
+                             System.Globalization.CultureInfo.InvariantCulture, out double dbm))
+        {
+            LoadTickleDefault();
+            return;
+        }
+
+        bool enabled = TickleDefaultEnabledCheck.IsChecked == true;
+        AppPreferencesIo.Update(p =>
+        {
+            p.HarmonicaTickleEnabled = enabled;
+            p.HarmonicaTickleDbm     = dbm;
+        });
     }
 
     // ── .ccolor interchange ──────────────────────────────────────────────────

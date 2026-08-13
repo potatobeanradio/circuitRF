@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.CompilerServices;
+using CircuitRF.Ui.Harmonica;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Harmonica;
@@ -61,10 +62,10 @@ public class HarmonicaDockedFocusWiringTests
     {
         string src = WorkspaceViewModelSource();
         int releaseIdx = src.IndexOf(
-            "_harmonicaDockedFocusDoc?.ViewModel.NativeMenuDockedFocusChanged?.Invoke(false);",
+            "_harmonicaDockedFocusDoc?.ViewModel.SetNativeMenuDockedFocus(false);",
             System.StringComparison.Ordinal);
         int grantIdx = src.IndexOf(
-            "nowActive.ViewModel.NativeMenuDockedFocusChanged?.Invoke(true);",
+            "nowActive.ViewModel.SetNativeMenuDockedFocus(true);",
             System.StringComparison.Ordinal);
 
         Assert.True(releaseIdx >= 0, "Expected the old holder to be released.");
@@ -115,5 +116,49 @@ public class HarmonicaDockedFocusWiringTests
         Assert.Contains(
             "if (ReferenceEquals(dockable, _harmonicaDockedFocusDoc))\n            ResetHarmonicaDockedFocusTracking();",
             src, System.StringComparison.Ordinal);
+    }
+
+    // R-h9r2-11 — a document that is ALREADY the active dockable at the instant its view is first
+    // realized must still end up with its native menu attached, even though WorkspaceViewModel's
+    // SetNativeMenuDockedFocus(true) necessarily runs before HarmonicaView.OnDataContextChanged has
+    // wired NativeMenuDockedFocusChanged. This drives HarmonicaDocumentViewModel directly (no Avalonia
+    // runtime needed) to prove the pending state survives the race rather than being silently dropped.
+    [Fact]
+    public void SetNativeMenuDockedFocus_BeforeTheViewWires_IsNotLost_AndAppliesOnWireUp()
+    {
+        var vm = new HarmonicaDocumentViewModel();
+
+        // WorkspaceViewModel declares this document active BEFORE any view exists to hear about it —
+        // exactly the first-open ordering.
+        vm.SetNativeMenuDockedFocus(true);
+
+        bool? observed = null;
+        vm.NativeMenuDockedFocusChanged = hasFocus => observed = hasFocus;
+
+        Assert.True(observed, "Wiring the delegate must immediately re-apply the pending docked-focus state.");
+    }
+
+    [Fact]
+    public void SetNativeMenuDockedFocus_WithNoPendingState_WiresToFalse()
+    {
+        var vm = new HarmonicaDocumentViewModel();
+
+        bool? observed = null;
+        vm.NativeMenuDockedFocusChanged = hasFocus => observed = hasFocus;
+
+        Assert.False(observed, "A document that was never made active should wire up as unfocused, not null/unset.");
+    }
+
+    [Fact]
+    public void SetNativeMenuDockedFocus_WhileWired_InvokesTheDelegateDirectly()
+    {
+        var vm = new HarmonicaDocumentViewModel();
+        var calls = new System.Collections.Generic.List<bool>();
+        vm.NativeMenuDockedFocusChanged = calls.Add;
+
+        vm.SetNativeMenuDockedFocus(true);
+        vm.SetNativeMenuDockedFocus(false);
+
+        Assert.Equal(new[] { false, true, false }, calls);
     }
 }

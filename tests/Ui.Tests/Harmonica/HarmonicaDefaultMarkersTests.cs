@@ -24,16 +24,24 @@ public sealed class HarmonicaDefaultMarkersTests
     }
 
     [Fact]
-    public void TheNewDefaults_AreNotLeftAtTheUnmarkedNearShort()
+    public void TheNewDefaults_ForS2L2L3_MatchTheUnmarkedBandEpsilon()
     {
+        // R-h9r2-1 (§2) SUPERSEDES this file's own R-h9b-14 title: S2/L2/L3 no longer get bespoke
+        // "sensible" starting impedances (the old `TheNewDefaults_AreNotLeftAtTheUnmarkedNearShort`
+        // name/assertion this test replaces) — they now default to the SAME unmarked-band epsilon
+        // TerminationSet already answers for "no marker at all" (Z = 1e-6 Ω, a near-short sitting
+        // right at the Smith-chart rim). S1/L1 are the two bands this constructor still gives real
+        // starting impedances (25 Ω and 80+j10 Ω) — see HarmonicaViewModel's own constructor comment.
         var vm = new HarmonicaViewModel();
+        var expected = HarmonicaDataSet.GammaOf(new Complex(TerminationSet.UnmarkedBandOhms, 0),
+                                                vm.Model.Settings.Z0);
 
         foreach (var band in new[] { (TerminationSideKind.Source, 2), (TerminationSideKind.Load, 2),
                                      (TerminationSideKind.Load, 3) })
         {
             var m = vm.Markers.Single(x => x.Side == band.Item1 && x.Band == band.Item2);
-            Assert.True(m.Gamma.Magnitude < 0.99,
-                $"{m.Name} sits on the rim at Γ ≈ 1 — the unmarked near-short is not a useful default");
+            Assert.Equal(expected.Real,      m.Gamma.Real,      precision: 9);
+            Assert.Equal(expected.Imaginary, m.Gamma.Imaginary, precision: 9);
         }
     }
 

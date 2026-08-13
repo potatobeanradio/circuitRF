@@ -13,6 +13,7 @@ using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Harmonica.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
+using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.Harmonica;
 
@@ -313,6 +314,8 @@ public partial class HarmonicaView : UserControl
         menus.CopyReadoutsHook    = () => RunHook(CopyReadoutsAsync);
         menus.PreferencesHook     = () => RunHook(ShowPreferencesAsync);
         menus.AddTraceHook        = () => RunHook(ShowTracePickerAsync);
+        menus.PowerSweepHook      = () => RunHook(ShowPowerSweepAsync);
+        menus.SetZ0Hook           = () => RunHook(ShowSetZ0Async);
 
         // H8 — the four H7 left deliberately null. An unwired hook is honest where a faked
         // implementation is not; this phase is what pays the debt.
@@ -396,6 +399,22 @@ public partial class HarmonicaView : UserControl
     {
         if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
         await new Dialogs.HarmonicaDcivSweepsDialog(h).ShowDialog(owner);
+        Refresh();
+    }
+
+    /// <summary>R-h9r2-18 — Display ▸ Power Sweep….</summary>
+    private async System.Threading.Tasks.Task ShowPowerSweepAsync()
+    {
+        if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
+        await new Dialogs.HarmonicaPowerSweepDialog(h).ShowDialog(owner);
+        Refresh();
+    }
+
+    /// <summary>R-h9r2-20 — Display ▸ Set Z0….</summary>
+    private async System.Threading.Tasks.Task ShowSetZ0Async()
+    {
+        if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
+        await new Dialogs.HarmonicaSetZ0Dialog(h).ShowDialog(owner);
         Refresh();
     }
 
@@ -744,9 +763,26 @@ public partial class HarmonicaView : UserControl
 
         var h = _doc.ViewModel.Harmonica;
         double w = Canvas.Bounds.Width, ht = Canvas.Bounds.Height;
-        var (kind, panelId) = HarmonicaEditTarget.Resolve(h.Layout, [.. h.PickedTraces], p.X, p.Y, w, ht);
 
         var items = new List<object>();
+
+        // R-h9r2-6 — resolve a MARKER first, through the exact hit test a drag uses (same radius, same
+        // z-order), BEFORE the panel-scoped branches below — a marker sits inside a Smith panel and the
+        // panel-level items must not shadow it.
+        var grab = HarmonicaHitTest.Resolve(h.Layout, h.Markers, p.X, p.Y, w, ht,
+                                            Canvas.RenderScaling, HarmonicaHitTest.GrabRadiusDevicePixels,
+                                            h.Frame.SmithPower.GridPoints, h.ShowGridPoints, h.TopmostMarker,
+                                            h.Model.Settings.Z0);
+
+        if (grab.Kind is HarmonicaGrabKind.ExtrinsicMarker or HarmonicaGrabKind.IntrinsicGlyph
+                       or HarmonicaGrabKind.VswrHandle)
+        {
+            BuildMarkerMenu(items, h, grab.Marker!);
+            if (sender is ContextMenu markerMenu) markerMenu.ItemsSource = items;
+            return;
+        }
+
+        var (kind, panelId) = HarmonicaEditTarget.Resolve(h.Layout, [.. h.PickedTraces], p.X, p.Y, w, ht);
 
         if (panelId == HarmonicaPanelId.PowerSweep)
         {
@@ -780,4 +816,102 @@ public partial class HarmonicaView : UserControl
         if (sender is ContextMenu menu) menu.ItemsSource = items;
     }
 
+    // ── §4 (R2A) — the per-marker context menu ──────────────────────────────
+
+    /// <summary>
+    /// R-h9r2-6/7/8/9/10 — three read-only format rows (each with its own "Set…"), a VSWR toggle, a
+    /// Snap to Grid toggle, a separator, then Remove — disabled with a stated reason on band 1, on
+    /// BOTH sides, per §4's own rule.
+    /// </summary>
+    private void BuildMarkerMenu(List<object> items, HarmonicaViewModel h, HarmonicaMarker marker)
+    {
+        double z0 = h.Model.Settings.Z0;
+        var z = HarmonicaDataSet.ImpedanceOf(marker.Gamma, z0);
+
+        items.Add(BuildFormatRow(
+            $"Γ = {HarmonicaReadoutFormatting.FormatGamma(marker.Gamma, ReadoutFormat.RealImaginary)}",
+            HarmonicaTerminationEntryFormat.GammaRealImag, h, marker));
+        items.Add(BuildFormatRow(
+            $"Γ = {HarmonicaReadoutFormatting.FormatGamma(marker.Gamma, ReadoutFormat.MagnitudeAngle)}",
+            HarmonicaTerminationEntryFormat.GammaMagAngle, h, marker));
+        items.Add(BuildFormatRow(
+            $"Z = {HarmonicaReadoutFormatting.FormatZ(z, ReadoutFormat.RealImaginary)}",
+            HarmonicaTerminationEntryFormat.ZRealImag, h, marker));
+
+        items.Add(new Separator());
+
+        // R-h9r2-8 — the VSWR circle. The value itself is edited by dragging its own on-chart handle
+        // (HarmonicaGrabKind.VswrHandle), not from this menu — this toggle only shows/hides it, and
+        // shows the current ratio so the menu itself doubles as a readout.
+        var vswr = new MenuItem
+        {
+            Header    = $"VSWR Circle ({marker.VswrValue:0.##}:1)",
+            ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = marker.VswrEnabled,
+        };
+        vswr.Click += (_, _) => { h.ToggleMarkerVswrEnabled(marker); Refresh(); };
+        items.Add(vswr);
+
+        // R-h9r2-9 — a snap with no grid to snap to is a no-op, not an error; the tooltip says so
+        // rather than the item being disabled.
+        bool hasGrid = h.Frame.SmithPower.GridPoints.Count > 0;
+        var snap = new MenuItem
+        {
+            Header    = "Snap to Grid",
+            ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = marker.SnapToGridEnabled,
+        };
+        if (!hasGrid)
+            ToolTip.SetTip(snap, "No grid has been solved yet — this takes effect once one has.");
+        snap.Click += (_, _) => { h.ToggleMarkerSnapToGrid(marker); Refresh(); };
+        items.Add(snap);
+
+        items.Add(new Separator());
+
+        // R-h9r2-10 — band 1 (S1 and L1) is always present on both sides; disabled with a reason
+        // rather than hidden, per R13a.
+        bool canRemove = marker.Band != 1;
+        var remove = new MenuItem
+        {
+            Header    = $"Remove {marker.Name}",
+            IsEnabled = canRemove,
+        };
+        if (!canRemove)
+            ToolTip.SetTip(remove, $"{marker.Name} is the fundamental and is always present.");
+        remove.Click += (_, _) => { h.RemoveMarkerAndShort(marker); Refresh(); };
+        items.Add(remove);
+    }
+
+    /// <summary>One read-only "Γ = …" / "Z = …" row, carrying its own "Set…" child that opens
+    /// <see cref="Dialogs.HarmonicaSetTerminationDialog"/> focused on this row's own format
+    /// (R-h9r2-7).</summary>
+    private MenuItem BuildFormatRow(string header, HarmonicaTerminationEntryFormat format,
+                                    HarmonicaViewModel h, HarmonicaMarker marker)
+    {
+        var set = new MenuItem { Header = "Set…" };
+        set.Click += (_, _) => RunHook(() => ShowMarkerSetDialogAsync(h, marker, format));
+        return new MenuItem { Header = header, ItemsSource = new object[] { set } };
+    }
+
+    /// <summary>R-h9r2-7's "Set…", opened from the marker menu rather than the readout strip — the
+    /// SAME dialog, the SAME two write-through calls
+    /// (<see cref="HarmonicaViewModel.SetMarkerGamma"/>/<see cref="HarmonicaViewModel.SetMarkerImpedance"/>)
+    /// <see cref="OnReadoutOpenSetDialogAsync"/> already uses, just reached from a different menu and
+    /// pre-focused on the row the user actually clicked.</summary>
+    private async System.Threading.Tasks.Task ShowMarkerSetDialogAsync(
+        HarmonicaViewModel h, HarmonicaMarker marker, HarmonicaTerminationEntryFormat format)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        double z0 = h.Model.Settings.Z0;
+        var result = await Dialogs.HarmonicaSetTerminationDialog.ShowAsync(owner, marker.Name, marker.Gamma, z0, format);
+        if (result is not { } edit) return;
+
+        if (edit.Gamma is { } g) h.SetMarkerGamma(marker, g);
+        else if (edit.Impedance is { } z) h.SetMarkerImpedance(marker, z);
+        else return;
+
+        h.RequestScheduledFrame(dragging: false);
+        Refresh();
+    }
 }
