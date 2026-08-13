@@ -283,32 +283,28 @@ namespace CircuitRF.Ui.DataDisplay
             bool   useSecondary = trace.UseSecondaryAxis;
             var    dl           = trace.GetMarkerDataLocation(marker);
             var    dataPx       = tf.ToCanvas(dl.X, dl.Y, useSecondary);
-            float  ts           = SymbolTextSize(marker, canvasSize);
 
-            using var font  = new SKFont(SkiaFonts.PlexBold, ts);
-            using var paint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
-
-            // Name label centred above the triangle apex
-            float tw = font.MeasureText(marker.Name);
-            canvas.DrawText(
-                marker.Name,
-                dataPx.X - tw / 2f,
-                dataPx.Y - ts - 4f,
-                SKTextAlign.Left, font, paint);
-
+            // brief-dd-loadpull-contour-ux-round8 §1: a contour marker in Mode 1 (interpolated —
+            // MarkerKind.Contour && !ContourSnapped) is sized/lettered like harmonicaRF's termination
+            // marker (canvas-proportional radius, not derived from SymbolTextSize). Mode 2
+            // (ContourSnapped) and every non-contour marker keep the original triangle glyph/sizing.
             bool isContourMode1 = marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped;
+
+            float ts = isContourMode1
+                ? ContourMarkerRadius(canvasSize) * 1.15f
+                : SymbolTextSize(marker, canvasSize);
 
             using var glyphPath = new SKPath();
             if (isContourMode1)
             {
                 // Ringed circle: filled disc + thin black stroked ring (design §9) —
                 // signals the reading is a 2-D interpolant, not a measured/grid value.
-                float r = ts * 0.5f;
+                float r = ContourMarkerRadius(canvasSize);
                 glyphPath.AddCircle(dataPx.X, dataPx.Y, r);
 
                 using var discPaint = new SKPaint
                 {
-                    Color       = theme.TextColor,
+                    Color       = ResolveContourMarkerFill(),
                     Style       = SKPaintStyle.Fill,
                     IsAntialias = true,
                 };
@@ -322,9 +318,44 @@ namespace CircuitRF.Ui.DataDisplay
                     IsAntialias = true,
                 };
                 canvas.DrawPath(glyphPath, ringPaint);
+
+                using var nameFont = new SKFont(SkiaFonts.PlexBold, ts);
+                float     tw       = nameFont.MeasureText(marker.Name);
+                if (marker.Name.Length <= 2)
+                {
+                    // Short name: centred inside the disc, harmonicaRF's metrics — always black,
+                    // since the disc fill is deliberately light enough to keep it legible.
+                    using var namePaint = new SKPaint { Color = SKColors.Black, IsAntialias = true };
+                    canvas.DrawText(
+                        marker.Name,
+                        dataPx.X - tw / 2f,
+                        dataPx.Y + ts * 0.36f,
+                        SKTextAlign.Left, nameFont, namePaint);
+                }
+                else
+                {
+                    // Longer name: keep today's behavior — centred above the glyph.
+                    using var namePaint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
+                    canvas.DrawText(
+                        marker.Name,
+                        dataPx.X - tw / 2f,
+                        dataPx.Y - ts - 4f,
+                        SKTextAlign.Left, nameFont, namePaint);
+                }
             }
             else
             {
+                using var font  = new SKFont(SkiaFonts.PlexBold, ts);
+                using var paint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
+
+                // Name label centred above the triangle apex
+                float tw = font.MeasureText(marker.Name);
+                canvas.DrawText(
+                    marker.Name,
+                    dataPx.X - tw / 2f,
+                    dataPx.Y - ts - 4f,
+                    SKTextAlign.Left, font, paint);
+
                 // Downward-pointing filled triangle (unchanged from prior behavior).
                 glyphPath.MoveTo(dataPx.X,           dataPx.Y);
                 glyphPath.LineTo(dataPx.X - ts / 2f, dataPx.Y - ts);
@@ -356,10 +387,48 @@ namespace CircuitRF.Ui.DataDisplay
 
         /// <summary>
         /// Hit radius in canvas pixels for marker symbol drag detection.
-        /// Returns 1.5× the symbol triangle height.
+        /// 1.5× the contour Mode-1 disc radius for an interpolated contour marker (§1,
+        /// brief-dd-loadpull-contour-ux-round8); 1.5× the symbol triangle height otherwise.
         /// </summary>
         public static float SymbolHitRadius(Marker marker, (double W, double H) canvasSize)
-            => SymbolTextSize(marker, canvasSize) * 1.5f;
+        {
+            bool isContourMode1 = marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped;
+            return isContourMode1
+                ? ContourMarkerRadius(canvasSize) * 1.5f
+                : SymbolTextSize(marker, canvasSize) * 1.5f;
+        }
+
+        /// <summary>
+        /// Canvas-proportional radius for a Mode-1 contour marker disc — mirrors harmonicaRF's
+        /// termination-marker geometry (<c>HarmonicaPanelRenderer.DrawMarkers</c>,
+        /// <c>r = max(6f, min(W,H) * 0.020)</c>) so the two read as the same on-screen size on an
+        /// equally-sized plot. Canvas-proportional only, per round-7 §2 — the canvas already
+        /// encodes zoom, so never multiply by zoomLevel here.
+        /// </summary>
+        private static float ContourMarkerRadius((double W, double H) canvasSize)
+            => Math.Max(6f, (float)(Math.Min(canvasSize.W, canvasSize.H) * 0.020));
+
+        /// <summary>
+        /// Fill color for a Mode-1 contour marker disc: a Bone-colormap sample lightened toward
+        /// white until its luminance clears a floor, so the always-black marker name stays legible
+        /// in both themes. Sample point (t=0.5) and floor (0.70) were picked by eye against a
+        /// Bone-filled contour — light enough for black text, still visibly "Bone"-toned rather
+        /// than plain white. Mirrors the luminance-*ceiling* helper round-7 §3 added for iso-line
+        /// color (<c>ContourRenderer.ResolveBaseLineColor</c>), inverted for a light-background need.
+        /// </summary>
+        internal static SKColor ResolveContourMarkerFill()
+        {
+            const double SamplePoint = 0.5;
+            const float  LumFloor    = 0.70f;
+
+            var   c   = ContourColormaps.Sample(ContourColorMap.Bone, SamplePoint);
+            float lum = (0.299f * c.Red + 0.587f * c.Green + 0.114f * c.Blue) / 255f;
+            if (lum >= LumFloor) return c;
+
+            float     t = (LumFloor - lum) / (1f - lum);
+            byte L(byte ch) => (byte)Math.Clamp((int)Math.Round(ch + (255 - ch) * t), 0, 255);
+            return new SKColor(L(c.Red), L(c.Green), L(c.Blue), c.Alpha);
+        }
 
         // ---- VSWR locus overlay -------------------------------------------
         //  Draws a red, no-fill closed polyline through the constant-VSWR locus

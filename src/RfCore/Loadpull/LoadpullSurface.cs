@@ -59,7 +59,7 @@ namespace RfCore.Loadpull
     public sealed record LoadpullFit(
         Rbf2D       Rbf,
         SurfacePlane Plane,
-        double?     Z0,
+        Complex?    Z0,
         int         FreqIdx,
         string      MetricY,
         ConstraintSpec Constraint,
@@ -130,11 +130,14 @@ namespace RfCore.Loadpull
 
         /// <summary>
         /// Compute scattered {coord, Y} at constant constraint, NaN-dropped.
-        /// coord is Γ (Z0-renorm if z0 != null) or Z per plane.
+        /// coord is Γ (Z0-renorm if z0 != null) or Z per plane. <paramref name="z0"/> may be complex
+        /// (brief-dd-z0-renormalization.md §3); the stored grid's OWN reference is assumed 50 Ω real
+        /// (see <see cref="RenormGamma"/> — no per-run loadpull reference is carried in the DataSet
+        /// today).
         /// </summary>
         public ScatterReduction Reduce(
             int freqIdx, string metricY, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0 = null)
+            SurfacePlane plane, Complex? z0 = null)
         {
             var fs     = _freqs[freqIdx];
             int nGrid  = fs.NGrid;
@@ -151,7 +154,7 @@ namespace RfCore.Loadpull
                 Complex coord = plane == SurfacePlane.Gamma ? fs.Gammas[gi] : fs.Zs[gi];
 
                 if (z0.HasValue && plane == SurfacePlane.Gamma)
-                    coord = RenormGamma(coord, z0.Value);
+                    coord = RenormGamma(coord, new Complex(AssumedSourceZ0, 0), z0.Value);
 
                 coords.Add(coord);
                 values.Add(yi);
@@ -169,7 +172,7 @@ namespace RfCore.Loadpull
         /// </summary>
         public LoadpullFit? Fit(
             int freqIdx, string metricY, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0 = null,
+            SurfacePlane plane, Complex? z0 = null,
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3,
             double? epsilon = null)
         {
@@ -195,14 +198,14 @@ namespace RfCore.Loadpull
         /// <summary>Max output power location (MXP): measured + interpolated Γ or Z.</summary>
         public MxxResult? MaxPower(
             int freqIdx, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0 = null,
+            SurfacePlane plane, Complex? z0 = null,
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
             => GetMxx(freqIdx, "Pout_dBm", constraint, plane, z0, kernel, smooth, epsilon);
 
         /// <summary>Max drain efficiency location (MXE): measured + interpolated Γ or Z.</summary>
         public MxxResult? MaxEfficiency(
             int freqIdx, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0 = null,
+            SurfacePlane plane, Complex? z0 = null,
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
             => GetMxx(freqIdx, "Efficiency", constraint, plane, z0, kernel, smooth, epsilon);
 
@@ -218,7 +221,7 @@ namespace RfCore.Loadpull
         /// </summary>
         public double MetricAtCoord(
             int freqIdx, string metricY, Complex coord, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0 = null,
+            SurfacePlane plane, Complex? z0 = null,
             bool nearest = false,
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
         {
@@ -327,7 +330,7 @@ namespace RfCore.Loadpull
 
             // VSWR include factors (SPLData: 99 for Gamma "as much as possible"; 1.3 for Z)
             double includeVswr = fit.Plane == SurfacePlane.Gamma ? 99.0 : 1.3;
-            double? z0ref      = fit.Z0 ?? (fit.Plane == SurfacePlane.Gamma ? 50.0 : null);
+            Complex? z0ref     = fit.Z0 ?? (fit.Plane == SurfacePlane.Gamma ? new Complex(AssumedSourceZ0, 0) : null);
 
             var mxpBox = VswrBoundingBox(mxp, includeVswr, fit.Plane, z0ref);
             var mxeBox = VswrBoundingBox(mxe, includeVswr, fit.Plane, z0ref);
@@ -413,6 +416,15 @@ namespace RfCore.Loadpull
 
         private const int    MinFitNodes   = 6;
         private const int    VswrNPoints   = 100;
+
+        /// <summary>
+        /// Assumed reference impedance the stored Γ grid is natively referenced to. There is no
+        /// per-run "loadpull reference Z0" carried in the DataSet today — LoadpullExportModel and
+        /// the pre-brief-dd-z0-renormalization RenormGamma both hardcoded 50 Ω for the same reason.
+        /// Known limitation, not silently assumed: if a future loadpull format ever carries its own
+        /// reference, this constant (and every <c>RenormGamma</c> call site) is where it plugs in.
+        /// </summary>
+        private const double AssumedSourceZ0 = 50.0;
 
         private static FreqSlice[] BuildFreqSlices(DataSet data, string group)
         {
@@ -696,7 +708,7 @@ namespace RfCore.Loadpull
 
         private MxxResult? GetMxx(
             int freqIdx, string metricY, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0,
+            SurfacePlane plane, Complex? z0,
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
         {
             // Use Compression constraint for MXX regardless of caller constraint
@@ -721,7 +733,7 @@ namespace RfCore.Loadpull
 
             // 2. Interpolated peak — high-res search in VSWR=1.2 circle around measured
             double searchVswr = 1.2;
-            double? z0ref     = z0 ?? (plane == SurfacePlane.Gamma ? 50.0 : null);
+            Complex? z0ref    = z0 ?? (plane == SurfacePlane.Gamma ? new Complex(AssumedSourceZ0, 0) : null);
             var searchCircle  = VswrCirclePoints(measured, searchVswr, plane, z0ref);
 
             double cMinRe = searchCircle.MinRe, cMaxRe = searchCircle.MaxRe;
@@ -849,15 +861,15 @@ namespace RfCore.Loadpull
         /// </summary>
         private static ViewBox VswrBoundingBox(
             Complex center, double vswr,
-            SurfacePlane plane, double? z0ref)
-            => BoundingBox(VswrLocus(center, vswr, plane, new Complex(z0ref ?? 50.0, 0.0)));
+            SurfacePlane plane, Complex? z0ref)
+            => BoundingBox(VswrLocus(center, vswr, plane, z0ref ?? new Complex(AssumedSourceZ0, 0.0)));
 
         /// <summary>
         /// Bounding box of the VSWR search circle for the MXX grid search.
         /// </summary>
         private static ViewBox VswrCirclePoints(
             Complex center, double vswr,
-            SurfacePlane plane, double? z0ref)
+            SurfacePlane plane, Complex? z0ref)
             => VswrBoundingBox(center, vswr, plane, z0ref);
 
         private static ViewBox BoundingBox(Complex[] pts)
@@ -878,12 +890,19 @@ namespace RfCore.Loadpull
         //  Private — Γ renormalization
         // ================================================================
 
-        /// <summary>Renormalize Γ from 50Ω to z0 (SPLData: z2g(50*g2z(X)/Z0)).</summary>
-        private static Complex RenormGamma(Complex gamma50, double z0)
+        /// <summary>
+        /// Renormalize Γ from <paramref name="z0Src"/> to <paramref name="z0New"/> — generalizes the
+        /// old real-only <c>z2g(50*g2z(X)/Z0)</c> (SPLData) to an arbitrary complex source/target
+        /// (brief-dd-z0-renormalization.md §3): Z2G(z/z0New) = (Z−z0New)/(Z+z0New) holds algebraically
+        /// for a complex z0New too (division, no conjugation), so this is an exact generalization, not
+        /// an approximation — reduces to the original formula when z0Src = 50 + 0j. Short-circuits on
+        /// an identical reference so the (still overwhelmingly common) default-50 case stays bit-exact.
+        /// </summary>
+        private static Complex RenormGamma(Complex gammaSrc, Complex z0Src, Complex z0New)
         {
-            // g2z normalized → × 50 → / z0 → z2g
-            Complex zNorm = RfHelpers.G2Z(gamma50) * (50.0 / z0);
-            return RfHelpers.Z2G(zNorm);
+            if (z0Src == z0New) return gammaSrc;
+            Complex z = RfHelpers.G2Z(gammaSrc) * z0Src;   // physical impedance (Ω)
+            return RfHelpers.Z2G(z / z0New);
         }
 
         // ================================================================
@@ -1279,7 +1298,7 @@ namespace RfCore.Loadpull
             string        MetricY,
             ConstraintSpec Constraint,
             SurfacePlane  Plane,
-            double?       Z0,
+            Complex?      Z0,
             RbfKernel     Kernel,
             double        Smooth,
             double?       Epsilon);

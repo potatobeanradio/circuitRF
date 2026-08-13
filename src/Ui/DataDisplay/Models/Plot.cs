@@ -596,7 +596,14 @@ namespace CircuitRF.Ui.DataDisplay
             return new Rect(x, y, w, h);
         }
 
-        private static Rect SquareCentredOnOrigin(Rect r)
+        /// <summary>
+        /// The smallest square, centred at the origin, that contains <paramref name="r"/>. Single
+        /// source of truth for "square window" on a complex (Smith/Polar) plot type — used by
+        /// <see cref="Autoscale"/> and, since brief-dd-plot-type-integrity.md §3, by the manual
+        /// axis-limits dialog (<c>AxesLimitsViewModel</c>) — so a manual edit followed by an
+        /// autoscale can never jump between two different notions of "square".
+        /// </summary>
+        internal static Rect SquareCentredOnOrigin(Rect r)
         {
             double xMin = new[] { r.Left, r.Right, -r.Left, -r.Right }.Min();
             double yMin = new[] { r.Top,  r.Bottom, -r.Top, -r.Bottom }.Min();
@@ -617,65 +624,86 @@ namespace CircuitRF.Ui.DataDisplay
             PlotType oldType = PlotType;
             PlotType = newType;
 
-            switch (newType)
+            // Leaving Table: narrow deletion to what genuinely cannot exist on another plot type
+            // (brief-dd-plot-type-integrity.md §1). Everything else survives and is remapped below —
+            // this used to clear _plot.Traces wholesale (at the VM layer), taking ordinary traces
+            // with it.
+            if (oldType == PlotType.Table && newType != PlotType.Table)
             {
-                case PlotType.Smith:
-                case PlotType.Polar:
-                    if (!oldType.IsComplex())
-                    {
-                        for (int i = _traces.Count - 1; i >= 0; i--)
-                        {
-                            var t = _traces[i];
-                            if (t.YAxis == DependentVarFormat.Phase     ||
-                                t.YAxis == DependentVarFormat.Real      ||
-                                t.YAxis == DependentVarFormat.Imaginary ||
-                                t.Derived == DerivedParameters.MaxGain)
-                                _traces.RemoveAt(i);
-                        }
-
-                        foreach (var t in _traces)
-                        {
-                            if (!t.IsDerived) t.YAxis = DependentVarFormat.Complex;
-                            if (t.Derived == DerivedParameters.MuPrime) t.Derived = DerivedParameters.SourceStabilityCircle;
-                            if (t.Derived == DerivedParameters.Mu) t.Derived = DerivedParameters.LoadStabilityCircle;
-                            t.UseSecondaryAxis = false;
-                        }
-                    }
-
-                    foreach (var t in _traces)
-                        foreach (var mk in t.Markers)
-                        { mk.IsMulti = false; mk.IsDelta = false; }
-                    break;
-
-                case PlotType.Rect:
-                    if (oldType.IsComplex())
-                    {
-                        var originals = _traces.ToList();
-                        int added = 0;
-                        for (int idx = 0; idx < originals.Count; idx++)
-                        {
-                            var t = originals[idx];
-                            if (t.YAxis == DependentVarFormat.Complex && !t.IsDerived)
-                            {
-                                var phaseTrace = new Trace(t, incrementColorBy: originals.Count, false)
-                                {
-                                    YAxis            = DependentVarFormat.Phase,
-                                    UseSecondaryAxis = true
-                                };
-                                t.YAxis = DependentVarFormat.Db;
-                                _traces.Insert(idx + 1 + added, phaseTrace);
-                                added++;
-                            }
-                            else if (t.YAxis == DependentVarFormat.Phase) t.UseSecondaryAxis = true;
-                            else if (t.Derived == DerivedParameters.LoadStabilityCircle) t.Derived = DerivedParameters.Mu;
-                            else if (t.Derived == DerivedParameters.SourceStabilityCircle) t.Derived = DerivedParameters.MuPrime;
-                        }
-                    }
-                    break;
-
-                case PlotType.Table:
-                    break;
+                for (int i = _traces.Count - 1; i >= 0; i--)
+                {
+                    var t = _traces[i];
+                    if (t.IsSummaryColumn || (t.IsCubeBound && t.CubeIsScalar))
+                        _traces.RemoveAt(i);
+                }
             }
+
+            // Network/derived-trace plot-type mutation — unchanged from before this brief except that
+            // a network trace's YAxis Phase/Real/Imaginary is now remapped to Complex on entering
+            // Smith/Polar instead of being deleted (§1 anchor 3), and MaxGain is no longer deleted
+            // either (it joins K/|Δ|/Passivity, which already survived — none of the four have a
+            // Γ-plane locus, so they go dormant rather than vanish; the reverse switch restores them).
+            // Table on EITHER side is a pure no-op here ("Anything ↔ Table: no transform change at
+            // all" — a Table renders complex and scalar cells alike); cube-bound traces are instead
+            // handled uniformly below by Trace.RemapForPlotType, regardless of this switch.
+            if (oldType != PlotType.Table && newType != PlotType.Table)
+            {
+                switch (newType)
+                {
+                    case PlotType.Smith:
+                    case PlotType.Polar:
+                        if (!oldType.IsComplex())
+                        {
+                            foreach (var t in _traces)
+                            {
+                                if (t.IsCubeBound) continue;
+                                if (!t.IsDerived) t.YAxis = DependentVarFormat.Complex;
+                                if (t.Derived == DerivedParameters.MuPrime) t.Derived = DerivedParameters.SourceStabilityCircle;
+                                if (t.Derived == DerivedParameters.Mu) t.Derived = DerivedParameters.LoadStabilityCircle;
+                                t.UseSecondaryAxis = false;
+                            }
+                        }
+                        break;
+
+                    case PlotType.Rect:
+                        if (oldType.IsComplex())
+                        {
+                            var originals = _traces.ToList();
+                            int added = 0;
+                            for (int idx = 0; idx < originals.Count; idx++)
+                            {
+                                var t = originals[idx];
+                                if (t.IsCubeBound) continue;
+                                if (t.YAxis == DependentVarFormat.Complex && !t.IsDerived)
+                                {
+                                    var phaseTrace = new Trace(t, incrementColorBy: originals.Count, false)
+                                    {
+                                        YAxis            = DependentVarFormat.Phase,
+                                        UseSecondaryAxis = true
+                                    };
+                                    t.YAxis = DependentVarFormat.Db;
+                                    _traces.Insert(idx + 1 + added, phaseTrace);
+                                    added++;
+                                }
+                                else if (t.YAxis == DependentVarFormat.Phase) t.UseSecondaryAxis = true;
+                                else if (t.Derived == DerivedParameters.LoadStabilityCircle) t.Derived = DerivedParameters.Mu;
+                                else if (t.Derived == DerivedParameters.SourceStabilityCircle) t.Derived = DerivedParameters.MuPrime;
+                            }
+                        }
+                        break;
+                }
+            }
+
+            if (newType is PlotType.Smith or PlotType.Polar)
+                foreach (var t in _traces)
+                    foreach (var mk in t.Markers)
+                    { mk.IsMulti = false; mk.IsDelta = false; }
+
+            // Cube-bound remap — single source of truth for what a plot-type change does to a cube
+            // trace's Transform/Expression. No-op for network/derived/contour traces and whenever
+            // Table is on either side (handled above).
+            foreach (var t in _traces)
+                t.RemapForPlotType(oldType, newType);
 
             foreach (var t in _traces) t.BuildPath(PlotType, FreqUnits);
 

@@ -148,6 +148,12 @@ public partial class AxesLimitsViewModel : ViewModelBase
         if (!TryParse(XMinText, out double xMin) || !TryParse(XMaxText, out double xMax)) return;
         if (Math.Abs(xMax - xMin) < 1e-15) return;
 
+        if (IsComplex)
+        {
+            ApplySquareFromEditedAxis(xMin, xMax, editedIsX: true);
+            return;
+        }
+
         var w = _plot.Axes.Window;
         _plot.Axes.Window      = new Rect(Math.Min(xMin, xMax), w.Y, Math.Abs(xMax - xMin), w.Height);
         _plot.Axes.WindowState = _plot.Axes.Window;
@@ -169,9 +175,39 @@ public partial class AxesLimitsViewModel : ViewModelBase
         if (!TryParse(YMinText, out double yMin) || !TryParse(YMaxText, out double yMax)) return;
         if (Math.Abs(yMax - yMin) < 1e-15) return;
 
+        if (IsComplex)
+        {
+            ApplySquareFromEditedAxis(yMin, yMax, editedIsX: false);
+            return;
+        }
+
         var w = _plot.Axes.Window;
         _plot.Axes.Window      = new Rect(w.X, Math.Min(yMin, yMax), w.Width, Math.Abs(yMax - yMin));
         _plot.Axes.WindowState = _plot.Axes.Window;
+        RaiseRedraw();
+    }
+
+    /// <summary>
+    /// Smith/Polar (brief-dd-plot-type-integrity.md §3): a manual edit of ONE axis still yields a
+    /// square window centred at the origin — reuses <see cref="Plot.SquareCentredOnOrigin"/>, the
+    /// SAME helper <see cref="Plot.Autoscale"/> uses, so a manual edit followed by an autoscale can
+    /// never jump between two different notions of "square". The edited axis's span is applied as
+    /// the square's span (its own extent on both sides of the origin, even if asymmetric); the other
+    /// axis is whatever that square implies — both text boxes are refreshed so the user sees the
+    /// coupled value immediately.
+    /// </summary>
+    private void ApplySquareFromEditedAxis(double lo, double hi, bool editedIsX)
+    {
+        var edited = editedIsX
+            ? new Rect(Math.Min(lo, hi), 0, Math.Abs(hi - lo), 0)
+            : new Rect(0, Math.Min(lo, hi), 0, Math.Abs(hi - lo));
+
+        var square = Plot.SquareCentredOnOrigin(edited);
+        _plot.Axes.Window      = square;
+        _plot.Axes.WindowState = square;
+
+        RefreshXText();
+        RefreshYText();
         RaiseRedraw();
     }
 

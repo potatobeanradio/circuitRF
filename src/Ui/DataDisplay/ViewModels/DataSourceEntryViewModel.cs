@@ -33,7 +33,58 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     public SNP? Snp => _snp;
 
     /// <summary>Unified DataSet payload.  Null for broken entries.</summary>
-    public DataSet? Data => _data;
+    public DataSet? Data
+    {
+        get
+        {
+            EnsureNetworkParamCubesMaterialized();
+            return _data;
+        }
+    }
+
+    private bool _networkParamCubesMaterialized;
+
+    /// <summary>
+    /// Materializes virtual "Z" and "Y" cubes into every NAMED analysis group that carries both
+    /// "S" and "Z0" — a simulated S-parameter run has neither cube today
+    /// (brief-dd-network-params-and-stability.md §2). Lazy and memoized (built once per load, like
+    /// <see cref="NetworkView"/>'s own pattern), and re-armed on reload since a refreshed DataSet
+    /// may carry different cubes.
+    ///
+    /// <para><b>Named groups only</b> — never the default group. A flat/Touchstone-shaped DataSet's
+    /// "S" already lives in the default group AND is exposed as <see cref="Snp"/>, so it is offered
+    /// through the NETWORK path (matrix-element picker items), not the cube path; materializing "Z"
+    /// and "Y" there too would offer the same values a second time, as cube items.</para>
+    ///
+    /// <para>Once materialized, "SP1.Z"/"SP1.Y" are ordinary cubes — every consumer that already
+    /// understands "SP1.S" (the spec parser, TraceExpression, the Table, export, .cdd persistence)
+    /// understands them with no further change, because <c>DataSet.Contains</c>/<c>this[spec]</c>
+    /// now genuinely resolve them.</para>
+    /// </summary>
+    private void EnsureNetworkParamCubesMaterialized()
+    {
+        if (_networkParamCubesMaterialized) return;
+        _networkParamCubesMaterialized = true;
+        if (_data is not { } ds) return;
+
+        foreach (var group in ds.Groups)
+        {
+            if (group == RfCore.Data.DataSet.DefaultGroup) continue;
+
+            var cubes = ds.CubesIn(group);
+            if (!cubes.TryGetValue(NetworkMetrics.SCubeName, out var sCube)) continue;
+            if (!cubes.TryGetValue(NetworkMetrics.Z0CubeName, out var z0Cube)) continue;
+            if (cubes.ContainsKey("Z") || cubes.ContainsKey("Y")) continue;   // don't clobber
+            if (sCube.Rank < 3) continue;                                     // not [.., i, j]-shaped
+
+            int nPorts = sCube.Axes[sCube.Rank - 1].Length;
+            var z0PerPort = z0Cube.ComplexValues;
+            if (z0PerPort.Length != nPorts) continue;   // not a genuine per-port Z0 for this S cube
+
+            ds.AddToGroup(group, "Z", NetworkMetrics.ConvertSCube(sCube, z0PerPort, MatrixType.Z));
+            ds.AddToGroup(group, "Y", NetworkMetrics.ConvertSCube(sCube, z0PerPort, MatrixType.Y));
+        }
+    }
 
     private SNP? _networkView;
     private bool _networkViewBuilt;
@@ -225,6 +276,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         _snp.RefreshFrom(newSnp);
         _filePath = newPath;
         _data = DataSetBuilder.FromSnp(_snp);
+        _networkParamCubesMaterialized = false;
         NotifyBrokenStateChanged();
         ClassifyZ0FromData();
     }
@@ -239,6 +291,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         _filePath = newPath;
         _data     = data;
         _networkView = null; _networkViewBuilt = false;   // rebuilt lazily against the new DataSet
+        _networkParamCubesMaterialized = false;           // re-armed against the new DataSet
 
         if (data.Contains("S"))
         {
@@ -276,6 +329,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         _filePath = newPath;
         _data     = data;
         _snp      = null;
+        _networkParamCubesMaterialized = false;
         NotifyBrokenStateChanged();
         ClassifyZ0FromData();
     }

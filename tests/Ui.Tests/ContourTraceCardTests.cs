@@ -1025,6 +1025,81 @@ public sealed class ContourTraceCardTests
         Assert.Equal("%", vm.ConstraintUnits);
     }
 
+    // ── brief-dd-loadpull-contour-ux-round8 gate tests ─────────────────────────
+
+    // §2: AddContourTrace on a Rect plot sets LabelSpacing = 150
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
+    public async Task AddContourTrace_RectPlot_LabelSpacing150()
+    {
+        var path = FindSplFile();
+        if (path is null) return;
+
+        var lib = new DataSourceLibraryViewModel();
+        await lib.SelectDataSourceAsync(path);
+
+        var plot      = new Plot(PlotType.Rect, FreqUnit.GHz);
+        var inspector = new PlotInspectorViewModel(plot, () => {}, library: lib);
+
+        inspector.AddContourTraceCommand.Execute(null);
+
+        var cd = plot.Traces[0].ContourData;
+        Assert.NotNull(cd);
+        Assert.Equal(150.0, cd!.LabelSpacing);
+    }
+
+    // §2: AddContourTrace on a Smith plot keeps LabelSpacing = 30
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
+    public async Task AddContourTrace_SmithPlot_LabelSpacing30()
+    {
+        var path = FindSplFile();
+        if (path is null) return;
+
+        var lib = new DataSourceLibraryViewModel();
+        await lib.SelectDataSourceAsync(path);
+
+        var plot      = new Plot(PlotType.Smith, FreqUnit.GHz);
+        var inspector = new PlotInspectorViewModel(plot, () => {}, library: lib);
+
+        inspector.AddContourTraceCommand.Execute(null);
+
+        var cd = plot.Traces[0].ContourData;
+        Assert.NotNull(cd);
+        Assert.Equal(30.0, cd!.LabelSpacing);
+    }
+
+    // §3: ContourFillOptions has exactly two members and does not contain Heatmap
+    [Fact]
+    public void ContourFillOptions_ExcludesHeatmap()
+    {
+        Assert.Equal(2, TraceRowViewModel.ContourFillOptions.Count);
+        Assert.Contains(ContourFillSelection.None,        TraceRowViewModel.ContourFillOptions);
+        Assert.Contains(ContourFillSelection.Topography,  TraceRowViewModel.ContourFillOptions);
+        Assert.DoesNotContain(ContourFillSelection.Heatmap, TraceRowViewModel.ContourFillOptions);
+    }
+
+    // §3: a trace carrying a saved Heatmap selection still reports it via SelectedContourFill
+    // (the getter reads ContourShowFill/ContourSelectedFillKind directly, not the picker list) and
+    // still renders through the heatmap branch (ContourFillKind.HeatMap survives unchanged).
+    [Fact]
+    public void SelectedContourFill_SavedHeatmap_StillReadableAndRenders()
+    {
+        var snp = new SNP(new[] { 1e9 }, 1);
+        var t   = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
+        t.ContourData = new ContourData
+        {
+            ShowFill = true,
+            SelectedFillKind = ContourFillKind.HeatMap,
+        };
+        var plot      = new Plot(PlotType.Smith, FreqUnit.GHz);
+        plot.Traces.Add(t);
+        var inspector = new PlotInspectorViewModel(plot, () => {}, library: null);
+        var vm        = inspector.Traces[0];
+
+        Assert.Equal(ContourFillSelection.Heatmap, vm.SelectedContourFill);
+        Assert.True(vm.IsHeatMapFill);
+        Assert.Equal(ContourFillType.HeatMap, t.ContourData!.FillType);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static string? FindSplFile()

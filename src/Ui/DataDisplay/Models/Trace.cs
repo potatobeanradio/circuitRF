@@ -15,6 +15,7 @@ using Avalonia;
 using NumFlat;
 using RfCore;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 
 namespace CircuitRF.Ui.DataDisplay
 {
@@ -550,7 +551,32 @@ namespace CircuitRF.Ui.DataDisplay
             if (IsCubeBound && RectValueInvalid && !baseLabel.Contains("<invalid"))
                 baseLabel += " <invalid: complex on scalar plot type>";
             if (dimensionMismatch) baseLabel += " dimension mismatch";
+            if (IsZ0ReReferenced) baseLabel += " @ Z0=" + ComplexStringHelper.Format(_z0) + "Ω";
             return baseLabel;
+        }
+
+        /// <summary>
+        /// True when this trace's displayed reference <see cref="Z0"/> has been changed away from
+        /// the SOURCE's own reference — brief-dd-z0-renormalization.md §4. Compared against the
+        /// source, never a literal 50 Ω, so a native-75 Ω source displayed at 75 Ω shows no token.
+        /// A genuinely non-uniform/complex ("unusual") source has no single native value to compare
+        /// against — displaying it at ANY uniform reference is already a re-reference, so the token
+        /// always shows in that case. Restricted to the same trace kinds that actually expose the Z0
+        /// field to the user (network: non-derived MatrixType.S; cube: a network-param S/Z/Y element)
+        /// — everywhere else <see cref="Z0"/> is an inert default the user never touched.
+        /// </summary>
+        private bool IsZ0ReReferenced
+        {
+            get
+            {
+                if (!IsCubeBound)
+                {
+                    if (Derived != DerivedParameters.None || MatrixType != MatrixType.S) return false;
+                    return SourceZ0IsUnusual || _z0 != Data.Z0;
+                }
+                if (SourceZ0PerPort is not { Length: > 0 } perPort) return false;
+                return SourceZ0IsUnusual || _z0 != perPort[0];
+            }
         }
 
         /// <summary>Computes the function-call shorthand from CubeName/Slice/Transform only,
@@ -712,9 +738,123 @@ namespace CircuitRF.Ui.DataDisplay
 
         public void BuildPath(PlotType plotType, FreqUnit freqUnit)
         {
-            if      (IsCubeBound) BuildCubePath(plotType, freqUnit);
+            if      (IsFamily)    BuildFamilyPath(plotType, freqUnit);
+            else if (IsCubeBound) BuildCubePath(plotType, freqUnit);
             else if (IsDerived)   BuildDerivedPath(plotType, freqUnit);
             else                  BuildMatrixPath(plotType, freqUnit);
+        }
+
+        // ---- Plot-type remap (Phase brief-dd-plot-type-integrity §1) ----
+
+        /// <summary>
+        /// Single source of truth for what a plot-type change does to a CUBE-BOUND trace's
+        /// Transform/Expression. Called by <see cref="Plot.SetPlotType"/> for every trace, right
+        /// before <see cref="BuildPath"/>. A valid trace must stay valid across every plot-type
+        /// change — this transforms only as much as the new plot type requires, and never blanks or
+        /// deletes a trace that can still be made to render.
+        ///
+        /// <para>No-op for: a non-cube trace (network/derived plot-type behaviour is unchanged and
+        /// stays in <see cref="Plot.SetPlotType"/> — it predates cube binding and has its own
+        /// well-established rules); a contour trace (already plot-type aware via
+        /// <c>TraceRowViewModel.RebuildContour</c>); Table on EITHER side (a Table renders complex
+        /// and scalar cells alike — no transform change, either direction); a REAL multi-cube
+        /// expression result (<see cref="TransformIsInert"/> — the transform lives in the baked
+        /// expression text, never in <see cref="Transform"/>); real (non-complex) underlying data
+        /// (nothing to remap to — kept as-is so the reverse switch restores a perfectly good
+        /// trace); and a Rect→Rect-equivalent transition (Smith↔Polar, both complex-plane).</para>
+        ///
+        /// <para>Only rewrites <see cref="Expression"/> for a genuine picker-authored trace
+        /// (<see cref="CubeName"/> != null) — a user-typed multi-cube expression is never rewritten,
+        /// only its <see cref="Transform"/> (see CLAUDE.md §"Transform combo must not corrupt a
+        /// network trace").</para>
+        /// </summary>
+        internal void RemapForPlotType(PlotType oldType, PlotType newType)
+        {
+            if (oldType == newType) return;
+            if (!IsCubeBound || IsContourTrace) return;
+            if (oldType == PlotType.Table || newType == PlotType.Table) return;
+            if (TransformIsInert) return;
+
+            bool wasComplexPlane = oldType.IsComplex();
+            bool isComplexPlane  = newType.IsComplex();
+            if (wasComplexPlane == isComplexPlane) return;   // both Rect-side — nothing to remap
+
+            if (!CubeDataIsComplex) return;   // real cube-bound data: keep as-is either direction
+
+            if (isComplexPlane)
+            {
+                // → Smith/Polar: undo any scalar reduction so the complex value passes through.
+                if (Transform is CubeTransform.None or CubeTransform.Conj) return;
+                Transform = CubeTransform.None;
+            }
+            else
+            {
+                // → Rect: apply the same "first-add nicety" default a fresh complex trace gets
+                // (TraceRowViewModel.DefaultTransformFor's single source of truth).
+                if (Transform is not (CubeTransform.None or CubeTransform.Conj)) return;
+                Transform = DefaultRectTransform(true, HasPortAxes, CubeName);
+            }
+
+            if (CubeName is not null) Expression = BuildPickerExpression();
+        }
+
+        /// <summary>True when the currently-bound cube data is complex — family-aware (a family
+        /// trace's underlying arrays live in <see cref="FamilyCurve.RawComplex"/>/RawReal, not the
+        /// single-slice <c>_cubeComplexValues</c> cache). Also drives <c>TraceRowViewModel</c>'s
+        /// per-plot-type transform-list filtering (§4).</summary>
+        internal bool CubeDataIsComplex => IsFamily
+            ? FamilyCurves.Count > 0 && FamilyCurves[0].RawComplex is not null
+            : _cubeComplexValues is not null;
+
+        /// <summary>True when this trace's cube axes look like an S/Y/Z port matrix (both "i" and
+        /// "j" axes present in <see cref="Slice"/>) — mirrors <c>TraceRowViewModel.IsParameterCube</c>'s
+        /// <c>cube.Axes</c> check, from the Trace's own cached Slice (no DataCube at this layer).</summary>
+        private bool HasPortAxes => Slice is not null
+            && Array.Exists(Slice, s => s.AxisName == "i")
+            && Array.Exists(Slice, s => s.AxisName == "j");
+
+        /// <summary>True when this trace is a cube-bound network-parameter REFLECTION element
+        /// (bare cube name "S", pinned i == pinned j) — the only cube case where a per-sample
+        /// impedance readout is meaningful (brief-dd-z0-renormalization.md §5). Off-diagonal or
+        /// non-S cube-bound traces have no impedance meaning.</summary>
+        private bool IsCubeReflectionElement
+        {
+            get
+            {
+                if (!HasPortAxes || Slice is null || CubeName is null) return false;
+                if (BareCubeName(CubeName) != "S") return false;
+                AxisSlice? iSlice = null, jSlice = null;
+                foreach (var s in Slice)
+                {
+                    if (s.AxisName == "i") iSlice = s;
+                    else if (s.AxisName == "j") jSlice = s;
+                }
+                return iSlice is { Role: AxisRole.PinToIndex } i
+                    && jSlice is { Role: AxisRole.PinToIndex } j
+                    && i.Index == j.Index;
+            }
+        }
+
+        /// <summary>
+        /// The "first-add nicety" default Rect transform for a COMPLEX cube: dB20 for an S-parameter
+        /// cube, Mag otherwise. Single source of truth — <c>TraceRowViewModel.DefaultTransformFor</c>
+        /// (which seeds a freshly-added trace from an actual <c>RfCore.Data.DataCube</c>) calls this
+        /// same table via cube-derived (isComplex, hasPortAxes) inputs; <see cref="RemapForPlotType"/>
+        /// calls it from the Trace's own cached state.
+        /// </summary>
+        internal static CubeTransform DefaultRectTransform(bool isComplex, bool hasPortAxes, string? cubeName)
+        {
+            if (!isComplex)   return CubeTransform.None;
+            if (!hasPortAxes) return CubeTransform.Mag;
+            string bare = BareCubeName(cubeName);
+            return cubeName is null || bare == "S" ? CubeTransform.dB20 : CubeTransform.Mag;
+        }
+
+        private static string BareCubeName(string? cubeName)
+        {
+            if (cubeName is null) return "";
+            int dot = cubeName.LastIndexOf('.');
+            return dot < 0 ? cubeName : cubeName[(dot + 1)..];
         }
 
         // ---- Cube-bound path (Phase 7.2c-a) ----------------------------
@@ -807,7 +947,6 @@ namespace CircuitRF.Ui.DataDisplay
             SetPinnedSpectral(null, null, double.NaN);   // a family trace shows the per-curve tag, not a
                                                          // pinned line — clear any stale pinned context
             SetPinnedAxisDisplay(null);                  // resolved from the cube — cannot outlive it
-            _lastPlotType = plotType;
             _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
             _cubeComplexValues = null; _cubeRealValues = null;
             FamilyAxisName = familyAxisName;
@@ -815,41 +954,60 @@ namespace CircuitRF.Ui.DataDisplay
             FamilyCurves.Clear();
             FamilyColumnWidths.Clear();
             Points.Clear();
-            RectValueInvalid = false;
-
-            bool isRect = plotType.IsRect();
-            bool isHarmonicFamilyX = string.Equals(xAxisName, HarmonicAxisName, StringComparison.Ordinal) && _f0ByX is not null;
-            double xScale = IsFreqUnit(xUnit) ? freqUnit.Scale() : 1.0;
 
             foreach (var (axisValue, axisLabel, cz, rv) in curves)
+                FamilyCurves.Add(new FamilyCurve { AxisValue = axisValue, AxisLabel = axisLabel,
+                                                     RawComplex = cz, RawReal = rv });
+
+            BuildFamilyPath(plotType, freqUnit);
+        }
+
+        /// <summary>
+        /// Rebuilds every <see cref="FamilyCurve"/>'s <c>Points</c> for the given plot type from the
+        /// already-cached <c>RawComplex</c>/<c>RawReal</c> arrays — no re-slice from the DataSet needed.
+        /// Split out of <see cref="SetFamilyData"/> so a plain plot-type or freq-unit change (which only
+        /// calls <see cref="BuildPath"/>, never re-touches the DataSet) can re-render a family trace
+        /// too — previously <see cref="BuildPath"/> only dispatched to <see cref="BuildCubePath"/>, which
+        /// no-ops for a family trace (its single-slice cube arrays are null by design), so a family
+        /// trace's geometry silently went stale on a plot-type switch.
+        /// </summary>
+        private void BuildFamilyPath(PlotType plotType, FreqUnit freqUnit)
+        {
+            _lastPlotType = plotType;
+            RectValueInvalid = false;
+            if (_cubeXValues is null) return;
+
+            bool isRect = plotType.IsRect();
+            bool isHarmonicFamilyX = string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal) && _f0ByX is not null;
+            double xScale = IsFreqUnit(_cubeXUnit) ? freqUnit.Scale() : 1.0;
+            int n = _cubeXValues.Length;
+
+            foreach (var fc in FamilyCurves)
             {
-                var fc = new FamilyCurve { AxisValue = axisValue, AxisLabel = axisLabel,
-                                           RawComplex = cz, RawReal = rv };
-                int n = xValues.Length;
-                bool isComplex = cz is not null;
+                fc.Points.Clear();
+                bool isComplex = fc.RawComplex is not null;
                 if (isRect && isComplex && (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
-                { RectValueInvalid = true; FamilyCurves.Add(fc); continue; }
+                { RectValueInvalid = true; continue; }
 
                 for (int i = 0; i < n; i++)
                 {
                     if (isRect)
                     {
-                        double? y = RectY(isComplex ? cz![i] : (Complex?)null, isComplex ? (double?)null : rv![i]);
+                        double? y = RectY(isComplex ? fc.RawComplex![i] : (Complex?)null, isComplex ? (double?)null : fc.RawReal![i]);
                         if (y is double yy)
                         {
                             double xCoord = isHarmonicFamilyX
-                                ? xValues[i] * _f0ByX![Math.Min(i, _f0ByX.Length - 1)] * freqUnit.Scale()
-                                : xValues[i] * xScale;
+                                ? _cubeXValues[i] * _f0ByX![Math.Min(i, _f0ByX.Length - 1)] * freqUnit.Scale()
+                                : _cubeXValues[i] * xScale;
                             fc.Points.Add(new Vector2((float)xCoord, (float)yy));
                         }
                     }
                     else if (isComplex)
                     {
-                        var z = Transform == CubeTransform.Conj ? Complex.Conjugate(cz![i]) : cz![i];
+                        var z = Transform == CubeTransform.Conj ? Complex.Conjugate(fc.RawComplex![i]) : fc.RawComplex![i];
                         fc.Points.Add(new Vector2((float)z.Real, (float)z.Imaginary));
                     }
                 }
-                FamilyCurves.Add(fc);
             }
         }
 
@@ -944,16 +1102,20 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (Row >= Data.Ports || Col >= Data.Ports) return;
 
-            // Per-port (unusual) path: use SourceZ0PerPort; no user renorm.
+            // Per-port (unusual) path: renormalize S from the per-port SourceZ0PerPort to the
+            // trace's own (uniform) Z0 before extracting the element — brief-dd-z0-renormalization.md
+            // §2. Z/Y stay computed straight from the raw per-port source (reference-independent —
+            // the same invariant §1 makes for the cube path, not a coincidence).
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0)
             {
+                var targetZ0Array = RFNetwork.Z0Array(_z0, Data.Ports);
                 for (int fi = 0; fi < Data.FrequencyCount; fi++)
                 {
                     Complex raw;
                     switch (MatrixType)
                     {
                         case MatrixType.S:
-                            raw = Data.Matrices[fi][Row, Col];   // stored as-is — renorm disabled
+                            raw = RFNetwork.SToS(Data.Matrices[fi], sourceZ0, targetZ0Array)[Row, Col];
                             break;
                         case MatrixType.Z:
                             raw = RFNetwork.SToZ(Data.Matrices[fi], sourceZ0)[Row, Col];
@@ -1162,6 +1324,53 @@ namespace CircuitRF.Ui.DataDisplay
 
         // ---- Data retrieval ---------------------------------------------
 
+        // Memoizes the full-sweep derived-metric array so a per-cell Table read (DataPointScalar
+        // called once per row by TableRenderer.FormatTraceCell) does not recompute the whole sweep
+        // per cell. Same authority as BuildDerivedPath — NetworkMetrics — just indexed at fi instead
+        // of iterated into Points.
+        private double[]? _derivedMetricCache;
+        private DerivedParameters _derivedMetricCacheDerived;
+        private int _derivedMetricCacheInPort;
+        private int _derivedMetricCacheOutPort;
+        private bool _derivedMetricCachePassivityScope;
+        private Mat<Complex>[]? _derivedMetricCacheMats;
+
+        private double[] GetDerivedMetricArray()
+        {
+            if (_derivedMetricCache != null
+                && _derivedMetricCacheDerived == Derived
+                && _derivedMetricCacheInPort == InputPort
+                && _derivedMetricCacheOutPort == OutputPort
+                && _derivedMetricCachePassivityScope == PassivityWholeNetwork
+                && ReferenceEquals(_derivedMetricCacheMats, Data.Matrices))
+            {
+                return _derivedMetricCache;
+            }
+
+            int nPorts = Data.Ports;
+            Complex[] z0PerPort =
+                SourceZ0PerPort is { } perPort && perPort.Length >= nPorts
+                    ? perPort.Take(nPorts).ToArray()
+                    : RFNetwork.Z0Array(Data.Z0, nPorts);
+
+            double[] values = Derived == DerivedParameters.Passivity
+                ? (PassivityWholeNetwork
+                    ? RfCore.Data.NetworkMetrics.PassivityFull(Data.Matrices, z0PerPort)
+                    : RfCore.Data.NetworkMetrics.PassivityPair(
+                          Data.Matrices, z0PerPort, InputPort, OutputPort))
+                : RfCore.Data.NetworkMetrics.TwoPortMetric(
+                      Data.Matrices, z0PerPort, Derived.ToNetworkMetric(),
+                      InputPort, OutputPort);
+
+            _derivedMetricCache = values;
+            _derivedMetricCacheDerived = Derived;
+            _derivedMetricCacheInPort = InputPort;
+            _derivedMetricCacheOutPort = OutputPort;
+            _derivedMetricCachePassivityScope = PassivityWholeNetwork;
+            _derivedMetricCacheMats = Data.Matrices;
+            return values;
+        }
+
         public Complex DataPoint(double freq, Complex? z0Override = null)
         {
             if (IsCubeBound) return new Complex(double.NaN, double.NaN);
@@ -1170,33 +1379,21 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (IsDerived)
             {
-                SNP snp;
-                if (SourceZ0IsUnusual && SourceZ0PerPort is { } srcZ0d && srcZ0d.Length >= 1)
+                double[] metricValues;
+                try
                 {
-                    int n = Data.Ports;
-                    var z0Real = new Complex(srcZ0d[0].Real, 0);
-                    var renormedMats = Data.Matrices
-                        .Select(m => RFNetwork.SToS(m, srcZ0d, RFNetwork.Z0Array(z0Real, n)))
-                        .ToArray();
-                    snp = new SNP(Data.Frequencies, renormedMats,
-                                  MatrixType.S, Data.Format, z0Real);
+                    metricValues = GetDerivedMetricArray();
                 }
-                else
+                catch (ArgumentException)
                 {
-                    snp = new SNP(Data.Frequencies, Data.Matrices,
-                                  MatrixType.S, Data.Format, Data.Z0);
+                    return new Complex(double.NaN, double.NaN);   // bad port pair → NaN, never a crash
                 }
-                double v = Derived switch
-                {
-                    DerivedParameters.Mu      => RFNetwork.StabilityMu(snp)[fi],
-                    DerivedParameters.MuPrime => RFNetwork.StabilityMuPrime(snp)[fi],
-                    DerivedParameters.MaxGain => RFNetwork.MaxGain(snp)[fi],
-                    _                         => double.NaN
-                };
+                double v = fi < metricValues.Length ? metricValues[fi] : double.NaN;
                 return new Complex(v, 0);
             }
 
-            // Per-port (unusual) path: no user renorm.
+            // Per-port (unusual) path: renormalize S to the trace's (or override's) Z0 before
+            // extracting — §2. Z/Y are reference-independent, unchanged.
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0)
             {
                 var mat = Data.Matrices[fi];
@@ -1204,7 +1401,8 @@ namespace CircuitRF.Ui.DataDisplay
                     mat = RFNetwork.SToZ(mat, sourceZ0);
                 else if (MatrixType == MatrixType.Y)
                     mat = RFNetwork.SToY(mat, sourceZ0);
-                // S: return stored matrix as-is (renorm disabled)
+                else
+                    mat = RFNetwork.SToS(mat, sourceZ0, RFNetwork.Z0Array(z0Override ?? _z0, Data.Ports));
                 return mat[Row, Col];
             }
 
@@ -1225,6 +1423,11 @@ namespace CircuitRF.Ui.DataDisplay
         public double DataPointScalar(double freq, Complex? z0Override = null)
         {
             var d = DataPoint(freq, z0Override);
+            // A derived metric's DataPoint is already the final displayed number (matching
+            // BuildDerivedPath, which plots the NetworkMetrics value with no further transform) —
+            // e.g. MaxGain is already dB from RFNetwork.MaxGain. Re-running it through the YAxis
+            // switch below would double-apply Db for MaxGain (whose YAxis defaults to Db).
+            if (IsDerived) return d.Real;
             return YAxis switch
             {
                 DependentVarFormat.Db        => 20.0 * Math.Log10(Math.Max(d.Magnitude, 1e-300)),
@@ -1642,6 +1845,9 @@ namespace CircuitRF.Ui.DataDisplay
             if (string.IsNullOrEmpty(val)) val = "NaN";
             lines.Add(($"{desc}={val}", false));
 
+            if (MarkerShowsImpedance(m))
+                lines.Add((GetMarkerImpedanceString(m), false));
+
             // Multi-marker rows: the same X sample read on every other trace in the plot.
             // Cube traces are keyed by X-index, not frequency, so this uses the cube path.
             // When the other trace's X axis is incompatible (different length), the value is NaN.
@@ -1836,33 +2042,34 @@ namespace CircuitRF.Ui.DataDisplay
             int fi = Array.FindIndex(Data.Frequencies, f => f == m.Freq);
             if (fi < 0) return new Complex(double.NaN, double.NaN);
 
+            if (IsDerived)
+            {
+                // Same authority and z0PerPort resolution as DataPoint's derived branch —
+                // extraction via NetworkMetrics, never the raw N-port matrix.
+                double[] metricValues;
+                try
+                {
+                    metricValues = GetDerivedMetricArray();
+                }
+                catch (ArgumentException)
+                {
+                    return new Complex(double.NaN, double.NaN);   // bad port pair → NaN, never a crash
+                }
+                double v = fi < metricValues.Length ? metricValues[fi] : double.NaN;
+                return new Complex(v, 0);
+            }
+
             var mat = Data.Matrices[fi];
 
-            // Per-port (unusual) path: convert using SourceZ0PerPort; no user renorm.
+            // Per-port (unusual) path: renormalize S to the trace's Z0 before extracting — §2.
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0)
             {
-                if (IsDerived)
-                {
-                    // Renorm to uniform-real so scalar stability methods are valid.
-                    int n = Data.Ports;
-                    var z0Real = new Complex(sourceZ0[0].Real, 0);
-                    mat = RFNetwork.SToS(mat, sourceZ0, RFNetwork.Z0Array(z0Real, n));
-                    double v = Derived switch
-                    {
-                        DerivedParameters.Mu      => RFNetwork.StabilityMu(mat),
-                        DerivedParameters.MuPrime => RFNetwork.StabilityMuPrime(mat),
-                        DerivedParameters.MaxGain => RFNetwork.MaxGain(mat),
-                        _                         => double.NaN
-                    };
-                    return new Complex(v, 0);
-                }
-
-                // Non-derived: convert type if needed using per-port reference.
                 if (MatrixType == MatrixType.Z)
                     mat = RFNetwork.SToZ(mat, sourceZ0);
                 else if (MatrixType == MatrixType.Y)
                     mat = RFNetwork.SToY(mat, sourceZ0);
-                // S: return stored as-is
+                else
+                    mat = RFNetwork.SToS(mat, sourceZ0, RFNetwork.Z0Array(Z0, Data.Ports));
 
                 return mat[Row, Col];
             }
@@ -1870,18 +2077,6 @@ namespace CircuitRF.Ui.DataDisplay
             // Uniform/legacy path (unchanged).
             if (Data.Type != MatrixType || Z0 != Data.Z0)
                 mat = RFNetwork.Convert(mat, Data.Type, Data.Z0, MatrixType, Z0);
-
-            if (IsDerived)
-            {
-                double v = Derived switch
-                {
-                    DerivedParameters.Mu      => RFNetwork.StabilityMu(mat),
-                    DerivedParameters.MuPrime => RFNetwork.StabilityMuPrime(mat),
-                    DerivedParameters.MaxGain => RFNetwork.MaxGain(mat),
-                    _                         => double.NaN
-                };
-                return new Complex(v, 0);
-            }
 
             return mat[Row, Col];
         }
@@ -2103,37 +2298,74 @@ namespace CircuitRF.Ui.DataDisplay
             string fmt = $"{m.FormatString.ToString()}{m.MaximumFractionDigits}";
             int fi = Array.FindIndex(Data.Frequencies, f => f == m.Freq);
             if (fi < 0) return "Stability=NaN";
-            switch (Derived)
+
+            RfCore.Data.NetworkMetric? metric = Derived switch
             {
-                case DerivedParameters.LoadStabilityCircle or DerivedParameters.Mu:
-                    var val = RFNetwork.StabilityMu(Data);
-                    return "Load Stability, µ=" + val[fi].ToString(fmt);
-                case DerivedParameters.SourceStabilityCircle or DerivedParameters.MuPrime:
-                    val = RFNetwork.StabilityMuPrime(Data);
-                    return "Source Stability, µ'=" + val[fi].ToString(fmt);
+                DerivedParameters.LoadStabilityCircle or DerivedParameters.Mu      => RfCore.Data.NetworkMetric.Mu,
+                DerivedParameters.SourceStabilityCircle or DerivedParameters.MuPrime => RfCore.Data.NetworkMetric.MuPrime,
+                _ => null,
+            };
+            if (metric is null) return "";
+            string label = metric == RfCore.Data.NetworkMetric.Mu
+                ? "Load Stability, µ=" : "Source Stability, µ'=";
+
+            // Extract the ordered 2-port via NetworkMetrics — same authority and z0PerPort
+            // resolution as the plotted path — rather than calling RFNetwork on the raw N-port SNP.
+            int nPorts = Data.Ports;
+            Complex[] z0PerPort =
+                SourceZ0PerPort is { } perPort && perPort.Length >= nPorts
+                    ? perPort.Take(nPorts).ToArray()
+                    : RFNetwork.Z0Array(Data.Z0, nPorts);
+            try
+            {
+                double v = RfCore.Data.NetworkMetrics.TwoPortMetric(
+                    Data.Matrices, z0PerPort, metric.Value, InputPort, OutputPort)[fi];
+                return label + v.ToString(fmt);
             }
-            return "";
+            catch (ArgumentException)
+            {
+                return label + "NaN";   // bad port pair → NaN, never a crash
+            }
         }
 
         public bool MarkerShowsImpedance(Marker m) =>
-            !IsCubeBound && !m.IsMulti && Row == Col && YAxis == DependentVarFormat.Complex;
+            !m.IsMulti && (IsCubeBound
+                ? IsCubeReflectionElement
+                : Row == Col && YAxis == DependentVarFormat.Complex);
+
+        /// <summary>Shared impedance formula — Γ (or S(i,i)) at a reference Z0, both the plain and
+        /// normalized forms. One formatter for the network and cube-bound paths (brief-dd-z0-
+        /// renormalization.md §5: "do not add a second impedance formatter").</summary>
+        private static string FormatImpedance(Complex s, Complex z0, Marker m)
+        {
+            var Z  = z0 * (z0.Conjugate() / z0 + s) / (Complex.One - s);
+            var Zn = Z / z0;
+            return m.UseNormalizedImpedance
+                ? $"impedance=Z0*({m.FormatComplex(Zn)})"
+                : $"impedance={m.FormatComplex(Z)} Ω";
+        }
 
         public string GetMarkerImpedanceString(Marker m)
         {
-            if (IsCubeBound) return "";
+            if (IsCubeBound)
+            {
+                if (!IsCubeReflectionElement || _cubeComplexValues is null) return "";
+                int xIdx = _lastPlotType == PlotType.Table ? NearestCubeXIndex(m.Freq) : CubeMarkerIndex(m);
+                if (xIdx < 0 || xIdx >= _cubeComplexValues.Length) return "impedance=NaN";
+                // §1 already renormalized _cubeComplexValues to Z0 upstream (PlotInspectorViewModel.
+                // ResolveNetworkParamCube) — no per-port branching needed here, unlike the network path.
+                return FormatImpedance(_cubeComplexValues[xIdx], _z0, m);
+            }
+
             int fi = Array.FindIndex(Data.Frequencies, f => f == m.Freq);
             if (fi < 0) return "impedance=NaN";
 
-            // Per-port (unusual) path: use SourceZ0PerPort[Row] as the port reference.
+            // Per-port (unusual) path: renormalize to the trace's Z0 before reading out — §2 (was
+            // "no user renorm", read straight off sourceZ0[Row] — now aligned with the uniform path).
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0 && Row < sourceZ0.Length)
             {
-                Complex s = Data.Matrices[fi][Row, Col];  // stored S referenced to sourceZ0[Row]
-                var portZ0 = sourceZ0[Row];
-                var Z  = portZ0 * (portZ0.Conjugate() / portZ0 + s) / (Complex.One - s);
-                var Zn = Z / portZ0;
-                return m.UseNormalizedImpedance
-                    ? $"impedance=Z0*({m.FormatComplex(Zn)})"
-                    : $"impedance={m.FormatComplex(Z)} Ω";
+                Complex s = RFNetwork.SToS(Data.Matrices[fi], sourceZ0, RFNetwork.Z0Array(Z0, Data.Ports))[Row, Col];
+                return FormatImpedance(s, Z0, m);
             }
 
             // Uniform/legacy path (unchanged).
@@ -2144,12 +2376,7 @@ namespace CircuitRF.Ui.DataDisplay
                 Mat<Complex> temp = RFNetwork.Convert(Data.Matrices[fi], Data.Type, Data.Z0, MatrixType, Z0);
                 sv = temp[Row, Col];
             }
-            var Zv  = Z0 * (Z0.Conjugate() / Z0 + sv) / (Complex.One - sv);
-            var Znv = Zv / Z0;
-
-            return m.UseNormalizedImpedance
-                ? $"impedance=Z0*({m.FormatComplex(Znv)})"
-                : $"impedance={m.FormatComplex(Zv)} Ω";
+            return FormatImpedance(sv, Z0, m);
         }
 
         public List<(string Text, bool Bold)> BuildMarkerBoxLines(Marker m, FreqUnit freqUnit,

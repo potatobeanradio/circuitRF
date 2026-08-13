@@ -24,8 +24,10 @@ using Dock.Model.Core;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using RfCore.Data;
+using RfCore.Loadpull;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
@@ -8218,28 +8220,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         bool populated = false;
         if (lib.SelectedEntry is { } entry)
         {
-            var plotType = CircuitRF.Ui.DataDisplay.ViewModels.PlotInspectorViewModel.HasPlottableData(entry, allowScalars: false)
-                ? PlotType.Rect
-                : PlotType.Table;
-
-            // A brand-new DisplayWindowViewModel's initial tab already seeds one empty Smith plot
-            // (DataDisplayViewModel's own "starts empty; user authors it" constructor default) —
-            // reuse THAT container instead of calling AddPlot, which would add a SECOND one. Only
-            // one plot must ever exist after auto-create.
-            var container = newVm.Window.DataDisplay?.Plots.FirstOrDefault();
-            if (container is not null)
+            // §4 (brief-dd-loadpull-contour-ux-round8): a loadpull run gets two contour plots
+            // (Pout dBm, Efficiency) instead of the single arbitrary-cube trace below, which is
+            // meaningless for loadpull data (anchor 5).
+            if (entry.Data is { } loadpullDs && LoadpullRecognition.IsLoadpull(loadpullDs))
             {
-                if (container.Inspector.PlotType != plotType)
+                populated = PopulateLoadpullContourPlots(newVm, loadpullDs);
+            }
+            else
+            {
+                var plotType = CircuitRF.Ui.DataDisplay.ViewModels.PlotInspectorViewModel.HasPlottableData(entry, allowScalars: false)
+                    ? PlotType.Rect
+                    : PlotType.Table;
+
+                // A brand-new DisplayWindowViewModel's initial tab already seeds one empty Smith plot
+                // (DataDisplayViewModel's own "starts empty; user authors it" constructor default) —
+                // reuse THAT container instead of calling AddPlot, which would add a SECOND one. Only
+                // one plot must ever exist after auto-create.
+                var container = newVm.Window.DataDisplay?.Plots.FirstOrDefault();
+                if (container is not null)
                 {
-                    container.Inspector.PlotType = plotType;
-                    bool square = plotType is PlotType.Smith or PlotType.Polar;
-                    container.Width  = square ? 420 : 520;
-                    container.Height = square ? 420 : 360;
-                }
-                if (container.Inspector.AddTraceCommand.CanExecute(null))
-                {
-                    container.Inspector.AddTraceCommand.Execute(null);
-                    populated = container.Inspector.Traces.Count > 0;
+                    if (container.Inspector.PlotType != plotType)
+                    {
+                        container.Inspector.PlotType = plotType;
+                        bool square = plotType is PlotType.Smith or PlotType.Polar;
+                        container.Width  = square ? 420 : 520;
+                        container.Height = square ? 420 : 360;
+                    }
+                    if (container.Inspector.AddTraceCommand.CanExecute(null))
+                    {
+                        container.Inspector.AddTraceCommand.Execute(null);
+                        populated = container.Inspector.Traces.Count > 0;
+                    }
                 }
             }
         }
@@ -8260,6 +8272,90 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Warning($"Auto-created Data Display could not be saved: {ex.Message}", cddPath);
         }
+    }
+
+    /// <summary>
+    /// §4 (brief-dd-loadpull-contour-ux-round8): populates the auto-created Data Display for a
+    /// recognized loadpull run with two contour plots — Pout (dBm) left, Efficiency right, both at
+    /// 3 dB compression — instead of <see cref="AutoOpenOrCreateDataDisplayAsync"/>'s normal single
+    /// arbitrary-cube trace (meaningless for loadpull data, per the auto-create issue this brief
+    /// fixes). Reuses the tab's single already-seeded plot as the LEFT plot (anchor 5 — only one
+    /// plot exists after a plain auto-create; exactly two must exist here, never three); adds
+    /// exactly one more via <c>AddPlot</c> with an explicit position (anchor 8 — never left to
+    /// <c>ComputeNewPlotPosition</c>'s inferred grid). A metric whose cube is absent is skipped
+    /// rather than producing an empty plot for it. Returns true when at least one contour was
+    /// created (suppresses the caller's "no default plot" warning).
+    ///
+    /// <c>internal</c> (not <c>private</c>) solely so <c>CircuitRF.Ui.Tests</c> can exercise this
+    /// directly via <c>InternalsVisibleTo</c> — <see cref="WorkspaceViewModel"/> itself cannot be
+    /// constructed headlessly, but this method needs no instance state.
+    /// </summary>
+    internal static bool PopulateLoadpullContourPlots(DataDisplayDocumentViewModel newVm, DataSet ds)
+    {
+        var dataDisplay = newVm.Window.DataDisplay;
+        var leftPlot     = dataDisplay?.Plots.FirstOrDefault();
+        if (dataDisplay is null || leftPlot is null) return false;
+
+        var views = LoadpullRecognition.FindLoadpullViews(ds);
+        if (views.Count == 0) return false;   // unreachable — caller already checked IsLoadpull
+        var view = views[0];
+
+        bool HasMetricCube(string metric)
+        {
+            string spec = string.IsNullOrEmpty(view.Group) ? metric : $"{view.Group}.{metric}";
+            return ds.Contains(spec);
+        }
+
+        // §4: Pout (dBm) left, Efficiency right — canonical cube names the engine emits
+        // (LoadpullRecognition.FomCubes / AutoFillSummary's column list).
+        var metrics = new[] { "Pout_dBm", "Efficiency" }.Where(HasMetricCube).ToList();
+        if (metrics.Count == 0) return false;
+
+        // §4a: one grid-plane decision shared by both plots, from the recognized view's GammaLoad
+        // geometry — never from which termination cube happens to exist (both always do).
+        var plane    = LoadpullRecognition.DetectGridPlane(ds, view);
+        var plotType = plane == SurfacePlane.Gamma ? PlotType.Smith : PlotType.Rect;
+
+        // Size per plot type — square for Smith/Polar, width/RectAspectRatio for Rect (the same
+        // rule DataDisplayViewModel.AddPlot and brief DD-P §2 apply).
+        bool   square = plotType is PlotType.Smith or PlotType.Polar;
+        double w      = square ? 420.0 : 520.0;
+        double h;
+        if (square) h = 420.0;
+        else
+        {
+            double ratio = AppSettingsViewModel.Instance.RectAspectRatio;
+            h = ratio > 0 ? w / ratio : 360.0;
+        }
+        const double left0 = 30.0, top0 = 30.0, gap = 40.0;   // anchor 8: explicit, non-overlapping
+
+        bool populated = false;
+        for (int i = 0; i < metrics.Count; i++)
+        {
+            var target = i == 0 ? leftPlot : dataDisplay.AddPlot(
+                plotType, FreqUnit.GHz, left: left0 + w + gap, top: top0, width: w, height: h);
+
+            if (i == 0)
+            {
+                target.Left = left0; target.Top = top0; target.Width = w; target.Height = h;
+                if (target.Inspector.PlotType != plotType) target.Inspector.PlotType = plotType;
+            }
+
+            if (!target.Inspector.CanAddContourTrace) continue;
+            target.Inspector.AddContourTraceCommand.Execute(null);
+            if (target.Inspector.Traces.Count == 0) continue;
+
+            var trow = target.Inspector.Traces[0];
+            trow.ContourConstraintKind  = ConstraintKind.Compression;
+            trow.ContourConstraintValue = 3.0;   // already ContourData's default (:60) — pinned
+                                                  // explicitly so a later default change can't
+                                                  // silently alter this auto-created display.
+            trow.ContourMetricName      = metrics[i];   // triggers the single RebuildContour() fit
+
+            populated = true;
+        }
+
+        return populated;
     }
 
     /// <summary>

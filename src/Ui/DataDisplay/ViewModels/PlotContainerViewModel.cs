@@ -260,6 +260,9 @@ public partial class PlotContainerViewModel : ViewModelBase
 
         UpdateLabelStrips();
         SyncTableWidth();    // size the box correctly if this container starts as a Table plot
+        _lastCoercedPlotType = PlotVM.Plot.PlotType;   // baseline — a freshly-added plot is already
+                                                        // sized correctly by DataDisplayViewModel.AddPlot;
+                                                        // this only needs to detect a LATER transition.
 
         // Forward redraw requests from the inspector to the view; also bump
         // AppearanceRevision on every strip so AxisLabelControl re-renders live
@@ -395,21 +398,46 @@ public partial class PlotContainerViewModel : ViewModelBase
         return Math.Max(1, rows);
     }
 
+    /// <summary>Plot type as of the last <see cref="CoerceAspectForPlotType"/> call — lets that method
+    /// tell an actual plot-type SWITCH apart from an ordinary structural change (trace add/remove)
+    /// at the SAME plot type, both of which raise <c>Inspector.PlotStructureChanged</c>.</summary>
+    private PlotType _lastCoercedPlotType;
+
     /// <summary>
-    /// Re-shapes the container box to match the current plot type after a live plot-type switch.
-    /// Smith/Polar → square (preserving the larger dimension); Table → natural column total;
-    /// Rect → left as-is.
+    /// Re-shapes the container box to match the current plot type after a live plot-type switch
+    /// (brief-dd-plot-type-integrity.md §2). Smith/Polar → square (preserving the larger dimension,
+    /// via the same rule <see cref="ResizeTo"/> enforces on every drag); Table → natural column
+    /// total; Rect → the configured aspect ratio (golden by default), width kept and height derived
+    /// — the same rule <see cref="DataDisplayViewModel.AddPlot"/> applies to a freshly-added Rect
+    /// plot and <c>PlotContainerView</c> enforces on every drag-resize.
+    ///
+    /// <para>The Rect branch fires ONLY on an actual plot-type transition, not on every call — this
+    /// method also runs on ordinary trace add/remove (both raise the same
+    /// <c>PlotStructureChanged</c> broadcast; brief §2 says to reuse it rather than add a new
+    /// back-reference), and re-snapping to the golden ratio on every trace add would silently
+    /// discard a user's manual resize. The Smith/Polar and Table branches stay unconditional — both
+    /// are idempotent invariants (already-square / already-fitted is a no-op) that pre-date this
+    /// brief.</para>
     /// </summary>
     private void CoerceAspectForPlotType()
     {
+        var plotType    = PlotVM.Plot.PlotType;
+        bool typeChanged = plotType != _lastCoercedPlotType;
+        _lastCoercedPlotType = plotType;
+
         if (IsSquareAspect)
         {
             double size = Math.Max(200, Math.Max(Width, Height));
             if (Width != size || Height != size) { Width = size; Height = size; }
         }
-        else if (PlotVM.Plot.PlotType == PlotType.Table)
+        else if (plotType == PlotType.Table)
         {
             SyncTableWidth();
+        }
+        else if (plotType == PlotType.Rect && typeChanged)
+        {
+            double ratio = AppSettingsViewModel.Instance.RectAspectRatio;
+            if (ratio > 0) ResizeTo(Width, Width / ratio);
         }
     }
 

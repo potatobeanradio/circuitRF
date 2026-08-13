@@ -25,6 +25,12 @@ public sealed class TraceDataItem
     /// </summary>
     public string? DisabledReason { get; init; }
 
+    /// <summary>Tooltip text: the disabled reason when present, else the label. A plain-string
+    /// binding target — `TargetNullValue={Binding ...}` is not evaluated by Avalonia (the binding
+    /// object itself becomes the fallback value, rendered via ToString()), so the fallback must be
+    /// computed here rather than in the view.</summary>
+    public string TooltipText => DisabledReason ?? Label;
+
     /// <summary>
     /// True when the source file is missing or the row/col is out of range
     /// for the currently loaded file.  The item is still selectable (it

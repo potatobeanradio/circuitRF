@@ -542,7 +542,7 @@
                                                                Classes.brokenSource="{Binding IsBroken}"
                                                                FontSize="{StaticResource FontSize}"
                                                                TextTrimming="CharacterEllipsis"
-                                                               ToolTip.Tip="{Binding DisabledReason, TargetNullValue={Binding Label}}"/>
+                                                               ToolTip.Tip="{Binding TooltipText}"/>
                                                 </DataTemplate>
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
@@ -722,6 +722,34 @@
                                                       HorizontalAlignment="Stretch"
                                                       ToolTip.Tip="Swept-axis value to slice at"/>
                                         </Grid>
+
+                                        <!-- Z0 row: Γ-plane loadpull contours only (brief-dd-z0-renormalization.md §5) —
+                                             the Z-plane impedance grid has no reference-impedance concept and never
+                                             shows this row. -->
+                                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                                    VerticalAlignment="Center"
+                                                    IsVisible="{Binding ShowContourZ0Control}">
+                                            <TextBlock Text="Z0"
+                                                       Classes="label" Margin="0,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBox Text="{Binding Z0String, Mode=TwoWay}"
+                                                     IsEnabled="{Binding IsZ0Editable}"
+                                                     FontSize="{StaticResource FontSize}"
+                                                     Height="20"
+                                                     MinHeight="0"
+                                                     Width="120"
+                                                     Padding="4,3"
+                                                     PlaceholderText="50+j0"
+                                                     ToolTip.Tip="{Binding Z0ErrorText}"
+                                                     VerticalAlignment="Center"/>
+                                            <TextBlock Text="Ω"
+                                                       Classes="label"
+                                                       VerticalAlignment="Center"/>
+                                            <CheckBox Content="Override"
+                                                      IsChecked="{Binding Z0OverrideEnabled, Mode=TwoWay}"
+                                                      VerticalAlignment="Center"
+                                                      FontSize="{StaticResource FontSize}"/>
+                                        </StackPanel>
 
                                         <!-- Level-set mode toggle -->
                                         <Grid ColumnDefinitions="50,Auto">
@@ -1322,7 +1350,7 @@
                                             <!-- Col 3: blank spacer -->
                                         </Grid>
 
-                                        <!-- Z0 row: S-param traces only -->
+                                        <!-- Z0 row: S-param (network or cube-bound) traces, and a Γ-plane contour -->
                                         <StackPanel Orientation="Horizontal" Spacing="6"
                                                     VerticalAlignment="Center"
                                                     IsVisible="{Binding ShowZ0Row}">
@@ -1331,15 +1359,11 @@
                                                        Classes="label" Margin="0,0,0,0"
                                                        VerticalAlignment="Center"/>
 
-                                            <!-- Non-uniform: no box, subtle grey label -->
-                                            <TextBlock Text="Multiple Port Normalization"
-                                                       IsVisible="{Binding IsMultiPortNormalization}">
-                                                <TextBlock.Foreground>
-                                                    <SolidColorBrush Color="{DynamicResource SystemBaseMediumColor}" Opacity="0.6"/>
-                                                </TextBlock.Foreground>
-                                            </TextBlock>
-
-                                            <!-- Uniform source: read-only-by-default box + Override checkbox -->
+                                            <!-- Read-only-by-default box + Override checkbox. brief-dd-z0-renormalization.md
+                                                 §2: an "unusual" (non-uniform/complex) source no longer replaces this with a
+                                                 static label — renormalizing a per-port source to a uniform user Z0 is exactly
+                                                 what RFNetwork.SToS/RenormalizeSCube already do; ShowZ0Badge/Z0BadgeTooltip
+                                                 carry the "source was unusual" provenance indicator instead. -->
                                             <StackPanel Orientation="Horizontal" Spacing="6"
                                                         IsVisible="{Binding ShowZ0Control}"
                                                         VerticalAlignment="Center">
@@ -1351,6 +1375,7 @@
                                                          Width="120"
                                                          Padding="4,3"
                                                          PlaceholderText="50+j0"
+                                                         ToolTip.Tip="{Binding Z0ErrorText}"
                                                          VerticalAlignment="Center"/>
                                                 <TextBlock Text="Ω"
                                                            Classes="label"
@@ -1359,6 +1384,14 @@
                                                           IsChecked="{Binding Z0OverrideEnabled, Mode=TwoWay}"
                                                           VerticalAlignment="Center"
                                                           FontSize="{StaticResource FontSize}"/>
+                                                <TextBlock Text="{Binding Z0ErrorText}"
+                                                           IsVisible="{Binding HasZ0Error}"
+                                                           Classes="label"
+                                                           VerticalAlignment="Center">
+                                                    <TextBlock.Foreground>
+                                                        <SolidColorBrush Color="{DynamicResource SystemBaseMediumColor}" Opacity="0.85"/>
+                                                    </TextBlock.Foreground>
+                                                </TextBlock>
                                             </StackPanel>
 
                                         </StackPanel>

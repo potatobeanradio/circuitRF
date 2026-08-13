@@ -222,7 +222,10 @@ public sealed class SimulatedSourceNetworkMetricsTests : IDisposable
         row.SelectedGroup = "SP1";
         var labels = row.AvailableSignals.Select(x => x.Label).ToList();
 
-        Assert.Contains("S", labels);                       // the cube path is untouched
+        // Post-§4: one item per ordered (i,j) pair rather than a bare "S" quantity — the cube path
+        // is still what serves them (S(1,1)/CubeName == "SP1.S").
+        Assert.Contains("S(1,1)", labels);
+        Assert.Contains("S(2,2)", labels);
         Assert.Contains("Load Stability µ",   labels);
         Assert.Contains("Source Stability µ'", labels);
         Assert.Contains("Rollett K",           labels);

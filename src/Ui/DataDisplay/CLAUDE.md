@@ -3,6 +3,158 @@
 Standing instructions for `src/Ui/DataDisplay`. Read with the root `CLAUDE.md`, `src/Ui/CLAUDE.md`,
 and `docs/design/data-display.md`.
 
+## Plot-type integrity: remap, Rect aspect, Smith square limits (brief-dd-plot-type-integrity, 2026-08-13)
+
+Theme: *changing the plot type must never leave the user with a broken plot.* Four slices, P1–P4.
+
+- **§1 — one remap function, model-level.** `Trace.RemapForPlotType(oldType, newType)` is the single
+  source of truth for what a plot-type change does to a CUBE-BOUND trace's `Transform`/`Expression`
+  — called by `Plot.SetPlotType` for every trace, right before `BuildPath`. No-op for a non-cube
+  trace (network/derived plot-type behaviour is unchanged, still in `Plot.SetPlotType` itself), a
+  contour trace, Table on EITHER side (a Table renders complex and scalar cells alike — no transform
+  change, either direction, confirmed for both directions), a real-baked expression
+  (`TransformIsInert`), real (non-complex) underlying data (kept as-is — no complex quantity to map
+  to), and a Rect↔Rect-equivalent transition (Smith↔Polar). Complex data: → Smith/Polar undoes a
+  scalar reduction back to `None`; → Rect applies `Trace.DefaultRectTransform` (dB20 for an S/Z/Y
+  cube — detected from the trace's own cached `Slice` having both an `"i"` and `"j"` axis, since
+  `Trace` never holds a `DataCube` — Mag otherwise), the exact same table
+  `TraceRowViewModel.DefaultTransformFor` uses to seed a freshly-added trace (refactored to share
+  it, not a second copy). `Expression` is only re-derived via `BuildPickerExpression()` for a
+  genuine picker trace (`CubeName != null`) — a user-typed multi-cube expression is never rewritten,
+  matching the existing "Transform combo must not corrupt a network trace" rule above.
+  `Plot.SetPlotType`'s pre-existing network/derived switch is otherwise unchanged except: a network
+  trace's `YAxis` Phase/Real/Imaginary is now remapped to `Complex` on entering Smith/Polar instead
+  of being deleted, and `MaxGain` is no longer deleted either — it joins K/|Δ|/Passivity (which
+  already silently survived; none of the four have a Γ-plane locus, so they go dormant rather than
+  vanish, and the reverse switch restores them, per the brief's explicit preference for keeping over
+  deleting).
+- **Leaving Table — narrowed, not wholesale.** The VM-layer `OnPlotTypeChanged` used to clear
+  `_plot.Traces` entirely whenever the OLD type was Table. `Plot.SetPlotType` now deletes only
+  `IsSummaryColumn` and rank-0-scalar (`CubeIsScalar`) traces — genuinely Table-only constructs;
+  everything else survives and goes through the remap above. `PlotInspectorViewModel.OnPlotTypeChanged`
+  mirrors `RemoveTrace`'s cleanup only for what didn't survive (`vm.UnsubscribeFromLibrary()`), by
+  diffing the VM list against `_plot.Traces` after the switch — it does not pre-clear anything itself.
+- **Family-trace geometry was never rebuilt on a bare plot-type (or `FreqUnits`) change.**
+  `Trace.BuildPath` only ever dispatched to `BuildCubePath`, which no-ops for a family trace by
+  design (`SetFamilyData` deliberately nulls the single-slice `_cubeComplexValues`/`_cubeRealValues`
+  cache). So `Plot.SetPlotType`'s/`FreqUnits`'s `BuildPath` loop silently left every `FamilyCurve`'s
+  `Points` stale after a switch — invisible until this brief needed family traces to actually remap.
+  Fixed by extracting `Trace.BuildFamilyPath(plotType, freqUnit)` out of `SetFamilyData`: it rebuilds
+  every curve's `Points` from the already-cached `FamilyCurve.RawComplex`/`RawReal` (no DataSet
+  re-slice needed), and `BuildPath` now dispatches to it whenever `IsFamily`.
+- **§2 — Rect adopts the configured aspect ratio on a plot-type switch, width kept.**
+  `PlotContainerViewModel.CoerceAspectForPlotType` (already existed for the Smith/Polar
+  square-on-structure-change invariant, wired to `Inspector.PlotStructureChanged`) gained a Rect
+  branch: `ResizeTo(Width, Width / RectAspectRatio)` — the same rule `DataDisplayViewModel.AddPlot`
+  and the drag-resize/double-click-snap in `PlotContainerView.axaml.cs` already apply. **Guarded on
+  an actual plot-type transition**, tracked via a new `_lastCoercedPlotType` field — `PlotStructureChanged`
+  also fires on ordinary trace add/remove at the SAME plot type (the brief said to reuse this
+  broadcast rather than add a new back-reference), and re-snapping to the golden ratio on every trace
+  add would silently discard a user's manual resize. The Smith/Polar and Table branches stay
+  unconditional (pre-existing, idempotent: already-square / already-fitted is a no-op either way).
+  **Undo:** verified there is currently no undo command for a plot-type change at all — the segmented
+  buttons just set `PlotType` directly (`SetPlotTypeRectCommand` etc.), no `PushUndoCommand` anywhere
+  on that path. So there is no "two separate undo steps" to fix; adding one only for the resize would
+  make undo revert the SIZE but leave the TYPE changed, worse than today. Left as-is.
+  **Popup Plot Inspector:** its flyout anchor (`PlotControl.ShowPlotInspectorAtTrace`/`ShowPlotInspector`
+  → `ComputeStableAnchor`) is computed ONCE at open time from `Bounds.Width` and a fixed `y = 0` (top
+  edge) — it does not live-track the container. Verified this brief's resize never breaks it: every
+  branch here (`ResizeTo(Width, Width/ratio)`, and the pre-existing Smith/Polar square coercion, which
+  only ever GROWS via `max(Width, Height)`) explicitly keeps `Width` fixed and only changes `Height`,
+  and the anchor depends on neither `Height` nor `y`-position-by-height — so the already-open popup
+  never needs to follow. Confirmed, changed nothing.
+- **§3 — Smith/Polar manual axis limits stay square.** `AxesLimitsViewModel.TryApplyX`/`TryApplyY`
+  now branch on `IsComplex`: instead of writing one dimension of `Axes.Window` independently, they
+  call `Plot.SquareCentredOnOrigin` (made `internal`, previously `Autoscale`-only) with a rect built
+  from ONLY the just-edited axis's span (the other dimension zeroed out, so it never contributes),
+  then refresh BOTH text boxes (`RefreshXText`/`RefreshYText`) so the coupled value is visible
+  immediately. Reusing the exact autoscale helper means a manual edit and a later autoscale can never
+  disagree about what "square" means. Rect is untouched — X and Y stay independent there, byte-identical.
+- **§4 — transform-list filtering is now per-trace, per-plot-type.** `TraceRowViewModel.TraceTransformItems`
+  used to return one of two shared STATIC lists (`PlotInspectorViewModel.AllCubeTransforms`/
+  `AllTransformsForNetwork`), blind to plot type — so a complex cube on Rect still offered `None`/`Conj`,
+  which render nothing (`Trace.RectValueInvalid`'s exact two arms). Replaced by
+  `TraceRowViewModel.BuildTransformItems(isCubeBound, plotType, isComplexData)`, one rule table
+  (`TransformEntryEnabled`): the pre-existing network-only dB10/dB/Conj exclusion is unconditional;
+  Table is unconditionally all-enabled; Smith/Polar enables only `None`/`Conj` (scalar reductions
+  don't belong on a Γ-plane plot); Rect disables `None`/`Conj` **for a CUBE trace only** — a network
+  trace has no `RectValueInvalid` failure mode (it degrades to magnitude, pre-existing, out of this
+  brief's scope) so `None` stays enabled for it on Rect, same as always
+  (`NetworkTraceTransformHealTests` pins this); `Conj` is disabled for real data on any plot type.
+  **Cached per (isCubeBound, plotType, isComplexData)** on the VM (`_cachedTransformItems`/Key) rather
+  than reallocated on every property read — needed so the ItemsSource binding and
+  `SyncTransformItem`'s own lookup return the SAME `CubeTransformItem` instances within one refresh;
+  otherwise `SelectedTransformItem`'s `ReferenceEquals` check (and Avalonia's own ComboBox
+  SelectedItem-vs-ItemsSource matching) would never see two reads as equal even when nothing changed,
+  which would have shown as the combo losing its visible selection on every refresh.
+- Tests: `PlotTypeIntegrityTests.cs` (32 tests) — the §1 remap matrix (round-trips for an S-param
+  cube, a non-param complex cube, real cube data, a family trace, `MaxGain`, network `YAxis` Phase, a
+  contour trace; Table-leaving narrowing for an ordinary/scalar/summary trace; Table no-op both
+  directions), §2 (golden ratio adopted + width kept, round-trip back to square, Table→Rect, and a
+  regression guard that an ordinary trace add does NOT re-snap a manually-resized Rect plot), §3
+  (X-edit couples Y and vice versa, matches `SquareCentredOnOrigin` directly for an asymmetric span,
+  Rect stays independent), §4 (the enabled-matrix across plot type × data kind, network `None` stays
+  enabled on Rect). Plus updates to `TraceCardLayoutTests.UnifiedTransform_NetworkMap` (content
+  equality instead of `Assert.Same` — the list is no longer literally the shared static instance).
+  `dotnet test tests/Ui.Tests` (6492 passed) then `dotnet test tests/Firewall.Tests` (6 passed).
+
+## S/Z/Y trace-card identity, virtual Z/Y cubes, and the N-port stability crash (2026-08-13)
+
+brief-dd-network-params-and-stability.md, landed as slices N1–N6. Everything below shares one root:
+a simulated S-parameter run's `S` cube goes through the CUBE path (no SNP — see
+`brief-sparam-run-add-trace`), while a Touchstone file's `S` goes through the NETWORK (SNP) path —
+several older code paths quietly assumed only the network path existed.
+
+- **`RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, cubeSpec)`** is now the single authority
+  for "this cube spec (`"S"`, `"SP1.Z"`, …) is a network-parameter matrix element" — true when the
+  bare name is S/Z/Y AND that GROUP carries both a correctly-shaped `S` (rank ≥ 3) and a genuinely
+  per-port `Z0` (length == port count). Deliberately does NOT require the spec itself to resolve in
+  the DataSet — a virtual `Z`/`Y` cube passes even before it's materialized. Shared by the trace
+  card's S/Z/Y matrix-type selector visibility (`TraceRowViewModel.ShowMatrixTypeCombo`) and the
+  virtual-cube materializer, so "should this show a selector" and "did Z/Y actually get built" never
+  disagree — a test fixture with a same-named-but-wrong-shaped "Z0" cube caught the un-shape-checked
+  version giving a false positive.
+- **Virtual `Z`/`Y` cubes**: `DataSourceEntryViewModel.Data`'s getter lazily materializes `Z`/`Y`
+  DataCubes (via `RfCore.Data.NetworkMetrics.ConvertSCube`, which is `RFNetwork.SToZ`/`SToY` applied
+  per leading-axis block) into every NAMED group that carries `S`+`Z0` — memoized, re-armed on
+  reload. **Named groups only, never the default group** — a flat/Touchstone-shaped `S` already
+  serves the network path via `Snp`; materializing `Z`/`Y` there too would offer the same values a
+  second time as cube items. Once materialized they are ordinary cubes — `ds.Contains("SP1.Z")` and
+  `ds["SP1.Z"]` genuinely resolve, so the spec parser/TraceExpression/Table/export/`.cdd` need no
+  special-casing. Measured cost (8-port × 4001-point, both conversions): ~200 ms — eager
+  materialization on first `Data` access is fine; no per-frequency-on-demand fallback was needed.
+- **Picker: one item per ordered (i,j) pair**, not a bare `S`/`Z`/`Y` quantity item — `S(1,1)`,
+  `S(1,2)`, … row-major, listed above the stability-metric items, and only for the CURRENTLY
+  selected `MatrixType` (flipping S→Z→Y relabels the same N² items rather than tripling the list).
+  The `i`/`j` axis-role rows are suppressed for a network-param cube trace; every other axis
+  (a parametric sweep) still shows. `TraceRowViewModel.OnMatrixTypeChanged` rewrites a cube-bound
+  trace's `CubeName` (`SP1.S`→`SP1.Z`) directly since `MatrixType` has no effect on cube rendering
+  (unlike the network path, where it already drove `BuildMatrixPath`/`DataPoint`).
+  **Trap, twice over:** because N items now share one `CubeName`, two pre-existing "nothing actually
+  changed, skip" shortcuts that compared CubeName ALONE — `RebuildSignals`' auto-select match AND
+  `OnSelectedSignalChanged`'s `alreadyApplied` short-circuit — both silently collapsed onto
+  whichever port pair happened to be first/already-selected, so picking `S(3,2)` (or typing
+  `SP1.S[:, 3, 2]`) would resolve to `S(1,1)` instead. Both now also compare the item's `i`/`j` pin
+  indices (`NetworkParamSliceMatches`/`HasPortPair`) before calling it a no-op.
+- **The N-port stability crash**: `Trace.DataPoint`'s `IsDerived` branch built an `SNP` straight
+  from the raw N-port matrices and called `RFNetwork.StabilityMu`/`MuPrime`/`MaxGain` directly —
+  those throw for N≠2. Root cause was a second, older implementation that never learned the ordered
+  port-pair extraction `Trace.BuildDerivedPath` (the plotted path) already used via
+  `RfCore.Data.NetworkMetrics.TwoPortMetric`/`PassivityFull`/`PassivityPair`. Fixed by routing
+  through the same authority (memoized per trace — `Trace.GetDerivedMetricArray()` — so a Table
+  read, which calls `DataPointScalar` once per row, doesn't recompute the whole sweep per cell), and
+  catching `ArgumentException` → NaN. The same raw-SNP bypass also lived in `Trace.GetMarkerDataPoint`
+  and `Trace.MuString` (the stability-circle marker readout) — both fixed the same way. **Also found
+  while fixing this**: `Trace.DataPointScalar` re-applied the `YAxis` Db transform on top of a
+  derived value that was already final (MaxGain is already dB from `RFNetwork.MaxGain`) — a
+  double-dB bug in every Table/marker readout of MaxGain, invisible on the plotted curve because
+  `BuildDerivedPath` never applied that transform in the first place. Fixed by having
+  `DataPointScalar` return the derived value as-is (`d.Real`), matching what's actually plotted.
+- **`{Binding X, TargetNullValue={Binding Y}}` is not evaluated by Avalonia** — the binding object
+  itself becomes the fallback, rendered via `ToString()` (`"Avalonia.Data.CompiledBinding"`). Fix is
+  always a plain-string VM property (`TraceDataItem.TooltipText => DisabledReason ?? Label`) bound
+  directly. Grepped the whole `src/Ui` tree — this was the only occurrence.
+
 ## Canvas background is DataDisplay's own, not the shared dock grey (2026-08-01)
 
 The Data Display canvas (`PlotCanvasView.axaml`'s `PlotCanvas` ItemsControl) used

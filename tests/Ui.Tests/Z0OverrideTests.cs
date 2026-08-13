@@ -4,7 +4,7 @@
 //  1. UniformSource_BoxLockedShowsPort1      — ShowZ0Control true, box seeded from port-1
 //  2. Override_EnablesEditing               — Override checkbox unlocks box + reverts on uncheck
 //  3. UniformComplex_TreatedAsUniform       — complex-but-uniform shows box, IsMultiPortNorm false
-//  4. NonUniform_ShowsLabelNoBox            — non-uniform hides box, IsMultiPortNormalization true
+//  4. NonUniform_ShowsControlBoxWithBadge   — non-uniform shows box (renorm enabled), badge true
 //  5. NonScattering_NoControl               — cube-bound + derived/Z/Y traces hide the Z0 control
 // ================================================================
 
@@ -155,11 +155,14 @@ public sealed class Z0OverrideTests
         }
     }
 
-    // ---- Test 4: NonUniform_ShowsLabelNoBox ---------------------------------
-    // A non-uniform source → IsMultiPortNormalization true, ShowZ0Control false.
+    // ---- Test 4: NonUniform_ShowsControlBoxWithBadge ------------------------
+    // brief-dd-z0-renormalization.md §2: a non-uniform source no longer hides the Z0 box —
+    // IsMultiPortNormalization is now purely a "source was unusual" badge signal;
+    // ShowZ0Control/renorm is enabled the same as any other source. Box starts locked
+    // (Override unchecked), same as every other case.
 
     [Fact]
-    public async Task NonUniform_ShowsLabelNoBox()
+    public async Task NonUniform_ShowsControlBoxWithBadge()
     {
         var tmpPath = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(), $"crf_nu_{Guid.NewGuid():N}.npy");
@@ -182,11 +185,11 @@ public sealed class Z0OverrideTests
             var row  = insp.Traces[0];
 
             Assert.True(row.IsMultiPortNormalization,
-                "NonUniform: IsMultiPortNormalization must be true");
-            Assert.False(row.ShowZ0Control,
-                "NonUniform: Z0 control must be hidden");
+                "NonUniform: IsMultiPortNormalization (badge condition) must be true");
+            Assert.True(row.ShowZ0Control,
+                "NonUniform: Z0 control must now be shown (renorm enabled per §2)");
             Assert.False(row.IsZ0Editable,
-                "NonUniform: Z0 box must not be editable");
+                "NonUniform: Z0 box starts locked (Override off by default)");
         }
         finally
         {

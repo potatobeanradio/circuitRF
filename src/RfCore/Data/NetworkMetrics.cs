@@ -17,6 +17,7 @@
 // ================================================================
 
 using System;
+using System.Linq;
 using System.Numerics;
 using NumFlat;
 
@@ -79,6 +80,121 @@ namespace RfCore.Data
         {
             var c = FindSCube(ds);
             return c is null || c.Rank < 3 ? 0 : c.Axes[1].Length;
+        }
+
+        /// <summary>
+        /// Converts an S-shaped DataCube (<c>[&lt;optional sweep&gt;, freq, i, j]</c>) to Z or Y,
+        /// element-wise per leading-axis combination, using the group's per-port reference
+        /// impedance — the same axis layout as S, so every DataSet consumer that already
+        /// understands an S cube (the spec parser, TraceExpression, the Table, export, .cdd
+        /// persistence) understands the result with no further change
+        /// (brief-dd-network-params-and-stability.md §2). The last two axes of
+        /// <paramref name="sCube"/> must be the square port axes (i, j); any number of leading
+        /// axes is handled identically, since they only change how many N×N blocks there are.
+        /// </summary>
+        public static DataCube ConvertSCube(DataCube sCube, Complex[] z0PerPort, MatrixType targetType)
+        {
+            if (targetType == MatrixType.S)
+                throw new ArgumentException("targetType must be Z or Y.", nameof(targetType));
+
+            int rank    = sCube.Rank;
+            int nPorts  = sCube.Axes[rank - 1].Length;
+            int matSize = nPorts * nPorts;
+            var raw     = sCube.ComplexValues;
+            int nMats   = matSize == 0 ? 0 : raw.Length / matSize;
+            var outRaw  = new Complex[raw.Length];
+
+            for (int k = 0; k < nMats; k++)
+            {
+                int baseIdx = k * matSize;
+                var m = new Mat<Complex>(nPorts, nPorts);
+                for (int i = 0; i < nPorts; i++)
+                for (int j = 0; j < nPorts; j++)
+                    m[i, j] = raw[baseIdx + i * nPorts + j];
+
+                var converted = targetType == MatrixType.Z ? RFNetwork.SToZ(m, z0PerPort)
+                                                            : RFNetwork.SToY(m, z0PerPort);
+
+                for (int i = 0; i < nPorts; i++)
+                for (int j = 0; j < nPorts; j++)
+                    outRaw[baseIdx + i * nPorts + j] = converted[i, j];
+            }
+
+            return new DataCube(sCube.Axes.ToArray(), outRaw);
+        }
+
+        /// <summary>
+        /// Renormalizes an S-shaped DataCube (<c>[&lt;optional sweep&gt;, freq, i, j]</c>) from
+        /// <paramref name="z0Src"/> to <paramref name="z0New"/>, per leading-axis combination —
+        /// a whole-matrix operation (<see cref="RFNetwork.SToS"/>) applied to each N×N block, never
+        /// an element-wise shortcut (brief-dd-z0-renormalization.md §1: renormalizing a single S
+        /// element in isolation is wrong and silently produces plausible-looking numbers). Same
+        /// axis-layout generality as <see cref="ConvertSCube"/> — the last two axes of
+        /// <paramref name="sCube"/> must be the square port axes (i, j).
+        /// </summary>
+        public static DataCube RenormalizeSCube(DataCube sCube, Complex[] z0Src, Complex[] z0New)
+        {
+            foreach (var z in z0New)
+                if (z.Real <= 0.0)
+                    throw new ArgumentException(
+                        $"Reference impedance must have Re(Z0) > 0 (got {z}) — the power-wave form divides by √Re(Z0).",
+                        nameof(z0New));
+
+            int rank    = sCube.Rank;
+            int nPorts  = sCube.Axes[rank - 1].Length;
+            int matSize = nPorts * nPorts;
+            var raw     = sCube.ComplexValues;
+            int nMats   = matSize == 0 ? 0 : raw.Length / matSize;
+            var outRaw  = new Complex[raw.Length];
+
+            for (int k = 0; k < nMats; k++)
+            {
+                int baseIdx = k * matSize;
+                var m = new Mat<Complex>(nPorts, nPorts);
+                for (int i = 0; i < nPorts; i++)
+                for (int j = 0; j < nPorts; j++)
+                    m[i, j] = raw[baseIdx + i * nPorts + j];
+
+                var renormed = RFNetwork.SToS(m, z0Src, z0New);
+
+                for (int i = 0; i < nPorts; i++)
+                for (int j = 0; j < nPorts; j++)
+                    outRaw[baseIdx + i * nPorts + j] = renormed[i, j];
+            }
+
+            return new DataCube(sCube.Axes.ToArray(), outRaw);
+        }
+
+        /// <summary>
+        /// True when <paramref name="cubeSpec"/> names an S/Z/Y matrix cube ("S", "SP1.Z", …)
+        /// belonging to a group that carries both S and Z0 — the single authority for "this is a
+        /// network-parameter matrix element", shared by the trace card's S/Z/Y matrix-type selector
+        /// (brief-dd-network-params-and-stability.md §1) and its virtual Z/Y cubes (§2).
+        ///
+        /// <para>Deliberately does NOT require <paramref name="cubeSpec"/> itself to resolve in
+        /// <paramref name="ds"/> — only that its GROUP carries S and Z0 — so this stays correct for
+        /// a virtual Z/Y cube that is never actually added to the DataSet, only derived on demand.
+        /// </para>
+        /// </summary>
+        public static bool IsNetworkParamCubeSpec(DataSet ds, string cubeSpec)
+        {
+            int dot = cubeSpec.LastIndexOf('.');
+            string bare = dot < 0 ? cubeSpec : cubeSpec[(dot + 1)..];
+            if (bare is not (SCubeName or "Z" or "Y")) return false;
+
+            string group  = dot < 0 ? "" : cubeSpec[..dot];
+            string sSpec  = group.Length == 0 ? SCubeName  : $"{group}.{SCubeName}";
+            string z0Spec = group.Length == 0 ? Z0CubeName : $"{group}.{Z0CubeName}";
+            if (!ds.Contains(sSpec) || !ds.Contains(z0Spec)) return false;
+
+            // Shape check, not just presence — mirrors the guard the Z/Y materializer itself
+            // applies, so "this predicate says yes" and "Z/Y actually got materialized" never
+            // disagree. A "Z0" cube that happens to exist but isn't genuinely per-port (wrong
+            // length) is not a real reference impedance for this S cube.
+            var sCube = ds[sSpec];
+            if (sCube.Rank < 3) return false;
+            int nPorts = sCube.Axes[sCube.Rank - 1].Length;
+            return ds[z0Spec].ComplexValues.Length == nPorts;
         }
 
         /// <summary>

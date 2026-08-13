@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using RfCore.Data;
+using RfCore.Loadpull;
 
 namespace CircuitRF.Ui.DataDisplay;
 
@@ -82,5 +84,45 @@ public static class LoadpullRecognition
                 && c.Axes[^1].Name == PinStepAxis)
                 return true;
         return false;
+    }
+
+    // ── §4a (brief-dd-loadpull-contour-ux-round8): Γ-grid vs impedance-grid detector ──────────
+
+    /// <summary>
+    /// <c>GammaLoad</c> and <c>ZLoad</c> are BOTH always emitted for every loadpull (anchor 6 —
+    /// <c>LoadpullEngine.BuildLoadpullDataSet</c>), so which one the run was actually authored/swept
+    /// in cannot be told from cube presence. This is a HEURISTIC, not a fact of the data: a grid
+    /// swept in the Γ-plane clusters near the unit circle (high VSWR); one swept in the impedance
+    /// plane is typically a modest, bounded Z sweep (low VSWR). The owner picked this threshold by
+    /// eye against two real fixtures (§4a fixture measurements, brief-dd-loadpull-contour-ux-round8):
+    /// a Γ-grid run's max VSWR measured far above it, an impedance-grid run's measured far below —
+    /// see <c>RESOLVED.md</c> for the recorded numbers. A grid that happens to straddle it would be
+    /// misclassified; nothing here detects that case.
+    /// </summary>
+    public const double GammaGridVswrThreshold = 15.0;
+
+    /// <summary>
+    /// Classifies a recognized loadpull view's termination grid as authored in the Γ-plane or the
+    /// impedance plane, from the GEOMETRY of its <c>GammaLoad</c> points (see
+    /// <see cref="GammaGridVswrThreshold"/>) — never from which cube happens to exist, since both
+    /// always do. Returns <see cref="SurfacePlane.Z"/> (impedance) when the cube is missing or
+    /// carries no finite points, so an unrecognizable grid degrades to the more conservative Rect
+    /// rendering rather than an arbitrary Smith chart.
+    /// </summary>
+    public static SurfacePlane DetectGridPlane(DataSet ds, LoadpullView view)
+    {
+        string spec = view.Group is null ? "GammaLoad" : $"{view.Group}.GammaLoad";
+        if (ds is null || !ds.Contains(spec)) return SurfacePlane.Z;
+
+        double maxVswr = 0.0;
+        foreach (var gamma in ds[spec].ComplexValues)
+        {
+            double mag = gamma.Magnitude;
+            if (!double.IsFinite(mag)) continue;          // skip a non-finite point rather than let it decide
+            double clamped = Math.Min(mag, 0.999999);     // guard |Γ|→1, which would otherwise give VSWR=∞
+            double vswr    = (1.0 + clamped) / (1.0 - clamped);
+            if (vswr > maxVswr) maxVswr = vswr;
+        }
+        return maxVswr > GammaGridVswrThreshold ? SurfacePlane.Gamma : SurfacePlane.Z;
     }
 }

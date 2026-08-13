@@ -112,9 +112,13 @@ public sealed class TraceCardLayoutTests
         var vm  = MakeInspector(snp, PlotType.Rect);
         var row = vm.Traces.Single();
 
-        // Network trace: TraceTransformItems should be AllTransformsForNetwork.
+        // Network trace on Rect: TraceTransformItems should match AllTransformsForNetwork's
+        // enabled-set (brief-dd-plot-type-integrity.md §4 made the list per-trace/per-plot-type, so
+        // it is no longer the same shared static instance — content, not reference, is what matters).
         var items = row.TraceTransformItems;
-        Assert.Same(PlotInspectorViewModel.AllTransformsForNetwork, items);
+        Assert.Equal(
+            PlotInspectorViewModel.AllTransformsForNetwork.Select(t => (t.Transform, t.Enabled)),
+            items.Select(t => (t.Transform, t.Enabled)));
 
         // Cube-only members are disabled.
         Assert.False(items.Single(t => t.Transform == CubeTransform.dB10).Enabled, "dB10 disabled for network");

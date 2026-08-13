@@ -550,7 +550,13 @@ public partial class TraceRowViewModel : ViewModelBase
             ? SurfacePlane.Gamma
             : SurfacePlane.Z;
 
-        var fit = surface.Fit(freqIdx, cd.MetricName, constraint, plane,
+        // brief-dd-z0-renormalization.md §5: Γ plane only — a Z-plane contour has no reference
+        // impedance concept (the impedance grid does not move), so z0 stays null there and cannot
+        // leak into that fit even if the trace's Z0 field holds a stale override from a prior
+        // Smith/Polar view.
+        System.Numerics.Complex? z0 = plane == SurfacePlane.Gamma ? _trace.Z0 : (System.Numerics.Complex?)null;
+
+        var fit = surface.Fit(freqIdx, cd.MetricName, constraint, plane, z0,
             kernel: cd.InterpKernel, smooth: cd.Smoothing, epsilon: cd.Epsilon);
         if (fit is null) { ClearContourGrid(cd); return; }
 
@@ -560,7 +566,7 @@ public partial class TraceRowViewModel : ViewModelBase
         var fillGrid = (plane == SurfacePlane.Gamma)
             ? surface.Resample(fit, new ViewBox(-1.0, 1.0, -1.0, 1.0), 80)
             : null;
-        var scatter = surface.Reduce(freqIdx, cd.MetricName, constraint, plane);
+        var scatter = surface.Reduce(freqIdx, cd.MetricName, constraint, plane, z0);
 
         ContourLevelSet levels;
         if (cd.LevelMode == ContourLevelMode.Range)
@@ -596,12 +602,13 @@ public partial class TraceRowViewModel : ViewModelBase
         string   evalMetric  = cd.MetricName;
         var      evalConstr  = constraint;
         var      evalPlane   = plane;
+        var      evalZ0      = z0;
         RbfKernel evalKernel = cd.InterpKernel;
         double   evalSmooth  = cd.Smoothing;
         double?  evalEps     = cd.Epsilon;
 
         cd.EvaluateMetric = (coord, snapped) =>
-            evalSurface.MetricAtCoord(evalFreq, evalMetric, coord, evalConstr, evalPlane,
+            evalSurface.MetricAtCoord(evalFreq, evalMetric, coord, evalConstr, evalPlane, evalZ0,
                 nearest: snapped, kernel: evalKernel, smooth: evalSmooth, epsilon: evalEps);
 
         var nodeCoords = scatter.Coords;
@@ -1017,8 +1024,28 @@ public partial class TraceRowViewModel : ViewModelBase
     /// <summary>YAxis combo is shown for network-bound Rect/Table; hidden for cube-bound.</summary>
     public bool ShowYAxisCombo => IsRectOrTablePlot && !IsCubeBoundTrace;
 
-    /// <summary>MatrixType (S/Z/Y) combo visible for S-parameter network sources only.</summary>
-    public bool ShowMatrixTypeCombo => !_trace.IsCubeBound && _trace.Data is { } d && !d.IsEmpty;
+    /// <summary>
+    /// MatrixType (S/Z/Y) combo — shown only for a trace that reads a network-parameter matrix
+    /// ELEMENT (an S/Z/Y value at a fixed port pair). Never for a derived metric (µ, µ′, K, |Δ|,
+    /// MaxGain, passivity, circles): the metric is defined on S only, and Trace.Derived's setter
+    /// already force-pins MatrixType to S, so the selector could only lie there (§1).
+    ///
+    /// True for (a) a non-derived network (Touchstone/SNP) trace with non-empty Data, and (b) a
+    /// cube-bound trace whose cube is the network-parameter cube of a group that carries S + Z0 —
+    /// via <see cref="RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec"/>, the same authority §2's
+    /// virtual Z/Y cubes are built from.
+    /// </summary>
+    public bool ShowMatrixTypeCombo
+    {
+        get
+        {
+            if (_trace.IsDerived) return false;
+            if (!_trace.IsCubeBound) return _trace.Data is { } d && !d.IsEmpty;
+            return _trace.CubeName is { } cubeName
+                && ResolveTraceSourceEntry()?.Data is { } ds
+                && RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, cubeName);
+        }
+    }
 
     // ---- Combined data picker (replaces SNP source + Row + Col) ----------
     //
@@ -1305,9 +1332,13 @@ public partial class TraceRowViewModel : ViewModelBase
         if (value.IsCubeBound)
         {
             // Compare source + cube only; user may have customized Slice via the axis-role editor.
+            // EXCEPT for a network-parameter element item (§4): N² of them share one CubeName
+            // ("SP1.S(1,1)".."SP1.S(4,4)" all bind CubeName=="SP1.S"), so "same CubeName" alone is
+            // not "nothing changed" there — the i/j port pair must also match.
             alreadyApplied = _trace.IsCubeBound
                 && string.Equals(_trace.SourcePath, value.Entry.FilePath, StringComparison.OrdinalIgnoreCase)
-                && _trace.CubeName == value.CubeName;
+                && _trace.CubeName == value.CubeName
+                && (!HasPortPair(value.Slice) || NetworkParamSliceMatches(value.Slice, _trace.Slice));
         }
         else
         {
@@ -1361,19 +1392,65 @@ public partial class TraceRowViewModel : ViewModelBase
             }
             else
             {
-                _trace.Slice = BuildCarriedSlice(value, oldSlice);
+                var carried = BuildCarriedSlice(value, oldSlice);
+                // Network-parameter items (§4) all share one CubeName across N² port pairs —
+                // BuildCarriedSlice would otherwise carry the OLD trace's i/j pin forward and
+                // ignore the port pair the user actually picked. Every other axis (sweep
+                // pin/Family, etc.) still carries over normally.
+                if (value.Slice is not null
+                    && value.Entry.Data is { } vds
+                    && value.CubeName is not null
+                    && RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(vds, value.CubeName))
+                {
+                    var pickedI = value.Slice.First(s => s.AxisName == "i");
+                    var pickedJ = value.Slice.First(s => s.AxisName == "j");
+                    for (int d = 0; d < carried.Length; d++)
+                    {
+                        if (carried[d].AxisName == "i") carried[d] = pickedI;
+                        else if (carried[d].AxisName == "j") carried[d] = pickedJ;
+                    }
+                }
+                _trace.Slice = carried;
             }
             // Re-apply the first-add nicety for the NEW signal: an auto-transform only for COMPLEX data
             // (so it shows a curve), None for REAL data (raw, no annoying "mag"). Matches the seed path.
             if (cubeForRank is not null)
-                _trace.Transform = DefaultTransformFor(cubeForRank, _parent.PlotType);
+                _trace.Transform = DefaultTransformFor(cubeForRank, _parent.PlotType, value.CubeName);
             _trace.InvalidSpecText = null;
             _trace.ExpressionError = null;
             _trace.Expression      = _trace.BuildPickerExpression();
 
-            // Cube-bound traces have no per-port Z0 from the S matrix.
+            // Interim reset — an ordinary (non-network-param) cube has no per-port Z0 at all, and a
+            // network-param cube trace (S/Z/Y element) gets these re-stamped from the group's own
+            // Z0 cube by PlotInspectorViewModel.ResolveNetworkParamCube on the RebuildAndNotify()
+            // below (brief-dd-z0-renormalization.md §1) — this reset just avoids showing a stale
+            // network-trace value in between.
             _trace.SourceZ0PerPort   = null;
             _trace.SourceZ0IsUnusual = false;
+
+            // A freshly-picked network-param cube trace (S/Z/Y element) seeds Z0 at the source's OWN
+            // port-1 reference, matching the network-trace convention (ApplySourceZ0/SeedZ0FromSource)
+            // — otherwise a stale default Z0=50 would silently renormalize a non-50Ω source the first
+            // time it's plotted, before the user ever touched the Override checkbox.
+            if (value.CubeName is not null && value.Entry.Data is { } dsForZ0
+                && RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(dsForZ0, value.CubeName))
+            {
+                int dotZ0 = value.CubeName.LastIndexOf('.');
+                string grp = dotZ0 < 0 ? "" : value.CubeName[..dotZ0];
+                string z0Spec = grp.Length == 0
+                    ? RfCore.Data.NetworkMetrics.Z0CubeName
+                    : $"{grp}.{RfCore.Data.NetworkMetrics.Z0CubeName}";
+                if (dsForZ0.Contains(z0Spec) && dsForZ0[z0Spec].ComplexValues is { Length: > 0 } z0Vals)
+                {
+                    _trace.Z0  = z0Vals[0];
+                    _seedingZ0 = true;
+                    Z0String   = ComplexStringHelper.Format(z0Vals[0]);
+                    _seedingZ0 = false;
+                }
+                _applyingSource   = true;
+                Z0OverrideEnabled = false;
+                _applyingSource   = false;
+            }
             RebuildAxisRoles();
         }
         else
@@ -1615,6 +1692,23 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnMatrixTypeChanged(MatrixType value)
     {
         _trace.MatrixType = value;
+
+        if (_trace.CubeName is { } cubeName)
+        {
+            int dot      = cubeName.LastIndexOf('.');
+            string bare  = dot < 0 ? cubeName : cubeName[(dot + 1)..];
+            string group = dot < 0 ? "" : cubeName[..dot];
+            if (bare is "S" or "Z" or "Y")
+            {
+                // Cube-bound network-parameter trace: MatrixType has no direct effect on cube
+                // rendering (unlike the network/SNP path, where it's already honoured in
+                // BuildMatrixPath/DataPoint) — rewrite CubeName's bare S/Z/Y name instead, keep
+                // the slice, and re-derive Expression so the picker/spec text stay in sync.
+                _trace.CubeName   = group.Length == 0 ? value.ToString() : $"{group}.{value}";
+                _trace.Expression = _trace.BuildPickerExpression();
+            }
+        }
+
         RebuildSignals();          // labels change (S→Z etc.)
         _parent.RebuildAndNotify();
     }
@@ -1708,11 +1802,66 @@ public partial class TraceRowViewModel : ViewModelBase
     /// network traces.</summary>
     public bool IsTransformComboEnabled => !_trace.TransformIsInert;
 
-    /// <summary>Returns the per-trace transform list: all-enabled for cube, network-filtered otherwise.</summary>
-    public IReadOnlyList<CubeTransformItem> TraceTransformItems =>
-        _trace.IsCubeBound
-            ? PlotInspectorViewModel.AllCubeTransforms
-            : PlotInspectorViewModel.AllTransformsForNetwork;
+    /// <summary>
+    /// Returns the per-trace, per-plot-type transform list — single source of truth for which
+    /// entries make sense to select (brief-dd-plot-type-integrity.md §4): None/Conj are disabled on
+    /// Rect for complex data (they leave a value Rect can't plot); the scalar reductions are
+    /// disabled on Smith/Polar (only complex-preserving entries make sense there); everything is
+    /// enabled on Table (it renders complex and scalar cells alike); Conj is disabled for real data
+    /// on any plot type. The pre-existing network-only exclusion (dB10/dB/Conj are cube-only) is
+    /// unaffected — this is an additional filter, not a replacement.
+    /// </summary>
+    public IReadOnlyList<CubeTransformItem> TraceTransformItems
+    {
+        get
+        {
+            // Cached by (isCubeBound, plotType, isComplexData) so repeated reads within one refresh
+            // cycle — the ItemsSource binding AND SyncTransformItem's own lookup — return the SAME
+            // CubeTransformItem instances. Without this, each read allocates a fresh list/items, and
+            // SelectedTransformItem's ReferenceEquals-based "did it actually change" check (and
+            // Avalonia's own ComboBox SelectedItem matching against its ItemsSource) would never see
+            // two reads as equal even when nothing changed.
+            var key = (_trace.IsCubeBound, _parent.PlotType, isComplexData: _trace.IsCubeBound ? _trace.CubeDataIsComplex : true);
+            if (_cachedTransformItems is null || _cachedTransformItemsKey != key)
+            {
+                _cachedTransformItems    = BuildTransformItems(key.IsCubeBound, key.PlotType, key.isComplexData);
+                _cachedTransformItemsKey = key;
+            }
+            return _cachedTransformItems;
+        }
+    }
+
+    private IReadOnlyList<CubeTransformItem>? _cachedTransformItems;
+    private (bool IsCubeBound, PlotType PlotType, bool isComplexData) _cachedTransformItemsKey;
+
+    internal static IReadOnlyList<CubeTransformItem> BuildTransformItems(
+        bool isCubeBound, PlotType plotType, bool isComplexData) =>
+        Enum.GetValues<CubeTransform>()
+            .Select(t => new CubeTransformItem(t, TransformEntryEnabled(t, isCubeBound, plotType, isComplexData)))
+            .ToList();
+
+    private static bool TransformEntryEnabled(
+        CubeTransform t, bool isCubeBound, PlotType plotType, bool isComplexData)
+    {
+        // Pre-existing rule, unaffected by plot type: dB10/dB/Conj are cube-only.
+        if (!isCubeBound && t is CubeTransform.dB10 or CubeTransform.dB or CubeTransform.Conj)
+            return false;
+
+        if (plotType == PlotType.Table) return true;   // renders complex & scalar cells alike
+
+        bool isComplexPassthrough = t is CubeTransform.None or CubeTransform.Conj;
+
+        if (plotType.IsComplex())   // Smith/Polar: only complex-preserving entries make sense
+            return isComplexPassthrough && (isComplexData || t != CubeTransform.Conj);
+
+        // Rect. A CUBE trace with no scalar reduction can't render at all (Trace.RectValueInvalid) —
+        // disable None/Conj. A NETWORK trace has no such failure mode (it falls back to magnitude,
+        // pre-existing behaviour outside this brief's scope) — unaffected, only the exclusion above
+        // and the real-data Conj rule below apply to it.
+        if (isCubeBound && isComplexData) return !isComplexPassthrough;
+        if (!isComplexData) return t != CubeTransform.Conj;   // real data: Conj is meaningless
+        return true;
+    }
 
     /// <summary>
     /// Syncs SelectedTransformItem to the trace's current YAxis/Transform without triggering
@@ -1725,17 +1874,16 @@ public partial class TraceRowViewModel : ViewModelBase
         if (_trace.TransformIsInert && _trace.Transform != CubeTransform.None)
             _trace.Transform = CubeTransform.None;
 
+        var items = TraceTransformItems;
         CubeTransformItem? item;
         if (_trace.IsCubeBound)
         {
-            item = PlotInspectorViewModel.AllCubeTransforms
-                .FirstOrDefault(t => t.Transform == _trace.Transform);
+            item = items.FirstOrDefault(t => t.Transform == _trace.Transform);
         }
         else
         {
             var ct = YAxisToCubeTransform(_trace.YAxis);
-            item = PlotInspectorViewModel.AllTransformsForNetwork
-                .FirstOrDefault(t => t.Transform == ct);
+            item = items.FirstOrDefault(t => t.Transform == ct);
         }
         if (!ReferenceEquals(_selectedTransformItem, item))
         {
@@ -1806,20 +1954,47 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnZ0StringChanged(string value)
     {
         if (_seedingZ0) return;
-        if (ComplexStringHelper.TryParse(value, out Complex z0))
+        if (!ComplexStringHelper.TryParse(value, out Complex z0))
         {
-            _trace.Z0 = z0;
-            _parent.RebuildAndNotify();
+            Z0ErrorText = "Invalid Z0 — expected a real or complex value (e.g. \"75\" or \"50+10j\").";
+            return;
         }
+        // brief-dd-z0-renormalization.md §2: the power-wave renormalization divides by √Re(Z0), so a
+        // non-positive real part must be refused with a clear message rather than left to produce NaNs
+        // deep in RFNetwork.SToS.
+        if (z0.Real <= 0.0)
+        {
+            Z0ErrorText = "Z0 must have a positive real part.";
+            return;
+        }
+        Z0ErrorText = "";
+        _trace.Z0 = z0;
+        RebuildAfterZ0Change();
     }
 
-    // ---- Z0 badge (Phase 7.2e) — retained for the one-time Messages warning seam ---
+    /// <summary>Validation message for the Z0 box; empty when the current text is valid. §2.</summary>
+    [ObservableProperty]
+    private string _z0ErrorText = "";
 
-    /// <summary>True when this is an S-parameter trace whose source has unusual (non-uniform or complex) Z0.</summary>
+    public bool HasZ0Error => !string.IsNullOrEmpty(Z0ErrorText);
+
+    partial void OnZ0ErrorTextChanged(string value) => OnPropertyChanged(nameof(HasZ0Error));
+
+    // ---- Z0 badge (Phase 7.2e; extended to cube network-param traces by §2) --------
+
+    /// <summary>True when this is an S-parameter trace (network OR cube-bound network-param) whose
+    /// source has unusual (non-uniform or complex) Z0 — the provenance indicator that survives now
+    /// that §2 no longer disables the Z0 control for an unusual source.</summary>
     public bool ShowZ0Badge =>
-        !_trace.IsCubeBound
-        && _trace.MatrixType == MatrixType.S
+        (IsScatteringTrace
+            || (IsCubeNetworkParamTrace && _trace.CubeName is { } cn && BareCubeNameOf(cn) == "S"))
         && (SelectedSignal?.Entry?.HasUnusualZ0 ?? false);
+
+    private static string BareCubeNameOf(string cubeName)
+    {
+        int dot = cubeName.LastIndexOf('.');
+        return dot < 0 ? cubeName : cubeName[(dot + 1)..];
+    }
 
     /// <summary>Tooltip listing the per-port Z0 values from the source entry.</summary>
     public string Z0BadgeTooltip
@@ -1845,11 +2020,16 @@ public partial class TraceRowViewModel : ViewModelBase
         }
     }
 
-    // ---- Z0 control gating (Phase 7.2f-2) ---------------------------------
+    // ---- Z0 control gating (Phase 7.2f-2; extended to cube traces by brief-dd-z0-renormalization.md §1) --
 
     /// <summary>True when the source uses genuinely non-uniform-across-ports normalization.
     /// UniformComplex is NOT non-uniform; only NonUniform triggers multi-port mode.</summary>
-    private bool SourceZ0IsNonUniform => _sourceZ0Kind == RfCore.Data.Z0Kind.NonUniform;
+    /// <summary>_sourceZ0Kind is stamped only by the network path's ApplySourceZ0; a cube-bound
+    /// network-param trace has no such stash, so derive non-uniformity directly from the per-port
+    /// array PlotInspectorViewModel.ResolveNetworkParamCube stamps on the trace.</summary>
+    private bool SourceZ0IsNonUniform => _trace.IsCubeBound
+        ? _trace.SourceZ0PerPort is { Length: > 1 } perPort && perPort.Any(z => z != perPort[0])
+        : _sourceZ0Kind == RfCore.Data.Z0Kind.NonUniform;
 
     /// <summary>True for a network-bound, non-derived S-matrix trace.</summary>
     public bool IsScatteringTrace =>
@@ -1857,17 +2037,44 @@ public partial class TraceRowViewModel : ViewModelBase
         && _trace.Derived == DerivedParameters.None
         && _trace.MatrixType == MatrixType.S;
 
-    /// <summary>Gates the entire Z0 row — only S-param (non-cube, non-derived) traces show it.</summary>
-    public bool ShowZ0Row => IsScatteringTrace;
+    /// <summary>True for a cube-bound trace whose cube is the network-parameter cube (S/Z/Y element)
+    /// of a group that carries S + Z0 — the same authority <see cref="ShowMatrixTypeCombo"/> uses.
+    /// Unlike the network path this is NOT restricted to MatrixType.S: Z/Y are reference-independent
+    /// (§1's "renormalize S first, then convert" invariant), so showing the same Z0 control on a Z/Y
+    /// cube trace is correct — the numbers just don't move when it's edited.</summary>
+    public bool IsCubeNetworkParamTrace =>
+        _trace.IsCubeBound
+        && _trace.CubeName is { } cubeName
+        && ResolveTraceSourceEntry()?.Data is { } ds
+        && RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, cubeName);
 
-    /// <summary>True when the source has non-uniform port normalization — the Z0 box is replaced
-    /// by a "Multiple Port Normalization" label; no Override checkbox is shown.</summary>
+    /// <summary>Gates the entire Z0 row — S-param (network) traces and network-param cube traces.
+    /// A contour trace's Z0 control is a SEPARATE row in its own card section, gated by
+    /// <see cref="ShowContourZ0Control"/> — see that property's doc.</summary>
+    public bool ShowZ0Row => IsScatteringTrace || IsCubeNetworkParamTrace;
+
+    /// <summary>True when a Γ-plane loadpull contour's Z0 control should be shown
+    /// (brief-dd-z0-renormalization.md §5). The Z plane has no reference-impedance concept — the
+    /// impedance grid does not move — so this is false there even if the trace carries a stale Z0
+    /// override from a prior Smith/Polar view.</summary>
+    public bool ShowContourZ0Control =>
+        _trace.IsContourTrace && (_parent.PlotType is PlotType.Smith or PlotType.Polar);
+
+    /// <summary>
+    /// True when the source has non-uniform-across-ports or complex port normalization. §2
+    /// reconsidered the old "renorm disabled" reading of this flag — it no longer replaces the Z0
+    /// box with a static label; it now only drives the "source was unusual" badge
+    /// (<see cref="ShowZ0Badge"/>/<see cref="Z0BadgeTooltip"/>). Renormalizing a per-port/complex
+    /// source to a uniform user Z0 is exactly what <c>RFNetwork.SToS</c>/<c>RenormalizeSCube</c>
+    /// already do natively — there was no concrete correctness reason found to keep the old block.
+    /// </summary>
     public bool IsMultiPortNormalization =>
-        !_trace.IsCubeBound && _trace.SourceZ0IsUnusual && SourceZ0IsNonUniform;
+        (!_trace.IsCubeBound || IsCubeNetworkParamTrace) && _trace.SourceZ0IsUnusual && SourceZ0IsNonUniform;
 
-    /// <summary>True when the Z0 control (box + Override checkbox) should be shown — i.e. the
-    /// trace is scattering and NOT in multi-port normalization mode.</summary>
-    public bool ShowZ0Control => !_trace.IsCubeBound && IsScatteringTrace && !IsMultiPortNormalization;
+    /// <summary>True when the Z0 control (box + Override checkbox) should be shown — a scattering
+    /// network trace or a network-param cube trace. No longer suppressed by
+    /// <see cref="IsMultiPortNormalization"/> — see that property's doc for why.</summary>
+    public bool ShowZ0Control => IsScatteringTrace || IsCubeNetworkParamTrace;
 
     /// <summary>Override checkbox bound in the trace card. When unchecked, the Z0 box reverts to
     /// the source port-1 reference and editing is disabled.</summary>
@@ -1883,30 +2090,42 @@ public partial class TraceRowViewModel : ViewModelBase
         if (!value)
         {
             SeedZ0FromSource();
-            _parent.RebuildAndNotify();
+            RebuildAfterZ0Change();
         }
         OnPropertyChanged(nameof(IsZ0Editable));
     }
 
-    /// <summary>Seeds _trace.Z0 and Z0String from the source's port-1 reference impedance.
-    /// Does not trigger RebuildAndNotify — callers handle that.</summary>
+    /// <summary>Seeds _trace.Z0 and Z0String from the source's port-1 reference impedance. A contour
+    /// trace has no "source" port-1 — it seeds to the assumed 50 Ω the Γ grid is itself referenced to
+    /// (RfCore.Loadpull.LoadpullSurface.AssumedSourceZ0). Does not trigger a rebuild — callers handle
+    /// that (RebuildAfterZ0Change).</summary>
     private void SeedZ0FromSource()
     {
-        var sourcePort1Z0 = (_trace.SourceZ0PerPort is { Length: > 0 } arr)
-            ? arr[0]
-            : _trace.Data.Z0;
+        var sourcePort1Z0 = _trace.IsContourTrace
+            ? new Complex(50, 0)
+            : (_trace.SourceZ0PerPort is { Length: > 0 } arr) ? arr[0] : _trace.Data.Z0;
         _trace.Z0 = sourcePort1Z0;
         _seedingZ0 = true;
         Z0String = ComplexStringHelper.Format(sourcePort1Z0);
         _seedingZ0 = false;
     }
 
-    /// <summary>Z0 box is editable only when ShowZ0Control is true and the Override checkbox is on.</summary>
-    public bool IsZ0Editable => ShowZ0Control && Z0OverrideEnabled;
+    /// <summary>A contour trace's Γ-grid is not rebuilt by the ordinary RebuildAndNotify/BuildPath
+    /// sweep (Trace.BuildPath falls through to the network path for a contour trace — contour
+    /// rendering is deliberately driven only by explicit RebuildContour calls, same as every other
+    /// OnContourXxxChanged handler in this file). Route the Z0 box's rebuild the same way.</summary>
+    private void RebuildAfterZ0Change()
+    {
+        if (_trace.IsContourTrace) RebuildContour();
+        else _parent.RebuildAndNotify();
+    }
+
+    /// <summary>Z0 box is editable only when its control is shown and the Override checkbox is on.</summary>
+    public bool IsZ0Editable => (ShowZ0Control || ShowContourZ0Control) && Z0OverrideEnabled;
 
     /// <summary>Tooltip shown on the disabled Z0 box (legacy; kept for existing tests).</summary>
     public string Z0DisabledReason => _trace.SourceZ0IsUnusual
-        ? "Source has non-uniform/complex port normalization — renormalize by re-simulating."
+        ? "Source has non-uniform/complex port normalization — check Override to renormalize to a uniform Z0."
         : "";
 
     // ---- Line ---------------------------------------------------------------
@@ -2117,8 +2336,13 @@ public partial class TraceRowViewModel : ViewModelBase
     public static IReadOnlyList<RbfKernel>            AllRbfKernels { get; } =
         Enum.GetValues<RbfKernel>().ToList();
 
+    // brief-dd-loadpull-contour-ux-round8 §3: Heatmap is experimental and withheld from the UI —
+    // the picker offers only None/Topography. ContourFillSelection.Heatmap, ContourFillKind.HeatMap,
+    // ContourFillType.HeatMap, ContourData.Scatter, and the renderer's heatmap branch stay intact so
+    // a saved .cdd with Heatmap selected still loads and renders, and the experiment can be
+    // re-enabled by restoring this list to Enum.GetValues<ContourFillSelection>().
     public static IReadOnlyList<ContourFillSelection> ContourFillOptions { get; } =
-        Enum.GetValues<ContourFillSelection>().ToList();
+        new[] { ContourFillSelection.None, ContourFillSelection.Topography };
 
     // ---- Constructor --------------------------------------------------------
 
@@ -2152,16 +2376,17 @@ public partial class TraceRowViewModel : ViewModelBase
         _selectedCubeTransformItem = PlotInspectorViewModel.AllCubeTransforms
             .FirstOrDefault(t => t.Transform == trace.Transform);
 
-        // Unified transform item — cube or mapped-from-YAxis.
+        // Unified transform item — cube or mapped-from-YAxis, from the per-plot-type list (§4).
+        // TraceTransformItems needs _trace/_parent, both already assigned above.
         if (trace.IsCubeBound)
         {
-            _selectedTransformItem = PlotInspectorViewModel.AllCubeTransforms
+            _selectedTransformItem = TraceTransformItems
                 .FirstOrDefault(t => t.Transform == trace.Transform);
         }
         else
         {
             var ct = YAxisToCubeTransform(trace.YAxis);
-            _selectedTransformItem = PlotInspectorViewModel.AllTransformsForNetwork
+            _selectedTransformItem = TraceTransformItems
                 .FirstOrDefault(t => t.Transform == ct);
         }
 
@@ -2265,6 +2490,12 @@ public partial class TraceRowViewModel : ViewModelBase
 
         // Build data picker list and select the item matching the current trace state.
         RebuildSignals();
+
+        // AvailablePorts (and the other network-metric card properties) are otherwise populated
+        // only by RefreshDescription -> RefreshNetworkMetricCard, which the constructor never
+        // calls — so a freshly-built card rendered the In/Out row with two empty combos until the
+        // user re-picked the signal on the live VM. Populate it up front instead.
+        RefreshNetworkMetricCard();
 
         // Keep AvailableSignals fresh when the library collection changes.
         _parent.LibraryEntries.CollectionChanged += OnLibraryEntriesChanged;
@@ -2393,6 +2624,18 @@ public partial class TraceRowViewModel : ViewModelBase
                         (bareName == "I" || bareName == "INl")
                         && cube.Axes.Any(a => a.Name == "node");
                     if (isNodeIndexedCurrent) continue;
+
+                    // Network-parameter matrix cube (S/Z/Y in a NAMED group carrying S+Z0): never a
+                    // bare quantity item — one item per ordered (i,j) port pair instead (§4), and
+                    // only for the currently selected matrix type (see AddNetworkParamElementItems).
+                    if (group != DataSet.DefaultGroup && bareName is "S" or "Z" or "Y"
+                        && RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, $"{group}.{bareName}"))
+                    {
+                        if (bareName == MatrixType.ToString())
+                            AddNetworkParamElementItems(entry, group, bareName, cube, cubeGroup, isComplexPlot);
+                        continue;
+                    }
+
                     int rank = cube.Rank;
                     if (rank == 0 && !_parent.IsTablePlot) continue;   // scalars are Table-only
 
@@ -2480,11 +2723,20 @@ public partial class TraceRowViewModel : ViewModelBase
 
         if (_trace.IsCubeBound)
         {
-            // Match by source + cube only; slice is managed via the axis-role editor.
-            match = _allSignals.FirstOrDefault(s =>
+            // Match by source + cube; slice is normally managed via the axis-role editor and
+            // ignored here. But a network-parameter cube (§4) now offers N² items that all share
+            // the SAME CubeName ("SP1.S(1,1)".."SP1.S(4,4)" all bind CubeName=="SP1.S") — those
+            // must disambiguate on the i/j port pair, or every S(i,j)/typed spec would always
+            // resolve to the first item (S(1,1)).
+            var candidates = _allSignals.Where(s =>
                 s.IsCubeBound
                 && string.Equals(s.Entry.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase)
-                && s.CubeName == _trace.CubeName);
+                && s.CubeName == _trace.CubeName).ToList();
+
+            match = candidates.Count <= 1
+                ? candidates.FirstOrDefault()
+                : candidates.FirstOrDefault(s => NetworkParamSliceMatches(s.Slice, _trace.Slice))
+                  ?? candidates.FirstOrDefault();
         }
         else if (_trace.Data != null)
         {
@@ -2596,6 +2848,11 @@ public partial class TraceRowViewModel : ViewModelBase
         var cube  = ds[_trace.CubeName];
         var slice = _trace.Slice;
 
+        // A network-parameter matrix element (S/Z/Y): the port indices i/j are never an X axis
+        // and are picked via the item combo (S(1,1), S(1,2), …), not the axis-role editor — so
+        // suppress their rows here (§4). Every other axis (a parametric sweep, freq) stays.
+        bool isNetworkParamCube = RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, _trace.CubeName);
+
         // Which axis (if any) is the filterable label axis, and its provenance side-cube.
         string? filterAxisName = null, provenanceCube = null;
         foreach (var ax in cube.Axes)
@@ -2631,6 +2888,8 @@ public partial class TraceRowViewModel : ViewModelBase
         for (int d = 0; d < cube.Rank; d++)
         {
             var axis = cube.Axes[d];
+
+            if (isNetworkParamCube && (axis.Name == "i" || axis.Name == "j")) continue;
 
             // Find matching slice entry by axis name.
             bool isX      = false;
@@ -2820,6 +3079,66 @@ public partial class TraceRowViewModel : ViewModelBase
         return slice;
     }
 
+    /// <summary>
+    /// Adds one picker item per ordered (i,j) port pair — S(1,1), S(1,2), S(2,1), … in row-major
+    /// order — instead of a single bare quantity item, for a network-parameter matrix cube (§4).
+    /// The label prefix is <paramref name="bareName"/> (the CURRENTLY selected matrix type — the
+    /// caller only invokes this for that one), so flipping the S/Z/Y selector relabels the same
+    /// N² items rather than tripling the list.
+    /// </summary>
+    private void AddNetworkParamElementItems(DataSourceEntryViewModel entry, string group,
+        string bareName, RfCore.Data.DataCube cube, string cubeGroup, bool isComplexPlot)
+    {
+        int iDim = -1, jDim = -1;
+        for (int d = 0; d < cube.Rank; d++)
+        {
+            if (cube.Axes[d].Name == "i") iDim = d;
+            else if (cube.Axes[d].Name == "j") jDim = d;
+        }
+        if (iDim < 0 || jDim < 0) return;   // malformed — refuse rather than guess
+
+        int nPorts = cube.Axes[iDim].Length;
+        string qualified = $"{group}.{bareName}";
+        bool isEnabled = !isComplexPlot || cube.DataKind == DataKind.Complex;
+        AxisSlice[] baseSlice = BuildDefaultSlice(cube);
+
+        for (int i = 0; i < nPorts; i++)
+        for (int j = 0; j < nPorts; j++)
+        {
+            var slice = (AxisSlice[])baseSlice.Clone();
+            slice[iDim] = new AxisSlice("i", AxisRole.PinToIndex, i);
+            slice[jDim] = new AxisSlice("j", AxisRole.PinToIndex, j);
+
+            string label = $"{bareName}({i + 1},{j + 1})";
+            _allSignals.Add(new TraceDataItem(entry, qualified, slice, label, isEnabled)
+                            { Group = cubeGroup });
+        }
+    }
+
+    /// <summary>True when both slices pin the SAME "i" and "j" axis index — the disambiguator for
+    /// network-parameter picker items, which all share one CubeName across N² port pairs.</summary>
+    private static bool NetworkParamSliceMatches(AxisSlice[]? itemSlice, AxisSlice[]? traceSlice)
+    {
+        if (itemSlice is null || traceSlice is null) return false;
+        int? itemI = null, itemJ = null, traceI = null, traceJ = null;
+        foreach (var s in itemSlice)
+        {
+            if (s.AxisName == "i") itemI = s.Index;
+            else if (s.AxisName == "j") itemJ = s.Index;
+        }
+        foreach (var s in traceSlice)
+        {
+            if (s.AxisName == "i") traceI = s.Index;
+            else if (s.AxisName == "j") traceJ = s.Index;
+        }
+        return itemI is not null && itemI == traceI && itemJ is not null && itemJ == traceJ;
+    }
+
+    /// <summary>True when a slice pins both an "i" and a "j" axis — i.e. it identifies a network-
+    /// parameter element item, one of the N² sharing a single CubeName (§4).</summary>
+    private static bool HasPortPair(AxisSlice[]? slice) =>
+        slice is not null && slice.Any(s => s.AxisName == "i") && slice.Any(s => s.AxisName == "j");
+
     /// <summary>True for an S/Y/Z parameter cube (axes "freq", "i", "j") — used to pick the dB20
     /// first-add transform on Rect.</summary>
     internal static bool IsParameterCube(RfCore.Data.DataCube cube)
@@ -2828,12 +3147,22 @@ public partial class TraceRowViewModel : ViewModelBase
         && cube.Axes.Any(a => a.Name == "j");
 
     /// <summary>The auto-applied "first-add nicety" transform for a cube on a given plot type. Only
-    /// COMPLEX data on a Rect plot gets a transform (dB20 for S/Y/Z parameter cubes, mag otherwise) so the
-    /// user sees a curve instead of <c>&lt;invalid&gt;</c>; REAL data is shown raw (None) — no annoying "mag".</summary>
-    internal static CubeTransform DefaultTransformFor(RfCore.Data.DataCube cube, PlotType plotType)
-        => plotType == PlotType.Rect && cube.DataKind == RfCore.Data.DataKind.Complex
-            ? (IsParameterCube(cube) ? CubeTransform.dB20 : CubeTransform.Mag)
-            : CubeTransform.None;
+    /// COMPLEX data on a Rect plot gets a transform so the user sees a curve instead of
+    /// <c>&lt;invalid&gt;</c>; REAL data is shown raw (None) — no annoying "mag".
+    ///
+    /// <para>S gets dB20 (the conventional S-parameter view); Z and Y prefer Mag — dB20 of an
+    /// impedance/admittance is defensible but odd. S/Z/Y share the exact same axis shape (freq, i,
+    /// j — <see cref="IsParameterCube"/> cannot tell them apart), so the distinction is by cube
+    /// NAME; <paramref name="cubeName"/> omitted (e.g. harmonicaRF, which is never S/Z/Y-shaped in
+    /// practice) keeps the previous dB20-for-any-parameter-cube default.</para>
+    /// </summary>
+    internal static CubeTransform DefaultTransformFor(
+        RfCore.Data.DataCube cube, PlotType plotType, string? cubeName = null)
+    {
+        if (plotType != PlotType.Rect) return CubeTransform.None;
+        return Trace.DefaultRectTransform(
+            cube.DataKind == RfCore.Data.DataKind.Complex, IsParameterCube(cube), cubeName);
+    }
 
     private AxisSlice[] BuildCarriedSlice(TraceDataItem value, AxisSlice[]? oldSlice)
     {

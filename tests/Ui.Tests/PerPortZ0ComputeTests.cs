@@ -1,7 +1,7 @@
 // ================================================================
 //  PerPortZ0ComputeTests.cs  —  Phase 7.2f gate tests
 //
-//  1. NonUniformSource_S_NoRenorm           — S-trace uses stored matrix; uniform 50 Ω unchanged
+//  1. NonUniformSource_S_Renormalizes        — S-trace renormalizes to trace Z0; uniform 50 Ω unchanged
 //  2. NonUniformSource_Z_UsesPerPort        — Z-trace uses per-port SToZ, not scalar collapse
 //  3. MarkerImpedance_PerPort               — marker impedance uses SourceZ0PerPort[Row]
 //  4. Z0Box_GatedByKind                     — IsZ0Editable true only for uniform-real sources
@@ -59,24 +59,34 @@ public sealed class PerPortZ0ComputeTests
         return t;
     }
 
-    // ---- Test 1: NonUniformSource_S_NoRenorm --------------------------------
-    // An S-trace on an unusual source returns the stored S value unchanged (no SToS shift).
-    // A uniform-50Ω trace on the same SNP also returns the stored value (regression).
+    // ---- Test 1: NonUniformSource_S_Renormalizes ----------------------------
+    // brief-dd-z0-renormalization.md §2: an S-trace on an unusual (per-port) source now
+    // renormalizes to the trace's own (uniform) Z0 before extracting the element — it no longer
+    // returns the stored value unchanged. A uniform-50Ω trace on the same SNP is still unaffected
+    // (its own reference already equals the trace's default Z0).
 
     [Fact]
-    public void NonUniformSource_S_NoRenorm()
+    public void NonUniformSource_S_Renormalizes()
     {
         var snp = MakeTestSnp();
 
-        // Unusual S21 trace — Smith plot returns (Re(S), Im(S)) as the point.
+        // Unusual S21 trace at the default Z0 (50+j0) — must equal RFNetwork.SToS from the true
+        // per-port source [50, 75-10j] to a uniform 50 Ω target, NOT the raw stored value.
         var unusual = MakeUnusualTrace(snp, MatrixType.S, 0, 1, DependentVarFormat.Complex);
         unusual.BuildPath(PlotType.Smith, FreqUnit.GHz);
 
-        Assert.Single(unusual.Points);
-        Assert.Equal((float)S21.Real,      unusual.Points[0].X, precision: 6);
-        Assert.Equal((float)S21.Imaginary, unusual.Points[0].Y, precision: 6);
+        var sourceZ0 = MakeNonUniformZ0();
+        var expected = RFNetwork.SToS(snp.Matrices[0], sourceZ0, RFNetwork.Z0Array(new Complex(50, 0), 2))[0, 1];
 
-        // Regression: uniform-50Ω trace (SourceZ0IsUnusual = false, _z0 == Data.Z0 == 50).
+        Assert.Single(unusual.Points);
+        Assert.Equal((float)expected.Real,      unusual.Points[0].X, precision: 6);
+        Assert.Equal((float)expected.Imaginary, unusual.Points[0].Y, precision: 6);
+        // The renormalized value genuinely differs from the raw stored S21 (pre-condition the old
+        // "no renorm" test relied on) — otherwise this test wouldn't distinguish the two behaviors.
+        Assert.NotEqual((float)S21.Real, unusual.Points[0].X, precision: 3);
+
+        // Regression: uniform-50Ω trace (SourceZ0IsUnusual = false, _z0 == Data.Z0 == 50) — renorm
+        // is a no-op, still returns the stored value.
         var uniform = new Trace(snp, MatrixType.S, 0, 1, DependentVarFormat.Complex);
         uniform.BuildPath(PlotType.Smith, FreqUnit.GHz);
 

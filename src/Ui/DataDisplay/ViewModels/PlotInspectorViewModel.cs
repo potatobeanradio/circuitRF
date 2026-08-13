@@ -181,20 +181,23 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     partial void OnPlotTypeChanged(PlotType value)
     {
-        // Leaving Table for any other plot type: clear all traces. Table traces are summary columns
-        // (or scalar/operating-point rows) that don't translate to a Smith/Polar/Rect plot, and forcing
-        // the user to delete each one by hand before reusing the plot as e.g. a Smith chart is tedious
-        // (design feedback). Start the new plot type clean.
         var oldType = _plot.PlotType;
-        if (oldType == PlotType.Table && value != PlotType.Table && _plot.Traces.Count > 0)
+        var oldVms  = Traces.ToList();
+
+        // Leaving Table: Plot.SetPlotType narrows the deletion to what genuinely cannot exist
+        // elsewhere (summary columns, scalar cubes — brief-dd-plot-type-integrity.md §1); everything
+        // else survives and is remapped. Mirrors RemoveTrace's own cleanup for whatever didn't
+        // survive — RebuildTraces() below discards every VM wrapper regardless (as it always has for
+        // any plot-type change), but only a trace actually gone from _plot.Traces needs unsubscribing.
+        _plot.SetPlotType(value);
+        if (oldType == PlotType.Table && value != PlotType.Table && oldVms.Count > 0)
         {
-            foreach (var vm in Traces.ToList())
-                vm.UnsubscribeFromLibrary();
-            _plot.Traces.Clear();
-            Traces.Clear();
+            var surviving = new HashSet<Trace>(_plot.Traces);
+            foreach (var vm in oldVms)
+                if (!surviving.Contains(vm.Trace))
+                    vm.UnsubscribeFromLibrary();
         }
 
-        _plot.SetPlotType(value);
         RebuildTraces();
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsSmithPlot));
@@ -613,7 +616,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         // First-add nicety on Rect: only COMPLEX cubes get an auto-transform (so they don't render
         // <invalid>); REAL cubes are shown raw — no annoying "mag". (Shared with the signal-switch path.)
-        trace.Transform = TraceRowViewModel.DefaultTransformFor(cube, _plot.PlotType);
+        trace.Transform = TraceRowViewModel.DefaultTransformFor(cube, _plot.PlotType, cubeName);
 
         trace.Expression = trace.BuildPickerExpression();
         return trace;
@@ -804,6 +807,13 @@ public partial class PlotInspectorViewModel : ViewModelBase
             return;
         }
 
+        // brief-dd-z0-renormalization.md §1: a network-parameter cube trace (S/Z/Y element) renders
+        // at the trace's OWN reference Z0 rather than the source's. This is the single interception
+        // point that feeds Rect/Smith/Polar/Table AND every marker/table readout downstream (via
+        // _cubeComplexValues) — do not duplicate this renorm anywhere else in the cube path.
+        if (RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, t.CubeName))
+            cube = ResolveNetworkParamCube(ds, t, t.CubeName, cube);
+
         // Cube + slice resolved → clear any stale invalid flag left by a prior bad source
         // (covers the scalar, family, all-pinned, and rank-1 success paths below).
         t.InvalidSpecText = null;
@@ -893,6 +903,57 @@ public partial class PlotInspectorViewModel : ViewModelBase
                       xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels);
         ApplyPinnedSpectral(t, ds);
         ApplyPinnedAxisDisplay(t, ds);
+    }
+
+    /// <summary>
+    /// Resolves the effective DataCube for a network-parameter cube trace (S/Z/Y element) at the
+    /// trace's OWN reference <see cref="Trace.Z0"/> — brief-dd-z0-renormalization.md §1. Also stamps
+    /// <see cref="Trace.SourceZ0PerPort"/>/<see cref="Trace.SourceZ0IsUnusual"/> from the group's Z0
+    /// cube, reusing the exact two fields the network/SNP path already uses (§3's Y-label token and
+    /// §2's badge read them regardless of which path populated them).
+    ///
+    /// <para>Order with Z/Y conversion (§1): renormalize S first, then convert to Z or Y — so Z/Y
+    /// come out mathematically INVARIANT to the trace's Z0 for a REAL target (Z/Y are reference-
+    /// independent quantities; pinned by <c>Z0RenormalizationTests</c>'s "order commutes" gate).
+    /// <b>Known limitation for a COMPLEX target:</b> <c>RFNetwork.SToS</c> is the power-wave
+    /// (Kurokawa) form (uses <c>Conjugate(z0)</c>), while <c>SToZ</c>/<c>SToY</c> are the ORDINARY
+    /// (non-power-wave) √Z0 form — no conjugate. The two conventions coincide when Z0 is real but
+    /// genuinely diverge for a complex reference, so a Z/Y cube trace's displayed values can shift
+    /// slightly under a COMPLEX Z0 override (pinned by
+    /// <c>Z0RenormalizationTests.RenormalizeSCube_ThenConvert_DivergesFromDirect_ComplexTarget</c>).
+    /// Not introduced by this brief — <c>NetworkMetrics.TwoPortUniformReal</c>/<c>FullUniformReal</c>
+    /// (R-stb-1..6) already restrict their own renormalization target to REAL for exactly this
+    /// reason. Fixing the underlying convention gap (making SToZ/SToY power-wave-aware, or SToS
+    /// ordinary-aware) is out of scope here — it would touch every S/Z/Y conversion call site in the
+    /// engine and UI, not just this brief's cube-trace Z0 field.</para>
+    /// </summary>
+    private static DataCube ResolveNetworkParamCube(DataSet ds, Trace t, string cubeSpec, DataCube cube)
+    {
+        int dot = cubeSpec.LastIndexOf('.');
+        string bare  = dot < 0 ? cubeSpec : cubeSpec[(dot + 1)..];
+        string group = dot < 0 ? "" : cubeSpec[..dot];
+        string sSpec  = group.Length == 0 ? RfCore.Data.NetworkMetrics.SCubeName  : $"{group}.{RfCore.Data.NetworkMetrics.SCubeName}";
+        string z0Spec = group.Length == 0 ? RfCore.Data.NetworkMetrics.Z0CubeName : $"{group}.{RfCore.Data.NetworkMetrics.Z0CubeName}";
+
+        var sCube  = ds[sSpec];
+        var z0Cube = ds[z0Spec];
+        int nPorts = sCube.Axes[sCube.Rank - 1].Length;
+        var z0Src  = z0Cube.ComplexValues;
+
+        t.SourceZ0PerPort  = z0Src;
+        t.SourceZ0IsUnusual = RfCore.Data.DataSetBuilder.ClassifyZ0(z0Cube) != RfCore.Data.Z0Kind.UniformReal;
+
+        bool identity = true;
+        for (int p = 0; p < nPorts; p++)
+            if (z0Src[p] != t.Z0) { identity = false; break; }
+        if (identity) return cube;
+
+        var z0New   = Enumerable.Repeat(t.Z0, nPorts).ToArray();
+        var renormS = RfCore.Data.NetworkMetrics.RenormalizeSCube(sCube, z0Src, z0New);
+        if (bare == RfCore.Data.NetworkMetrics.SCubeName) return renormS;
+
+        var matrixType = bare == "Z" ? MatrixType.Z : MatrixType.Y;
+        return RfCore.Data.NetworkMetrics.ConvertSCube(renormS, z0New, matrixType);
     }
 
     private static void ResolveFamily(Trace t, DataCube cube, AxisSlice[] slice,
@@ -1168,6 +1229,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
             FadeLineOpacity = (plane == SurfacePlane.Gamma),
             ColorMap        = lastContourColorMap,          // §4
             DrawLabels      = (plane == SurfacePlane.Z),   // §13
+            // brief-dd-loadpull-contour-ux-round8 §2: a Rect grid is far denser in data-space than
+            // Smith/Polar, so it needs a wider label pitch than ContourData's 30.0 default (which
+            // Smith/Polar keep).
+            LabelSpacing    = (plane == SurfacePlane.Z) ? 150.0 : 30.0,
         };
 
         _plot.Traces.Add(trace);
