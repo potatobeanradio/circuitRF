@@ -111,6 +111,18 @@ public readonly struct LayoutRenderOptions
     /// is a readonly struct, which may not carry field initialisers.)</summary>
     public IReadOnlyList<PlanarPortResolution>? PlanarPorts { get; init; }
 
+    /// <summary>
+    /// L5b export (owner request: "copy/paste the DRC markers, just like the mesh"). Copies
+    /// <see cref="ShowPlanarMesh"/>'s own contract: false by default, so every export/one-shot render
+    /// draws no markers unless a caller explicitly opts in. The interactive canvas never sets this —
+    /// it already draws markers via <see cref="Overlay"/>'s own <c>DrcMarkers</c>; this is the second,
+    /// Overlay-independent path an exporter (which always passes <c>Overlay = null</c>) can use.
+    /// </summary>
+    public bool ShowDrcMarkers { get; init; }
+
+    /// <summary>The markers to draw when <see cref="ShowDrcMarkers"/> is set. Null draws nothing.</summary>
+    public IReadOnlyList<DrcMarker>? DrcMarkers { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true, ShowPCellPins = true };
 }
 
@@ -487,7 +499,11 @@ public static partial class LayoutRenderer
                 // L5b: §9A.1's "system layer over the geometry" — drawn LAST inside the path-space
                 // transform so a violation is never hidden behind the metal it is about, and above
                 // the selection outline so a selected shape's own violation stays visible.
-                if (opts.Overlay?.DrcMarkers is { Count: > 0 } drcMarkers)
+                // Export mode has no Overlay (every exporter passes Overlay = null) so it opts in via
+                // ShowDrcMarkers/DrcMarkers instead — same shape as ShowPlanarMesh/PlanarMesh above.
+                var drcMarkers = opts.Overlay?.DrcMarkers
+                    ?? (opts.ShowDrcMarkers ? opts.DrcMarkers : null);
+                if (drcMarkers is { Count: > 0 })
                     DrawDrcMarkers(canvas, drcMarkers, theme, ps, scaleUm);
             }
             finally

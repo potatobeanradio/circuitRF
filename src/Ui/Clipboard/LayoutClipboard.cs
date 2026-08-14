@@ -52,6 +52,11 @@ public static class LayoutClipboard
     /// <para><b>The EM mesh rides along when one is showing</b> (owner request) — it is part of the
     /// picture the user is looking at. It is deliberately NOT in the JSON payload: a mesh belongs to
     /// an EM setup, not to geometry, so pasting into another layout must not carry one.</para>
+    ///
+    /// <para><b>DRC violation markers ride along the same way</b> (owner request, mirrors the mesh
+    /// exactly): shown in the graphic (bitmap/PDF/SVG) only when the panel's own markers toggle is on,
+    /// and deliberately NOT in the JSON payload — a violation marker is a check result, not geometry,
+    /// so pasting into another layout must never carry one.</para>
     /// </summary>
     public static async Task CopyAsync(
         IClipboard clipboard,
@@ -60,7 +65,8 @@ public static class LayoutClipboard
         IntPtr ownerHwnd = default,
         string baseDir = "",
         Engine.Mom.PlanarMeshReport? planarMesh = null,
-        Engine.Mom.PlanarCurrentDensityMap? currentDensity = null)
+        Engine.Mom.PlanarCurrentDensityMap? currentDensity = null,
+        IReadOnlyList<Layout.DrcMarker>? drcMarkers = null)
     {
         if (payload.Shapes.Count == 0 && payload.Instances.Count == 0) return;
 
@@ -75,7 +81,7 @@ public static class LayoutClipboard
         Bitmap?                         bmp = null;
         try
         {
-            var ctx = new ExportContext(payload, tech, renderTheme, transparent, baseDir, planarMesh, currentDensity);
+            var ctx = new ExportContext(payload, tech, renderTheme, transparent, baseDir, planarMesh, currentDensity, drcMarkers);
             pdf = TryRenderToPdf(ctx);
             svg = TryRenderToSvg(ctx);
             bmp = TryRenderToAvaloniaImage(ctx);
@@ -146,7 +152,8 @@ public static class LayoutClipboard
         bool Transparent,
         string BaseDir,
         Engine.Mom.PlanarMeshReport? PlanarMesh,
-        Engine.Mom.PlanarCurrentDensityMap? CurrentDensity);
+        Engine.Mom.PlanarCurrentDensityMap? CurrentDensity,
+        IReadOnlyList<Layout.DrcMarker>? DrcMarkers = null);
 
     /// <summary>
     /// Bounds of what will actually be PAINTED (R-L1f-4: the SELECTION, never the current view) —
@@ -210,7 +217,9 @@ public static class LayoutClipboard
 
     /// <summary>Export-mode render options (R-L1f-5): no grid, no overlay (which alone already
     /// suppresses the ghost/selection outlines/handles/marquee), transparent background — plus the
-    /// EM mesh when one is showing, and the base directory instances resolve against.</summary>
+    /// EM mesh when one is showing, the DRC markers when the caller supplied any (owner request:
+    /// mirrors the mesh's own "rides along in the graphic, never in the JSON payload" contract), and
+    /// the base directory instances resolve against.</summary>
     private static LayoutRenderOptions ExportOptions(ExportContext ctx) => new()
     {
         Theme = ctx.Theme,
@@ -221,6 +230,8 @@ public static class LayoutClipboard
         ShowPlanarMesh = ctx.PlanarMesh is not null,
         PlanarMesh = ctx.PlanarMesh,
         PlanarCurrentDensity = ctx.CurrentDensity,
+        ShowDrcMarkers = ctx.DrcMarkers is { Count: > 0 },
+        DrcMarkers = ctx.DrcMarkers,
     };
 
     /// <summary>Test seam: build the same context <see cref="CopyAsync"/> builds, so a gate can drive
@@ -228,8 +239,9 @@ public static class LayoutClipboard
     internal static ExportContext MakeExportContext(
         LayoutFragment.Payload payload, Technology? tech, LayoutRenderTheme theme, bool transparent,
         string baseDir = "", Engine.Mom.PlanarMeshReport? planarMesh = null,
-        Engine.Mom.PlanarCurrentDensityMap? currentDensity = null)
-        => new(payload, tech, theme, transparent, baseDir, planarMesh, currentDensity);
+        Engine.Mom.PlanarCurrentDensityMap? currentDensity = null,
+        IReadOnlyList<Layout.DrcMarker>? drcMarkers = null)
+        => new(payload, tech, theme, transparent, baseDir, planarMesh, currentDensity, drcMarkers);
 
     /// <summary>Test seam over <see cref="ComputeSelectionBounds"/> — the page-framing rule is the
     /// thing the cropped-ports report was about, and it is worth asserting directly rather than

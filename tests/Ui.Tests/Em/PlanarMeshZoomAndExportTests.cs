@@ -222,6 +222,36 @@ public class PlanarMeshZoomAndExportTests : IDisposable
         Assert.DoesNotContain("Mesh", json, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void DrcMarkersRideAlongInTheGraphic_ButNeverInThePastePayload()
+    {
+        // Owner report, 2026-08-14: "the DRC red error glyphs/shapes need to copy/paste to the
+        // clipboard for pasting into PowerPoint and Keynote... just like how the copy/paste of the
+        // Mesh rendering is done today." Same contract as the mesh above: rides along in the graphic
+        // export only when supplied, never in the JSON geometry payload.
+        var (payload, tech, baseDir) = PortsPlusInstanceSelection();
+        var markers = new List<DrcMarker>
+        {
+            new([[0, -533_400, 10_185_400, -533_400, 10_185_400, 533_400, 0, 533_400]],
+                DrcSeverity.Error, Waived: false, Selected: false),
+        };
+
+        var withMarkers = LayoutClipboard.MakeExportContext(
+            payload, tech, LayoutRenderTheme.Light, false, baseDir, drcMarkers: markers);
+        var without = LayoutClipboard.MakeExportContext(
+            payload, tech, LayoutRenderTheme.Light, false, baseDir);
+
+        var a = LayoutClipboard.TryRenderToSvg(withMarkers);
+        var b = LayoutClipboard.TryRenderToSvg(without);
+        Assert.NotNull(a);
+        Assert.NotNull(b);
+        Assert.True(a!.Value.Svg.Length > b!.Value.Svg.Length,
+            "the DRC marker must appear in the exported graphic");
+
+        string json = LayoutFragment.Serialize(payload);
+        Assert.DoesNotContain("Drc", json, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static LayoutFragment.Payload StripInstances(LayoutFragment.Payload p)
     {
         var copy = new LayoutFragment.Payload { DbuPerMicron = p.DbuPerMicron };

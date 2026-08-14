@@ -663,14 +663,17 @@ public partial class LayoutEditorView : UserControl
 
         IntPtr ownerHwnd = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
         // baseDir is what lets the graphic export resolve a placed instance's own cell — without it
-        // a schematic-generated selection copies as an empty picture. The mesh rides along when one
-        // is showing, in the graphic only: it belongs to an EM setup, not to geometry, so the JSON
-        // payload (what circuitRF's own paste reads) deliberately carries none.
+        // a schematic-generated selection copies as an empty picture. The mesh — and, per owner
+        // request, the DRC violation markers — ride along when showing, in the graphic only: neither
+        // is geometry, so the JSON payload (what circuitRF's own paste reads) deliberately carries
+        // none of either. vm.Overlay.DrcMarkers is already exactly "current markers, or empty when
+        // the panel's toggle is off / nothing has been checked" (LayoutEditorViewModel.Drc.cs).
         await LayoutClipboard.CopyAsync(
             clipboard, payload, vm.Technology, ownerHwnd,
             vm.InstanceBaseDir,
             vm.ShowPlanarMesh ? vm.PlanarMeshReport : null,
-            vm.ShowPlanarMesh ? vm.PlanarCurrentDensity : null);
+            vm.ShowPlanarMesh ? vm.PlanarCurrentDensity : null,
+            vm.Overlay.DrcMarkers.Count > 0 ? vm.Overlay.DrcMarkers : null);
     }
 
     private async Task OnClipboardCut()
