@@ -57,10 +57,12 @@ public sealed class HarmonicaPowerSweepDragCostTests(ITestOutputHelper output)
         // frame here, so this measures wall-clock (FrameTiming.TierAMs, stamped ON the frame itself
         // by the worker that solved it) rather than a solve count.
         var frames = new List<(FrameTiming Timing, int Points)>();
-        vm.Pool.Completed += (f, _) =>
+        vm.Pool.Completed += (f, seq) =>
         {
             lock (frames) frames.Add((f.Timing, f.PowerSweep.PinAvailDbm.Length));
             vm.PublishFrame(f);
+            // brief-harmonicarf-r5 §3 — settles conflate-and-pace, same as the live view.
+            vm.OnPoolSettled(seq);
         };
 
         // ── the opening frame: COLD, no prior-frame spectra to warm-start from ──────────────

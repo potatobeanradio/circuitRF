@@ -202,8 +202,29 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// too (an invisible point must not be grabbable), and the drag still works once shown.</summary>
     [ObservableProperty] private bool _showGridPoints;
 
+    /// <summary>brief-harmonicarf-r5 §1 — the diagnostics overlay HUD, default OFF (guardrail 6: it
+    /// must cost nothing measurable when off). <see cref="HarmonicaCanvas"/>'s draw operation reads
+    /// this to decide whether to record a frame into <see cref="Diagnostics"/> at all — the rolling
+    /// buffers are allocated regardless (negligible, one-time), but nothing WRITES to them, and
+    /// nothing draws, unless this is true.</summary>
+    [ObservableProperty] private bool _showDiagnosticsOverlay;
+
+    /// <summary>
+    /// brief-harmonicarf-r5 §1 — this document's own diagnostics overlay state (the rolling
+    /// frame-interval window, GC deltas). Owned here, not on the canvas, so <c>Reset()</c> is reachable
+    /// directly from a menu command — the same reason <see cref="EditDisplay"/>/<see cref="ColorEditor"/>
+    /// are VM-owned rather than living on the view.
+    /// </summary>
+    public HarmonicaDiagnosticsOverlay Diagnostics { get; } = new();
+
     /// <summary>Raised whenever the frame, the theme or a marker changes and the canvas must repaint.</summary>
     public event Action? RedrawRequested;
+
+    /// <summary>brief-harmonicarf-r5 §1 — lets a caller with no state change of its own to report
+    /// (<c>Diagnostics.Reset()</c> touches only session-only overlay state, nothing
+    /// <see cref="RedrawRequested"/>'s other callers already invalidate on) still ask for an immediate
+    /// repaint, so the HUD does not sit showing stale numbers until the next unrelated redraw.</summary>
+    public void RequestRedraw() => RedrawRequested?.Invoke();
 
     /// <summary>Raised when anything that belongs in the <c>.charm</c> changes.</summary>
     public event Action? DirtyChanged;
@@ -687,6 +708,13 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>HB solves the last frame cost.</summary>
     public int LastSolveCount => _solver.LastSolveCount;
 
+    /// <summary>brief-harmonicarf-r4 §5.3's own counter (`HarmonicaSolver.LeverOneDeltaGammaThreshold`)
+    /// — how many frames read lever 1 (the previous frame's converged spectrum as the Pin-ladder seed)
+    /// as disabled because the largest single-band Γ move since the last frame exceeded the threshold.
+    /// Exposed here so §1's diagnostics overlay can show it without reaching into the solver directly.
+    /// </summary>
+    public int Lever1DisabledCount => _solver.Lever1DisabledCount;
+
     /// <summary>
     /// Solves one frame and publishes it. <b>Never throws</b> — a live instrument that dies on a bad
     /// parameter is not a live instrument; the failure lands in <see cref="SolveError"/> and the
@@ -938,6 +966,30 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// making a no-re-solve path's own hit rate visible rather than inferred.</summary>
     public int NoOpDragFrameSkipCount { get; private set; }
 
+    // ── brief-harmonicarf-r5 §3 — conflate-and-pace the marker-drag SOLVE submission ────────
+    //
+    // §3's own finding: SolvePool's latest-wins (D3) cancels the previous frame the instant a new one
+    // is submitted, and a real pointer delivers 100-1000 events/sec against a 9-14 ms solve — every
+    // mid-drag solve was being cancelled before it could complete, so nothing published until the
+    // pointer slowed or stopped ("starvation", not "lag"). The fix is NOT a change to SolvePool
+    // (guardrail 2 — latest-wins stays the pool's own policy for everything else); it is this call
+    // site submitting at most one mid-drag solve at a time and conflating everything in between.
+    //
+    // "Is a mid-drag solve still outstanding" is answered from the POOL's own LastCompletedSequence
+    // rather than from a private flag a completion callback has to remember to clear — a private flag
+    // would wedge forever the moment a caller drains the pool without also routing its Completed event
+    // back through this class (every headless test that calls RequestFrameOnMarkerRelease directly,
+    // without wiring Pool.Completed at all, does exactly that). LastCompletedSequence only advances
+    // when a job actually PUBLISHES (never merely superseded) and sequence numbers are pool-global and
+    // monotonic, so "our in-flight seq is still greater than the last one that published" is true
+    // exactly while it is genuinely outstanding, self-corrects the instant it (or anything newer)
+    // finishes, and needs no cooperation from the caller to stay accurate.
+    private long? _dragInFlightSeq;
+    private bool _dragResubmitPending;
+    private (TerminationSideKind Side, int Band)? _dragPendingTarget;
+
+    private bool DragSolveInFlight => _dragInFlightSeq is { } seq && seq > _pool.LastCompletedSequence;
+
     /// <summary>
     /// R-h9r2-3 — the single routing point for a marker drag's RELEASE, used identically by
     /// <c>HarmonicaGesture.Apply</c>'s <c>ExtrinsicMarker</c> branch and by
@@ -952,6 +1004,13 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// publish. Release is NEVER skipped by this — a real, non-degraded solve always runs on release
     /// regardless of how small the final move was, matching <c>DragGridPoint</c>'s own "mid-drag is
     /// free, release is real" shape.</para>
+    ///
+    /// <para><b>brief-harmonicarf-r5 §3 — a mid-drag call that finds a solve already outstanding
+    /// CONFLATES rather than submits.</b> It records the (side, band) to resubmit for and returns -1
+    /// (the same "nothing was submitted" sentinel §5.4's no-op uses) without touching the pool — so
+    /// SolvePool's own cancel-before-submit (D3) never fires against a mid-drag job, and every mid-drag
+    /// solve that DOES start is allowed to finish and publish. See <see cref="OnPoolSettled"/> for the
+    /// other half.</para>
     /// </summary>
     public long RequestFrameOnMarkerRelease(TerminationSideKind side, int band, bool dragging)
     {
@@ -966,10 +1025,29 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                 return -1;
             }
 
+            if (DragSolveInFlight)
+            {
+                // A mid-drag solve is already running — conflate into it rather than cancelling it.
+                // The marker's own Γ (already written by SetMarkerGamma before this call) is what the
+                // eventual resubmission will read, so no target value needs to be stored here.
+                _dragResubmitPending = true;
+                _dragPendingTarget   = (side, band);
+                return -1;
+            }
+
             long seq = RequestScheduledFrame(dragging: true);
+            _dragInFlightSeq = seq;
             if (marker is not null) _lastSubmittedDragTermination = (side, band, marker.Gamma);
             return seq;
         }
+
+        // Release is never paced — a real, full-quality solve always runs, and any mid-drag solve
+        // still outstanding is superseded by it exactly as latest-wins already does for every other
+        // submitter. Reset the pacing state here too so a conflated move from THIS gesture can never
+        // leak into the next one.
+        _dragInFlightSeq     = null;
+        _dragResubmitPending = false;
+        _dragPendingTarget   = null;
 
         if (IsSweptBand(side, band))
         {
@@ -984,6 +1062,29 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var m2 = Markers.FirstOrDefault(mk => mk.Side == side && mk.Band == band);
         if (m2 is not null) _lastSubmittedDragTermination = (side, band, m2.Gamma);
         return seqFull;
+    }
+
+    /// <summary>
+    /// brief-harmonicarf-r5 §3 — the other half of conflate-and-pace: submits a conflated move THE
+    /// MOMENT it can, rather than waiting for the next pointer event (which may never come, if the
+    /// user is holding the pointer still while the picture catches up). Meant to be called from
+    /// wherever a pool completion or failure is marshalled to the UI thread — <c>HarmonicaView</c> in
+    /// the live app — right after publishing it; <paramref name="seq"/> is accepted for symmetry with
+    /// that call site but not otherwise consulted, because <see cref="DragSolveInFlight"/> already
+    /// answers "is our own submission still outstanding" from the pool's own
+    /// <c>LastCompletedSequence</c> rather than from seq equality — which is what lets this be a no-op
+    /// on every publish that has nothing to do with a drag (the common case) without needing to know
+    /// this call's seq matches anything in particular.
+    /// </summary>
+    public void OnPoolSettled(long seq)
+    {
+        _ = seq;
+        if (!_dragResubmitPending || DragSolveInFlight) return;
+
+        _dragResubmitPending = false;
+        var (side, band) = _dragPendingTarget!.Value;
+        _dragPendingTarget = null;
+        RequestFrameOnMarkerRelease(side, band, dragging: true);
     }
 
     // ── the Γ grid (§6.4 / R-h7-11) ──────────────────────────────────────────
@@ -1467,6 +1568,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         // R-h9b-7 — the live toggle is kept in step with the persisted appearance on load, so a
         // reopened .charm shows grid points exactly as it was left rather than always at the default.
         ShowGridPoints = c.Appearance.ShowGridPoints ?? false;
+        // brief-harmonicarf-r5 §1 — same "kept in step with the persisted appearance on load" rule.
+        // The rolling window itself is NOT restored (it is session-only diagnostics, not document
+        // state) — only the toggle's on/off is.
+        ShowDiagnosticsOverlay = c.Appearance.ShowDiagnosticsOverlay ?? false;
 
         Model = c.Model;
         _ctx  = null;                                   // structure may have changed entirely

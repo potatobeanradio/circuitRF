@@ -123,12 +123,16 @@ public partial class HarmonicaView : UserControl
     private void OnFrameCompleted(HarmonicaFrame frame, long seq) => Dispatcher.UIThread.Post(() =>
     {
         _doc?.ViewModel.Harmonica.PublishFrame(frame);
+        // brief-harmonicarf-r5 §3 — the other half of conflate-and-pace: settles the marker-drag
+        // pacing state and resubmits a conflated move, if one arrived while this solve was running.
+        _doc?.ViewModel.Harmonica.OnPoolSettled(seq);
         Refresh();
     }, DispatcherPriority.Background);
 
     private void OnFrameFailed(Exception ex, long seq) => Dispatcher.UIThread.Post(() =>
     {
         _doc?.ViewModel.Harmonica.PublishFailure(ex);
+        _doc?.ViewModel.Harmonica.OnPoolSettled(seq);
         Refresh();
     }, DispatcherPriority.Background);
 
@@ -209,6 +213,12 @@ public partial class HarmonicaView : UserControl
         Readouts.SetItems(h.Frame.Readouts, brush, fontSize,
                           ReadoutFormatFor, OnReadoutFormatChanged, OnReadoutCommitEdit, OnReadoutOpenSetDialog);
         PlaceReadoutStrip();
+
+        // brief-harmonicarf-r5 §1 — the canvas has no reference to Readouts itself; this is the
+        // channel its own diagnostics overlay reads these two numbers through.
+        Canvas.ReadoutSetItemsMs  = Readouts.LastSetItemsMs;
+        Canvas.ReadoutSetInputsMs = Readouts.LastSetInputsMs;
+
         Canvas.InvalidateVisual();
     }
 

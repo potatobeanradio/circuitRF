@@ -322,6 +322,26 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
         _vm.Appearance = _vm.Appearance with { ShowGridPoints = _vm.ShowGridPoints };
     }
 
+    /// <summary>brief-harmonicarf-r5 §1 — mirrors <see cref="ToggleShowGridPoints"/> exactly. Turning
+    /// it OFF does not clear the rolling window (so flipping it on/off to compare two drags keeps both
+    /// readings); use <see cref="ResetDiagnosticsOverlay"/> for that.</summary>
+    [RelayCommand]
+    private void ToggleDiagnosticsOverlay()
+    {
+        _vm.ShowDiagnosticsOverlay = !_vm.ShowDiagnosticsOverlay;
+        _vm.Appearance = _vm.Appearance with { ShowDiagnosticsOverlay = _vm.ShowDiagnosticsOverlay };
+    }
+
+    /// <summary>§1.1's own "reset on demand" — clears the rolling window so the owner can do one
+    /// representative drag and read a clean set, unpolluted by whatever ran before. Session-only, like
+    /// the window itself: never marks the document dirty.</summary>
+    [RelayCommand]
+    private void ResetDiagnosticsOverlay()
+    {
+        _vm.Diagnostics.Reset();
+        _vm.RequestRedraw();
+    }
+
     [RelayCommand] private void ToggleLoadlinePlane() => _vm.IntrinsicPlane = !_vm.IntrinsicPlane;
 
     /// <summary>§1 (R1C) — the removed toolbar's cursor-snap button. §7.6.</summary>

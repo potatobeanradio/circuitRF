@@ -104,10 +104,29 @@ public partial class ReadoutStripView : UserControl
         => Math.Clamp(Math.Min(width, height) * FontSizeFraction, MinFontSize, MaxFontSize);
 
     /// <summary>
-    /// Replaces the strip's contents — §7.5's General run PLUS R-h9c-6's four columns. Rebuilding
-    /// rather than diffing is deliberate: the strip is a few dozen short pairs, so a rebuild is
-    /// cheaper than the bookkeeping a diff would need — and a diff that got it wrong would leave a
-    /// stale number on screen, which is the one failure a readout must not have.
+    /// Replaces the strip's contents — §7.5's General run PLUS R-h9c-6's four columns.
+    ///
+    /// <para><b>brief-harmonicarf-r5 §2 — build-once/update-in-place for the four Source/Load/MXP/MXE
+    /// (plus OperatingPoint) columns, the same pattern <see cref="SetInputs"/>'s Settings column
+    /// already uses.</b> R3C's own note on this method used to read "rebuilding rather than diffing is
+    /// deliberate... a rebuild is cheaper than the bookkeeping a diff would need" — true when the strip
+    /// was measured in isolation, false once §1.4/§4.6 actually READ what an unconditional rebuild
+    /// costs on a real published frame: ~70-110 real Avalonia controls constructed on the UI thread,
+    /// EVERY frame, harmonicaRF publishes constantly. <see cref="UpdateReadoutColumn"/> rebuilds a
+    /// column's rows only when its own SHAPE SIGNATURE changes (the marker set, or whether an MXP/MXE
+    /// optimum is present/absent) and otherwise writes values into the existing rows — closing R3C's
+    /// own follow-up for free (an open Source/Load inline editor no longer gets destroyed and reopened
+    /// as a stale row every published frame; <see cref="SettingsRowMayBeOverwritten"/>, already built
+    /// for the Settings column, guards it here too). <b>Per column, not whole-strip</b>: adding an L2
+    /// marker rebuilds ONLY the Load (or Source) column's own shape — Source/MXP/MXE/OperatingPoint are
+    /// each compared and rebuilt independently.</para>
+    ///
+    /// <para>The General column (<see cref="Items"/>) is UNCHANGED — still a full rebuild every call.
+    /// It carries no editable rows (nothing there can be mid-edit) and today is typically zero or one
+    /// row ("intrinsic: not located"), so it is not where the ~70-110-control cost lives; giving it the
+    /// same signature machinery would add bookkeeping with no measurable payoff.</para>
+    ///
+    /// <para><b>The rendered output must not change</b> (guardrail 4) — this is a HOW, not a WHAT.</para>
     ///
     /// <para><b>The four callbacks are all optional</b> so a caller with nothing to offer (a test, a
     /// read-only render) gets a strip with no interaction rather than a null-reference — the same
@@ -125,10 +144,13 @@ public partial class ReadoutStripView : UserControl
     /// called.</param>
     /// <param name="onOpenSetDialog">R-h9c-7's "Set…" menu item on an editable row.</param>
     /// <summary>
-    /// brief-harmonicarf-r3b §1.4 — how long the last <see cref="SetItems"/> call took to rebuild
-    /// every column's controls, in milliseconds. Ui.Tests cannot instantiate this control (no live
-    /// Avalonia Application), so this is the only way the strip-rebuild cost §1.4 asks about can be
-    /// reported: read it after an interactive drag rather than from an automated benchmark.
+    /// brief-harmonicarf-r3b §1.4 — how long the last <see cref="SetItems"/> call took, in
+    /// milliseconds. Ui.Tests cannot instantiate this control (no live Avalonia Application), so this
+    /// is the only way the strip-rebuild cost §1.4 asks about can be reported: read it after an
+    /// interactive drag rather than from an automated benchmark. brief-harmonicarf-r5 §2's own
+    /// prediction: in the STEADY STATE of a drag (no marker added or removed, no optimum
+    /// appearing/vanishing) this should now read as the cost of writing ~37 strings, not constructing
+    /// ~100 controls.
     /// </summary>
     public double LastSetItemsMs { get; private set; }
 
@@ -142,36 +164,41 @@ public partial class ReadoutStripView : UserControl
         formatFor ??= _ => ReadoutFormat.RealImaginary;
 
         Items.Children.Clear();
-        OperatingPointColumn.Children.Clear();
-        SourceColumn.Children.Clear();
-        LoadColumn.Children.Clear();
-        MxpColumn.Children.Clear();
-        MxeColumn.Children.Clear();
 
-        bool anyColumns = false;
+        var operating = new List<HarmonicaReadout>();
+        var source    = new List<HarmonicaReadout>();
+        var load      = new List<HarmonicaReadout>();
+        var mxp       = new List<HarmonicaReadout>();
+        var mxe       = new List<HarmonicaReadout>();
 
         foreach (var item in items)
         {
-            if (item.Column == ReadoutColumn.General)
+            switch (item.Column)
             {
-                Items.Children.Add(BuildGeneralRow(item.Label, item.Value, item.Tooltip, foreground, fontSize));
-                continue;
+                case ReadoutColumn.General:
+                    Items.Children.Add(BuildGeneralRow(item.Label, item.Value, item.Tooltip, foreground, fontSize));
+                    break;
+                case ReadoutColumn.OperatingPoint: operating.Add(item); break;
+                case ReadoutColumn.Source:         source.Add(item);    break;
+                case ReadoutColumn.Load:           load.Add(item);      break;
+                case ReadoutColumn.Mxp:            mxp.Add(item);       break;
+                default:                           mxe.Add(item);       break;
             }
-
-            anyColumns = true;
-            var host = item.Column switch
-            {
-                ReadoutColumn.OperatingPoint => OperatingPointColumn,
-                ReadoutColumn.Source         => SourceColumn,
-                ReadoutColumn.Load           => LoadColumn,
-                ReadoutColumn.Mxp            => MxpColumn,
-                _                            => MxeColumn,
-            };
-            host.Children.Add(BuildColumnRow(item, foreground, fontSize, formatFor,
-                                             onFormatChanged, onCommitEdit, onOpenSetDialog));
         }
 
-        ColumnRule.IsVisible    = anyColumns;
+        UpdateReadoutColumn(OperatingPointColumn, ReadoutColumn.OperatingPoint, operating,
+                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
+        UpdateReadoutColumn(SourceColumn, ReadoutColumn.Source, source,
+                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
+        UpdateReadoutColumn(LoadColumn, ReadoutColumn.Load, load,
+                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
+        UpdateReadoutColumn(MxpColumn, ReadoutColumn.Mxp, mxp,
+                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
+        UpdateReadoutColumn(MxeColumn, ReadoutColumn.Mxe, mxe,
+                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
+
+        ColumnRule.IsVisible    = operating.Count > 0 || source.Count > 0 || load.Count > 0 ||
+                                  mxp.Count > 0 || mxe.Count > 0;
         ColumnRule.Background   = foreground;
 
         sw.Stop();
@@ -217,76 +244,166 @@ public partial class ReadoutStripView : UserControl
     }
 
     /// <summary>
-    /// One Source/Load/MXP/MXE column row. A row with an empty <see cref="HarmonicaReadout.Value"/>
-    /// and no tooltip is a HEADER (R-h9c-6's "MXP 1f0 Load" / a plain "Source"/"Load" column title) —
-    /// label only, no value, no interaction. Everything else gets the label/value pair; a complex
-    /// row (<see cref="HarmonicaReadout.IsComplex"/>) additionally gets R-h9c-7's right-click format
-    /// menu, and an editable one (R-h9c-8) gets the double-click inline editor.
+    /// What one Source/Load/MXP/MXE(/OperatingPoint) row remembers between refreshes — the same shape
+    /// <see cref="SettingsRowState"/> plays for the Settings column, generalised to a row whose
+    /// <see cref="HarmonicaReadout"/> identity can itself change (a right-click format toggle, a
+    /// re-solved figure) without the row's STRUCTURE changing. Everything the row's live event
+    /// handlers need is read from here AT CLICK/TAP TIME, never from a build-time closure — the row is
+    /// built once per <see cref="ColumnShapeSignature"/> and refreshed every <see cref="SetItems"/>
+    /// call after that, so a closure capturing the build-time <c>item</c>/<c>formatFor</c> would go
+    /// stale the moment either changed.
     /// </summary>
-    private Control BuildColumnRow(HarmonicaReadout item, IBrush foreground, double fontSize,
-                                          Func<string, ReadoutFormat> formatFor,
-                                          Action<string, ReadoutFormat>? onFormatChanged,
-                                          Func<HarmonicaReadout, string, bool>? onCommitEdit,
-                                          Action<HarmonicaReadout>? onOpenSetDialog)
+    private sealed class ColumnRowState
     {
-        var pair = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        public required HarmonicaReadout Item;
+        public bool   IsEditing;
+        public IBrush Foreground = Brushes.Black;
+        public double FontSize   = 10;
+        public Func<string, ReadoutFormat> FormatFor = _ => ReadoutFormat.RealImaginary;
+        public Action<string, ReadoutFormat>?              OnFormatChanged;
+        public Func<HarmonicaReadout, string, bool>?       OnCommitEdit;
+        public Action<HarmonicaReadout>?                   OnOpenSetDialog;
+    }
+
+    /// <summary>One column's own last-built shape signature (brief-harmonicarf-r5 §2.2) — per column,
+    /// so adding a marker to Load never rebuilds Source/MXP/MXE/OperatingPoint alongside it.</summary>
+    private readonly Dictionary<ReadoutColumn, string> _columnSignatures = new();
+
+    /// <summary>
+    /// Build-once/update-in-place for ONE column (<paramref name="host"/>) — R3C's own Settings-column
+    /// pattern (<see cref="UpdateSettingsColumn"/>), generalised from a fixed 7-key list to a
+    /// variable-length, variable-shape one. <see cref="RowShapeKey"/> is what actually determines a
+    /// row's STRUCTURE (its label, whether it is a header, whether it carries a format menu, whether
+    /// it is editable) — never its current VALUE, which is written into the existing row every call
+    /// regardless of whether a rebuild happened this time.
+    /// </summary>
+    private void UpdateReadoutColumn(StackPanel host, ReadoutColumn column, IReadOnlyList<HarmonicaReadout> items,
+                                     IBrush foreground, double fontSize,
+                                     Func<string, ReadoutFormat> formatFor,
+                                     Action<string, ReadoutFormat>? onFormatChanged,
+                                     Func<HarmonicaReadout, string, bool>? onCommitEdit,
+                                     Action<HarmonicaReadout>? onOpenSetDialog)
+    {
+        // Whether a row's Editable flag actually yields an editable WIDGET depends on onCommitEdit
+        // being non-null too (R-h9r2-15's own reasoning below) — folded into the signature so a caller
+        // whose commit callback appears/disappears (never happens in production; a defensive case for
+        // a test or a read-only render) still gets rebuilt rows rather than a stale widget choice.
+        bool hasCommit  = onCommitEdit is not null;
+        string signature = (hasCommit ? "C" : "c") + string.Join("|", items.Select(RowShapeKey));
+
+        if (!_columnSignatures.TryGetValue(column, out var prev) || prev != signature ||
+            host.Children.Count != items.Count)
+        {
+            _columnSignatures[column] = signature;
+            host.Children.Clear();
+            foreach (var item in items) host.Children.Add(BuildColumnRowShell(item, hasCommit));
+        }
+
+        for (int i = 0; i < host.Children.Count && i < items.Count; i++)
+            if (host.Children[i] is StackPanel row)
+                UpdateColumnRow(row, items[i], foreground, fontSize, formatFor,
+                                onFormatChanged, onCommitEdit, onOpenSetDialog);
+    }
+
+    /// <summary>What determines a row's STRUCTURE rather than its current display value — a header row
+    /// (R-h9c-6's "MXP 1f0 Load" / a plain "Source"/"Load" title) has a different shape from a
+    /// label/value pair, and a complex/editable row's widget type and interactivity are themselves
+    /// structural, not something the per-frame update step may change.</summary>
+    private static string RowShapeKey(HarmonicaReadout item)
+    {
+        bool isHeader = item.Value.Length == 0 && item.Tooltip.Length == 0;
+        return $"{item.Label}{isHeader}{item.IsComplex}{item.Editable}";
+    }
+
+    /// <summary>
+    /// Builds one row's SKELETON — label, and (for a non-header row) a value control of whichever type
+    /// its shape calls for, an optional live format menu, and an optional double-click editor — with NO
+    /// content written yet (<see cref="UpdateColumnRow"/> fills it in immediately after, on this same
+    /// call, and on every call after). Never rebuilt while <see cref="RowShapeKey"/> stays the same, so
+    /// every event handler here reads <see cref="ColumnRowState"/> LIVE at invocation time rather than
+    /// closing over this call's own <paramref name="item"/>.
+    /// </summary>
+    private StackPanel BuildColumnRowShell(HarmonicaReadout item, bool hasCommit)
+    {
+        var state = new ColumnRowState { Item = item };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Tag = state };
 
         bool isHeader = item.Value.Length == 0 && item.Tooltip.Length == 0;
 
-        pair.Children.Add(new TextBlock
-        {
-            Text              = item.Label,
-            FontSize          = fontSize,
-            FontWeight        = isHeader ? FontWeight.Bold : FontWeight.Normal,
-            Opacity           = isHeader ? 1.0 : 0.65,
-            Foreground        = foreground,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-
-        if (isHeader) return pair;
-
-        // R-h9r2-25 — rendered from RawValue at the CURRENT format, not from the solve-time Value, so
-        // a right-click format change repaints immediately with no re-solve (see DisplayValue).
-        string displayText = DisplayValue(item, formatFor);
+        row.Children.Add(new TextBlock { VerticalAlignment = VerticalAlignment.Center });
+        if (isHeader) return row;
 
         // R-h9r2-15 — an EDITABLE row is plain TextBlock, never SelectableTextBlock: the latter
-        // consumes a double-tap as select-a-word before it ever reaches this pair's own
-        // DoubleTapped handler below, which is why the inline editor never engaged (owner-reported).
-        // Every other row (§7.5's "all text is selectable") keeps SelectableTextBlock — there is no
-        // competing gesture on them, and an editable row's own value is still reachable for
-        // selection one double-click away, inside the editor itself.
-        bool editable = item.Editable && onCommitEdit is not null;
+        // consumes a double-tap as select-a-word before it ever reaches this row's own DoubleTapped
+        // handler below, which is why the inline editor never engaged (owner-reported). Every other
+        // row (§7.5's "all text is selectable") keeps SelectableTextBlock.
+        bool editable = item.Editable && hasCommit;
         Control valueBlock = editable
-            ? new TextBlock
-              {
-                  Text              = displayText,
-                  FontSize          = fontSize,
-                  FontWeight        = FontWeight.SemiBold,
-                  Foreground        = foreground,
-                  VerticalAlignment = VerticalAlignment.Center,
-              }
-            : new SelectableTextBlock
-              {
-                  Text              = displayText,
-                  FontSize          = fontSize,
-                  FontWeight        = FontWeight.SemiBold,
-                  Foreground        = foreground,
-                  VerticalAlignment = VerticalAlignment.Center,
-              };
-        pair.Children.Add(valueBlock);
+            ? new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+            : new SelectableTextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(valueBlock);
 
-        if (item.Tooltip.Length > 0) ToolTip.SetTip(pair, item.Tooltip);
-
-        if (item.IsComplex)
-            pair.ContextMenu = BuildFormatMenu(item, formatFor, onFormatChanged, onOpenSetDialog);
+        if (item.IsComplex) row.ContextMenu = BuildLiveFormatMenu(state);
 
         if (editable)
-            pair.DoubleTapped += (_, _) =>
-                BeginInlineEdit(valueBlock, foreground, fontSize,
-                                text => onCommitEdit!(item, text),
-                                DisplayValue(item, formatFor));
+            row.DoubleTapped += (_, _) =>
+            {
+                if (state.OnCommitEdit is not { } commit || !SettingsRowMayBeOverwritten(state.IsEditing)) return;
+                BeginInlineEdit(valueBlock, state.Foreground, state.FontSize,
+                                text => commit(state.Item, text),
+                                DisplayValue(state.Item, state.FormatFor),
+                                editing => state.IsEditing = editing);
+            };
 
-        return pair;
+        return row;
+    }
+
+    /// <summary>Writes one row's CURRENT label/value/tooltip/live foreground+font into an
+    /// already-built row — skipping the value slot entirely while an editor is open on it, the same
+    /// guard <see cref="UpdateSettingsColumnRow"/> already uses.</summary>
+    private static void UpdateColumnRow(StackPanel row, HarmonicaReadout item, IBrush foreground, double fontSize,
+                                        Func<string, ReadoutFormat> formatFor,
+                                        Action<string, ReadoutFormat>? onFormatChanged,
+                                        Func<HarmonicaReadout, string, bool>? onCommitEdit,
+                                        Action<HarmonicaReadout>? onOpenSetDialog)
+    {
+        if (row.Tag is not ColumnRowState state) return;
+        state.Item            = item;
+        state.Foreground      = foreground;
+        state.FontSize        = fontSize;
+        state.FormatFor       = formatFor;
+        state.OnFormatChanged = onFormatChanged;
+        state.OnCommitEdit    = onCommitEdit;
+        state.OnOpenSetDialog = onOpenSetDialog;
+
+        bool isHeader = item.Value.Length == 0 && item.Tooltip.Length == 0;
+
+        if (row.Children.Count > 0 && row.Children[0] is TextBlock label)
+        {
+            label.Text       = item.Label;
+            label.FontWeight = isHeader ? FontWeight.Bold : FontWeight.Normal;
+            label.Opacity    = isHeader ? 1.0 : 0.65;
+            label.Foreground = foreground;
+            label.FontSize   = fontSize;
+        }
+
+        if (isHeader) { ToolTip.SetTip(row, null); return; }
+
+        if (SettingsRowMayBeOverwritten(state.IsEditing) &&
+            row.Children.Count > 1 && row.Children[1] is Control valueControl)
+        {
+            // R-h9r2-25 — rendered from RawValue at the CURRENT format, not from the solve-time Value,
+            // so a right-click format change repaints immediately with no re-solve.
+            string text = DisplayValue(item, formatFor);
+            switch (valueControl)
+            {
+                // SelectableTextBlock derives from TextBlock in Avalonia, so it must be matched FIRST.
+                case SelectableTextBlock stb: stb.Text = text; stb.Foreground = foreground; stb.FontSize = fontSize; break;
+                case TextBlock tb:            tb.Text  = text; tb.Foreground  = foreground; tb.FontSize  = fontSize; break;
+            }
+        }
+
+        ToolTip.SetTip(row, item.Tooltip.Length > 0 ? item.Tooltip : null);
     }
 
     /// <summary>
@@ -309,48 +426,58 @@ public partial class ReadoutStripView : UserControl
         return item.Value;
     }
 
-    /// <summary>R-h9c-7's right-click flyout: real/imaginary ⇄ magnitude/angle, plus "Set…" on an
-    /// editable row. MXP/MXE rows get the format choice but never "Set…" — the owner's own words,
-    /// "MXP/MXE impedance … cannot be edited because those are a consequence of the simulation".</summary>
-    private static ContextMenu BuildFormatMenu(HarmonicaReadout item,
-                                               Func<string, ReadoutFormat> formatFor,
-                                               Action<string, ReadoutFormat>? onFormatChanged,
-                                               Action<HarmonicaReadout>? onOpenSetDialog)
+    /// <summary>
+    /// R-h9c-7's right-click flyout: real/imaginary ⇄ magnitude/angle, plus "Set…" on an editable row.
+    /// MXP/MXE rows get the format choice but never "Set…" — the owner's own words, "MXP/MXE impedance
+    /// … cannot be edited because those are a consequence of the simulation".
+    ///
+    /// <para><b>brief-harmonicarf-r5 §2 — built ONCE per row (unlike the pre-r5 version, rebuilt every
+    /// <see cref="SetItems"/> call) and populated LAZILY on <see cref="ContextMenu.Opening"/></b>, which
+    /// fires only when the user actually right-clicks — so the two/three <c>MenuItem</c>s this menu
+    /// needs are constructed on a user gesture, never on a published frame the user never even looked
+    /// at the menu for. Reads <paramref name="state"/> live, so a format changed elsewhere (the
+    /// Settings-style "Set…" dialog, or another row) is reflected the next time this one opens.</para>
+    /// </summary>
+    private static ContextMenu BuildLiveFormatMenu(ColumnRowState state)
     {
-        var menu  = new ContextMenu();
-        var items = new List<object>();
-
-        if (item.FormatKey is { } key && onFormatChanged is not null)
+        var menu = new ContextMenu();
+        menu.Opening += (_, _) =>
         {
-            var current = formatFor(key);
+            var item  = state.Item;
+            var items = new List<object>();
 
-            var ri = new MenuItem
+            if (item.FormatKey is { } key && state.OnFormatChanged is { } onFormatChanged)
             {
-                Header = "Real / Imaginary", ToggleType = MenuItemToggleType.Radio,
-                IsChecked = current == ReadoutFormat.RealImaginary,
-            };
-            ri.Click += (_, _) => onFormatChanged(key, ReadoutFormat.RealImaginary);
+                var current = state.FormatFor(key);
 
-            var ma = new MenuItem
+                var ri = new MenuItem
+                {
+                    Header = "Real / Imaginary", ToggleType = MenuItemToggleType.Radio,
+                    IsChecked = current == ReadoutFormat.RealImaginary,
+                };
+                ri.Click += (_, _) => onFormatChanged(key, ReadoutFormat.RealImaginary);
+
+                var ma = new MenuItem
+                {
+                    Header = "Magnitude / Angle", ToggleType = MenuItemToggleType.Radio,
+                    IsChecked = current == ReadoutFormat.MagnitudeAngle,
+                };
+                ma.Click += (_, _) => onFormatChanged(key, ReadoutFormat.MagnitudeAngle);
+
+                items.Add(ri);
+                items.Add(ma);
+            }
+
+            if (item.Editable && state.OnOpenSetDialog is { } onOpenSetDialog)
             {
-                Header = "Magnitude / Angle", ToggleType = MenuItemToggleType.Radio,
-                IsChecked = current == ReadoutFormat.MagnitudeAngle,
-            };
-            ma.Click += (_, _) => onFormatChanged(key, ReadoutFormat.MagnitudeAngle);
+                if (items.Count > 0) items.Add(new Separator());
+                var set = new MenuItem { Header = "Set…" };
+                set.Click += (_, _) => onOpenSetDialog(item);
+                items.Add(set);
+            }
 
-            items.Add(ri);
-            items.Add(ma);
-        }
-
-        if (item.Editable && onOpenSetDialog is not null)
-        {
-            if (items.Count > 0) items.Add(new Separator());
-            var set = new MenuItem { Header = "Set…" };
-            set.Click += (_, _) => onOpenSetDialog(item);
-            items.Add(set);
-        }
-
-        menu.ItemsSource = items;
+            menu.ItemsSource = items;
+        };
         return menu;
     }
 
@@ -506,8 +633,24 @@ public partial class ReadoutStripView : UserControl
     /// </param>
     private string _inputSignature = "";
 
+    /// <summary>
+    /// brief-harmonicarf-r5 §1.1 -- "the SetInputs half timed the same way if it isn't already." It
+    /// wasn't; this is the same self-timing convention <see cref="LastSetItemsMs"/> already uses,
+    /// wrapping the whole call (both the Settings-column update and the shape-checked rest-of-strip
+    /// path below, including its early-return branch) via try/finally.
+    /// </summary>
+    public double LastSetInputsMs { get; private set; }
+
     public void SetInputs(IReadOnlyList<CircuitRF.Ui.Harmonica.HarmonicaInput> inputs,
                           IBrush foreground, Func<string, string, bool> apply, double fontSize = 10)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try { SetInputsCore(inputs, foreground, apply, fontSize); }
+        finally { sw.Stop(); LastSetInputsMs = sw.Elapsed.TotalMilliseconds; }
+    }
+
+    private void SetInputsCore(IReadOnlyList<CircuitRF.Ui.Harmonica.HarmonicaInput> inputs,
+                               IBrush foreground, Func<string, string, bool> apply, double fontSize)
     {
         // R3C §1 — the seven named inputs move to SettingsColumn (double-click text, R-h9c-8's own
         // editor, reused via BeginInlineEdit); everything else stays exactly what it was, in the

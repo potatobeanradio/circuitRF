@@ -41,10 +41,13 @@ public sealed class HarmonicaDragCostTests(ITestOutputHelper output)
         var vm = new HarmonicaViewModel();
 
         var costs = new List<(FrameQuality Quality, FrameTiming Timing)>();
-        vm.Pool.Completed += (f, _) =>
+        vm.Pool.Completed += (f, seq) =>
         {
             lock (costs) costs.Add((f.Quality, f.Timing));
             vm.PublishFrame(f);
+            // brief-harmonicarf-r5 §3 — settles conflate-and-pace so a real 40-move drag resubmits
+            // as each mid-drag solve finishes, exactly as the live view does.
+            vm.OnPoolSettled(seq);
         };
 
         // The document's own opening frame, exactly as HarmonicaView.EnsureFirstSolve produces it.

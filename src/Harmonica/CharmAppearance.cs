@@ -50,6 +50,12 @@ public sealed record CharmAppearance
     /// <see cref="ShowIsoLineLabels"/>: null = the built-in default, which is OFF.</summary>
     public bool? ShowGridPoints { get; init; }
 
+    /// <summary>brief-harmonicarf-r5 §1 — the diagnostics overlay HUD. Same shape of display-only
+    /// toggle as <see cref="ShowGridPoints"/>: null = the built-in default, which is OFF (guardrail 6
+    /// — it must cost nothing measurable, and "on by default" would mean every document pays for the
+    /// rolling-window bookkeeping whether anyone is looking at it or not).</summary>
+    public bool? ShowDiagnosticsOverlay { get; init; }
+
     /// <summary>
     /// R-h9c-7 (R1C §5) — the readout strip's per-row Z/Γ format, keyed by
     /// <c>HarmonicaReadout.FormatKey</c> ("S1.Z", "L2.Gamma", "MXP.Zin", …), each value either
@@ -67,7 +73,7 @@ public sealed record CharmAppearance
     public bool IsDefault
         => Light.Count == 0 && Dark.Count == 0
         && IsoAlphaFloor is null && IsoAlphaExponent is null && ShowIsoLineLabels is null
-        && ShowGridPoints is null && ReadoutFormats.Count == 0;
+        && ShowGridPoints is null && ShowDiagnosticsOverlay is null && ReadoutFormats.Count == 0;
 
     public static readonly CharmAppearance Default = new();
 

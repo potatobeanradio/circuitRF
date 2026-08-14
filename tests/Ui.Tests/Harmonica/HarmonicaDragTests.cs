@@ -209,7 +209,7 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         // near L1's own position (R-h9r2-5's z-order rank, not proximity, decides who wins a grab
         // radius overlap) — see Tier2_TheGrabRadiusIsTheSameNumberOfPixelsOnA300pxPanelAndA900pxOne.
         var vm = StripToS1L1(new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 33.3) });
-        vm.Pool.Completed += (f, _) => vm.PublishFrame(f);
+        vm.Pool.Completed += (f, seq) => { vm.PublishFrame(f); vm.OnPoolSettled(seq); };
 
         const double W = 1200, H = 800;
 
@@ -234,9 +234,13 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         Assert.True(g.PointerDown(sx, sy, W, H));
         Assert.Same(marker, g.Grab.Marker);
 
-        // 40 moves along an arc, fired back-to-back: latest-wins is the whole point, so they are NOT
-        // drained one at a time. A test that drained between moves would be testing a drag nobody
-        // performs.
+        int startedBeforeDrag = vm.Pool.StartedCount;
+
+        // 40 moves along an arc, fired back-to-back with NO drain between them — the shape of a real
+        // fast drag. Before brief-harmonicarf-r5 §3, every one of these reached SolvePool.Submit and
+        // most were cancelled before finishing (latest-wins/D3); now conflate-and-pace holds at most
+        // ONE mid-drag solve in flight at a time, so this loop must reach the pool far fewer than 40
+        // times.
         var release = new Complex(0.55, -0.30);
         for (int i = 1; i <= 40; i++)
         {
@@ -263,12 +267,16 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         Assert.Equal(1, snapshot.Count(q => q == FrameQuality.Full));
         Assert.Equal(FrameQuality.Full, snapshot[^1]);
 
-        // Latest-wins actually collapsed the 40 moves rather than queueing them.
-        output.WriteLine($"pool: {vm.Pool.StartedCount} started, {vm.Pool.CompletedCount} completed, " +
-                         $"{vm.Pool.SupersededCount} superseded");
-        Assert.True(vm.Pool.SupersededCount > 20,
-            "a 40-move drag that superseded nothing is queueing, which is the failure mode D3 exists " +
-            "to prevent");
+        // brief-harmonicarf-r5 §3 — conflate-and-pace collapsed the 40 moves at the SUBMISSION site
+        // rather than by cancelling jobs after starting them: far fewer than 40 solves ever started
+        // for the whole burst (the release's own submission is included in this count, so a bound of
+        // half the move count is comfortably loose).
+        int startedDuringDrag = vm.Pool.StartedCount - startedBeforeDrag;
+        output.WriteLine($"pool: {startedDuringDrag} solves started across the whole gesture " +
+                         $"(of 40 moves + 1 release), {vm.Pool.SupersededCount} superseded overall");
+        Assert.True(startedDuringDrag < 20,
+            $"{startedDuringDrag} solves started for a 40-move drag — conflate-and-pace is not " +
+            "engaging (every move is reaching the pool, which is the starvation §3 exists to fix)");
     }
 
     [Fact]
@@ -527,6 +535,108 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         await vm.Pool.DrainAsync();
         Assert.True(vm.Pool.StartedCount > startedBeforeRelease,
             "release must always submit a real solve, even when Γ has not moved since the last mid-drag frame");
+    }
+
+    // ══ brief-harmonicarf-r5 §3 — conflate-and-pace: latest-wins starvation ══════════════════
+
+    [Fact]
+    public async Task ConflateAndPace_AMoveThatArrivesWhileASolveIsInFlight_DoesNotReachThePool()
+    {
+        // §3.1's own mechanism, pinned directly rather than through a real pointer/timing race: a
+        // mid-drag move that arrives before the PREVIOUS mid-drag solve has finished must conflate
+        // (return -1, exactly like §5.4's no-op sentinel) instead of calling SolvePool.Submit — which
+        // is what used to cancel that previous solve before it could publish (D3's own
+        // cancel-before-submit). Deterministic because nothing here is drained until AFTER the second
+        // call, so the first solve genuinely cannot have settled yet.
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 8, RasterResolution = 32 });
+
+        var marker = vm.Markers.First(m => m.Side == TerminationSideKind.Load && m.Band == 1);
+
+        vm.SetMarkerGamma(marker, new Complex(0.10, 0.05));
+        long seq1 = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);
+        Assert.NotEqual(-1, seq1);
+
+        // A second, genuinely different move — arrives with the first solve's own sequence not yet
+        // the pool's LastCompletedSequence (nothing has been drained), so it must conflate.
+        vm.SetMarkerGamma(marker, new Complex(0.20, 0.05));
+        long seq2 = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);
+        Assert.Equal(-1, seq2);
+
+        // The glyph itself is UNPACED (R-h6-3) — it tracks the second move even though nothing new was
+        // submitted for it yet.
+        Assert.True((marker.Gamma - new Complex(0.20, 0.05)).Magnitude < 1e-6);
+
+        await vm.Pool.DrainAsync();
+        // Exactly the ONE mid-drag solve started — the conflated second move never reached the pool
+        // at all (this test wires no Pool.Completed, so nothing resubmits it).
+        Assert.Equal(1, vm.Pool.StartedCount);
+    }
+
+    [Fact]
+    public async Task ConflateAndPace_OnceTheInFlightSolveSettles_ThePendingMoveResubmitsAutomatically()
+    {
+        // §3.3's "on completion, if the pending slot holds a newer Γ, submit that" — wired exactly as
+        // the live view wires it (PublishFrame then OnPoolSettled, right after a pool completion).
+        var vm = new HarmonicaViewModel();
+        vm.Pool.Completed += (f, seq) => { vm.PublishFrame(f); vm.OnPoolSettled(seq); };
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 8, RasterResolution = 32 });
+
+        var marker = vm.Markers.First(m => m.Side == TerminationSideKind.Load && m.Band == 1);
+
+        vm.SetMarkerGamma(marker, new Complex(0.10, 0.05));
+        Assert.NotEqual(-1, vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true));
+
+        vm.SetMarkerGamma(marker, new Complex(0.25, 0.05));
+        Assert.Equal(-1, vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true));
+
+        int startedBeforeDrain = vm.Pool.StartedCount;
+
+        // Draining lets the in-flight solve finish, which fires Pool.Completed → PublishFrame →
+        // OnPoolSettled — and THAT is what submits the conflated move, with no further pointer event.
+        await vm.Pool.DrainAsync();
+
+        Assert.True(vm.Pool.StartedCount > startedBeforeDrain,
+            "the conflated move never got resubmitted once the in-flight solve settled");
+        Assert.True((marker.Gamma - new Complex(0.25, 0.05)).Magnitude < 1e-6,
+            "the marker itself should still be at the latest conflated position (R-h6-3)");
+    }
+
+    [Fact]
+    public async Task ConflateAndPace_ABurstOf30MovesWithNoDrainBetweenThem_StartsFarFewerThan30Solves()
+    {
+        // §3.4's own gate: N simulated moves during a drag produce at most the paced number of
+        // submissions, the marker's own Γ still tracks the last move, and release still submits a
+        // real full-quality solve.
+        var vm = new HarmonicaViewModel();
+        vm.Pool.Completed += (f, seq) => { vm.PublishFrame(f); vm.OnPoolSettled(seq); };
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 8, RasterResolution = 32 });
+
+        var marker = vm.Markers.First(m => m.Side == TerminationSideKind.Load && m.Band == 1);
+        int startedBefore = vm.Pool.StartedCount;
+
+        for (int i = 1; i <= 30; i++)
+        {
+            vm.SetMarkerGamma(marker, new Complex(0.01 * i, 0.005 * i));
+            vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);
+        }
+        await vm.Pool.DrainAsync();
+
+        int startedDuringBurst = vm.Pool.StartedCount - startedBefore;
+        output.WriteLine($"{startedDuringBurst} of 30 moves reached the solve pool " +
+                         $"({vm.Pool.SupersededCount} superseded overall)");
+        Assert.True(startedDuringBurst < 30,
+            "every move reached the pool — conflate-and-pace is not engaging");
+
+        // The marker's own Γ tracks the LAST move, unpaced.
+        Assert.True((marker.Gamma - new Complex(0.30, 0.15)).Magnitude < 1e-6);
+
+        // Release still submits a real, full-quality solve.
+        vm.SetMarkerGamma(marker, new Complex(0.30, 0.15));
+        long releaseSeq = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: false);
+        Assert.NotEqual(-1, releaseSeq);
+        await vm.Pool.DrainAsync();
+        Assert.Equal(FrameQuality.Full, vm.LastPlan!.Value.Quality);
     }
 
     private static string ReadSource(params string[] parts)

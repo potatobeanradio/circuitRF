@@ -650,11 +650,12 @@ public static class CharmIo
             // Sorted for a stable, human-diffable file — the same courtesy ColorThemeIo extends.
             Light = Sorted(a.Light),
             Dark  = Sorted(a.Dark),
-            IsoAlphaFloor     = a.IsoAlphaFloor,
-            IsoAlphaExponent  = a.IsoAlphaExponent,
-            ShowIsoLineLabels = a.ShowIsoLineLabels,
-            ShowGridPoints    = a.ShowGridPoints,
-            ReadoutFormats    = Sorted(a.ReadoutFormats),
+            IsoAlphaFloor          = a.IsoAlphaFloor,
+            IsoAlphaExponent       = a.IsoAlphaExponent,
+            ShowIsoLineLabels      = a.ShowIsoLineLabels,
+            ShowGridPoints         = a.ShowGridPoints,
+            ShowDiagnosticsOverlay = a.ShowDiagnosticsOverlay,
+            ReadoutFormats         = Sorted(a.ReadoutFormats),
         };
 
         static Dictionary<string, string>? Sorted(IReadOnlyDictionary<string, string> src)
@@ -675,10 +676,11 @@ public static class CharmIo
                 Dark = b.Dark is null
                     ? new Dictionary<string, string>(StringComparer.Ordinal)
                     : new Dictionary<string, string>(b.Dark, StringComparer.Ordinal),
-                IsoAlphaFloor     = b.IsoAlphaFloor,
-                IsoAlphaExponent  = b.IsoAlphaExponent,
-                ShowIsoLineLabels = b.ShowIsoLineLabels,
-                ShowGridPoints    = b.ShowGridPoints,
+                IsoAlphaFloor          = b.IsoAlphaFloor,
+                IsoAlphaExponent       = b.IsoAlphaExponent,
+                ShowIsoLineLabels      = b.ShowIsoLineLabels,
+                ShowGridPoints         = b.ShowGridPoints,
+                ShowDiagnosticsOverlay = b.ShowDiagnosticsOverlay,
                 ReadoutFormats    = b.ReadoutFormats is null
                     ? new Dictionary<string, string>(StringComparer.Ordinal)
                     : new Dictionary<string, string>(b.ReadoutFormats, StringComparer.Ordinal),
@@ -688,10 +690,11 @@ public static class CharmIo
     {
         public Dictionary<string, string>? Light { get; set; }
         public Dictionary<string, string>? Dark  { get; set; }
-        public double? IsoAlphaFloor     { get; set; }
-        public double? IsoAlphaExponent  { get; set; }
-        public bool?   ShowIsoLineLabels { get; set; }
-        public bool?   ShowGridPoints    { get; set; }
+        public double? IsoAlphaFloor          { get; set; }
+        public double? IsoAlphaExponent       { get; set; }
+        public bool?   ShowIsoLineLabels      { get; set; }
+        public bool?   ShowGridPoints         { get; set; }
+        public bool?   ShowDiagnosticsOverlay { get; set; }
         public Dictionary<string, string>? ReadoutFormats { get; set; }
     }
 }

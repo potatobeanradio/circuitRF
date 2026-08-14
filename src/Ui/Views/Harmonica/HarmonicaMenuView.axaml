@@ -128,6 +128,12 @@
             <NativeMenuItem Header="Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"/>
             <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"/>
             <NativeMenuItem Header="Cursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"/>
+            <!-- brief-harmonicarf-r5 §1 — owner request 2026-08-13: the Diagnostics Overlay menu items
+                 are removed from BOTH menu surfaces (this one and the MenuItem block below), but the
+                 commands (ToggleDiagnosticsOverlayCommand/ResetDiagnosticsOverlayCommand), the VM state
+                 (HarmonicaViewModel.ShowDiagnosticsOverlay/Diagnostics), the overlay/renderer classes
+                 and the .charm persistence are all left in place — re-adding these two lines (and their
+                 MenuItem counterparts below) is the whole of turning it back on. -->
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Power Sweep…"       Command="{Binding PowerSweepCommand}"/>
             <NativeMenuItem Header="Set Z0…"            Command="{Binding SetZ0Command}"/>
@@ -280,6 +286,10 @@
                 ToolTip.Tip="The Γ grid sample dots. Off by default; draggable once shown."/>
       <MenuItem Header="C_ursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"
                 ToolTip.Tip="Operating point for the glyphs and the inverse solve. Snap to compression follows the P-x dB point; otherwise the cursor stays where you put it."/>
+      <!-- brief-harmonicarf-r5 §1 — see the matching NativeMenu comment above: the Diagnostics
+           Overlay items are deliberately removed from the menu (owner request, 2026-08-13), while
+           ToggleDiagnosticsOverlayCommand/ResetDiagnosticsOverlayCommand and everything they drive
+           stay wired and working underneath. -->
       <Separator/>
       <MenuItem Header="_Power Sweep…" Command="{Binding PowerSweepCommand}"
                 ToolTip.Tip="The explicit Pin Start/Stop/Step ladder, the tickle, and the exact-compression-solve option.">

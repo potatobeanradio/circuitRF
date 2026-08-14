@@ -36,24 +36,27 @@ public sealed class HarmonicaInlineEditSelectabilityTests
     // ══ R-h9r2-15 — editable rows are NOT SelectableTextBlock ═══════════════════════════════════
 
     [Fact]
-    public void BuildColumnRow_UsesPlainTextBlock_ForAnEditableRow_AndSelectable_ForEveryOther()
+    public void BuildColumnRowShell_UsesPlainTextBlock_ForAnEditableRow_AndSelectable_ForEveryOther()
     {
+        // brief-harmonicarf-r5 §2 — BuildColumnRow (rebuilt every SetItems call) split into
+        // BuildColumnRowShell (build-once skeleton) + UpdateColumnRow (per-call value write). The
+        // editable/selectable widget-choice rule this test pins moved to the shell, unchanged.
         string src = Source();
 
-        int m = src.IndexOf("private Control BuildColumnRow(", StringComparison.Ordinal);
-        Assert.True(m >= 0, "Expected to find BuildColumnRow.");
-        int mEnd = src.IndexOf("\n    private static ContextMenu BuildFormatMenu", m, StringComparison.Ordinal);
+        int m = src.IndexOf("private StackPanel BuildColumnRowShell(", StringComparison.Ordinal);
+        Assert.True(m >= 0, "Expected to find BuildColumnRowShell.");
+        int mEnd = src.IndexOf("\n    /// <summary>Writes one row's CURRENT label", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
-        Assert.Contains("bool editable = item.Editable && onCommitEdit is not null;", body, StringComparison.Ordinal);
+        Assert.Contains("bool editable = item.Editable && hasCommit;", body, StringComparison.Ordinal);
         Assert.Contains("? new TextBlock", body, StringComparison.Ordinal);
         Assert.Contains(": new SelectableTextBlock", body, StringComparison.Ordinal);
 
         // The DoubleTapped wiring must be gated on the SAME `editable` flag the control choice used,
         // not re-derived — otherwise the two could disagree about which rows are editable.
         Assert.Contains("if (editable)", body, StringComparison.Ordinal);
-        Assert.Contains("pair.DoubleTapped += (_, _) =>", body, StringComparison.Ordinal);
+        Assert.Contains("row.DoubleTapped += (_, _) =>", body, StringComparison.Ordinal);
     }
 
     // ══ R3C §1 — the Settings column's rows are ALSO plain TextBlock, never Selectable ═══════════
@@ -83,7 +86,7 @@ public sealed class HarmonicaInlineEditSelectabilityTests
 
         int m = src.IndexOf("private static Control BuildGeneralRow(", StringComparison.Ordinal);
         Assert.True(m >= 0);
-        int mEnd = src.IndexOf("\n    private Control BuildColumnRow", m, StringComparison.Ordinal);
+        int mEnd = src.IndexOf("\n    /// <summary>\n    /// What one Source/Load/MXP/MXE", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 

@@ -6,6 +6,155 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## The instrument, the strip rebuild, and drag starvation (brief-harmonicarf-r5, 2026-08-13)
+
+**§6's own bar — the owner's real drag, with the overlay on — is met.** Two prior briefs (R3B §1.4, R4
+§4.6) each ended with "not measured this pass — requires a live interactive Avalonia session, which
+this session had no way to drive." This one closes it: reported directly by the owner, from the
+shipped build, first thing after landing —
+
+> `last 16.7  mean 34  p95 17.5  p99 144.9  max 1632.0 ms   >33ms: 2/96`
+
+**Read exactly, not smoothed over — the mean sitting ABOVE p95 is real and says something, not a
+typo.** 94 of 96 frames are fast (p95 17.5 ms is comfortably under the 33.3 ms/30 fps line, matching
+`last` 16.7 ms), and only 2 of 96 crossed the budget at all. The mean (34) and p99 (144.9) are both
+being pulled hard by a single outlier — `max` 1632 ms is almost certainly one cold/first-touch frame
+(JIT, first backdrop-cache fill, or a one-time GC pause), not a representative drag frame; one 1632 ms
+sample alone contributes ~17 ms to a 96-sample mean, which is most of the gap between `mean` and `p95`
+on its own. **This is exactly the right shape for "conflate-and-pace fixed the starvation, and the
+strip rebuild fixed the steady-state cost, with one unrelated warm-up hitch left over"** — a
+19 ms-ish stutter magnitude concentrated in ~2% of frames, not the ~90 ms/11 fps `EVERY` frame the
+brief opened with. Matches the owner's own words ("extremely fast... exactly the UX I was looking
+for") independent of the numbers. **Not yet separately isolated**: whether the `max` outlier is
+specifically the document's first solve (a known, one-time, already-understood cost — first backdrop
+fill, first HB solve, JIT) rather than a genuine mid-drag hitch. Worth a look only if it recurs; a
+single first-frame outlier in an otherwise-clean 96-sample window is not a regression to chase.
+`LastSetItemsMs`/`LastRenderMs`/the solve-stage breakdown/`SolvePool` counters/GC deltas were not part
+of the reported line — the frame-interval read alone is what the owner chose to report, and it is
+the one §0's whole diagnosis turned on ("stutter is frame-interval VARIANCE... no number anywhere in
+this repo has ever measured it"), so it is the one that actually closes the brief.
+
+**§1 — the instrument, built.** `HarmonicaDiagnosticsOverlay` (new, `src/Ui/Harmonica/`, framework-free
+— a rolling 120-frame ring buffer of interval/GC samples, `Compute()` returning
+mean/p95/p99/max/`>33ms` count fresh from the buffer every call rather than maintained running
+aggregates) plus `HarmonicaDiagnosticsOverlayRenderer` (new, `Renderers/` — the Skia draw, plain text,
+`IsAntialias = false` throughout, times its own draw and writes `LastDrawMs` back for the NEXT frame to
+show, the same one-frame-behind convention `LastRenderMs` already uses). Owned by `HarmonicaViewModel`
+(`Diagnostics`), not by the canvas, so `Display ▸ Reset Diagnostics Overlay` reaches it with no hook
+back into the view. `HarmonicaCanvas`'s draw operation records a sample and draws the HUD, both gated on
+`ShowDiagnosticsOverlay` (default OFF, persisted per document exactly like `ShowGridPoints` — new
+`CharmAppearance.ShowDiagnosticsOverlay`, an untouched document still re-serialises byte-for-byte). It
+shows every number §1.1 asked for: frame-interval last/mean/p95/p99/max + `>33ms` count,
+`FrameTiming`'s own per-stage breakdown + `LastRenderMs`, the readout strip's `LastSetItemsMs` **and**
+`LastSetInputsMs` (new — §1.1 also asked for this half to be timed "if it isn't already"; it wasn't),
+`SolvePool`'s `StartedCount`/`CompletedCount`/`SupersededCount` + the completed/started ratio,
+`NoOpDragFrameSkipCount`, `Lever1DisabledCount` (new VM passthrough to the solver's own counter), and
+the GC gen0/gen1 deltas across the window. Deterministic tests (`HarmonicaDiagnosticsOverlayTests`, fed
+a clock the same D1 convention `FrameScheduler` uses) pin the rolling-window arithmetic itself —
+mean/max/percentile-ordering/window-eviction/reset-clears-the-seed — since the DRAW cost and a real
+frame cadence are exactly the two things this environment cannot produce.
+
+**§2 — `SetItems`, build-once/update-in-place, done and measured (headlessly, where it can be).**
+Applied the Settings-column's own pattern (a per-column SHAPE SIGNATURE — label, header-or-not,
+`IsComplex`, `Editable`, joined per row — compared before any `.Clear()`) to all five non-General
+columns (OperatingPoint/Source/Load/Mxp/Mxe), independently: `_columnSignatures` is keyed by
+`ReadoutColumn`, so adding an L2 marker rebuilds ONLY Load. `SettingsRowMayBeOverwritten` — the exact
+predicate R3C built — now guards these rows' value slots too, closing R3C's own named follow-up "for
+free": an open Source/Load inline editor is no longer destroyed and reopened as a stale row every
+published frame, because the row is no longer destroyed at all in the steady state. The per-row
+context menu (real/imaginary ⇄ magnitude/angle, "Set…") moved from eagerly rebuilt every `SetItems`
+call to built once and populated lazily on `ContextMenu.Opening` — a user right-click, not a published
+frame. The General column is explicitly untouched (still rebuilds every call) — it carries no editors
+and is typically 0–1 rows, so it was never where the ~70–110-control cost lived. All 480 Harmonica
+`Ui.Tests` pass, including 7 new tests pinning the signature's own dependence on the marker set (not on
+the current VALUE) and the per-column independence claim at the data level. **`LastSetItemsMs` itself,
+in the steady state of a drag, could not be measured this pass for the same reason §1's primary gate
+could not — it needs the readout strip actually rebuilding real Avalonia controls, which needs the live
+host.** The overlay reads it live now; that reading is what closes this.
+
+**§3 — latest-wins starvation, real, fixed, and demonstrated (though not against a real pointer).**
+Confirmed by reading exactly as the brief predicted: `HarmonicaViewModel.RequestFrameOnMarkerRelease`'s
+`dragging: true` branch called `RequestScheduledFrame` — and through it, `SolvePool.Submit` — on EVERY
+pointer-move with no pacing, and `Submit` cancels whatever was in flight before the new job even starts.
+**Fixed with conflate-and-pace, not with a change to `SolvePool`** (guardrail 2 holds — latest-wins is
+untouched for every other submitter): a mid-drag call now checks `DragSolveInFlight` — computed from
+the POOL's own `LastCompletedSequence` against the sequence this class itself last submitted, not from
+a private flag a completion callback would have to remember to clear — and conflates into a pending
+slot rather than submitting when one is still outstanding. `OnPoolSettled` (called by whoever marshals
+the pool's `Completed`/`Failed` events to the UI thread — `HarmonicaView` in the live app) submits the
+conflated move the moment the in-flight one finishes, reading the marker's Γ at THAT moment rather than
+whatever it was when the move first arrived. The marker glyph itself is never paced — `SetMarkerGamma`
+still runs on every pointer event, unconditionally, before any of this. **This is where an existing
+test's own assertion had to invert, and that is worth recording rather than quietly rewriting past.**
+`HarmonicaDragTests.ASyntheticDrag_...` used to assert `SupersededCount > 20` on a 40-move burst as
+proof latest-wins was collapsing the drag — correct for the OLD mechanism, and now the WRONG signature
+for the fix: conflate-and-pace collapses the same burst by never submitting most of the 40 in the first
+place, so `SupersededCount` stays near zero and the right assertion is that far fewer than 40 solves
+ever START. Rewritten accordingly, plus three new deterministic tests
+(`ConflateAndPace_*`) pinning the mechanism directly — a second move arriving before the first settles
+does not reach the pool; the conflated move resubmits automatically once the in-flight one completes,
+with no further pointer event; a 30-move synchronous burst starts far fewer than 30 solves, the glyph
+still tracks the last move, and release still submits a real full-quality solve. **What could not be
+produced: the `CompletedCount / StartedCount` ratio from an actual drag**, and with it, whether the
+starvation was actually large enough to explain the owner's ~11 fps in practice rather than merely real
+in principle. §3.2's own confirm-before-fix instruction is answered "yes, mechanically, by reading and
+by a synthetic burst" — not yet answered "yes, and here is how much it cost" — for the same reason
+everything else in this note carries the same caveat.
+
+**§4 — the Avalonia dispatcher-priority finding, established by reading the installed 12.0.3 assembly,
+not from memory.** `DispatcherPriority` in this version is a struct (not an enum), with an ordered
+integer `.Value`. Reflecting the actual shipped `Avalonia.Base.dll` (12.0.3, the version this repo
+pins): `Invalid −7, Inactive −6, SystemIdle −5, ApplicationIdle −4, ContextIdle −3, Background −2,
+Input −1, Default 0, Loaded 1, UiThreadRender 2, Render 4, BeforeRender 5, AsyncRenderTargetResize 6,
+DataBind 7, Normal 8, Send 9` (mirrors WPF's own canonical list, same names, same relative order).
+`Dispatcher.Post(Action action, DispatcherPriority priority = default)` — confirmed via
+`MethodInfo.GetParameters()[1].DefaultValue` and directly via `default(DispatcherPriority) ==
+DispatcherPriority.Default` (`Value == 0`) — so `HarmonicaCanvas.OnRedrawRequested`'s
+`Dispatcher.UIThread.Post(InvalidateVisual)`, which supplies no explicit priority, posts at `Default`
+(0), confirmed **above** `Input` (−1) (`DispatcherPriority.Default.CompareTo(DispatcherPriority.Input) >
+0`). So §4's suspected mechanism is real as stated: a redraw posted this way can win the dispatcher's
+attention ahead of queued pointer-input processing during a burst. **Not acted on** — §4's own
+guardrail is "only worth pursuing if the overlay shows the stutter clustering... rather than
+throughout," which is exactly the reading this note cannot yet produce. `OnRedrawRequested` is
+unchanged.
+
+**Guardrails held.** Nothing in `PinSearch`/`ContourGrid`/`HarmonicaContext`/any solver path changed.
+`SolvePool`'s latest-wins semantics are untouched for every submitter but the marker-drag path.
+`SetItems`' rendered output is unchanged (source-scanned and behaviourally pinned, not eyeballed). The
+overlay ships off by default, persisted, and every recording call site is gated on the toggle — no
+timer runs and no buffer fills when it is off. `PlotRenderer`/`AxesRenderer` untouched.
+
+**Full gate.** `dotnet build` clean across the whole solution. `dotnet test` (no flags, the routine
+gate): Firewall.Tests 6/6, Core.Tests 1361/1361 (1 pre-existing unrelated skip), Harmonica.Tests
+167/167, WBond.Tests 237/237, RfCore.Tests 298/298, Ui.Tests 6645/6645 (486 of them are this brief's own
+— 480 Harmonica + a mix of new §1/§2/§3 tests). **One unrelated failure, confirmed a pre-existing
+full-suite-load flake, not a regression**: `Engine.Tests`' `Hero1B_ImportElaborateAndSolve_
+WithinBudgetAndConsistent` (a performance-budget gate, 12.4 s against a 10 s ceiling under full-suite
+contention) — re-run alone, 1 s, comfortably under budget. Nothing in this brief touches `src/Engine`,
+`src/Core`, or anything the Hero 1B fixture exercises; this matches this repo's own documented pattern
+(`verify-races-under-full-suite-load` memory) of timing-sensitive gates flaking only under parallel
+contention.
+
+**Closed.** The owner's own reading (above) confirms what §2 and §3 argued for from reading and from
+synthetic tests: the drag is fast now, and fast in the specific shape (a clean p95, two rare outliers)
+that a fixed starvation-plus-rebuild-cost problem should produce rather than a merely-averaged-down one.
+The per-stage numbers (`LastSetItemsMs`, the solve breakdown, the pool ratio, GC deltas) remain
+available in the overlay for whenever a future regression needs them — that is what §1 built the
+instrument FOR — but are not needed to close this brief, since the frame-interval read alone already
+answers the question §0 opened with.
+
+**Owner follow-up, same day — the two Display menu items removed, the code behind kept.** "Remove the
+2 diagnostic menu items, but keep the code behind so we can turn this back on easily." Both AXAML lines
+(`NativeMenuItem`/`MenuItem` for Toggle and Reset) removed from `HarmonicaMenuView.axaml`, on both menu
+surfaces, each replaced with a comment naming exactly what to re-add. Nothing else moved:
+`HarmonicaMenuViewModel.ToggleDiagnosticsOverlay`/`ResetDiagnosticsOverlay` (the commands themselves),
+`HarmonicaViewModel.ShowDiagnosticsOverlay`/`Diagnostics`, the overlay/renderer classes, and the
+`.charm` persistence are all untouched and still fully wired to each other — "turning it back on" is
+re-adding the two lines the comments point at, nothing more. Pinned by test rather than left to the
+comment alone: one test asserts the AXAML no longer references either command, a second drives both
+commands directly (no menu in the loop at all) and confirms they still flip `ShowDiagnosticsOverlay`,
+write `Appearance`, and reset the rolling window exactly as before.
+
 ## A batch of owner follow-ups: marker clamp, Contour Harmonic, a settings dialog, silent hooks (2026-08-13)
 
 **`HarmonicaViewModel.SetMarkerGamma`'s own clamp was redundant with — and stricter than —

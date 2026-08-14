@@ -236,17 +236,30 @@ public sealed class HarmonicaCanvas : Control
                         p.W * Bounds.Width, p.H * Bounds.Height);
     }
 
+    /// <summary>brief-harmonicarf-r5 §1 — the readout strip's own last <c>SetItems</c> cost, written
+    /// by <c>HarmonicaView.Refresh()</c> right after it calls <c>Readouts.SetItems</c>. The canvas has
+    /// no reference to the strip control itself, so this is the channel the overlay reads it through —
+    /// snapshotted into each <see cref="HarmonicaDrawOperation"/> exactly like every other per-frame
+    /// number this control captures.</summary>
+    public double ReadoutSetItemsMs { get; set; }
+
+    /// <summary>Same channel as <see cref="ReadoutSetItemsMs"/>, for <c>ReadoutStripView.SetInputs</c>'s
+    /// own cost.</summary>
+    public double ReadoutSetInputsMs { get; set; }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
         if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
         context.Custom(new HarmonicaDrawOperation(new Rect(Bounds.Size), _vm,
-                                                  _powerBackdrop, _efficiencyBackdrop, RenderScaling));
+                                                  _powerBackdrop, _efficiencyBackdrop, RenderScaling,
+                                                  ReadoutSetItemsMs, ReadoutSetInputsMs));
     }
 
     private sealed class HarmonicaDrawOperation(
         Rect bounds, HarmonicaViewModel? vm,
-        HarmonicaBackdropCache powerBackdrop, HarmonicaBackdropCache efficiencyBackdrop, double deviceScale)
+        HarmonicaBackdropCache powerBackdrop, HarmonicaBackdropCache efficiencyBackdrop, double deviceScale,
+        double readoutSetItemsMs, double readoutSetInputsMs)
         : ICustomDrawOperation
     {
         // A SNAPSHOT of what to draw, captured at render time. The VM may change on the UI thread
@@ -265,6 +278,15 @@ public sealed class HarmonicaCanvas : Control
         // §7.7 — the Edit Display state, snapshotted with everything else.
         private readonly bool _editing = vm?.EditDisplay.Unlocked ?? false;
 
+        // brief-harmonicarf-r5 §1 — the diagnostics overlay. Guardrail 6: "costs nothing measurable
+        // when off" — _showOverlay is read ONCE per operation, and every call this class makes into
+        // Diagnostics/the renderer below is gated on it, so an OFF document allocates and does nothing
+        // beyond this one bool read.
+        private readonly bool _showOverlay = vm?.ShowDiagnosticsOverlay ?? false;
+        private readonly HarmonicaDiagnosticsOverlay? _diagnostics = vm?.Diagnostics;
+        private readonly double _readoutSetItemsMs  = readoutSetItemsMs;
+        private readonly double _readoutSetInputsMs = readoutSetInputsMs;
+
         public Rect Bounds { get; } = bounds;
         public void Dispose() { }
         public bool HitTest(Point p) => Bounds.Contains(p);
@@ -276,6 +298,11 @@ public sealed class HarmonicaCanvas : Control
             if (lease is null) return;
             using var l = lease.Lease();
             var canvas = l.SkCanvas;
+
+            // §1 — recorded FIRST, before anything else this operation draws, so the interval between
+            // successive calls to THIS method (an actual canvas repaint) is what gets sampled — the
+            // real stutter signal, independent of how long any one repaint itself then takes.
+            if (_showOverlay && _diagnostics is not null) _diagnostics.RecordFrame();
 
             // R-h6-4 / D6 — the RENDER stage of a FrameTiming, measured where it happens. The solver
             // fills in every other stage; this is the one it cannot see.
@@ -292,6 +319,13 @@ public sealed class HarmonicaCanvas : Control
             if (_editing) DrawEditChrome(canvas);
 
             if (_vm is not null) _vm.LastRenderMs = sw.Elapsed.TotalMilliseconds;
+
+            // §1.2 — drawn LAST (over everything, including edit chrome), so it is always readable;
+            // reads _vm.LastRenderMs just written above, so the render figure it shows is THIS frame's,
+            // not last frame's.
+            if (_showOverlay && _vm is not null && _diagnostics is not null)
+                HarmonicaDiagnosticsOverlayRenderer.Draw(canvas, _diagnostics, _vm,
+                                                         _readoutSetItemsMs, _readoutSetInputsMs);
         }
 
         /// <summary>
