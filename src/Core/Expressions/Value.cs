@@ -10,7 +10,7 @@ public enum ValueKind { Real, Complex, Bool, String, Cube, All }
 /// Real and Complex map directly to the DataKind used in the result model.
 /// Bool is internal to conditionals and never the final value of a parameter.
 /// String is storage-only (no operators, no coercions) — used for SnP/N-port config
-/// params (File, Type, InterpMode, ExtrapMode). A String value is a type error
+/// params (File, Type, InterpMode, InterpDomain, ExtrapMode). A String value is a type error
 /// anywhere a number is required.
 /// Cube is a DataCube operand produced by a measurement accessor; arithmetic broadcasts element-wise.
 /// All is a sentinel used in accessor slice positions to keep an entire axis (mirrors DataCube.All).

@@ -34,7 +34,7 @@ public sealed record CallExpr(string Name, Expr[] Args) : Expr;
 
 /// <summary>
 /// String literal: "foo". Storage-only — no string operators or coercions allowed.
-/// Used for SnP/N-port config params (File, Type, InterpMode, ExtrapMode).
+/// Used for SnP/N-port config params (File, Type, InterpMode, InterpDomain, ExtrapMode).
 /// </summary>
 public sealed record StringLiteralExpr(string Value) : Expr;
 

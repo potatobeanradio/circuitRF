@@ -85,12 +85,20 @@ public class SnpComponentTests
     }
 
     [Fact]
-    public void DefaultParameters_Snp2_Has7Params_NumPortsIs2()
+    public void DefaultParameters_Snp2_Has8Params_NumPortsIs2()
     {
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, 2);
-        Assert.Equal(7, ps.Count);
+        Assert.Equal(8, ps.Count);
         bool hasNumPorts = ps.Any(p => p.Name == "NumPorts" && p.Expression == "2" && !p.ShowOnSchematic);
         Assert.True(hasNumPorts, "NumPorts param must be hidden and equal 2");
+    }
+
+    [Fact]
+    public void DefaultParameters_Snp_InterpModeIsCubicSpline_InterpDomainIsMA()
+    {
+        var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, 2);
+        Assert.Equal("CubicSpline", ps.Single(p => p.Name == "InterpMode").Expression);
+        Assert.Equal("MA",          ps.Single(p => p.Name == "InterpDomain").Expression);
     }
 
     [Fact]

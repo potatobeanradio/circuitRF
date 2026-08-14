@@ -1,3 +1,4 @@
+using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
@@ -80,6 +81,85 @@ public class SnpElaborationTests
         // Path contains the filename; exact backslash representation is platform-dependent but must not crash.
         Assert.Contains("myamp.s2p", comp.Parameters["File"].AsString());
         Assert.Equal(2.0, comp.Parameters["NumPorts"].AsReal());
+    }
+
+    // ── InterpMode / InterpDomain: honored end-to-end through elaboration + simulation ──────
+
+    [Fact]
+    public void SnpElaboration_InterpModeMakima_DoesNotThrow_AndElaboratesToSnpModel()
+    {
+        var filePath = Path.Combine(Hero1Dir(), "potentially_unstable_amp.s2p");
+        var cnl = $"""
+            Port:T1  n1 0  Num=1 Z=50 Ohm
+            Port:T2  n2 0  Num=2 Z=50 Ohm
+            SnP:S1   n1 n2  NumPorts=2 File={filePath} InterpMode=Makima InterpDomain=RI ExtrapMode=NearestEdge
+            """;
+
+        var (lib, tb) = ParseCnl(cnl);
+        var nl = new Elaborator(lib).Elaborate(tb);
+        Assert.IsType<SnpModel>(nl.Components.First(c => c.Model is SnpModel).Model);
+
+        var freqs = new double[] { 1.05e9 }; // off-grid — exercises the interpolation path
+        var ds = SParameterEngine.Run(nl, freqs);
+        Assert.NotNull(ds["S"]);
+    }
+
+    [Fact]
+    public void SnpElaboration_InterpDomainMA_ProducesADifferentResult_ThanRI_AtAnOffGridFrequency()
+    {
+        // Proves InterpDomain reaches the simulated result rather than being silently accepted and
+        // ignored: RI (real/imag) and MA (magnitude/angle) cubic-spline interpolation of the same
+        // file, at the same off-grid frequency, must disagree.
+        var filePath = Path.Combine(Hero1Dir(), "potentially_unstable_amp.s2p");
+        string CnlWith(string interpDomain) => $"""
+            Port:T1  n1 0  Num=1 Z=50 Ohm
+            Port:T2  n2 0  Num=2 Z=50 Ohm
+            SnP:S1   n1 n2  NumPorts=2 File={filePath} InterpMode=CubicSpline InterpDomain={interpDomain} ExtrapMode=NearestEdge
+            """;
+        var freqs = new double[] { 1.05e9 };
+
+        var (libRi, tbRi) = ParseCnl(CnlWith("RI"));
+        var dsRi = SParameterEngine.Run(new Elaborator(libRi).Elaborate(tbRi), freqs);
+
+        var (libMa, tbMa) = ParseCnl(CnlWith("MA"));
+        var dsMa = SParameterEngine.Run(new Elaborator(libMa).Elaborate(tbMa), freqs);
+
+        var s11Ri = (Complex)dsRi["S"][0, 0, 0];
+        var s11Ma = (Complex)dsMa["S"][0, 0, 0];
+
+        Assert.True((s11Ri - s11Ma).Magnitude > 1e-6,
+            $"RI S11={s11Ri:G6} and MA S11={s11Ma:G6} coincide — InterpDomain is not reaching the simulated result.");
+    }
+
+    [Fact]
+    public void SnpElaboration_InterpDomainOmitted_DefaultsToMA_NotRI()
+    {
+        // Owner: "change the default Domain parameter for all SNP components ... to be MA (not RI)."
+        // A hand-written .cnl that never states InterpDomain at all must resolve the same way an
+        // explicit InterpDomain=MA does, and differently from InterpDomain=RI.
+        var filePath = Path.Combine(Hero1Dir(), "potentially_unstable_amp.s2p");
+        string CnlWith(string? interpDomain) => $"""
+            Port:T1  n1 0  Num=1 Z=50 Ohm
+            Port:T2  n2 0  Num=2 Z=50 Ohm
+            SnP:S1   n1 n2  NumPorts=2 File={filePath} InterpMode=CubicSpline{(interpDomain is null ? "" : $" InterpDomain={interpDomain}")} ExtrapMode=NearestEdge
+            """;
+        var freqs = new double[] { 1.05e9 };
+
+        Complex S11(string? interpDomain)
+        {
+            var (lib, tb) = ParseCnl(CnlWith(interpDomain));
+            var ds = SParameterEngine.Run(new Elaborator(lib).Elaborate(tb), freqs);
+            return (Complex)ds["S"][0, 0, 0];
+        }
+
+        var s11Omitted = S11(null);
+        var s11Ma      = S11("MA");
+        var s11Ri      = S11("RI");
+
+        Assert.True((s11Omitted - s11Ma).Magnitude < 1e-12,
+            $"Omitted InterpDomain (S11={s11Omitted:G6}) does not match explicit MA (S11={s11Ma:G6}).");
+        Assert.True((s11Omitted - s11Ri).Magnitude > 1e-6,
+            $"Omitted InterpDomain (S11={s11Omitted:G6}) matches RI (S11={s11Ri:G6}) — default is not MA.");
     }
 
     // ── T3: End-to-end — real s2p + two Ports + S-param run ─────────────────

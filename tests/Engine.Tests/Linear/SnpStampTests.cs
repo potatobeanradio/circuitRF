@@ -124,6 +124,78 @@ public class SnpStampTests
         }
     }
 
+    // ── Interp Mode + Interp Domain: SnpModel must pass BOTH through to RFNetwork.Interpolate ──
+
+    [Fact]
+    public void SnpModel_MakimaMethod_MatchesIndependentRFNetworkInterpolate()
+    {
+        var filePath = Path.Combine(Hero1Dir(), "potentially_unstable_amp.s2p");
+        double testHz = 1.05e9; // off-grid between the 1 GHz and 1.1 GHz file points
+
+        var snpRef    = TouchstoneIO.ReadFile(filePath);
+        var interpRef = RFNetwork.Interpolate(snpRef, [testHz],
+            InterpolationMethod.Makima, InterpolationFormat.RealImag,
+            MatrixType.S, OutOfRangePolicy.WarnClamp);
+        var zRef = RFNetwork.SToZ(interpRef.Matrices[0], snpRef.Z0);
+
+        var model = new SnpModel(portCount: 2, absoluteFilePath: filePath,
+            interpMethod: InterpolationMethod.Makima);
+        var mna = new MnaSystem(nonGroundNodes: 2);
+        var ec  = MakeEc(model, [1, 2], refNode: 0);
+
+        model.Stamp(mna, ec, 2.0 * Math.PI * testHz);
+
+        const double Tol = 1e-10;
+        for (int k = 0; k < 2; k++)
+        for (int j = 0; j < 2; j++)
+        {
+            var expected = -zRef[k, j];
+            var actual   = mna.GetEntry(row: 2 + k, col: 2 + j);
+            Assert.True((actual - expected).Magnitude < Tol,
+                $"D[{k},{j}]: expected {expected:G6}, got {actual:G6}");
+        }
+    }
+
+    [Fact]
+    public void SnpModel_MagPhaseDomain_MatchesIndependentRFNetworkInterpolate_AndDiffersFromRealImag()
+    {
+        var filePath = Path.Combine(Hero1Dir(), "potentially_unstable_amp.s2p");
+        double testHz = 1.05e9;
+
+        var snpRef = TouchstoneIO.ReadFile(filePath);
+        var interpRefMagPhase = RFNetwork.Interpolate(snpRef, [testHz],
+            InterpolationMethod.CubicSpline, InterpolationFormat.MagPhase,
+            MatrixType.S, OutOfRangePolicy.WarnClamp);
+        var zRefMagPhase = RFNetwork.SToZ(interpRefMagPhase.Matrices[0], snpRef.Z0);
+
+        var interpRefRealImag = RFNetwork.Interpolate(snpRef, [testHz],
+            InterpolationMethod.CubicSpline, InterpolationFormat.RealImag,
+            MatrixType.S, OutOfRangePolicy.WarnClamp);
+        var zRefRealImag = RFNetwork.SToZ(interpRefRealImag.Matrices[0], snpRef.Z0);
+
+        // Sanity: off-grid, the two domains must actually disagree, or this test would pass
+        // vacuously regardless of whether SnpModel threads the domain through at all.
+        Assert.True((zRefMagPhase[0, 0] - zRefRealImag[0, 0]).Magnitude > 1e-6,
+            "Test fixture invalid: RI and MA interpolation coincide at this frequency.");
+
+        var model = new SnpModel(portCount: 2, absoluteFilePath: filePath,
+            interpFormat: InterpolationFormat.MagPhase);
+        var mna = new MnaSystem(nonGroundNodes: 2);
+        var ec  = MakeEc(model, [1, 2], refNode: 0);
+
+        model.Stamp(mna, ec, 2.0 * Math.PI * testHz);
+
+        const double Tol = 1e-10;
+        for (int k = 0; k < 2; k++)
+        for (int j = 0; j < 2; j++)
+        {
+            var expected = -zRefMagPhase[k, j];
+            var actual   = mna.GetEntry(row: 2 + k, col: 2 + j);
+            Assert.True((actual - expected).Magnitude < Tol,
+                $"D[{k},{j}]: expected (MagPhase) {expected:G6}, got {actual:G6}");
+        }
+    }
+
     // ── CnlReader round-trip: hero1.cnl parses SnP: line correctly ────────────
 
     [Fact]

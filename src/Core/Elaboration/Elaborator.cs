@@ -864,11 +864,13 @@ public sealed class Elaborator
     }
 
     // ── SnP parameter resolution ──────────────────────────────────────────────
-    // File / InterpMode / ExtrapMode / PinConfig / RefNode are STRING params — store raw, never Eval().
-    // (A file path like "/Users/…/x.s2p" is not an expression.) Only NumPorts is numeric.
+    // File / InterpMode / InterpDomain / ExtrapMode / PinConfig / RefNode are STRING params — store
+    // raw, never Eval(). (A file path like "/Users/…/x.s2p" is not an expression.) Only NumPorts is
+    // numeric.
 
     private static readonly HashSet<string> _snpStringParams =
-        new(StringComparer.OrdinalIgnoreCase) { "File", "InterpMode", "ExtrapMode", "PinConfig", "RefNode" };
+        new(StringComparer.OrdinalIgnoreCase)
+            { "File", "InterpMode", "InterpDomain", "ExtrapMode", "PinConfig", "RefNode" };
 
     private IReadOnlyDictionary<string, Value> ResolveSnpParameters(
         Instance inst, Scope parentScope)

@@ -25,6 +25,7 @@ public sealed class SnpModel : ComponentModel
     private readonly string              _filePath;
     private readonly InterpolationMethod _interpMethod;
     private readonly OutOfRangePolicy    _extrapPolicy;
+    private readonly InterpolationFormat _interpFormat;
 
     private SNP? _snp;
 
@@ -39,12 +40,14 @@ public sealed class SnpModel : ComponentModel
         int                  portCount,
         string               absoluteFilePath,
         InterpolationMethod  interpMethod = InterpolationMethod.CubicSpline,
-        OutOfRangePolicy     extrapPolicy = OutOfRangePolicy.WarnClamp)
+        OutOfRangePolicy     extrapPolicy = OutOfRangePolicy.WarnClamp,
+        InterpolationFormat  interpFormat = InterpolationFormat.RealImag)
     {
         _portCount    = portCount;
         _filePath     = absoluteFilePath;
         _interpMethod = interpMethod;
         _extrapPolicy = extrapPolicy;
+        _interpFormat = interpFormat;
         PortBranchIndices = new int[portCount];
         for (int k = 0; k < portCount; k++) PortBranchIndices[k] = -1;
     }
@@ -68,7 +71,7 @@ public sealed class SnpModel : ComponentModel
             snp,
             [hz],
             _interpMethod,
-            InterpolationFormat.RealImag,
+            _interpFormat,
             MatrixType.S,
             _extrapPolicy);
         var zMat = RFNetwork.SToZ(interpolated.Matrices[0], snp.Z0);

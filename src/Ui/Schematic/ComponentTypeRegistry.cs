@@ -610,18 +610,22 @@ public static class ComponentTypeRegistry
 
             // SnP: N-port Touchstone file-backed component.
             // NumPorts (hidden) is required by CnlReader. File, RefNode, PinConfig, Pitch,
-            // InterpMode, ExtrapMode are the remaining 6 fixed params.
+            // InterpMode, InterpDomain, ExtrapMode are the remaining 7 fixed params.
+            // InterpMode default is cubic spline (per docs/design; the smoothest choice for a
+            // typically-sparse measured/simulated sweep); InterpDomain default is MA (magnitude/angle
+            // — owner's explicit preference, 2026-08-13, overriding the earlier RI-default choice).
             case SymbolKind.Snp:
             {
                 int n = portCount >= 1 ? portCount : 2;
                 return [
-                    new("NumPorts",  $"{n}",         "",  false, UnitDimension.None),
-                    new("File",      "",              "",  true,  UnitDimension.None),
-                    new("RefNode",   "false",         "",  false, UnitDimension.None),
-                    new("PinConfig", "Standard",      "",  false, UnitDimension.None),
-                    new("Pitch",     "Loose",         "",  false, UnitDimension.None),
-                    new("InterpMode","Cubic",         "",  false, UnitDimension.None),
-                    new("ExtrapMode","NearestEdge",   "",  false, UnitDimension.None),
+                    new("NumPorts",    $"{n}",         "",  false, UnitDimension.None),
+                    new("File",        "",              "",  true,  UnitDimension.None),
+                    new("RefNode",     "false",         "",  false, UnitDimension.None),
+                    new("PinConfig",   "Standard",      "",  false, UnitDimension.None),
+                    new("Pitch",       "Loose",         "",  false, UnitDimension.None),
+                    new("InterpMode",  "CubicSpline",   "",  false, UnitDimension.None),
+                    new("InterpDomain","MA",            "",  false, UnitDimension.None),
+                    new("ExtrapMode",  "NearestEdge",   "",  false, UnitDimension.None),
                 ];
             }
 

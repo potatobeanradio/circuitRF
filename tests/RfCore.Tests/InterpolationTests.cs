@@ -84,6 +84,93 @@ public class InterpolationTests
             $"{filename} at-own-points linear RMS={rms:G4}, expected < 1e-10");
     }
 
+    [Theory]
+    [InlineData("2SC5226A.s2p")]
+    [InlineData("potentially_unstable_amp.s2p")]
+    [InlineData("Test_5Port.s5p")]
+    public void AtOwnPoints_MakimaExact(string filename)
+    {
+        var snp = TouchstoneIO.ReadFile(Path.Combine(TestDataDir, filename));
+        var interp = RFNetwork.Interpolate(snp, snp.Frequencies,
+                                           method: InterpolationMethod.Makima);
+
+        double rms = RFNetwork.CompareRMSValue(snp, interp);
+        Assert.True(rms < 1e-10,
+            $"{filename} at-own-points Makima RMS={rms:G4}, expected < 1e-10");
+    }
+
+    // ================================================================
+    //  Makima: analytical delay line, interior midpoint
+    // ================================================================
+
+    [Fact]
+    public void DelayLine_MakimaMidpoint_AccurateToTolerance()
+    {
+        double tau  = 0.1e-9;
+        double[] xs = { 0, 0.1e9, 0.2e9, 0.3e9, 0.4e9, 0.5e9 };
+        var snp = MakeDelayLine(xs, tau);
+
+        double fMid = 0.25e9;
+        var interp = RFNetwork.Interpolate(snp, new[] { fMid }, method: InterpolationMethod.Makima);
+
+        double phaseExact = -2.0 * Math.PI * fMid * tau;
+        Complex s21Exact = Complex.FromPolarCoordinates(1.0, phaseExact);
+        Complex s21Got   = interp.Matrices[0][1, 0];
+
+        double err = (s21Got - s21Exact).Magnitude;
+        Assert.True(err < 1e-3, $"Makima midpoint error={err:G4}, expected < 1e-3");
+    }
+
+    // ================================================================
+    //  Makima: a flat run of collinear points must not diverge.
+    //
+    //  This is the case the "modified" weighting (over plain 1970 Akima)
+    //  exists for: two adjacent slope differences both vanish across a
+    //  flat/linear stretch, which would otherwise divide 0/0.
+    // ================================================================
+
+    [Fact]
+    public void Makima_FlatRun_StaysFlat_NoNaN()
+    {
+        double[] xs = { 0, 1, 2, 3, 4, 5, 6 };
+        var mats = new Mat<Complex>[xs.Length];
+        for (int i = 0; i < xs.Length; i++)
+        {
+            var m = new Mat<Complex>(1, 1);
+            m[0, 0] = new Complex(3.0, 0.0); // perfectly flat
+            mats[i] = m;
+        }
+        var snp = new SNP(xs, mats, MatrixType.S, MatrixFormat.RI);
+
+        var interp = RFNetwork.Interpolate(snp, new[] { 2.5, 0.5, 5.5 }, method: InterpolationMethod.Makima);
+        foreach (var m in interp.Matrices)
+        {
+            Assert.False(double.IsNaN(m[0, 0].Real), "Makima produced NaN over a flat run.");
+            Assert.True(Math.Abs(m[0, 0].Real - 3.0) < 1e-9,
+                $"Makima should reproduce the flat value exactly, got {m[0, 0].Real:G6}");
+        }
+    }
+
+    // ================================================================
+    //  Makima vs natural cubic spline: must actually be a different method,
+    //  not an alias — otherwise choosing it from the UI would be a no-op.
+    // ================================================================
+
+    [Fact]
+    public void Makima_DiffersFromNaturalCubicSpline_NearASharpFeature()
+    {
+        var snp = TouchstoneIO.ReadFile(Path.Combine(TestDataDir, "potentially_unstable_amp.s2p"));
+        // Off-grid midpoint between the first two stored frequencies.
+        double fMid = (snp.Frequencies[0] + snp.Frequencies[1]) / 2.0;
+
+        var makima = RFNetwork.Interpolate(snp, new[] { fMid }, method: InterpolationMethod.Makima);
+        var cubic  = RFNetwork.Interpolate(snp, new[] { fMid }, method: InterpolationMethod.CubicSpline);
+
+        double diff = (makima.Matrices[0][0, 0] - cubic.Matrices[0][0, 0]).Magnitude;
+        Assert.True(diff > 1e-8,
+            $"Makima and natural cubic spline coincide (diff={diff:G4}) — Makima is not a distinct method.");
+    }
+
     // ================================================================
     //  Analytical: ideal delay line
     //

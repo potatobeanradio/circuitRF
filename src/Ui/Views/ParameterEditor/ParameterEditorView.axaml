@@ -271,6 +271,27 @@
                                   FontSize="11"
                                   Padding="4,3"/>
                     </Grid>
+                    <!-- Interp Mode + Interp Domain -->
+                    <Grid ColumnDefinitions="60,*,Auto,*">
+                        <TextBlock Grid.Column="0" Text="Interp"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="How the stored S-parameters are interpolated between the file's own frequency points"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SnpInterpModeOptions}"
+                                  SelectedIndex="{Binding SnpInterpModeIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"
+                                  ToolTip.Tip="Interp Mode — Linear, Cubic Spline (default), or Makima"/>
+                        <TextBlock Grid.Column="2" Text="Domain"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   Margin="8,0,6,0"/>
+                        <ComboBox Grid.Column="3"
+                                  ItemsSource="{Binding SnpInterpDomainOptions}"
+                                  SelectedIndex="{Binding SnpInterpDomainIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"
+                                  ToolTip.Tip="Interp Domain — RI: interpolate real/imaginary parts (default). MA: interpolate magnitude/angle."/>
+                    </Grid>
                 </StackPanel>
             </Panel>
         </ScrollViewer>

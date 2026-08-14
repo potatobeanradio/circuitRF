@@ -10,7 +10,7 @@ Port:Term4  p4 0  Num=4 Z=50 Ohm
 L:L1   p1   a1   L=3.3 nH
 C:C1   a1   0    C=1.5 pF
 
-SnP:X1  a1 a2  NumPorts=2 File="potentially_unstable_amp.s2p" Type="touchstone" InterpMode="linear" ExtrapMode="clamp"
+SnP:X1  a1 a2  NumPorts=2 File="potentially_unstable_amp.s2p" Type="touchstone" InterpMode="linear" InterpDomain="RI" ExtrapMode="clamp"
 
 L:L2   a2   p2   L=2.7 nH
 C:C2   p2   0    C=1.0 pF

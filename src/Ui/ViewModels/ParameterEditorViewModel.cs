@@ -171,17 +171,29 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// <summary>Callback set by the view to reveal a file in the OS file manager.</summary>
     public Func<string, Task>? RevealFileAsync { get; set; }
 
-    public static string[] SnpPinConfigOptions { get; } = ["Standard", "SplitLR", "DualRow"];
-    public static string[] SnpPitchOptions     { get; } = ["Tight",    "Loose"];
+    public static string[] SnpPinConfigOptions   { get; } = ["Standard", "SplitLR", "DualRow"];
+    public static string[] SnpPitchOptions       { get; } = ["Tight",    "Loose"];
+
+    // Interpolation method used to evaluate the stored S-parameters at a simulation frequency that
+    // falls between the file's own sample points. Cubic spline is the default (smoothest fit for a
+    // typically-sparse measured/simulated sweep); Makima is a local-support alternative that avoids
+    // overshoot near a sharp resonance; Linear is the plain fallback. See RfCore.InterpolationMethod.
+    public static string[] SnpInterpModeOptions   { get; } = ["Linear", "CubicSpline", "Makima"];
+
+    // Which components are interpolated: RI (real/imaginary) or MA (magnitude/angle, default). See
+    // RfCore.InterpolationFormat.
+    public static string[] SnpInterpDomainOptions { get; } = ["RI", "MA"];
 
     public IAsyncRelayCommand PickSnpFileCommand    { get; private set; } = null!;
     public IAsyncRelayCommand ShowSnpFileCommand    { get; private set; } = null!;
 
-    [ObservableProperty] private string _snpFilePath       = "";
-    [ObservableProperty] private bool   _snpRefNode        = false;
-    [ObservableProperty] private int    _snpPinConfigIndex = 0;
-    [ObservableProperty] private int    _snpPitchIndex     = 1;
-    [ObservableProperty] private string _snpPortCountText  = "";
+    [ObservableProperty] private string _snpFilePath         = "";
+    [ObservableProperty] private bool   _snpRefNode          = false;
+    [ObservableProperty] private int    _snpPinConfigIndex   = 0;
+    [ObservableProperty] private int    _snpPitchIndex       = 1;
+    [ObservableProperty] private int    _snpInterpModeIndex  = 1; // CubicSpline
+    [ObservableProperty] private int    _snpInterpDomainIndex = 1; // MA
+    [ObservableProperty] private string _snpPortCountText    = "";
 
     partial void OnSnpFilePathChanged(string value) => ShowSnpFileCommand.NotifyCanExecuteChanged();
 
@@ -203,6 +215,22 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         string val = (uint)newValue < (uint)SnpPitchOptions.Length ? SnpPitchOptions[newValue] : "Loose";
         ApplySnpParam("Pitch", val);
+    }
+
+    partial void OnSnpInterpModeIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        string val = (uint)newValue < (uint)SnpInterpModeOptions.Length
+            ? SnpInterpModeOptions[newValue] : "CubicSpline";
+        ApplySnpParam("InterpMode", val);
+    }
+
+    partial void OnSnpInterpDomainIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        string val = (uint)newValue < (uint)SnpInterpDomainOptions.Length
+            ? SnpInterpDomainOptions[newValue] : "MA";
+        ApplySnpParam("InterpDomain", val);
     }
 
     private async Task PickFileAsync()
@@ -249,19 +277,31 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         string file = _target.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression ?? "";
         bool refNode = (_target.Parameters.FirstOrDefault(p => p.Name == "RefNode")?.Expression ?? "false")
             .Equals("true", StringComparison.OrdinalIgnoreCase);
-        string cfgStr   = _target.Parameters.FirstOrDefault(p => p.Name == "PinConfig")?.Expression ?? "Standard";
-        string pitchStr = _target.Parameters.FirstOrDefault(p => p.Name == "Pitch")?.Expression ?? "Loose";
-        int cfgIdx   = Array.IndexOf(SnpPinConfigOptions, cfgStr); if (cfgIdx < 0) cfgIdx = 0;
-        int pitchIdx = Array.IndexOf(SnpPitchOptions,     pitchStr); if (pitchIdx < 0) pitchIdx = 1;
+        string cfgStr    = _target.Parameters.FirstOrDefault(p => p.Name == "PinConfig")?.Expression ?? "Standard";
+        string pitchStr  = _target.Parameters.FirstOrDefault(p => p.Name == "Pitch")?.Expression ?? "Loose";
+        // "Cubic" is the pre-2026-08-13 stored value (kept working by ComponentModelFactory's
+        // fallback-to-cubic-spline default); treat it the same as "CubicSpline" here too.
+        string interpModeStr = _target.Parameters.FirstOrDefault(p => p.Name == "InterpMode")?.Expression
+            ?? "CubicSpline";
+        string interpDomainStr = _target.Parameters.FirstOrDefault(p => p.Name == "InterpDomain")?.Expression
+            ?? "MA";
+        int cfgIdx    = Array.IndexOf(SnpPinConfigOptions, cfgStr);       if (cfgIdx < 0)    cfgIdx    = 0;
+        int pitchIdx  = Array.IndexOf(SnpPitchOptions,     pitchStr);     if (pitchIdx < 0)  pitchIdx  = 1;
+        int interpModeIdx = Array.IndexOf(SnpInterpModeOptions, interpModeStr);
+        if (interpModeIdx < 0) interpModeIdx = Array.IndexOf(SnpInterpModeOptions, "CubicSpline");
+        int interpDomainIdx = Array.IndexOf(SnpInterpDomainOptions, interpDomainStr);
+        if (interpDomainIdx < 0) interpDomainIdx = Array.IndexOf(SnpInterpDomainOptions, "MA");
         int portCount = _target.PortCount;
 
         // Set _isRefreshing so the partial callbacks don't call ApplySnpParam.
         _isRefreshing = true;
-        SnpFilePath       = file;
-        SnpRefNode        = refNode;
-        SnpPinConfigIndex = cfgIdx;
-        SnpPitchIndex     = pitchIdx;
-        SnpPortCountText  = portCount >= 1 ? $"{portCount}-port" : "Unknown";
+        SnpFilePath           = file;
+        SnpRefNode            = refNode;
+        SnpPinConfigIndex     = cfgIdx;
+        SnpPitchIndex         = pitchIdx;
+        SnpInterpModeIndex    = interpModeIdx;
+        SnpInterpDomainIndex  = interpDomainIdx;
+        SnpPortCountText      = portCount >= 1 ? $"{portCount}-port" : "Unknown";
         _isRefreshing = false;
     }
 
@@ -418,6 +458,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             foreach (var row in built.Where(IsOwnOverride)) Rows.Add(row);
         }
 
+        if (comp.Symbol == SymbolKind.Snp) AdoptDefaultSnpParameters(comp);
+
         _isRefreshing = false;
 
         OnPropertyChanged(nameof(IsSnp));
@@ -428,6 +470,40 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
         SyncVerilogAFromModelFile();
+    }
+
+    /// <summary>
+    /// Gives a placed SnP instance any FIXED param it is missing (e.g. <c>InterpDomain</c>, added
+    /// after some instances were already placed/saved), seeded at its registry default.
+    ///
+    /// <para><b>Why an instance can be missing one at all.</b> Unlike the generic parameter rows,
+    /// the SnP panel's combos (<see cref="SnpInterpModeIndex"/>, <see cref="SnpInterpDomainIndex"/>,
+    /// …) write through <see cref="ApplySnpParam"/>, which only ever SETS an existing row's
+    /// expression — it does not add a missing one. Without this top-up, selecting "MA" on an
+    /// instance saved before <c>InterpDomain</c> existed silently no-ops (nothing to find and set),
+    /// so the combo appears to change while nothing is actually written — reported as "the setting
+    /// reverts to RI every time the dialog is reopened". Mirrors
+    /// <see cref="AdoptCellDeclaredParameters"/>'s same shape of bug for cell-ref instances.</para>
+    ///
+    /// <para><b>No undo entry, and never a value change.</b> Same rule as
+    /// <see cref="AdoptCellDeclaredParameters"/>: opening a dialog is not an edit, and an existing
+    /// value — however it got there — is never touched.</para>
+    /// </summary>
+    private static void AdoptDefaultSnpParameters(EditableComponent comp)
+    {
+        var defaults = ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, comp.PortCount);
+        foreach (var d in defaults)
+        {
+            if (comp.Parameters.Any(p => p.Name.Equals(d.Name, StringComparison.Ordinal))) continue;
+            comp.Parameters.Add(new EditableParameter
+            {
+                Name            = d.Name,
+                Expression      = d.Expression,
+                Unit            = d.Unit,
+                Dimension       = d.Dimension,
+                ShowOnSchematic = d.ShowOnSchematic,
+            });
+        }
     }
 
     /// <summary>

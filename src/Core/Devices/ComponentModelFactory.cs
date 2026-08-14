@@ -332,11 +332,24 @@ public static class ComponentModelFactory
             throw new InvalidOperationException("SnP: File parameter is missing or not a string");
         string filePath = fileVal.AsString();
 
+        // Default is cubic spline — anything other than an explicit "linear"/"makima" falls back to
+        // it, which also covers the pre-existing stored value "Cubic".
         var interpMethod = InterpolationMethod.CubicSpline;
         if (parameters.TryGetValue("InterpMode", out var im) && im.Kind == ValueKind.String)
-            interpMethod = im.AsString().Equals("linear", StringComparison.OrdinalIgnoreCase)
-                ? InterpolationMethod.Linear
-                : InterpolationMethod.CubicSpline;
+            interpMethod = im.AsString() switch
+            {
+                var s when s.Equals("linear", StringComparison.OrdinalIgnoreCase) => InterpolationMethod.Linear,
+                var s when s.Equals("makima", StringComparison.OrdinalIgnoreCase) => InterpolationMethod.Makima,
+                _ => InterpolationMethod.CubicSpline,
+            };
+
+        // MA (magnitude/angle, default) or RI (real/imaginary) — anything other than an explicit
+        // "RI" falls back to MA.
+        var interpFormat = InterpolationFormat.MagPhase;
+        if (parameters.TryGetValue("InterpDomain", out var id) && id.Kind == ValueKind.String)
+            interpFormat = id.AsString().Equals("RI", StringComparison.OrdinalIgnoreCase)
+                ? InterpolationFormat.RealImag
+                : InterpolationFormat.MagPhase;
 
         var extrapPolicy = OutOfRangePolicy.WarnClamp;
         if (parameters.TryGetValue("ExtrapMode", out var em) && em.Kind == ValueKind.String)
@@ -344,7 +357,7 @@ public static class ComponentModelFactory
                 ? OutOfRangePolicy.WarnExtrapolate
                 : OutOfRangePolicy.WarnClamp;
 
-        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy);
+        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy, interpFormat);
     }
 
     private static MutualInductanceModel CreateMutualModel(IReadOnlyDictionary<string, Value> parameters)

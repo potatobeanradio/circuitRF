@@ -3,7 +3,10 @@
 //
 //  Partial class continuation of RFNetwork.
 //
-//  Method: natural cubic spline (default) or piecewise linear.
+//  Method: natural cubic spline (default), piecewise linear, or Makima
+//          (modified Akima — local-support cubic Hermite, avoids the
+//          overshoot a global natural spline can show near a sharp
+//          resonance, and stays well-behaved over flat stretches).
 //  Format: real/imag (default) or magnitude/phase (with phase unwrap).
 //  Out-of-range: warn + clamp (default) or warn + linear extrapolation.
 //
@@ -27,7 +30,7 @@ namespace RfCore
     //  Enums for the Interpolate API
     // ============================================================
 
-    public enum InterpolationMethod { CubicSpline, Linear }
+    public enum InterpolationMethod { CubicSpline, Linear, Makima }
     public enum InterpolationFormat { RealImag, MagPhase }
     public enum OutOfRangePolicy    { WarnClamp, WarnExtrapolate }
 
@@ -42,7 +45,7 @@ namespace RfCore
         /// </summary>
         /// <param name="source">The stored network parameter sweep.</param>
         /// <param name="targetFrequencies">Target frequencies in Hz.</param>
-        /// <param name="method">Cubic spline (default) or piecewise linear.</param>
+        /// <param name="method">Cubic spline (default), piecewise linear, or Makima.</param>
         /// <param name="format">Interpolate real/imag (default) or mag/phase components.</param>
         /// <param name="interpolateIn">Parameter domain to interpolate in.
         ///   If different from <paramref name="source"/>.Type, the SNP is converted
@@ -125,8 +128,8 @@ namespace RfCore
                     PhaseUnwrap(comp2);
                 }
 
-                var spline1 = new Spline1D(xs, comp1, forceLinear);
-                var spline2 = new Spline1D(xs, comp2, forceLinear);
+                var spline1 = new Spline1D(xs, comp1, method, forceLinear);
+                var spline2 = new Spline1D(xs, comp2, method, forceLinear);
 
                 for (int ti = 0; ti < nFreqTgt; ti++)
                 {
@@ -189,7 +192,7 @@ namespace RfCore
             private readonly double[] _a; // y values at knots
             private readonly double[] _b, _c, _d;
 
-            internal Spline1D(double[] x, double[] y, bool forceLinear)
+            internal Spline1D(double[] x, double[] y, InterpolationMethod method, bool forceLinear)
             {
                 _x = x;
                 _a = y;
@@ -209,7 +212,23 @@ namespace RfCore
                     return;
                 }
 
-                // Burden & Faires Algorithm 3.4 — natural cubic spline
+                (double[] b, double[] c, double[] d) = method == InterpolationMethod.Makima
+                    ? ComputeMakimaCoeffs(x, y, n)
+                    : ComputeNaturalCubicCoeffs(x, y, n);
+                b.CopyTo(_b, 0);
+                c.CopyTo(_c, 0);
+                d.CopyTo(_d, 0);
+            }
+
+            /// <summary>Burden &amp; Faires Algorithm 3.4 — natural cubic spline (n &gt;= 3).</summary>
+            private static (double[] b, double[] c, double[] d) ComputeNaturalCubicCoeffs(
+                double[] x, double[] y, int n)
+            {
+                int nm1 = n - 1;
+                var b = new double[nm1];
+                var c = new double[nm1];
+                var d = new double[nm1];
+
                 double[] h = new double[nm1];
                 for (int i = 0; i < nm1; i++) h[i] = x[i + 1] - x[i];
 
@@ -234,11 +253,65 @@ namespace RfCore
                 var cc = new double[n]; // second derivatives
                 for (int j = nm1 - 1; j >= 0; j--)
                 {
-                    cc[j]  = z[j] - mu[j] * cc[j + 1];
-                    _b[j]  = (y[j + 1] - y[j]) / h[j] - h[j] * (cc[j + 1] + 2.0 * cc[j]) / 3.0;
-                    _c[j]  = cc[j];
-                    _d[j]  = (cc[j + 1] - cc[j]) / (3.0 * h[j]);
+                    cc[j] = z[j] - mu[j] * cc[j + 1];
+                    b[j]  = (y[j + 1] - y[j]) / h[j] - h[j] * (cc[j + 1] + 2.0 * cc[j]) / 3.0;
+                    c[j]  = cc[j];
+                    d[j]  = (cc[j + 1] - cc[j]) / (3.0 * h[j]);
                 }
+                return (b, c, d);
+            }
+
+            /// <summary>
+            /// Modified Akima ("makima") — a local-support piecewise cubic Hermite spline.
+            /// Unlike the natural cubic spline above, each segment's endpoint derivatives depend
+            /// only on nearby slopes, so a sharp feature (a resonance peak) does not ring the whole
+            /// curve, and the "modified" weighting (the added |sum|/2 term below, over the classic
+            /// 1970 Akima weights) keeps the derivative from picking an arbitrary value across a
+            /// flat run where the plain Akima weights would both vanish to 0/0.
+            /// </summary>
+            private static (double[] b, double[] c, double[] d) ComputeMakimaCoeffs(
+                double[] x, double[] y, int n)
+            {
+                int ns = n - 1; // number of real slopes
+                var slope = new double[ns];
+                for (int i = 0; i < ns; i++)
+                    slope[i] = (y[i + 1] - y[i]) / (x[i + 1] - x[i]);
+
+                // Extended slope array: de[j] == slope_{j-2}, j = 0..ns+3, via linear extrapolation
+                // at both ends (Akima 1970 §II) so every point i in [0, n-1] has 4 neighboring slopes.
+                var de = new double[ns + 4];
+                for (int j = 0; j < ns; j++) de[j + 2] = slope[j];
+                de[1]      = 2.0 * de[2]      - de[3];
+                de[0]      = 2.0 * de[1]      - de[2];
+                de[ns + 2] = 2.0 * de[ns + 1] - de[ns];
+                de[ns + 3] = 2.0 * de[ns + 2] - de[ns + 1];
+
+                var t = new double[n]; // derivative estimate at each point
+                for (int i = 0; i < n; i++)
+                {
+                    double dm2 = de[i];
+                    double dm1 = de[i + 1];
+                    double d0  = de[i + 2];
+                    double dp1 = de[i + 3];
+
+                    double w1 = Math.Abs(dp1 - d0)  + Math.Abs(dp1 + d0)  / 2.0;
+                    double w2 = Math.Abs(dm1 - dm2) + Math.Abs(dm1 + dm2) / 2.0;
+
+                    t[i] = (w1 + w2) > 0.0 ? (w1 * dm1 + w2 * d0) / (w1 + w2) : 0.0;
+                }
+
+                var b = new double[ns];
+                var c = new double[ns];
+                var d = new double[ns];
+                for (int i = 0; i < ns; i++)
+                {
+                    double h     = x[i + 1] - x[i];
+                    double delta = (y[i + 1] - y[i]) / h;
+                    b[i] = t[i];
+                    c[i] = (3.0 * delta - 2.0 * t[i] - t[i + 1]) / h;
+                    d[i] = (t[i] + t[i + 1] - 2.0 * delta) / (h * h);
+                }
+                return (b, c, d);
             }
 
             /// <summary>Evaluate the spline, clamping out-of-range to nearest endpoint value.</summary>
