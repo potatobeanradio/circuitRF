@@ -54,6 +54,12 @@ public partial class SettingsView : Window
     {
         LoadGeneralPrefs();
         PopulateThemeCombo();
+
+        // Open on whichever variant circuitRF is actually rendering right now, not a hardcoded
+        // default — otherwise the editor shows colors the user isn't looking at.
+        DarkRadio.IsChecked  = ThemeService.CurrentVariant == ColorVariant.Dark;
+        LightRadio.IsChecked = ThemeService.CurrentVariant != ColorVariant.Dark;
+
         LoadThemeIntoEditor(ThemeService.Active);
     }
 

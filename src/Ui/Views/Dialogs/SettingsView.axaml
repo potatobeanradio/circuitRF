@@ -167,7 +167,7 @@
                     <DockPanel Grid.Row="0" Margin="0,0,0,10">
                         <!-- Variant toggle (right-docked first so it doesn't collapse) -->
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <RadioButton Name="LightRadio" Content="Light" IsChecked="True"
+                            <RadioButton Name="LightRadio" Content="Light"
                                          GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>
                             <RadioButton Name="DarkRadio"  Content="Dark"
                                          GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>

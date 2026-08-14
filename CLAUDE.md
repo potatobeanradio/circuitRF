@@ -4,6 +4,14 @@ Lightweight cross-platform RF circuit simulator (DC, S-parameters, harmonic bala
 loadpull/sourcepull). **NOT a SPICE simulator.** See `docs/PRD.md` for scope, the five
 hero circuits, and non-goals. This file is standing project memory — keep it current.
 
+## Searching this repo
+
+**Use `grep` (or ripgrep) directly whenever possible instead of spawning a search agent.** This
+repo's structure is well-known and its files are plain text — a targeted `grep -n` finds a
+symbol, class, or XAML control faster and far cheaper than delegating a "find X" task to an
+agent. Reach for an agent only when the search genuinely needs multi-step reasoning across many
+unrelated locations, not for straightforward lookups.
+
 ## Stack
 - .NET 10 (LTS), C# 14
 - Avalonia 12 (UI), SkiaSharp (canvas rendering), CommunityToolkit.MVVM (MVVM)
