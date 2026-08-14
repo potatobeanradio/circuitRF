@@ -98,11 +98,18 @@ public readonly record struct FramePlan(
 /// </summary>
 public sealed class FrameScheduler
 {
-    /// <summary>§6.8's full user grid.</summary>
-    public const int FullRings = 5, FullSpokes = 12;
+    /// <summary>
+    /// §6.8's full user grid. brief-harmonicarf-r6a §5.1 — owner request: a new document now starts at
+    /// 3 × 12 (was 5 × 12). Chosen as option (b) over (a): <see cref="CoarseRings"/> moved DOWN to
+    /// 2 × 12 rather than colliding with this at 3 × 12, so the ladder keeps its two distinct rungs
+    /// rather than flattening to one — the ladder exists to make a drag cheap, and collapsing it would
+    /// silently push drag cost up to the full-quality solve on every frame.
+    /// </summary>
+    public const int FullRings = 3, FullSpokes = 12;
 
-    /// <summary>§6.8's coarse ring set: 3 × 12 = 37 points.</summary>
-    public const int CoarseRings = 3, CoarseSpokes = 12;
+    /// <summary>§6.8's coarse ring set: 2 × 12 = 25 points (moved down from 3 × 12 by §5.1 above, to
+    /// stay strictly below the new <see cref="FullRings"/>).</summary>
+    public const int CoarseRings = 2, CoarseSpokes = 12;
 
     /// <summary>D5's two raster resolutions.</summary>
     public const int FullRaster = 256, CoarseRaster = 96;

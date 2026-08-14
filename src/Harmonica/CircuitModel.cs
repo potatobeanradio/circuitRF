@@ -249,7 +249,10 @@ public sealed record HarmonicaSettings
     /// ladder for a value nobody asked to re-solve for). It DOES change the Γ grid, so a change still
     /// re-solves through the ordinary value-input path.</para>
     /// </summary>
-    public double Z0 { get; init; } = 50.0;
+    /// <summary>brief-harmonicarf-r6a §5.2 — owner request: default raised from 50 to 80 Ω, matching
+    /// the current DUT's R_opt. Default only — an existing <c>.charm</c> carries its own Z0 and opens
+    /// unchanged (see <c>CharmIo</c>'s own absent-means-default rule).</summary>
+    public double Z0 { get; init; } = 80.0;
 
     // ── R-h9b-12 — the DCIV Sweeps dialog's override of DcivFamily.DefaultKey ────────────────
     //
@@ -345,6 +348,25 @@ public sealed record HarmonicaSettings
     /// <summary>Whether the DUT's charge terms are evaluated — the strip's compute-charge toggle.</summary>
     public bool ComputeCharge { get; init; } = true;
 
+    // ── brief-harmonicarf-r6a §3 — the contour surface's own RBF kernel knobs ──────────────
+
+    /// <summary>Which <see cref="RfCore.Loadpull.RbfKernel"/> <c>ContourGrid.Fit</c> factorizes with.
+    /// Default matches <c>Rbf2D</c>'s own default, so an untouched document behaves exactly as
+    /// before this setting existed.</summary>
+    public RfCore.Loadpull.RbfKernel ContourKernel { get; init; } = RfCore.Loadpull.RbfKernel.Multiquadric;
+
+    /// <summary>The RBF smoothing term (scipy convention: subtracted from the kernel matrix diagonal).
+    /// Default matches <c>Rbf2D</c>'s own default (1e-3).</summary>
+    public double ContourSmooth { get; init; } = 1e-3;
+
+    /// <summary>
+    /// The RBF shape parameter ε. <c>null</c> means <c>Rbf2D</c>'s own scipy-style auto epsilon —
+    /// deliberately NOT defaulted to a number here, because "auto" recomputes from each grid's own
+    /// bounding box and node count while a fixed number would not, and the difference is visible in
+    /// the contours.
+    /// </summary>
+    public double? ContourEpsilon { get; init; }
+
     /// <summary>
     /// The bias choke, henries. One henry is the ideal-bias value (§4.4) and the default.
     ///
@@ -374,6 +396,43 @@ public sealed record HarmonicaSettings
     /// 0.08 Ω and still a short.</para>
     /// </summary>
     public double DcBlockFarads { get; init; } = 1.0;
+
+    // ── brief-harmonicarf-r6e §2.1 — persisted axis limits + autoscale, one mechanism, three plots ──
+    //
+    // Absent (null) means "never set", never zero — the same convention DcivVgsMin already follows.
+    // Autoscale defaults to FALSE on all three: "the axes are never changed while the user drags
+    // markers" is the owner's own wording for why. §2.2/§2.3 (HarmonicaViewModel.CaptureAxisWindows)
+    // is what keeps a stored limit in sync with what AutoScale would have computed, so the numbers
+    // are never stale the moment autoscale is turned back on.
+
+    /// <summary>The DCIV / loadline panel's own stored window.</summary>
+    public double? DcivXMin { get; init; }
+    public double? DcivXMax { get; init; }
+    public double? DcivYMin { get; init; }
+    public double? DcivYMax { get; init; }
+    public bool    DcivAutoscale { get; init; }
+
+    /// <summary>The power-sweep panel's own stored window — X, left Y (gain) and right Y (efficiency).</summary>
+    public double? PowerSweepXMin { get; init; }
+    public double? PowerSweepXMax { get; init; }
+    public double? PowerSweepYMin { get; init; }
+    public double? PowerSweepYMax { get; init; }
+    public double? PowerSweepY2Min { get; init; }
+    public double? PowerSweepY2Max { get; init; }
+    public bool    PowerSweepAutoscale { get; init; }
+
+    /// <summary>
+    /// The SAME panel slot's Time Domain view (§4) — a DIFFERENT quantity (time / volts / amps rather
+    /// than power / dB / %), so it gets its own stored window rather than sharing the power-sweep one;
+    /// switching modes must not corrupt the other mode's axes.
+    /// </summary>
+    public double? TimeDomainXMin { get; init; }
+    public double? TimeDomainXMax { get; init; }
+    public double? TimeDomainYMin { get; init; }
+    public double? TimeDomainYMax { get; init; }
+    public double? TimeDomainY2Min { get; init; }
+    public double? TimeDomainY2Max { get; init; }
+    public bool    TimeDomainAutoscale { get; init; }
 }
 
 /// <summary>

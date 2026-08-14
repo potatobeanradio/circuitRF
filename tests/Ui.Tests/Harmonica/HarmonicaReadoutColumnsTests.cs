@@ -40,9 +40,11 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
 
         // compr and K are a DIFFERENT list (§7.5's inputs) and must still be there — the owner's own
         // point was "the user sets it, no need to read it back", about the readout half only.
-        var inputKeys = vm.Inputs.Select(i => i.Label).ToArray();
-        Assert.Contains("compr", inputKeys);
-        Assert.Contains("K", inputKeys);
+        // R6C §3 renamed their LABELS ("compr" -> "Compression:", "K" -> "Harmonic Order:") without
+        // touching their KEYS, which is what this asserts against.
+        var inputKeys = vm.Inputs.Select(i => i.Key).ToArray();
+        Assert.Contains(HarmonicaInputs.KeyCompression, inputKeys);
+        Assert.Contains(HarmonicaInputs.KeyHarmonicCount, inputKeys);
 
         output.WriteLine(string.Join(", ", labels));
     }
@@ -149,7 +151,7 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
         double expectedDeg = loadFund.Phase * 180.0 / Math.PI;
 
         var row = vm.Frame.Readouts.Single(r => r.Column == ReadoutColumn.Mxp && r.Label == "AM/PM");
-        Assert.Equal($"{expectedDeg:0.#}°", row.Value);
+        Assert.Equal(HarmonicaReadoutFormatting.FormatDegrees(expectedDeg), row.Value);
     }
 
     [Fact]
@@ -162,8 +164,8 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
         var gpRow   = vm.Frame.Readouts.Single(r => r.Column == ReadoutColumn.Mxp && r.Label == "Gp");
         var gainRow = vm.Frame.Readouts.Single(r => r.Column == ReadoutColumn.Mxp && r.Label == "Gain");
 
-        Assert.Equal($"{opt!.Solved!.Foms.GpDb:0.##} dB", gpRow.Value);
-        Assert.Equal($"{opt.Solved.GainDb:0.##} dB", gainRow.Value);
+        Assert.Equal(HarmonicaReadoutFormatting.FormatDb(opt!.Solved!.Foms.GpDb), gpRow.Value);
+        Assert.Equal(HarmonicaReadoutFormatting.FormatDb(opt.Solved.GainDb), gainRow.Value);
         // Gp and Gt genuinely differ for this fixture — a passive gate has a non-trivial delivered
         // power, so the two are not coincidentally equal.
         Assert.NotEqual(gpRow.Value, gainRow.Value);

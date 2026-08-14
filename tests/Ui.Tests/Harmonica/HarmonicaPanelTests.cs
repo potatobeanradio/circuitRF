@@ -439,6 +439,10 @@ public sealed class HarmonicaPanelTests : IDisposable
                 BiasChokeHenries = 1e-6, DcBlockFarads = 1e-9, Tol = 1e-8,
                 // A PinMax most Γ points reach and a few do not — which is how a real hole appears.
                 CompressionDb = 3.0, PinStartDbm = -10, PinMaxDbm = PinMaxForAFewHoles,
+                // brief-harmonicarf-r6a §5.2 — pinned explicitly rather than left on the default: this
+                // fixture's hole count (2/31 at maxGamma 0.90, see the comment below) was measured
+                // against 50 Ω, and Z0 changes which impedances a given Γ grid actually sweeps.
+                Z0 = 50.0,
             },
         };
 
@@ -682,6 +686,31 @@ public sealed class HarmonicaPanelTests : IDisposable
             "the loadline must render in the reserved red (§7.9.2)");
     }
 
+    // ══ brief-harmonicarf-r6d §3 — panel titles ═════════════════════════════════════════════════════
+
+    [Fact]
+    public void LoadlineAndPowerSweepPanels_AreTitled_AndTheirViewportsStillLineUp()
+    {
+        var theme = HarmonicaRenderTheme.Dark;
+
+        var loadlinePlot   = HarmonicaPanelRenderer.BuildLoadlinePlot(new LoadlinePanelData(), theme);
+        var powerSweepPlot = HarmonicaPanelRenderer.BuildPowerSweepPlot(new PowerSweepPanelData(), theme);
+
+        Assert.Equal("Loadline",    loadlinePlot.Title);
+        Assert.Equal("Power Sweep", powerSweepPlot.Title);
+
+        // The two panels deliberately share ONE pinned viewport shape (PowerSweepShapedViewport,
+        // R-h9b-11) so their data rectangles line up; a title must not move that — it is
+        // unconditionally pinned, never re-derived from ComputeViewport's own title-aware top-margin
+        // formula (which only applies to Smith/Polar plots in the first place).
+        Assert.Equal(loadlinePlot.Axes.Viewport, powerSweepPlot.Axes.Viewport);
+
+        // The reserved top margin (10% of the panel, R-h9b-11's own shape) must still leave the bulk
+        // of the panel to the chart — a squeezed plot would show as this collapsing toward zero.
+        Assert.True(loadlinePlot.Axes.Viewport.Height > 0.7,
+            $"the title band must not squeeze the plot area (Viewport.Height={loadlinePlot.Axes.Viewport.Height})");
+    }
+
     [Fact]
     public void PowerSweepPanel_DrawsGainAndEfficiency_AndCyclesItsXUnit()
     {
@@ -722,6 +751,47 @@ public sealed class HarmonicaPanelTests : IDisposable
         var watts = PowerSweepXUnit.PoutW.Values(d with { PoutDbm = [30.0, 0.0] });
         Assert.Equal(1.0,   watts[0], precision: 9);
         Assert.Equal(1e-3,  watts[1], precision: 12);
+    }
+
+    // ══ brief-harmonicarf-r6d §2 — right-side headroom past the sweep stop ═════════════════════════
+
+    [Theory]
+    [InlineData(PowerSweepXUnit.PoutDbm)]
+    [InlineData(PowerSweepXUnit.PoutW)]
+    [InlineData(PowerSweepXUnit.PinAvailDbm)]
+    [InlineData(PowerSweepXUnit.PinAvailW)]
+    public void PowerSweepPlot_XAxis_HasHeadroomPastTheSweepStop_ForEveryXUnit(PowerSweepXUnit unit)
+    {
+        var theme = HarmonicaRenderTheme.Dark;
+
+        int n = 33;
+        var pin  = Enumerable.Range(0, n).Select(i => -10.0 + i * 1.25).ToArray();
+        var gain = pin.Select(p => 14.5 - 4.0 * Math.Log(1 + Math.Exp((p - 18) * 0.45))).ToArray();
+        var d = new PowerSweepPanelData
+        {
+            PinAvailDbm   = pin,
+            PoutDbm       = pin.Zip(gain, (p, g) => p + g).ToArray(),
+            GainDb        = gain,
+            EfficiencyPct = pin.Select(p => 72.0 / (1 + Math.Exp(-(p - 14) * 0.30))).ToArray(),
+            CursorIndex   = 20,
+            XUnit         = unit,
+            // The sweep's own configured range matches the last solved point exactly, so the
+            // PRE-fix window right edge lands exactly at max(x) — the failure mode being fixed —
+            // for the Pin-domain units too (PinAxisPin overrides the AutoScale window with this
+            // range), not just Pout-domain (where AutoScale's own Pad adds no X margin at all).
+            PinStartDbm   = pin[0],
+            PinMaxDbm     = pin[^1],
+        };
+
+        var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(d, theme);
+        double maxX = unit.Values(d).Max();
+
+        Assert.True(plot.Axes.Window.Right > maxX,
+            $"expected the window's right edge ({plot.Axes.Window.Right}) to clear the data's own " +
+            $"max X ({maxX}) — the curve used to end exactly on the border");
+
+        Assert.Equal(plot.Axes.Window.Left,  plot.Axes.WindowSecondary.Left,  precision: 9);
+        Assert.Equal(plot.Axes.Window.Width, plot.Axes.WindowSecondary.Width, precision: 9);
     }
 
     // ══ R-h9r2-23 — the "Efficiency (%)" / "PAE (%)" LABEL itself, not just the axis line/ticks ═════
@@ -773,6 +843,114 @@ public sealed class HarmonicaPanelTests : IDisposable
         Assert.True(found,
             $"no {theme.EfficiencyTrace} pixel found within the Y2 label's own hit rect " +
             $"({x0},{y0})-({x1},{y1}) — the label text must be drawn exactly there.");
+    }
+
+    // ══ brief-harmonicarf-r6d §1 — the right axis is drawn ONCE, not covered ═══════════════════════
+
+    [Fact]
+    public void PowerSweepPanel_RightAxis_NoOrdinaryAxisColourSurvivesUnderneathTheOverlay()
+    {
+        const int W = 480, H = 380;
+        var theme = HarmonicaRenderTheme.Dark;
+
+        int n = 33;
+        var pin  = Enumerable.Range(0, n).Select(i => -10.0 + i * 1.25).ToArray();
+        var gain = pin.Select(p => 14.5 - 4.0 * Math.Log(1 + Math.Exp((p - 18) * 0.45))).ToArray();
+        var d = new PowerSweepPanelData
+        {
+            PinAvailDbm     = pin,
+            PoutDbm         = pin.Zip(gain, (p, g) => p + g).ToArray(),
+            GainDb          = gain,
+            EfficiencyPct   = pin.Select(p => 72.0 / (1 + Math.Exp(-(p - 14) * 0.30))).ToArray(),
+            CursorIndex     = 20,
+            ReachedCompression = true,
+        };
+
+        var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(d, theme);
+        var tf    = CircuitRF.Ui.DataDisplay.PlotRenderer.BuildTransforms(plot, (W, H));
+        var rects = CircuitRF.Ui.DataDisplay.AxesRenderer.ComputeLabelHitRects(plot, (W, H));
+
+        var topRight = tf.PrimaryToCanvas(plot.Axes.Window.Right, plot.Axes.Window.Top);
+        var botRight = tf.PrimaryToCanvas(plot.Axes.Window.Right, plot.Axes.Window.Bottom);
+
+        using var surface = SKSurface.Create(new SKImageInfo(W, H));
+        surface.Canvas.Clear(theme.Background);
+        HarmonicaPanelRenderer.DrawPowerSweepPanel(surface.Canvas, (W, H), d, theme, darkMode: true);
+        using var bmp = SKBitmap.FromImage(surface.Snapshot());
+
+        // The right-axis line itself (a few px either side of the border x), the tick-number band to
+        // its right, and the rotated Y2-label rect — the three places the two prior attempts (R3C §5,
+        // R-h9r2-23) redrew a cover over. Clear of the BOTTOM border's own legitimate AxisLine-coloured
+        // corner pixel (that border still spans the full width — see DrawBorder — it is a different
+        // stroke, not the bug), and of the X-axis tick labels below it.
+        int xLo = Math.Max(0, (int)topRight.X - 4);
+        int xHi = Math.Min(W - 1, (int)Math.Ceiling(rects.Y2Label.Right) + 2);
+        int yLo = Math.Max(0, (int)topRight.Y + 2);
+        int yHi = Math.Min(H - 1, (int)botRight.Y - 6);
+
+        bool axisColourSurvives = false;
+        int hitX = -1, hitY = -1;
+        for (int y = yLo; y <= yHi && !axisColourSurvives; y++)
+        for (int x = xLo; x <= xHi; x++)
+            if (NearlySame(bmp.GetPixel(x, y), theme.AxisLine))
+            {
+                axisColourSurvives = true; hitX = x; hitY = y; break;
+            }
+
+        Assert.False(axisColourSurvives,
+            $"the right axis must be drawn ONCE, in Harmonica.EfficiencyTrace — found the ordinary " +
+            $"AxisLine colour at ({hitX},{hitY}), the exact fringe the previous two 'match the cover " +
+            $"to the covered' fixes could not eliminate because the covered stroke was still there.");
+
+        Assert.True(HasColourNear(bmp, theme.EfficiencyTrace, tolerance: 40),
+            "the efficiency axis must still render — just once, not zero times");
+    }
+
+    // ══ brief-harmonicarf-r6d §5 — the Time Domain view ═════════════════════════════════════════
+
+    [Fact]
+    public void TimeDomainPanel_DrawsVdsInGainTrace_AndIdsInLoadline_WithTheRightAxisPaintedOnce()
+    {
+        const int W = 480, H = 380;
+        var theme = HarmonicaRenderTheme.Dark;
+
+        var d = new LoadlinePanelData
+        {
+            LoadlineVds = [0.0, 10.0, 20.0, 30.0, 20.0, 10.0, 0.0],
+            LoadlineIds = [0.9, 0.6, 0.3, 0.05, 0.3, 0.6, 0.9],
+            FrequencyHz = 2e9,
+        };
+
+        using var surface = SKSurface.Create(new SKImageInfo(W, H));
+        surface.Canvas.Clear(theme.Background);
+        HarmonicaPanelRenderer.DrawTimeDomainPanel(surface.Canvas, (W, H), d, theme, darkMode: true);
+        using var bmp = SKBitmap.FromImage(surface.Snapshot());
+
+        Assert.True(HasColourNear(bmp, theme.GainTrace, tolerance: 40),
+            "Vds(t) must render in Harmonica.GainTrace, the SAME colour as the power-sweep gain trace");
+        Assert.True(HasColourNear(bmp, theme.Loadline, tolerance: 40),
+            "Ids(t) must render in Harmonica.Loadline, the reserved red the loadline panel uses");
+
+        // §1's fix applies here too: the right axis must never carry the ordinary AxisLine colour —
+        // it is drawn ONCE, in Harmonica.Loadline, through the SAME colour-parametrized overlay.
+        var plot  = HarmonicaPanelRenderer.BuildTimeDomainPlot(d, theme);
+        var tf    = CircuitRF.Ui.DataDisplay.PlotRenderer.BuildTransforms(plot, (W, H));
+        var rects = CircuitRF.Ui.DataDisplay.AxesRenderer.ComputeLabelHitRects(plot, (W, H));
+        var topRight = tf.PrimaryToCanvas(plot.Axes.Window.Right, plot.Axes.Window.Top);
+        var botRight = tf.PrimaryToCanvas(plot.Axes.Window.Right, plot.Axes.Window.Bottom);
+
+        int xLo = Math.Max(0, (int)topRight.X - 4);
+        int xHi = Math.Min(W - 1, (int)Math.Ceiling(rects.Y2Label.Right) + 2);
+        int yLo = Math.Max(0, (int)topRight.Y + 2);
+        int yHi = Math.Min(H - 1, (int)botRight.Y - 6);
+
+        bool axisColourSurvives = false;
+        for (int y = yLo; y <= yHi && !axisColourSurvives; y++)
+        for (int x = xLo; x <= xHi; x++)
+            if (NearlySame(bmp.GetPixel(x, y), theme.AxisLine)) { axisColourSurvives = true; break; }
+
+        Assert.False(axisColourSurvives,
+            "the time-domain panel's right axis must be drawn ONCE, in Harmonica.Loadline");
     }
 
     [Fact]

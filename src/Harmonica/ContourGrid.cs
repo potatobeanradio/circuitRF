@@ -79,6 +79,17 @@ public sealed class ContourGrid
     /// </summary>
     public double Z0 { get; private set; }
 
+    /// <summary>
+    /// brief-harmonicarf-r6a §3 — the contour surface's own RBF kernel/smooth/epsilon, re-read from
+    /// <c>ctx.Model.Settings</c> at the START of every <see cref="Build"/>/<see cref="BuildParallel"/>,
+    /// the SAME pattern <see cref="Z0"/> already uses and for the identical reason: a worker's grid is
+    /// a long-lived, reused object, so these must track the document's live value rather than freeze
+    /// at construction.
+    /// </summary>
+    public RbfKernel ContourKernel  { get; private set; } = RbfKernel.Multiquadric;
+    public double    ContourSmooth  { get; private set; } = 1e-3;
+    public double?   ContourEpsilon { get; private set; }
+
     public ContourGrid(double z0 = 50.0) => Z0 = z0;
 
     public IReadOnlyList<GridPoint> Points => _points;
@@ -153,7 +164,10 @@ public sealed class ContourGrid
         // R-h9b-6 — this grid is a long-lived, per-worker object (§6.7); re-read Z0 from the document
         // on every build rather than freezing it at construction, or a Z0 change would silently keep
         // sweeping the OLD reference on every worker until the process restarted.
-        Z0 = ctx.Model.Settings.Z0;
+        Z0             = ctx.Model.Settings.Z0;
+        ContourKernel  = ctx.Model.Settings.ContourKernel;
+        ContourSmooth  = ctx.Model.Settings.ContourSmooth;
+        ContourEpsilon = ctx.Model.Settings.ContourEpsilon;
 
         // R-h7-12 — a DRAGGED grid point invalidates exactly one Γ sample. Everything else in the
         // scatter is at the identical Γ and was solved against the identical terminations, so its
@@ -281,7 +295,10 @@ public sealed class ContourGrid
                               bool reuseUnchanged = false, Action<int, int>? onProgress = null,
                               int batchSize = 12, int? maxParallelism = null)
     {
-        Z0 = ctx.Model.Settings.Z0;
+        Z0             = ctx.Model.Settings.Z0;
+        ContourKernel  = ctx.Model.Settings.ContourKernel;
+        ContourSmooth  = ctx.Model.Settings.ContourSmooth;
+        ContourEpsilon = ctx.Model.Settings.ContourEpsilon;
 
         Dictionary<Complex, GridPoint>? previous = null;
         if (reuseUnchanged && _points.Count > 0 && _reusableAgainst == StateKey(ctx, terminations, side, tuneHarmonic))
@@ -598,7 +615,7 @@ public sealed class ContourGrid
 
         if (_factor is null || !_factor.MatchesNaNMask(values))
         {
-            _factor = Rbf2D.Factorize(re, im, values);
+            _factor = Rbf2D.Factorize(re, im, values, ContourKernel, ContourSmooth, ContourEpsilon);
             _factorMask = [.. values.Select(v => !double.IsNaN(v))];
             FactorizationCount++;
         }

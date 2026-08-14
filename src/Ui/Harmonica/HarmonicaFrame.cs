@@ -72,10 +72,12 @@ public enum TerminationSideKind { Source, Load }
 /// moved everything else out of it); <c>Source</c>/<c>Load</c>/<c>Mxp</c>/<c>Mxe</c> are R-h9c-6's
 /// columns. <c>OperatingPoint</c> (R3C §2) is Pin/Pout/Gain/DE/PAE/Pdc — named for what the figures
 /// ARE (the numbers at the operating point), not for where R3C happens to have put the column.
-/// Screen order (Settings · OperatingPoint · Source · Load · Mxp · Mxe) lives in
-/// <c>ReadoutStripView.axaml</c>'s <c>Columns</c> panel, not here.
+/// <c>IntrinsicVds</c>/<c>IntrinsicIds</c> (R6C §2) are the intrinsic drain voltage/current spectra,
+/// one row per harmonic, magnitude ∠ angle. Screen order (a 2×4 grid — Settings · OperatingPoint ·
+/// Mxp · Mxe over Load · Source · IntrinsicVds · IntrinsicIds) lives in
+/// <c>ReadoutStripView.axaml</c>'s <c>Columns</c> grid, not here.
 /// </summary>
-public enum ReadoutColumn { General, Source, Load, Mxp, Mxe, OperatingPoint }
+public enum ReadoutColumn { General, Source, Load, Mxp, Mxe, OperatingPoint, IntrinsicVds, IntrinsicIds }
 
 /// <summary>
 /// One row of §7.5's strip (R-h9c-9). Replaces the old flat <c>(label, value, tooltip)</c> triple —
@@ -123,6 +125,8 @@ public sealed record HarmonicaReadout(
             ? $"{(side == TerminationSideKind.Source ? "S" : "L")}{Band}.{(IsGamma ? "Gamma" : "Z")}"
         : Column is ReadoutColumn.Mxp or ReadoutColumn.Mxe
             ? $"{(Column == ReadoutColumn.Mxp ? "MXP" : "MXE")}.Zin"
+        : Column is ReadoutColumn.IntrinsicVds or ReadoutColumn.IntrinsicIds
+            ? $"{(Column == ReadoutColumn.IntrinsicVds ? "VDSi" : "IDSi")}.{Band}"
         : null;
 }
 
@@ -243,6 +247,15 @@ public sealed record LoadlinePanelData
     public bool Intrinsic { get; init; } = true;
 
     public string PlaneLabel => Intrinsic ? "intrinsic" : "extrinsic";
+
+    /// <summary>
+    /// brief-harmonicarf-r6d §5 — the fundamental this loadline was closed over one cycle of, carried
+    /// alongside <see cref="LoadlineVds"/>/<see cref="LoadlineIds"/> so the Time Domain panel can build
+    /// its own time axis (<c>i / N × 1/f₀</c>, <c>N = LoadlineVds.Length − 1</c>) WITHOUT a second read
+    /// of <c>Model.Settings</c> — the same "read from the solved frame, never recompute" rule §0.3
+    /// item 1 states for every other panel value.
+    /// </summary>
+    public double FrequencyHz { get; init; }
 }
 
 /// <summary>§7.4 — gain on the left axis, efficiency on the right, against output power.</summary>

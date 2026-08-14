@@ -48,7 +48,7 @@ public sealed class HarmonicaZ0Tests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Z0_RoundTripsThroughCharm_AndAnOlderCharmOpensAt50Ohms()
+    public void Z0_RoundTripsThroughCharm_AndAnOlderCharmOpensAtTheDefault()
     {
         var vm = new HarmonicaViewModel();
         Assert.True(vm.ApplyInput(HarmonicaInputs.KeyZ0, "42"));
@@ -59,9 +59,12 @@ public sealed class HarmonicaZ0Tests(ITestOutputHelper output)
         vm2.LoadCharm(json, null);
         Assert.Equal(42.0, vm2.Model.Settings.Z0);
 
+        // brief-harmonicarf-r6a §5.2 — default raised from 50 to 80 Ω; a .charm with no Z0 field at
+        // all (older than the setting, or hand-written) opens at whatever HarmonicaSettings' own
+        // default is, not a number restated here.
         var vm3 = new HarmonicaViewModel();
         vm3.LoadCharm("""{ "FormatVersion": 1 }""", null);
-        Assert.Equal(50.0, vm3.Model.Settings.Z0);
+        Assert.Equal(new HarmonicaSettings().Z0, vm3.Model.Settings.Z0);
     }
 
     [Fact]
@@ -70,6 +73,6 @@ public sealed class HarmonicaZ0Tests(ITestOutputHelper output)
         var vm = new HarmonicaViewModel();
         Assert.False(vm.ApplyInput(HarmonicaInputs.KeyZ0, "-5"));
         Assert.NotNull(vm.InputError);
-        Assert.Equal(50.0, vm.Model.Settings.Z0);
+        Assert.Equal(new HarmonicaSettings().Z0, vm.Model.Settings.Z0);
     }
 }

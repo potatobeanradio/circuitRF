@@ -111,6 +111,72 @@ public class HarmonicaAppMenuInjectorTests
         Assert.Same(lookalike, Assert.Single(appMenu.Items));
     }
 
+    // ── §1.2 — the owner-reported "Markers shows, Display/Grid do not" symptom ─────────────────────
+    //
+    // Diagnosis: a normal Inject/Withdraw/re-Inject cycle against hand-built stand-in items (below,
+    // and InjectThenWithdraw_RoundTripsCleanly_TwiceInARow above) does NOT reproduce a throw — the
+    // exact mechanism did not reproduce headlessly. What DOES reproduce is the underlying hazard: the
+    // OLD Inject was a bare foreach with no rollback, so if ANY item in a call already carried a
+    // Parent (from anywhere — a stale reference, a second concurrent injector, a bug elsewhere), the
+    // items before it in the list would already have landed in appMenu.Items while the rest silently
+    // never did. That is exactly "Markers present, Display and Grid absent" — item order preserved,
+    // partial success. Inject is now atomic (see its own doc comment) — this proves it.
+
+    [Fact]
+    public void Inject_NeverLeavesAPartialSet_WhenALaterItemAlreadyHasAParent()
+    {
+        var appMenu = new NativeMenu();
+
+        // Simulates the exact hazard: "Display" is not fresh — it already belongs to some other menu
+        // when Inject is asked to add it as harmonicaRF's second top-level item.
+        var elsewhere = new NativeMenu();
+        var poisoned = new NativeMenuItem("Display");
+        elsewhere.Items.Add(poisoned);
+
+        var items = new[] { new NativeMenuItem("Markers"), poisoned, new NativeMenuItem("Grid") };
+
+        Assert.Throws<InvalidOperationException>(() => HarmonicaAppMenuInjector.Inject(appMenu, items));
+
+        // The OLD code would have left "Markers" behind here — the exact owner-reported symptom.
+        // Atomic Inject rolls it back: the whole set lands, or none of it.
+        Assert.Empty(appMenu.Items);
+    }
+
+    [Fact]
+    public void InjectWithdrawReinject_SurvivesSeveralRounds_IncludingABandToggleAndAViewModelSwap()
+    {
+        var appMenu = new NativeMenu();
+        var circuitRfFile = new NativeMenuItem("File");
+        appMenu.Items.Add(circuitRfFile);
+        var baseline = appMenu.Items.ToList();
+
+        // Round 1 — ordinary dock-and-focus.
+        var round1 = new[] { new NativeMenuItem("harmonicaRF"), new NativeMenuItem("Markers"),
+                              new NativeMenuItem("Display"), new NativeMenuItem("Grid") };
+        HarmonicaAppMenuInjector.Inject(appMenu, round1);
+        Assert.Equal(baseline.Concat(round1).ToList(), appMenu.Items.ToList());
+
+        // Round 2 — simulates RefreshInjectedItemsIfAny after a band toggle: withdraw the exact set,
+        // then inject a FRESH set built from the (now-changed) view model. Never the same instances —
+        // HarmonicaAppMenuInjector.BuildTopLevelItems always returns brand-new items.
+        HarmonicaAppMenuInjector.Withdraw(appMenu, round1);
+        var round2 = new[] { new NativeMenuItem("harmonicaRF"), new NativeMenuItem("Markers"),
+                              new NativeMenuItem("Display"), new NativeMenuItem("Grid") };
+        HarmonicaAppMenuInjector.Inject(appMenu, round2);
+        Assert.Equal(baseline.Concat(round2).ToList(), appMenu.Items.ToList());
+
+        // Round 3 — simulates a view-model swap (a different document becomes the docked-and-focused
+        // holder): withdraw round 2's items, inject a third fresh set.
+        HarmonicaAppMenuInjector.Withdraw(appMenu, round2);
+        var round3 = new[] { new NativeMenuItem("harmonicaRF"), new NativeMenuItem("Markers"),
+                              new NativeMenuItem("Display"), new NativeMenuItem("Grid") };
+        HarmonicaAppMenuInjector.Inject(appMenu, round3);
+        Assert.Equal(baseline.Concat(round3).ToList(), appMenu.Items.ToList());
+
+        HarmonicaAppMenuInjector.Withdraw(appMenu, round3);
+        Assert.True(baseline.SequenceEqual(appMenu.Items, ReferenceEqualityComparer.Instance));
+    }
+
     // ── §3.5 / §2.1 — BuildTopLevelItems' own shape, pinned by SOURCE SCAN (see file header for why
     // it is never called directly here) ──────────────────────────────────────────────────────────
 
@@ -149,9 +215,32 @@ public class HarmonicaAppMenuInjectorTests
         Assert.True(start >= 0, "Expected to find BuildTopLevelItems.");
         string rest = src[start..];
 
+        // brief-harmonicarf-r6a §1.3 — the injected set gained a fourth top-level item, "harmonicaRF"
+        // (BuildHarmonicaRf), holding what used to live ONLY in the torn-off File/Edit menus. It is
+        // named "harmonicaRF", never literally "File"/"Edit" — those two headers still duplicate
+        // circuitRF's own bar and stay out of the injected set.
         Assert.DoesNotContain("\"File\"", rest, System.StringComparison.Ordinal);
         Assert.DoesNotContain("\"Edit\"", rest, System.StringComparison.Ordinal);
         Assert.DoesNotContain("\"Help\"", rest, System.StringComparison.Ordinal);
-        Assert.Contains("[BuildMarkers(vm), BuildDisplay(vm), BuildGrid(vm)]", src, System.StringComparison.Ordinal);
+        Assert.Contains(
+            "[BuildHarmonicaRf(vm), BuildMarkers(vm), BuildDisplay(vm), BuildGrid(vm)]",
+            src, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildHarmonicaRf_NeverIncludesUndoOrRedo_CircuitRfsOwnEditAlreadyOwnsTheGesture()
+    {
+        string src = InjectorSource();
+
+        int start = src.IndexOf("private static NativeMenuItem BuildHarmonicaRf", System.StringComparison.Ordinal);
+        Assert.True(start >= 0, "Expected to find BuildHarmonicaRf.");
+        int end = src.IndexOf("\n    private static NativeMenuItem BuildMarkers", start, System.StringComparison.Ordinal);
+        Assert.True(end > start);
+        string body = src[start..end];
+
+        Assert.DoesNotContain("\"Undo\"", body, System.StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Redo\"", body, System.StringComparison.Ordinal);
+        Assert.Contains("\"Settings…\"", body, System.StringComparison.Ordinal);
+        Assert.Contains("\"Close\"", body, System.StringComparison.Ordinal);
     }
 }

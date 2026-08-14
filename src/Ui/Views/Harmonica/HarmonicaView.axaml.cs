@@ -322,11 +322,10 @@ public partial class HarmonicaView : UserControl
         menus.ExportTestbenchHook = () => RunHook(ExportTestbenchAsync);
         menus.CopyTerminationsHook= () => RunHook(CopyTerminationsAsync);
         menus.CopyReadoutsHook    = () => RunHook(CopyReadoutsAsync);
-        menus.PreferencesHook     = () => RunHook(ShowPreferencesAsync);
+        menus.SettingsHook        = () => RunHook(ShowSettingsAsync);
         menus.AddTraceHook        = () => RunHook(ShowTracePickerAsync);
         menus.PowerSweepHook      = () => RunHook(ShowPowerSweepAsync);
         menus.SetZ0Hook           = () => RunHook(ShowSetZ0Async);
-        menus.AdvancedSettingsHook= () => RunHook(ShowAdvancedSettingsAsync);
 
         // H8 — the four H7 left deliberately null. An unwired hook is honest where a faked
         // implementation is not; this phase is what pays the debt.
@@ -410,6 +409,15 @@ public partial class HarmonicaView : UserControl
     {
         if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
         await new Dialogs.HarmonicaDcivSweepsDialog(h).ShowDialog(owner);
+        Refresh();
+    }
+
+    /// <summary>brief-harmonicarf-r6e §3.2/§4 — the power-sweep panel's title fly menu's own
+    /// "Axis Limits…", in whichever mode the panel is actually showing.</summary>
+    private async System.Threading.Tasks.Task ShowPowerSweepAxesDialogAsync(bool timeDomain)
+    {
+        if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
+        await new Dialogs.HarmonicaPowerSweepAxesDialog(h, timeDomain).ShowDialog(owner);
         Refresh();
     }
 
@@ -578,6 +586,7 @@ public partial class HarmonicaView : UserControl
         try
         {
             string text = HarmonicaInterchange.ExportGam(h.Frame.SmithPower.GridPoints,
+                                                         z0: h.Model.Settings.Z0,
                                                          freqHz: h.Model.Settings.FrequencyHz);
             await System.IO.File.WriteAllTextAsync(file.Path.LocalPath, text);
         }
@@ -716,53 +725,45 @@ public partial class HarmonicaView : UserControl
         var sb = new System.Text.StringBuilder();
         foreach (var column in new[]
                  { ReadoutColumn.General, ReadoutColumn.Source, ReadoutColumn.Load,
-                   ReadoutColumn.Mxp, ReadoutColumn.Mxe })
+                   ReadoutColumn.Mxp, ReadoutColumn.Mxe, ReadoutColumn.IntrinsicVds, ReadoutColumn.IntrinsicIds })
         {
             var rows = h.Frame.Readouts.Where(r => r.Column == column).ToList();
             if (rows.Count == 0) continue;
 
             sb.AppendLine($"[{column}]");
-            foreach (var r in rows) sb.Append(r.Label).Append('\t').AppendLine(r.Value);
+            sb.Append(HarmonicaClipboard.RowsText(rows.Select(r => (r.Label, r.Value))));
         }
         await clip.SetTextAsync(sb.ToString());
     }
 
     /// <summary>
-    /// Owner-reported: "Edit ▸ Settings menu does not open up a settings dialog" — this IS §7.6's
-    /// Edit ▸ Preferences… item; harmonicaRF has no menu item literally named "Settings".
+    /// brief-harmonicarf-r6a §2 — the ONE Settings… dialog, merging what used to be Edit ▸
+    /// Preferences… (the colour/appearance editor) and Display ▸ Advanced Settings… (loadline pts /
+    /// FFT× / charge / M / §3's contour-kernel controls) into one tabbed
+    /// <see cref="Dialogs.HarmonicaSettingsDialog"/>.
     ///
-    /// <para><b>Same bug class as R-h9c-10's own fix, in this same file</b> — a silent guard that
-    /// `return`s on a failed <c>_doc</c>/<c>TopLevel</c> resolution with no message at all, which
-    /// <see cref="RunHook"/> cannot help with because a guarded early return throws nothing. Fixed the
-    /// identical way <see cref="ShowSetDutAsync"/> was: report by name instead of returning silently.
+    /// <para><b>Owner-reported: "Edit ▸ Settings menu does not open up a settings dialog."</b>
+    /// Investigated (§2.1): the item the owner was actually clicking was circuitRF's OWN
+    /// <c>WorkspaceWindow</c> "Settings…" (File menu / the macOS app menu ⌘,) — a genuinely different,
+    /// application-scoped dialog with no connection to harmonicaRF, which does something (it is not
+    /// dead) but is not what a harmonicaRF document's own settings are. The path that really was
+    /// unreachable is harmonicaRF's own settings <i>while docked</i>: before §1.3's injected
+    /// <c>harmonicaRF</c> top-level menu, the docked bar carried no document-scoped Edit menu at all —
+    /// harmonicaRF's own in-window Menu is hidden on macOS, and the injected set was Markers/Display/
+    /// Grid only. §1.3's own <c>Settings…</c> item closes that gap; harmonicaRF's torn-off/in-window
+    /// Preferences… item already worked (R-h9c-10's guard was already fixed in an earlier round).
     /// </para>
     /// </summary>
-    private async System.Threading.Tasks.Task ShowPreferencesAsync()
+    private async System.Threading.Tasks.Task ShowSettingsAsync()
     {
         if (Vm is not { } h) return;   // no document attached — nothing to report against yet
         if (TopLevel.GetTopLevel(this) is not Window owner)
         {
-            h.SolveError = "Preferences… could not find a window to open the dialog in.";
+            h.SolveError = "Settings… could not find a window to open the dialog in.";
             Refresh();
             return;
         }
-        await new Dialogs.HarmonicaPreferencesDialog(h).ShowDialog(owner);
-        Refresh();
-    }
-
-    /// <summary>Owner request — Display ▸ Advanced Settings…, for loadline pts / FFT× / charge / M,
-    /// moved out of the strip. Uses the R-h9c-10 error-reporting guard (new code, not the silent shape
-    /// <see cref="ShowPreferencesAsync"/> just had fixed).</summary>
-    private async System.Threading.Tasks.Task ShowAdvancedSettingsAsync()
-    {
-        if (Vm is not { } h) return;
-        if (TopLevel.GetTopLevel(this) is not Window owner)
-        {
-            h.SolveError = "Advanced Settings… could not find a window to open the dialog in.";
-            Refresh();
-            return;
-        }
-        await new Dialogs.HarmonicaAdvancedSettingsDialog(h).ShowDialog(owner);
+        await new Dialogs.HarmonicaSettingsDialog(h).ShowDialog(owner);
         Refresh();
     }
 
@@ -832,6 +833,26 @@ public partial class HarmonicaView : UserControl
             return;
         }
 
+        // brief-harmonicarf-r6b §4 — the Smith panels' own fly menus, resolved next (still ahead of
+        // the Edit-Display panel branches below): a click anywhere inside a Smith panel is always
+        // about THAT panel, title band or body.
+        var smithPanelId = HarmonicaHitTest.PanelAt(h.Layout, p.X, p.Y, w, ht);
+        if (smithPanelId is not null)
+        {
+            if (Menus.DataContext is HarmonicaMenuViewModel menus)
+            {
+                var (local, size) = HarmonicaHitTest.ToPanel(h.Layout, smithPanelId, p.X, p.Y, w, ht);
+                if (local.Y < HarmonicaPanelRenderer.TitleBandHeight(size))
+                    BuildSmithTitleMenu(items, h, menus, smithPanelId);
+                else
+                    BuildSmithBodyMenu(items, h, menus, smithPanelId);
+            }
+
+            if (items.Count == 0) { e.Cancel = true; return; }
+            if (sender is ContextMenu smithMenu) smithMenu.ItemsSource = items;
+            return;
+        }
+
         var (kind, panelId) = HarmonicaEditTarget.Resolve(h.Layout, [.. h.PickedTraces], p.X, p.Y, w, ht);
 
         if (panelId == HarmonicaPanelId.PowerSweep)
@@ -840,10 +861,26 @@ public partial class HarmonicaView : UserControl
             // rect: AxesRenderer.ComputeLabelHitRects is a standalone (non-drawing) accessor for it,
             // so this needs no "generous band" fallback. HarmonicaEditTarget resolves the whole panel,
             // not the label sub-rect, so a click anywhere ELSE in the panel must NOT open this menu.
+            //
+            // brief-harmonicarf-r6d §4 — this slot's own TITLE band is also a fly-menu target now
+            // (Power Sweep / Time Domain), resolved against whichever plot is actually on screen —
+            // the two plots' title bands need not coincide in general, so the mode decides which one
+            // to hit-test against rather than assuming the power-sweep shape.
             var (local, size) = HarmonicaHitTest.ToPanel(h.Layout, panelId, p.X, p.Y, w, ht);
-            var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(h.Frame.PowerSweep, h.RenderTheme);
+            var plot = h.ShowPowerSweepTimeDomain
+                ? HarmonicaPanelRenderer.BuildTimeDomainPlot(h.Frame.Loadline, h.RenderTheme,
+                    HarmonicaPanelRenderer.TimeDomainLimits(h.Model.Settings))
+                : HarmonicaPanelRenderer.BuildPowerSweepPlot(h.Frame.PowerSweep, h.RenderTheme,
+                    HarmonicaPanelRenderer.PowerSweepLimits(h.Model.Settings));
             var rects = AxesRenderer.ComputeLabelHitRects(plot, size);
-            if (rects.XLabel.Contains((float)local.X, (float)local.Y))
+
+            if (rects.Title.Contains((float)local.X, (float)local.Y))
+            {
+                BuildPowerSweepTitleMenu(items, h);
+            }
+            // §5 — the X-unit click-to-cycle menu belongs to the power-sweep mode only; in time-domain
+            // mode the X label is a plain time axis with no unit to pick.
+            else if (!h.ShowPowerSweepTimeDomain && rects.XLabel.Contains((float)local.X, (float)local.Y))
             {
                 foreach (PowerSweepXUnit unit in Enum.GetValues<PowerSweepXUnit>())
                 {
@@ -852,52 +889,136 @@ public partial class HarmonicaView : UserControl
                     items.Add(mi);
                 }
             }
+            else
+            {
+                // brief-harmonicarf-r6d §6 — Copy, in both modes.
+                items.Add(BuildCopyMenuItem(panelId));
+            }
         }
         else if (panelId == HarmonicaPanelId.Loadline)
         {
+            // brief-harmonicarf-r6d §6 — Copy, above the pre-existing DCIV Sweeps… item.
+            items.Add(BuildCopyMenuItem(panelId));
+
+            // brief-harmonicarf-r6e §4 — the SAME property HarmonicaDcivSweepsDialog's own Axis
+            // limits checkbox writes (HarmonicaViewModel.SetDcivAutoscale) — one property, two
+            // surfaces, no shadow state.
+            var autoscale = new MenuItem
+            {
+                Header = "Autoscale", ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = h.Model.Settings.DcivAutoscale,
+            };
+            autoscale.Click += (_, _) => { h.SetDcivAutoscale(!h.Model.Settings.DcivAutoscale); Refresh(); };
+            items.Add(autoscale);
+
             // R-h9b-12 — "if user right-clicks ANYWHERE on the DCIV plot". The loadline panel IS the
             // DCIV panel (§7.1's layout combines DCIV + loadline into one rect).
             var dciv = new MenuItem { Header = "DCIV Sweeps…" };
             dciv.Click += (_, _) => RunHook(ShowDcivSweepsAsync);
             items.Add(dciv);
         }
+        else if (!string.IsNullOrEmpty(panelId) && panelId != HarmonicaPanelId.ReadoutStrip)
+        {
+            // brief-harmonicarf-r6d §6 — a picked trace's own panel (§7.7). Reached through the SAME
+            // resolve Edit Display's own move/resize gesture already uses, so this is reachable
+            // without a second hit test.
+            items.Add(BuildCopyMenuItem(panelId));
+        }
 
         if (items.Count == 0) { e.Cancel = true; return; }
         if (sender is ContextMenu menu) menu.ItemsSource = items;
     }
 
+    /// <summary>brief-harmonicarf-r6d §4 — the power-sweep panel's own title fly menu: two mutually
+    /// exclusive checkable items, bound to the SAME command the mode itself is read from
+    /// (<see cref="HarmonicaViewModel.ShowPowerSweepTimeDomain"/>), so the menu doubles as a readout.
+    /// Built as its own list (not appended inline) so R6E's Autoscale/Copy additions to this SAME menu
+    /// need only add to this one place.</summary>
+    private void BuildPowerSweepTitleMenu(List<object> items, HarmonicaViewModel h)
+    {
+        if (Menus.DataContext is not HarmonicaMenuViewModel menus) return;
+
+        var powerSweep = new MenuItem
+        {
+            Header = "Power Sweep", ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = !h.ShowPowerSweepTimeDomain,
+        };
+        powerSweep.Click += (_, _) => { menus.SetPowerSweepModeCommand.Execute("PowerSweep"); Refresh(); };
+
+        var timeDomain = new MenuItem
+        {
+            Header = "Time Domain", ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = h.ShowPowerSweepTimeDomain,
+        };
+        timeDomain.Click += (_, _) => { menus.SetPowerSweepModeCommand.Execute("TimeDomain"); Refresh(); };
+
+        items.Add(powerSweep);
+        items.Add(timeDomain);
+
+        // brief-harmonicarf-r6e §4 — Autoscale and Axis Limits…, resolved against whichever mode is
+        // ACTUALLY on screen right now: the Time Domain view edits its own SEPARATE stored limit set
+        // (§4's own "switching modes must not corrupt the other mode's axes" rule), never the
+        // power-sweep one.
+        items.Add(new Separator());
+
+        bool timeDomainMode = h.ShowPowerSweepTimeDomain;
+        bool autoscaleOn = timeDomainMode ? h.Model.Settings.TimeDomainAutoscale
+                                          : h.Model.Settings.PowerSweepAutoscale;
+        var autoscale = new MenuItem
+        {
+            Header = "Autoscale", ToggleType = MenuItemToggleType.CheckBox, IsChecked = autoscaleOn,
+        };
+        autoscale.Click += (_, _) =>
+        {
+            if (timeDomainMode) h.SetTimeDomainAutoscale(!autoscaleOn);
+            else                h.SetPowerSweepAutoscale(!autoscaleOn);
+            Refresh();
+        };
+        items.Add(autoscale);
+
+        var axisLimits = new MenuItem { Header = "Axis Limits…" };
+        axisLimits.Click += (_, _) => RunHook(() => ShowPowerSweepAxesDialogAsync(timeDomainMode));
+        items.Add(axisLimits);
+    }
+
     // ── §4 (R2A) — the per-marker context menu ──────────────────────────────
 
     /// <summary>
-    /// R-h9r2-6/7/8/9/10 — three read-only format rows (each with its own "Set…"), a VSWR toggle, a
-    /// Snap to Grid toggle, a separator, then Remove — disabled with a stated reason on band 1, on
-    /// BOTH sides, per §4's own rule.
+    /// R-h9r2-6/7/8/9/10, extended by brief-harmonicarf-r6b §2 — three read-only format rows (each
+    /// with its own "Set…"), a "VSWR: &lt;val&gt;" toggle with its own "Set…" submenu, a Snap to Grid
+    /// toggle, Add Point, Add Points to VSWR, a separator, then Remove — disabled with a stated reason
+    /// on band 1, on BOTH sides, per §4's own rule.
     /// </summary>
     private void BuildMarkerMenu(List<object> items, HarmonicaViewModel h, HarmonicaMarker marker)
     {
         double z0 = h.Model.Settings.Z0;
         var z = HarmonicaDataSet.ImpedanceOf(marker.Gamma, z0);
 
+        // pad:false — a menu item's header, not a strip column; R6C §4.2's fixed-width padding exists
+        // to keep a COLUMN from reflowing and has nothing to reserve here.
         items.Add(BuildFormatRow(
-            $"Γ = {HarmonicaReadoutFormatting.FormatGamma(marker.Gamma, ReadoutFormat.RealImaginary)}",
+            $"Γ = {HarmonicaReadoutFormatting.FormatGamma(marker.Gamma, ReadoutFormat.RealImaginary, pad: false)}",
             HarmonicaTerminationEntryFormat.GammaRealImag, h, marker));
         items.Add(BuildFormatRow(
-            $"Γ = {HarmonicaReadoutFormatting.FormatGamma(marker.Gamma, ReadoutFormat.MagnitudeAngle)}",
+            $"Γ = {HarmonicaReadoutFormatting.FormatGamma(marker.Gamma, ReadoutFormat.MagnitudeAngle, pad: false)}",
             HarmonicaTerminationEntryFormat.GammaMagAngle, h, marker));
         items.Add(BuildFormatRow(
-            $"Z = {HarmonicaReadoutFormatting.FormatZ(z, ReadoutFormat.RealImaginary)}",
+            $"Z = {HarmonicaReadoutFormatting.FormatZ(z, ReadoutFormat.RealImaginary, pad: false)}",
             HarmonicaTerminationEntryFormat.ZRealImag, h, marker));
 
         items.Add(new Separator());
 
-        // R-h9r2-8 — the VSWR circle. The value itself is edited by dragging its own on-chart handle
-        // (HarmonicaGrabKind.VswrHandle), not from this menu — this toggle only shows/hides it, and
-        // shows the current ratio so the menu itself doubles as a readout.
+        // brief-harmonicarf-r6b §2.1 — the header is now "VSWR: <val>", the SAME formatter §1.3's
+        // live readout uses, so the number a drag lands on is the number this menu then shows. Still
+        // a checkbox that toggles the circle; it gains one submenu item, "Set…".
+        var vswrSet = new MenuItem { Header = "Set…" };
+        vswrSet.Click += (_, _) => RunHook(() => ShowMarkerSetVswrDialogAsync(h, marker));
         var vswr = new MenuItem
         {
-            Header    = $"VSWR Circle ({marker.VswrValue:0.##}:1)",
-            ToggleType = MenuItemToggleType.CheckBox,
-            IsChecked = marker.VswrEnabled,
+            Header      = HarmonicaReadoutFormatting.FormatVswr(marker.VswrValue),
+            ToggleType  = MenuItemToggleType.CheckBox,
+            IsChecked   = marker.VswrEnabled,
+            ItemsSource = new object[] { vswrSet },
         };
         vswr.Click += (_, _) => { h.ToggleMarkerVswrEnabled(marker); Refresh(); };
         items.Add(vswr);
@@ -916,6 +1037,27 @@ public partial class HarmonicaView : UserControl
         snap.Click += (_, _) => { h.ToggleMarkerSnapToGrid(marker); Refresh(); };
         items.Add(snap);
 
+        // brief-harmonicarf-r6b §2.2 — a Γ point AT the marker's own Γ, additive on top of the
+        // current ring/spoke preset; persists in the .charm.
+        var addPoint = new MenuItem { Header = "Add Point" };
+        ToolTip.SetTip(addPoint,
+            "Adds this marker's own Γ to the loadpull grid, on top of the current preset — persists " +
+            "in the file. Grid ▸ Reset Grid or picking a new Grid Preset clears it.");
+        addPoint.Click += (_, _) => { h.AddGridPoint(marker.Gamma); Refresh(); };
+        items.Add(addPoint);
+
+        // brief-harmonicarf-r6b §2.3 — 12 points uniformly spaced on the marker's own VSWR locus,
+        // through the same path. Disabled (greyed) when the circle itself is off.
+        var addVswrPoints = new MenuItem
+        {
+            Header    = "Add Points to VSWR",
+            IsEnabled = marker.VswrEnabled,
+        };
+        if (!marker.VswrEnabled)
+            ToolTip.SetTip(addVswrPoints, "Turn on this marker's VSWR circle first.");
+        addVswrPoints.Click += (_, _) => { h.AddGridPointsOnVswrCircle(marker); Refresh(); };
+        items.Add(addVswrPoints);
+
         items.Add(new Separator());
 
         // R-h9r2-10 — band 1 (S1 and L1) is always present on both sides; disabled with a reason
@@ -930,6 +1072,131 @@ public partial class HarmonicaView : UserControl
             ToolTip.SetTip(remove, $"{marker.Name} is the fundamental and is always present.");
         remove.Click += (_, _) => { h.RemoveMarkerAndShort(marker); Refresh(); };
         items.Add(remove);
+    }
+
+    /// <summary>brief-harmonicarf-r6b §2.1's "Set…" — validates finite and ≥ 1, reject-and-keep on bad
+    /// input; OK commits through <see cref="HarmonicaViewModel.SetMarkerVswr"/>, the same call the
+    /// drag uses (which also enables the circle if it was off).</summary>
+    private async System.Threading.Tasks.Task ShowMarkerSetVswrDialogAsync(
+        HarmonicaViewModel h, HarmonicaMarker marker)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        var result = await Dialogs.HarmonicaSetVswrDialog.ShowAsync(owner, marker.Name, marker.VswrValue);
+        if (result is not { } v) return;
+
+        h.SetMarkerVswr(marker, v);
+        Refresh();
+    }
+
+    // ── §4 (R6B) — the Smith panels' own fly menus ───────────────────────────
+
+    /// <summary>brief-harmonicarf-r6b §4.2 — a right-click anywhere in a Smith panel's BODY: Copy
+    /// (this panel, never the whole canvas — the panel id is already resolved) and Show Grid Points,
+    /// bound to the SAME commands the Edit/Display menus use.</summary>
+    private void BuildSmithBodyMenu(List<object> items, HarmonicaViewModel h,
+                                    HarmonicaMenuViewModel menus, string panelId)
+    {
+        items.Add(BuildCopyMenuItem(panelId));
+
+        var gridPoints = new MenuItem
+        {
+            Header     = "Show Grid Points",
+            ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked  = h.ShowGridPoints,
+        };
+        gridPoints.Click += (_, _) => { menus.ToggleShowGridPointsCommand.Execute(null); Refresh(); };
+        items.Add(gridPoints);
+    }
+
+    /// <summary>brief-harmonicarf-r6b §4.3 — a right-click on a Smith panel's TITLE band: Contour
+    /// Plane and Contour Harmonic on both charts, plus Efficiency Metric on the efficiency chart only
+    /// — every item bound to the SAME command <c>Display ▸ …</c> already uses, with the current
+    /// selection shown checked so the menu doubles as a readout.</summary>
+    private void BuildSmithTitleMenu(List<object> items, HarmonicaViewModel h,
+                                     HarmonicaMenuViewModel menus, string panelId)
+    {
+        var plane = new MenuItem { Header = "Contour Plane" };
+        var load = new MenuItem
+        {
+            Header = "Load", ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = h.GridSide == TerminationSide.Load,
+        };
+        load.Click += (_, _) => { menus.SetGridSideCommand.Execute("Load"); Refresh(); };
+        var source = new MenuItem
+        {
+            Header = "Source", ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = h.GridSide == TerminationSide.Source,
+        };
+        source.Click += (_, _) => { menus.SetGridSideCommand.Execute("Source"); Refresh(); };
+        plane.ItemsSource = new object[] { load, source };
+        items.Add(plane);
+
+        // menus.ContourHarmonics already tracks K (RebuildBandMenus) — never hardcode f₀/2f₀/3f₀,
+        // the exact owner-reported bug R-h7-2's own item names.
+        var harmonic = new MenuItem { Header = "Contour Harmonic" };
+        var harmonicItems = new List<object>();
+        foreach (var band in menus.ContourHarmonics)
+        {
+            var mi = new MenuItem
+            {
+                Header = band.Header, ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = h.GridHarmonic == band.Band,
+            };
+            mi.Click += (_, _) => { band.SelectCommand.Execute(null); Refresh(); };
+            harmonicItems.Add(mi);
+        }
+        harmonic.ItemsSource = harmonicItems;
+        items.Add(harmonic);
+
+        if (panelId == HarmonicaPanelId.SmithEfficiency)
+        {
+            var eff = new MenuItem { Header = "Efficiency Metric" };
+            var de = new MenuItem
+            {
+                Header = "DE", ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = h.EfficiencyMetric == GridMetric.DrainEfficiency,
+            };
+            de.Click += (_, _) => { menus.SetEfficiencyMetricCommand.Execute("DE"); Refresh(); };
+            var pae = new MenuItem
+            {
+                Header = "PAE", ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = h.EfficiencyMetric == GridMetric.Pae,
+            };
+            pae.Click += (_, _) => { menus.SetEfficiencyMetricCommand.Execute("PAE"); Refresh(); };
+            eff.ItemsSource = new object[] { de, pae };
+            items.Add(eff);
+        }
+    }
+
+    /// <summary>
+    /// brief-harmonicarf-r6d §6 — "one helper that takes a resolved panelId and builds the Copy
+    /// MenuItem, used by every branch." A failure lands on <see cref="HarmonicaViewModel.SolveError"/>
+    /// through <see cref="RunHook(Func{System.Threading.Tasks.Task})"/>, like every other menu hook
+    /// (R-h9a-13) — this is the ONE Click handler shape every caller shares, so a future panel needs
+    /// no new hook wiring of its own.
+    /// </summary>
+    private MenuItem BuildCopyMenuItem(string panelId)
+    {
+        var copy = new MenuItem { Header = "Copy" };
+        copy.Click += (_, _) => RunHook(() => CopyPanelAsync(panelId));
+        return copy;
+    }
+
+    /// <summary>brief-harmonicarf-r6b §4.2, generalised by r6d §6 to every panel's own fly menu — the
+    /// SAME <see cref="HarmonicaClipboard.CopyAsync"/> Edit ▸ Copy Plot calls, with the resolved
+    /// <paramref name="panelId"/> in place of <c>Canvas.PanelUnderPointer()</c> — never a second
+    /// exporter.</summary>
+    private async System.Threading.Tasks.Task CopyPanelAsync(string panelId)
+    {
+        if (Vm is not { } h) return;
+        try
+        {
+            string what = await HarmonicaClipboard.CopyAsync(Canvas, h, panelId);
+            h.SolveError = $"Copied {what} to the clipboard.";
+        }
+        catch (Exception ex) { h.SolveError = ex.Message; }
+        Refresh();
     }
 
     /// <summary>One read-only "Γ = …" / "Z = …" row, carrying its own "Set…" child that opens

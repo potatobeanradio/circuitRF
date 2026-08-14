@@ -48,7 +48,27 @@ public partial class HarmonicaDcivSweepsDialog : Window
         VdsMinBox.Text   = Num(k.VdsMin);
         VdsMaxBox.Text   = Num(k.VdsMax);
         VdsStepsBox.Text = k.VdsSteps.ToString(CultureInfo.InvariantCulture);
+
+        // brief-harmonicarf-r6e §3.1 — the Axis limits section. A stored limit shows what it holds;
+        // an ABSENT one (never set — §2.2's "compute once from the first frame" has not run yet, or
+        // this document predates the setting) shows blank rather than a fabricated number, so the
+        // boxes never claim a value the document does not actually have.
+        var s = _vm.Model.Settings;
+        AxisXMinBox.Text = s.DcivXMin is { } xMin ? Num(xMin) : "";
+        AxisXMaxBox.Text = s.DcivXMax is { } xMax ? Num(xMax) : "";
+        AxisYMinBox.Text = s.DcivYMin is { } yMin ? Num(yMin) : "";
+        AxisYMaxBox.Text = s.DcivYMax is { } yMax ? Num(yMax) : "";
+        AutoscaleCheck.IsChecked = s.DcivAutoscale;
+        SetAxisBoxesEnabled(!s.DcivAutoscale);
         _updating = false;
+    }
+
+    private void SetAxisBoxesEnabled(bool enabled)
+    {
+        AxisXMinBox.IsEnabled = enabled;
+        AxisXMaxBox.IsEnabled = enabled;
+        AxisYMinBox.IsEnabled = enabled;
+        AxisYMaxBox.IsEnabled = enabled;
     }
 
     private static string Num(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
@@ -101,6 +121,58 @@ public partial class HarmonicaDcivSweepsDialog : Window
     }
 
     private void HideError() => ErrorText.IsVisible = false;
+
+    // ── brief-harmonicarf-r6e §3.1 — Axis limits: X min/max, Y min/max, Autoscale. Same commit
+    // shape as the sweep-range fields above (LostFocus / Enter applies, Escape reverts) — see this
+    // class's own remarks at the top for why.
+
+    private void OnAxisFieldLostFocus(object? sender, RoutedEventArgs e) => CommitAxisLimits();
+
+    private void OnAxisFieldKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Return)
+        {
+            CommitAxisLimits();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            RefreshFromModel();
+            HideError();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Reject-and-keep on bad input (R6A §6's rule) — a rejected candidate never reaches
+    /// <see cref="HarmonicaViewModel.ApplyDcivAxisLimits"/>, so the stored window stays exactly what
+    /// it was and the offending box is flagged in <see cref="ErrorText"/>.</summary>
+    private void CommitAxisLimits()
+    {
+        if (_updating) return;
+
+        if (!TryReal(AxisXMinBox.Text, out double xMin) || !TryReal(AxisXMaxBox.Text, out double xMax) ||
+            !TryReal(AxisYMinBox.Text, out double yMin) || !TryReal(AxisYMaxBox.Text, out double yMax))
+        {
+            ShowError("Every axis-limit field must be a number.");
+            return;
+        }
+
+        if (!_vm.ApplyDcivAxisLimits(xMin, xMax, yMin, yMax))
+        {
+            ShowError("min must be less than max on both axes.");
+            return;
+        }
+
+        HideError();
+    }
+
+    private void OnAutoscaleClick(object? sender, RoutedEventArgs e)
+    {
+        bool on = AutoscaleCheck.IsChecked == true;
+        _vm.SetDcivAutoscale(on);
+        SetAxisBoxesEnabled(!on);
+        HideError();
+    }
 
     private void OnResetClick(object? sender, RoutedEventArgs e)
     {

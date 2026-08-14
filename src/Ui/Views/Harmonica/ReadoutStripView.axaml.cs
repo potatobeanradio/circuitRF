@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -41,6 +42,72 @@ public partial class ReadoutStripView : UserControl
         // depend on focus actually moving at all.
         AddHandler(KeyDownEvent, OnStripKeyDownTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerPressedEvent, OnStripPointerPressedTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        // R6C §5 — one Copy-flyout ContextMenu PER CHUNK, attached once here rather than per row (the
+        // pattern this file already uses for the per-row format menu, BuildLiveFormatMenu). A row that
+        // carries its OWN ContextMenu (an IsComplex row's format flyout, wired in BuildColumnRowShell)
+        // wins on a right-click landing inside it — Avalonia resolves ContextRequested against the
+        // nearest ancestor with a ContextMenu set, so a complex row's own menu is never shadowed by
+        // this one. Everything else in a chunk (its header row, a plain scalar row, or the chunk's own
+        // whitespace) falls through to this menu instead.
+        foreach (var host in new[]
+                 { SettingsColumn, OperatingPointColumn, SourceColumn, LoadColumn,
+                   MxpColumn, MxeColumn, IntrinsicVdsColumn, IntrinsicIdsColumn })
+            AttachChunkCopyMenu(host);
+    }
+
+    /// <summary>Builds ONE chunk's Copy flyout — populated lazily on <see cref="ContextMenu.Opening"/>,
+    /// same reason <see cref="BuildLiveFormatMenu"/> already does this: the single <c>MenuItem</c> is
+    /// constructed on an actual right-click, never on a published frame nobody looked at the menu
+    /// for.</summary>
+    private void AttachChunkCopyMenu(StackPanel host)
+    {
+        var menu = new ContextMenu();
+        menu.Opening += (_, _) =>
+        {
+            var copy = new MenuItem { Header = "Copy" };
+            copy.Click += (_, _) => _ = CopyChunkAsync(host);
+            menu.ItemsSource = new List<object> { copy };
+        };
+        host.ContextMenu = menu;
+    }
+
+    /// <summary>R6C §5 — puts what the user is seeing in this chunk on the clipboard as tab-delimited
+    /// text, one row per line (its header row included), so it pastes straight into Excel as two
+    /// columns. Reads straight off the chunk's own built controls — the same text on screen, whatever
+    /// built it (a <see cref="HarmonicaReadout"/>-backed column or the Settings column's plain
+    /// label/value/unit rows), rather than a second, parallel data path that could disagree with the
+    /// screen.</summary>
+    private async System.Threading.Tasks.Task CopyChunkAsync(StackPanel host)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clip) return;
+        var rows = host.Children.OfType<StackPanel>().Select(RowText);
+        await clip.SetTextAsync(HarmonicaClipboard.RowsText(rows));
+    }
+
+    /// <summary>One row's (label, value) pair AS RENDERED — the label is the row's first child; the
+    /// value is every TextBlock/SelectableTextBlock/CheckBox after it, joined with a space (a Settings
+    /// row's own unit is a separate third child, e.g. "3.5" + "V" reads as "3.5 V", matching what the
+    /// row visually shows).</summary>
+    private static (string Label, string Value) RowText(StackPanel row)
+    {
+        string label = row.Children.Count > 0 && row.Children[0] is TextBlock l ? l.Text ?? "" : "";
+
+        var valueParts = new List<string>();
+        for (int i = 1; i < row.Children.Count; i++)
+        {
+            string? t = row.Children[i] switch
+            {
+                // SelectableTextBlock derives from TextBlock, so it must be matched FIRST.
+                SelectableTextBlock stb => stb.Text,
+                TextBlock tb            => tb.Text,
+                CheckBox cb             => cb.IsChecked == true ? "1" : "0",
+                _                       => null,
+            };
+            if (!string.IsNullOrEmpty(t)) valueParts.Add(t);
+        }
+
+        return (label, string.Join(" ", valueParts));
     }
 
     /// <summary>Every currently-open inline editor (there can be more than one — nothing stops a
@@ -161,7 +228,7 @@ public partial class ReadoutStripView : UserControl
                          Action<HarmonicaReadout>? onOpenSetDialog = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        formatFor ??= _ => ReadoutFormat.RealImaginary;
+        formatFor ??= HarmonicaReadoutFormatting.DefaultReadoutFormat;
 
         Items.Children.Clear();
 
@@ -170,6 +237,8 @@ public partial class ReadoutStripView : UserControl
         var load      = new List<HarmonicaReadout>();
         var mxp       = new List<HarmonicaReadout>();
         var mxe       = new List<HarmonicaReadout>();
+        var intrVds   = new List<HarmonicaReadout>();
+        var intrIds   = new List<HarmonicaReadout>();
 
         foreach (var item in items)
         {
@@ -182,7 +251,9 @@ public partial class ReadoutStripView : UserControl
                 case ReadoutColumn.Source:         source.Add(item);    break;
                 case ReadoutColumn.Load:           load.Add(item);      break;
                 case ReadoutColumn.Mxp:            mxp.Add(item);       break;
-                default:                           mxe.Add(item);       break;
+                case ReadoutColumn.Mxe:            mxe.Add(item);       break;
+                case ReadoutColumn.IntrinsicVds:   intrVds.Add(item);   break;
+                case ReadoutColumn.IntrinsicIds:   intrIds.Add(item);   break;
             }
         }
 
@@ -196,9 +267,13 @@ public partial class ReadoutStripView : UserControl
                             foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
         UpdateReadoutColumn(MxeColumn, ReadoutColumn.Mxe, mxe,
                             foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
+        UpdateReadoutColumn(IntrinsicVdsColumn, ReadoutColumn.IntrinsicVds, intrVds,
+                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
+        UpdateReadoutColumn(IntrinsicIdsColumn, ReadoutColumn.IntrinsicIds, intrIds,
+                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
 
         ColumnRule.IsVisible    = operating.Count > 0 || source.Count > 0 || load.Count > 0 ||
-                                  mxp.Count > 0 || mxe.Count > 0;
+                                  mxp.Count > 0 || mxe.Count > 0 || intrVds.Count > 0 || intrIds.Count > 0;
         ColumnRule.Background   = foreground;
 
         sw.Stop();
@@ -338,9 +413,17 @@ public partial class ReadoutStripView : UserControl
         // handler below, which is why the inline editor never engaged (owner-reported). Every other
         // row (§7.5's "all text is selectable") keeps SelectableTextBlock.
         bool editable = item.Editable && hasCommit;
+        // Right-aligned: the reserved-width box (ReservedValueChars, §4.2) is sized GENEROUSLY, and a
+        // proportional font's actual rendered width still varies slightly at a fixed CHARACTER count
+        // (a "1" and an "8" are not the same number of pixels wide) — left-aligned text lets that
+        // variation show up as the trailing unit suffix visibly creeping left/right on every drag
+        // frame. Right-aligning pins the LAST character (the unit) to the box's right edge, which is
+        // fixed by Width alone, regardless of how the preceding digits happen to render.
         Control valueBlock = editable
-            ? new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center }
-            : new SelectableTextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+            ? new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center,
+                              TextAlignment = TextAlignment.Right }
+            : new SelectableTextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center,
+                                        TextAlignment = TextAlignment.Right };
         row.Children.Add(valueBlock);
 
         if (item.IsComplex) row.ContextMenu = BuildLiveFormatMenu(state);
@@ -351,7 +434,7 @@ public partial class ReadoutStripView : UserControl
                 if (state.OnCommitEdit is not { } commit || !SettingsRowMayBeOverwritten(state.IsEditing)) return;
                 BeginInlineEdit(valueBlock, state.Foreground, state.FontSize,
                                 text => commit(state.Item, text),
-                                DisplayValue(state.Item, state.FormatFor),
+                                EditSeedValue(state.Item, state.FormatFor),
                                 editing => state.IsEditing = editing);
             };
 
@@ -389,17 +472,25 @@ public partial class ReadoutStripView : UserControl
 
         if (isHeader) { ToolTip.SetTip(row, null); return; }
 
-        if (SettingsRowMayBeOverwritten(state.IsEditing) &&
-            row.Children.Count > 1 && row.Children[1] is Control valueControl)
+        if (row.Children.Count > 1 && row.Children[1] is Control valueControl)
         {
-            // R-h9r2-25 — rendered from RawValue at the CURRENT format, not from the solve-time Value,
-            // so a right-click format change repaints immediately with no re-solve.
-            string text = DisplayValue(item, formatFor);
-            switch (valueControl)
+            // R6C §4.2 — a pure function of the row's KIND (never its current value), so writing it
+            // every call is a no-op on screen and cannot be the thing that moves a column on a
+            // value-only update. Set unconditionally — unlike the TEXT below, this never touches
+            // whatever the user is mid-edit on.
+            valueControl.Width = HarmonicaReadoutFormatting.ReservedValueChars(item) * fontSize * 0.55;
+
+            if (SettingsRowMayBeOverwritten(state.IsEditing))
             {
-                // SelectableTextBlock derives from TextBlock in Avalonia, so it must be matched FIRST.
-                case SelectableTextBlock stb: stb.Text = text; stb.Foreground = foreground; stb.FontSize = fontSize; break;
-                case TextBlock tb:            tb.Text  = text; tb.Foreground  = foreground; tb.FontSize  = fontSize; break;
+                // R-h9r2-25 — rendered from RawValue at the CURRENT format, not from the solve-time
+                // Value, so a right-click format change repaints immediately with no re-solve.
+                string text = DisplayValue(item, formatFor);
+                switch (valueControl)
+                {
+                    // SelectableTextBlock derives from TextBlock in Avalonia, so it must be matched FIRST.
+                    case SelectableTextBlock stb: stb.Text = text; stb.Foreground = foreground; stb.FontSize = fontSize; break;
+                    case TextBlock tb:            tb.Text  = text; tb.Foreground  = foreground; tb.FontSize  = fontSize; break;
+                }
             }
         }
 
@@ -419,9 +510,34 @@ public partial class ReadoutStripView : UserControl
         if (item.IsComplex && item.RawValue is { } raw && item.FormatKey is { } key)
         {
             var format = formatFor(key);
-            return item.IsGamma
-                ? HarmonicaReadoutFormatting.FormatGamma(raw, format)
-                : HarmonicaReadoutFormatting.FormatZ(raw, format);
+            if (item.IsGamma) return HarmonicaReadoutFormatting.FormatGamma(raw, format);
+            // Owner: the intrinsic VDS/IDS chunks carry no per-row unit at all — their unit is stated
+            // once, in the chunk's own header ("Intrinsic VDS (V)") — this used to fall through to
+            // FormatZ unconditionally, which is where the wrong "Ω" on a Volts/Amps row came from.
+            if (HarmonicaReadoutFormatting.IsIntrinsicVoltageOrCurrentKey(key))
+                return HarmonicaReadoutFormatting.FormatComplex(raw, format);
+            return HarmonicaReadoutFormatting.FormatZ(raw, format);
+        }
+        return item.Value;
+    }
+
+    /// <summary>
+    /// R6C §4.2 — the SAME text as <see cref="DisplayValue"/>, unpadded, for seeding an inline editor.
+    /// §4.2's fixed-width DISPLAY text carries leading spaces so the row's own on-screen width never
+    /// churns; feeding that straight into an editable <c>TextBox</c> would put those spaces ahead of
+    /// the caret, breaking <see cref="ValueSelectionLength"/>'s own "last space is the value/unit
+    /// boundary" rule and everything a user types after. The editor needs no width discipline of its
+    /// own — it floats in <c>EditorOverlay</c> and sizes itself from <see cref="CalcInlineEditWidth"/>.
+    /// </summary>
+    private static string EditSeedValue(HarmonicaReadout item, Func<string, ReadoutFormat> formatFor)
+    {
+        if (item.IsComplex && item.RawValue is { } raw && item.FormatKey is { } key)
+        {
+            var format = formatFor(key);
+            if (item.IsGamma) return HarmonicaReadoutFormatting.FormatGamma(raw, format, pad: false);
+            if (HarmonicaReadoutFormatting.IsIntrinsicVoltageOrCurrentKey(key))
+                return HarmonicaReadoutFormatting.FormatComplex(raw, format, pad: false);
+            return HarmonicaReadoutFormatting.FormatZ(raw, format, pad: false);
         }
         return item.Value;
     }
@@ -900,7 +1016,13 @@ public partial class ReadoutStripView : UserControl
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Tag = state };
 
         var label = new TextBlock { Opacity = 0.65, VerticalAlignment = VerticalAlignment.Center };
-        var value = new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        // Right-aligned for the same reason BuildColumnRowShell's value control is: SettingsValueWidth
+        // is a GENEROUS per-key budget (its own doc comment says so), so a left-aligned value leaves a
+        // visible gap before the unit that follows it — right-aligning puts the value flush against
+        // the box's right edge, immediately next to the unit, with the slack landing on the left where
+        // there is nothing to visually separate it from.
+        var value = new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center,
+                                    TextAlignment = TextAlignment.Right };
         row.Children.Add(label);
         row.Children.Add(value);
 
@@ -919,6 +1041,26 @@ public partial class ReadoutStripView : UserControl
         return row;
     }
 
+    /// <summary>R6C §4.2 — the character budget for one Settings row's value, keyed by WHICH setting
+    /// it is rather than measured from its current text (the whole point: it must not change when
+    /// the text does). Generous rather than exact — the reserved box may show a little blank space,
+    /// which costs nothing; a box too narrow for a legitimate value would.</summary>
+    private static double SettingsValueWidth(string key)
+    {
+        int chars = key switch
+        {
+            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVgs           => 8,
+            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyIdq           => 8,
+            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVds           => 8,
+            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyFrequency     => 10,
+            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyHarmonicCount => 4,
+            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCompression   => 8,
+            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyZ0            => 8,
+            _                                                        => 10,
+        };
+        return chars;
+    }
+
     /// <summary>Writes one Settings row's CURRENT value — label (with the structural marker), value
     /// (or its placeholder), unit, tooltip and live foreground/font — skipping the value slot entirely
     /// while an editor is open on it (§1.2 trap 1; see <see cref="SettingsRowMayBeOverwritten"/>).</summary>
@@ -931,22 +1073,31 @@ public partial class ReadoutStripView : UserControl
 
         if (row.Children.Count > 0 && row.Children[0] is TextBlock label)
         {
-            // A structural input carries a marker rather than a colour: §7.9.2 reserves red, and the
-            // strip has exactly one text role.
-            label.Text       = input.Structural ? input.Label + "*" : input.Label;
+            // Owner: no "*" marker on the Settings-column label — Freq/Harmonic Order's structural
+            // note stays in the tooltip only (below), which is where every other row's own detail
+            // already lives.
+            label.Text       = input.Label;
             label.Foreground = foreground;
             label.FontSize   = fontSize;
         }
 
-        if (SettingsRowMayBeOverwritten(state.IsEditing) &&
-            row.Children.Count > 1 && row.Children[1] is TextBlock value)
+        if (row.Children.Count > 1 && row.Children[1] is TextBlock value)
         {
-            state.IsPlaceholder = input.Text.Length == 0 && input.Placeholder.Length > 0;
-            state.EditSeedText  = input.EditValue;
-            value.Text       = state.IsPlaceholder ? input.Placeholder : input.Text;
-            value.Opacity    = state.IsPlaceholder ? 0.55 : 1.0;
-            value.Foreground = foreground;
-            value.FontSize   = fontSize;
+            // R6C §4.2 — same reservation discipline as the readout columns: a pure function of WHICH
+            // setting this row is, never of its current text, so it never moves the column on a value
+            // update. §3's label renames widened the LABEL column, not this one — recomputed every
+            // call so a font-size change still lands right, but the number itself is a no-op.
+            value.Width = SettingsValueWidth(input.Key) * fontSize * 0.55;
+
+            if (SettingsRowMayBeOverwritten(state.IsEditing))
+            {
+                state.IsPlaceholder = input.Text.Length == 0 && input.Placeholder.Length > 0;
+                state.EditSeedText  = input.EditValue;
+                value.Text       = state.IsPlaceholder ? input.Placeholder : input.Text;
+                value.Opacity    = state.IsPlaceholder ? 0.55 : 1.0;
+                value.Foreground = foreground;
+                value.FontSize   = fontSize;
+            }
         }
 
         if (row.Children.Count > 2 && row.Children[2] is TextBlock unit)

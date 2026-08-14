@@ -105,8 +105,12 @@ public static class HarmonicaPanelRenderer
     /// (<see cref="TitleSizeR3C"/>, <see cref="TitleBottomPaddingFraction"/>) rather than one fraction
     /// doing double duty. <see cref="DrawTitleRows"/> derives row 2's baseline from THIS SAME padding
     /// term, so the two can never disagree about where the gap above the chart actually is.</para>
+    ///
+    /// <para><b>brief-harmonicarf-r6b §4.1 — PUBLIC</b> so the fly-menu dispatch
+    /// (<c>HarmonicaView.OnCanvasContextMenuOpening</c>) can resolve a title-band click against the
+    /// SAME geometry this file draws into, rather than hand-deriving the band height a second time.</para>
     /// </summary>
-    private static double TitleBandHeight((double W, double H) size)
+    public static double TitleBandHeight((double W, double H) size)
     {
         double m = Math.Min(size.W, size.H);
         double row = Math.Max(7.0, m * TitleRowFontFraction * TitleFontShrink * TitleSizeR3C);
@@ -114,6 +118,22 @@ public static class HarmonicaPanelRenderer
         // 1.3× line-height per row (ascender/descender headroom) plus the named bottom padding.
         return row * 1.3 + row * 1.3 + padding;
     }
+
+    /// <summary>
+    /// The Rect plots (Loadline/DCIV, Power Sweep, Time Domain) draw their own <c>CustomTitle</c>
+    /// through the SHARED <c>AxesRenderer.DrawTitleAndAxisLabels</c>, whose Rect title formula is
+    /// <c>Axes.FontSizeLabel * 1.4 * AxesRenderer.LineWidth(canvasSize)</c>, and
+    /// <c>LineWidth = min(W,H) / 200</c> — so the rendered title height is
+    /// <c>Axes.FontSizeLabel * 1.4 * min(W,H) / 200</c>, proportional to the panel's shorter side just
+    /// like <see cref="TitleBandHeight"/>'s own row height above, only with a different constant.
+    /// Setting <c>Axes.FontSizeLabel</c> to this value makes the two proportional-to-<c>min(W,H)</c>
+    /// formulas equal at every panel size, not just one: solving
+    /// <c>FontSizeLabel * 1.4 / 200 = TitleRowFontFraction * TitleFontShrink * TitleSizeR3C</c> for
+    /// <c>FontSizeLabel</c>. <c>Axes.FontSizeLabel</c> is used for NOTHING ELSE on a Rect plot (the
+    /// X/Y axis labels use <c>FontSizeTicks</c> instead), so this only ever touches the title.
+    /// </summary>
+    internal const double RectTitleFontSizeLabel =
+        TitleRowFontFraction * TitleFontShrink * TitleSizeR3C * 200.0 / 1.4;
 
     /// <summary>
     /// R3C follow-up (2026-08-13) — "add slightly more margin around the Smith charts, ~20 more
@@ -221,7 +241,9 @@ public static class HarmonicaPanelRenderer
             canvas.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
             DrawContours(canvas, d, tf, theme);
             if (showGridPoints) DrawGridPoints(canvas, d, tf, theme, chartSize);
-            DrawOptima(canvas, d, tf, theme, chartSize);
+            // brief-harmonicarf-r6b §3 — the MXP/MXE optimum cross is no longer drawn here (deferred
+            // to v2); d.Optimum stays populated for the readout columns (HarmonicaSolver.AddMxColumn),
+            // this file just stopped rendering it.
             // brief-harmonicarf-r4 §4.4 — moved from BENEATH the chrome to here (still beneath the
             // glyphs/markers below, still clipped to the viewport) so this path and the cached one
             // below are provably pixel-identical for ANY scene, reachable region included, rather than
@@ -244,7 +266,8 @@ public static class HarmonicaPanelRenderer
 
     /// <summary>
     /// brief-harmonicarf-r4 §4 — the cached half of <see cref="DrawSmithPanel"/>: Layer A (Smith
-    /// chrome + frozen contour polylines + the optimum cross) and Layer B (the grid-point dots) are
+    /// chrome + frozen contour polylines — the optimum cross is no longer part of it, see
+    /// brief-harmonicarf-r6b §3) and Layer B (the grid-point dots) are
     /// each rendered once into an offscreen surface and blitted back — a drag frame's own marker
     /// glyph, the live termination markers and R-h6-12's reachable region are the only things drawn
     /// fresh every frame.
@@ -295,8 +318,11 @@ public static class HarmonicaPanelRenderer
         }
 
         var themeKey = BackdropThemeKey.From(theme, darkMode);
+        // brief-harmonicarf-r6b §3 — Optimum dropped from the key: nothing in Layer A reads it any
+        // more (the cross is not drawn), so keeping it here meant the whole cached layer was thrown
+        // away every time the optimum moved during a drag, for a pixel difference that no longer exists.
         var layerAKey = new LayerAKey(chartSize, themeKey, d.Title, d.Subtitle, showIsoLineLabels,
-                                      d.Contours, d.Levels, d.Optimum, offscreenMatrix);
+                                      d.Contours, d.Levels, offscreenMatrix);
 
         var imgA = cache.GetOrRenderLayerA(layerAKey, pixelSize, offscreenMatrix, theme.Background, offscreen =>
         {
@@ -312,7 +338,6 @@ public static class HarmonicaPanelRenderer
             offscreen.Save();
             offscreen.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
             DrawContours(offscreen, d, tf, theme);
-            DrawOptima(offscreen, d, tf, theme, chartSize);
             offscreen.Restore();
             offscreen.Restore();
         });
@@ -376,12 +401,16 @@ public static class HarmonicaPanelRenderer
             t.GridPoint, t.GridPointDropped, darkMode);
     }
 
-    /// <summary>Layer A's own key: everything <see cref="DrawContours"/>/<see cref="DrawOptima"/> and
-    /// the Smith chrome read. <c>Contours</c>/<c>Levels</c>/<c>Optimum</c> compare by the record's own
-    /// generated equality — reference equality for the two lists (R-h9r2-1's carry-forward keeps the
-    /// SAME list instance across every grid-less/dragging frame, and a real rebuild always produces a
-    /// new one) and value equality for <c>Optimum</c> (a small record, cheap to compare by value,
-    /// which is if anything MORE cache-friendly than reference equality would be).</summary>
+    /// <summary>Layer A's own key: everything <see cref="DrawContours"/> and the Smith chrome read.
+    /// <c>Contours</c>/<c>Levels</c> compare by the record's own generated equality — reference
+    /// equality for the two lists (R-h9r2-1's carry-forward keeps the SAME list instance across every
+    /// grid-less/dragging frame, and a real rebuild always produces a new one).
+    ///
+    /// <para><b>brief-harmonicarf-r6b §3 — <c>Optimum</c> deliberately dropped.</b> Layer A no longer
+    /// draws the optimum cross (see <see cref="DrawSmithPanelCached"/>'s own note), so keying on it
+    /// only bought unnecessary cache invalidation — the whole layer re-rendered every time the argmax
+    /// moved during a drag, for a pixel difference that no longer exists.</para>
+    /// </summary>
     /// <summary><c>Matrix</c> is the exact offscreen-raster transform (§4.4's own exact-pixel-alignment
     /// note on <see cref="DrawSmithPanelCached"/>) — a panel reposition or a HiDPI scale change shifts
     /// this even when <c>ChartSize</c> itself does not, and either must invalidate the cache exactly
@@ -389,7 +418,7 @@ public static class HarmonicaPanelRenderer
     private readonly record struct LayerAKey(
         (double W, double H) ChartSize, BackdropThemeKey Theme, string Title, string Subtitle,
         bool ShowIsoLineLabels, IReadOnlyList<RfCore.Loadpull.IsoPolyline> Contours,
-        IReadOnlyList<double> Levels, SmithPanelData.SmithOptimum? Optimum, SKMatrix Matrix);
+        IReadOnlyList<double> Levels, SKMatrix Matrix);
 
     /// <summary>Layer B's own key: everything <see cref="DrawGridPoints"/> reads. <c>GridPoints</c>
     /// compares the same reference-or-value way <see cref="LayerAKey"/>'s own lists do. <c>Matrix</c>
@@ -668,30 +697,33 @@ public static class HarmonicaPanelRenderer
         }
     }
 
-    private static void DrawOptima(SKCanvas canvas, SmithPanelData d, TransformSet tf,
-                                   HarmonicaRenderTheme theme, (double W, double H) size)
+    /// <summary>
+    /// brief-harmonicarf-r6b §1.3 — the live "VSWR: &lt;val&gt;" readout shown near the pointer while
+    /// dragging the circle (or on a plain click, before any move). Mirrors Data Display's own
+    /// unclipped, drawn-last VSWR readout (<c>PlotRenderer.cs</c>'s <c>vswrReadout</c> block) —
+    /// <b>the caller draws this OUTSIDE any panel's own clip rect</b> (<c>HarmonicaCanvas</c>'s draw
+    /// operation, after <c>HarmonicaCanvasRenderer.DrawAll</c>, never from inside
+    /// <see cref="DrawSmithPanel"/>), so it is never cut off at a panel edge. <paramref name="text"/>
+    /// and <paramref name="pointerCanvas"/> are already in full-canvas space; <paramref name="panelSize"/>
+    /// is the Smith panel the drag started on, ONLY for font sizing (the same panel-relative
+    /// convention every other glyph size in this file uses) — the text itself is not clipped to it.
+    /// </summary>
+    public static void DrawVswrReadout(SKCanvas canvas, string text, SKPoint pointerCanvas,
+                                       (double W, double H) panelSize, HarmonicaRenderTheme theme)
     {
-        float s = (float)(Math.Min(size.W, size.H) * 0.014);
-        s = Math.Max(4f, s);
+        if (string.IsNullOrEmpty(text)) return;
 
-        using var paint = new SKPaint
-        {
-            Style = SKPaintStyle.Stroke, StrokeWidth = 1.6f, IsAntialias = true,
-            Color = theme.AxisLine,
-        };
+        float size = (float)(Math.Min(panelSize.W, panelSize.H) * 0.0224);
+        if (size <= 0) return;
 
-        void Cross(Complex? c)
-        {
-            if (c is not Complex z) return;
-            var p = tf.PrimaryToCanvas(z.Real, z.Imaginary);
-            canvas.DrawLine(p.X - s, p.Y, p.X + s, p.Y, paint);
-            canvas.DrawLine(p.X, p.Y - s, p.X, p.Y + s, paint);
-        }
-
-        // R-h9b-15 — the INTERPOLATED argmax, never the grid sample: null (no optimum — every point
-        // a hole, or a SkipContours frame) draws nothing, never a cross at the origin.
-        Cross(d.Optimum?.Gamma);
+        using var font  = new SKFont(SkiaFonts.PlexRegular, size);
+        using var paint = new SKPaint { Color = theme.ReadoutText, IsAntialias = true };
+        canvas.DrawText(text, pointerCanvas.X + 10f, pointerCanvas.Y - 10f, SKTextAlign.Left, font, paint);
     }
+
+    // brief-harmonicarf-r6b §3 — DrawOptima (the MXP/MXE cross) removed; the glyph is deferred to v2.
+    // SmithPanelData.Optimum stays populated for HarmonicaSolver.AddMxColumn's readout columns — this
+    // file simply stopped rendering it (see LayerAKey's own note on why Optimum left its cache key too).
 
     /// <summary>
     /// R-h45-4 — the intrinsic glyphs: subtle TRIANGULAR markers, always beneath the round
@@ -804,6 +836,11 @@ public static class HarmonicaPanelRenderer
     /// transforms <see cref="GammaToCanvas"/> itself applies analytically for a caller with no canvas
     /// state of its own. Calling it again here would apply both a second time. <c>tf.PrimaryToCanvas</c>
     /// is what the marker circle right below already uses for the identical reason.</para>
+    ///
+    /// <para><b>brief-harmonicarf-r6b §1.1 — no gripper glyph any more.</b> The circle used to carry a
+    /// small square drag handle at its own θ = 0 sample; the whole circumference is grabbable now
+    /// (<see cref="HarmonicaHitTest.Resolve"/>'s Pass 2.5), so a glyph that implied only ONE point was
+    /// draggable would be actively misleading. Only the dashed stroke remains.</para>
     /// </summary>
     private static void DrawVswrLocus(SKCanvas canvas, HarmonicaMarker m, TransformSet tf,
                                       HarmonicaRenderTheme theme, double z0)
@@ -830,21 +867,6 @@ public static class HarmonicaPanelRenderer
             path.LineTo(tf.PrimaryToCanvas(pts[i].Real, pts[i].Imaginary));
         path.Close();
         canvas.DrawPath(path, paint);
-
-        // R-h9r2-8's drag handle — a small square (never round, so it never reads as a marker or a
-        // grid point) at the locus's own θ = 0 sample. p0 above is exactly this point, in the SAME
-        // raw-Gamma space HarmonicaHitTest hit-tests it in (HarmonicaVswrHandle.HandleGamma) — drawn
-        // from it directly rather than recomputed, so render and hit-test cannot drift apart.
-        float hs = 3.2f;
-        using var handleFill = new SKPaint { Color = theme.MarkerBand(m.Band), IsAntialias = true };
-        using var handleEdge = new SKPaint
-        {
-            Style = SKPaintStyle.Stroke, StrokeWidth = 1.0f, IsAntialias = true,
-            Color = theme.Background,
-        };
-        var handleRect = new SKRect(p0.X - hs, p0.Y - hs, p0.X + hs, p0.Y + hs);
-        canvas.DrawRect(handleRect, handleFill);
-        canvas.DrawRect(handleRect, handleEdge);
     }
 
     /// <summary>
@@ -888,23 +910,28 @@ public static class HarmonicaPanelRenderer
     /// picture of the wrong thing.
     /// </summary>
     public static void DrawLoadlinePanel(SKCanvas canvas, (double W, double H) size,
-                                         LoadlinePanelData d, HarmonicaRenderTheme theme, bool darkMode)
+                                         LoadlinePanelData d, HarmonicaRenderTheme theme, bool darkMode,
+                                         HarmonicaSettings? settings = null)
     {
-        var plot = BuildLoadlinePlot(d, theme);
+        var plot = BuildLoadlinePlot(d, theme, DcivLimits(settings ?? new HarmonicaSettings()));
         PlotRenderer.Draw(canvas, size, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
                           watermarkOpacity: 0f);
         DrawPlaneIndicator(canvas, size, d, theme);
     }
 
-    internal static Plot BuildLoadlinePlot(LoadlinePanelData d, HarmonicaRenderTheme theme)
+    internal static Plot BuildLoadlinePlot(LoadlinePanelData d, HarmonicaRenderTheme theme,
+                                           StoredAxisWindow limits = default)
     {
         var plot = new Plot(PlotType.Rect, FreqUnit.GHz)
         {
             ShowWatermark = false,
-            CustomTitleOn = true, CustomTitle = "",
+            // brief-harmonicarf-r6d §3.
+            CustomTitleOn = true, CustomTitle = "Loadline",
             CustomXLabelOn = true, CustomXLabel = "Vds (V)",
             CustomYLabelOn = true, CustomYLabel = "Ids (A)",
         };
+        // Matches the Smith panels' own row-1 title height — see RectTitleFontSizeLabel's own remarks.
+        plot.Axes.FontSizeLabel = RectTitleFontSizeLabel;
 
         foreach (var c in d.Dciv)
         {
@@ -916,6 +943,9 @@ public static class HarmonicaPanelRenderer
             plot.Traces.Add(NewRectTrace(d.LoadlineVds, d.LoadlineIds, theme.Loadline, width: 1.8));
 
         AutoScale(plot);
+        // brief-harmonicarf-r6e §2.4 — applied last: an explicit stored limit overrides AutoScale's
+        // own fit, and autoscale ON leaves it untouched so CaptureAxisWindows can read it back.
+        ApplyStoredWindow(plot, limits, hasSecondary: false);
         // R-h9b-11 — the loadline draws no secondary trace, so Plot.SetAxesViewport() (fired
         // automatically when the traces above were added) reserved a NARROWER right margin than the
         // power-sweep panel's own secondary-axis margin. Pinned to the same shape either draws.
@@ -955,47 +985,78 @@ public static class HarmonicaPanelRenderer
     /// <summary>Gain on the left axis, efficiency on the right, against the currently selected
     /// X unit (§7.4's click-to-cycle), with the operating-point cursor.</summary>
     public static void DrawPowerSweepPanel(SKCanvas canvas, (double W, double H) size,
-                                           PowerSweepPanelData d, HarmonicaRenderTheme theme, bool darkMode)
+                                           PowerSweepPanelData d, HarmonicaRenderTheme theme, bool darkMode,
+                                           HarmonicaSettings? settings = null)
     {
-        var plot = BuildPowerSweepPlot(d, theme);
-        PlotRenderer.Draw(canvas, size, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
-                          watermarkOpacity: 0f);
-        DrawEfficiencyAxisOverlay(canvas, size, plot, theme);
+        var plot = BuildPowerSweepPlot(d, theme, PowerSweepLimits(settings ?? new HarmonicaSettings()));
+        DrawWithSuppressedSecondaryChrome(canvas, size, plot, theme, darkMode);
+        DrawSecondaryAxisOverlay(canvas, size, plot, theme, theme.EfficiencyTrace);
         DrawOperatingCursor(canvas, size, plot, d, theme);
         if (!d.ReachedCompression) DrawDidNotCompressNote(canvas, size, theme);
     }
 
     /// <summary>
-    /// R-h9b-9 — the right (efficiency) axis's line, tick marks and tick NUMBERS redrawn in
-    /// <c>Harmonica.EfficiencyTrace</c>, over what <see cref="PlotRenderer.Draw"/> already drew in the
-    /// shared theme's ordinary axis colour.
+    /// brief-harmonicarf-r6d §1 — the fix for the double-rendered right axis: draw the SHARED plot
+    /// with its secondary chrome (border edges, ticks, tick numbers, label — all of
+    /// <c>AxesRenderer</c>'s <c>axes.ShowSecondary</c> branches) suppressed, so
+    /// <see cref="DrawSecondaryAxisOverlay"/> below is drawing the axis for the FIRST time rather than
+    /// covering a stroke that is still there underneath it.
+    ///
+    /// <para><b>Why a copy, not a flag flip-then-back.</b> <c>Axes</c> already has a deep-copy
+    /// constructor (<c>Axes.cs:161</c>) that carries <c>Window</c>/<c>WindowSecondary</c>/<c>Viewport</c>
+    /// verbatim — so the copy's trace geometry is byte-identical to the original's; only
+    /// <c>ShowSecondary</c> differs. <c>Plot.Axes</c> is temporarily swapped to the copy for the
+    /// <see cref="PlotRenderer.Draw"/> call and restored in a <c>finally</c>, so the ORIGINAL
+    /// <c>plot</c> — with <c>ShowSecondary</c> still true — is what <see cref="DrawSecondaryAxisOverlay"/>
+    /// (and every caller after it: the operating cursor, the compression note) sees. Confirmed safe by
+    /// reading, not assumed: trace drawing branches on <c>trace.UseSecondaryAxis</c>/
+    /// <c>TransformSet.SecondaryToCanvas</c>, never on <c>Axes.ShowSecondary</c> — nothing in
+    /// <c>PlotRenderer</c>/<c>TraceRenderer</c> reads that flag — and <c>BuildPowerSweepPlot</c> pins
+    /// <c>plot.Axes.Viewport</c> explicitly (R-h9b-11), so the copy's identical <c>Viewport</c> value
+    /// keeps the data rectangle exactly where it was; <c>PlotRenderer.ComputeViewport</c> only
+    /// re-derives a viewport from <c>ShowSecondary</c> for a Rect plot with NO pinned viewport, which
+    /// this one is not.</para>
+    /// </summary>
+    private static void DrawWithSuppressedSecondaryChrome(SKCanvas canvas, (double W, double H) size,
+                                                           Plot plot, HarmonicaRenderTheme theme,
+                                                           bool darkMode)
+    {
+        var original = plot.Axes;
+        plot.Axes = new Axes(original) { ShowSecondary = false };
+        try
+        {
+            PlotRenderer.Draw(canvas, size, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
+                              watermarkOpacity: 0f);
+        }
+        finally
+        {
+            plot.Axes = original;
+        }
+    }
+
+    /// <summary>
+    /// R-h9b-9 — the right axis's line, tick marks and tick NUMBERS, drawn in <paramref name="color"/>.
     ///
     /// <para><b>Not a shared-renderer change.</b> <c>AxesRenderer</c> colours the primary and secondary
     /// axes identically and has no per-axis colour capability — adding one there for a single
     /// harmonicaRF panel is exactly what the <c>AnnulusHeadroom</c> precedent (§9) says not to do. This
     /// duplicates the handful of lines of <c>AxesRenderer</c>'s own secondary-axis geometry rather than
     /// widening it, using the SAME public <see cref="Axes.Ticks"/> data and the SAME
-    /// <see cref="TransformSet.SecondaryToCanvas"/>/<see cref="TransformSet.PrimaryToCanvas"/> calls, so
-    /// the redraw lands exactly on top of the original rather than beside it.</para>
+    /// <see cref="TransformSet.SecondaryToCanvas"/>/<see cref="TransformSet.PrimaryToCanvas"/> calls.</para>
     ///
-    /// <para><b>R3C §5 — the cover must match the covered EXACTLY, or it doesn't cover.</b> Owner:
-    /// "the right y-axis... currently renders a vertical red line over top of a green. Do not render
-    /// the green line underneath it." The green was never a second line — it is
-    /// <c>AxesRenderer.DrawBorder</c>'s antialiased, <c>Square</c>-capped stroke showing as a fringe
-    /// along both edges and past both ends of THIS overlay's stroke, which used to be drawn
-    /// <c>IsAntialias = false</c> with the default <c>Butt</c> cap: a hard-edged, shorter stroke laid
-    /// over a softer, longer one always leaves a border of the thing underneath visible. Route (b) —
-    /// match the covered stroke's own <c>AxesRenderer.StrokePaint</c> shape (antialiased, <c>Square</c>
-    /// cap, identical width, identical endpoints) — confirmed by inspection of the two paints (no pixel
-    /// probe needed; the geometry argument is exact) and chosen over route (a) (omitting the border
-    /// draw) because it stays entirely inside this file, per the standing "never widen
-    /// <c>PlotRenderer</c>/<c>AxesRenderer</c> for a harmonicaRF need" rule (§9). Same fix applied to
-    /// the tick marks (<c>tickPaint</c>) below — they are the identical two-pass pattern with the
-    /// identical mismatch. The tick NUMBERS were already antialiased on both sides (this overlay's own
-    /// <c>textPaint</c> and <c>AxesRenderer</c>'s own tick-label paint) and show no fringe.</para>
+    /// <para><b>brief-harmonicarf-r6d §1 — no longer a cover.</b> R3C §5 had this matching
+    /// <c>AxesRenderer.DrawBorder</c>'s antialiased, <c>Square</c>-capped stroke shape so a two-pass
+    /// draw wouldn't leave a fringe of the covered colour showing. That matching is no longer load
+    /// -bearing for correctness (<see cref="DrawWithSuppressedSecondaryChrome"/> means there is nothing
+    /// underneath to fringe) but is kept anyway, since it is also just the right way to draw a border
+    /// stroke.</para>
+    ///
+    /// <para><b>brief-harmonicarf-r6d §5 — <paramref name="color"/> is a parameter, not a fork.</b> The
+    /// time-domain view redraws this same axis in <c>Harmonica.Loadline</c> instead of
+    /// <c>Harmonica.EfficiencyTrace</c>; the geometry is identical either way.</para>
     /// </summary>
-    private static void DrawEfficiencyAxisOverlay(SKCanvas canvas, (double W, double H) size,
-                                                   Plot plot, HarmonicaRenderTheme theme)
+    private static void DrawSecondaryAxisOverlay(SKCanvas canvas, (double W, double H) size,
+                                                  Plot plot, HarmonicaRenderTheme theme, SKColor color)
     {
         var axes = plot.Axes;
         if (!axes.ShowSecondary) return;
@@ -1006,7 +1067,7 @@ public static class HarmonicaPanelRenderer
         using var linePaint = new SKPaint
         {
             Style = SKPaintStyle.Stroke, IsAntialias = true, StrokeCap = SKStrokeCap.Square,
-            Color = theme.EfficiencyTrace, StrokeWidth = 2f * (float)axes.GridThicknessFactor * lw,
+            Color = color, StrokeWidth = 2f * (float)axes.GridThicknessFactor * lw,
         };
         // The right border edge — positioned in the PRIMARY window, exactly as AxesRenderer.DrawBorder
         // draws it (the border box itself does not depend on the secondary VALUE scale).
@@ -1017,10 +1078,10 @@ public static class HarmonicaPanelRenderer
         using var tickPaint = new SKPaint
         {
             Style = SKPaintStyle.Stroke, IsAntialias = true, StrokeCap = SKStrokeCap.Square,
-            Color = theme.EfficiencyTrace, StrokeWidth = (float)axes.TickThicknessFactor * lw,
+            Color = color, StrokeWidth = (float)axes.TickThicknessFactor * lw,
         };
         using var font  = new SKFont(SkiaFonts.PlexRegular, (float)(axes.FontSizeTicks * lw));
-        using var textPaint = new SKPaint { Color = theme.EfficiencyTrace, IsAntialias = true };
+        using var textPaint = new SKPaint { Color = color, IsAntialias = true };
 
         foreach (var (yPrimary, ySecondary) in axes.Ticks(minorTicks: false).MajorY)
         {
@@ -1050,26 +1111,22 @@ public static class HarmonicaPanelRenderer
                             SKTextAlign.Left, font, textPaint);
         }
 
-        DrawEfficiencyAxisLabel(canvas, size, plot, theme);
+        DrawSecondaryAxisLabel(canvas, size, plot, color);
     }
 
     /// <summary>
-    /// R-h9r2-23 — "The 'Efficiency (%)' text label needs to be rendered in
-    /// Harmonica.EfficiencyTrace color." R-h9b-9 already redrew the axis's line, ticks and tick
-    /// NUMBERS; it did not redraw the axis LABEL itself, which <c>AxesRenderer.
-    /// DrawTitleAndAxisLabels</c> still draws in the shared theme's ordinary text colour.
+    /// R-h9r2-23 — the "Efficiency (%)" / "Ids (A)" text label, drawn in <paramref name="color"/>.
+    /// R-h9b-9 already redrew the axis's line, ticks and tick NUMBERS; it did not redraw the axis LABEL
+    /// itself, which <c>AxesRenderer.DrawTitleAndAxisLabels</c> still draws in the shared theme's
+    /// ordinary text colour.
     ///
     /// <para><b>Lands EXACTLY on top of the original</b>, using
     /// <see cref="AxesRenderer.ComputeLabelHitRects"/>'s <c>Y2Label</c> rect — a standalone,
     /// non-drawing geometry accessor R-h9b-10 already uses for the X-label context menu — rather than
-    /// a hand-derived guess at the label's position. Widening a non-drawing geometry accessor is the
-    /// one permitted exception to "never widen <c>AxesRenderer</c> for a harmonicaRF colour need"
-    /// (§9); <c>Y2Label</c> already existed on <c>LabelHitRects</c>, so nothing there needed widening
-    /// either. This duplicates the handful of lines that actually PAINT the rotated text, the same
-    /// shape the rest of this overlay already follows for the line/ticks/numbers.</para>
+    /// a hand-derived guess at the label's position.</para>
     /// </summary>
-    private static void DrawEfficiencyAxisLabel(SKCanvas canvas, (double W, double H) size,
-                                                 Plot plot, HarmonicaRenderTheme theme)
+    private static void DrawSecondaryAxisLabel(SKCanvas canvas, (double W, double H) size,
+                                                Plot plot, SKColor color)
     {
         string label = plot.Y2Label;
         if (string.IsNullOrEmpty(label) || !plot.Axes.ShowSecondary) return;
@@ -1080,7 +1137,7 @@ public static class HarmonicaPanelRenderer
 
         float lw = AxesRenderer.LineWidth(size);
         using var font  = new SKFont(SkiaFonts.PlexRegular, (float)(plot.Axes.FontSizeTicks * 0.9f * lw));
-        using var paint = new SKPaint { Color = theme.EfficiencyTrace, IsAntialias = true };
+        using var paint = new SKPaint { Color = color, IsAntialias = true };
 
         float cx = r.MidX;
         float cy = r.MidY;
@@ -1093,12 +1150,15 @@ public static class HarmonicaPanelRenderer
         canvas.Restore();
     }
 
-    internal static Plot BuildPowerSweepPlot(PowerSweepPanelData d, HarmonicaRenderTheme theme)
+    internal static Plot BuildPowerSweepPlot(PowerSweepPanelData d, HarmonicaRenderTheme theme,
+                                             StoredAxisWindow limits = default)
     {
         var plot = new Plot(PlotType.Rect, FreqUnit.GHz)
         {
             ShowWatermark = false,
-            CustomTitleOn = true, CustomTitle = "",
+            // brief-harmonicarf-r6d §3 — also the §4 fly menu's hit target (the title band read
+            // through AxesRenderer.ComputeLabelHitRects, never hand-derived).
+            CustomTitleOn = true, CustomTitle = "Power Sweep",
             CustomXLabelOn = true, CustomXLabel = d.XUnit.Label(),
             CustomYLabelOn = true, CustomYLabel = "Gain (dB)",
             // R-h9b-8 — without this the right axis falls back to its trace's own auto-derived label
@@ -1106,6 +1166,8 @@ public static class HarmonicaPanelRenderer
             CustomY2LabelOn = true,
             CustomY2Label = d.EfficiencyMetric == GridMetric.Pae ? "PAE (%)" : "Efficiency (%)",
         };
+        // Matches the Smith panels' own row-1 title height — see RectTitleFontSizeLabel's own remarks.
+        plot.Axes.FontSizeLabel = RectTitleFontSizeLabel;
 
         double[] x = d.XUnit.Values(d);
         if (x.Length > 1)
@@ -1117,11 +1179,47 @@ public static class HarmonicaPanelRenderer
 
         AutoScale(plot);
         PinAxisPin(plot, d);
+        AddXHeadroom(plot);
+        // brief-harmonicarf-r6e §2.4 — LAST in the ordering: AutoScale, then the Pin-domain pin, then
+        // the right-edge headroom, then (only here) an explicit stored limit, which overrides all
+        // three. Autoscale ON leaves this frame's computed window as the other three left it, so
+        // CaptureAxisWindows can read it back.
+        ApplyStoredWindow(plot, limits, hasSecondary: true);
         // R-h9b-11 — pinned explicitly rather than left to the automatic computation, so a future
         // change to Plot.SetAxesViewport()'s formula cannot silently re-open the mismatch with the
         // loadline panel, which derives its own viewport from this SAME probe shape.
         plot.Axes.Viewport = PowerSweepShapedViewport();
         return plot;
+    }
+
+    /// <summary>
+    /// brief-harmonicarf-r6d §2 — without this the curve ends exactly on the right border (neither
+    /// <see cref="AutoScale"/>'s <c>Pad</c> nor <see cref="PinAxisPin"/> add any X margin, only Y), so
+    /// the compression cursor — drawn at the LAST swept X — sits under the axis line and cannot be
+    /// read. Extends <see cref="Axes.Window"/>'s right edge by a fraction of the span, AFTER both
+    /// AutoScale and the Pin-domain pin.
+    ///
+    /// <para><b>The identical extension is applied to <see cref="Axes.WindowSecondary"/>.</b>
+    /// <see cref="PinAxisPin"/>'s own note says why: the two windows must keep the same X mapping or
+    /// the gain and efficiency curves separate horizontally. <see cref="AutoScale"/> already gives
+    /// them the same X range (one <c>minX</c>/<c>maxX</c> accumulator across both primary and
+    /// secondary traces) and <see cref="PinAxisPin"/> — when it fires — sets both to the identical
+    /// <c>[lo, hi]</c>, so re-using ONE <c>extra</c> value computed from the primary window (rather
+    /// than independently deriving a second fraction from the secondary one) is what guarantees the
+    /// two stay exactly equal rather than merely equal up to floating-point noise.</para>
+    /// </summary>
+    internal const double XHeadroomFraction = 0.05;
+
+    private static void AddXHeadroom(Plot plot)
+    {
+        var w = plot.Axes.Window;
+        if (w.Width <= 0) return;
+        double extra = w.Width * XHeadroomFraction;
+        plot.Axes.Window = new Avalonia.Rect(w.X, w.Y, w.Width + extra, w.Height);
+
+        var w2 = plot.Axes.WindowSecondary;
+        if (w2.Width > 0)
+            plot.Axes.WindowSecondary = new Avalonia.Rect(w2.X, w2.Y, w2.Width + extra, w2.Height);
     }
 
     /// <summary>
@@ -1182,6 +1280,112 @@ public static class HarmonicaPanelRenderer
         using var paint = new SKPaint { Color = theme.GridPointDropped, IsAntialias = true };
         canvas.DrawText("did not reach compression", 6f, (float)(ts + 4f),
                         SKTextAlign.Left, font, paint);
+    }
+
+    // ── §7.4 (r6d §5) — the power-sweep panel, repurposed as a Time Domain view ─
+
+    /// <summary>
+    /// brief-harmonicarf-r6d §4/§5 — the power-sweep panel's title fly menu can switch it to this
+    /// view instead: Vds(t) on the left axis, Ids(t) on the right, over ONE RF cycle.
+    ///
+    /// <para><b>Reads the SAME arrays the loadline panel plots</b> — <paramref name="d"/> is
+    /// <c>HarmonicaFrame.Loadline</c>, exactly what <see cref="DrawLoadlinePanel"/> draws — so the two
+    /// panels can never disagree about the loadline's own shape. Nothing here re-evaluates
+    /// <c>Vds_intr_t</c>/<c>Ids_intr_t</c> (§0.3 item 1).</para>
+    ///
+    /// <para><b>The empty case is stated, never zeros.</b> When the intrinsic plane has not been
+    /// located, <see cref="LoadlinePanelData.LoadlineVds"/>/<see cref="LoadlinePanelData.LoadlineIds"/>
+    /// are published empty (R-h8-3's refusal) — drawing an all-zero flat line there would be a
+    /// plausible-looking wrong answer, so this draws a stated note instead, the same shape
+    /// <see cref="DrawPickedTracePanel"/>'s "no trace" note already uses.</para>
+    /// </summary>
+    public static void DrawTimeDomainPanel(SKCanvas canvas, (double W, double H) size,
+                                           LoadlinePanelData d, HarmonicaRenderTheme theme, bool darkMode,
+                                           HarmonicaSettings? settings = null)
+    {
+        if (d.LoadlineVds.Length < 2 || d.LoadlineIds.Length < 2)
+        {
+            DrawTimeDomainEmptyNote(canvas, size, theme);
+            return;
+        }
+
+        var plot = BuildTimeDomainPlot(d, theme, TimeDomainLimits(settings ?? new HarmonicaSettings()));
+        DrawWithSuppressedSecondaryChrome(canvas, size, plot, theme, darkMode);
+        // §1's fix applies here too — the right axis is drawn ONCE, in Harmonica.Loadline rather than
+        // Harmonica.EfficiencyTrace, through the SAME colour-parametrized overlay.
+        DrawSecondaryAxisOverlay(canvas, size, plot, theme, theme.Loadline);
+    }
+
+    /// <summary>Owner: show 2 RF cycles on the Time Domain view rather than 1, so a period's shape
+    /// reads as periodic rather than as a single, possibly-ambiguous-looking arc.</summary>
+    internal const int TimeDomainCycles = 2;
+
+    /// <summary>
+    /// The time axis is <c>i / N × (1/f₀)</c>, <c>N = LoadlineVds.Length − 1</c> (the array is closed
+    /// over one cycle — <c>HarmonicaSolver.BuildLoadline</c> repeats the first sample as the last — so
+    /// <c>N</c> is exactly <c>Settings.LoadlineSamples</c>), extended to
+    /// <see cref="TimeDomainCycles"/> cycles by wrapping the source index (see the loop below),
+    /// labelled in <b>nanoseconds</b>: at the shipped f₀ = 2 GHz one period is 0.5 ns, which reads as
+    /// a plain number in ns (<c>NumDigitsXAxis</c>'s default 5 significant figures) without the extra
+    /// zeros picoseconds would add for a period this size.
+    /// </summary>
+    internal static Plot BuildTimeDomainPlot(LoadlinePanelData d, HarmonicaRenderTheme theme,
+                                             StoredAxisWindow limits = default)
+    {
+        var plot = new Plot(PlotType.Rect, FreqUnit.GHz)
+        {
+            ShowWatermark = false,
+            CustomTitleOn = true, CustomTitle = "Time Domain",
+            CustomXLabelOn = true, CustomXLabel = "Time (ns)",
+            CustomYLabelOn = true, CustomYLabel = "Vds (V)",
+            CustomY2LabelOn = true, CustomY2Label = "Ids (A)",
+        };
+        // Matches the Smith panels' own row-1 title height — see RectTitleFontSizeLabel's own remarks.
+        plot.Axes.FontSizeLabel = RectTitleFontSizeLabel;
+
+        int n = d.LoadlineVds.Length;
+        if (n > 1 && d.FrequencyHz > 0)
+        {
+            double periodNs = 1e9 / d.FrequencyHz;
+            int cycleSamples = n - 1;
+            // Owner: show 2 RF cycles, not 1. LoadlineVds/LoadlineIds is one CLOSED cycle (its last
+            // sample already repeats its first — HarmonicaSolver.BuildLoadline's own doc comment), so
+            // wrapping the source index modulo cycleSamples repeats that exact closed waveform a
+            // second time rather than re-deriving it — the seam at t=periodNs lands on the identical
+            // value either way, since d.LoadlineVds[cycleSamples] == d.LoadlineVds[0] already.
+            int total = cycleSamples * TimeDomainCycles + 1;
+            double[] t   = new double[total];
+            double[] vds = new double[total];
+            double[] ids = new double[total];
+            for (int i = 0; i < total; i++)
+            {
+                t[i] = (double)i / cycleSamples * periodNs;
+                int src = i % cycleSamples;
+                vds[i] = d.LoadlineVds[src];
+                ids[i] = d.LoadlineIds[src];
+            }
+
+            plot.Traces.Add(NewRectTrace(t, vds, theme.GainTrace, width: 1.6));
+            plot.Traces.Add(NewRectTrace(t, ids, theme.Loadline, width: 1.6, secondary: true));
+        }
+
+        AutoScale(plot);
+        // brief-harmonicarf-r6e §2.4/§4 — the Time Domain view's OWN stored window, never the
+        // power-sweep one, even though the two share this panel slot (§4's own instruction).
+        ApplyStoredWindow(plot, limits, hasSecondary: true);
+        // R-h9b-11 — the same pinned shape every §7.4-family plot uses, so this panel's data
+        // rectangle lines up with the power-sweep view it replaces (they occupy the same layout slot).
+        plot.Axes.Viewport = PowerSweepShapedViewport();
+        return plot;
+    }
+
+    private static void DrawTimeDomainEmptyNote(SKCanvas canvas, (double W, double H) size,
+                                                 HarmonicaRenderTheme theme)
+    {
+        float ts = (float)Math.Max(9.0, Math.Min(size.W, size.H) * 0.05);
+        using var font  = new SKFont(SkiaFonts.PlexRegular, ts);
+        using var paint = new SKPaint { Color = theme.GridPointDropped, IsAntialias = true };
+        canvas.DrawText("intrinsic plane not located", 6f, (float)(ts + 4f), SKTextAlign.Left, font, paint);
     }
 
     // ── §7.7 — a picked trace's own panel ────────────────────────────────────
@@ -1253,5 +1457,74 @@ public static class HarmonicaPanelRenderer
         double w = x1 - x0, h = y1 - y0;
         if (w <= 0) w = 1; if (h <= 0) h = 1;
         return new Avalonia.Rect(x0, y0 - h * 0.05, w, h * 1.10);
+    }
+
+    // ── brief-harmonicarf-r6e §2 — persisted axis limits + autoscale, one mechanism, three plots ──
+
+    /// <summary>
+    /// One plot's worth of <c>HarmonicaSettings</c>' stored axis fields, resolved to a single value
+    /// so <see cref="ApplyStoredWindow"/> does not need to know which plot it is applying to.
+    /// <c>Y2Min</c>/<c>Y2Max</c> are unused (left null) for the DCIV/loadline plot, which has no
+    /// secondary axis.
+    /// </summary>
+    internal readonly record struct StoredAxisWindow(
+        double? XMin, double? XMax, double? YMin, double? YMax,
+        double? Y2Min, double? Y2Max, bool Autoscale);
+
+    internal static StoredAxisWindow DcivLimits(HarmonicaSettings s) => new(
+        s.DcivXMin, s.DcivXMax, s.DcivYMin, s.DcivYMax, null, null, s.DcivAutoscale);
+
+    internal static StoredAxisWindow PowerSweepLimits(HarmonicaSettings s) => new(
+        s.PowerSweepXMin, s.PowerSweepXMax, s.PowerSweepYMin, s.PowerSweepYMax,
+        s.PowerSweepY2Min, s.PowerSweepY2Max, s.PowerSweepAutoscale);
+
+    internal static StoredAxisWindow TimeDomainLimits(HarmonicaSettings s) => new(
+        s.TimeDomainXMin, s.TimeDomainXMax, s.TimeDomainYMin, s.TimeDomainYMax,
+        s.TimeDomainY2Min, s.TimeDomainY2Max, s.TimeDomainAutoscale);
+
+    /// <summary>
+    /// brief-harmonicarf-r6e §2.3/§2.4 — applied AFTER <see cref="AutoScale"/> (and, for the power
+    /// sweep, after <c>PinAxisPin</c> and the right-edge headroom) — <b>an explicit user limit is the
+    /// user's, and nothing may silently correct it, so this always wins when it applies.</b>
+    ///
+    /// <para><b>Autoscale ON leaves the just-computed window untouched</b> — that IS "autoscale":
+    /// whatever <see cref="AutoScale"/>/<c>PinAxisPin</c>/the headroom fraction computed is what
+    /// gets captured back into <c>HarmonicaSettings</c> by
+    /// <see cref="Harmonica.HarmonicaViewModel.CaptureAxisWindows"/> on the next published frame, so
+    /// turning autoscale back off freezes exactly what is on screen (§2.3).</para>
+    ///
+    /// <para><b>Autoscale OFF with no stored limit (§2.2)</b> — <c>XMin</c>/<c>YMin</c> null — is
+    /// ALSO a no-op here: the computed window is left exactly as <see cref="AutoScale"/> fit it, which
+    /// is what a document that has never had its axes touched looks like today. It is
+    /// <see cref="Harmonica.HarmonicaViewModel.CaptureAxisWindows"/>'s job to notice the absence and
+    /// store this same window once, so the NEXT frame holds it — this method never writes anywhere,
+    /// it only reads.</para>
+    /// </summary>
+    private static void ApplyStoredWindow(Plot plot, StoredAxisWindow limits, bool hasSecondary)
+    {
+        if (limits.Autoscale) return;
+
+        if (limits.XMin is { } xMin && limits.XMax is { } xMax && xMax > xMin)
+        {
+            var w = plot.Axes.Window;
+            plot.Axes.Window = new Avalonia.Rect(xMin, w.Y, xMax - xMin, w.Height);
+            if (hasSecondary)
+            {
+                var w2 = plot.Axes.WindowSecondary;
+                plot.Axes.WindowSecondary = new Avalonia.Rect(xMin, w2.Y, xMax - xMin, w2.Height);
+            }
+        }
+
+        if (limits.YMin is { } yMin && limits.YMax is { } yMax && yMax > yMin)
+        {
+            var w = plot.Axes.Window;
+            plot.Axes.Window = new Avalonia.Rect(w.X, yMin, w.Width, yMax - yMin);
+        }
+
+        if (hasSecondary && limits.Y2Min is { } y2Min && limits.Y2Max is { } y2Max && y2Max > y2Min)
+        {
+            var w2 = plot.Axes.WindowSecondary;
+            plot.Axes.WindowSecondary = new Avalonia.Rect(w2.X, y2Min, w2.Width, y2Max - y2Min);
+        }
     }
 }

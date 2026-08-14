@@ -23,39 +23,40 @@ using RfCore.Loadpull;
 
 namespace CircuitRF.Ui.Harmonica;
 
-/// <summary>R-h9r2-8's VSWR-circle drag handle: the θ = 0 point on the true locus, and the numeric
-/// inverse — which VSWR's locus passes through a given drag point — since the map from "drag distance"
-/// to VSWR has no closed form for a marker off the real axis.</summary>
+/// <summary>R-h9r2-8's VSWR-circle drag: the numeric inverse — which VSWR's locus passes through a
+/// given drag point — since the map from "drag distance" to VSWR has no closed form for a marker off
+/// the real axis. brief-harmonicarf-r6b §1.1 removed the single θ = 0 grab point; a drag now grabs
+/// the circle's own circumference anywhere (see <c>HarmonicaHitTest.Resolve</c>), so this class's own
+/// job shrank to the pure geometry/inversion, with no one "handle" point of its own left to name.
+/// </summary>
 public static class HarmonicaVswrHandle
 {
-    /// <summary>The lowest VSWR a drag may reach — short of 1.0 (a zero-radius circle, nothing to
-    /// grab) but otherwise as close to a perfect match as the drag can express.</summary>
+    /// <summary>
+    /// The ONE remaining restriction on a VSWR-circle drag (brief-harmonicarf-r6b §1.2, owner ruling:
+    /// "no clamping — the user may drag the circle outside the Smith chart if they want"). This floor
+    /// is geometric, not a policy choice: ρ = (VSWR−1)/(VSWR+1) goes negative below VSWR = 1, and a
+    /// negative-radius circle is not a circle. Set just above 1.0 rather than exactly at it, since
+    /// VSWR = 1 is a zero-radius circle — nothing to grab or show a locus for.
+    /// </summary>
     public const double MinVswr = 1.001;
 
-    /// <summary>The highest VSWR a drag may reach — the circle's own radius saturates well before
-    /// this for any drag point inside the unit disk, so the cap is a sanity ceiling, not a geometric
-    /// limit.</summary>
-    public const double MaxVswr = 199.0;
+    /// <summary>
+    /// <see cref="VswrThrough"/>'s bisection SEARCH ceiling — not a display cap (brief-harmonicarf-r6b
+    /// §1.2 removed the old display clamp entirely; nothing downstream of a drag clamps the resulting
+    /// <c>VswrValue</c> anymore). An unbounded upper end still needs a finite bracket that provably
+    /// contains the root, so this is picked large enough that no reachable drag point inside the
+    /// panel's own canvas extent needs a VSWR beyond it: at VSWR = 1e6, ρ is 1 − 2e-6, i.e. the locus
+    /// already sits within 2 parts per million of the Γ = 1 rim for every marker position, which is
+    /// far tighter than screen-pixel resolution can distinguish. A drag that still lands outside a
+    /// circle this close to the rim genuinely has no finite answer nearby, and <see cref="VswrThrough"/>
+    /// clamping to this ceiling (rather than looping forever) is the honest fallback for that case.
+    /// </summary>
+    public const double MaxVswr = 1_000_000.0;
 
-    /// <summary>Bisection iterations for <see cref="VswrThrough"/> — 40 halvings of a
-    /// [1.001, 199] search bracket is ~1e-13 relative precision, at the cost of 40 cheap
+    /// <summary>Bisection iterations for <see cref="VswrThrough"/> — 60 halvings of a
+    /// [1.001, 1e6] search bracket is well past double precision, at the cost of 60 cheap
     /// (2-point-locus) evaluations per pointer move. Nowhere near a hot path.</summary>
-    private const int BisectionIterations = 40;
-
-    /// <summary>The Γ-plane reflection-coefficient magnitude for a given VSWR — the standard
-    /// ρ = (VSWR−1)/(VSWR+1) relation. Pure unit conversion; carries no claim about WHERE on the Γ
-    /// plane a circle of that radius is centred (see this file's own header for why that claim was
-    /// wrong).</summary>
-    public static double RhoOf(double vswr) => (vswr - 1.0) / (vswr + 1.0);
-
-    /// <summary>The inverse of <see cref="RhoOf"/>, clamped to <see cref="MinVswr"/>/<see cref="MaxVswr"/>.
-    /// Used both to convert a raw ρ into a displayable VSWR and, via <see cref="HarmonicaViewModel.
-    /// SetMarkerVswr"/>, to re-clamp an already-computed VSWR by round-tripping it through ρ.</summary>
-    public static double VswrOf(double rho)
-    {
-        rho = Math.Clamp(rho, 0.0, 0.99);
-        return Math.Clamp((1.0 + rho) / (1.0 - rho), MinVswr, MaxVswr);
-    }
+    private const int BisectionIterations = 60;
 
     /// <summary>The circle's own centre and radius in the Γ plane, for one (marker, VSWR, Z0) —
     /// derived from <see cref="LoadpullSurface.VswrLocus"/>'s own θ = 0 / θ = π samples rather than
@@ -70,12 +71,6 @@ public static class HarmonicaVswrHandle
         return (ctr, rad);
     }
 
-    /// <summary>The handle's raw Gamma — the locus's own θ = 0 sample, i.e. exactly the point
-    /// <see cref="HarmonicaPanelRenderer.DrawVswrLocus"/> starts (and closes) its outline at. Never run
-    /// through <c>IntrinsicGlyphScale</c>: the locus itself is drawn on the raw chart transform.</summary>
-    public static Complex HandleGamma(Complex center, double vswr, double z0)
-        => LoadpullSurface.VswrLocus(center, vswr, SurfacePlane.Gamma, new Complex(z0, 0.0), nPoints: 1)[0];
-
     /// <summary>
     /// The VSWR whose locus passes through <paramref name="dragGamma"/> — a drag SETS this, it does
     /// not compute a radius from it, because there is no closed form: the circle's centre moves with
@@ -86,13 +81,31 @@ public static class HarmonicaVswrHandle
     /// drag point lies outside it), negative near <see cref="MaxVswr"/> for any point inside the Γ
     /// disk. A drag that manages to fall outside that bracket either way clamps to the corresponding
     /// end rather than extrapolating past it.
+    ///
+    /// <para><b>brief-harmonicarf-r6b §1.2 — <paramref name="dragGamma"/> is used exactly as given,
+    /// no rim clamp.</b> An earlier version pulled a drag point back inside <c>|Γ| &lt; 0.999</c> —
+    /// copied from <see cref="HarmonicaViewModel.SetMarkerGamma"/>'s own Γ = 1 guard, where it matters
+    /// because that Γ becomes a new termination (an open circuit at exactly Γ = 1). Here
+    /// <paramref name="dragGamma"/> is never converted to an impedance — it is only ever compared
+    /// against a circle's centre and radius — so the guard bought nothing but silently capping every
+    /// "drag past the rim" gesture this brief exists to unlock. Nothing in <see cref="CircleParams"/>
+    /// requires it: ρ stays below 1 for any finite VSWR, so <c>ctr</c>/<c>rad</c> stay finite
+    /// regardless of how far outside the unit circle the drag point itself sits.</para>
+    ///
+    /// <para><b>MEASURED, NOT ASSUMED — what "clamps to <see cref="MaxVswr"/>" actually means for an
+    /// ordinary (passive, <c>|marker.Gamma| &lt; 1</c>) marker.</b> The underlying Möbius map is an
+    /// automorphism of the passive half-plane, so a passive centre's whole power-wave disk images
+    /// STRICTLY INSIDE the passive Γ disk for every finite VSWR — the locus approaches <c>|Γ| = 1</c>
+    /// as VSWR → ∞ but can never reach or cross it. So a passive marker's circle can never legitimately
+    /// need a VSWR the ceiling would reject; the drag simply asks for one closer and closer to the rim
+    /// as the pointer approaches it, and <see cref="MaxVswr"/> only ever bites a drag point that has
+    /// truly moved past what any finite VSWR reaches. The mirror case — an ACTIVE marker
+    /// (<c>|marker.Gamma| &gt; 1</c>, R-h6-10's own flag) — has its ENTIRE family sitting outside
+    /// <c>|Γ| = 1</c> instead, never inside; §2.3's "some added points land outside the unit circle"
+    /// is this case, not a high-VSWR passive drag.</para>
     /// </summary>
     public static double VswrThrough(Complex center, Complex dragGamma, double z0)
     {
-        // Γ = 1 is an open, same guard SetMarkerGamma already applies to a marker drag.
-        double mag = dragGamma.Magnitude;
-        if (mag > 0.999) dragGamma = dragGamma / mag * 0.999;
-
         double F(double v)
         {
             var (ctr, rad) = CircleParams(center, v, z0);

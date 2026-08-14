@@ -280,7 +280,7 @@ public sealed class HarmonicaColorEditorTests(ITestOutputHelper output)
     [Fact]
     public void TheHexField_AppliesOnReturnAndHandlesIt_RevertsOnEscape_AndAppliesOnLostFocus()
     {
-        string code = RepoFile("src/Ui/Views/Dialogs/HarmonicaPreferencesDialog.axaml.cs");
+        string code = RepoFile("src/Ui/Views/Dialogs/HarmonicaAppearanceSettingsView.axaml.cs");
 
         // Return applies AND sets e.Handled — or the window's default button closes the dialog
         // instead of applying, which is the defect SettingsView already absorbed.
@@ -292,7 +292,7 @@ public sealed class HarmonicaColorEditorTests(ITestOutputHelper output)
         // RRGGBBAA, with a six-digit entry taken as opaque.
         Assert.Contains("if (txt.Length == 6) txt += \"FF\";", code, StringComparison.Ordinal);
 
-        string axaml = RepoFile("src/Ui/Views/Dialogs/HarmonicaPreferencesDialog.axaml");
+        string axaml = RepoFile("src/Ui/Views/Dialogs/HarmonicaAppearanceSettingsView.axaml");
         Assert.Contains("LostFocus=\"OnHexLostFocus\"", axaml, StringComparison.Ordinal);
         Assert.Contains("KeyDown=\"OnHexKeyDown\"", axaml, StringComparison.Ordinal);
     }
@@ -300,7 +300,7 @@ public sealed class HarmonicaColorEditorTests(ITestOutputHelper output)
     [Fact]
     public void TheColourPicker_IsCircuitRfsOwnDialog_WhichAlreadyCarriesColorViewsFluentTheme()
     {
-        string code = RepoFile("src/Ui/Views/Dialogs/HarmonicaPreferencesDialog.axaml.cs");
+        string code = RepoFile("src/Ui/Views/Dialogs/HarmonicaAppearanceSettingsView.axaml.cs");
         Assert.Contains("new ColorPickerDialog(", code, StringComparison.Ordinal);
 
         // …and the app really does include the theme ColorView needs, or it instantiates blank.
@@ -316,7 +316,7 @@ public sealed class HarmonicaColorEditorTests(ITestOutputHelper output)
     [Fact]
     public void ThePreferencesDialog_OffersImportExportResetAndTheFadeParameters()
     {
-        var axaml = XDocument.Parse(RepoFile("src/Ui/Views/Dialogs/HarmonicaPreferencesDialog.axaml"));
+        var axaml = XDocument.Parse(RepoFile("src/Ui/Views/Dialogs/HarmonicaAppearanceSettingsView.axaml"));
         var names = axaml.Descendants()
             .Select(e => (string?)e.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml")))
             .Where(n => n is { Length: > 0 })

@@ -17,6 +17,7 @@
 //  window/exporter operation) does.
 // ================================================================
 
+using System;
 using System.Collections.Generic;
 using Avalonia.Controls;
 
@@ -24,18 +25,43 @@ namespace CircuitRF.Ui.Harmonica;
 
 public static class HarmonicaAppMenuInjector
 {
-    /// <summary>Builds fresh Markers / Display / Grid top-level items from the view model's own
-    /// collections and commands. Each call returns brand-new <see cref="NativeMenuItem"/> instances —
-    /// never <c>_ownMenu</c>'s own children, which <see cref="NativeMenu"/>'s list validator refuses
-    /// to accept a second time (an item that already has a <c>Parent</c> throws
+    /// <summary>Builds fresh harmonicaRF / Markers / Display / Grid top-level items from the view
+    /// model's own collections and commands. Each call returns brand-new <see cref="NativeMenuItem"/>
+    /// instances — never <c>_ownMenu</c>'s own children, which <see cref="NativeMenu"/>'s list
+    /// validator refuses to accept a second time (an item that already has a <c>Parent</c> throws
     /// <see cref="System.InvalidOperationException"/>).</summary>
     public static IReadOnlyList<NativeMenuItem> BuildTopLevelItems(HarmonicaMenuViewModel vm)
-        => [BuildMarkers(vm), BuildDisplay(vm), BuildGrid(vm)];
+        => [BuildHarmonicaRf(vm), BuildMarkers(vm), BuildDisplay(vm), BuildGrid(vm)];
 
-    /// <summary>Appends <paramref name="items"/> to <paramref name="appMenu"/>'s own <c>Items</c>.</summary>
+    /// <summary>
+    /// Appends <paramref name="items"/> to <paramref name="appMenu"/>'s own <c>Items</c> — ATOMICALLY.
+    ///
+    /// <para>brief-harmonicarf-r6a §1.2 — the owner reported the docked bar showing <c>Markers</c> but
+    /// not <c>Display</c>/<c>Grid</c>: exactly the symptom of a <c>foreach</c> loop that adds items one
+    /// at a time with no rollback, where a later item throws (<c>NativeMenu</c>'s own list validator
+    /// refuses any item that already has a <c>Parent</c>) after an earlier one already succeeded. The
+    /// exact throw did not reproduce headlessly against a normal Inject/Withdraw/re-Inject cycle (see
+    /// <c>HarmonicaAppMenuInjectorTests</c>), so this fixes the loop to be failure-visible regardless of
+    /// cause: on ANY exception partway through, every item added so far in this call is removed again
+    /// before the exception propagates — the caller either sees the WHOLE set land, or NONE of it.
+    /// </para>
+    /// </summary>
     public static void Inject(NativeMenu appMenu, IReadOnlyList<NativeMenuItem> items)
     {
-        foreach (var item in items) appMenu.Items.Add(item);
+        var added = new List<NativeMenuItem>(items.Count);
+        try
+        {
+            foreach (var item in items)
+            {
+                appMenu.Items.Add(item);
+                added.Add(item);
+            }
+        }
+        catch
+        {
+            foreach (var item in added) appMenu.Items.Remove(item);
+            throw;
+        }
     }
 
     /// <summary>Removes exactly <paramref name="items"/> from <paramref name="appMenu"/> — by
@@ -46,8 +72,42 @@ public static class HarmonicaAppMenuInjector
         foreach (var item in items) appMenu.Items.Remove(item);
     }
 
-    // ── builders — mirrors HarmonicaMenuView.axaml's <NativeMenu.Menu> block, Markers/Display/Grid
-    //    only (File/Edit/Help duplicate what circuitRF's own bar already shows) ──────────────────────
+    // ── builders — mirrors HarmonicaMenuView.axaml's <NativeMenu.Menu> block, harmonicaRF/Markers/
+    //    Display/Grid (Help duplicates what circuitRF's own bar already shows) ─────────────────────
+
+    /// <summary>
+    /// brief-harmonicarf-r6a §1.3 — the owner ruling: a DOCKED document gets ONE extra top-level menu
+    /// named <c>harmonicaRF</c>, holding the document-scoped items that live in the torn-off File and
+    /// Edit menus (minus Undo/Redo — circuitRF's own Edit ▸ Undo already owns ⌘Z on a docked window,
+    /// and two Undo items on one gesture is worse than one). This is what closes §2's own "docked has
+    /// no route to harmonicaRF's own Settings…" gap. The grouping/order mirrors File's own separators,
+    /// with Edit's copy group and Settings… folded in before Close (File's own last item).
+    /// </summary>
+    private static NativeMenuItem BuildHarmonicaRf(HarmonicaMenuViewModel vm)
+        => new("harmonicaRF")
+        {
+            Menu = MenuOf(
+                Item("New",           vm.NewDocumentCommand),
+                Item("Open .charm…",  vm.OpenDocumentCommand),
+                Item("Save",          vm.SaveDocumentCommand),
+                Item("Save As…",      vm.SaveDocumentAsCommand),
+                Sep(),
+                Item("Set DUT…",      vm.SetDutCommand),
+                Item("Refresh DUT",   vm.RefreshDutCommand),
+                Sep(),
+                Item("Import .gam…",       vm.ImportGamCommand),
+                Item("Export .gam…",       vm.ExportGamCommand),
+                Item("Export Data…",       vm.ExportDataCommand),
+                Item("Export Testbench…",  vm.ExportTestbenchCommand),
+                Sep(),
+                Item("Copy Plot",             vm.CopyPlotCommand),
+                Item("Copy Readouts",         vm.CopyReadoutsCommand),
+                Item("Copy Termination Set",  vm.CopyTerminationsCommand),
+                Sep(),
+                Item("Settings…", vm.SettingsCommand),
+                Sep(),
+                Item("Close", vm.CloseDocumentCommand)),
+        };
 
     private static NativeMenuItem BuildMarkers(HarmonicaMenuViewModel vm)
     {
@@ -95,13 +155,13 @@ public static class HarmonicaAppMenuInjector
                 Item("20", vm.SetContourLevelsCommand, "20")),
         };
 
+        // brief-harmonicarf-r6a §4 — Edit Display / Add Trace… / Remove All Traces (deferred to a
+        // harmonicaRF v2) and "Cursor Snap to Compression" (owner request) are removed from this menu
+        // too — see HarmonicaMenuView.axaml's matching comments for the two other surfaces. The code
+        // behind all of them stays wired; only the menu items are gone.
         return new NativeMenuItem("Display")
         {
             Menu = MenuOf(
-                Item("Edit Display",      vm.ToggleEditDisplayCommand),
-                Item("Add Trace…",        vm.AddTraceCommand),
-                Item("Remove All Traces", vm.RemoveAllTracesCommand),
-                Sep(),
                 contourPlane,
                 contourHarmonic,
                 efficiencyMetric,
@@ -109,7 +169,6 @@ public static class HarmonicaAppMenuInjector
                 contourLevels,
                 Item("Iso-line Labels",            vm.ToggleIsoLineLabelsCommand),
                 Item("Grid Points",                vm.ToggleShowGridPointsCommand),
-                Item("Cursor Snap to Compression",  vm.ToggleCursorSnapCommand),
                 Sep(),
                 Item("Power Sweep…", vm.PowerSweepCommand),
                 Item("Set Z0…",      vm.SetZ0Command)),

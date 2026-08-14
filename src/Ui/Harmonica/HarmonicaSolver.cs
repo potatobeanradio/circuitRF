@@ -86,9 +86,11 @@ public sealed class HarmonicaSolver
     /// first frame after opening a document is fast rather than correct-and-slow.</summary>
     public sealed record Options
     {
-        /// <summary>§6.8's coarse ring set is 3 × 12 = 37 points; the full user grid is 5 × 12 = 61.</summary>
-        public int Rings  { get; init; } = 3;
-        public int Spokes { get; init; } = 12;
+        /// <summary>brief-harmonicarf-r6a §5.1 — tracks <see cref="FrameScheduler"/>'s own coarse ring
+        /// set (now 2 × 12 = 25 points; was 3 × 12 = 37) rather than a literal that would silently
+        /// drift from the ladder's actual "fast" tier the next time it moves.</summary>
+        public int Rings  { get; init; } = FrameScheduler.CoarseRings;
+        public int Spokes { get; init; } = FrameScheduler.CoarseSpokes;
         public double MaxGamma { get; init; } = 0.8;
 
         /// <summary>D8 — auto with override, defaulting to 10 levels.</summary>
@@ -143,6 +145,15 @@ public sealed class HarmonicaSolver
         /// §6.4 built <c>ContourGrid</c> for exactly that.
         /// </summary>
         public IReadOnlyList<Complex>? GammaGrid { get; init; }
+
+        /// <summary>
+        /// brief-harmonicarf-r6b §2.2 — Γ points ADDED on top of whatever <see cref="GammaGrid"/>
+        /// resolves to (the ring/spoke lattice by default, or an imported <c>.gam</c>/dragged scatter
+        /// when <see cref="GammaGrid"/> is set). Owner ruling: adding a point to a 3×12 grid gives
+        /// 3×12+1 solved points — it does not throw the preset away, so this is a SEPARATE layer
+        /// rather than something folded into <see cref="GammaGrid"/> itself.
+        /// </summary>
+        public IReadOnlyList<Complex>? AddedGridPoints { get; init; }
 
         /// <summary>
         /// §6.5 — which termination plane the contour grid sweeps. Load by default.
@@ -294,8 +305,14 @@ public sealed class HarmonicaSolver
         {
             grid ??= new ContourGrid();
             stage.Restart();
-            grid.Build(ctx, terminations.Clone(),
-                       opt.GammaGrid ?? ContourGrid.RingGrid(opt.Rings, opt.Spokes, opt.MaxGamma),
+            // brief-harmonicarf-r6b §2.2 — the base scatter (the ring/spoke lattice, or an imported
+            // .gam/dragged grid when GammaGrid supersedes it) PLUS whatever points §2.2/§2.3 added on
+            // top. AddedGridPoints is a layer over the base, never a replacement for it.
+            var baseGrid = opt.GammaGrid ?? ContourGrid.RingGrid(opt.Rings, opt.Spokes, opt.MaxGamma);
+            var effectiveGrid = opt.AddedGridPoints is { Count: > 0 } added
+                ? (IReadOnlyList<Complex>)[.. baseGrid, .. added]
+                : baseGrid;
+            grid.Build(ctx, terminations.Clone(), effectiveGrid,
                        opt.GridSide, opt.GridHarmonic,
                        ct: ct, reuseUnchanged: opt.ReuseUnchangedGridPoints, onProgress: onGridProgress);
             LastSolveCount += grid.SolveCount;
@@ -347,7 +364,7 @@ public sealed class HarmonicaSolver
             Loadline        = loadline,
             PowerSweep      = power,
             Markers         = markers,
-            Readouts        = BuildReadouts(ctx, sweep, at, markers, opt, smithP, smithE, readoutFormat),
+            Readouts        = BuildReadouts(ctx, sweep, at, markers, opt, smithP, smithE, readoutFormat, published),
             Published       = published,
             Quality         = opt.Quality,
             // RenderMs is deliberately left at zero: the solver cannot know it. The view fills it in
@@ -464,6 +481,7 @@ public sealed class HarmonicaSolver
             LoadlineVds = vds,
             LoadlineIds = ids,
             Intrinsic   = intrinsic,
+            FrequencyHz = ctx.Model.Settings.FrequencyHz,
         };
     }
 
@@ -574,9 +592,9 @@ public sealed class HarmonicaSolver
         HarmonicaContext ctx, PinSearchResult sweep, PinStep? at,
         IReadOnlyList<HarmonicaMarker> markers, Options opt,
         SmithPanelData smithP, SmithPanelData smithE,
-        Func<string, ReadoutFormat>? readoutFormat)
+        Func<string, ReadoutFormat>? readoutFormat, DataSet? published)
     {
-        var format = readoutFormat ?? (_ => ReadoutFormat.RealImaginary);
+        var format = readoutFormat ?? HarmonicaReadoutFormatting.DefaultReadoutFormat;
         double z0  = ctx.Model.Settings.Z0;
         var r = new List<HarmonicaReadout>();
 
@@ -615,13 +633,13 @@ public sealed class HarmonicaSolver
             void AddOp(string label, string value, string tip)
                 => r.Add(new HarmonicaReadout(label, value, tip, ReadoutColumn.OperatingPoint));
 
-            AddOp("Pin", $"{pinDbm:0.##} dBm", "Available power at the operating point.");
-            AddOp("Pout", double.IsNaN(poutDbm) ? "—" : $"{poutDbm:0.##} dBm",
+            AddOp("Pin", HarmonicaReadoutFormatting.FormatDbm(pinDbm), "Available power at the operating point.");
+            AddOp("Pout", HarmonicaReadoutFormatting.FormatDbm(poutDbm),
                 "Output power at the operating point.");
-            AddOp("Gain", $"{gainDb:0.##} dB", "Transducer gain (Gt) — D9's default criterion.");
-            AddOp("DE",  $"{deFrac * 100:0.#} %",  "Drain efficiency, Pout / Pdc.");
-            AddOp("PAE", $"{paeFrac * 100:0.#} %", "Power-added efficiency, (Pout − Pin_delivered) / Pdc.");
-            AddOp("Pdc", $"{pdcW:0.###} W", "DC power drawn at the operating point.");
+            AddOp("Gain", HarmonicaReadoutFormatting.FormatDb(gainDb), "Transducer gain (Gt) — D9's default criterion.");
+            AddOp("DE",  HarmonicaReadoutFormatting.FormatPercent(deFrac * 100),  "Drain efficiency, Pout / Pdc.");
+            AddOp("PAE", HarmonicaReadoutFormatting.FormatPercent(paeFrac * 100), "Power-added efficiency, (Pout − Pin_delivered) / Pdc.");
+            AddOp("Pdc", HarmonicaReadoutFormatting.FormatWatt(pdcW), "DC power drawn at the operating point.");
         }
 
         // R-h9r2-24 — the per-marker INTRINSIC Γ rows that used to sit on this General line are GONE,
@@ -680,7 +698,55 @@ public sealed class HarmonicaSolver
         AddMxColumn(r, ReadoutColumn.Mxp, "MXP", opt, smithP.Optimum, format);
         AddMxColumn(r, ReadoutColumn.Mxe, "MXE", opt, smithE.Optimum, format);
 
+        // ── Intrinsic VDS / IDS — R6C §2's two new chunks ───────────────────────
+        AddIntrinsicColumn(r, ReadoutColumn.IntrinsicVds, "Intrinsic VDS (V)", "Intrinsic VDS", ctx, published,
+            "V_intr", format);
+        AddIntrinsicColumn(r, ReadoutColumn.IntrinsicIds, "Intrinsic IDS (A)", "Intrinsic IDS", ctx, published,
+            "I_intr", format);
+
         return r;
+    }
+
+    /// <summary>
+    /// R6C §2 — the intrinsic drain voltage/current spectra, one row per harmonic (DC through K),
+    /// magnitude ∠ angle, read from the already-published <c>V_intr</c>/<c>I_intr</c> cubes
+    /// (<c>HarmonicaDataSet.Build</c>) at <c>ctx.IntrinsicPorts.DrainPort</c> — never recomputed here
+    /// (§0.3 item 1). When the intrinsic plane is not located, the chunk shows one stated row
+    /// ("not located") rather than zeros — the same rule R-h8-3 already established for this strip.
+    ///
+    /// <para>Owner: the unit belongs on the chunk's own HEADER, once, in brackets
+    /// (<paramref name="headerLabel"/> — "Intrinsic VDS (V)") — never repeated on every per-harmonic
+    /// VALUE row (<c>HarmonicaReadoutFormatting.FormatComplex</c> carries no unit suffix, unlike
+    /// <c>FormatZ</c>). <paramref name="quantityLabel"/> is the SAME name without the unit, for the
+    /// tooltip's "… at 1f0" phrasing.</para>
+    /// </summary>
+    private static void AddIntrinsicColumn(List<HarmonicaReadout> r, ReadoutColumn column,
+                                           string headerLabel, string quantityLabel,
+                                           HarmonicaContext ctx, DataSet? published,
+                                           string cubeName, Func<string, ReadoutFormat> format)
+    {
+        r.Add(new HarmonicaReadout(headerLabel, "", "", column));
+
+        if (!ctx.IntrinsicPorts.LoadAvailable || published is null)
+        {
+            r.Add(new HarmonicaReadout("intrinsic", "not located",
+                ctx.IntrinsicPorts.LoadUnavailable ?? "The intrinsic plane could not be located.", column));
+            return;
+        }
+
+        int k = ctx.Model.Settings.HarmonicCount;
+        int drainPort = ctx.IntrinsicPorts.DrainPort;
+        for (int h = 0; h <= k; h++)
+        {
+            var value = ReadComplex(published, cubeName, drainPort, h);
+            string harmonicLabel = h == 0 ? "DC" : $"{h}f0";
+            string key = $"{(column == ReadoutColumn.IntrinsicVds ? "VDSi" : "IDSi")}.{h}";
+            r.Add(new HarmonicaReadout(harmonicLabel,
+                HarmonicaReadoutFormatting.FormatComplex(value, format(key)),
+                $"{quantityLabel} at {harmonicLabel} — read from the intrinsic plane, never recomputed. " +
+                "Right-click to switch real/imaginary ⇄ magnitude/angle.",
+                column, IsComplex: true, Band: h, RawValue: value));
+        }
     }
 
     /// <summary>
@@ -709,15 +775,15 @@ public sealed class HarmonicaSolver
 
         r.Add(new HarmonicaReadout(header, "", "", column));
         r.Add(new HarmonicaReadout("Pout",
-            step.PoutW > 0 ? $"{10 * Math.Log10(step.PoutW) + 30:0.##} dBm" : "—",
+            HarmonicaReadoutFormatting.FormatDbm(step.PoutW > 0 ? 10 * Math.Log10(step.PoutW) + 30 : double.NaN),
             "Output power at this optimum.", column));
-        r.Add(new HarmonicaReadout("Efficiency", $"{step.De * 100:0.#} %",
+        r.Add(new HarmonicaReadout("Efficiency", HarmonicaReadoutFormatting.FormatPercent(step.De * 100),
             "Drain efficiency at this optimum.", column));
-        r.Add(new HarmonicaReadout("PAE", $"{step.Pae * 100:0.#} %",
+        r.Add(new HarmonicaReadout("PAE", HarmonicaReadoutFormatting.FormatPercent(step.Pae * 100),
             "Power-added efficiency at this optimum.", column));
-        r.Add(new HarmonicaReadout("Gain", $"{step.GainDb:0.##} dB",
+        r.Add(new HarmonicaReadout("Gain", HarmonicaReadoutFormatting.FormatDb(step.GainDb),
             "Transducer gain (Gt) at this optimum.", column));
-        r.Add(new HarmonicaReadout("Gp", $"{step.Foms.GpDb:0.##} dB",
+        r.Add(new HarmonicaReadout("Gp", HarmonicaReadoutFormatting.FormatDb(step.Foms.GpDb),
             "Power gain (Gp = Pout / Pin_delivered) at this optimum — free off the solved PinStep's " +
             "own FomResult, the same one Gain (Gt) reads.", column));
 
@@ -730,7 +796,8 @@ public sealed class HarmonicaSolver
             column, IsComplex: true, RawValue: zin));
 
         var vOutFund = ReadComplex(ds, "V_ext", (int)TerminationSide.Load, 1);
-        string amPm = double.IsNaN(vOutFund.Real) ? "—" : $"{vOutFund.Phase * 180.0 / Math.PI:0.#}°";
+        string amPm = double.IsNaN(vOutFund.Real) ? "—"
+            : HarmonicaReadoutFormatting.FormatDegrees(vOutFund.Phase * 180.0 / Math.PI);
         r.Add(new HarmonicaReadout("AM/PM", amPm,
             "The fundamental output's phase relative to the drive, at this optimum. The drive's own " +
             "phase reference is 0 by construction (HarmonicaContext.DriveVolts is a real Thévenin " +

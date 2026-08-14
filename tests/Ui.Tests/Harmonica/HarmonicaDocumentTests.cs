@@ -161,7 +161,8 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
         var z = vm.Terminations.Z(TerminationSide.Load, 1);
         Assert.Equal(31.4, z.Real,      precision: 9);
         Assert.Equal(-12.7, z.Imaginary, precision: 9);
-        Assert.Equal((z - 50.0) / (z + 50.0), l1.Gamma);
+        double z0 = vm.Model.Settings.Z0;
+        Assert.Equal((z - z0) / (z + z0), l1.Gamma);
     }
 
     // ══ R-h45-7 — the plane toggle and the X-unit cycle ══════════════════════

@@ -150,14 +150,14 @@ public static class HarmonicaInputs
             Make(model, KeyVds, "Vds", Num(model.Bias.Vds), "V", "Drain supply.",
                  HarmonicaInputEntry.Number),
 
-            Make(model, KeyFrequency, "f₀", Num(model.Settings.FrequencyHz / 1e9), "GHz",
+            Make(model, KeyFrequency, "Freq:", Num(model.Settings.FrequencyHz / 1e9), "GHz",
                  "Fundamental drive frequency. Changing it rebuilds the context and resets the frame ladder.",
                  HarmonicaInputEntry.Number),
-            Make(model, KeyHarmonicCount, "K", model.Settings.HarmonicCount.ToString(CultureInfo.InvariantCulture), "",
+            Make(model, KeyHarmonicCount, "Harmonic Order:", model.Settings.HarmonicCount.ToString(CultureInfo.InvariantCulture), "",
                  "Harmonic order. Changing it rebuilds the context and resets the frame ladder; " +
                  "marker bands above the new K are dropped.",
                  HarmonicaInputEntry.Integer),
-            Make(model, KeyCompression, "compr", Num(model.Settings.CompressionDb), "dB",
+            Make(model, KeyCompression, "Compression:", Num(model.Settings.CompressionDb), "dB",
                  "Compression target the contour grid is taken at.",
                  HarmonicaInputEntry.Number),
             Make(model, KeyZ0, "Z0", Num(model.Settings.Z0), "Ω",

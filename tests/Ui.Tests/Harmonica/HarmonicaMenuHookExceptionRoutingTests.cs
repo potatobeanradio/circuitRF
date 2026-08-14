@@ -61,7 +61,7 @@ public class HarmonicaMenuHookExceptionRoutingTests
     [InlineData("menus.ExportTestbenchHook = () => RunHook(ExportTestbenchAsync);")]
     [InlineData("menus.CopyTerminationsHook= () => RunHook(CopyTerminationsAsync);")]
     [InlineData("menus.CopyReadoutsHook    = () => RunHook(CopyReadoutsAsync);")]
-    [InlineData("menus.PreferencesHook     = () => RunHook(ShowPreferencesAsync);")]
+    [InlineData("menus.SettingsHook        = () => RunHook(ShowSettingsAsync);")]
     [InlineData("menus.AddTraceHook        = () => RunHook(ShowTracePickerAsync);")]
     [InlineData("menus.SetDutHook          = () => RunHook(ShowSetDutAsync);")]
     [InlineData("menus.ExportDataHook      = () => RunHook(ExportDataAsync);")]

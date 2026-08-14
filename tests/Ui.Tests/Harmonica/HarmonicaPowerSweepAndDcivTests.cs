@@ -344,8 +344,11 @@ public sealed class HarmonicaPowerSweepAndDcivTests(ITestOutputHelper output)
         };
         var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(d, HarmonicaRenderTheme.Dark);
 
+        // brief-harmonicarf-r6d §2 — the pinned range is extended by XHeadroomFraction past the
+        // configured stop, so the compression cursor is never read sitting under the axis line.
+        double span = 50.0 - (-10.0);
         Assert.Equal(-10.0, plot.Axes.Window.Left, 6);
-        Assert.Equal(50.0,  plot.Axes.Window.Right, 6);
+        Assert.Equal(50.0 + span * HarmonicaPanelRenderer.XHeadroomFraction, plot.Axes.Window.Right, 6);
     }
 
     [Fact]
@@ -388,8 +391,10 @@ public sealed class HarmonicaPowerSweepAndDcivTests(ITestOutputHelper output)
 
         double expectedLo = Math.Pow(10.0, (-10 - 30.0) / 10.0);
         double expectedHi = Math.Pow(10.0, (20 - 30.0) / 10.0);
+        // brief-harmonicarf-r6d §2 — same headroom extension, applied in the Watts domain too.
+        double span = expectedHi - expectedLo;
         Assert.Equal(expectedLo, plot.Axes.Window.Left,  9);
-        Assert.Equal(expectedHi, plot.Axes.Window.Right, 9);
+        Assert.Equal(expectedHi + span * HarmonicaPanelRenderer.XHeadroomFraction, plot.Axes.Window.Right, 9);
     }
 
     [Fact]
@@ -409,6 +414,97 @@ public sealed class HarmonicaPowerSweepAndDcivTests(ITestOutputHelper output)
         // Autofit to the actual Pout data (0..12), not to the Pin range (-10..50).
         Assert.True(plot.Axes.Window.Left > -10.0);
         Assert.True(plot.Axes.Window.Right < 50.0);
+    }
+
+    // ══ brief-harmonicarf-r6d §5 — the Time Domain view ══════════════════════════════════════════
+
+    [Fact]
+    public void SolvedFrame_Loadline_CarriesFrequencyHz_AndTheSampleCountMatchesSettings()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
+
+        var loadline = vm.Frame.Loadline;
+        Assert.Equal(vm.Model.Settings.FrequencyHz, loadline.FrequencyHz, 3);
+
+        if (loadline.LoadlineVds.Length > 0)
+        {
+            // Closed over one cycle: the array is Settings.LoadlineSamples + 1 (the first sample
+            // repeated as the last) — HarmonicaSolver.BuildLoadline's own note.
+            Assert.Equal(vm.Model.Settings.LoadlineSamples + 1, loadline.LoadlineVds.Length);
+            Assert.Equal(loadline.LoadlineVds.Length, loadline.LoadlineIds.Length);
+        }
+    }
+
+    [Fact]
+    public void TimeDomainPlot_ReadsTheExactLoadlineArrays_NeverRecomputingOrResampling()
+    {
+        var theme = HarmonicaRenderTheme.Dark;
+        var d = new LoadlinePanelData
+        {
+            LoadlineVds = [0.0, 1.5, 3.0, 0.0],
+            LoadlineIds = [0.05, 0.10, 0.05, 0.05],
+            FrequencyHz = 2e9,
+        };
+
+        var plot = HarmonicaPanelRenderer.BuildTimeDomainPlot(d, theme);
+        Assert.Equal("Time Domain", plot.Title);
+        Assert.Equal("Time (ns)", plot.XLabel);
+        Assert.Equal("Vds (V)",   plot.YLabel);
+        Assert.Equal("Ids (A)",   plot.Y2Label);
+        Assert.Equal(2, plot.Traces.Count);
+
+        var vdsTrace = plot.Traces[0];
+        var idsTrace = plot.Traces[1];
+        Assert.False(vdsTrace.UseSecondaryAxis, "Vds is the LEFT axis");
+        Assert.True(idsTrace.UseSecondaryAxis,  "Ids is the RIGHT axis");
+
+        // Owner: 2 RF cycles, not 1 — cycleSamples * TimeDomainCycles + 1 points.
+        double periodNs = 1e9 / d.FrequencyHz;
+        int cycleSamples = d.LoadlineVds.Length - 1;
+        int expectedTotal = cycleSamples * HarmonicaPanelRenderer.TimeDomainCycles + 1;
+        Assert.Equal(expectedTotal, vdsTrace.Points.Count);
+        Assert.Equal(expectedTotal, idsTrace.Points.Count);
+
+        // Exact, not approximate (precision 4 is the float-vs-double rounding floor, not slack for a
+        // resample) — the panel must read the SAME source arrays the loadline panel draws (wrapped
+        // for the second cycle), never recompute or resample.
+        for (int i = 0; i < expectedTotal; i++)
+        {
+            double expectedT = (double)i / cycleSamples * periodNs;
+            int src = i % cycleSamples;
+            Assert.Equal(expectedT,          vdsTrace.Points[i].X, precision: 4);
+            Assert.Equal(expectedT,          idsTrace.Points[i].X, precision: 4);
+            Assert.Equal(d.LoadlineVds[src], vdsTrace.Points[i].Y, precision: 4);
+            Assert.Equal(d.LoadlineIds[src], idsTrace.Points[i].Y, precision: 4);
+        }
+
+        // t[0] = 0, t[last] = TWO full periods — the array is closed over 2 RF cycles.
+        Assert.Equal(0.0,                                        vdsTrace.Points[0].X,   precision: 9);
+        Assert.Equal(periodNs * HarmonicaPanelRenderer.TimeDomainCycles, vdsTrace.Points[^1].X, precision: 4);
+    }
+
+    [Fact]
+    public void TimeDomainPanel_EmptyLoadline_DrawsAStatedNote_NeverZeros()
+    {
+        const int W = 300, H = 240;
+        var theme = HarmonicaRenderTheme.Dark;
+        var d = new LoadlinePanelData();   // R-h8-3's refusal: intrinsic plane not located
+
+        using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(W, H));
+        surface.Canvas.Clear(theme.Background);
+        HarmonicaPanelRenderer.DrawTimeDomainPanel(surface.Canvas, (W, H), d, theme, darkMode: true);
+
+        using var bmp = SkiaSharp.SKBitmap.FromImage(surface.Snapshot());
+        int nonBackground = 0;
+        for (int y = 0; y < H; y += 2)
+        for (int x = 0; x < W; x += 2)
+        {
+            var c = bmp.GetPixel(x, y);
+            if (Math.Abs(c.Red - theme.Background.Red) > 4 || Math.Abs(c.Green - theme.Background.Green) > 4 ||
+                Math.Abs(c.Blue - theme.Background.Blue) > 4) nonBackground++;
+        }
+        Assert.True(nonBackground > 0, "an empty loadline must still draw a stated note, not a blank panel");
     }
 
     private static string ReadSource(params string[] parts)

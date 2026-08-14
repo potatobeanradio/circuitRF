@@ -161,8 +161,9 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
 
         // …and the TerminationSet the engine reads moved with it, not just the marker.
         var z = vm.Terminations.Z(TerminationSide.Load, 1);
-        Assert.Equal(marker.Gamma.Real,      HarmonicaDataSet.GammaOf(z).Real,      precision: 9);
-        Assert.Equal(marker.Gamma.Imaginary, HarmonicaDataSet.GammaOf(z).Imaginary, precision: 9);
+        var gammaOfZ = HarmonicaDataSet.GammaOf(z, vm.Model.Settings.Z0);
+        Assert.Equal(marker.Gamma.Real,      gammaOfZ.Real,      precision: 9);
+        Assert.Equal(marker.Gamma.Imaginary, gammaOfZ.Imaginary, precision: 9);
 
         // The GLYPH landed on the target. This is read off the published frame, which came from an
         // ordinary forward solve of the answer — so it is a round trip through the forward path, the

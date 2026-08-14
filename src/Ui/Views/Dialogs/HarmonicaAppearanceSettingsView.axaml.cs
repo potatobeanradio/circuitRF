@@ -12,33 +12,30 @@ using CircuitRF.Ui.Theming;
 namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
-/// §7.9.4's colour editor, and the rest of harmonicaRF's Preferences.
+/// brief-harmonicarf-r6a §2.2 — §7.9.4's colour editor, and the rest of harmonicaRF's Appearance
+/// settings, lifted from the former <c>HarmonicaPreferencesDialog</c> (its own code-behind, unchanged
+/// in behaviour) into a <see cref="HarmonicaSettingsDialog"/> tab.
 ///
 /// <para><b>Live preview is free and must stay free (R-h7-16).</b> Every edit here writes
 /// <c>CharmAppearance</c> through <see cref="HarmonicaColorEditor"/>, which re-projects
 /// <c>HarmonicaRenderTheme</c> and invalidates the canvas — no re-solve, no re-fit and specifically
-/// no RBF re-factorization. That holds by construction: this dialog can reach the appearance and
+/// no RBF re-factorization. That holds by construction: this view can reach the appearance and
 /// nothing else.</para>
-///
-/// <para><b>The two inherited fixes are reused, not re-derived</b> (§7.9.4): the hex field's
-/// Return-applies-and-handles / Escape-reverts / LostFocus-applies contract with <c>RRGGBBAA</c> and
-/// a six-digit entry taken as opaque, and <c>ColorView</c>'s Fluent theme — the latter by going
-/// through <see cref="ColorPickerDialog"/>, which already carries it.</para>
 /// </summary>
-public partial class HarmonicaPreferencesDialog : Window
+public partial class HarmonicaAppearanceSettingsView : UserControl
 {
-    private readonly HarmonicaViewModel _vm;
-    private readonly HarmonicaColorEditor _editor;
+    private HarmonicaViewModel _vm = null!;
+    private HarmonicaColorEditor _editor = null!;
     private bool _updating;
 
-    // Parameterless ctor satisfies the Avalonia XAML resource loader (AVLN3001).
-    public HarmonicaPreferencesDialog() : this(new HarmonicaViewModel()) { }
+    public HarmonicaAppearanceSettingsView() => InitializeComponent();
 
-    public HarmonicaPreferencesDialog(HarmonicaViewModel vm)
+    /// <summary>Called once by the hosting dialog, before this view is shown — mirrors the former
+    /// dialog's own constructor-time setup.</summary>
+    public void Attach(HarmonicaViewModel vm)
     {
         _vm     = vm;
         _editor = vm.ColorEditor;
-        InitializeComponent();
 
         DarkRadio.IsChecked  = vm.Variant == ColorVariant.Dark;
         LightRadio.IsChecked = vm.Variant == ColorVariant.Light;
@@ -138,9 +135,10 @@ public partial class HarmonicaPreferencesDialog : Window
     private async void OnPickClick(object? sender, RoutedEventArgs e)
     {
         if (SelectedRole is not { } role) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
 
         // ColorPickerDialog already carries the ColorView Fluent-theme include §7.9.4 warns about.
-        var picked = await new ColorPickerDialog(_editor.Resolve(role, Variant)).ShowDialog<Rgba?>(this);
+        var picked = await new ColorPickerDialog(_editor.Resolve(role, Variant)).ShowDialog<Rgba?>(owner);
         if (picked is { } c) _editor.Set(role, Variant, c);
         RefreshEditor();
     }
@@ -242,7 +240,8 @@ public partial class HarmonicaPreferencesDialog : Window
 
     private async void OnImportClick(object? sender, RoutedEventArgs e)
     {
-        var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        if (TopLevel.GetTopLevel(this) is not { } top) return;
+        var picked = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Import .ccolor",
             AllowMultiple = false,
@@ -265,7 +264,8 @@ public partial class HarmonicaPreferencesDialog : Window
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)
     {
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        if (TopLevel.GetTopLevel(this) is not { } top) return;
+        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export .ccolor",
             DefaultExtension = "ccolor",
@@ -280,6 +280,4 @@ public partial class HarmonicaPreferencesDialog : Window
         }
         catch (Exception ex) { StatusLabel.Text = ex.Message; }
     }
-
-    private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
 }

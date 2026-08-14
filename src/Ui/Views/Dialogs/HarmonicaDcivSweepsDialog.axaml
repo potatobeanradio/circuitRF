@@ -2,7 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaDcivSweepsDialog"
         Title="DCIV Sweeps"
-        Width="340" Height="300"
+        Width="340"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -12,9 +13,16 @@
     (VgsMin/Max/Steps, VdsMin/Max/Steps); DrainPort stays out (R-h9b-12 says offering it invites a
     wrong answer that draws perfectly). Updates live as the user changes a value; invalid input keeps
     the previous trace on screen rather than being applied.
+
+    brief-harmonicarf-r6e §1/§3.1 — the Vds title/fields used to sit in a Grid.Row="2" TITLE row that
+    was the Grid's own "*" (stretch-to-fill) row, so the title floated at the top of a tall empty row
+    and its own fields were pushed to the very bottom of the window. Every row here is now Auto —
+    SizeToContent="Height" on the Window itself is what "drop the * entirely" (§1's own fix) means in
+    practice, so a future section (like this brief's own Axis limits one) grows the window rather than
+    fighting a fixed Height for space.
   -->
 
-  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="14">
 
     <TextBlock Grid.Row="0" Text="Gate sweep (Vgs)" FontWeight="SemiBold" Margin="0,0,0,4"/>
     <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,*,Auto,*" Margin="0,0,0,10">
@@ -29,27 +37,46 @@
                LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
     </Grid>
 
-    <TextBlock Grid.Row="2" Text="Drain sweep (Vds)" FontWeight="SemiBold" Margin="0,0,0,4" VerticalAlignment="Top"/>
+    <TextBlock Grid.Row="2" Text="Drain sweep (Vds)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*,Auto,*" Margin="0,0,0,10">
+      <TextBlock Grid.Column="0" Text="min" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="VdsMinBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="2" Text="max" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="VdsMaxBox" Grid.Column="3" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="4" Text="steps" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="VdsStepsBox" Grid.Column="5"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
 
-    <StackPanel Grid.Row="3" Spacing="10">
-      <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*">
-        <TextBlock Grid.Column="0" Text="min" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
-        <TextBox x:Name="VdsMinBox" Grid.Column="1" Margin="0,0,8,0"
-                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-        <TextBlock Grid.Column="2" Text="max" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
-        <TextBox x:Name="VdsMaxBox" Grid.Column="3" Margin="0,0,8,0"
-                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-        <TextBlock Grid.Column="4" Text="steps" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
-        <TextBox x:Name="VdsStepsBox" Grid.Column="5"
-                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-      </Grid>
+    <!-- brief-harmonicarf-r6e §3.1 — the DCIV/loadline plot's own stored axis limits + autoscale. -->
+    <TextBlock Grid.Row="4" Text="Axis limits" FontWeight="SemiBold" Margin="0,0,0,4"/>
+    <Grid Grid.Row="5" ColumnDefinitions="Auto,*,Auto,*" Margin="0,0,0,6">
+      <TextBlock Grid.Column="0" Text="X min" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="AxisXMinBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnAxisFieldLostFocus" KeyDown="OnAxisFieldKeyDown"/>
+      <TextBlock Grid.Column="2" Text="X max" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="AxisXMaxBox" Grid.Column="3"
+               LostFocus="OnAxisFieldLostFocus" KeyDown="OnAxisFieldKeyDown"/>
+    </Grid>
+    <Grid Grid.Row="6" ColumnDefinitions="Auto,*,Auto,*" Margin="0,0,0,6">
+      <TextBlock Grid.Column="0" Text="Y min" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="AxisYMinBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnAxisFieldLostFocus" KeyDown="OnAxisFieldKeyDown"/>
+      <TextBlock Grid.Column="2" Text="Y max" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="AxisYMaxBox" Grid.Column="3"
+               LostFocus="OnAxisFieldLostFocus" KeyDown="OnAxisFieldKeyDown"/>
+    </Grid>
+    <CheckBox Grid.Row="7" x:Name="AutoscaleCheck" Content="Autoscale" Click="OnAutoscaleClick"
+              Margin="0,0,0,10"/>
 
-      <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
+    <TextBlock Grid.Row="8" x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap"
+               IsVisible="False" Margin="0,0,0,10"/>
 
-      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-        <Button Content="Reset to Default" Click="OnResetClick"/>
-        <Button Content="Close" Click="OnCloseClick" IsDefault="True"/>
-      </StackPanel>
+    <StackPanel Grid.Row="9" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="Reset to Default" Click="OnResetClick"/>
+      <Button Content="Close" Click="OnCloseClick" IsDefault="True"/>
     </StackPanel>
   </Grid>
 </Window>

@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaSettingsDialog"
+        Title="harmonicaRF Settings"
+        Width="640" Height="580"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    brief-harmonicarf-r6a §2.2 — the ONE Settings dialog, merging what used to be Edit ▸ Preferences…
+    (HarmonicaPreferencesDialog) and Display ▸ Advanced Settings… (HarmonicaAdvancedSettingsDialog).
+    Both former dialogs' own code-behind is reused verbatim, lifted into a UserControl per tab
+    (HarmonicaAppearanceSettingsView / HarmonicaAdvancedSettingsView) rather than retyped.
+  -->
+
+  <Grid RowDefinitions="*,Auto" Margin="12">
+    <TabControl Grid.Row="0">
+      <TabItem Header="Appearance">
+        <dlg:HarmonicaAppearanceSettingsView x:Name="AppearanceTab"/>
+      </TabItem>
+      <TabItem Header="Advanced">
+        <dlg:HarmonicaAdvancedSettingsView x:Name="AdvancedTab"/>
+      </TabItem>
+    </TabControl>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Right">
+      <Button Content="Close" Width="80" IsCancel="True" IsDefault="True"
+              HorizontalContentAlignment="Center" Click="OnCloseClick"/>
+    </StackPanel>
+  </Grid>
+</Window>

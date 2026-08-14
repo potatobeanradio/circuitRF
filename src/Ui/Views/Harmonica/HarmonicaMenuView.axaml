@@ -59,7 +59,7 @@
             <NativeMenuItem Header="Copy Readouts"        Command="{Binding CopyReadoutsCommand}"/>
             <NativeMenuItem Header="Copy Termination Set" Command="{Binding CopyTerminationsCommand}"/>
             <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Preferences…"         Command="{Binding PreferencesCommand}"/>
+            <NativeMenuItem Header="Settings…"            Command="{Binding SettingsCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -88,10 +88,14 @@
       <NativeMenuItem Header="Display">
         <NativeMenuItem.Menu>
           <NativeMenu>
-            <NativeMenuItem Header="Edit Display" Command="{Binding ToggleEditDisplayCommand}"/>
-            <NativeMenuItem Header="Add Trace…"   Command="{Binding AddTraceCommand}"/>
-            <NativeMenuItem Header="Remove All Traces" Command="{Binding RemoveAllTracesCommand}"/>
-            <NativeMenuItemSeparator/>
+            <!-- brief-harmonicarf-r6a §4 — Edit Display / Add Trace… / Remove All Traces and their
+                 separator are removed from BOTH menu surfaces (this one and the MenuItem block below):
+                 editing the display is deferred to a harmonicaRF v2. Every line of code behind them —
+                 ToggleEditDisplayCommand, AddTraceCommand, RemoveAllTracesCommand, HarmonicaEditDisplay,
+                 HarmonicaTracePicker, HarmonicaTracePickerDialog, the PickedTraces plumbing and all
+                 their tests — stays in place; re-adding these three lines (and their MenuItem
+                 counterparts below) is the whole of turning it back on. Follows the same precedent the
+                 R5 Diagnostics Overlay removal below already set. -->
             <NativeMenuItem Header="Contour Plane">
               <NativeMenuItem.Menu>
                 <NativeMenu>
@@ -127,7 +131,9 @@
             </NativeMenuItem>
             <NativeMenuItem Header="Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"/>
             <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"/>
-            <NativeMenuItem Header="Cursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"/>
+            <!-- brief-harmonicarf-r6a §4 — owner request: the "Cursor Snap to Compression" menu item
+                 is removed (this menu-only; ToggleCursorSnapCommand and
+                 HarmonicaViewModel.SnapCursorToCompression stay wired, default true, behaviour on). -->
             <!-- brief-harmonicarf-r5 §1 — owner request 2026-08-13: the Diagnostics Overlay menu items
                  are removed from BOTH menu surfaces (this one and the MenuItem block below), but the
                  commands (ToggleDiagnosticsOverlayCommand/ResetDiagnosticsOverlayCommand), the VM state
@@ -137,7 +143,6 @@
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Power Sweep…"       Command="{Binding PowerSweepCommand}"/>
             <NativeMenuItem Header="Set Z0…"            Command="{Binding SetZ0Command}"/>
-            <NativeMenuItem Header="Advanced Settings…" Command="{Binding AdvancedSettingsCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -213,7 +218,7 @@
       <MenuItem Header="Copy _Termination Set" Command="{Binding CopyTerminationsCommand}"
                 ToolTip.Tip="A Tuner pair ready to paste into a schematic."/>
       <Separator/>
-      <MenuItem Header="P_references…"  Command="{Binding PreferencesCommand}"/>
+      <MenuItem Header="_Settings…"      Command="{Binding SettingsCommand}"/>
     </MenuItem>
 
     <MenuItem Header="_Markers" Padding="8,4">
@@ -244,16 +249,16 @@
     </MenuItem>
 
     <MenuItem Header="_Display" Padding="8,4">
-      <MenuItem Header="_Edit Display" Command="{Binding ToggleEditDisplayCommand}"
-                ToolTip.Tip="Unlock the panel layout so panels can be moved, resized and removed.">
-        <MenuItem.Icon><mi:MaterialIcon Kind="ViewDashboardEdit" Width="16" Height="16"/></MenuItem.Icon>
-      </MenuItem>
-      <MenuItem Header="_Add Trace…" Command="{Binding AddTraceCommand}"
-                ToolTip.Tip="Plot anything harmonicaRF solved, over the published DataSet — including Zs_conv's off-diagonals.">
-        <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
-      </MenuItem>
-      <MenuItem Header="Remo_ve All Traces" Command="{Binding RemoveAllTracesCommand}"/>
-      <Separator/>
+      <!-- brief-harmonicarf-r6a §4 — Edit Display / Add Trace… / Remove All Traces and their separator
+           are removed from BOTH menu surfaces (this one and the NativeMenu block above): editing the
+           display is deferred to a harmonicaRF v2. Every line of code behind them —
+           ToggleEditDisplayCommand, AddTraceCommand, RemoveAllTracesCommand, HarmonicaEditDisplay,
+           HarmonicaTracePicker, HarmonicaTracePickerDialog, the PickedTraces plumbing and all their
+           tests — stays in place; re-adding these three MenuItems (and their NativeMenuItem
+           counterparts above) is the whole of turning it back on. Follows the same precedent the R5
+           Diagnostics Overlay removal below already set. HarmonicaEditTarget (the right-click panel
+           resolver) is used by live features — Copy Plot and the panel context menus — so it is NOT
+           part of this deferral. -->
       <MenuItem Header="Contour _Plane">
         <MenuItem Header="_Load"   Command="{Binding SetGridSideCommand}" CommandParameter="Load"/>
         <MenuItem Header="_Source" Command="{Binding SetGridSideCommand}" CommandParameter="Source"/>
@@ -284,8 +289,9 @@
                 ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them, and labelling is the most expensive part of the extract."/>
       <MenuItem Header="_Grid Points" Command="{Binding ToggleShowGridPointsCommand}"
                 ToolTip.Tip="The Γ grid sample dots. Off by default; draggable once shown."/>
-      <MenuItem Header="C_ursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"
-                ToolTip.Tip="Operating point for the glyphs and the inverse solve. Snap to compression follows the P-x dB point; otherwise the cursor stays where you put it."/>
+      <!-- brief-harmonicarf-r6a §4 — owner request: the "Cursor Snap to Compression" menu item is
+           removed (this menu-only; ToggleCursorSnapCommand and
+           HarmonicaViewModel.SnapCursorToCompression stay wired, default true, behaviour on). -->
       <!-- brief-harmonicarf-r5 §1 — see the matching NativeMenu comment above: the Diagnostics
            Overlay items are deliberately removed from the menu (owner request, 2026-08-13), while
            ToggleDiagnosticsOverlayCommand/ResetDiagnosticsOverlayCommand and everything they drive
@@ -297,8 +303,6 @@
       </MenuItem>
       <MenuItem Header="Set _Z0…" Command="{Binding SetZ0Command}"
                 ToolTip.Tip="The Smith-chart reference impedance. Also settable from the readout strip's own Z0 field."/>
-      <MenuItem Header="Ad_vanced Settings…" Command="{Binding AdvancedSettingsCommand}"
-                ToolTip.Tip="Loadline samples, FFT oversampling, compute-charge, and device multiplicity (M)."/>
     </MenuItem>
 
     <MenuItem Header="_Grid" Padding="8,4">

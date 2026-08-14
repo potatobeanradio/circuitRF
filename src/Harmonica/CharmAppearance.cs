@@ -56,6 +56,11 @@ public sealed record CharmAppearance
     /// rolling-window bookkeeping whether anyone is looking at it or not).</summary>
     public bool? ShowDiagnosticsOverlay { get; init; }
 
+    /// <summary>brief-harmonicarf-r6d §4 — the power-sweep panel's own title fly menu: Power Sweep
+    /// (false) or Time Domain (true). Same shape as <see cref="ShowGridPoints"/>: null = the built-in
+    /// default, which is Power Sweep (false).</summary>
+    public bool? ShowPowerSweepTimeDomain { get; init; }
+
     /// <summary>
     /// R-h9c-7 (R1C §5) — the readout strip's per-row Z/Γ format, keyed by
     /// <c>HarmonicaReadout.FormatKey</c> ("S1.Z", "L2.Gamma", "MXP.Zin", …), each value either
@@ -73,7 +78,8 @@ public sealed record CharmAppearance
     public bool IsDefault
         => Light.Count == 0 && Dark.Count == 0
         && IsoAlphaFloor is null && IsoAlphaExponent is null && ShowIsoLineLabels is null
-        && ShowGridPoints is null && ShowDiagnosticsOverlay is null && ReadoutFormats.Count == 0;
+        && ShowGridPoints is null && ShowDiagnosticsOverlay is null && ShowPowerSweepTimeDomain is null
+        && ReadoutFormats.Count == 0;
 
     public static readonly CharmAppearance Default = new();
 

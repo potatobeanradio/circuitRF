@@ -50,6 +50,9 @@ public static class CharmIo
     /// <param name="Unresolved">Every referenced artifact that is not there.</param>
     /// <param name="Traces">R-h7-7's picked traces, as plain (spec, panel, label) data.</param>
     /// <param name="Vswr">R-h9r2-8 — every marker whose VSWR-circle overlay is ON.</param>
+    /// <param name="AddedGridPoints">brief-harmonicarf-r6b §2.2 — Γ points added to the loadpull grid
+    /// on top of the ring/spoke preset (or an imported <c>.gam</c>). Empty for a document with
+    /// none.</param>
     public readonly record struct CharmContents(
         CircuitModel                        Model,
         TerminationSet                      Terminations,
@@ -57,7 +60,8 @@ public static class CharmIo
         CharmLayout                         Layout,
         IReadOnlyList<UnresolvedReference>  Unresolved,
         IReadOnlyList<CharmTrace>           Traces,
-        IReadOnlyList<CharmMarkerVswr>      Vswr);
+        IReadOnlyList<CharmMarkerVswr>      Vswr,
+        IReadOnlyList<Complex>              AddedGridPoints);
 
     /// <summary>
     /// R-h7-7 — one picked trace, as the <c>.charm</c> carries it.
@@ -209,6 +213,9 @@ public static class CharmIo
             DcBlockF      = m.Settings.DcBlockFarads,
             Z0            = m.Settings.Z0,
             LoadlineSamples = m.Settings.LoadlineSamples,
+            ContourKernel   = m.Settings.ContourKernel.ToString(),
+            ContourSmooth   = m.Settings.ContourSmooth,
+            ContourEpsilon  = m.Settings.ContourEpsilon,
             DcivVgsMin    = m.Settings.DcivVgsMin,
             DcivVgsMax    = m.Settings.DcivVgsMax,
             DcivVgsSteps  = m.Settings.DcivVgsSteps,
@@ -220,6 +227,17 @@ public static class CharmIo
             TickleDbm     = m.Settings.TickleDbm,
             ExactCompressionSolve = m.Settings.ExactCompressionSolve,
             SweepOverdriveDb = m.Settings.SweepOverdriveDb,
+            DcivXMin = m.Settings.DcivXMin, DcivXMax = m.Settings.DcivXMax,
+            DcivYMin = m.Settings.DcivYMin, DcivYMax = m.Settings.DcivYMax,
+            DcivAutoscale = m.Settings.DcivAutoscale,
+            PowerSweepXMin = m.Settings.PowerSweepXMin, PowerSweepXMax = m.Settings.PowerSweepXMax,
+            PowerSweepYMin = m.Settings.PowerSweepYMin, PowerSweepYMax = m.Settings.PowerSweepYMax,
+            PowerSweepY2Min = m.Settings.PowerSweepY2Min, PowerSweepY2Max = m.Settings.PowerSweepY2Max,
+            PowerSweepAutoscale = m.Settings.PowerSweepAutoscale,
+            TimeDomainXMin = m.Settings.TimeDomainXMin, TimeDomainXMax = m.Settings.TimeDomainXMax,
+            TimeDomainYMin = m.Settings.TimeDomainYMin, TimeDomainYMax = m.Settings.TimeDomainYMax,
+            TimeDomainY2Min = m.Settings.TimeDomainY2Min, TimeDomainY2Max = m.Settings.TimeDomainY2Max,
+            TimeDomainAutoscale = m.Settings.TimeDomainAutoscale,
         },
         PavlDbm = m.PavlDbm,
     };
@@ -285,6 +303,11 @@ public static class CharmIo
                 DcBlockFarads    = s?.DcBlockF   ?? defaults.DcBlockFarads,
                 Z0               = s?.Z0         ?? defaults.Z0,
                 LoadlineSamples  = s?.LoadlineSamples ?? defaults.LoadlineSamples,
+                ContourKernel    = s?.ContourKernel is { Length: > 0 } ck
+                                 && Enum.TryParse<RfCore.Loadpull.RbfKernel>(ck, out var kernel)
+                                     ? kernel : defaults.ContourKernel,
+                ContourSmooth    = s?.ContourSmooth  ?? defaults.ContourSmooth,
+                ContourEpsilon   = s?.ContourEpsilon,
                 DcivVgsMin       = s?.DcivVgsMin,
                 DcivVgsMax       = s?.DcivVgsMax,
                 DcivVgsSteps     = s?.DcivVgsSteps,
@@ -296,6 +319,17 @@ public static class CharmIo
                 TickleDbm        = s?.TickleDbm        ?? defaults.TickleDbm,
                 ExactCompressionSolve = s?.ExactCompressionSolve ?? defaults.ExactCompressionSolve,
                 SweepOverdriveDb = s?.SweepOverdriveDb ?? defaults.SweepOverdriveDb,
+                DcivXMin = s?.DcivXMin, DcivXMax = s?.DcivXMax,
+                DcivYMin = s?.DcivYMin, DcivYMax = s?.DcivYMax,
+                DcivAutoscale = s?.DcivAutoscale ?? defaults.DcivAutoscale,
+                PowerSweepXMin = s?.PowerSweepXMin, PowerSweepXMax = s?.PowerSweepXMax,
+                PowerSweepYMin = s?.PowerSweepYMin, PowerSweepYMax = s?.PowerSweepYMax,
+                PowerSweepY2Min = s?.PowerSweepY2Min, PowerSweepY2Max = s?.PowerSweepY2Max,
+                PowerSweepAutoscale = s?.PowerSweepAutoscale ?? defaults.PowerSweepAutoscale,
+                TimeDomainXMin = s?.TimeDomainXMin, TimeDomainXMax = s?.TimeDomainXMax,
+                TimeDomainYMin = s?.TimeDomainYMin, TimeDomainYMax = s?.TimeDomainYMax,
+                TimeDomainY2Min = s?.TimeDomainY2Min, TimeDomainY2Max = s?.TimeDomainY2Max,
+                TimeDomainAutoscale = s?.TimeDomainAutoscale ?? defaults.TimeDomainAutoscale,
             },
             PavlDbm = d.PavlDbm ?? 0.0,
         };
@@ -330,6 +364,11 @@ public static class CharmIo
         /// <see cref="Terminations"/>. Absent on every .charm written before this brief and on every
         /// one nobody has turned the overlay on for.</summary>
         public Dictionary<string, string>? Vswr { get; set; }
+        /// <summary>brief-harmonicarf-r6b §2.2 — Γ points added to the loadpull grid on top of the
+        /// ring/spoke preset, each "re,im" like <see cref="TerminationsToJson"/>'s own value encoding.
+        /// Unordered (there is no natural key), so a plain array rather than a dictionary. Absent on
+        /// every .charm written before this brief and on every one with no added points.</summary>
+        public string[]? AddedGridPoints { get; set; }
     }
 
     private sealed class CharmTraceBlock
@@ -400,6 +439,20 @@ public static class CharmIo
         /// file opens at the default 64 samples.</summary>
         public int? LoadlineSamples { get; set; }
 
+        /// <summary>brief-harmonicarf-r6a §3 — the contour surface's own RBF kernel, stored by NAME
+        /// (never a raw integer) so the file stays readable and stable across an enum-member reorder.
+        /// Absent on every .charm written before this setting existed; such a file opens at
+        /// Multiquadric, matching <c>Rbf2D</c>'s own default.</summary>
+        public string? ContourKernel { get; set; }
+
+        /// <summary>See <see cref="ContourKernel"/>. Absent takes <c>Rbf2D</c>'s own default, 1e-3.</summary>
+        public double? ContourSmooth { get; set; }
+
+        /// <summary>See <see cref="ContourKernel"/>. Absent — like a <c>null</c> value written here —
+        /// both mean <c>Rbf2D</c>'s own scipy-style auto epsilon; there is no separate "absent" state
+        /// to distinguish, since the model's own default is already null.</summary>
+        public double? ContourEpsilon { get; set; }
+
         /// <summary>R-h9b-12 — the DCIV Sweeps dialog's override, all-or-nothing (see
         /// <c>DcivFamily.OverrideOf</c>). Absent on every .charm written before the dialog existed.</summary>
         public double? DcivVgsMin { get; set; }
@@ -425,6 +478,32 @@ public static class CharmIo
         /// <summary>brief-harmonicarf-r4 §1 — absent on every .charm written before this brief; such
         /// a file opens at the default margin (0 dB, stop exactly on the crossing rung).</summary>
         public double? SweepOverdriveDb { get; set; }
+
+        // ── brief-harmonicarf-r6e §2.1 — persisted axis limits + autoscale ─────────────────────
+        // Absent on every .charm written before this brief; such a file opens with autoscale OFF
+        // and no stored limits, which HarmonicaViewModel.CaptureAxisWindows then computes ONCE from
+        // the first frame with data (§2.2) — the SAME picture a pre-existing file already showed.
+        public double? DcivXMin { get; set; }
+        public double? DcivXMax { get; set; }
+        public double? DcivYMin { get; set; }
+        public double? DcivYMax { get; set; }
+        public bool?   DcivAutoscale { get; set; }
+
+        public double? PowerSweepXMin { get; set; }
+        public double? PowerSweepXMax { get; set; }
+        public double? PowerSweepYMin { get; set; }
+        public double? PowerSweepYMax { get; set; }
+        public double? PowerSweepY2Min { get; set; }
+        public double? PowerSweepY2Max { get; set; }
+        public bool?   PowerSweepAutoscale { get; set; }
+
+        public double? TimeDomainXMin { get; set; }
+        public double? TimeDomainXMax { get; set; }
+        public double? TimeDomainYMin { get; set; }
+        public double? TimeDomainYMax { get; set; }
+        public double? TimeDomainY2Min { get; set; }
+        public double? TimeDomainY2Max { get; set; }
+        public bool?   TimeDomainAutoscale { get; set; }
     }
 
     // ── markers ───────────────────────────────────────────────────────────────
@@ -478,7 +557,8 @@ public static class CharmIo
     public static string Write(CircuitModel model, TerminationSet terminations,
                                CharmAppearance? appearance = null, CharmLayout? layout = null,
                                IReadOnlyList<CharmTrace>? traces = null,
-                               IReadOnlyList<CharmMarkerVswr>? vswr = null)
+                               IReadOnlyList<CharmMarkerVswr>? vswr = null,
+                               IReadOnlyList<Complex>? addedGridPoints = null)
     {
         var doc = ToDocument(model);
         doc.Terminations = TerminationsToJson(terminations);
@@ -494,15 +574,19 @@ public static class CharmIo
                 })]
             : null;
         // R-h9r2-8 — same rule again: no marker has the overlay on ⇒ no block.
-        doc.Vswr         = VswrToJson(vswr);
+        doc.Vswr             = VswrToJson(vswr);
+        // brief-harmonicarf-r6b §2.2 — same rule again: no added points ⇒ no block.
+        doc.AddedGridPoints  = AddedGridPointsToJson(addedGridPoints);
         return JsonSerializer.Serialize(doc, Options);
     }
 
     public static void WriteFile(string path, CircuitModel model, TerminationSet terminations,
                                  CharmAppearance? appearance = null, CharmLayout? layout = null,
                                  IReadOnlyList<CharmTrace>? traces = null,
-                                 IReadOnlyList<CharmMarkerVswr>? vswr = null)
-        => File.WriteAllText(path, Write(model, terminations, appearance, layout, traces, vswr));
+                                 IReadOnlyList<CharmMarkerVswr>? vswr = null,
+                                 IReadOnlyList<Complex>? addedGridPoints = null)
+        => File.WriteAllText(path,
+            Write(model, terminations, appearance, layout, traces, vswr, addedGridPoints));
 
     /// <summary>R-h9r2-8 — writes only the markers whose overlay is ON, keyed like
     /// <see cref="TerminationsToJson"/>. Null/empty input ⇒ null block, so an untouched document
@@ -530,6 +614,33 @@ public static class CharmIo
             if (!int.TryParse(parts[1], out int band)) continue;
             if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) continue;
             list.Add(new CharmMarkerVswr(side, band, v));
+        }
+        return list;
+    }
+
+    /// <summary>brief-harmonicarf-r6b §2.2 — each point as "re,im", the same encoding
+    /// <see cref="TerminationsToJson"/> uses for its own values. Null/empty input ⇒ null block, so a
+    /// document with no added points re-serialises byte-for-byte.</summary>
+    public static string[]? AddedGridPointsToJson(IReadOnlyList<Complex>? points)
+    {
+        if (points is not { Count: > 0 }) return null;
+        return [.. points.Select(p =>
+            $"{p.Real.ToString("R", CultureInfo.InvariantCulture)}," +
+            $"{p.Imaginary.ToString("R", CultureInfo.InvariantCulture)}")];
+    }
+
+    /// <inheritdoc cref="AddedGridPointsToJson"/>
+    public static IReadOnlyList<Complex> AddedGridPointsFromJson(string[]? arr)
+    {
+        if (arr is null) return [];
+        var list = new List<Complex>(arr.Length);
+        foreach (string entry in arr)
+        {
+            string[] nums = entry.Split(',');
+            if (nums.Length != 2) continue;
+            if (!double.TryParse(nums[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double re)) continue;
+            if (!double.TryParse(nums[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double im)) continue;
+            list.Add(new Complex(re, im));
         }
         return list;
     }
@@ -562,7 +673,8 @@ public static class CharmIo
             LayoutFromJson(doc.Layout),
             FindUnresolved(model, doc, baseDirectory),
             TracesFromJson(doc.Traces),
-            VswrFromJson(doc.Vswr));
+            VswrFromJson(doc.Vswr),
+            AddedGridPointsFromJson(doc.AddedGridPoints));
     }
 
     /// <summary>
@@ -650,12 +762,13 @@ public static class CharmIo
             // Sorted for a stable, human-diffable file — the same courtesy ColorThemeIo extends.
             Light = Sorted(a.Light),
             Dark  = Sorted(a.Dark),
-            IsoAlphaFloor          = a.IsoAlphaFloor,
-            IsoAlphaExponent       = a.IsoAlphaExponent,
-            ShowIsoLineLabels      = a.ShowIsoLineLabels,
-            ShowGridPoints         = a.ShowGridPoints,
-            ShowDiagnosticsOverlay = a.ShowDiagnosticsOverlay,
-            ReadoutFormats         = Sorted(a.ReadoutFormats),
+            IsoAlphaFloor            = a.IsoAlphaFloor,
+            IsoAlphaExponent         = a.IsoAlphaExponent,
+            ShowIsoLineLabels        = a.ShowIsoLineLabels,
+            ShowGridPoints           = a.ShowGridPoints,
+            ShowDiagnosticsOverlay   = a.ShowDiagnosticsOverlay,
+            ShowPowerSweepTimeDomain = a.ShowPowerSweepTimeDomain,
+            ReadoutFormats           = Sorted(a.ReadoutFormats),
         };
 
         static Dictionary<string, string>? Sorted(IReadOnlyDictionary<string, string> src)
@@ -676,11 +789,12 @@ public static class CharmIo
                 Dark = b.Dark is null
                     ? new Dictionary<string, string>(StringComparer.Ordinal)
                     : new Dictionary<string, string>(b.Dark, StringComparer.Ordinal),
-                IsoAlphaFloor          = b.IsoAlphaFloor,
-                IsoAlphaExponent       = b.IsoAlphaExponent,
-                ShowIsoLineLabels      = b.ShowIsoLineLabels,
-                ShowGridPoints         = b.ShowGridPoints,
-                ShowDiagnosticsOverlay = b.ShowDiagnosticsOverlay,
+                IsoAlphaFloor            = b.IsoAlphaFloor,
+                IsoAlphaExponent         = b.IsoAlphaExponent,
+                ShowIsoLineLabels        = b.ShowIsoLineLabels,
+                ShowGridPoints           = b.ShowGridPoints,
+                ShowDiagnosticsOverlay   = b.ShowDiagnosticsOverlay,
+                ShowPowerSweepTimeDomain = b.ShowPowerSweepTimeDomain,
                 ReadoutFormats    = b.ReadoutFormats is null
                     ? new Dictionary<string, string>(StringComparer.Ordinal)
                     : new Dictionary<string, string>(b.ReadoutFormats, StringComparer.Ordinal),
@@ -690,11 +804,12 @@ public static class CharmIo
     {
         public Dictionary<string, string>? Light { get; set; }
         public Dictionary<string, string>? Dark  { get; set; }
-        public double? IsoAlphaFloor          { get; set; }
-        public double? IsoAlphaExponent       { get; set; }
-        public bool?   ShowIsoLineLabels      { get; set; }
-        public bool?   ShowGridPoints         { get; set; }
-        public bool?   ShowDiagnosticsOverlay { get; set; }
+        public double? IsoAlphaFloor            { get; set; }
+        public double? IsoAlphaExponent         { get; set; }
+        public bool?   ShowIsoLineLabels        { get; set; }
+        public bool?   ShowGridPoints           { get; set; }
+        public bool?   ShowDiagnosticsOverlay   { get; set; }
+        public bool?   ShowPowerSweepTimeDomain { get; set; }
         public Dictionary<string, string>? ReadoutFormats { get; set; }
     }
 }

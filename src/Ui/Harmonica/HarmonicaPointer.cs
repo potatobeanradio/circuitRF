@@ -185,18 +185,29 @@ public static class HarmonicaHitTest
         }
         if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.IntrinsicGlyph, best, panelId);
 
-        // Pass 2.5 — R-h9r2-8's VSWR-circle drag handles, one per marker with the overlay on. Tested
-        // through the SAME raw-Gamma transform DrawVswrLocus draws the locus with (GammaToCanvas, never
-        // MarkerToCanvas — the locus is not on the compressed intrinsic scale).
+        // Pass 2.5 — R-h9r2-8's VSWR circle, one per marker with the overlay on. brief-harmonicarf-r6b
+        // §1.1: there is no gripper any more — the whole circumference is grabbable, sampled at
+        // LoadpullSurface.VswrLocus's own default resolution (the SAME polyline DrawVswrLocus draws)
+        // and hit-tested by point-to-SEGMENT distance so a coarse polyline still reads as a smooth
+        // circle to the pointer. Tested through the SAME raw-Gamma transform the locus is drawn with
+        // (GammaToCanvas, never MarkerToCanvas — the locus is not on the compressed intrinsic scale).
         double vswrRadius = VswrHandleGrabRadiusDevicePixels / Math.Max(1e-9, renderScaling);
         double v2 = vswrRadius * vswrRadius;
         bestD2 = double.MaxValue;
         foreach (var m in markers)
         {
             if (!m.VswrEnabled) continue;
-            var handle = HarmonicaVswrHandle.HandleGamma(m.Gamma, m.VswrValue, z0);
-            double d2 = Distance2(HarmonicaPanelRenderer.GammaToCanvas(handle, size), local);
-            if (d2 <= v2 && d2 < bestD2) { bestD2 = d2; best = m; }
+            var pts = RfCore.Loadpull.LoadpullSurface.VswrLocus(
+                m.Gamma, m.VswrValue, RfCore.Loadpull.SurfacePlane.Gamma, new Complex(z0, 0.0));
+            if (pts is null || pts.Length < 2) continue;
+
+            for (int i = 0; i < pts.Length; i++)
+            {
+                var a = HarmonicaPanelRenderer.GammaToCanvas(pts[i], size);
+                var b = HarmonicaPanelRenderer.GammaToCanvas(pts[(i + 1) % pts.Length], size);
+                double d2 = Distance2ToSegment(local, a, b);
+                if (d2 <= v2 && d2 < bestD2) { bestD2 = d2; best = m; }
+            }
         }
         if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.VswrHandle, best, panelId);
 
@@ -228,14 +239,32 @@ public static class HarmonicaHitTest
     /// </summary>
     public const double GridPointGrabRadiusDevicePixels = 7.0;
 
-    /// <summary>R-h9r2-8's grab radius for a VSWR-circle drag handle, in DEVICE pixels. There is at
-    /// most one per marker, so it can be a comfortable size without any risk of crowding.</summary>
+    /// <summary>R-h9r2-8's grab radius for the VSWR circle, in DEVICE pixels — measured PERPENDICULAR
+    /// to the circumference (via <see cref="Distance2ToSegment"/>), not to any single point on it.
+    /// There is at most one circle per marker, so it can be a comfortable size without any risk of
+    /// crowding.</summary>
     public const double VswrHandleGrabRadiusDevicePixels = 9.0;
 
     private static double Distance2(SKPoint a, SKPoint b)
     {
         double dx = a.X - b.X, dy = a.Y - b.Y;
         return dx * dx + dy * dy;
+    }
+
+    /// <summary>Squared distance from <paramref name="p"/> to the segment <paramref name="a"/>–
+    /// <paramref name="b"/> — the same point-to-segment measure the Data Display's own
+    /// <c>HitTestVswrLocus</c> uses (there, non-squared; squared here to match every other distance
+    /// comparison in this file, which all compare against a squared radius).</summary>
+    private static double Distance2ToSegment(SKPoint p, SKPoint a, SKPoint b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        double lenSq = dx * dx + dy * dy;
+        if (lenSq < 1e-9) return Distance2(p, a);
+
+        double t = Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / lenSq, 0.0, 1.0);
+        double cx = a.X + t * dx, cy = a.Y + t * dy;
+        double ex = p.X - cx, ey = p.Y - cy;
+        return ex * ex + ey * ey;
     }
 }
 
@@ -296,9 +325,26 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
     private double _editAnchorX, _editAnchorY;
     private CharmPanelPlacement _editStart;
 
+    // ── brief-harmonicarf-r6b §1.3 — the live VSWR readout, mirroring Data Display's
+    // PlotControl._vswrReadoutActive/_vswrReadoutPt (set on press AND move, cleared on release/cancel).
+    // Canvas-space (not panel-local), since HarmonicaCanvasRenderer draws it OUTSIDE any panel's own
+    // clip so it is never cut off at a panel edge (§1.3's "unclipped, last" rule).
+
+    /// <summary>Whether the live "VSWR: …" readout should be drawn this frame.</summary>
+    public bool VswrReadoutActive { get; private set; }
+
+    /// <summary>The pointer's own canvas-space position, for the readout's <c>+10, −10</c> offset.</summary>
+    public (double X, double Y) VswrReadoutPointer { get; private set; }
+
+    /// <summary>The readout's own text — <c>HarmonicaReadoutFormatting.FormatVswr</c>, the SAME
+    /// formatter §2.1's menu header uses, so the number a drag lands on is the number the menu then
+    /// shows.</summary>
+    public string VswrReadoutText { get; private set; } = "";
+
     public bool PointerDown(double x, double y, double w, double h, double renderScaling = 1.0)
     {
         MoveCount = 0;
+        VswrReadoutActive = false;
 
         // §7.7 — while unlocked, the canvas edits the LAYOUT and nothing else. A marker drag and a
         // panel drag on the same pointer would be ambiguous the moment a marker sat under a grip.
@@ -339,6 +385,15 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
             _vm.BeginIntrinsicDrag(grab.Marker!);
         else if (grab.Kind == HarmonicaGrabKind.GridPoint)
             _vm.BeginGridPointDrag(grab.GridIndex);
+        else if (grab.Kind == HarmonicaGrabKind.VswrHandle)
+        {
+            // §1.3 — shown on a plain click too, not only once a move has happened, so the user can
+            // click the circle to read its value without moving it (mirrors Data Display's own press
+            // behaviour). Shows the CURRENT value; Apply below updates it once the pointer actually moves.
+            VswrReadoutActive  = true;
+            VswrReadoutPointer = (x, y);
+            VswrReadoutText    = HarmonicaReadoutFormatting.FormatVswr(grab.Marker!.VswrValue);
+        }
 
         return true;
     }
@@ -375,6 +430,8 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
         if (Grab.Kind == HarmonicaGrabKind.IntrinsicGlyph) _vm.EndIntrinsicDrag();
         else if (Grab.Kind == HarmonicaGrabKind.GridPoint) _vm.EndGridPointDrag();
         Grab = HarmonicaGrab.None;
+        // §1.3 — cleared on release, mirroring PlotControl.cs:1110.
+        VswrReadoutActive = false;
     }
 
     /// <summary>Abandons the gesture without applying anything further — a lost pointer capture, or
@@ -393,6 +450,7 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
         if (Grab.Kind == HarmonicaGrabKind.IntrinsicGlyph) _vm.EndIntrinsicDrag();
         else if (Grab.Kind == HarmonicaGrabKind.GridPoint) _vm.EndGridPointDrag();
         Grab = HarmonicaGrab.None;
+        VswrReadoutActive = false;
     }
 
     /// <summary>One frame of an Edit Display drag, in layout FRACTIONS — the units
@@ -438,6 +496,12 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
             double vswr = HarmonicaVswrHandle.VswrThrough(Grab.Marker!.Gamma, rawGamma,
                                                            _vm.Frame.SmithPower.Z0);
             _vm.SetMarkerVswr(Grab.Marker!, vswr);
+
+            // §1.3 — the readout follows the pointer's CANVAS position (x, y), not the panel-local
+            // one: it is drawn unclipped, outside any panel's own clip rect.
+            VswrReadoutActive  = true;
+            VswrReadoutPointer = (x, y);
+            VswrReadoutText    = HarmonicaReadoutFormatting.FormatVswr(Grab.Marker!.VswrValue);
             return;
         }
 

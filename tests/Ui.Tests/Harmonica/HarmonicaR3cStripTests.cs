@@ -43,24 +43,62 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
 
     // ══ §1/§2 — column order, gated on the panel composition rather than by eye (gate 4) ═════════
 
+    /// <summary>
+    /// R6C §1 — the owner's 2 × 4 grid replaces the old single horizontal row, and the owner's own
+    /// left-to-right ORDER within a row is no longer what determines position (a Grid's children can
+    /// appear in any order in markup) — so this reads each chunk's actual <c>Grid.Row</c>/
+    /// <c>Grid.Column</c> attributes off the XAML rather than trusting declaration order.
+    /// </summary>
+    private static (int Row, int Column) GridPositionOf(string axaml, string name)
+    {
+        int idx = axaml.IndexOf($"x:Name=\"{name}\"", StringComparison.Ordinal);
+        Assert.True(idx >= 0, $"{name} not found in ReadoutStripView.axaml");
+
+        // The tag containing this x:Name runs from the preceding '<' to the following '/>' or '>'.
+        int tagStart = axaml.LastIndexOf('<', idx);
+        int tagEnd    = axaml.IndexOf('>', idx);
+        string tag = axaml[tagStart..(tagEnd + 1)];
+
+        int row = ReadIntAttribute(tag, "Grid.Row");
+        int col = ReadIntAttribute(tag, "Grid.Column");
+        return (row, col);
+    }
+
+    private static int ReadIntAttribute(string tag, string attribute)
+    {
+        int idx = tag.IndexOf($"{attribute}=\"", StringComparison.Ordinal);
+        Assert.True(idx >= 0, $"{attribute} not found on tag: {tag}");
+        int start = idx + attribute.Length + 2;
+        int end = tag.IndexOf('"', start);
+        return int.Parse(tag[start..end]);
+    }
+
     [Fact]
-    public void ColumnsPanel_ListsTheSixColumns_InTheOwnersOrder()
+    public void ColumnsGrid_PlacesTheEightChunks_AtTheOwnersOwnPositions()
     {
         string axaml = ReadSource("src", "Ui", "Views", "Harmonica", "ReadoutStripView.axaml");
 
-        string[] expected =
-        [
-            "SettingsColumn", "OperatingPointColumn", "SourceColumn", "LoadColumn", "MxpColumn", "MxeColumn",
-        ];
-
-        int cursor = -1;
-        foreach (string name in expected)
+        // (row, column) — row 1: Settings · OperatingPoint · MXP · MXE
+        //                 row 2: Load · Source · IntrinsicVDS · IntrinsicIDS
+        // Load is above-left of Source (D at (2,1), C at (2,2)) — the reverse of R3C's own
+        // left-to-right Source-then-Load order, and deliberate: the owner specified it this way.
+        var expected = new (string Name, int Row, int Column)[]
         {
-            int idx = axaml.IndexOf($"x:Name=\"{name}\"", StringComparison.Ordinal);
-            Assert.True(idx >= 0, $"{name} not found in ReadoutStripView.axaml");
-            Assert.True(idx > cursor, $"{name} is out of order — expected Settings · OperatingPoint · " +
-                                       "Source · Load · MXP · MXE left to right");
-            cursor = idx;
+            ("SettingsColumn",       0, 0),
+            ("OperatingPointColumn", 0, 1),
+            ("MxpColumn",            0, 2),
+            ("MxeColumn",            0, 3),
+            ("LoadColumn",           1, 0),
+            ("SourceColumn",         1, 1),
+            ("IntrinsicVdsColumn",   1, 2),
+            ("IntrinsicIdsColumn",   1, 3),
+        };
+
+        foreach (var (name, row, column) in expected)
+        {
+            var pos = GridPositionOf(axaml, name);
+            Assert.True(pos == (row, column),
+                $"{name} is at {pos}, expected {(row, column)}");
         }
     }
 
@@ -105,15 +143,20 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         var inputLabels   = vm.Inputs.Select(i => i.Label);
         var all = readoutLabels.Concat(inputLabels).ToArray();
 
-        foreach (string label in new[] { "f₀", "Vds", "Vgs" })
+        // R6C §3 renamed the frequency input's LABEL from "f₀" to "Freq:" — the KEY is what still
+        // identifies it uniquely, so the duplicate scan below checks by key for that one and by label
+        // for Vds/Vgs, which R6C left untouched.
+        foreach (string label in new[] { "Vds", "Vgs" })
         {
             int count = all.Count(l => l == label);
             Assert.True(count == 1, $"'{label}' appears {count} times in the strip (readouts+inputs); expected 1");
         }
+        Assert.Equal(1, vm.Inputs.Count(i => i.Key == HarmonicaInputs.KeyFrequency) +
+                         vm.Frame.Readouts.Count(r => r.Label == "Freq:"));
 
         // And specifically: the READOUT half no longer carries them at all — the input is what's left.
-        Assert.DoesNotContain(vm.Frame.Readouts, r => r.Label is "f₀" or "Vds" or "Vgs");
-        Assert.Contains(vm.Inputs, i => i.Label == "f₀");
+        Assert.DoesNotContain(vm.Frame.Readouts, r => r.Label is "f₀" or "Freq:" or "Vds" or "Vgs");
+        Assert.Contains(vm.Inputs, i => i.Key == HarmonicaInputs.KeyFrequency);
         Assert.Contains(vm.Inputs, i => i.Label == "Vds");
         Assert.Contains(vm.Inputs, i => i.Label == "Vgs");
     }
@@ -225,7 +268,9 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         Assert.Contains("private const double TitleSizeR3C = 0.85;", src, StringComparison.Ordinal);
         Assert.Contains("private const double TitleBottomPaddingFraction", src, StringComparison.Ordinal);
 
-        int m = src.IndexOf("private static double TitleBandHeight(", StringComparison.Ordinal);
+        // brief-harmonicarf-r6b §4.1 made this PUBLIC (the fly-menu dispatch needs it) — still the
+        // same method, just a different modifier.
+        int m = src.IndexOf("public static double TitleBandHeight(", StringComparison.Ordinal);
         Assert.True(m >= 0);
         int mEnd = src.IndexOf("\n\n    // ── §7.2", m, StringComparison.Ordinal);
         if (mEnd < 0) mEnd = m + 800;
@@ -284,9 +329,9 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         // either the old 63px or a bare-zero gap.
         (double W, double H) size = (700, 650);
 
-        var bandHMethod = typeof(HarmonicaPanelRenderer).GetMethod("TitleBandHeight",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        double bandH = (double)bandHMethod.Invoke(null, [size])!;
+        // brief-harmonicarf-r6b §4.1 made TitleBandHeight PUBLIC (the fly-menu dispatch needs it) —
+        // call it directly now rather than through reflection.
+        double bandH = HarmonicaPanelRenderer.TitleBandHeight(size);
 
         var rimTop = HarmonicaPanelRenderer.GammaToCanvas(new Complex(0, 1), size);
         double gapPx = rimTop.Y - bandH;
@@ -306,14 +351,18 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
     // ══ §5 — no green fringe: the cover paints match the covered paints exactly (gate 9) ══════════
 
     [Fact]
-    public void DrawEfficiencyAxisOverlay_LineAndTickPaints_AreAntialiasedWithSquareCaps()
+    public void DrawSecondaryAxisOverlay_LineAndTickPaints_AreAntialiasedWithSquareCaps()
     {
+        // brief-harmonicarf-r6d §1 renamed this (and made the colour a parameter, for the time-domain
+        // view's own right axis) once DrawWithSuppressedSecondaryChrome removed the underlying stroke
+        // this shape-matching used to defend against — see HarmonicaPanelTests' pixel oracle for the
+        // gate that actually matters now (no pixel of the ordinary axis colour survives at all).
         string src = ReadSource("src", "Ui", "Harmonica", "Renderers", "HarmonicaPanelRenderer.cs");
 
-        int m = src.IndexOf("private static void DrawEfficiencyAxisOverlay(", StringComparison.Ordinal);
+        int m = src.IndexOf("private static void DrawSecondaryAxisOverlay(", StringComparison.Ordinal);
         Assert.True(m >= 0);
         int mEnd = src.IndexOf("\n    /// <summary>\n    /// R-h9r2-23", m, StringComparison.Ordinal);
-        Assert.True(mEnd >= 0, "could not find DrawEfficiencyAxisLabel's doc comment after the overlay method");
+        Assert.True(mEnd >= 0, "could not find DrawSecondaryAxisLabel's doc comment after the overlay method");
         string body = src[m..mEnd];
 
         // linePaint (the border cover) and tickPaint (the tick-mark cover) must both now match
@@ -529,7 +578,7 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
     [Fact]
     public void AdvancedSettingsDialog_CommitsThroughTheSameHarmonicaInputsKeys()
     {
-        string src = ReadSource("src", "Ui", "Views", "Dialogs", "HarmonicaAdvancedSettingsDialog.axaml.cs");
+        string src = ReadSource("src", "Ui", "Views", "Dialogs", "HarmonicaAdvancedSettingsView.axaml.cs");
 
         Assert.Contains("HarmonicaInputs.KeyLoadlineSamples", src, StringComparison.Ordinal);
         Assert.Contains("HarmonicaInputs.KeyFftOverSample", src, StringComparison.Ordinal);
@@ -540,12 +589,11 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         Assert.DoesNotContain("_vm.Model =", src, StringComparison.Ordinal);
     }
 
-    // ══ owner-reported — Edit ▸ Preferences… (and Set Z0…) report instead of silently doing nothing ═
+    // ══ owner-reported — Edit ▸ Settings… (and Set Z0…) report instead of silently doing nothing ═
 
     [Theory]
-    [InlineData("ShowPreferencesAsync", "Preferences…")]
+    [InlineData("ShowSettingsAsync", "Settings…")]
     [InlineData("ShowSetZ0Async", "Set Z0…")]
-    [InlineData("ShowAdvancedSettingsAsync", "Advanced Settings…")]
     public void DialogHooks_ReportByName_RatherThanSilentlyReturning(string method, string label)
     {
         string src = ReadSource("src", "Ui", "Views", "Harmonica", "HarmonicaView.axaml.cs");

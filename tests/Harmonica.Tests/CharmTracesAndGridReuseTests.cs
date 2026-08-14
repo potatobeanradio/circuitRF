@@ -103,6 +103,40 @@ public sealed class CharmTracesAndGridReuseTests(ITestOutputHelper output)
         Assert.Equal("trace.7", back.Traces[1].PanelId);
     }
 
+    // ══ brief-harmonicarf-r6b §2.2 — added grid points ══════════════════════
+
+    [Fact]
+    public void AddedGridPoints_RoundTripThroughCharmIo()
+    {
+        var model = Model();
+        var terms = new TerminationSet(model.Settings.HarmonicCount);
+
+        IReadOnlyList<Complex> added = [new(0.3, -0.2), new(-0.1, 0.55)];
+
+        string json = CharmIo.Write(model, terms, addedGridPoints: added);
+        var back = CharmIo.ReadAll(json, baseDirectory: null);
+
+        Assert.Equal(2, back.AddedGridPoints.Count);
+        Assert.Equal(added[0], back.AddedGridPoints[0]);
+        Assert.Equal(added[1], back.AddedGridPoints[1]);
+    }
+
+    [Fact]
+    public void NoAddedGridPoints_WritesNoBlock_SoAnUntouchedFileReSerialisesByteForByte()
+    {
+        var model = Model();
+        var terms = new TerminationSet(model.Settings.HarmonicCount);
+
+        string a = CharmIo.Write(model, terms);
+        string b = CharmIo.Write(model, terms, addedGridPoints: []);
+
+        Assert.DoesNotContain("\"AddedGridPoints\"", a, StringComparison.Ordinal);
+        Assert.Equal(a, b);
+
+        var back = CharmIo.ReadAll(a, baseDirectory: null);
+        Assert.Empty(back.AddedGridPoints);
+    }
+
     // ══ R-h7-11 / R-h7-12 — the grid ═══════════════════════════════════════
 
     [Fact]

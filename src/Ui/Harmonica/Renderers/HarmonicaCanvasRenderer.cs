@@ -47,6 +47,12 @@ public static class HarmonicaCanvasRenderer
     /// list names it) even though no renderer currently reads it to draw a label; a future label
     /// implementation then needs no cache-invalidation work of its own.
     /// </param>
+    /// <param name="PowerSweepTimeDomain">brief-harmonicarf-r6d §4 — whether the power-sweep panel's
+    /// slot is showing the Time Domain view instead of the ordinary power sweep.</param>
+    /// <param name="Settings">brief-harmonicarf-r6e §2 — the document's own axis-limits/autoscale
+    /// state, read by the loadline/power-sweep/time-domain panels. Defaults to a fresh
+    /// <c>HarmonicaSettings</c> (autoscale off, no stored limits — today's behaviour) for a null
+    /// <paramref name="vm"/>.</param>
     public readonly record struct Snapshot(
         HarmonicaFrame                    Frame,
         CharmLayout                       Layout,
@@ -58,7 +64,9 @@ public static class HarmonicaCanvasRenderer
         HarmonicaBackdropCache?           PowerBackdrop = null,
         HarmonicaBackdropCache?           EfficiencyBackdrop = null,
         double                            DeviceScale = 1.0,
-        bool                              ShowIsoLineLabels = false)
+        bool                              ShowIsoLineLabels = false,
+        bool                              PowerSweepTimeDomain = false,
+        HarmonicaSettings?                Settings = null)
     {
         public static Snapshot Of(HarmonicaViewModel? vm) => new(
             vm?.Frame       ?? HarmonicaFrame.Empty,
@@ -68,7 +76,9 @@ public static class HarmonicaCanvasRenderer
             vm is null ? [] : [.. vm.PickedTraces],
             vm?.ShowGridPoints ?? false,
             vm?.TopmostMarker,
-            ShowIsoLineLabels: vm?.ShowIsoLineLabels ?? false);
+            ShowIsoLineLabels: vm?.ShowIsoLineLabels ?? false,
+            PowerSweepTimeDomain: vm?.ShowPowerSweepTimeDomain ?? false,
+            Settings: vm?.Model.Settings ?? new HarmonicaSettings());
 
         /// <summary>The same snapshot, with the live canvas's own render caches and device scale
         /// attached — <see cref="Of"/> alone (as every non-canvas caller still uses it) never has a
@@ -134,7 +144,7 @@ public static class HarmonicaCanvasRenderer
             HarmonicaPanelId.SmithPower      => "Power",
             HarmonicaPanelId.SmithEfficiency => "Efficiency",
             HarmonicaPanelId.Loadline        => "Loadline",
-            HarmonicaPanelId.PowerSweep      => "Power sweep",
+            HarmonicaPanelId.PowerSweep      => s.PowerSweepTimeDomain ? "Time domain" : "Power sweep",
             _ => s.Picked.FirstOrDefault(p => p.PanelId == panelId) is { } t
                 ? (t.Label is { Length: > 0 } l ? l : t.Spec)
                 : panelId,
@@ -156,10 +166,18 @@ public static class HarmonicaCanvasRenderer
                                                       s.EfficiencyBackdrop, s.DeviceScale, s.ShowIsoLineLabels);
                 return;
             case HarmonicaPanelId.Loadline:
-                HarmonicaPanelRenderer.DrawLoadlinePanel(canvas, size, s.Frame.Loadline, s.Theme, s.Dark);
+                HarmonicaPanelRenderer.DrawLoadlinePanel(canvas, size, s.Frame.Loadline, s.Theme, s.Dark,
+                                                         s.Settings ?? new HarmonicaSettings());
                 return;
             case HarmonicaPanelId.PowerSweep:
-                HarmonicaPanelRenderer.DrawPowerSweepPanel(canvas, size, s.Frame.PowerSweep, s.Theme, s.Dark);
+                // brief-harmonicarf-r6d §4 — the title fly menu repurposes this slot; the panel it
+                // draws is a property of the DOCUMENT (persisted), not of which panel id it occupies.
+                if (s.PowerSweepTimeDomain)
+                    HarmonicaPanelRenderer.DrawTimeDomainPanel(canvas, size, s.Frame.Loadline, s.Theme, s.Dark,
+                                                               s.Settings ?? new HarmonicaSettings());
+                else
+                    HarmonicaPanelRenderer.DrawPowerSweepPanel(canvas, size, s.Frame.PowerSweep, s.Theme, s.Dark,
+                                                               s.Settings ?? new HarmonicaSettings());
                 return;
         }
 

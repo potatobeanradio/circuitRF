@@ -161,7 +161,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     {
         var formats = Appearance.ReadoutFormats;
         return key => formats.TryGetValue(key, out var v) && Enum.TryParse<ReadoutFormat>(v, out var f)
-            ? f : ReadoutFormat.RealImaginary;
+            ? f : HarmonicaReadoutFormatting.DefaultReadoutFormat(key);
     }
 
     /// <summary>The most recently solved frame. The panels render this and nothing else.</summary>
@@ -208,6 +208,11 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// buffers are allocated regardless (negligible, one-time), but nothing WRITES to them, and
     /// nothing draws, unless this is true.</summary>
     [ObservableProperty] private bool _showDiagnosticsOverlay;
+
+    /// <summary>brief-harmonicarf-r6d §4 — the power-sweep panel's title fly menu: false = Power
+    /// Sweep (default), true = Time Domain. Same shape of display-only toggle as
+    /// <see cref="ShowGridPoints"/>.</summary>
+    [ObservableProperty] private bool _showPowerSweepTimeDomain;
 
     /// <summary>
     /// brief-harmonicarf-r5 §1 — this document's own diagnostics overlay state (the rolling
@@ -256,8 +261,102 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
     partial void OnVariantChanged(ColorVariant value)   => RedrawRequested?.Invoke();
     partial void OnAppearanceChanged(CharmAppearance value) { RedrawRequested?.Invoke(); DirtyChanged?.Invoke(); }
-    partial void OnFrameChanged(HarmonicaFrame value)   => RedrawRequested?.Invoke();
+    partial void OnFrameChanged(HarmonicaFrame value)
+    {
+        CaptureAxisWindows(value);
+        RedrawRequested?.Invoke();
+    }
     partial void OnLayoutChanged(CharmLayout value)     { RedrawRequested?.Invoke(); DirtyChanged?.Invoke(); }
+
+    /// <summary>
+    /// brief-harmonicarf-r6e §2.2/§2.3 — the write-back half of the stored-axis-limits mechanism.
+    /// <see cref="Renderers.HarmonicaPanelRenderer.ApplyStoredWindow"/> (the read half) only ever
+    /// READS <see cref="Model"/>; this is the one place anything WRITES the stored limits.
+    ///
+    /// <para>Fires on every published frame (this is <see cref="Frame"/>'s own
+    /// <c>OnFrameChanged</c>), but only actually touches <see cref="Model"/> when it has to:
+    /// autoscale ON recomputes and re-stores the natural (AutoScale/PinAxisPin/headroom-fitted)
+    /// window EVERY time, so turning it back off freezes exactly what is on screen (§2.3); autoscale
+    /// OFF with no stored limit yet computes it ONCE, from the first frame that actually has data,
+    /// and never again (§2.2) — which is the "axes never move while the user drags markers" property
+    /// itself. Autoscale OFF with a limit already stored is a pure no-op, by construction: neither
+    /// condition below is true.</para>
+    ///
+    /// <para>Each plot's own <c>Build*Plot</c> is called with <c>Autoscale: true</c> regardless of
+    /// what is actually stored — that makes <see cref="Renderers.HarmonicaPanelRenderer.
+    /// ApplyStoredWindow"/> a no-op for this call, so the returned <c>Axes.Window</c>/
+    /// <c>WindowSecondary</c> is always the NATURAL fit, never a stale stored value read back at
+    /// itself.</para>
+    /// </summary>
+    private void CaptureAxisWindows(HarmonicaFrame frame)
+    {
+        var s = Model.Settings;
+        var theme = RenderTheme;
+        var next = s;
+
+        if ((s.DcivAutoscale || s.DcivXMin is null)
+            && (frame.Loadline.Dciv.Count > 0 || frame.Loadline.LoadlineVds.Length > 1))
+        {
+            var w = Renderers.HarmonicaPanelRenderer.BuildLoadlinePlot(
+                frame.Loadline, theme,
+                Renderers.HarmonicaPanelRenderer.DcivLimits(s) with { Autoscale = true }).Axes.Window;
+            if (w.Width > 0 && w.Height > 0 &&
+                (next.DcivXMin != w.X || next.DcivXMax != w.X + w.Width ||
+                 next.DcivYMin != w.Y || next.DcivYMax != w.Y + w.Height))
+            {
+                next = next with
+                {
+                    DcivXMin = w.X, DcivXMax = w.X + w.Width, DcivYMin = w.Y, DcivYMax = w.Y + w.Height,
+                };
+            }
+        }
+
+        if ((s.PowerSweepAutoscale || s.PowerSweepXMin is null) && frame.PowerSweep.GainDb.Length > 1)
+        {
+            var axes = Renderers.HarmonicaPanelRenderer.BuildPowerSweepPlot(
+                frame.PowerSweep, theme,
+                Renderers.HarmonicaPanelRenderer.PowerSweepLimits(s) with { Autoscale = true }).Axes;
+            var w = axes.Window; var w2 = axes.WindowSecondary;
+            if (w.Width > 0 && w.Height > 0 &&
+                (next.PowerSweepXMin != w.X || next.PowerSweepXMax != w.X + w.Width ||
+                 next.PowerSweepYMin != w.Y || next.PowerSweepYMax != w.Y + w.Height ||
+                 next.PowerSweepY2Min != w2.Y || next.PowerSweepY2Max != w2.Y + w2.Height))
+            {
+                next = next with
+                {
+                    PowerSweepXMin = w.X, PowerSweepXMax = w.X + w.Width,
+                    PowerSweepYMin = w.Y, PowerSweepYMax = w.Y + w.Height,
+                    PowerSweepY2Min = w2.Y, PowerSweepY2Max = w2.Y + w2.Height,
+                };
+            }
+        }
+
+        if ((s.TimeDomainAutoscale || s.TimeDomainXMin is null) && frame.Loadline.LoadlineVds.Length > 1)
+        {
+            var axes = Renderers.HarmonicaPanelRenderer.BuildTimeDomainPlot(
+                frame.Loadline, theme,
+                Renderers.HarmonicaPanelRenderer.TimeDomainLimits(s) with { Autoscale = true }).Axes;
+            var w = axes.Window; var w2 = axes.WindowSecondary;
+            if (w.Width > 0 && w.Height > 0 &&
+                (next.TimeDomainXMin != w.X || next.TimeDomainXMax != w.X + w.Width ||
+                 next.TimeDomainYMin != w.Y || next.TimeDomainYMax != w.Y + w.Height ||
+                 next.TimeDomainY2Min != w2.Y || next.TimeDomainY2Max != w2.Y + w2.Height))
+            {
+                next = next with
+                {
+                    TimeDomainXMin = w.X, TimeDomainXMax = w.X + w.Width,
+                    TimeDomainYMin = w.Y, TimeDomainYMax = w.Y + w.Height,
+                    TimeDomainY2Min = w2.Y, TimeDomainY2Max = w2.Y + w2.Height,
+                };
+            }
+        }
+
+        if (!ReferenceEquals(next, s))
+        {
+            Model = Model with { Settings = next };
+            DirtyChanged?.Invoke();
+        }
+    }
 
     partial void OnIntrinsicPlaneChanged(bool value)
     {
@@ -399,17 +498,30 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         => SetMarkerImpedance(marker, HarmonicaDataSet.ImpedanceOf(gamma, Model.Settings.Z0));
 
     /// <summary>
-    /// R-h9r2-8 — writes a marker's VSWR-circle radius, from a drag on its handle.
+    /// R-h9r2-8 — writes a marker's VSWR-circle radius, from a drag on its own circumference or from
+    /// the menu's <c>Set…</c> dialog (brief-harmonicarf-r6b §1.2/§2.1).
     ///
     /// <para><b>No re-solve, unlike every other marker drag.</b> The overlay is a display annotation
     /// over an already-solved termination (§9's own framing) — it neither reads nor writes anything the
     /// circuit depends on, so there is no frame to request. <see cref="RedrawRequested"/> alone is
     /// enough to move the circle on screen; <see cref="DirtyChanged"/> marks the document unsaved, the
     /// same as every other <c>.charm</c>-persisted edit.</para>
+    ///
+    /// <para><b>§1.2 — no clamping beyond <see cref="HarmonicaVswrHandle.MinVswr"/>.</b> This used to
+    /// re-clamp an already-computed VSWR by round-tripping it through ρ
+    /// (<c>VswrOf(RhoOf(vswr))</c>), which silently capped it at the old <c>MaxVswr</c> display ceiling
+    /// — exactly the saturation the owner asked to remove. The only restriction left is the floor VSWR
+    /// ≥ 1 is defined for; a caller (the drag path, the <c>Set…</c> dialog) is responsible for its own
+    /// upstream validation of anything else (finiteness, "reject < 1 with a message").</para>
+    ///
+    /// <para><b>§2.1 — setting a value also ENABLES the circle</b> if it was off: typing a number into
+    /// <c>Set…</c> and seeing nothing happen is the failure mode to avoid. A no-op for the drag path,
+    /// which can only be reached while the circle is already on.</para>
     /// </summary>
     public void SetMarkerVswr(HarmonicaMarker marker, double vswr)
     {
-        marker.VswrValue = HarmonicaVswrHandle.VswrOf(HarmonicaVswrHandle.RhoOf(vswr));
+        marker.VswrValue = Math.Max(HarmonicaVswrHandle.MinVswr, vswr);
+        marker.VswrEnabled = true;
         RedrawRequested?.Invoke();
         DirtyChanged?.Invoke();
     }
@@ -649,6 +761,47 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// brief-harmonicarf-r6a §3 — the Advanced tab's contour-kernel controls (kernel / smooth /
+    /// epsilon). <b>Validated BEFORE anything is written</b>, the same rule
+    /// <see cref="ApplyPowerSweepSettings"/> follows: a rejected candidate never touches
+    /// <see cref="Model"/>, so the surface on screen stays exactly what it was.
+    ///
+    /// <para>Not structural (<see cref="CircuitModel.StructuralKey"/> is untouched) — an ordinary
+    /// value re-solve, which for the contour grid specifically means a re-FIT: <c>ContourGrid.Build</c>
+    /// re-reads these three off <see cref="Model"/>.<c>Settings</c> at its own start (mirroring how it
+    /// already re-reads <c>Z0</c>) and unconditionally drops its cached RBF factorization on every
+    /// call, so the next frame's <c>Fit</c> re-factorizes against the new kernel/smooth/epsilon without
+    /// re-running a single <see cref="PinSearch"/> — <see cref="RequestScheduledFrame"/> with
+    /// <c>reuseUnchanged</c> is what keeps the Γ points themselves from being re-solved.</para>
+    /// </summary>
+    /// <param name="epsilon"><c>null</c> means Rbf2D's own scipy-style auto epsilon — never
+    /// substituted for a number.</param>
+    public bool ApplyContourSettings(RfCore.Loadpull.RbfKernel kernel, double smooth, double? epsilon)
+    {
+        if (!double.IsFinite(smooth) || smooth < 0) return false;
+        if (epsilon is { } e && (!double.IsFinite(e) || e <= 0)) return false;
+
+        Model = Model with
+        {
+            Settings = Model.Settings with
+            {
+                ContourKernel = kernel, ContourSmooth = smooth, ContourEpsilon = epsilon,
+            },
+        };
+        DirtyChanged?.Invoke();
+
+        // R-h7-12's own point-reuse path (the same one DragGridPoint's release uses) — nothing about
+        // the terminations, side or harmonic moved, so every Γ point's PinSearch answer is reusable
+        // as-is. ContourGrid.Build still drops the cached RBF factorization unconditionally (see this
+        // method's own remarks), so the fit itself is NOT stale — only the expensive re-solve is
+        // skipped.
+        var plan = Scheduler.NextPlan(dragging: false);
+        LastPlan = plan;
+        RequestFrame(OptionsFor(plan, dragging: false) with { ReuseUnchangedGridPoints = true });
+        return true;
+    }
+
     /// <summary>Clears the override — back to <see cref="DcivFamily.DefaultKey"/>.</summary>
     public void ResetDcivOverride()
     {
@@ -662,6 +815,100 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         };
         DirtyChanged?.Invoke();
         RequestScheduledFrame(dragging: false);
+    }
+
+    // ── brief-harmonicarf-r6e §3/§4 — persisted axis limits + autoscale, one property per plot, ──
+    // ── two surfaces each (a dialog's boxes/checkbox and the fly menu's Autoscale item) ───────────
+
+    private static bool IsValidAxisPair(double lo, double hi)
+        => double.IsFinite(lo) && double.IsFinite(hi) && hi > lo;
+
+    /// <summary>The DCIV Sweeps dialog's Axis limits section. Validated BEFORE anything is written —
+    /// the same "invalid input keeps the old picture" rule <see cref="ApplyDcivOverride"/> follows.
+    /// No re-solve: this is a display-only window, never a sweep-range change.</summary>
+    public bool ApplyDcivAxisLimits(double xMin, double xMax, double yMin, double yMax)
+    {
+        if (!IsValidAxisPair(xMin, xMax) || !IsValidAxisPair(yMin, yMax)) return false;
+
+        Model = Model with
+        {
+            Settings = Model.Settings with { DcivXMin = xMin, DcivXMax = xMax, DcivYMin = yMin, DcivYMax = yMax },
+        };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+        return true;
+    }
+
+    /// <summary>The DCIV/loadline panel's own Autoscale — the checkbox in its dialog and the
+    /// checkbox in its fly menu write this SAME property, so the two can never disagree.</summary>
+    public void SetDcivAutoscale(bool value)
+    {
+        if (Model.Settings.DcivAutoscale == value) return;
+        Model = Model with { Settings = Model.Settings with { DcivAutoscale = value } };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+    }
+
+    /// <summary>The Power Sweep Axes dialog's write-back — X, left Y (gain) and right Y (efficiency).</summary>
+    public bool ApplyPowerSweepAxisLimits(double xMin, double xMax, double yMin, double yMax,
+                                          double y2Min, double y2Max)
+    {
+        if (!IsValidAxisPair(xMin, xMax) || !IsValidAxisPair(yMin, yMax) || !IsValidAxisPair(y2Min, y2Max))
+            return false;
+
+        Model = Model with
+        {
+            Settings = Model.Settings with
+            {
+                PowerSweepXMin = xMin, PowerSweepXMax = xMax,
+                PowerSweepYMin = yMin, PowerSweepYMax = yMax,
+                PowerSweepY2Min = y2Min, PowerSweepY2Max = y2Max,
+            },
+        };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+        return true;
+    }
+
+    public void SetPowerSweepAutoscale(bool value)
+    {
+        if (Model.Settings.PowerSweepAutoscale == value) return;
+        Model = Model with { Settings = Model.Settings with { PowerSweepAutoscale = value } };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+    }
+
+    /// <summary>
+    /// The SAME Power Sweep Axes dialog, opened while the panel is showing the Time Domain view
+    /// (§4) — writes the SEPARATE Time Domain limit set, never the power-sweep one, so switching
+    /// modes cannot corrupt the other mode's axes.
+    /// </summary>
+    public bool ApplyTimeDomainAxisLimits(double xMin, double xMax, double yMin, double yMax,
+                                          double y2Min, double y2Max)
+    {
+        if (!IsValidAxisPair(xMin, xMax) || !IsValidAxisPair(yMin, yMax) || !IsValidAxisPair(y2Min, y2Max))
+            return false;
+
+        Model = Model with
+        {
+            Settings = Model.Settings with
+            {
+                TimeDomainXMin = xMin, TimeDomainXMax = xMax,
+                TimeDomainYMin = yMin, TimeDomainYMax = yMax,
+                TimeDomainY2Min = y2Min, TimeDomainY2Max = y2Max,
+            },
+        };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+        return true;
+    }
+
+    public void SetTimeDomainAutoscale(bool value)
+    {
+        if (Model.Settings.TimeDomainAutoscale == value) return;
+        Model = Model with { Settings = Model.Settings with { TimeDomainAutoscale = value } };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
     }
 
     /// <summary>
@@ -928,6 +1175,9 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         // but it cannot thin a scatter it did not generate. Dropping points from a grid the user
         // imported or hand-placed would silently answer a different question from the one they asked.
         GammaGrid        = CustomGrid,
+        // brief-harmonicarf-r6b §2.2 — layered on top of whatever GammaGrid resolves to, never
+        // replacing it.
+        AddedGridPoints  = AddedGridPoints.Count > 0 ? [.. AddedGridPoints] : null,
     };
 
     /// <summary>
@@ -1108,24 +1358,74 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private IReadOnlyList<Complex>? _customGrid;
 
+    /// <summary>
+    /// brief-harmonicarf-r6b §2.2 — Γ points added via the marker menu's <c>Add Point</c>/<c>Add
+    /// Points to VSWR</c>, layered ON TOP of <see cref="CustomGrid"/> (or the ring/spoke preset when
+    /// that is null) rather than replacing it — see <see cref="HarmonicaSolver.Options.
+    /// AddedGridPoints"/>'s own doc comment for why this is a separate list. Persists in the
+    /// <c>.charm</c> (<see cref="ToCharmJson"/>/<see cref="LoadCharm"/>); cleared by
+    /// <see cref="ResetGrid"/> and by <see cref="SetGridPreset"/>, per the owner's own ruling that
+    /// the preset must always describe exactly what is on screen.
+    /// </summary>
+    public ObservableCollection<Complex> AddedGridPoints { get; } = [];
+
     /// <summary>The Grid menu's ring presets. Clears any custom grid — a preset and an imported
-    /// scatter are alternatives, and keeping both would leave the menu lying about what is drawn.</summary>
+    /// scatter are alternatives, and keeping both would leave the menu lying about what is drawn.
+    /// §2.2's own added points are cleared too — "the preset must always describe exactly what is on
+    /// screen".</summary>
     public void SetGridPreset(int rings, int spokes)
     {
         CustomGrid = null;
+        AddedGridPoints.Clear();
         Scheduler.SetGridPreset(rings, spokes);
         ResetSchedule();
         DirtyChanged?.Invoke();
         RequestScheduledFrame(dragging: false);
     }
 
-    /// <summary>Grid ▸ Reset grid — back to the ladder's own ring set.</summary>
+    /// <summary>Grid ▸ Reset grid — back to the ladder's own ring set, with no added points.</summary>
     public void ResetGrid()
     {
         CustomGrid = null;
+        AddedGridPoints.Clear();
         Scheduler.SetGridPreset(null, null);
         ResetSchedule();
         DirtyChanged?.Invoke();
+        RequestScheduledFrame(dragging: false);
+    }
+
+    /// <summary>
+    /// brief-harmonicarf-r6b §2.2 — the marker menu's <c>Add Point</c>: appends the marker's own Γ to
+    /// <see cref="AddedGridPoints"/> and re-solves. A full re-solve of the WHOLE grid, not just the
+    /// new point — the honest fallback (§2.2's own text: "either is acceptable — say which you did").
+    /// Adding a point moves the node set, which already invalidates <c>ContourGrid</c>'s own
+    /// factorization cache by construction (its own <c>_factor</c>/<c>_factorMask</c> note), so
+    /// nothing extra is needed there.
+    /// </summary>
+    public void AddGridPoint(Complex gamma)
+    {
+        AddedGridPoints.Add(gamma);
+        DirtyChanged?.Invoke();
+        ResetSchedule();
+        RequestScheduledFrame(dragging: false);
+    }
+
+    /// <summary>
+    /// brief-harmonicarf-r6b §2.3 — the marker menu's <c>Add Points to VSWR</c>: 12 points uniformly
+    /// spaced in θ on the marker's OWN VSWR locus, through the same <see cref="AddGridPoint"/> path
+    /// (one re-solve for the whole batch, not 12). §1.2's unclamped drag means some of these can land
+    /// outside the unit circle — a legitimate active termination, not filtered out; a point the Pin
+    /// search cannot converge at comes back a hole, same as any other.
+    /// </summary>
+    public void AddGridPointsOnVswrCircle(HarmonicaMarker marker)
+    {
+        var pts = RfCore.Loadpull.LoadpullSurface.VswrLocus(
+            marker.Gamma, marker.VswrValue, RfCore.Loadpull.SurfacePlane.Gamma,
+            new Complex(Model.Settings.Z0, 0.0), nPoints: 12);
+        foreach (var p in pts) AddedGridPoints.Add(p);
+
+        DirtyChanged?.Invoke();
+        ResetSchedule();
         RequestScheduledFrame(dragging: false);
     }
 
@@ -1221,7 +1521,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// </summary>
     public void SolveFullGrid() => RequestFrame(new HarmonicaSolver.Options
     {
-        Rings = 5, Spokes = 12,
+        Rings = FrameScheduler.FullRings, Spokes = FrameScheduler.FullSpokes,
         RasterResolution = HarmonicaSolver.Options.FullRasterResolution,
     });
 
@@ -1557,7 +1857,8 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                          [.. Markers.Where(m => m.VswrEnabled)
                                     .Select(m => new CharmIo.CharmMarkerVswr(
                                         m.Side == TerminationSideKind.Source ? TerminationSide.Source : TerminationSide.Load,
-                                        m.Band, m.VswrValue))]);
+                                        m.Band, m.VswrValue))],
+                         [.. AddedGridPoints]);
 
     /// <summary>Loads a <c>.charm</c>. Unresolved references come back so the caller can offer to
     /// re-point them rather than losing the document.</summary>
@@ -1572,6 +1873,8 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         // The rolling window itself is NOT restored (it is session-only diagnostics, not document
         // state) — only the toggle's on/off is.
         ShowDiagnosticsOverlay = c.Appearance.ShowDiagnosticsOverlay ?? false;
+        // brief-harmonicarf-r6d §4 — same "kept in step with the persisted appearance on load" rule.
+        ShowPowerSweepTimeDomain = c.Appearance.ShowPowerSweepTimeDomain ?? false;
 
         Model = c.Model;
         _ctx  = null;                                   // structure may have changed entirely
@@ -1594,6 +1897,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
         Appearance = c.Appearance;
         Layout     = c.Layout;
+
+        // brief-harmonicarf-r6b §2.2 — added grid points persist in the .charm.
+        AddedGridPoints.Clear();
+        foreach (var p in c.AddedGridPoints) AddedGridPoints.Add(p);
 
         PickedTraces.Clear();
         foreach (var t in c.Traces)

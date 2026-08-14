@@ -144,15 +144,18 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     public Action? CopyPlotHook        { get; set; }
     public Action? CopyReadoutsHook    { get; set; }
     public Action? CopyTerminationsHook{ get; set; }
-    public Action? PreferencesHook     { get; set; }
     public Action? HelpHook            { get; set; }
     public Action? AddTraceHook        { get; set; }
     public Action? PowerSweepHook      { get; set; }
     public Action? SetZ0Hook           { get; set; }
 
-    /// <summary>Owner request (2026-08-13) — loadline pts / FFT× / charge / M moved out of the strip
-    /// into their own dialog; this is the menu item that opens it.</summary>
-    public Action? AdvancedSettingsHook { get; set; }
+    /// <summary>
+    /// brief-harmonicarf-r6a §2.2 — the ONE Settings… item, everywhere. Supersedes the separate
+    /// <c>PreferencesHook</c> (the colour/appearance editor) and <c>AdvancedSettingsHook</c> (loadline
+    /// pts / FFT× / charge / M / §3's contour-kernel controls) — both dialogs merged into one
+    /// tabbed <c>HarmonicaSettingsDialog</c>, so there is only one item and one hook to open it.
+    /// </summary>
+    public Action? SettingsHook { get; set; }
 
     [RelayCommand] private void NewDocument()     => NewDocumentHook?.Invoke();
     [RelayCommand] private void OpenDocument()    => OpenDocumentHook?.Invoke();
@@ -173,7 +176,7 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     [RelayCommand] private void CopyPlot()         => CopyPlotHook?.Invoke();
     [RelayCommand] private void CopyReadouts()     => CopyReadoutsHook?.Invoke();
     [RelayCommand] private void CopyTerminations() => CopyTerminationsHook?.Invoke();
-    [RelayCommand] private void Preferences()      => PreferencesHook?.Invoke();
+    [RelayCommand] private void Settings()         => SettingsHook?.Invoke();
     [RelayCommand] private void Help()             => HelpHook?.Invoke();
 
     // ── Markers (R-h7-2) ─────────────────────────────────────────────────────
@@ -303,10 +306,6 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     /// row already makes.</summary>
     [RelayCommand] private void SetZ0() => SetZ0Hook?.Invoke();
 
-    /// <summary>Owner request — Display ▸ Advanced Settings…, for the four inputs the strip no longer
-    /// shows (loadline pts / FFT× / charge / M).</summary>
-    [RelayCommand] private void AdvancedSettings() => AdvancedSettingsHook?.Invoke();
-
     [RelayCommand]
     private void ToggleIsoLineLabels()
     {
@@ -340,6 +339,21 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     {
         _vm.Diagnostics.Reset();
         _vm.RequestRedraw();
+    }
+
+    /// <summary>brief-harmonicarf-r6d §4 — the power-sweep panel's title fly menu, same parametrized
+    /// shape as <see cref="SetGridSide"/>'s Load/Source pair. The panel TITLE tracks this too (it is
+    /// read from <see cref="HarmonicaViewModel.ShowPowerSweepTimeDomain"/> at draw time, in
+    /// <c>HarmonicaPanelRenderer.BuildPowerSweepPlot</c>/<c>BuildTimeDomainPlot</c>), so it always
+    /// names what is actually drawn.</summary>
+    [RelayCommand]
+    private void SetPowerSweepMode(string? mode)
+    {
+        bool timeDomain = string.Equals(mode, "TimeDomain", StringComparison.OrdinalIgnoreCase);
+        if (_vm.ShowPowerSweepTimeDomain == timeDomain) return;
+
+        _vm.ShowPowerSweepTimeDomain = timeDomain;
+        _vm.Appearance = _vm.Appearance with { ShowPowerSweepTimeDomain = timeDomain };
     }
 
     [RelayCommand] private void ToggleLoadlinePlane() => _vm.IntrinsicPlane = !_vm.IntrinsicPlane;

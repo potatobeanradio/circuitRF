@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
@@ -30,15 +32,23 @@ namespace CircuitRF.Ui.Harmonica;
 /// </summary>
 public static class HarmonicaClipboard
 {
+    /// <summary>
+    /// R6C §5 — the ONE tab-delimited <c>label\tvalue\n</c> formatter, so the whole-canvas text
+    /// flavour below, <c>HarmonicaView.CopyReadoutsAsync</c> (Edit ▸ Copy Readouts) and
+    /// <c>ReadoutStripView</c>'s new per-chunk Copy all produce the identical shape — one row per
+    /// line, pasting straight into a spreadsheet as two columns.
+    /// </summary>
+    public static string RowsText(IEnumerable<(string Label, string Value)> rows)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var (label, value) in rows) sb.Append(label).Append('\t').AppendLine(value);
+        return sb.ToString();
+    }
+
     /// <summary>The JSON a Data Display would carry. harmonicaRF has no plot config to serialise, so
     /// the text flavour is the readouts — which is what a paste into a text field should give.</summary>
     private static string TextFor(HarmonicaViewModel vm)
-    {
-        var sb = new System.Text.StringBuilder();
-        foreach (var r in vm.Frame.Readouts)
-            sb.Append(r.Label).Append('\t').AppendLine(r.Value);
-        return sb.ToString();
-    }
+        => RowsText(vm.Frame.Readouts.Select(r => (r.Label, r.Value)));
 
     /// <summary>
     /// Copies one panel (or the whole canvas when <paramref name="panelId"/> is null) to the

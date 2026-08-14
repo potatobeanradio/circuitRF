@@ -1,16 +1,13 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaPreferencesDialog"
-        Title="harmonicaRF Preferences"
-        Width="620" Height="520"
-        WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaAppearanceSettingsView">
 
   <!--
-    §7.9.4's colour editor. It reuses circuitRF's existing colour UI rather than a new one — the
-    role-list + hex-field pattern from Views/Dialogs/SettingsView, and Views/Dialogs/ColorPickerDialog
-    for the picker itself — because that code has already absorbed two non-obvious fixes worth
-    inheriting rather than rediscovering:
+    brief-harmonicarf-r6a §2.2 — lifted verbatim from the former HarmonicaPreferencesDialog (its own
+    §7.9.4 colour editor), as a UserControl tab of HarmonicaSettingsDialog. Reuses circuitRF's existing
+    colour UI rather than a new one — the role-list + hex-field pattern from Views/Dialogs/SettingsView,
+    and Views/Dialogs/ColorPickerDialog for the picker itself — because that code has already absorbed
+    two non-obvious fixes worth inheriting rather than rediscovering:
 
       • THE HEX-FIELD KEY HANDLING. Return applies AND sets e.Handled = true, or the window's default
         button closes the dialog instead of applying; Escape reverts; LostFocus applies; the value is
@@ -88,9 +85,7 @@
       <Button x:Name="ExportButton" Content="Export .ccolor…" Click="OnExportClick"/>
       <Button x:Name="ResetAllButton" Content="Reset All Colours" Click="OnResetAllClick"/>
       <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
-      <Button Content="Close" Width="80" IsCancel="True" HorizontalAlignment="Right"
-              HorizontalContentAlignment="Center" Click="OnCloseClick"/>
     </StackPanel>
 
   </Grid>
-</Window>
+</UserControl>

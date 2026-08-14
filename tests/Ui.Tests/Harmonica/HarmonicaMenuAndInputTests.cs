@@ -72,12 +72,14 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
     // ══ owner-reported — Advanced Settings… exists, in the same place, on both surfaces ═══════════
 
     [Fact]
-    public void DisplayMenu_ListsTheSameItems_OnBothSurfaces_IncludingAdvancedSettings()
+    public void DisplayMenu_ListsTheSameItems_OnBothSurfaces()
     {
         // EverySection76Menu_... above only compares TOP-LEVEL headers — a submenu that drifted
         // between the two hand-mirrored surfaces (R-h9a-1's own risk) would pass it silently. This
-        // specifically pins Display's own item list, since that is where Advanced Settings… (and
-        // Set Z0…, which had the identical bug once already) live.
+        // specifically pins Display's own item list, since that is where Set Z0… (which had the
+        // identical bug once already) lives. brief-harmonicarf-r6a §2.2 — "Advanced Settings…" is
+        // REMOVED from Display on both surfaces (merged into the one Settings… dialog, reachable from
+        // Edit ▸ Settings… instead); see SettingsCommand_IsWiredOnBothSurfaces below.
         var doc = LoadMenuAxaml();
 
         var nativeDisplay = doc.Descendants()
@@ -97,19 +99,31 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
         output.WriteLine("in-win. Display: " + string.Join(", ", inWindowDisplay));
 
         Assert.Equal(nativeDisplay, inWindowDisplay);
-        Assert.Contains("Advanced Settings…", nativeDisplay);
+        Assert.DoesNotContain("Advanced Settings…", nativeDisplay);
     }
 
     [Fact]
-    public void AdvancedSettingsCommand_IsWiredOnBothSurfaces()
+    public void SettingsCommand_IsWiredOnBothSurfaces_AndAdvancedSettingsIsGone()
     {
         var doc = LoadMenuAxaml();
-        var offenders = doc.Descendants()
+
+        var settingsItems = doc.Descendants()
             .Where(e => e.Name.LocalName is "NativeMenuItem" or "MenuItem")
-            .Where(e => (string?)e.Attribute("Header") is { } h && h.Replace("_", "").StartsWith("Advanced Settings"))
-            .Where(e => (string?)e.Attribute("Command") != "{Binding AdvancedSettingsCommand}")
+            .Where(e => (string?)e.Attribute("Header") is { } h && h.Replace("_", "") == "Settings…")
             .ToArray();
 
+        // Edit's own Settings… on both surfaces — never a stray third with a different binding.
+        Assert.Equal(2, settingsItems.Length);
+        Assert.All(settingsItems, e =>
+            Assert.Equal("{Binding SettingsCommand}", (string?)e.Attribute("Command")));
+
+        // The old two-dialog names are gone from BOTH menu surfaces entirely.
+        var offenders = doc.Descendants()
+            .Where(e => e.Name.LocalName is "NativeMenuItem" or "MenuItem")
+            .Where(e => (string?)e.Attribute("Header") is { } h &&
+                        (h.Replace("_", "").StartsWith("Advanced Settings") ||
+                         h.Replace("_", "").StartsWith("Preferences")))
+            .ToArray();
         Assert.Empty(offenders);
     }
 

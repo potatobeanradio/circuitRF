@@ -189,8 +189,13 @@ public sealed class HarmonicaBackdropCacheTests : IDisposable
     }
 
     [Fact]
-    public void ChangingOptimum_RebuildsLayerA()
+    public void ChangingOptimum_DoesNotRebuildLayerA()
     {
+        // brief-harmonicarf-r6b §3 — the optimum cross is no longer drawn (deferred to v2), and
+        // Optimum was deliberately taken OUT of LayerAKey for exactly this reason: the whole cached
+        // layer used to be thrown away every time the argmax moved during a drag, for a pixel
+        // difference that no longer exists. Inverted from the pre-brief
+        // "ChangingOptimum_RebuildsLayerA" — the optimum still moving must NOT force a rebuild now.
         var d = Fixture();
         using var cache = new HarmonicaBackdropCache();
         using (Render(d, cache)) { }
@@ -201,7 +206,7 @@ public sealed class HarmonicaBackdropCacheTests : IDisposable
         };
         using (Render(changed, cache)) { }
 
-        Assert.Equal(2, cache.LayerARebuilds);
+        Assert.Equal(1, cache.LayerARebuilds);
     }
 
     [Fact]

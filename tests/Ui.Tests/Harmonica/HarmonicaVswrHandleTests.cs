@@ -1,26 +1,30 @@
 // ================================================================
-//  HarmonicaVswrHandleTests.cs  —  R-h9r2-8's drag handle
+//  HarmonicaVswrHandleTests.cs  —  brief-harmonicarf-r6b §1's grab-anywhere VSWR circle
 //
-//  A marker's VSWR circle can be grabbed and dragged: the handle sits at the locus's own θ = 0 sample
-//  (HarmonicaVswrHandle), is hit-tested through the SAME raw-Gamma transform the locus is drawn with
-//  (GammaToCanvas, never MarkerToCanvas), and a drag sets VswrValue by inverting the REAL Möbius-circle
-//  geometry — not an approximation — via HarmonicaVswrHandle.VswrThrough. No solve, no frame request:
-//  the overlay is a display annotation over an already-solved termination.
+//  §1.1: there is no single handle point any more — the whole circumference is grabbable, hit-tested
+//  by point-to-SEGMENT distance against LoadpullSurface.VswrLocus's own default-resolution polyline
+//  (HarmonicaHitTest.Resolve's Pass 2.5), through the SAME raw-Gamma transform the locus is drawn with
+//  (GammaToCanvas, never MarkerToCanvas). §1.2: the drag is UNCLAMPED beyond the geometric VSWR ≥ 1
+//  floor — HarmonicaVswrHandle.VswrThrough inverts the REAL Möbius-circle geometry via bisection, not
+//  an approximation, and nothing downstream re-clamps the result. §1.3: the live "VSWR: <val>" readout
+//  is tracked on the gesture itself and shares its formatter with §2.1's menu header.
 //
 //  MARKER INDEX NOTE: HarmonicaViewModel's constructor inserts markers in RANK order (source bands
 //  ascending, then load bands ascending), not insertion order — vm.Markers is [S1, S2, L1, L2, L3].
 //  S2/L2/L3 default to TerminationSet.UnmarkedBandOhms (a near-short, Γ magnitude ≈ 1 — right at the
-//  rim), which is a degenerate fixture for VSWR-handle geometry (the circle has nowhere to expand into
-//  before hitting the unit circle, so the handle can land almost on top of the marker). Tests here use
-//  S1 (vm.Markers[0], Z=25 Ω) or L1 (vm.Markers[2], Z=80+j10 Ω) — both comfortably inside the disk —
-//  and never vm.Markers[1]/[3]/[4] (the unmarked S2/L2/L3) unless the test overrides Gamma itself.
+//  rim), which is a degenerate fixture for VSWR-circle geometry (the circle has nowhere to expand into
+//  before hitting the unit circle). Tests here use S1 (vm.Markers[0], Z=25 Ω) or L1 (vm.Markers[2],
+//  Z=80+j10 Ω) — both comfortably inside the disk — and never vm.Markers[1]/[3]/[4] (the unmarked
+//  S2/L2/L3) unless the test overrides Gamma itself.
 // ================================================================
 
 using System;
+using System.Linq;
 using System.Numerics;
 using CircuitRF.Harmonica;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Harmonica.Renderers;
+using RfCore.Loadpull;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -39,99 +43,99 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         return (p.X * w + local.X, p.Y * h + local.Y);
     }
 
+    /// <summary>A point ON a marker's own VSWR locus, at angle θ (radians) — the general "any θ, not
+    /// just 0" grab point §1.4 asks tests to use.</summary>
+    private static (double X, double Y) OnLocus(HarmonicaViewModel vm, HarmonicaMarker marker,
+                                                 double z0, double thetaRadians, double w, double h)
+    {
+        var (ctr, rad) = CircleParamsFor(marker.Gamma, marker.VswrValue, z0);
+        var gamma = ctr + rad * new Complex(Math.Cos(thetaRadians), Math.Sin(thetaRadians));
+        return RawOnPowerPanel(vm, gamma, w, h);
+    }
+
+    /// <summary>The circle's own centre/radius, recovered the same way <c>HarmonicaVswrHandle</c>'s
+    /// own (private) <c>CircleParams</c> does — from <c>VswrLocus</c>'s θ = 0 / θ = π samples, which
+    /// are diametrically opposite by construction.</summary>
+    private static (Complex Ctr, double Rad) CircleParamsFor(Complex center, double vswr, double z0)
+    {
+        var pts = LoadpullSurface.VswrLocus(center, vswr, SurfacePlane.Gamma, new Complex(z0, 0.0), nPoints: 2);
+        return ((pts[0] + pts[1]) / 2.0, (pts[0] - pts[1]).Magnitude / 2.0);
+    }
+
     private static double Z0Of(HarmonicaViewModel vm) => vm.Frame.SmithPower.Z0;
 
     // ══ the math ══════════════════════════════════════════════════════════
 
-    [Theory]
-    [InlineData(1.5)]
-    [InlineData(2.0)]
-    [InlineData(10.0)]
-    [InlineData(50.0)]
-    public void RhoAndVswr_RoundTrip(double vswr)
-    {
-        double rho = HarmonicaVswrHandle.RhoOf(vswr);
-        double back = HarmonicaVswrHandle.VswrOf(rho);
-        Assert.Equal(vswr, back, precision: 6);
-    }
-
     [Fact]
-    public void VswrOf_ClampsAtTheDegenerateEnds()
+    public void VswrThrough_InvertsAnArbitraryLocusPoint_ForAnOffCenterMarker()
     {
-        // rho = 0 (the drag lands exactly on the marker) → the lowest expressible VSWR, never 1.0
-        // exactly (a zero-radius circle is nothing to grab).
-        Assert.Equal(HarmonicaVswrHandle.MinVswr, HarmonicaVswrHandle.VswrOf(0.0), precision: 6);
-
-        // rho → 1 (the drag lands on or beyond the unit circle) → the capped maximum, never infinity.
-        Assert.Equal(HarmonicaVswrHandle.MaxVswr, HarmonicaVswrHandle.VswrOf(0.999), precision: 3);
-        Assert.Equal(HarmonicaVswrHandle.MaxVswr, HarmonicaVswrHandle.VswrOf(5.0), precision: 3);
-    }
-
-    [Fact]
-    public void HandleGamma_IsTheLocussOwnThetaZeroSample()
-    {
-        // HandleGamma is now IMPLEMENTED by calling VswrLocus at nPoints:1 — this pins that wiring
-        // rather than re-deriving the geometry, and is the regression gate for ever "optimizing" it
-        // back into a hand-rolled formula (the earlier, disproven "center + rho" shortcut).
-        var center = new Complex(0.3, -0.2);
-        const double vswr = 3.0;
-        var locus = RfCore.Loadpull.LoadpullSurface.VswrLocus(
-            center, vswr, RfCore.Loadpull.SurfacePlane.Gamma, new Complex(50.0, 0.0));
-
-        var handle = HarmonicaVswrHandle.HandleGamma(center, vswr, 50.0);
-        output.WriteLine($"locus[0] = {locus[0]}, HandleGamma = {handle}");
-        Assert.Equal(locus[0].Real,      handle.Real,      precision: 9);
-        Assert.Equal(locus[0].Imaginary, handle.Imaginary, precision: 9);
-    }
-
-    [Fact]
-    public void HandleGamma_OffCenterMarker_DoesNotEqualTheNaiveCenterPlusRhoFormula()
-    {
-        // The disproven shortcut: center + (rho, 0). Confirms the fix actually changed behavior for an
-        // off-matched-point marker, rather than merely reformatting the same wrong answer.
-        var center = new Complex(0.3, -0.2);
-        const double vswr = 3.0;
-        double rho = HarmonicaVswrHandle.RhoOf(vswr);
-        var naive = center + new Complex(rho, 0.0);
-
-        var handle = HarmonicaVswrHandle.HandleGamma(center, vswr, 50.0);
-        Assert.True((handle - naive).Magnitude > 0.01,
-            $"handle {handle} should differ materially from the naive formula {naive}");
-    }
-
-    [Fact]
-    public void VswrThrough_InvertsHandleGamma_ForAnOffCenterMarker()
-    {
-        // Dragging exactly onto the handle's own position must recover the VSWR that placed it there —
-        // the round trip the bisection search exists to guarantee.
+        // Dragging exactly onto a point on the true locus (θ = 0.7 rad, not just 0) must recover the
+        // VSWR that placed it there — the round trip the bisection search exists to guarantee.
         var center = new Complex(0.3, -0.2);
         const double vswr = 7.0;
-        var handle = HarmonicaVswrHandle.HandleGamma(center, vswr, 50.0);
+        var (ctr, rad) = CircleParamsFor(center, vswr, 50.0);
+        var onLocus = ctr + rad * new Complex(Math.Cos(0.7), Math.Sin(0.7));
 
-        double recovered = HarmonicaVswrHandle.VswrThrough(center, handle, 50.0);
+        double recovered = HarmonicaVswrHandle.VswrThrough(center, onLocus, 50.0);
         Assert.Equal(vswr, recovered, precision: 3);
     }
 
-    // ══ the hit test ══════════════════════════════════════════════════════
+    [Fact]
+    public void VswrThrough_HasNoUpperClamp_TheResultingLocusPassesThroughTheDragPoint()
+    {
+        // §1.2 — the direct test: a drag near the rim produces the VSWR whose locus ACTUALLY PASSES
+        // THROUGH the drag point, not a magic saturated number — well past the OLD ceiling (MaxVswr
+        // was 199 before this brief). Assert the invariant (closest approach on a fine resample of the
+        // resulting locus is tiny), not a specific value.
+        //
+        // MEASURED, NOT ASSUMED (found while writing this test): for a PASSIVE marker (|Γ| < 1, the
+        // ordinary case), the entire VSWR family stays strictly INSIDE |Γ| = 1 for every finite VSWR —
+        // it approaches the rim as VSWR → ∞ but never reaches or crosses it (the underlying Möbius map
+        // is an automorphism of the passive half-plane, so a passive Zc's power-wave disk can never
+        // image outside the passive Γ disk). So "drag past the rim" for a passive marker has no finite
+        // answer arbitrarily far out — it has one arbitrarily CLOSE to the rim, which is what this test
+        // actually exercises. (The reverse holds for an ACTIVE marker, |Γ| > 1 — R-h6-10's flag — whose
+        // ENTIRE family then stays outside |Γ| = 1 instead; not exercised here.)
+        var center = new Complex(0.3, -0.2); // this file's own header example
+        var dragGamma = 0.9995 * Complex.FromPolarCoordinates(1.0, center.Phase); // close to the rim
+
+        double vswr = HarmonicaVswrHandle.VswrThrough(center, dragGamma, 50.0);
+        output.WriteLine($"near-rim drag recovered VSWR = {vswr:F3}");
+        Assert.True(vswr > 199.0, $"expected a VSWR well past the old 199 ceiling, got {vswr:F3}");
+
+        var fine = LoadpullSurface.VswrLocus(center, vswr, SurfacePlane.Gamma,
+                                             new Complex(50.0, 0.0), nPoints: 720);
+        double minDist = fine.Min(p => (p - dragGamma).Magnitude);
+        output.WriteLine($"closest approach of the resulting locus to the drag point = {minDist:E3}");
+        Assert.True(minDist < 1e-2, $"expected the locus to pass near the drag point, closest was {minDist:E3}");
+    }
 
     [Fact]
-    public void TheHandle_IsGrabbableOnlyWhenVswrIsEnabled()
+    public void VswrThrough_NeverGoesBelowMinVswr()
+    {
+        // The drag point lands exactly on the marker itself (zero distance) — the tightest possible
+        // circle, which is the ONE remaining floor (§1.2's own ruling).
+        var center = new Complex(0.2, 0.1);
+        double vswr = HarmonicaVswrHandle.VswrThrough(center, center, 50.0);
+        Assert.Equal(HarmonicaVswrHandle.MinVswr, vswr, precision: 3);
+    }
+
+    // ══ the hit test — grab anywhere on the circumference (§1.1) ═══════════
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.7)]
+    [InlineData(Math.PI)]
+    [InlineData(4.2)]
+    public void APointOnTheLocus_AtAnyAngle_IsGrabbableWhenVswrIsEnabled(double theta)
     {
         var vm = new HarmonicaViewModel();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1, Z=80+j10Ω — comfortably off the rim
         double z0 = Z0Of(vm);
-
-        marker.VswrEnabled = false;
-        var (hx0, hy0) = RawOnPowerPanel(
-            vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, marker.VswrValue, z0), W, H);
-        var missGrab = HarmonicaHitTest.Resolve(vm.Layout, vm.Markers, hx0, hy0, W, H,
-            topmost: vm.TopmostMarker, z0: z0);
-        Assert.NotEqual(HarmonicaGrabKind.VswrHandle, missGrab.Kind);
-
         marker.VswrEnabled = true;
-        var (hx, hy) = RawOnPowerPanel(
-            vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, marker.VswrValue, z0), W, H);
+
+        var (hx, hy) = OnLocus(vm, marker, z0, theta, W, H);
         var grab = HarmonicaHitTest.Resolve(vm.Layout, vm.Markers, hx, hy, W, H,
             topmost: vm.TopmostMarker, z0: z0);
         Assert.Equal(HarmonicaGrabKind.VswrHandle, grab.Kind);
@@ -139,16 +143,47 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void TheMarkersOwnRoundGlyph_StillWinsOverItsOwnHandle_WhenTheyOverlap()
+    public void APointOnTheLocus_IsNotGrabbable_WhenVswrIsDisabled()
+    {
+        var vm = new HarmonicaViewModel();
+        const double W = 1200, H = 800;
+        var marker = vm.Markers[2];
+        double z0 = Z0Of(vm);
+        marker.VswrEnabled = false;
+
+        var (hx, hy) = OnLocus(vm, marker, z0, 0.0, W, H);
+        var grab = HarmonicaHitTest.Resolve(vm.Layout, vm.Markers, hx, hy, W, H,
+            topmost: vm.TopmostMarker, z0: z0);
+        Assert.NotEqual(HarmonicaGrabKind.VswrHandle, grab.Kind);
+    }
+
+    [Fact]
+    public void APointWellOffTheLocus_DoesNotGrab()
+    {
+        var vm = new HarmonicaViewModel();
+        const double W = 1200, H = 800;
+        var marker = vm.Markers[2];
+        double z0 = Z0Of(vm);
+        marker.VswrEnabled = true;
+
+        // Nowhere near the locus at all — deep inside the disk, away from the circle and the marker.
+        var (fx, fy) = RawOnPowerPanel(vm, Complex.Zero, W, H);
+        var grab = HarmonicaHitTest.Resolve(vm.Layout, vm.Markers, fx, fy, W, H,
+            topmost: vm.TopmostMarker, z0: z0);
+        Assert.NotEqual(HarmonicaGrabKind.VswrHandle, grab.Kind);
+    }
+
+    [Fact]
+    public void TheMarkersOwnRoundGlyph_StillWinsOverItsOwnCircle_WhenTheyOverlap()
     {
         // R-h9r2-5's z-order: the round marker is drawn ON TOP of its own VSWR circle (DrawMarkers
-        // draws the locus first, then the dot), so a low-VSWR handle sitting close enough to coincide
-        // with the marker's own grab radius must still resolve to the marker, not the handle.
+        // draws the locus first, then the dot), so a low-VSWR circle sitting close enough to coincide
+        // with the marker's own grab radius must still resolve to the marker, not the circle.
         var vm = new HarmonicaViewModel();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1
         marker.VswrEnabled = true;
-        marker.VswrValue = 1.001; // rho ~ 0.0005 — the handle sits essentially on the marker itself
+        marker.VswrValue = 1.001; // the locus sits essentially on the marker itself
 
         var (mx, my) = RawOnPowerPanel(vm, marker.Gamma, W, H);
         var grab = HarmonicaHitTest.Resolve(vm.Layout, vm.Markers, mx, my, W, H,
@@ -159,7 +194,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     // ══ the gesture ═══════════════════════════════════════════════════════
 
     [Fact]
-    public void DraggingTheHandle_AtTheMatchedMarker_SetsVswrFromDistanceAlone_AngleIsIrrelevant()
+    public void DraggingTheCircle_AtTheMatchedMarker_SetsVswrFromDistanceAlone_AngleIsIrrelevant()
     {
         // Every default marker (S1/S2/L1/L2/L3) is seeded away from Γ = 0 (SetMarkerImpedance runs on
         // all of them in the constructor), so the matched-point case has to be set up explicitly rather
@@ -174,8 +209,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         marker.VswrValue = 2.0;
         double z0 = Z0Of(vm);
 
-        var (sx, sy) = RawOnPowerPanel(
-            vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, marker.VswrValue, z0), W, H);
+        var (sx, sy) = OnLocus(vm, marker, z0, 0.0, W, H);
 
         var g = new HarmonicaGesture(vm);
         Assert.True(g.PointerDown(sx, sy, W, H));
@@ -196,17 +230,17 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         g.PointerMoved(nx, ny, W, H);
         double vswrNorth = marker.VswrValue;
 
-        output.WriteLine($"east: VSWR = {vswrEast:F4}, north: VSWR = {vswrNorth:F4}, " +
-                         $"expected {HarmonicaVswrHandle.VswrOf(rho):F4}");
-        Assert.Equal(HarmonicaVswrHandle.VswrOf(rho), vswrEast,  precision: 3);
-        Assert.Equal(HarmonicaVswrHandle.VswrOf(rho), vswrNorth, precision: 3);
+        double expected = (1.0 + rho) / (1.0 - rho); // plain ρ↔VSWR relation, at the matched point
+        output.WriteLine($"east: VSWR = {vswrEast:F4}, north: VSWR = {vswrNorth:F4}, expected {expected:F4}");
+        Assert.Equal(expected, vswrEast,  precision: 3);
+        Assert.Equal(expected, vswrNorth, precision: 3);
 
         g.PointerUp(nx, ny, W, H);
         Assert.False(g.IsDragging);
     }
 
     [Fact]
-    public void DraggingTheHandle_AtAnOffCenterMarker_AngleGenerallyMatters()
+    public void DraggingTheCircle_AtAnOffCenterMarker_AngleGenerallyMatters()
     {
         // The general case (Γ ≠ 0): the true locus is an offset Möbius circle, so equal-distance drags
         // at different angles are NOT expected to land on the same VSWR. This is the direct regression
@@ -220,8 +254,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         marker.VswrValue = 2.0;
         double z0 = Z0Of(vm);
 
-        var (sx, sy) = RawOnPowerPanel(
-            vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, marker.VswrValue, z0), W, H);
+        var (sx, sy) = OnLocus(vm, marker, z0, 0.0, W, H);
 
         var g = new HarmonicaGesture(vm);
         Assert.True(g.PointerDown(sx, sy, W, H));
@@ -246,7 +279,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void GrabbingTheHandle_PromotesTheMarker_LikeGrabbingTheMarkerItself()
+    public void GrabbingTheCircle_PromotesTheMarker_LikeGrabbingTheMarkerItself()
     {
         var vm = new HarmonicaViewModel();
         const double W = 1200, H = 800;
@@ -254,8 +287,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         marker.VswrEnabled = true;
         double z0 = Z0Of(vm);
 
-        var (sx, sy) = RawOnPowerPanel(
-            vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, marker.VswrValue, z0), W, H);
+        var (sx, sy) = OnLocus(vm, marker, z0, 0.0, W, H);
 
         var g = new HarmonicaGesture(vm);
         Assert.True(g.PointerDown(sx, sy, W, H));
@@ -263,26 +295,25 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void DraggingTheHandle_RequestsNoFrame_ItIsADisplayAnnotationOnly()
+    public void DraggingTheCircle_RequestsNoFrame_ItIsADisplayAnnotationOnly()
     {
-        // R-h9r2-8's own scope: the overlay neither reads nor writes anything the circuit depends on.
-        // Every OTHER marker drag drives the solve pool (R-h6-3/R-h6-4); this one must not.
+        // brief-harmonicarf-r6b's own scope: the overlay neither reads nor writes anything the circuit
+        // depends on. Every OTHER marker drag drives the solve pool (R-h6-3/R-h6-4); this one must not.
         var vm = new HarmonicaViewModel();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1
         marker.VswrEnabled = true;
         double z0 = Z0Of(vm);
 
-        var (sx, sy) = RawOnPowerPanel(
-            vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, marker.VswrValue, z0), W, H);
+        var (sx, sy) = OnLocus(vm, marker, z0, 0.0, W, H);
 
         int startedBefore = vm.Pool.StartedCount;
         var g = new HarmonicaGesture(vm);
         g.PointerDown(sx, sy, W, H);
         for (int i = 1; i <= 5; i++)
         {
-            var (mx, my) = RawOnPowerPanel(
-                vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, 2.0 + i * 0.3, z0), W, H);
+            var (ctr, rad) = CircleParamsFor(marker.Gamma, 2.0 + i * 0.3, z0);
+            var (mx, my) = RawOnPowerPanel(vm, ctr + rad, W, H);
             g.PointerMoved(mx, my, W, H);
         }
         g.PointerUp(sx, sy, W, H);
@@ -290,8 +321,28 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         Assert.Equal(startedBefore, vm.Pool.StartedCount);
     }
 
+    // ══ the live readout (§1.3) ══════════════════════════════════════════
+
     [Fact]
-    public void DraggingBeyondTheUnitCircle_ClampsAtMaxVswr_NeverThrows()
+    public void PressingTheCircle_ShowsTheReadout_WithTheCurrentValue_BeforeAnyMove()
+    {
+        var vm = new HarmonicaViewModel();
+        const double W = 1200, H = 800;
+        var marker = vm.Markers[2]; // L1
+        marker.VswrEnabled = true;
+        marker.VswrValue = 3.25;
+        double z0 = Z0Of(vm);
+
+        var (sx, sy) = OnLocus(vm, marker, z0, 0.0, W, H);
+        var g = new HarmonicaGesture(vm);
+        g.PointerDown(sx, sy, W, H);
+
+        Assert.True(g.VswrReadoutActive);
+        Assert.Equal(HarmonicaReadoutFormatting.FormatVswr(marker.VswrValue), g.VswrReadoutText);
+    }
+
+    [Fact]
+    public void DraggingTheCircle_KeepsTheReadoutInStepWithTheLiveValue_AndClearsOnRelease()
     {
         var vm = new HarmonicaViewModel();
         const double W = 1200, H = 800;
@@ -299,15 +350,38 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         marker.VswrEnabled = true;
         double z0 = Z0Of(vm);
 
-        var (sx, sy) = RawOnPowerPanel(
-            vm, HarmonicaVswrHandle.HandleGamma(marker.Gamma, marker.VswrValue, z0), W, H);
+        var (sx, sy) = OnLocus(vm, marker, z0, 0.0, W, H);
         var g = new HarmonicaGesture(vm);
         g.PointerDown(sx, sy, W, H);
 
-        var farOutside = marker.Gamma + new Complex(50.0, 0.0);
-        var (fx, fy) = RawOnPowerPanel(vm, farOutside, W, H);
-        g.PointerMoved(fx, fy, W, H);
+        var (ctr, rad) = CircleParamsFor(marker.Gamma, 4.0, z0);
+        var (mx, my) = RawOnPowerPanel(vm, ctr + rad, W, H);
+        g.PointerMoved(mx, my, W, H);
 
-        Assert.Equal(HarmonicaVswrHandle.MaxVswr, marker.VswrValue, precision: 3);
+        Assert.True(g.VswrReadoutActive);
+        // §1.3 — the SAME formatter §2.1's menu header uses, so the number a drag lands on is the
+        // number the menu then shows.
+        Assert.Equal(HarmonicaReadoutFormatting.FormatVswr(marker.VswrValue), g.VswrReadoutText);
+
+        g.PointerUp(mx, my, W, H);
+        Assert.False(g.VswrReadoutActive);
+    }
+
+    [Fact]
+    public void CancellingTheDrag_ClearsTheReadout()
+    {
+        var vm = new HarmonicaViewModel();
+        const double W = 1200, H = 800;
+        var marker = vm.Markers[2];
+        marker.VswrEnabled = true;
+        double z0 = Z0Of(vm);
+
+        var (sx, sy) = OnLocus(vm, marker, z0, 0.0, W, H);
+        var g = new HarmonicaGesture(vm);
+        g.PointerDown(sx, sy, W, H);
+        Assert.True(g.VswrReadoutActive);
+
+        g.Cancel();
+        Assert.False(g.VswrReadoutActive);
     }
 }

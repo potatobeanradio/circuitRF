@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaPowerSweepAxesDialog"
+        Title="Axis Limits"
+        Width="340"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    brief-harmonicarf-r6e §3.2 — the power-sweep panel's own axis-limits dialog, distinct from
+    Display ▸ Power Sweep… (HarmonicaPowerSweepDialog), which configures the SWEEP (physics), never
+    display. Opened from the panel's own title fly menu, in EITHER of the two modes that slot can
+    show (§4) — Power Sweep or Time Domain — each writing its OWN stored limit set so switching
+    modes cannot corrupt the other one's axes. Same live-commit shape as
+    HarmonicaDcivSweepsDialog's own Axis limits section: LostFocus/Enter applies, Escape reverts,
+    reject-and-keep on bad input.
+  -->
+
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="14">
+
+    <TextBlock Grid.Row="0" x:Name="HeaderText" FontWeight="SemiBold" Margin="0,0,0,8"/>
+
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,*" Margin="0,0,0,6">
+      <TextBlock Grid.Column="0" Text="X min" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="XMinBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="2" Text="X max" VerticalAlignment="Center" Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="XMaxBox" Grid.Column="3"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto,*" Margin="0,0,0,6">
+      <TextBlock Grid.Column="0" x:Name="YMinLabel" Text="Y min" VerticalAlignment="Center"
+                 Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="YMinBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="2" x:Name="YMaxLabel" Text="Y max" VerticalAlignment="Center"
+                 Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="YMaxBox" Grid.Column="3"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*" Margin="0,0,0,6">
+      <TextBlock Grid.Column="0" x:Name="Y2MinLabel" Text="right Y min" VerticalAlignment="Center"
+                 Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="Y2MinBox" Grid.Column="1" Margin="0,0,8,0"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+      <TextBlock Grid.Column="2" x:Name="Y2MaxLabel" Text="right Y max" VerticalAlignment="Center"
+                 Margin="0,0,4,0" Opacity="0.7"/>
+      <TextBox x:Name="Y2MaxBox" Grid.Column="3"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <CheckBox Grid.Row="4" x:Name="AutoscaleCheck" Content="Autoscale" Click="OnAutoscaleClick"
+              Margin="0,0,0,10"/>
+
+    <TextBlock Grid.Row="5" x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap"
+               IsVisible="False" Margin="0,0,0,10"/>
+
+    <StackPanel Grid.Row="6" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="Close" Click="OnCloseClick" IsDefault="True"/>
+    </StackPanel>
+  </Grid>
+</Window>

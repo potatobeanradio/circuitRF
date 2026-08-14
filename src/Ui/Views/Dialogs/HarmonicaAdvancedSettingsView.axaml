@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaAdvancedSettingsView">
+
+  <!--
+    brief-harmonicarf-r6a §2.2/§3 — lifted from the former HarmonicaAdvancedSettingsDialog, as a
+    UserControl tab of HarmonicaSettingsDialog, plus §3's new contour-kernel controls (kernel / smooth
+    / epsilon) threaded into ContourGrid.Fit via Rbf2D.Factorize.
+  -->
+
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" Margin="14">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Loadline samples" VerticalAlignment="Center"
+                 ToolTip.Tip="Time samples the loadline is drawn at. Exact at any count — not a solve setting."/>
+      <TextBox x:Name="LoadlineSamplesBox" Grid.Column="1" Width="100"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="FFT oversampling" VerticalAlignment="Center"
+                 ToolTip.Tip="FFT oversampling factor. Structural — the time grid changes size."/>
+      <TextBox x:Name="FftOverSampleBox" Grid.Column="1" Width="100"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Multiplicity (M)" VerticalAlignment="Center"
+                 ToolTip.Tip="Device multiplier — how many identical devices in parallel."/>
+      <TextBox x:Name="MultiplicityBox" Grid.Column="1" Width="100"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Compute charge" VerticalAlignment="Center"
+                 ToolTip.Tip="Whether the DUT's charge terms are evaluated. With charge OFF the load glyph coincides with its marker on a bare device."/>
+      <CheckBox x:Name="ComputeChargeCheck" Grid.Column="1" Click="OnComputeChargeClick"/>
+    </Grid>
+
+    <Border Grid.Row="4" Height="1" Opacity="0.2" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,4,0,10"/>
+
+    <TextBlock Grid.Row="5" Text="Contour surface (§3)" FontWeight="SemiBold" Margin="0,0,0,8"/>
+
+    <Grid Grid.Row="6" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="RBF kernel" VerticalAlignment="Center"
+                 ToolTip.Tip="The radial basis function ContourGrid.Fit factorizes the loadpull surface with."/>
+      <ComboBox x:Name="KernelCombo" Grid.Column="1" Width="140" SelectionChanged="OnKernelChanged"/>
+    </Grid>
+
+    <Grid Grid.Row="7" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Smooth / Epsilon" VerticalAlignment="Center"
+                 ToolTip.Tip="Smooth: the RBF's smoothing term, ≥ 0. Epsilon: the shape parameter — leave blank for Rbf2D's own auto value."/>
+      <TextBox x:Name="ContourSmoothBox" Grid.Column="1" Width="80" Margin="0,0,6,0"
+               LostFocus="OnContourFieldLostFocus" KeyDown="OnContourFieldKeyDown"/>
+      <TextBox x:Name="ContourEpsilonBox" Grid.Column="2" Width="80" PlaceholderText="auto"
+               LostFocus="OnContourFieldLostFocus" KeyDown="OnContourFieldKeyDown"/>
+    </Grid>
+
+    <StackPanel Grid.Row="9" Orientation="Vertical" Spacing="8" Margin="0,8,0,0">
+      <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
+    </StackPanel>
+  </Grid>
+</UserControl>

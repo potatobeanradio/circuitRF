@@ -301,16 +301,18 @@ public sealed class FrameSchedulerTests(ITestOutputHelper output)
             plans.Add(s.NextPlan(true));
         }
 
-        // §6.8: full user grid 5 × 12 = 61; coarse ring set 3 × 12 = 37. D5: 256 / 96.
-        Assert.Equal(new FramePlan(FrameQuality.Full,           5, 12, 256, false), plans[0]);
-        Assert.Equal(new FramePlan(FrameQuality.CoarseRaster,   5, 12,  96, false), plans[1]);
-        Assert.Equal(new FramePlan(FrameQuality.CoarseGrid,     3, 12,  96, false), plans[2]);
-        Assert.Equal(new FramePlan(FrameQuality.FrozenContours, 3, 12,  96, true ), plans[3]);
+        // brief-harmonicarf-r6a §5.1 — owner request: the default full grid moved from 5×12 to 3×12
+        // (a new document now starts there), and the coarse ring set moved down with it, from 3×12 to
+        // 2×12, so the ladder keeps its two distinct rungs rather than collapsing to one. D5: 256 / 96.
+        Assert.Equal(new FramePlan(FrameQuality.Full,           3, 12, 256, false), plans[0]);
+        Assert.Equal(new FramePlan(FrameQuality.CoarseRaster,   3, 12,  96, false), plans[1]);
+        Assert.Equal(new FramePlan(FrameQuality.CoarseGrid,     2, 12,  96, false), plans[2]);
+        Assert.Equal(new FramePlan(FrameQuality.FrozenContours, 2, 12,  96, true ), plans[3]);
 
         // The point counts the design note names, arrived at from the ring/spoke numbers rather than
         // restated: rings × spokes + the centre point.
-        Assert.Equal(61, FrameScheduler.FullRings   * FrameScheduler.FullSpokes   + 1);
-        Assert.Equal(37, FrameScheduler.CoarseRings * FrameScheduler.CoarseSpokes + 1);
+        Assert.Equal(37, FrameScheduler.FullRings   * FrameScheduler.FullSpokes   + 1);
+        Assert.Equal(25, FrameScheduler.CoarseRings * FrameScheduler.CoarseSpokes + 1);
     }
 
     private static FrameTiming Comfortable() => new(2, 6, 1, 4, 3);        // 16 ms

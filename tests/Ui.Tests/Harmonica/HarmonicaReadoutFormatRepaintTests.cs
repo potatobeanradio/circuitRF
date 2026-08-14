@@ -40,7 +40,7 @@ public sealed class HarmonicaReadoutFormatRepaintTests
             Side: TerminationSideKind.Load, Band: 1, IsGamma: false, RawValue: z);
 
         string beforeFormatChange = InvokeDisplayValue(item, _ => ReadoutFormat.RealImaginary);
-        Assert.Equal("80+j10 Ω", beforeFormatChange);
+        Assert.Equal(HarmonicaReadoutFormatting.FormatZ(z, ReadoutFormat.RealImaginary), beforeFormatChange);
 
         // The user picks Magnitude/Angle from the right-click menu — the SAME HarmonicaReadout object
         // (no re-solve happened), only the format resolver's answer changed.

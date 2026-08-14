@@ -6,6 +6,302 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Persisted axis limits + autoscale: one mechanism, three plots (brief-harmonicarf-r6e, 2026-08-14)
+
+**§1 — the Drain Sweep bug was the Grid's own `*` row, not a positioning mistake.**
+`HarmonicaDcivSweepsDialog.axaml`'s `RowDefinitions="Auto,Auto,*,Auto"` put the "Drain sweep (Vds)"
+title in row 2 — the ONE row marked `*` — so it floated at the top of a row that stretched to fill
+whatever space `Height="300"` left over, while its own fields (row 3) were pushed to the bottom of
+the window. Fixed by making every row `Auto` and switching the Window to `SizeToContent="Height"`
+(dropping the explicit `Height` entirely) rather than picking a new fixed number — the same fix this
+brief's own §3.1 addition (a whole new "Axis limits" section) needed anyway, so the window grows to
+fit rather than needing a second guess at a magic height.
+
+**§2 — the three-state rule, expressed as one small pure function plus one write-back method.**
+`HarmonicaPanelRenderer.StoredAxisWindow` (X/Y/Y2 min+max + `Autoscale`) is read by
+`ApplyStoredWindow`, called at the END of `BuildLoadlinePlot`/`BuildPowerSweepPlot`/
+`BuildTimeDomainPlot` — strictly AFTER `AutoScale`, `PinAxisPin` and the right-edge headroom, so an
+explicit stored limit always wins over all three. `Autoscale == true` makes `ApplyStoredWindow` a
+pure no-op, which is the trick that lets ONE call site serve both "read the stored window" (ordinary
+render) and "tell me what AutoScale/PinAxisPin/headroom would compute right now" (the capture path,
+below) — the caller decides which question it's asking by what it does with `Autoscale` and with the
+result, not by a second code path.
+
+**The write-back is a SEPARATE method (`HarmonicaViewModel.CaptureAxisWindows`), fired from
+`OnFrameChanged` — never from inside the renderer.** The renderer is a pure function called from
+several places (the live canvas, Copy Plot, export) that must never have a mutating side effect;
+`CaptureAxisWindows` is the one place anything WRITES a stored limit, and it only fires per SOLVED
+FRAME, never per repaint. It calls each `Build*Plot` with `Autoscale` forced to `true` (so
+`ApplyStoredWindow` no-ops and the returned `Axes.Window`/`WindowSecondary` is always today's
+natural fit), then writes that back into `HarmonicaSettings` under exactly two conditions: autoscale
+is actually ON (every frame — this is what makes "turn it off" freeze exactly what's on screen), or
+autoscale is OFF and nothing has ever been stored (ONCE, from the first frame that has real data —
+checked against the panel's own arrays, not against the Window looking "big enough", because
+`Axes`'s own default `Window` is `(-50,-50,150,150)`, not `(0,0,0,0)`, and would otherwise read as a
+plausible captured value before any data exists). Neither condition holds once a limit is held with
+autoscale off — the anti-breathing property itself, not a special case of it.
+
+**Time Domain gets its OWN thirteen-field-shaped block, not a shared one with Power Sweep** — same
+panel slot, different quantity (time/V/A vs power/dB/%), so `TimeDomainXMin`/… are separate
+`HarmonicaSettings` fields and a separate `HarmonicaPowerSweepAxesDialog(vm, timeDomain: bool)`
+construction, never a shared set gated by the current mode. Confirmed by test
+(`ApplyTimeDomainAxisLimits_IsIndependentOfPowerSweepAxisLimits`) that setting one leaves the other
+untouched.
+
+**One dialog class serves two modes.** `HarmonicaPowerSweepAxesDialog` relabels its Y/Y2 rows at
+construction time (`Gain`/`Efficiency|PAE` vs `Vds`/`Ids`) and calls whichever `Apply…AxisLimits`/
+`Set…Autoscale` pair matches the mode it was opened in — cheaper than two near-identical dialog
+classes, and the brief's own "say if you find a cheaper representation" invited exactly this.
+
+Tests: `AxisLimitsPersistenceTests` (`Harmonica.Tests`, 3 — round-trip, all-absent-on-an-old-file,
+no-bloat-when-untouched), `HarmonicaR6eAxisLimitsTests` + `HarmonicaR6eDialogsAndMenusTests`
+(`Ui.Tests`, 19 — the §1 layout fix, the §2.4 precedence ordering pinned against values PinAxisPin/
+headroom would NOT have produced, the anti-breathing property both as a direct render-level assertion
+and end-to-end through a real `HarmonicaViewModel` solve, and the dialog/fly-menu wiring). Full gate:
+`Ui.Tests` 6,756, `Harmonica.Tests` 175, `Firewall.Tests` 6 — all green. **Not verified interactively**
+(no live Avalonia session in this environment) — the owner-check items in the brief's own §5.5 (typed
+limits surviving a drag and a save/reopen, the checkbox and fly-menu item agreeing on screen) are
+covered by the tests above at the API/mechanism level but not watched happen in the running app.
+
+## The power-sweep right axis, drawn twice: the third fix stops covering and just doesn't draw the underlying one (brief-harmonicarf-r6d, 2026-08-14)
+
+**Third time reporting the identical symptom — "the right axis renders in two colours" — after two
+prior fixes that both, in different ways, tried to make the COVER match the COVERED exactly** (R-h9b-9
+added the cover; R3C §5 fixed the cover's paint SHAPE so it matched `AxesRenderer.DrawBorder`'s stroke
+field-for-field, see this file's own r3c entry above). Both were real fixes for the bug they diagnosed
+and neither could be the last fix, because **the thing being covered was still there** — any future
+change to either paint's shape (a stroke width formula, a cap style, an AA setting) reopens the exact
+same symptom with a new mismatch. The owner's own framing this round: "Do not render the green line
+underneath it" — not "match it better."
+
+**The actual fix: stop drawing the underlying secondary-axis chrome at all**, rather than adding a
+third generation of paint-matching. `HarmonicaPanelRenderer.DrawWithSuppressedSecondaryChrome` swaps
+`plot.Axes` for a deep copy (`Axes`'s own copy constructor, `Axes.cs:161`) with `ShowSecondary = false`
+for the ONE `PlotRenderer.Draw` call, then restores the original before the (renamed, colour-
+parametrized) overlay draws the axis for the first time. Confirmed safe by reading rather than assumed,
+per the brief's own instructions:
+
+- **Trace rendering never reads `Axes.ShowSecondary`** — grepped the whole `PlotRenderer`/
+  `TraceRenderer` stack; only `AxesRenderer`'s chrome (border, ticks, tick numbers, label) and a few
+  interaction call sites in `PlotControl` (irrelevant here — harmonicaRF never uses that control) branch
+  on it. So the efficiency/loadline trace itself renders identically whichever way the flag is set.
+- **The viewport does not move.** `PlotRenderer.ComputeViewport` only re-derives a `ShowSecondary`-
+  dependent viewport for a Rect plot with NO pinned `Axes.Viewport` — `BuildPowerSweepPlot`/
+  `BuildTimeDomainPlot` both pin `PowerSweepShapedViewport()` explicitly (R-h9b-11), so that formula
+  never runs for these panels regardless of which `Axes` instance is live when `Draw` is called.
+
+The general lesson, sharpened from r3c's own "the cover must match the covered exactly" note: **a cover
+that must match the covered exactly is the wrong design in the first place — check whether the
+covered draw can simply be suppressed before reaching for a better-matched cover.** Here it could,
+because the ONE thing keying the covered draw (`Axes.ShowSecondary`) was a plain bool with an existing
+copy-and-flip path, and nothing downstream of the `Draw` call needed it to stay true. That will not
+always be true (a shared renderer might branch on a dozen fields, or the caller might not own a cheap
+copy of its own state) — when it is not, r3c's paint-matching route is still the right fallback, not a
+mistake to avoid on principle.
+
+A headless pixel test (`HarmonicaPanelTests.PowerSweepPanel_RightAxis_NoOrdinaryAxisColourSurvivesUnderneathTheOverlay`)
+is the gate the previous two fixes could never have written, because the previous two never made it
+true: it renders the panel and asserts NO pixel along the right axis, its tick-number band or its
+rotated label carries the ordinary `Harmonica.AxisLine` colour — not "the fringe is small enough not to
+notice," an assertion that is exact by construction now rather than approximately true by paint-shape
+coincidence.
+
+## The readout strip: 2×4 grid, intrinsic chunks, stable widths, per-chunk copy (brief-harmonicarf-r6c, 2026-08-14)
+
+**§1 — the six-column horizontal `StackPanel` became an 8-cell `Grid` (2 rows × 4 columns), re-parenting
+only.** Every `x:Name` from the old `Columns` row survives unchanged (`SettingsColumn`,
+`OperatingPointColumn`, `SourceColumn`, `LoadColumn`, `MxpColumn`, `MxeColumn`, plus two new ones), so
+`UpdateReadoutColumn`'s build-once/update-in-place machinery needed no changes at all — only the XAML
+`Grid.Row`/`Grid.Column` placement and `ReadoutColumn`'s own doc comment moved. Row 1: Settings ·
+OperatingPoint · MXP · MXE. Row 2: **Load · Source** · IntrinsicVDS · IntrinsicIDS — Load left of
+Source, the reverse of R1C's own left-to-right order, per the owner's explicit (row, column)
+specification. `HarmonicaR3cStripTests`' own column-order test now reads `Grid.Row`/`Grid.Column` off
+the XAML rather than trusting declaration order (a `Grid`'s children may appear in any order in markup).
+
+**§2 — two new chunks (`ReadoutColumn.IntrinsicVds`/`IntrinsicIds`) read `V_intr`/`I_intr` at
+`ctx.IntrinsicPorts.DrainPort`, never recomputed.** `HarmonicaSolver.ReadComplex(ds, cubeName,
+sideIndex, harmonic)` already generically indexes any `[axis0, harmonic]` complex cube — it needed no
+change to serve a `[port, harmonic]` cube with `sideIndex = DrainPort` instead of a `[side, harmonic]`
+one with `sideIndex = (int)TerminationSide`. **These two chunks default to magnitude ∠ angle, unlike
+every other complex row's real/imaginary default** — `HarmonicaReadoutFormatting.DefaultReadoutFormat`
+special-cases the `VDSi.`/`IDSi.` key namespace (one place, shared by `HarmonicaSolver`'s null-resolver
+fallback and `HarmonicaViewModel.ReadoutFormatLookup`'s own unrecognized-key fallback, so the two
+cannot disagree) — the row is still an ordinary `IsComplex` row with a working format flyout, the
+owner's default preference is just the OTHER format from everywhere else. `SetItems`'s column-routing
+switch is now **exhaustive over `ReadoutColumn`** (it used to fall through to `default: mxe.Add(item)`,
+which would have silently swallowed both new columns into MXE).
+
+**§4 — TWO independent sources of column-width churn, and the fix for one nearly broke the other.**
+Trailing-zero trimming (`0.###` turns 10.01 into 10.1, one character shorter) is fixed by fixed decimal
+places; the INTEGER side growing (an impedance running 0.5 Ω → 5000 Ω) additionally needs
+`HarmonicaReadoutFormatting.FixedWidth(value, decimals, budget)` — pads to a stated per-quantity
+character budget, or switches to a fixed-width exponent form past it, so a row's rendered length is a
+function of WHAT KIND of row it is, never of its current value.
+
+**The trap: `FixedWidth`'s padding must NEVER reach an editable `TextBox`.** The strip's inline editor
+(`BeginInlineEdit`) and `HarmonicaSetTerminationDialog`'s three boxes both used to SEED from the exact
+same formatted string the strip DISPLAYS — so baking left-padding spaces into `FormatZ`/`FormatGamma`'s
+output put whitespace ahead of the caret in a live edit box. Concretely: typing "200" into a freshly
+opened Z field now inserted after the leading pad spaces of a PRIOR reformat, landing the digits in the
+wrong place — reproduced directly by `HarmonicaSetTerminationDialogTests`' own old-algorithm simulation,
+which is exactly the caret-under-a-rewrite defect class brief-harmonicarf-r6a §6 already fixed once for
+a different cause. **Fixed by splitting the two purposes**: `FixedWidth`/`FormatComplex`/`FormatZ`/
+`FormatGamma` gained a `pad` parameter (default `true`, for display); every EDITABLE-text call site
+passes `pad: false` — `ReadoutStripView.EditSeedValue` (new, parallel to `DisplayValue`), and
+`HarmonicaSetTerminationDialog.LoadFields`. The marker context menu's read-only `"Γ = …"`/`"Z = …"`
+header rows also pass `pad: false` — not because they are editable, but because the padding exists
+ONLY to reserve a strip COLUMN's width, and a `MenuItem` header has no column to protect.
+
+**Column width itself is reserved on the CONTROL, not inferred from the padded string.**
+`HarmonicaReadoutFormatting.ReservedValueChars(item)` is a pure function of a row's KIND (Label/
+IsComplex/IsGamma — never its value or even its current format, since it takes the WIDER of
+rectangular and polar so a live format toggle cannot move the column either) — `ReadoutStripView`
+writes `chars * fontSize * 0.55` to the value control's `Width` on every refresh, which is a no-op on
+screen for a value-only update and stays correct across a live font-size change. The Settings column
+gets the same discipline from a small per-key budget table (`SettingsValueWidth`), since §3's label
+renames widened the LABEL column and the brief calls out rechecking the VALUE column too.
+
+**§5 — one `ContextMenu` per chunk (not per row), relying on Avalonia's own ContextRequested
+bubbling.** A complex row's existing per-row format flyout (`row.ContextMenu`, set only for `IsComplex`
+rows) wins on a right-click landing inside it; everything else in a chunk (its header row, a plain
+scalar row, the chunk's own whitespace) has no row-level `ContextMenu` and falls through to the
+chunk-level one, built once per chunk in the constructor and populated lazily on `Opening` — the same
+pattern `BuildLiveFormatMenu` already uses. `HarmonicaClipboard.RowsText(IEnumerable<(string, string)>)`
+(new) factors out the one `label\tvalue\n` loop shared by the whole-canvas text-clipboard flavour, the
+existing `Edit ▸ Copy Readouts`, and this new per-chunk Copy — the per-chunk version reads straight off
+the chunk's own built controls (label/value/unit `TextBlock`s) rather than off `HarmonicaReadout`
+objects, since the Settings chunk has no `HarmonicaReadout` backing at all.
+
+## Smith charts — grab-anywhere VSWR, Add Point, fly menus (brief-harmonicarf-r6b, 2026-08-14)
+
+**§1 — the VSWR circle has no gripper; the whole circumference is grabbable, and the drag is
+unclamped.** `HarmonicaHitTest.Resolve`'s Pass 2.5 now hit-tests point-to-SEGMENT distance against
+`LoadpullSurface.VswrLocus`'s own default-resolution polyline (the Data Display's `HitTestVswrLocus`
+pattern), not a single θ = 0 handle point; `HarmonicaPanelRenderer.DrawVswrLocus` lost its square
+handle glyph to match. `HarmonicaVswrHandle.HandleGamma` is gone — nothing needs "the" grab point any
+more. The old display clamp (`VswrOf`/`RhoOf`'s `Math.Clamp(rho, 0, 0.99)` → `MaxVswr = 199`) is
+gone too; `HarmonicaViewModel.SetMarkerVswr` now only floors at `MinVswr = 1.001` (VSWR ≥ 1 is
+geometric, not policy). `VswrThrough`'s own rim-clamp on the DRAG POINT (`|Γ| < 0.999`) was also
+removed — it was copied from `SetMarkerGamma`'s Γ = 1 guard, which matters there because that Γ
+becomes a termination; here the drag point is only ever compared against a circle's centre/radius, so
+the guard bought nothing but silently capping the exact gesture this brief exists to unlock.
+`MaxVswr` is now `1e6` — a bisection SEARCH ceiling, not a display cap.
+
+**MEASURED, NOT ASSUMED — the reason `MaxVswr` almost never actually bites.** For an ordinary
+(passive, `|marker.Gamma| < 1`) marker, the WHOLE VSWR family stays strictly inside `|Γ| = 1` for
+every finite VSWR — it approaches the rim as VSWR → ∞ but provably never reaches or crosses it (the
+underlying power-wave Möbius map is an automorphism of the passive half-plane). Probed directly
+across several passive centres up to VSWR = 1e6: max `|Γ|` on the locus never exceeded ~0.99999.
+The MIRROR case — an ACTIVE marker (`|Γ| > 1`, R-h6-10's own flag) — has its ENTIRE family sitting
+OUTSIDE `|Γ| = 1` instead, for every VSWR down to the floor. So "the user drags the circle outside
+the Smith chart" (§1.2's own framing) cashes out as: a passive marker's circle can be dragged
+arbitrarily CLOSE to the rim (any VSWR up to 1e6, never saturating at the old 199), while only an
+ACTIVE marker's circle is ever actually beyond it. `HarmonicaVswrHandleTests` pins both regimes.
+
+**§1.3 — the live readout is gesture state, not view-model state**, tracked on `HarmonicaGesture`
+itself (`VswrReadoutActive`/`VswrReadoutPointer`/`VswrReadoutText`, set on press AND move, cleared on
+release/cancel — mirrors `PlotControl._vswrReadoutActive`). Drawn by
+`HarmonicaPanelRenderer.DrawVswrReadout`, called from `HarmonicaCanvas`'s own draw operation AFTER
+`HarmonicaCanvasRenderer.DrawAll` (i.e. outside every panel's own clip rect) — the same "unclipped,
+last" rule Data Display's `vswrReadout` block follows. `HarmonicaReadoutFormatting.FormatVswr` is the
+ONE formatter both this readout and §2.1's menu header use, so the number a drag lands on is the
+number the menu then shows.
+
+**§2 — `Add Point`/`Add Points to VSWR` needed a THIRD layer in the grid model, not a second
+`CustomGrid` contract.** `HarmonicaViewModel.AddedGridPoints` (an `ObservableCollection<Complex>`) is
+additive on top of whatever `HarmonicaSolver.Options.GammaGrid` resolves to — the ring/spoke lattice
+by default, or an imported `.gam`/dragged scatter when `GammaGrid` supersedes it.
+`HarmonicaSolver.Solve` composes `(opt.GammaGrid ?? RingGrid(...)) ++ opt.AddedGridPoints` right
+before calling `ContourGrid.Build`; no partial-reuse path was built (§2.2's own "either is
+acceptable" — the node SET moves, which invalidates the RBF factorization cache by construction
+anyway, so a full re-solve was the honest, not-noticeably-worse choice). **Measured**: a shipping
+3 × 12 (37-point) grid re-solve is ~250–280 ms either way; adding one point (38 points) costs the
+same order of magnitude, not noticeably more — one HB solve per point dominates regardless. Cleared
+by `ResetGrid()` and by `SetGridPreset()` (the owner's own ruling: "the preset must always describe
+exactly what is on screen"), NOT by a `.gam` import (`SetGammaGrid` only ever replaces the base — the
+brief names this explicitly and does not list import as a third clearing trigger). Persists in the
+`.charm` via a new `CharmIo.CharmDocument.AddedGridPoints` string array (`"re,im"` per entry, same
+encoding `TerminationsToJson` already uses), absent-block-when-empty like every other optional
+`.charm` field.
+
+**§2.1 — `HarmonicaSetVswrDialog` (new)**, sized/shaped like `HarmonicaSetZ0Dialog` (a single field,
+OK/Cancel gated) rather than `HarmonicaSetTerminationDialog`'s three-synced-rows shape — the closer
+precedent for "one number." Reject-and-keep on non-finite or < 1, never a silent substitution; OK
+commits through `SetMarkerVswr`, which now also flips `VswrEnabled` on (typing a value and seeing
+nothing happen was the failure mode named in the brief).
+
+**§3 — the MXP/MXE cross is gone from the Smith panels, deliberately (deferred to v2), but the
+DATA is untouched.** `HarmonicaPanelRenderer.DrawOptima` is deleted; `SmithPanelData.Optimum` still
+gets computed and populated exactly as before (the readout columns read it). `Optimum` came OUT of
+`HarmonicaBackdropCache`'s `LayerAKey` — it was the only thing forcing a full Layer-A raster rebuild
+every time the argmax moved during a drag, for a pixel difference that no longer exists.
+`HarmonicaBackdropCacheTests.ChangingOptimum_RebuildsLayerA` inverted to
+`..._DoesNotRebuildLayerA`, per the brief's own "invert, don't delete" instruction.
+
+**§4 — one dispatch, two new panel-scoped fly menus, reusing (never re-deriving) existing
+geometry.** `HarmonicaPanelRenderer.TitleBandHeight` went `private` → `public` so
+`HarmonicaView.OnCanvasContextMenuOpening` can resolve a title-band click against the SAME band the
+renderer draws into. Dispatch order: marker/glyph/VSWR-handle (unchanged) → `HarmonicaHitTest.PanelAt`
+resolves a Smith panel → title vs body by `local.Y < TitleBandHeight(size)` → the Edit-Display panel
+branches (power sweep / loadline), unchanged. Body: Copy (via `HarmonicaClipboard.CopyAsync` with the
+RESOLVED panel id, never `Canvas.PanelUnderPointer()`) + Show Grid Points. Title: Contour Plane +
+Contour Harmonic (built from `HarmonicaMenuViewModel.ContourHarmonics`, never hardcoded f₀/2f₀/3f₀ —
+the exact bug that list already exists to prevent) on both charts, + Efficiency Metric on the
+efficiency chart only — every item bound to the SAME `ICommand` the `Display` menu uses, checked to
+show the current selection. This brief's own §4 note ("R6D and R6E extend this") means the dispatch
+shape here is the pattern to copy, not a one-off.
+
+**Tests**: `HarmonicaVswrHandleTests` (rewritten, 17), `HarmonicaSetVswrDialogTests` (5, new),
+`HarmonicaSmithFlyMenuTests` (7, new), `HarmonicaAddedGridPointsTests` (12, new),
+`CharmTracesAndGridReuseTests` (+2, `Harmonica.Tests`), `HarmonicaBackdropCacheTests` (1 inverted),
+`HarmonicaR3cStripTests` (2 fixed for `TitleBandHeight`'s new visibility). `dotnet test tests/Ui.Tests`
+6,702 passed; `tests/Harmonica.Tests` 172 passed; `tests/Firewall.Tests` 6 passed.
+
+## The docked menu injection, the Settings merge, and a reformat-under-caret bug (brief-harmonicarf-r6a, 2026-08-13)
+
+**§1.2 — "Markers shows, Display/Grid do not" did NOT reproduce as a throw under a normal
+Inject/Withdraw/re-Inject cycle, headlessly.** `HarmonicaAppMenuInjectorTests` already proved (before
+this brief) that a plain two-round Inject/Withdraw round-trip against hand-built stand-in items is
+clean. What the old `HarmonicaAppMenuInjector.Inject` genuinely lacked was ATOMICITY: a bare `foreach`
+appending one item at a time with no rollback, so if item 2 of 3 ever threw for ANY reason (an item
+that already carries a `Parent` — `NativeMenu`'s own list validator refuses that), item 1 would already
+be sitting in `appMenu.Items` while items 2 and 3 never landed — exactly the reported shape. Fixed to
+be atomic (build a scratch `added` list, roll it all back on any exception) and failure-visible
+(`InjectDockedItemsIfNeeded` now catches and reports through `HarmonicaViewModel.SolveError` instead of
+losing the failure silently). `HarmonicaAppMenuInjectorTests.Inject_NeverLeavesAPartialSet_...` proves
+the OLD code's exact vulnerability class (a poisoned item mid-list leaves a partial `appMenu.Items`)
+and that the fix closes it.
+
+**§2.1 — none of the three "Settings" paths the owner could reach were actually dead; the docked one
+was unreachable, which reads the same from the outside.** circuitRF's own `Settings…` (File menu /
+macOS app menu ⌘,) opens circuitRF's OWN app-level dialog and does something — it is just not
+harmonicaRF's. harmonicaRF's own `Edit ▸ Preferences…` (torn-off/in-window) already worked, from an
+earlier round's `RunHook`/error-reporting fix. What genuinely had no route at all: harmonicaRF's own
+settings **while docked** — before this brief's §1.3, the docked injected set was Markers/Display/Grid
+only, and the in-window `Menu` (which carries `Preferences…`) is hidden on macOS whenever docked. The
+owner's report ("Edit ▸ Settings does nothing") is the visible symptom of clicking circuitRF's own item
+believing it is harmonicaRF's — an easy thing to do, since docked, harmonicaRF's own Edit menu is not
+visible at all. §1.3's injected `harmonicaRF` top-level menu (with its own `Settings…` item) is what
+actually closes this, not a fix to any of the three items themselves.
+
+**§6.1 — the exact "typed 200, committed 190" figure did NOT reproduce under the most plausible
+headless caret model, and that is recorded rather than papered over.** `HarmonicaSetTerminationDialog`
+is a `Window` (uninstantiable headlessly, same constraint as every other dialog in this file); the
+mechanism was instead driven against the REAL `HarmonicaReadoutFormatting` parse/format functions under
+a simulated "CaretIndex preserved across a programmatic Text rewrite, clamped to the new length" model
+— the one documented, ordinary Avalonia `TextBox` behaviour. Under that model, typing "200" into a
+FRESH, empty (selected-then-replaced) box happens NOT to corrupt — confirmed by test, not assumed. What
+DOES reproduce, under the identical mechanism: typing into a box that already carries text (resuming
+mid-edit rather than replacing a selection) corrupts outright, and so does anything with an imaginary
+term or an exponent (`"-25+j40"` loses its imaginary part; `"1e3"` comes out as `0+j31`) — because the
+reformatted string's own structure (a `+j0 Ω` tail, or a totally different digit grouping) shifts under
+a caret index that does not know the string got longer or shorter. The fix removes the mechanism
+entirely rather than chasing one caret model: the box currently being edited is now NEVER
+programmatically rewritten (`LoadFields(except:)`), so no caret assumption is needed at all — reformat
+happens exactly once, on blur (`OnFieldLostFocus`) or OK. See
+`tests/Ui.Tests/Harmonica/HarmonicaSetTerminationDialogTests.cs` for both the (partial) reproduction and
+the fixed algorithm's own gate.
+
 ## The instrument, the strip rebuild, and drag starvation (brief-harmonicarf-r5, 2026-08-13)
 
 **§6's own bar — the owner's real drag, with the overlay on — is met.** Two prior briefs (R3B §1.4, R4

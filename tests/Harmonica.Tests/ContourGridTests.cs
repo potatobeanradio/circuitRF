@@ -185,6 +185,106 @@ public sealed class ContourGridTests(ITestOutputHelper output)
         Assert.Equal([0, 1, 3, 4, 5], cached.UsedIndices);
     }
 
+    // ── brief-harmonicarf-r6a §3 — the contour surface's own kernel/smooth/epsilon ──────────────────
+
+    [Fact]
+    public void ContourKernel_ChangesTheFittedSurface_ForTheIdenticalGrid()
+    {
+        // Two builds of the SAME model/terminations/Γ grid, differing only in ContourKernel — the
+        // brief's own gate: the interpolated value must differ, or the setting does nothing.
+        var mqModel = Model() with { Settings = Model().Settings with { ContourKernel = RbfKernel.Multiquadric } };
+        var tpModel = Model() with { Settings = Model().Settings with { ContourKernel = RbfKernel.ThinPlate } };
+
+        var gammaGrid = ContourGrid.RingGrid(rings: 3, spokes: 10, maxGamma: 0.85);
+
+        var mqCtx = HarmonicaContext.Create(mqModel, Settings);
+        var mqGrid = new ContourGrid();
+        mqGrid.Build(mqCtx, Terms(mqModel), gammaGrid);
+        var mqFit = mqGrid.Fit(GridMetric.PoutDbm);
+
+        var tpCtx = HarmonicaContext.Create(tpModel, Settings);
+        var tpGrid = new ContourGrid();
+        tpGrid.Build(tpCtx, Terms(tpModel), gammaGrid);
+        var tpFit = tpGrid.Fit(GridMetric.PoutDbm);
+
+        Assert.Equal(RbfKernel.Multiquadric, mqGrid.ContourKernel);
+        Assert.Equal(RbfKernel.ThinPlate,    tpGrid.ContourKernel);
+
+        // A query point BETWEEN samples — at a sample node itself an RBF interpolant is exact for
+        // every kernel and would agree trivially.
+        double mqValue = mqFit.Evaluate(0.15, -0.1);
+        double tpValue = tpFit.Evaluate(0.15, -0.1);
+        output.WriteLine($"Multiquadric: {mqValue:F6} dBm, ThinPlate: {tpValue:F6} dBm");
+
+        Assert.NotEqual(mqValue, tpValue, precision: 6);
+    }
+
+    [Fact]
+    public void ContourSmooth_ChangeAlone_InvalidatesTheCachedFactor_EvenWithUnchangedPositions()
+    {
+        // §3's own correctness trap: _factor/_factorMask are keyed on (positions, NaN mask) — a
+        // kernel/smooth/epsilon change with UNCHANGED positions must still force a re-factorization,
+        // or the user changes the setting and the contours do not move.
+        var model = Model();
+        var gammaGrid = ContourGrid.RingGrid(rings: 3, spokes: 10, maxGamma: 0.85);
+        var terms = Terms(model);
+
+        var ctx = HarmonicaContext.Create(model, Settings);
+        var grid = new ContourGrid();
+        grid.Build(ctx, terms, gammaGrid);
+
+        var before = grid.Fit(GridMetric.PoutDbm);
+        int factorizationsBefore = grid.FactorizationCount;
+        Assert.Equal(1, factorizationsBefore);
+        double beforeValue = before.Evaluate(0.15, -0.1);
+
+        // Same positions, same terminations, same NaN mask — ONLY ContourSmooth moves. Reuse the grid
+        // points (no re-solve needed — see HarmonicaViewModel.ApplyContourSettings' own remarks) via
+        // reuseUnchanged, exactly the path a live settings change takes.
+        var smoothedModel = model with { Settings = model.Settings with { ContourSmooth = 0.5 } };
+        var smoothedCtx = HarmonicaContext.Create(smoothedModel, Settings);
+        grid.Build(smoothedCtx, terms, gammaGrid, reuseUnchanged: true);
+
+        var after = grid.Fit(GridMetric.PoutDbm);
+        double afterValue = after.Evaluate(0.15, -0.1);
+
+        output.WriteLine($"smooth=1e-3: {beforeValue:F6} dBm, smooth=0.5: {afterValue:F6} dBm, " +
+                         $"factorizations before={factorizationsBefore} after={grid.FactorizationCount}");
+
+        // A NEW factorization happened (the cache was not stale-reused)...
+        Assert.Equal(factorizationsBefore + 1, grid.FactorizationCount);
+        // ...and it actually moved the surface — proving this is real invalidation, not just a counter.
+        Assert.NotEqual(beforeValue, afterValue, precision: 6);
+    }
+
+    [Fact]
+    public void ContourSettings_RoundTripThroughCharm_AndAnOlderCharmOpensAtRbf2DsOwnDefaults()
+    {
+        var model = Model() with
+        {
+            Settings = Model().Settings with
+            {
+                ContourKernel = RbfKernel.Gaussian, ContourSmooth = 0.25, ContourEpsilon = 0.7,
+            },
+        };
+        var terms = Terms(model);
+
+        string json = CharmIo.Write(model, terms);
+        var (back, _) = CharmIo.Read(json, null, out var unresolved, withMarkers: true);
+        Assert.Empty(unresolved);
+
+        Assert.Equal(RbfKernel.Gaussian, back.Settings.ContourKernel);
+        Assert.Equal(0.25, back.Settings.ContourSmooth);
+        Assert.Equal(0.7,  back.Settings.ContourEpsilon);
+
+        // Absent (an older .charm, or a hand-written one) takes Rbf2D's own defaults — never a
+        // substituted number for ContourEpsilon's "auto" null.
+        var (older, _) = CharmIo.Read("""{ "FormatVersion": 1 }""", null, out _, withMarkers: true);
+        Assert.Equal(new HarmonicaSettings().ContourKernel,  older.Settings.ContourKernel);
+        Assert.Equal(new HarmonicaSettings().ContourSmooth,  older.Settings.ContourSmooth);
+        Assert.Null(older.Settings.ContourEpsilon);
+    }
+
     [Fact]
     public void Tier6_TheExistingConstructorIsUntouched()
     {

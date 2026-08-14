@@ -172,7 +172,7 @@ public sealed class HarmonicaStandaloneTests(ITestOutputHelper output)
             "src/Ui/Views/Harmonica/HarmonicaMenuView.axaml",
             "src/Ui/Views/Harmonica/ReadoutStripView.axaml",
             "src/Ui/Views/Harmonica/HarmonicaShellWindow.axaml",
-            "src/Ui/Views/Dialogs/HarmonicaPreferencesDialog.axaml",
+            "src/Ui/Views/Dialogs/HarmonicaAppearanceSettingsView.axaml",
             "src/Ui/Views/Dialogs/HarmonicaTracePickerDialog.axaml",
             "src/Ui/Views/Dialogs/HarmonicaSetDutDialog.axaml",
         ];

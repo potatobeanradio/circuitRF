@@ -251,15 +251,37 @@ public sealed class HarmonicaCanvas : Control
     {
         base.Render(context);
         if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
+
+        // brief-harmonicarf-r6b §1.3 — the live VSWR-drag readout, if this gesture has one this
+        // frame. Read from the gesture rather than the view model: it is pointer/session state, not
+        // document state, and the gesture already tracks it beside Grab.
+        bool  readoutActive  = Gesture?.VswrReadoutActive ?? false;
+        string readoutText   = readoutActive ? Gesture!.VswrReadoutText : "";
+        Point readoutPointer = readoutActive
+            ? new Point(Gesture!.VswrReadoutPointer.X, Gesture.VswrReadoutPointer.Y)
+            : default;
+        var readoutPanel = readoutActive ? PanelSizeOf(Gesture!.Grab.PanelId) : (0.0, 0.0);
+
         context.Custom(new HarmonicaDrawOperation(new Rect(Bounds.Size), _vm,
                                                   _powerBackdrop, _efficiencyBackdrop, RenderScaling,
-                                                  ReadoutSetItemsMs, ReadoutSetInputsMs));
+                                                  ReadoutSetItemsMs, ReadoutSetInputsMs,
+                                                  readoutActive, readoutText, readoutPointer, readoutPanel));
+    }
+
+    /// <summary>A panel's own pixel size at this canvas's current bounds — the same arithmetic
+    /// <see cref="PanelRect"/> uses, just the size half of it, for §1.3's readout font sizing.</summary>
+    private (double W, double H) PanelSizeOf(string panelId)
+    {
+        var p = (_vm?.Layout ?? CharmLayout.Default).PlacementOf(panelId);
+        return (p.W * Bounds.Width, p.H * Bounds.Height);
     }
 
     private sealed class HarmonicaDrawOperation(
         Rect bounds, HarmonicaViewModel? vm,
         HarmonicaBackdropCache powerBackdrop, HarmonicaBackdropCache efficiencyBackdrop, double deviceScale,
-        double readoutSetItemsMs, double readoutSetInputsMs)
+        double readoutSetItemsMs, double readoutSetInputsMs,
+        bool vswrReadoutActive = false, string vswrReadoutText = "",
+        Point vswrReadoutPointer = default, (double W, double H) vswrReadoutPanelSize = default)
         : ICustomDrawOperation
     {
         // A SNAPSHOT of what to draw, captured at render time. The VM may change on the UI thread
@@ -286,6 +308,12 @@ public sealed class HarmonicaCanvas : Control
         private readonly HarmonicaDiagnosticsOverlay? _diagnostics = vm?.Diagnostics;
         private readonly double _readoutSetItemsMs  = readoutSetItemsMs;
         private readonly double _readoutSetInputsMs = readoutSetInputsMs;
+
+        // brief-harmonicarf-r6b §1.3 — the live VSWR-drag readout.
+        private readonly bool   _vswrReadoutActive     = vswrReadoutActive;
+        private readonly string _vswrReadoutText        = vswrReadoutText;
+        private readonly Point  _vswrReadoutPointer      = vswrReadoutPointer;
+        private readonly (double W, double H) _vswrReadoutPanelSize = vswrReadoutPanelSize;
 
         public Rect Bounds { get; } = bounds;
         public void Dispose() { }
@@ -317,6 +345,14 @@ public sealed class HarmonicaCanvas : Control
             HarmonicaCanvasRenderer.DrawAll(canvas, Bounds.Width, Bounds.Height, _snap);
 
             if (_editing) DrawEditChrome(canvas);
+
+            // brief-harmonicarf-r6b §1.3 — drawn UNCLIPPED, last (over the panels and any edit
+            // chrome), so it is never cut off at a panel edge — the same rule Data Display's own
+            // vswrReadout block follows.
+            if (_vswrReadoutActive)
+                HarmonicaPanelRenderer.DrawVswrReadout(canvas, _vswrReadoutText,
+                    new SkiaSharp.SKPoint((float)_vswrReadoutPointer.X, (float)_vswrReadoutPointer.Y),
+                    _vswrReadoutPanelSize, _theme);
 
             if (_vm is not null) _vm.LastRenderMs = sw.Elapsed.TotalMilliseconds;
 
