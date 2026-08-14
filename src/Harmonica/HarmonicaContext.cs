@@ -1,4 +1,5 @@
 using System.Numerics;
+using CircuitRF.Core;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
@@ -105,6 +106,18 @@ public sealed class HarmonicaContext
     /// Applies a new model. Rebuilds only if <see cref="CircuitModel.StructuralKey"/> moved; a bias
     /// or drive change mutates in place. Returns whether a rebuild happened, so a caller (and a
     /// test) can assert the boundary rather than trust it.
+    ///
+    /// <para><b>Idq-driven bias, R3C follow-up (2026-08-13) — this used to be entirely unimplemented.</b>
+    /// <c>model.Bias.Idq</c> was round-tripped and persisted but never once read here; the applied
+    /// gate voltage was always <c>model.Bias.Vgs ?? 0.0</c>, so an Idq-only document silently biased at
+    /// 0 V. Now: whichever of Vgs/Vds/Idq moved re-resolves the actual gate voltage — via
+    /// <see cref="SolveVgsForIdq"/> when <c>Idq</c> is set (a Vds change alone still has to re-solve,
+    /// since the same Idq target needs a different Vgs at a different Vds), else <c>Vgs ?? 0.0</c> as
+    /// before. <see cref="SetBias"/>'s own write leaves <c>_model.Bias.Idq</c> exactly as the top-level
+    /// <c>_model = model</c> assignment above already set it — so after this returns, <c>Vgs</c> is
+    /// always the real (solved-or-given) bias and <c>Idq</c>, when non-null, is the TARGET that
+    /// produced it. Both fields are populated together now; "Vgs xor Idq" is no longer the invariant a
+    /// caller should assume.</para>
     /// </summary>
     public bool Apply(CircuitModel model)
     {
@@ -114,9 +127,25 @@ public sealed class HarmonicaContext
 
         if (structural) { Rebuild(); return true; }
 
-        if (model.Bias.Vgs != previous.Bias.Vgs || model.Bias.Vds != previous.Bias.Vds)
-            SetBias(model.Bias.Vgs ?? 0.0, model.Bias.Vds);
+        bool biasMoved = model.Bias.Vgs != previous.Bias.Vgs
+                       || model.Bias.Vds != previous.Bias.Vds
+                       || model.Bias.Idq != previous.Bias.Idq;
+        if (biasMoved) ResolveBias(model);
         return false;
+    }
+
+    /// <summary>Applies whichever of Vgs/Idq the model states — via <see cref="SolveVgsForIdq"/> when
+    /// Idq drives, else Vgs directly — through <see cref="SetBias"/>. Shared by <see cref="Apply"/>'s
+    /// value-change branch and <see cref="Rebuild"/>'s own end: a FRESH context (construction, or any
+    /// structural rebuild) needs this exactly as much as a later value edit does — an Idq-driven model
+    /// hand to <see cref="Create"/> for the first time must not sit at the netlist's raw default gate
+    /// voltage until some later unrelated value edit happens to trigger a resolve.</summary>
+    private void ResolveBias(CircuitModel model)
+    {
+        double vgs = model.Bias.Idq is { } idq
+            ? SolveVgsForIdq(idq, model.Bias.Vds)
+            : model.Bias.Vgs ?? 0.0;
+        SetBias(vgs, model.Bias.Vds);
     }
 
     /// <summary>
@@ -146,6 +175,10 @@ public sealed class HarmonicaContext
         // — and ONLY the extraction — has to be redone. That is a linear solve per harmonic, not an
         // elaboration, and it is why bias is not part of the structural key.
         ReExtract();
+
+        // §3.3 item 1 (brief-harmonicarf-r3b) — the DC seed is a function of (structure, bias); a
+        // bias move invalidates it exactly like ReExtract, not one moment later.
+        _dcSeedVoltages = null;
     }
 
     private void Rebuild()
@@ -164,6 +197,17 @@ public sealed class HarmonicaContext
 
         RebuildCount++;
         ReExtract();
+
+        // §3.3 item 1 — a structural rebuild (Apply's structural branch, or ForceRebuild) always
+        // invalidates too; the netlist itself may now be a different circuit.
+        _dcSeedVoltages = null;
+
+        // R3C follow-up — an Idq-driven model handed to Create() for the very first time (or a
+        // structural rebuild of one — a new DUT, a new K) must not sit at the netlist's raw default
+        // gate voltage until some later, unrelated value edit happens to trigger a resolve. Also
+        // covers plain Vgs: harmless (ResolveBias is a no-op re-application of the same Vgs) and one
+        // path is simpler than two.
+        ResolveBias(_model);
     }
 
     private void ReExtract()
@@ -225,7 +269,7 @@ public sealed class HarmonicaContext
         if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == K + 1)
             Array.Copy(warmStart, v, warmStart.Length);
         else
-            SeedFromDc(v, yNN, iSrc, N, K);
+            SeedFromRealDc(v, N);
 
         var result = HbNewton.Solve(v, yNN, iSrc, _model.Settings.FrequencyHz, K, N,
                                     _netlist, _interface.DeviceNodes, gridN, _settings,
@@ -255,21 +299,214 @@ public sealed class HarmonicaContext
         };
     }
 
+    // ── §3.3 item 1 (brief-harmonicarf-r3b) — the REAL nonlinear DC seed ────────
+
     /// <summary>
-    /// Cold seed: the linear network's own DC operating point with the devices absent
-    /// (<c>V = −Y(0)⁻¹·I_src(0)</c>), and zero at every harmonic. A warm start supersedes it, which
-    /// is the case that matters — 0.94 ms warm against 2.45 ms cold (§2).
+    /// Cached once per (structure, bias) — the owner's own ask: "the DC solve can be performed as
+    /// soon as the DUT is loaded into memory and can always be reused throughout all harmonica
+    /// calculations." Invalidated in <see cref="Rebuild"/> and <see cref="SetBias"/>. Null means "not
+    /// computed yet, or invalidated" — computed lazily on first use, not eagerly, so a document that
+    /// never needs a cold seed (every solve is warm-started) never pays for one.
     /// </summary>
-    private static void SeedFromDc(Complex[,] v, Complex[][,] yNN, Complex[][] iSrc, int n, int k)
+    private double[]? _dcSeedVoltages;
+
+    /// <summary>How many times the true nonlinear DC operating point has actually been solved.
+    /// The cache's own gate — a counter, not a clock.</summary>
+    public int DcSeedComputeCount { get; private set; }
+
+    /// <summary>
+    /// Seeds a cold solve from the DUT's own converged nonlinear DC operating point — the quiescent
+    /// bias point, harmonics zero — rather than the linear network's DC point WITH THE DEVICE ABSENT
+    /// (what this used to do: <c>V = −Y(0)⁻¹·I_src(0)</c>). The old seed was not "seeded from DC" in
+    /// any sense that involves the device's own nonlinearity; it was the network's open-circuit point,
+    /// which for a device biased well away from pinch-off/breakdown can be dB-scale wrong as a guess
+    /// for where the real operating point sits.
+    /// </summary>
+    private void SeedFromRealDc(Complex[,] v, int n)
     {
-        var rhs = new Complex[n, 1];
-        for (int i = 0; i < n; i++) rhs[i, 0] = -iSrc[0][i];
+        var dcV = _dcSeedVoltages ??= ComputeDcSeed();
+        for (int i = 0; i < n; i++)
+        {
+            int nid = _interface.DeviceNodes[i];               // 1-based; 0 = ground
+            v[i, 0] = nid >= 1 && nid <= dcV.Length ? new Complex(dcV[nid - 1], 0.0) : Complex.Zero;
+        }
+        // Harmonics 1..K stay zero — the same "zero at every harmonic" rule the old seed used.
+    }
 
-        Complex[,] dc;
-        try { dc = InterfaceNetwork.SolveDense(yNN[0], rhs); }
-        catch (InvalidOperationException) { return; }   // leave the seed at zero
+    /// <summary>
+    /// The real nonlinear DC solve, against harmonicaRF's own OPEN-port netlist (the bias tees are
+    /// already stamped into it — §4.4 — so this is the device's genuine quiescent point, not a guess
+    /// requiring any termination). A non-convergent DC solve still returns its best-effort voltages
+    /// (never null) — using them is strictly no worse than the old zero/linear seed, and the HB
+    /// Newton loop's own convergence is what actually matters downstream.
+    /// </summary>
+    private double[] ComputeDcSeed()
+    {
+        DcSeedComputeCount++;
+        try
+        {
+            var result = CircuitRF.Engine.NonlinearDcEngine.Run(_netlist);
+            return result.NodeVoltages;
+        }
+        catch (Exception)
+        {
+            // A DC solve that cannot converge even under continuation stepping (NonlinearDcEngine's
+            // own last resort) leaves the seed at zero — never worse than the old linear-network
+            // seed's own failure mode (InterfaceNetwork.SolveDense throwing on a singular Y(0)), and
+            // the HB Newton loop downstream is what actually has to converge either way.
+            return [];
+        }
+    }
 
-        for (int i = 0; i < n; i++) v[i, 0] = dc[i, 0];
-        _ = k;
+    // ── R3C follow-up — Idq ⇄ Vgs, the "1-D secant on the DC solve" the tooltips always promised ────
+
+    /// <summary>The DUT's own DC drain current AT THE CURRENT BIAS, amps — what the strip shows when
+    /// Vgs is the driver (Idq is then informational: "here is what this Vgs actually draws"). Reuses
+    /// <see cref="_dcSeedVoltages"/> — the SAME cached DC operating point <see cref="SeedFromRealDc"/>
+    /// warm-starts a cold HB solve from — so reading this costs nothing extra once anything has
+    /// already triggered a cold solve at this bias, and exactly one DC solve otherwise. NaN when the
+    /// drain port is unavailable (an external DUT with no intrinsic mapping, §4.5.5) or the cached
+    /// solve is empty (DC did not converge at all).</summary>
+    public double DcDrainCurrentAmps => DrainCurrentAt(_dcSeedVoltages ??= ComputeDcSeed());
+
+    /// <summary>
+    /// Solves Vgs for a target quiescent drain current, by bracket-then-secant on the DUT's own DC
+    /// operating point — the SAME shape <c>PinSearch.Run</c> already uses for (Pin, compression),
+    /// applied here to (Vgs, Ids). <paramref name="idqTargetAmps"/> and the return value are both
+    /// AMPS/VOLTS — unit conversion for a mA-displaying UI is the caller's own job, not this method's.
+    ///
+    /// <para><b>Never throws, never returns null</b> — matches <see cref="ComputeDcSeed"/>'s own
+    /// "best-effort, always leaves a real bias behind" philosophy: a target this DUT genuinely cannot
+    /// reach (outside its Vgs range, or a DC solve that stops converging while searching) still has to
+    /// leave SOME Vgs applied, and the closest one found beats an exception taking the whole edit down.
+    /// </para>
+    ///
+    /// <para><b>Mutates the bias supplies as a side effect of searching</b> — each trial has to be a
+    /// real DC solve against the real netlist, so there is no way to probe Ids(Vgs) without moving
+    /// <c>_gateSupply</c> there first. The CALLER (<see cref="Apply"/>) always finishes by calling
+    /// <see cref="SetBias"/> with the result, which re-applies the converged Vgs/Vds pair for real
+    /// (including <see cref="ReExtract"/> and invalidating the DC seed cache) — so a caller of THIS
+    /// method alone, mid-search, must not assume the supplies are left at any particular value.</para>
+    /// </summary>
+    public double SolveVgsForIdq(double idqTargetAmps, double vds)
+    {
+        double vgs0 = _model.Bias.Vgs ?? 0.0;
+        double i0 = TryDcIds(vgs0, vds, out bool ok0);
+        if (!ok0) return vgs0;
+
+        double tol = Math.Max(1e-12, Math.Abs(idqTargetAmps) * 1e-4);
+        if (Math.Abs(i0 - idqTargetAmps) <= tol) return vgs0;
+
+        // Probe gm's SIGN rather than assuming one — a depletion-mode and an enhancement-mode device
+        // (or a user-supplied external model of either) can disagree about which way Vgs has to move.
+        const double probeStep = 0.01;
+        double i1 = TryDcIds(vgs0 + probeStep, vds, out bool ok1);
+        double gmSign = ok1 && Math.Abs(i1 - i0) > 1e-15 ? Math.Sign(i1 - i0) : 1.0;
+        double dir = Math.Sign(idqTargetAmps - i0) * gmSign;
+        if (dir == 0) dir = 1.0;
+
+        // ── bracket: step outward, doubling, until Ids crosses the target ──────
+        double vgsLo = vgs0, iLo = i0;
+        double vgsHi = vgs0, iHi = i0;
+        double stride = probeStep;
+        bool bracketed = false;
+
+        for (int i = 0; i < MaxBiasBracketSteps; i++)
+        {
+            double vgsNext = vgsHi + dir * stride;
+            double iNext = TryDcIds(vgsNext, vds, out bool ok);
+            if (!ok) break;   // DC stopped converging out here — work with whatever was bracketed
+
+            bool crossed = (iLo <= idqTargetAmps) != (iNext <= idqTargetAmps);
+            vgsLo = vgsHi; iLo = iHi;
+            vgsHi = vgsNext; iHi = iNext;
+            if (crossed) { bracketed = true; break; }
+
+            stride *= 2.0;
+        }
+
+        if (!bracketed)
+            return Math.Abs(iHi - idqTargetAmps) < Math.Abs(i0 - idqTargetAmps) ? vgsHi : vgs0;
+
+        // ── secant within [vgsLo, vgsHi], bisection fallback on a flat/overshoot step ──
+        double best = Math.Abs(iHi - idqTargetAmps) < Math.Abs(iLo - idqTargetAmps) ? vgsHi : vgsLo;
+        double bestErr = Math.Min(Math.Abs(iHi - idqTargetAmps), Math.Abs(iLo - idqTargetAmps));
+
+        for (int it = 0; it < MaxBiasSecantSteps && bestErr > tol; it++)
+        {
+            double denom = iHi - iLo;
+            double next = Math.Abs(denom) < 1e-15
+                ? 0.5 * (vgsLo + vgsHi)
+                : vgsLo + (idqTargetAmps - iLo) * (vgsHi - vgsLo) / denom;
+
+            if (!(next > Math.Min(vgsLo, vgsHi) && next < Math.Max(vgsLo, vgsHi)))
+                next = 0.5 * (vgsLo + vgsHi);
+
+            double iNext = TryDcIds(next, vds, out bool ok);
+            if (!ok) break;
+
+            double err = Math.Abs(iNext - idqTargetAmps);
+            if (err < bestErr) { best = next; bestErr = err; }
+
+            if ((iNext <= idqTargetAmps) == (iLo <= idqTargetAmps)) { vgsLo = next; iLo = iNext; }
+            else                                                    { vgsHi = next; iHi = iNext; }
+        }
+
+        return best;
+    }
+
+    private const int MaxBiasBracketSteps = 20;
+    private const int MaxBiasSecantSteps  = 30;
+
+    /// <summary>One trial: apply (vgs, vds) to the real supplies, run a real DC solve, read Ids back.
+    /// <paramref name="ok"/> is false for a solve that threw or produced no node voltages at all — the
+    /// caller decides what "give up here" means for its own search, this just reports the fact.
+    /// </summary>
+    private double TryDcIds(double vgs, double vds, out bool ok)
+    {
+        _gateSupply?.SetVdc(vgs);
+        _drainSupply?.SetVdc(vds);
+        try
+        {
+            var result = CircuitRF.Engine.NonlinearDcEngine.Run(_netlist);
+            double ids = DrainCurrentAt(result.NodeVoltages);
+            ok = !double.IsNaN(ids) && double.IsFinite(ids);
+            return ids;
+        }
+        catch (Exception)
+        {
+            ok = false;
+            return double.NaN;
+        }
+    }
+
+    /// <summary>
+    /// The DUT's own drain current at a converged DC node-voltage vector — direct device evaluation
+    /// (<see cref="ComponentModel.Evaluate"/>) at the terminal voltages, the SAME
+    /// "read the model's own I directly, no ratio" rule §4.5.1 states for the load side. Built from
+    /// <c>dut.Nodes</c> and indexed with the SAME 1-based/0-is-ground convention
+    /// <see cref="SeedFromRealDc"/> already uses for this exact array, so the two can never disagree
+    /// about what "node 0" means. NaN when the drain port is unknown (§4.5.5 refuses to guess) or
+    /// <paramref name="dcV"/> is empty (a DC solve that did not converge at all).
+    /// </summary>
+    private double DrainCurrentAt(double[] dcV)
+    {
+        int drainPort = IntrinsicPorts.DrainPort;
+        if (drainPort < 0 || dcV.Length == 0) return double.NaN;
+
+        var dut = DutComponent;
+        int p = dut.Model.PortCount;
+        var pv = new double[p];
+        for (int q = 0; q < p; q++)
+        {
+            int np = dut.Nodes.Length > 2 * q     ? dut.Nodes[2 * q]     : 0;
+            int nm = dut.Nodes.Length > 2 * q + 1 ? dut.Nodes[2 * q + 1] : 0;
+            double vp = np >= 1 && np <= dcV.Length ? dcV[np - 1] : 0.0;
+            double vm = nm >= 1 && nm <= dcV.Length ? dcV[nm - 1] : 0.0;
+            pv[q] = vp - vm;
+        }
+
+        if (drainPort >= p) return double.NaN;
+        return dut.Model.Evaluate(new PortVoltages(pv)).I[drainPort];
     }
 }

@@ -219,6 +219,7 @@ public static class CharmIo
             TickleEnabled = m.Settings.TickleEnabled,
             TickleDbm     = m.Settings.TickleDbm,
             ExactCompressionSolve = m.Settings.ExactCompressionSolve,
+            SweepOverdriveDb = m.Settings.SweepOverdriveDb,
         },
         PavlDbm = m.PavlDbm,
     };
@@ -294,6 +295,7 @@ public static class CharmIo
                 TickleEnabled    = s?.TickleEnabled    ?? defaults.TickleEnabled,
                 TickleDbm        = s?.TickleDbm        ?? defaults.TickleDbm,
                 ExactCompressionSolve = s?.ExactCompressionSolve ?? defaults.ExactCompressionSolve,
+                SweepOverdriveDb = s?.SweepOverdriveDb ?? defaults.SweepOverdriveDb,
             },
             PavlDbm = d.PavlDbm ?? 0.0,
         };
@@ -419,6 +421,10 @@ public static class CharmIo
         /// <summary>R-h9r2-17a — absent on every .charm written before this brief; such a file opens
         /// with the option off (interpolated compression, no extra solve).</summary>
         public bool?   ExactCompressionSolve { get; set; }
+
+        /// <summary>brief-harmonicarf-r4 §1 — absent on every .charm written before this brief; such
+        /// a file opens at the default margin (0 dB, stop exactly on the crossing rung).</summary>
+        public double? SweepOverdriveDb { get; set; }
     }
 
     // ── markers ───────────────────────────────────────────────────────────────

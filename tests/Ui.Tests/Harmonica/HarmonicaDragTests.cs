@@ -454,6 +454,81 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         Assert.Contains("ToggleCursorSnapCommand", menuAxaml, StringComparison.Ordinal);
     }
 
+    // ══ §5.4 (brief-harmonicarf-r4) — a mid-drag marker frame that hasn't moved costs no solve ══
+
+    [Fact]
+    public async Task MidDragMarkerFrame_WithinToleranceOfLastSubmitted_IsSkipped_GatedOnACounterNotAStopwatch()
+    {
+        // Same shape as HarmonicaGridPointDragTests' own
+        // MidDragGridPointFrame_CostsZeroHbSolves_GatedOnACounterNotAStopwatch — a counter
+        // (Pool.StartedCount / NoOpDragFrameSkipCount), never a stopwatch, proves the skip.
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 8, RasterResolution = 32 });
+
+        var marker = vm.Markers.First(m => m.Side == TerminationSideKind.Load && m.Band == 1);
+
+        // One genuine move establishes a "last submitted" baseline.
+        vm.SetMarkerGamma(marker, new Complex(0.10, 0.05));
+        long seq1 = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);
+        Assert.NotEqual(-1, seq1);
+        await vm.Pool.DrainAsync();
+
+        int startedAfterFirst = vm.Pool.StartedCount;
+        int skippedBefore     = vm.NoOpDragFrameSkipCount;
+
+        // Sub-tolerance jitter — five moves, each landing within DragNoOpGammaTolerance of the last
+        // SUBMITTED Γ (not of each other, so this also proves the comparison doesn't drift frame to
+        // frame). None may reach the solve pool.
+        for (int i = 1; i <= 5; i++)
+        {
+            vm.SetMarkerGamma(marker, new Complex(0.10 + 1e-6 * i, 0.05));
+            long seq = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);
+            Assert.Equal(-1, seq);
+        }
+        Assert.Equal(startedAfterFirst, vm.Pool.StartedCount);
+        Assert.Equal(skippedBefore + 5, vm.NoOpDragFrameSkipCount);
+
+        // A real move — well past tolerance — DOES reach the pool. StartedCount increments when the
+        // pool actually STARTS the job (async), not synchronously on Submit, so this needs a drain
+        // before it can be read.
+        vm.SetMarkerGamma(marker, new Complex(0.15, 0.05));
+        long seq2 = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);
+        Assert.NotEqual(-1, seq2);
+        await vm.Pool.DrainAsync();
+        Assert.True(vm.Pool.StartedCount > startedAfterFirst,
+            "a move well beyond the no-op tolerance must still reach the solve pool");
+    }
+
+    [Fact]
+    public async Task MarkerReleaseAlwaysSolves_EvenWithinTheNoOpTolerance()
+    {
+        // §5.4's own carve-out: mid-drag is free, release is real — matching DragGridPoint's shape.
+        // A release that lands within tolerance of the last mid-drag frame must still submit a real,
+        // full-quality solve; skipping it would leave the document showing a degraded drag-quality
+        // frame as its final, at-rest state.
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 8, RasterResolution = 32 });
+
+        // S1 is never the swept band (default GridSide/GridHarmonic is Load/1) — see the sibling drag
+        // test's own comment for why that matters to which code path a release takes.
+        var marker = vm.Markers.First(m => m.Side == TerminationSideKind.Source && m.Band == 1);
+
+        vm.SetMarkerGamma(marker, new Complex(0.20, -0.10));
+        long seq1 = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);
+        Assert.NotEqual(-1, seq1);
+        await vm.Pool.DrainAsync();
+        int startedBeforeRelease = vm.Pool.StartedCount;
+
+        // Release at the SAME Γ (well within tolerance of the last mid-drag frame). StartedCount only
+        // increments when the pool actually STARTS the job (async), so this needs a drain first.
+        vm.SetMarkerGamma(marker, new Complex(0.20, -0.10));
+        long seq2 = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: false);
+        Assert.NotEqual(-1, seq2);
+        await vm.Pool.DrainAsync();
+        Assert.True(vm.Pool.StartedCount > startedBeforeRelease,
+            "release must always submit a real solve, even when Γ has not moved since the last mid-drag frame");
+    }
+
     private static string ReadSource(params string[] parts)
     {
         var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);

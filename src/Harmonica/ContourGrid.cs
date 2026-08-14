@@ -1,5 +1,7 @@
+using System.Linq;
 using System.Numerics;
 using System.Threading;
+using System.Threading.Tasks;
 using RfCore.Loadpull;
 
 namespace CircuitRF.Harmonica;
@@ -83,6 +85,22 @@ public sealed class ContourGrid
     public int HoleCount => _points.Count(p => p.IsHole);
     public int ConvergedCount => _points.Count(p => !p.IsHole);
 
+    /// <summary>
+    /// §3.3 item 4 (brief-harmonicarf-r3b) — a hole is not one story. <c>PinMax</c> means this load
+    /// genuinely does not compress by the target within the swept range (a real physical answer);
+    /// <c>NonConvergence</c> means the solver gave up (a search-quality problem, and the one §3's
+    /// fixes above target). Both render as an identical hollow dot today; this is the minimum bar
+    /// the brief asks for — the distinction reachable, not silently merged — until a status-strip or
+    /// tooltip surfaces it visually.
+    /// </summary>
+    public int PinMaxHoleCount => _points.Count(p => p.Result.Reason == PinStopReason.PinMax);
+
+    /// <summary>See <see cref="PinMaxHoleCount"/>.</summary>
+    public int NonConvergenceHoleCount => _points.Count(p => p.Result.Reason == PinStopReason.NonConvergence);
+
+    /// <summary>§3.3 item 3 — total retries spent across the whole grid (a counter, not a hidden cost).</summary>
+    public int RetryCount => _points.Sum(p => p.Result.Retries);
+
     /// <summary>How many times a kernel matrix has actually been factorized. The cache's own gate.</summary>
     public int FactorizationCount { get; private set; }
 
@@ -121,10 +139,16 @@ public sealed class ContourGrid
     /// within one point's cost rather than running the grid out. Finer granularity would mean
     /// threading a token through the HB Newton loop, which buys nothing at this frame rate.
     /// </param>
+    /// <param name="onPointProbe">
+    /// brief-harmonicarf-r3b §3.1 — purely additive diagnostic hook, called once per solve attempt
+    /// (tickle/PinStart/bracket/secant, success or failure) for every Γ point actually solved (never
+    /// for a reused point). Null in every production call site; changes nothing about the search.
+    /// </param>
     public void Build(HarmonicaContext ctx, TerminationSet terminations,
                       IReadOnlyList<Complex> gammaGrid, TerminationSide side = TerminationSide.Load,
                       int tuneHarmonic = 1, CancellationToken ct = default,
-                      bool reuseUnchanged = false, Action<int, int>? onProgress = null)
+                      bool reuseUnchanged = false, Action<int, int>? onProgress = null,
+                      Action<Complex, PinSearchProbe>? onPointProbe = null)
     {
         // R-h9b-6 — this grid is a long-lived, per-worker object (§6.7); re-read Z0 from the document
         // on every build rather than freezing it at construction, or a Z0 change would silently keep
@@ -153,7 +177,13 @@ public sealed class ContourGrid
         ReusedPointCount = 0;
 
         var working = terminations.Clone();
-        var converged = new List<(Complex Gamma, Complex[,] V, double? PinAtCompression)>();
+        // §3.3 item 2 (brief-harmonicarf-r3b) — each converged neighbour's WHOLE ladder, not just its
+        // last (most-compressed) step, so a probe can be seeded from whichever of the neighbour's own
+        // steps sits nearest the Pin level actually being solved, rather than always from the most
+        // compressed one (an 80 dB mismatch for a tickle) or from this point's own in-ladder
+        // predecessor (up to 30+ dB mismatch for the bracket's first, hint-driven jump — measured to
+        // be exactly where the shipped default's holes come from, see LoadpullHoleDiagnosticTests).
+        var converged = new List<(Complex Gamma, IReadOnlyList<PinStep> Steps, double? PinAtCompression)>();
 
         // §3 (R1C) — one tick per Γ point, reused or freshly solved alike, so the fraction reflects
         // total completion regardless of which path a point took. The FINAL point always ticks
@@ -172,26 +202,209 @@ public sealed class ContourGrid
                 _points.Add(kept);
                 ReusedPointCount++;
                 if (kept.Result.Steps.Count > 0)
-                    converged.Add((gamma, kept.Result.Steps[^1].Point.V,
-                                   kept.Result.AtCompression?.PavlDbm));
+                    converged.Add((gamma, kept.Result.Steps, kept.Result.AtCompression?.PavlDbm));
                 onProgress?.Invoke(++done, total);
                 continue;
             }
 
             working.Set(side, tuneHarmonic, z);
 
-            var (seed, hint) = NearestByVswr(converged, gamma);
-            var result = PinSearch.Run(ctx, working, seed, hint);
+            var (seed, hint, neighborSteps) = NearestByVswr(converged, gamma);
+            var result = onPointProbe is null
+                ? PinSearch.Run(ctx, working, seed, hint, neighborSteps: neighborSteps)
+                : PinSearch.Run(ctx, working, seed, hint, probe => onPointProbe(gamma, probe), neighborSteps);
 
             _points.Add(new GridPoint(gamma, z, result));
 
             if (result.Steps.Count > 0)
-                converged.Add((gamma, result.Steps[^1].Point.V, result.AtCompression?.PavlDbm));
+                converged.Add((gamma, result.Steps, result.AtCompression?.PavlDbm));
 
             onProgress?.Invoke(++done, total);
         }
 
         _reusableAgainst = StateKey(ctx, terminations, side, tuneHarmonic);
+    }
+
+    // ── §4 (brief-harmonicarf-r3b) — the parallel grid build ────────────────────
+
+    /// <summary>
+    /// Persistent pool of per-batch contexts — created once, reused across calls (elaboration is
+    /// milliseconds and happens only on a structural change, exactly <see cref="SolveWorker.
+    /// EnsureContext"/>'s own rule). Never touched from more than one thread at a time: every use
+    /// pops one via <c>ConcurrentBag</c> before the parallel region starts and returns it after, so
+    /// two batches can never share a context concurrently, which is the one thing that would corrupt
+    /// results (<c>HarmonicaContext</c> is not thread-safe — <c>src/Harmonica/CLAUDE.md</c>'s own rule).
+    /// </summary>
+    private readonly List<HarmonicaContext> _batchContextPool = [];
+
+    /// <summary>
+    /// §4 — the same grid <see cref="Build"/> computes, across a small pool of per-batch contexts.
+    /// <paramref name="gammaGrid"/> is partitioned into FIXED batches of <paramref name="batchSize"/>
+    /// (see that parameter's own remarks — the owner's suggested "4 or 8" measured too small) — batch
+    /// <c>b</c> is always solved by worker <c>b % workerCount</c>, decided once before any work
+    /// starts, never reassigned at runtime ("no work stealing", so a run is reproducible). Batch
+    /// MEMBERSHIP is chosen by ANGLE, not raw grid-array order — <see cref="RingGrid"/>'s own
+    /// generation order (ring-then-spoke) chunks a batch to one ring's short arc, which is angularly
+    /// coherent but radially blind, and the hole cluster this repo's own default document has sits
+    /// along a single radial line (same angle, every ring) — angle-sorting first groups exactly that
+    /// line into one batch instead of splitting it one-point-per-ring across many. General for any
+    /// scatter, not ring-grid-specific (an arbitrary imported <c>.gam</c> still gets angularly-grouped
+    /// batches, which is a reasonable notion of "spatially coherent" for any Γ-plane scatter).
+    ///
+    /// <para><b>Seeding is strictly WITHIN a batch.</b> Each batch keeps its own "converged so far"
+    /// list (mirroring <see cref="Build"/>'s single global one) and never reads another batch's
+    /// results — cross-batch seeding is exactly what makes an answer depend on thread timing. The
+    /// deterministic seed every batch's FIRST point gets is the real DC operating point (§3.3 item 1)
+    /// — whatever a null <c>warmStart</c> already resolves to in <see cref="HarmonicaContext.Solve"/>,
+    /// nothing extra to wire here.</para>
+    ///
+    /// <para><b>Point order is independent of completion order.</b> Every result is written into a
+    /// position-indexed array sized to <paramref name="gammaGrid"/> and <c>_points</c> is assembled
+    /// from it, in original order, only after every batch has finished.</para>
+    /// </summary>
+    /// <param name="batchSize">
+    /// Points per batch. The owner's own suggestion was "4 or 8 points per core" — MEASURED, on the
+    /// shipped default's 61-point ring grid, that is too small: it gave the hole SET (the gate that
+    /// must match exactly) a real, non-hypothetical mismatch, because a batch that small can end up
+    /// confined to a genuinely hard arc with no good neighbour to seed from — a distinct effect from
+    /// (and stacks with) the pre-existing bracket aliasing this file's own doc comment describes.
+    /// Default is 12 — one whole ring on this repo's own ring-grid shape — which measured a CLEAN hole
+    /// SET match and 2.68× wall-clock on the same fixture (<c>ContourGridParallelTests</c>). Smaller
+    /// values are still accepted (the caller's call), but are not the default because 8 was measured
+    /// to disagree here.
+    /// </param>
+    /// <param name="maxParallelism">Worker cap. Null defaults to <see cref="SolvePool{T}.
+    /// DefaultWorkerCount"/> (cores − 2), clamped to never exceed the batch count.</param>
+    public void BuildParallel(HarmonicaContext ctx, TerminationSet terminations,
+                              IReadOnlyList<Complex> gammaGrid, TerminationSide side = TerminationSide.Load,
+                              int tuneHarmonic = 1, CancellationToken ct = default,
+                              bool reuseUnchanged = false, Action<int, int>? onProgress = null,
+                              int batchSize = 12, int? maxParallelism = null)
+    {
+        Z0 = ctx.Model.Settings.Z0;
+
+        Dictionary<Complex, GridPoint>? previous = null;
+        if (reuseUnchanged && _points.Count > 0 && _reusableAgainst == StateKey(ctx, terminations, side, tuneHarmonic))
+        {
+            previous = [];
+            foreach (var p in _points) previous.TryAdd(p.Gamma, p);
+        }
+
+        _fits.Clear();
+        _factor = null;
+        ReusedPointCount = 0;
+
+        int total = gammaGrid.Count;
+        var results = new GridPoint[total];
+        int doneCount = 0;
+        var progressGate = new Lock();
+        void ReportProgress() { lock (progressGate) onProgress?.Invoke(++doneCount, total); }
+
+        // Reused points are free and not worth a worker — filled synchronously first, exactly as the
+        // serial path does, so §3's "one tick per point, reused or not" progress rule is unchanged.
+        var pending = new List<int>(total);
+        for (int i = 0; i < total; i++)
+        {
+            var gamma = gammaGrid[i];
+            if (previous is not null && previous.TryGetValue(gamma, out var kept))
+            {
+                results[i] = kept;
+                ReusedPointCount++;
+                ReportProgress();
+            }
+            else pending.Add(i);
+        }
+
+        if (pending.Count > 0)
+        {
+            // A deterministic serial "leader" — solved once, single-threaded, BEFORE the fan-out —
+            // gives every batch a shared, always-available seed on top of the DC point (§3.3 item 1),
+            // rather than each batch bootstrapping purely cold when its own few points happen to sit
+            // in a hard region of the plane (measured to matter: without this, a batch confined to a
+            // difficult arc has no good neighbour at all and holes that the serial `Build` — which can
+            // draw a seed from anywhere in the WHOLE grid — would not). Chosen as the pending point
+            // closest to the origin (Γ≈0 is always easy), not named by the caller.
+            (Complex Gamma, IReadOnlyList<PinStep> Steps, double? PinAtCompression)? leader = null;
+            int leaderIdx = pending.OrderBy(i => gammaGrid[i].Magnitude).First();
+            {
+                Complex lg = gammaGrid[leaderIdx];
+                Complex lz = Z0 * (Complex.One + lg) / (Complex.One - lg);
+                var lt = terminations.Clone();
+                lt.Set(side, tuneHarmonic, lz);
+                var lr = PinSearch.Run(ctx, lt);
+                results[leaderIdx] = new GridPoint(lg, lz, lr);
+                if (lr.Steps.Count > 0) leader = (lg, lr.Steps, lr.AtCompression?.PavlDbm);
+                pending.Remove(leaderIdx);
+                ReportProgress();
+            }
+
+            // Batch by ANGLE-sorted order, not input order — measured to matter. A ring grid's own
+            // generation order (ring-then-spoke) chunks each batch to one ring's own short arc, which
+            // is angularly coherent but RADIALLY blind: a whole radial line (same angle, every ring)
+            // can be a genuinely hard region (confirmed — LoadpullHoleDiagnosticTests' own hole
+            // centroid sits at a fixed angle across radii), and splitting it across batches by ring
+            // means no batch ever sees more than one point of it, so none can bootstrap the others the
+            // way the serial Build's GLOBAL nearest-neighbour search does. Sorting by angle first
+            // groups same-or-similar-angle points from every ring consecutively (a stable sort keeps
+            // ties in their original, already-radius-ordered sequence), so a batch spans a radial
+            // stripe instead of an angular arc — general for any scatter, not ring-grid-specific.
+            pending = [.. pending.OrderBy(i => NormalizedAngle(gammaGrid[i]))];
+
+            int batchCount = (pending.Count + batchSize - 1) / batchSize;
+            int workerCount = Math.Max(1, Math.Min(maxParallelism ?? SolvePool<int>.DefaultWorkerCount, Math.Max(1, batchCount)));
+
+            while (_batchContextPool.Count < workerCount) _batchContextPool.Add(HarmonicaContext.Create(ctx.Model));
+            for (int i = 0; i < workerCount; i++) _batchContextPool[i].Apply(ctx.Model);   // no-op unless structural
+
+            var bag = new System.Collections.Concurrent.ConcurrentBag<HarmonicaContext>(_batchContextPool.Take(workerCount));
+
+            Parallel.ForEach(
+                Enumerable.Range(0, batchCount),
+                new ParallelOptions { MaxDegreeOfParallelism = workerCount, CancellationToken = ct },
+                localInit: () => bag.TryTake(out var c) ? c : HarmonicaContext.Create(ctx.Model),
+                body: (b, _, batchCtx) =>
+                {
+                    var batchTerms = terminations.Clone();
+                    var batchConverged = new List<(Complex Gamma, IReadOnlyList<PinStep> Steps, double? PinAtCompression)>();
+                    if (leader is { } lead) batchConverged.Add(lead);
+
+                    int start = b * batchSize, end = Math.Min(start + batchSize, pending.Count);
+                    for (int j = start; j < end; j++)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        int idx = pending[j];
+                        Complex gamma = gammaGrid[idx];
+                        Complex z = Z0 * (Complex.One + gamma) / (Complex.One - gamma);
+                        batchTerms.Set(side, tuneHarmonic, z);
+
+                        var (seed, hint, neighborSteps) = NearestByVswr(batchConverged, gamma);
+                        var result = PinSearch.Run(batchCtx, batchTerms, seed, hint, neighborSteps: neighborSteps);
+
+                        results[idx] = new GridPoint(gamma, z, result);
+                        if (result.Steps.Count > 0)
+                            batchConverged.Add((gamma, result.Steps, result.AtCompression?.PavlDbm));
+
+                        ReportProgress();
+                    }
+                    return batchCtx;
+                },
+                localFinally: batchCtx => bag.Add(batchCtx));
+
+            _batchContextPool.Clear();
+            _batchContextPool.AddRange(bag);
+        }
+
+        _points.Clear();
+        _points.AddRange(results);
+        _reusableAgainst = StateKey(ctx, terminations, side, tuneHarmonic);
+    }
+
+    /// <summary>Angle in [0, 2π) — <see cref="Complex.Phase"/> is (−π, π]; batching wants a single
+    /// monotone sweep, not a wrap at the negative real axis.</summary>
+    private static double NormalizedAngle(Complex g)
+    {
+        double a = g.Phase;
+        return a < 0 ? a + 2.0 * Math.PI : a;
     }
 
     /// <summary>
@@ -233,20 +446,23 @@ public sealed class ContourGrid
 
     /// <summary>
     /// The existing warm-start rule: seed from the converged neighbour closest in VSWR-like distance,
-    /// which on the Γ plane is ordinary Euclidean distance.
+    /// which on the Γ plane is ordinary Euclidean distance. Now also returns that neighbour's WHOLE
+    /// ladder (§3.3 item 2), so <see cref="PinSearch.Run"/> can pick the level-nearest step for each
+    /// probe rather than only ever seeding its very first solve from the neighbour.
     /// </summary>
-    private static (Complex[,]? Seed, double? PinHint) NearestByVswr(
-        List<(Complex Gamma, Complex[,] V, double? PinAtCompression)> converged, Complex gamma)
+    private static (Complex[,]? Seed, double? PinHint, IReadOnlyList<PinStep>? NeighborSteps) NearestByVswr(
+        List<(Complex Gamma, IReadOnlyList<PinStep> Steps, double? PinAtCompression)> converged, Complex gamma)
     {
-        Complex[,]? best = null;
+        IReadOnlyList<PinStep>? bestSteps = null;
         double? hint = null;
         double bestD = double.MaxValue;
-        foreach (var (g, v, pin) in converged)
+        foreach (var (g, steps, pin) in converged)
         {
             double d = (g - gamma).Magnitude;
-            if (d < bestD) { bestD = d; best = v; hint = pin; }
+            if (d < bestD) { bestD = d; bestSteps = steps; hint = pin; }
         }
-        return (best, hint);
+        Complex[,]? seed = bestSteps is { Count: > 0 } s ? s[^1].Point.V : null;
+        return (seed, hint, bestSteps);
     }
 
     // ── D6 — the extrema ──────────────────────────────────────────────────────

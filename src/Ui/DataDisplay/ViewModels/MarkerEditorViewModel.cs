@@ -414,9 +414,10 @@ public partial class MarkerEditorViewModel : ViewModelBase
     public string OwnDataLine => _parent is null ? "dB(S(2,1)) = −3.45 dB ∠−45°"
         : _parent.Trace.GetEditorDataLine(_marker, showFilePrefix: false);
 
-    /// <summary>Own trace reference impedance, e.g. "Z0=50 Ω".</summary>
+    /// <summary>Own trace reference impedance, e.g. "Z0=50 Ω" — the reference the readout above is
+    /// actually against (the port's own when Z0 Override is off), not the trace's port-1 mirror.</summary>
     public string OwnZ0Line => _parent is null ? "Z0=50 Ω"
-        : $"Z0={ComplexStringHelper.Format(_parent.Trace.Z0)} Ω";
+        : $"Z0={ComplexStringHelper.Format(_parent.Trace.MarkerZ0)} Ω";
 
     /// <summary>True when the multi-trace section should be visible.</summary>
     public bool HasMultiLines => _parent is not null && IsMulti && _parent.PlotType == PlotType.Rect;
@@ -438,7 +439,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
                 {
                     // Delegate to Trace.GetMultiMarkerLine so formatting is identical to the InfoBox.
                     DataText = _parent.Trace.GetMultiMarkerLine(_marker, t),
-                    Z0Text   = tHasZ0 ? $"Z0={ComplexStringHelper.Format(t.Z0)} Ω" : "",
+                    Z0Text   = tHasZ0 ? $"Z0={ComplexStringHelper.Format(t.MarkerZ0)} Ω" : "",
                 });
             }
             return result;

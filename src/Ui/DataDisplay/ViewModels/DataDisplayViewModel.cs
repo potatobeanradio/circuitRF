@@ -1387,6 +1387,7 @@ public partial class DataDisplayViewModel : ViewModelBase
 
             if (ComplexStringHelper.TryParse(traceConfig.Z0, out System.Numerics.Complex z0))
                 trace.Z0 = z0;
+            trace.Z0OverrideEnabled = traceConfig.Z0Override;
 
             ApplyProperties(traceConfig.Properties, trace.Properties);
 
@@ -1545,6 +1546,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             YAxis                 = t.YAxis,
             UseSecondaryAxis      = t.UseSecondaryAxis,
             Z0                    = ComplexStringHelper.Format(t.Z0),
+            Z0Override            = t.Z0OverrideEnabled,
             MatrixFormat          = t.MatrixFormat,
             ColumnWidth           = t.ColumnWidth,
             XColumnWidth          = t.XColumnWidth,

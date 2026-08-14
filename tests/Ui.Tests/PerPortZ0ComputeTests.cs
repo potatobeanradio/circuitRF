@@ -59,34 +59,42 @@ public sealed class PerPortZ0ComputeTests
         return t;
     }
 
-    // ---- Test 1: NonUniformSource_S_Renormalizes ----------------------------
-    // brief-dd-z0-renormalization.md §2: an S-trace on an unusual (per-port) source now
-    // renormalizes to the trace's own (uniform) Z0 before extracting the element — it no longer
-    // returns the stored value unchanged. A uniform-50Ω trace on the same SNP is still unaffected
-    // (its own reference already equals the trace's default Z0).
+    // ---- Test 1: NonUniformSource_S_RenormalizesOnlyUnderOverride -----------
+    // brief-dd-z0-nonuniform-override: an S-trace on an unusual (per-port) source renormalizes to
+    // the trace's own (uniform) Z0 ONLY when the card's Z0 Override is checked. With Override off
+    // — the default — the stored value is rendered untouched, each port at its own reference.
+    // (§2 of brief-dd-z0-renormalization made this renorm unconditional, which silently destroyed
+    // the match of any run with per-port Term impedances.)
 
     [Fact]
-    public void NonUniformSource_S_Renormalizes()
+    public void NonUniformSource_S_RenormalizesOnlyUnderOverride()
     {
-        var snp = MakeTestSnp();
-
-        // Unusual S21 trace at the default Z0 (50+j0) — must equal RFNetwork.SToS from the true
-        // per-port source [50, 75-10j] to a uniform 50 Ω target, NOT the raw stored value.
-        var unusual = MakeUnusualTrace(snp, MatrixType.S, 0, 1, DependentVarFormat.Complex);
-        unusual.BuildPath(PlotType.Smith, FreqUnit.GHz);
-
+        var snp      = MakeTestSnp();
         var sourceZ0 = MakeNonUniformZ0();
+
+        // Override OFF (default): the raw stored S21, no renormalization at all.
+        var raw = MakeUnusualTrace(snp, MatrixType.S, 0, 1, DependentVarFormat.Complex);
+        raw.BuildPath(PlotType.Smith, FreqUnit.GHz);
+
+        Assert.Single(raw.Points);
+        Assert.Equal((float)S21.Real,      raw.Points[0].X, precision: 6);
+        Assert.Equal((float)S21.Imaginary, raw.Points[0].Y, precision: 6);
+
+        // Override ON: equals RFNetwork.SToS from the true per-port source [50, 75-10j] to a
+        // uniform 50 Ω target, and genuinely differs from the raw value above.
+        var overridden = MakeUnusualTrace(snp, MatrixType.S, 0, 1, DependentVarFormat.Complex);
+        overridden.Z0OverrideEnabled = true;
+        overridden.BuildPath(PlotType.Smith, FreqUnit.GHz);
+
         var expected = RFNetwork.SToS(snp.Matrices[0], sourceZ0, RFNetwork.Z0Array(new Complex(50, 0), 2))[0, 1];
 
-        Assert.Single(unusual.Points);
-        Assert.Equal((float)expected.Real,      unusual.Points[0].X, precision: 6);
-        Assert.Equal((float)expected.Imaginary, unusual.Points[0].Y, precision: 6);
-        // The renormalized value genuinely differs from the raw stored S21 (pre-condition the old
-        // "no renorm" test relied on) — otherwise this test wouldn't distinguish the two behaviors.
-        Assert.NotEqual((float)S21.Real, unusual.Points[0].X, precision: 3);
+        Assert.Single(overridden.Points);
+        Assert.Equal((float)expected.Real,      overridden.Points[0].X, precision: 6);
+        Assert.Equal((float)expected.Imaginary, overridden.Points[0].Y, precision: 6);
+        Assert.NotEqual((float)S21.Real, overridden.Points[0].X, precision: 3);
 
         // Regression: uniform-50Ω trace (SourceZ0IsUnusual = false, _z0 == Data.Z0 == 50) — renorm
-        // is a no-op, still returns the stored value.
+        // is a no-op either way, still returns the stored value.
         var uniform = new Trace(snp, MatrixType.S, 0, 1, DependentVarFormat.Complex);
         uniform.BuildPath(PlotType.Smith, FreqUnit.GHz);
 
@@ -165,6 +173,22 @@ public sealed class PerPortZ0ComputeTests
 
         // Results must genuinely differ.
         Assert.NotEqual(Zexpect.Real, Zwrong.Real, precision: 2);
+
+        // The readout must be exactly the per-port formula, not merely "different from the uniform
+        // one" — Override off means the raw S22 read against port-2's OWN 75-j10 Ω reference.
+        Assert.Equal($"impedance={marker.FormatComplex(Zexpect)} Ω", perPortResult);
+        Assert.Equal(portZ0, unusual.MarkerZ0);
+
+        // Override ON: every port is renormalized to the uniform trace Z0 (50 Ω here), and the
+        // readout is reported against that same 50 Ω.
+        var overridden = MakeUnusualTrace(snp, MatrixType.S, 1, 1, DependentVarFormat.Complex);
+        overridden.Z0OverrideEnabled = true;
+        var sRenorm = RFNetwork.SToS(snp.Matrices[0], sourceZ0, RFNetwork.Z0Array(portZ0w, 2))[1, 1];
+        var ZoverExpect = portZ0w * (portZ0w.Conjugate() / portZ0w + sRenorm) / (Complex.One - sRenorm);
+
+        Assert.Equal(portZ0w, overridden.MarkerZ0);
+        Assert.Equal($"impedance={marker.FormatComplex(ZoverExpect)} Ω",
+                     overridden.GetMarkerImpedanceString(marker));
     }
 
     // ---- Test 4: Z0Box_GatedByKind ------------------------------------------

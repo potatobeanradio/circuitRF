@@ -943,6 +943,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
         t.SourceZ0PerPort  = z0Src;
         t.SourceZ0IsUnusual = RfCore.Data.DataSetBuilder.ClassifyZ0(z0Cube) != RfCore.Data.Z0Kind.UniformReal;
 
+        // Override OFF ⇒ absolutely no renormalization, whatever the source's per-port references
+        // are (brief-dd-z0-nonuniform-override). The cube is returned exactly as simulated/loaded:
+        // an S-parameter run with per-port Term impedances renders the match it actually has, not
+        // the match it would have if every port were re-terminated at the port-1 reference.
+        if (!t.Z0OverrideEnabled) return cube;
+
         bool identity = true;
         for (int p = 0; p < nPorts; p++)
             if (z0Src[p] != t.Z0) { identity = false; break; }

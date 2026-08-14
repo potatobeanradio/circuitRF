@@ -5,6 +5,153 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## A cube marker's frequency lives in its POSITION (2026-08-13)
+
+Switching a trace from S(1,1) to a stability circle sent its marker to 0 Hz, where every lookup read
+NaN. Two independent faults, both on the S-param → circle direction:
+
+1. **`PlotControl.SnapMarkerToTrace` deliberately never assigns `Marker.Freq` for a cube trace** —
+   `CubeMarkerIndex` re-derives the sample from the position on every read — and markers are
+   constructed with `freq: 0.0`. So a marker that has only ever lived on a cube trace has
+   `Freq == 0`. Harmless there, fatal the moment the trace becomes network/derived, where `Freq` IS
+   the identity. New `Trace.CaptureMarkerFrequencies()` reads it out of the position (nearest cube X
+   sample, frequency axis only — a Pin sweep has no frequency to carry and must not invent one), and
+   `OnSelectedSignalChanged`'s network branch calls it **before** clearing the cube binding, while
+   the cube X values are still there to read.
+2. **The `Derived` setter's own snap loop matched with `f == m.Freq - 1e-6`** — an exact float
+   comparison against a *shifted* value, so it never matched and every marker fell through to
+   `Data.Frequencies.Length - 1`. The marker was snapped to the LAST frequency's circle while its box
+   still reported the original frequency. It also zeroed `PositionStatic` first, so "nearest point on
+   the circle" was measured from the origin and the marker teleported. Now: `NearestFrequencyIndex`
+   (nearest, never equality — a frequency arriving from another mode is not bit-identical to a
+   sample), position kept, shortest move onto that frequency's circle.
+   `FindNearestPointOnStabilityCircle` also gained a `freqIndex < 0` guard and now returns the
+   `+real` perimeter point when queried exactly at the centre, instead of null (which left the marker
+   off the locus).
+
+Tests: `StabilityCircleMarkerTransitionTests` (5), verified to fail without the fix (4 of 5 red).
+
+**Verified on the owner's own file** (`results/dataset.cdd` + `dataset.npy`, the non-uniform 4-port):
+marker 0 Hz → 1.19 GHz, landing 1.9e-8 from that frequency's circle perimeter, angle preserved.
+
+**Not a bug, checked in full:** the same file's marker reported `Γ=1.023∠−15.14°` alongside
+`impedance=374.8∠−95.07° Ω`. Those are consistent — 50·(1+Γ)/(1−Γ) = 374.9∠−94.99°, i.e.
+−33.1 − j373.3 Ω — and the marker sits 0.000000 from the 1.19 GHz source-stability circle. |Γ| > 1
+on a stability circle is ordinary (µ′ = 1.015, unconditionally stable, so the whole circle lies just
+outside the unit disc and every point on it is a small negative resistance). The confusion was the
+**MA display format**: `FormatImpedance` renders through `Marker.FormatComplex`, which honours the
+marker's `MatrixFormat`, so an impedance can appear as magnitude∠angle — or, in DB mode, as
+`20·log10(|Z|) dB`. Left as-is, but that is where to look first if this is reported again.
+
+## A cube binding and a derived metric are mutually exclusive — cube wins (2026-08-13)
+
+Picking "Load Stability Circles" on a simulated 4-port run and then picking `S(1,1)` again left the
+trace in **both** states: `OnSelectedSignalChanged`'s cube branch never reset `Trace.Derived` (only
+the network branch did). One cause, two symptoms that looked unrelated:
+
+- **S(1,1) never appeared.** `Trace.BuildPath` tests `IsCubeBound` **before** `IsDerived`, so it
+  built a cube path and filled `Points` — but `TraceRenderer.BuildPath` branches on
+  `IsStabilityCircle`, which was still true, so it drew the **stale circle geometry** and ignored
+  `Points` entirely. Nothing in the cube path clears `StabilityCircleCentres`/`Radii`/`StableInside`
+  — only `BuildDerivedPath`/`BuildMatrixPath` do, and neither runs for a cube trace.
+- **The In/Out port selectors stayed on the card.** `TraceRowViewModel.ShowPortSelectors` reads
+  `Trace.Derived`. The property *was* re-raised by `RefreshDescription` → `RefreshNetworkMetricCard`
+  — it just still answered "yes". A property-change notification proves nothing when the underlying
+  state is the thing that is stale.
+
+**Fixed on the two setters that make a trace cube-bound** — `Trace.CubeName` and `Trace.Expression`
+are now real properties that call `DropDerivedForCubeBinding()` on a **non-null** assignment (the
+null guard matters: the network branch sets both to null *before* assigning `Derived`, and a drop
+there would fight it). One rule covers the picker, a typed spec, and a `.cdd` load. `Trace.Derived`'s
+setter now also clears the circle geometry when set to `None`, so the geometry cannot outlive the
+mode that owns it whoever does the reset.
+
+`.cdd` files saved in the broken state load correctly without extra work: `DataDisplayViewModel`
+restores `Derived` only on its non-cube-bound branch.
+
+Tests: `StabilityCircleSignalSwitchTests` (6) — the round trip both ways, the geometry/`Points`/card
+state after the switch, the two setters at model level, and the null-assignment guard. Verified to
+fail without the fix (3 of 6 red).
+
+## Stability-circle marker impedance (2026-08-13)
+
+A marker on a load/source stability circle sits on a Γ-plane **locus**, not on an S-matrix element,
+so its impedance must come from the marker **position** at the reference the locus lives in. Two
+defects, both in `Trace.GetMarkerImpedanceString`:
+
+1. **The per-port ("unusual source") branch ran before any derived check** and read `S[Row, Col]` —
+   which for a derived trace is **S11**, since `Derived`'s setter forces `Row = Col = 0`. The readout
+   was a constant that did not move when the marker did. Only reachable on a non-uniform source,
+   which is where it surfaced. The derived case is now handled **first**, ahead of both branches.
+2. **The reference was `Trace.Z0`/port 1's**, but `BuildDerivedPath` hands the circle routines the
+   2-port from `NetworkMetrics.TwoPortUniformReal`, which renormalizes **both** ports to
+   `Re(z0[InputPort−1])`. New `Trace.DerivedGammaReferenceZ0` mirrors that target exactly — so it is
+   the input port's reference, not port 1's, and its **real part only**. Change one without the other
+   and the drawn circle silently disagrees with every readout taken on it.
+
+`MarkerReferenceZ0` returns it for any derived trace, which also fixes the info box's `Z0=` line and
+the VSWR locus reference. It deliberately **ignores `Z0OverrideEnabled`/`Trace.Z0`**: the Z0 control
+is not shown for a derived trace and `BuildDerivedPath` never consults it, so honouring it would
+report an impedance the drawn circle does not have.
+
+Also extracted `Trace.SourceZ0PerPortResolved(nPorts)` — the "true per-port references" expression
+was copied verbatim in three places (`BuildDerivedPath`, `GetDerivedMetricArray`, `MuString`), and
+all derived paths must agree on it or the curve and its readouts diverge.
+
+Tests: `StabilityCircleMarkerImpedanceTests` (7), verified to fail without the fix (5 of 7 red).
+
+## Z0 override is the gate, not a label (brief-dd-z0-nonuniform-override, 2026-08-13)
+
+**Corrects the brief below.** Z1/Z2 made the renormalization to `Trace.Z0` *unconditional* — the
+Override checkbox only controlled whether the Z0 *box* was editable, and `Trace.Z0` was seeded from
+the source's **port-1** reference. For a uniform source that is invisible (port-1's value IS every
+port's value). For a run with per-port `Term` impedances it is destructive: every port was silently
+re-referenced to port 1's value, so a design genuinely matched into a 12 Ω port-2 read its match
+against 50 Ω instead. Owner's report: a −20 dB return loss displayed as −4 to −6 dB.
+
+**The rule now, and it is one sentence per state:**
+- **Override OFF ⇒ absolutely no renormalization**, whatever the source's per-port references are.
+  The trace shows the source's own data; `Trace.Z0` is a read-only mirror of port 1 and is not used
+  to transform anything.
+- **Override ON ⇒ every port renormalized to the user's uniform `Trace.Z0`**, starting from the
+  source's true per-port `SourceZ0PerPort` (so a non-uniform source is accounted for, not ignored).
+
+**`Trace.Z0OverrideEnabled` is the single gate**, and it lives on the MODEL, not just the row VM —
+every renormalization site consults it: `PlotInspectorViewModel.ResolveNetworkParamCube` (the cube
+path's one interception point), and, on the network/SNP path, `Trace.BuildMatrixPath` /`DataPoint`
+/`GetMarkerDataPoint`/`GetMarkerImpedanceString`, in both their per-port and uniform branches.
+`TraceRowViewModel` mirrors the checkbox into it (including from the ctor, so a `.cdd`-restored or
+copied trace keeps its state) and it persists as `TraceConfig.Z0Override`.
+
+**What is deliberately NOT gated:** derived quantities (µ, µ′, |Δ|, MaxGain, stability circles) and
+Z/Y conversion still renormalize internally and unconditionally. Those are only *defined* at a
+uniform real reference — that renormalization is mathematics, not a display choice.
+
+**Marker readouts follow the same reference, per PORT.** New `Trace.MarkerZ0` — the port's own
+reference with Override off, the uniform override Z0 with it on — replaces bare `Trace.Z0` in the
+impedance readout, the info box / marker editor `Z0=` line, and the VSWR locus reference
+(`PlotRenderer`, `PlotControl.ResolveVswrPlaneAndZ0`). Without it an S(2,2) trace on a 12 Ω port
+reported its impedance against the port-1 50 Ω. The cube path gets its port index from the pinned
+`"i"` slice (`CubeReflectionPortIndex`); the network path uses `Row`. **The impedance is
+reference-independent and the tests pin exactly that**: port 2 of the 50↔12 Ω transformer reads
+12 Ω *both* with Override off (S22 = 0 against 12 Ω) and with Override on at 50 Ω (S22 = −0.6129
+against 50 Ω) — two different Γ values, one physical impedance. That round trip is the strongest
+available check that both branches are right.
+
+**Two consequences worth knowing.** The `" @ Z0=…"` Y-label token is now gated on Override too — with
+Override off nothing was re-referenced, so the token would misstate the reference (this includes the
+old "an unusual source is always re-referenced" arm, which no longer holds). And
+`OnZ0OverrideEnabledChanged` now rebuilds in BOTH directions: turning Override *on* changes the
+rendered data for a non-uniform source before the box is ever edited, which the old
+off-branch-only rebuild never redrew.
+
+**Test oracle worth reusing:** an ideal 50 Ω ↔ 12 Ω transformer, `S = [[0,1],[1,0]]` at its own port
+references — a perfect match. Renormalized to a uniform 50 Ω it reads |S11| = (50−12)/(50+12) =
+0.6129 → −4.25 dB, *exactly* the reported symptom. The two behaviors are separated by the largest
+possible margin and the expected value is hand-checkable. `Z0NonUniformOverrideTests` (10 tests);
+`PerPortZ0ComputeTests.NonUniformSource_S_RenormalizesOnlyUnderOverride` replaces the old
+`NonUniformSource_S_Renormalizes`, which asserted the unconditional behavior.
+
 ## Z0 renormalization — S-param and loadpull traces (brief-dd-z0-renormalization, 2026-08-13)
 
 Five slices, Z1–Z5. One Z0 field per trace (`Trace.Z0`, already `Complex`, default 50+j0) — no

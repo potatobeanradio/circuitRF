@@ -301,6 +301,19 @@ public sealed record HarmonicaSettings
     public const int MaxSweepPoints = 1001;
 
     /// <summary>
+    /// brief-harmonicarf-r4 §1 — R-h9r2-19 is superseded for the compression case: the explicit
+    /// power sweep now stops once compression reaches <see cref="CompressionDb"/> +
+    /// <see cref="SweepOverdriveDb"/>, rather than always running to <see cref="PinMaxDbm"/>. This
+    /// margin, dB, is what is left to search PAST the target before the ladder stops — 0 satisfies the
+    /// owner's literal instruction ("stop once compression exceeds the P-xdB setting") and is the
+    /// default; a positive value keeps a few rungs of the saturation region (PAE typically peaks a few
+    /// dB past P3dB) on the panel at the cost of a few extra solves. Never applies when the sweep does
+    /// not cross the target at all — that path still runs the full range unchanged (R-h9r2-19's
+    /// original guarantee, kept for the non-crossing case).
+    /// </summary>
+    public double SweepOverdriveDb { get; init; }
+
+    /// <summary>
     /// R-h9r2-18a — whether the tickle (the small-signal reference every compression measurement is
     /// taken against) is solved at all. Default true. OFF means <c>gMax</c> seeds from the first
     /// solved sweep/grid point instead and <c>SmallSignalGainDb</c> is null rather than fabricated —

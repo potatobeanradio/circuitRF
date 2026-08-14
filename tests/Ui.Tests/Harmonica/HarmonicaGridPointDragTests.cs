@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using CircuitRF.Harmonica;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Harmonica.Renderers;
@@ -223,6 +224,41 @@ public sealed class HarmonicaGridPointDragTests(ITestOutputHelper output)
 
         vm.EndGridPointDrag();
         Assert.False(vm.IsGridPointDragging);
+    }
+
+    [Fact]
+    public async Task MidDragGridPointFrame_CostsZeroHbSolves_GatedOnACounterNotAStopwatch()
+    {
+        // brief-harmonicarf-r3b §2 — "A mid-drag grid-point frame must cost ZERO HB solves." Before
+        // this fix, RequestFrame(dragging: true) still ran the whole tier-A power sweep (SkipContours
+        // only ever skipped the grid build, never PinSearch.Sweep) even though the gesture is a
+        // display-only edit that touches no circuit state.
+        var vm = new HarmonicaViewModel();
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 8, RasterResolution = 32 });
+
+        vm.BeginGridPointDrag(2);
+        int startedBefore = vm.Pool.StartedCount;
+        int solvesBefore  = vm.LastSolveCount;
+        var beforeGlyph   = vm.Frame.SmithPower.GridPoints[2].Gamma;
+
+        // N pointer-move events, each landing at a different Γ — none may reach the solve pool.
+        Complex[] moves = [new(0.10, 0.05), new(0.12, 0.06), new(0.15, 0.02), new(0.18, -0.04), new(0.20, -0.10)];
+        foreach (var g in moves)
+            vm.DragGridPoint(2, g, dragging: true);
+
+        Assert.Equal(startedBefore, vm.Pool.StartedCount);
+        Assert.Equal(solvesBefore,  vm.LastSolveCount);
+
+        // …and the glyph still tracks the pointer — the display-only edit actually took effect.
+        var afterGlyph = vm.Frame.SmithPower.GridPoints[2].Gamma;
+        Assert.NotEqual(beforeGlyph, afterGlyph);
+        Assert.Equal(moves[^1].Real,      afterGlyph.Real,      6);
+        Assert.Equal(moves[^1].Imaginary, afterGlyph.Imaginary, 6);
+
+        // On release, a real (single-point-reuse) solve DOES run — this fix only covers mid-drag.
+        vm.DragGridPoint(2, moves[^1], dragging: false);
+        await vm.Pool.DrainAsync();
+        Assert.True(vm.Pool.StartedCount > startedBefore, "release should still submit a real solve");
     }
 
     [Fact]

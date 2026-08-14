@@ -100,14 +100,12 @@
                 </NativeMenu>
               </NativeMenuItem.Menu>
             </NativeMenuItem>
+            <!-- Populated in code-behind (RebuildNativeBandMenus), from ContourHarmonics — NativeMenu
+                 has no ItemsSource, same reason Source/Load Bands are built there too (see that
+                 comment above). Owner-reported: this used to be three hardcoded items and never
+                 tracked K. -->
             <NativeMenuItem Header="Contour Harmonic">
-              <NativeMenuItem.Menu>
-                <NativeMenu>
-                  <NativeMenuItem Header="f₀"  Command="{Binding SetGridHarmonicCommand}" CommandParameter="1"/>
-                  <NativeMenuItem Header="2f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="2"/>
-                  <NativeMenuItem Header="3f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="3"/>
-                </NativeMenu>
-              </NativeMenuItem.Menu>
+              <NativeMenuItem.Menu><NativeMenu/></NativeMenuItem.Menu>
             </NativeMenuItem>
             <NativeMenuItem Header="Efficiency Metric">
               <NativeMenuItem.Menu>
@@ -131,8 +129,9 @@
             <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"/>
             <NativeMenuItem Header="Cursor Snap to Compression" Command="{Binding ToggleCursorSnapCommand}"/>
             <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Power Sweep…" Command="{Binding PowerSweepCommand}"/>
-            <NativeMenuItem Header="Set Z0…"      Command="{Binding SetZ0Command}"/>
+            <NativeMenuItem Header="Power Sweep…"       Command="{Binding PowerSweepCommand}"/>
+            <NativeMenuItem Header="Set Z0…"            Command="{Binding SetZ0Command}"/>
+            <NativeMenuItem Header="Advanced Settings…" Command="{Binding AdvancedSettingsCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -253,10 +252,16 @@
         <MenuItem Header="_Load"   Command="{Binding SetGridSideCommand}" CommandParameter="Load"/>
         <MenuItem Header="_Source" Command="{Binding SetGridSideCommand}" CommandParameter="Source"/>
       </MenuItem>
-      <MenuItem Header="Contour _Harmonic">
-        <MenuItem Header="f₀"  Command="{Binding SetGridHarmonicCommand}" CommandParameter="1"/>
-        <MenuItem Header="2f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="2"/>
-        <MenuItem Header="3f₀" Command="{Binding SetGridHarmonicCommand}" CommandParameter="3"/>
+      <!-- Owner-reported: this used to be three hardcoded items (f₀/2f₀/3f₀), so K > 3 had no way to
+           reach its own bands. ContourHarmonics is rebuilt to K's own length by
+           HarmonicaMenuViewModel.RebuildBandMenus, the SAME trigger the band checkboxes above use. -->
+      <MenuItem Header="Contour _Harmonic" ItemsSource="{Binding ContourHarmonics}">
+        <MenuItem.Styles>
+          <Style Selector="MenuItem" x:DataType="vm:HarmonicaHarmonicMenuItem">
+            <Setter Property="Header"  Value="{Binding Header}"/>
+            <Setter Property="Command" Value="{Binding SelectCommand}"/>
+          </Style>
+        </MenuItem.Styles>
       </MenuItem>
       <MenuItem Header="E_fficiency Metric">
         <MenuItem Header="_DE"  Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="DE"/>
@@ -282,6 +287,8 @@
       </MenuItem>
       <MenuItem Header="Set _Z0…" Command="{Binding SetZ0Command}"
                 ToolTip.Tip="The Smith-chart reference impedance. Also settable from the readout strip's own Z0 field."/>
+      <MenuItem Header="Ad_vanced Settings…" Command="{Binding AdvancedSettingsCommand}"
+                ToolTip.Tip="Loadline samples, FFT oversampling, compute-charge, and device multiplicity (M)."/>
     </MenuItem>
 
     <MenuItem Header="_Grid" Padding="8,4">

@@ -63,6 +63,33 @@ public static class HarmonicaPanelRenderer
     private const double TitleRowFontFraction = 0.052;
 
     /// <summary>
+    /// R3C §4 — owner: "Make Smith chart title text size 85%." One more shrink factor on top of
+    /// <see cref="TitleFontShrink"/>, named per the same rule R-h9r2-21 established ("make this text
+    /// size a variable in the code") — this is the second such tweak, so the precedent already exists
+    /// rather than being invented here.
+    ///
+    /// <para><b>The 7.0 pt floor in <see cref="TitleBandHeight"/> is deliberately NOT scaled by this
+    /// factor.</b> It already reads as a readability minimum, not a proportional shrink target — a
+    /// panel small enough to be clamped there is already at the smallest legible size, and multiplying
+    /// the floor by 0.85 would only make an already-clamped title harder to read for no space
+    /// saved (the clamp exists so nothing gets smaller than 7 pt, and shrinking the clamp itself
+    /// defeats that).</b></para>
+    /// </summary>
+    private const double TitleSizeR3C = 0.85;
+
+    /// <summary>
+    /// R3C §4 — owner: "move the title down… so it renders closer to the Smith Chart. (I.e. the
+    /// bottom of row 2 text should be above the Smith Chart with some padding.)" This is that
+    /// padding, named and factored out of what used to be an inline <c>m * 0.01</c> magic fraction
+    /// used for two jobs at once (part of <see cref="TitleBandHeight"/>'s own total, AND row 2's
+    /// baseline offset in <see cref="DrawTitleRows"/>). Halved from the old 0.01 — row 2's baseline
+    /// sits at <c>TitleBandHeight - TitleBottomPaddingFraction * m</c>, so a smaller value moves the
+    /// text closer to the chart directly, on top of the closeness §4's 85% shrink already buys by
+    /// making both rows shorter.
+    /// </summary>
+    private const double TitleBottomPaddingFraction = 0.005;
+
+    /// <summary>
     /// R-h9b-4 — how much of the panel's height the two title rows reserve, in PIXELS, given the row
     /// font size above. Computed from the actual font metrics rather than a fixed fraction, so a very
     /// short or very tall panel does not waste — or run out of — title space.
@@ -73,13 +100,57 @@ public static class HarmonicaPanelRenderer
     /// footprint, not something hidden. The "too high" complaint is fixed separately, inside the band,
     /// by <see cref="DrawTitleRows"/>'s own baselines below — moving the text down within an unchanged
     /// band reduces the gap above the chart without costing any chart real estate.</b></para>
+    ///
+    /// <para><b>R3C §4 — now literally <c>rows + padding</c></b>, both named constants
+    /// (<see cref="TitleSizeR3C"/>, <see cref="TitleBottomPaddingFraction"/>) rather than one fraction
+    /// doing double duty. <see cref="DrawTitleRows"/> derives row 2's baseline from THIS SAME padding
+    /// term, so the two can never disagree about where the gap above the chart actually is.</para>
     /// </summary>
     private static double TitleBandHeight((double W, double H) size)
     {
         double m = Math.Min(size.W, size.H);
-        double row = Math.Max(7.0, m * TitleRowFontFraction * TitleFontShrink);
-        // 1.3× line-height per row (ascender/descender headroom) plus a hair of padding above/below.
-        return row * 1.3 + row * 1.3 + m * 0.01;
+        double row = Math.Max(7.0, m * TitleRowFontFraction * TitleFontShrink * TitleSizeR3C);
+        double padding = m * TitleBottomPaddingFraction;
+        // 1.3× line-height per row (ascender/descender headroom) plus the named bottom padding.
+        return row * 1.3 + row * 1.3 + padding;
+    }
+
+    /// <summary>
+    /// R3C follow-up (2026-08-13) — "add slightly more margin around the Smith charts, ~20 more
+    /// pixels." Expressed as a FRACTION of the panel's own shorter side, the same panel-relative
+    /// convention every other constant in this file uses (<see cref="TitleRowFontFraction"/> etc.), and
+    /// for the identical reason: <c>HarmonicaDragTests.
+    /// Tier2_TheGrabRadiusIsTheSameNumberOfPixelsOnA300pxPanelAndA900pxOne</c> pins that a hit test in
+    /// DEVICE PIXELS reads the same at every panel size, which only holds if every term in the
+    /// Γ↔canvas pipeline is exactly proportional to panel size — a FLAT pixel constant (tried first)
+    /// broke that invariant (14px on a 300px canvas, 15px on a 900px one) because a fixed cost is
+    /// relatively larger on a small panel than a large one. 0.03 (3% of the shorter side) reads as
+    /// ~18–20px at the panel sizes this file's own R3B history records as typical (600–650px shorter
+    /// side), matching the owner's own estimate there without reintroducing a size-dependent wobble.
+    /// <b>Distinct from <see cref="AnnulusHeadroom"/> on purpose</b> — that mechanism (currently 0)
+    /// exists to guarantee an out-of-circle glyph is never clipped and is a fraction of the RIM radius;
+    /// this one is plain cosmetic breathing room between the chart and the panel's own edges (and the
+    /// title band above it), requested separately and for a different reason.
+    /// </summary>
+    private const double ChartMarginFraction = 0.03;
+
+    /// <summary>
+    /// The box the Smith chart actually draws and hit-tests into: <paramref name="size"/> minus the
+    /// title band, minus <see cref="ChartMarginFraction"/> of the panel's shorter side on every side —
+    /// plus the (x, y) canvas offset of that box's own top-left corner, so <see cref="DrawSmithPanel"/>,
+    /// <see cref="GammaToCanvas"/> and <see cref="CanvasToGamma"/> can never disagree about where it
+    /// starts. One shared computation rather than three independent ones, for the same "render and
+    /// hit-test must never diverge" reason <see cref="TitleBandHeight"/> is itself already shared by
+    /// all three.
+    /// </summary>
+    private static ((double W, double H) Box, double OffsetX, double OffsetY) ChartBox(
+        (double W, double H) size, double bandH)
+    {
+        double margin = Math.Min(size.W, size.H) * ChartMarginFraction;
+        (double W, double H) chartSize = (size.W, size.H - bandH);
+        (double W, double H) box = (Math.Max(1.0, chartSize.W - 2 * margin),
+                                     Math.Max(1.0, chartSize.H - 2 * margin));
+        return (box, margin, bandH + margin);
     }
 
     // ── §7.2 — the Smith panels ──────────────────────────────────────────────
@@ -94,7 +165,9 @@ public static class HarmonicaPanelRenderer
     /// </summary>
     public static void DrawSmithPanel(SKCanvas canvas, (double W, double H) size,
                                       SmithPanelData d, HarmonicaRenderTheme theme, bool darkMode,
-                                      bool showGridPoints = true, HarmonicaMarker? topmostMarker = null)
+                                      bool showGridPoints = true, HarmonicaMarker? topmostMarker = null,
+                                      HarmonicaBackdropCache? cache = null, double deviceScale = 1.0,
+                                      bool showIsoLineLabels = false)
     {
         // R-h9b-4 — the two title rows are drawn OURSELVES, in the panel's own top strip, BEFORE the
         // chart transform below — never through PlotRenderer's CustomTitle (see NewSmithPlot's doc
@@ -102,67 +175,233 @@ public static class HarmonicaPanelRenderer
         double bandH = TitleBandHeight(size);
         DrawTitleRows(canvas, size, bandH, d, theme);
 
-        // Everything below draws into the sub-rect BENEATH the title band. This is exactly the
-        // "chart size" GammaToCanvas/CanvasToGamma compute from the same TitleBandHeight, so a render
-        // position and a hit-tested position can never disagree about where the reserved band ends.
-        (double W, double H) chartSize = (size.W, size.H - bandH);
+        // Everything below draws into the sub-rect BENEATH the title band, inset by ChartMargin on
+        // every side. This is exactly the box GammaToCanvas/CanvasToGamma compute from the same
+        // ChartBox helper, so a render position and a hit-tested position can never disagree about
+        // where the drawn chart actually starts.
+        var (chartSize, offsetX, offsetY) = ChartBox(size, bandH);
 
         canvas.Save();
-        canvas.Translate(0, (float)bandH);
+        canvas.Translate((float)offsetX, (float)offsetY);
 
-        // ── ANNULUS HEADROOM ─────────────────────────────────────────────────
+        // ── ANNULUS HEADROOM — owner-disabled, R3C follow-up, 2026-08-13 ────────
         //
-        // This is not cosmetic and it was found by a failing pixel oracle, not by inspection. The
-        // shared complex-plot viewport (PlotRenderer.ComplexSideMargin et al.) insets the chart by
-        // 1% of the canvas — so on a 420 px panel the Γ = 1 rim lands at x = 415.8 and there are
-        // FOUR pixels left over. R-h45-4's compressed annulus needs up to
-        // IntrinsicGlyphScale.DefaultMargin of the rim radius beyond that, so a glyph with
-        // |Γ_intr| > 1 would have been drawn straight off the edge of the panel — clipped, i.e.
-        // hidden, which is precisely what §4.5 consequence 2 forbids.
-        //
-        // The fix is local to harmonicaRF: scale the whole panel about its centre so the chart PLUS
-        // its annulus fits. Widening PlotRenderer's own margins would have moved every Data Display
-        // Smith plot in the application to solve a harmonicaRF problem.
-        //
-        // Applied UNCONDITIONALLY, not only when a glyph is currently outside: a chart that resized
-        // itself the moment a glyph crossed the rim would be far more disorienting than one that is
-        // always the same size.
+        // This USED TO shrink the whole panel 20% so a compressed out-of-circle glyph (R-h45-4, §4.5
+        // consequence 2, never clamped, never hidden) always had room and could never be clipped at
+        // the panel edge — not cosmetic, found by a failing pixel oracle. It was ALSO the dominant
+        // cause of a third owner-reported "title still too high above the chart": that 20% shrink
+        // measured out to ~11% of the chart's own height as dead space above the visible circle, which
+        // no amount of tuning the title band's own few-pixel padding could ever have closed. Presented
+        // with the trade-off, the owner chose to remove the margin (AnnulusHeadroom is now 0 — see its
+        // own doc comment for the full reasoning) and accept that a sufficiently far-out intrinsic
+        // glyph can be clipped again. The mechanism itself is left in place, at k=1 (identity), rather
+        // than unwound — see AnnulusHeadroom's own note on why that is the safer edit.
         float k = (float)(1.0 / (1.0 + AnnulusHeadroom));
         float cx = (float)(chartSize.W / 2), cy = (float)(chartSize.H / 2);
 
+        var plot = NewSmithPlot();
+        // tf depends only on chartSize (the Smith plot carries no traces to autoscale against — the
+        // Γ-plane window is always the fixed unit circle) so it is cheap to (re)compute regardless of
+        // whether Layer A's own chrome pixels came from cache or a fresh draw.
+        var tf = GammaTransform(plot, chartSize);
+
+        if (cache is null)
+        {
+            // ── the ORIGINAL, always-available uncached path — byte-identical drawing code to
+            // before this brief, just re-using the plot/tf built above instead of rebuilding them.
+            canvas.Save();
+            canvas.Translate(cx, cy);
+            canvas.Scale(k);
+            canvas.Translate(-cx, -cy);
+
+            PlotRenderer.Draw(canvas, chartSize, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
+                              watermarkOpacity: 0f);
+
+            canvas.Save();
+            canvas.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
+            DrawContours(canvas, d, tf, theme);
+            if (showGridPoints) DrawGridPoints(canvas, d, tf, theme, chartSize);
+            DrawOptima(canvas, d, tf, theme, chartSize);
+            // brief-harmonicarf-r4 §4.4 — moved from BENEATH the chrome to here (still beneath the
+            // glyphs/markers below, still clipped to the viewport) so this path and the cached one
+            // below are provably pixel-identical for ANY scene, reachable region included, rather than
+            // only for the common case where Reachable is null. See DrawSmithPanelCached's own note.
+            DrawReachableRegion(canvas, d, tf, theme);
+            canvas.Restore();
+
+            DrawIntrinsicGlyphs(canvas, d, tf, theme, chartSize);
+            DrawMarkers(canvas, d, tf, theme, chartSize, topmostMarker);
+
+            canvas.Restore();
+            canvas.Restore();
+            return;
+        }
+
+        DrawSmithPanelCached(canvas, chartSize, cx, cy, k, plot, tf, d, theme, darkMode,
+                             showGridPoints, topmostMarker, cache, deviceScale, showIsoLineLabels);
+        canvas.Restore();
+    }
+
+    /// <summary>
+    /// brief-harmonicarf-r4 §4 — the cached half of <see cref="DrawSmithPanel"/>: Layer A (Smith
+    /// chrome + frozen contour polylines + the optimum cross) and Layer B (the grid-point dots) are
+    /// each rendered once into an offscreen surface and blitted back — a drag frame's own marker
+    /// glyph, the live termination markers and R-h6-12's reachable region are the only things drawn
+    /// fresh every frame.
+    ///
+    /// <para><b>Z-order note.</b> The reachable region moved from BENEATH the chrome/contours to
+    /// ABOVE Layer A/B (still beneath glyphs/markers) — see <see cref="DrawSmithPanel"/>'s own mirrored
+    /// change. It is a light, ~22%-alpha wash (<see cref="DrawReachableRegion"/>), so the visual
+    /// difference is minor, and moving it there is what lets a cached and an uncached frame be
+    /// PROVABLY pixel-identical for any scene rather than only for the (common, but not universal)
+    /// case where no reachable region is showing.</para>
+    /// </summary>
+    private static void DrawSmithPanelCached(
+        SKCanvas canvas, (double W, double H) chartSize, float cx, float cy, float k,
+        Plot plot, TransformSet tf, SmithPanelData d, HarmonicaRenderTheme theme, bool darkMode,
+        bool showGridPoints, HarmonicaMarker? topmostMarker, HarmonicaBackdropCache cache,
+        double deviceScale, bool showIsoLineLabels)
+    {
+        // §4's own correctness gate demands a BIT-EXACT match against the uncached vector draw. An
+        // offscreen raster's own pixel grid is always phase-0 at ITS local origin, but the live canvas
+        // places chart-local (0,0) at whatever FRACTIONAL device pixel its accumulated transform
+        // (`canvas.TotalMatrix` — any outer HiDPI scale, this panel's own position, ChartBox's
+        // margin/title-band offset, none of which is generally pixel-integral) happens to land on.
+        // Rasterising Layer A/B at local-origin phase 0 and then blitting onto that fractional device
+        // position forces Skia to RESAMPLE the whole image on every blit — reprocessing every
+        // antialiased edge in the backdrop, which is what `HarmonicaBackdropCacheTests` actually caught
+        // (~5% of pixels, up to 199 levels off — nothing like ordinary ±1 AA rounding). Fixed by baking
+        // the SAME matrix into the offscreen render (so its AA phase matches exactly), shifted by only
+        // an INTEGER number of device pixels (`floorX`/`floorY` — an integer translate does not change
+        // AA phase), then blitting that integer shift back in raw device space (`SetMatrix(Identity)`,
+        // bypassing whatever CTM was active) — an integer-aligned, same-size copy needs no resampling.
+        var m = canvas.TotalMatrix;
+        var origin = m.MapPoint(0, 0);
+        float floorX = MathF.Floor(origin.X), floorY = MathF.Floor(origin.Y);
+        var offscreenMatrix = SKMatrix.Concat(SKMatrix.CreateTranslation(-floorX, -floorY), m);
+
+        // +1 padding in each dimension: baking a sub-pixel phase into the raster can push content up to
+        // one extra device pixel past the plain Ceiling(chartSize * deviceScale) size.
+        var pixelSize = new SKSizeI(
+            (int)Math.Ceiling(Math.Max(1.0, chartSize.W) * deviceScale) + 1,
+            (int)Math.Ceiling(Math.Max(1.0, chartSize.H) * deviceScale) + 1);
+
+        void Blit(SKImage img)
+        {
+            canvas.Save();
+            canvas.SetMatrix(SKMatrix.Identity);
+            canvas.DrawImage(img, new SKRect(floorX, floorY, floorX + img.Width, floorY + img.Height));
+            canvas.Restore();
+        }
+
+        var themeKey = BackdropThemeKey.From(theme, darkMode);
+        var layerAKey = new LayerAKey(chartSize, themeKey, d.Title, d.Subtitle, showIsoLineLabels,
+                                      d.Contours, d.Levels, d.Optimum, offscreenMatrix);
+
+        var imgA = cache.GetOrRenderLayerA(layerAKey, pixelSize, offscreenMatrix, theme.Background, offscreen =>
+        {
+            // The SAME translate/scale/translate the uncached path applies live, baked into the
+            // raster instead — a future non-zero AnnulusHeadroom stays correct without touching this.
+            offscreen.Save();
+            offscreen.Translate(cx, cy);
+            offscreen.Scale(k);
+            offscreen.Translate(-cx, -cy);
+
+            PlotRenderer.Draw(offscreen, chartSize, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
+                              watermarkOpacity: 0f);
+            offscreen.Save();
+            offscreen.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
+            DrawContours(offscreen, d, tf, theme);
+            DrawOptima(offscreen, d, tf, theme, chartSize);
+            offscreen.Restore();
+            offscreen.Restore();
+        });
+        if (showGridPoints)
+        {
+            // Fused, not blitted as its own translucent layer — see HarmonicaBackdropCache's own note
+            // on why two separately-composited translucent layers cannot be bit-exact.
+            var layerBKey = new LayerBKey(chartSize, themeKey, d.GridPoints, offscreenMatrix, pixelSize);
+            var fused = cache.GetOrRenderFusedWithLayerB(layerBKey, imgA, offscreenMatrix, offscreen =>
+            {
+                offscreen.Save();
+                offscreen.Translate(cx, cy);
+                offscreen.Scale(k);
+                offscreen.Translate(-cx, -cy);
+                offscreen.Save();
+                offscreen.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
+                DrawGridPoints(offscreen, d, tf, theme, chartSize);
+                offscreen.Restore();
+                offscreen.Restore();
+            });
+            Blit(fused);
+        }
+        else
+        {
+            Blit(imgA);
+        }
+
+        // Live from here on: the reachable region (its own gesture, changes independently of both
+        // layers above) and every marker/glyph — same transform the cached layers were baked with,
+        // applied to the live canvas so everything lines up.
         canvas.Save();
         canvas.Translate(cx, cy);
         canvas.Scale(k);
         canvas.Translate(-cx, -cy);
 
-        var plot = NewSmithPlot();
-        PlotRenderer.Draw(canvas, chartSize, plot, PlotDetail.Full, theme.ToPlotTheme(darkMode),
-                          watermarkOpacity: 0f);
-
-        var tf = GammaTransform(plot, chartSize);
-
         canvas.Save();
         canvas.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
-
-        // Beneath everything: R-h6-12's reachable region, so it reads as ground the data sits on
-        // rather than as a mark competing with it.
         DrawReachableRegion(canvas, d, tf, theme);
-
-        DrawContours(canvas, d, tf, theme);
-        if (showGridPoints) DrawGridPoints(canvas, d, tf, theme, chartSize);
-        DrawOptima(canvas, d, tf, theme, chartSize);
-
         canvas.Restore();
 
-        // Glyphs and markers are drawn UNCLIPPED within the scaled frame: a glyph with |Γ_intr| > 1
-        // lands in the compressed annulus just outside the rim, and clipping to the viewport would
-        // hide exactly the case the compressed scale exists to show.
         DrawIntrinsicGlyphs(canvas, d, tf, theme, chartSize);
         DrawMarkers(canvas, d, tf, theme, chartSize, topmostMarker);
 
         canvas.Restore();
-        canvas.Restore();
     }
+
+    /// <summary>brief-harmonicarf-r4 §4.4 — the theme/palette slice of the invalidation key, in ONE
+    /// place, so a future field addition (a new role either layer starts reading) has exactly one
+    /// site to update. Shared by both layers' keys rather than split per-layer: a layer that does not
+    /// actually read a given field just invalidates a little more eagerly than strictly necessary on
+    /// an unrelated theme change, which is cheap and rare — far cheaper than two field lists silently
+    /// drifting apart.</summary>
+    private readonly record struct BackdropThemeKey(
+        SKColor Background, SKColor AxisLine, SKColor AxisText, SKColor GridLine, SKColor SmithGrid,
+        SKColor Isoline, double IsoAlphaFloor, double IsoAlphaExponent,
+        SKColor GridPoint, SKColor GridPointDropped, bool DarkMode)
+    {
+        public static BackdropThemeKey From(HarmonicaRenderTheme t, bool darkMode) => new(
+            t.Background, t.AxisLine, t.AxisText, t.GridLine, t.SmithGrid,
+            t.Isoline, t.IsoAlphaFloor, t.IsoAlphaExponent,
+            t.GridPoint, t.GridPointDropped, darkMode);
+    }
+
+    /// <summary>Layer A's own key: everything <see cref="DrawContours"/>/<see cref="DrawOptima"/> and
+    /// the Smith chrome read. <c>Contours</c>/<c>Levels</c>/<c>Optimum</c> compare by the record's own
+    /// generated equality — reference equality for the two lists (R-h9r2-1's carry-forward keeps the
+    /// SAME list instance across every grid-less/dragging frame, and a real rebuild always produces a
+    /// new one) and value equality for <c>Optimum</c> (a small record, cheap to compare by value,
+    /// which is if anything MORE cache-friendly than reference equality would be).</summary>
+    /// <summary><c>Matrix</c> is the exact offscreen-raster transform (§4.4's own exact-pixel-alignment
+    /// note on <see cref="DrawSmithPanelCached"/>) — a panel reposition or a HiDPI scale change shifts
+    /// this even when <c>ChartSize</c> itself does not, and either must invalidate the cache exactly
+    /// like any other key field.</summary>
+    private readonly record struct LayerAKey(
+        (double W, double H) ChartSize, BackdropThemeKey Theme, string Title, string Subtitle,
+        bool ShowIsoLineLabels, IReadOnlyList<RfCore.Loadpull.IsoPolyline> Contours,
+        IReadOnlyList<double> Levels, SmithPanelData.SmithOptimum? Optimum, SKMatrix Matrix);
+
+    /// <summary>Layer B's own key: everything <see cref="DrawGridPoints"/> reads. <c>GridPoints</c>
+    /// compares the same reference-or-value way <see cref="LayerAKey"/>'s own lists do. <c>Matrix</c>
+    /// — see <see cref="LayerAKey"/>'s own note. <c>PixelSize</c> is explicit rather than inferred: a
+    /// pure device-pixel-scale change can leave every OTHER field (including <c>Matrix</c>, if the
+    /// live canvas's own transform happens not to encode it — as in a headless test render) unchanged
+    /// while still demanding a higher- or lower-resolution raster, and that must count as Layer B's
+    /// own change (it needs re-rasterising at the new size) rather than being silently absorbed into
+    /// whatever Layer A recompose happens to be forced anyway.</summary>
+    private readonly record struct LayerBKey(
+        (double W, double H) ChartSize, BackdropThemeKey Theme,
+        IReadOnlyList<HarmonicaGridPoint> GridPoints, SKMatrix Matrix, SKSizeI PixelSize);
 
     /// <summary>
     /// R-h9b-4/5 — the two title rows, centred with the CHART (not the raw panel): both rows share the
@@ -185,14 +424,16 @@ public static class HarmonicaPanelRenderer
         if (string.IsNullOrEmpty(d.Title) && string.IsNullOrEmpty(d.Subtitle)) return;
 
         double m = Math.Min(size.W, size.H);
-        float rowSize = (float)Math.Max(7.0, m * TitleRowFontFraction * TitleFontShrink);
+        float rowSize = (float)Math.Max(7.0, m * TitleRowFontFraction * TitleFontShrink * TitleSizeR3C);
         float cx = (float)(size.W / 2);
 
         using var font1 = new SKFont(SkiaFonts.PlexBold,    rowSize);
         using var font2 = new SKFont(SkiaFonts.PlexRegular, rowSize);
         using var paint = new SKPaint { Color = theme.AxisText, IsAntialias = true };
 
-        float y2 = (float)(bandH - m * 0.01);
+        // R3C §4 — the SAME padding term TitleBandHeight reserves, so row 2's baseline and the band's
+        // own bottom edge can never disagree about where the gap above the chart is.
+        float y2 = (float)(bandH - m * TitleBottomPaddingFraction);
         float y1 = y2 - rowSize * 1.3f;
 
         if (!string.IsNullOrEmpty(d.Title))
@@ -202,29 +443,53 @@ public static class HarmonicaPanelRenderer
     }
 
     /// <summary>
-    /// How much room beyond the Γ = 1 rim a Smith panel reserves, as a fraction of the rim radius —
-    /// exactly what <see cref="IntrinsicGlyphScale"/> can consume, so the two cannot disagree about
-    /// whether an out-of-circle glyph fits.
+    /// How much room beyond the Γ = 1 rim a Smith panel RESERVES BY SHRINKING ITSELF, as a fraction of
+    /// the rim radius — <b>owner decision, R3C follow-up, 2026-08-13: 0.</b>
+    ///
+    /// <para><b>This used to equal <see cref="IntrinsicGlyphScale.DefaultMargin"/> (0.25)</b> — R-h45-4's
+    /// original reasoning, still true and still worth keeping: shrinking the WHOLE panel by 20% so a
+    /// compressed out-of-circle glyph (§4.5 consequence 2, never clamped, never hidden) always has room
+    /// is what stops that glyph being clipped at the panel edge. But that 20% shrink was ALSO the
+    /// dominant cause of a THIRD owner-reported "the title still renders too high above the chart"
+    /// (measured: ~63px / ~11% of chart height gap on a representative panel, from this shrink alone —
+    /// two prior fixes had been tuning <see cref="TitleBottomPaddingFraction"/>, a ~3px constant, which
+    /// could never have closed a gap that size). Presented with the trade-off — a real but
+    /// never-empirically-measured safety margin vs. a visibly tight chart — the owner chose to remove
+    /// it and accept the risk: <b>a marker for a device whose intrinsic Γ is far enough outside the
+    /// unit circle can now be clipped at the panel edge again</b>, the exact failure mode this constant
+    /// used to prevent. <see cref="IntrinsicGlyphScale.DefaultMargin"/> itself is UNCHANGED (0.25) —
+    /// it governs how a compressed glyph's POSITION is computed, a distinct question from whether the
+    /// PANEL shrinks to make literal room for it, and the owner's request was about the panel's size,
+    /// not the compression curve.</para>
+    ///
+    /// <para>Deliberately kept as a NAMED CONSTANT rather than deleted along with the scale/translate
+    /// dance in <see cref="DrawSmithPanel"/> and the <c>k</c> factor in
+    /// <see cref="GammaToCanvas"/>/<see cref="CanvasToGamma"/>: at 0, <c>k = 1</c> and every one of
+    /// those becomes an identity operation, so hit-testing and rendering stay provably consistent with
+    /// zero risk of the two drifting apart — changing ONE number here was strictly safer than unwinding
+    /// the mechanism, and leaves the door open to a partial value later without more surgery.</para>
     /// </summary>
-    public const double AnnulusHeadroom = IntrinsicGlyphScale.DefaultMargin;
+    public const double AnnulusHeadroom = 0.0;
 
     /// <summary>
     /// Where a Γ value lands on a Smith panel of this size, INCLUDING the annulus headroom scale AND
     /// R-h9b-4's reserved title band. Callers that need to hit-test or overlay on a harmonicaRF Smith
     /// panel must use this rather than <c>PlotRenderer.BuildTransforms</c> directly, or they will be
     /// off by the headroom factor and/or the title band — the exact bug R-h9b-1's diagnosis found.
+    /// The headroom factor is currently an identity (<see cref="AnnulusHeadroom"/> = 0 — see its own
+    /// doc comment) but the machinery stays general rather than special-cased for that.
     /// </summary>
     public static SKPoint GammaToCanvas(Complex gamma, (double W, double H) size)
     {
         double bandH = TitleBandHeight(size);
-        (double W, double H) chartSize = (size.W, size.H - bandH);
+        var (chartSize, offsetX, offsetY) = ChartBox(size, bandH);
 
         var tf   = HitTestTransform(chartSize);
         var p    = tf.PrimaryToCanvas(gamma.Real, gamma.Imaginary);
 
         float k  = (float)(1.0 / (1.0 + AnnulusHeadroom));
         float cx = (float)(chartSize.W / 2), cy = (float)(chartSize.H / 2);
-        return new SKPoint(cx + (p.X - cx) * k, (float)bandH + cy + (p.Y - cy) * k);
+        return new SKPoint((float)offsetX + cx + (p.X - cx) * k, (float)offsetY + cy + (p.Y - cy) * k);
     }
 
     /// <summary>
@@ -241,14 +506,14 @@ public static class HarmonicaPanelRenderer
     public static Complex CanvasToGamma(SKPoint canvas, (double W, double H) size)
     {
         double bandH = TitleBandHeight(size);
-        (double W, double H) chartSize = (size.W, size.H - bandH);
+        var (chartSize, offsetX, offsetY) = ChartBox(size, bandH);
 
         float k  = (float)(1.0 / (1.0 + AnnulusHeadroom));
         float cx = (float)(chartSize.W / 2), cy = (float)(chartSize.H / 2);
 
-        // Undo the title-band offset, then the headroom scale about the chart's own centre — the same
-        // lines GammaToCanvas applies, run backwards.
-        var local = new SKPoint(canvas.X, (float)(canvas.Y - bandH));
+        // Undo the ChartBox offset (title band + ChartMargin), then the headroom scale about the
+        // chart's own centre — the same lines GammaToCanvas applies, run backwards.
+        var local = new SKPoint((float)(canvas.X - offsetX), (float)(canvas.Y - offsetY));
         var p = new SKPoint(cx + (local.X - cx) / k, cy + (local.Y - cy) / k);
 
         // Invert the window map by measuring it, rather than reconstructing PlotRenderer's margin
@@ -712,6 +977,22 @@ public static class HarmonicaPanelRenderer
     /// widening it, using the SAME public <see cref="Axes.Ticks"/> data and the SAME
     /// <see cref="TransformSet.SecondaryToCanvas"/>/<see cref="TransformSet.PrimaryToCanvas"/> calls, so
     /// the redraw lands exactly on top of the original rather than beside it.</para>
+    ///
+    /// <para><b>R3C §5 — the cover must match the covered EXACTLY, or it doesn't cover.</b> Owner:
+    /// "the right y-axis... currently renders a vertical red line over top of a green. Do not render
+    /// the green line underneath it." The green was never a second line — it is
+    /// <c>AxesRenderer.DrawBorder</c>'s antialiased, <c>Square</c>-capped stroke showing as a fringe
+    /// along both edges and past both ends of THIS overlay's stroke, which used to be drawn
+    /// <c>IsAntialias = false</c> with the default <c>Butt</c> cap: a hard-edged, shorter stroke laid
+    /// over a softer, longer one always leaves a border of the thing underneath visible. Route (b) —
+    /// match the covered stroke's own <c>AxesRenderer.StrokePaint</c> shape (antialiased, <c>Square</c>
+    /// cap, identical width, identical endpoints) — confirmed by inspection of the two paints (no pixel
+    /// probe needed; the geometry argument is exact) and chosen over route (a) (omitting the border
+    /// draw) because it stays entirely inside this file, per the standing "never widen
+    /// <c>PlotRenderer</c>/<c>AxesRenderer</c> for a harmonicaRF need" rule (§9). Same fix applied to
+    /// the tick marks (<c>tickPaint</c>) below — they are the identical two-pass pattern with the
+    /// identical mismatch. The tick NUMBERS were already antialiased on both sides (this overlay's own
+    /// <c>textPaint</c> and <c>AxesRenderer</c>'s own tick-label paint) and show no fringe.</para>
     /// </summary>
     private static void DrawEfficiencyAxisOverlay(SKCanvas canvas, (double W, double H) size,
                                                    Plot plot, HarmonicaRenderTheme theme)
@@ -724,7 +1005,7 @@ public static class HarmonicaPanelRenderer
 
         using var linePaint = new SKPaint
         {
-            Style = SKPaintStyle.Stroke, IsAntialias = false,
+            Style = SKPaintStyle.Stroke, IsAntialias = true, StrokeCap = SKStrokeCap.Square,
             Color = theme.EfficiencyTrace, StrokeWidth = 2f * (float)axes.GridThicknessFactor * lw,
         };
         // The right border edge — positioned in the PRIMARY window, exactly as AxesRenderer.DrawBorder
@@ -735,7 +1016,7 @@ public static class HarmonicaPanelRenderer
 
         using var tickPaint = new SKPaint
         {
-            Style = SKPaintStyle.Stroke, IsAntialias = false,
+            Style = SKPaintStyle.Stroke, IsAntialias = true, StrokeCap = SKStrokeCap.Square,
             Color = theme.EfficiencyTrace, StrokeWidth = (float)axes.TickThicknessFactor * lw,
         };
         using var font  = new SKFont(SkiaFonts.PlexRegular, (float)(axes.FontSizeTicks * lw));
@@ -835,12 +1116,42 @@ public static class HarmonicaPanelRenderer
         }
 
         AutoScale(plot);
+        PinAxisPin(plot, d);
         // R-h9b-11 — pinned explicitly rather than left to the automatic computation, so a future
         // change to Plot.SetAxesViewport()'s formula cannot silently re-open the mismatch with the
         // loadline panel, which derives its own viewport from this SAME probe shape.
         plot.Axes.Viewport = PowerSweepShapedViewport();
         return plot;
     }
+
+    /// <summary>
+    /// brief-harmonicarf-r4 §1.2 — with the sweep's own early stop, the last solved Pin (and hence
+    /// AutoScale's own data-fit X range) moves with the termination, which would make the axis visibly
+    /// breathe frame to frame during a drag. When the X unit is Pin-domain, override the X extent
+    /// AutoScale computed with the sweep's full CONFIGURED range instead — the axis then stays fixed
+    /// regardless of where any one termination's ladder actually stopped, and the curve simply ends
+    /// short of the right edge. Only the X component is touched; Y (gain/efficiency) stays whatever
+    /// AutoScale fit to the data, exactly as before. Pout-domain X units have no fixed range to pin to
+    /// (Pout at compression is not a control setting) and are left to AutoScale, unchanged.
+    /// </summary>
+    private static void PinAxisPin(Plot plot, PowerSweepPanelData d)
+    {
+        if (d.XUnit is not (PowerSweepXUnit.PinAvailDbm or PowerSweepXUnit.PinAvailW)) return;
+        if (plot.Axes.Window.Width <= 0) return;
+
+        double lo = d.PinStartDbm, hi = d.PinMaxDbm;
+        if (d.XUnit == PowerSweepXUnit.PinAvailW) { lo = DbmToWatts(lo); hi = DbmToWatts(hi); }
+        if (!(hi > lo)) return;
+
+        var w = plot.Axes.Window;
+        plot.Axes.Window = new Avalonia.Rect(lo, w.Y, hi - lo, w.Height);
+
+        var w2 = plot.Axes.WindowSecondary;
+        if (w2.Width > 0)
+            plot.Axes.WindowSecondary = new Avalonia.Rect(lo, w2.Y, hi - lo, w2.Height);
+    }
+
+    private static double DbmToWatts(double dbm) => Math.Pow(10.0, (dbm - 30.0) / 10.0);
 
     private static void DrawOperatingCursor(SKCanvas canvas, (double W, double H) size, Plot plot,
                                             PowerSweepPanelData d, HarmonicaRenderTheme theme)

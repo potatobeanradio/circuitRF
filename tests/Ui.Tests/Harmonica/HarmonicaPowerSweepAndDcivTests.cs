@@ -329,6 +329,88 @@ public sealed class HarmonicaPowerSweepAndDcivTests(ITestOutputHelper output)
         Assert.Equal(expectedCount, dragging);
     }
 
+    // ══ brief-harmonicarf-r4 §1.2 — the Pin-domain X axis is pinned, not autofit ═══════════════
+
+    [Fact]
+    public void PinDomainXAxis_IsPinnedToTheConfiguredRange_NotToWhereTheLadderActuallyStopped()
+    {
+        // A ladder that stopped WAY short of PinMaxDbm (an early-stopped sweep) must still show the
+        // full configured [PinStartDbm, PinMaxDbm] on the X axis — the whole point of pinning it.
+        var d = Fixture(GridMetric.DrainEfficiency) with
+        {
+            XUnit = PowerSweepXUnit.PinAvailDbm,
+            PinAvailDbm = [-10, -5, 0, 5],   // stopped at 5 dBm, far short of PinMaxDbm below
+            PinStartDbm = -10, PinMaxDbm = 50,
+        };
+        var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(d, HarmonicaRenderTheme.Dark);
+
+        Assert.Equal(-10.0, plot.Axes.Window.Left, 6);
+        Assert.Equal(50.0,  plot.Axes.Window.Right, 6);
+    }
+
+    [Fact]
+    public void PinDomainXAxis_IsStableAcrossDifferentEarlyStopPoints_ThisIsTheAntiJitterGate()
+    {
+        // Two "frames" whose ladders stopped at different Pin levels (as two different terminations'
+        // early-stopped sweeps would) must produce the IDENTICAL X window — this is what stops the
+        // axis breathing frame to frame during a drag.
+        var dA = Fixture(GridMetric.DrainEfficiency) with
+        {
+            XUnit = PowerSweepXUnit.PinAvailDbm, PinAvailDbm = [-10, -5, 0],
+            GainDb = [10, 10, 10], EfficiencyPct = [10, 20, 30],
+            PinStartDbm = -10, PinMaxDbm = 50,
+        };
+        var dB = Fixture(GridMetric.DrainEfficiency) with
+        {
+            XUnit = PowerSweepXUnit.PinAvailDbm, PinAvailDbm = [-10, -5, 0, 5, 10, 15, 20],
+            GainDb = [10, 10, 10, 10, 10, 10, 9], EfficiencyPct = [10, 20, 30, 32, 34, 35, 35],
+            PinStartDbm = -10, PinMaxDbm = 50,
+        };
+
+        var plotA = HarmonicaPanelRenderer.BuildPowerSweepPlot(dA, HarmonicaRenderTheme.Dark);
+        var plotB = HarmonicaPanelRenderer.BuildPowerSweepPlot(dB, HarmonicaRenderTheme.Dark);
+
+        Assert.Equal(plotA.Axes.Window.Left,  plotB.Axes.Window.Left,  6);
+        Assert.Equal(plotA.Axes.Window.Right, plotB.Axes.Window.Right, 6);
+    }
+
+    [Fact]
+    public void PinDomainXAxis_InWatts_IsPinnedInTheWattsDomainToo()
+    {
+        var d = Fixture(GridMetric.DrainEfficiency) with
+        {
+            XUnit = PowerSweepXUnit.PinAvailW,
+            PinAvailDbm = [-10, -5, 0],
+            GainDb = [10, 10, 10], EfficiencyPct = [10, 20, 30],
+            PinStartDbm = -10, PinMaxDbm = 20,
+        };
+        var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(d, HarmonicaRenderTheme.Dark);
+
+        double expectedLo = Math.Pow(10.0, (-10 - 30.0) / 10.0);
+        double expectedHi = Math.Pow(10.0, (20 - 30.0) / 10.0);
+        Assert.Equal(expectedLo, plot.Axes.Window.Left,  9);
+        Assert.Equal(expectedHi, plot.Axes.Window.Right, 9);
+    }
+
+    [Fact]
+    public void PoutDomainXAxis_IsLeftToAutoScale_UnaffectedByThePinPin()
+    {
+        // Pout has no configured range to pin to — this documents that the fix is deliberately
+        // scoped to the Pin-domain X units only (§1.2's own instruction), so a Pout-domain axis still
+        // reflects the actual data range, exactly as before this brief.
+        var d = Fixture(GridMetric.DrainEfficiency) with
+        {
+            XUnit = PowerSweepXUnit.PoutDbm,
+            PoutDbm = [0, 5, 10, 12],
+            PinStartDbm = -10, PinMaxDbm = 50,
+        };
+        var plot = HarmonicaPanelRenderer.BuildPowerSweepPlot(d, HarmonicaRenderTheme.Dark);
+
+        // Autofit to the actual Pout data (0..12), not to the Pin range (-10..50).
+        Assert.True(plot.Axes.Window.Left > -10.0);
+        Assert.True(plot.Axes.Window.Right < 50.0);
+    }
+
     private static string ReadSource(params string[] parts)
     {
         var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);

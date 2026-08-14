@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaAdvancedSettingsDialog"
+        Title="Advanced Settings"
+        Width="360" Height="270"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    Owner request — "Remove the loadline pts, FFTx, charge and M display settings (and the horizontal
+    bar below them) from the display. These are to be set via a menu item AND a settings in a separate
+    dialog." Each field here is a SECOND SURFACE onto the identical write ReadoutStripView.axaml.cs's
+    (now-removed-from-view) rows used to make — every commit goes through HarmonicaViewModel.ApplyInput
+    with the SAME HarmonicaInputs key, so this dialog and the model can never drift apart on
+    validation. Mirrors HarmonicaSetZ0Dialog's per-field independent-commit shape (Return applies,
+    Escape reverts, LostFocus applies), just four rows instead of one.
+  -->
+
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="14">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Loadline samples" VerticalAlignment="Center"
+                 ToolTip.Tip="Time samples the loadline is drawn at. Exact at any count — not a solve setting."/>
+      <TextBox x:Name="LoadlineSamplesBox" Grid.Column="1" Width="100"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="FFT oversampling" VerticalAlignment="Center"
+                 ToolTip.Tip="FFT oversampling factor. Structural — the time grid changes size."/>
+      <TextBox x:Name="FftOverSampleBox" Grid.Column="1" Width="100"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Multiplicity (M)" VerticalAlignment="Center"
+                 ToolTip.Tip="Device multiplier — how many identical devices in parallel."/>
+      <TextBox x:Name="MultiplicityBox" Grid.Column="1" Width="100"
+               LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+    </Grid>
+
+    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Compute charge" VerticalAlignment="Center"
+                 ToolTip.Tip="Whether the DUT's charge terms are evaluated. With charge OFF the load glyph coincides with its marker on a bare device."/>
+      <CheckBox x:Name="ComputeChargeCheck" Grid.Column="1" Click="OnComputeChargeClick"/>
+    </Grid>
+
+    <StackPanel Grid.Row="5" Orientation="Vertical" Spacing="8" Margin="0,8,0,0">
+      <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Content="Close" Click="OnCloseClick" IsDefault="True"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

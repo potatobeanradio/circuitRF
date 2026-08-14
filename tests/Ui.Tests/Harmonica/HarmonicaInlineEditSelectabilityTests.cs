@@ -40,7 +40,7 @@ public sealed class HarmonicaInlineEditSelectabilityTests
     {
         string src = Source();
 
-        int m = src.IndexOf("private static Control BuildColumnRow(", StringComparison.Ordinal);
+        int m = src.IndexOf("private Control BuildColumnRow(", StringComparison.Ordinal);
         Assert.True(m >= 0, "Expected to find BuildColumnRow.");
         int mEnd = src.IndexOf("\n    private static ContextMenu BuildFormatMenu", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
@@ -56,6 +56,26 @@ public sealed class HarmonicaInlineEditSelectabilityTests
         Assert.Contains("pair.DoubleTapped += (_, _) =>", body, StringComparison.Ordinal);
     }
 
+    // ══ R3C §1 — the Settings column's rows are ALSO plain TextBlock, never Selectable ═══════════
+
+    [Fact]
+    public void BuildSettingsColumnRow_UsesPlainTextBlockThroughout_NeverSelectableTextBlock()
+    {
+        string src = Source();
+
+        int m = src.IndexOf("private StackPanel BuildSettingsColumnRow(", StringComparison.Ordinal);
+        Assert.True(m >= 0, "Expected to find BuildSettingsColumnRow.");
+        int mEnd = src.IndexOf("\n    private static void UpdateSettingsColumnRow", m, StringComparison.Ordinal);
+        Assert.True(mEnd >= 0);
+        string body = src[m..mEnd];
+
+        // Every row here is editable (R3C §1's whole point), so R-h9r2-15's rule applies to all of
+        // it: label, value AND unit are plain TextBlock — none of them may be SelectableTextBlock, or
+        // the row's own DoubleTapped (wired here too) would never engage.
+        Assert.DoesNotContain("SelectableTextBlock", body, StringComparison.Ordinal);
+        Assert.Contains("row.DoubleTapped += (_, _) =>", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void BuildGeneralRow_IsUntouched_StillSelectable_NoDoubleTapped()
     {
@@ -63,7 +83,7 @@ public sealed class HarmonicaInlineEditSelectabilityTests
 
         int m = src.IndexOf("private static Control BuildGeneralRow(", StringComparison.Ordinal);
         Assert.True(m >= 0);
-        int mEnd = src.IndexOf("\n    private static Control BuildColumnRow", m, StringComparison.Ordinal);
+        int mEnd = src.IndexOf("\n    private Control BuildColumnRow", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
@@ -77,7 +97,7 @@ public sealed class HarmonicaInlineEditSelectabilityTests
     public void BeginInlineEdit_SeedsFromItemValueVerbatim_UnitIncluded()
     {
         string src = Source();
-        int m = src.IndexOf("private static void BeginInlineEdit(", StringComparison.Ordinal);
+        int m = src.IndexOf("private void BeginInlineEdit(", StringComparison.Ordinal);
         Assert.True(m >= 0);
         int mEnd = src.IndexOf("\n    private static int ValueSelectionLength", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
@@ -91,7 +111,7 @@ public sealed class HarmonicaInlineEditSelectabilityTests
     public void BeginInlineEdit_SelectsOnlyTheValue_NotSelectAll()
     {
         string src = Source();
-        int m = src.IndexOf("private static void BeginInlineEdit(", StringComparison.Ordinal);
+        int m = src.IndexOf("private void BeginInlineEdit(", StringComparison.Ordinal);
         Assert.True(m >= 0);
         int mEnd = src.IndexOf("\n    private static int ValueSelectionLength", m, StringComparison.Ordinal);
         string body = src[m..mEnd];

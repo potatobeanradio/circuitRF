@@ -316,6 +316,7 @@ public partial class HarmonicaView : UserControl
         menus.AddTraceHook        = () => RunHook(ShowTracePickerAsync);
         menus.PowerSweepHook      = () => RunHook(ShowPowerSweepAsync);
         menus.SetZ0Hook           = () => RunHook(ShowSetZ0Async);
+        menus.AdvancedSettingsHook= () => RunHook(ShowAdvancedSettingsAsync);
 
         // H8 — the four H7 left deliberately null. An unwired hook is honest where a faked
         // implementation is not; this phase is what pays the debt.
@@ -410,10 +411,17 @@ public partial class HarmonicaView : UserControl
         Refresh();
     }
 
-    /// <summary>R-h9r2-20 — Display ▸ Set Z0….</summary>
+    /// <summary>R-h9r2-20 — Display ▸ Set Z0…. Same silent-guard bug <see cref="ShowPreferencesAsync"/>
+    /// had (found while fixing that one, in this same file) — fixed the same way.</summary>
     private async System.Threading.Tasks.Task ShowSetZ0Async()
     {
-        if (Vm is not { } h || TopLevel.GetTopLevel(this) is not Window owner) return;
+        if (Vm is not { } h) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            h.SolveError = "Set Z0… could not find a window to open the dialog in.";
+            Refresh();
+            return;
+        }
         await new Dialogs.HarmonicaSetZ0Dialog(h).ShowDialog(owner);
         Refresh();
     }
@@ -709,10 +717,42 @@ public partial class HarmonicaView : UserControl
         await clip.SetTextAsync(sb.ToString());
     }
 
+    /// <summary>
+    /// Owner-reported: "Edit ▸ Settings menu does not open up a settings dialog" — this IS §7.6's
+    /// Edit ▸ Preferences… item; harmonicaRF has no menu item literally named "Settings".
+    ///
+    /// <para><b>Same bug class as R-h9c-10's own fix, in this same file</b> — a silent guard that
+    /// `return`s on a failed <c>_doc</c>/<c>TopLevel</c> resolution with no message at all, which
+    /// <see cref="RunHook"/> cannot help with because a guarded early return throws nothing. Fixed the
+    /// identical way <see cref="ShowSetDutAsync"/> was: report by name instead of returning silently.
+    /// </para>
+    /// </summary>
     private async System.Threading.Tasks.Task ShowPreferencesAsync()
     {
-        if (_doc is null || TopLevel.GetTopLevel(this) is not Window owner) return;
-        await new Dialogs.HarmonicaPreferencesDialog(_doc.ViewModel.Harmonica).ShowDialog(owner);
+        if (Vm is not { } h) return;   // no document attached — nothing to report against yet
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            h.SolveError = "Preferences… could not find a window to open the dialog in.";
+            Refresh();
+            return;
+        }
+        await new Dialogs.HarmonicaPreferencesDialog(h).ShowDialog(owner);
+        Refresh();
+    }
+
+    /// <summary>Owner request — Display ▸ Advanced Settings…, for loadline pts / FFT× / charge / M,
+    /// moved out of the strip. Uses the R-h9c-10 error-reporting guard (new code, not the silent shape
+    /// <see cref="ShowPreferencesAsync"/> just had fixed).</summary>
+    private async System.Threading.Tasks.Task ShowAdvancedSettingsAsync()
+    {
+        if (Vm is not { } h) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            h.SolveError = "Advanced Settings… could not find a window to open the dialog in.";
+            Refresh();
+            return;
+        }
+        await new Dialogs.HarmonicaAdvancedSettingsDialog(h).ShowDialog(owner);
         Refresh();
     }
 

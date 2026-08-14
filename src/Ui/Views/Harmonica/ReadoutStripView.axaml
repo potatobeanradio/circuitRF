@@ -44,22 +44,48 @@
     §7.5 shape); Source · Load · MXP · MXE (R-h9c-6) are four vertical columns beside it, left to
     right in that order — the editable termination columns nearest the charts they belong to, the
     read-only performance summaries beside them.
+
+    R3C §1/§2 add two more columns, at the FRONT of Columns: SettingsColumn (the seven named §7.5
+    inputs — Vgs, Idq, Vds, f0, K, compr, Z0 — as inline-editable text, R3C §1) and
+    OperatingPointColumn (Pin/Pout/Gain/DE/PAE/Pdc at the operating point, R3C §2). Final left-to-right
+    order: Settings · Operating point · Source · Load · MXP · MXE. SettingsColumn hugs the left edge
+    of the window (this ScrollViewer's own Padding, shared by everything in it) exactly as the owner
+    asked. HarmonicaR3cStripTests.ColumnsPanel_ListsTheSixColumns_InTheOwnersOrder pins this ordering
+    by scanning THIS file's own x:Name order, since nothing here is unit-testable through a live
+    control tree.
+  -->
+  <!--
+    R3C follow-up — EditorOverlay is a transparent Canvas layered ON TOP of the content StackPanel,
+    both children of the same Panel so they share one coordinate space. An inline editor used to be
+    spliced INTO a row's own StackPanel, which meant its own MinWidth widened that row's — and
+    therefore its whole COLUMN's (a StackPanel sizes to its widest row) — layout, visibly shoving
+    every column to its right sideways the instant an edit opened. The floated box renders in
+    EditorOverlay instead (ReadoutStripView.axaml.cs's BeginInlineEdit), positioned over the hidden
+    (Opacity 0, so its layout slot stays reserved) original value control — so no column ever moves,
+    and the editor genuinely renders over everything, per the owner's own words. Background is left
+    UNSET (not even Transparent) so the overlay's own empty space passes clicks through to whatever
+    is under it; only an actual open editor's TextBox is ever hit-testable.
   -->
   <ScrollViewer HorizontalScrollBarVisibility="Auto"
                 VerticalScrollBarVisibility="Auto"
                 Padding="6,4">
-    <StackPanel Orientation="Vertical" Spacing="3">
-      <WrapPanel x:Name="Inputs" Orientation="Horizontal"/>
-      <Border    x:Name="InputRule" Height="1" Opacity="0.25" IsVisible="False"/>
-      <TextBlock x:Name="InputError" FontSize="10" IsVisible="False" TextWrapping="Wrap"/>
-      <WrapPanel x:Name="Items"  Orientation="Horizontal"/>
-      <Border    x:Name="ColumnRule" Height="1" Opacity="0.25" IsVisible="False"/>
-      <StackPanel x:Name="Columns" Orientation="Horizontal" Spacing="16">
-        <StackPanel x:Name="SourceColumn" Orientation="Vertical" Spacing="1"/>
-        <StackPanel x:Name="LoadColumn"   Orientation="Vertical" Spacing="1"/>
-        <StackPanel x:Name="MxpColumn"    Orientation="Vertical" Spacing="1"/>
-        <StackPanel x:Name="MxeColumn"    Orientation="Vertical" Spacing="1"/>
+    <Panel>
+      <StackPanel Orientation="Vertical" Spacing="3">
+        <WrapPanel x:Name="Inputs" Orientation="Horizontal"/>
+        <Border    x:Name="InputRule" Height="1" Opacity="0.25" IsVisible="False"/>
+        <TextBlock x:Name="InputError" FontSize="10" IsVisible="False" TextWrapping="Wrap"/>
+        <WrapPanel x:Name="Items"  Orientation="Horizontal"/>
+        <Border    x:Name="ColumnRule" Height="1" Opacity="0.25" IsVisible="False"/>
+        <StackPanel x:Name="Columns" Orientation="Horizontal" Spacing="16">
+          <StackPanel x:Name="SettingsColumn"       Orientation="Vertical" Spacing="1"/>
+          <StackPanel x:Name="OperatingPointColumn" Orientation="Vertical" Spacing="1"/>
+          <StackPanel x:Name="SourceColumn"         Orientation="Vertical" Spacing="1"/>
+          <StackPanel x:Name="LoadColumn"           Orientation="Vertical" Spacing="1"/>
+          <StackPanel x:Name="MxpColumn"            Orientation="Vertical" Spacing="1"/>
+          <StackPanel x:Name="MxeColumn"            Orientation="Vertical" Spacing="1"/>
+        </StackPanel>
       </StackPanel>
-    </StackPanel>
+      <Canvas x:Name="EditorOverlay"/>
+    </Panel>
   </ScrollViewer>
 </UserControl>

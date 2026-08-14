@@ -172,6 +172,70 @@ namespace CircuitRF.Ui.DataDisplay
             set => _z0 = value;
         }
 
+        /// <summary>
+        /// True when the user has explicitly checked "Override" on the trace card's Z0 control.
+        /// This is the single gate on ALL reference-impedance renormalization of displayed data:
+        /// <list type="bullet">
+        /// <item>OFF — the trace renders the source's OWN data with no renormalization whatsoever,
+        /// even when the source's ports carry different (or complex) references. <see cref="Z0"/>
+        /// is then merely a mirror of the source's port-1 reference, shown read-only.</item>
+        /// <item>ON — every port is renormalized to the uniform user <see cref="Z0"/>, starting from
+        /// the source's true per-port references (<see cref="SourceZ0PerPort"/>), so a non-uniform
+        /// source is accounted for correctly.</item>
+        /// </list>
+        /// Introduced by brief-dd-z0-nonuniform-override: without it, a trace on a non-uniform
+        /// source silently renormalized every port to the port-1 reference even with Override off,
+        /// turning a genuine −20 dB match into a −5 dB one. Derived quantities (µ, µ', |Δ|, MaxGain)
+        /// are NOT affected — those are only defined at a uniform real reference, so their internal
+        /// renormalization is mathematics, not a display choice, and stays unconditional.
+        /// </summary>
+        public bool Z0OverrideEnabled { get; set; }
+
+        /// <summary>
+        /// The TRUE per-port references of the source. <see cref="SourceZ0PerPort"/> is stamped from
+        /// the source's own Z0 cube (Phase 7.2f); <c>Data.Z0</c> is a single value because SNP is
+        /// uniform-only by design, and <c>DataSetBuilder.ToSnp</c> flattens a non-uniform cube to
+        /// port 1 — so for a simulated S cube the stamped array is the only faithful record.
+        /// One copy, used by every derived/metric path (they must all agree on the references, or
+        /// the plotted curve and its readouts disagree).
+        /// </summary>
+        internal Complex[] SourceZ0PerPortResolved(int nPorts) =>
+            SourceZ0PerPort is { } perPort && perPort.Length >= nPorts
+                ? perPort.Take(nPorts).ToArray()
+                : RFNetwork.Z0Array(Data.Z0, nPorts);
+
+        /// <summary>
+        /// The reference impedance a DERIVED Γ-plane locus (a load/source stability circle) lives in.
+        /// <c>BuildDerivedPath</c> hands the circle routines the 2-port from
+        /// <c>NetworkMetrics.TwoPortUniformReal</c>, which renormalizes BOTH ports to
+        /// <c>Re(z0[InputPort−1])</c> — so the plotted Γ is in that uniform REAL reference and
+        /// nothing else. Mirrors that target exactly; changing one without the other silently
+        /// desynchronizes the drawn circle from every readout taken on it.
+        /// <para>Deliberately ignores <see cref="Z0OverrideEnabled"/>/<see cref="Z0"/>: the Z0 box is
+        /// not even shown for a derived trace, and <c>BuildDerivedPath</c> does not consult it, so
+        /// honouring it here would report an impedance the drawn circle does not have.</para>
+        /// </summary>
+        private Complex DerivedGammaReferenceZ0
+        {
+            get
+            {
+                int nPorts = Data.Ports;
+                int inIdx  = Math.Clamp(InputPort - 1, 0, Math.Max(0, nPorts - 1));
+                return new Complex(SourceZ0PerPortResolved(nPorts)[inIdx].Real, 0.0);
+            }
+        }
+
+        /// <summary>The per-port reference impedances the DISPLAYED data is referenced to — the
+        /// single authority behind the rule above. Override off ⇒ the source's own references;
+        /// override on ⇒ the user's uniform <see cref="Z0"/> on every port.</summary>
+        internal Complex[] DisplayZ0PerPort(int nPorts)
+        {
+            if (Z0OverrideEnabled) return RFNetwork.Z0Array(_z0, nPorts);
+            if (SourceZ0PerPort is { } src && src.Length >= nPorts)
+                return src.Length == nPorts ? src : src.Take(nPorts).ToArray();
+            return RFNetwork.Z0Array(Data.Z0, nPorts);
+        }
+
         // ---- Matrix type ------------------------------------------------
 
         private MatrixType _matrixType = MatrixType.S;
@@ -199,24 +263,41 @@ namespace CircuitRF.Ui.DataDisplay
             set
             {
                 _derived = value;
-                if (IsDerived)
+                if (!IsDerived)
                 {
-                    _row        = 0;
-                    _col        = 0;
-                    _matrixType = MatrixType.S;
-                    _yAxis      = IsStabilityCircle
-                        ? DependentVarFormat.Complex
-                        : value == DerivedParameters.MaxGain
-                            ? DependentVarFormat.Db
-                            : DependentVarFormat.Mag;
-                    if (StabilityCircleCentres.Count == 0 && Markers.Count > 0) BuildDerivedPath(PlotType.Smith, FreqUnit.GHz);
-                    foreach (var m in Markers)
-                    {
-                        m.PositionStatic = new System.Numerics.Vector2(0, 0);
-                        int fi = Array.FindIndex(Data.Frequencies, f => f == m.Freq - 1e-6);
-                        if (fi < 0) fi = Data.Frequencies.Length - 1;
-                        SnapMarkerToStabilityCircle(m, fi);
-                    }
+                    // Circle geometry belongs to the derived mode and nothing else clears it — only
+                    // BuildDerivedPath/BuildMatrixPath do, and BuildCubePath never runs them. Left
+                    // behind, it keeps rendering (TraceRenderer.BuildPath branches on
+                    // IsStabilityCircle) after the trace has become something else.
+                    StabilityCircleCentres.Clear();
+                    StabilityCircleRadii.Clear();
+                    StabilityCircleStableInside.Clear();
+                    return;
+                }
+
+                _row        = 0;
+                _col        = 0;
+                _matrixType = MatrixType.S;
+                _yAxis      = IsStabilityCircle
+                    ? DependentVarFormat.Complex
+                    : value == DerivedParameters.MaxGain
+                        ? DependentVarFormat.Db
+                        : DependentVarFormat.Mag;
+                if (StabilityCircleCentres.Count == 0 && Markers.Count > 0) BuildDerivedPath(PlotType.Smith, FreqUnit.GHz);
+                foreach (var m in Markers)
+                {
+                    // Keep the marker's FREQUENCY and move it the shortest way onto that
+                    // frequency's circle. Two things were wrong here before:
+                    //   • `f == m.Freq - 1e-6` is an exact float comparison against a SHIFTED
+                    //     value, so it never matched and every marker fell through to the LAST
+                    //     frequency — the readout then described a frequency the marker was not at.
+                    //   • The position was zeroed first, so "nearest point on the circle" was always
+                    //     measured from the origin and the marker teleported to an arbitrary point
+                    //     instead of staying beside where the user had put it.
+                    int fi = NearestFrequencyIndex(m.Freq);
+                    if (fi < 0) continue;
+                    m.Freq = Data.Frequencies[fi];
+                    SnapMarkerToStabilityCircle(m, fi);
                 }
             }
         }
@@ -300,7 +381,13 @@ namespace CircuitRF.Ui.DataDisplay
         //  to numeric arrays and injects them via SetCubeData; Trace never
         //  holds a DataSet reference.
 
-        public string?       CubeName       { get; set; }
+        private string? _cubeName;
+        public string? CubeName
+        {
+            get => _cubeName;
+            set { _cubeName = value; if (value is not null) DropDerivedForCubeBinding(); }
+        }
+
         public AxisSlice[]?  Slice          { get; set; }
         public CubeTransform Transform      { get; set; } = CubeTransform.None;
         public string?       InvalidSpecText { get; set; }
@@ -308,7 +395,30 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>Full element-wise expression string (e.g. <c>mag(V[:, 0, 0]) + mag(V[:, 0, 1])</c>).
         /// When non-null, the owner resolves via <c>TraceExpression</c> instead of the single-slice path.
         /// Supersedes CubeName/Slice/Transform for value production.</summary>
-        public string?       Expression      { get; set; }
+        private string? _expression;
+        public string? Expression
+        {
+            get => _expression;
+            set { _expression = value; if (value is not null) DropDerivedForCubeBinding(); }
+        }
+
+        /// <summary>
+        /// A cube binding and a derived network metric are mutually exclusive, and <b>cube wins</b> —
+        /// <see cref="BuildPath"/> tests <see cref="IsCubeBound"/> before <see cref="IsDerived"/>, so
+        /// a trace holding both BUILDS a cube path while <see cref="IsStabilityCircle"/> stays true,
+        /// and the renderer (which keys off that flag) draws the stale circles instead of the curve.
+        /// That is exactly the "picked Stability Circles, then picked S(1,1) again, and S(1,1) never
+        /// appeared" bug, with the In/Out port selectors left on the card for the same reason
+        /// (<c>TraceRowViewModel.ShowPortSelectors</c> reads <see cref="Derived"/>).
+        /// <para>Enforced HERE, on the two setters that make a trace cube-bound, rather than at each
+        /// call site — the picker, a typed spec, and a <c>.cdd</c> load all pass through them, and a
+        /// <c>.cdd</c> saved before this fix carries the broken combination on disk.</para>
+        /// </summary>
+        private void DropDerivedForCubeBinding()
+        {
+            if (_derived == DerivedParameters.None) return;
+            Derived = DerivedParameters.None;   // via the setter, so the circle geometry is dropped too
+        }
 
         /// <summary>Set by the owner when TraceExpression evaluation fails; cleared on success.</summary>
         public string?       ExpressionError { get; set; }
@@ -564,11 +674,15 @@ namespace CircuitRF.Ui.DataDisplay
         /// always shows in that case. Restricted to the same trace kinds that actually expose the Z0
         /// field to the user (network: non-derived MatrixType.S; cube: a network-param S/Z/Y element)
         /// — everywhere else <see cref="Z0"/> is an inert default the user never touched.
+        /// <para>Gated on <see cref="Z0OverrideEnabled"/>: with Override off nothing is
+        /// renormalized at all, so the data IS at the source's own reference and the token would be
+        /// a lie — including for an "unusual" (non-uniform) source, which is now rendered raw.</para>
         /// </summary>
         private bool IsZ0ReReferenced
         {
             get
             {
+                if (!Z0OverrideEnabled) return false;
                 if (!IsCubeBound)
                 {
                     if (Derived != DerivedParameters.None || MatrixType != MatrixType.S) return false;
@@ -692,6 +806,7 @@ namespace CircuitRF.Ui.DataDisplay
             _derived          = src.Derived;
             Properties        = new TraceProperties(src.Properties, incrementColorBy);
             _z0               = src.Z0;
+            Z0OverrideEnabled = src.Z0OverrideEnabled;
             SourceRef         = src.SourceRef;
             SourcePath        = src.SourcePath;
             ColumnWidth       = src.ColumnWidth;
@@ -1102,20 +1217,24 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (Row >= Data.Ports || Col >= Data.Ports) return;
 
-            // Per-port (unusual) path: renormalize S from the per-port SourceZ0PerPort to the
-            // trace's own (uniform) Z0 before extracting the element — brief-dd-z0-renormalization.md
-            // §2. Z/Y stay computed straight from the raw per-port source (reference-independent —
+            // Per-port (unusual) path: with Override ON, renormalize S from the per-port
+            // SourceZ0PerPort to the trace's own (uniform) Z0 before extracting the element —
+            // brief-dd-z0-renormalization.md §2. With Override OFF, S is displayed exactly as the
+            // source holds it, each port at its own reference (brief-dd-z0-nonuniform-override).
+            // Z/Y stay computed straight from the raw per-port source (reference-independent —
             // the same invariant §1 makes for the cube path, not a coincidence).
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0)
             {
-                var targetZ0Array = RFNetwork.Z0Array(_z0, Data.Ports);
+                var targetZ0Array = Z0OverrideEnabled ? RFNetwork.Z0Array(_z0, Data.Ports) : null;
                 for (int fi = 0; fi < Data.FrequencyCount; fi++)
                 {
                     Complex raw;
                     switch (MatrixType)
                     {
                         case MatrixType.S:
-                            raw = RFNetwork.SToS(Data.Matrices[fi], sourceZ0, targetZ0Array)[Row, Col];
+                            raw = targetZ0Array is null
+                                ? Data.Matrices[fi][Row, Col]
+                                : RFNetwork.SToS(Data.Matrices[fi], sourceZ0, targetZ0Array)[Row, Col];
                             break;
                         case MatrixType.Z:
                             raw = RFNetwork.SToZ(Data.Matrices[fi], sourceZ0)[Row, Col];
@@ -1162,7 +1281,7 @@ namespace CircuitRF.Ui.DataDisplay
                     case MatrixType.S:
                     {
                         var mat = Data.Matrices[fi];
-                        if (_z0 != Data.Z0)
+                        if (Z0OverrideEnabled && _z0 != Data.Z0)
                             mat = RFNetwork.SToS(mat, Data.Z0, z0Array);
                         raw = mat[Row, Col];
                         break;
@@ -1215,14 +1334,7 @@ namespace CircuitRF.Ui.DataDisplay
             int minPorts = Derived.NeedsPortPair() ? 2 : 1;
             if (nPorts < minPorts) return;
 
-            // The TRUE per-port references. SourceZ0PerPort is stamped from the source's own Z0
-            // cube (Phase 7.2f); Data.Z0 is a single value because SNP is uniform-only by design,
-            // and DataSetBuilder.ToSnp flattens a non-uniform cube to port 1 — so for a simulated
-            // S cube this array is the only faithful record of the per-port references.
-            Complex[] z0PerPort =
-                SourceZ0PerPort is { } perPort && perPort.Length >= nPorts
-                    ? perPort.Take(nPorts).ToArray()
-                    : RFNetwork.Z0Array(Data.Z0, nPorts);
+            Complex[] z0PerPort = SourceZ0PerPortResolved(nPorts);
 
             if (plotType.IsRect())
             {
@@ -1348,10 +1460,7 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             int nPorts = Data.Ports;
-            Complex[] z0PerPort =
-                SourceZ0PerPort is { } perPort && perPort.Length >= nPorts
-                    ? perPort.Take(nPorts).ToArray()
-                    : RFNetwork.Z0Array(Data.Z0, nPorts);
+            Complex[] z0PerPort = SourceZ0PerPortResolved(nPorts);
 
             double[] values = Derived == DerivedParameters.Passivity
                 ? (PassivityWholeNetwork
@@ -1393,7 +1502,7 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             // Per-port (unusual) path: renormalize S to the trace's (or override's) Z0 before
-            // extracting — §2. Z/Y are reference-independent, unchanged.
+            // extracting — §2, and only when Override is on. Z/Y are reference-independent, unchanged.
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0)
             {
                 var mat = Data.Matrices[fi];
@@ -1401,7 +1510,7 @@ namespace CircuitRF.Ui.DataDisplay
                     mat = RFNetwork.SToZ(mat, sourceZ0);
                 else if (MatrixType == MatrixType.Y)
                     mat = RFNetwork.SToY(mat, sourceZ0);
-                else
+                else if (Z0OverrideEnabled || z0Override is not null)
                     mat = RFNetwork.SToS(mat, sourceZ0, RFNetwork.Z0Array(z0Override ?? _z0, Data.Ports));
                 return mat[Row, Col];
             }
@@ -1410,7 +1519,7 @@ namespace CircuitRF.Ui.DataDisplay
             var z0  = z0Override ?? _z0;
             var matU = Data.Matrices[fi];
 
-            if (MatrixType == MatrixType.S && z0 != Data.Z0)
+            if (MatrixType == MatrixType.S && (Z0OverrideEnabled || z0Override is not null) && z0 != Data.Z0)
                 matU = RFNetwork.SToS(matU, Data.Z0, z0);
             else if (MatrixType == MatrixType.Z)
                 matU = RFNetwork.SToZ(Data.Matrices[fi], Data.Z0);
@@ -1520,15 +1629,63 @@ namespace CircuitRF.Ui.DataDisplay
 
         public Vector2? FindNearestPointOnStabilityCircle(Vector2 queryWorld, int freqIndex)
         {
-            if (!IsStabilityCircle || freqIndex >= StabilityCircleCentres.Count)
+            if (!IsStabilityCircle || freqIndex < 0 || freqIndex >= StabilityCircleCentres.Count)
                 return null;
             var   C  = StabilityCircleCentres[freqIndex];
             float r  = MathF.Abs((float)StabilityCircleRadii[freqIndex]);
             float dx = queryWorld.X - C.X;
             float dy = queryWorld.Y - C.Y;
             float dc = MathF.Sqrt(dx * dx + dy * dy);
-            if (dc < 1e-9f) return null;
+            // Query exactly at the centre — every perimeter point is equidistant, so "nearest" is
+            // undefined. Pick the +real one rather than returning null and leaving the marker
+            // wherever it happened to be (which, at the centre, is off the locus entirely).
+            if (dc < 1e-9f) return new Vector2(C.X + r, C.Y);
             return new Vector2(C.X + dx / dc * r, C.Y + dy / dc * r);
+        }
+
+        /// <summary>Index of the frequency sample NEAREST <paramref name="freq"/>; −1 when the trace
+        /// has no frequencies. Never an exact-equality match — a frequency that arrives from another
+        /// trace mode (or from a cube axis) is not guaranteed to be bit-identical to a sample.</summary>
+        private int NearestFrequencyIndex(double freq)
+        {
+            var f = Data.Frequencies;
+            if (f is not { Length: > 0 }) return -1;
+            int best = 0;
+            double bestD = Math.Abs(f[0] - freq);
+            for (int i = 1; i < f.Length; i++)
+            {
+                double d = Math.Abs(f[i] - freq);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Writes every marker's frequency into <see cref="Marker.Freq"/>, resolved from whatever
+        /// representation the trace currently uses — so the value survives a change of trace mode.
+        /// <para>A CUBE-bound marker carries its frequency <b>implicitly, in its position</b>:
+        /// <c>PlotControl.SnapMarkerToTrace</c> deliberately does not assign <c>Freq</c> for a cube
+        /// trace (<c>CubeMarkerIndex</c> re-derives the sample from the position on every read), and
+        /// markers are constructed with <c>freq: 0.0</c>. So a marker that has only ever lived on a
+        /// cube trace has <c>Freq == 0</c> — invisible there, but it becomes the displayed frequency
+        /// the moment the trace turns into a network/derived one, which is the "marker jumps to
+        /// 0 Hz and reads NaN" report.</para>
+        /// <para>Call this BEFORE clearing the cube binding — it reads the cube X values, which
+        /// <see cref="SetCubeData"/> will replace.</para>
+        /// </summary>
+        public void CaptureMarkerFrequencies()
+        {
+            if (!IsCubeBound || Markers.Count == 0) return;
+            if (_cubeXValues is not { Length: > 0 } xs) return;
+            // Only a frequency X axis can answer this; a Pin/harmonic sweep has no frequency to
+            // carry over, and inventing one from a sweep index would be worse than leaving it.
+            if (!string.Equals(_cubeXAxisName, "freq", StringComparison.OrdinalIgnoreCase)) return;
+
+            foreach (var m in Markers)
+            {
+                int idx = CubeMarkerIndex(m);
+                if (idx >= 0 && idx < xs.Length) m.Freq = xs[idx];
+            }
         }
 
         // ---- Safe bulk data assignment ----------------------------------
@@ -2061,22 +2218,25 @@ namespace CircuitRF.Ui.DataDisplay
 
             var mat = Data.Matrices[fi];
 
-            // Per-port (unusual) path: renormalize S to the trace's Z0 before extracting — §2.
+            // Per-port (unusual) path: renormalize S to the trace's Z0 before extracting — §2, and
+            // only when Override is on.
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0)
             {
                 if (MatrixType == MatrixType.Z)
                     mat = RFNetwork.SToZ(mat, sourceZ0);
                 else if (MatrixType == MatrixType.Y)
                     mat = RFNetwork.SToY(mat, sourceZ0);
-                else
+                else if (Z0OverrideEnabled)
                     mat = RFNetwork.SToS(mat, sourceZ0, RFNetwork.Z0Array(Z0, Data.Ports));
 
                 return mat[Row, Col];
             }
 
-            // Uniform/legacy path (unchanged).
-            if (Data.Type != MatrixType || Z0 != Data.Z0)
-                mat = RFNetwork.Convert(mat, Data.Type, Data.Z0, MatrixType, Z0);
+            // Uniform/legacy path (unchanged apart from the Override gate: with Override off the
+            // target reference IS the source's, so a type conversion still happens but no renorm).
+            var targetZ0 = Z0OverrideEnabled ? Z0 : Data.Z0;
+            if (Data.Type != MatrixType || targetZ0 != Data.Z0)
+                mat = RFNetwork.Convert(mat, Data.Type, Data.Z0, MatrixType, targetZ0);
 
             return mat[Row, Col];
         }
@@ -2312,10 +2472,7 @@ namespace CircuitRF.Ui.DataDisplay
             // Extract the ordered 2-port via NetworkMetrics — same authority and z0PerPort
             // resolution as the plotted path — rather than calling RFNetwork on the raw N-port SNP.
             int nPorts = Data.Ports;
-            Complex[] z0PerPort =
-                SourceZ0PerPort is { } perPort && perPort.Length >= nPorts
-                    ? perPort.Take(nPorts).ToArray()
-                    : RFNetwork.Z0Array(Data.Z0, nPorts);
+            Complex[] z0PerPort = SourceZ0PerPortResolved(nPorts);
             try
             {
                 double v = RfCore.Data.NetworkMetrics.TwoPortMetric(
@@ -2345,6 +2502,43 @@ namespace CircuitRF.Ui.DataDisplay
                 : $"impedance={m.FormatComplex(Z)} Ω";
         }
 
+        /// <summary>The 0-based port index a cube-bound reflection element (S(i,i)) reads; -1 when
+        /// the trace is not one. The pinned "i" slice index IS the port index (the axis is 1-based
+        /// port numbers, the slice holds the 0-based position).</summary>
+        private int CubeReflectionPortIndex
+        {
+            get
+            {
+                if (!IsCubeReflectionElement || Slice is null) return -1;
+                foreach (var s in Slice)
+                    if (s.AxisName == "i") return s.Index;
+                return -1;
+            }
+        }
+
+        /// <summary>The reference impedance a marker readout must report against — the port's OWN
+        /// reference with Override off (the data was never renormalized, so reporting it against a
+        /// uniform Z0 would state the wrong impedance), the user's uniform Z0 with Override on.
+        /// Either way this is "the impedance looking into the port with every other port terminated
+        /// in the reference the displayed S is normalized to".</summary>
+        private Complex MarkerReferenceZ0(int portIndex)
+        {
+            // A derived Γ-plane locus is not an S-element at a port — it lives in the uniform real
+            // reference TwoPortUniformReal put it in, whatever the Z0 box or the per-port array say.
+            if (IsDerived) return DerivedGammaReferenceZ0;
+            if (Z0OverrideEnabled) return _z0;
+            if (SourceZ0PerPort is { } src && portIndex >= 0 && portIndex < src.Length)
+                return src[portIndex];
+            return IsCubeBound ? _z0 : Data.Z0;
+        }
+
+        /// <summary>The reference impedance every marker readout on this trace is against — the
+        /// port's own reference with Override off, the user's uniform <see cref="Z0"/> with it on.
+        /// This is what the info box's "Z0=" line reports and what the VSWR locus is drawn in, so
+        /// an S(2,2) trace on a 12 Ω port reads 12 Ω rather than the port-1 value <see cref="Z0"/>
+        /// happens to mirror.</summary>
+        public Complex MarkerZ0 => MarkerReferenceZ0(IsCubeBound ? CubeReflectionPortIndex : Row);
+
         public string GetMarkerImpedanceString(Marker m)
         {
             if (IsCubeBound)
@@ -2352,31 +2546,41 @@ namespace CircuitRF.Ui.DataDisplay
                 if (!IsCubeReflectionElement || _cubeComplexValues is null) return "";
                 int xIdx = _lastPlotType == PlotType.Table ? NearestCubeXIndex(m.Freq) : CubeMarkerIndex(m);
                 if (xIdx < 0 || xIdx >= _cubeComplexValues.Length) return "impedance=NaN";
-                // §1 already renormalized _cubeComplexValues to Z0 upstream (PlotInspectorViewModel.
-                // ResolveNetworkParamCube) — no per-port branching needed here, unlike the network path.
-                return FormatImpedance(_cubeComplexValues[xIdx], _z0, m);
+                // §1 already renormalized _cubeComplexValues upstream when Override is ON
+                // (PlotInspectorViewModel.ResolveNetworkParamCube); with Override off they are the
+                // source's own values, so the readout must use that port's own reference.
+                return FormatImpedance(_cubeComplexValues[xIdx], MarkerReferenceZ0(CubeReflectionPortIndex), m);
             }
 
             int fi = Array.FindIndex(Data.Frequencies, f => f == m.Freq);
             if (fi < 0) return "impedance=NaN";
 
-            // Per-port (unusual) path: renormalize to the trace's Z0 before reading out — §2 (was
-            // "no user renorm", read straight off sourceZ0[Row] — now aligned with the uniform path).
+            // Derived (stability-circle) traces FIRST — the marker sits on a Γ-plane locus, so its
+            // impedance comes from the marker POSITION at the locus's own uniform-real reference,
+            // never from an S-matrix element. Both branches below read S[Row, Col] (= S11, since
+            // Derived forces Row = Col = 0), which for a circle marker is an unrelated number that
+            // does not even move when the marker does. The per-port branch in particular used to
+            // swallow every derived trace on a non-uniform source.
+            if (IsDerived)
+                return FormatImpedance(new Complex(m.PositionStatic.X, m.PositionStatic.Y),
+                                       DerivedGammaReferenceZ0, m);
+
+            // Per-port (unusual) path: with Override ON, renormalize to the trace's Z0 before
+            // reading out — §2. With Override off nothing is renormalized and the readout is against
+            // the port's own reference (sourceZ0[Row]).
             if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0 && Row < sourceZ0.Length)
             {
+                if (!Z0OverrideEnabled)
+                    return FormatImpedance(Data.Matrices[fi][Row, Col], sourceZ0[Row], m);
                 Complex s = RFNetwork.SToS(Data.Matrices[fi], sourceZ0, RFNetwork.Z0Array(Z0, Data.Ports))[Row, Col];
                 return FormatImpedance(s, Z0, m);
             }
 
-            // Uniform/legacy path (unchanged).
-            Complex sv = new Complex(m.PositionStatic.X, m.PositionStatic.Y);
-
-            if (!IsDerived)
-            {
-                Mat<Complex> temp = RFNetwork.Convert(Data.Matrices[fi], Data.Type, Data.Z0, MatrixType, Z0);
-                sv = temp[Row, Col];
-            }
-            return FormatImpedance(sv, Z0, m);
+            // Uniform/legacy path (unchanged apart from the Override gate). The derived case is
+            // handled above, so the element read is unconditional here.
+            var refZ0 = MarkerReferenceZ0(Row);
+            Mat<Complex> temp = RFNetwork.Convert(Data.Matrices[fi], Data.Type, Data.Z0, MatrixType, refZ0);
+            return FormatImpedance(temp[Row, Col], refZ0, m);
         }
 
         public List<(string Text, bool Bold)> BuildMarkerBoxLines(Marker m, FreqUnit freqUnit,

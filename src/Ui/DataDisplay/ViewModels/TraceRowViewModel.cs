@@ -1455,6 +1455,12 @@ public partial class TraceRowViewModel : ViewModelBase
         }
         else
         {
+            // A cube marker's frequency lives in its POSITION, and the position is about to become
+            // meaningless (the cube data is replaced below, and a derived trace re-places markers on
+            // a Γ-plane locus). Read it out first, or every marker reports 0 Hz — and a 0 Hz lookup
+            // against the new network reads NaN. Must run BEFORE the cube identity is cleared.
+            _trace.CaptureMarkerFrequencies();
+
             // Switching to network-bound: clear ALL cube identity, INCLUDING the expression —
             // otherwise IsCubeBound (CubeName is not null || Expression is not null) stays true
             // and the card keeps showing HB fields.
@@ -2086,12 +2092,15 @@ public partial class TraceRowViewModel : ViewModelBase
 
     partial void OnZ0OverrideEnabledChanged(bool value)
     {
+        // The model flag is the single gate on every renormalization path (Trace.Z0OverrideEnabled)
+        // — it must track the checkbox even when the change is a source-swap reset.
+        _trace.Z0OverrideEnabled = value;
         if (_applyingSource) return;
-        if (!value)
-        {
-            SeedZ0FromSource();
-            RebuildAfterZ0Change();
-        }
+        if (!value) SeedZ0FromSource();
+        // Both directions change what is rendered: turning Override OFF drops any renormalization
+        // and returns the source's own data; turning it ON renormalizes every port to the box's Z0
+        // (which for a non-uniform source moves the curve even before the box is edited).
+        RebuildAfterZ0Change();
         OnPropertyChanged(nameof(IsZ0Editable));
     }
 
@@ -2367,6 +2376,10 @@ public partial class TraceRowViewModel : ViewModelBase
         _maximumFractionDigits = trace.MaximumFractionDigits;
 
         _z0String = ComplexStringHelper.Format(trace.Z0);
+        // Mirror the model's override state into the checkbox (a trace restored from .cdd, or a
+        // copied trace, may already have it on) — via the backing field, so the change handler's
+        // reseed/rebuild does not fire while the row is still being constructed.
+        _z0OverrideEnabled = trace.Z0OverrideEnabled;
 
         // Marker type via icon wrapper
         _selectedMarkerTypeItem = PlotInspectorViewModel.AllMarkerTypes

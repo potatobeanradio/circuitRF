@@ -50,6 +50,13 @@ the `ComponentModel` types). Read with the root `CLAUDE.md`. Design notes: `docs
 - **Never string substitution.** Real tokenize → Pratt-parse → AST → evaluate.
 - **Parse once, evaluate many.** Cache the AST on the owning `Variable`/parameter/SDD/`Measurement`;
   the SDD hot path (per time sample × Newton step × sweep point) must allocate no garbage.
+- **`SddModel`'s hot path does not call `SddEvaluator` directly.** It compiles each equation once, in
+  its own constructor, to `CompiledSddExpr` (a slot-resolved evaluator; a flat register program for
+  the (overwhelmingly common) no-conditional case, `SddCompiler`'s node-tree walk as the fallback for
+  one that has an `if`/ternary). `SddEvaluator.EvalDual`/`EvalDouble` are unchanged and remain the
+  reference implementation every caller outside `SddModel` still uses directly, and the bit-identical
+  gate (`SddCompiledBitIdenticalTests`) diffs against. See `RESOLVED.md`'s evaluator entry for the
+  measured payoff and why the compiled path does not cover conditionals.
 - **Kinded values: Real / Complex / Bool.** A resolved variable or parameter is Real **or** Complex
   (not forced complex) — most component values are Real, impedances Complex. Ordering comparisons
   are **real-only**; SDD equations are real-only time-domain (no `j`).

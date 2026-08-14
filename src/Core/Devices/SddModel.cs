@@ -31,6 +31,14 @@ public sealed class SddModel : ComponentModel
     // These are constants at eval time — they don't change per Newton step.
     private readonly IReadOnlyDictionary<string, double> _params;
 
+    // §1.3 step 1 (brief-harmonicarf-r3b) — each equation compiled ONCE here, alongside where the AST
+    // is already cached, rather than re-resolved (dictionary + string interpolation + string-hashed
+    // RefExpr lookup) on every one of the many Evaluate calls a Newton solve makes. Null entries mirror
+    // the corresponding *Ast entry (no equation for that port).
+    private readonly CompiledSddExpr?[] _compiledCurrent;
+    private readonly CompiledSddExpr?[] _compiledCharge;
+    private readonly (int W, CompiledSddExpr Compiled)[][] _compiledHigher;
+
     /// <summary>Instance name (for error messages).</summary>
     public string Name => _name;
 
@@ -82,6 +90,26 @@ public sealed class SddModel : ComponentModel
         ControlBranchIndices = new int[ControlRefs.Length];
         for (int i = 0; i < ControlBranchIndices.Length; i++) ControlBranchIndices[i] = -1;
         ControlBias = new double[ControlRefs.Length];   // zeros (correct seed for linear-in-_cn)
+
+        // §1.3 step 1 — compile every equation once, here, against this model's own fixed shape
+        // (port count, control-ref numbering, parameter set). Order matches BuildControlSeeds' own
+        // seed array (ControlRefs[i].N at seed index i), which is what a compiled slot i must agree
+        // with at evaluation time.
+        var controlNs = ControlRefs.Select(r => r.N).ToArray();
+        _compiledCurrent = new CompiledSddExpr?[_portCount];
+        _compiledCharge  = new CompiledSddExpr?[_portCount];
+        _compiledHigher  = new (int W, CompiledSddExpr Compiled)[_portCount][];
+        for (int p = 0; p < _portCount; p++)
+        {
+            if (_currentAst[p] is { } ca) _compiledCurrent[p] = CompiledSddExpr.Compile(ca, _params, _portCount, controlNs, _name);
+            if (_chargeAst[p]  is { } qa) _compiledCharge[p]  = CompiledSddExpr.Compile(qa, _params, _portCount, controlNs, _name);
+
+            var higher = _higherAst[p];
+            var compiled = new (int, CompiledSddExpr)[higher.Count];
+            for (int j = 0; j < higher.Count; j++)
+                compiled[j] = (higher[j].W, CompiledSddExpr.Compile(higher[j].Ast, _params, _portCount, controlNs, _name));
+            _compiledHigher[p] = compiled;
+        }
     }
 
     public override int       PortCount => _portCount;
@@ -157,46 +185,31 @@ public sealed class SddModel : ComponentModel
         // Build (N, value)[] for control-current dual seeding (controls are at grad slots nV+i).
         var ctrlSeeds = nC > 0 ? BuildControlSeeds(c) : [];
 
-        // Evaluate each current equation with Dual arithmetic.
+        // Evaluate each current equation with Dual arithmetic, through the pre-compiled slot form
+        // (§1.3 step 1) — ctrlSeeds is [] when nC == 0, so this is one unified path for both cases.
         for (int p = 0; p < n; p++)
         {
-            var ast = _currentAst[p];
-            if (ast is null) continue;
+            var compiled = _compiledCurrent[p];
+            if (compiled is null) continue;
 
+            (double val, double[] grad) = compiled.EvalDual(vArr, ctrlSeeds, _name);
+            i[p] = val;
+            for (int k = 0; k < n; k++) dg[p, k] = grad[k];
             if (nC > 0)
-            {
-                (double val, double[] grad) = SddEvaluator.EvalDual(ast, _params, vArr, ctrlSeeds, _name);
-                i[p] = val;
-                for (int k = 0; k < n;  k++) dg[p, k]    = grad[k];
                 for (int k = 0; k < nC; k++) dCtrl![p, k] = grad[n + k];
-            }
-            else
-            {
-                (double val, double[] grad) = SddEvaluator.EvalDual(ast, _params, vArr, _name);
-                i[p] = val;
-                for (int k = 0; k < n; k++) dg[p, k] = grad[k];
-            }
         }
 
         // Evaluate each charge equation — same AD path. DC solver drops charge (jω=0).
         for (int p = 0; p < n; p++)
         {
-            var ast = _chargeAst[p];
-            if (ast is null) continue;
+            var compiled = _compiledCharge[p];
+            if (compiled is null) continue;
 
+            (double val, double[] grad) = compiled.EvalDual(vArr, ctrlSeeds, _name);
+            q[p] = val;
+            for (int k = 0; k < n; k++) dc[p, k] = grad[k];
             if (nC > 0)
-            {
-                (double val, double[] grad) = SddEvaluator.EvalDual(ast, _params, vArr, ctrlSeeds, _name);
-                q[p] = val;
-                for (int k = 0; k < n;  k++) dc[p, k]          = grad[k];
                 for (int k = 0; k < nC; k++) dCtrlCharge![p, k] = grad[n + k];  // ∂Q[p]/∂_cn (brief #3 §2)
-            }
-            else
-            {
-                (double val, double[] grad) = SddEvaluator.EvalDual(ast, _params, vArr, _name);
-                q[p] = val;
-                for (int k = 0; k < n; k++) dc[p, k] = grad[k];
-            }
         }
 
         // Collect all distinct w≥2 values referenced across all ports.
@@ -217,25 +230,18 @@ public sealed class SddModel : ComponentModel
             var jacCtrl = nC > 0 ? new double[n, nC] : null;  // ∂I[p,w]/∂_cn (brief #3 §2)
             for (int p = 0; p < n; p++)
             {
-                Expr? ast = null;
-                foreach (var (ww, a) in _higherAst[p])
-                    if (ww == w) { ast = a; break; }
-                if (ast is null) continue;
+                CompiledSddExpr? compiled = null;
+                foreach (var (ww, cw) in _compiledHigher[p])
+                    if (ww == w) { compiled = cw; break; }
+                if (compiled is null) continue;
 
+                // Seed control currents so _cn is valid in higher-w equations too (ctrlSeeds is []
+                // when nC == 0 — one unified call, same as the current/charge loops above).
+                (double fval, double[] grad) = compiled.EvalDual(vArr, ctrlSeeds, _name);
+                val[p] = fval;
+                for (int k = 0; k < n; k++) jac[p, k] = grad[k];
                 if (nC > 0)
-                {
-                    // Seed control currents so _cn is valid in higher-w equations too.
-                    (double fval, double[] grad) = SddEvaluator.EvalDual(ast, _params, vArr, ctrlSeeds, _name);
-                    val[p] = fval;
-                    for (int k = 0; k < n;  k++) jac[p, k]      = grad[k];
                     for (int k = 0; k < nC; k++) jacCtrl![p, k] = grad[n + k];
-                }
-                else
-                {
-                    (double fval, double[] grad) = SddEvaluator.EvalDual(ast, _params, vArr, _name);
-                    val[p] = fval;
-                    for (int k = 0; k < n; k++) jac[p, k] = grad[k];
-                }
             }
             terms.Add(new WeightedTerm(w, val, jac, jacCtrl));
         }

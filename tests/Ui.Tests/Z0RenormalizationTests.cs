@@ -279,6 +279,9 @@ public sealed class Z0RenormalizationTests : IDisposable
             SourceZ0PerPort = sourceZ0PerPort,
             SourceZ0IsUnusual = unusual,
             Z0 = z0,
+            // The "@ Z0=" token describes a renormalization, and renormalization only happens with
+            // Override on (brief-dd-z0-nonuniform-override) — these are the Override-on cases.
+            Z0OverrideEnabled = true,
         };
         return trace;
     }
@@ -306,6 +309,17 @@ public sealed class Z0RenormalizationTests : IDisposable
     {
         var trace = MakeReflectionTrace([new Complex(75, 0)], unusual: false, z0: new Complex(75, 0));
         Assert.Equal("dB20(S(1,1))", trace.RectYLabel("dB20(S(1,1))", false));
+    }
+
+    [Fact]
+    public void Label_OverrideOff_NeverShowsToken()
+    {
+        // Override off ⇒ nothing was renormalized, so the token would misstate the reference —
+        // including for a non-uniform ("unusual") source, which is now rendered raw.
+        var unusual = MakeReflectionTrace([new Complex(50, 0), new Complex(12, 0)],
+                                          unusual: true, z0: new Complex(50, 0));
+        unusual.Z0OverrideEnabled = false;
+        Assert.Equal("dB20(S(1,1))", unusual.RectYLabel("dB20(S(1,1))", false));
     }
 
     [Fact]

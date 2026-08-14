@@ -134,6 +134,7 @@ public partial class App : Application
                 ApplyMacOsDockIcon();
                 WireAppMenuItems();
                 BuildBgMenuWindow(desktop);
+                WireNativeMenuDispatcherBackstop();
             }
 
             var firstWindow = new WorkspaceWindow
@@ -369,6 +370,31 @@ public partial class App : Application
                 _appSettingsWindow.Show(owner);
             else
                 _appSettingsWindow.Show();
+        };
+    }
+
+    /// <summary>
+    /// brief-harmonicarf-r3a §2.4 — a FLOOR, not the fix; the fix is
+    /// <c>HarmonicaMenuView.RecomputeAttachment</c> never handing a window a second <c>NativeMenu</c>
+    /// instance in the first place (see <c>src/Ui/RESOLVED.md</c>). Even so, a queued
+    /// <c>AvaloniaNativeMenuExporter.DoLayoutReset</c> that throws runs on the dispatcher, where no
+    /// call-site <c>try</c>/<c>catch</c> can reach it — it takes the whole process down. This matches
+    /// ONLY that specific <c>ArgumentException("The menu being updated does not match.")</c> coming out
+    /// of Avalonia.Native's own menu interop, never a blanket handler — swallowing every dispatcher
+    /// exception would hide real bugs and is refused.
+    /// </summary>
+    private static void WireNativeMenuDispatcherBackstop()
+    {
+        Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
+        {
+            if (e.Exception is not ArgumentException ex) return;
+            if (!ex.Message.Contains("menu being updated does not match", StringComparison.OrdinalIgnoreCase)) return;
+            if (ex.StackTrace is not { } trace || !trace.Contains("Avalonia.Native", StringComparison.Ordinal)) return;
+
+            Console.Error.WriteLine(
+                "circuitRF: swallowed a known Avalonia.Native NativeMenu exporter exception on the " +
+                "dispatcher (brief-harmonicarf-r3a §2.4 — a floor, not the fix): " + ex);
+            e.Handled = true;
         };
     }
 

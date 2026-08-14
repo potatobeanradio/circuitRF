@@ -831,6 +831,21 @@ Gain (`Gt` or `Gp`) on the left axis and efficiency on the right, against output
   Pin available (W).
 - Carries the **operating-point cursor** — the Pin at which the intrinsic glyphs, the loadline, and
   the inverse solve (§6.6) are evaluated. Draggable, with a *snap to compression* mode.
+- **The ladder stops once it CROSSES the compression target** (`brief-harmonicarf-r4` §1, revising the
+  original "always run to `Stop`, never decimate" rule below) — at `CompressionDb +
+  HarmonicaSettings.SweepOverdriveDb` (default margin 0, so the ladder stops on the rung that first
+  reaches `CompressionDb`). A ladder that never crosses still runs the full `Start…Stop` range, so a
+  device that does not compress is still shown in full. The Pin-domain X-axis is pinned to
+  `[PinStartDbm, PinMaxDbm]` regardless of where a given termination's sweep actually stopped, so the
+  axis does not visibly move frame to frame as the last solved Pin moves with the termination during a
+  drag.
+
+  > **Superseded, not deleted (2026-08-13).** The rule used to read: every rung `Start, Start+Step, …,
+  > Stop` is solved regardless of where compression crosses — never resampled, never decimated, never
+  > stopped early. That was right when `PinMaxDbm` defaulted to 30 dBm (a few dB of harmless overdrive
+  > past `P3dB`) and became visibly wrong once the default moved to 50 (~20 dB of wasted overdrive,
+  > ~44 solves thrown away on the shipped default). The "never resampled/decimated" half is unchanged —
+  > every rung that IS solved is still a real HB solve, nothing interpolated or dropped mid-range.
 
 ### 7.5 The dense settings / readout strip
 

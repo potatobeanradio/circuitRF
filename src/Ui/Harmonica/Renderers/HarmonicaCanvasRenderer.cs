@@ -29,6 +29,24 @@ public static class HarmonicaCanvasRenderer
     /// <param name="Picked">§7.7's picked traces, each with its own panel.</param>
     /// <param name="TopmostMarker">R-h9r2-5 — the session's promoted marker, so the composed picture
     /// agrees with the live canvas about which marker is drawn on top.</param>
+    /// <param name="PowerBackdrop">
+    /// brief-harmonicarf-r4 §4 — the Power Smith panel's own two-layer render cache, or null for an
+    /// uncached draw (the ordinary case for a one-off render: Copy Plot, export, a test). Owned by the
+    /// LIVE canvas control, never constructed here — a cache tied to a single throwaway render would
+    /// pay the offscreen-surface cost for no future frame to amortise it against.
+    /// </param>
+    /// <param name="EfficiencyBackdrop">The Efficiency Smith panel's own cache, same rule.</param>
+    /// <param name="DeviceScale">
+    /// The live canvas's own device pixel ratio (<c>TopLevel.RenderScaling</c>), so a cached layer's
+    /// offscreen surface is rasterised at the SAME density the live (uncached) path already draws at
+    /// via Avalonia's own pre-scaled canvas — 1.0 for any uncached caller, which needs no device scale
+    /// at all since it never allocates an offscreen surface.
+    /// </param>
+    /// <param name="ShowIsoLineLabels">
+    /// D11's iso-line-label toggle — carried into the cache key defensively (§4.4's own minimum field
+    /// list names it) even though no renderer currently reads it to draw a label; a future label
+    /// implementation then needs no cache-invalidation work of its own.
+    /// </param>
     public readonly record struct Snapshot(
         HarmonicaFrame                    Frame,
         CharmLayout                       Layout,
@@ -36,7 +54,11 @@ public static class HarmonicaCanvasRenderer
         bool                              Dark,
         IReadOnlyList<HarmonicaPickedTrace> Picked,
         bool                              ShowGridPoints,
-        HarmonicaMarker?                  TopmostMarker = null)
+        HarmonicaMarker?                  TopmostMarker = null,
+        HarmonicaBackdropCache?           PowerBackdrop = null,
+        HarmonicaBackdropCache?           EfficiencyBackdrop = null,
+        double                            DeviceScale = 1.0,
+        bool                              ShowIsoLineLabels = false)
     {
         public static Snapshot Of(HarmonicaViewModel? vm) => new(
             vm?.Frame       ?? HarmonicaFrame.Empty,
@@ -45,7 +67,18 @@ public static class HarmonicaCanvasRenderer
             vm?.Variant     != Theming.ColorVariant.Light,
             vm is null ? [] : [.. vm.PickedTraces],
             vm?.ShowGridPoints ?? false,
-            vm?.TopmostMarker);
+            vm?.TopmostMarker,
+            ShowIsoLineLabels: vm?.ShowIsoLineLabels ?? false);
+
+        /// <summary>The same snapshot, with the live canvas's own render caches and device scale
+        /// attached — <see cref="Of"/> alone (as every non-canvas caller still uses it) never has a
+        /// cache, on purpose.</summary>
+        public Snapshot WithBackdropCaches(
+            HarmonicaBackdropCache powerCache, HarmonicaBackdropCache efficiencyCache, double deviceScale)
+            => this with
+            {
+                PowerBackdrop = powerCache, EfficiencyBackdrop = efficiencyCache, DeviceScale = deviceScale,
+            };
     }
 
     /// <summary>Fills the target rect with the document background. Never <c>canvas.Clear</c>, which
@@ -114,11 +147,13 @@ public static class HarmonicaCanvasRenderer
         {
             case HarmonicaPanelId.SmithPower:
                 HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithPower, s.Theme, s.Dark,
-                                                      s.ShowGridPoints, s.TopmostMarker);
+                                                      s.ShowGridPoints, s.TopmostMarker,
+                                                      s.PowerBackdrop, s.DeviceScale, s.ShowIsoLineLabels);
                 return;
             case HarmonicaPanelId.SmithEfficiency:
                 HarmonicaPanelRenderer.DrawSmithPanel(canvas, size, s.Frame.SmithEfficiency, s.Theme, s.Dark,
-                                                      s.ShowGridPoints, s.TopmostMarker);
+                                                      s.ShowGridPoints, s.TopmostMarker,
+                                                      s.EfficiencyBackdrop, s.DeviceScale, s.ShowIsoLineLabels);
                 return;
             case HarmonicaPanelId.Loadline:
                 HarmonicaPanelRenderer.DrawLoadlinePanel(canvas, size, s.Frame.Loadline, s.Theme, s.Dark);

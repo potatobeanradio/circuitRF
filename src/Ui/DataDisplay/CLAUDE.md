@@ -3,6 +3,51 @@
 Standing instructions for `src/Ui/DataDisplay`. Read with the root `CLAUDE.md`, `src/Ui/CLAUDE.md`,
 and `docs/design/data-display.md`.
 
+## Marker frequency: cube markers carry it in their POSITION, not in `Marker.Freq`
+
+`PlotControl.SnapMarkerToTrace` deliberately does not assign `Marker.Freq` for a cube trace
+(`CubeMarkerIndex` re-derives the sample from the position on every read), and markers are
+constructed with `freq: 0.0` — so a marker that has only ever lived on a cube trace has `Freq == 0`.
+Any code path that turns a cube trace into a network/derived one, where `Freq` **is** the identity,
+must call `Trace.CaptureMarkerFrequencies()` **before** clearing the cube binding. Match a carried
+frequency to a sample with `NearestFrequencyIndex`, never with `==`: a frequency arriving from a cube
+axis or another trace is not bit-identical to an `SNP` sample.
+
+## A trace is cube-bound OR derived, never both — and cube wins
+
+`Trace.BuildPath` tests `IsCubeBound` before `IsDerived`, so that precedence is already the truth;
+everything else must agree with it. Enforced on the `Trace.CubeName`/`Trace.Expression` setters,
+which drop `Derived` (and, via its setter, the stability-circle geometry) on a **non-null**
+assignment — never at call sites, because the picker, a typed spec, and a `.cdd` load all pass
+through them. **Don't reintroduce the split**: a trace holding both builds a cube path while
+`IsStabilityCircle` stays true, and `TraceRenderer.BuildPath` — which branches on that flag — draws
+the stale circles instead of the curve, with the card's In/Out selectors along for the ride.
+Corollary worth remembering: `RefreshNetworkMetricCard` re-raising `ShowPortSelectors` never fixed
+this. A property-change notification is not a state reset.
+
+## Stability-circle readouts live at `Re(z0[InputPort−1])`, not `Trace.Z0`
+
+`BuildDerivedPath` builds the circles from `NetworkMetrics.TwoPortUniformReal`, which renormalizes
+**both** ports to `Re(z0[InputPort−1])` — so that is the Γ plane the locus lives in, and
+`Trace.DerivedGammaReferenceZ0` mirrors it. Any readout on a circle marker (impedance, the info-box
+`Z0=` line, VSWR) must use it and must come from the marker **position**, never from an S-matrix
+element — `Derived` forces `Row = Col = 0`, so an element read silently yields S11. The Z0 Override
+box does not apply to a derived trace. Per-port source references come from
+`Trace.SourceZ0PerPortResolved(nPorts)`, the single copy every derived path shares.
+
+## Reference impedance: the Override checkbox is the ONLY gate on renormalization
+
+`Trace.Z0OverrideEnabled` — **off ⇒ absolutely no renormalization** of displayed S data, whatever
+the source's per-port references are (`Trace.Z0` is then a read-only mirror of port 1 and transforms
+nothing); **on ⇒ every port renormalized to the uniform user `Trace.Z0`, starting from the source's
+true per-port `SourceZ0PerPort`**, so a non-uniform source is accounted for rather than ignored.
+Every renormalization site must consult the flag — never renormalize "because `Z0 != Data.Z0`".
+Exception, on purpose: derived quantities (µ, µ′, |Δ|, MaxGain, stability circles) and Z/Y conversion
+renormalize internally and unconditionally, because they are only *defined* at a uniform real
+reference. Marker/VSWR readouts use `Trace.MarkerZ0` (the **port's own** reference when Override is
+off), never bare `Trace.Z0`. See `RESOLVED.md`'s brief-dd-z0-nonuniform-override entry — this rule
+exists because the unconditional version turned a real −20 dB match into −4 dB.
+
 ## Plot-type integrity: remap, Rect aspect, Smith square limits (brief-dd-plot-type-integrity, 2026-08-13)
 
 Theme: *changing the plot type must never leave the user with a broken plot.* Four slices, P1–P4.

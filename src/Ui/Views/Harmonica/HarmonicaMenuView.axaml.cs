@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using CircuitRF.Ui.Harmonica;
@@ -16,9 +17,11 @@ namespace CircuitRF.Ui.Views.Harmonica;
 /// them while docked would leave the document with no menu set at all.</para>
 ///
 /// <para><b>The macOS <c>NativeMenu</c> is attached to the hosting Window only when harmonicaRF has a
-/// window of its own</b> — a torn-off document, or the standalone binary of §3.1. Attaching it from a
-/// docked tab would replace circuitRF's application menu bar for the whole app, which is not what a
-/// document-scoped menu means. Same per-window attach §4B.1 records as the one that actually works.</para>
+/// window of its own</b> — a torn-off document, or the standalone binary of §3.1. A docked tab never
+/// calls <c>NativeMenu.SetMenu</c> on the shared <c>WorkspaceWindow</c> at all — a window's
+/// <c>NativeMenu</c> instance is fixed for its whole lifetime (brief-harmonicarf-r3a §1); instead its
+/// own top-level items are injected into circuitRF's app-menu instance while it has focus, and
+/// withdrawn on blur. See <c>RecomputeAttachment</c> and <c>src/Ui/RESOLVED.md</c>.</para>
 ///
 /// <para><b>The band submenus are built here, not bound.</b> <c>NativeMenu</c> has no
 /// <c>ItemsSource</c> — the same limitation <c>WorkspaceWindow</c>'s Window menu works around — so
@@ -48,6 +51,11 @@ public partial class HarmonicaMenuView : UserControl
     /// </summary>
     private bool _dockedHasFocus;
 
+    /// <summary>The top-level items currently injected into circuitRF's own app-menu instance (§2.1
+    /// of brief-harmonicarf-r3a) — empty whenever this document is not the docked-and-focused holder.
+    /// Tracked by reference so withdrawal can only ever remove exactly what was added.</summary>
+    private readonly List<NativeMenuItem> _injectedItems = new();
+
     public HarmonicaMenuView()
     {
         InitializeComponent();
@@ -55,7 +63,7 @@ public partial class HarmonicaMenuView : UserControl
         _attachedTo = this;
         DataContextChanged     += (_, _) => OnViewModelChanged();
         AttachedToVisualTree   += (_, _) => { RecomputeAttachment(); RebuildNativeBandMenus(); };
-        DetachedFromVisualTree += (_, _) => DetachNativeMenuFromWindow();
+        DetachedFromVisualTree += (_, _) => { DetachNativeMenuFromWindow(); WithdrawInjectedItemsIfAny(); };
     }
 
     /// <summary>
@@ -91,67 +99,83 @@ public partial class HarmonicaMenuView : UserControl
         ((INotifyCollectionChanged)_vm.SourceBands).CollectionChanged += OnBandsChanged;
         ((INotifyCollectionChanged)_vm.LoadBands).CollectionChanged   += OnBandsChanged;
         RebuildNativeBandMenus();
+        RefreshInjectedItemsIfAny();
     }
 
     private void OnBandsChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        => RebuildNativeBandMenus();
+    {
+        RebuildNativeBandMenus();
+        RefreshInjectedItemsIfAny();
+    }
 
     /// <summary>
-    /// R-h9a-2's whole policy in one place: decides which <see cref="AvaloniaObject"/> should carry
-    /// <see cref="_ownMenu"/> right now, and moves it there if it isn't already. Three cases —
+    /// R3A §1/§2.1's whole policy in one place. On macOS, a window's <c>NativeMenu</c> instance is
+    /// chosen ONCE, by Avalonia's own <c>AvaloniaNativeMenuExporter</c>, and can never be changed for
+    /// that window's lifetime — <c>__MicroComIAvnMenuProxy.Update</c> throws
+    /// <c>ArgumentException("The menu being updated does not match.")</c> for any instance other than
+    /// the one the exporter was first given (Avalonia 12.0.3's own
+    /// <c>AvaloniaNativeMenuExporter.cs</c>/<c>IAvnMenu.cs</c> — see <c>src/Ui/RESOLVED.md</c>). So
+    /// this method never tries to change WHICH instance the <c>WorkspaceWindow</c> shows — only two
+    /// cases remain:
     /// <list type="bullet">
-    /// <item>torn-off document, or the standalone binary: always own the hosting window outright;</item>
-    /// <item>docked, and this document currently has focus (R-h9a-3): take over the SAME hosting
-    /// window (a <c>WorkspaceWindow</c>), which silently overwrites whatever it had attached —
-    /// circuitRF's own menu, restored by <c>WorkspaceViewModel</c>'s focus tracking on blur;</item>
-    /// <item>docked, no focus: stay attached to <c>this</c> — inert, exactly as XAML left it.</item>
+    /// <item>torn-off document, or the standalone binary: this window has never had a
+    /// <c>NativeMenu</c> of its own — own it outright, via <see cref="AttachToWindowOutright"/>;</item>
+    /// <item>docked: circuitRF's own app-menu instance is already permanently bound to the
+    /// <c>WorkspaceWindow</c>'s exporter (set once, at startup, by
+    /// <c>WorkspaceWindow.AttachNativeMenuAtApplicationScope</c>) — <c>NativeMenu.SetMenu</c> is never
+    /// called on that window again. Focus (R-h9a-3) is instead expressed by injecting this document's
+    /// own top-level items into that SAME instance's <c>Items</c> list while focused, and withdrawing
+    /// exactly those items on blur — see <see cref="InjectDockedItemsIfNeeded"/>/
+    /// <see cref="WithdrawInjectedItemsIfAny"/> and <see cref="HarmonicaAppMenuInjector"/>.</item>
     /// </list>
     /// </summary>
-    /// <remarks>
-    /// R-h9r2-12 — owner-reported: switching the OS colour theme to dark crashed the app with
-    /// <c>ArgumentException("The menu being updated does not match.")</c> out of
-    /// <c>AvaloniaNativeMenuExporter.Update</c>, thrown from the ATTACH call below (the same exception,
-    /// from the same interop layer, as <see cref="DetachNativeMenuFromWindow"/>'s own guarded case — see
-    /// that method's doc comment). A theme change fires <c>AttachedToVisualTree</c> here, and
-    /// <c>ReferenceEquals(_attachedTo, desiredTarget)</c> found them NOT equal, so this proceeded to
-    /// attach and the platform exporter refused it — meaning <c>_attachedTo</c> and what the exporter
-    /// itself currently holds had already diverged BEFORE this call, most likely because the OS
-    /// appearance-change notification and this view's own <c>AttachedToVisualTree</c>/
-    /// <c>ActualThemeVariantChanged</c> handling (R-h9a-8) both touch this window's native menu around
-    /// the same theme transition, on cocoa's own callback vs. Avalonia's dispatcher — a genuine
-    /// Avalonia.Native race this view cannot see into or repair by re-attaching harder (not headlessly
-    /// reproducible; not confirmed further than this). What this method controls is making sure that
-    /// divergence can never again take the application down with it, and clearing it once found rather
-    /// than trusting stale bookkeeping.
-    /// </remarks>
     private void RecomputeAttachment()
     {
         if (!OperatingSystem.IsMacOS() || _ownMenu is null) return;
         if (TopLevel.GetTopLevel(this) is not Window window) return;
 
         bool isWorkspaceWindow = window.GetType().Name == WorkspaceWindowTypeName;
-        AvaloniaObject desiredTarget =
-            !isWorkspaceWindow    ? window     // torn-off document window, or the standalone shell
-            : _dockedHasFocus     ? window     // docked WITH focus: take over the app menu bar
-            :                       this;      // docked, no focus: stay inert on the control
 
+        if (isWorkspaceWindow)
+        {
+            if (_dockedHasFocus) InjectDockedItemsIfNeeded();
+            else WithdrawInjectedItemsIfAny();
+            return;
+        }
+
+        // torn-off document window, or the standalone shell: own the hosting window outright. Not
+        // (or no longer) docked, so nothing should be injected into circuitRF's own app menu.
+        WithdrawInjectedItemsIfAny();
+        AttachToWindowOutright(window);
+    }
+
+    /// <summary>
+    /// The torn-off/standalone case: this window has never had a <c>NativeMenu</c> of its own, so
+    /// binding it here is the FIRST and only bind its exporter will ever accept (§1).
+    /// </summary>
+    private void AttachToWindowOutright(Window window)
+    {
+        AvaloniaObject desiredTarget = window;
         if (ReferenceEquals(_attachedTo, desiredTarget)) return;   // already there
+
+        // §2.3 — this window's exporter must never already be bound to a DIFFERENT instance, or this
+        // attach is refused forever, not just this once. WorkspaceViewModel.TryWireWindowFocusTracking
+        // excludes a HarmonicaDocument (and a WBondDocument) window from ever receiving circuitRF's
+        // own shared NativeMenu for exactly this reason — assert the invariant here rather than only
+        // trust that call site's own comment.
+        Debug.Assert(
+            NativeMenu.GetMenu(desiredTarget) is null,
+            "A harmonicaRF document window must never have received another NativeMenu instance " +
+            "before its own (see WorkspaceViewModel.TryWireWindowFocusTracking's Harmonica/WBond " +
+            "exclusion, brief-harmonicarf-r3a §2.3) — this attach can only ever be refused if it has.");
 
         // R-h9a-1: at any instant a given NativeMenu instance is set on at most one AvaloniaObject.
         // Detach from wherever it currently is BEFORE attaching it elsewhere — attaching the SAME
         // instance to two AvaloniaObjects at once is exactly what crashed AvaloniaNativeMenuExporter.
-        //
-        // R-h9r2-12 — detach defensively, not only from where OUR bookkeeping thinks we are: after a
-        // visual-tree event our _attachedTo field can disagree with what the platform exporter
-        // believes it holds (that disagreement is the crash above), so clear the DESIRED target's menu
-        // too, before setting it — cheap, and it removes one more way for the two to disagree. Guarded
-        // exactly like the known-crashing detach in DetachNativeMenuFromWindow: a failed clear here
-        // costs nothing, an unhandled exception costs the whole application.
         if (_attachedTo is { } current && !ReferenceEquals(current, desiredTarget))
         {
             try { NativeMenu.SetMenu(current, null); } catch (Exception) { }
         }
-        try { NativeMenu.SetMenu(desiredTarget, null); } catch (Exception) { }
 
         try
         {
@@ -161,13 +185,50 @@ public partial class HarmonicaMenuView : UserControl
         catch (Exception)
         {
             // A failed menu-bar attach costs a menu bar; an unhandled exception here costs the whole
-            // application, and the two are not close (owner-reported crash, R-h9r2-12). Left cleared
-            // rather than restored to its old value: the old value is already known-stale the instant
-            // SetMenu refuses it (the exporter's own state no longer matches what we last set there),
-            // so keeping it would make the NEXT AttachedToVisualTree's ReferenceEquals early-return
-            // skip a retry this document actually needs.
+            // application, and the two are not close. Left cleared rather than restored to its old
+            // value: the old value is already known-stale the instant SetMenu refuses it, so keeping
+            // it would make the NEXT AttachedToVisualTree's ReferenceEquals early-return skip a retry
+            // this document actually needs. This floor should never fire in practice now that §2.3's
+            // precondition is asserted above — see App.axaml.cs's Dispatcher.UnhandledException
+            // backstop (§2.4) for the case a queued reset throws where no call-site catch can reach it.
             _attachedTo = null;
         }
+    }
+
+    /// <summary>
+    /// §2.1 — appends this document's own top-level items (Markers / Display / Grid) to circuitRF's
+    /// app-menu <c>NativeMenu</c> instance, read off <c>Application.Current</c> — the SAME instance
+    /// <c>WorkspaceWindow.AttachNativeMenuAtApplicationScope</c> bound to the shell's exporter at
+    /// startup. A no-op if already injected, or if there is nothing to build yet.
+    /// </summary>
+    private void InjectDockedItemsIfNeeded()
+    {
+        if (_injectedItems.Count > 0 || _vm is null) return;
+        if (Application.Current is not { } app) return;
+        if (NativeMenu.GetMenu(app) is not { } appMenu) return;
+
+        var items = HarmonicaAppMenuInjector.BuildTopLevelItems(_vm);
+        HarmonicaAppMenuInjector.Inject(appMenu, items);
+        _injectedItems.AddRange(items);
+    }
+
+    /// <summary>Removes exactly the items <see cref="InjectDockedItemsIfNeeded"/> added, if any.</summary>
+    private void WithdrawInjectedItemsIfAny()
+    {
+        if (_injectedItems.Count == 0) return;
+        if (Application.Current is { } app && NativeMenu.GetMenu(app) is { } appMenu)
+            HarmonicaAppMenuInjector.Withdraw(appMenu, _injectedItems);
+        _injectedItems.Clear();
+    }
+
+    /// <summary>Rebuilds the injected set in place when the source data changes (a band toggled, or
+    /// the view model swapped) while this document currently holds the takeover — otherwise the
+    /// native items would silently drift from the model until the next focus change.</summary>
+    private void RefreshInjectedItemsIfAny()
+    {
+        if (_injectedItems.Count == 0) return;
+        WithdrawInjectedItemsIfAny();
+        InjectDockedItemsIfNeeded();
     }
 
     /// <summary>
@@ -200,7 +261,8 @@ public partial class HarmonicaMenuView : UserControl
         _attachedTo = null;
     }
 
-    /// <summary>Rebuilds the two native band submenus from the view model's own collections.</summary>
+    /// <summary>Rebuilds the native band submenus AND Contour Harmonic from the view model's own
+    /// collections.</summary>
     private void RebuildNativeBandMenus()
     {
         // Reads _ownMenu, not NativeMenu.GetMenu(this) — the instance may currently be attached to a
@@ -210,6 +272,7 @@ public partial class HarmonicaMenuView : UserControl
 
         Fill(FindByHeader(root, "Markers", "Source Bands"), _vm.SourceBands);
         Fill(FindByHeader(root, "Markers", "Load Bands"),   _vm.LoadBands);
+        FillHarmonics(FindByHeader(root, "Display", "Contour Harmonic"), _vm.ContourHarmonics);
 
         static void Fill(NativeMenuItem? host, IReadOnlyList<HarmonicaBandMenuItem> bands)
         {
@@ -227,6 +290,19 @@ public partial class HarmonicaMenuView : UserControl
                 // Writing IsPresent is what runs R-h7-2's add/remove — the SAME property the
                 // in-window checkbox binds two-way to, so both surfaces go through one path.
                 item.Click += (_, _) => captured.IsPresent = !captured.IsPresent;
+                target.Items.Add(item);
+            }
+        }
+
+        static void FillHarmonics(NativeMenuItem? host, IReadOnlyList<HarmonicaHarmonicMenuItem> items)
+        {
+            if (host?.Menu is not { } target) return;
+            target.Items.Clear();
+            foreach (var it in items)
+            {
+                var item = new NativeMenuItem(it.Header);
+                var captured = it;
+                item.Click += (_, _) => captured.SelectCommand.Execute(null);
                 target.Items.Add(item);
             }
         }

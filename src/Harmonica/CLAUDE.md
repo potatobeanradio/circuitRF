@@ -7,13 +7,39 @@ Standing instructions for `src/Harmonica`. Read with the root `CLAUDE.md` and
 `tests/Firewall.Tests` assertion alongside `RfCore`, `Core`, `Engine` and `Cli`. The standalone
 harmonicaRF binary (H8) does not weaken that: it is `src/Ui` with a different `Main`.
 
+**`PinSearch.Run`'s bracket can converge to the WRONG (non-first) compression crossing on a device
+with a locally non-monotone gain-vs-Pin curve** — its doubling stride (3, 6, 12, 24 dB…) can probe
+right past the true first crossing and lock onto a later, spurious one; reproduces with the original,
+untouched bracket code (no hint, no neighbour spectra). Found while gating `ContourGrid.BuildParallel`
+(brief-harmonicarf-r3b §4), pre-dates that brief, and is NOT fixed — see `RESOLVED.md`'s §4 entry
+before trusting a `Run()` answer at face value on a device whose gain does not fall off monotonically.
+
+## Round 3B — evaluator speedup, grid parallelised, loadpull holes mostly cured (2026-08-13)
+
+See `RESOLVED.md` for the detail: `PinSearch.Run`'s neighbour-by-level seeding + a real nonlinear DC
+seed (`HarmonicaContext.SeedFromRealDc`) cut the shipped default's loadpull holes from ~9% to ~2% of
+a 61-point grid; `ContourGrid.BuildParallel` (new) parallelises the same grid 2.68× with an identical
+hole set; `src/Core/RESOLVED.md` has the SDD evaluator's 3× speedup (this project's own hot path,
+`SddModel`, is what that work sped up — nothing in `src/Harmonica` itself changed for that part).
+
 ## Round 2B — `PinSearch.Sweep`, the explicit tier-A ladder (2026-08-13)
+
+> **R-h9r2-19's "never stop early" is superseded for the compression case (brief-harmonicarf-r4 §1,
+> 2026-08-13).** It was right when `PinMaxDbm` defaulted to 30 dBm — a few dB of overdrive past
+> `P3dB` is harmless — and became visibly wrong once the owner raised the default to 50: a sweep that
+> crosses compression early now ran ~20 dB / ~44 solves past the target for nothing. The ladder now
+> stops once compression reaches `CompressionDb + HarmonicaSettings.SweepOverdriveDb` (default margin
+> 0). **A sweep that never crosses is UNCHANGED** — it still runs the full range, so a device that
+> does not compress is still shown in full; only a sweep that DOES cross stops early, and strictly
+> after the crossing pair itself has been recorded. See `HarmonicaSettings.SweepOverdriveDb`'s own doc
+> comment and `PinSearch.Sweep`'s ladder loop. The "never resampled/decimated" half of the original
+> rule is untouched — every rung that is solved is still a real HB solve.
 
 `PinSearch.Run`'s bracket-and-secant is UNCHANGED and stays what `ContourGrid` calls once per Γ point.
 **`PinSearch.Sweep`** (new, same file) is a structurally separate sibling — `HarmonicaSolver`'s tier-A
 drive-up now calls it instead of `Run` — that walks the EXPLICIT `Start, Start+Step, …, Stop` ladder
-`HarmonicaSettings.PinStartDbm/PinMaxDbm/PinStepDbm` name, inclusive at both ends, every point a real
-solve, never stopping early. Compression is found by the SAME incremental running-`gMax` rule `Run`'s
+`HarmonicaSettings.PinStartDbm/PinMaxDbm/PinStepDbm` name, inclusive at both ends (unless it crosses
+compression, see above), every point a real solve. Compression is found by the SAME incremental running-`gMax` rule `Run`'s
 own `CompressionAt` already uses (walked forward, in order) — computing `gMax` as the ladder's GLOBAL
 maximum and re-deriving every step's compression against it AFTER the walk is a different, wrong
 answer for a non-monotone (gain-expansion) device: measured directly, it moved a real fixture's

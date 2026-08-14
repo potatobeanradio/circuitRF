@@ -45,6 +45,18 @@ public enum HarmonicaInputEntry
 /// the key, so an input that is added to the model without being classified here cannot be
 /// mis-classified.
 /// </param>
+/// <param name="Placeholder">
+/// R3C §3 — shown in place of an EMPTY <see cref="Text"/>, greyed. Unused today (both Vgs and Idq
+/// always carry a real value once <see cref="HarmonicaContext.SolveVgsForIdq"/> landed — see that
+/// method's own remarks) but left in place as general strip machinery rather than torn out.
+/// </param>
+/// <param name="EditText">
+/// Owner follow-up (2026-08-13) — "keep it to 3 decimal places in the display; the inline text editor
+/// should show the full value." <see cref="Text"/> is what the row DISPLAYS (rounded, for Vgs/Idq —
+/// see <see cref="HarmonicaInputs.Build"/>'s own Vgs/Idq rows); this is what an inline editor SEEDS
+/// from once opened. Null means "same as <see cref="Text"/>" — every input except Vgs/Idq has no
+/// separate rounding, so <see cref="EditValue"/> is what every call site actually reads.
+/// </param>
 public sealed record HarmonicaInput(
     string              Key,
     string              Label,
@@ -52,7 +64,14 @@ public sealed record HarmonicaInput(
     string              Unit,
     string              Tooltip,
     HarmonicaInputEntry Entry,
-    bool                Structural);
+    bool                Structural,
+    string              Placeholder = "",
+    string?             EditText    = null)
+{
+    /// <summary>The text an inline editor should seed from — <see cref="EditText"/> when the row has
+    /// one, else <see cref="Text"/> itself (the common case).</summary>
+    public string EditValue => EditText ?? Text;
+}
 
 /// <summary>
 /// §7.5's input half: bias, frequency, compression, the compute-charge toggle, multiplicity, and
@@ -84,18 +103,50 @@ public static class HarmonicaInputs
     /// <summary>
     /// The whole §7.5 input list for a model, in strip order: bias, drive, then the model's own.
     /// </summary>
-    public static IReadOnlyList<HarmonicaInput> Build(CircuitModel model)
+    /// <param name="liveIdqAmpsWhenVgsDriven">
+    /// R3C follow-up (2026-08-13) — the DC drain current the CURRENT Vgs actually draws, amps, read
+    /// live from a <see cref="HarmonicaContext"/> the caller already owns (<c>HarmonicaContext.
+    /// DcDrainCurrentAmps</c>). Shown in the Idq row ONLY when <c>model.Bias.Idq</c> is null (Vgs is
+    /// the driver) — otherwise the row shows the user's own STATED target, which is what
+    /// <see cref="HarmonicaContext.SolveVgsForIdq"/> was actually asked to hit. This stays a plain
+    /// <c>double?</c> parameter rather than a <see cref="HarmonicaContext"/> reference so this method
+    /// keeps its "pure function of a model" contract — see the class's own remark.
+    /// </param>
+    public static IReadOnlyList<HarmonicaInput> Build(CircuitModel model,
+                                                       double? liveIdqAmpsWhenVgsDriven = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
+        // R3C follow-up — Idq is user-facing in mA (owner request); BiasSpec.Idq itself stays amps
+        // (Num/TryReal below convert at this one boundary, same as every other unit-bearing input in
+        // this file). model.Bias.Idq set ⇒ the user's own stated target; else the LIVE, computed
+        // current the CURRENT Vgs draws (Idq is then informational, not an editable "answer" — typing
+        // into it still switches the document to Idq-driven, exactly like typing into Vgs switches it
+        // back, per HarmonicaInputs.Apply's own KeyVgs/KeyIdq cases).
+        //
+        // Owner follow-up — the STRIP shows Vgs to 3 places and Idq to 1 (a live-updating mA readout
+        // at full precision is noise, not information); the inline EDITOR still seeds from the full
+        // value (HarmonicaInput.EditText), so committing without retyping every digit round-trips
+        // exactly rather than truncating to whatever the display happened to round to.
+        double? idqAmps = model.Bias.Idq ?? (liveIdqAmpsWhenVgsDriven is { } liveA && double.IsFinite(liveA) ? liveA : null);
+        string idqText     = idqAmps is { } a ? Num1(a * 1000.0) : "";
+        string idqEditText = idqAmps is { } a2 ? Num(a2 * 1000.0) : "";
+
         var list = new List<HarmonicaInput>
         {
-            Make(model, KeyVgs, "Vgs", model.Bias.Vgs is { } vg ? Num(vg) : "", "V",
-                 "Gate bias. Leave blank and set Idq to solve Vgs by a 1-D secant on the DC solve.",
-                 HarmonicaInputEntry.Number),
-            Make(model, KeyIdq, "Idq", model.Bias.Idq is { } iq ? Num(iq) : "", "A",
-                 "Quiescent drain current. When set, Vgs is solved for it at the stated Vds.",
-                 HarmonicaInputEntry.Number),
+            Make(model, KeyVgs, "Vgs", model.Bias.Vgs is { } vg ? Num3(vg) : "", "V",
+                 model.Bias.Idq is not null
+                     ? "Gate bias, solved for the stated Idq (1-D secant on the DC operating point)."
+                     : "Gate bias. Set Idq instead to solve Vgs for a target current.",
+                 HarmonicaInputEntry.Number,
+                 editText: model.Bias.Vgs is { } vge ? Num(vge) : null),
+            Make(model, KeyIdq, "Idq", idqText, "mA",
+                 model.Bias.Idq is not null
+                     ? "Quiescent drain current target. Vgs is solved for it at the stated Vds."
+                     : "Quiescent drain current — read live from the current Vgs. Type a value to " +
+                       "drive the bias from Idq instead (Vgs is then solved for it).",
+                 HarmonicaInputEntry.Number,
+                 editText: idqEditText),
             Make(model, KeyVds, "Vds", Num(model.Bias.Vds), "V", "Drain supply.",
                  HarmonicaInputEntry.Number),
 
@@ -256,8 +307,9 @@ public static class HarmonicaInputs
     // ── classification: ask the key, do not keep a list ───────────────────────
 
     private static HarmonicaInput Make(CircuitModel model, string key, string label, string text,
-                                       string unit, string tooltip, HarmonicaInputEntry entry)
-        => new(key, label, text, unit, tooltip, entry, IsStructural(model, key));
+                                       string unit, string tooltip, HarmonicaInputEntry entry,
+                                       string placeholder = "", string? editText = null)
+        => new(key, label, text, unit, tooltip, entry, IsStructural(model, key), placeholder, editText);
 
     /// <summary>
     /// Whether writing <paramref name="key"/> moves <see cref="CircuitModel.StructuralKey"/>.
@@ -297,7 +349,9 @@ public static class HarmonicaInputs
             KeyZ0            => Num(model.Settings.Z0 + 1.0),
             KeyLoadlineSamples => Num(model.Settings.LoadlineSamples + 1),
             KeyVgs           => Num((model.Bias.Vgs ?? 0.0) - 0.1),
-            KeyIdq           => Num((model.Bias.Idq ?? 0.0) + 0.01),
+            // R3C follow-up — the field (and so the probe text Apply parses) is mA now; Bias.Idq
+            // itself is still amps, hence the ×1000 before adding the probe's own mA nudge.
+            KeyIdq           => Num((model.Bias.Idq ?? 0.0) * 1000.0 + 0.01),
             KeyVds           => Num(model.Bias.Vds + 1.0),
             KeyMultiplicity  => Num(model.Dut.Multiplicity + 1.0),
             _                => "",
@@ -341,8 +395,10 @@ public static class HarmonicaInputs
             case KeyIdq:
                 if (text.Length == 0)
                     return model with { Bias = model.Bias with { Idq = null } };
-                if (!TryReal(text, out double idq)) { error = Bad("Idq", text); return null; }
-                return model with { Bias = model.Bias with { Idq = idq } };
+                if (!TryReal(text, out double idqMa)) { error = Bad("Idq", text); return null; }
+                // R3C follow-up — the field is mA (owner request); BiasSpec.Idq itself stays amps,
+                // the unit every solver-side consumer (HarmonicaContext.SolveVgsForIdq) expects.
+                return model with { Bias = model.Bias with { Idq = idqMa / 1000.0 } };
 
             case KeyVds:
                 if (!TryReal(text, out double vds)) { error = Bad("Vds", text); return null; }
@@ -415,4 +471,14 @@ public static class HarmonicaInputs
 
     private static string Num(double v)
         => v.ToString("0.#######", CultureInfo.InvariantCulture);
+
+    /// <summary>Owner follow-up — the Vgs row's DISPLAY precision (3 places); <see cref="Num"/> stays
+    /// what an inline editor seeds from (<see cref="HarmonicaInput.EditText"/>).</summary>
+    private static string Num3(double v)
+        => v.ToString("0.000", CultureInfo.InvariantCulture);
+
+    /// <summary>Owner follow-up — the Idq row's DISPLAY precision, mA (1 place): "49.1 mA, not
+    /// 49.113mA". Same split from <see cref="Num"/> as <see cref="Num3"/>.</summary>
+    private static string Num1(double v)
+        => v.ToString("0.0", CultureInfo.InvariantCulture);
 }

@@ -189,6 +189,11 @@ public sealed class TraceConfig
     public bool   UseSecondaryAxis   { get; set; }
     public string Z0                 { get; set; } = "50";
 
+    /// <summary>Whether the trace card's Z0 "Override" checkbox is on. Absent in files written
+    /// before the override gate existed, and false is the right reading there: no override means
+    /// the data is shown at the source's own per-port references, un-renormalized.</summary>
+    public bool   Z0Override         { get; set; }
+
     // Table-view per-trace settings.
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MatrixFormat    MatrixFormat          { get; set; } = MatrixFormat.MA;

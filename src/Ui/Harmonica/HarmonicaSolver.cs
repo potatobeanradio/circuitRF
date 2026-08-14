@@ -54,6 +54,34 @@ public sealed class HarmonicaSolver
     /// </summary>
     private Dictionary<double, Complex[,]>? _lastSweepLevelSpectra;
 
+    /// <summary>
+    /// brief-harmonicarf-r4 §5.2/§5.3 — Policy C, the hedge. HB solutions across the termination plane
+    /// are NOT a smooth family: two nearby Γ can sit in different basins, so on a LARGE drag jump
+    /// <see cref="_lastSweepLevelSpectra"/> is not merely a slightly-wrong seed, it can be an actively
+    /// misleading one — measured directly (<c>DragSeedPolicyTests.AvsB_CrossoverPoint_WhereLever1StopsHelping</c>):
+    /// reading lever 1 wins clearly for |ΔΓ| up to ~0.15, ties through ~0.20-0.25, and LOSES from ~0.30
+    /// up (a single-frame spike to ~18 ms against a smooth ~10-13 ms elsewhere — a continuation-stepping
+    /// fallback firing inside the ladder, not a graceful degradation). 0.20 sits just past where lever 1
+    /// stops winning outright, so this only disables it where the measurement shows it stops helping.
+    /// Policy B (never read it at all) was tried first and measurably LOST on small/moderate drags —
+    /// ~24% slower at |ΔΓ| ≈ 0.004, still slower at the tangential-drag control's ≈0.13 — so the plain
+    /// "always DC, never reuse" policy was not adopted outright; this hedge is.
+    /// </summary>
+    public const double LeverOneDeltaGammaThreshold = 0.20;
+
+    /// <summary>The Γ (per marked side/band) that <see cref="_lastSweepLevelSpectra"/> was solved at —
+    /// what <see cref="LeverOneDeltaGammaThreshold"/> is measured against. A band with no prior-frame
+    /// entry (just marked) counts as an infinite jump, so a freshly added marker never reads a stale
+    /// spectrum meant for a different termination entirely.</summary>
+    private Dictionary<(TerminationSide Side, int Band), Complex> _lastTerminationGammas = [];
+
+    /// <summary>How many frames disabled lever 1 because the termination moved past
+    /// <see cref="LeverOneDeltaGammaThreshold"/> since the previous frame — a counter, not a stopwatch,
+    /// this repo's own convention for making a hedge's own hit rate visible rather than inferred.</summary>
+    public int Lever1DisabledCount { get; private set; }
+
+    private static readonly TerminationSide[] Sides = [TerminationSide.Source, TerminationSide.Load];
+
     /// <summary>Options a frame is solved under. Defaults are the coarse ring set of §6.8, so the
     /// first frame after opening a document is fast rather than correct-and-slow.</summary>
     public sealed record Options
@@ -179,8 +207,28 @@ public sealed class HarmonicaSolver
         // the user's own ladder now, every point a real solve, on every frame including a drag.
         ct.ThrowIfCancellationRequested();
         var s0 = ctx.Model.Settings;
+
+        // §5.2/§5.3 — Policy C. Judged by the LARGEST single-band Γ move, not an average across
+        // bands: one band jumping while the others sit still is exactly the case a hidden average
+        // would mask.
+        double maxDeltaGamma = 0.0;
+        var currentGammas = new Dictionary<(TerminationSide, int), Complex>();
+        foreach (var side in Sides)
+            foreach (int band in terminations.MarkedBands(side))
+            {
+                var g = HarmonicaDataSet.GammaOf(terminations.Z(side, band), s0.Z0);
+                currentGammas[(side, band)] = g;
+                double d = _lastTerminationGammas.TryGetValue((side, band), out var prior)
+                    ? (g - prior).Magnitude
+                    : double.PositiveInfinity; // a just-marked band has no prior frame to compare to
+                if (d > maxDeltaGamma) maxDeltaGamma = d;
+            }
+        bool readLever1 = maxDeltaGamma < LeverOneDeltaGammaThreshold;
+        if (!readLever1) Lever1DisabledCount++;
+        _lastTerminationGammas = currentGammas;
+
         var sweep = PinSearch.Sweep(ctx, terminations, s0.PinStartDbm, s0.PinMaxDbm, s0.PinStepDbm,
-                                    priorLevelSpectra: _lastSweepLevelSpectra);
+                                    priorLevelSpectra: readLever1 ? _lastSweepLevelSpectra : null);
         LastSolveCount += sweep.Solves;
         _lastSweepLevelSpectra = sweep.Steps.Count > 0
             ? sweep.Steps.ToDictionary(st => Math.Round(st.PavlDbm, 6), st => st.Point.V)
@@ -229,7 +277,7 @@ public sealed class HarmonicaSolver
 
         // ── the panels ────────────────────────────────────────────────────────
         var loadline = BuildLoadline(ctx, at, opt.IntrinsicPlane);
-        var power    = BuildPowerSweep(sweep, cursor, opt.EfficiencyMetric);
+        var power    = BuildPowerSweep(sweep, cursor, opt.EfficiencyMetric, s0.PinStartDbm, s0.PinMaxDbm);
 
         // R-h9b-4 — both rows are built HERE, in one place, so the two charts cannot disagree about
         // how the compression setting, the metric or Z0 is spelled. Live even on a SkipContours
@@ -422,7 +470,8 @@ public sealed class HarmonicaSolver
     // ── §7.4 — the power-sweep panel ─────────────────────────────────────────
 
     private static PowerSweepPanelData BuildPowerSweep(PinSearchResult sweep, int cursor,
-                                                        GridMetric efficiencyMetric)
+                                                        GridMetric efficiencyMetric,
+                                                        double pinStartDbm, double pinMaxDbm)
     {
         // The steps come back in the order they were SOLVED — a doubling bracket then a secant — so
         // they are not monotone in Pin. A plot of them unsorted would zig-zag back on itself.
@@ -445,6 +494,8 @@ public sealed class HarmonicaSolver
             CursorIndex   = orderedCursor,
             ReachedCompression = sweep.Compressed,
             EfficiencyMetric = efficiencyMetric,
+            PinStartDbm = pinStartDbm,
+            PinMaxDbm   = pinMaxDbm,
         };
     }
 
@@ -531,12 +582,17 @@ public sealed class HarmonicaSolver
 
         void Add(string label, string value, string tip) => r.Add(new(label, value, tip, ReadoutColumn.General));
 
-        // ── General ──────────────────────────────────────────────────────────
-        Add("f₀", $"{ctx.Model.Settings.FrequencyHz / 1e9:0.###} GHz", "Fundamental drive frequency.");
-        Add("Vds", $"{ctx.Model.Bias.Vds:0.##} V", "Drain supply.");
-        Add("Vgs", ctx.Model.Bias.Vgs is double vg ? $"{vg:0.###} V" : "(from Idq)",
-            "Gate bias. Idq solves Vgs by a 1-D secant on the DC solve.");
+        // ── R3C §3 — f₀, Vds, Vgs are GONE from here. They were duplicated against the editable
+        // Settings-column inputs (HarmonicaInputs.KeyFrequency/KeyVds/KeyVgs), which are strictly more
+        // capable (editable) and, after R3C §1, render as text anyway — so the input is what survives.
+        // The one thing the removed Vgs row said that the input alone could not ("(from Idq)" when the
+        // bias is current-driven) is now carried by the input itself: see HarmonicaInputs.Build's own
+        // Placeholder for KeyVgs.
 
+        // ── R3C §2 — the operating-point column: Pin/Pout/Gain/DE/PAE/Pdc, headed with the SAME
+        // compression-label vocabulary the Smith titles use (HarmonicaTitles), so this column and the
+        // two charts can never disagree about how the compression target is spelled — never composed
+        // as a new string here.
         if (at is not null)
         {
             // R-h9r2-17a — a sweep's SweepCompression carries the interpolated (or, with
@@ -553,13 +609,19 @@ public sealed class HarmonicaSolver
             double paeFrac = sc?.Pae     ?? at.Pae;
             double pdcW    = sc?.PdcW    ?? at.PdcW;
 
-            Add("Pin", $"{pinDbm:0.##} dBm", "Available power at the operating point.");
-            Add("Pout", double.IsNaN(poutDbm) ? "—" : $"{poutDbm:0.##} dBm",
+            string opHeader = HarmonicaTitles.CompressionLabel(ctx.Model.Settings.CompressionDb);
+            r.Add(new HarmonicaReadout(opHeader, "", "", ReadoutColumn.OperatingPoint));
+
+            void AddOp(string label, string value, string tip)
+                => r.Add(new HarmonicaReadout(label, value, tip, ReadoutColumn.OperatingPoint));
+
+            AddOp("Pin", $"{pinDbm:0.##} dBm", "Available power at the operating point.");
+            AddOp("Pout", double.IsNaN(poutDbm) ? "—" : $"{poutDbm:0.##} dBm",
                 "Output power at the operating point.");
-            Add("Gain", $"{gainDb:0.##} dB", "Transducer gain (Gt) — D9's default criterion.");
-            Add("DE",  $"{deFrac * 100:0.#} %",  "Drain efficiency, Pout / Pdc.");
-            Add("PAE", $"{paeFrac * 100:0.#} %", "Power-added efficiency, (Pout − Pin_delivered) / Pdc.");
-            Add("Pdc", $"{pdcW:0.###} W", "DC power drawn at the operating point.");
+            AddOp("Gain", $"{gainDb:0.##} dB", "Transducer gain (Gt) — D9's default criterion.");
+            AddOp("DE",  $"{deFrac * 100:0.#} %",  "Drain efficiency, Pout / Pdc.");
+            AddOp("PAE", $"{paeFrac * 100:0.#} %", "Power-added efficiency, (Pout − Pin_delivered) / Pdc.");
+            AddOp("Pdc", $"{pdcW:0.###} W", "DC power drawn at the operating point.");
         }
 
         // R-h9r2-24 — the per-marker INTRINSIC Γ rows that used to sit on this General line are GONE,

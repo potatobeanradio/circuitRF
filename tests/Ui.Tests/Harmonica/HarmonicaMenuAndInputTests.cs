@@ -69,6 +69,50 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
         Assert.Equal(ExpectedMenus, inWindow);
     }
 
+    // ══ owner-reported — Advanced Settings… exists, in the same place, on both surfaces ═══════════
+
+    [Fact]
+    public void DisplayMenu_ListsTheSameItems_OnBothSurfaces_IncludingAdvancedSettings()
+    {
+        // EverySection76Menu_... above only compares TOP-LEVEL headers — a submenu that drifted
+        // between the two hand-mirrored surfaces (R-h9a-1's own risk) would pass it silently. This
+        // specifically pins Display's own item list, since that is where Advanced Settings… (and
+        // Set Z0…, which had the identical bug once already) live.
+        var doc = LoadMenuAxaml();
+
+        var nativeDisplay = doc.Descendants()
+            .First(e => e.Name.LocalName == "NativeMenuItem" && (string?)e.Attribute("Header") == "Display")
+            .Descendants().First(e => e.Name.LocalName == "NativeMenu")
+            .Elements().Where(e => e.Name.LocalName == "NativeMenuItem")
+            .Select(e => (string?)e.Attribute("Header"))
+            .ToArray();
+
+        var inWindowDisplay = doc.Descendants()
+            .First(e => e.Name.LocalName == "MenuItem" && ((string?)e.Attribute("Header"))?.Replace("_", "") == "Display")
+            .Elements().Where(e => e.Name.LocalName == "MenuItem")
+            .Select(e => ((string?)e.Attribute("Header"))?.Replace("_", ""))
+            .ToArray();
+
+        output.WriteLine("native  Display: " + string.Join(", ", nativeDisplay));
+        output.WriteLine("in-win. Display: " + string.Join(", ", inWindowDisplay));
+
+        Assert.Equal(nativeDisplay, inWindowDisplay);
+        Assert.Contains("Advanced Settings…", nativeDisplay);
+    }
+
+    [Fact]
+    public void AdvancedSettingsCommand_IsWiredOnBothSurfaces()
+    {
+        var doc = LoadMenuAxaml();
+        var offenders = doc.Descendants()
+            .Where(e => e.Name.LocalName is "NativeMenuItem" or "MenuItem")
+            .Where(e => (string?)e.Attribute("Header") is { } h && h.Replace("_", "").StartsWith("Advanced Settings"))
+            .Where(e => (string?)e.Attribute("Command") != "{Binding AdvancedSettingsCommand}")
+            .ToArray();
+
+        Assert.Empty(offenders);
+    }
+
     [Fact]
     public void NeitherSurface_CarriesASimulateMenu_BecauseHarmonicaRfIsAlwaysSimulating()
     {
@@ -160,6 +204,40 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
         // …and the unmarked value is D9's near-short, which is what the engine will now see.
         Assert.Equal(TerminationSet.UnmarkedBandOhms,
                      vm.Terminations.Z(TerminationSide.Load, 2).Real, 12);
+    }
+
+    // ══ owner-reported — Contour Harmonic tracks K, not a hardcoded 3-item list ══════════════════
+
+    [Fact]
+    public void ContourHarmonicMenu_TracksK_AndSelectingABandSetsGridHarmonic()
+    {
+        var vm = new HarmonicaViewModel();
+        var menus = new HarmonicaMenuViewModel(vm);
+
+        Assert.Equal(3, menus.ContourHarmonics.Count);   // the default document's K
+        Assert.Equal(["f₀", "2f₀", "3f₀"], menus.ContourHarmonics.Select(h => h.Header));
+
+        // K=5 — the owner's own example: "the menu should allow me to loadpull or sourcepull on the
+        // 5f0 plane." The three hardcoded XAML items this replaces had no way to reach it at all.
+        Assert.True(vm.ApplyInput(HarmonicaInputs.KeyHarmonicCount, "5"));
+
+        Assert.Equal(5, menus.ContourHarmonics.Count);
+        Assert.Equal(["f₀", "2f₀", "3f₀", "4f₀", "5f₀"], menus.ContourHarmonics.Select(h => h.Header));
+
+        var band5 = menus.ContourHarmonics.Single(h => h.Band == 5);
+        band5.SelectCommand.Execute(null);
+        Assert.Equal(5, vm.GridHarmonic);
+    }
+
+    [Fact]
+    public void ContourHarmonicMenu_ShrinksWithK_AndSurvivesACharmReload()
+    {
+        var vm = new HarmonicaViewModel();
+        var menus = new HarmonicaMenuViewModel(vm);
+
+        Assert.True(vm.ApplyInput(HarmonicaInputs.KeyHarmonicCount, "2"));
+        Assert.Equal(2, menus.ContourHarmonics.Count);
+        Assert.Equal(["f₀", "2f₀"], menus.ContourHarmonics.Select(h => h.Header));
     }
 
     [Theory]

@@ -452,8 +452,15 @@ public sealed class HarmonicaPanelTests : IDisposable
         terms.Set(TerminationSide.Source, 1, new Complex(25, 0));
         terms.Set(TerminationSide.Load,   1, new Complex(80, 10));
 
+        // maxGamma 0.90, not the original 0.85 — re-measured after brief-harmonicarf-r4 §3's
+        // PinSearch.Run bracket fix (src/Harmonica/RESOLVED.md's own §3 entry), which closed most of
+        // the bracket-stage holes this fixture used to rely on: at 0.85 this grid now converges with
+        // ZERO holes (0/31), which starved this test's own precondition below. Scanned 0.85–0.98 in
+        // 0.02 steps: 0.90 reproduces 2/31 holes reliably (deterministic — no RNG in this path) and is
+        // otherwise the same "PinMax reaches almost everywhere, not quite everywhere" fixture the
+        // original comment describes.
         var grid = new ContourGrid();
-        grid.Build(ctx, terms, ContourGrid.RingGrid(rings: 3, spokes: 10, maxGamma: 0.85));
+        grid.Build(ctx, terms, ContourGrid.RingGrid(rings: 3, spokes: 10, maxGamma: 0.90));
 
         // The fixture must be a MOSTLY-converged grid with A FEW holes. An all-holes grid has no
         // surface to draw and would pass the in-hole assertion vacuously; a no-holes grid has nothing

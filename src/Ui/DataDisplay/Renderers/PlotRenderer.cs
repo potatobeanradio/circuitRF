@@ -284,10 +284,12 @@ namespace CircuitRF.Ui.DataDisplay
                         {
                             var vplane = plot.PlotType is PlotType.Smith or PlotType.Polar
                                 ? SurfacePlane.Gamma : SurfacePlane.Z;
-                            // Full complex trace Z0 is the reference — never drop the imaginary part.
-                            var z0Ref = trace.Z0 == System.Numerics.Complex.Zero
+                            // Full complex marker reference — never drop the imaginary part, and use
+                            // the reference the DISPLAYED data actually carries (MarkerZ0: the
+                            // port's own Z0 when the trace's Z0 Override is off).
+                            var z0Ref = trace.MarkerZ0 == System.Numerics.Complex.Zero
                                 ? new System.Numerics.Complex(50.0, 0.0)
-                                : trace.Z0;
+                                : trace.MarkerZ0;
                             canvas.Save();
                             canvas.ClipRect(viewportClip);
                             MarkerRenderer.DrawVswrLocus(canvas, canvasSize, marker, trace, tf, vplane, z0Ref);

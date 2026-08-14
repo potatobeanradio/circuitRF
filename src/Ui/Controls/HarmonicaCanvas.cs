@@ -39,6 +39,21 @@ public sealed class HarmonicaCanvas : Control
     // this control had none at all.
     public HarmonicaCanvas() => Focusable = true;
 
+    // brief-harmonicarf-r4 §4 — one backdrop cache PER SMITH PANEL, owned by this control instance
+    // (never static — src/Harmonica/CLAUDE.md's "no static mutable state" rule, applied here too)
+    // so it survives across Render() calls even though HarmonicaDrawOperation itself is rebuilt fresh
+    // every frame. Copy Plot / export never touches these — HarmonicaCanvasRenderer.Snapshot.Of(vm)
+    // alone (no WithBackdropCaches) is what those call, on purpose.
+    private readonly HarmonicaBackdropCache _powerBackdrop      = new();
+    private readonly HarmonicaBackdropCache _efficiencyBackdrop = new();
+
+    protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        _powerBackdrop.Dispose();
+        _efficiencyBackdrop.Dispose();
+        base.OnDetachedFromVisualTree(e);
+    }
+
     public static readonly DirectProperty<HarmonicaCanvas, HarmonicaViewModel?> ViewModelProperty =
         AvaloniaProperty.RegisterDirect<HarmonicaCanvas, HarmonicaViewModel?>(
             nameof(ViewModel), o => o.ViewModel, (o, v) => o.ViewModel = v);
@@ -225,15 +240,22 @@ public sealed class HarmonicaCanvas : Control
     {
         base.Render(context);
         if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
-        context.Custom(new HarmonicaDrawOperation(new Rect(Bounds.Size), _vm));
+        context.Custom(new HarmonicaDrawOperation(new Rect(Bounds.Size), _vm,
+                                                  _powerBackdrop, _efficiencyBackdrop, RenderScaling));
     }
 
-    private sealed class HarmonicaDrawOperation(Rect bounds, HarmonicaViewModel? vm) : ICustomDrawOperation
+    private sealed class HarmonicaDrawOperation(
+        Rect bounds, HarmonicaViewModel? vm,
+        HarmonicaBackdropCache powerBackdrop, HarmonicaBackdropCache efficiencyBackdrop, double deviceScale)
+        : ICustomDrawOperation
     {
         // A SNAPSHOT of what to draw, captured at render time. The VM may change on the UI thread
         // while the operation is queued; capturing here is the same discipline every other custom
-        // draw operation in this codebase follows.
-        private readonly HarmonicaCanvasRenderer.Snapshot _snap = HarmonicaCanvasRenderer.Snapshot.Of(vm);
+        // draw operation in this codebase follows. brief-harmonicarf-r4 §4 — the two backdrop caches
+        // are the LIVE canvas's own, attached here rather than by Snapshot.Of itself, so every other
+        // caller of Snapshot.Of (Copy Plot, export, tests) stays uncached exactly as before.
+        private readonly HarmonicaCanvasRenderer.Snapshot _snap =
+            HarmonicaCanvasRenderer.Snapshot.Of(vm).WithBackdropCaches(powerBackdrop, efficiencyBackdrop, deviceScale);
         private readonly HarmonicaViewModel? _vm = vm;
 
         private CharmLayout          _layout => _snap.Layout;

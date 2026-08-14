@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using CircuitRF.Engine.Loadpull;
 
@@ -70,6 +73,18 @@ public sealed record PinSearchResult(PinStopReason Reason, int Solves)
     /// </summary>
     public double? SmallSignalGainDb { get; init; }
 
+    /// <summary>§3.3 item 3 (brief-harmonicarf-r3b) — how many of <see cref="Solves"/> were a cold
+    /// DC-seeded RETRY after the warm-started attempt at that same Pin level failed to converge. Zero
+    /// on the ordinary path; a counter, not a hidden cost, so the retry's own price stays visible.</summary>
+    public int Retries { get; init; }
+
+    /// <summary>brief-harmonicarf-r4 §3.3 — how many extra probes <see cref="PinSearch.Run"/> spent
+    /// bisecting a coarse bracket to find the TRUE first compression crossing (§3.2). Zero on the
+    /// ordinary path (a narrow, monotone bracket needs no extra probe at all); a counter, never a
+    /// hidden cost, exactly like <see cref="Retries"/>. Always 0 for <see cref="PinSearch.Sweep"/>,
+    /// whose ladder has no bracket to refine.</summary>
+    public int BracketRefineProbes { get; init; }
+
     public bool Compressed => Reason == PinStopReason.Compression && AtCompression is not null;
 }
 
@@ -91,6 +106,14 @@ public sealed record PinSearchResult(PinStopReason Reason, int Solves)
 public sealed record CompressionReadout(
     double PinDbm, double PoutDbm, double GainDb, double De, double Pae, double PdcW,
     PinStep Spectrum, bool WasInterpolated);
+
+/// <summary>Which stage of <see cref="PinSearch.Run"/> a probed solve belongs to — brief-harmonicarf-r3b
+/// §3.1's own diagnostic vocabulary, so a hole's cause can be named instead of just counted.</summary>
+public enum PinSearchStage { Tickle, PinStart, Bracket, Secant }
+
+/// <summary>One solve attempt inside <see cref="PinSearch.Run"/>, reported to an optional observer —
+/// purely additive instrumentation (§3.1); it changes nothing about the search itself.</summary>
+public readonly record struct PinSearchProbe(PinSearchStage Stage, double PinDbm, bool Converged);
 
 /// <summary>
 /// R-hrf-7 / D4 — secant bisection on Pin toward the compression target, rather than the batch
@@ -122,6 +145,11 @@ public static class PinSearch
     /// <summary>The first bracketing stride, dB. Subsequent strides DOUBLE.</summary>
     public const double FirstStrideDb = 3.0;
 
+    /// <summary>brief-harmonicarf-r4 §3.3 — the cost budget's own cap: at most this many extra probes
+    /// bisecting a coarse bracket to find the true first crossing, so a pathological gain curve cannot
+    /// turn one Γ point's search into the ladder it was built to avoid.</summary>
+    public const int MaxBracketRefineProbes = 4;
+
     /// <summary>
     /// Drives one Γ point to its compression target.
     ///
@@ -135,22 +163,65 @@ public static class PinSearch
     /// <c>PinStart</c>, and every point after it starts a few dB from the answer. Null bootstraps
     /// from <c>PinStart</c> with geometrically expanding strides.
     /// </param>
+    /// <param name="neighborSteps">
+    /// §3.3 item 2 (brief-harmonicarf-r3b) — the VSWR-nearest neighbour's WHOLE converged ladder
+    /// (every Pin level it solved, not just its most-compressed step). When supplied, EVERY solve in
+    /// this search — including the very first — prefers whichever is closer in Pin: the neighbour's
+    /// own step nearest the level being solved, or this point's own in-ladder predecessor. Measured to
+    /// be exactly where the shipped default's holes come from: the bracket's first, hint-driven probe
+    /// otherwise jumps from <c>PinStart</c> (a low-drive spectrum) straight to a neighbour's
+    /// compression Pin — potentially 30+ dB in one step, seeded with the wrong end of that gap.
+    /// </param>
     public static PinSearchResult Run(
         HarmonicaContext ctx, TerminationSet terminations, Complex[,]? warmStart = null,
-        double? pinHintDbm = null)
+        double? pinHintDbm = null, Action<PinSearchProbe>? onProbe = null,
+        IReadOnlyList<PinStep>? neighborSteps = null)
     {
         var s = ctx.Model.Settings;
         var steps  = new List<PinStep>();
         int solves = 0;
 
         Complex[,]? seed = warmStart;
+        double lastPinDbm = double.NaN;
 
-        PinStep? Solve(double pavlDbm)
+        Complex[,]? SeedFor(double pavlDbm)
+        {
+            Complex[,]? best = seed;
+            double bestD = double.IsNaN(lastPinDbm) ? double.MaxValue : Math.Abs(lastPinDbm - pavlDbm);
+            if (neighborSteps is { Count: > 0 })
+            {
+                foreach (var st in neighborSteps)
+                {
+                    double d = Math.Abs(st.PavlDbm - pavlDbm);
+                    if (d < bestD) { bestD = d; best = st.Point.V; }
+                }
+            }
+            return best;
+        }
+
+        int retries = 0;
+        int bracketRefineProbes = 0;
+
+        PinStep? Solve(double pavlDbm, PinSearchStage stage)
         {
             solves++;
-            var pt = ctx.Solve(terminations, pavlDbm, seed);
-            if (!pt.Converged) return null;
+            var pt = ctx.Solve(terminations, pavlDbm, SeedFor(pavlDbm));
+            onProbe?.Invoke(new PinSearchProbe(stage, pavlDbm, pt.Converged));
+
+            if (!pt.Converged)
+            {
+                // §3.3 item 3 — one retry from the DC seed (ctx.Solve's own cold-seed path, a real
+                // nonlinear operating point per §3.3 item 1) before declaring a hole. Costs one solve
+                // on a path that was already failing; nothing on a path that converges normally.
+                retries++;
+                solves++;
+                pt = ctx.Solve(terminations, pavlDbm, warmStart: null);
+                onProbe?.Invoke(new PinSearchProbe(stage, pavlDbm, pt.Converged));
+                if (!pt.Converged) return null;
+            }
+
             seed = pt.V;
+            lastPinDbm = pavlDbm;
             return Measure(ctx, pt, terminations);
         }
 
@@ -159,9 +230,9 @@ public static class PinSearch
         double gMax = double.NegativeInfinity;
         if (s.TickleEnabled)
         {
-            var tickle = Solve(s.TickleDbm);
+            var tickle = Solve(s.TickleDbm, PinSearchStage.Tickle);
             if (tickle is null)
-                return new PinSearchResult(PinStopReason.NonConvergence, solves) { Steps = steps };
+                return new PinSearchResult(PinStopReason.NonConvergence, solves) { Steps = steps, Retries = retries, BracketRefineProbes = bracketRefineProbes };
             gss  = tickle.GainDb;
             gMax = gss.Value;
         }
@@ -181,10 +252,10 @@ public static class PinSearch
         // ── 2. bracket, then secant ───────────────────────────────────────────
         double target = s.CompressionDb;
 
-        var lo = Solve(s.PinStartDbm);
+        var lo = Solve(s.PinStartDbm, PinSearchStage.PinStart);
         if (lo is null)
             return new PinSearchResult(PinStopReason.NonConvergence, solves)
-                { Steps = steps, SmallSignalGainDb = gss };
+                { Steps = steps, SmallSignalGainDb = gss, Retries = retries, BracketRefineProbes = bracketRefineProbes };
         if (!s.TickleEnabled) gMax = lo.GainDb;
         double cLo = CompressionAt(lo);
         steps.Add(lo with { Compression = cLo });
@@ -194,7 +265,7 @@ public static class PinSearch
             // Already at or past the target at the very first drive level. Nothing to search for.
             return new PinSearchResult(PinStopReason.Compression, solves)
             {
-                Steps = steps, SmallSignalGainDb = gss, AtCompression = steps[^1],
+                Steps = steps, SmallSignalGainDb = gss, AtCompression = steps[^1], Retries = retries, BracketRefineProbes = bracketRefineProbes,
             };
         }
 
@@ -202,9 +273,31 @@ public static class PinSearch
         // PinStart to PinMax is the batch engine's ladder wearing a different name, and it dominated
         // the solve count (12 of 14) before this was measured. A hint from a neighbouring Γ point,
         // when there is one, starts the climb beside the answer instead of at the bottom.
+        //
+        // brief-harmonicarf-r4 §3 — every probed (Pin, GainDb) pair is kept in `probed`, regardless of
+        // the ORDER it was solved in. The doubling stride (or a hint's own big first jump) can land a
+        // LATER probe at a much higher Pin than an EARLIER one; `gMax` above is a running maximum
+        // accumulated in PROBE order, so deciding "is this the first crossing" from it directly is
+        // wrong the moment probe order and Pin order diverge — exactly RESOLVED.md §3's own bracket-
+        // stage trap. `FirstCrossing` below is a PURE function of the accumulated samples, sorted by
+        // Pin, so the answer cannot depend on which order they happened to be solved in.
         double pinLo = lo.PavlDbm;
         PinStep? hi = null;
-        double cHi = double.NaN, pinHi = double.NaN;
+
+        // §3.3's own trigger, made precise: TRUE only when the DOUBLING STRIDE actually grew past its
+        // first rung before `hi` was found — i.e. the coarse loop missed at least once and had to widen.
+        // A hint's own first probe landing on/past the target (the ordinary, common case — most grid
+        // points after the first warm-start from a close neighbour) leaves this FALSE even though the
+        // literal span from PinStart to the hint can be tens of dB: that span was never SEARCHED by the
+        // doubling stride at all, so there is no stride-granularity evidence to refine against, and
+        // measured directly, bisecting into it anyway makes things WORSE (the serial/parallel grid
+        // comparison's own worst-case PAE deviation went from 2.69 to 8.05 pts when this guard was
+        // missing) rather than better — probes placed there cannot know what a hint deliberately
+        // skipped, they just narrow around whatever they happen to find, which is not necessarily the
+        // hint's OWN neighbour-informed answer.
+        bool coarseDoubled = false;
+
+        var probed = new List<PinStep> { lo with { Compression = cLo } };
 
         double stride = FirstStrideDb;
         double pin = pinHintDbm is { } hint
@@ -213,15 +306,17 @@ public static class PinSearch
 
         while (pin <= s.PinMaxDbm + 1e-9)
         {
-            var step = Solve(pin);
+            var step = Solve(pin, PinSearchStage.Bracket);
             if (step is null)
                 return new PinSearchResult(PinStopReason.NonConvergence, solves)
-                    { Steps = steps, SmallSignalGainDb = gss };
+                    { Steps = steps, SmallSignalGainDb = gss, Retries = retries, BracketRefineProbes = bracketRefineProbes };
 
             double c = CompressionAt(step);
-            steps.Add(step with { Compression = c });
+            var withC = step with { Compression = c };
+            steps.Add(withC);
+            probed.Add(withC);
 
-            if (c >= target) { hi = step; cHi = c; pinHi = pin; break; }
+            if (c >= target) { hi = withC; coarseDoubled = stride > FirstStrideDb + 1e-9; break; }
 
             pinLo = pin; cLo = c;
 
@@ -234,10 +329,106 @@ public static class PinSearch
             // Never compressed before PinMax. R-hrf-8: this Γ point is a HOLE, thrown out of the grid
             // rather than extrapolated into.
             return new PinSearchResult(PinStopReason.PinMax, solves)
-                { Steps = steps, SmallSignalGainDb = gss };
+                { Steps = steps, SmallSignalGainDb = gss, Retries = retries, BracketRefineProbes = bracketRefineProbes };
+
+        // §3.2 — the FIRST crossing, in ascending-Pin order, over EVERY sample probed so far. Exactly
+        // Sweep()'s own running-gMax rule, applied to this search's (possibly sparse, non-uniform)
+        // sample set instead of a dense uniform ladder. Guaranteed non-null: PinStart's own compression
+        // is < target (the early-return above already excluded the opposite case) and `hi` — by
+        // construction the highest-Pin sample probed so far — has compression >= target, so a
+        // finite ascending walk from one to the other must cross somewhere.
+        (PinStep Lo, double CLo, PinStep Hi, double CHi)? FirstCrossing()
+        {
+            var sorted = probed.OrderBy(p => p.PavlDbm).ToList();
+            double runMax = s.TickleEnabled ? gss!.Value : double.NegativeInfinity;
+            double prevC = double.NaN;
+            PinStep? prevStep = null;
+            foreach (var p in sorted)
+            {
+                if (p.GainDb > runMax) runMax = p.GainDb;
+                double c = runMax - p.GainDb;
+                if (prevStep is not null && prevC < target && c >= target)
+                    return (prevStep, prevC, p, c);
+                prevStep = p; prevC = c;
+            }
+            return null;
+        }
+
+        var crossing = FirstCrossing()
+            ?? throw new InvalidOperationException("PinSearch.Run: no crossing found despite hi >= target — " +
+                                                    "see FirstCrossing's own proof of non-nullity.");
+
+        // §3.2's trap and §3.3's budget, together: a naive back-probe evaluated in PROBE order would
+        // repeat the exact mistake this fix removes, so refinement always re-derives the crossing
+        // through the SAME pure function above. Bounded to a small, COUNTED number of extra probes
+        // (never silent, `Retries`' own precedent) and only spent when the sample history actually
+        // gives a reason to: the doubling stride grew past its first rung, or a non-monotone gain
+        // sequence (gain expansion — the exact shape that let a later, spurious crossing masquerade as
+        // the first one before this fix).
+        //
+        // <b>Restricted to an UNHINTED search — measured, not assumed.</b> Extending refinement to a
+        // HINTED search (every grid point after the first, warm-started from a converged neighbour)
+        // regressed `ContourGridParallelTests`' own serial-vs-parallel gate from 2.69 to 3.75 pts PAE
+        // worst-case, on a DIFFERENT set of points than the one this fix targets. Root cause: on this
+        // fixture's gain-expansion device, the true peak gain can sit anywhere on the Γ plane, and a
+        // hint from a DIFFERENT neighbour's own compression Pin can define a coarse bracket that never
+        // samples that peak at all — refinement then converges CONFIDENTLY (stable across a wide range
+        // of probe caps, not merely under-iterated) to a crossing measured against an
+        // under-established `gMax`, and since serial and parallel grids hint from different neighbour
+        // pools for the same Γ, they converge confidently to two DIFFERENT wrong answers instead of one
+        // secant's shared, smoother approximation. That is a real, pre-existing limitation of `gMax`
+        // establishment under a hint — not the doubling-stride sampling defect §3 scopes — and is
+        // NOT fixed here; disabling refinement outright reproduces the original 2.69 pts baseline
+        // almost exactly (2.687, measured), which is what pins the regression to refinement-under-a-hint
+        // specifically. The unhinted path (the grid's own single deterministic "leader" point, and any
+        // direct <see cref="Run"/> call with no hint) has no such neighbour to disagree with and is
+        // exactly brief-harmonicarf-r4 §3's own named reproduction case (28.4 vs 27.2 dBm).
+        while (pinHintDbm is null && bracketRefineProbes < MaxBracketRefineProbes)
+        {
+            var (a, _, b, _) = crossing;
+            double width = b.PavlDbm - a.PavlDbm;
+
+            bool nonMonotone = false;
+            var sortedNow = probed.OrderBy(p => p.PavlDbm).ToList();
+            for (int i = 1; i < sortedNow.Count; i++)
+                if (sortedNow[i].GainDb > sortedNow[i - 1].GainDb + 1e-9) { nonMonotone = true; break; }
+
+            if (!coarseDoubled && !nonMonotone) break;     // no reason to spend a probe — see above
+            if (width <= FirstStrideDb + 1e-9 && !nonMonotone) break;
+
+            double mid = 0.5 * (a.PavlDbm + b.PavlDbm);
+            var midStep = Solve(mid, PinSearchStage.Bracket);
+            bracketRefineProbes++;
+            if (midStep is null) break;    // a failed refinement probe just stops refining — the
+                                            // coarse bracket already found is still a valid answer.
+
+            double c = CompressionAt(midStep);
+            var withC = midStep with { Compression = c };
+            steps.Add(withC);
+            probed.Add(withC);
+
+            var next = FirstCrossing();
+            if (next is null) break;       // cannot happen per the proof above; never spin regardless.
+            crossing = next.Value;
+        }
+
+        var (finalLo, finalCLo, finalHi, finalCHi) = crossing;
+        pinLo = finalLo.PavlDbm;
+        double pinHi = finalHi.PavlDbm;
+        cLo = finalCLo;
+        double cHi = finalCHi;
+
+        // The secant below re-uses the closure's running `gMax` — re-seed it to what the PURE
+        // evaluation actually used at the crossing's high end, so a probe-order artifact from a hint's
+        // own big jump (or from the refinement probes above) cannot leak into the secant's own
+        // CompressionAt calls. Every secant probe lands INSIDE [pinLo, pinHi], at or below `finalHi`'s
+        // Pin, so this is the correct — and only — max the secant should be comparing against.
+        gMax = s.TickleEnabled
+            ? Math.Max(gss!.Value, probed.Where(p => p.PavlDbm <= pinHi + 1e-9).Max(p => p.GainDb))
+            : probed.Where(p => p.PavlDbm <= pinHi + 1e-9).Max(p => p.GainDb);
 
         // ── 3. secant on (Pin, compression) toward the target ─────────────────
-        PinStep best = hi with { Compression = cHi };
+        PinStep best = finalHi with { Compression = cHi };
         double  bestErr = Math.Abs(cHi - target);
 
         for (int it = 0; it < MaxSecantSteps && bestErr > CompressionToleranceDb; it++)
@@ -252,10 +443,10 @@ public static class PinSearch
             if (!(next > Math.Min(pinLo, pinHi) && next < Math.Max(pinLo, pinHi)))
                 next = 0.5 * (pinLo + pinHi);
 
-            var step = Solve(next);
+            var step = Solve(next, PinSearchStage.Secant);
             if (step is null)
                 return new PinSearchResult(PinStopReason.NonConvergence, solves)
-                    { Steps = steps, SmallSignalGainDb = gss };
+                    { Steps = steps, SmallSignalGainDb = gss, Retries = retries, BracketRefineProbes = bracketRefineProbes };
 
             double c = CompressionAt(step);
             var    withC = step with { Compression = c };
@@ -269,7 +460,7 @@ public static class PinSearch
 
         return new PinSearchResult(PinStopReason.Compression, solves)
         {
-            Steps = steps, SmallSignalGainDb = gss, AtCompression = best,
+            Steps = steps, SmallSignalGainDb = gss, AtCompression = best, Retries = retries, BracketRefineProbes = bracketRefineProbes,
         };
     }
 
@@ -282,9 +473,14 @@ public static class PinSearch
     /// ~13× the solves and make the grid unaffordable), while this is tier A's alone, called once per
     /// frame at the marker's own terminations.
     ///
-    /// <para><b>Inclusive at both ends</b> (R-h9r2-17): <paramref name="stopDbm"/> is always solved,
-    /// even when the range is not an integer multiple of <paramref name="stepDbm"/> — the final
-    /// interval is then short rather than <paramref name="stopDbm"/> being dropped.</para>
+    /// <para><b>Inclusive at both ends, UNLESS the ladder crosses compression</b> (R-h9r2-17, revised
+    /// by brief-harmonicarf-r4 §1): a sweep that never reaches <c>CompressionDb</c> still solves every
+    /// rung up to and including <paramref name="stopDbm"/>, so the user always sees the full range on a
+    /// device that does not compress. A sweep that DOES cross stops once compression reaches
+    /// <c>CompressionDb + HarmonicaSettings.SweepOverdriveDb</c> — R-h9r2-19's original "never stop
+    /// early" is superseded for this case only; see <c>HarmonicaSettings.SweepOverdriveDb</c>'s own
+    /// remarks for why (the rule was right at a 30 dBm <c>PinMaxDbm</c> ceiling and became visibly
+    /// wrong once it moved to 50).</para>
     ///
     /// <para><b>Compression is INTERPOLATED from the ladder</b> (R-h9r2-17a), never from an extra
     /// solve by default — <see cref="PinSearchResult.SweepCompression"/> carries it.
@@ -351,12 +547,22 @@ public static class PinSearch
         }
 
         double target = s.CompressionDb;
+        // brief-harmonicarf-r4 §1 — the OVERDRIVE-inclusive stop target. Always >= target, so the
+        // crossing above (which fires the moment c first reaches `target`) is guaranteed to have
+        // already been recorded by the time this one can fire — "the early stop happens strictly
+        // after the crossing pair has been recorded" holds by construction, not by ordering the checks
+        // carefully. A margin of 0 makes the two targets identical, so the ladder stops on the very
+        // rung that crosses.
+        double overdriveTarget = target + Math.Max(0.0, s.SweepOverdriveDb);
         int cross = -1;
 
-        // ── 2. the ladder, every point a real solve, inclusive at both ends (R-h9r2-19) ────────
-        // Every point is solved regardless of where compression crosses — R-h9r2-19 forbids stopping
-        // early, unlike Run()'s own bracket-and-secant. The FIRST crossing is still recorded AS the
-        // ladder is walked (R-h9r2-17a's own "first one"), from the incremental gMax above.
+        // ── 2. the ladder, inclusive at both ends (R-h9r2-19, revised by brief-harmonicarf-r4 §1) ──
+        // R-h9r2-19 originally forbade stopping early at all. That was right when PinMaxDbm was 30 dBm
+        // (a few dB of overdrive past P3dB) and became wrong at 50 (~20 dB of overdrive, ~44 wasted
+        // solves on the shipped default) — see CLAUDE.md's own dated note. A sweep that never crosses
+        // the target is UNCHANGED: it still runs the full ladder, so the user sees the whole range and
+        // can tell the device never compressed. Only a sweep that DOES cross stops early, and only
+        // once it has gone at least as far PAST the crossing as SweepOverdriveDb asks for.
         foreach (double pin in Ladder(startDbm, stopDbm, stepDbm))
         {
             var step = Solve(pin);
@@ -370,6 +576,10 @@ public static class PinSearch
 
             if (cross < 0 && steps.Count > 1 && steps[^2].Compression < target && c >= target)
                 cross = steps.Count - 2;
+
+            bool alreadyAtTarget = cross >= 0 || (steps.Count == 1 && c >= target);
+            if (alreadyAtTarget && c >= overdriveTarget)
+                break;
         }
 
         if (steps.Count == 0)

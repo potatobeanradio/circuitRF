@@ -24,3 +24,8 @@ view, Data Display, dialogs, theming — the whole Avalonia application). Read w
 > **Maintenance rule, or this stays permanently thin.** A completed phase's narrative belongs in
 > `HISTORY.md`, not here. This file should only ever gain durable, still-true content: an invariant, a
 > current default, a refusal, a trap with a name — never a phase-by-phase write-up.
+
+**macOS `NativeMenu` invariant:** a window's `NativeMenu` instance is fixed for its lifetime — change
+its `Items`, never the instance (`NativeMenu.SetMenu` a second time on the same window throws, and can
+crash on a later dispatcher-queued reset even when the throw itself is swallowed). See
+`src/Ui/RESOLVED.md`'s harmonicaRF R3A entry.

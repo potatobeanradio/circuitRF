@@ -4,8 +4,10 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Renderers;
 
@@ -19,7 +21,57 @@ namespace CircuitRF.Ui.Views.Harmonica;
 /// </summary>
 public partial class ReadoutStripView : UserControl
 {
-    public ReadoutStripView() => InitializeComponent();
+    public ReadoutStripView()
+    {
+        InitializeComponent();
+
+        // R3C follow-up — an inline editor (R-h9c-8's Source/Load boxes, R3C §1's Settings boxes)
+        // must close on Escape and on a click OUTSIDE it, and neither happened reliably:
+        //
+        // Escape: a docked document sits inside WorkspaceWindow, whose OWN <KeyBinding Gesture=
+        // "Escape" Command="{Binding DisarmPlacementCommand}"/> marks the KeyDown event Handled
+        // BEFORE routing reaches this control at all — SchematicView.OnViewKeyDownTunnel hit the
+        // identical problem for its own inline editor and its own comment names the mechanism.
+        // handledEventsToo:true is what lets a handler still see and act on an already-Handled key.
+        //
+        // Click-away: most of this strip is plain, non-focusable TextBlocks/StackPanels — clicking
+        // one does not move keyboard focus away from an open editor's TextBox (Avalonia only moves
+        // focus to a FOCUSABLE target), so the box's own LostFocus commit never fires. A Tunnel
+        // PointerPressed here — closing any open editor the press did not land inside — does not
+        // depend on focus actually moving at all.
+        AddHandler(KeyDownEvent, OnStripKeyDownTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerPressedEvent, OnStripPointerPressedTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    /// <summary>Every currently-open inline editor (there can be more than one — nothing stops a
+    /// double-click on a second row while a first is still open), its OWN end-edit callback
+    /// (<c>commit</c>: true to commit-if-changed, false to revert), and its box. Populated by
+    /// <see cref="BeginInlineEdit"/>, drained by that same call's own <c>EndEdit</c>.</summary>
+    private readonly List<(TextBox Box, Action<bool> EndEdit)> _openEditors = [];
+
+    private void OnStripKeyDownTunnel(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _openEditors.Count == 0) return;
+
+        // Only the box that actually has keyboard focus is what Escape means to cancel — a second
+        // open editor elsewhere in the strip is untouched.
+        var focused = _openEditors.FirstOrDefault(x => x.Box.IsFocused);
+        if (focused.EndEdit is null) return;
+
+        focused.EndEdit(false);
+        e.Handled = true;
+    }
+
+    private void OnStripPointerPressedTunnel(object? sender, PointerPressedEventArgs e)
+    {
+        if (_openEditors.Count == 0 || e.Source is not Visual source) return;
+
+        // Snapshot first — EndEdit removes its own entry from _openEditors, so iterating the live
+        // list while calling it would skip whichever entry follows the one just removed.
+        foreach (var (box, endEdit) in _openEditors.ToArray())
+            if (!ReferenceEquals(source, box) && !box.IsVisualAncestorOf(source))
+                endEdit(true);   // outside the box — commit it, exactly what LostFocus would have done
+    }
 
     /// <summary>
     /// §4 (R1C) — the density floor/ceiling, moved by R-h9r2-21's own +25%: below ~10 pt the strip is
@@ -72,15 +124,25 @@ public partial class ReadoutStripView : UserControl
     /// expression string can be; a bad Complex format simply fails to parse before this is even
     /// called.</param>
     /// <param name="onOpenSetDialog">R-h9c-7's "Set…" menu item on an editable row.</param>
+    /// <summary>
+    /// brief-harmonicarf-r3b §1.4 — how long the last <see cref="SetItems"/> call took to rebuild
+    /// every column's controls, in milliseconds. Ui.Tests cannot instantiate this control (no live
+    /// Avalonia Application), so this is the only way the strip-rebuild cost §1.4 asks about can be
+    /// reported: read it after an interactive drag rather than from an automated benchmark.
+    /// </summary>
+    public double LastSetItemsMs { get; private set; }
+
     public void SetItems(IReadOnlyList<HarmonicaReadout> items, IBrush foreground, double fontSize = 10,
                          Func<string, ReadoutFormat>? formatFor = null,
                          Action<string, ReadoutFormat>? onFormatChanged = null,
                          Func<HarmonicaReadout, string, bool>? onCommitEdit = null,
                          Action<HarmonicaReadout>? onOpenSetDialog = null)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         formatFor ??= _ => ReadoutFormat.RealImaginary;
 
         Items.Children.Clear();
+        OperatingPointColumn.Children.Clear();
         SourceColumn.Children.Clear();
         LoadColumn.Children.Clear();
         MxpColumn.Children.Clear();
@@ -99,10 +161,11 @@ public partial class ReadoutStripView : UserControl
             anyColumns = true;
             var host = item.Column switch
             {
-                ReadoutColumn.Source => SourceColumn,
-                ReadoutColumn.Load   => LoadColumn,
-                ReadoutColumn.Mxp    => MxpColumn,
-                _                    => MxeColumn,
+                ReadoutColumn.OperatingPoint => OperatingPointColumn,
+                ReadoutColumn.Source         => SourceColumn,
+                ReadoutColumn.Load           => LoadColumn,
+                ReadoutColumn.Mxp            => MxpColumn,
+                _                            => MxeColumn,
             };
             host.Children.Add(BuildColumnRow(item, foreground, fontSize, formatFor,
                                              onFormatChanged, onCommitEdit, onOpenSetDialog));
@@ -110,6 +173,9 @@ public partial class ReadoutStripView : UserControl
 
         ColumnRule.IsVisible    = anyColumns;
         ColumnRule.Background   = foreground;
+
+        sw.Stop();
+        LastSetItemsMs = sw.Elapsed.TotalMilliseconds;
     }
 
     /// <summary>One General-column row — §7.5's original flat pair, unchanged shape.</summary>
@@ -157,7 +223,7 @@ public partial class ReadoutStripView : UserControl
     /// row (<see cref="HarmonicaReadout.IsComplex"/>) additionally gets R-h9c-7's right-click format
     /// menu, and an editable one (R-h9c-8) gets the double-click inline editor.
     /// </summary>
-    private static Control BuildColumnRow(HarmonicaReadout item, IBrush foreground, double fontSize,
+    private Control BuildColumnRow(HarmonicaReadout item, IBrush foreground, double fontSize,
                                           Func<string, ReadoutFormat> formatFor,
                                           Action<string, ReadoutFormat>? onFormatChanged,
                                           Func<HarmonicaReadout, string, bool>? onCommitEdit,
@@ -216,7 +282,8 @@ public partial class ReadoutStripView : UserControl
 
         if (editable)
             pair.DoubleTapped += (_, _) =>
-                BeginInlineEdit(pair, valueBlock, item, foreground, fontSize, onCommitEdit!,
+                BeginInlineEdit(valueBlock, foreground, fontSize,
+                                text => onCommitEdit!(item, text),
                                 DisplayValue(item, formatFor));
 
         return pair;
@@ -288,13 +355,22 @@ public partial class ReadoutStripView : UserControl
     }
 
     /// <summary>
-    /// R-h9c-8 — double-click swaps the value cell for a <see cref="TextBox"/> in place, using the
-    /// SAME position <see cref="HarmonicaPanelRenderer"/>… no — this is Avalonia CONTROLS, so "the
-    /// same geometry the renderer uses" is trivially true: the anchor IS the control's own bounds,
-    /// which is exactly R-h9c-8's own point (the schematic's inline editor has to derive a canvas
-    /// position; a strip row does not). Commits on Return and LostFocus, reverts on Escape,
-    /// <c>e.Handled = true</c> on Return so the hosting window's default button does not take it —
-    /// the three-key contract <see cref="SetInputs"/>'s own editors already use.
+    /// R-h9c-8 — double-click opens a floating <see cref="TextBox"/> over the value cell. Commits on
+    /// Return and LostFocus, reverts on Escape, <c>e.Handled = true</c> on Return so the hosting
+    /// window's default button does not take it — the three-key contract <see cref="SetInputs"/>'s
+    /// own editors already use.
+    ///
+    /// <para><b>R3C follow-up — floats in <c>EditorOverlay</c>, does NOT splice into the row.</b> The
+    /// original scheme removed <paramref name="valueControl"/> from its own row and inserted the
+    /// <see cref="TextBox"/> in its place — so the box's own <c>MinWidth</c> (70) widened whichever
+    /// row it opened on, and since a <c>StackPanel</c> column sizes to its widest row, that shoved
+    /// every column to ITS right sideways the instant an edit opened (owner-reported). The box now
+    /// renders in <c>EditorOverlay</c> — a transparent <c>Canvas</c> layered on top of the whole
+    /// strip's content, sharing its coordinate space (see the AXAML's own remark) — positioned over
+    /// <paramref name="valueControl"/> via <c>TranslatePoint</c>, while <paramref name="valueControl"/>
+    /// itself merely goes <c>Opacity = 0</c> (which reserves its layout slot; removing it would not).
+    /// No row, column, or anything to its right ever moves, and the editor genuinely paints over
+    /// everything, per the owner's own words — it is the TOPMOST sibling in the shared <c>Panel</c>.</para>
     ///
     /// <para><b>R-h9r2-16</b> — the box is seeded with exactly what the row is CURRENTLY showing (its
     /// <paramref name="currentDisplayValue"/>, R-h9r2-25's own render-time text — never <c>item.
@@ -308,15 +384,23 @@ public partial class ReadoutStripView : UserControl
     /// tolerates the trailing unit back (it strips a trailing 'Ω' before parsing), so committing needs
     /// no second strip-the-unit step here — and it parses in the row's OWN CURRENT format, which
     /// R-h9r2-25 makes unambiguous (<c>OnReadoutCommitEdit</c> reads it live, same as this seed does).</para>
+    ///
+    /// <para><b>R3C §1 — generalised to a bare <c>Func&lt;string, bool&gt;</c> commit callback</b>
+    /// (was <c>Func&lt;HarmonicaReadout, string, bool&gt;</c>) so the Settings column's rows
+    /// (<see cref="BuildSettingsColumnRow"/>, which have no <see cref="HarmonicaReadout"/> at all —
+    /// their identity is a plain input KEY) can share this one editor rather than a second copy of it.
+    /// The Source/Load/MXP/MXE call site (<see cref="BuildColumnRow"/>) adapts by closing over its own
+    /// <c>item</c>. <paramref name="onEditingChanged"/> is optional and lets a caller track "is a
+    /// box open right now" in its own per-row state — the Settings column needs this because, unlike
+    /// this readout half (rebuilt every frame by <see cref="SetItems"/>, so an editor can never survive
+    /// long enough to collide with a refresh), the Settings column is built ONCE and updated in place
+    /// forever after (see <see cref="SettingsRowMayBeOverwritten"/>'s own note).</para>
     /// </summary>
-    private static void BeginInlineEdit(StackPanel pair, Control valueControl, HarmonicaReadout item,
-                                        IBrush foreground, double fontSize,
-                                        Func<HarmonicaReadout, string, bool> onCommitEdit,
-                                        string currentDisplayValue)
+    private void BeginInlineEdit(Control valueControl, IBrush foreground, double fontSize,
+                                 Func<string, bool> onCommitEdit,
+                                 string currentDisplayValue,
+                                 Action<bool>? onEditingChanged = null)
     {
-        int index = pair.Children.IndexOf(valueControl);
-        if (index < 0) return;
-
         string pristine = currentDisplayValue;
         var box = new TextBox
         {
@@ -324,23 +408,37 @@ public partial class ReadoutStripView : UserControl
             FontSize          = fontSize,
             Padding           = new Thickness(2, 0),
             MinHeight         = 0,
-            MinWidth          = 70,
+            Width             = CalcInlineEditWidth(pristine, fontSize),
             Foreground        = foreground,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        // Owner-reported — a flat MinWidth (70, sized for the longest Z/Γ row) made a short row like
+        // "-1.5" look oversized. Width now tracks the text itself, same formula and shape as the
+        // schematic editor's own CalcInlineEditWidth: grows/shrinks live as the user types, since the
+        // box's LEFT edge is pinned by Canvas.Left below and only its Width changes on TextChanged.
+        box.TextChanged += (_, _) => box.Width = CalcInlineEditWidth(box.Text ?? "", fontSize);
 
-        pair.Children.RemoveAt(index);
-        pair.Children.Insert(index, box);
+        var origin = valueControl.TranslatePoint(new Point(0, 0), EditorOverlay) ?? default;
+        Canvas.SetLeft(box, origin.X);
+        Canvas.SetTop(box, origin.Y);
+        EditorOverlay.Children.Add(box);
+        valueControl.Opacity = 0;
+        onEditingChanged?.Invoke(true);
 
         void EndEdit(bool commit)
         {
-            if (commit && box.Text != pristine) onCommitEdit(item, box.Text ?? "");
+            if (commit && box.Text != pristine) onCommitEdit(box.Text ?? "");
 
-            int i = pair.Children.IndexOf(box);
-            if (i < 0) return;
-            pair.Children.RemoveAt(i);
-            pair.Children.Insert(i, valueControl);
+            _openEditors.RemoveAll(x => x.Box == box);
+            EditorOverlay.Children.Remove(box);
+            valueControl.Opacity = 1;
+            onEditingChanged?.Invoke(false);
         }
+
+        // Registered so the strip-level tunnel handlers (constructor) can close THIS editor from
+        // Escape or a click outside it — the two follow-up bugs this box's own KeyDown/LostFocus below
+        // could not reliably catch on their own. See the constructor's own remark for why.
+        _openEditors.Add((box, EndEdit));
 
         box.KeyDown += (_, e) =>
         {
@@ -352,6 +450,18 @@ public partial class ReadoutStripView : UserControl
         box.Focus();
         box.SelectionStart = 0;
         box.SelectionEnd   = ValueSelectionLength(pristine);
+    }
+
+    /// <summary>
+    /// How wide an inline editor should be for <paramref name="text"/> at <paramref name="fontSize"/>
+    /// — the SAME formula (and same reasoning) as <c>SchematicView.CalcInlineEditWidth</c>: an average
+    /// per-character width for the IBM Plex Sans proportional font, floored at two characters' worth
+    /// so an empty box (Vgs blank, Idq-driven) is still clickable rather than a sliver.
+    /// </summary>
+    private static double CalcInlineEditWidth(string text, double fontSize)
+    {
+        double charWidth = fontSize * 0.55;
+        return Math.Max(fontSize * 2.0, text.Length * charWidth + fontSize * 0.8);
     }
 
     /// <summary>
@@ -399,26 +509,41 @@ public partial class ReadoutStripView : UserControl
     public void SetInputs(IReadOnlyList<CircuitRF.Ui.Harmonica.HarmonicaInput> inputs,
                           IBrush foreground, Func<string, string, bool> apply, double fontSize = 10)
     {
+        // R3C §1 — the seven named inputs move to SettingsColumn (double-click text, R-h9c-8's own
+        // editor, reused via BeginInlineEdit); everything else stays exactly what it was, in the
+        // ORIGINAL always-live-TextBox WrapPanel below. Splitting here, once, keeps both halves'
+        // existing logic — the signature/update-in-place discipline below, and SettingsColumn's own —
+        // from having to know about each other's rows.
+        var named = new Dictionary<string, CircuitRF.Ui.Harmonica.HarmonicaInput>(StringComparer.Ordinal);
+        var rest  = new List<CircuitRF.Ui.Harmonica.HarmonicaInput>(inputs.Count);
+        foreach (var i in inputs)
+        {
+            if (Array.IndexOf(SettingsColumnKeys, i.Key) >= 0) named[i.Key] = i;
+            else if (Array.IndexOf(HiddenFromStripKeys, i.Key) >= 0) { /* owner: moved to the Settings dialog */ }
+            else rest.Add(i);
+        }
+        UpdateSettingsColumn(named, foreground, fontSize, apply);
+
         // The strip is refreshed on EVERY published frame, and harmonicaRF publishes constantly. A
         // rebuild would destroy the TextBox the user is typing in — the caret vanishing mid-number is
         // the single most disruptive thing this panel could do. So the row is rebuilt only when its
         // SHAPE changes (a different model declares different parameters), and otherwise the values
         // are written in place, skipping whichever editor currently has focus.
-        string signature = string.Join("", inputs.Select(i => i.Key + "" + i.Entry));
-        if (signature == _inputSignature && Inputs.Children.Count == inputs.Count)
+        string signature = string.Join("", rest.Select(i => i.Key + "" + i.Entry));
+        if (signature == _inputSignature && Inputs.Children.Count == rest.Count)
         {
-            for (int i = 0; i < inputs.Count; i++)
+            for (int i = 0; i < rest.Count; i++)
                 if (Inputs.Children[i] is StackPanel row)
-                    UpdateInPlace(row, inputs[i], foreground, fontSize);
+                    UpdateInPlace(row, rest[i], foreground, fontSize);
             return;
         }
         _inputSignature = signature;
 
         Inputs.Children.Clear();
-        InputRule.IsVisible       = inputs.Count > 0;
+        InputRule.IsVisible       = rest.Count > 0;
         InputRule.Background      = foreground;
 
-        foreach (var input in inputs)
+        foreach (var input in rest)
         {
             var pair = new StackPanel
             {
@@ -520,6 +645,177 @@ public partial class ReadoutStripView : UserControl
 
             Inputs.Children.Add(pair);
         }
+    }
+
+    // ── R3C §1 — the Settings column (Vgs, Idq, Vds, f₀, K, compr, Z0) ──────
+
+    /// <summary>The seven inputs R3C §1 moves into their own column, IN THE OWNER'S OWN ORDER — the
+    /// same order the brief lists them and <see cref="CircuitRF.Ui.Harmonica.HarmonicaInputs.Build"/>
+    /// already emits them in, so this is a filter over that list rather than a second ordering.</summary>
+    private static readonly string[] SettingsColumnKeys =
+    [
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVgs,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyIdq,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVds,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyFrequency,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyHarmonicCount,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCompression,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyZ0,
+    ];
+
+    /// <summary>
+    /// Owner request — "Remove the loadline pts, FFTx, charge and M display settings (and the
+    /// horizontal bar below them) from the display. These are to be set via a menu item AND a
+    /// settings in a separate dialog." These four still come back from
+    /// <see cref="CircuitRF.Ui.Harmonica.HarmonicaInputs.Build"/> (it stays the one general-purpose
+    /// input list — the Settings dialog reads/writes through the SAME <c>HarmonicaInputs.Apply</c>
+    /// path this strip uses, no second write-back), they are just never RENDERED here. Dropped in
+    /// <see cref="SetInputs"/> before the shape signature is computed, so removing/adding a model
+    /// parameter around them still only rebuilds when it actually needs to.
+    /// </summary>
+    private static readonly string[] HiddenFromStripKeys =
+    [
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyLoadlineSamples,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyFftOverSample,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyComputeCharge,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyMultiplicity,
+    ];
+
+    /// <summary>
+    /// What one Settings row remembers between refreshes: which input it writes, the live
+    /// foreground/font an editor opened THIS INSTANT should use (so a theme/size change between
+    /// builds cannot leave a freshly-opened editor showing stale colours — the row is built once and
+    /// never rebuilt, unlike <see cref="BuildColumnRow"/>'s rows, which <see cref="SetItems"/> rebuilds
+    /// every frame and so never go stale), whether it is mid-edit, and whether its steady-state text is
+    /// a PLACEHOLDER (<see cref="CircuitRF.Ui.Harmonica.HarmonicaInput.Placeholder"/>) rather than a
+    /// real value — so opening the editor seeds empty, not the placeholder string.
+    /// </summary>
+    private sealed class SettingsRowState
+    {
+        public required string Key;
+        public bool   IsEditing;
+        public bool   IsPlaceholder;
+        public IBrush Foreground = Brushes.Black;
+        public double FontSize   = 10;
+
+        /// <summary>Owner follow-up — what an editor opened on THIS row right now should seed from.
+        /// Usually equal to the displayed text, but Vgs/Idq round their DISPLAY (3 / 1 decimal places)
+        /// while the editor still seeds from the full value (<c>HarmonicaInput.EditValue</c>) — kept
+        /// on the row's own state, refreshed every <see cref="UpdateSettingsColumnRow"/> call, so the
+        /// DoubleTapped handler below reads it LIVE rather than closing over a build-time value.</summary>
+        public string EditSeedText = "";
+    }
+
+    /// <summary>
+    /// R3C §1.2 trap 1 — "SetItems clears and rebuilds all four columns on every call, so a refresh
+    /// while an editor is open destroys it mid-edit." <see cref="SetInputs"/> runs on every published
+    /// frame too, exactly like <see cref="SetItems"/> — so the Settings column cannot follow
+    /// <see cref="BuildColumnRow"/>'s shape (rebuild-from-scratch every call) once its rows are
+    /// double-click editable. The chosen discipline: SettingsColumn is built ONCE (its shape never
+    /// changes — <see cref="SettingsColumnKeys"/> is a fixed 7-key list
+    /// <see cref="CircuitRF.Ui.Harmonica.HarmonicaInputs.Build"/> always emits in full) and every later
+    /// call only WRITES VALUES into the existing rows — and this is the one decision that guards a
+    /// row's value slot from being overwritten mid-edit. <b>Pure</b> so it is testable without a live
+    /// Avalonia control (<c>Ui.Tests</c> cannot instantiate one): the production call site is
+    /// <see cref="UpdateSettingsColumnRow"/>, which reads <c>state.IsEditing</c> exactly as this
+    /// predicate expects.
+    /// </summary>
+    internal static bool SettingsRowMayBeOverwritten(bool isEditing) => !isEditing;
+
+    /// <summary>Builds SettingsColumn once (if its shape is not already right) then writes every
+    /// row's current value — the same "build lazily, always update" shape <see cref="SetInputs"/>
+    /// itself already uses for <c>Inputs</c>, just split into two steps because a Settings row's build
+    /// step wires a closure (the DoubleTapped handler) the update step must not repeat.</summary>
+    private void UpdateSettingsColumn(IReadOnlyDictionary<string, CircuitRF.Ui.Harmonica.HarmonicaInput> named,
+                                      IBrush foreground, double fontSize,
+                                      Func<string, string, bool> apply)
+    {
+        if (SettingsColumn.Children.Count != SettingsColumnKeys.Length)
+        {
+            SettingsColumn.Children.Clear();
+            foreach (string key in SettingsColumnKeys)
+                if (named.TryGetValue(key, out var input))
+                    SettingsColumn.Children.Add(BuildSettingsColumnRow(input, apply));
+        }
+
+        for (int i = 0; i < SettingsColumn.Children.Count && i < SettingsColumnKeys.Length; i++)
+            if (SettingsColumn.Children[i] is StackPanel row &&
+                named.TryGetValue(SettingsColumnKeys[i], out var input))
+                UpdateSettingsColumnRow(row, input, foreground, fontSize);
+    }
+
+    /// <summary>Builds one Settings row's skeleton — label, value, optional unit — with NO content yet
+    /// (<see cref="UpdateSettingsColumnRow"/> fills it in immediately after, on this same call, and on
+    /// every call after). The DoubleTapped handler is wired here, once, and reads <c>state</c>/<c>value
+    /// .Text</c> LIVE at click time rather than closing over this call's own <paramref name="input"/> —
+    /// this row is never rebuilt, so a closure over the build-time input would go stale the moment the
+    /// value changes.</summary>
+    private StackPanel BuildSettingsColumnRow(CircuitRF.Ui.Harmonica.HarmonicaInput input,
+                                                      Func<string, string, bool> apply)
+    {
+        var state = new SettingsRowState { Key = input.Key };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Tag = state };
+
+        var label = new TextBlock { Opacity = 0.65, VerticalAlignment = VerticalAlignment.Center };
+        var value = new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(label);
+        row.Children.Add(value);
+
+        if (input.Unit.Length > 0)
+            row.Children.Add(new TextBlock { Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center });
+
+        row.DoubleTapped += (_, _) =>
+        {
+            if (!SettingsRowMayBeOverwritten(state.IsEditing)) return;   // already open — ignore
+            string seed = state.IsPlaceholder ? "" : state.EditSeedText;
+            BeginInlineEdit(value, state.Foreground, state.FontSize,
+                            text => apply(state.Key, text), seed,
+                            editing => state.IsEditing = editing);
+        };
+
+        return row;
+    }
+
+    /// <summary>Writes one Settings row's CURRENT value — label (with the structural marker), value
+    /// (or its placeholder), unit, tooltip and live foreground/font — skipping the value slot entirely
+    /// while an editor is open on it (§1.2 trap 1; see <see cref="SettingsRowMayBeOverwritten"/>).</summary>
+    private static void UpdateSettingsColumnRow(StackPanel row, CircuitRF.Ui.Harmonica.HarmonicaInput input,
+                                                IBrush foreground, double fontSize)
+    {
+        if (row.Tag is not SettingsRowState state) return;
+        state.Foreground = foreground;
+        state.FontSize   = fontSize;
+
+        if (row.Children.Count > 0 && row.Children[0] is TextBlock label)
+        {
+            // A structural input carries a marker rather than a colour: §7.9.2 reserves red, and the
+            // strip has exactly one text role.
+            label.Text       = input.Structural ? input.Label + "*" : input.Label;
+            label.Foreground = foreground;
+            label.FontSize   = fontSize;
+        }
+
+        if (SettingsRowMayBeOverwritten(state.IsEditing) &&
+            row.Children.Count > 1 && row.Children[1] is TextBlock value)
+        {
+            state.IsPlaceholder = input.Text.Length == 0 && input.Placeholder.Length > 0;
+            state.EditSeedText  = input.EditValue;
+            value.Text       = state.IsPlaceholder ? input.Placeholder : input.Text;
+            value.Opacity    = state.IsPlaceholder ? 0.55 : 1.0;
+            value.Foreground = foreground;
+            value.FontSize   = fontSize;
+        }
+
+        if (row.Children.Count > 2 && row.Children[2] is TextBlock unit)
+        {
+            unit.Text       = input.Unit;
+            unit.Foreground = foreground;
+            unit.FontSize   = fontSize;
+        }
+
+        ToolTip.SetTip(row, input.Structural
+            ? input.Tooltip + "  (structural — changing it rebuilds the context and resets the frame ladder)"
+            : input.Tooltip);
     }
 
     /// <summary>

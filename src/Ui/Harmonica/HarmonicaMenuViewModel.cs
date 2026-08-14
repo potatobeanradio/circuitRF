@@ -65,6 +65,36 @@ public sealed partial class HarmonicaBandMenuItem : ObservableObject
 }
 
 /// <summary>
+/// One band's entry in Display ▸ Contour Harmonic — owner follow-up (2026-08-13): "the Contour
+/// Harmonic menu does not update the harmonic order K. If I set K=5, then the menu should allow me to
+/// loadpull or sourcepull on the 5f0 plane." The list used to be three hardcoded XAML items (f₀, 2f₀,
+/// 3f₀) on each surface, so K &gt; 3 had no way to reach the bands it actually has. Carries its own
+/// <c>Select</c> command (the SAME shape <see cref="HarmonicaBandMenuItem"/> already uses for its own
+/// callback) so the in-window <c>ItemsSource</c> menu and the macOS <c>NativeMenu</c> code-behind
+/// build (<c>HarmonicaMenuView.RebuildNativeBandMenus</c>) can share one item type and one trigger.
+/// </summary>
+public sealed partial class HarmonicaHarmonicMenuItem : ObservableObject
+{
+    public HarmonicaHarmonicMenuItem(int band, Action<int> select)
+    {
+        Band    = band;
+        _select = select;
+    }
+
+    private readonly Action<int> _select;
+
+    public int Band { get; }
+
+    /// <summary>"f₀" for the fundamental, "{n}f₀" otherwise — the exact spelling the three hardcoded
+    /// XAML items this replaces already used, kept identical rather than switched to
+    /// <c>HarmonicaTitles.MxHeaderRow</c>'s own "1f₀" convention (a different row, styled for its own
+    /// reasons — no need to move this menu's wording along with its data source).</summary>
+    public string Header => Band == 1 ? "f₀" : $"{Band}f₀";
+
+    [RelayCommand] private void Select() => _select(Band);
+}
+
+/// <summary>
 /// The commands and state behind harmonicaRF's own menu set (§7.6).
 ///
 /// <para><b>There is no Simulate menu and there is not going to be one</b> (R-h7-1). harmonicaRF is
@@ -120,6 +150,10 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     public Action? PowerSweepHook      { get; set; }
     public Action? SetZ0Hook           { get; set; }
 
+    /// <summary>Owner request (2026-08-13) — loadline pts / FFT× / charge / M moved out of the strip
+    /// into their own dialog; this is the menu item that opens it.</summary>
+    public Action? AdvancedSettingsHook { get; set; }
+
     [RelayCommand] private void NewDocument()     => NewDocumentHook?.Invoke();
     [RelayCommand] private void OpenDocument()    => OpenDocumentHook?.Invoke();
     [RelayCommand] private void SaveDocument()    => SaveDocumentHook?.Invoke();
@@ -150,12 +184,20 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     /// <summary>Every band on the load plane, checked when it carries a marker.</summary>
     public ObservableCollection<HarmonicaBandMenuItem> LoadBands { get; } = [];
 
+    /// <summary>Display ▸ Contour Harmonic's own items, one per band 1..K — see
+    /// <see cref="HarmonicaHarmonicMenuItem"/>'s own remark for the bug this replaces.</summary>
+    public ObservableCollection<HarmonicaHarmonicMenuItem> ContourHarmonics { get; } = [];
+
     private bool _rebuilding;
 
     /// <summary>
-    /// Rebuilds both band submenus from the model. Called on construction and whenever the marker
-    /// list changes — including from a <c>.charm</c> load, so the menu can never claim a band is
-    /// marked that the file did not mark.
+    /// Rebuilds the band submenus AND Contour Harmonic from the model. Called on construction and
+    /// whenever the marker list changes — including from a <c>.charm</c> load, so the menu can never
+    /// claim a band is marked (or a harmonic is reachable) that the file did not actually have. K only
+    /// ever moves through <c>RetargetTerminations</c>/<c>RebuildMarkersFromTerminations</c>
+    /// (structural — no direct "K changed" event exists), both of which always touch
+    /// <see cref="HarmonicaViewModel.Markers"/>, so the SAME trigger this method already had for the
+    /// band checkboxes is exactly the right one for Contour Harmonic too — one signal, three lists.
     /// </summary>
     public void RebuildBandMenus()
     {
@@ -165,6 +207,7 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
         {
             Sync(SourceBands, TerminationSideKind.Source);
             Sync(LoadBands,   TerminationSideKind.Load);
+            SyncContourHarmonics();
         }
         finally { _rebuilding = false; }
 
@@ -190,6 +233,23 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
         bool Present(TerminationSideKind side, int band)
             => _vm.Markers.Any(m => m.Side == side && m.Band == band);
     }
+
+    /// <summary>Same "rebuild only when the COUNT moved" discipline <c>Sync</c> uses for the band
+    /// checkboxes — K is the only thing that ever changes this list's length.</summary>
+    private void SyncContourHarmonics()
+    {
+        int k = _vm.Terminations.HarmonicCount;
+        if (ContourHarmonics.Count == k) return;
+
+        ContourHarmonics.Clear();
+        for (int band = 1; band <= k; band++)
+            ContourHarmonics.Add(new HarmonicaHarmonicMenuItem(band, SelectGridHarmonic));
+    }
+
+    /// <summary>A Contour Harmonic item was picked — routes through the SAME
+    /// <see cref="SetGridHarmonic"/> the (now dynamic) menu items always used, never a second write.</summary>
+    private void SelectGridHarmonic(int band)
+        => SetGridHarmonic(band.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     private void ToggleBand(TerminationSideKind side, int band, bool wanted)
     {
@@ -242,6 +302,10 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     /// <summary>R-h9r2-20 — Display ▸ Set Z0…, a second surface onto the SAME write the §7.5 input
     /// row already makes.</summary>
     [RelayCommand] private void SetZ0() => SetZ0Hook?.Invoke();
+
+    /// <summary>Owner request — Display ▸ Advanced Settings…, for the four inputs the strip no longer
+    /// shows (loadline pts / FFT× / charge / M).</summary>
+    [RelayCommand] private void AdvancedSettings() => AdvancedSettingsHook?.Invoke();
 
     [RelayCommand]
     private void ToggleIsoLineLabels()

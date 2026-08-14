@@ -1463,9 +1463,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var plane  = (_plot?.PlotType is PlotType.Smith or PlotType.Polar)
                 ? RfCore.Loadpull.SurfacePlane.Gamma
                 : RfCore.Loadpull.SurfacePlane.Z;
-            var z0Ref  = trace.Z0 == System.Numerics.Complex.Zero
+            var z0Ref  = trace.MarkerZ0 == System.Numerics.Complex.Zero
                 ? new System.Numerics.Complex(50.0, 0.0)
-                : trace.Z0;
+                : trace.MarkerZ0;
             return (plane, z0Ref);
         }
 

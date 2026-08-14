@@ -362,15 +362,20 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         DirtyChanged?.Invoke();
     }
 
-    /// <summary>Writes a marker's termination as Γ — what a drag on a Smith panel produces.</summary>
+    /// <summary>
+    /// Writes a marker's termination as Γ — what a drag on a Smith panel produces.
+    ///
+    /// <para><b>Owner ruling, R3C follow-up, 2026-08-13 — a harmonic marker may be dragged outside the
+    /// unit circle (an active, negative-real-part termination).</b> This used to clamp EVERY
+    /// <c>|Γ| &gt; 0.999</c> down to exactly 0.999, which silently forbade any active marker at all —
+    /// found to be unnecessary: <see cref="HarmonicaDataSet.ImpedanceOf"/>, which this hands off to,
+    /// already nudges only the single true singularity (Γ = 1 exactly, an open circuit) and says so in
+    /// its own doc comment — "<c>|Γ| &gt; 1</c> is left alone, because an active termination is a
+    /// legitimate thing... to land on". The clamp here was strictly redundant with (and stricter than)
+    /// what the callee already does correctly, so it is simply removed rather than narrowed.</para>
+    /// </summary>
     public void SetMarkerGamma(HarmonicaMarker marker, Complex gamma)
-    {
-        // Γ = 1 is an open; the impedance is infinite. Nudge off the rim rather than producing a
-        // non-finite Z that would take the whole solve down.
-        double mag = gamma.Magnitude;
-        if (mag > 0.999) gamma = gamma / mag * 0.999;
-        SetMarkerImpedance(marker, HarmonicaDataSet.ImpedanceOf(gamma, Model.Settings.Z0));
-    }
+        => SetMarkerImpedance(marker, HarmonicaDataSet.ImpedanceOf(gamma, Model.Settings.Z0));
 
     /// <summary>
     /// R-h9r2-8 — writes a marker's VSWR-circle radius, from a drag on its handle.
@@ -405,8 +410,18 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
     // ── R-h7-3 — the §7.5 inputs ─────────────────────────────────────────────
 
-    /// <summary>§7.5's input half, rebuilt from the current model. The strip renders this.</summary>
-    public IReadOnlyList<HarmonicaInput> Inputs => HarmonicaInputs.Build(Model);
+    /// <summary>§7.5's input half, rebuilt from the current model. The strip renders this.
+    ///
+    /// <para><b>R3C follow-up</b> — when Vgs (not Idq) drives the bias, the Idq row shows the LIVE
+    /// current that Vgs actually draws, read from this document's own <see cref="EnsureContext"/>.
+    /// Calling it here is safe/cheap even though this is a property getter: <c>HarmonicaContext.
+    /// Apply</c> is a no-op once its own <c>_model</c> already matches <see cref="Model"/> (an
+    /// equality check, not a re-solve), so a strip refresh that hasn't touched the bias costs nothing
+    /// beyond that check — the same reasoning that already lets <see cref="SolveFrame"/> call it every
+    /// frame.</para>
+    /// </summary>
+    public IReadOnlyList<HarmonicaInput> Inputs
+        => HarmonicaInputs.Build(Model, Model.Bias.Idq is null ? EnsureContext().DcDrainCurrentAmps : null);
 
     /// <summary>What the last rejected input edit was wrong about, or null. Shown beside the strip
     /// rather than thrown — a live instrument that dies on a typo is not a live instrument.</summary>
@@ -449,6 +464,20 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                     updated.Settings.Z0);
 
         Model = updated;
+
+        // R3C follow-up — Idq⇄Vgs is solved INSIDE HarmonicaContext.Apply (SolveVgsForIdq), which
+        // only ever runs on whatever context actually calls it. Without this, that would be a pool
+        // worker's own throwaway context on the NEXT RequestFrame — the solved Vgs would exist for
+        // one frame and never reach this document's own Model, so the Vgs row would still show
+        // whatever it showed before the edit. Resolving through THIS document's own EnsureContext()
+        // right here means the strip shows the solved value on the SAME edit, not one frame later.
+        // Bias-only, never structural (K/DUT/etc. changes are not Vgs/Idq/Vds and skip this).
+        if (key is HarmonicaInputs.KeyVgs or HarmonicaInputs.KeyIdq or HarmonicaInputs.KeyVds)
+        {
+            var ctx = EnsureContext();
+            if (ctx.Model.Bias.Vgs != Model.Bias.Vgs)
+                Model = Model with { Bias = Model.Bias with { Vgs = ctx.Model.Bias.Vgs } };
+        }
 
         if (structural)
         {
@@ -887,6 +916,28 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         return mapped == GridSide && band == GridHarmonic;
     }
 
+    /// <summary>How far Γ must move, since the last frame actually SUBMITTED for this (side, band),
+    /// before a mid-drag frame is worth solving — brief-harmonicarf-r4 §5.4: "if the termination point
+    /// doesn't change, the point should not run, because that result is already rendered." Set below
+    /// what a Smith panel or the readout strip can show a user (a marker glyph a few pixels across on
+    /// a panel a few hundred pixels wide already can't distinguish Γ movement smaller than ~1e-3, and
+    /// every readout in this file rounds to at most 4 decimal digits) — 1e-4 is an order of magnitude
+    /// under the coarser of the two, so this only ever catches genuinely sub-visible jitter (a
+    /// stationary hand, a trackpad's own noise floor), never a real repositioning.</summary>
+    private const double DragNoOpGammaTolerance = 1e-4;
+
+    /// <summary>The (side, band, Γ) of the last mid-drag OR release frame actually submitted to the
+    /// solve pool for a marker drag — null until the first one. Compared against on every subsequent
+    /// mid-drag frame so a pointer-move event that landed within
+    /// <see cref="DragNoOpGammaTolerance"/> of it can be skipped without ever touching the pool.</summary>
+    private (TerminationSideKind Side, int Band, Complex Gamma)? _lastSubmittedDragTermination;
+
+    /// <summary>§5.4's own gate — how many mid-drag marker frames were skipped because Γ had not moved
+    /// past <see cref="DragNoOpGammaTolerance"/> since the last one actually solved. A counter, not a
+    /// stopwatch, this repo's own convention (<c>Retries</c>/<c>LayerBRebuilds</c>' precedent) for
+    /// making a no-re-solve path's own hit rate visible rather than inferred.</summary>
+    public int NoOpDragFrameSkipCount { get; private set; }
+
     /// <summary>
     /// R-h9r2-3 — the single routing point for a marker drag's RELEASE, used identically by
     /// <c>HarmonicaGesture.Apply</c>'s <c>ExtrinsicMarker</c> branch and by
@@ -895,16 +946,44 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// pointer comes up. When the released band IS the swept plane/band (Finding B, above), the grid
     /// is skipped there too — carrying the pre-drag contour layer forward (R-h9r2-1) instead of
     /// paying for a re-solve that would publish the identical result.
+    ///
+    /// <para><b>§5.4 — a mid-drag frame whose Γ has not actually moved is skipped before it ever
+    /// reaches the solve pool</b>, since the frame already on screen is exactly the answer it would
+    /// publish. Release is NEVER skipped by this — a real, non-degraded solve always runs on release
+    /// regardless of how small the final move was, matching <c>DragGridPoint</c>'s own "mid-drag is
+    /// free, release is real" shape.</para>
     /// </summary>
     public long RequestFrameOnMarkerRelease(TerminationSideKind side, int band, bool dragging)
     {
-        if (!dragging && IsSweptBand(side, band))
+        if (dragging)
+        {
+            var marker = Markers.FirstOrDefault(m => m.Side == side && m.Band == band);
+            if (marker is not null && _lastSubmittedDragTermination is { } last &&
+                last.Side == side && last.Band == band &&
+                (marker.Gamma - last.Gamma).Magnitude < DragNoOpGammaTolerance)
+            {
+                NoOpDragFrameSkipCount++;
+                return -1;
+            }
+
+            long seq = RequestScheduledFrame(dragging: true);
+            if (marker is not null) _lastSubmittedDragTermination = (side, band, marker.Gamma);
+            return seq;
+        }
+
+        if (IsSweptBand(side, band))
         {
             var plan = Scheduler.NextPlan(dragging: false);
             LastPlan = plan;
+            var releaseMarker = Markers.FirstOrDefault(m => m.Side == side && m.Band == band);
+            if (releaseMarker is not null) _lastSubmittedDragTermination = (side, band, releaseMarker.Gamma);
             return RequestFrame(OptionsFor(plan, dragging: false) with { SkipContours = true });
         }
-        return RequestScheduledFrame(dragging);
+
+        var seqFull = RequestScheduledFrame(dragging: false);
+        var m2 = Markers.FirstOrDefault(mk => mk.Side == side && mk.Band == band);
+        if (m2 is not null) _lastSubmittedDragTermination = (side, band, m2.Gamma);
+        return seqFull;
     }
 
     // ── the Γ grid (§6.4 / R-h7-11) ──────────────────────────────────────────
@@ -1008,9 +1087,24 @@ public sealed partial class HarmonicaViewModel : ObservableObject
             return RequestFrame(OptionsFor(releasePlan, dragging: false) with { ReuseUnchangedGridPoints = true });
         }
 
-        var plan = Scheduler.NextPlan(dragging: true);
-        LastPlan = plan;
-        return RequestFrame(OptionsFor(plan, dragging: true), gridPointOverride: (index, gamma));
+        // §2 (brief-harmonicarf-r3b) — a mid-drag grid-point frame changes NO circuit state: the
+        // dragged Γ is a display-only edit to the already-published grid-point list (CustomGrid
+        // itself stays untouched until release, exactly as before). R-h9r2-4 chose this shape
+        // precisely so the gesture would be cheap, but routing it through RequestFrame still ran the
+        // WHOLE tier-A power sweep at terminations the drag never touches — SkipContours only ever
+        // skipped the grid build, never tier A. A gesture that changes no circuit state must cost no
+        // HB solves at all, so this is moved off the solve pool entirely: splice the moved point into
+        // the CURRENTLY PUBLISHED frame's grid-point lists on the UI thread and redraw — the same
+        // no-re-solve shape as SetMarkerVswr/ToggleMarkerVswrEnabled, just for a grid point rather
+        // than a marker overlay. Setting Frame (an ObservableProperty) raises RedrawRequested itself
+        // (OnFrameChanged); DirtyChanged is NOT raised — nothing persisted has changed yet, matching
+        // the pre-existing rule that only release marks the document dirty.
+        Frame = Frame with
+        {
+            SmithPower      = ApplyGridPointOverride(Frame.SmithPower,      (index, gamma)) ?? Frame.SmithPower,
+            SmithEfficiency = ApplyGridPointOverride(Frame.SmithEfficiency, (index, gamma)) ?? Frame.SmithEfficiency,
+        };
+        return -1;
     }
 
     /// <summary>Ends a grid-point drag.</summary>

@@ -12,22 +12,22 @@ public readonly struct SddScalar(double value) : IAdScalar<SddScalar>
     private const double LogFloor = 1e-300;
 
     public static SddScalar Constant(double d) => new(d);
-    public static double ValueOf(SddScalar a) => a.Value;
+    public static double ValueOf(in SddScalar a) => a.Value;
 
-    public static SddScalar Add(SddScalar a, SddScalar b) => new(a.Value + b.Value);
-    public static SddScalar Sub(SddScalar a, SddScalar b) => new(a.Value - b.Value);
-    public static SddScalar Mul(SddScalar a, SddScalar b) => new(a.Value * b.Value);
-    public static SddScalar Div(SddScalar a, SddScalar b) => new(a.Value / b.Value);
-    public static SddScalar Neg(SddScalar a) => new(-a.Value);
-    public static SddScalar Pow(SddScalar a, SddScalar b) => new(Math.Pow(a.Value, b.Value));
+    public static SddScalar Add(in SddScalar a, in SddScalar b) => new(a.Value + b.Value);
+    public static SddScalar Sub(in SddScalar a, in SddScalar b) => new(a.Value - b.Value);
+    public static SddScalar Mul(in SddScalar a, in SddScalar b) => new(a.Value * b.Value);
+    public static SddScalar Div(in SddScalar a, in SddScalar b) => new(a.Value / b.Value);
+    public static SddScalar Neg(in SddScalar a) => new(-a.Value);
+    public static SddScalar Pow(in SddScalar a, in SddScalar b) => new(Math.Pow(a.Value, b.Value));
 
-    public static SddScalar Exp(SddScalar a)
+    public static SddScalar Exp(in SddScalar a)
     {
         double xv = a.Value > ExpCap ? ExpCap : a.Value;
         return new(Math.Exp(xv));
     }
 
-    public static SddScalar Log(SddScalar a)
+    public static SddScalar Log(in SddScalar a)
     {
         double av = a.Value;
         if (av <= 0.0)
@@ -38,7 +38,7 @@ public readonly struct SddScalar(double value) : IAdScalar<SddScalar>
         return new(Math.Log(av));
     }
 
-    public static SddScalar Sqrt(SddScalar a)
+    public static SddScalar Sqrt(in SddScalar a)
     {
         double av = a.Value;
         if (av < 0.0)
@@ -49,10 +49,10 @@ public readonly struct SddScalar(double value) : IAdScalar<SddScalar>
         return new(Math.Sqrt(av));
     }
 
-    public static SddScalar Tanh(SddScalar a) => new(Math.Tanh(a.Value));
-    public static SddScalar Sin(SddScalar a)  => new(Math.Sin(a.Value));
-    public static SddScalar Cos(SddScalar a)  => new(Math.Cos(a.Value));
-    public static SddScalar Abs(SddScalar a)  => new(Math.Abs(a.Value));
+    public static SddScalar Tanh(in SddScalar a) => new(Math.Tanh(a.Value));
+    public static SddScalar Sin(in SddScalar a)  => new(Math.Sin(a.Value));
+    public static SddScalar Cos(in SddScalar a)  => new(Math.Cos(a.Value));
+    public static SddScalar Abs(in SddScalar a)  => new(Math.Abs(a.Value));
 
     public override string ToString() => Value.ToString("G");
 }

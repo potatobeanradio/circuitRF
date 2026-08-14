@@ -67,12 +67,15 @@ public sealed class HarmonicaMarker(TerminationSideKind side, int band)
 public enum TerminationSideKind { Source, Load }
 
 /// <summary>
-/// §5 (R1C) — which of the strip's four columns a readout belongs to. <c>General</c> is everything
-/// that stayed flat (§7.5's original wrapping run); the other three are R-h9c-6's new columns,
-/// left to right Source · Load · MXP · MXE — the editable termination columns nearest the charts
-/// they belong to, the read-only performance summaries beside them.
+/// §5 (R1C) — which of the strip's columns a readout belongs to. <c>General</c> is everything that
+/// stayed flat (§7.5's original wrapping run, now just the "intrinsic: not located" row — R3C §2/§3
+/// moved everything else out of it); <c>Source</c>/<c>Load</c>/<c>Mxp</c>/<c>Mxe</c> are R-h9c-6's
+/// columns. <c>OperatingPoint</c> (R3C §2) is Pin/Pout/Gain/DE/PAE/Pdc — named for what the figures
+/// ARE (the numbers at the operating point), not for where R3C happens to have put the column.
+/// Screen order (Settings · OperatingPoint · Source · Load · Mxp · Mxe) lives in
+/// <c>ReadoutStripView.axaml</c>'s <c>Columns</c> panel, not here.
 /// </summary>
-public enum ReadoutColumn { General, Source, Load, Mxp, Mxe }
+public enum ReadoutColumn { General, Source, Load, Mxp, Mxe, OperatingPoint }
 
 /// <summary>
 /// One row of §7.5's strip (R-h9c-9). Replaces the old flat <c>(label, value, tooltip)</c> triple —
@@ -260,6 +263,15 @@ public sealed record PowerSweepPanelData
 
     /// <summary>§7.4 — the X-axis unit is CLICK-TO-CYCLE on the axis itself.</summary>
     public PowerSweepXUnit XUnit { get; init; } = PowerSweepXUnit.PoutDbm;
+
+    /// <summary>
+    /// brief-harmonicarf-r4 §1.2 — the sweep's own configured range, carried alongside the data so a
+    /// Pin-domain X axis can be PINNED to it rather than autofit to whatever Pin the ladder actually
+    /// stopped at. With §1's early stop, the last solved Pin moves with the termination; autofitting
+    /// the axis to that would make it visibly breathe frame to frame during a drag.
+    /// </summary>
+    public double PinStartDbm { get; init; }
+    public double PinMaxDbm   { get; init; }
 
     /// <summary>
     /// R-h9b-8 — which metric the right axis is, so its label reads "Efficiency (%)" or "PAE (%)"

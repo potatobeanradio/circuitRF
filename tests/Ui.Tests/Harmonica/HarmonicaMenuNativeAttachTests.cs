@@ -117,14 +117,16 @@ public class HarmonicaMenuNativeAttachTests
     // failed attach must cost a menu bar, never the whole application.
 
     [Fact]
-    public void RecomputeAttachment_GuardsTheAttachCall_SoAFailedAttachCannotCrashTheApp()
+    public void AttachToWindowOutright_GuardsTheAttachCall_SoAFailedAttachCannotCrashTheApp()
     {
         string src = CodeOnly();
 
-        int methodStart = src.IndexOf("private void RecomputeAttachment()", StringComparison.Ordinal);
-        Assert.True(methodStart >= 0, "Expected to find RecomputeAttachment.");
+        // R3A §2.1 split RecomputeAttachment's torn-off/standalone case out into its own method —
+        // the real attach call, and its guard, now live there.
+        int methodStart = src.IndexOf("private void AttachToWindowOutright(Window window)", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "Expected to find AttachToWindowOutright.");
         int methodEnd = src.IndexOf("\n    }", methodStart, StringComparison.Ordinal);
-        Assert.True(methodEnd >= 0, "Expected RecomputeAttachment's closing brace.");
+        Assert.True(methodEnd >= 0, "Expected AttachToWindowOutright's closing brace.");
         string body = src[methodStart..methodEnd];
 
         int attachIdx = body.IndexOf("NativeMenu.SetMenu(desiredTarget, _ownMenu);", StringComparison.Ordinal);
@@ -139,12 +141,38 @@ public class HarmonicaMenuNativeAttachTests
         Assert.Contains("_attachedTo = null;", afterAttach, StringComparison.Ordinal);
     }
 
+    // ── R3A §2.2 — the R2B "defensive clear" is a POISONING step, not a safety step (§1 of the
+    // brief), and is gone. SetMenu(window, null) on a window that already holds a NativeMenu
+    // substitutes a brand-new empty NativeMenu rather than clearing anything, and that substitution
+    // is what later crashes on the dispatcher.
+
     [Fact]
-    public void RecomputeAttachment_ClearsTheDesiredTargetDefensively_BeforeAttaching()
+    public void RecomputeAttachment_NoLongerClearsTheDesiredTargetDefensively()
     {
         string src = CodeOnly();
-        // Detaching the desired target's own menu before setting ours removes one more way our
-        // bookkeeping (_attachedTo) can disagree with what the platform exporter actually holds.
-        Assert.Contains("NativeMenu.SetMenu(desiredTarget, null);", src, StringComparison.Ordinal);
+        Assert.DoesNotContain("NativeMenu.SetMenu(desiredTarget, null);", src, StringComparison.Ordinal);
+    }
+
+    // ── R3A §2.1/§3.2 — the docked path never swaps NativeMenu instances on the WorkspaceWindow at
+    // all; it injects/withdraws items into circuitRF's own app-menu instance instead.
+
+    [Fact]
+    public void RecomputeAttachment_DockedCase_NeverCallsNativeMenuSetMenu()
+    {
+        string src = CodeOnly();
+
+        int methodStart = src.IndexOf("private void RecomputeAttachment()", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "Expected to find RecomputeAttachment.");
+        int methodEnd = src.IndexOf("\n    }", methodStart, StringComparison.Ordinal);
+        Assert.True(methodEnd >= 0, "Expected RecomputeAttachment's closing brace.");
+        string method = src[methodStart..methodEnd];
+
+        int dockedStart = method.IndexOf("if (isWorkspaceWindow)", StringComparison.Ordinal);
+        Assert.True(dockedStart >= 0, "Expected the isWorkspaceWindow (docked) branch.");
+        int dockedEnd = method.IndexOf("\n        }", dockedStart, StringComparison.Ordinal);
+        Assert.True(dockedEnd >= 0, "Expected the docked branch's closing brace.");
+        string dockedBranch = method[dockedStart..dockedEnd];
+
+        Assert.DoesNotContain("NativeMenu.SetMenu(", dockedBranch, StringComparison.Ordinal);
     }
 }

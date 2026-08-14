@@ -254,11 +254,11 @@ public sealed class HarmonicaStandaloneTests(ITestOutputHelper output)
         Assert.Contains("WorkspaceWindowTypeName = \"WorkspaceWindow\"", code, StringComparison.Ordinal);
         Assert.Contains("bool isWorkspaceWindow = window.GetType().Name == WorkspaceWindowTypeName;",
             code, StringComparison.Ordinal);
-        // R-h9a-3's own RecomputeAttachment: a torn-off document window or the standalone shell
+        // R3A §2.1's own RecomputeAttachment: a torn-off document window or the standalone shell
         // (!isWorkspaceWindow) always owns the window outright — the same case this test's own name
-        // describes, just reached through the three-way desiredTarget decision rather than a
-        // standalone attach method.
-        Assert.Contains("!isWorkspaceWindow    ? window", code, StringComparison.Ordinal);
+        // describes, reached by falling through the isWorkspaceWindow branch into
+        // AttachToWindowOutright rather than a three-way desiredTarget ternary.
+        Assert.Contains("AttachToWindowOutright(window);", code, StringComparison.Ordinal);
         Assert.Contains("NativeMenu.SetMenu(desiredTarget, _ownMenu);", code, StringComparison.Ordinal);
 
         // The name it compares against must still be a real type, or the comparison is against a

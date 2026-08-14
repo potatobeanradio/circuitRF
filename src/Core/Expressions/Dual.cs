@@ -51,9 +51,9 @@ public struct Dual : IAdScalar<Dual>
     // ── IAdScalar<Dual> ──────────────────────────────────────────────────────
 
     public static Dual Constant(double d) => Param(d, 0);  // N set by caller context; 0 = parameter
-    public static double ValueOf(Dual a) => a.Value;
+    public static double ValueOf(in Dual a) => a.Value;
 
-    public static Dual Add(Dual a, Dual b)
+    public static Dual Add(in Dual a, in Dual b)
     {
         var r = new Dual { Value = a.Value + b.Value, N = NMax(a, b) };
         int n = r.N;
@@ -61,7 +61,7 @@ public struct Dual : IAdScalar<Dual>
         return r;
     }
 
-    public static Dual Sub(Dual a, Dual b)
+    public static Dual Sub(in Dual a, in Dual b)
     {
         var r = new Dual { Value = a.Value - b.Value, N = NMax(a, b) };
         int n = r.N;
@@ -69,7 +69,7 @@ public struct Dual : IAdScalar<Dual>
         return r;
     }
 
-    public static Dual Mul(Dual a, Dual b)
+    public static Dual Mul(in Dual a, in Dual b)
     {
         var r = new Dual { Value = a.Value * b.Value, N = NMax(a, b) };
         int n = r.N;
@@ -77,7 +77,7 @@ public struct Dual : IAdScalar<Dual>
         return r;
     }
 
-    public static Dual Div(Dual a, Dual b)
+    public static Dual Div(in Dual a, in Dual b)
     {
         // (a/b)' = (a'b - ab') / b^2
         double bv = b.Value;
@@ -89,7 +89,7 @@ public struct Dual : IAdScalar<Dual>
         return r;
     }
 
-    public static Dual Neg(Dual a)
+    public static Dual Neg(in Dual a)
     {
         var r = new Dual { Value = -a.Value, N = a.N };
         for (int i = 0; i < a.N; i++) r._grad[i] = -a._grad[i];
@@ -98,7 +98,7 @@ public struct Dual : IAdScalar<Dual>
 
     // (a^b)' — full formula: a^b * (b/a * a' + ln(a) * b')
     // When b is a constant (b.Grad all zero): simplifies to b*a^(b-1)*a'.
-    public static Dual Pow(Dual a, Dual b)
+    public static Dual Pow(in Dual a, in Dual b)
     {
         double av = a.Value, bv = b.Value;
         double pval = Math.Pow(av, bv);
@@ -117,7 +117,7 @@ public struct Dual : IAdScalar<Dual>
     // Gradient uses the capped value — at the cap edge the gradient is also capped,
     // which is correct for the softplus pattern log(exp(x)+1): both value and gradient
     // stay finite and recover the correct softplus when composed with Log.
-    public static Dual Exp(Dual a)
+    public static Dual Exp(in Dual a)
     {
         double xv = a.Value > ExpCap ? ExpCap : a.Value;
         double ev = Math.Exp(xv);
@@ -127,7 +127,7 @@ public struct Dual : IAdScalar<Dual>
     }
 
     // Domain-safe log: clamps to LogFloor and warns (§2.5).
-    public static Dual Log(Dual a)
+    public static Dual Log(in Dual a)
     {
         double av = a.Value;
         if (av <= 0.0)
@@ -141,7 +141,7 @@ public struct Dual : IAdScalar<Dual>
     }
 
     // Domain-safe sqrt: clamps to 0 and warns.
-    public static Dual Sqrt(Dual a)
+    public static Dual Sqrt(in Dual a)
     {
         double av = a.Value;
         if (av < 0.0)
@@ -156,7 +156,7 @@ public struct Dual : IAdScalar<Dual>
         return r;
     }
 
-    public static Dual Tanh(Dual a)
+    public static Dual Tanh(in Dual a)
     {
         double tv = Math.Tanh(a.Value);
         double dt = 1.0 - tv * tv;  // sech²
@@ -165,7 +165,7 @@ public struct Dual : IAdScalar<Dual>
         return r;
     }
 
-    public static Dual Sin(Dual a)
+    public static Dual Sin(in Dual a)
     {
         double sv = Math.Sin(a.Value);
         double cv = Math.Cos(a.Value);
@@ -174,7 +174,7 @@ public struct Dual : IAdScalar<Dual>
         return r;
     }
 
-    public static Dual Cos(Dual a)
+    public static Dual Cos(in Dual a)
     {
         double cv = Math.Cos(a.Value);
         double sv = Math.Sin(a.Value);
@@ -184,7 +184,7 @@ public struct Dual : IAdScalar<Dual>
     }
 
     // abs: sub-gradient at 0 is +1 (documented; measure-zero kink, no effect on Newton).
-    public static Dual Abs(Dual a)
+    public static Dual Abs(in Dual a)
     {
         double sign = a.Value >= 0.0 ? 1.0 : -1.0;
         var r = new Dual { Value = Math.Abs(a.Value), N = a.N };
@@ -195,7 +195,7 @@ public struct Dual : IAdScalar<Dual>
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     // N for a binary result: prefer the non-zero N (one operand may be a plain constant with N=0).
-    private static int NMax(Dual a, Dual b) => a.N >= b.N ? a.N : b.N;
+    private static int NMax(in Dual a, in Dual b) => a.N >= b.N ? a.N : b.N;
 
     public override string ToString()
     {
