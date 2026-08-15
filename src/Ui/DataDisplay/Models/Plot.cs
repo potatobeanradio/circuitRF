@@ -157,6 +157,11 @@ namespace CircuitRF.Ui.DataDisplay
         public bool   ShowWatermark      { get; set; } = false;
         public string CustomTitle    { get; set; } = "";
         public bool   CustomTitleOn  { get; set; } = false;
+
+        /// <summary>Renders <see cref="Title"/> in bold. Defaults false — every existing plot keeps
+        /// its regular-weight title; harmonicaRF's Loadline/Power Sweep/Time Domain plots opt in
+        /// (<c>HarmonicaPanelRenderer</c>'s own three <c>Build*Plot</c> methods).</summary>
+        public bool   CustomTitleBold { get; set; } = false;
         public string CustomXLabel   { get; set; } = "";
         public bool   CustomXLabelOn { get; set; } = false;
         public string CustomYLabel   { get; set; } = "";

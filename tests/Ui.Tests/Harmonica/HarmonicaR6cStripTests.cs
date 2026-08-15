@@ -5,8 +5,9 @@
 //  §2  Intrinsic VDS / Intrinsic IDS — two new chunks, read from the already-published V_intr/I_intr
 //      cubes, magnitude ∠ angle by default.
 //  §3  Settings label renames (compr -> "Compression:", f0 -> "Freq:", K -> "Harmonic Order:").
-//  §4  fixed-width formatting — every produced string for a given row TYPE has the same length, and
-//      that length does not depend on the row's own value.
+//  §4  fixed-DECIMAL formatting (R-hui-2) — every produced string for a given row TYPE holds the same
+//      decimal-place count regardless of the row's own value; column stability is the reserved
+//      control WIDTH's job, not text padding, so a complex row's real/imaginary parts sit with no gap.
 //  §5  per-chunk Copy — one ContextMenu per chunk, sharing HarmonicaClipboard.RowsText with the
 //      existing Edit > Copy Readouts.
 // ================================================================
@@ -118,34 +119,30 @@ public sealed class HarmonicaR6cStripTests(ITestOutputHelper output)
         var vm = new HarmonicaViewModel();
         var byKey = vm.Inputs.ToDictionary(i => i.Key);
 
-        Assert.Equal("Compression:", byKey[HarmonicaInputs.KeyCompression].Label);
+        Assert.Equal("P-xdB",        byKey[HarmonicaInputs.KeyCompression].Label);
         Assert.Equal("Freq:",        byKey[HarmonicaInputs.KeyFrequency].Label);
-        Assert.Equal("Harmonic Order:", byKey[HarmonicaInputs.KeyHarmonicCount].Label);
+        Assert.Equal("HB Order:",    byKey[HarmonicaInputs.KeyHarmonicCount].Label);
 
         // Vds/Vgs/Z0 are untouched — only the three named labels moved.
         Assert.Equal("Vds", byKey[HarmonicaInputs.KeyVds].Label);
         Assert.Equal("Vgs", byKey[HarmonicaInputs.KeyVgs].Label);
     }
 
-    // ══ §4.1/§4.3 — fixed-width formatting ═══════════════════════════════════════════════════════
+    // ══ §4.1/§4.3 (R-hui-2/R-hui-4) — fixed-DECIMAL formatting; column stability moved to the GRID ══
+    //
+    // HarmonicaReadoutFormatting no longer pads: a row's string length is no longer forced constant by
+    // stuffing leading spaces into the TEXT (that scheme is what produced the "x+j     y" gap the owner
+    // asked to remove). Column stability is now a SharedSizeGroup'd Grid column's job (ReadoutStripView
+    // — ReservedValueChars is gone), sized to the widest content each chunk actually has. What
+    // FixedWidth must still guarantee: the same DECIMAL PLACE count regardless of magnitude (10.123 ->
+    // 10.120 must not move a digit), and a bounded exponent fallback for a pathologically large value.
 
-    // 0.001 .. 5000 plus the degenerate 9.999/10.001 crossing — within EVERY current row budget's own
-    // fixed-decimal branch (none of these need the exponent fallback), so this exercises the ordinary
-    // "value moved, string length must not" case every row type actually sees in practice. A separate
-    // test below exercises the exponent fallback itself, which only the widest-budget quantities
-    // (impedance, watts) are sized to survive out to 1e6 — a narrow-budget quantity like an angle was
-    // never meant to hold a million degrees, so it is not swept there.
     private static readonly double[] SweepMagnitudes =
         [0.001, 0.01, 0.1, 1, 9.999, 10.001, 50, 100, 1000, 5000];
 
     [Fact]
-    public void FixedWidth_ProducesTheSameLength_AcrossASweptRangeOfMagnitudesAndSigns()
+    public void FixedWidth_NeverPads_AndAlwaysHoldsTheDecimalPlaceCount()
     {
-        // Each (decimals, budget) pair here is one of the REAL per-quantity budgets §4.1 defines —
-        // every one of them is sized to hold its own worst case (including the exponent fallback), so
-        // sweeping a wide magnitude range must never change the produced length. An arbitrarily small
-        // budget CAN legitimately be too narrow even for the exponent form (a documented edge case of
-        // FixedWidth's own contract) — that is not this test's concern.
         var quantities = new (int Decimals, int Budget)[]
         {
             (HarmonicaReadoutFormatting.ComplexPartDecimals, HarmonicaReadoutFormatting.ComplexPartBudget),
@@ -159,53 +156,54 @@ public sealed class HarmonicaR6cStripTests(ITestOutputHelper output)
         };
 
         foreach (var (decimals, budget) in quantities)
+        foreach (double mag in SweepMagnitudes)
+        foreach (double value in new[] { mag, -mag })
         {
-            int? expectedLength = null;
-            foreach (double mag in SweepMagnitudes)
-            foreach (double value in new[] { mag, -mag })
-            {
-                string s = HarmonicaReadoutFormatting.FixedWidth(value, decimals, budget);
-                expectedLength ??= s.Length;
-                Assert.True(s.Length == expectedLength,
-                    $"FixedWidth({value}, {decimals}, {budget}) = '{s}' ({s.Length} chars), " +
-                    $"expected {expectedLength} chars (row's own budget: {budget})");
-            }
+            string s = HarmonicaReadoutFormatting.FixedWidth(value, decimals, budget);
+            Assert.False(s.StartsWith(' '), $"FixedWidth({value}, {decimals}, {budget}) = '{s}' is padded");
+            int dot = s.IndexOf('.');
+            int actualDecimals = dot < 0 ? 0 : s.Length - dot - 1;
+            Assert.True(actualDecimals == decimals,
+                $"FixedWidth({value}, {decimals}, {budget}) = '{s}' has {actualDecimals} decimals, expected {decimals}");
         }
     }
 
     [Fact]
-    public void FixedWidth_PastTheBudget_FallsBackToAFixedWidthExponentForm_UpTo1e6()
+    public void FixedWidth_SameDigitCount_ProducesTheSameLength_ButADigitCountChangeMayGrow()
     {
-        // The widest-range quantities (impedance parts, watts, dBm) are the ones the brief itself
-        // names as needing the exponent fallback — swept out to 1e6, both signs, still constant length.
+        // The owner's own tolerance: 10.123 -> 10.120 (same digit count) must not move; 9 -> 10 (a
+        // digit-count change) MAY — and does, since nothing pads it back out any more.
+        string a = HarmonicaReadoutFormatting.FixedWidth(10.123, 3, 10);
+        string b = HarmonicaReadoutFormatting.FixedWidth(10.120, 3, 10);
+        Assert.Equal(a.Length, b.Length);
+
+        string nine = HarmonicaReadoutFormatting.FixedWidth(9.99, 2, 9);
+        string ten  = HarmonicaReadoutFormatting.FixedWidth(10.01, 2, 9);
+        Assert.True(ten.Length > nine.Length, $"'{nine}' -> '{ten}' expected to grow by a digit");
+    }
+
+    [Fact]
+    public void FixedWidth_PastTheBudget_FallsBackToAFixedWidthExponentForm()
+    {
+        // The widest-range quantities (impedance parts, dBm) are sized to need the exponent fallback
+        // out at 1e6 — still a fixed decimal-place count, no padding.
         var wideQuantities = new (int Decimals, int Budget)[]
         {
             (HarmonicaReadoutFormatting.ComplexPartDecimals, HarmonicaReadoutFormatting.ComplexPartBudget),
-            (HarmonicaReadoutFormatting.WattDecimals,        HarmonicaReadoutFormatting.WattBudget),
             (HarmonicaReadoutFormatting.DbmDecimals,         HarmonicaReadoutFormatting.DbmBudget),
         };
 
         foreach (var (decimals, budget) in wideQuantities)
         {
-            int? expectedLength = null;
-            foreach (double value in new[] { 1e6, -1e6, 12345.678, -12345.678 })
-            {
-                string s = HarmonicaReadoutFormatting.FixedWidth(value, decimals, budget);
-                expectedLength ??= s.Length;
-                Assert.Equal(expectedLength, s.Length);
-                output.WriteLine($"FixedWidth({value}, {decimals}, {budget}) = '{s}'");
-            }
+            string s = HarmonicaReadoutFormatting.FixedWidth(1e6, decimals, budget);
+            Assert.Contains('e', s);
+            output.WriteLine($"FixedWidth(1000000, {decimals}, {budget}) = '{s}'");
         }
-    }
 
-    [Fact]
-    public void FixedWidth_TheDegenerateTrailingZeroCrossing_KeepsTheSameLength()
-    {
-        // The brief's own motivating case: 9.99 -> 10.01 must not lose or gain a character.
-        string before = HarmonicaReadoutFormatting.FixedWidth(9.999, 2, 9);
-        string after  = HarmonicaReadoutFormatting.FixedWidth(10.001, 2, 9);
-        Assert.Equal(before.Length, after.Length);
-        output.WriteLine($"'{before}' -> '{after}'");
+        // A quantity whose value stays within its own budget must NOT switch to exponent form.
+        string watt = HarmonicaReadoutFormatting.FixedWidth(
+            1e5, HarmonicaReadoutFormatting.WattDecimals, HarmonicaReadoutFormatting.WattBudget);
+        Assert.DoesNotContain('e', watt);
     }
 
     [Theory]
@@ -213,47 +211,120 @@ public sealed class HarmonicaR6cStripTests(ITestOutputHelper output)
     [InlineData(50)]
     [InlineData(5000)]
     [InlineData(-5000)]
-    public void FormatZ_NeverChangesLength_AcrossZsWideDynamicRange(double re)
+    public void FormatZ_NoGapBetweenRealAndImaginary_AcrossZsWideDynamicRange(double re)
     {
-        // §0's own motivating complaint — an impedance running 0.5 Ω .. 5000 Ω during a drag must not
-        // change the rendered string's length (and so must not reflow the column it sits in).
-        string baseline = HarmonicaReadoutFormatting.FormatZ(new Complex(0.5, 0.1), ReadoutFormat.RealImaginary);
-        string swept     = HarmonicaReadoutFormatting.FormatZ(new Complex(re, 0.1), ReadoutFormat.RealImaginary);
-        Assert.Equal(baseline.Length, swept.Length);
+        // R-hui-2 — the owner's own complaint: "x+j     y" (a padded gap between the real and
+        // imaginary parts). FormatZ must never produce a space immediately after "+j"/"-j".
+        string s = HarmonicaReadoutFormatting.FormatZ(new Complex(re, 0.1), ReadoutFormat.RealImaginary);
+        int j = s.IndexOf('j');
+        Assert.True(j >= 0 && j + 1 < s.Length && s[j + 1] != ' ', $"'{s}' has a gap after 'j'");
+    }
+
+    // ══ R-hui-4 — value/unit split for column-aligned rendering (replaces ReservedValueChars) ══════
+
+    [Theory]
+    [InlineData("-3.50 dBm", "-3.50", "dBm")]
+    [InlineData("12.340 dB", "12.340", "dB")]
+    [InlineData("45.6 %", "45.6", "%")]
+    [InlineData("1.234 W", "1.234", "W")]
+    [InlineData("158.806+j0.000 Ω", "158.806+j0.000", "Ω")]
+    public void SplitUnit_RecognizesEveryKnownSuffix(string formatted, string expectedValue, string expectedUnit)
+    {
+        var (value, unit) = HarmonicaReadoutFormatting.SplitUnit(formatted);
+        Assert.Equal(expectedValue, value);
+        Assert.Equal(expectedUnit, unit);
+    }
+
+    [Theory]
+    [InlineData("no optimum")]      // a plain status string with a space — must NOT be misparsed
+    [InlineData("not located")]
+    [InlineData("0.500+j0.100")]    // a Γ row — no unit at all
+    [InlineData("45.0°")]           // degrees attach with no space, by convention — stays one token
+    [InlineData("—")]
+    public void SplitUnit_LeavesAnythingWithNoKnownSuffixAlone(string formatted)
+    {
+        var (value, unit) = HarmonicaReadoutFormatting.SplitUnit(formatted);
+        Assert.Equal(formatted, value);
+        Assert.Equal("", unit);
+    }
+
+    // ══ R7C §1.1/§1.3 — the UNIT column is GONE; the unit rides in the LABEL, and a row's reserved
+    // VALUE width is now a worst-case STRING (measured against the live typeface by ReadoutStripView),
+    // not a character-count budget for a now-nonexistent unit column.
+
+    [Fact]
+    public void WorstCaseValueTexts_ReserveAtLeastAsManyDigitsAsARealFormattedValueNeeds()
+    {
+        // Every quantity's worst-case literal must be at least as long (digit-for-digit) as what a
+        // real, in-range formatted value's own VALUE half (unit stripped) actually needs, or the
+        // pinned reserved width would clip a legitimate value rather than merely leave slack.
+        var pout = new HarmonicaReadout("Pout", HarmonicaReadoutFormatting.FormatDbm(-3.5), "", ReadoutColumn.OperatingPoint, Unit: "dBm");
+        var eff  = new HarmonicaReadout("Eff",  HarmonicaReadoutFormatting.FormatPercent(45.6), "", ReadoutColumn.OperatingPoint, Unit: "%");
+        var gain = new HarmonicaReadout("Gain", HarmonicaReadoutFormatting.FormatDb(12.3), "", ReadoutColumn.OperatingPoint, Unit: "dB");
+        var pdc  = new HarmonicaReadout("Pdc",  HarmonicaReadoutFormatting.FormatWatt(1.234), "", ReadoutColumn.OperatingPoint, Unit: "W");
+        var amPm = new HarmonicaReadout("AM/PM", HarmonicaReadoutFormatting.FormatDegrees(45.0), "", ReadoutColumn.OperatingPoint);
+        var zRow = new HarmonicaReadout("ZL1", HarmonicaReadoutFormatting.FormatZ(new Complex(50, 10), ReadoutFormat.RealImaginary),
+            "", ReadoutColumn.Load, IsComplex: true, Editable: true, RawValue: new Complex(50, 10), Unit: "Ω");
+
+        foreach (var item in new[] { pout, eff, gain, pdc, amPm })
+        {
+            var (value, _) = HarmonicaReadoutFormatting.SplitUnit(item.Value);
+            string worstCase = Assert.Single(HarmonicaReadoutFormatting.WorstCaseValueTexts(item));
+            Assert.True(value.Length <= worstCase.Length,
+                $"{item.Label}: '{value}' ({value.Length} chars) exceeds worst case '{worstCase}' ({worstCase.Length} chars)");
+        }
+
+        var (zValue, zUnit) = HarmonicaReadoutFormatting.SplitUnit(zRow.Value);
+        Assert.Equal("Ω", zUnit);   // Format* functions still append the unit — SplitUnit still strips it
+        var zWorstCases = HarmonicaReadoutFormatting.WorstCaseValueTexts(zRow);
+        Assert.Equal(2, zWorstCases.Count);   // a complex row's format can flip live: rect AND polar
+        Assert.Contains(zWorstCases, wc => zValue.Length <= wc.Length);
+
+        // The intrinsic VDS/IDS chunks carry no per-row unit (it is stated once, in the header) but
+        // are still complex rows whose format can flip, so they still get both candidates.
+        var intrinsicRow = new HarmonicaReadout("1f0", "", "", ReadoutColumn.IntrinsicVds, IsComplex: true, Band: 1);
+        Assert.Equal(2, HarmonicaReadoutFormatting.WorstCaseValueTexts(intrinsicRow).Count);
+    }
+
+    [Theory]
+    [InlineData("Pout", "dBm", "Pout (dBm):")]
+    [InlineData("Vgs", "", "Vgs:")]
+    [InlineData("γ", "", "γ:")]
+    public void LabelWithUnit_MergesTheUnitIntoTheLabelCell(string label, string unit, string expected)
+    {
+        // R7C §1.1 — "Merge the units to be with the metric name." Source-scanned, same reason every
+        // other ReadoutStripView layout fact in this suite is (Ui.Tests cannot instantiate a live
+        // control), but exercised via reflection here since LabelWithUnit is a pure function.
+        var type = typeof(HarmonicaReadout).Assembly.GetType("CircuitRF.Ui.Views.Harmonica.ReadoutStripView");
+        Assert.NotNull(type);
+        var method = type!.GetMethod("LabelWithUnit", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        Assert.Equal(expected, (string)method!.Invoke(null, [label, unit])!);
     }
 
     [Fact]
-    public void ReservedValueChars_IsAFunctionOfTheRowKind_NeverOfItsValue()
+    public void LabelWithUnit_StripsAPreExistingTrailingColon_RatherThanDoublingIt()
     {
-        // R6C §4.2 — the same row TYPE (a Load Z row) reserves the identical width whether its current
-        // value is small or huge; only the LABEL/IsComplex/IsGamma shape may change it.
-        var small = new HarmonicaReadout("ZL1", HarmonicaReadoutFormatting.FormatZ(new Complex(0.5, 0), ReadoutFormat.RealImaginary),
-            "tip", ReadoutColumn.Load, IsComplex: true, Editable: true, RawValue: new Complex(0.5, 0));
-        var big = small with
-        {
-            Value = HarmonicaReadoutFormatting.FormatZ(new Complex(5000, 0), ReadoutFormat.RealImaginary),
-            RawValue = new Complex(5000, 0),
-        };
-
-        Assert.Equal(HarmonicaReadoutFormatting.ReservedValueChars(small),
-                     HarmonicaReadoutFormatting.ReservedValueChars(big));
-
-        // A bare Gamma row (no unit) reserves LESS than a Z row (" Ω") of the same complex shape.
-        var gamma = small with { IsGamma = true };
-        Assert.True(HarmonicaReadoutFormatting.ReservedValueChars(gamma) <
-                    HarmonicaReadoutFormatting.ReservedValueChars(small));
+        // Two of HarmonicaInputs.Build's own labels ("Freq:", "HB Order:") already bake in a colon
+        // for reasons unrelated to this render-time convention — LabelWithUnit must not produce
+        // "Freq: (GHz):".
+        var type = typeof(HarmonicaReadout).Assembly.GetType("CircuitRF.Ui.Views.Harmonica.ReadoutStripView");
+        var method = type!.GetMethod("LabelWithUnit", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.Equal("Freq (GHz):", (string)method!.Invoke(null, ["Freq:", "GHz"])!);
+        Assert.Equal("HB Order:", (string)method!.Invoke(null, ["HB Order:", ""])!);
     }
 
     // ══ §5 — per-chunk Copy, source-scanned (Ui.Tests cannot instantiate a live control) ═════════
 
     [Fact]
-    public void ReadoutStripView_AttachesOneCopyMenuPerChunk_ToAllEightHosts()
+    public void ReadoutStripView_AttachesOneCopyMenuPerChunk_ToAllSevenHosts()
     {
         string src = ReadSource("src", "Ui", "Views", "Harmonica", "ReadoutStripView.axaml.cs");
         Assert.Contains("AttachChunkCopyMenu(host)", src, StringComparison.Ordinal);
 
+        // R-hui-1 — Source and Load merged into one TerminationsColumn chunk.
         foreach (string chunk in new[]
-                 { "SettingsColumn", "OperatingPointColumn", "SourceColumn", "LoadColumn",
+                 { "SettingsColumn", "OperatingPointColumn", "TerminationsColumn",
                    "MxpColumn", "MxeColumn", "IntrinsicVdsColumn", "IntrinsicIdsColumn" })
             Assert.Contains(chunk, src, StringComparison.Ordinal);
 

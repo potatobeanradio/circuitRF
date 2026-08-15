@@ -19,9 +19,19 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// </summary>
 public partial class HarmonicaSetDutDialog : Window
 {
+    /// <summary>
+    /// R7B §2 — the ONE place combo index maps to <see cref="DutKind"/>. Diode is deliberately not in
+    /// here: §1 keeps the type fully supported everywhere except this offer list, so a document that
+    /// already carries one gets a fourth, legacy-only item appended in the constructor instead of a
+    /// fifth permanent entry nobody would otherwise choose ("we don't loadpull diodes").
+    /// </summary>
+    private static readonly DutKind[] KindOrder = [DutKind.Sdd, DutKind.NativeFet, DutKind.External];
+    private static readonly string[] KindLabels = ["SDD equations", "Native FET", "External model"];
+
     private HarmonicaDutEditor _editor = new(new DutSpec { Kind = DutKind.Sdd, TypeName = "SDD" });
     private ExternalDeviceDescriptor? _descriptor;
     private IReadOnlyList<HarmonicaExternalType> _types = [];
+    private DutKind[] _kindItems = KindOrder;
     private bool _loading;
 
     public HarmonicaSetDutDialog() => InitializeComponent();
@@ -33,10 +43,14 @@ public partial class HarmonicaSetDutDialog : Window
         _loading = true;
         LawCombo.ItemsSource = HarmonicaDutCatalog.NativeFetLaws.Select(l => l.Display).ToList();
 
-        KindSdd.IsChecked      = current.Kind == DutKind.Sdd;
-        KindFet.IsChecked      = current.Kind == DutKind.NativeFet;
-        KindDiode.IsChecked    = current.Kind == DutKind.Diode;
-        KindExternal.IsChecked = current.Kind == DutKind.External;
+        // §1 — Diode is offered only as a legacy item, and only on a document that already carries
+        // one: present so the state is never invisible, absent so nobody can pick it fresh.
+        bool legacyDiode = current.Kind == DutKind.Diode;
+        _kindItems = legacyDiode ? [.. KindOrder, DutKind.Diode] : KindOrder;
+        KindCombo.ItemsSource = legacyDiode ? [.. KindLabels, "Diode (legacy)"] : KindLabels;
+
+        int kindIdx = Array.IndexOf(_kindItems, current.Kind);
+        KindCombo.SelectedIndex = kindIdx >= 0 ? kindIdx : 0;
 
         int law = IndexOfLaw(current.TypeName);
         LawCombo.SelectedIndex = law >= 0 ? law : 0;
@@ -70,14 +84,11 @@ public partial class HarmonicaSetDutDialog : Window
 
     // ── kind ──────────────────────────────────────────────────────────────────
 
-    private void OnKindChanged(object? sender, RoutedEventArgs e)
+    private void OnKindChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_loading || !IsInitialized) return;
+        if (_loading || !IsInitialized || KindCombo.SelectedIndex < 0) return;
 
-        _editor.SetKind(
-            KindFet.IsChecked      == true ? DutKind.NativeFet :
-            KindDiode.IsChecked    == true ? DutKind.Diode :
-            KindExternal.IsChecked == true ? DutKind.External : DutKind.Sdd);
+        _editor.SetKind(_kindItems[KindCombo.SelectedIndex]);
 
         if (_editor.Kind == DutKind.NativeFet && LawCombo.SelectedIndex >= 0)
             _editor.SetNativeLaw(HarmonicaDutCatalog.NativeFetLaws[LawCombo.SelectedIndex].TypeName);
@@ -101,6 +112,9 @@ public partial class HarmonicaSetDutDialog : Window
         ExternalChooser.IsVisible = ext;
         MappingPanel.IsVisible    = ext;
 
+        ParamBorder.IsVisible    = !sdd;
+        SddEditorPanel.IsVisible = sdd;
+
         FileRow.IsVisible = ext && SourceFile.IsChecked == true;
         KitRow.IsVisible  = ext && SourceKit.IsChecked  == true;
     }
@@ -110,7 +124,7 @@ public partial class HarmonicaSetDutDialog : Window
     {
         if (_loading || !IsInitialized || _editor.Kind != DutKind.Sdd) return;
         _editor.SddPortCount = SddPorts3.IsChecked == true ? 3 : 2;
-        RefreshStatus();
+        RevalidateSddText();
     }
 
     private void OnLawChanged(object? sender, SelectionChangedEventArgs e)
@@ -244,6 +258,17 @@ public partial class HarmonicaSetDutDialog : Window
 
     private void RebuildParameterRows()
     {
+        // R7B §3.9 — an SDD gets its own text editor instead of per-parameter rows, and the trap this
+        // guards against: falling through into the loop below would call SetParameter for every row
+        // it built, which for SDD would write equation keys back as if they were declared scalar
+        // parameters.
+        if (_editor.Kind == DutKind.Sdd)
+        {
+            ParamHeader.Text = "SDD equations and variables";
+            RefreshSddEditor();
+            return;
+        }
+
         ParamHost.Children.Clear();
 
         // The one reader. HarmonicaInputs.DeclaredModelParameters answers "what does this model
@@ -296,6 +321,44 @@ public partial class HarmonicaSetDutDialog : Window
         }
     }
 
+    // ── R7B §3.9 — the SDD text editor ──────────────────────────────────────────
+
+    /// <summary>Seeds the box from the editor's staged text (kind just switched TO SDD, or the
+    /// dialog just opened on one) and revalidates.</summary>
+    private void RefreshSddEditor()
+    {
+        _loading = true;
+        SddTextBox.Text = _editor.SddText ?? "";
+        _loading = false;
+        RevalidateSddText();
+    }
+
+    private void OnSddTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_loading || _editor.Kind != DutKind.Sdd) return;
+        _editor.SddText = SddTextBox.Text ?? "";
+        RevalidateSddText();
+    }
+
+    /// <summary>
+    /// §3.2/§3.6 — re-parses the box on every keystroke (cheap: <c>Parser.Parse</c> on a handful of
+    /// short expressions), updates the status line's counts and the per-line error list, and drives
+    /// the SAME "can I commit" path every other kind uses (<see cref="RefreshStatus"/>).
+    /// </summary>
+    private void RevalidateSddText()
+    {
+        var parsed = HarmonicaSddText.Parse(_editor.SddText ?? "", _editor.SddPortCount);
+
+        SddStatusLabel.Text =
+            $"{parsed.Variables.Count} variable(s) · {parsed.Equations.Count} equation(s) · " +
+            $"{_editor.SddPortCount} port(s)";
+
+        SddErrorsLabel.Text = string.Join('\n', parsed.Problems.Select(p =>
+            p.Line > 0 ? $"line {p.Line}: {p.Message}" : p.Message));
+
+        RefreshStatus();
+    }
+
     // ── §4.5.5 — the mapping, offered from the model's OWN node names ─────────
 
     private void RefreshMapping()
@@ -341,6 +404,12 @@ public partial class HarmonicaSetDutDialog : Window
         if (problem is null && _editor.Kind == DutKind.External
             && _editor.Build().IntrinsicMapping is null)
             problem = "The intrinsic plane is not named: the glyphs and the loadline will be empty.";
+
+        // §1 — Diode is kept fully working for a document that already has one, but is no longer
+        // offered for a new device; say so, since the combo item alone ("(legacy)") is easy to miss.
+        if (problem is null && _editor.Kind == DutKind.Diode)
+            problem = "Diode is kept for documents that already use it and is no longer offered for " +
+                      "a new device — switch to another kind to move off it.";
 
         StatusLabel.Text = problem ?? "";
         ApplyButton.IsEnabled = _typeError is null && _editor.Validate() is null;

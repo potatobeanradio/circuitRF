@@ -134,6 +134,15 @@ public static class HarmonicaHitTest
     /// Möbius-circle geometry, which is Z0-dependent off the matched point. Defaults to 50 Ω for
     /// callers with no panel context (most direct tests).
     /// </param>
+    /// <param name="intrinsicDragAllowed">
+    /// R8C §5.2 — <see cref="CircuitModel.IntrinsicDragAllowed"/>, evaluated by the caller (it needs
+    /// the live <c>CircuitModel</c>, which this framework-free hit test does not take). False makes
+    /// Pass 2 not run at all — the intrinsic glyph is not grabbable, so a click falls through to the
+    /// VSWR circle / grid point / panel body as if the glyph were decoration. Gating the PASS rather
+    /// than refusing the drag afterward: a grab that starts and then refuses to move is worse than no
+    /// grab. Defaults true so a caller with no model context (most direct tests) keeps today's
+    /// behaviour.
+    /// </param>
     public static HarmonicaGrab Resolve(CharmLayout layout, IReadOnlyList<HarmonicaMarker> markers,
                                         double x, double y, double w, double h,
                                         double renderScaling = 1.0,
@@ -141,7 +150,8 @@ public static class HarmonicaHitTest
                                         IReadOnlyList<HarmonicaGridPoint>? gridPoints = null,
                                         bool gridPointsVisible = true,
                                         HarmonicaMarker? topmost = null,
-                                        double z0 = 50.0)
+                                        double z0 = 50.0,
+                                        bool intrinsicDragAllowed = true)
     {
         if (w <= 0 || h <= 0) return HarmonicaGrab.None;
         if (!gridPointsVisible) gridPoints = null;
@@ -164,7 +174,9 @@ public static class HarmonicaHitTest
         int bestRank = int.MinValue;
         foreach (var m in markers)
         {
-            double d2 = Distance2(HarmonicaPanelRenderer.MarkerToCanvas(m.Gamma, size), local);
+            // R8B §2 — the extrinsic marker is on the plain chart map, never the compressed intrinsic
+            // one; GammaToCanvas is the SAME transform DrawMarkers now paints it with.
+            double d2 = Distance2(HarmonicaPanelRenderer.GammaToCanvas(m.Gamma, size), local);
             if (d2 > r2) continue;
 
             int rank = HarmonicaMarkerZOrder.RankOf(m, topmost);
@@ -177,13 +189,19 @@ public static class HarmonicaHitTest
         }
         if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.ExtrinsicMarker, best, panelId);
 
-        // Pass 2 — the intrinsic glyphs beneath them.
-        foreach (var m in markers)
+        // Pass 2 — the intrinsic glyphs beneath them. These STAY on the compressed radial scale
+        // (R8B §2 only re-points the extrinsic marker). R8C §5.2 — does not run at all when the
+        // predicate is false, so the glyph is not grabbable rather than grabbable-but-refuses-to-move.
+        if (intrinsicDragAllowed)
         {
-            double d2 = Distance2(HarmonicaPanelRenderer.MarkerToCanvas(m.GammaIntrinsic, size), local);
-            if (d2 <= r2 && d2 < bestD2) { bestD2 = d2; best = m; }
+            foreach (var m in markers)
+            {
+                var p = HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(m.GammaIntrinsic), size);
+                double d2 = Distance2(p, local);
+                if (d2 <= r2 && d2 < bestD2) { bestD2 = d2; best = m; }
+            }
+            if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.IntrinsicGlyph, best, panelId);
         }
-        if (best is not null) return new HarmonicaGrab(HarmonicaGrabKind.IntrinsicGlyph, best, panelId);
 
         // Pass 2.5 — R-h9r2-8's VSWR circle, one per marker with the overlay on. brief-harmonicarf-r6b
         // §1.1: there is no gripper any more — the whole circumference is grabbable, sampled at
@@ -231,6 +249,30 @@ public static class HarmonicaHitTest
         return bestIndex < 0
             ? HarmonicaGrab.None
             : new HarmonicaGrab(HarmonicaGrabKind.GridPoint, null, panelId, bestIndex);
+    }
+
+    /// <summary>R8C §5.2 — whether <paramref name="x"/>,<paramref name="y"/> is over an intrinsic
+    /// glyph, independent of whether dragging is currently allowed there. Used only to decide whether
+    /// a click that fell through Pass 2 (because it is disallowed) should still say WHY, via
+    /// <c>HarmonicaViewModel.InverseMessage</c> — never to grab.</summary>
+    public static bool IsOverIntrinsicGlyph(CharmLayout layout, IReadOnlyList<HarmonicaMarker> markers,
+                                            double x, double y, double w, double h,
+                                            double renderScaling, double grabRadiusDevicePixels)
+    {
+        if (w <= 0 || h <= 0 || markers.Count == 0) return false;
+        string? panelId = PanelAt(layout, x, y, w, h);
+        if (panelId is null) return false;
+
+        var (local, size) = ToPanel(layout, panelId, x, y, w, h);
+        double radius = grabRadiusDevicePixels / Math.Max(1e-9, renderScaling);
+        double r2 = radius * radius;
+
+        foreach (var m in markers)
+        {
+            var p = HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(m.GammaIntrinsic), size);
+            if (Distance2(p, local) <= r2) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -366,13 +408,24 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
             return true;
         }
 
+        bool intrinsicDragAllowed = CircuitModel.IntrinsicDragAllowed(_vm.Model, out string intrinsicDragReason);
         var grab = HarmonicaHitTest.Resolve(_vm.Layout, _vm.Markers, x, y, w, h,
                                             renderScaling, GrabRadiusDevicePixels,
                                             GridPointsOf(_vm), _vm.ShowGridPoints, _vm.TopmostMarker,
-                                            _vm.Frame.SmithPower.Z0);
+                                            _vm.Frame.SmithPower.Z0,
+                                            intrinsicDragAllowed);
         Grab         = grab;
         LastGrabKind = grab.Kind;
-        if (!grab.IsGrab) return false;
+        if (!grab.IsGrab)
+        {
+            // R8C §5.2 — the glyph is not grabbable at all when dragging is disallowed (Pass 2 does
+            // not run), so a click that would have landed on it falls through to here. Say why, rather
+            // than leaving a click that visibly landed on something explain nothing.
+            if (!intrinsicDragAllowed && HarmonicaHitTest.IsOverIntrinsicGlyph(
+                    _vm.Layout, _vm.Markers, x, y, w, h, renderScaling, GrabRadiusDevicePixels))
+                _vm.InverseMessage = intrinsicDragReason;
+            return false;
+        }
 
         // R-h9r2-5 — a successful grab of a marker's own round glyph, its intrinsic glyph, or (R-h9r2-8)
         // its VSWR-circle handle promotes that marker to the top of the z-order for the rest of the
@@ -482,7 +535,6 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
         // over now: dragging off the edge of a panel must not teleport the marker into the other
         // chart's coordinate frame.
         var (local, size) = HarmonicaHitTest.ToPanel(_vm.Layout, Grab.PanelId, x, y, w, h);
-        var gamma = HarmonicaPanelRenderer.CanvasToMarker(local, size);
 
         if (Grab.Kind == HarmonicaGrabKind.VswrHandle)
         {
@@ -493,15 +545,16 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
             // from the marker" to VSWR in general, so the drag point is inverted through the real
             // geometry via bisection rather than approximated.
             var rawGamma = HarmonicaPanelRenderer.CanvasToGamma(local, size);
-            double vswr = HarmonicaVswrHandle.VswrThrough(Grab.Marker!.Gamma, rawGamma,
-                                                           _vm.Frame.SmithPower.Z0);
+            var (vswr, saturated) = HarmonicaVswrHandle.VswrThroughEx(Grab.Marker!.Gamma, rawGamma,
+                                                                       _vm.Frame.SmithPower.Z0);
             _vm.SetMarkerVswr(Grab.Marker!, vswr);
 
             // §1.3 — the readout follows the pointer's CANVAS position (x, y), not the panel-local
-            // one: it is drawn unclipped, outside any panel's own clip rect.
+            // one: it is drawn unclipped, outside any panel's own clip rect. R8B §7.3 — a saturated
+            // drag reports the bound, not the clamped number it cannot actually move.
             VswrReadoutActive  = true;
             VswrReadoutPointer = (x, y);
-            VswrReadoutText    = HarmonicaReadoutFormatting.FormatVswr(Grab.Marker!.VswrValue);
+            VswrReadoutText    = HarmonicaReadoutFormatting.FormatVswr(Grab.Marker!.VswrValue, saturated);
             return;
         }
 
@@ -516,6 +569,12 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
 
         if (Grab.Kind == HarmonicaGrabKind.ExtrinsicMarker)
         {
+            // R8B §2 — an extrinsic termination marker lives on the PLAIN chart map, never the
+            // compressed intrinsic scale: CanvasToMarker composed that scale in for the intrinsic
+            // glyph's own benefit, and applying it to the termination marker too was why the marker
+            // and the pointer disagreed the moment |Γ| > 1.
+            var gamma = HarmonicaPanelRenderer.CanvasToGamma(local, size);
+
             // R-h9r2-9 — Snap to Grid lands the marker on the nearest already-solved Γ sample instead
             // of the raw cursor position. Applied on EVERY move, not only at release, so the marker
             // never shows an unsnapped position that the eventual commit would then jump away from —
@@ -533,6 +592,10 @@ public sealed class HarmonicaGesture(HarmonicaViewModel viewModel)
         }
         else
         {
+            // The intrinsic glyph is the one thing still on IntrinsicGlyphScale's compressed radial
+            // map — R8B §2 only re-points the EXTRINSIC marker.
+            var gamma = IntrinsicGlyphScale.TruePosition(HarmonicaPanelRenderer.CanvasToGamma(local, size));
+
             // M2 — the target is the INTRINSIC Γ under the pointer; the extrinsic terminations that
             // put it there are what the solve finds. A failure surfaces in the view model's status
             // message, not here, because it arrives with the frame rather than with the gesture.

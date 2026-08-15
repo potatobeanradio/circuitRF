@@ -108,11 +108,19 @@ public enum ReadoutColumn { General, Source, Load, Mxp, Mxe, OperatingPoint, Int
 /// using whatever format is current then, rather than baking in whatever format was current when
 /// <c>HarmonicaSolver.BuildReadouts</c> ran. Null for every row with no complex quantity behind it.
 /// </param>
+/// <param name="Unit">
+/// R7C §1.2 — the row's unit, stated ONCE here from what <c>HarmonicaSolver</c> KNOWS the row is
+/// ("dBm" for Pout, "Ω" for a Zin/termination row, …), never recovered by parsing <see cref="Value"/>
+/// (<c>HarmonicaReadoutFormatting.SplitUnit</c>'s old job). Parsing the rendered text meant the unit
+/// silently vanished — and the shared label column silently narrowed — the instant a value rendered
+/// "—" instead of a number (a failed solve mid-drag). <c>ReadoutStripView</c> composes the row's
+/// LABEL cell from this ("Pout (dBm):"), never the value cell — see <c>BuildColumnRowShell</c>.
+/// </param>
 public sealed record HarmonicaReadout(
     string Label, string Value, string Tooltip, ReadoutColumn Column,
     bool IsComplex = false, bool Editable = false,
     TerminationSideKind? Side = null, int Band = 0, bool IsGamma = false,
-    Complex? RawValue = null)
+    Complex? RawValue = null, string Unit = "")
 {
     /// <summary>
     /// R-h9c-7's persistence key for this row's format choice, or null for a row with no format
@@ -127,6 +135,8 @@ public sealed record HarmonicaReadout(
             ? $"{(Column == ReadoutColumn.Mxp ? "MXP" : "MXE")}.Zin"
         : Column is ReadoutColumn.IntrinsicVds or ReadoutColumn.IntrinsicIds
             ? $"{(Column == ReadoutColumn.IntrinsicVds ? "VDSi" : "IDSi")}.{Band}"
+        : Column is ReadoutColumn.OperatingPoint
+            ? "OP.Zin"
         : null;
 }
 

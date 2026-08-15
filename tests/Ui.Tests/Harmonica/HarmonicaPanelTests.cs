@@ -312,18 +312,19 @@ public sealed class HarmonicaPanelTests : IDisposable
         Assert.True(rimLit, "the hole dot must be DRAWN — a hole is measured data, not a gap");
     }
 
-    // ══ TIER 8 — nothing is drawn inside a hole ══════════════════════════════
+    // ══ TIER 8 — R8A §6: a hole is now SPANNED, at the pixel level ═══════════
 
     [Fact]
-    public void Tier8_AGridWithAHole_DrawsNoContourAndNoFillInsideTheExcludedDisc()
+    public void Tier8_AGridWithAHole_NowDrawsContourPixelsInsideTheExcludedDisc()
     {
-        // Tier 8 is Tier 7 of the PREVIOUS brief moved one layer out: that one proved no POLYLINE
-        // enters a hole; this proves no PIXEL does, which is a different claim and the one a user
-        // sees. §6.3: "an invented efficiency ridge in a hole is exactly the kind of artifact this
-        // tool must never produce."
+        // R8A §6 REVERSES the doctrine Tier 8 originally pinned: that one proved no PIXEL entered a
+        // hole; this proves the opposite, on the same fixture and the same differential-render
+        // oracle, because the owner ruled the surface model still covers the hole and an iso-line
+        // should render there — see ContourGrid's own class doc comment for the reasoning and why it
+        // depends on the hollow hole dot (asserted separately, above) staying drawn.
         //
-        // The grid is built by ContourGrid itself — its own support mask (convex hull minus a disc
-        // around each thrown-out point) is the thing under test, so synthesising a mask here would
+        // The grid is built by ContourGrid itself — its own support mask (now just the convex hull;
+        // the per-hole disc is opt-in) is the thing under test, so synthesising a mask here would
         // test the fixture instead.
         const int W = 520, H = 520;
         var theme = HarmonicaRenderTheme.Dark;
@@ -333,6 +334,7 @@ public sealed class HarmonicaPanelTests : IDisposable
         _out.WriteLine($"grid: {grid.Points.Count} Γ points, {grid.HoleCount} hole(s), " +
                        $"hole at {holeGamma}, mask radius {holeRadius:F3}");
 
+        // Default excludeHoleDiscs: false — the SPANNING raster, exactly what HarmonicaSolver draws.
         var raster = grid.Raster(GridMetric.PoutDbm, 256);
         var levels = ContourExtractor.LevelsBetween(raster, 10);
         var polys  = ContourExtractor.Extract(raster, levels);
@@ -366,7 +368,7 @@ public sealed class HarmonicaPanelTests : IDisposable
         // hide. The hollow hole dot is drawn from the contour-free frame too, so it cancels in the
         // difference and needs no exclusion.
         int lit = 0;
-        var offenders = new List<(int X, int Y, double R)>();
+        var hits = new List<(int X, int Y, double R)>();
         for (int y = (int)(centrePx.Y - discR); y <= (int)(centrePx.Y + discR); y++)
         for (int x = (int)(centrePx.X - discR); x <= (int)(centrePx.X + discR); x++)
         {
@@ -378,15 +380,18 @@ public sealed class HarmonicaPanelTests : IDisposable
             if (!NearlySame(bmpWith.GetPixel(x, y), bmpWithout.GetPixel(x, y)))
             {
                 lit++;
-                offenders.Add((x, y, r));
+                hits.Add((x, y, r));
             }
         }
 
-        if (lit > 0)
-            _out.WriteLine("contour pixels INSIDE the hole: " + string.Join(", ",
-                offenders.Take(6).Select(o => $"({o.X},{o.Y}) r={o.R:F1}/{discR:F1}")));
+        _out.WriteLine($"{lit} contour pixels inside the (now-unexcluded) hole disc " +
+                       $"(disc {discR:F1} px, probed to {discR * 0.80:F1} px)" +
+                       (lit > 0 ? ": " + string.Join(", ",
+                           hits.Take(6).Select(o => $"({o.X},{o.Y}) r={o.R:F1}/{discR:F1}")) : ""));
 
-        Assert.Equal(0, lit);
+        Assert.True(lit > 0,
+            "R8A §6 spans a hole with the fitted surface — a contour genuinely crossing it must leave " +
+            "at least one differing pixel inside the disc, or the reversal isn't wired to the renderer");
 
         // NON-VACUITY: the same difference taken over the WHOLE panel must find plenty of contour
         // pixels — otherwise this would pass against a panel that drew no contours at all.
@@ -398,8 +403,7 @@ public sealed class HarmonicaPanelTests : IDisposable
         Assert.True(litSomewhere > 200,
             $"only {litSomewhere} contour pixels anywhere — the panel drew essentially nothing, so " +
             "the in-hole assertion above proves nothing.");
-        _out.WriteLine($"{litSomewhere} contour pixels on the panel, 0 inside the hole " +
-                       $"(disc {discR:F1} px, probed to {discR * 0.80:F1} px)");
+        _out.WriteLine($"{litSomewhere} contour pixels on the panel, {lit} of them inside the hole");
     }
 
     private static SKBitmap RenderSmith(SmithPanelData data, HarmonicaRenderTheme theme, int w, int h)
@@ -1011,7 +1015,7 @@ public sealed class HarmonicaPanelTests : IDisposable
         HarmonicaPanelRenderer.DrawSmithPanel(surface.Canvas, (W, H), data, theme, darkMode: true);
         using var bmp = SKBitmap.FromImage(surface.Snapshot());
 
-        var at = HarmonicaPanelRenderer.MarkerToCanvas(marker.Gamma, (W, H));
+        var at = HarmonicaPanelRenderer.GammaToCanvas(marker.Gamma, (W, H));
         int cx = (int)Math.Round(at.X), cy = (int)Math.Round(at.Y);
 
         var expected = theme.MarkerBand(marker.Band);
@@ -1021,7 +1025,7 @@ public sealed class HarmonicaPanelTests : IDisposable
             if (NearlySame(bmp.GetPixel(cx + dx, cy + dy), expected)) found = true;
 
         Assert.True(found,
-            $"expected marker fill {expected} within 1px of MarkerToCanvas ({cx},{cy}) at {W}x{H} " +
+            $"expected marker fill {expected} within 1px of GammaToCanvas ({cx},{cy}) at {W}x{H} " +
             "with both title rows drawn — render and the published transform must agree.");
     }
 

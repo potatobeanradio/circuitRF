@@ -36,20 +36,12 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         EditDisplay  = new HarmonicaEditDisplay(() => Layout, l => Layout = l);
         ColorEditor  = new HarmonicaColorEditor(() => Appearance, a => Appearance = a);
 
-        // §4.2 — S1 and L1 are ALWAYS present. S2…/L2… are added and removed from a menu (H7);
-        // a band with no marker is 1e-6 Ω, which TerminationSet already treats as the unmarked state.
-        Markers.Add(new HarmonicaMarker(TerminationSideKind.Source, 1));
-        Markers.Add(new HarmonicaMarker(TerminationSideKind.Load,   1));
-        SetMarkerImpedance(Markers[0], new Complex(25, 0));
-        SetMarkerImpedance(Markers[1], new Complex(80, 10));
-
-        // R-h9r2-1 (§2) — SUPERSEDES R-h9b-14's "sensible starting impedances" for S2/L2/L3. A new
-        // document's default marker set is still S1, S2, L1, L2, L3 (AddMarkerBand refuses a band
-        // above Terminations.HarmonicCount, asserted rather than relied on: DefaultModel's K=3 is
-        // what makes all five fit) — but S2/L2/L3 now default to the SAME unmarked-band epsilon
-        // TerminationSet itself already uses for "no marker at all" (Z = 1e-6 Ω), not a distinct
-        // hand-picked value. S1 and L1 are UNCHANGED (25 Ω and 80+j10 Ω) — they are always present
-        // and were never part of this brief's complaint.
+        // R8B §3 — S1/S2 start with NO marker: the owner must turn them on from Add Source Marker
+        // (§4) before either is visible or draggable. The Source band-1 termination is still written
+        // (50 Ω, matching the default DUT's own input impedance) so REMOVING the marker never changes
+        // the circuit — AddMarkerBand's own invariant, read backwards; band 2 keeps
+        // TerminationSet.UnmarkedBandOhms exactly as before, unchanged from R-h9r2-1's own ruling.
+        // L1 (80+j10 Ω) and the L2/L3 unmarked-epsilon markers are UNCHANGED.
         //
         // A LOADED .charm is completely unaffected: this only ever runs in the constructor's own
         // default-model path, never on load — RebuildMarkersFromTerminations (the load path) replaces
@@ -59,10 +51,14 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                 $"the default marker set needs harmonic bands 1..3, but this model's HarmonicCount is " +
                 $"only {Terminations.HarmonicCount}");
 
+        Terminations.Set(TerminationSide.Source, 1, new Complex(50.0, 0.0));
+
+        Markers.Add(new HarmonicaMarker(TerminationSideKind.Load, 1));
+        SetMarkerImpedance(Markers[0], new Complex(80, 10));
+
         var unmarked = new Complex(TerminationSet.UnmarkedBandOhms, 0);
-        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Source, 2), unmarked);
-        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   2), unmarked);
-        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load,   3), unmarked);
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load, 2), unmarked);
+        SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load, 3), unmarked);
     }
 
     // ── the circuit ──────────────────────────────────────────────────────────
@@ -288,6 +284,32 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <c>WindowSecondary</c> is always the NATURAL fit, never a stale stored value read back at
     /// itself.</para>
     /// </summary>
+    // ── R-hui-6 — the natural-fit window per plot, factored out of CaptureAxisWindows so
+    // ── LockDcivAxes/LockPowerSweepAxes/LockTimeDomainAxes can force the SAME computation at an
+    // ── ARBITRARY moment (a "Locked" click) rather than only ever reading whatever the last
+    // ── published frame happened to store — see those methods' own remark for why that distinction
+    // ── is the actual fix for "the axis shifts when Locked is turned on".
+
+    private static Avalonia.Rect NaturalDcivWindow(HarmonicaFrame frame, HarmonicaSettings s, HarmonicaRenderTheme theme)
+        => Renderers.HarmonicaPanelRenderer.BuildLoadlinePlot(
+            frame.Loadline, theme, Renderers.HarmonicaPanelRenderer.DcivLimits(s) with { Autoscale = true }).Axes.Window;
+
+    private static (Avalonia.Rect Window, Avalonia.Rect Window2) NaturalPowerSweepWindow(
+        HarmonicaFrame frame, HarmonicaSettings s, HarmonicaRenderTheme theme)
+    {
+        var axes = Renderers.HarmonicaPanelRenderer.BuildPowerSweepPlot(
+            frame.PowerSweep, theme, Renderers.HarmonicaPanelRenderer.PowerSweepLimits(s) with { Autoscale = true }).Axes;
+        return (axes.Window, axes.WindowSecondary);
+    }
+
+    private static (Avalonia.Rect Window, Avalonia.Rect Window2) NaturalTimeDomainWindow(
+        HarmonicaFrame frame, HarmonicaSettings s, HarmonicaRenderTheme theme)
+    {
+        var axes = Renderers.HarmonicaPanelRenderer.BuildTimeDomainPlot(
+            frame.Loadline, theme, Renderers.HarmonicaPanelRenderer.TimeDomainLimits(s) with { Autoscale = true }).Axes;
+        return (axes.Window, axes.WindowSecondary);
+    }
+
     private void CaptureAxisWindows(HarmonicaFrame frame)
     {
         var s = Model.Settings;
@@ -297,9 +319,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         if ((s.DcivAutoscale || s.DcivXMin is null)
             && (frame.Loadline.Dciv.Count > 0 || frame.Loadline.LoadlineVds.Length > 1))
         {
-            var w = Renderers.HarmonicaPanelRenderer.BuildLoadlinePlot(
-                frame.Loadline, theme,
-                Renderers.HarmonicaPanelRenderer.DcivLimits(s) with { Autoscale = true }).Axes.Window;
+            var w = NaturalDcivWindow(frame, s, theme);
             if (w.Width > 0 && w.Height > 0 &&
                 (next.DcivXMin != w.X || next.DcivXMax != w.X + w.Width ||
                  next.DcivYMin != w.Y || next.DcivYMax != w.Y + w.Height))
@@ -313,10 +333,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
         if ((s.PowerSweepAutoscale || s.PowerSweepXMin is null) && frame.PowerSweep.GainDb.Length > 1)
         {
-            var axes = Renderers.HarmonicaPanelRenderer.BuildPowerSweepPlot(
-                frame.PowerSweep, theme,
-                Renderers.HarmonicaPanelRenderer.PowerSweepLimits(s) with { Autoscale = true }).Axes;
-            var w = axes.Window; var w2 = axes.WindowSecondary;
+            var (w, w2) = NaturalPowerSweepWindow(frame, s, theme);
             if (w.Width > 0 && w.Height > 0 &&
                 (next.PowerSweepXMin != w.X || next.PowerSweepXMax != w.X + w.Width ||
                  next.PowerSweepYMin != w.Y || next.PowerSweepYMax != w.Y + w.Height ||
@@ -333,10 +350,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
         if ((s.TimeDomainAutoscale || s.TimeDomainXMin is null) && frame.Loadline.LoadlineVds.Length > 1)
         {
-            var axes = Renderers.HarmonicaPanelRenderer.BuildTimeDomainPlot(
-                frame.Loadline, theme,
-                Renderers.HarmonicaPanelRenderer.TimeDomainLimits(s) with { Autoscale = true }).Axes;
-            var w = axes.Window; var w2 = axes.WindowSecondary;
+            var (w, w2) = NaturalTimeDomainWindow(frame, s, theme);
             if (w.Width > 0 && w.Height > 0 &&
                 (next.TimeDomainXMin != w.X || next.TimeDomainXMax != w.X + w.Width ||
                  next.TimeDomainYMin != w.Y || next.TimeDomainYMax != w.Y + w.Height ||
@@ -437,21 +451,25 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     }
 
     /// <summary>
-    /// R-h7-2 — removes a band marker. <b>The termination entry is REMOVED too</b>, not reset:
+    /// R-h7-2 — removes a band marker. <b>The termination entry is REMOVED too, for bands ≥ 2</b>:
     /// §4.2 says an unmarked band is the <i>absence</i> of a marker rather than a marker with a
-    /// default value, and <see cref="TerminationSet.Remove"/> is what expresses that. Band 1 refuses,
-    /// on both sides — it is the fundamental.
+    /// default value, and <see cref="TerminationSet.Remove"/> is what expresses that.
+    ///
+    /// <para><b>R8B §3.3 — band 1 IS removable, on both sides, but its termination stays.</b> A
+    /// fundamental marker used to refuse removal outright; now removing it only takes the VIEW away
+    /// — <see cref="AddMarkerBand"/>'s own invariant ("adding a marker does not itself change the
+    /// circuit") read backwards: removing one must not either. <see cref="TerminationSet.Remove"/>
+    /// itself still refuses band 1 (nothing calls it for that band any more).</para>
     /// </summary>
     public bool RemoveMarkerBand(TerminationSideKind side, int band)
     {
-        if (band == 1) return false;
-
         var marker = Markers.FirstOrDefault(m => m.Side == side && m.Band == band);
         if (marker is null) return false;
 
-        Terminations.Remove(side == TerminationSideKind.Source
-                                ? TerminationSide.Source : TerminationSide.Load,
-                            band);
+        if (band != 1)
+            Terminations.Remove(side == TerminationSideKind.Source
+                                    ? TerminationSide.Source : TerminationSide.Load,
+                                band);
         Markers.Remove(marker);
 
         RedrawRequested?.Invoke();
@@ -465,7 +483,9 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <see cref="TerminationSet.Z"/> already answers <c>UnmarkedBandOhms</c> for any band
     /// <see cref="TerminationSet.Remove"/> has taken out — so "removed" and "set to Z = 1e-6" are the
     /// same internal state (§2's own point) and there is nothing left to write before requesting the
-    /// re-solve. Refuses band 1 exactly as <see cref="RemoveMarkerBand"/> already does, on both sides.
+    /// re-solve — for bands ≥ 2. R8B §3.3: band 1 is removable too, but leaves its termination in
+    /// place (see <see cref="RemoveMarkerBand"/>'s own remark), so removing S1/L1 here re-solves at
+    /// an UNCHANGED circuit — only the marker/view goes away.
     /// </summary>
     public bool RemoveMarkerAndShort(HarmonicaMarker marker)
     {
@@ -554,7 +574,28 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// frame.</para>
     /// </summary>
     public IReadOnlyList<HarmonicaInput> Inputs
-        => HarmonicaInputs.Build(Model, Model.Bias.Idq is null ? EnsureContext().DcDrainCurrentAmps : null);
+    {
+        get
+        {
+            var ctx  = EnsureContext();
+            var caps = Model.Dut.Capacitances;
+
+            // R7D §3.3 — computed by HarmonicaSolver (ctx + the last published DataSet), never
+            // re-derived here; a linear/absent capacitor needs none of this at all.
+            double? cgs = caps.Cgs.IsNonlinear
+                ? HarmonicaSolver.LinearizedCapacitanceFarads(ctx, Frame.Published, caps.Cgs.Coefficients!, DutCapacitanceKind.Cgs)
+                : null;
+            double? cdg = caps.Cdg.IsNonlinear
+                ? HarmonicaSolver.LinearizedCapacitanceFarads(ctx, Frame.Published, caps.Cdg.Coefficients!, DutCapacitanceKind.Cdg)
+                : null;
+            double? cds = caps.Cds.IsNonlinear
+                ? HarmonicaSolver.LinearizedCapacitanceFarads(ctx, Frame.Published, caps.Cds.Coefficients!, DutCapacitanceKind.Cds)
+                : null;
+
+            return HarmonicaInputs.Build(Model, Model.Bias.Idq is null ? ctx.DcDrainCurrentAmps : null,
+                                         cgs, cdg, cds);
+        }
+    }
 
     /// <summary>What the last rejected input edit was wrong about, or null. Shown beside the strip
     /// rather than thrown — a live instrument that dies on a typo is not a live instrument.</summary>
@@ -849,6 +890,34 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         RedrawRequested?.Invoke();
     }
 
+    /// <summary>
+    /// R-hui-6, owner-reported — "the axis shifts" when the DCIV/Loadline fly menu's "Locked" item is
+    /// turned on; it should instead freeze exactly what is CURRENTLY on screen. A bare
+    /// <c>SetDcivAutoscale(false)</c> is not that: while Autoscale is on, every REDRAW (not just a new
+    /// published frame) re-autoscales live from <see cref="Frame"/>'s own data — <see
+    /// cref="CaptureAxisWindows"/> only re-stores that fit back into <c>DcivXMin</c>/etc. on the NEXT
+    /// published frame, so the stored value can trail what the screen is actually showing right now by
+    /// however long since the last solve. Turning Autoscale off alone would then freeze at that STALE
+    /// stored value — a visible jump. Fixed by computing the natural fit directly from THIS call's own
+    /// <see cref="Frame"/> (the exact same data driving the current render) and writing it in the SAME
+    /// model update that turns Autoscale off, so there is no window where a stale value could apply.
+    /// </summary>
+    public void LockDcivAxes()
+    {
+        var s = Model.Settings;
+        var w = NaturalDcivWindow(Frame, s, RenderTheme);
+        var next = w.Width > 0 && w.Height > 0
+            ? s with
+            {
+                DcivAutoscale = false,
+                DcivXMin = w.X, DcivXMax = w.X + w.Width, DcivYMin = w.Y, DcivYMax = w.Y + w.Height,
+            }
+            : s with { DcivAutoscale = false };
+        Model = Model with { Settings = next };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+    }
+
     /// <summary>The Power Sweep Axes dialog's write-back — X, left Y (gain) and right Y (efficiency).</summary>
     public bool ApplyPowerSweepAxisLimits(double xMin, double xMax, double yMin, double yMax,
                                           double y2Min, double y2Max)
@@ -874,6 +943,26 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     {
         if (Model.Settings.PowerSweepAutoscale == value) return;
         Model = Model with { Settings = Model.Settings with { PowerSweepAutoscale = value } };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+    }
+
+    /// <summary>R-hui-6 — the Power Sweep fly menu's own "Locked", same fix and same reasoning as
+    /// <see cref="LockDcivAxes"/>.</summary>
+    public void LockPowerSweepAxes()
+    {
+        var s = Model.Settings;
+        var (w, w2) = NaturalPowerSweepWindow(Frame, s, RenderTheme);
+        var next = w.Width > 0 && w.Height > 0
+            ? s with
+            {
+                PowerSweepAutoscale = false,
+                PowerSweepXMin = w.X, PowerSweepXMax = w.X + w.Width,
+                PowerSweepYMin = w.Y, PowerSweepYMax = w.Y + w.Height,
+                PowerSweepY2Min = w2.Y, PowerSweepY2Max = w2.Y + w2.Height,
+            }
+            : s with { PowerSweepAutoscale = false };
+        Model = Model with { Settings = next };
         DirtyChanged?.Invoke();
         RedrawRequested?.Invoke();
     }
@@ -907,6 +996,26 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     {
         if (Model.Settings.TimeDomainAutoscale == value) return;
         Model = Model with { Settings = Model.Settings with { TimeDomainAutoscale = value } };
+        DirtyChanged?.Invoke();
+        RedrawRequested?.Invoke();
+    }
+
+    /// <summary>R-hui-6 — the Time Domain fly menu's own "Locked", same fix and same reasoning as
+    /// <see cref="LockDcivAxes"/>.</summary>
+    public void LockTimeDomainAxes()
+    {
+        var s = Model.Settings;
+        var (w, w2) = NaturalTimeDomainWindow(Frame, s, RenderTheme);
+        var next = w.Width > 0 && w.Height > 0
+            ? s with
+            {
+                TimeDomainAutoscale = false,
+                TimeDomainXMin = w.X, TimeDomainXMax = w.X + w.Width,
+                TimeDomainYMin = w.Y, TimeDomainYMax = w.Y + w.Height,
+                TimeDomainY2Min = w2.Y, TimeDomainY2Max = w2.Y + w2.Height,
+            }
+            : s with { TimeDomainAutoscale = false };
+        Model = Model with { Settings = next };
         DirtyChanged?.Invoke();
         RedrawRequested?.Invoke();
     }
@@ -1607,10 +1716,14 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         }
     }
 
-    // ── M2 — the inverse solve, wired to the pool ────────────────────────────
+    // ── M2 — the inverse solve, kept per R8C §5.1 ("keep the code"), unreferenced from the drag ────
+    // path (which now runs IntrinsicAbcd's closed form instead). RequestInverseFrame below is
+    // consequently unreachable from this class too — nothing here still calls it — and stays only so
+    // the inverse solve can be re-wired later without rewriting it. Explicit `= null` initializers so
+    // the compiler does not read "no assignment anywhere" as a mistake.
 
-    private InverseSolver?  _inverse;
-    private HarmonicaMarker? _inverseMarker;
+    private InverseSolver?  _inverse = null;
+    private HarmonicaMarker? _inverseMarker = null;
     private InverseBand[]   _inverseBands  = [];
     private Complex[]       _inverseTargets = [];
 
@@ -1623,10 +1736,16 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>
     /// Open item 4, settled by measurement (see <c>InverseSolveCostTests</c>): sampling costs ~53 ms
     /// at the shipping density and is paid ONCE per drag, not per frame. That is under two frames of a
-    /// 33 ms budget for the whole gesture, so it is AUTOMATIC rather than opt-in — this stays a
-    /// property so a slow model can still be told not to.
+    /// 33 ms budget for the whole gesture, so it was AUTOMATIC while an intrinsic drag ran the inverse
+    /// solve — this stays a property so a slow model can still be told not to.
+    ///
+    /// <para>R8C §5.3 — DEFAULTS OFF. The region shaded the set of intrinsic Γ the (retired) inverse
+    /// solve could reach. Under the closed-form ABCD inversion every target is reachable except at the
+    /// map's own pole, so the shading answers a question that no longer has an interesting answer. The
+    /// sampler and <c>DrawReachableRegion</c> stay in place — nothing here is deleted, only defaulted
+    /// off — in case the inverse solve is ever re-enabled.</para>
     /// </summary>
-    [ObservableProperty] private bool _showReachableRegion = true;
+    [ObservableProperty] private bool _showReachableRegion = false;
 
     /// <summary>How many times the reachable region has actually been sampled. R-h6-12's "cached"
     /// claim, as a counter rather than a clock.</summary>
@@ -1644,64 +1763,61 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     public InverseSolver? Inverse => _inverse;
 
     /// <summary>
-    /// Starts an intrinsic drag on <paramref name="marker"/>'s glyph.
-    ///
-    /// <para><b>Every marked band becomes an unknown, and every OTHER glyph's present value becomes a
-    /// target</b> (R-h6-6). The other targets are frozen HERE rather than re-read each frame: re-reading
-    /// would let each frame's own answer become the next frame's requirement, and the constraint
-    /// "these do not move" would quietly become "these may drift as far as one frame at a time
-    /// allows".</para>
+    /// R8C §5.1 — the intrinsic drag no longer runs the inverse solve; §5.3's closed form needs no
+    /// per-gesture setup. Kept (rather than removed) because <c>HarmonicaPointer</c> still calls it on
+    /// grab, and because <see cref="InverseSolver"/>/<see cref="RequestInverseFrame"/> stay in the
+    /// tree — the owner said "keep the code" — reachable only from their own tests now.
     /// </summary>
     public void BeginIntrinsicDrag(HarmonicaMarker marker)
     {
         ArgumentNullException.ThrowIfNull(marker);
-
-        _inverseBands = [.. Markers.Select(m => new InverseBand(
-            m.Side == TerminationSideKind.Source ? TerminationSide.Source : TerminationSide.Load,
-            m.Band))];
-
-        if (_inverseBands.Length == 0) { _inverse = null; return; }
-
-        var start = _inverseBands
-            .Select(b => HarmonicaDataSet.GammaOf(Terminations.Z(b.Side, b.Band), Model.Settings.Z0))
-            .ToArray();
-
-        _inverseTargets = [.. Markers.Select(m => m.GammaIntrinsic)];
-        _inverseMarker  = marker;
-        _inverse        = new InverseSolver(Terminations, _inverseBands, start,
-                                            new InverseSolveOptions
-                                            {
-                                                PavlDbm = OperatingPointDbm,
-                                                Z0      = Model.Settings.Z0,
-                                            });
-        InverseMessage  = null;
+        InverseMessage = null;
     }
+
+    /// <summary>R8C §5.3 — the pole-proximity refusal bound, ohms. See <see cref="DragIntrinsicGlyph"/>'s
+    /// own remark for why this is a magnitude bound rather than a literal finiteness check.</summary>
+    public const double PoleMagnitudeOhms = 1e9;
 
     /// <summary>
-    /// One frame of an intrinsic drag: put <paramref name="marker"/>'s glyph at
-    /// <paramref name="targetGamma"/> and hold every other glyph where it was.
+    /// R8C §5.3 — one frame of an intrinsic drag: the closed-form ABCD back-calculation
+    /// (<see cref="IntrinsicAbcd"/>), on the UI thread, no solve. <see
+    /// cref="CircuitModel.IntrinsicDragAllowed"/> is checked at GRAB time
+    /// (<c>HarmonicaHitTest</c>'s Pass 2, which is what stops this being reachable at all when the
+    /// predicate is false); this call trusts that rather than re-checking the full predicate.
     /// </summary>
-    public long DragIntrinsicGlyph(HarmonicaMarker marker, Complex targetGamma, bool dragging)
+    public long DragIntrinsicGlyph(HarmonicaMarker marker, Complex targetIntrinsicGamma, bool dragging)
     {
-        if (_inverse is null) return RequestScheduledFrame(dragging);
+        ArgumentNullException.ThrowIfNull(marker);
 
-        int idx = Markers.IndexOf(marker);
-        if (idx >= 0 && idx < _inverseTargets.Length) _inverseTargets[idx] = targetGamma;
+        var side = marker.Side == TerminationSideKind.Source ? TerminationSide.Source : TerminationSide.Load;
+        var zIntr = HarmonicaDataSet.ImpedanceOf(targetIntrinsicGamma, Model.Settings.Z0);
+        var zExt  = IntrinsicAbcd.ExtrinsicFor(Model, side, marker.Band, zIntr);
 
-        // R-h9r2-3 — applies identically to the extrinsic case: on release, if the dragged marker's
-        // own band is the plane/band the contour grid currently sweeps (Finding B), the grid is
-        // skipped there too rather than re-solved for a result the swept band's own value could not
-        // have changed.
-        bool forceSkip = !dragging && IsSweptBand(marker.Side, marker.Band);
-        return RequestInverseFrame(dragging, forceSkip);
+        // The map's own pole (−C·Z_intr + A → 0): the requested intrinsic impedance is not producible
+        // by any finite extrinsic termination. A drag target essentially never lands EXACTLY on the
+        // pole (it is a single point on a continuous Γ plane), so the guard is a magnitude bound, not
+        // literal double.IsFinite — a near-pole target still blows the denominator up to a huge but
+        // technically finite double (measured: ~7e17 Ω one ULP off the true pole), which is just as
+        // unusable a termination as an infinite one. PoleMagnitudeOhms is comfortably above any real
+        // termination (tens to low thousands of ohms) and comfortably below where double precision
+        // itself starts to lose meaning. Refuse the frame — leave the marker exactly where it was
+        // (R-h6-9's precedent: a failed solve moves NOTHING, no partial application).
+        if (!double.IsFinite(zExt.Real) || !double.IsFinite(zExt.Imaginary) ||
+            zExt.Magnitude > PoleMagnitudeOhms)
+        {
+            InverseMessage = "That intrinsic target is not reachable by any finite termination here.";
+            return RequestScheduledFrame(dragging);
+        }
+
+        InverseMessage = null;
+        SetMarkerImpedance(marker, zExt);   // markers update LIVE
+        return RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging);
     }
 
-    /// <summary>Ends the drag. The solver — and with it the Jacobian — is dropped; the next drag
-    /// starts from a fresh FD build, because the operating point it was measured at is gone.</summary>
+    /// <summary>R8C §5.1 — no-op; clears the status message a refused drag may have left.</summary>
     public void EndIntrinsicDrag()
     {
-        _inverse       = null;
-        _inverseMarker = null;
+        InverseMessage = null;
     }
 
     /// <summary>
@@ -1938,21 +2054,39 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     // ── the fixture a brand-new document opens on ────────────────────────────
 
     /// <summary>
+    /// R7B §3.8 — the owner's own variable form of Hero 2's GaN HEMT, replacing the folded-coefficient
+    /// string this default used to carry. Substituting the constants back in reproduces the old
+    /// <c>I[2,0]</c> string term for term — proved, not trusted, by
+    /// <c>HarmonicaSddTextTests.DefaultModelEquationEquation_AgreesWithTheOldFoldedCoefficientForm</c>.
+    /// </summary>
+    private const string DefaultSddText =
+        "Periphery_mm = 1.0\n" +
+        "Sv = -0.837\n" +
+        "Sc = 0.71\n" +
+        "TV0 = 4.268\n" +
+        "TC = 1.507\n" +
+        "th = 0.001\n" +
+        "a = 0.176\n" +
+        "g = 0.089\n" +
+        "lam = 0.0012\n" +
+        "B = 1130\n" +
+        "\n" +
+        "I[1,0] = _v1/50\n" +
+        "I[2,0] = Periphery_mm*(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1)))+1))*ln(exp(-(2*TV0 - 2*_v1 +2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1) * (_v2*lam + 1))/2";
+
+    /// <summary>
     /// A new harmonicaRF document opens on a real, converging device rather than an empty canvas —
     /// §1's whole claim is liveness, and a tool that opens showing nothing has to be configured
-    /// before it can demonstrate anything. This is Hero 2's own GaN HEMT with its coefficients folded
-    /// into the equation text, so the document is self-contained and needs no globals.
+    /// before it can demonstrate anything. This is Hero 2's own GaN HEMT, self-contained and needing
+    /// no globals.
     /// </summary>
     public static CircuitModel DefaultModel() => new()
     {
         Dut = new DutSpec
         {
             Kind = DutKind.Sdd, TypeName = "SDD",
-            Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["I[1,0]"] = "_v1/50",
-                ["I[2,0]"] = "(1130*1.507*tanh(_v2*0.176*(tanh(0.089*(4.268-_v1+_v2*0.001+0.71*ln(exp(-(-0.837-_v1)/0.71)+1)))+1))*ln(exp(-(2*4.268-2*_v1+2*_v2*0.001+2*0.71*ln(exp(-(-0.837-_v1)/0.71)+1))/1.507)+1)*(_v2*0.0012+1))/2",
-            },
+            SddText    = DefaultSddText,
+            Parameters = HarmonicaSddText.ToParameters(HarmonicaSddText.Parse(DefaultSddText, portCount: 2)),
         },
         Bias     = new BiasSpec { Vgs = -3.05, Vds = 48 },
         Settings = new HarmonicaSettings

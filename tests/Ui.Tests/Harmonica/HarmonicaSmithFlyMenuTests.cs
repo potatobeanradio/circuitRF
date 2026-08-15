@@ -101,7 +101,8 @@ public sealed class HarmonicaSmithFlyMenuTests
         // PanelUnderPointer().
         Assert.Contains("BuildCopyMenuItem(panelId)", body, StringComparison.Ordinal);
         Assert.Contains("menus.ToggleShowGridPointsCommand.Execute(null)", body, StringComparison.Ordinal);
-        Assert.Contains("IsChecked  = h.ShowGridPoints,", body, StringComparison.Ordinal);
+        // R8B §5 — the dynamic-icon Toggle helper, never ToggleType.
+        Assert.Contains("Toggle(\"Show Grid Points\", h.ShowGridPoints,", body, StringComparison.Ordinal);
         Assert.DoesNotContain("PanelUnderPointer()", body, StringComparison.Ordinal);
     }
 

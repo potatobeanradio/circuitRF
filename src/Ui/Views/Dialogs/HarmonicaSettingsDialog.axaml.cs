@@ -21,7 +21,10 @@ public partial class HarmonicaSettingsDialog : Window
     {
         InitializeComponent();
         AppearanceTab.Attach(vm);
-        AdvancedTab.Attach(vm);
+        // R8A §3 — the same HarmonicaColorEditor instance both tabs share; the Advanced tab gained the
+        // fade sliders and the label toggle in this brief and writes through it exactly as Appearance
+        // does. One editor, two tabs — never two editors.
+        AdvancedTab.Attach(vm, vm.ColorEditor);
     }
 
     private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();

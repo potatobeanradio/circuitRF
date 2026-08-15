@@ -6,6 +6,8 @@
 //             ever reaches the parent's DoubleTapped handler. Fixed by making only EDITABLE rows plain
 //             TextBlock; every other row (General, MXP/MXE, headers) keeps SelectableTextBlock.
 //  R-h9r2-16  the editor seeds with the value AND its unit, and pre-selects only the value.
+//  R7C §1.1/§1.5  the unit moved into the row's LABEL cell; the seed is unit-free now and the box
+//                 SelectAlls — there is no trailing unit token left to carve the selection around.
 // ================================================================
 
 using System;
@@ -43,7 +45,7 @@ public sealed class HarmonicaInlineEditSelectabilityTests
         // editable/selectable widget-choice rule this test pins moved to the shell, unchanged.
         string src = Source();
 
-        int m = src.IndexOf("private StackPanel BuildColumnRowShell(", StringComparison.Ordinal);
+        int m = src.IndexOf("private Grid BuildColumnRowShell(", StringComparison.Ordinal);
         Assert.True(m >= 0, "Expected to find BuildColumnRowShell.");
         int mEnd = src.IndexOf("\n    /// <summary>Writes one row's CURRENT label", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
@@ -66,7 +68,7 @@ public sealed class HarmonicaInlineEditSelectabilityTests
     {
         string src = Source();
 
-        int m = src.IndexOf("private StackPanel BuildSettingsColumnRow(", StringComparison.Ordinal);
+        int m = src.IndexOf("private Grid BuildSettingsColumnRow(", StringComparison.Ordinal);
         Assert.True(m >= 0, "Expected to find BuildSettingsColumnRow.");
         int mEnd = src.IndexOf("\n    private static void UpdateSettingsColumnRow", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
@@ -94,15 +96,16 @@ public sealed class HarmonicaInlineEditSelectabilityTests
         Assert.DoesNotContain("DoubleTapped", body, StringComparison.Ordinal);
     }
 
-    // ══ R-h9r2-16 — seed with the unit, select only the value ═══════════════════════════════════
+    // ══ R7C §1.1/§1.5 — the unit moved into the LABEL; the seed no longer carries one, and the box
+    // now SelectAlls (there is no trailing unit token left to carve the selection around) ══════════
 
     [Fact]
-    public void BeginInlineEdit_SeedsFromItemValueVerbatim_UnitIncluded()
+    public void BeginInlineEdit_SeedsFromItemValueVerbatim()
     {
         string src = Source();
         int m = src.IndexOf("private void BeginInlineEdit(", StringComparison.Ordinal);
         Assert.True(m >= 0);
-        int mEnd = src.IndexOf("\n    private static int ValueSelectionLength", m, StringComparison.Ordinal);
+        int mEnd = src.IndexOf("\n    private static double CalcInlineEditWidth", m, StringComparison.Ordinal);
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
@@ -111,51 +114,56 @@ public sealed class HarmonicaInlineEditSelectabilityTests
     }
 
     [Fact]
-    public void BeginInlineEdit_SelectsOnlyTheValue_NotSelectAll()
+    public void BeginInlineEdit_SelectsAll_NowThatTheSeedCarriesNoUnitToCarveAround()
     {
         string src = Source();
         int m = src.IndexOf("private void BeginInlineEdit(", StringComparison.Ordinal);
         Assert.True(m >= 0);
-        int mEnd = src.IndexOf("\n    private static int ValueSelectionLength", m, StringComparison.Ordinal);
+        int mEnd = src.IndexOf("\n    private static double CalcInlineEditWidth", m, StringComparison.Ordinal);
         string body = src[m..mEnd];
 
-        Assert.DoesNotContain("box.SelectAll();", body, StringComparison.Ordinal);
         Assert.Contains("box.SelectionStart = 0;", body, StringComparison.Ordinal);
-        Assert.Contains("box.SelectionEnd   = ValueSelectionLength(pristine);", body, StringComparison.Ordinal);
+        Assert.Contains("box.SelectionEnd   = pristine.Length;", body, StringComparison.Ordinal);
     }
 
-    // ValueSelectionLength is private; invoked via reflection so the actual boundary math is pinned
-    // rather than merely its presence in source.
-    private static int InvokeValueSelectionLength(string text)
+    // EditSeedValue is private; invoked via reflection so the actual unit-stripping behaviour is
+    // pinned, not merely its presence in source. It is what BeginInlineEdit's own `pristine` is
+    // seeded from at every production call site (BuildColumnRowShell's DoubleTapped handler).
+    private static string InvokeEditSeedValue(HarmonicaReadout item, Func<string, ReadoutFormat> formatFor)
     {
         var type = typeof(CircuitRF.Ui.Views.Harmonica.ReadoutStripView);
-        var method = type.GetMethod("ValueSelectionLength",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (int)method.Invoke(null, [text])!;
+        var method = type.GetMethod("EditSeedValue", BindingFlags.NonPublic | BindingFlags.Static)!;
+        return (string)method.Invoke(null, [item, formatFor])!;
     }
-
-    [Theory]
-    [InlineData("80+j10 Ω", 6)]           // Z row — select the value, leave " Ω" alone
-    [InlineData("0.35-j0.2", 9)]          // Γ row — no unit, select everything
-    [InlineData("0.5∠30°", 7)]            // magnitude/angle Γ — no space, select everything
-    [InlineData("12.5∠-45° Ω", 9)]        // magnitude/angle Z — select up to the unit's space
-    public void ValueSelectionLength_ExcludesOnlyATrailingUnit(string text, int expected)
-    {
-        Assert.Equal(expected, InvokeValueSelectionLength(text));
-    }
-
-    // ══ TryParse already tolerates the trailing unit the editor now always seeds ═════════════════
 
     [Fact]
-    public void TryParse_AlreadyAcceptsTheUnitBackFromTheEditor_NoSecondStripStepNeeded()
+    public void EditSeedValue_StripsTheUnit_NowThatItLivesInTheLabel()
+    {
+        var z = new Complex(80, 10);
+        var zRow = new HarmonicaReadout("ZL1", HarmonicaReadoutFormatting.FormatZ(z, ReadoutFormat.RealImaginary),
+            "", ReadoutColumn.Load, IsComplex: true, Editable: true, RawValue: z, Unit: "Ω");
+        Assert.Equal("80.000+j10.000", InvokeEditSeedValue(zRow, _ => ReadoutFormat.RealImaginary));
+
+        // A Γ row (no unit at all, IsGamma) is unaffected — SplitUnit already left it alone.
+        var gammaRow = zRow with { IsGamma = true, Unit = "" };
+        string gammaSeed = InvokeEditSeedValue(gammaRow, _ => ReadoutFormat.RealImaginary);
+        Assert.DoesNotContain("Ω", gammaSeed);
+    }
+
+    // ══ TryParse still tolerates a trailing unit defensively, even though the editor no longer
+    // seeds one — a user could still type "80+j10 Ω" by hand. ═══════════════════════════════════
+
+    [Fact]
+    public void TryParse_StillAcceptsATrailingUnit_EvenThoughTheEditorNoLongerSeedsOne()
     {
         Assert.True(HarmonicaReadoutFormatting.TryParse("80+j10 Ω", ReadoutFormat.RealImaginary, out var z));
         Assert.Equal(new Complex(80, 10), z);
 
-        // Round-trip: what BeginInlineEdit seeds is exactly what FormatZ produced, and TryParse must
-        // accept it back unmodified — the editor never needs a call-site strip-the-unit step.
-        string formatted = HarmonicaReadoutFormatting.FormatZ(new Complex(42, -7), ReadoutFormat.RealImaginary);
-        Assert.True(HarmonicaReadoutFormatting.TryParse(formatted, ReadoutFormat.RealImaginary, out var roundTripped));
+        // Round-trip: what BeginInlineEdit now seeds is the UNIT-FREE value half, and TryParse must
+        // still accept it back unmodified.
+        var (unitFree, _) = HarmonicaReadoutFormatting.SplitUnit(
+            HarmonicaReadoutFormatting.FormatZ(new Complex(42, -7), ReadoutFormat.RealImaginary));
+        Assert.True(HarmonicaReadoutFormatting.TryParse(unitFree, ReadoutFormat.RealImaginary, out var roundTripped));
         Assert.Equal(new Complex(42, -7), roundTripped);
     }
 }

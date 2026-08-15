@@ -19,18 +19,21 @@
     <Grid Grid.Row="1" ColumnDefinitions="Auto,*" Margin="0,0,0,8">
       <TextBlock Grid.Column="0" Text="Γ (R + jX)" VerticalAlignment="Center" Width="90" Opacity="0.7"/>
       <TextBox x:Name="GammaRealImagBox" Grid.Column="1"
+               GotFocus="OnGammaRealImagGotFocus"
                TextChanged="OnGammaRealImagChanged" LostFocus="OnFieldLostFocus"/>
     </Grid>
 
     <Grid Grid.Row="2" ColumnDefinitions="Auto,*" Margin="0,0,0,8">
       <TextBlock Grid.Column="0" Text="Γ (∠)" VerticalAlignment="Center" Width="90" Opacity="0.7"/>
       <TextBox x:Name="GammaMagAngleBox" Grid.Column="1"
+               GotFocus="OnGammaMagAngleGotFocus"
                TextChanged="OnGammaMagAngleChanged" LostFocus="OnFieldLostFocus"/>
     </Grid>
 
     <Grid Grid.Row="3" ColumnDefinitions="Auto,*" Margin="0,0,0,8">
       <TextBlock Grid.Column="0" Text="Z (R + jX)" VerticalAlignment="Center" Width="90" Opacity="0.7"/>
       <TextBox x:Name="ZRealImagBox" Grid.Column="1"
+               GotFocus="OnZRealImagGotFocus"
                TextChanged="OnZRealImagChanged" LostFocus="OnFieldLostFocus"/>
     </Grid>
 

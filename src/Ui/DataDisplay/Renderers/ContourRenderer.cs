@@ -274,15 +274,13 @@ namespace CircuitRF.Ui.DataDisplay
             using var bgPaint    = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
             using var bgStroke   = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 0.75f };
 
-            // Label-box padding (canvas px), scaled by lw so it tracks zoom like the font. Slightly
-            // larger than the old fixed 2 px so the text never crowds the border (design feedback).
-            // capHeight = the text's visual height (ascent above baseline + descent below); the box is
-            // centered on the label anchor in BOTH axes and the baseline is placed so the glyphs sit in
-            // the exact center of the box.
-            var   labelMetrics = labelFont.Metrics;
-            float labelPadX    = 4f * lw / BaseLw;
-            float labelPadY    = 3f * lw / BaseLw;
-            float capHeight    = labelMetrics.Descent - labelMetrics.Ascent;  // ascent is negative
+            // Label-box padding (canvas px), scaled by lw so it tracks zoom like the font — independent
+            // of levelFontSize itself, which is why this is passed to the shared DrawIsoLineLabel
+            // helper (R8A §4.1) as explicit padX/padY rather than derived from the font's point size
+            // there (a user-adjustable LevelFontSize away from the 9f default would otherwise silently
+            // change the padding too, which is not this extraction's job).
+            float labelPadX = 4f * lw / BaseLw;
+            float labelPadY = 3f * lw / BaseLw;
 
             // §3 — label positions are world-unit based so they don't shift on zoom.
             // spacingW is in world coordinates; a canvas-px guard keeps labels off tiny paths.
@@ -320,61 +318,22 @@ namespace CircuitRF.Ui.DataDisplay
 
                 if (drawLabels)
                 {
-                    // Canvas-px guard: skip paths too short to read (zoom-invariant intent).
+                    // Canvas-px guard: skip paths too short to read (zoom-invariant intent). This
+                    // guard is Data-Display-specific (it needs `tf` to measure in canvas px) and stays
+                    // here rather than moving into the shared helper below.
                     float length = PathCanvasLength(pts, tf);
                     if (length < minLabelLenPx) { ringIndex++; continue; }
 
-                    string labelText = FormatLevel(pl.Level);
-                    float  tw        = labelFont.MeasureText(labelText);
+                    bgPaint.Color  = labelBg.WithAlpha((byte)Math.Round(labelBg.Alpha * fadeF));
+                    bgStroke.Color = new SKColor(0, 0, 0, (byte)Math.Round(120 * fadeF));
 
-                    // Stagger start per ring in world-unit fractions.
-                    double startFrac = 0.5 + 0.18 * ((ringIndex % 3) - 1);
-                    startFrac = Math.Max(0.15, Math.Min(0.85, startFrac));
-                    double targetArcW = startFrac * spacingW;
-
-                    // §3 — walk in world coordinates; convert to canvas only when drawing.
-                    double arcSoFarW  = 0.0;
-                    double prevWx     = pts[0].X, prevWy = pts[0].Y;
-
-                    for (int i = 1; i < pts.Count; i++)
-                    {
-                        double curWx  = pts[i].X, curWy = pts[i].Y;
-                        double dx     = curWx - prevWx, dy = curWy - prevWy;
-                        double segLen = Math.Sqrt(dx * dx + dy * dy);
-                        double segEnd = arcSoFarW + segLen;
-
-                        while (targetArcW <= segEnd)
-                        {
-                            double t_seg = segLen > 0.0 ? (targetArcW - arcSoFarW) / segLen : 0.0;
-                            double pmWx  = prevWx + t_seg * dx;
-                            double pmWy  = prevWy + t_seg * dy;
-                            var    pm    = tf.ToCanvas(pmWx, pmWy, useSecondary: false);
-
-                            bgPaint.Color  = labelBg.WithAlpha((byte)Math.Round(labelBg.Alpha * fadeF));
-                            bgStroke.Color = new SKColor(0, 0, 0, (byte)Math.Round(120 * fadeF));
-
-                            // Box centered on the label anchor (pm) in BOTH axes, with padded
-                            // half-extents. Text is horizontally centered (SKTextAlign.Center at pm.X)
-                            // and vertically centered: baseline offset places the glyph block's midpoint
-                            // at pm.Y, so the text sits in the exact center of the box (design feedback).
-                            float halfW = tw / 2f + labelPadX;
-                            float halfH = capHeight / 2f + labelPadY;
-                            var   bg    = new SKRect(pm.X - halfW, pm.Y - halfH,
-                                                     pm.X + halfW, pm.Y + halfH);
-                            canvas.DrawRect(bg, bgPaint);
-                            canvas.DrawRect(bg, bgStroke);
-
-                            float baselineY = pm.Y - (labelMetrics.Ascent + labelMetrics.Descent) / 2f;
-                            canvas.DrawText(labelText, pm.X, baselineY,
-                                            SKTextAlign.Center, labelFont, labelPaint);
-
-                            targetArcW += spacingW;
-                        }
-
-                        arcSoFarW = segEnd;
-                        prevWx    = curWx;
-                        prevWy    = curWy;
-                    }
+                    // R8A §4.1 — the world-unit arc walk + box/text draw, shared with harmonicaRF's
+                    // own DrawContours (HarmonicaPanelRenderer.cs), which had no label-drawing code of
+                    // its own at all. Pure extraction here: byte-identical output to the inline walk
+                    // this replaced.
+                    DrawIsoLineLabel(canvas, pts, (wx, wy) => tf.ToCanvas(wx, wy, useSecondary: false),
+                                     pl.Level, spacingW, ringIndex, labelFont, labelPaint, bgPaint, bgStroke,
+                                     labelPadX, labelPadY);
 
                     ringIndex++;
                 }
@@ -585,6 +544,116 @@ namespace CircuitRF.Ui.DataDisplay
             if (abs >= 100 || abs == 0) return level.ToString("F0");
             if (abs >= 10)              return level.ToString("F1");
             return                             level.ToString("F2");
+        }
+
+        // ================================================================
+        //  R8A §4 — one polyline's iso-line label(s), shared by Data Display's own DrawIsoLines
+        //  (a pure extraction there) and harmonicaRF's HarmonicaPanelRenderer.DrawContours (which had
+        //  no label-drawing code of its own at all — R8A §4.1).
+        // ================================================================
+
+        /// <summary>
+        /// Draws every label this polyline gets: world-unit arc walk, per-ring stagger, padded centred
+        /// background box, baseline offset from the font metrics. <paramref name="project"/> is the
+        /// caller's own world→canvas map — Data Display passes <c>tf.ToCanvas(..., useSecondary: false)</c>,
+        /// harmonicaRF passes <c>tf.PrimaryToCanvas</c>; both are the same map on a Smith plot but the two
+        /// callers use different transform TYPES for it, so a delegate is the shared surface rather than
+        /// picking one type and making the other caller wrong. <paramref name="padX"/>/<paramref name="padY"/>
+        /// are canvas-px, explicit rather than derived from <paramref name="font"/>'s point size — Data
+        /// Display's own padding tracks zoom (`lw`) independently of its user-adjustable label font size,
+        /// and deriving it from the font here would silently couple the two.
+        /// </summary>
+        internal static void DrawIsoLineLabel(
+            SKCanvas canvas,
+            IReadOnlyList<(double X, double Y)> pts,
+            Func<double, double, SKPoint> project,
+            double level, double spacingWorld, int ringIndex,
+            SKFont font, SKPaint labelPaint, SKPaint bgPaint, SKPaint bgStroke,
+            float padX, float padY)
+        {
+            var anchors = ComputeLabelAnchors(pts, spacingWorld, ringIndex);
+            if (anchors.Count == 0) return;
+
+            string labelText = FormatLevel(level);
+            float  tw        = font.MeasureText(labelText);
+            var    metrics   = font.Metrics;
+            float  capHeight = metrics.Descent - metrics.Ascent;   // ascent is negative
+            float  halfW     = tw / 2f + padX;
+            float  halfH     = capHeight / 2f + padY;
+
+            foreach (var (wx, wy) in anchors)
+            {
+                var pm = project(wx, wy);
+
+                // Box centered on the label anchor (pm) in BOTH axes. Text is horizontally centered
+                // (SKTextAlign.Center at pm.X) and vertically centered: baseline offset places the glyph
+                // block's midpoint at pm.Y, so the text sits in the exact center of the box.
+                var bg = new SKRect(pm.X - halfW, pm.Y - halfH, pm.X + halfW, pm.Y + halfH);
+                canvas.DrawRect(bg, bgPaint);
+                canvas.DrawRect(bg, bgStroke);
+
+                float baselineY = pm.Y - (metrics.Ascent + metrics.Descent) / 2f;
+                canvas.DrawText(labelText, pm.X, baselineY, SKTextAlign.Center, font, labelPaint);
+            }
+        }
+
+        /// <summary>
+        /// The pure arithmetic half of <see cref="DrawIsoLineLabel"/>: walks <paramref name="pts"/> in
+        /// world-unit arc length and returns the world-coordinate anchor for every label this polyline
+        /// gets, staggered per <paramref name="ringIndex"/> exactly as the original inline walk did.
+        /// Kept separate from the Skia draw so it is testable without a canvas
+        /// (<c>ContourIsoLabelPlacementTests</c>).
+        ///
+        /// <para><b>R8A §4.2(b)</b> — a <paramref name="spacingWorld"/> wider than the polyline's own
+        /// total arc length returns exactly ONE anchor (at <c>startFrac × totalArc</c>) rather than
+        /// none: a spacing larger than the path can never silently produce zero labels. A user who sets
+        /// a large spacing is asking for FEWER labels, never NONE — and "none" is indistinguishable from
+        /// "labels are broken", which is exactly the report that motivated this (§4.2: the Γ-plane
+        /// default of 30.0 world units on a ≤2π unit-disc polyline meant the walk never reached its
+        /// first target and drew nothing, for every contour on every Smith plot).</para>
+        /// </summary>
+        internal static IReadOnlyList<(double X, double Y)> ComputeLabelAnchors(
+            IReadOnlyList<(double X, double Y)> pts, double spacingWorld, int ringIndex)
+        {
+            if (pts.Count < 2) return Array.Empty<(double, double)>();
+
+            double spacingW = Math.Max(spacingWorld, 1e-6);
+
+            double totalArcW = 0.0;
+            for (int i = 1; i < pts.Count; i++)
+            {
+                double dx = pts[i].X - pts[i - 1].X, dy = pts[i].Y - pts[i - 1].Y;
+                totalArcW += Math.Sqrt(dx * dx + dy * dy);
+            }
+            if (totalArcW <= 0.0) return Array.Empty<(double, double)>();
+
+            double startFrac = 0.5 + 0.18 * ((ringIndex % 3) - 1);
+            startFrac = Math.Max(0.15, Math.Min(0.85, startFrac));
+
+            (double X, double Y) PointAtArc(double targetW)
+            {
+                double arcSoFar = 0.0;
+                for (int i = 1; i < pts.Count; i++)
+                {
+                    double dx = pts[i].X - pts[i - 1].X, dy = pts[i].Y - pts[i - 1].Y;
+                    double segLen = Math.Sqrt(dx * dx + dy * dy);
+                    double segEnd = arcSoFar + segLen;
+                    if (targetW <= segEnd || i == pts.Count - 1)
+                    {
+                        double t = segLen > 0.0 ? Math.Clamp((targetW - arcSoFar) / segLen, 0.0, 1.0) : 0.0;
+                        return (pts[i - 1].X + t * dx, pts[i - 1].Y + t * dy);
+                    }
+                    arcSoFar = segEnd;
+                }
+                return pts[^1];
+            }
+
+            if (spacingW > totalArcW) return [PointAtArc(startFrac * totalArcW)];
+
+            var result = new List<(double X, double Y)>();
+            for (double targetArcW = startFrac * spacingW; targetArcW <= totalArcW; targetArcW += spacingW)
+                result.Add(PointAtArc(targetArcW));
+            return result;
         }
     }
 }

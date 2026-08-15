@@ -1047,9 +1047,12 @@ public sealed class ContourTraceCardTests
         Assert.Equal(150.0, cd!.LabelSpacing);
     }
 
-    // §2: AddContourTrace on a Smith plot keeps LabelSpacing = 30
+    // R8A §4.2: AddContourTrace on a Smith plot now seeds LabelSpacing = 0.35, not 30 — the Γ world
+    // is the unit disc (longest closed polyline ≈ 2π ≈ 6.28), and 30.0 world units meant the
+    // world-unit arc walk in ContourRenderer.DrawIsoLines never reached its first label target, so
+    // not one label was ever drawn on a Smith/Polar contour.
     [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
-    public async Task AddContourTrace_SmithPlot_LabelSpacing30()
+    public async Task AddContourTrace_SmithPlot_LabelSpacing035()
     {
         var path = FindSplFile();
         if (path is null) return;
@@ -1064,7 +1067,7 @@ public sealed class ContourTraceCardTests
 
         var cd = plot.Traces[0].ContourData;
         Assert.NotNull(cd);
-        Assert.Equal(30.0, cd!.LabelSpacing);
+        Assert.Equal(0.35, cd!.LabelSpacing);
     }
 
     // §3: ContourFillOptions has exactly two members and does not contain Heatmap

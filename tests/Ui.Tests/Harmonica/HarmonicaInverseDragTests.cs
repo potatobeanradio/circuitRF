@@ -1,10 +1,13 @@
 // ================================================================
-//  HarmonicaInverseDragTests.cs  —  M2/M3 through the DOCUMENT, brief-harmonicarf-h6
+//  HarmonicaInverseDragTests.cs  —  M2/M3 through the DOCUMENT, brief-harmonicarf-h6;
+//  rewritten for R8C §5, which retires the wiring this file used to gate.
 //
-//  InverseSolveTests / ReachabilityTests gate the maths headlessly. This gates the WIRING: that a
-//  pointer on a glyph reaches the solver, that the answer comes back on the frame and lands in the
-//  terminations on the UI thread, that a refusal moves nothing and says so, and that the shading is
-//  computed once per drag rather than once per frame.
+//  InverseSolveTests / ReachabilityTests still gate the (retired, kept-in-tree) inverse solve's own
+//  maths headlessly. IntrinsicAbcdTests gates the CLOSED FORM's own maths headlessly. This file gates
+//  the WIRING: that a pointer on a glyph reaches IntrinsicAbcd, that the answer lands in the
+//  terminations on the UI thread with no solve pool involvement for the position itself, that a pole
+//  target moves nothing and says so, and that the glyph is not grabbable at all when
+//  CircuitModel.IntrinsicDragAllowed is false.
 // ================================================================
 
 using System;
@@ -31,10 +34,13 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
     // and the test was measuring the wrong gesture. GlyphIsSeparatelyGrabbable below pins that.
     private const double W = 2400, H = 1600;
 
+    /// <summary>Every call site in this file drives an INTRINSIC glyph drag — the glyph is the one
+    /// thing still on IntrinsicGlyphScale's compressed radial map after R8B §2 re-pointed the
+    /// extrinsic marker onto the plain chart transform.</summary>
     private static (double X, double Y) OnPowerPanel(HarmonicaViewModel vm, Complex gamma)
     {
         var p = vm.Layout.PlacementOf(HarmonicaPanelId.SmithPower);
-        var local = HarmonicaPanelRenderer.MarkerToCanvas(gamma, (p.W * W, p.H * H));
+        var local = HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(gamma), (p.W * W, p.H * H));
         return (p.X * W + local.X, p.Y * H + local.Y);
     }
 
@@ -42,46 +48,44 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
     /// A document with one solved frame in it, and the ladder already at freeze-and-snap.
     ///
     /// <para>The ladder is pushed there by recording hopeless frames DIRECTLY on the scheduler rather
-    /// than by solving several — the point of these tests is the inverse-drag wiring, and on this
+    /// than by solving several — the point of these tests is the intrinsic-drag wiring, and on this
     /// model a contour-bearing frame is ~600 ms, so paying for four of them per test would buy
     /// nothing but wall-clock.</para>
     /// </summary>
     /// <summary>
-    /// The default document's DUT with a real extrinsic package.
+    /// The default document's DUT with a real extrinsic package on the LOAD side only.
     ///
     /// <para><b>The package is not decoration, it is what makes an intrinsic drag testable at all.</b>
     /// §4.5 consequence 1: the glyph coincides with its marker when charge is off AND there is no
-    /// extrinsic network — and the shipped default document is exactly that (a chargeless SDD, no
-    /// package), so its glyph sits ~0.003 Γ from its marker and the z-ordered hit test correctly
-    /// grabs the marker on top. A series Rd/Rs/Ls separates the two planes, which is both the
-    /// realistic case and the only one where "grab the glyph" means anything.</para>
+    /// extrinsic network — and the shipped default document is exactly that (a chargeless-package SDD,
+    /// no package), so its glyph sits ~0.003 Γ from its marker and the z-ordered hit test correctly
+    /// grabs the marker on top. A series Rd/Ld separates the two planes.
+    ///
+    /// <para><b>R8C §5.2 — Rd/Ld, never Rs/Ls.</b> The fixture this file used before R8C used Rs/Ls to
+    /// get the same pixel separation; Rs/Ls is exactly <c>LumpedPackage.CouplesInputAndOutput</c>,
+    /// which now makes <c>IntrinsicDragAllowed</c> false and the glyph ungrabbable. Rd/Ld is a series
+    /// lead on the LOAD side alone — it moves <c>Z_L,intr</c> away from the marker just as well and
+    /// leaves the predicate true.</para>
     ///
     /// <para><b>R-h9r2-19 note:</b> this fixture's own DUT equation GAIN-EXPANDS by ~3 dB before it
     /// ever compresses (rises smoothly from Pin −10 to a peak of ~14.8 dB around +22 dBm, then rolls
-    /// over) — its own physics, unrelated to the package above. Before this brief, <c>PinSearch.Run</c>
-    /// silently gave up its bracket search a few solves in and fell back to whatever it had (a mild,
-    /// low-Pin point), which is why an inverse drag at "the compression point" here used to be
-    /// benign. <c>PinSearch.Sweep</c> now finds the genuine 3 dB-down-from-its-own-peak crossing
-    /// honestly — around +27 dBm, deep enough into this DUT's own saturation that a cold FD Jacobian
-    /// for an 0.05-Γ intrinsic drag no longer converges there. <c>PinMaxDbm</c> is capped well below
-    /// the peak so the sweep still (honestly) never reaches compression and falls back to its last
-    /// solved, well-behaved point — mirroring the operating point this test always exercised, without
-    /// relying on the old algorithm's silent early bail-out to get there.</para>
+    /// over) — its own physics, unrelated to the package above. <c>PinMaxDbm</c> is capped well below
+    /// the peak so a sweep never reaches compression and falls back to its last solved, well-behaved
+    /// point.</para>
     /// </summary>
     private static CircuitModel ModelWithAPackage()
     {
         var m = HarmonicaViewModel.DefaultModel();
-        return m with
+        var model = m with
         {
             Embedding = new EmbeddingStack
             {
-                // Deliberately exaggerated — a real GaN HEMT's Rd is an ohm or two. The separation
-                // between the two planes has to exceed the grab radius IN PIXELS for the gesture to be
-                // exercisable at all, and a realistic package puts the glyph ~10 px from its marker.
-                Package = new LumpedPackage { Rd = 20.0, Rs = 2.0, Ls = 100e-12 },
+                Package = new LumpedPackage { Rd = 20.0, Ld = 2e-9 },
             },
             Settings = m.Settings with { PinMaxDbm = 15.0 },
         };
+        Assert.True(CircuitModel.IntrinsicDragAllowed(model, out string reason), reason);
+        return model;
     }
 
     private static async Task<HarmonicaViewModel> DocumentAtTierAOnly()
@@ -103,17 +107,18 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
     private static double GlyphSeparationPixels(HarmonicaViewModel vm, HarmonicaMarker m)
     {
         var p = vm.Layout.PlacementOf(HarmonicaPanelId.SmithPower);
-        var a = HarmonicaPanelRenderer.MarkerToCanvas(m.Gamma,          (p.W * W, p.H * H));
-        var b = HarmonicaPanelRenderer.MarkerToCanvas(m.GammaIntrinsic, (p.W * W, p.H * H));
+        var a = HarmonicaPanelRenderer.GammaToCanvas(m.Gamma, (p.W * W, p.H * H));
+        var b = HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(m.GammaIntrinsic), (p.W * W, p.H * H));
         return Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
     }
 
-    // ══ M2 — the glyph drag reaches the solver and the answer lands ══════════
+    // ══ R8C §5.3 — the closed-form glyph drag reaches IntrinsicAbcd and the answer lands ══════════
 
     [Fact]
     public async Task DraggingAnIntrinsicGlyph_MovesTheEXTRINSICTerminations_AndLandsTheGlyphOnTarget()
     {
         var vm = await DocumentAtTierAOnly();
+        Assert.True(CircuitModel.IntrinsicDragAllowed(vm.Model, out string reason), reason);
 
         var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
         Assert.NotEqual(Complex.Zero, marker.GammaIntrinsic);
@@ -139,9 +144,10 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
         Assert.True(g.PointerDown(gx, gy, W, H));
         Assert.Equal(HarmonicaGrabKind.IntrinsicGlyph, g.Grab.Kind);
         Assert.Same(marker, g.Grab.Marker);
-        Assert.True(vm.IsInverseDragging);
 
-        // A short drag, then release.
+        // A short drag, then release. R8C §5.1 — IsInverseDragging is retired FROM the drag path
+        // (the field it reads is never assigned any more); the closed form needs no "am I dragging"
+        // state of its own, since every frame is independently computed.
         var target = glyphBefore + new Complex(0.04, -0.03);
         var (tx, ty) = OnPowerPanel(vm, target);
         g.PointerMoved(tx, ty, W, H);
@@ -155,9 +161,9 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
 
         Assert.Null(vm.InverseMessage);
 
-        // The EXTRINSIC termination is what moved — that is the whole point of an inverse solve.
+        // The EXTRINSIC termination is what moved — that is the whole point of the ABCD back-calc.
         Assert.True((marker.Gamma - extrinsicBefore).Magnitude > 1e-3,
-            "the extrinsic termination did not move, so nothing was solved for");
+            "the extrinsic termination did not move, so nothing was computed for");
 
         // …and the TerminationSet the engine reads moved with it, not just the marker.
         var z = vm.Terminations.Z(TerminationSide.Load, 1);
@@ -166,38 +172,92 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
         Assert.Equal(marker.Gamma.Imaginary, gammaOfZ.Imaginary, precision: 9);
 
         // The GLYPH landed on the target. This is read off the published frame, which came from an
-        // ordinary forward solve of the answer — so it is a round trip through the forward path, the
-        // same oracle InverseSolveTests uses, taken here through the document.
+        // ordinary forward solve of the ABCD-computed termination — so it is a round trip through the
+        // real solver, not merely IntrinsicAbcd re-checking its own arithmetic. The residual is the
+        // ideal-bias-tee approximation IntrinsicAbcd makes (the chain does not model the document's
+        // own non-ideal BiasChokeHenries/DcBlockFarads — see IntrinsicAbcd's own header), measured at
+        // ~0.2% relative for this document's choke/block values — well under the tolerance below.
         double err = (marker.GammaIntrinsic - target).Magnitude;
         output.WriteLine($"glyph landed {err:E3} from the target");
         Assert.True(err < 5e-3, $"the glyph landed {err:E3} from where it was dragged");
+    }
 
-        Assert.False(vm.IsInverseDragging);
+    /// <summary>The load-side chain's own analytic pole: <c>Z_intr = A/C</c>, where <c>-C·Z_intr + A
+    /// = 0</c> exactly. Only a chain with a genuine SHUNT element (C ≠ 0) has one — the Rd/Ld-only
+    /// fixture above is affine (C = 0, no pole at all), so this uses a dedicated model with a bare
+    /// shunt Cds and no series lead, chosen so the pole is exactly representable in double precision
+    /// (a pure-imaginary Y divides itself to exactly 1.0, so the denominator is exactly
+    /// <c>Complex.Zero</c>, not merely close to it).</summary>
+    private static CircuitModel ModelWithACleanPole()
+    {
+        var m = HarmonicaViewModel.DefaultModel();
+        var model = m with
+        {
+            Dut = m.Dut with
+            {
+                Capacitances = new DutCapacitances
+                {
+                    Cds = new DutCapacitance { Farads = 1e-12 },
+                },
+            },
+            Settings = m.Settings with { PinMaxDbm = 15.0 },
+        };
+        Assert.True(CircuitModel.IntrinsicDragAllowed(model, out string reason), reason);
+        return model;
     }
 
     [Fact]
-    public async Task AnUnreachableTargetThroughTheDocument_MovesNothing_AndSaysSo()
+    public async Task ThePolesTarget_MovesNothing_AndSaysSo()
     {
-        var vm = await DocumentAtTierAOnly();
+        var vm = new HarmonicaViewModel(ModelWithACleanPole());
+        vm.Pool.Completed += (f, _) => vm.PublishFrame(f);
+        for (int i = 0; i < 4; i++)
+            vm.Scheduler.RecordFrame(vm.Scheduler.NextPlan(dragging: true),
+                                     new FrameTiming(4, 900, 6, 90, 10));
+        vm.RequestScheduledFrame(dragging: true);
+        await vm.Pool.DrainAsync();
 
         var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
         var extrinsicBefore = marker.Gamma;
         var termsBefore     = vm.Terminations.Z(TerminationSide.Load, 1);
         var glyphBefore     = marker.GammaIntrinsic;
 
+        double sep = GlyphSeparationPixels(vm, marker);
+        output.WriteLine($"glyph is {sep:F0} px from its marker (grab radius " +
+                         $"{HarmonicaHitTest.GrabRadiusDevicePixels})");
+        Assert.True(sep > HarmonicaHitTest.GrabRadiusDevicePixels + 4,
+            $"the glyph is only {sep:F0} px from its marker — this fixture cannot exercise a drag");
+
         var g = new HarmonicaGesture(vm);
         var (gx, gy) = OnPowerPanel(vm, glyphBefore);
         Assert.True(g.PointerDown(gx, gy, W, H));
+        Assert.Equal(HarmonicaGrabKind.IntrinsicGlyph, g.Grab.Kind);
 
-        // Somewhere on the far side of the panel from anything this device can produce.
-        vm.DragIntrinsicGlyph(marker, new Complex(-38.0, 44.0), dragging: true);
+        // Z_intr = 1/(jωCds), the chain's own pole, computed the SAME way IntrinsicAbcd's Chain
+        // builds it (a bare shunt Cds, Rd = Ld = Cpd = 0) — not re-derived by a different route.
+        double omega = 2.0 * Math.PI * vm.Model.Settings.FrequencyHz;
+        var zPole = Complex.One / new Complex(0, omega * vm.Model.Dut.Capacitances.Cds.Farads);
+        var gammaPole = HarmonicaDataSet.GammaOf(zPole, vm.Model.Settings.Z0);
+
+        // A drag target essentially never lands EXACTLY on the pole in floating point (one ULP off the
+        // true zero denominator still blows the quotient up to ~1e17 Ω here, measured) — which is
+        // exactly why HarmonicaViewModel.PoleMagnitudeOhms is a magnitude bound, not a literal
+        // double.IsFinite check. This asserts the fixture actually produces a value past that bound.
+        var zExtCheck = IntrinsicAbcd.ExtrinsicFor(vm.Model, TerminationSide.Load, 1, zPole);
+        output.WriteLine($"Z_pole = {zPole}, IntrinsicAbcd.ExtrinsicFor there = {zExtCheck}");
+        Assert.True(zExtCheck.Magnitude > HarmonicaViewModel.PoleMagnitudeOhms,
+            "the fixture's own pole did not actually land near IntrinsicAbcd's pole — the test fixture " +
+            "needs revisiting, not the production refusal path");
+
+        var (tx, ty) = OnPowerPanel(vm, IntrinsicGlyphScale.DisplayPosition(gammaPole));
+        g.PointerMoved(tx, ty, W, H);
         await vm.Pool.DrainAsync();
 
         output.WriteLine($"status: {vm.StatusMessage}");
         Assert.NotNull(vm.InverseMessage);
-        Assert.Contains("nothing moved", vm.InverseMessage!, StringComparison.Ordinal);
+        Assert.Contains("not reachable", vm.InverseMessage!, StringComparison.Ordinal);
 
-        // EXACTLY where they were.
+        // EXACTLY where they were — R-h6-9's precedent, still enforced.
         Assert.Equal(extrinsicBefore.Real,      marker.Gamma.Real);
         Assert.Equal(extrinsicBefore.Imaginary, marker.Gamma.Imaginary);
         Assert.Equal(termsBefore, vm.Terminations.Z(TerminationSide.Load, 1));
@@ -205,102 +265,49 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
         g.Cancel();
     }
 
+    // ══ R8C §5.2 — the glyph is not grabbable at all when dragging is disallowed ═══════════════════
+
     [Fact]
-    public async Task TheInverseSolveRunsOnTheWORKER_NotOnTheCallingThread()
+    public async Task IntrinsicGlyph_IsNotGrabbable_WhenNonlinearCgsDisallowsTheDrag()
     {
-        // §6.7 / R-h6-4's standing constraint. The pool's own counters are the evidence: an inverse
-        // frame is submitted like any other, so it is started by a worker and superseded like any
-        // other.
-        var vm = await DocumentAtTierAOnly();
-        int startedBefore = vm.Pool.StartedCount;
-
-        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
-        var g = new HarmonicaGesture(vm);
-        var (gx, gy) = OnPowerPanel(vm, marker.GammaIntrinsic);
-        Assert.True(g.PointerDown(gx, gy, W, H));
-
-        for (int i = 1; i <= 6; i++)
+        var m = HarmonicaViewModel.DefaultModel();
+        var model = m with
         {
-            var t = marker.GammaIntrinsic + new Complex(0.006 * i, -0.004 * i);
-            var (tx, ty) = OnPowerPanel(vm, t);
-            g.PointerMoved(tx, ty, W, H);
-        }
-        await vm.Pool.DrainAsync();
-        g.PointerUp(gx, gy, W, H);
+            Embedding = new EmbeddingStack { Package = new LumpedPackage { Rd = 20.0, Ld = 2e-9 } },
+            Dut = m.Dut with
+            {
+                Capacitances = new DutCapacitances
+                {
+                    Cgs = new DutCapacitance { Coefficients = [1e-12, 1e-14] },
+                },
+            },
+        };
+        Assert.False(CircuitModel.IntrinsicDragAllowed(model, out string reason));
+        output.WriteLine($"disallowed: {reason}");
+
+        var vm = new HarmonicaViewModel(model);
+        vm.Pool.Completed += (f, _) => vm.PublishFrame(f);
+        vm.RequestScheduledFrame(dragging: false);
         await vm.Pool.DrainAsync();
 
-        output.WriteLine($"pool: {vm.Pool.StartedCount - startedBefore} inverse frames started, " +
-                         $"{vm.Pool.SupersededCount} superseded overall");
-        Assert.True(vm.Pool.StartedCount > startedBefore);
-        Assert.True(vm.Pool.SupersededCount > 0,
-            "a six-move inverse drag that superseded nothing is queueing");
+        var marker = vm.Markers.Single(mk => mk is { Side: TerminationSideKind.Load, Band: 1 });
+        var (gx, gy) = OnPowerPanel(vm, marker.GammaIntrinsic);
 
-        // Every worker that ran did so on its OWN context and never rebuilt the netlist: an inverse
-        // drag is a VALUE change like any other.
-        foreach (var w in vm.Pool.Workers)
-            Assert.True(w.ContextRebuildCount <= 1,
-                $"worker {w.Index} rebuilt its netlist {w.ContextRebuildCount} times during a drag");
+        var g = new HarmonicaGesture(vm);
+        Assert.False(g.PointerDown(gx, gy, W, H));
+        Assert.NotEqual(HarmonicaGrabKind.IntrinsicGlyph, g.LastGrabKind);
+
+        // The click fell through Pass 2 — the reason is surfaced anyway, so the click is not silent.
+        Assert.Equal(reason, vm.InverseMessage);
     }
 
-    // ══ M3 — the shading is computed ONCE per drag ═══════════════════════════
+    // ══ R8C §5.3 — ShowReachableRegion defaults OFF now the inverse solve no longer drives a drag ══
 
     [Fact]
-    public async Task Tier12_TheReachableRegionIsSampledOncePerDrag_NotOncePerFrame()
+    public void ShowReachableRegion_DefaultsFalse()
     {
-        var vm = await DocumentAtTierAOnly();
-        Assert.True(vm.ShowReachableRegion);
-        Assert.Equal(0, vm.ReachabilitySampleCount);
-
-        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
-        var g = new HarmonicaGesture(vm);
-        var (gx, gy) = OnPowerPanel(vm, marker.GammaIntrinsic);
-        Assert.True(g.PointerDown(gx, gy, W, H));
-
-        const int Frames = 8;
-        for (int i = 1; i <= Frames; i++)
-        {
-            var t = marker.GammaIntrinsic + new Complex(0.004 * i, 0.003 * i);
-            var (tx, ty) = OnPowerPanel(vm, t);
-            g.PointerMoved(tx, ty, W, H);
-            await vm.Pool.DrainAsync();          // drain per move so every frame really runs
-        }
-        g.PointerUp(gx, gy, W, H);
-        await vm.Pool.DrainAsync();
-
-        output.WriteLine($"{Frames + 1} inverse frames → ReachabilitySampleCount = " +
-                         $"{vm.ReachabilitySampleCount}");
-        Assert.Equal(1, vm.ReachabilitySampleCount);
-
-        // …and the region actually reached the panel, so "cached" is not "never computed".
-        Assert.NotNull(vm.Frame.SmithPower.Reachable);
-        Assert.False(vm.Frame.SmithPower.Reachable!.IsEmpty);
-        Assert.Same(vm.Frame.SmithPower.Reachable, vm.Frame.SmithEfficiency.Reachable);
-        output.WriteLine($"region: {vm.Frame.SmithPower.Reachable.Boundary.Count} boundary points, " +
-                         $"area {vm.Frame.SmithPower.Reachable.Area:F4} Γ², " +
-                         $"{vm.Frame.SmithPower.Reachable.Solves} solves, " +
-                         $"{vm.Frame.SmithPower.Reachable.Dropped} dropped");
-    }
-
-    [Fact]
-    public async Task Tier12_TurningTheShadingOff_SkipsTheSamplingEntirely()
-    {
-        // Open item 4's escape hatch: it is AUTOMATIC because it measured cheap, but a slow model can
-        // still be told not to.
-        var vm = await DocumentAtTierAOnly();
-        vm.ShowReachableRegion = false;
-
-        var marker = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 }); // L1
-        var g = new HarmonicaGesture(vm);
-        var (gx, gy) = OnPowerPanel(vm, marker.GammaIntrinsic);
-        Assert.True(g.PointerDown(gx, gy, W, H));
-        var (tx, ty) = OnPowerPanel(vm, marker.GammaIntrinsic + new Complex(0.02, 0.01));
-        g.PointerMoved(tx, ty, W, H);
-        await vm.Pool.DrainAsync();
-        g.PointerUp(tx, ty, W, H);
-        await vm.Pool.DrainAsync();
-
-        Assert.Equal(0, vm.ReachabilitySampleCount);
-        Assert.Null(vm.Frame.SmithPower.Reachable);
+        var vm = new HarmonicaViewModel();
+        Assert.False(vm.ShowReachableRegion);
     }
 
     // ══ R-h6-10 — an out-of-circle EXTRINSIC marker is FLAGGED, not clamped ══
@@ -317,10 +324,15 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
             // difference between the two renders is the flag, by construction — the same differential
             // oracle H4–H5 had to invent when a colour probe could not separate an iso-line from
             // chart chrome.
+            // R8B §2 — an active marker is no longer compressed onto IntrinsicGlyphScale's annulus;
+            // it draws at its TRUE position on the plain chart map, which means it can leave the
+            // panel entirely once |Γ| is far enough out (§2.3: "the largest Γ a pointer can express
+            // is whatever the panel extent reaches, ~1.3 at the chart margins"). 1.15 stays just
+            // inside that extent, so this fixture can still exercise "on the panel, past the rim".
             var passive = new HarmonicaMarker(TerminationSideKind.Load, 1)
             { Gamma = new Complex(0.60, 0.0), GammaIntrinsic = new Complex(0.60, 0.0) };
             var active = new HarmonicaMarker(TerminationSideKind.Load, 1)
-            { Gamma = new Complex(1.60, 0.0), GammaIntrinsic = new Complex(0.60, 0.0) };
+            { Gamma = new Complex(1.15, 0.0), GammaIntrinsic = new Complex(0.60, 0.0) };
 
             Assert.False(passive.ExtrinsicIsOutsideUnitCircle);
             Assert.True(active.ExtrinsicIsOutsideUnitCircle);
@@ -330,7 +342,7 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
 
             var rim    = HarmonicaPanelRenderer.GammaToCanvas(Complex.One, (Size, Size));
             var centre = HarmonicaPanelRenderer.GammaToCanvas(Complex.Zero, (Size, Size));
-            var at     = HarmonicaPanelRenderer.MarkerToCanvas(active.Gamma, (Size, Size));
+            var at     = HarmonicaPanelRenderer.GammaToCanvas(active.Gamma, (Size, Size));
 
             output.WriteLine($"rim x = {rim.X:F1}, active marker drawn at x = {at.X:F1} " +
                              $"(centre {centre.X:F1})");
@@ -345,7 +357,7 @@ public sealed class HarmonicaInverseDragTests(ITestOutputHelper output)
             // FLAGGED: the hatched outline reaches further from the marker centre than the plain
             // outline does. Measured as the outermost differing pixel on the +x ray from each
             // marker's own centre.
-            double plainReach  = OutermostMarkerPixel(bmpP, HarmonicaPanelRenderer.MarkerToCanvas(
+            double plainReach  = OutermostMarkerPixel(bmpP, HarmonicaPanelRenderer.GammaToCanvas(
                                      passive.Gamma, (Size, Size)), theme, Size);
             double hatchReach  = OutermostMarkerPixel(bmpA, at, theme, Size);
             output.WriteLine($"outline reach: plain {plainReach:F0} px, hatched {hatchReach:F0} px");

@@ -131,7 +131,7 @@ public sealed class HarmonicaR1bDragDiagnosisTests(ITestOutputHelper output)
 
         var marker = vm.Markers[1];
         var p = vm.Layout.PlacementOf(HarmonicaPanelId.SmithPower);
-        var local = HarmonicaPanelRenderer.MarkerToCanvas(marker.Gamma, (p.W * W, p.H * H));
+        var local = HarmonicaPanelRenderer.GammaToCanvas(marker.Gamma, (p.W * W, p.H * H));
         double x = p.X * W + local.X, y = p.Y * H + local.Y;
 
         var g = new HarmonicaGesture(vm);
@@ -171,14 +171,14 @@ public sealed class HarmonicaR1bDragDiagnosisTests(ITestOutputHelper output)
 
         var target = new Complex(0.5, -0.25);
         var p = vm.Layout.PlacementOf(HarmonicaPanelId.SmithPower);
-        var canvasTarget = HarmonicaPanelRenderer.MarkerToCanvas(marker.Gamma, (p.W * W, p.H * H));
+        var canvasTarget = HarmonicaPanelRenderer.GammaToCanvas(marker.Gamma, (p.W * W, p.H * H));
         double sx = p.X * W + canvasTarget.X, sy = p.Y * H + canvasTarget.Y;
 
         var g = new HarmonicaGesture(vm);
         Assert.True(g.PointerDown(sx, sy, W, H));
         Assert.Equal(HarmonicaGrabKind.ExtrinsicMarker, g.Grab.Kind);
 
-        var releaseCanvas = HarmonicaPanelRenderer.MarkerToCanvas(target, (p.W * W, p.H * H));
+        var releaseCanvas = HarmonicaPanelRenderer.GammaToCanvas(target, (p.W * W, p.H * H));
         double rx = p.X * W + releaseCanvas.X, ry = p.Y * H + releaseCanvas.Y;
         g.PointerMoved(rx, ry, W, H);
         g.PointerUp(rx, ry, W, H);

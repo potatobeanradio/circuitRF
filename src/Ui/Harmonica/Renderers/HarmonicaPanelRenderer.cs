@@ -227,8 +227,9 @@ public static class HarmonicaPanelRenderer
 
         if (cache is null)
         {
-            // ── the ORIGINAL, always-available uncached path — byte-identical drawing code to
-            // before this brief, just re-using the plot/tf built above instead of rebuilding them.
+            // ── the ORIGINAL, always-available uncached path — re-using the plot/tf built above
+            // instead of rebuilding them. R8A §4.1 is the first thing to make this diverge from the
+            // cached path's own draw call by more than that: both now also thread showIsoLineLabels.
             canvas.Save();
             canvas.Translate(cx, cy);
             canvas.Scale(k);
@@ -239,7 +240,7 @@ public static class HarmonicaPanelRenderer
 
             canvas.Save();
             canvas.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
-            DrawContours(canvas, d, tf, theme);
+            DrawContours(canvas, d, tf, theme, chartSize, showIsoLineLabels);
             if (showGridPoints) DrawGridPoints(canvas, d, tf, theme, chartSize);
             // brief-harmonicarf-r6b §3 — the MXP/MXE optimum cross is no longer drawn here (deferred
             // to v2); d.Optimum stays populated for the readout columns (HarmonicaSolver.AddMxColumn),
@@ -337,7 +338,7 @@ public static class HarmonicaPanelRenderer
                               watermarkOpacity: 0f);
             offscreen.Save();
             offscreen.ClipRect(PlotRenderer.ViewportClipRect(tf.Viewport, chartSize));
-            DrawContours(offscreen, d, tf, theme);
+            DrawContours(offscreen, d, tf, theme, chartSize, showIsoLineLabels);
             offscreen.Restore();
             offscreen.Restore();
         });
@@ -567,22 +568,6 @@ public static class HarmonicaPanelRenderer
                                         { ShowWatermark = false }, chartSize);
 
     /// <summary>
-    /// Where a MARKER or an intrinsic GLYPH lands: the chart transform composed with
-    /// <see cref="IntrinsicGlyphScale"/>'s compressed radial scale, which is what puts a
-    /// <c>|Γ| &gt; 1</c> value in the annulus instead of off the panel.
-    ///
-    /// <para><b>Hit-testing must use this pair, not <see cref="GammaToCanvas"/> alone.</b> The two
-    /// agree everywhere inside the unit circle and disagree exactly where an active termination or an
-    /// out-of-circle glyph sits — which is where R-h6-10 says the interesting cases are.</para>
-    /// </summary>
-    public static SKPoint MarkerToCanvas(Complex gamma, (double W, double H) size)
-        => GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(gamma), size);
-
-    /// <summary>The inverse of <see cref="MarkerToCanvas"/> — canvas pixels back to the true Γ.</summary>
-    public static Complex CanvasToMarker(SKPoint canvas, (double W, double H) size)
-        => IntrinsicGlyphScale.TruePosition(CanvasToGamma(canvas, size));
-
-    /// <summary>
     /// R-h6-12 — the reachable region, shaded during an intrinsic drag.
     ///
     /// <para><b>The glyph is drawn on the COMPRESSED radial scale, so the region has to be too.</b>
@@ -626,10 +611,40 @@ public static class HarmonicaPanelRenderer
         canvas.DrawPath(path, edge);
     }
 
+    /// <summary>harmonicaRF has no per-document label-spacing setting (Data Display's own
+    /// trace-card label-spacing field has no counterpart here) — the Γ world is the unit disc on
+    /// every panel, so one fixed value serves every document. Matches the Γ-plane default
+    /// <c>PlotInspectorViewModel</c> now seeds for Data Display's own Smith/Polar contours (R8A §4.2):
+    /// one label per ~1.1 rad of a rim-scale ring.</summary>
+    private const double IsoLabelSpacingGamma = 0.35;
+
+    /// <summary>R8A §4.1 — the label font's canvas-proportional scale, mirroring
+    /// <c>ContourRenderer.DrawIsoLines</c>'s own <c>levelFontSize</c>/<c>BaseLw</c> convention (a
+    /// 400×400 canvas at zoom 1) so a harmonicaRF label reads at the same relative size Data Display's
+    /// own iso-line labels do.</summary>
+    private const float IsoLabelFontSize = 9f;
+    private const float IsoLabelBaseLw   = 2.0f;
+
     /// <summary>§7.2's ranked alpha ramp, one flat alpha per polyline — no shader, no per-vertex
-    /// work, no geometry cache.</summary>
+    /// work, no geometry cache.
+    ///
+    /// <para><b>R8A §4.1 — iso-line labels.</b> harmonicaRF had the <paramref name="showIsoLineLabels"/>
+    /// toggle wired end to end (the menu item, the .charm round trip, <c>LayerAKey</c>) except for the
+    /// one thing it names: nothing ever drew a label. Fixed by reusing
+    /// <see cref="ContourRenderer.DrawIsoLineLabel"/> — the SAME world-unit arc-walk placer Data
+    /// Display's own iso-lines use, not a second hand-rolled one. Labels are part of Layer A (they
+    /// depend on the contours and the chart size, not on marker positions, which is why
+    /// <c>ShowIsoLineLabels</c> is already in <c>LayerAKey</c>), so they are drawn HERE, inside the
+    /// cached layer. Colour comes from <c>theme.Isoline</c>/<c>theme.Background</c> — not Data
+    /// Display's own per-trace label colours — so a user who recoloured iso-lines gets labels that match;
+    /// and every label gets the SAME ramped alpha byte its own polyline got, so a faded low-rank
+    /// contour never carries a fully-opaque label (with §1's new 0.01 floor a low-rank contour is
+    /// nearly invisible, and an opaque label on it is exactly the artifact the fade exists to
+    /// avoid).</para>
+    /// </summary>
     private static void DrawContours(SKCanvas canvas, SmithPanelData d, TransformSet tf,
-                                     HarmonicaRenderTheme theme)
+                                     HarmonicaRenderTheme theme, (double W, double H) size,
+                                     bool showIsoLineLabels)
     {
         if (d.Contours.Count == 0) return;
 
@@ -641,9 +656,23 @@ public static class HarmonicaPanelRenderer
             IsAntialias = true,
         };
 
+        float lw = AxesRenderer.LineWidth(size);
+        using var labelFont  = showIsoLineLabels
+            ? new SKFont(SkiaFonts.PlexRegular, IsoLabelFontSize * lw / IsoLabelBaseLw) : null;
+        using var labelPaint = showIsoLineLabels
+            ? new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill } : null;
+        using var bgPaint    = showIsoLineLabels
+            ? new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill } : null;
+        using var bgStroke   = showIsoLineLabels
+            ? new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 0.75f } : null;
+        float labelPadX = 4f * lw / IsoLabelBaseLw;
+        float labelPadY = 3f * lw / IsoLabelBaseLw;
+
+        int ringIndex = 0;
+
         foreach (var poly in d.Contours)
         {
-            if (poly.Points.Count < 2) continue;
+            if (poly.Points.Count < 2) { ringIndex++; continue; }
 
             int rank = IsoLineAlphaRamp.RankOf(poly.Level, levels);
             byte a   = IsoLineAlphaRamp.AlphaByte(rank, Math.Max(levels.Count, 1),
@@ -660,6 +689,20 @@ public static class HarmonicaPanelRenderer
             }
             if (poly.Closed) path.Close();
             canvas.DrawPath(path, paint);
+
+            if (showIsoLineLabels)
+            {
+                labelPaint!.Color = theme.Isoline.WithAlpha(ScaleAlpha(theme.Isoline.Alpha, a));
+                bgPaint!.Color    = theme.Background.WithAlpha(ScaleAlpha(theme.Background.Alpha, a));
+                bgStroke!.Color   = new SKColor(0, 0, 0, ScaleAlpha(120, a));
+
+                ContourRenderer.DrawIsoLineLabel(
+                    canvas, poly.Points, tf.PrimaryToCanvas,
+                    poly.Level, IsoLabelSpacingGamma, ringIndex,
+                    labelFont!, labelPaint, bgPaint, bgStroke, labelPadX, labelPadY);
+            }
+
+            ringIndex++;
         }
     }
 
@@ -730,11 +773,15 @@ public static class HarmonicaPanelRenderer
     /// termination markers, in the same per-band colour at reduced saturation. Values come from the
     /// <c>Gamma_intr</c> cube; nothing here recomputes them (§0.3 item 1).
     /// </summary>
+    /// <summary>R8C §4.1 — the intrinsic glyph is 0.9× the termination marker's rendered radius:
+    /// clearly secondary, but no longer half the size (0.012/0.020 = 0.6, the ratio before this
+    /// change). DERIVED from the marker's own constants so the two cannot drift apart.</summary>
+    internal const double IntrinsicGlyphScaleOfMarker = 0.9;
+
     private static void DrawIntrinsicGlyphs(SKCanvas canvas, SmithPanelData d, TransformSet tf,
                                             HarmonicaRenderTheme theme, (double W, double H) size)
     {
-        float s = (float)(Math.Min(size.W, size.H) * 0.012);
-        s = Math.Max(3.5f, s);
+        float s = (float)(MarkerRadius(size) * IntrinsicGlyphScaleOfMarker);
 
         foreach (var m in d.Markers)
         {
@@ -752,9 +799,14 @@ public static class HarmonicaPanelRenderer
             // its marker without losing which band it belongs to.
             var c = Desaturate(band, theme.Background, 0.45);
 
-            using var fill = new SKPaint { Color = c.WithAlpha(190), IsAntialias = true };
+            // R8C §4.2 — fully opaque; only the desaturation toward the background (above) marks the
+            // glyph as secondary now, not a reduced alpha.
+            using var fill = new SKPaint { Color = c, IsAntialias = true };
             using var path = new SKPath();
             path.MoveTo(p.X, p.Y - s);
+            // The 0.9f/0.75f below are the triangle's own SHAPE proportions (vertex spread), unrelated
+            // to IntrinsicGlyphScaleOfMarker's 0.9 (the glyph's overall SIZE relative to a marker) —
+            // an unfortunate collision of literals, not the same knob.
             path.LineTo(p.X + s * 0.9f, p.Y + s * 0.75f);
             path.LineTo(p.X - s * 0.9f, p.Y + s * 0.75f);
             path.Close();
@@ -781,6 +833,15 @@ public static class HarmonicaPanelRenderer
         return new SKColor(L(c.Red, toward.Red), L(c.Green, toward.Green), L(c.Blue, toward.Blue), c.Alpha);
     }
 
+    /// <summary>R8C §4.1 — the round termination marker's own rendered radius, hoisted out of
+    /// <see cref="DrawMarkers"/> so <see cref="DrawIntrinsicGlyphs"/> can size itself as a DERIVED
+    /// fraction of it rather than an independent magic number the two could drift apart from.</summary>
+    internal const double MarkerRadiusFraction = 0.020;
+    internal const float  MarkerRadiusFloorPx  = 6f;
+
+    internal static float MarkerRadius((double W, double H) size)
+        => Math.Max(MarkerRadiusFloorPx, (float)(Math.Min(size.W, size.H) * MarkerRadiusFraction));
+
     /// <summary>
     /// §4.2 — a marker is a filled circle with a thin outline and its name inside, in its BAND's
     /// colour from the five-colour cycle.
@@ -794,8 +855,7 @@ public static class HarmonicaPanelRenderer
                                     HarmonicaRenderTheme theme, (double W, double H) size,
                                     HarmonicaMarker? topmostMarker = null)
     {
-        float r  = (float)(Math.Min(size.W, size.H) * 0.020);
-        r = Math.Max(6f, r);
+        float r  = MarkerRadius(size);
         float ts = r * 1.15f;
 
         using var font   = new SKFont(SkiaFonts.PlexBold, ts);
@@ -809,11 +869,12 @@ public static class HarmonicaPanelRenderer
             // readable sitting on top of the circle rather than the circle competing with them.
             DrawVswrLocus(canvas, m, tf, theme, d.Z0);
 
-            // An ACTIVE termination is drawn where it actually is on the compressed radial scale —
-            // the same scale the intrinsic glyph uses — rather than clamped to the rim (R-h6-10).
-            // Clamping would put two quite different terminations on the same pixel.
-            var shown = IntrinsicGlyphScale.DisplayPosition(m.Gamma);
-            var p = tf.PrimaryToCanvas(shown.Real, shown.Imaginary);
+            // R8B §2 — an ACTIVE termination is drawn where it TRULY is, on the plain chart map,
+            // rather than clamped to the rim (R-h6-10) or composed with the intrinsic glyph's own
+            // compressed scale (that composition was never this marker's — see IntrinsicGlyphScale's
+            // own remarks, which are about the intrinsic glyph only). A marker can now leave the panel
+            // at |Γ| > ~1.3; DrawMarkers carries no ClipRect, so it still paints.
+            var p = tf.PrimaryToCanvas(m.Gamma.Real, m.Gamma.Imaginary);
             using var fill = new SKPaint { Color = theme.MarkerBand(m.Band), IsAntialias = true };
             canvas.DrawCircle(p, r, fill);
 
@@ -926,7 +987,7 @@ public static class HarmonicaPanelRenderer
         {
             ShowWatermark = false,
             // brief-harmonicarf-r6d §3.
-            CustomTitleOn = true, CustomTitle = "Loadline",
+            CustomTitleOn = true, CustomTitle = "Loadline", CustomTitleBold = true,
             CustomXLabelOn = true, CustomXLabel = "Vds (V)",
             CustomYLabelOn = true, CustomYLabel = "Ids (A)",
         };
@@ -1158,7 +1219,7 @@ public static class HarmonicaPanelRenderer
             ShowWatermark = false,
             // brief-harmonicarf-r6d §3 — also the §4 fly menu's hit target (the title band read
             // through AxesRenderer.ComputeLabelHitRects, never hand-derived).
-            CustomTitleOn = true, CustomTitle = "Power Sweep",
+            CustomTitleOn = true, CustomTitle = "Power Sweep", CustomTitleBold = true,
             CustomXLabelOn = true, CustomXLabel = d.XUnit.Label(),
             CustomYLabelOn = true, CustomYLabel = "Gain (dB)",
             // R-h9b-8 — without this the right axis falls back to its trace's own auto-derived label
@@ -1335,7 +1396,7 @@ public static class HarmonicaPanelRenderer
         var plot = new Plot(PlotType.Rect, FreqUnit.GHz)
         {
             ShowWatermark = false,
-            CustomTitleOn = true, CustomTitle = "Time Domain",
+            CustomTitleOn = true, CustomTitle = "Time Domain", CustomTitleBold = true,
             CustomXLabelOn = true, CustomXLabel = "Time (ns)",
             CustomYLabelOn = true, CustomYLabel = "Vds (V)",
             CustomY2LabelOn = true, CustomY2Label = "Ids (A)",

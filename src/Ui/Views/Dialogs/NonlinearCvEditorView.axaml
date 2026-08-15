@@ -8,6 +8,20 @@
              Background="{DynamicResource SystemChromeLowColor}">
 
     <UserControl.Styles>
+        <!-- R7D §5 — the Fit-order NumericUpDown rendered oversized with its text eaten by the
+             spinner buttons: this control's OWN instance below set none of the properties the
+             Fluent theme needs to shrink it (no MinWidth, no Height, spinner buttons left on), and a
+             Width smaller than the theme's default MinWidth does not shrink it — it produces a
+             control wider than its slot. Matches the known-good style MarkerEditorView.axaml and
+             PlotInspectorView.axaml already use for the same control. -->
+        <Style Selector="NumericUpDown">
+            <Setter Property="FontSize"                 Value="11"/>
+            <Setter Property="Height"                   Value="22"/>
+            <Setter Property="MinWidth"                 Value="10"/>
+            <Setter Property="Padding"                  Value="4,1"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
         <!-- Mode toggle buttons — mirror VarEditorView -->
         <Style Selector="Button.mode-btn">
             <Setter Property="FontSize" Value="11"/>
@@ -78,13 +92,15 @@
                 <TextBlock Text="Fit order:"
                            FontSize="11"
                            VerticalAlignment="Center"/>
+                <!-- R7D §5.3 item 3 — the spinner stays ON here (a small integer the user nudges is
+                     exactly the case it earns its space), so the width is widened to give it room
+                     rather than shrinking to 70 and cropping the digits behind the buttons. -->
                 <NumericUpDown Value="{Binding FitOrder, Converter={x:Static cvt:NumericFieldConverter.Instance}}"
                                Minimum="0"
                                Maximum="20"
                                Increment="1"
                                FormatString="0"
-                               Width="70"
-                               FontSize="11"
+                               Width="96"
                                VerticalAlignment="Center"/>
                 <ctl:CvShapePreview Points="{Binding PreviewPoints}"
                                     Width="45"

@@ -57,4 +57,24 @@ public sealed class HarmonicaTitlesTests
         var row = HarmonicaTitles.PlaneRow(TerminationSide.Load, 1, 75.0);
         Assert.DoesNotContain(".", row);
     }
+
+    // ── R8C §1.5 — MxHeaderRow carries the optimum's impedance ───────────────
+
+    [Fact]
+    public void MxHeaderRow_Load_WithZText_CarriesZL()
+        => Assert.Equal("MXP 1f0 ZL1=12.500-j3.200 Ω",
+            HarmonicaTitles.MxHeaderRow("MXP", TerminationSide.Load, 1, "12.500-j3.200 Ω"));
+
+    [Fact]
+    public void MxHeaderRow_Source_WithZText_CarriesZS()
+        => Assert.Equal("MXE 2f0 ZS2=8.100+j45.000 Ω",
+            HarmonicaTitles.MxHeaderRow("MXE", TerminationSide.Source, 2, "8.100+j45.000 Ω"));
+
+    [Fact]
+    public void MxHeaderRow_NullZText_KeepsTheOldPlaneOnlyHeader()
+        => Assert.Equal("MXP 1f0 Load", HarmonicaTitles.MxHeaderRow("MXP", TerminationSide.Load, 1, zText: null));
+
+    [Fact]
+    public void MxHeaderRow_EmptyZText_KeepsTheOldPlaneOnlyHeader()
+        => Assert.Equal("MXE 3f0 Source", HarmonicaTitles.MxHeaderRow("MXE", TerminationSide.Source, 3, zText: ""));
 }

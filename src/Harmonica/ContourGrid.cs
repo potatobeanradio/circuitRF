@@ -47,14 +47,32 @@ public sealed record GridExtremum(int Index, GridPoint Point, double Value);
 /// R-hrf-8 / R-hrf-9 / D5 / D6 — the Γ grid, its holes, the support mask, the extrema, and the RBF
 /// factorization cache.
 ///
-/// <para><b>Holes are thrown out, never extrapolated into (D5).</b> A Γ point that does not reach
-/// the compression target before <c>PinMax</c> carries no value; its metric is NaN, which
-/// <c>Rbf2D</c>'s own NaN-drop removes from the fit. That alone is not enough: an RBF over a scatter
-/// with a hole punched in it rings, and will happily invent an efficiency ridge where there is no
-/// data. So contours are additionally clipped to a SUPPORT MASK — the convex hull of the converged
-/// points, minus a disc around each excluded one — and outside that mask nothing is drawn. This is a
-/// correctness requirement rather than cosmetics: an invented ridge inside a hole is exactly the
-/// artifact this tool must never produce.</para>
+/// <para><b>R8A §6 — REVERSED: iso-lines now SPAN a hole rather than breaking at it.</b> D5's original
+/// doctrine is quoted below verbatim, and its argument is still true — this is a deliberate trade,
+/// not a discovery that the old reasoning was wrong. The owner's own words: "the surface model still
+/// exists, so make sure that the surface model still covers the area over the hole so that the
+/// iso-lines still render near the hole. Yes, this is a form of 2D extrapolation, but it is more
+/// visually appealing and doesn't lose much fidelity. (Also the user knows the surface may be
+/// suspect there anyway because they can see the hole rendering.)" That last clause is why the trade
+/// is acceptable rather than merely convenient: it DEPENDS on <c>DrawGridPoints</c> still drawing the
+/// hollow hole dot (<c>HarmonicaPanelRenderer.DrawGridPoints</c>, <c>gp.IsHole</c> → hollow) — remove
+/// those dots and the extrapolation becomes silent and this trade is no longer defensible. The convex
+/// HULL clip stays unconditionally (outside the measured grid there is genuinely nothing, and a
+/// contour running off into unmeasured Γ is a worse artifact); only the PER-HOLE DISC is now optional,
+/// via <see cref="InSupport"/>'s <c>excludeHoleDiscs</c> parameter — <see cref="Raster"/> defaults to
+/// NOT excluding (this is what the user sees), while the optimum search
+/// (<see cref="InterpolatedArgmax"/>) always keeps the disc, because reporting an optimum at a Γ
+/// nothing converged at would be a wrong NUMBER, not a cosmetic gap (§6.3).</para>
+///
+/// <para><b>D5's original doctrine, kept for the record.</b> "Holes are thrown out, never
+/// extrapolated into." A Γ point that does not reach the compression target before <c>PinMax</c>
+/// carries no value; its metric is NaN, which <c>Rbf2D</c>'s own NaN-drop removes from the fit. That
+/// alone is not enough: an RBF over a scatter with a hole punched in it rings, and will happily
+/// invent an efficiency ridge where there is no data. So contours were additionally clipped to a
+/// SUPPORT MASK — the convex hull of the converged points, minus a disc around each excluded one —
+/// and outside that mask nothing was drawn. This was framed as a correctness requirement rather than
+/// cosmetics: an invented ridge inside a hole is exactly the artifact this tool must never produce.
+/// It still can (§6.4) — the hollow dot is what now marks the region as suspect instead.</para>
 ///
 /// <para><b>MXP and MXE are the argmax over the COMPUTED grid (D6)</b> — no search, no
 /// <c>PursuitEngine</c> call — so the summary readout is always consistent with what is drawn.</para>
@@ -87,8 +105,8 @@ public sealed class ContourGrid
     /// at construction.
     /// </summary>
     public RbfKernel ContourKernel  { get; private set; } = RbfKernel.Multiquadric;
-    public double    ContourSmooth  { get; private set; } = 1e-3;
-    public double?   ContourEpsilon { get; private set; }
+    public double    ContourSmooth  { get; private set; } = 0.1;    // R8A §5 — mirrors CircuitModel's own default
+    public double?   ContourEpsilon { get; private set; } = 0.5;    // R8A §5 — mirrors CircuitModel's own default
 
     public ContourGrid(double z0 = 50.0) => Z0 = z0;
 
@@ -573,7 +591,9 @@ public sealed class ContourGrid
                 for (int xi = 0; xi < RefineSamples; xi++)
                 {
                     double re = best.Real - halfRe + 2 * halfRe * xi / (RefineSamples - 1);
-                    if (!InSupport(re, im, hull, holeRadius)) continue;
+                    // R8A §6 — explicit true: the optimum search must NEVER extrapolate into a hole,
+                    // unlike Raster's own new default. See this class's own doc comment and §6.3.
+                    if (!InSupport(re, im, hull, holeRadius, excludeHoleDiscs: true)) continue;
                     double v = fit.Evaluate(re, im);
                     if (v > localBest) { localBest = v; foundRe = re; foundIm = im; }
                 }
@@ -639,11 +659,18 @@ public sealed class ContourGrid
 
     /// <summary>
     /// Whether a raster point is inside the support: within the convex hull of the converged points,
-    /// and outside every hole's disc.
+    /// and — when <paramref name="excludeHoleDiscs"/> — outside every hole's disc too.
+    ///
+    /// <para><b>R8A §6</b> — the hull clip is unconditional (outside the measured grid there is
+    /// genuinely nothing); the per-hole disc is now opt-in, defaulting to <c>true</c> (the pre-R8A
+    /// behaviour) so any call site that does not pass the parameter is unaffected. <see cref="Raster"/>
+    /// is the one caller that flips its OWN default to spanning holes — see its own remarks.</para>
     /// </summary>
-    public bool InSupport(double re, double im, IReadOnlyList<Complex> hull, double holeRadius)
+    public bool InSupport(double re, double im, IReadOnlyList<Complex> hull, double holeRadius,
+                          bool excludeHoleDiscs = true)
     {
         if (!InsideHull(hull, re, im)) return false;
+        if (!excludeHoleDiscs) return true;
 
         foreach (var p in _points)
         {
@@ -655,10 +682,17 @@ public sealed class ContourGrid
     }
 
     /// <summary>
-    /// Evaluates the fitted surface on a raster and blanks everything outside the support mask.
-    /// <c>ContourExtractor</c> treats NaN cells as absent, so a masked cell contributes no polyline.
+    /// Evaluates the fitted surface on a raster, blanking everything outside the convex hull. Whether
+    /// a hole's own disc is ALSO blanked is <paramref name="excludeHoleDiscs"/> — <c>false</c> by
+    /// default (R8A §6: the surface still covers the hole, so an iso-line spans it rather than
+    /// breaking — this is what the user sees on a Smith panel). <c>ContourExtractor</c> treats NaN
+    /// cells as absent, so a masked cell contributes no polyline.
+    ///
+    /// <para><b>Pass <c>excludeHoleDiscs: true</c> for anything feeding an optimum search</b> — MXP/MXE
+    /// and <see cref="InterpolatedArgmax"/> must never be reported at a Γ nothing converged at, which
+    /// is a wrong NUMBER rather than a cosmetic gap and is exactly what §6.3 refuses to trade away.</para>
     /// </summary>
-    public SurfaceGrid Raster(GridMetric metric, int resolution = 256)
+    public SurfaceGrid Raster(GridMetric metric, int resolution = 256, bool excludeHoleDiscs = false)
     {
         var fit  = Fit(metric);
         var hull = ConvexHull([.. _points.Where(p => !p.IsHole).Select(p => p.Gamma)]);
@@ -685,18 +719,19 @@ public sealed class ContourGrid
         var values = new double[resolution * resolution];
         for (int yi = 0; yi < resolution; yi++)
             for (int xi = 0; xi < resolution; xi++)
-                values[yi * resolution + xi] = InSupport(xs[xi], ys[yi], hull, holeRadius)
+                values[yi * resolution + xi] = InSupport(xs[xi], ys[yi], hull, holeRadius, excludeHoleDiscs)
                     ? fit.Evaluate(xs[xi], ys[yi])
                     : double.NaN;
 
         return new SurfaceGrid(xs, ys, values);
     }
 
-    /// <summary>Iso-lines for a metric, already clipped to the support mask.</summary>
+    /// <summary>Iso-lines for a metric, clipped to the convex hull and — R8A §6 — SPANNING any hole
+    /// rather than breaking at it, exactly what a Smith panel draws.</summary>
     public IReadOnlyList<IsoPolyline> Contours(
         GridMetric metric, int levels = 10, int resolution = 256)
     {
-        var grid = Raster(metric, resolution);
+        var grid = Raster(metric, resolution, excludeHoleDiscs: false);
         var set  = ContourExtractor.LevelsBetween(grid, levels);
         return ContourExtractor.Extract(grid, set);
     }

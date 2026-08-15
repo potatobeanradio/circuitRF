@@ -57,6 +57,12 @@ public enum HarmonicaInputEntry
 /// from once opened. Null means "same as <see cref="Text"/>" — every input except Vgs/Idq has no
 /// separate rounding, so <see cref="EditValue"/> is what every call site actually reads.
 /// </param>
+/// <param name="Locked">
+/// R7D §3.4 — true blocks the row's inline (double-click) editor outright, independent of
+/// <see cref="Structural"/>: a nonlinear Cgs/Cdg/Cds row is edited only via its own right-click menu
+/// (<c>ReadoutStripView</c>'s capacitance-row menu), never by typing a number over it. False for
+/// every other input.
+/// </param>
 public sealed record HarmonicaInput(
     string              Key,
     string              Label,
@@ -66,7 +72,8 @@ public sealed record HarmonicaInput(
     HarmonicaInputEntry Entry,
     bool                Structural,
     string              Placeholder = "",
-    string?             EditText    = null)
+    string?             EditText    = null,
+    bool                Locked      = false)
 {
     /// <summary>The text an inline editor should seed from — <see cref="EditText"/> when the row has
     /// one, else <see cref="Text"/> itself (the common case).</summary>
@@ -100,6 +107,15 @@ public static class HarmonicaInputs
     public const string KeyFftOverSample = "settings.fftoversample";
     public const string KeyMultiplicity  = "dut.m";
 
+    /// <summary>R7D §3.1 — the three DUT capacitances. SDD only; see <see cref="Build"/>.</summary>
+    public const string KeyCgs = "dut.cgs";
+    public const string KeyCdg = "dut.cdg";
+    public const string KeyCds = "dut.cds";
+
+    /// <summary>R8C §3.4 — series resistance in the Cgs branch. SDD only, same rule as the
+    /// capacitances above.</summary>
+    public const string KeyRgs = "dut.rgs";
+
     /// <summary>
     /// The whole §7.5 input list for a model, in strip order: bias, drive, then the model's own.
     /// </summary>
@@ -112,8 +128,18 @@ public static class HarmonicaInputs
     /// <c>double?</c> parameter rather than a <see cref="HarmonicaContext"/> reference so this method
     /// keeps its "pure function of a model" contract — see the class's own remark.
     /// </param>
+    /// <param name="linearizedCgsFarads">
+    /// R7D §3.3 — the linearized value of a NONLINEAR Cgs, farads, at the current operating point's DC
+    /// bias — computed by <c>HarmonicaSolver.LinearizedCapacitanceFarads</c> (never here: this class
+    /// stays a pure function of a model) and threaded through exactly like
+    /// <paramref name="liveIdqAmpsWhenVgsDriven"/> is. Null when the intrinsic plane is not located or
+    /// nothing has been solved yet; the row then shows C0 with "(at V=0)" instead.
+    /// </param>
     public static IReadOnlyList<HarmonicaInput> Build(CircuitModel model,
-                                                       double? liveIdqAmpsWhenVgsDriven = null)
+                                                       double? liveIdqAmpsWhenVgsDriven = null,
+                                                       double? linearizedCgsFarads = null,
+                                                       double? linearizedCdgFarads = null,
+                                                       double? linearizedCdsFarads = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -153,11 +179,11 @@ public static class HarmonicaInputs
             Make(model, KeyFrequency, "Freq:", Num(model.Settings.FrequencyHz / 1e9), "GHz",
                  "Fundamental drive frequency. Changing it rebuilds the context and resets the frame ladder.",
                  HarmonicaInputEntry.Number),
-            Make(model, KeyHarmonicCount, "Harmonic Order:", model.Settings.HarmonicCount.ToString(CultureInfo.InvariantCulture), "",
+            Make(model, KeyHarmonicCount, "HB Order:", model.Settings.HarmonicCount.ToString(CultureInfo.InvariantCulture), "",
                  "Harmonic order. Changing it rebuilds the context and resets the frame ladder; " +
                  "marker bands above the new K are dropped.",
                  HarmonicaInputEntry.Integer),
-            Make(model, KeyCompression, "Compression:", Num(model.Settings.CompressionDb), "dB",
+            Make(model, KeyCompression, "P-xdB", Num(model.Settings.CompressionDb), "dB",
                  "Compression target the contour grid is taken at.",
                  HarmonicaInputEntry.Number),
             Make(model, KeyZ0, "Z0", Num(model.Settings.Z0), "Ω",
@@ -182,8 +208,62 @@ public static class HarmonicaInputs
                  HarmonicaInputEntry.Number),
         };
 
+        // R7D §1/§3.1 — SDD only: a native FET already carries gate charge via its own CapModel and
+        // an external model carries its own parasitics, so these would double-count anywhere else.
+        // The strip's Settings column follows the same rule, by the same test (§3.1's own words).
+        if (model.Dut.Kind == DutKind.Sdd)
+        {
+            var caps = model.Dut.Capacitances;
+            // R8C §3.4 — above Cgs. Plain Make, not CapacitanceRow: rgs has no nonlinear form, no
+            // Locked state and no "(linearized)" text, and Make's probe-based IsStructural correctly
+            // reports true (rgs is a netlist element and Apply accepts it), so unlike CapacitanceRow
+            // this one does not need to bypass the probe.
+            list.Add(Make(model, KeyRgs, "rgs", Num(caps.RgsOhms), "Ω",
+                 "Series resistance in the gate branch, between the gate terminal and Cgs. 0 means " +
+                 "none — no element is emitted at all. Affects the intrinsic source impedance.",
+                 HarmonicaInputEntry.Number));
+            list.Add(CapacitanceRow(KeyCgs, "Cgs", caps.Cgs, linearizedCgsFarads));
+            list.Add(CapacitanceRow(KeyCdg, "Cdg", caps.Cdg, linearizedCdgFarads));
+            list.Add(CapacitanceRow(KeyCds, "Cds", caps.Cds, linearizedCdsFarads));
+        }
+
         list.AddRange(DeclaredModelParameters(model));
         return list;
+    }
+
+    /// <summary>
+    /// R7D §3.2/§3.4 — one Cgs/Cdg/Cds row. <b>Always structural</b> (a capacitance is a netlist
+    /// element, §2.2), which is why this bypasses <see cref="Make"/>'s own probe-based
+    /// <see cref="IsStructural"/> — the probe would report <c>false</c> the moment the capacitor is
+    /// nonlinear, because <see cref="Apply"/> correctly refuses a probe edit there (§3.4), and that
+    /// refusal is not evidence the row stopped being structural.
+    /// </summary>
+    private static HarmonicaInput CapacitanceRow(string key, string label, DutCapacitance cap,
+                                                 double? linearizedFarads)
+    {
+        bool locked = cap.IsNonlinear;
+        string text, tooltip;
+
+        if (cap.IsNonlinear)
+        {
+            bool haveLinearized = linearizedFarads is { } lf && double.IsFinite(lf);
+            double pf = (haveLinearized ? linearizedFarads!.Value : cap.Coefficients![0]) * 1e12;
+            text = pf.ToString("F2", CultureInfo.InvariantCulture) + (haveLinearized ? " (linearized)" : " (at V=0)");
+            tooltip = $"{label} is a nonlinear capacitance, C(V) — shown here linearized at the DC " +
+                      "bias point. Right-click to edit its curve or switch back to linear; the inline " +
+                      "editor is disabled while nonlinear.";
+        }
+        else
+        {
+            text = (cap.Farads * 1e12).ToString("F2", CultureInfo.InvariantCulture);
+            tooltip = $"{label}, across the DUT's own terminals, in parallel with the SDD's ports " +
+                      "(§1). 0 means none. Right-click for a nonlinear C(V) option.";
+        }
+
+        return new HarmonicaInput(key, label, text, "pF", tooltip, HarmonicaInputEntry.Number,
+                                  Structural: true,
+                                  EditText: locked ? null : Num(cap.Farads * 1e12),
+                                  Locked: locked);
     }
 
     /// <summary>
@@ -354,6 +434,10 @@ public static class HarmonicaInputs
             KeyIdq           => Num((model.Bias.Idq ?? 0.0) * 1000.0 + 0.01),
             KeyVds           => Num(model.Bias.Vds + 1.0),
             KeyMultiplicity  => Num(model.Dut.Multiplicity + 1.0),
+            KeyCgs           => Num(model.Dut.Capacitances.Cgs.Farads * 1e12 + 1.0),
+            KeyCdg           => Num(model.Dut.Capacitances.Cdg.Farads * 1e12 + 1.0),
+            KeyCds           => Num(model.Dut.Capacitances.Cds.Farads * 1e12 + 1.0),
+            KeyRgs           => Num(model.Dut.Capacitances.RgsOhms + 1.0),
             _                => "",
         };
     }
@@ -450,10 +534,62 @@ public static class HarmonicaInputs
                 { error = "The device multiplier must be a positive number."; return null; }
                 return model with { Dut = model.Dut with { Multiplicity = m } };
 
+            case KeyCgs:
+            case KeyCdg:
+            case KeyCds:
+                return ApplyCapacitance(model, key, text, out error);
+
+            case KeyRgs:
+                if (!TryReal(text, out double rgs) || rgs < 0)
+                { error = "rgs must be a non-negative number of ohms."; return null; }
+                return model with
+                {
+                    Dut = model.Dut with { Capacitances = model.Dut.Capacitances with { RgsOhms = rgs } },
+                };
+
             default:
                 error = $"'{key}' is not an input of this document.";
                 return null;
         }
+    }
+
+    /// <summary>
+    /// R7D §3.1/§3.4 — the typed number is pF; stored as farads. Refuses a negative value, and refuses
+    /// ANY edit at all while that capacitor is nonlinear — the row's own right-click menu ("Use
+    /// Linear") is the only way out of nonlinear, never a number typed over it.
+    /// </summary>
+    private static CircuitModel? ApplyCapacitance(CircuitModel model, string key, string text,
+                                                   out string? error)
+    {
+        var caps = model.Dut.Capacitances;
+        (DutCapacitance current, string label) = key switch
+        {
+            KeyCgs => (caps.Cgs, "Cgs"),
+            KeyCdg => (caps.Cdg, "Cdg"),
+            _      => (caps.Cds, "Cds"),
+        };
+
+        if (current.IsNonlinear)
+        {
+            error = $"{label} is nonlinear — use \"Use Linear\" from its right-click menu before " +
+                    "typing a value.";
+            return null;
+        }
+        if (!TryReal(text, out double pf) || pf < 0)
+        {
+            error = $"{label} must be a non-negative number of pF.";
+            return null;
+        }
+
+        var updated = new DutCapacitance { Farads = pf * 1e-12 };
+        var newCaps = key switch
+        {
+            KeyCgs => caps with { Cgs = updated },
+            KeyCdg => caps with { Cdg = updated },
+            _      => caps with { Cds = updated },
+        };
+        error = null;
+        return model with { Dut = model.Dut with { Capacitances = newCaps } };
     }
 
     private static string Bad(string what, string text)

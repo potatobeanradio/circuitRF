@@ -39,7 +39,9 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
                                                      double w, double h)
     {
         var p = vm.Layout.PlacementOf(HarmonicaPanelId.SmithPower);
-        var local = HarmonicaPanelRenderer.MarkerToCanvas(gamma, (p.W * w, p.H * h));
+        // R8B §2 — an extrinsic termination marker is on the PLAIN chart map now, never the
+        // compressed intrinsic one MarkerToCanvas used to compose in.
+        var local = HarmonicaPanelRenderer.GammaToCanvas(gamma, (p.W * w, p.H * h));
         return (p.X * w + local.X, p.Y * h + local.Y);
     }
 
@@ -162,9 +164,12 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         var probe = new SKPoint((float)(p.X * W + 10), (float)(p.Y * H + 10));
 
         foreach (var m in vm.Markers)
-        foreach (var gamma in new[] { m.Gamma, m.GammaIntrinsic })
+        foreach (var at in new[]
         {
-            var at = HarmonicaPanelRenderer.MarkerToCanvas(gamma, panelSize);
+            HarmonicaPanelRenderer.GammaToCanvas(m.Gamma, panelSize),
+            HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(m.GammaIntrinsic), panelSize),
+        })
+        {
             double d = Math.Sqrt(Math.Pow(at.X - (probe.X - p.X * W), 2) +
                                  Math.Pow(at.Y - (probe.Y - p.Y * H), 2));
             Assert.True(d > 200, $"the fixture's probe is only {d:F0} px from {m.Name} — move it");
@@ -370,17 +375,19 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         Assert.Equal(structureBefore, vm.Model.StructuralKey);
         Assert.Equal(rebuildsBefore,  vm.Pool.Workers[0].ContextRebuildCount);
         Assert.Equal(untouched,       vm.Markers[0].Gamma);           // the OTHER marker is untouched
-        Assert.Equal(5, vm.Markers.Count);                            // R-h9b-14's default set — no marker was added or removed
+        Assert.Equal(3, vm.Markers.Count);                            // R8B §3's default set (L1/L2/L3) — no marker was added or removed
     }
 
-    /// <summary>R-h9b-14 strips a fresh document's default marker set (S1, S2, L1, L2, L3) down to
-    /// just S1/L1, for the many drag tests here that want exactly two markers and do not care which
-    /// bands they are — so the added defaults cannot collide with a test-chosen probe position.</summary>
+    /// <summary>R-h9b-14 strips a fresh document's marker set down to just S1/L1, for the many drag
+    /// tests here that want exactly two markers and do not care which bands they are — so the added
+    /// defaults cannot collide with a test-chosen probe position. R8B §3 changed the fresh-document
+    /// default to L1/L2/L3 with no source marker at all, so S1 is added back explicitly (25 Ω, the
+    /// pre-R8B default this file's fixtures were written against) rather than merely un-stripped.</summary>
     private static HarmonicaViewModel StripToS1L1(HarmonicaViewModel vm)
     {
-        vm.RemoveMarkerBand(TerminationSideKind.Source, 2);
-        vm.RemoveMarkerBand(TerminationSideKind.Load,   2);
-        vm.RemoveMarkerBand(TerminationSideKind.Load,   3);
+        vm.SetMarkerImpedance(vm.AddMarkerBand(TerminationSideKind.Source, 1), new Complex(25, 0));
+        vm.RemoveMarkerBand(TerminationSideKind.Load, 2);
+        vm.RemoveMarkerBand(TerminationSideKind.Load, 3);
         return vm;
     }
 
@@ -400,7 +407,11 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
 
         Assert.False(vm.Scheduler.TierAHealthy);
         Assert.NotNull(vm.StatusMessage);
-        Assert.Contains("cannot hold", vm.StatusMessage!, StringComparison.Ordinal);
+        // R-hui-1 — the message says what the scheduler DID (ran the coarsest grid), never "cannot
+        // hold" or "degraded" (owner: describe what harmonicaRF did, not what it couldn't do).
+        Assert.Contains("coarsest contour grid", vm.StatusMessage!, StringComparison.Ordinal);
+        Assert.DoesNotContain("cannot hold", vm.StatusMessage!, StringComparison.Ordinal);
+        Assert.DoesNotContain("degraded", vm.StatusMessage!, StringComparison.Ordinal);
         Assert.Contains("120", vm.StatusMessage!, StringComparison.Ordinal);
         output.WriteLine(vm.StatusMessage!);
 
@@ -518,8 +529,9 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 8, RasterResolution = 32 });
 
         // S1 is never the swept band (default GridSide/GridHarmonic is Load/1) — see the sibling drag
-        // test's own comment for why that matters to which code path a release takes.
-        var marker = vm.Markers.First(m => m.Side == TerminationSideKind.Source && m.Band == 1);
+        // test's own comment for why that matters to which code path a release takes. R8B §3 — a
+        // fresh document has no source marker at all any more, so S1 is added explicitly.
+        var marker = vm.AddMarkerBand(TerminationSideKind.Source, 1);
 
         vm.SetMarkerGamma(marker, new Complex(0.20, -0.10));
         long seq1 = vm.RequestFrameOnMarkerRelease(marker.Side, marker.Band, dragging: true);

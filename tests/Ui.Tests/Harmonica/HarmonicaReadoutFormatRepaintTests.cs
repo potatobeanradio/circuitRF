@@ -96,16 +96,19 @@ public sealed class HarmonicaReadoutFormatRepaintTests
     }
 
     [Fact]
-    public void BuildReadouts_PopulatesRawValue_OnEveryComplexRow()
+    public void BuildReadouts_PopulatesRawValue_OnEveryComplexRowThatActuallyHasAValue()
     {
         // Integration check through the real solver: every IsComplex row in a solved frame carries a
-        // RawValue — the thing R-h9r2-25's whole fix depends on.
+        // RawValue — the thing R-h9r2-25's whole fix depends on. R7C §1.4's own exception: on a
+        // SkipContours frame MXP/MXE's Zin row stays IsComplex (the row SHAPE must not change between
+        // an available and an unavailable optimum — see AddMxColumn) but renders "—" with no RawValue,
+        // which is legitimate and expected, not a regression of this rule.
         var vm = new HarmonicaViewModel();
         vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
 
         foreach (var r in vm.Frame.Readouts)
         {
-            if (!r.IsComplex) continue;
+            if (!r.IsComplex || r.Value == "—") continue;
             Assert.True(r.RawValue.HasValue, $"row '{r.Label}' (column {r.Column}) is IsComplex but carries no RawValue");
         }
     }

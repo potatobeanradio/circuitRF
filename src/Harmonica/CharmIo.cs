@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -182,6 +183,20 @@ public static class CharmIo
             IntrinsicGate   = m.Dut.IntrinsicMapping?.GateNode,
             IntrinsicDrain  = m.Dut.IntrinsicMapping?.DrainNode,
             IntrinsicSource = m.Dut.IntrinsicMapping?.SourcePin,
+            // R7B §3.4 — additive, absent on every .charm written before this field existed. Written
+            // verbatim (never reconstructed here): a DutSpec whose own SddText is null writes null,
+            // so a pre-R7B document that nobody has re-opened through the dialog re-serialises
+            // byte-for-byte. The reconstruction a stale file needs to show something sensible in the
+            // EDITOR happens in HarmonicaDutEditor, not here.
+            SddText = m.Dut.Kind == DutKind.Sdd ? m.Dut.SddText : null,
+            // R7D §2.3 — additive, absent-means-None: a document with no capacitor for a given role
+            // writes no block for it at all, so an untouched (or non-SDD) document re-serialises
+            // byte-for-byte.
+            Cgs = ToCharmCapacitance(m.Dut.Capacitances.Cgs),
+            Cdg = ToCharmCapacitance(m.Dut.Capacitances.Cdg),
+            Cds = ToCharmCapacitance(m.Dut.Capacitances.Cds),
+            // R8C §3.1 — additive, ?? 0.0 on read: an older .charm loads as 0, no migration.
+            Rgs = m.Dut.Capacitances.RgsOhms != 0.0 ? m.Dut.Capacitances.RgsOhms : null,
         },
         Embedding = new CharmEmbedding
         {
@@ -265,6 +280,18 @@ public static class CharmIo
                                 && dut.IntrinsicSource is { Length: > 0 } sp
                     ? new IntrinsicMapping(g, dr, sp)
                     : null,
+                // R7B §3.4 — verbatim, null when absent. Absent is NOT reconstructed here, so the
+                // untouched-document-round-trips-byte-for-byte rule holds for every field this class
+                // writes; HarmonicaDutEditor reconstructs something to show the first time such a
+                // document is opened through the dialog.
+                SddText = dut?.SddText,
+                Capacitances = new DutCapacitances
+                {
+                    Cgs = FromCharmCapacitance(dut?.Cgs),
+                    Cdg = FromCharmCapacitance(dut?.Cdg),
+                    Cds = FromCharmCapacitance(dut?.Cds),
+                    RgsOhms = dut?.Rgs ?? 0.0,
+                },
             },
             Embedding = new EmbeddingStack
             {
@@ -307,7 +334,11 @@ public static class CharmIo
                                  && Enum.TryParse<RfCore.Loadpull.RbfKernel>(ck, out var kernel)
                                      ? kernel : defaults.ContourKernel,
                 ContourSmooth    = s?.ContourSmooth  ?? defaults.ContourSmooth,
-                ContourEpsilon   = s?.ContourEpsilon,
+                // R8A §5 — ContourEpsilon is no longer null-means-auto by default, so an older .charm
+                // (or one that never wrote the field at all) must land on the new default like every
+                // neighbouring field here does. A file that explicitly persisted null and one with no
+                // field at all are indistinguishable in this serializer either way.
+                ContourEpsilon   = s?.ContourEpsilon ?? defaults.ContourEpsilon,
                 DcivVgsMin       = s?.DcivVgsMin,
                 DcivVgsMax       = s?.DcivVgsMax,
                 DcivVgsSteps     = s?.DcivVgsSteps,
@@ -337,6 +368,24 @@ public static class CharmIo
 
     private static string? BareName(string? path)
         => path is null ? null : Path.GetFileName(path);
+
+    /// <summary>R7D §2.3 — null for <see cref="DutCapacitance.IsAbsent"/>, so a capacitance nobody set
+    /// writes no block at all.</summary>
+    private static CharmCapacitance? ToCharmCapacitance(DutCapacitance c)
+        => c.IsAbsent ? null
+            : new CharmCapacitance
+            {
+                Farads       = c.IsNonlinear ? null : c.Farads,
+                Coefficients = c.IsNonlinear ? c.Coefficients!.ToArray() : null,
+            };
+
+    /// <inheritdoc cref="ToCharmCapacitance"/>
+    private static DutCapacitance FromCharmCapacitance(CharmCapacitance? c)
+        => c is null
+            ? DutCapacitance.None
+            : c.Coefficients is { Length: > 0 }
+                ? new DutCapacitance { Coefficients = c.Coefficients }
+                : new DutCapacitance { Farads = c.Farads ?? 0.0 };
 
     // ── the serialised shape. Every field nullable, so absent takes the default. ──
 
@@ -390,6 +439,28 @@ public static class CharmIo
         public string? IntrinsicGate { get; set; }
         public string? IntrinsicDrain { get; set; }
         public string? IntrinsicSource { get; set; }
+        /// <summary>R7B §3.4 — the SDD editor's verbatim text. Absent on every .charm written before
+        /// this field existed.</summary>
+        public string? SddText { get; set; }
+
+        // R7D §2.3 — Cgs/Cdg/Cds, each absent-means-None. Absent on every .charm written before this
+        // brief and on every document with no capacitor for that role.
+        public CharmCapacitance? Cgs { get; set; }
+        public CharmCapacitance? Cdg { get; set; }
+        public CharmCapacitance? Cds { get; set; }
+
+        /// <summary>R8C §3.1 — series resistance in the Cgs branch, ohms. Absent on every .charm
+        /// written before this field existed; read back as 0.</summary>
+        public double? Rgs { get; set; }
+    }
+
+    /// <summary>R7D §2.3 — one DUT capacitance, absent-means-<see cref="DutCapacitance.None"/>. Exactly
+    /// one of <see cref="Farads"/>/<see cref="Coefficients"/> is written — never both — matching
+    /// <see cref="DutCapacitance.IsNonlinear"/>'s own either/or.</summary>
+    private sealed class CharmCapacitance
+    {
+        public double?   Farads       { get; set; }
+        public double[]? Coefficients { get; set; }
     }
 
     private sealed class CharmEmbedding
@@ -445,12 +516,16 @@ public static class CharmIo
         /// Multiquadric, matching <c>Rbf2D</c>'s own default.</summary>
         public string? ContourKernel { get; set; }
 
-        /// <summary>See <see cref="ContourKernel"/>. Absent takes <c>Rbf2D</c>'s own default, 1e-3.</summary>
+        /// <summary>See <see cref="ContourKernel"/>. Absent takes <c>HarmonicaSettings</c>'s own
+        /// default — R8A §5 — 0.1 (was <c>Rbf2D</c>'s own 1e-3, before the owner re-tuned it).</summary>
         public double? ContourSmooth { get; set; }
 
-        /// <summary>See <see cref="ContourKernel"/>. Absent — like a <c>null</c> value written here —
-        /// both mean <c>Rbf2D</c>'s own scipy-style auto epsilon; there is no separate "absent" state
-        /// to distinguish, since the model's own default is already null.</summary>
+        /// <summary>See <see cref="ContourKernel"/>. R8A §5 — no longer null-means-auto BY DEFAULT:
+        /// absent (like a <c>null</c> value written here) takes <c>HarmonicaSettings</c>'s own default
+        /// of 0.5, exactly like <see cref="ContourSmooth"/> above. <c>Rbf2D</c>'s own scipy-style auto
+        /// epsilon is still reachable — a user can clear the Advanced tab's epsilon box, which writes
+        /// an explicit <c>null</c> that round-trips as null, not as 0.5 — but it is no longer where an
+        /// absent/never-written field lands.</summary>
         public double? ContourEpsilon { get; set; }
 
         /// <summary>R-h9b-12 — the DCIV Sweeps dialog's override, all-or-nothing (see

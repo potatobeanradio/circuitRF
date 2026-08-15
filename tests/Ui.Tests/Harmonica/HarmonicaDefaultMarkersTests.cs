@@ -1,6 +1,11 @@
 // ================================================================
 //  HarmonicaDefaultMarkersTests.cs — §8 (R-h9b-14) of
-//  brief-harmonicarf-r1b-panels-charts-and-interaction.md
+//  brief-harmonicarf-r1b-panels-charts-and-interaction.md, superseded by R8B §3
+//
+//  R8B §3: "By default, S1 and S2 termination markers are turned off." The fresh-document default is
+//  now L1/L2/L3 only — see HarmonicaDefaultMarkerSetTests.cs for the fuller R8B §3 coverage (the
+//  Source band-1 termination staying at 50 Ω with no marker, band-1 removal on both sides, etc.). This
+//  file keeps the load-path/round-trip cases that are still this file's own subject.
 // ================================================================
 
 using System.Linq;
@@ -14,30 +19,26 @@ namespace CircuitRF.Ui.Tests.Harmonica;
 public sealed class HarmonicaDefaultMarkersTests
 {
     [Fact]
-    public void ANewDocument_OpensWithExactlyFiveMarkers_S1S2L1L2L3()
+    public void ANewDocument_OpensWithExactlyThreeMarkers_L1L2L3_NoSourceMarker()
     {
         var vm = new HarmonicaViewModel();
 
-        Assert.Equal(5, vm.Markers.Count);
+        Assert.Equal(3, vm.Markers.Count);
         var names = vm.Markers.Select(m => m.Name).ToArray();
-        Assert.Equal(["S1", "S2", "L1", "L2", "L3"], names);
+        Assert.Equal(["L1", "L2", "L3"], names);
     }
 
     [Fact]
-    public void TheNewDefaults_ForS2L2L3_MatchTheUnmarkedBandEpsilon()
+    public void TheDefaults_ForL2L3_MatchTheUnmarkedBandEpsilon()
     {
-        // R-h9r2-1 (§2) SUPERSEDES this file's own R-h9b-14 title: S2/L2/L3 no longer get bespoke
-        // "sensible" starting impedances (the old `TheNewDefaults_AreNotLeftAtTheUnmarkedNearShort`
-        // name/assertion this test replaces) — they now default to the SAME unmarked-band epsilon
-        // TerminationSet already answers for "no marker at all" (Z = 1e-6 Ω, a near-short sitting
-        // right at the Smith-chart rim). S1/L1 are the two bands this constructor still gives real
-        // starting impedances (25 Ω and 80+j10 Ω) — see HarmonicaViewModel's own constructor comment.
+        // R-h9r2-1 (§2): S2/L2/L3 default to the SAME unmarked-band epsilon TerminationSet already
+        // answers for "no marker at all" (Z = 1e-6 Ω). L1 is the one band this constructor still gives
+        // a real starting impedance (80+j10 Ω) — see HarmonicaViewModel's own constructor comment.
         var vm = new HarmonicaViewModel();
         var expected = HarmonicaDataSet.GammaOf(new Complex(TerminationSet.UnmarkedBandOhms, 0),
                                                 vm.Model.Settings.Z0);
 
-        foreach (var band in new[] { (TerminationSideKind.Source, 2), (TerminationSideKind.Load, 2),
-                                     (TerminationSideKind.Load, 3) })
+        foreach (var band in new[] { (TerminationSideKind.Load, 2), (TerminationSideKind.Load, 3) })
         {
             var m = vm.Markers.Single(x => x.Side == band.Item1 && x.Band == band.Item2);
             Assert.Equal(expected.Real,      m.Gamma.Real,      precision: 9);
@@ -46,38 +47,37 @@ public sealed class HarmonicaDefaultMarkersTests
     }
 
     [Fact]
-    public void Band1_IsStillTheOnlyOneThatRefusesRemoval()
+    public void Band1_IsRemovableOnBothSides_R8BSuperseded()
     {
+        // R8B §3.3 supersedes the old "band 1 always refuses" rule: it is removable on both sides now
+        // (the termination stays in place — see HarmonicaDefaultMarkerSetTests for that half).
         var vm = new HarmonicaViewModel();
+        vm.AddMarkerBand(TerminationSideKind.Source, 1);
 
-        // The new defaults do not make S2/L2/L3 unremovable — only band 1, on both sides.
-        Assert.True(vm.RemoveMarkerBand(TerminationSideKind.Source, 2));
-        Assert.True(vm.RemoveMarkerBand(TerminationSideKind.Load,   2));
-        Assert.True(vm.RemoveMarkerBand(TerminationSideKind.Load,   3));
-        Assert.False(vm.RemoveMarkerBand(TerminationSideKind.Source, 1));
-        Assert.False(vm.RemoveMarkerBand(TerminationSideKind.Load,   1));
-        Assert.Equal(2, vm.Markers.Count);
+        Assert.True(vm.RemoveMarkerBand(TerminationSideKind.Load, 2));
+        Assert.True(vm.RemoveMarkerBand(TerminationSideKind.Load, 3));
+        Assert.True(vm.RemoveMarkerBand(TerminationSideKind.Load, 1));
+        Assert.True(vm.RemoveMarkerBand(TerminationSideKind.Source, 1));
+        Assert.Empty(vm.Markers);
     }
 
     [Fact]
     public void ALoadedCharmMarkingOnlyS1AndL1_StillProducesExactlyThoseTwoMarkers()
     {
         // §4.2 — RebuildMarkersFromTerminations derives markers from the file's own marked bands; an
-        // unmarked band is the ABSENCE of a marker, not a default. The constructor's new S2/L2/L3
-        // defaults must not survive a load that never marked them.
+        // unmarked band is the ABSENCE of a marker, not a default. The constructor's new L2/L3
+        // defaults must not survive a load that never marked them, and a marked S1 must come back.
         var writer = new HarmonicaViewModel();
-        foreach (var band in new[] { (TerminationSideKind.Source, 2), (TerminationSideKind.Load, 2),
-                                     (TerminationSideKind.Load, 3) })
-            writer.RemoveMarkerBand(band.Item1, band.Item2);
-        writer.SetMarkerImpedance(writer.Markers.Single(m => m.Band == 1 && m.Side == TerminationSideKind.Source),
-                                  new Complex(25, 0));
+        writer.RemoveMarkerBand(TerminationSideKind.Load, 2);
+        writer.RemoveMarkerBand(TerminationSideKind.Load, 3);
+        writer.SetMarkerImpedance(writer.AddMarkerBand(TerminationSideKind.Source, 1), new Complex(25, 0));
         writer.SetMarkerImpedance(writer.Markers.Single(m => m.Band == 1 && m.Side == TerminationSideKind.Load),
                                   new Complex(80, 10));
 
         string json = writer.ToCharmJson();
 
         var reader = new HarmonicaViewModel();
-        Assert.Equal(5, reader.Markers.Count);          // the fresh document's own defaults, pre-load
+        Assert.Equal(3, reader.Markers.Count);          // the fresh document's own R8B §3 defaults, pre-load
 
         reader.LoadCharm(json, null);
 

@@ -9,13 +9,14 @@
 //  an approximation, and nothing downstream re-clamps the result. §1.3: the live "VSWR: <val>" readout
 //  is tracked on the gesture itself and shares its formatter with §2.1's menu header.
 //
-//  MARKER INDEX NOTE: HarmonicaViewModel's constructor inserts markers in RANK order (source bands
-//  ascending, then load bands ascending), not insertion order — vm.Markers is [S1, S2, L1, L2, L3].
-//  S2/L2/L3 default to TerminationSet.UnmarkedBandOhms (a near-short, Γ magnitude ≈ 1 — right at the
-//  rim), which is a degenerate fixture for VSWR-circle geometry (the circle has nowhere to expand into
-//  before hitting the unit circle). Tests here use S1 (vm.Markers[0], Z=25 Ω) or L1 (vm.Markers[2],
-//  Z=80+j10 Ω) — both comfortably inside the disk — and never vm.Markers[1]/[3]/[4] (the unmarked
-//  S2/L2/L3) unless the test overrides Gamma itself.
+//  MARKER INDEX NOTE: this file's own NewVm() reconstructs the PRE-R8B five-marker default
+//  ([S1, S2, L1, L2, L3], RANK order — source bands ascending, then load bands ascending) on top of
+//  R8B §3's changed fresh-document default (L1/L2/L3 only, no source marker). S2/L2/L3 default to
+//  TerminationSet.UnmarkedBandOhms (a near-short, Γ magnitude ≈ 1 — right at the rim), which is a
+//  degenerate fixture for VSWR-circle geometry (the circle has nowhere to expand into before hitting
+//  the unit circle). Tests here use S1 (vm.Markers[0], Z=25 Ω) or L1 (vm.Markers[2], Z=80+j10 Ω) —
+//  both comfortably inside the disk — and never vm.Markers[1]/[3]/[4] (the unmarked S2/L2/L3) unless
+//  the test overrides Gamma itself.
 // ================================================================
 
 using System;
@@ -32,6 +33,22 @@ namespace CircuitRF.Ui.Tests.Harmonica;
 
 public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
 {
+    /// <summary>R8B §3 changed a fresh document's default marker set to L1/L2/L3 with no source
+    /// marker at all. Every fixture in this file was written against the PRE-R8B five-marker default
+    /// (<c>[S1, S2, L1, L2, L3]</c>, S1 = 25 Ω, L1 = 80+j10 Ω — see this file's own header) and relies
+    /// on that exact index/value pairing throughout, so it is reconstructed here rather than
+    /// hand-editing every index below. <c>AddMarkerBand</c> inserts in RANK order (source ascending,
+    /// then load ascending), so adding S1 then S2 back onto a fresh L1/L2/L3 document reproduces the
+    /// identical order.</summary>
+    private static HarmonicaViewModel NewVm()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.SetMarkerImpedance(vm.AddMarkerBand(TerminationSideKind.Source, 1), new Complex(25, 0));
+        vm.SetMarkerImpedance(vm.AddMarkerBand(TerminationSideKind.Source, 2),
+            new Complex(TerminationSet.UnmarkedBandOhms, 0));
+        return vm;
+    }
+
     /// <summary>Canvas coordinates of a Γ on the POWER Smith panel, at this canvas size — mirrors
     /// HarmonicaDragTests' own OnPowerPanel, but through the RAW transform (GammaToCanvas), since the
     /// VSWR locus is never drawn on the compressed intrinsic scale.</summary>
@@ -129,7 +146,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     [InlineData(4.2)]
     public void APointOnTheLocus_AtAnyAngle_IsGrabbableWhenVswrIsEnabled(double theta)
     {
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1, Z=80+j10Ω — comfortably off the rim
         double z0 = Z0Of(vm);
@@ -145,7 +162,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     [Fact]
     public void APointOnTheLocus_IsNotGrabbable_WhenVswrIsDisabled()
     {
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2];
         double z0 = Z0Of(vm);
@@ -160,7 +177,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     [Fact]
     public void APointWellOffTheLocus_DoesNotGrab()
     {
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2];
         double z0 = Z0Of(vm);
@@ -179,7 +196,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         // R-h9r2-5's z-order: the round marker is drawn ON TOP of its own VSWR circle (DrawMarkers
         // draws the locus first, then the dot), so a low-VSWR circle sitting close enough to coincide
         // with the marker's own grab radius must still resolve to the marker, not the circle.
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1
         marker.VswrEnabled = true;
@@ -201,7 +218,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         // than found in a fixture. At Γ = 0 the locus genuinely IS a plain circle centred on the marker
         // (HarmonicaVswrHandle's own header names this the one degenerate case), so angle really is
         // irrelevant here — this test pins that special case, not the general rule.
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1
         marker.Gamma = Complex.Zero;
@@ -246,7 +263,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
         // at different angles are NOT expected to land on the same VSWR. This is the direct regression
         // guard for the bug this file's own header describes — a naive "distance from the marker"
         // formula would (wrongly) make this test's two readings agree.
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[0]; // S1 — given an explicit, clearly off-matched-point value
         marker.Gamma = new Complex(0.3, -0.2);
@@ -281,7 +298,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     [Fact]
     public void GrabbingTheCircle_PromotesTheMarker_LikeGrabbingTheMarkerItself()
     {
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[0]; // S1 — not the default top of the z-order
         marker.VswrEnabled = true;
@@ -299,7 +316,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     {
         // brief-harmonicarf-r6b's own scope: the overlay neither reads nor writes anything the circuit
         // depends on. Every OTHER marker drag drives the solve pool (R-h6-3/R-h6-4); this one must not.
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1
         marker.VswrEnabled = true;
@@ -326,7 +343,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     [Fact]
     public void PressingTheCircle_ShowsTheReadout_WithTheCurrentValue_BeforeAnyMove()
     {
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1
         marker.VswrEnabled = true;
@@ -344,7 +361,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     [Fact]
     public void DraggingTheCircle_KeepsTheReadoutInStepWithTheLiveValue_AndClearsOnRelease()
     {
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2]; // L1
         marker.VswrEnabled = true;
@@ -370,7 +387,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     [Fact]
     public void CancellingTheDrag_ClearsTheReadout()
     {
-        var vm = new HarmonicaViewModel();
+        var vm = NewVm();
         const double W = 1200, H = 800;
         var marker = vm.Markers[2];
         marker.VswrEnabled = true;

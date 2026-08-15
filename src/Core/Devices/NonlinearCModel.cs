@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Core.Devices;
@@ -20,10 +21,16 @@ public sealed class NonlinearCModel : ComponentModel
     public override ModelKind Kind      => ModelKind.Nonlinear;
 
     /// <summary>Small-signal capacitance C(V) = Σ Cₖ·Vᵏ (Horner).</summary>
-    private double CapAt(double v)
+    private double CapAt(double v) => CapacitanceAt(_c, v);
+
+    /// <summary>
+    /// The same Horner, exposed for a caller (harmonicaRF's readout strip, R7D §3.3) that needs the
+    /// linearized value of an arbitrary coefficient list without constructing a whole model instance.
+    /// </summary>
+    public static double CapacitanceAt(IReadOnlyList<double> coefficients, double v)
     {
         double acc = 0.0;
-        for (int k = _c.Length - 1; k >= 0; k--) acc = acc * v + _c[k];
+        for (int k = coefficients.Count - 1; k >= 0; k--) acc = acc * v + coefficients[k];
         return acc;
     }
 

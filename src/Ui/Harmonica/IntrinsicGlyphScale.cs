@@ -29,6 +29,18 @@ public static class IntrinsicGlyphScale
     public const double DefaultRate = 1.0;
 
     /// <summary>
+    /// R7A §1 — the largest <c>|Γ|</c> a pointer may ever WRITE to a marker. <see cref="TrueRadius"/>
+    /// saturates here rather than at its own asymptote (<c>1 + margin</c>, a true pole with no finite
+    /// pre-image) — the old <c>1 - 1e-9</c> clamp put every pointer position at or beyond drawn radius
+    /// <c>1 + margin</c> at the SAME Γ ≈ −10⁹, which does not survive its own Γ↔Z round trip
+    /// (catastrophic cancellation in <c>Z = z0(1+Γ)/(1−Γ)</c>) and reads as a different, disagreeing
+    /// number everywhere it is re-derived from Z (the readout strip, a `.charm` reload). At |Γ| = 10,
+    /// Z round-trips to full double precision and is already past every physically interesting active
+    /// termination (−0.818·z0 — see §1.3's own worked numbers at Z0 = 50 and 80 Ω).
+    /// </summary>
+    public const double MaxTrueMagnitude = 10.0;
+
+    /// <summary>
     /// Maps a true <c>|Γ|</c> to the radius the glyph is drawn at.
     /// <list type="bullet">
     /// <item><c>|Γ| ≤ 1</c> → returned unchanged. Inside the disc the chart is exact; the compression
@@ -71,8 +83,10 @@ public static class IntrinsicGlyphScale
     /// drag that inverted the chart transform alone would be wrong for everything in the annulus.
     ///
     /// <para>A drawn radius at or beyond <c>1 + margin</c> is the map's asymptote and has no finite
-    /// pre-image; it saturates at a large but finite value rather than returning infinity, because
-    /// every caller here is about to convert it to an impedance.</para>
+    /// pre-image; it saturates at <see cref="MaxTrueMagnitude"/> rather than returning infinity or the
+    /// asymptote's own <c>1 - 1e-9</c>-clamped near-pole (R7A §1 — that plateau does not survive its own
+    /// Γ↔Z round trip). The clamp is derived from <see cref="MaxTrueMagnitude"/> itself, so the two can
+    /// never drift apart.</para>
     /// </summary>
     public static double TrueRadius(double displayRadius,
                                     double margin = DefaultMargin, double rate = DefaultRate)
@@ -82,7 +96,10 @@ public static class IntrinsicGlyphScale
 
         double m = Math.Max(1e-12, margin);
         double k = Math.Max(1e-9, rate);
-        double u = Math.Min((displayRadius - 1.0) / m, 1.0 - 1e-9);
+
+        double xMax = MaxTrueMagnitude - 1.0;
+        double uMax = k * xMax / (1.0 + k * xMax);
+        double u = Math.Min((displayRadius - 1.0) / m, uMax);
         return 1.0 + u / (k * (1.0 - u));
     }
 

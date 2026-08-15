@@ -62,8 +62,10 @@ public sealed class InterpolatedOptimumTests(ITestOutputHelper output)
         grid.Build(ctx, Terms(model), ContourGrid.RingGrid(rings: 3, spokes: 12, maxGamma: 0.75),
                   TerminationSide.Load, 1);
 
-        var r96  = grid.Raster(GridMetric.PoutDbm, 96);
-        var r256 = grid.Raster(GridMetric.PoutDbm, 256);
+        // R8A §6 — excludeHoleDiscs: true, explicitly: an optimum search must never extrapolate into
+        // a hole (Raster's own default flipped to spanning holes; see ContourGrid's own doc comment).
+        var r96  = grid.Raster(GridMetric.PoutDbm, 96,  excludeHoleDiscs: true);
+        var r256 = grid.Raster(GridMetric.PoutDbm, 256, excludeHoleDiscs: true);
 
         var at96  = grid.InterpolatedArgmax(GridMetric.PoutDbm, r96);
         var at256 = grid.InterpolatedArgmax(GridMetric.PoutDbm, r256);
@@ -93,7 +95,7 @@ public sealed class InterpolatedOptimumTests(ITestOutputHelper output)
         grid.Build(ctx, Terms(model), ContourGrid.RingGrid(rings: 3, spokes: 12, maxGamma: 0.75),
                   TerminationSide.Load, 1);
 
-        var raster = grid.Raster(GridMetric.PoutDbm, 128);
+        var raster = grid.Raster(GridMetric.PoutDbm, 128, excludeHoleDiscs: true);   // R8A §6
         var argmax = grid.InterpolatedArgmax(GridMetric.PoutDbm, raster);
         Assert.NotNull(argmax);
 
@@ -129,7 +131,7 @@ public sealed class InterpolatedOptimumTests(ITestOutputHelper output)
 
         Assert.Equal(grid.Points.Count, grid.HoleCount);
 
-        var raster = grid.Raster(GridMetric.PoutDbm, 64);
+        var raster = grid.Raster(GridMetric.PoutDbm, 64, excludeHoleDiscs: true);   // R8A §6
         var argmax = grid.InterpolatedArgmax(GridMetric.PoutDbm, raster);
         Assert.Null(argmax);
     }
@@ -138,7 +140,7 @@ public sealed class InterpolatedOptimumTests(ITestOutputHelper output)
     public void EmptyGrid_ProducesNoOptimum()
     {
         var grid = new ContourGrid();
-        var raster = grid.Raster(GridMetric.PoutDbm, 32);
+        var raster = grid.Raster(GridMetric.PoutDbm, 32, excludeHoleDiscs: true);   // R8A §6
         Assert.Null(grid.InterpolatedArgmax(GridMetric.PoutDbm, raster));
     }
 }

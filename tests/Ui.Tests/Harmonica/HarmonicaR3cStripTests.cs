@@ -74,22 +74,21 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void ColumnsGrid_PlacesTheEightChunks_AtTheOwnersOwnPositions()
+    public void ColumnsGrid_PlacesTheSevenChunks_AtTheOwnersOwnPositions()
     {
         string axaml = ReadSource("src", "Ui", "Views", "Harmonica", "ReadoutStripView.axaml");
 
-        // (row, column) — row 1: Settings · OperatingPoint · MXP · MXE
-        //                 row 2: Load · Source · IntrinsicVDS · IntrinsicIDS
-        // Load is above-left of Source (D at (2,1), C at (2,2)) — the reverse of R3C's own
-        // left-to-right Source-then-Load order, and deliberate: the owner specified it this way.
+        // (row, column) — row 1: Settings (spans both rows) · OperatingPoint · MXP · MXE
+        //                 row 2: [Settings continues]        · Terminations  · IntrinsicVDS · IntrinsicIDS
+        // R-hui-1 — Settings spans down into row 2's own column-0 slot, and Source+Load merge into
+        // ONE Terminations chunk at (2,2) — the owner's revised layout.
         var expected = new (string Name, int Row, int Column)[]
         {
             ("SettingsColumn",       0, 0),
             ("OperatingPointColumn", 0, 1),
             ("MxpColumn",            0, 2),
             ("MxeColumn",            0, 3),
-            ("LoadColumn",           1, 0),
-            ("SourceColumn",         1, 1),
+            ("TerminationsColumn",   1, 1),
             ("IntrinsicVdsColumn",   1, 2),
             ("IntrinsicIdsColumn",   1, 3),
         };
@@ -123,7 +122,8 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         Assert.Equal("", opColumn[0].Value);   // header row — label only, exactly like MXP/MXE's own
 
         var byLabel = opColumn.Skip(1).ToDictionary(r => r.Label);
-        foreach (string expected in new[] { "Pin", "Pout", "Gain", "DE", "PAE", "Pdc" })
+        // R-hui-1/R-hui-7 — Pin is gone; Gp/Zin/AM-PM joined, matching the MXP/MXE chunks' own row set.
+        foreach (string expected in new[] { "Pout", "Eff", "PAE", "Gain", "Gp", "Zin", "AM/PM", "Pdc" })
             Assert.True(byLabel.ContainsKey(expected), $"OperatingPoint column is missing '{expected}'");
 
         output.WriteLine(string.Join(" | ", opColumn.Select(r => $"{r.Label}={r.Value}")));
@@ -233,11 +233,14 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
 
         // BuildSettingsColumnRow's DoubleTapped handler must also consult it before opening a second
         // editor on an already-open row.
-        int bm = src.IndexOf("private StackPanel BuildSettingsColumnRow(", StringComparison.Ordinal);
+        int bm = src.IndexOf("private Grid BuildSettingsColumnRow(", StringComparison.Ordinal);
         Assert.True(bm >= 0);
         int bmEnd = src.IndexOf("\n    private static void UpdateSettingsColumnRow", bm, StringComparison.Ordinal);
         string buildBody = src[bm..bmEnd];
-        Assert.Contains("if (!SettingsRowMayBeOverwritten(state.IsEditing)) return;", buildBody, StringComparison.Ordinal);
+        // R7D §3.4 extended this guard with a Locked check (a nonlinear capacitance row's own
+        // inline-edit block) — the substring below is what survives that extension.
+        Assert.Contains("if (!SettingsRowMayBeOverwritten(state.IsEditing) || state.Locked) return;",
+            buildBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -254,7 +257,10 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
-        Assert.Contains("if (SettingsColumn.Children.Count != SettingsColumnKeys.Length)", body, StringComparison.Ordinal);
+        // R7D §3.1 — the shape check now compares against EffectiveSettingsColumnKeys(named) (the
+        // base seven, or the base seven plus Cgs/Cdg/Cds for an SDD DUT) rather than the fixed
+        // 7-key SettingsColumnKeys array directly; the gate the check enforces is unchanged.
+        Assert.Contains("if (SettingsColumn.Children.Count != keys.Length)", body, StringComparison.Ordinal);
         Assert.Contains("SettingsColumn.Children.Clear();", body, StringComparison.Ordinal);
     }
 
@@ -464,34 +470,27 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         Assert.DoesNotContain("pair.Children", body, StringComparison.Ordinal);
     }
 
-    // ══ owner-reported — the editor's width tracks its own text, not a flat MinWidth ══════════════
-
-    private static double InvokeCalcInlineEditWidth(string text, double fontSize)
-    {
-        var type = typeof(CircuitRF.Ui.Views.Harmonica.ReadoutStripView);
-        var method = type.GetMethod("CalcInlineEditWidth",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        return (double)method.Invoke(null, [text, fontSize])!;
-    }
+    // ══ R7C §1.3 — the editor's width is now an actual MEASUREMENT (FormattedText against the live
+    // typeface), not the old text.Length * 0.55 formula. Ui.Tests cannot invoke FormattedText.Width
+    // headlessly — confirmed directly (it throws "Unable to locate 'Avalonia.Platform.IFontManagerImpl'"
+    // with no live Application/font-manager registered), which is exactly why the brief's own gate for
+    // this is a screenshot, not a unit test. Pinned by source scan instead: the 0.55 formula is GONE,
+    // and a real measurement (FormattedText, against the passed-in typeface) replaced it.
 
     [Fact]
-    public void CalcInlineEditWidth_GrowsWithTextLength_NeverAFlatMinWidth()
+    public void CalcInlineEditWidth_MeasuresAgainstTheTypeface_NotAnAssumedPerCharacterAdvance()
     {
-        // The old `MinWidth = 70` made a short row like "-1.5" look oversized (owner-reported); width
-        // now tracks the text itself. A long value must measure wider than a short one at the SAME
-        // font size, and an empty/blank field must still be a usable click target rather than zero.
-        double empty = InvokeCalcInlineEditWidth("", 12.0);
-        double shortText = InvokeCalcInlineEditWidth("-1.5", 12.0);
-        double longText = InvokeCalcInlineEditWidth("80+j10.25 Ω", 12.0);
+        string src = ReadSource("src", "Ui", "Views", "Harmonica", "ReadoutStripView.axaml.cs");
 
-        Assert.True(empty > 0);
-        Assert.True(longText > shortText, $"expected a longer value to measure wider: {longText} vs {shortText}");
-        Assert.True(shortText >= empty, $"expected a non-empty value to be at least as wide as empty: {shortText} vs {empty}");
+        int m = src.IndexOf("private static double CalcInlineEditWidth(", StringComparison.Ordinal);
+        Assert.True(m >= 0);
+        int mEnd = src.IndexOf("\n    public static IBrush BrushFor", m, StringComparison.Ordinal);
+        Assert.True(mEnd > m);
+        string body = src[m..mEnd];
 
-        // Scales with the strip's own font size, exactly like every other density constant in this file.
-        double atSmallerFont = InvokeCalcInlineEditWidth("80+j10.25 Ω", 10.0);
-        double atLargerFont  = InvokeCalcInlineEditWidth("80+j10.25 Ω", 18.0);
-        Assert.True(atLargerFont > atSmallerFont);
+        Assert.Contains("Typeface typeface", body, StringComparison.Ordinal);
+        Assert.Contains("new FormattedText(", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("* 0.55", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -506,9 +505,10 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         string body = src[m..mEnd];
 
         Assert.DoesNotContain("MinWidth          =", body, StringComparison.Ordinal);
-        Assert.Contains("Width             = CalcInlineEditWidth(pristine, fontSize),", body, StringComparison.Ordinal);
-        Assert.Contains("box.TextChanged += (_, _) => box.Width = CalcInlineEditWidth(box.Text ?? \"\", fontSize);",
-                         body, StringComparison.Ordinal);
+        Assert.Contains("Width             = CalcInlineEditWidth(pristine, fontSize, editTypeface),", body, StringComparison.Ordinal);
+        Assert.Contains(
+            "box.TextChanged += (_, _) => box.Width = CalcInlineEditWidth(box.Text ?? \"\", fontSize, editTypeface);",
+            body, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -51,7 +51,10 @@ public static class VarTextParser
                 continue;
             }
 
-            if (trimmed.StartsWith('#') || trimmed.StartsWith("//", StringComparison.Ordinal))
+            // R7B §3.3 — ';' is the .cnl comment character too, so an SDD block pasted straight out
+            // of a netlist keeps its comments recognised. Additive: existing callers are unaffected.
+            if (trimmed.StartsWith('#') || trimmed.StartsWith("//", StringComparison.Ordinal)
+                || trimmed.StartsWith(';'))
             {
                 result.Add(new VarLine(raw, null, null, false, IsBlank: false, IsComment: true));
                 continue;
@@ -106,4 +109,16 @@ public static class VarTextParser
             parameters
                 .Where(p => !string.IsNullOrWhiteSpace(p.Name))
                 .Select(p => $"{p.Name} = {p.Expression}"));
+
+    /// <summary>
+    /// R7B §3.3 — the sibling that round-trips a parsed <see cref="VarLine"/> list, PRESERVING blank
+    /// and comment lines verbatim. <see cref="SerializeLines(IEnumerable{EditableParameter})"/> only
+    /// ever had valid parameter rows to write and so drops everything else; an editor that also
+    /// carries comments and blank lines (the SDD text editor) needs this overload instead. An invalid
+    /// line's raw text is kept too, so the user's not-yet-fixed typo survives a round trip rather than
+    /// being silently dropped.
+    /// </summary>
+    public static string SerializeLines(IReadOnlyList<VarLine> lines)
+        => string.Join('\n', lines.Select(l =>
+            l.IsBlank || l.IsComment || !l.IsValid ? l.RawText : $"{l.Name} = {l.Expression}"));
 }

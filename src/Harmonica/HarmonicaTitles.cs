@@ -40,9 +40,18 @@ public static class HarmonicaTitles
     /// <b>Literally as the owner specified</b> — always numeric ("1f0"), unlike <see cref="PlaneRow"/>'s
     /// row 2, which spells band 1 as "Fundamental". Two different rows the owner asked to look
     /// different are kept different rather than unified for tidiness.
+    ///
+    /// <para>R8C §1 — when the optimum is solved, the header also carries its REAL impedance, named
+    /// by the termination it corresponds to ("MXP 1f0 ZL1=12.500-j3.200 Ω") — the same <c>Z{side}
+    /// {harmonic}</c> spelling the Source/Load termination rows already use.</para>
     /// </summary>
-    public static string MxHeaderRow(string label, TerminationSide side, int harmonic)
-        => $"{label} {harmonic}f0 {(side == TerminationSide.Source ? "Source" : "Load")}";
+    /// <param name="zText">The optimum's impedance, already formatted by the caller
+    /// (HarmonicaReadoutFormatting.FormatZ, which is in src/Ui and must stay there). Null or empty
+    /// keeps the old plane-only header — the "no optimum" case.</param>
+    public static string MxHeaderRow(string label, TerminationSide side, int harmonic, string? zText = null)
+        => zText is { Length: > 0 }
+            ? $"{label} {harmonic}f0 Z{(side == TerminationSide.Source ? "S" : "L")}{harmonic}={zText}"
+            : $"{label} {harmonic}f0 {(side == TerminationSide.Source ? "Source" : "Load")}";
 
     private static string FormatTrim(double v)
         => v == Math.Floor(v)

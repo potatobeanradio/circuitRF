@@ -427,16 +427,23 @@ public sealed class HarmonicaSolver
 
         // Raster once and derive both the levels and the polylines from it, rather than calling
         // ContourGrid.Contours (which rasters again) — paying it twice per panel would be the single
-        // most expensive avoidable thing in a frame.
+        // most expensive avoidable thing in a frame. R8A §6 — excludeHoleDiscs defaults to false, so
+        // this is the SPANNING raster: what the panel actually draws.
         sw.Restart();
         var raster = grid.Raster(metric, opt.RasterResolution);
         var levels = ContourExtractor.LevelsBetween(raster, opt.Levels);
         var polys  = ContourExtractor.Extract(raster, levels);
         rasterMs += sw.Elapsed.TotalMilliseconds;
 
-        // R-h9b-15 — seeded from the SAME raster (no second one), refined on the SAME fit the
-        // contours were drawn from. Cheap: no HB solve, just Rbf2D.Evaluate over a small window.
-        var interp = grid.InterpolatedArgmax(metric, raster);
+        // R8A §6.3 — the optimum search must NOT extrapolate: InterpolatedArgmax's own seed scan has
+        // no InSupport check of its own (it just reads raster.Values for the highest non-NaN cell), so
+        // feeding it the spanning raster above could seed — and, if refinement then finds nothing
+        // supported nearby, RETURN — a Γ inside a hole. A second raster, hole discs excluded, keeps
+        // MXP/MXE (and the interpolated glyph) off any Γ the solver never reached. This is a real
+        // second per-cell RBF evaluate (see src/Harmonica/CLAUDE.md's own raster-cost note) — paid
+        // deliberately, because "the optimum is here" is a wrong NUMBER otherwise, not a cosmetic gap.
+        var optimumRaster = grid.Raster(metric, opt.RasterResolution, excludeHoleDiscs: true);
+        var interp = grid.InterpolatedArgmax(metric, optimumRaster);
         var optimum = interp is { } ie ? new SmithPanelData.SmithOptimum(ie.Gamma, ie.Value, null, null) : null;
 
         return new SmithPanelData
@@ -620,7 +627,6 @@ public sealed class HarmonicaSolver
             // interpolation exists to remove. Null for a Run() result (its own AtCompression already
             // sits exactly on target), so the fallback is exactly the old behaviour there.
             var sc = sweep.SweepCompression;
-            double pinDbm  = sc?.PinDbm  ?? at.PavlDbm;
             double poutDbm = sc?.PoutDbm ?? (at.PoutW > 0 ? 10 * Math.Log10(at.PoutW) + 30 : double.NaN);
             double gainDb  = sc?.GainDb  ?? at.GainDb;
             double deFrac  = sc?.De      ?? at.De;
@@ -630,16 +636,41 @@ public sealed class HarmonicaSolver
             string opHeader = HarmonicaTitles.CompressionLabel(ctx.Model.Settings.CompressionDb);
             r.Add(new HarmonicaReadout(opHeader, "", "", ReadoutColumn.OperatingPoint));
 
-            void AddOp(string label, string value, string tip)
-                => r.Add(new HarmonicaReadout(label, value, tip, ReadoutColumn.OperatingPoint));
+            void AddOp(string label, string value, string tip, string unit = "")
+                => r.Add(new HarmonicaReadout(label, value, tip, ReadoutColumn.OperatingPoint, Unit: unit));
 
-            AddOp("Pin", HarmonicaReadoutFormatting.FormatDbm(pinDbm), "Available power at the operating point.");
+            // R-hui-1/R-hui-7 — row order matches the MXP/MXE chunks' own order (Pout/Eff/PAE/Gain/
+            // Gp/Zin/AM-PM), so all three performance chunks read the same way; Pdc has no MXP/MXE
+            // counterpart and stays last, where it always was. Pin is gone (redundant with the
+            // operating point itself).
             AddOp("Pout", HarmonicaReadoutFormatting.FormatDbm(poutDbm),
-                "Output power at the operating point.");
-            AddOp("Gain", HarmonicaReadoutFormatting.FormatDb(gainDb), "Transducer gain (Gt) — D9's default criterion.");
-            AddOp("DE",  HarmonicaReadoutFormatting.FormatPercent(deFrac * 100),  "Drain efficiency, Pout / Pdc.");
-            AddOp("PAE", HarmonicaReadoutFormatting.FormatPercent(paeFrac * 100), "Power-added efficiency, (Pout − Pin_delivered) / Pdc.");
-            AddOp("Pdc", HarmonicaReadoutFormatting.FormatWatt(pdcW), "DC power drawn at the operating point.");
+                "Output power at the operating point.", "dBm");
+            AddOp("Eff",  HarmonicaReadoutFormatting.FormatPercent(deFrac * 100),  "Drain efficiency, Pout / Pdc.", "%");
+            AddOp("PAE", HarmonicaReadoutFormatting.FormatPercent(paeFrac * 100), "Power-added efficiency, (Pout − Pin_delivered) / Pdc.", "%");
+            AddOp("Gain", HarmonicaReadoutFormatting.FormatDb(gainDb), "Transducer gain (Gt) — D9's default criterion.", "dB");
+            // R-hui-7 — Gp has no interpolated SweepCompression counterpart (unlike Pout/Gain/Eff/
+            // PAE/Pdc above), so it reads straight off `at`'s own solved FomResult — the nearest
+            // ladder point, same rounding Zin/AM-PM below already accept for the same reason.
+            AddOp("Gp", HarmonicaReadoutFormatting.FormatDb(at.Foms.GpDb),
+                "Power gain (Gp = Pout / Pin_delivered) at the operating point — free off the solved " +
+                "PinStep's own FomResult, the same one Gain (Gt) reads.", "dB");
+
+            if (published is not null)
+            {
+                var zin = ReadComplex(published, "Zin", (int)TerminationSide.Source, 1);
+                r.Add(new HarmonicaReadout("Zin", HarmonicaReadoutFormatting.FormatZ(zin, format("OP.Zin")),
+                    "Impedance looking into the DUT at the extrinsic plane, fundamental (§4.5.4), at the " +
+                    "operating point.", ReadoutColumn.OperatingPoint, IsComplex: true, RawValue: zin, Unit: "Ω"));
+
+                var vOutFund = ReadComplex(published, "V_ext", (int)TerminationSide.Load, 1);
+                string amPm = double.IsNaN(vOutFund.Real) ? "—"
+                    : HarmonicaReadoutFormatting.FormatDegrees(vOutFund.Phase * 180.0 / Math.PI);
+                AddOp("AM/PM", amPm,
+                    "The fundamental output's phase relative to the drive, at the operating point.");
+            }
+
+            AddOp("Pdc", HarmonicaReadoutFormatting.FormatWatt(pdcW), "DC power drawn at the operating point.", "W");
+            AddGammaRow(r, ReadoutColumn.OperatingPoint, ctx, published);
         }
 
         // R-h9r2-24 — the per-marker INTRINSIC Γ rows that used to sit on this General line are GONE,
@@ -665,12 +696,20 @@ public sealed class HarmonicaSolver
         {
             var column = side == TerminationSideKind.Source ? ReadoutColumn.Source : ReadoutColumn.Load;
             string sideLetter = side == TerminationSideKind.Source ? "S" : "L";
+            string sideName = sideLetter == "S" ? "Source" : "Load";
 
-            // A plain title row, the same shape MXP/MXE's own header uses (label only, empty value) —
-            // one rendering path for every column's header rather than two.
-            r.Add(new HarmonicaReadout(sideLetter == "S" ? "Source" : "Load", "", "", column));
+            var sideMarkers = markers.Where(m => m.Side == side).OrderBy(m => m.Band).ToList();
 
-            foreach (var m in markers.Where(m => m.Side == side).OrderBy(m => m.Band))
+            // R8B §3 — S1/S2 (and, since §3.3, any band) can start or end with NO marker on this side.
+            // The header row is KEPT either way — a missing chunk reads as "broken", a header with
+            // nothing under it reads as "none set" (R7C §1.4's own rule about row-shape stability) —
+            // and it names the fix rather than leaving a silent gap.
+            string headerTip = sideMarkers.Count == 0
+                ? $"No {sideName.ToLowerInvariant()} markers — right-click the Smith chart to add one."
+                : "";
+            r.Add(new HarmonicaReadout(sideName, "", headerTip, column));
+
+            foreach (var m in sideMarkers)
             {
                 var z = HarmonicaDataSet.ImpedanceOf(m.Gamma, z0);
 
@@ -683,20 +722,13 @@ public sealed class HarmonicaSolver
                     $"{m.Name}'s termination, as an impedance against Z0={FormatZ0(z0)} Ω. " +
                     "Double-click to edit; right-click to switch real/imaginary ⇄ magnitude/angle.",
                     column, IsComplex: true, Editable: true, Side: side, Band: m.Band, IsGamma: false,
-                    RawValue: z));
-
-                r.Add(new HarmonicaReadout(
-                    $"Γ{m.Name}", HarmonicaReadoutFormatting.FormatGamma(m.Gamma, format($"{sideLetter}{m.Band}.Gamma")),
-                    $"{m.Name}'s termination, as Γ against Z0={FormatZ0(z0)} Ω. " +
-                    "Double-click to edit; right-click to switch real/imaginary ⇄ magnitude/angle.",
-                    column, IsComplex: true, Editable: true, Side: side, Band: m.Band, IsGamma: true,
-                    RawValue: m.Gamma));
+                    RawValue: z, Unit: "Ω"));
             }
         }
 
         // ── MXP / MXE — R-h9c-6's read-only performance summaries ──────────────
-        AddMxColumn(r, ReadoutColumn.Mxp, "MXP", opt, smithP.Optimum, format);
-        AddMxColumn(r, ReadoutColumn.Mxe, "MXE", opt, smithE.Optimum, format);
+        AddMxColumn(r, ReadoutColumn.Mxp, "MXP", opt, smithP.Optimum, format, ctx);
+        AddMxColumn(r, ReadoutColumn.Mxe, "MXE", opt, smithE.Optimum, format, ctx);
 
         // ── Intrinsic VDS / IDS — R6C §2's two new chunks ───────────────────────
         AddIntrinsicColumn(r, ReadoutColumn.IntrinsicVds, "Intrinsic VDS (V)", "Intrinsic VDS", ctx, published,
@@ -757,35 +789,58 @@ public sealed class HarmonicaSolver
     /// </summary>
     private static void AddMxColumn(List<HarmonicaReadout> r, ReadoutColumn column, string label,
                                     Options opt, SmithPanelData.SmithOptimum? optimum,
-                                    Func<string, ReadoutFormat> format)
+                                    Func<string, ReadoutFormat> format, HarmonicaContext ctx)
     {
-        string header = HarmonicaTitles.MxHeaderRow(label, opt.GridSide, opt.GridHarmonic);
-
         // R-h9b-15/16/17 — "no optimum" covers all three states 1B names: every grid point a hole
         // (Optimum itself null), and a degraded ladder rung or a SkipContours frame (Optimum's
         // position is cheap and updates every frame, but Solved/Published — the figures of merit —
         // are only ever set on a full-quality frame with a real solve there).
+        //
+        // R7C §1.4 — THE CHUNK'S ROW SHAPE MUST NOT CHANGE between this branch and the solved one
+        // below: emitting a single "no optimum" row here (the old behaviour) tore the whole column
+        // down to one row every time a degraded ladder rung or a SkipContours frame carried no fresh
+        // optimum, and rebuilt it again the instant a full-quality frame supplied one — structural
+        // churn at frame rate, on every marker drag, that no pixel-width fix could reach. So the same
+        // nine (now ten, with γ) rows are emitted either way; only the HEADER's own text states which
+        // case this is, and every row's tooltip repeats it.
         if (optimum is not { Solved: { } step, Published: { } ds })
         {
-            r.Add(new HarmonicaReadout(header, "no optimum",
-                "No optimum is available this frame — every grid point is a hole, or this is a " +
-                "degraded/dragging frame with no fresh solve at the optimum yet.", column));
+            string baseHeader = HarmonicaTitles.MxHeaderRow(label, opt.GridSide, opt.GridHarmonic);
+            const string tip = "No optimum is available this frame — every grid point is a hole, or " +
+                "this frame is mid-drag and has not yet solved a fresh optimum.";
+            r.Add(new HarmonicaReadout($"{baseHeader} — no optimum", "", "", column));
+            r.Add(new HarmonicaReadout("Pout", "—", tip, column, Unit: "dBm"));
+            r.Add(new HarmonicaReadout("Eff",  "—", tip, column, Unit: "%"));
+            r.Add(new HarmonicaReadout("PAE",  "—", tip, column, Unit: "%"));
+            r.Add(new HarmonicaReadout("Gain", "—", tip, column, Unit: "dB"));
+            r.Add(new HarmonicaReadout("Gp",   "—", tip, column, Unit: "dB"));
+            r.Add(new HarmonicaReadout("Zin",  "—", tip, column, IsComplex: true, Unit: "Ω"));
+            r.Add(new HarmonicaReadout("AM/PM", "—", tip, column));
+            r.Add(new HarmonicaReadout("Pdc",  "—", tip, column, Unit: "W"));
+            AddGammaRow(r, column, ctx, null);
             return;
         }
 
-        r.Add(new HarmonicaReadout(header, "", "", column));
+        // R8C §1.2 — the REAL optimum impedance (the interpolated argmax on this panel's own fitted
+        // surface), never the marker's, and never read from the published DataSet. Resolved through
+        // the column's own saved format key so the header agrees with whatever the column's Zin row
+        // is showing rather than being independently spelled.
+        string zText = HarmonicaReadoutFormatting.FormatZ(
+            HarmonicaDataSet.ImpedanceOf(optimum.Gamma, ctx.Model.Settings.Z0), format($"{label}.MxZ"));
+        r.Add(new HarmonicaReadout(HarmonicaTitles.MxHeaderRow(label, opt.GridSide, opt.GridHarmonic, zText),
+            "", "", column));
         r.Add(new HarmonicaReadout("Pout",
             HarmonicaReadoutFormatting.FormatDbm(step.PoutW > 0 ? 10 * Math.Log10(step.PoutW) + 30 : double.NaN),
-            "Output power at this optimum.", column));
-        r.Add(new HarmonicaReadout("Efficiency", HarmonicaReadoutFormatting.FormatPercent(step.De * 100),
-            "Drain efficiency at this optimum.", column));
+            "Output power at this optimum.", column, Unit: "dBm"));
+        r.Add(new HarmonicaReadout("Eff", HarmonicaReadoutFormatting.FormatPercent(step.De * 100),
+            "Drain efficiency at this optimum.", column, Unit: "%"));
         r.Add(new HarmonicaReadout("PAE", HarmonicaReadoutFormatting.FormatPercent(step.Pae * 100),
-            "Power-added efficiency at this optimum.", column));
+            "Power-added efficiency at this optimum.", column, Unit: "%"));
         r.Add(new HarmonicaReadout("Gain", HarmonicaReadoutFormatting.FormatDb(step.GainDb),
-            "Transducer gain (Gt) at this optimum.", column));
+            "Transducer gain (Gt) at this optimum.", column, Unit: "dB"));
         r.Add(new HarmonicaReadout("Gp", HarmonicaReadoutFormatting.FormatDb(step.Foms.GpDb),
             "Power gain (Gp = Pout / Pin_delivered) at this optimum — free off the solved PinStep's " +
-            "own FomResult, the same one Gain (Gt) reads.", column));
+            "own FomResult, the same one Gain (Gt) reads.", column, Unit: "dB"));
 
         var zin = ReadComplex(ds, "Zin", (int)TerminationSide.Source, 1);
         r.Add(new HarmonicaReadout("Zin", HarmonicaReadoutFormatting.FormatZ(zin, format($"{label}.Zin")),
@@ -793,7 +848,7 @@ public sealed class HarmonicaSolver
             "delivered current, not the device's own intrinsic gate current. Moves with the load on " +
             "a non-unilateral device, which is why it is read at THIS optimum's own termination " +
             "rather than published as one document-wide number.",
-            column, IsComplex: true, RawValue: zin));
+            column, IsComplex: true, RawValue: zin, Unit: "Ω"));
 
         var vOutFund = ReadComplex(ds, "V_ext", (int)TerminationSide.Load, 1);
         string amPm = double.IsNaN(vOutFund.Real) ? "—"
@@ -804,6 +859,11 @@ public sealed class HarmonicaSolver
             "amplitude), so this is the RAW phase of V_ext at the load plane, fundamental — not a " +
             "deg/dB AM-to-PM slope, which nothing published here carries the multi-point sweep for.",
             column));
+
+        // R-hui-7 — Pdc, matching the P-3dB (OperatingPoint) chunk's own row set, last here too.
+        r.Add(new HarmonicaReadout("Pdc", HarmonicaReadoutFormatting.FormatWatt(step.PdcW),
+            "DC power drawn at this optimum.", column, Unit: "W"));
+        AddGammaRow(r, column, ctx, ds);
     }
 
     /// <summary>Reads one <c>[side, harmonic]</c> entry of a published complex cube. NaN when the
@@ -820,6 +880,106 @@ public sealed class HarmonicaSolver
         return cube.ComplexValues[sideIndex * harmonics + harmonic];
     }
 
+    /// <summary>R7C §2 — the tooltip every γ row carries, its backing reference included so a user who
+    /// does not recognise the symbol has somewhere to go.</summary>
+    private const string GammaTooltip =
+        "Input nonlinearity factor. |γ| is the magnitude of the 2nd-harmonic intrinsic control " +
+        "voltage over the fundamental's; ∠γ is φ₂ − 2·φ₁. Read from the intrinsic gate port's own " +
+        "V_intr spectrum at this operating point — used for input waveform shaping in high-efficiency " +
+        "PA design (Dhar et al., IMS 2019).";
+
+    /// <summary>
+    /// R7C §2 — the input nonlinearity factor, γ = V₂·conj(V₁)²/|V₁|³ (§2.1's closed form — NOT
+    /// <c>arg(V₂/V₁)</c>), read from the intrinsic GATE port's own <c>V_intr</c> spectrum at whichever
+    /// <paramref name="ds"/> this chunk's own operating point is (§2.3: three chunks, three different
+    /// DataSets, three independent computations — never one shared answer). Appended immediately after
+    /// Pdc in every one of the three call sites (§2.3's own table). <see cref="HarmonicaReadout.
+    /// IsComplex"/> is deliberately false: §2.4 wants γ shown ONLY as magnitude ∠ angle, and marking it
+    /// complex would both offer a real/imaginary menu that means nothing (γ's own definition has no
+    /// sensible real/imaginary split) and collide with Zin's saved format state under <see
+    /// cref="HarmonicaReadout.FormatKey"/>'s per-column resolution (both would resolve to the same
+    /// key).
+    ///
+    /// <para>Backing reference: S. K. Dhar, T. Sharma, N. Zhu, D. Holmes, R. Darraji,
+    /// F. M. Ghannouchi, "Comprehensive Analysis of Input Waveform Shaping for Efficiency Enhancement
+    /// in Class B Power Amplifiers," <i>2019 IEEE MTT-S International Microwave Symposium (IMS)</i>,
+    /// Boston, MA, USA, 2019, pp. 1164–1167.</para>
+    /// </summary>
+    private static void AddGammaRow(List<HarmonicaReadout> r, ReadoutColumn column, HarmonicaContext ctx, DataSet? ds)
+    {
+        string? reason = null;
+        var gamma = new Complex(double.NaN, double.NaN);
+
+        // §2.5 — every case a γ row cannot be computed, checked in the order a user can most readily
+        // act on: an unlocated intrinsic plane, then too few harmonics, then no data this frame (a
+        // degraded/SkipContours MXP/MXE rung — nothing more specific to say than "—" for that one).
+        if (ctx.IntrinsicPorts.GatePort < 0)
+            reason = ctx.IntrinsicPorts.Reason ?? "The intrinsic plane could not be located.";
+        else if (ctx.Model.Settings.HarmonicCount < 2)
+            reason = "K = 1: no second harmonic is solved.";
+        else if (ds is not null && ds.Contains("V_intr"))
+        {
+            var v1 = ReadComplex(ds, "V_intr", ctx.IntrinsicPorts.GatePort, 1);
+            var v2 = ReadComplex(ds, "V_intr", ctx.IntrinsicPorts.GatePort, 2);
+            gamma = GammaFactor(v1, v2);
+        }
+
+        string tip = reason is { Length: > 0 } ? $"{GammaTooltip} ({reason})" : GammaTooltip;
+        r.Add(new HarmonicaReadout("γ", HarmonicaReadoutFormatting.FormatGammaFactor(gamma), tip, column));
+    }
+
+    /// <summary>
+    /// R7C §2.1's closed form, standalone — <c>γ = V₂·conj(V₁)²/|V₁|³</c>, NOT <c>arg(V₂/V₁)</c> (check:
+    /// with <c>V₁ = |V₁|e^{jφ₁}</c>, <c>V₂ = |V₂|e^{jφ₂}</c>, the numerator is
+    /// <c>|V₂||V₁|²e^{j(φ₂−2φ₁)}</c>, so <c>|γ| = |V₂|/|V₁|</c> and <c>∠γ = φ₂ − 2·φ₁</c> — one
+    /// expression, no separate magnitude/angle assembly that could disagree with itself). Guards
+    /// <c>|V₁| = 0</c> and a NaN input by returning <c>Complex(NaN, NaN)</c>, which <see
+    /// cref="HarmonicaReadoutFormatting.FormatGammaFactor"/> already renders as "—".
+    /// </summary>
+    private static Complex GammaFactor(Complex v1, Complex v2)
+    {
+        if (double.IsNaN(v1.Real) || double.IsNaN(v2.Real) || v1.Magnitude == 0)
+            return new Complex(double.NaN, double.NaN);
+
+        var conjV1 = Complex.Conjugate(v1);
+        return v2 * conjV1 * conjV1 / (v1.Magnitude * v1.Magnitude * v1.Magnitude);
+    }
+
     private static string FormatZ0(double z0)
         => z0 == Math.Floor(z0) ? ((long)z0).ToString() : z0.ToString("0.##");
+
+    // ── R7D §3.3 — the linearized value of a nonlinear Cgs/Cdg/Cds row ──────────
+
+    /// <summary>
+    /// C(V_bias) via <c>NonlinearCModel.CapacitanceAt</c>'s own Horner, evaluated at the DC voltage
+    /// across the named capacitor — read from the already-published <c>V_intr</c> cube (harmonic 0),
+    /// never re-solved and never walked by node name (the terminal node names change with the
+    /// package). Null when the intrinsic plane is not located (§0.3 item 1: this is a READ, not a
+    /// recomputation) or nothing has been solved this session — the caller then shows C0 with
+    /// "(at V=0)" instead of a number it could not verify.
+    ///
+    /// <para>V_Cgs = Re(V_intr[gate,0]); V_Cds = Re(V_intr[drain,0]);
+    /// V_Cdg = Re(V_intr[drain,0]) − Re(V_intr[gate,0]) — matching §1's <c>{drain} {gate}</c> net
+    /// order for CDG.</para>
+    /// </summary>
+    public static double? LinearizedCapacitanceFarads(HarmonicaContext ctx, RfCore.Data.DataSet? published,
+        IReadOnlyList<double> coefficients, DutCapacitanceKind which)
+    {
+        if (published is null || !ctx.IntrinsicPorts.LoadAvailable) return null;
+
+        int gate = ctx.IntrinsicPorts.GatePort, drain = ctx.IntrinsicPorts.DrainPort;
+        double vGate  = ReadComplex(published, "V_intr", gate,  0).Real;
+        double vDrain = ReadComplex(published, "V_intr", drain, 0).Real;
+
+        double vBias = which switch
+        {
+            DutCapacitanceKind.Cgs => vGate,
+            DutCapacitanceKind.Cds => vDrain,
+            DutCapacitanceKind.Cdg => vDrain - vGate,
+            _                      => double.NaN,
+        };
+        if (double.IsNaN(vBias)) return null;
+
+        return CircuitRF.Core.Devices.NonlinearCModel.CapacitanceAt(coefficients, vBias);
+    }
 }

@@ -8,7 +8,8 @@
     / epsilon) threaded into ContourGrid.Fit via Rbf2D.Factorize.
   -->
 
-  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" Margin="14">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto"
+        Margin="14">
 
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
       <TextBlock Grid.Column="0" Text="Loadline samples" VerticalAlignment="Center"
@@ -39,7 +40,7 @@
 
     <Border Grid.Row="4" Height="1" Opacity="0.2" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,4,0,10"/>
 
-    <TextBlock Grid.Row="5" Text="Contour surface (§3)" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    <TextBlock Grid.Row="5" Text="Contour surface" FontWeight="SemiBold" Margin="0,0,0,8"/>
 
     <Grid Grid.Row="6" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
       <TextBlock Grid.Column="0" Text="RBF kernel" VerticalAlignment="Center"
@@ -56,7 +57,43 @@
                LostFocus="OnContourFieldLostFocus" KeyDown="OnContourFieldKeyDown"/>
     </Grid>
 
-    <StackPanel Grid.Row="9" Orientation="Vertical" Spacing="8" Margin="0,8,0,0">
+    <!-- R8A §3 — moved here from Appearance, verbatim (markup and the handlers/state that back it). -->
+
+    <Border Grid.Row="8" Height="1" Opacity="0.2" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,4,0,10"/>
+
+    <TextBlock Grid.Row="9" Text="Iso-line fade" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    <StackPanel Grid.Row="10" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+      <TextBlock Text="α floor" VerticalAlignment="Center" Width="60" Opacity="0.7"/>
+      <Slider x:Name="AlphaFloorSlider" Minimum="0" Maximum="1" Width="220"
+              ValueChanged="OnFadeChanged"
+              ToolTip.Tip="1 flattens the fade entirely — every contour fully opaque — with no code change."/>
+      <TextBlock x:Name="AlphaFloorLabel" VerticalAlignment="Center" Width="40"/>
+    </StackPanel>
+    <StackPanel Grid.Row="11" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+      <TextBlock Text="exponent" VerticalAlignment="Center" Width="60" Opacity="0.7"/>
+      <Slider x:Name="AlphaExpSlider" Minimum="0.05" Maximum="4" Width="220"
+              ValueChanged="OnFadeChanged"
+              ToolTip.Tip="The shaping exponent p. Larger fades the lower levels harder."/>
+      <TextBlock x:Name="AlphaExpLabel" VerticalAlignment="Center" Width="40"/>
+    </StackPanel>
+    <CheckBox Grid.Row="12" x:Name="IsoLabelsCheck" Content="Iso-line labels" Click="OnIsoLabelsChanged"
+              Margin="0,0,0,8"
+              ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them."/>
+
+    <Border Grid.Row="13" Height="1" Opacity="0.2" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,4,0,10"/>
+
+    <TextBlock Grid.Row="14" Text="Tickle default" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    <TextBlock Grid.Row="15" TextWrapping="Wrap" Opacity="0.7" FontSize="11" Margin="0,0,0,8"
+               Text="What a BRAND NEW harmonicaRF document opens with. A document you already have keeps its own tickle regardless of this — it is per-user, not something a .charm from someone else can silently change."/>
+    <StackPanel Grid.Row="16" Orientation="Horizontal" Spacing="8">
+      <CheckBox x:Name="TickleDefaultEnabledCheck" Content="Enabled" Click="OnTickleDefaultChanged"/>
+      <TextBlock Text="level" VerticalAlignment="Center" Opacity="0.7"/>
+      <TextBox x:Name="TickleDefaultDbmBox" Width="70"
+               KeyDown="OnTickleDefaultDbmKeyDown" LostFocus="OnTickleDefaultDbmLostFocus"/>
+      <TextBlock Text="dBm" VerticalAlignment="Center" Opacity="0.7"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="18" Orientation="Vertical" Spacing="8" Margin="0,8,0,0">
       <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
     </StackPanel>
   </Grid>

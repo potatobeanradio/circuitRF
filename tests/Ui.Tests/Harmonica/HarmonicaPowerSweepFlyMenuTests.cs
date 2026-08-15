@@ -35,8 +35,11 @@ public sealed class HarmonicaPowerSweepFlyMenuTests
     // ══ §4 — the title fly menu ═════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void PowerSweepTitleMenu_OffersBothItems_CheckableAndMutuallyExclusive()
+    public void PowerSweepTitleMenu_OffersBothItems_AsARadioGroupUnderOneModeSubmenu()
     {
+        // R8B §5.3 — "Power Sweep" and "Time Domain" are grouped under one "Mode ▸" submenu row,
+        // each a RADIO (never ToggleType — see PowerSweepTitleMenu_NeverUsesToggleType below), rather
+        // than two loose top-level checkboxes that were secretly mutually exclusive.
         string src = ViewSource();
         int m = src.IndexOf("private void BuildPowerSweepTitleMenu(", StringComparison.Ordinal);
         Assert.True(m >= 0);
@@ -46,20 +49,32 @@ public sealed class HarmonicaPowerSweepFlyMenuTests
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
-        Assert.Contains("Header = \"Power Sweep\"", body, StringComparison.Ordinal);
-        Assert.Contains("Header = \"Time Domain\"", body, StringComparison.Ordinal);
-        Assert.Contains("ToggleType.CheckBox", body, StringComparison.Ordinal);
+        Assert.Contains("\"Power Sweep\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"Time Domain\"", body, StringComparison.Ordinal);
+        Assert.Contains("glyph: MenuGlyph.Radio", body, StringComparison.Ordinal);
         Assert.Contains("menus.SetPowerSweepModeCommand.Execute(\"PowerSweep\")", body, StringComparison.Ordinal);
         Assert.Contains("menus.SetPowerSweepModeCommand.Execute(\"TimeDomain\")", body, StringComparison.Ordinal);
-        // The checked state reads the SAME flag the mode is switched with, so the menu doubles as a
-        // readout rather than drifting from what is actually drawn.
-        Assert.Contains("IsChecked = !h.ShowPowerSweepTimeDomain", body, StringComparison.Ordinal);
-        Assert.Contains("IsChecked = h.ShowPowerSweepTimeDomain", body, StringComparison.Ordinal);
+        // Grouped under one "Mode: <current>" submenu row, which carries the state so the menu doubles
+        // as a readout rather than drifting from what is actually drawn.
+        Assert.Contains("Header = $\"Mode: ", body, StringComparison.Ordinal);
+        Assert.Contains("!timeDomainMode", body, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource = new object[] { powerSweep, timeDomain }", body, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void PowerSweepDispatch_ResolvesTitleBeforeXLabel_AndGatesXUnitOnPowerSweepModeOnly()
+    public void PowerSweepTitleMenu_NeverUsesToggleType()
     {
+        string src = ViewSource();
+        Assert.Empty(System.Text.RegularExpressions.Regex.Matches(src, "MenuItemToggleType"));
+    }
+
+    [Fact]
+    public void PowerSweepDispatch_TitleAndXLabel_ResolveToDIFFERENTMenus()
+    {
+        // R-hui-2, owner-reported — R-hui-1 briefly merged the title band and the X-axis label into
+        // ONE menu, which wrongly put Copy/mode-toggle/Autoscale on the axis-label menu. They are
+        // separate again: title -> BuildPowerSweepTitleMenu, X-label -> BuildPowerSweepXUnitMenu,
+        // and the X-label branch is gated on power-sweep mode only (a plain time axis has no unit).
         string src = ViewSource();
         int m = src.IndexOf("if (panelId == HarmonicaPanelId.PowerSweep)", StringComparison.Ordinal);
         Assert.True(m >= 0);
@@ -67,23 +82,76 @@ public sealed class HarmonicaPowerSweepFlyMenuTests
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
-        int title  = body.IndexOf("rects.Title.Contains", StringComparison.Ordinal);
-        int xLabel = body.IndexOf("rects.XLabel.Contains", StringComparison.Ordinal);
-        Assert.True(title >= 0 && xLabel >= 0 && title < xLabel,
-            "the title band must resolve BEFORE the X-label band");
+        int title      = body.IndexOf("rects.Title.Contains", StringComparison.Ordinal);
+        int titleMenu  = body.IndexOf("BuildPowerSweepTitleMenu(items, h)", StringComparison.Ordinal);
+        int xLabel     = body.IndexOf("!h.ShowPowerSweepTimeDomain && rects.XLabel.Contains", StringComparison.Ordinal);
+        int xLabelMenu = body.IndexOf("BuildPowerSweepXUnitMenu(items, h)", StringComparison.Ordinal);
+        Assert.True(title >= 0 && titleMenu >= 0 && xLabel >= 0 && xLabelMenu >= 0);
+        Assert.True(title < titleMenu && titleMenu < xLabel && xLabel < xLabelMenu,
+            "expected order: title hit-test -> BuildPowerSweepTitleMenu, then X-label hit-test -> BuildPowerSweepXUnitMenu");
 
-        // §5 — the X-unit menu is gated on power-sweep mode; it must not appear in time-domain mode.
-        Assert.Contains("!h.ShowPowerSweepTimeDomain && rects.XLabel.Contains", body, StringComparison.Ordinal);
+        // R-hui-3, owner-reported — right-clicking anywhere ELSE in the panel body (the fallback
+        // branch, neither title nor X-label) must show the SAME menu as the title, not a bare Copy.
+        int fallbackMenu = body.LastIndexOf("BuildPowerSweepTitleMenu(items, h)", StringComparison.Ordinal);
+        Assert.True(fallbackMenu > xLabelMenu, "the fallback branch must also call BuildPowerSweepTitleMenu");
+    }
 
-        // §6 — Copy is offered in the fallback (neither title nor X-label), in both modes.
-        Assert.Contains("BuildCopyMenuItem(panelId)", body, StringComparison.Ordinal);
+    [Fact]
+    public void PowerSweepTitleMenu_OffersNoXUnitItems_AndPutsCopyLast()
+    {
+        string src = ViewSource();
+        int m = src.IndexOf("private void BuildPowerSweepTitleMenu(", StringComparison.Ordinal);
+        Assert.True(m >= 0);
+        int mEnd = src.IndexOf("\n    /// <summary>", m + 1, StringComparison.Ordinal);
+        Assert.True(mEnd >= 0);
+        string body = src[m..mEnd];
+
+        // Owner-reported — the title menu must NOT offer the X-unit cycle; that is
+        // BuildPowerSweepXUnitMenu's own, separate menu.
+        Assert.DoesNotContain("PowerSweepXUnit unit in Enum.GetValues", body, StringComparison.Ordinal);
+
+        // R7A §2.3 — Autoscale/Locked now come from the shared AddAutoscaleLockedItems helper call.
+        int autoscaleLocked = body.IndexOf("AddAutoscaleLockedItems(items, autoscaleOn,", StringComparison.Ordinal);
+        int copy = body.LastIndexOf("BuildCopyMenuItem(HarmonicaPanelId.PowerSweep)", StringComparison.Ordinal);
+        Assert.True(autoscaleLocked >= 0 && copy >= 0 && autoscaleLocked < copy, "Copy must be the LAST item");
+
+        int separator = body.LastIndexOf("new Separator()", copy, StringComparison.Ordinal);
+        Assert.True(separator > autoscaleLocked && separator < copy, "Copy must be preceded by a separator");
+    }
+
+    [Fact]
+    public void PowerSweepXUnitMenu_OffersOnlyTheFourUnits_EachCheckmarkedAgainstTheCurrentOne()
+    {
+        string src = ViewSource();
+        int m = src.IndexOf("private void BuildPowerSweepXUnitMenu(", StringComparison.Ordinal);
+        Assert.True(m >= 0);
+        // R7A §2 — the shared icon helpers now follow this method, before "§4 (R2A)"'s own comment,
+        // so the boundary is the R7A §2 section comment rather than that later marker.
+        int mEnd = src.IndexOf("\n    // ── R7A §2", m, StringComparison.Ordinal);
+        Assert.True(mEnd >= 0);
+        string body = src[m..mEnd];
+
+        // Owner-reported — a checkmark beside the option currently used for the X axis. R8B §5 —
+        // dynamic icon (Toggle/MenuGlyph.Radio), never ToggleType.
+        Assert.Contains("h.PowerSweepXUnit == unit", body, StringComparison.Ordinal);
+        Assert.Contains("glyph: MenuGlyph.Radio", body, StringComparison.Ordinal);
+        Assert.Contains("h.SetPowerSweepXUnitCommand.Execute(unit)", body, StringComparison.Ordinal);
+
+        // Nothing else — no Copy, no mode toggle, no Autoscale/Locked/Axis Limits….
+        Assert.DoesNotContain("BuildCopyMenuItem", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header = \"Power Sweep\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header = \"Time Domain\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header = \"Autoscale\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header = \"Locked\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header = \"Axis Limits…\"", body, StringComparison.Ordinal);
     }
 
     // ══ §6 — Copy on every panel ════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void LoadlineDispatch_OffersCopy_AboveDcivSweeps()
+    public void LoadlineDispatch_OffersCopy_LastWithASeparatorAboveIt()
     {
+        // R-hui-1 — Copy moved to the BOTTOM of every plot's fly menu, with a separator above it.
         string src = ViewSource();
         int m = src.IndexOf("else if (panelId == HarmonicaPanelId.Loadline)", StringComparison.Ordinal);
         Assert.True(m >= 0);
@@ -92,8 +160,11 @@ public sealed class HarmonicaPowerSweepFlyMenuTests
         string body = src[m..mEnd];
 
         int copy = body.IndexOf("BuildCopyMenuItem(panelId)", StringComparison.Ordinal);
-        int dciv = body.IndexOf("Header = \"DCIV Sweeps…\"", StringComparison.Ordinal);
-        Assert.True(copy >= 0 && dciv >= 0 && copy < dciv, "Copy must be added ABOVE DCIV Sweeps…");
+        int dciv = body.IndexOf("Item(\"DCIV Sweeps…\"", StringComparison.Ordinal);
+        Assert.True(copy >= 0 && dciv >= 0 && dciv < copy, "Copy must be added BELOW DCIV Sweeps…");
+
+        int separator = body.LastIndexOf("new Separator()", copy, StringComparison.Ordinal);
+        Assert.True(separator > dciv && separator < copy, "Copy must be preceded by a separator");
     }
 
     [Fact]

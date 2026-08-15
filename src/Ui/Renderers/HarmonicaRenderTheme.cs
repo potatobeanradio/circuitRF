@@ -100,8 +100,14 @@ public sealed class HarmonicaRenderTheme
     /// both persist as nullable overrides in <c>CharmAppearance</c>, exactly as before; this only
     /// moves the DEFAULT a user who has never touched the colour editor sees.</para>
     /// </summary>
-    public const double DefaultIsoAlphaFloor    = 0.15;
-    public const double DefaultIsoAlphaExponent = 2.0;
+    /// <summary>R8A §1 — lowered from 0.15/2.0 to 0.01/3.00, the owner's own default, pushing the
+    /// fade harder still (see this doc comment's own numbers above for the (0.15, 2.0) reasoning,
+    /// which the new numbers extend rather than replace). Both are the single source
+    /// (<see cref="HarmonicaColorEditor"/>'s two properties fall back to them, <see cref="FromTheme"/>
+    /// clamps against them, and a <c>.charm</c>'s own null means "take the built-in") — a document
+    /// that never touched the sliders picks these up on load; one that did keeps its own.</summary>
+    public const double DefaultIsoAlphaFloor    = 0.01;
+    public const double DefaultIsoAlphaExponent = 3.00;
 
     // ── Projection factory (L2) ───────────────────────────────────────────────
 

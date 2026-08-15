@@ -1101,6 +1101,18 @@ public static class ComponentModelFactory
     // Noise entries (In, Nc) — silently skip.
     private static readonly Regex RxNoise = new(@"^(In|Nc)\[", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>
+    /// R7B §3.2/§3.5 — true when <paramref name="name"/> is one of the SDD equation-parameter shapes
+    /// this factory parses (<c>I[p,w]</c>, <c>I[p]</c>, <c>Q[p]</c>, <c>H[w]</c>, <c>C[n]</c>,
+    /// <c>Cport[n]</c>, <c>In[…]</c>, <c>Nc[…]</c>) rather than a plain scope-variable name. The
+    /// harmonicaRF SDD text editor and netlist builder key off this SAME set instead of re-spelling
+    /// it, so a new equation shape only ever needs adding here.
+    /// </summary>
+    public static bool IsSddEquationName(string name) =>
+        RxCurrentEq.IsMatch(name) || RxCurrentEq1.IsMatch(name) || RxChargeEq1.IsMatch(name) ||
+        RxWeightFn.IsMatch(name) || RxControlRef.IsMatch(name) || RxControlPort.IsMatch(name) ||
+        RxNoise.IsMatch(name);
+
     private static SddModel CreateSddModel(IReadOnlyDictionary<string, Value> parameters,
         IReadOnlyList<UserFunction>? functions = null)
     {

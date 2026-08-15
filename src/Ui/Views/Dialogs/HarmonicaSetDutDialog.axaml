@@ -20,13 +20,11 @@
 
   <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="12" RowSpacing="8">
 
-    <!-- ── kind ──────────────────────────────────────────────────────────── -->
+    <!-- ── kind (R7B §2 — a combobox; §1 — Diode is offered only as a legacy item on a document
+         that already carries one) ─────────────────────────────────────────────────────────────── -->
     <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="14">
       <TextBlock Text="Device" VerticalAlignment="Center" Opacity="0.7" Width="70"/>
-      <RadioButton x:Name="KindSdd"      GroupName="Kind" Content="SDD equations" IsCheckedChanged="OnKindChanged"/>
-      <RadioButton x:Name="KindFet"      GroupName="Kind" Content="Native FET"    IsCheckedChanged="OnKindChanged"/>
-      <RadioButton x:Name="KindDiode"    GroupName="Kind" Content="Diode"         IsCheckedChanged="OnKindChanged"/>
-      <RadioButton x:Name="KindExternal" GroupName="Kind" Content="External model" IsCheckedChanged="OnKindChanged"/>
+      <ComboBox x:Name="KindCombo" MinWidth="200" SelectionChanged="OnKindChanged"/>
     </StackPanel>
 
     <!-- ── kind-specific chooser ─────────────────────────────────────────── -->
@@ -81,16 +79,34 @@
       </StackPanel>
     </Grid>
 
-    <!-- ── parameters, READ from the model (R-h8-2) ──────────────────────── -->
+    <!-- ── parameters, READ from the model (R-h8-2); an SDD gets its own text editor (R7B §3.9) ── -->
     <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="4">
       <TextBlock Grid.Row="0" x:Name="ParamHeader" Opacity="0.7"
                  Text="Parameters, as the model itself declares them"/>
-      <Border Grid.Row="1" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
-              CornerRadius="4" Padding="6">
+
+      <Border Grid.Row="1" x:Name="ParamBorder" BorderBrush="{DynamicResource CrfTileBorderBrush}"
+              BorderThickness="1" CornerRadius="4" Padding="6">
         <ScrollViewer>
           <StackPanel x:Name="ParamHost" Spacing="4"/>
         </ScrollViewer>
       </Border>
+
+      <!-- R7B §3.2/§3.9 — one editor for variables and equations together; the partition is shown,
+           not structural (the status line below), and every check in §3.6 is reported per line. -->
+      <Grid Grid.Row="1" x:Name="SddEditorPanel" RowDefinitions="Auto,*,Auto" RowSpacing="4"
+            IsVisible="False">
+        <TextBlock Grid.Row="0" x:Name="SddStatusLabel" Opacity="0.65" FontSize="11" TextWrapping="Wrap"/>
+        <Border Grid.Row="1" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                CornerRadius="4">
+          <TextBox x:Name="SddTextBox" AcceptsReturn="True" AcceptsTab="False"
+                   FontFamily="Cascadia Code,Consolas,Menlo,monospace" FontSize="11" Padding="6"
+                   VerticalContentAlignment="Top" BorderThickness="0" Background="Transparent"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   TextChanged="OnSddTextChanged"/>
+        </Border>
+        <TextBlock Grid.Row="2" x:Name="SddErrorsLabel" Opacity="0.9" FontSize="10" TextWrapping="Wrap"
+                   Foreground="{DynamicResource CrfWarningBrush}"/>
+      </Grid>
     </Grid>
 
     <!-- ── §4.5.5 — the intrinsic mapping, ASKED FOR ─────────────────────── -->

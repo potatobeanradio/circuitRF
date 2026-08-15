@@ -257,21 +257,29 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
     [Theory]
     [InlineData(TerminationSideKind.Source)]
     [InlineData(TerminationSideKind.Load)]
-    public void Band1_RefusesRemoval_OnBothSides(TerminationSideKind side)
+    public void Band1_IsRemovableOnBothSides_R8BSuperseded(TerminationSideKind side)
     {
+        // R8B §3.3 supersedes the old "band 1 always refuses" rule: it is removable on both sides
+        // now, and the termination stays in place (RemoveMarkerBand's own remark) — see
+        // HarmonicaDefaultMarkerSetTests for that half's own coverage.
         var vm = new HarmonicaViewModel();
+        if (side == TerminationSideKind.Source) vm.AddMarkerBand(TerminationSideKind.Source, 1);
         var menus = new HarmonicaMenuViewModel(vm);
 
         var bands = side == TerminationSideKind.Source ? menus.SourceBands : menus.LoadBands;
         var band1 = bands.Single(b => b.Band == 1);
 
-        Assert.False(band1.CanRemove, "the fundamental's menu entry must be disabled");
+        Assert.True(band1.CanRemove, "band 1 is removable on both sides since R8B §3.3");
+        var terminationBefore = vm.Terminations.Z(
+            side == TerminationSideKind.Source ? TerminationSide.Source : TerminationSide.Load, 1);
 
-        band1.IsPresent = false;                       // a determined caller, or a keyboard route
+        band1.IsPresent = false;
 
-        Assert.Contains(vm.Markers, m => m.Side == side && m.Band == 1);
-        Assert.True(band1.IsPresent, "the checkmark must be put back rather than left disagreeing " +
-                                     "with the model");
+        Assert.DoesNotContain(vm.Markers, m => m.Side == side && m.Band == 1);
+        Assert.False(band1.IsPresent);
+        // The circuit did not move — only the marker/view went away.
+        Assert.Equal(terminationBefore, vm.Terminations.Z(
+            side == TerminationSideKind.Source ? TerminationSide.Source : TerminationSide.Load, 1));
     }
 
     [Fact]
@@ -280,13 +288,15 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
         var vm = new HarmonicaViewModel();
         var menus = new HarmonicaMenuViewModel(vm);
 
-        // R-h9b-14's defaults are already S1, S2, L1, L2, L3 (5); Source band 3 is the one still
-        // unmarked, so adding it brings the count to 6.
+        // R8B §3's fresh-document default is L1/L2/L3 (3); adding S1 and S3 brings the count to 5.
+        menus.SourceBands.Single(b => b.Band == 1).IsPresent = true;
         menus.SourceBands.Single(b => b.Band == 3).IsPresent = true;
-        Assert.Equal(6, vm.Markers.Count);
+        Assert.Equal(5, vm.Markers.Count);
 
         menus.ResetMarkersCommand.Execute(null);
 
+        // ResetMarkers rebuilds from a FRESH TerminationSet (S1/L1 always marked at construction —
+        // TerminationSet's own ctor), independent of R8B §3's constructor-only default-marker change.
         Assert.Equal(2, vm.Markers.Count);
         Assert.All(vm.Markers, m => Assert.Equal(1, m.Band));
         Assert.False(vm.Terminations.IsMarked(TerminationSide.Load, 2));

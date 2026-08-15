@@ -50,10 +50,34 @@ public partial class ReadoutStripView : UserControl
         // nearest ancestor with a ContextMenu set, so a complex row's own menu is never shadowed by
         // this one. Everything else in a chunk (its header row, a plain scalar row, or the chunk's own
         // whitespace) falls through to this menu instead.
+        // R-hui-4, owner-reported — "the readout text does not appear horizontally aligned... I want
+        // the values to be as close to the metric text as possible and I want the units to be as
+        // close to the values as possible... while aligning horizontally with the render above and
+        // below." Every row inside ONE chunk is built as a small Label|Value Grid
+        // (BuildColumnRowShell/BuildSettingsColumnRow/BuildGeneralRow), so the value sits as close to
+        // the label as the chunk's widest label allows (never a generous fixed reserved budget, which
+        // is what put daylight between the label and a short value), while still keeping every row's
+        // label/value flush with the row above and below it. Scoped PER CHUNK, not globally, so the
+        // Settings column's wide labels ("HB Order:") cannot push the MXP column's value out.
+        //
+        // R7C §1.5 — column alignment is NO LONGER `Grid.IsSharedSizeScope` + `SharedSizeGroup`. An
+        // isolated repro (two rows of different label length inside a StackPanel with
+        // IsSharedSizeScope=true) measured their value cells at two different X positions — confirmed
+        // NOT working when the scope host is a StackPanel in this Avalonia build (see
+        // src/Ui/RESOLVED.md). Each chunk's label column is instead pinned to a MEASURED width
+        // (ChunkLabelWidth for BuildColumnRowShell/BuildSettingsColumnRow's chunks; SetItems itself
+        // for BuildGeneralRow's), the same discipline ReservedValueWidth already uses for the value
+        // column — so there is nothing left here to mark as a shared-size scope.
+        //
+        // R7C §1.1 — the UNIT is no longer a third column at all: it rides IN the label cell's own
+        // text ("Pout (dBm):"), composed from the row's own Unit field rather than recovered by
+        // parsing the rendered value — see LabelWithUnit and HarmonicaReadout.Unit's own remarks.
         foreach (var host in new[]
-                 { SettingsColumn, OperatingPointColumn, SourceColumn, LoadColumn,
+                 { SettingsColumn, OperatingPointColumn, TerminationsColumn,
                    MxpColumn, MxeColumn, IntrinsicVdsColumn, IntrinsicIdsColumn })
+        {
             AttachChunkCopyMenu(host);
+        }
     }
 
     /// <summary>Builds ONE chunk's Copy flyout — populated lazily on <see cref="ContextMenu.Opening"/>,
@@ -81,15 +105,15 @@ public partial class ReadoutStripView : UserControl
     private async System.Threading.Tasks.Task CopyChunkAsync(StackPanel host)
     {
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clip) return;
-        var rows = host.Children.OfType<StackPanel>().Select(RowText);
+        var rows = host.Children.OfType<Grid>().Select(RowText);
         await clip.SetTextAsync(HarmonicaClipboard.RowsText(rows));
     }
 
     /// <summary>One row's (label, value) pair AS RENDERED — the label is the row's first child; the
-    /// value is every TextBlock/SelectableTextBlock/CheckBox after it, joined with a space (a Settings
-    /// row's own unit is a separate third child, e.g. "3.5" + "V" reads as "3.5 V", matching what the
-    /// row visually shows).</summary>
-    private static (string Label, string Value) RowText(StackPanel row)
+    /// value is every TextBlock/SelectableTextBlock/CheckBox after it, joined with a space (a
+    /// separate Unit cell reads as its own space-joined token, e.g. "3.5" + "V" reads as "3.5 V",
+    /// matching what the row visually shows).</summary>
+    private static (string Label, string Value) RowText(Grid row)
     {
         string label = row.Children.Count > 0 && row.Children[0] is TextBlock l ? l.Text ?? "" : "";
 
@@ -245,7 +269,7 @@ public partial class ReadoutStripView : UserControl
             switch (item.Column)
             {
                 case ReadoutColumn.General:
-                    Items.Children.Add(BuildGeneralRow(item.Label, item.Value, item.Tooltip, foreground, fontSize));
+                    Items.Children.Add(BuildGeneralRow(item.Label, item.Unit, item.Value, item.Tooltip, foreground, fontSize));
                     break;
                 case ReadoutColumn.OperatingPoint: operating.Add(item); break;
                 case ReadoutColumn.Source:         source.Add(item);    break;
@@ -257,11 +281,30 @@ public partial class ReadoutStripView : UserControl
             }
         }
 
+        // R7C §1.5 — same fallback as ChunkLabelWidth/UpdateSettingsColumn: SharedSizeGroup does not
+        // align a StackPanel/WrapPanel-hosted Grid's columns in this Avalonia build, so General's
+        // label column is pinned to a measured width too. Measured in a SECOND pass, after every
+        // General row is already a child of Items — a freshly-constructed, not-yet-attached
+        // TextBlock's FontFamily has not resolved its real (styled/inherited) value yet, so probing
+        // one before attachment would measure the wrong typeface.
+        if (Items.Children.Count > 0)
+        {
+            double generalLabelWidth = 0;
+            foreach (var row in Items.Children.OfType<Grid>())
+                if (row.Children.Count > 0 && row.Children[0] is TextBlock lbl)
+                    generalLabelWidth = Math.Max(generalLabelWidth, ReservedValueWidth(lbl, fontSize, lbl.Text ?? ""));
+            foreach (var row in Items.Children.OfType<Grid>())
+                if (row.Children.Count > 0 && row.Children[0] is TextBlock lbl)
+                    lbl.Width = generalLabelWidth;
+        }
+
         UpdateReadoutColumn(OperatingPointColumn, ReadoutColumn.OperatingPoint, operating,
                             foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
-        UpdateReadoutColumn(SourceColumn, ReadoutColumn.Source, source,
-                            foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
-        UpdateReadoutColumn(LoadColumn, ReadoutColumn.Load, load,
+        // R-hui-1 — Source and Load are merged into ONE chunk (Terminations, at grid (2,2)); Source
+        // rows first, then Load, matching HarmonicaSolver.BuildReadouts' own production order. Each
+        // item still carries its own ReadoutColumn.Source/.Load (FormatKey, Side/Band for the editor
+        // callbacks) — only the RENDERED HOST is shared, not the data model.
+        UpdateReadoutColumn(TerminationsColumn, ReadoutColumn.Source, [.. source, .. load],
                             foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
         UpdateReadoutColumn(MxpColumn, ReadoutColumn.Mxp, mxp,
                             foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
@@ -280,36 +323,46 @@ public partial class ReadoutStripView : UserControl
         LastSetItemsMs = sw.Elapsed.TotalMilliseconds;
     }
 
-    /// <summary>One General-column row — §7.5's original flat pair, unchanged shape.</summary>
-    private static Control BuildGeneralRow(string label, string value, string tooltip,
+    /// <summary>One General-column row — a 2-column (Label, Value) Grid. Its label column is pinned
+    /// to a measured per-column width by <c>SetItems</c>'s own second pass (R7C §1.5 — not a
+    /// <c>SharedSizeGroup</c>, which does not align columns hosted in a Panel like <c>Items</c> in
+    /// this Avalonia build), so the value sits immediately after the label — never a fixed reserved
+    /// gap — while still lining up with the row above/below it. R7C §1.1 — the unit (when the row has
+    /// one) rides IN the label, "Label (Unit):", never in a third column; the same convention
+    /// <c>BuildColumnRowShell</c>/<c>BuildSettingsColumnRow</c> use.</summary>
+    private static Control BuildGeneralRow(string label, string unit, string value, string tooltip,
                                            IBrush foreground, double fontSize)
     {
-        var pair = new StackPanel
+        var pair = new Grid
         {
-            Orientation = Orientation.Horizontal,
-            Spacing     = 3,
-            Margin      = new Thickness(0, 0, 12, 2),
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto"),
+            ColumnSpacing     = 4,
+            Margin            = new Thickness(0, 0, 12, 2),
         };
 
-        pair.Children.Add(new TextBlock
+        var labelBlock = new TextBlock
         {
-            Text              = label,
+            Text              = LabelWithUnit(label, unit),
             FontSize          = fontSize,
             Opacity           = 0.65,
             Foreground        = foreground,
             VerticalAlignment = VerticalAlignment.Center,
-        });
+        };
+        Grid.SetColumn(labelBlock, 0);
+        pair.Children.Add(labelBlock);
 
         // SelectableTextBlock, never TextBlock — §7.5: "All text is selectable so any readout can
         // be copied." A readout you cannot copy is one you retype by hand into a report.
-        pair.Children.Add(new SelectableTextBlock
+        var valueBlock = new SelectableTextBlock
         {
             Text              = value,
             FontSize          = fontSize,
             FontWeight        = FontWeight.SemiBold,
             Foreground        = foreground,
             VerticalAlignment = VerticalAlignment.Center,
-        });
+        };
+        Grid.SetColumn(valueBlock, 1);
+        pair.Children.Add(valueBlock);
 
         // Every element carries a tooltip — §7.5's own concession to newcomers, and the reason
         // the strip can afford to have no section titles.
@@ -374,10 +427,73 @@ public partial class ReadoutStripView : UserControl
             foreach (var item in items) host.Children.Add(BuildColumnRowShell(item, hasCommit));
         }
 
+        // R7C §1.5 — Grid.IsSharedSizeScope set on a StackPanel host does NOT align columns in this
+        // Avalonia build (confirmed empirically — a minimal isolated repro with two rows of different
+        // label length inside a StackPanel with IsSharedSizeScope=true measured value cells at two
+        // different X positions; see src/Ui/RESOLVED.md). So the label column's width is pinned
+        // explicitly per chunk instead, exactly like ReservedValueWidth already pins the value
+        // column: the max, measured against the LIVE typeface, over every non-header row's own label
+        // text — computed ONCE per call, then applied to every row uniformly below.
+        double labelWidth = ChunkLabelWidth(host, items, fontSize);
+
         for (int i = 0; i < host.Children.Count && i < items.Count; i++)
-            if (host.Children[i] is StackPanel row)
-                UpdateColumnRow(row, items[i], foreground, fontSize, formatFor,
+            if (host.Children[i] is Grid row)
+                UpdateColumnRow(row, items[i], foreground, fontSize, labelWidth, formatFor,
                                 onFormatChanged, onCommitEdit, onOpenSetDialog);
+    }
+
+    /// <summary>
+    /// R7C §1.5 — the pinned LABEL column width for one chunk: the widest non-header label text
+    /// <paramref name="items"/> carries, measured against a representative NON-HEADER row's own live
+    /// TYPEFACE (a header renders Bold; measuring with it would overstate a Normal-weight label's
+    /// width) but at THIS CALL's own <paramref name="fontSize"/> — never the probe control's current
+    /// <c>FontSize</c> property, which still holds the PREVIOUS call's value at the point this method
+    /// runs (<see cref="UpdateColumnRow"/> is what writes the new one, and it has not run yet this
+    /// call). Reading the stale property was tried and measurably wrong: on a font-size change (a
+    /// panel resize) it silently measured at the old size for one frame, then jumped once the row's
+    /// own property finally caught up — pinned as <c>ChunkLabelWidth_UsesTheCurrentCallsFontSize</c>.
+    /// <paramref name="host"/>'s children supply the probe control ONLY — <paramref name="items"/> is
+    /// what is actually measured, so this reads the CURRENT frame's labels even before <see
+    /// cref="UpdateColumnRow"/> has written them into the rows below. Recomputed every call — cheap (a
+    /// handful of short strings) and necessary, since it is a genuine function of every row's CURRENT
+    /// label/unit, not a fixed per-row-kind constant the way <see
+    /// cref="ReservedValueWidth(TextBlock,double,HarmonicaReadout)"/> is. Returns 0 when there is no
+    /// non-header row yet to probe a typeface from.
+    /// </summary>
+    private static double ChunkLabelWidth(StackPanel host, IReadOnlyList<HarmonicaReadout> items, double fontSize)
+    {
+        TextBlock? probe = null;
+        for (int i = 0; i < host.Children.Count && i < items.Count; i++)
+        {
+            bool isHeader = items[i].Value.Length == 0 && items[i].Tooltip.Length == 0;
+            if (isHeader) continue;
+            if (host.Children[i] is Grid { Children: [TextBlock tb, ..] }) { probe = tb; break; }
+        }
+        if (probe is null) return 0;
+
+        double max = 0;
+        foreach (var item in items)
+        {
+            if (item.Value.Length == 0 && item.Tooltip.Length == 0) continue;   // header — spans both columns
+            max = Math.Max(max, ReservedValueWidth(probe, fontSize, LabelWithUnit(item.Label, item.Unit)));
+        }
+        return max;
+    }
+
+    /// <summary>
+    /// R7C §1.1 — the ONE place a row's label cell composes its unit, so all three row builders
+    /// (<see cref="BuildGeneralRow"/>, <see cref="BuildColumnRowShell"/>, <see
+    /// cref="BuildSettingsColumnRow"/>) render the identical convention rather than three that can
+    /// drift apart. "Label (Unit):" when the row has a unit, "Label:" when it does not — the owner's
+    /// own words, "Merge the units to be with the metric name." Strips a trailing colon
+    /// <paramref name="label"/> may already carry (two of <c>HarmonicaInputs.Build</c>'s own labels,
+    /// "Freq:"/"HB Order:", bake one in for reasons unrelated to this render-time convention) so this
+    /// is the only place a colon is ever added, never a place one is doubled.
+    /// </summary>
+    private static string LabelWithUnit(string label, string unit)
+    {
+        string bare = label.EndsWith(':') ? label[..^1] : label;
+        return unit.Length > 0 ? $"{bare} ({unit}):" : $"{bare}:";
     }
 
     /// <summary>What determines a row's STRUCTURE rather than its current display value — a header row
@@ -391,39 +507,63 @@ public partial class ReadoutStripView : UserControl
     }
 
     /// <summary>
-    /// Builds one row's SKELETON — label, and (for a non-header row) a value control of whichever type
-    /// its shape calls for, an optional live format menu, and an optional double-click editor — with NO
-    /// content written yet (<see cref="UpdateColumnRow"/> fills it in immediately after, on this same
-    /// call, and on every call after). Never rebuilt while <see cref="RowShapeKey"/> stays the same, so
-    /// every event handler here reads <see cref="ColumnRowState"/> LIVE at invocation time rather than
-    /// closing over this call's own <paramref name="item"/>.
+    /// Builds one row's SKELETON — R7C §1.1's 2-column (Label, Value) <see cref="Grid"/>. Every row's
+    /// label column is pinned to the same measured width per chunk (<see cref="ChunkLabelWidth"/>,
+    /// written in <see cref="UpdateColumnRow"/>) — <b>not</b> a <c>SharedSizeGroup</c>, which R7C §1.5
+    /// found does NOT align columns hosted in a <c>StackPanel</c> in this Avalonia build (confirmed by
+    /// an isolated repro; see <c>src/Ui/RESOLVED.md</c>) — so the value sits as close to the label as
+    /// the chunk's widest label allows and every row lines up with its neighbours above/below.
+    /// <b>The unit is no longer a third column</b> — R-hui-4/R-hui-7's own UNIT column is gone; the
+    /// unit instead rides IN the label cell's own text (<see cref="LabelWithUnit"/>), composed from
+    /// the row's <see cref="HarmonicaReadout.Unit"/> — never recovered by parsing the rendered value,
+    /// which is what let the label column narrow the instant a value rendered "—" (§1.2). An optional
+    /// live format menu and an optional double-click editor are wired here too, with NO content
+    /// written yet (<see cref="UpdateColumnRow"/> fills it in immediately after, on this same call,
+    /// and on every call after). Never rebuilt while <see cref="RowShapeKey"/> stays the same, so
+    /// every event handler here reads <see cref="ColumnRowState"/> LIVE at invocation time rather
+    /// than closing over this call's own <paramref name="item"/>.
     /// </summary>
-    private StackPanel BuildColumnRowShell(HarmonicaReadout item, bool hasCommit)
+    private Grid BuildColumnRowShell(HarmonicaReadout item, bool hasCommit)
     {
         var state = new ColumnRowState { Item = item };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Tag = state };
+        var row = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto"),
+            ColumnSpacing     = 4,
+            Tag               = state,
+        };
 
         bool isHeader = item.Value.Length == 0 && item.Tooltip.Length == 0;
 
-        row.Children.Add(new TextBlock { VerticalAlignment = VerticalAlignment.Center });
-        if (isHeader) return row;
+        // R8C §1.4 — a header is the one row a user could not select/copy, which now matters since
+        // §1 puts a real impedance in it. SelectableTextBlock derives from TextBlock, so every other
+        // match against `is TextBlock` below (UpdateColumnRow, the row-text extraction) still holds —
+        // no second branch needed. The one hazard (R-h9r2-15: SelectableTextBlock eats a double-tap
+        // as select-a-word before DoubleTapped fires) does not apply here — a header has no inline
+        // editor and no DoubleTapped handler, so there is nothing to eat.
+        Control label = isHeader
+            ? new SelectableTextBlock { VerticalAlignment = VerticalAlignment.Center }
+            : new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(label, 0);
+        row.Children.Add(label);
+        if (isHeader)
+        {
+            // A header's own text ("MXP 1f0 Load") is typically far wider than any data row's label
+            // in the same chunk — spanning both columns keeps it from forcing the shared Label column
+            // (and so every data row's value) wider than the data actually needs.
+            Grid.SetColumnSpan(label, 2);
+            return row;
+        }
 
         // R-h9r2-15 — an EDITABLE row is plain TextBlock, never SelectableTextBlock: the latter
         // consumes a double-tap as select-a-word before it ever reaches this row's own DoubleTapped
         // handler below, which is why the inline editor never engaged (owner-reported). Every other
         // row (§7.5's "all text is selectable") keeps SelectableTextBlock.
         bool editable = item.Editable && hasCommit;
-        // Right-aligned: the reserved-width box (ReservedValueChars, §4.2) is sized GENEROUSLY, and a
-        // proportional font's actual rendered width still varies slightly at a fixed CHARACTER count
-        // (a "1" and an "8" are not the same number of pixels wide) — left-aligned text lets that
-        // variation show up as the trailing unit suffix visibly creeping left/right on every drag
-        // frame. Right-aligning pins the LAST character (the unit) to the box's right edge, which is
-        // fixed by Width alone, regardless of how the preceding digits happen to render.
         Control valueBlock = editable
-            ? new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center,
-                              TextAlignment = TextAlignment.Right }
-            : new SelectableTextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center,
-                                        TextAlignment = TextAlignment.Right };
+            ? new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+            : new SelectableTextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(valueBlock, 1);
         row.Children.Add(valueBlock);
 
         if (item.IsComplex) row.ContextMenu = BuildLiveFormatMenu(state);
@@ -441,10 +581,11 @@ public partial class ReadoutStripView : UserControl
         return row;
     }
 
-    /// <summary>Writes one row's CURRENT label/value/tooltip/live foreground+font into an
+    /// <summary>Writes one row's CURRENT label/value/unit/tooltip/live foreground+font into an
     /// already-built row — skipping the value slot entirely while an editor is open on it, the same
     /// guard <see cref="UpdateSettingsColumnRow"/> already uses.</summary>
-    private static void UpdateColumnRow(StackPanel row, HarmonicaReadout item, IBrush foreground, double fontSize,
+    private static void UpdateColumnRow(Grid row, HarmonicaReadout item, IBrush foreground, double fontSize,
+                                        double labelWidth,
                                         Func<string, ReadoutFormat> formatFor,
                                         Action<string, ReadoutFormat>? onFormatChanged,
                                         Func<HarmonicaReadout, string, bool>? onCommitEdit,
@@ -463,38 +604,96 @@ public partial class ReadoutStripView : UserControl
 
         if (row.Children.Count > 0 && row.Children[0] is TextBlock label)
         {
-            label.Text       = item.Label;
+            // R7C §1.1 — the unit rides IN the label ("Pout (dBm):"), from item.Unit — a header row
+            // keeps its own bare text (never composed; a header carries no Unit anyway).
+            label.Text       = isHeader ? item.Label : LabelWithUnit(item.Label, item.Unit);
             label.FontWeight = isHeader ? FontWeight.Bold : FontWeight.Normal;
             label.Opacity    = isHeader ? 1.0 : 0.65;
             label.Foreground = foreground;
             label.FontSize   = fontSize;
+            // R7C §1.5 — SharedSizeGroup does not align a StackPanel-hosted Grid's columns in this
+            // Avalonia build; the label column is pinned to the chunk's own measured width instead.
+            // A header spans both columns (below), so it is never pinned.
+            if (!isHeader) label.Width = labelWidth;
         }
 
         if (isHeader) { ToolTip.SetTip(row, null); return; }
 
-        if (row.Children.Count > 1 && row.Children[1] is Control valueControl)
+        if (row.Children.Count > 1 && row.Children[1] is TextBlock valueControl)
         {
-            // R6C §4.2 — a pure function of the row's KIND (never its current value), so writing it
-            // every call is a no-op on screen and cannot be the thing that moves a column on a
-            // value-only update. Set unconditionally — unlike the TEXT below, this never touches
-            // whatever the user is mid-edit on.
-            valueControl.Width = HarmonicaReadoutFormatting.ReservedValueChars(item) * fontSize * 0.55;
+            // R7C §1.3 — the row's reserved width is now an actual MEASUREMENT of the widest text
+            // this row KIND can ever render (HarmonicaReadoutFormatting.WorstCaseValueTexts), taken
+            // against the LIVE typeface — never a character count times an assumed 0.55
+            // per-character advance, which was wrong by a different amount for every glyph this strip
+            // renders and by a different amount again at every non-integer font size. Set
+            // unconditionally, exactly like R-hui-5's own Width line: a pure function of the row's
+            // KIND, never of its current value, so it cannot be what moves the shared column while a
+            // dragged value's own digit count changes frame to frame.
+            valueControl.Width = ReservedValueWidth(valueControl, fontSize, item);
 
             if (SettingsRowMayBeOverwritten(state.IsEditing))
             {
                 // R-h9r2-25 — rendered from RawValue at the CURRENT format, not from the solve-time
-                // Value, so a right-click format change repaints immediately with no re-solve.
-                string text = DisplayValue(item, formatFor);
-                switch (valueControl)
-                {
-                    // SelectableTextBlock derives from TextBlock in Avalonia, so it must be matched FIRST.
-                    case SelectableTextBlock stb: stb.Text = text; stb.Foreground = foreground; stb.FontSize = fontSize; break;
-                    case TextBlock tb:            tb.Text  = text; tb.Foreground  = foreground; tb.FontSize  = fontSize; break;
-                }
+                // Value, so a right-click format change repaints immediately with no re-solve. R7C
+                // §1.2 — only the VALUE half is kept here; the unit (if any) is already in the label
+                // above, so SplitUnit's own Unit half is discarded — SplitUnit is now "strip the
+                // suffix", never "discover the unit".
+                var (valueText, _) = HarmonicaReadoutFormatting.SplitUnit(DisplayValue(item, formatFor));
+                valueControl.Text       = valueText;
+                valueControl.Foreground = foreground;
+                valueControl.FontSize   = fontSize;
             }
         }
 
         ToolTip.SetTip(row, item.Tooltip.Length > 0 ? item.Tooltip : null);
+    }
+
+    // ── R7C §1.3 — measured reserved widths, replacing the 0.55-per-character guess ─────────────────
+
+    /// <summary>
+    /// Cached pixel width of one worst-case STRING at one (family, size, weight) — measuring ~15 short
+    /// strings once per font-size change is free; measuring per row per frame is not. Keyed on the
+    /// FAMILY NAME rather than the <see cref="FontFamily"/> instance (which does not implement value
+    /// equality) and on <see cref="FontWeight"/> (the value cells are SemiBold, the labels are not,
+    /// and SemiBold digits measure wider).
+    /// </summary>
+    private static readonly Dictionary<(string Family, double Size, FontWeight Weight, string WorstCase), double>
+        ReservedWidthCache = new();
+
+    /// <summary>
+    /// R7C §1.3 — the pixel width of the widest string this row KIND can ever render, measured with
+    /// the typeface and size the row is actually drawn with. <paramref name="control"/> supplies the
+    /// live typeface (its own FontFamily/FontWeight/FontStyle — SemiBold for a value cell) rather than
+    /// assuming a default; <paramref name="item"/>'s row kind decides which worst-case string(s) apply
+    /// (<see cref="HarmonicaReadoutFormatting.WorstCaseValueTexts"/> — a complex row's format can flip
+    /// live, so both its rect and polar worst cases are measured and the wider one wins).
+    /// </summary>
+    private static double ReservedValueWidth(TextBlock control, double fontSize, HarmonicaReadout item)
+    {
+        double max = 0;
+        foreach (var worstCase in HarmonicaReadoutFormatting.WorstCaseValueTexts(item))
+            max = Math.Max(max, ReservedValueWidth(control, fontSize, worstCase));
+        return max;
+    }
+
+    /// <summary>The single-worst-case-string overload — what <see cref="SettingsWorstCaseValueText"/>
+    /// (the Settings column's own row kinds, which never flip format) uses directly.</summary>
+    private static double ReservedValueWidth(TextBlock control, double fontSize, string worstCase)
+    {
+        var typeface = new Typeface(control.FontFamily, control.FontStyle, control.FontWeight);
+        return MeasureWidth(typeface, fontSize, worstCase);
+    }
+
+    private static double MeasureWidth(Typeface typeface, double fontSize, string worstCase)
+    {
+        var key = (typeface.FontFamily.Name, fontSize, typeface.Weight, worstCase);
+        if (ReservedWidthCache.TryGetValue(key, out double cached)) return cached;
+
+        var formatted = new FormattedText(worstCase, System.Globalization.CultureInfo.InvariantCulture,
+                                          FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black);
+        double width = formatted.Width;
+        ReservedWidthCache[key] = width;
+        return width;
     }
 
     /// <summary>
@@ -522,25 +721,14 @@ public partial class ReadoutStripView : UserControl
     }
 
     /// <summary>
-    /// R6C §4.2 — the SAME text as <see cref="DisplayValue"/>, unpadded, for seeding an inline editor.
-    /// §4.2's fixed-width DISPLAY text carries leading spaces so the row's own on-screen width never
-    /// churns; feeding that straight into an editable <c>TextBox</c> would put those spaces ahead of
-    /// the caret, breaking <see cref="ValueSelectionLength"/>'s own "last space is the value/unit
-    /// boundary" rule and everything a user types after. The editor needs no width discipline of its
-    /// own — it floats in <c>EditorOverlay</c> and sizes itself from <see cref="CalcInlineEditWidth"/>.
+    /// R7C §1.5 — the VALUE half only, with any unit suffix <see cref="DisplayValue"/> may still carry
+    /// stripped off (<see cref="HarmonicaReadoutFormatting.SplitUnit"/>): the unit now lives in the
+    /// row's own LABEL cell (§1.1), so an editable termination row's seed no longer carries a trailing
+    /// " Ω" the way it did before this brief — <see cref="BeginInlineEdit"/> now selects the WHOLE
+    /// seeded text (there is no trailing unit token left to carve out of the selection).
     /// </summary>
     private static string EditSeedValue(HarmonicaReadout item, Func<string, ReadoutFormat> formatFor)
-    {
-        if (item.IsComplex && item.RawValue is { } raw && item.FormatKey is { } key)
-        {
-            var format = formatFor(key);
-            if (item.IsGamma) return HarmonicaReadoutFormatting.FormatGamma(raw, format, pad: false);
-            if (HarmonicaReadoutFormatting.IsIntrinsicVoltageOrCurrentKey(key))
-                return HarmonicaReadoutFormatting.FormatComplex(raw, format, pad: false);
-            return HarmonicaReadoutFormatting.FormatZ(raw, format, pad: false);
-        }
-        return item.Value;
-    }
+        => HarmonicaReadoutFormatting.SplitUnit(DisplayValue(item, formatFor)).Value;
 
     /// <summary>
     /// R-h9c-7's right-click flyout: real/imaginary ⇄ magnitude/angle, plus "Set…" on an editable row.
@@ -615,18 +803,19 @@ public partial class ReadoutStripView : UserControl
     /// No row, column, or anything to its right ever moves, and the editor genuinely paints over
     /// everything, per the owner's own words — it is the TOPMOST sibling in the shared <c>Panel</c>.</para>
     ///
-    /// <para><b>R-h9r2-16</b> — the box is seeded with exactly what the row is CURRENTLY showing (its
-    /// <paramref name="currentDisplayValue"/>, R-h9r2-25's own render-time text — never <c>item.
-    /// Value</c> directly, which after a right-click format change would be the STALE solve-time
-    /// string), unit included (<c>HarmonicaReadoutFormatting.FormatZ</c> always appends " Ω" to a
-    /// termination row; a Γ row carries no unit at all — either way "what's in the box is what the
-    /// row showed" holds without a special case here). Only the VALUE is pre-selected, mirroring the
-    /// schematic editor's own rule (<c>InlineEditSelLength = param.Expression.Length</c> when a unit
-    /// is present) — typing a fresh number replaces the number and leaves the unit in place, rather
-    /// than <c>SelectAll</c> eating it. <see cref="HarmonicaReadoutFormatting.TryParse"/> already
-    /// tolerates the trailing unit back (it strips a trailing 'Ω' before parsing), so committing needs
-    /// no second strip-the-unit step here — and it parses in the row's OWN CURRENT format, which
-    /// R-h9r2-25 makes unambiguous (<c>OnReadoutCommitEdit</c> reads it live, same as this seed does).</para>
+    /// <para><b>R-h9r2-16, superseded by R7C §1.5</b> — the box is seeded with exactly what the row is
+    /// CURRENTLY showing (its <paramref name="currentDisplayValue"/>, R-h9r2-25's own render-time
+    /// text — never <c>item.Value</c> directly, which after a right-click format change would be the
+    /// STALE solve-time string). <b>The seed no longer carries a unit</b> — R7C §1.1 moved the unit
+    /// into the row's own LABEL cell, so <see cref="EditSeedValue"/> now strips it
+    /// (<c>HarmonicaReadoutFormatting.SplitUnit</c>) before this is ever called, and the box
+    /// <c>SelectAll</c>s: there is no trailing unit token left to carve the selection around, so the
+    /// old value-only-not-unit selection rule (mirroring the schematic editor's own
+    /// <c>InlineEditSelLength</c>) has nothing left to do. <see cref="HarmonicaReadoutFormatting.
+    /// TryParse"/> still tolerates a trailing 'Ω' defensively (a user could still type one), but
+    /// committing needs no strip-the-unit step on the SEED side any more — and it parses in the row's
+    /// OWN CURRENT format, which R-h9r2-25 makes unambiguous (<c>OnReadoutCommitEdit</c> reads it
+    /// live, same as this seed does).</para>
     ///
     /// <para><b>R3C §1 — generalised to a bare <c>Func&lt;string, bool&gt;</c> commit callback</b>
     /// (was <c>Func&lt;HarmonicaReadout, string, bool&gt;</c>) so the Settings column's rows
@@ -644,6 +833,13 @@ public partial class ReadoutStripView : UserControl
                                  string currentDisplayValue,
                                  Action<bool>? onEditingChanged = null)
     {
+        // R7C §1.3 — the editor's own typeface, read off the row it is floating over (a TextBlock or
+        // SelectableTextBlock in every production call site) rather than assumed, so its measured
+        // width agrees with what the SAME text would measure as in the row itself.
+        var editTypeface = valueControl is TextBlock vcTb
+            ? new Typeface(vcTb.FontFamily, vcTb.FontStyle, vcTb.FontWeight)
+            : new Typeface(FontFamily.Default);
+
         string pristine = currentDisplayValue;
         var box = new TextBox
         {
@@ -651,15 +847,16 @@ public partial class ReadoutStripView : UserControl
             FontSize          = fontSize,
             Padding           = new Thickness(2, 0),
             MinHeight         = 0,
-            Width             = CalcInlineEditWidth(pristine, fontSize),
+            Width             = CalcInlineEditWidth(pristine, fontSize, editTypeface),
             Foreground        = foreground,
             VerticalAlignment = VerticalAlignment.Center,
         };
         // Owner-reported — a flat MinWidth (70, sized for the longest Z/Γ row) made a short row like
-        // "-1.5" look oversized. Width now tracks the text itself, same formula and shape as the
-        // schematic editor's own CalcInlineEditWidth: grows/shrinks live as the user types, since the
-        // box's LEFT edge is pinned by Canvas.Left below and only its Width changes on TextChanged.
-        box.TextChanged += (_, _) => box.Width = CalcInlineEditWidth(box.Text ?? "", fontSize);
+        // "-1.5" look oversized. Width now tracks the text itself — MEASURED against the live
+        // typeface (R7C §1.3), never a character count times an assumed per-character advance — and
+        // grows/shrinks live as the user types, since the box's LEFT edge is pinned by Canvas.Left
+        // below and only its Width changes on TextChanged.
+        box.TextChanged += (_, _) => box.Width = CalcInlineEditWidth(box.Text ?? "", fontSize, editTypeface);
 
         var origin = valueControl.TranslatePoint(new Point(0, 0), EditorOverlay) ?? default;
         Canvas.SetLeft(box, origin.X);
@@ -690,35 +887,30 @@ public partial class ReadoutStripView : UserControl
         };
         box.LostFocus += (_, _) => EndEdit(true);
 
+        // R7C §1.5 — a plain SelectAll now that the seed carries no trailing unit token to carve the
+        // selection around (EditSeedValue already stripped it; see this method's own R-h9r2-16 remark).
         box.Focus();
         box.SelectionStart = 0;
-        box.SelectionEnd   = ValueSelectionLength(pristine);
+        box.SelectionEnd   = pristine.Length;
     }
 
     /// <summary>
     /// How wide an inline editor should be for <paramref name="text"/> at <paramref name="fontSize"/>
-    /// — the SAME formula (and same reasoning) as <c>SchematicView.CalcInlineEditWidth</c>: an average
-    /// per-character width for the IBM Plex Sans proportional font, floored at two characters' worth
-    /// so an empty box (Vgs blank, Idq-driven) is still clickable rather than a sliver.
+    /// — R7C §1.3: an actual MEASUREMENT of <paramref name="text"/> against <paramref
+    /// name="typeface"/>, not an assumed per-character advance (this file's old formula, shared with
+    /// <c>SchematicView.CalcInlineEditWidth</c>, is wrong by a different amount for every non-ASCII
+    /// glyph this strip renders — see <c>HarmonicaReadoutFormatting</c>'s own §1.3 remark). The floor
+    /// at two characters' worth of the typeface's own average advance keeps an empty box (Vgs blank,
+    /// Idq-driven) clickable rather than a sliver; this one copy no longer shares a literal formula
+    /// with the schematic editor's, which measures nothing and is out of this brief's scope.
     /// </summary>
-    private static double CalcInlineEditWidth(string text, double fontSize)
+    private static double CalcInlineEditWidth(string text, double fontSize, Typeface typeface)
     {
-        double charWidth = fontSize * 0.55;
-        return Math.Max(fontSize * 2.0, text.Length * charWidth + fontSize * 0.8);
-    }
-
-    /// <summary>
-    /// R-h9r2-16 — how much of a seeded editor's text is the VALUE, as opposed to a trailing unit
-    /// token. Every editable row's <c>Value</c> carries at most one unit suffix, always a single space
-    /// then the unit itself (<c>HarmonicaReadoutFormatting.FormatZ</c>'s " Ω" is the only one an
-    /// editable row can show today) — neither real/imaginary nor magnitude/angle complex formatting
-    /// ever puts a space anywhere else, so the LAST space is unambiguously the value/unit boundary. A
-    /// Γ row (no unit) has no space at all, and the whole string is the value.
-    /// </summary>
-    private static int ValueSelectionLength(string text)
-    {
-        int space = text.LastIndexOf(' ');
-        return space > 0 ? space : text.Length;
+        string measured = text.Length > 0 ? text : "0";
+        var formatted = new FormattedText(measured, System.Globalization.CultureInfo.InvariantCulture,
+                                          FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black);
+        double textWidth = text.Length > 0 ? formatted.Width : 0;
+        return Math.Max(fontSize * 2.0, textWidth + fontSize * 0.8);
     }
 
     /// <summary>Projects the theme's own readout role to a brush. §7.9.2: Harmonica.ReadoutText
@@ -758,15 +950,17 @@ public partial class ReadoutStripView : UserControl
     public double LastSetInputsMs { get; private set; }
 
     public void SetInputs(IReadOnlyList<CircuitRF.Ui.Harmonica.HarmonicaInput> inputs,
-                          IBrush foreground, Func<string, string, bool> apply, double fontSize = 10)
+                          IBrush foreground, Func<string, string, bool> apply, double fontSize = 10,
+                          CapacitanceRowActions? capacitanceActions = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        try { SetInputsCore(inputs, foreground, apply, fontSize); }
+        try { SetInputsCore(inputs, foreground, apply, fontSize, capacitanceActions); }
         finally { sw.Stop(); LastSetInputsMs = sw.Elapsed.TotalMilliseconds; }
     }
 
     private void SetInputsCore(IReadOnlyList<CircuitRF.Ui.Harmonica.HarmonicaInput> inputs,
-                               IBrush foreground, Func<string, string, bool> apply, double fontSize)
+                               IBrush foreground, Func<string, string, bool> apply, double fontSize,
+                               CapacitanceRowActions? capacitanceActions)
     {
         // R3C §1 — the seven named inputs move to SettingsColumn (double-click text, R-h9c-8's own
         // editor, reused via BeginInlineEdit); everything else stays exactly what it was, in the
@@ -781,7 +975,7 @@ public partial class ReadoutStripView : UserControl
             else if (Array.IndexOf(HiddenFromStripKeys, i.Key) >= 0) { /* owner: moved to the Settings dialog */ }
             else rest.Add(i);
         }
-        UpdateSettingsColumn(named, foreground, fontSize, apply);
+        UpdateSettingsColumn(named, foreground, fontSize, apply, capacitanceActions);
 
         // The strip is refreshed on EVERY published frame, and harmonicaRF publishes constantly. A
         // rebuild would destroy the TextBox the user is typing in — the caret vanishing mid-number is
@@ -910,7 +1104,16 @@ public partial class ReadoutStripView : UserControl
 
     /// <summary>The seven inputs R3C §1 moves into their own column, IN THE OWNER'S OWN ORDER — the
     /// same order the brief lists them and <see cref="CircuitRF.Ui.Harmonica.HarmonicaInputs.Build"/>
-    /// already emits them in, so this is a filter over that list rather than a second ordering.</summary>
+    /// already emits them in, so this is a filter over that list rather than a second ordering.
+    ///
+    /// <para><b>R7D §3.1</b> appends a zero-content spacer (<see cref="CapacitanceSpacerKey"/>, never a
+    /// real input key — see <see cref="CapacitanceSpacerKey"/>'s own remark) then Cgs/Cdg/Cds. Those
+    /// four are only ever PRESENT in a call's own <c>named</c> dictionary for an SDD DUT (the same rule
+    /// <see cref="CircuitRF.Ui.Harmonica.HarmonicaInputs.Build"/> follows), which is what
+    /// <see cref="EffectiveSettingsColumnKeys"/> filters on — this array itself stays the fixed
+    /// superset used for row CLASSIFICATION (which keys belong in this column at all, in
+    /// <see cref="SetInputsCore"/>) regardless of which document is open.</para>
+    /// </summary>
     private static readonly string[] SettingsColumnKeys =
     [
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVgs,
@@ -920,7 +1123,34 @@ public partial class ReadoutStripView : UserControl
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyHarmonicCount,
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCompression,
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyZ0,
+        CapacitanceSpacerKey,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCgs,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCdg,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCds,
     ];
+
+    /// <summary>R7D §3.1 — a sentinel, never a real <c>HarmonicaInput.Key</c>, so it is harmless
+    /// inside <see cref="SettingsColumnKeys"/>'s own membership test in <see cref="SetInputsCore"/>
+    /// (it can never match a real input) while still marking where the divider row goes.</summary>
+    private const string CapacitanceSpacerKey = "__r7d.cap-spacer__";
+
+    /// <summary>How many of <see cref="SettingsColumnKeys"/>' entries are the seven ALWAYS-present
+    /// ones — everything from <see cref="CapacitanceSpacerKey"/> on is SDD-only.</summary>
+    private static readonly int BaseSettingsColumnCount =
+        Array.IndexOf(SettingsColumnKeys, CapacitanceSpacerKey);
+
+    /// <summary>
+    /// R7D §3.1 — the row set THIS document actually shows: the base seven, plus the spacer and
+    /// Cgs/Cdg/Cds when (and only when) <paramref name="named"/> carries them — i.e. an SDD DUT. A
+    /// non-SDD document, or a DUT change TO one, is exactly the shape change §1 says "happens on a DUT
+    /// change, never per frame" — <see cref="UpdateSettingsColumn"/>'s own rebuild-on-count-mismatch
+    /// check is what picks it up.
+    /// </summary>
+    private static string[] EffectiveSettingsColumnKeys(
+        IReadOnlyDictionary<string, CircuitRF.Ui.Harmonica.HarmonicaInput> named)
+        => named.ContainsKey(CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCgs)
+            ? SettingsColumnKeys
+            : SettingsColumnKeys[..BaseSettingsColumnCount];
 
     /// <summary>
     /// Owner request — "Remove the loadline pts, FFTx, charge and M display settings (and the
@@ -963,7 +1193,36 @@ public partial class ReadoutStripView : UserControl
         /// on the row's own state, refreshed every <see cref="UpdateSettingsColumnRow"/> call, so the
         /// DoubleTapped handler below reads it LIVE rather than closing over a build-time value.</summary>
         public string EditSeedText = "";
+
+        /// <summary>R7D §3.4 — mirrors <c>HarmonicaInput.Locked</c>, refreshed every
+        /// <see cref="UpdateSettingsColumnRow"/> call so the DoubleTapped guard below reads it live
+        /// rather than closing over a build-time value (true for a NONLINEAR Cgs/Cdg/Cds row).</summary>
+        public bool Locked;
+
+        /// <summary>R7D §3.4 — the capacitance-row menu's own callbacks, refreshed every
+        /// <see cref="UpdateSettingsColumnRow"/> call. Null for every non-capacitance row.</summary>
+        public CapacitanceRowActions? CapActions;
     }
+
+    /// <summary>
+    /// R7D §3.4 — the three capacitance rows' own right-click menu and inline-edit guard, bound by
+    /// KEY (<c>HarmonicaInputs.KeyCgs</c>/<c>KeyCdg</c>/<c>KeyCds</c>) rather than folded into
+    /// <see cref="CircuitRF.Ui.Harmonica.HarmonicaInput"/> itself, which stays plain, UI-framework-free
+    /// data — the dialog these open needs a owning <c>Window</c> and the schematic layer, neither of
+    /// which that class may know about.
+    /// </summary>
+    /// <param name="IsNonlinear">Whether the named capacitor (by <c>HarmonicaInput.Key</c>) is
+    /// currently nonlinear — decides the menu's own wording ("Use Nonlinear…" vs "Edit Nonlinear
+    /// C(V)…") and whether "Use Linear" is offered at all.</param>
+    /// <param name="OpenEditor">Opens <c>HarmonicaNonlinearCEditor</c> seeded from the capacitor's
+    /// current coefficients (linear: just C0; nonlinear: its own C0…Cn) and writes the result back —
+    /// the SAME operation for both menu wordings above, which is why there is only one callback.</param>
+    /// <param name="UseLinear">Drops a nonlinear capacitor's coefficients back to its own C0 as the
+    /// linear value.</param>
+    public sealed record CapacitanceRowActions(
+        Func<string, bool> IsNonlinear,
+        Action<string> OpenEditor,
+        Action<string> UseLinear);
 
     /// <summary>
     /// R3C §1.2 trap 1 — "SetItems clears and rebuilds all four columns on every call, so a refresh
@@ -987,107 +1246,212 @@ public partial class ReadoutStripView : UserControl
     /// step wires a closure (the DoubleTapped handler) the update step must not repeat.</summary>
     private void UpdateSettingsColumn(IReadOnlyDictionary<string, CircuitRF.Ui.Harmonica.HarmonicaInput> named,
                                       IBrush foreground, double fontSize,
-                                      Func<string, string, bool> apply)
+                                      Func<string, string, bool> apply,
+                                      CapacitanceRowActions? capacitanceActions)
     {
-        if (SettingsColumn.Children.Count != SettingsColumnKeys.Length)
+        // R7D §3.1 — variable shape now: the base seven, or the base seven plus the spacer and
+        // Cgs/Cdg/Cds for an SDD DUT. A DUT change is exactly the "shape changed" case this rebuild
+        // check already exists for — no separate signature needed, same as the "rest" WrapPanel below.
+        string[] keys = EffectiveSettingsColumnKeys(named);
+
+        if (SettingsColumn.Children.Count != keys.Length)
         {
             SettingsColumn.Children.Clear();
-            foreach (string key in SettingsColumnKeys)
+            foreach (string key in keys)
+            {
+                if (key == CapacitanceSpacerKey) { SettingsColumn.Children.Add(BuildCapacitanceSpacer()); continue; }
                 if (named.TryGetValue(key, out var input))
                     SettingsColumn.Children.Add(BuildSettingsColumnRow(input, apply));
+            }
         }
 
-        for (int i = 0; i < SettingsColumn.Children.Count && i < SettingsColumnKeys.Length; i++)
-            if (SettingsColumn.Children[i] is StackPanel row &&
-                named.TryGetValue(SettingsColumnKeys[i], out var input))
-                UpdateSettingsColumnRow(row, input, foreground, fontSize);
+        // R7C §1.5 — same fallback as ChunkLabelWidth: SharedSizeGroup does not align a StackPanel-
+        // hosted Grid's columns in this Avalonia build, so the label column is pinned to a measured
+        // width instead. Every Settings row is non-header, so the whole set is measured — no
+        // isHeader exclusion needed here, unlike ChunkLabelWidth's readout chunks. Measured at THIS
+        // call's own fontSize parameter, never probe.FontSize — see ChunkLabelWidth's own remark on
+        // why that property is stale at this point in the call. The spacer is skipped — it carries no
+        // TextBlock to probe or measure.
+        double labelWidth = 0;
+        Grid? probeRow = null;
+        foreach (var child in SettingsColumn.Children)
+            if (child is Grid { Children: [TextBlock, ..] } g) { probeRow = g; break; }
+
+        if (probeRow is { Children: [TextBlock probe, ..] })
+        {
+            double fs = fontSize;
+            foreach (string key in keys)
+                if (key != CapacitanceSpacerKey && named.TryGetValue(key, out var probeInput))
+                    labelWidth = Math.Max(labelWidth, ReservedValueWidth(probe, fs, LabelWithUnit(probeInput.Label, probeInput.Unit)));
+        }
+
+        for (int i = 0; i < SettingsColumn.Children.Count && i < keys.Length; i++)
+        {
+            if (keys[i] == CapacitanceSpacerKey) continue;
+            if (SettingsColumn.Children[i] is Grid row && named.TryGetValue(keys[i], out var input))
+                UpdateSettingsColumnRow(row, input, foreground, fontSize, labelWidth, capacitanceActions);
+        }
     }
 
-    /// <summary>Builds one Settings row's skeleton — label, value, optional unit — with NO content yet
-    /// (<see cref="UpdateSettingsColumnRow"/> fills it in immediately after, on this same call, and on
-    /// every call after). The DoubleTapped handler is wired here, once, and reads <c>state</c>/<c>value
-    /// .Text</c> LIVE at click time rather than closing over this call's own <paramref name="input"/> —
-    /// this row is never rebuilt, so a closure over the build-time input would go stale the moment the
-    /// value changes.</summary>
-    private StackPanel BuildSettingsColumnRow(CircuitRF.Ui.Harmonica.HarmonicaInput input,
-                                                      Func<string, string, bool> apply)
+    /// <summary>R7D §3.1 — the zero-content divider between Z0 and the capacitance rows: says "these
+    /// are separate settings" without a section header, which this strip does not use anywhere. NOT a
+    /// <see cref="Grid"/> — every per-row loop above pattern-matches on <c>Grid</c>, so a non-Grid
+    /// control here is automatically skipped by measurement and update alike, exactly what a spacer
+    /// needs (it must not participate in the label width measurement).</summary>
+    private static Control BuildCapacitanceSpacer() => new Border { Height = 6 };
+
+    /// <summary>Builds one Settings row's skeleton — R7C §1.1's 2-column (Label, Value) Grid, its
+    /// label column pinned to a measured per-chunk width (<see cref="UpdateSettingsColumn"/>'s own
+    /// <c>labelWidth</c>, written in <see cref="UpdateSettingsColumnRow"/>) rather than a
+    /// <c>SharedSizeGroup</c> — R7C §1.5 found that does NOT align columns hosted in a
+    /// <c>StackPanel</c> in this Avalonia build — so the value sits close to the label, lining up
+    /// with the row above/below, with NO content written yet (<see cref="UpdateSettingsColumnRow"/>
+    /// fills it in immediately after, on this same call, and on every call after). The unit is no
+    /// longer a third column (R-hui-7's own UNIT column is gone); it rides in the label cell's own
+    /// text instead (<see cref="LabelWithUnit"/>). The DoubleTapped handler is wired here, once, and
+    /// reads <c>state</c>/<c>value.Text</c> LIVE at click time rather than closing over this call's
+    /// own <paramref name="input"/> — this row is never rebuilt, so a closure over the build-time
+    /// input would go stale the moment the value changes.</summary>
+    private Grid BuildSettingsColumnRow(CircuitRF.Ui.Harmonica.HarmonicaInput input,
+                                        Func<string, string, bool> apply)
     {
         var state = new SettingsRowState { Key = input.Key };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Tag = state };
+        var row = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto"),
+            ColumnSpacing     = 4,
+            Tag               = state,
+        };
 
         var label = new TextBlock { Opacity = 0.65, VerticalAlignment = VerticalAlignment.Center };
-        // Right-aligned for the same reason BuildColumnRowShell's value control is: SettingsValueWidth
-        // is a GENEROUS per-key budget (its own doc comment says so), so a left-aligned value leaves a
-        // visible gap before the unit that follows it — right-aligning puts the value flush against
-        // the box's right edge, immediately next to the unit, with the slack landing on the left where
-        // there is nothing to visually separate it from.
-        var value = new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center,
-                                    TextAlignment = TextAlignment.Right };
+        var value = new TextBlock { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(value, 1);
         row.Children.Add(label);
         row.Children.Add(value);
 
-        if (input.Unit.Length > 0)
-            row.Children.Add(new TextBlock { Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center });
-
         row.DoubleTapped += (_, _) =>
         {
-            if (!SettingsRowMayBeOverwritten(state.IsEditing)) return;   // already open — ignore
+            // R7D §3.4 — a NONLINEAR capacitance row is edited only through its own right-click menu;
+            // the guard is state.Locked (mirrors HarmonicaInput.Locked), read live so a mode switch
+            // takes effect on the very next double-tap without this row being rebuilt.
+            if (!SettingsRowMayBeOverwritten(state.IsEditing) || state.Locked) return;
             string seed = state.IsPlaceholder ? "" : state.EditSeedText;
             BeginInlineEdit(value, state.Foreground, state.FontSize,
                             text => apply(state.Key, text), seed,
                             editing => state.IsEditing = editing);
         };
 
+        if (IsCapacitanceKey(input.Key))
+            row.ContextMenu = BuildCapacitanceRowMenu(state, row);
+
         return row;
     }
 
-    /// <summary>R6C §4.2 — the character budget for one Settings row's value, keyed by WHICH setting
-    /// it is rather than measured from its current text (the whole point: it must not change when
-    /// the text does). Generous rather than exact — the reserved box may show a little blank space,
-    /// which costs nothing; a box too narrow for a legitimate value would.</summary>
-    private static double SettingsValueWidth(string key)
+    private static bool IsCapacitanceKey(string key)
+        => key is CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCgs
+               or CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCdg
+               or CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCds;
+
+    /// <summary>
+    /// R7D §3.4 — a capacitance row's own right-click flyout. A row that carries its own
+    /// <see cref="ContextMenu"/> wins over <see cref="AttachChunkCopyMenu"/>'s chunk-level Copy —
+    /// Avalonia resolves <c>ContextRequested</c> against the nearest ancestor that has one, the same
+    /// mechanism this file's format flyout already documents (constructor remark). Built lazily on
+    /// <see cref="ContextMenu.Opening"/>, the pattern every other menu in this file uses, and reads
+    /// <paramref name="state"/> LIVE so a mode switch elsewhere is reflected next time this one opens.
+    /// </summary>
+    private ContextMenu BuildCapacitanceRowMenu(SettingsRowState state, Grid row)
     {
-        int chars = key switch
+        var menu = new ContextMenu();
+        menu.Opening += (_, _) =>
         {
-            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVgs           => 8,
-            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyIdq           => 8,
-            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVds           => 8,
-            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyFrequency     => 10,
-            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyHarmonicCount => 4,
-            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCompression   => 8,
-            CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyZ0            => 8,
-            _                                                        => 10,
+            var items = new List<object>();
+            bool nonlinear = state.CapActions?.IsNonlinear(state.Key) ?? false;
+
+            var openEditor = new MenuItem { Header = nonlinear ? "Edit Nonlinear C(V)…" : "Use Nonlinear…" };
+            openEditor.Click += (_, _) => state.CapActions?.OpenEditor(state.Key);
+            items.Add(openEditor);
+
+            if (nonlinear)
+            {
+                var useLinear = new MenuItem { Header = "Use Linear" };
+                useLinear.Click += (_, _) => state.CapActions?.UseLinear(state.Key);
+                items.Add(useLinear);
+            }
+
+            items.Add(new Separator());
+            var copy = new MenuItem { Header = "Copy" };
+            copy.Click += (_, _) => _ = CopyRowAsync(row);
+            items.Add(copy);
+
+            menu.ItemsSource = items;
         };
-        return chars;
+        return menu;
     }
+
+    /// <summary>R7D §3.4's own "Copy" — the same single-row shape <see cref="CopyChunkAsync"/> uses
+    /// for a whole chunk, scoped to just this row (label + value, as rendered).</summary>
+    private async System.Threading.Tasks.Task CopyRowAsync(Grid row)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clip) return;
+        await clip.SetTextAsync(HarmonicaClipboard.RowsText([RowText(row)]));
+    }
+
+    /// <summary>R7C §1.3 — the worst-case VALUE text for one Settings row, keyed by WHICH setting it
+    /// is rather than measured from its current text (the whole point: it must not change when the
+    /// text does, or the shared column would reflow every time the text does). Generous rather than
+    /// exact — the reserved box may show a little blank space, which costs nothing; a box too narrow
+    /// for a legitimate value would. <see cref="ReservedValueWidth(TextBlock,double,string)"/> measures
+    /// it against the live typeface, same as <see cref="HarmonicaReadoutFormatting.WorstCaseValueTexts"/>
+    /// does for the readout columns.</summary>
+    private static string SettingsWorstCaseValueText(string key) => key switch
+    {
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVgs           => "-00.000",
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyIdq           => "-0000.0",
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyVds           => "-00.000",
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyFrequency     => "000.0000000",
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyHarmonicCount => "00",
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCompression   => "-000.000",
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyZ0            => "00000.000",
+        // R7D §3.2 — 2 decimals, always, plus the longest possible suffix.
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCgs or
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCdg or
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCds           => "00000.00 (linearized)",
+        _                                                        => "0000000000",
+    };
 
     /// <summary>Writes one Settings row's CURRENT value — label (with the structural marker), value
     /// (or its placeholder), unit, tooltip and live foreground/font — skipping the value slot entirely
     /// while an editor is open on it (§1.2 trap 1; see <see cref="SettingsRowMayBeOverwritten"/>).</summary>
-    private static void UpdateSettingsColumnRow(StackPanel row, CircuitRF.Ui.Harmonica.HarmonicaInput input,
-                                                IBrush foreground, double fontSize)
+    private static void UpdateSettingsColumnRow(Grid row, CircuitRF.Ui.Harmonica.HarmonicaInput input,
+                                                IBrush foreground, double fontSize, double labelWidth,
+                                                CapacitanceRowActions? capacitanceActions)
     {
         if (row.Tag is not SettingsRowState state) return;
         state.Foreground = foreground;
         state.FontSize   = fontSize;
+        state.Locked     = input.Locked;
+        if (IsCapacitanceKey(input.Key)) state.CapActions = capacitanceActions;
 
         if (row.Children.Count > 0 && row.Children[0] is TextBlock label)
         {
             // Owner: no "*" marker on the Settings-column label — Freq/Harmonic Order's structural
             // note stays in the tooltip only (below), which is where every other row's own detail
-            // already lives.
-            label.Text       = input.Label;
+            // already lives. R7C §1.1 — the unit rides IN the label, same as every readout column.
+            label.Text       = LabelWithUnit(input.Label, input.Unit);
+            // R7C §1.5 — pinned to the chunk's measured width, not a (non-functional) SharedSizeGroup.
+            label.Width      = labelWidth;
             label.Foreground = foreground;
             label.FontSize   = fontSize;
         }
 
         if (row.Children.Count > 1 && row.Children[1] is TextBlock value)
         {
-            // R6C §4.2 — same reservation discipline as the readout columns: a pure function of WHICH
-            // setting this row is, never of its current text, so it never moves the column on a value
-            // update. §3's label renames widened the LABEL column, not this one — recomputed every
-            // call so a font-size change still lands right, but the number itself is a no-op.
-            value.Width = SettingsValueWidth(input.Key) * fontSize * 0.55;
+            // R7C §1.3 — the SAME measured-width discipline as UpdateColumnRow's own Width line: a
+            // pure function of WHICH setting this row is, never of its current text, so it cannot be
+            // the thing that jitters the shared column. Set unconditionally, unlike the TEXT below.
+            value.Width = ReservedValueWidth(value, fontSize, SettingsWorstCaseValueText(input.Key));
 
             if (SettingsRowMayBeOverwritten(state.IsEditing))
             {
@@ -1098,13 +1462,6 @@ public partial class ReadoutStripView : UserControl
                 value.Foreground = foreground;
                 value.FontSize   = fontSize;
             }
-        }
-
-        if (row.Children.Count > 2 && row.Children[2] is TextBlock unit)
-        {
-            unit.Text       = input.Unit;
-            unit.Foreground = foreground;
-            unit.FontSize   = fontSize;
         }
 
         ToolTip.SetTip(row, input.Structural

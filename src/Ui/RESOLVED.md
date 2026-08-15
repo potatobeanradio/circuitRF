@@ -6,6 +6,295 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## R8C — the readouts carry live impedance, γ suppresses its own noise, and the intrinsic drag stops solving (brief-harmonicarf-r8c, 2026-08-15)
+
+**§1 — `HarmonicaTitles.MxHeaderRow` gained a `zText` parameter rather than an `HarmonicaReadoutFormatting`
+reference, because the two files sit on opposite sides of the UI wall** (`src/Harmonica` is
+framework-free by rule; `HarmonicaReadoutFormatting` is `src/Ui`). `AddMxColumn` computes the real
+optimum's Z (`HarmonicaDataSet.ImpedanceOf(optimum.Gamma, z0)`, never the marker's, per the owner's own
+explicit instruction) ONLY inside the solved branch — the no-optimum branch still calls `MxHeaderRow`
+with `zText: null`, keeping R7C §1.4's "row shape must not change between branches" rule intact
+(computing it unconditionally from `optimum?.Gamma` looked simpler at first but leaked a Z into the
+"no optimum" header text, which the brief explicitly forbids).
+
+**Header rows became `SelectableTextBlock`, and the one hazard the brief flagged (R-h9r2-15: it eats a
+double-tap before `DoubleTapped` fires) genuinely does not apply — headers have no `DoubleTapped`
+handler at all**, confirmed by reading `BuildColumnRowShell`'s own early return for `isHeader`.
+
+**§2 — the γ phase floor (`GammaPhaseNoiseFloor = 1e-3`) collided with an EXISTING test's own
+fixture**, `HarmonicaGammaFactorTests.GammaRow_IsComputedThreeTimes_FromThreeDifferentDataSets`: the
+shipped default document's OP/MXP/MXE operating points all carry |γ| comfortably under the new floor,
+so their FORMATTED strings collapsed to the identical `"0.000∠—"` — correct display behaviour (the
+whole point of §2), not evidence the three computations merged into one. Fixed by comparing the raw
+`Complex` γ from each chunk's own `V_intr` cube (via the SAME private `ReadComplex`/`GammaFactor`
+reflection the file's other tests already use) instead of the rendered text — a strictly BETTER test
+than the string comparison it replaced, decoupled from any future formatting change.
+
+**§4 — `HarmonicaPanelRenderer.MarkerRadius` is now the one place either the round marker or the
+triangular intrinsic glyph computes its own radius from**, hoisted out of `DrawMarkers`. The 0.9
+scale factor collides in NAME ONLY with the triangle's own unrelated 0.9/0.75 shape-proportion
+literals a few lines below — commented at both sites so a reader does not fold them together.
+
+**§5 is where the real design work landed — see `src/Harmonica/RESOLVED.md`'s own R8C entry for the
+`IntrinsicAbcd` chain-order finding and the round-trip residual.** What lands here: `BeginIntrinsicDrag`/
+`EndIntrinsicDrag` became no-ops (clearing `InverseMessage`); `DragIntrinsicGlyph` calls
+`IntrinsicAbcd.ExtrinsicFor` synchronously on the UI thread and writes the result through the SAME
+`SetMarkerImpedance` an extrinsic drag uses, then routes the forward frame through
+`RequestFrameOnMarkerRelease` — the SAME pacing/dedup machinery an extrinsic marker drag already uses
+(its own doc comment already named `DragIntrinsicGlyph` as a caller, apparently written in
+anticipation of this exact change). `_inverse`/`_inverseMarker`/`_inverseBands`/`_inverseTargets` and
+`RequestInverseFrame` are now genuinely unreferenced from anywhere in this class (not merely "from the
+drag path") — `_inverse`/`_inverseMarker` needed explicit `= null` initializers or the compiler's
+CS0649 ("field is never assigned") turns into a build ERROR in this project's config, not a warning.
+
+**`HarmonicaHitTest.Resolve` gained `intrinsicDragAllowed` (default `true`, so every existing direct
+test keeps today's behaviour); Pass 2 does not run at all when it is false** — a grab that starts and
+then refuses to move is worse than no grab, per the brief's own instruction. A NEW hit-test helper,
+`IsOverIntrinsicGlyph`, runs the identical Pass-2 distance check independent of the allowed flag, used
+ONLY so `HarmonicaPointer.PointerDown` can still tell the user WHY a click that visibly landed on the
+glyph did nothing (`InverseMessage`), without granting the grab itself.
+
+**`ShowReachableRegion` now defaults `false`.** The property, sampler and `DrawReachableRegion` all
+stay in place (nothing here is deleted) — only the default flipped, since the shading answered "what
+can the retired inverse solve reach," a question the closed form's exact inversion makes uninteresting
+(everything is reachable except the pole).
+
+Gate: see `src/Harmonica/RESOLVED.md`'s own R8C entry for the full test list across both projects.
+
+## Terminations, the marker Γ, and the context menus — a re-entrancy flag cannot express "who owns this box"; only identity can (brief-harmonicarf-r8b, 2026-08-15)
+
+**§1 — the "can't type 50" bug (reported three times) was never in `TryParse`.** The Set Termination
+dialog's three combined-text boxes stayed in sync by having each `TextChanged` handler write the other
+two's `Text`, guarded by a single `bool _loading` set for the duration of that write. `_loading` is a
+*window in time*, not a statement about identity — an echo landing after the window closes (a deferred
+raise, a re-entrant write) is processed as if the user had typed it, which is what rewrote the Z box
+under the user's own caret. Fixed by replacing the flag with **ownership**: `TerminationEditModel`
+(new, no Avalonia reference) tracks `Editing` (which field, or none) and every `Edit(field, text)` call
+for a field that isn't the current `Editing` one is simply ignored, regardless of when or how it was
+raised. The dialog is now a thin shell — `GotFocus` sets `Editing`, `TextChanged` forwards to
+`Edit`, `LostFocus` clears `Editing` *before* reformatting so that reformat's own echo is disowned too.
+`TerminationEditModelTests` drives the actual echo call the old bug depended on
+(`AnEchoFromAnotherField_WhileEditingZ_DoesNotMoveTheModel`) — the case three prior "fixes," each
+verified only against a hand-built simulation of the handler shape, could never observe. **Not
+interactively verified against a live `TextBox`** (no headless-Avalonia harness for this dialog in this
+repo, and the brief asked for no screenshot verification) — the model-level fix is pinned directly; if
+the live control still misbehaves after this, that would be a SECOND, unlocated defect, not a
+regression of this one.
+
+**§2 — the marker glyph and its own VSWR circle were drawn on two different radial mappings, and only
+one of them was ever meant for a marker.** `IntrinsicGlyphScale`'s compressed radial map exists for the
+INTRINSIC glyph (`|Γ_intr|` is unbounded, R-h45-4) — `MarkerToCanvas`/`CanvasToMarker` composed that
+same map into the EXTRINSIC termination marker's own canvas transform too, invisibly inside the unit
+disc and wrong the moment `|Γ| > 1`. Both wrappers are deleted outright (not merely unused) so the
+composition cannot be silently reintroduced by "reusing the marker helper" — every extrinsic call site
+(hit-test passes, the drag gesture, `DrawMarkers`) now goes straight through the plain
+`GammaToCanvas`/`CanvasToGamma` affine map, exactly like a grid point or the VSWR locus already did.
+Consequence, intended: an active marker can now leave the panel entirely (`DrawMarkers` carries no
+`ClipRect`), and `IntrinsicGlyphScale.MaxTrueMagnitude`'s soft saturation at |Γ|=10 no longer applies to
+a marker drag — the practical bound is now whatever the panel's own pixel extent reaches (~1.3 at the
+chart margins), a harder and more honest one. **Measured, not assumed:** `GammaToCanvas`/`CanvasToGamma`
+round-trips to 1e-9 only near the origin; `SKPoint` is `float` (32-bit), so a value near the rim
+(|Γ|≈0.9–0.999) already loses precision to ~1e-7 absolute, and a value well outside the rim loses far
+more to the underlying chart viewport's own finite window — neither is a regression, both are properties
+of the transform this brief exposed rather than introduced.
+
+**§3 — an unmarked band is a near-short (1e-6 Ω), so "S1/S2 off by default" and "S1 defaults to 50 Ω"
+are the SAME change, not two.** Deleting the S1 marker without also writing its termination would have
+silently turned the DUT's source into a near-short the instant the marker vanished — exactly what
+`AddMarkerBand`'s own comment says must never happen. Fixed by writing `Terminations.Set(Source, 1, 50Ω)`
+in the constructor even though no marker exists for it — `TerminationSet`'s own ctor already does this
+for both S1/L1, so the explicit call is a second, defensive statement of the same fact rather than a
+behavior change on its own. A fresh document now ships **L1/L2/L3 only** (three markers, not five) —
+S1/S2 are added from the Smith panel's new "Add Source Marker" item. **Band 1 is removable on both
+sides now** (`RemoveMarkerBand`, the Markers-menu `HarmonicaBandMenuItem.CanRemove`) — it used to refuse
+outright; removing it now leaves the termination in place, same as bands ≥ 2 leave their absence as the
+unmarked value. The Source readout column keeps its header row even with zero markers on it (R7C §1.4's
+row-shape-stability rule), with a tooltip naming the fix rather than a silent gap.
+
+**§7.3 — "I can't drag the VSWR circle outside the chart" was two separate findings, and only one of
+them is fixable.** (1) A THEOREM: a passive marker's (`|Γ|<1`) whole VSWR family stays strictly inside
+`|Γ|=1` for every finite VSWR — the underlying Möbius map is an automorphism of the passive half-plane,
+so a passive marker's circle *cannot* be dragged outside the chart, ever, by construction. (2) A
+saturation that hid (1) badly: `VswrThrough`'s bisection silently returned the clamped `MaxVswr` (1e6)
+the instant a drag point fell outside its search bracket, which reads as "the number stopped moving."
+Fixed by reporting the clamp instead of hiding it (`VswrThroughEx` → `(Vswr, Saturated)`,
+`HarmonicaReadoutFormatting.FormatVswr(vswr, saturated)` → `"VSWR: > 10⁶"`), in both the live drag
+readout and the marker menu's own row. §2's fix is the other half the owner actually wanted: an ACTIVE
+marker's whole VSWR family sits entirely *outside* `|Γ|=1`, and with the marker itself no longer
+compressed onto the intrinsic scale, that family now draws (and drags) concentric with its marker,
+genuinely outside the Smith chart, unclipped.
+
+**§5 — the Fluent `MenuItem` template trap (R7A §2.3 first found it) gets closed for good, not
+patched twice.** `ToggleType.CheckBox` and `Icon` share the SAME leading slot in this Avalonia build —
+an item with both shows a missing icon, a missing checkmark, or a doubled indent depending on theme.
+R7A §2.3 fixed exactly two items this way (Autoscale/Locked) and left every other toggle on
+`ToggleType`; this brief converts the rest through one shared builder (`Toggle(header, on, onClick,
+glyph: MenuGlyph.Check|Radio)`) and pins it with a source scan (`HarmonicaView.axaml.cs` contains zero
+occurrences of `MenuItemToggleType`). Power Sweep/Time Domain — genuinely a two-state radio, not two
+independent checkboxes — is now one `Mode ▸` submenu row with the current mode in its own header text;
+its own row carries no `Click` (a `MenuItem` with children never raises one — R7A §2.4's trap, again).
+`HarmonicaAppMenuInjector.cs`'s one `NativeMenuItem.ToggleType` use was checked and left alone: it never
+sets `Icon` alongside it, so the slot-collision this rule exists for cannot occur there.
+
+**§6 — the Ω icon on the marker menu's Γ/Z rows was never anything but a placeholder** to satisfy
+`Item`'s old non-nullable `MaterialIconKind icon` parameter; made explicitly nullable (`icon: null`
+leaves `Icon` unset) rather than swapped for a different glyph that would mean something equally
+nothing.
+
+## Iso-line labels: a 30.0-vs-2π unit mismatch meant ZERO ever drew on a Smith/Polar plot; harmonicaRF's own toggle was wired end to end except the draw call (brief-harmonicarf-r8a §4, 2026-08-15)
+
+**`ContourRenderer.DrawIsoLines`' label placer walks in WORLD units, and Data Display's own Γ-plane
+default was 5× the longest polyline that can exist there.** `ContourData.LabelSpacing` seeded
+Smith/Polar contours at 30.0 — the SAME number used for a rectangular dB-vs-frequency axis, where it's
+sensible. But the Γ world is the unit disc: the longest closed polyline is the rim, arc length 2π ≈
+6.28, and the walk's first target is `startFrac × spacing ≥ 0.15 × 30 = 4.5`. For almost every real
+contour (arc 1–3) that target is never reached, so the `while (targetArcW <= segEnd)` loop's body never
+executes and **not one label was ever drawn, for every contour on every Smith/Polar plot, at any zoom,
+regardless of the `DrawLabels` toggle** — invisible on a Rect plot (hundreds of world units, so 30.0
+works fine there), which is exactly why nobody had noticed. Fixed two ways, both required: the seed
+default is now plane-dependent (0.35 for Γ, matching the disc's own scale), AND the placer itself
+(`ContourRenderer.ComputeLabelAnchors`) now falls back to placing exactly ONE label when the configured
+spacing exceeds the polyline's own total arc length, rather than silently placing none — a user asking
+for a wide spacing wants FEWER labels, never zero, and zero is indistinguishable from "broken".
+
+**harmonicaRF's `ShowIsoLineLabels` toggle was wired end to end — the menu item, the `.charm` round
+trip, the render-cache key — except for the one thing it names.** `HarmonicaPanelRenderer.DrawContours`
+stroked polylines and returned; the toggle's entire observable effect was busting the Layer-A raster
+cache key. This was not a rendering bug to hunt for — it was a feature shipped with its last step
+missing. Fixed by extracting Data Display's own placement arithmetic into
+`ContourRenderer.DrawIsoLineLabel`/`ComputeLabelAnchors` (Skia draw / pure arc-walk, split so the
+arithmetic is unit-testable without a canvas) and calling it from harmonicaRF too — one placer, two
+renderers, rather than a second hand-rolled one. Each label gets the SAME ramped alpha byte its own
+polyline got (`IsoLineAlphaRamp.AlphaByte`), so a faded low-rank contour never carries a fully-opaque
+label — with the fade floor now 0.01 (below), that would have been the loudest possible artifact.
+
+**Measured on the shipped default document** (37-point grid, `HarmonicaViewModel.DefaultModel()`,
+load side band 1): 55–68 label anchors across 11–15 polylines per metric at the new 0.35 spacing — 4–5
+labels per contour, matching the "~5–6 around a full rim-scale ring" estimate the new default was
+chosen from.
+
+**Tab split trap, named so it doesn't reappear:** moving the fade sliders and the label checkbox from
+the Appearance tab to the Advanced tab moved their MARKUP, but both write through the SAME
+`HarmonicaColorEditor` instance the Appearance tab was already handed — construct a second editor for
+the Advanced tab (the obvious way to wire a newly-independent view) and the two tabs silently diverge,
+with whichever one loads last winning. `HarmonicaSettingsDialog` now hands `vm.ColorEditor` explicitly
+to both `Attach` calls; there is exactly one editor per document, never two.
+
+## `Grid.IsSharedSizeScope` does not align columns hosted in a `StackPanel` — five failed attempts had the wrong culprit; units moved into the labels, γ landed (brief-harmonicarf-r7c, 2026-08-14)
+
+**The readout strip's label/value misalignment was never a width bug. `Grid.IsSharedSizeScope` set on
+a `StackPanel` host is a no-op in this Avalonia build (12.0.3) — confirmed by an isolated repro, not
+inferred.** A throwaway headless-Avalonia harness (`AppBuilder.Configure<T>().UseHeadless(...).
+UseSkia()`, real Skia text shaping, no display needed) built the minimal case directly: a `StackPanel`
+with `Grid.SetIsSharedSizeScope(host, true)`, two child `Grid`s each with a `SharedSizeGroup`'d
+`Auto,Auto` column set, one row labelled `"Short:"` and one `"A Much Longer Label:"`. Their VALUE
+cells measured at **X = 39 and X = 138** — never aligned, because each row's label column sized to
+its OWN text, exactly as if `IsSharedSizeScope` had never been set. R-hui-4 (2026-08-14, the brief
+before this one) built the whole three-column layout on this premise and it never worked; R-hui-5
+through R-hui-7 kept re-diagnosing the SYMPTOM (a jittering value column) as a width-reservation bug
+and re-fixing the value column's own width, which never touched the actual defect — the LABEL
+column, silently un-shared the entire time. Five attempts, one root cause, never named until this
+brief actually built the isolated case rather than staring at the full control tree.
+
+**The fix (§1.5's own explicit fallback): every chunk's label column is pinned to a MEASURED width,
+the same discipline `ReservedValueWidth` already used for the value column** — `ChunkLabelWidth`
+(readout columns), `UpdateSettingsColumn`'s own `labelWidth` (the Settings column), and a second pass
+over `Items.Children` after building (`General`, which rebuilds every call and so has no persistent
+row to probe a typeface from before all its rows exist). `SharedSizeGroup`/`Grid.SetIsSharedSizeScope`
+are deleted outright, not left in as inert scaffolding — "drop it entirely," per the brief.
+
+**A second, genuine bug was found and fixed while building the label-width measurement, and it is
+worth naming on its own: measuring against a control's OWN `.FontSize` property reads ONE FRAME
+STALE.** `ChunkLabelWidth`/`UpdateSettingsColumn`'s first draft read `probe.FontSize` (the label
+TextBlock's own current property) rather than the `fontSize` PARAMETER `SetItems` was just called
+with — `UpdateColumnRow` is what writes the new value onto that property, and it had not run yet at
+the point `ChunkLabelWidth` needed it. Harmless when font size never changes frame to frame (the
+stale read equals the current one), but caught directly: the SAME headless harness re-solved twice at
+the SAME font size and the whole `OperatingPointColumn` value column shifted 4–5 px between the two
+calls anyway — the tell was that `ChunkLabelWidth`'s own measured width (69.35 px, printed both
+before and after) was DIFFERENT on the very first call (74.69 px) than every call after, which only
+happens if the number being measured AT depends on something other than the label text and the font
+size actually requested. **Any future "measure once, pin the result" helper in this file must take
+its font size as an explicit parameter, never read it back off a control this same call is in the
+middle of updating.**
+
+**Measured, replacing the guess:** the widest complex value's worst case (`"−0000.000−j0000.000"` /
+`"0000.000∠−000.0°"`, the wider of the two) at the strip's own SemiBold weight, 13 px — a realistic
+mid-range font size for this panel — is **120.71 px**. The OLD `22 * fontSize * 0.55` formula
+(`RectComplexChars`'s old character budget) would have reserved **157.30 px** — 30% too generous,
+which is a real cost: every OTHER row-kind's column in the same chunk pays for a complex row's own
+padding once `ReservedValueWidth`'s max wins, even though nothing on screen actually needs that much
+room. §1.3's own prediction (the constant is wrong by "a different amount for every glyph and every
+non-integer font size") is not approximately right, it is measurably 30% off at one realistic size.
+
+**§1.4's row-count churn was real, not hypothetical — the pre-fix test asserted it directly.** Before
+this brief, `HarmonicaReadoutColumnsTests.MxpColumn_SaysNoOptimum_OnASkipContoursFrame` asserted
+`Assert.Single(mxp)` on a `SkipContours` frame — i.e. the MXP chunk genuinely collapsed from nine rows
+to one every time a degraded ladder rung or a `SkipContours` frame carried no fresh optimum, and
+expanded back to nine the instant a full-quality frame supplied one. That test is what proved the bug
+was live, not merely theoretically possible from reading `AddMxColumn`'s branch. Fixed by always
+emitting the same nine (now ten, with γ) rows and rendering `"—"` when unavailable — pinned by the
+SAME test, now asserting the opposite: row count invariant across both states.
+
+**γ, the input nonlinearity factor (§2 of the brief), landed as a NON-complex row on purpose** — see
+`HarmonicaSolver.GammaFactor`/`AddGammaRow` and `HarmonicaReadoutFormatting.FormatGammaFactor`. Marking
+it `IsComplex: false` is structural, not cosmetic: a `true` row would both offer a real/imaginary menu
+that means nothing for `γ = V₂·conj(V₁)²/|V₁|³` (no sensible real/imaginary split) and collide with
+Zin's own saved format state, since `HarmonicaReadout.FormatKey` resolves any complex row in a given
+column to the SAME key (`"MXP.Zin"` etc.) regardless of which row it is.
+
+**Not verified in this brief, and it should be before the layout is called fully closed:** the
+headless harness above proves column alignment and drag-stability ALGEBRAICALLY (measured X
+positions, before/after a re-solve, across four font sizes) — it does not prove what a human eye
+sees. `screencapture`/AppleScript UI automation was attempted from this session and blocked by macOS
+Screen Recording permission not being granted to the sandboxed shell; no screenshot of the running app
+was taken. The four gate screenshots §4 asks for (rest state, a live drag, MXP/MXE's nine dashes,
+γ under Pdc) are still owed.
+
+## Active-termination Γ bug was the compressed radial scale's clamp; fly menus are real context menus now (brief-harmonicarf-r7a, 2026-08-14)
+
+**§1 — `IntrinsicGlyphScale.MaxTrueMagnitude = 10.0`.** The old inverse (`TrueRadius`) saturated at
+`u = 1 - 1e-9`, a near-pole that put every pointer position at or beyond drawn radius `1 + margin`
+at the SAME Γ ≈ −1.0000000282×10⁹ (measured, reproduced by a test that pins the exact figure) — a
+value that does not survive its own Γ↔Z round trip (`GammaOf(ImpedanceOf(Γ))` was off by ~41) and so
+disagreed with itself everywhere it was re-derived from Z. At `|Γ| = 10`: **Z = −40.91 Ω at Z0 = 50**,
+**Z = −65.45 Ω at Z0 = 80** — past every physically interesting active termination and small enough
+that the round trip is exact to double precision. The clamp is now derived algebraically from the
+constant (`u_max = k(MaxTrueMagnitude−1)/(1+k(MaxTrueMagnitude−1))`), so the two can never drift.
+`HarmonicaSetTerminationDialog`'s live Z preview had the SAME bug's sibling — it clamped `|Γ|` to
+0.999 before previewing, which is wrong for this brief's whole subject (typing Γ = −3 showed the Z of
+−0.999, not −25 Ω). Fixed by deleting the clamp entirely: the preview is now exactly
+`HarmonicaDataSet.ImpedanceOf`, which already nudges only the genuine `|1−Γ| < 1e-12` singularity.
+Extracted as `HarmonicaSetTerminationDialog.PreviewImpedance` (internal static) since the dialog is a
+`Window` and cannot be constructed headlessly in `tests/Ui.Tests`.
+
+**§2 — every fly menu routes through one `Item(header, icon, onClick)` helper**, plus a shared
+`AddAutoscaleLockedItems` for the two panels that both carry an Autoscale/Locked pair. No
+`MaterialIconKind` name from the brief's own suggested map needed substituting — every one of
+`ContentCopy, Pencil, Cog, PlusCircleOutline, PlusCircleMultipleOutline, Delete, Magnet, MagnetOn,
+ChartBellCurve, SineWave, Percent, ChartLine, Waveform, Omega, Lock, LockOpenVariant, ArrowExpandAll`
+compiled — checked exhaustively against `Enum.GetNames(typeof(MaterialIconKind))` from a throwaway
+console probe before writing any call site, not by trial and error. The one gap: no
+`ArrowExpandAllOutline` (or any outline variant) exists for the inactive Autoscale state, so §2.3's
+own documented fallback is what shipped — the same `ArrowExpandAll` glyph at reduced opacity (0.35)
+rather than a different icon.
+
+**§2.3's Fluent `MenuItem` Icon/checkmark trap — NOT VISUALLY VERIFIED.** The owner's chosen
+resolution (Autoscale/Locked carry an icon and no `ToggleType` at all) was applied as specified, which
+sidesteps the trap by construction rather than by observing it. Whether the trap is real for the
+OTHER checkbox items the brief named to leave icon-free (Snap to Grid, Show Grid Points, Power
+Sweep/Time Domain, Contour Plane/Harmonic/Efficiency Metric's children) was not checked — the
+`/run`-and-screenshot half of this brief's own §4 gate was explicitly declined for this round (running
+the app means driving a real mouse/window on the owner's own machine), so this is deferred to whoever
+next has a live session open, not silently assumed passing.
+
+**§2.4 — the actual bug, generalized.** `MenuItem` with children never raises `Click`: true of the
+VSWR row (a checkbox carrying a lone "Set…" child) AND of all three format rows (Γ real/imag, Γ
+mag/angle, Z real/imag — each just a lone "Set…" child with no Click of its own). All four flattened;
+pinned structurally (`HarmonicaR7aMenuTests`) by asserting `ItemsSource` never appears in
+`BuildMarkerMenu`/`BuildFormatRow`'s own (comment-stripped) source, rather than re-deriving the
+specific defect shape by hand at every call site.
+
 ## Persisted axis limits + autoscale: one mechanism, three plots (brief-harmonicarf-r6e, 2026-08-14)
 
 **§1 — the Drain Sweep bug was the Grid's own `*` row, not a positioning mistake.**

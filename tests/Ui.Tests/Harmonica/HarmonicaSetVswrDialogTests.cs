@@ -79,10 +79,15 @@ public sealed class HarmonicaSetVswrDialogTests
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
-        // §2.1 — the header IS "VSWR: <val>", via the SAME formatter §1.3's live readout uses.
-        Assert.Contains("HarmonicaReadoutFormatting.FormatVswr(marker.VswrValue)", body, StringComparison.Ordinal);
-        Assert.Contains("ToggleType  = MenuItemToggleType.CheckBox,", body, StringComparison.Ordinal);
-        Assert.Contains("Header = \"Set…\"", body, StringComparison.Ordinal);
+        // R8B §7.1 — the header IS "VSWR: <val>" (saturated-aware), via the SAME formatter §1.3's
+        // live readout uses; the value row and "Set…" now appear only when Show VSWR is on, and
+        // "Set…" is its own CHILD of that row (never a flattened sibling any more — a value row with
+        // no children could not host it, and R7A §2.4's "no Click on a row with children" trap is why
+        // the value row itself carries none).
+        Assert.Contains("HarmonicaReadoutFormatting.FormatVswr(marker.VswrValue, saturated)", body, StringComparison.Ordinal);
+        Assert.Contains("Toggle(\"Show VSWR\", marker.VswrEnabled,", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("MenuItemToggleType", body, StringComparison.Ordinal);
+        Assert.Contains("Item(\"Set…\"", body, StringComparison.Ordinal);
         Assert.Contains("ShowMarkerSetVswrDialogAsync(h, marker)", body, StringComparison.Ordinal);
     }
 

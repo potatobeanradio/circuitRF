@@ -1236,9 +1236,18 @@ public partial class PlotInspectorViewModel : ViewModelBase
             ColorMap        = lastContourColorMap,          // §4
             DrawLabels      = (plane == SurfacePlane.Z),   // §13
             // brief-dd-loadpull-contour-ux-round8 §2: a Rect grid is far denser in data-space than
-            // Smith/Polar, so it needs a wider label pitch than ContourData's 30.0 default (which
-            // Smith/Polar keep).
-            LabelSpacing    = (plane == SurfacePlane.Z) ? 150.0 : 30.0,
+            // Smith/Polar, so it needs a wider label pitch than ContourData's 30.0 default. R8A §4.2:
+            // the Γ world is the unit disc (longest closed polyline ≈ 2π ≈ 6.28), and 30.0 is 5× that
+            // — the world-unit arc walk in ContourRenderer.DrawIsoLines never reached its first label
+            // target, so NOT ONE label was ever drawn on a Smith/Polar contour. 0.35 places one label
+            // per ~1.1 rad of a rim-scale ring — ~5-6 labels around a full circle, the density the
+            // Rect default already achieves on its own axis.
+            LabelSpacing = plane switch
+            {
+                SurfacePlane.Z     => 150.0,
+                SurfacePlane.Gamma => 0.35,
+                _                  => 30.0,
+            },
         };
 
         _plot.Traces.Add(trace);

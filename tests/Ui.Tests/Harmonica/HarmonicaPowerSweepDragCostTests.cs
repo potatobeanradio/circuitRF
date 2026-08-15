@@ -43,7 +43,7 @@ public sealed class HarmonicaPowerSweepDragCostTests(ITestOutputHelper output)
     private static (double X, double Y) OnPowerPanel(HarmonicaViewModel vm, Complex gamma)
     {
         var p = vm.Layout.PlacementOf(HarmonicaPanelId.SmithPower);
-        var local = HarmonicaPanelRenderer.MarkerToCanvas(gamma, (p.W * W, p.H * H));
+        var local = HarmonicaPanelRenderer.GammaToCanvas(gamma, (p.W * W, p.H * H));
         return (p.X * W + local.X, p.Y * H + local.Y);
     }
 

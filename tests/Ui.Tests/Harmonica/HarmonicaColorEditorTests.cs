@@ -314,8 +314,11 @@ public sealed class HarmonicaColorEditorTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void ThePreferencesDialog_OffersImportExportResetAndTheFadeParameters()
+    public void ThePreferencesDialog_OffersImportExportReset()
     {
+        // R8A §3 moved the fade sliders/label toggle to HarmonicaAdvancedSettingsView — see
+        // HarmonicaSettingsDialogTextAndTabSplitTests for that migration's own gate. This test now
+        // only pins what stayed on the Appearance tab.
         var axaml = XDocument.Parse(RepoFile("src/Ui/Views/Dialogs/HarmonicaAppearanceSettingsView.axaml"));
         var names = axaml.Descendants()
             .Select(e => (string?)e.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml")))
@@ -327,10 +330,10 @@ public sealed class HarmonicaColorEditorTests(ITestOutputHelper output)
         Assert.Contains("ExportButton",     names);
         Assert.Contains("ResetAllButton",   names);
         Assert.Contains("RevertButton",     names);
-        Assert.Contains("AlphaFloorSlider", names);
-        Assert.Contains("AlphaExpSlider",   names);
-        Assert.Contains("IsoLabelsCheck",   names);
         Assert.Contains("LightRadio",       names);
         Assert.Contains("DarkRadio",        names);
+        Assert.DoesNotContain("AlphaFloorSlider", names);
+        Assert.DoesNotContain("AlphaExpSlider",   names);
+        Assert.DoesNotContain("IsoLabelsCheck",   names);
     }
 }

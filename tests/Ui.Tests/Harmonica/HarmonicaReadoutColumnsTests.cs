@@ -71,20 +71,25 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
     public void SourceAndLoadColumns_ListOneZGammaPairPerMarker_NoMarkerNoRow()
     {
         var vm = NewSolvedVm();
-        // The default document ships S1/S2/L1/L2/L3 (R-h9b-14).
-        Assert.Equal(5, vm.Markers.Count);
+        // R8B §3 — the default document now ships L1/L2/L3 only; S1/S2 start with no marker.
+        Assert.Equal(3, vm.Markers.Count);
 
         var source = vm.Frame.Readouts.Where(r => r.Column == ReadoutColumn.Source).ToArray();
         var load   = vm.Frame.Readouts.Where(r => r.Column == ReadoutColumn.Load).ToArray();
 
-        // A header row plus one Z/Γ pair per marker on that side.
-        Assert.Equal(1 + 2 * 2, source.Length);   // S1, S2
-        Assert.Equal(1 + 2 * 3, load.Length);     // L1, L2, L3
+        // R8B §3 — a bare header, no marker rows, on the source side; its tooltip names the fix.
+        Assert.Single(source);
+        Assert.Equal("Source", source[0].Label);
+        Assert.Contains("right-click the Smith chart", source[0].Tooltip, StringComparison.Ordinal);
 
-        Assert.Contains(source, r => r.Label == "ZS1" && r.IsComplex && r.Editable);
-        Assert.Contains(source, r => r.Label == "ΓS1" && r.IsComplex && r.Editable && r.IsGamma);
-        Assert.Contains(load,   r => r.Label == "ZL2" && r.IsComplex && r.Editable);
-        Assert.Contains(load,   r => r.Label == "ΓL3" && r.IsComplex && r.Editable && r.IsGamma);
+        // R-hui-1 — the Γ rows are gone (owner: redundant with ZL*/ZS*, "keep ZL1, ZL2… remove
+        // ΓL1, ΓL2…"). A header row plus one Z row per marker on the load side.
+        Assert.Equal(1 + 3, load.Length);     // L1, L2, L3
+
+        Assert.Contains(load, r => r.Label == "ZL2" && r.IsComplex && r.Editable);
+        Assert.DoesNotContain(source, r => r.IsGamma);
+        Assert.DoesNotContain(load,   r => r.IsGamma);
+        Assert.DoesNotContain(source.Concat(load), r => r.Label.StartsWith('Γ'));
 
         // Every editable row carries the identity a Set… dialog / drag needs.
         foreach (var r in source.Concat(load).Where(r => r.Editable))
@@ -95,6 +100,19 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
 
         output.WriteLine(string.Join(" | ", source.Select(r => $"{r.Label}={r.Value}")));
         output.WriteLine(string.Join(" | ", load.Select(r => $"{r.Label}={r.Value}")));
+    }
+
+    [Fact]
+    public void SourceColumn_ListsARow_OnceAMarkerIsAdded()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.AddMarkerBand(TerminationSideKind.Source, 1);
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 6, MaxGamma = 0.6 });
+
+        var source = vm.Frame.Readouts.Where(r => r.Column == ReadoutColumn.Source).ToArray();
+        Assert.Equal(1 + 1, source.Length);
+        Assert.Contains(source, r => r.Label == "ZS1" && r.IsComplex && r.Editable);
+        Assert.Equal("", source[0].Tooltip);
     }
 
     [Fact]
@@ -109,12 +127,16 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
             var rows = vm.Frame.Readouts.Where(r => r.Column == column).ToArray();
             Assert.NotEmpty(rows);
 
-            // Header first, exactly as the owner spelled it: "MXP 1f0 Load".
-            Assert.Equal($"{label} 1f0 Load", rows[0].Label);
+            // R8C §1 — the header now carries the optimum's REAL impedance, named by the termination
+            // it corresponds to: "MXP 1f0 ZL1=<real Z>". The Z itself is solve-dependent, so this
+            // checks the shape rather than an exact number.
+            Assert.StartsWith($"{label} 1f0 ZL1=", rows[0].Label, StringComparison.Ordinal);
+            Assert.EndsWith(" Ω", rows[0].Label, StringComparison.Ordinal);
             Assert.Equal("", rows[0].Value);
 
             var byLabel = rows.Skip(1).ToDictionary(r => r.Label, r => r);
-            foreach (var expected in new[] { "Pout", "Efficiency", "PAE", "Gain", "Gp", "Zin", "AM/PM" })
+            // R-hui-7 — Pdc joined, matching the P-3dB (OperatingPoint) chunk's own row set.
+            foreach (var expected in new[] { "Pout", "Eff", "PAE", "Gain", "Gp", "Zin", "AM/PM", "Pdc" })
                 Assert.True(byLabel.ContainsKey(expected), $"{label} column is missing a '{expected}' row");
 
             // Zin gets the format flyout; the performance numbers do not; NONE of them are editable —
@@ -127,14 +149,54 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void MxpHeader_CarriesTheRealOptimumImpedance_NotTheMarkers()
+    {
+        var vm = NewSolvedVm();
+        var optimum = vm.Frame.SmithPower.Optimum;
+        Assert.NotNull(optimum);
+
+        double z0 = vm.Frame.SmithPower.Z0;
+        var expectedZ = HarmonicaDataSet.ImpedanceOf(optimum!.Gamma, z0);
+        string expectedZText = HarmonicaReadoutFormatting.FormatZ(expectedZ, ReadoutFormat.RealImaginary);
+
+        var mxp = vm.Frame.Readouts.Where(r => r.Column == ReadoutColumn.Mxp).ToArray();
+        Assert.StartsWith($"MXP 1f0 ZL1={expectedZText}", mxp[0].Label, StringComparison.Ordinal);
+
+        // The marker's OWN Z (whatever L1's termination happens to be) is a different quantity — the
+        // header must not silently read that instead (§1.2's own rule).
+        var l1Marker = vm.Markers.Single(m => m.Side == TerminationSideKind.Load && m.Band == 1);
+        var markerZ = HarmonicaDataSet.ImpedanceOf(l1Marker.Gamma, z0);
+        Assert.NotEqual(expectedZ, markerZ);
+
+        output.WriteLine($"header: {mxp[0].Label}, marker Z = {markerZ}");
+    }
+
+    [Fact]
     public void MxpColumn_SaysNoOptimum_OnASkipContoursFrame()
     {
+        // R7C §1.4 — a "no optimum" frame no longer collapses the chunk to one row: the row SHAPE
+        // (count and order) is IDENTICAL to a solved frame's, or the whole chunk rebuilds and the
+        // 2 x 4 grid re-measures every time the ladder flips between rung kinds — structural churn at
+        // frame rate. Only the header's own text states the situation now, and every value is "—".
         var vm = new HarmonicaViewModel();
         vm.SolveFrame(new HarmonicaSolver.Options { SkipContours = true });
 
         var mxp = vm.Frame.Readouts.Where(r => r.Column == ReadoutColumn.Mxp).ToArray();
-        Assert.Single(mxp);
-        Assert.Equal("no optimum", mxp[0].Value);
+        Assert.Equal(10, mxp.Length);   // header + Pout/Eff/PAE/Gain/Gp/Zin/AM-PM/Pdc/γ
+        Assert.Contains("no optimum", mxp[0].Label, StringComparison.Ordinal);
+        Assert.Equal("", mxp[0].Value);
+
+        string[] expectedLabels = ["Pout", "Eff", "PAE", "Gain", "Gp", "Zin", "AM/PM", "Pdc", "γ"];
+        for (int i = 0; i < expectedLabels.Length; i++)
+        {
+            Assert.Equal(expectedLabels[i], mxp[i + 1].Label);
+            Assert.Equal("—", mxp[i + 1].Value);
+        }
+
+        // The row SHAPE (label/IsComplex/Editable) must match the solved-frame case exactly, or
+        // ReadoutStripView's own signature comparison rebuilds the chunk on every optimum flip.
+        Assert.True(mxp[6].IsComplex);    // Zin
+        Assert.False(mxp[9].IsComplex);   // γ — always non-complex, per §2.4
     }
 
     [Fact]
@@ -157,7 +219,15 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
     [Fact]
     public void GpReadsTheSolvedFomResult_TheSameOneGainReads()
     {
-        var vm = NewSolvedVm();
+        // R8B §3 changed the fresh document's default Source band-1 termination from 25 Ω to 50 Ω
+        // (matching the DUT's own input impedance) — a real, near-matched source, which is exactly
+        // the degenerate case where Gp and Gt can coincide. Set S1 back to this test's own original,
+        // deliberately off-matched fixture value so it still exercises "Gp and Gt genuinely differ".
+        var vm = new HarmonicaViewModel();
+        vm.SetMarkerImpedance(vm.AddMarkerBand(TerminationSideKind.Source, 1), new Complex(25, 0));
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 6, MaxGamma = 0.6 });
+        Assert.Null(vm.SolveError);
+
         var opt = vm.Frame.SmithPower.Optimum;
         Assert.NotNull(opt?.Solved);
 
@@ -251,8 +321,11 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
     [Fact]
     public void ADraggedMarker_ChangesItsOwnRowOnTheNextFrame_NothingElse()
     {
-        var vm = NewSolvedVm();
-        var s1 = vm.Markers.Single(m => m.Side == TerminationSideKind.Source && m.Band == 1);
+        // R8B §3 — no source marker on a fresh document; add S1 explicitly.
+        var vm = new HarmonicaViewModel();
+        var s1 = vm.AddMarkerBand(TerminationSideKind.Source, 1);
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 6, MaxGamma = 0.6 });
+        Assert.Null(vm.SolveError);
         var before = vm.Frame.Readouts.Single(r => r.Label == "ZS1").Value;
 
         // A drag writes through SetMarkerImpedance exactly as a plain edit does — "live" costs

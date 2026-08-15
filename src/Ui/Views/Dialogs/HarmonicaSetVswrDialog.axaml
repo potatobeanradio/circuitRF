@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaSetVswrDialog"
         Title="Set VSWR"
-        Width="320" Height="170"
+        Width="320" Height="140"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -13,21 +13,19 @@
     fourth dialog idiom. Unlike SetZ0Dialog's live-apply-on-lost-focus, this one is OK/Cancel gated:
     bad input is rejected-and-kept (the text stays, an error explains why) rather than silently
     substituted, and OK is the only path that commits.
+
+    R8B §7.2 — the two explanatory TextBlocks are gone (dialog is only reachable once the circle is
+    already on, per §7.1, so "enables the circle if it is off" no longer applies; the row-1 grid's
+    ":1" label was redundant with the header's own "VSWR" wording). The TextBox now spans the row.
   -->
 
-  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="14">
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14">
 
     <TextBlock Grid.Row="0" x:Name="MarkerLabel" Text="VSWR" FontWeight="SemiBold" Margin="0,0,0,4"/>
 
-    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
-      <TextBox x:Name="VswrBox" Grid.Column="0" Margin="0,0,8,0" KeyDown="OnFieldKeyDown"/>
-      <TextBlock Grid.Column="1" Text=":1" VerticalAlignment="Center" Opacity="0.7"/>
-    </Grid>
+    <TextBox Grid.Row="1" x:Name="VswrBox" Margin="0,0,0,6" KeyDown="OnFieldKeyDown"/>
 
-    <TextBlock Grid.Row="2" TextWrapping="Wrap" Opacity="0.7" FontSize="11"
-               Text="Enables the circle if it is off. No re-solve — this only moves the overlay."/>
-
-    <StackPanel Grid.Row="4" Orientation="Vertical" Spacing="8" Margin="0,8,0,0">
+    <StackPanel Grid.Row="3" Orientation="Vertical" Spacing="8" Margin="0,8,0,0">
       <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
         <Button Content="Cancel" Click="OnCancelClick"/>

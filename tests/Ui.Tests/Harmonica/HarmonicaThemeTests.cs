@@ -235,6 +235,34 @@ public sealed class HarmonicaThemeTests(ITestOutputHelper output)
         Assert.True(clamped.IsoAlphaExponent > 0);
     }
 
+    // ── R8A §1 — the fade defaults moved to 0.01 / 3.00 ──────────────────────
+
+    [Fact]
+    public void R8A_IsoFadeDefaults_Are001And300()
+    {
+        Assert.Equal(0.01, HarmonicaRenderTheme.DefaultIsoAlphaFloor);
+        Assert.Equal(3.00, HarmonicaRenderTheme.DefaultIsoAlphaExponent);
+    }
+
+    [Fact]
+    public void R8A_ACharmAppearanceWithBothNulls_ResolvesToTheNewDefaults_AndAnExplicitOneKeepsItsOwn()
+    {
+        // "A document that never touched the sliders picks the new values up on load, and a document
+        // that did keeps its own" — tested through the bridge rather than merely asserted.
+        var untouched = new CharmAppearance();
+        Assert.Null(untouched.IsoAlphaFloor);
+        Assert.Null(untouched.IsoAlphaExponent);
+
+        var untouchedTheme = HarmonicaAppearanceBridge.ToRenderTheme(untouched, ColorVariant.Dark);
+        Assert.Equal(0.01, untouchedTheme.IsoAlphaFloor);
+        Assert.Equal(3.00, untouchedTheme.IsoAlphaExponent);
+
+        var explicitOld = new CharmAppearance { IsoAlphaFloor = 0.15, IsoAlphaExponent = 2.0 };
+        var explicitTheme = HarmonicaAppearanceBridge.ToRenderTheme(explicitOld, ColorVariant.Dark);
+        Assert.Equal(0.15, explicitTheme.IsoAlphaFloor);
+        Assert.Equal(2.0,  explicitTheme.IsoAlphaExponent);
+    }
+
     // ── TIER 3 — the .charm round trip ───────────────────────────────────────
 
     private static ColorTheme Recoloured()

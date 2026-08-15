@@ -215,11 +215,14 @@ public sealed class HarmonicaAddedGridPointsTests(ITestOutputHelper output)
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
-        int snap        = body.IndexOf("Header    = \"Snap to Grid\",", System.StringComparison.Ordinal);
-        int addPoint    = body.IndexOf("Header = \"Add Point\"", System.StringComparison.Ordinal);
-        int addVswr     = body.IndexOf("Header    = \"Add Points to VSWR\",", System.StringComparison.Ordinal);
+        // R7A §2.2/§2.4 — these are now built through the shared Item(header, icon, onClick, …) helper
+        // rather than a bare `new MenuItem { Header = … }`, so the source pattern to look for changed
+        // from `Header = "…"` to `Item("…"`.
+        int snap        = body.IndexOf("Toggle(\"Snap to Grid\",", System.StringComparison.Ordinal);
+        int addPoint    = body.IndexOf("Item(\"Add Point\"", System.StringComparison.Ordinal);
+        int addVswr     = body.IndexOf("Item(\"Add Points to VSWR\"", System.StringComparison.Ordinal);
         int lastSep     = body.LastIndexOf("new Separator()", System.StringComparison.Ordinal);
-        int remove      = body.IndexOf("Header    = $\"Remove {marker.Name}\"", System.StringComparison.Ordinal);
+        int remove      = body.IndexOf("Item($\"Remove {marker.Name}\"", System.StringComparison.Ordinal);
 
         Assert.True(snap >= 0 && addPoint >= 0 && addVswr >= 0 && lastSep >= 0 && remove >= 0);
         Assert.True(snap < addPoint,     "Add Point must come after Snap to Grid");
@@ -228,7 +231,7 @@ public sealed class HarmonicaAddedGridPointsTests(ITestOutputHelper output)
         Assert.True(lastSep < remove,    "Remove is the last item");
 
         // Add Points to VSWR is disabled with a stated reason when the circle itself is off.
-        Assert.Contains("IsEnabled = marker.VswrEnabled,", body, System.StringComparison.Ordinal);
+        Assert.Contains("enabled: marker.VswrEnabled,", body, System.StringComparison.Ordinal);
         Assert.Contains("Turn on this marker's VSWR circle first.", body, System.StringComparison.Ordinal);
     }
 

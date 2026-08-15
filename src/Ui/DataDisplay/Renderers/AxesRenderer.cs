@@ -492,6 +492,7 @@ namespace CircuitRF.Ui.DataDisplay
             var (font, paint) = MakeTextObjects(plot.Axes.FontSizeLabel * 1.4, lw, theme);
             using var _f = font;
             using var _p = paint;
+            if (plot.CustomTitleBold) font.Typeface = SkiaFonts.PlexBold;
 
             float w  = (float)canvasSize.W;
             float h  = (float)canvasSize.H;

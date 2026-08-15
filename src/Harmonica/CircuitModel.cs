@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Numerics;
 
 namespace CircuitRF.Harmonica;
@@ -59,6 +60,17 @@ public sealed record DutSpec
     public IReadOnlyDictionary<string, string> Parameters { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// R7B §3.4 — the SDD editor's verbatim text (variables, equations, comments, blank lines, in the
+    /// order the user wrote them). The AUTHORITATIVE user-facing form; <see cref="Parameters"/> is
+    /// DERIVED from it by <c>HarmonicaDutEditor.Build</c> whenever <see cref="Kind"/> is
+    /// <see cref="DutKind.Sdd"/>. Null for every non-SDD kind, and for an SDD loaded from a
+    /// <c>.charm</c> written before this field existed — <c>HarmonicaDutEditor</c>'s own constructor
+    /// reconstructs something sensible to show in that case (<c>SddTextIo.Reconstruct</c>), rather
+    /// than <c>CharmIo</c> writing a reconstruction back into a document nobody touched.
+    /// </summary>
+    public string? SddText { get; init; }
+
     /// <summary>Device multiplier — <c>m</c> in the netlist. 1 for a single device.</summary>
     public double Multiplicity { get; init; } = 1.0;
 
@@ -69,6 +81,15 @@ public sealed record DutSpec
     /// defaulted.
     /// </summary>
     public IntrinsicMapping? IntrinsicMapping { get; init; }
+
+    /// <summary>
+    /// R7D — Cgs/Cdg/Cds across the DUT's own terminals, SDD only. A property of THIS device (hence
+    /// hung off <see cref="DutSpec"/> rather than <see cref="LumpedPackage"/>, which is the extrinsic
+    /// network outside it) and the reason the SDD-only rule reads naturally here. Default
+    /// <see cref="DutCapacitances.None"/>, so every existing construction site keeps compiling and
+    /// every existing document is unchanged.
+    /// </summary>
+    public DutCapacitances Capacitances { get; init; } = DutCapacitances.None;
 }
 
 /// <summary>
@@ -76,6 +97,53 @@ public sealed record DutSpec
 /// intrinsic drain, so this is user-supplied and persisted per model type (§4.5.5).
 /// </summary>
 public sealed record IntrinsicMapping(string GateNode, string DrainNode, string SourcePin);
+
+/// <summary>R7D — one of the three DUT capacitances. Absent, linear, or a 1-D polynomial C(V).</summary>
+public sealed record DutCapacitance
+{
+    /// <summary>Farads. Used when <see cref="Coefficients"/> is null. Zero means "no capacitor at all"
+    /// — nothing is emitted into the netlist.</summary>
+    public double Farads { get; init; }
+
+    /// <summary>C0…Cn of C(V) = Σ Cₖ·Vᵏ, in raw SI (F, F/V, F/V², …) — the SAME spelling and the same
+    /// units NonlinearC's own C0/C1/… parameters use. Null for a linear capacitor.</summary>
+    public IReadOnlyList<double>? Coefficients { get; init; }
+
+    public bool IsNonlinear => Coefficients is { Count: > 0 };
+    public bool IsAbsent    => !IsNonlinear && Farads == 0.0;
+
+    public static readonly DutCapacitance None = new();
+
+    /// <summary>R7D §2.2 — this capacitor's own contribution to <see cref="CircuitModel.StructuralKey"/>,
+    /// stable and readable (<c>"Cgs=1.2E-12"</c> / <c>"Cgs=[1.2E-12,3E-14]"</c>), via
+    /// <see cref="HarmonicaNetlist.Num"/> so it never picks up a culture separator.</summary>
+    public string StructuralKeyPart(string name) => IsNonlinear
+        ? $"{name}=[{string.Join(",", Coefficients!.Select(HarmonicaNetlist.Num))}]"
+        : $"{name}={HarmonicaNetlist.Num(Farads)}";
+}
+
+/// <summary>R7D — the DUT's three parasitic capacitances (Cgs/Cdg/Cds), SDD only (§1).</summary>
+public sealed record DutCapacitances
+{
+    public DutCapacitance Cgs { get; init; } = DutCapacitance.None;
+    public DutCapacitance Cdg { get; init; } = DutCapacitance.None;
+    public DutCapacitance Cds { get; init; } = DutCapacitance.None;
+
+    /// <summary>R8C §3 — ohms, in SERIES with Cgs between the gate terminal and the source
+    /// terminal. 0 (the default) emits nothing at all, so an existing document is bit-identical.</summary>
+    public double RgsOhms { get; init; }
+
+    public static readonly DutCapacitances None = new();
+
+    // R8C §3.1 — deliberately does NOT consult RgsOhms: a non-zero rgs with an absent Cgs is an open
+    // branch and emits nothing (HarmonicaNetlist's own Cgs/rgs block), so it must not count as "not
+    // the identity" — a document with rgs set but no Cgs is still structurally untouched.
+    public bool IsIdentity => Cgs.IsAbsent && Cdg.IsAbsent && Cds.IsAbsent;
+}
+
+/// <summary>Which of the three DUT capacitances a quantity is about — used by the readout strip's
+/// linearized-value computation (R7D §3.3) to say which port pair's bias voltage to read.</summary>
+public enum DutCapacitanceKind { Cgs, Cdg, Cds }
 
 /// <summary>
 /// The canonical, fixed-topology extrinsic network (§4.1). Any value may be zero. It is deliberately
@@ -356,16 +424,17 @@ public sealed record HarmonicaSettings
     public RfCore.Loadpull.RbfKernel ContourKernel { get; init; } = RfCore.Loadpull.RbfKernel.Multiquadric;
 
     /// <summary>The RBF smoothing term (scipy convention: subtracted from the kernel matrix diagonal).
-    /// Default matches <c>Rbf2D</c>'s own default (1e-3).</summary>
-    public double ContourSmooth { get; init; } = 1e-3;
+    /// R8A §5 — 0.1, owner-set; was <c>Rbf2D</c>'s own default (1e-3).</summary>
+    public double ContourSmooth { get; init; } = 0.1;
 
     /// <summary>
-    /// The RBF shape parameter ε. <c>null</c> means <c>Rbf2D</c>'s own scipy-style auto epsilon —
-    /// deliberately NOT defaulted to a number here, because "auto" recomputes from each grid's own
-    /// bounding box and node count while a fixed number would not, and the difference is visible in
-    /// the contours.
+    /// The RBF shape parameter ε. R8A §5 — 0.5, owner-set; <c>ContourEpsilon</c> is no longer
+    /// null-means-auto BY DEFAULT for harmonicaRF (it was, until this brief — see
+    /// <c>HarmonicaAdvancedSettingsView</c>'s own epsilon box, whose blank-for-auto behaviour
+    /// survives as an OPT-IN a user can still reach by clearing the box). <c>null</c> still means
+    /// <c>Rbf2D</c>'s own scipy-style auto epsilon when it occurs.
     /// </summary>
-    public double? ContourEpsilon { get; init; }
+    public double? ContourEpsilon { get; init; } = 0.5;
 
     /// <summary>
     /// The bias choke, henries. One henry is the ideal-bias value (§4.4) and the default.
@@ -467,5 +536,72 @@ public sealed record CircuitModel
         Embedding.S2pInFile ?? "", Embedding.S2pOutFile ?? "", Embedding.S4pFile ?? "",
         Embedding.Package,
         Settings.HarmonicCount, Settings.FrequencyHz, Settings.FftOverSample,
-        Settings.ComputeCharge);
+        Settings.ComputeCharge,
+        // R7D §2.2 — a capacitance is a netlist ELEMENT, not a value like Vgs; leaving it out would
+        // mean editing one changes nothing until some unrelated structural edit happens to rebuild.
+        Dut.Capacitances.Cgs.StructuralKeyPart("Cgs"),
+        Dut.Capacitances.Cdg.StructuralKeyPart("Cdg"),
+        Dut.Capacitances.Cds.StructuralKeyPart("Cds"),
+        // R8C §3.1 — a netlist element (HarmonicaNetlist's own RGS resistor), same rule as the
+        // capacitances above: leaving it out would mean editing rgs changes nothing until some
+        // unrelated structural edit happens to rebuild.
+        "Rgs=" + HarmonicaNetlist.Num(Dut.Capacitances.RgsOhms));
+
+    /// <summary>R8C §5.2 — whether an intrinsic glyph may be dragged. True only when the intrinsic
+    /// plane is separated from each terminal by a LINEAR, UNILATERAL two-port, which is exactly the
+    /// condition under which <see cref="IntrinsicAbcd"/>'s ABCD inversion is exact rather than
+    /// approximate.</summary>
+    public static bool IntrinsicDragAllowed(CircuitModel m, out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+
+        if (m.Dut.Kind != DutKind.Sdd)
+        {
+            reason = "Intrinsic dragging needs an SDD DUT — a native FET carries gate charge inside " +
+                     "its own CapModel and an external model carries parasitics we cannot see, so no " +
+                     "ABCD chain can be written for either.";
+            return false;
+        }
+
+        var caps = m.Dut.Capacitances;
+        if (caps.Cgs.IsNonlinear || caps.Cdg.IsNonlinear || caps.Cds.IsNonlinear)
+        {
+            reason = "A nonlinear capacitor makes the embedding a conversion matrix, not a 2×2 ABCD " +
+                     "— harmonics couple and a per-band inversion would be wrong, not merely inaccurate.";
+            return false;
+        }
+
+        if (!caps.Cdg.IsAbsent)
+        {
+            reason = "Cdg is the DUT's own gate–drain feedback path; with it the input and output " +
+                     "halves are one four-port and cannot be inverted side by side.";
+            return false;
+        }
+
+        // R8C §5.2 — this predicate already exists, and is already documented as "exactly the
+        // condition under which Z_S,intr departs from the passive source network": a shared source
+        // lead (Rs/Ls) or an external gate-drain feedback cap (CgdExt) closes a path between the input
+        // and output loops. Mutual inductance between input and output is not representable in this
+        // model — LumpedPackage carries no coupling coefficient — and Ls (the shared source lead) is
+        // the one representable input–output inductive path, already covered here.
+        if (m.Embedding.Package.CouplesInputAndOutput)
+        {
+            reason = "The package couples the input and output loops (a shared source lead or an " +
+                     "external gate-drain feedback capacitance), so the two sides cannot be inverted " +
+                     "independently.";
+            return false;
+        }
+
+        if (!m.Settings.ComputeCharge)
+        {
+            // A drag is a no-op with charge off (the glyph already coincides with its marker), not an
+            // error — allowed, but the caller is told so it is not a surprise.
+            reason = "Charge is off, so the intrinsic glyph already coincides with its marker — a " +
+                     "drag will move nothing.";
+            return true;
+        }
+
+        reason = "";
+        return true;
+    }
 }

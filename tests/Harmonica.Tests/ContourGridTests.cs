@@ -12,8 +12,10 @@ namespace CircuitRF.Harmonica.Tests;
 
 /// <summary>
 /// M5's gate: <b>Tier 6</b> (the RBF factorization cache is bit-identical to a full rebuild and
-/// invalidates on a NaN-mask change) and <b>Tier 7</b> (a grid with a deliberate hole produces no
-/// iso-line inside it), plus R-hrf-7's solves-per-Γ-point and D6's argmax.
+/// invalidates on a NaN-mask change) and <b>Tier 7</b> (the <c>excludeHoleDiscs: true</c> mask still
+/// produces no iso-line inside a hole — R8A §6 reversed this from <c>Contours()</c>'s own DEFAULT to
+/// an explicit opt-in; see <c>ContourGridHoleSpanTests</c> for the new default's own gate), plus
+/// R-hrf-7's solves-per-Γ-point and D6's argmax.
 /// </summary>
 public sealed class ContourGridTests(ITestOutputHelper output)
 {
@@ -258,7 +260,7 @@ public sealed class ContourGridTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void ContourSettings_RoundTripThroughCharm_AndAnOlderCharmOpensAtRbf2DsOwnDefaults()
+    public void ContourSettings_RoundTripThroughCharm_AndAnOlderCharmOpensAtHarmonicaSettingsOwnDefaults()
     {
         var model = Model() with
         {
@@ -277,12 +279,14 @@ public sealed class ContourGridTests(ITestOutputHelper output)
         Assert.Equal(0.25, back.Settings.ContourSmooth);
         Assert.Equal(0.7,  back.Settings.ContourEpsilon);
 
-        // Absent (an older .charm, or a hand-written one) takes Rbf2D's own defaults — never a
-        // substituted number for ContourEpsilon's "auto" null.
+        // R8A §5 — absent (an older .charm, or a hand-written one) takes HarmonicaSettings's own
+        // defaults for ALL THREE now, ContourEpsilon included: it is no longer null-means-auto BY
+        // DEFAULT (CharmIo:334's `?? defaults.ContourEpsilon`), so an old file lands on 0.5 exactly
+        // like every neighbouring field here, not on Rbf2D's own auto null.
         var (older, _) = CharmIo.Read("""{ "FormatVersion": 1 }""", null, out _, withMarkers: true);
         Assert.Equal(new HarmonicaSettings().ContourKernel,  older.Settings.ContourKernel);
         Assert.Equal(new HarmonicaSettings().ContourSmooth,  older.Settings.ContourSmooth);
-        Assert.Null(older.Settings.ContourEpsilon);
+        Assert.Equal(new HarmonicaSettings().ContourEpsilon, older.Settings.ContourEpsilon);
     }
 
     [Fact]
@@ -315,10 +319,16 @@ public sealed class ContourGridTests(ITestOutputHelper output)
         }
     }
 
-    // ── TIER 7 — a hole draws nothing ─────────────────────────────────────────
+    // ── TIER 7 — the excludeHoleDiscs:true MASK still works, opt-in ────────────
+    //
+    // R8A §6 REVERSED the doctrine these two tests originally pinned: `Contours()`'s own DEFAULT now
+    // SPANS a hole rather than breaking at it (see `ContourGridHoleSpanTests` for that new-default
+    // gate). What survives here is the MECHANISM itself — `Raster(..., excludeHoleDiscs: true)`,
+    // which the optimum-search path (`InterpolatedArgmax`) still depends on unconditionally — so
+    // these are rewritten to exercise that explicit opt-in rather than deleted.
 
     [Fact]
-    public void Tier7_AGridWithADeliberateHoleProducesNoIsoLineInsideIt()
+    public void Tier7_ExcludeHoleDiscsTrue_StillProducesNoIsoLineInsideTheHole()
     {
         // A synthetic grid, because the claim is about the MASK rather than about the physics: a
         // ring set with one interior point removed, and a metric shaped so an unmasked RBF would
@@ -337,7 +347,12 @@ public sealed class ContourGridTests(ITestOutputHelper output)
         Assert.Equal(gammas.Length - 1, grid.ConvergedCount);
 
         double radius = grid.HoleRadius;
-        var polylines = grid.Contours(GridMetric.PoutDbm, levels: 12, resolution: 201);
+        // R8A §6 — `Contours()` no longer exposes the exclude switch (its own default is to span),
+        // so the opt-in path is built the same way `Contours()` builds its own default: raster then
+        // extract, just with excludeHoleDiscs explicit.
+        var raster = grid.Raster(GridMetric.PoutDbm, 201, excludeHoleDiscs: true);
+        var set    = ContourExtractor.LevelsBetween(raster, 12);
+        var polylines = ContourExtractor.Extract(raster, set);
 
         output.WriteLine($"hole at Γ = {holeGamma:G4}, excluded disc radius {radius:F4}, " +
                          $"{polylines.Count} iso-polylines extracted");
@@ -386,8 +401,9 @@ public sealed class ContourGridTests(ITestOutputHelper output)
         Assert.True(double.IsFinite(invented) && invented > 0,
             "the raw fit must produce something inside the hole, or the mask has nothing to suppress");
 
-        // The masked raster is NaN there, which is what ContourExtractor reads as absent.
-        var raster = grid.Raster(GridMetric.PoutDbm, resolution: 201);
+        // R8A §6 — excludeHoleDiscs: true, explicitly: Raster's own DEFAULT now spans the hole (the
+        // point of this brief), so the masked behaviour this test is about is opt-in from here on.
+        var raster = grid.Raster(GridMetric.PoutDbm, resolution: 201, excludeHoleDiscs: true);
         int xi = NearestIndex(raster.XSpace, holeGamma.Real);
         int yi = NearestIndex(raster.YSpace, holeGamma.Imaginary);
         Assert.True(double.IsNaN(raster.Values[yi * raster.XSpace.Length + xi]));

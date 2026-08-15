@@ -65,7 +65,7 @@ public sealed class HarmonicaGridPointDragTests(ITestOutputHelper output)
 
         // Z-ORDER: a marker sitting exactly on a grid point wins, because it is drawn on top.
         var l1 = vm.Markers.Single(m => m is { Side: TerminationSideKind.Load, Band: 1 });
-        var mAt = HarmonicaPanelRenderer.MarkerToCanvas(l1.Gamma, size);
+        var mAt = HarmonicaPanelRenderer.GammaToCanvas(l1.Gamma, size);
         var onMarker = HarmonicaHitTest.Resolve(
             layout, vm.Markers, panel.X * 1000 + mAt.X, panel.Y * 800 + mAt.Y, 1000, 800,
             gridPoints: [.. points, new HarmonicaGridPoint(l1.Gamma, false)]);
@@ -78,8 +78,10 @@ public sealed class HarmonicaGridPointDragTests(ITestOutputHelper output)
         // Worth writing down rather than assumed either way: the compressed radial scale only ACTS
         // outside the rim (IntrinsicGlyphScale compresses |Γ| > 1 into the annulus and is the
         // identity below it). A grid point is a passive load termination and is always inside, so
-        // MarkerToCanvas and GammaToCanvas agree on it exactly — the R-h6-1 offset that misses a
-        // marker near the rim has NO analogue here.
+        // the raw transform and the INTRINSIC GLYPH's compressed one agree on it exactly — the R-h6-1
+        // offset that misses a marker near the rim has NO analogue here. (R8B §2 re-pointed the
+        // EXTRINSIC marker onto the raw transform outright — this comparison is now about the
+        // intrinsic glyph, the one thing still on IntrinsicGlyphScale.)
         //
         // The hit test still goes through GammaToCanvas, because that is the transform the renderer
         // draws grid points with; matching the renderer is the rule, not the size of today's error.
@@ -90,7 +92,7 @@ public sealed class HarmonicaGridPointDragTests(ITestOutputHelper output)
         {
             var gamma = Complex.FromPolarCoordinates(mag, 0.7);
             var raw        = HarmonicaPanelRenderer.GammaToCanvas(gamma, size);
-            var compressed = HarmonicaPanelRenderer.MarkerToCanvas(gamma, size);
+            var compressed = HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(gamma), size);
             double offset  = Math.Sqrt((raw.X - compressed.X) * (raw.X - compressed.X)
                                      + (raw.Y - compressed.Y) * (raw.Y - compressed.Y));
             output.WriteLine($"  |Γ| = {mag:F3}: offset {offset:E2} px");
@@ -101,7 +103,7 @@ public sealed class HarmonicaGridPointDragTests(ITestOutputHelper output)
         // "they coincide" claim above is scoped rather than absolute.
         var outside = new Complex(1.6, 0.0);
         var rawOut  = HarmonicaPanelRenderer.GammaToCanvas(outside, size);
-        var compOut = HarmonicaPanelRenderer.MarkerToCanvas(outside, size);
+        var compOut = HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(outside), size);
         output.WriteLine($"  |Γ| = 1.600: offset {Math.Abs(rawOut.X - compOut.X):F1} px (the annulus)");
         Assert.True(Math.Abs(rawOut.X - compOut.X) > 10.0);
 

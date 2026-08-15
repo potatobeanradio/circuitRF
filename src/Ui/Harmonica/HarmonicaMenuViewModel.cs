@@ -41,7 +41,9 @@ public sealed partial class HarmonicaBandMenuItem : ObservableObject
     public string Header => (Side == TerminationSideKind.Source ? "S" : "L") + Band;
 
     public string Tooltip => Band == 1
-        ? "The fundamental termination is always present and cannot be removed (§4.2)."
+        ? $"Show a marker on the fundamental of the {(Side == TerminationSideKind.Source ? "source" : "load")} " +
+          "plane. Removing it leaves the termination in place — the circuit does not change, only the " +
+          "marker/view goes away (R8B §3.3)."
         : $"Show a marker on band {Band} of the {(Side == TerminationSideKind.Source ? "source" : "load")} " +
           "plane. Removing it leaves the band unmarked — the absence of a marker, not a marker with a " +
           "default value.";
@@ -224,9 +226,11 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
             if (into.Count != k)
             {
                 into.Clear();
+                // R8B §3.3 — band 1 is removable on both sides now; the fundamental TERMINATION stays
+                // in place (RemoveMarkerBand's own remark), only the marker/view goes away.
                 for (int band = 1; band <= k; band++)
                     into.Add(new HarmonicaBandMenuItem(side, band, Present(side, band),
-                                                       canRemove: band != 1, ToggleBand));
+                                                       canRemove: true, ToggleBand));
                 return;
             }
 

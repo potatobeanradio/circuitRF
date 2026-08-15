@@ -49,7 +49,7 @@
     inputs — Vgs, Idq, Vds, f0, K, compr, Z0 — as inline-editable text, R3C §1) and
     OperatingPointColumn (Pin/Pout/Gain/DE/PAE/Pdc at the operating point, R3C §2). Final left-to-right
     order: Settings · Operating point · Source · Load · MXP · MXE. SettingsColumn hugs the left edge
-    of the window (this ScrollViewer's own Padding, shared by everything in it) exactly as the owner
+    of the window (this root Panel's own Margin, shared by everything in it) exactly as the owner
     asked. HarmonicaR3cStripTests.ColumnsPanel_ListsTheSixColumns_InTheOwnersOrder pins this ordering
     by scanning THIS file's own x:Name order, since nothing here is unit-testable through a live
     control tree.
@@ -66,10 +66,7 @@
     UNSET (not even Transparent) so the overlay's own empty space passes clicks through to whatever
     is under it; only an actual open editor's TextBox is ever hit-testable.
   -->
-  <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                VerticalScrollBarVisibility="Auto"
-                Padding="6,4">
-    <Panel>
+  <Panel Margin="6,4">
       <StackPanel Orientation="Vertical" Spacing="3">
         <WrapPanel x:Name="Inputs" Orientation="Horizontal"/>
         <Border    x:Name="InputRule" Height="1" Opacity="0.25" IsVisible="False"/>
@@ -77,28 +74,27 @@
         <WrapPanel x:Name="Items"  Orientation="Horizontal"/>
         <Border    x:Name="ColumnRule" Height="1" Opacity="0.25" IsVisible="False"/>
         <!--
-          R6C §1 — the owner's 2 × 4 chunk grid, (row, column):
-            row 1:  A Settings        · B Operating point · E MXP            · F MXE
-            row 2:  D Load            · C Source           · G Intrinsic VDS · H Intrinsic IDS
-          Load sits above-left of Source (D at (2,1), C at (2,2)) — the reverse of the old
-          left-to-right Source-then-Load order, and deliberate: the owner specified it this way.
-          Re-parenting only: every x:Name from the old horizontal Columns StackPanel survives
-          unchanged, so UpdateReadoutColumn's build-once/update-in-place machinery (keyed on these
-          controls) and HarmonicaR3cStripTests both keep working.
+          R-hui-1 — the owner's revised 2 x 4 chunk grid, (row, column):
+            row 1:  A Settings (spans both rows) · B Operating point · E MXP            · F MXE
+            row 2:  [Settings continues]         · C Terminations   · G Intrinsic VDS · H Intrinsic IDS
+          Settings (Vgs, Idq, Vds, etc.) now occupies BOTH (1,1) and (2,1) — extending down instead of
+          sitting in one row — so it has room to grow (future settings like capacitance) without
+          stretching row 1 taller than the other three chunks there need. Source and Load are merged
+          into ONE chunk (Terminations) at (2,2), freeing the column-1/row-2 slot Settings now spans
+          into. Re-parenting only: every surviving x:Name from the old grid keeps
+          UpdateReadoutColumn's build-once/update-in-place machinery working unchanged.
         -->
         <Grid x:Name="Columns" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto,Auto"
               RowSpacing="6" ColumnSpacing="16">
-          <StackPanel x:Name="SettingsColumn"       Grid.Row="0" Grid.Column="0" Orientation="Vertical" Spacing="1"/>
+          <StackPanel x:Name="SettingsColumn"       Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Orientation="Vertical" Spacing="1"/>
           <StackPanel x:Name="OperatingPointColumn" Grid.Row="0" Grid.Column="1" Orientation="Vertical" Spacing="1"/>
           <StackPanel x:Name="MxpColumn"             Grid.Row="0" Grid.Column="2" Orientation="Vertical" Spacing="1"/>
           <StackPanel x:Name="MxeColumn"             Grid.Row="0" Grid.Column="3" Orientation="Vertical" Spacing="1"/>
-          <StackPanel x:Name="LoadColumn"            Grid.Row="1" Grid.Column="0" Orientation="Vertical" Spacing="1"/>
-          <StackPanel x:Name="SourceColumn"          Grid.Row="1" Grid.Column="1" Orientation="Vertical" Spacing="1"/>
+          <StackPanel x:Name="TerminationsColumn"    Grid.Row="1" Grid.Column="1" Orientation="Vertical" Spacing="1"/>
           <StackPanel x:Name="IntrinsicVdsColumn"    Grid.Row="1" Grid.Column="2" Orientation="Vertical" Spacing="1"/>
           <StackPanel x:Name="IntrinsicIdsColumn"    Grid.Row="1" Grid.Column="3" Orientation="Vertical" Spacing="1"/>
         </Grid>
       </StackPanel>
       <Canvas x:Name="EditorOverlay"/>
-    </Panel>
-  </ScrollViewer>
+  </Panel>
 </UserControl>

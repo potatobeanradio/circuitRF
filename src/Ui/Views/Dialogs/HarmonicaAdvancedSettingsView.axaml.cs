@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using CircuitRF.Ui.Harmonica;
+using CircuitRF.Ui.Theming;
 using RfCore.Loadpull;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -22,6 +23,7 @@ namespace CircuitRF.Ui.Views.Dialogs;
 public partial class HarmonicaAdvancedSettingsView : UserControl
 {
     private HarmonicaViewModel _vm = null!;
+    private HarmonicaColorEditor _editor = null!;
     private bool _updating;
 
     public HarmonicaAdvancedSettingsView()
@@ -30,10 +32,20 @@ public partial class HarmonicaAdvancedSettingsView : UserControl
         KernelCombo.ItemsSource = new[] { RbfKernel.Multiquadric, RbfKernel.ThinPlate, RbfKernel.Gaussian };
     }
 
-    public void Attach(HarmonicaViewModel vm)
+    /// <summary>
+    /// R8A §3 — this tab now also owns the iso-line fade sliders and label toggle, moved here verbatim
+    /// from <see cref="HarmonicaAppearanceSettingsView"/>. Both write through <c>_editor</c>
+    /// (<c>_editor.IsoAlphaFloor</c>/<c>_editor.ShowIsoLineLabels</c>) exactly as they did there — ONE
+    /// <see cref="HarmonicaColorEditor"/> instance, handed to both tabs by
+    /// <see cref="HarmonicaSettingsDialog"/>, never two.
+    /// </summary>
+    public void Attach(HarmonicaViewModel vm, HarmonicaColorEditor editor)
     {
-        _vm = vm;
+        _vm     = vm;
+        _editor = editor;
         RefreshFromModel();
+        LoadFade();
+        LoadTickleDefault();
     }
 
     private void RefreshFromModel()
@@ -101,6 +113,87 @@ public partial class HarmonicaAdvancedSettingsView : UserControl
             return;
         }
         HideError();
+    }
+
+    // ── R8A §3 — moved verbatim from HarmonicaAppearanceSettingsView ────────────
+    // ── §7.2's fade parameters ───────────────────────────────────────────────
+
+    private void LoadFade()
+    {
+        _updating = true;
+        try
+        {
+            AlphaFloorSlider.Value = _editor.IsoAlphaFloor;
+            AlphaExpSlider.Value   = _editor.IsoAlphaExponent;
+            IsoLabelsCheck.IsChecked = _editor.ShowIsoLineLabels;
+            AlphaFloorLabel.Text = _editor.IsoAlphaFloor.ToString("0.00");
+            AlphaExpLabel.Text   = _editor.IsoAlphaExponent.ToString("0.00");
+        }
+        finally { _updating = false; }
+    }
+
+    private void OnFadeChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_updating) return;
+        _editor.IsoAlphaFloor    = AlphaFloorSlider.Value;
+        _editor.IsoAlphaExponent = AlphaExpSlider.Value;
+        AlphaFloorLabel.Text = AlphaFloorSlider.Value.ToString("0.00");
+        AlphaExpLabel.Text   = AlphaExpSlider.Value.ToString("0.00");
+    }
+
+    private void OnIsoLabelsChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updating) return;
+        _editor.ShowIsoLineLabels = IsoLabelsCheck.IsChecked == true;
+        _vm.ShowIsoLineLabels     = _editor.ShowIsoLineLabels;
+    }
+
+    // ── R-h9r2-18a — the tickle default a brand new document seeds from ─────────
+
+    private void LoadTickleDefault()
+    {
+        _updating = true;
+        try
+        {
+            TickleDefaultEnabledCheck.IsChecked = HarmonicaTickleDefaults.Enabled;
+            TickleDefaultDbmBox.Text = HarmonicaTickleDefaults.Dbm.ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+            TickleDefaultDbmBox.IsEnabled = HarmonicaTickleDefaults.Enabled;
+        }
+        finally { _updating = false; }
+    }
+
+    private void OnTickleDefaultChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updating) return;
+        TickleDefaultDbmBox.IsEnabled = TickleDefaultEnabledCheck.IsChecked == true;
+        CommitTickleDefault();
+    }
+
+    private void OnTickleDefaultDbmLostFocus(object? sender, RoutedEventArgs e) => CommitTickleDefault();
+
+    private void OnTickleDefaultDbmKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Return) { CommitTickleDefault(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { LoadTickleDefault(); e.Handled = true; }
+    }
+
+    private void CommitTickleDefault()
+    {
+        if (_updating) return;
+        if (!double.TryParse(TickleDefaultDbmBox.Text, System.Globalization.NumberStyles.Float,
+                             System.Globalization.CultureInfo.InvariantCulture, out double dbm))
+        {
+            LoadTickleDefault();
+            return;
+        }
+
+        bool enabled = TickleDefaultEnabledCheck.IsChecked == true;
+        AppPreferencesIo.Update(p =>
+        {
+            p.HarmonicaTickleEnabled = enabled;
+            p.HarmonicaTickleDbm     = dbm;
+        });
     }
 
     // ── §3 — the contour surface's own kernel / smooth / epsilon ────────────────

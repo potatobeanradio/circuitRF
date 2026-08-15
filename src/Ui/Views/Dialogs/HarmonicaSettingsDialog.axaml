@@ -3,7 +3,7 @@
         xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
         x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaSettingsDialog"
         Title="harmonicaRF Settings"
-        Width="640" Height="580"
+        Width="640" Height="760"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 

@@ -105,6 +105,17 @@ public static class HarmonicaVswrHandle
     /// is this case, not a high-VSWR passive drag.</para>
     /// </summary>
     public static double VswrThrough(Complex center, Complex dragGamma, double z0)
+        => VswrThroughEx(center, dragGamma, z0).Vswr;
+
+    /// <summary>
+    /// R8B §7.3 — the same search as <see cref="VswrThrough"/>, but honest about a clamp. A drag past
+    /// either bracket end used to silently return the clamped number (<see cref="MinVswr"/> or
+    /// <see cref="MaxVswr"/>) with no way to tell it apart from a genuine root — which is what "the
+    /// readout jumps to VSWR: 1000000 and every further pixel of drag produces the same number" felt
+    /// like. <c>Saturated</c> is true exactly when the search never bisected at all, i.e. the drag
+    /// point already sat outside the loosest or tightest circle the bracket contains.
+    /// </summary>
+    public static (double Vswr, bool Saturated) VswrThroughEx(Complex center, Complex dragGamma, double z0)
     {
         double F(double v)
         {
@@ -113,14 +124,14 @@ public static class HarmonicaVswrHandle
         }
 
         double lo = MinVswr, hi = MaxVswr;
-        if (F(lo) <= 0) return lo;
-        if (F(hi) >= 0) return hi;
+        if (F(lo) <= 0) return (lo, true);
+        if (F(hi) >= 0) return (hi, true);
 
         for (int i = 0; i < BisectionIterations; i++)
         {
             double mid = (lo + hi) / 2.0;
             if (F(mid) > 0) lo = mid; else hi = mid;
         }
-        return (lo + hi) / 2.0;
+        return ((lo + hi) / 2.0, false);
     }
 }

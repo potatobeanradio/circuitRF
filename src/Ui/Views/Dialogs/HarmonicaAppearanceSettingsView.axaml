@@ -44,39 +44,6 @@
           <Button  x:Name="RevertButton" Content="Reset This Role" Click="OnRevertClick"/>
         </StackPanel>
 
-        <Border Height="1" Opacity="0.2" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,6"/>
-
-        <TextBlock Text="Iso-line fade (§7.2)" FontWeight="SemiBold"/>
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <TextBlock Text="α floor" VerticalAlignment="Center" Width="60" Opacity="0.7"/>
-          <Slider x:Name="AlphaFloorSlider" Minimum="0" Maximum="1" Width="220"
-                  ValueChanged="OnFadeChanged"
-                  ToolTip.Tip="1 flattens the fade entirely — every contour fully opaque — with no code change."/>
-          <TextBlock x:Name="AlphaFloorLabel" VerticalAlignment="Center" Width="40"/>
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <TextBlock Text="exponent" VerticalAlignment="Center" Width="60" Opacity="0.7"/>
-          <Slider x:Name="AlphaExpSlider" Minimum="0.05" Maximum="4" Width="220"
-                  ValueChanged="OnFadeChanged"
-                  ToolTip.Tip="The shaping exponent p. Larger fades the lower levels harder."/>
-          <TextBlock x:Name="AlphaExpLabel" VerticalAlignment="Center" Width="40"/>
-        </StackPanel>
-        <CheckBox x:Name="IsoLabelsCheck" Content="Iso-line labels" Click="OnIsoLabelsChanged"
-                  ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them."/>
-
-        <Border Height="1" Opacity="0.2" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,6"/>
-
-        <TextBlock Text="Tickle default (R-h9r2-18a)" FontWeight="SemiBold"/>
-        <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="11"
-                   Text="What a BRAND NEW harmonicaRF document opens with. A document you already have keeps its own tickle regardless of this — it is per-user, not something a .charm from someone else can silently change."/>
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <CheckBox x:Name="TickleDefaultEnabledCheck" Content="Enabled" Click="OnTickleDefaultChanged"/>
-          <TextBlock Text="level" VerticalAlignment="Center" Opacity="0.7"/>
-          <TextBox x:Name="TickleDefaultDbmBox" Width="70"
-                   KeyDown="OnTickleDefaultDbmKeyDown" LostFocus="OnTickleDefaultDbmLostFocus"/>
-          <TextBlock Text="dBm" VerticalAlignment="Center" Opacity="0.7"/>
-        </StackPanel>
-
       </StackPanel>
     </Grid>
 

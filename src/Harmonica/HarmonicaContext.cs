@@ -226,9 +226,17 @@ public sealed class HarmonicaContext
     /// <summary>Index into the HB unknown vector for a generated net name, or −1 if it is not one.</summary>
     public int InterfaceIndex(string netName) => Array.IndexOf(_interface.DeviceNodes, Node(netName));
 
-    /// <summary>The one DUT. The topology holds exactly one nonlinear device (§1.1).</summary>
+    /// <summary>
+    /// The one DUT, found by its own fixed instance name (<see cref="HarmonicaNetlist.Dut"/>).
+    ///
+    /// <para><b>Not</b> "the only nonlinear device" — that was true before R7D and is not any more:
+    /// a nonlinear Cgs/Cdg/Cds capacitor (<c>NonlinearCModel.Kind == ModelKind.Nonlinear</c>) sits
+    /// alongside the SDD in <c>_netlist.NonlinearComponents</c> once it is C(V), so a topology can now
+    /// legitimately hold more than one nonlinear device. Identity by name is what still picks out the
+    /// DUT unambiguously.</para>
+    /// </summary>
     public ElaboratedComponent DutComponent
-        => _netlist.Components[_netlist.NonlinearComponents.Single()];
+        => _netlist.Components.First(c => c.InstancePath == HarmonicaNetlist.Dut);
 
     /// <summary>
     /// Which ports §4.5's intrinsic quantities are read at, resolved once per REBUILD (the DUT and the

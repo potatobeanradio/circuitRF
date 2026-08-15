@@ -73,7 +73,7 @@ public sealed class HarmonicaR5StripRebuildTests
     }
 
     [Fact]
-    public void SetItems_CallsUpdateReadoutColumn_OnceEachForAllFiveNonGeneralColumns()
+    public void SetItems_CallsUpdateReadoutColumn_OnceEachForTheNonGeneralColumns()
     {
         string src = Source();
         int m = src.IndexOf("public void SetItems(", StringComparison.Ordinal);
@@ -82,7 +82,8 @@ public sealed class HarmonicaR5StripRebuildTests
         Assert.True(mEnd > m);
         string body = src[m..mEnd];
 
-        foreach (string column in new[] { "OperatingPointColumn", "SourceColumn", "LoadColumn", "MxpColumn", "MxeColumn" })
+        // R-hui-1 — Source and Load merged into ONE TerminationsColumn call.
+        foreach (string column in new[] { "OperatingPointColumn", "TerminationsColumn", "MxpColumn", "MxeColumn" })
             Assert.Contains($"UpdateReadoutColumn({column},", body, StringComparison.Ordinal);
 
         // The General column is explicitly UNCHANGED — still Items.Children.Clear() every call (it
@@ -99,7 +100,7 @@ public sealed class HarmonicaR5StripRebuildTests
         string src = Source();
 
         int m = src.IndexOf(
-            "private static void UpdateColumnRow(StackPanel row, HarmonicaReadout item,", StringComparison.Ordinal);
+            "private static void UpdateColumnRow(Grid row, HarmonicaReadout item,", StringComparison.Ordinal);
         Assert.True(m >= 0);
         int mEnd = src.IndexOf("\n    /// <summary>\n    /// R-h9r2-25", m, StringComparison.Ordinal);
         Assert.True(mEnd > m);
@@ -117,7 +118,7 @@ public sealed class HarmonicaR5StripRebuildTests
         // second double-tap from opening a SECOND editor over the live one in the meantime.
         string src = Source();
 
-        int m = src.IndexOf("private StackPanel BuildColumnRowShell(", StringComparison.Ordinal);
+        int m = src.IndexOf("private Grid BuildColumnRowShell(", StringComparison.Ordinal);
         Assert.True(m >= 0);
         int mEnd = src.IndexOf("\n    /// <summary>Writes one row's CURRENT label", m, StringComparison.Ordinal);
         Assert.True(mEnd > m);

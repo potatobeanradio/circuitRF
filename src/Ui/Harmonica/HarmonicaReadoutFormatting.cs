@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 
@@ -13,43 +14,40 @@ namespace CircuitRF.Ui.Harmonica;
 /// </summary>
 public static class HarmonicaReadoutFormatting
 {
-    // ── R6C §4 — fixed-width formatting ──────────────────────────────────────────────────────────
+    // ── R6C §4 / R-hui-2 — fixed-DECIMAL formatting, column stability from the CONTROL, not the text ─
     //
-    // Two independent sources of column-width churn during a drag: trailing zeros dropped by
-    // "shortest" formats (0.### turns 10.01 into 10.1 — one character shorter) and the INTEGER side
-    // growing (9.99 → 10.01, or an impedance running 0.5 Ω → 5000 Ω). Fixed decimal places fixes the
-    // first; neither fixes the second, because the STRING LENGTH still depends on the VALUE. Every
-    // quantity below is instead rendered through FixedWidth with a stated character BUDGET, so the
-    // string length is a function of the ROW (what kind of quantity it is), never of the value.
+    // Every quantity is rendered to a fixed number of DECIMAL PLACES (never "shortest form" — 0.###
+    // would turn 10.01 into 10.1, one character shorter) via FixedWidth, so a value that moves without
+    // changing its digit COUNT (10.123 → 10.120) never changes the string's length. A digit-count
+    // change (9.99 → 10.01, or an impedance running 0.5 Ω → 5000 Ω) still changes the length — the
+    // owner is explicit that is acceptable jitter, unlike the padded-real/imaginary-parts scheme this
+    // replaced ("x+j     y"), which stuffed LEADING SPACES into the string itself to hold every row of
+    // one kind to one length. Column stability instead comes from the value CONTROL: ReadoutStripView
+    // reserves a fixed pixel Width per row kind (<see cref="WorstCaseValueTexts"/>, measured against
+    // the live typeface), and pins the LABEL column to a per-chunk measured width the same way (R7C
+    // §1.5 — Grid.IsSharedSizeScope/SharedSizeGroup does NOT align columns hosted in a StackPanel in
+    // this Avalonia build, confirmed empirically), so values align across rows AND never reflow live
+    // off a dragged value's own changing text.
+    // <paramref name="budget"/> still bounds the character count, but only as an EXPONENT-form
+    // fallback for a pathologically large value — it no longer pads a short one up to it.
 
     /// <summary>
-    /// Formats <paramref name="value"/> to <paramref name="decimals"/> fixed places, padded (or, past
-    /// the budget, switched to a fixed-width exponent form) to exactly <paramref name="budget"/>
-    /// characters — never more, never fewer, for any value the row's own budget was sized for. NaN is
-    /// the one value with no numeric width to reserve; callers append a unit suffix themselves, which
-    /// never varies in length and so never has to go through this at all.
+    /// Formats <paramref name="value"/> to <paramref name="decimals"/> fixed places — switched to a
+    /// fixed-width exponent form only past <paramref name="budget"/> characters, for a value so large
+    /// the fixed-decimal form would otherwise run unbounded. NaN renders as "—"; callers append a unit
+    /// suffix themselves, which never varies in length and so never has to go through this at all.
     /// </summary>
-    /// <param name="pad">
-    /// True (the default) pads to exactly <paramref name="budget"/> characters, for a row's own
-    /// DISPLAY text. False leaves the number unpadded — still fixed-decimal, still exponent-clamped
-    /// past the budget, just without the leading spaces — for anywhere the string becomes EDITABLE
-    /// text (an inline editor's seed, a dialog's text box): a leading-space run inside editable text
-    /// sits ahead of the caret and confuses select-then-type and caret-relative insertion alike, which
-    /// is a real defect, not a cosmetic one — §4.2's reserved pixel WIDTH on the control is what keeps
-    /// the column stable for these callers instead.
-    /// </param>
-    public static string FixedWidth(double value, int decimals, int budget, bool pad = true)
+    public static string FixedWidth(double value, int decimals, int budget)
     {
-        if (double.IsNaN(value)) return pad ? "—".PadLeft(budget) : "—";
+        if (double.IsNaN(value)) return "—";
 
         string fixedForm = value.ToString("F" + decimals, CultureInfo.InvariantCulture);
-        if (fixedForm.Length <= budget) return pad ? fixedForm.PadLeft(budget) : fixedForm;
+        if (fixedForm.Length <= budget) return fixedForm;
 
         // Past the budget: a FIXED-WIDTH exponent form (mantissa digit count never varies with
         // magnitude, unlike the integer side of a fixed-decimal string) — "1.23e+04", not "12345.68".
         int mantissaDecimals = Math.Max(decimals, 1);
-        string exp = value.ToString("0." + new string('0', mantissaDecimals) + "e+00", CultureInfo.InvariantCulture);
-        return pad ? exp.PadLeft(budget) : exp;
+        return value.ToString("0." + new string('0', mantissaDecimals) + "e+00", CultureInfo.InvariantCulture);
     }
 
     // Per-quantity budgets — a constant per ROW TYPE (§4.1's own instruction), not a magic number at
@@ -81,11 +79,124 @@ public static class HarmonicaReadoutFormatting
     public static string FormatDegrees(double value)
         => double.IsNaN(value) ? "—" : FixedWidth(value, DegreeDecimals, DegreeBudget) + "°";
 
-    public static string FormatZ(Complex z, ReadoutFormat format, bool pad = true)
-        => FormatComplex(z, format, pad) + " Ω";
+    public static string FormatZ(Complex z, ReadoutFormat format)
+        => FormatComplex(z, format) + " Ω";
 
-    public static string FormatGamma(Complex g, ReadoutFormat format, bool pad = true)
-        => FormatComplex(g, format, pad);
+    public static string FormatGamma(Complex g, ReadoutFormat format)
+        => FormatComplex(g, format);
+
+    // ── R-hui-4 — value/unit split for column-aligned rendering ─────────────────────────────────
+    //
+    // A closed whitelist of the exact suffixes THIS file's own Format* functions produce — never a
+    // blind "last space" search, which would misparse a plain status string with a space in it
+    // ("no optimum", "not located") as if it carried a unit. Longest-specific-first doesn't actually
+    // matter here (no suffix here is itself a suffix of another: "dBm" does not end in " dB"), but
+    // they're listed that way for a reader's sake. Degrees ("45.0°") is deliberately excluded — it is
+    // one of this file's own attached-with-no-space forms (see FormatDegrees), so it stays one token.
+    private static readonly string[] KnownUnitSuffixes = [" dBm", " dB", " %", " W", " Ω"];
+
+    /// <summary>
+    /// Splits a Format* function's own rendered text back into its bare value and its unit, so a
+    /// renderer can lay the two out in separate, independently column-aligned cells (owner: "I want
+    /// the units to be as close to the values as possible... while aligning horizontally"). Returns
+    /// <c>(formatted, "")</c> for anything that doesn't end in a known suffix — a Γ row, an intrinsic
+    /// VDS/IDS row (unit lives in the chunk's own header), "—", or a plain status string.
+    /// </summary>
+    public static (string Value, string Unit) SplitUnit(string formatted)
+    {
+        foreach (var suffix in KnownUnitSuffixes)
+            if (formatted.EndsWith(suffix, StringComparison.Ordinal))
+                return (formatted[..^suffix.Length], suffix.TrimStart());
+        return (formatted, "");
+    }
+
+    // ── R7C §1.3 — the worst-case VALUE text a row kind can ever render, as a LITERAL string ───────
+    //
+    // R-hui-5's own reasoning still holds — pin the VALUE control's own reserved size to a pure
+    // function of the row's KIND, never of its current text, so a dragged value's own changing digit
+    // count cannot be the thing that moves the column. What changes below is WHAT that reservation is
+    // measured FROM: a literal worst-case string, actually measured against the live typeface, rather
+    // than a character count times an assumed per-character advance.
+    //
+    // R-hui-5/R-hui-7 pinned a row's reserved width to a CHARACTER COUNT times an assumed 0.55
+    // per-character advance for a proportional font — wrong by a different amount for digits, '−',
+    // '+j', '∠', '°', 'Ω', and '—', and wrong by a different amount again at every (non-integer) font
+    // size the strip actually renders at. R7C replaces the guess with an actual measurement of the
+    // typeface (ReadoutStripView.ReservedValueWidth), and replaces the character-count budget with the
+    // literal worst-case STRING that measurement is taken of — tied to the same decimals/budget
+    // constants above so a change to one cannot silently outgrow the other.
+
+    private static string WorstCaseFixed(int intDigits, int decimals, bool signed)
+        => (signed ? "-" : "") + new string('0', intDigits) + "." + new string('0', decimals);
+
+    // Integer-digit budgets, one per quantity — the counterpart to each Format*'s own Decimals/Budget
+    // pair above. Kept as named constants (not derived from Budget, which is a switchover threshold
+    // with its own slack, not a digit count) so the worst case stays a readable, auditable literal.
+    public const int ComplexPartIntDigits = 4;   // "-0000.000-j0000.000"
+    public const int ComplexMagIntDigits  = 4;   // "0000.000∠…"
+    public const int AngleIntDigits       = 3;   // "…∠-000.0°"
+    public const int DbmIntDigits         = 4;   // "-0000.00"
+    public const int DbIntDigits          = 3;   // "-000.00"
+    public const int PercentIntDigits     = 4;   // "-0000.0"
+    public const int WattIntDigits        = 6;   // "-000000.000"
+    public const int DegreeIntDigits      = 3;   // "-000.0°"
+
+    /// <summary>A complex row's REAL/IMAGINARY worst case — one of the two a right-click can flip to
+    /// (R-hui-5's own reasoning, formerly a character-count budget named MaxComplexChars), so callers
+    /// measure both this and <see cref="WorstCasePolarComplex"/> and reserve the wider.</summary>
+    public static string WorstCaseRectComplex =>
+        WorstCaseFixed(ComplexPartIntDigits, ComplexPartDecimals, true) + "-j" +
+        WorstCaseFixed(ComplexPartIntDigits, ComplexPartDecimals, false);
+
+    /// <summary>A complex row's MAGNITUDE/ANGLE worst case — also γ's own, permanently (§2.4: γ never
+    /// flips format, so it only ever needs this one).</summary>
+    public static string WorstCasePolarComplex =>
+        WorstCaseFixed(ComplexMagIntDigits, ComplexMagDecimals, false) + "∠" +
+        WorstCaseFixed(AngleIntDigits, AngleDecimals, true) + "°";
+
+    /// <summary>
+    /// Every worst-case VALUE literal <paramref name="item"/>'s row kind could ever render — one string
+    /// for a scalar row, two (rect and polar) for a complex row, since a right-click can flip which one
+    /// is showing without a re-solve. <c>ReadoutStripView.ReservedValueWidth</c> measures each and
+    /// reserves the widest — never a character count times an assumed per-character advance.
+    /// </summary>
+    public static IReadOnlyList<string> WorstCaseValueTexts(HarmonicaReadout item)
+    {
+        if (item.IsComplex) return [WorstCaseRectComplex, WorstCasePolarComplex];
+        if (item.Label == "γ") return [WorstCasePolarComplex];
+
+        return item.Label switch
+        {
+            "Pin" or "Pout" => [WorstCaseFixed(DbmIntDigits, DbmDecimals, true)],
+            "Gain" or "Gp"   => [WorstCaseFixed(DbIntDigits, DbDecimals, true)],
+            "Eff" or "PAE"   => [WorstCaseFixed(PercentIntDigits, PercentDecimals, true)],
+            "Pdc"            => [WorstCaseFixed(WattIntDigits, WattDecimals, true)],
+            "AM/PM"          => [WorstCaseFixed(DegreeIntDigits, DegreeDecimals, true) + "°"],
+            _                 => ["0000000000—"],   // a generous default for anything else, incl. "—"
+        };
+    }
+
+    /// <summary>R8C §2 — below this magnitude the angle is numerical noise: γ = V₂·conj(V₁)²/|V₁|³
+    /// divides by |V₁|³, so a vanishing 2nd harmonic leaves an angle that swings freely with the last
+    /// bits of V₂. The MAGNITUDE is still real information and is still shown; only the angle is
+    /// replaced by "—", the same em-dash every other unavailable value in this strip uses.</summary>
+    public const double GammaPhaseNoiseFloor = 1e-3;
+
+    /// <summary>
+    /// R7C §2.4 — the input nonlinearity factor, ALWAYS magnitude ∠ angle: the owner is explicit that
+    /// real/imaginary "does not make sense because of the way it is defined" (§2.1's γ = φ₂ − 2·φ₁ has
+    /// no meaningful real/imaginary decomposition). NaN — <see cref="HarmonicaSolver"/>'s own signal
+    /// for "cannot be computed this frame" — renders as "—", the same as every other formatter here.
+    /// R8C §2 — below <see cref="GammaPhaseNoiseFloor"/> the phase is noise and is shown as "—" while
+    /// the magnitude is still real information and still shown.
+    /// </summary>
+    public static string FormatGammaFactor(Complex g)
+    {
+        if (double.IsNaN(g.Real) || double.IsNaN(g.Imaginary)) return "—";
+        if (g.Magnitude < GammaPhaseNoiseFloor)
+            return FixedWidth(g.Magnitude, ComplexMagDecimals, ComplexMagBudget) + "∠—";
+        return FormatComplex(g, ReadoutFormat.MagnitudeAngle);
+    }
 
     /// <summary>
     /// True for R6C §2's intrinsic VDS/IDS chunk keys (<c>"VDSi.0"</c>, <c>"IDSi.3f0"</c>, …) — a
@@ -106,6 +217,12 @@ public static class HarmonicaReadoutFormatting
     /// agree).</summary>
     public static string FormatVswr(double vswr) => $"VSWR: {vswr:0.##}";
 
+    /// <summary>R8B §7.3 — the saturated-aware sibling: a drag that has run off the end of
+    /// <see cref="HarmonicaVswrHandle.VswrThroughEx"/>'s search bracket reports <c>"VSWR: &gt; 10⁶"</c>
+    /// rather than the clamped number, which is not a value the drag can actually move — a number the
+    /// user cannot move is worse than a bound the user can read.</summary>
+    public static string FormatVswr(double vswr, bool saturated) => saturated ? "VSWR: > 10⁶" : FormatVswr(vswr);
+
     /// <summary>
     /// The format a row's <c>FormatKey</c> resolves to when nothing has overridden it yet — real/
     /// imaginary for every row except R6C §2's intrinsic VDS/IDS chunks, which the owner is explicit
@@ -115,53 +232,14 @@ public static class HarmonicaReadoutFormatting
     public static ReadoutFormat DefaultReadoutFormat(string key)
         => IsIntrinsicVoltageOrCurrentKey(key) ? ReadoutFormat.MagnitudeAngle : ReadoutFormat.RealImaginary;
 
-    // ── R6C §4.2 — the reserved WIDTH a row's value control never has to grow past ────────────────
-    //
-    // Every possible presentation of a row's own quantity, in characters — the WIDER of rectangular
-    // ("R+jI") and polar ("M∠A°") for a complex row, so toggling the format (R-h9c-7's own flyout)
-    // never moves a column either, on top of §4.1's fixed-width numbers making a VALUE update never
-    // move one.
-    public const int RectComplexChars  = 2 * ComplexPartBudget + 2;                  // "R+jI"
-    public const int PolarComplexChars = ComplexMagBudget + 1 + AngleBudget + 1;     // "M∠A°"
-    public const int MaxComplexChars   = RectComplexChars > PolarComplexChars ? RectComplexChars : PolarComplexChars;
-
-    /// <summary>
-    /// The widest this row could EVER render, in characters — a pure function of what KIND of row it
-    /// is (its Label/IsComplex/IsGamma shape), never of its current value or format. <c>ReadoutStripView</c>
-    /// writes this to a row's value control's <c>Width</c> on every refresh (not just when the row is
-    /// rebuilt) — since it never changes for a fixed row kind, writing it every frame is a no-op on
-    /// screen, and it stays correct across a live font-size change.
-    /// </summary>
-    public static int ReservedValueChars(HarmonicaReadout item)
-    {
-        if (item.IsComplex)
-        {
-            // " Ω" is 2 characters; a bare Γ row and an intrinsic VDS/IDS row (unit stated once in
-            // the chunk's own HEADER, not per value — see IsIntrinsicVoltageOrCurrentKey) carry none.
-            bool noUnit = item.IsGamma
-                || (item.FormatKey is { } key && IsIntrinsicVoltageOrCurrentKey(key));
-            return MaxComplexChars + (noUnit ? 0 : 2);
-        }
-
-        return item.Label switch
-        {
-            "Pin" or "Pout"                => DbmBudget + 4,     // " dBm"
-            "Gain" or "Gp"                  => DbBudget + 3,      // " dB"
-            "DE" or "PAE" or "Efficiency"   => PercentBudget + 2, // " %"
-            "Pdc"                           => WattBudget + 2,    // " W"
-            "AM/PM"                         => DegreeBudget + 1,  // "°"
-            _                                => 12,                // a generous default for anything else
-        };
-    }
-
-    public static string FormatComplex(Complex z, ReadoutFormat format, bool pad = true)
+    public static string FormatComplex(Complex z, ReadoutFormat format)
     {
         if (double.IsNaN(z.Real) || double.IsNaN(z.Imaginary)) return "—";
         if (format == ReadoutFormat.MagnitudeAngle)
-            return $"{FixedWidth(z.Magnitude, ComplexMagDecimals, ComplexMagBudget, pad)}" +
-                   $"∠{FixedWidth(z.Phase * 180.0 / Math.PI, AngleDecimals, AngleBudget, pad)}°";
-        return $"{FixedWidth(z.Real, ComplexPartDecimals, ComplexPartBudget, pad)}" +
-               $"{(z.Imaginary >= 0 ? "+j" : "-j")}{FixedWidth(Math.Abs(z.Imaginary), ComplexPartDecimals, ComplexPartBudget, pad)}";
+            return $"{FixedWidth(z.Magnitude, ComplexMagDecimals, ComplexMagBudget)}" +
+                   $"∠{FixedWidth(z.Phase * 180.0 / Math.PI, AngleDecimals, AngleBudget)}°";
+        return $"{FixedWidth(z.Real, ComplexPartDecimals, ComplexPartBudget)}" +
+               $"{(z.Imaginary >= 0 ? "+j" : "-j")}{FixedWidth(Math.Abs(z.Imaginary), ComplexPartDecimals, ComplexPartBudget)}";
     }
 
     /// <summary>

@@ -36,6 +36,13 @@ public sealed class HarmonicaDutEditor
         DrainNode    = current.IntrinsicMapping?.DrainNode;
         SourcePin    = current.IntrinsicMapping?.SourcePin;
         foreach (var (k, v) in current.Parameters) _parameters[k] = v;
+
+        // R7B §3.4 — a document opens on WHATEVER it carries: its own authored text, or (a pre-R7B
+        // .charm, or a CircuitModel built directly in code) something reconstructed from Parameters so
+        // the box is never empty for an SDD that plainly has equations.
+        SddText = current.Kind == DutKind.Sdd
+            ? current.SddText ?? SddTextIo.Reconstruct(current.Parameters)
+            : null;
     }
 
     public DutKind Kind         { get; private set; }
@@ -51,6 +58,13 @@ public sealed class HarmonicaDutEditor
     public string? GateNode  { get; set; }
     public string? DrainNode { get; set; }
     public string? SourcePin { get; set; }
+
+    /// <summary>
+    /// R7B §3.4 — the SDD editor's own staged text, meaningful only while <see cref="Kind"/> is
+    /// <see cref="DutKind.Sdd"/>. This is the AUTHORITATIVE form while editing; <see cref="Build"/>
+    /// derives <see cref="DutSpec.Parameters"/> from it rather than from <see cref="_parameters"/>.
+    /// </summary>
+    public string? SddText { get; set; }
 
     /// <summary>The staged parameter values, keyed as the model spells them.</summary>
     public IReadOnlyDictionary<string, string> Parameters => _parameters;
@@ -75,7 +89,12 @@ public sealed class HarmonicaDutEditor
             case DutKind.Sdd:
                 TypeName = "SDD";
                 Provider = null;
-                Reseed(HarmonicaViewModel.DefaultModel().Dut.Parameters);
+                var defaultDut = HarmonicaViewModel.DefaultModel().Dut;
+                Reseed(defaultDut.Parameters);
+                // R7B §3.8 — reseed the TEXT too, or switching to SDD gives a device with equations
+                // and no variables (the text is the authoritative form; Parameters alone is not
+                // enough to repopulate it faithfully).
+                SddText = defaultDut.SddText;
                 break;
 
             case DutKind.NativeFet:
@@ -159,6 +178,17 @@ public sealed class HarmonicaDutEditor
             if (string.IsNullOrWhiteSpace(TypeName))
                 return "Choose which of the model's device types this DUT is.";
         }
+        else if (Kind == DutKind.Sdd)
+        {
+            // R7B §3.6 — every check the SDD text editor runs; the first problem found is what the
+            // dialog shows and what keeps Set DUT disabled.
+            var parsed = HarmonicaSddText.Parse(SddText ?? "", SddPortCount);
+            if (!parsed.IsValid)
+            {
+                var first = parsed.Problems[0];
+                return first.Line > 0 ? $"line {first.Line}: {first.Message}" : first.Message;
+            }
+        }
         else if (string.IsNullOrWhiteSpace(TypeName))
         {
             return "Choose a device.";
@@ -183,7 +213,12 @@ public sealed class HarmonicaDutEditor
         Provider     = Kind == DutKind.External ? Provider : null,
         Multiplicity = Multiplicity,
         SddPortCount = Kind == DutKind.Sdd && SddPortCount == 3 ? 3 : 2,
-        Parameters   = new Dictionary<string, string>(_parameters, StringComparer.Ordinal),
+        // R7B §3.4 — for SDD, Parameters is DERIVED from SddText (the authoritative form) rather than
+        // read from the staged dictionary, which SDD never writes to.
+        Parameters   = Kind == DutKind.Sdd
+            ? HarmonicaSddText.ToParameters(HarmonicaSddText.Parse(SddText ?? "", SddPortCount))
+            : new Dictionary<string, string>(_parameters, StringComparer.Ordinal),
+        SddText      = Kind == DutKind.Sdd ? SddText : null,
         IntrinsicMapping =
             Kind == DutKind.External
             && GateNode  is { Length: > 0 } g

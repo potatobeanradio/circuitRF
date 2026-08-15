@@ -10,6 +10,8 @@
 
 using System;
 using System.IO;
+using System.Linq;
+using System.Numerics;
 using CircuitRF.Harmonica;
 using CircuitRF.Ui.Harmonica;
 using Xunit;
@@ -110,8 +112,11 @@ public sealed class HarmonicaR6eDialogsAndMenusTests
     //         same constraint every other dialog/menu test in this folder already works around) ═
 
     [Fact]
-    public void LoadlinePanelMenu_OffersCopy_ThenAutoscale_ThenDcivSweeps()
+    public void LoadlinePanelMenu_OffersAutoscaleLockedThenDcivSweeps_ThenCopyLast()
     {
+        // R7A §2.3 — Autoscale/Locked moved into the shared AddAutoscaleLockedItems helper (dynamic
+        // icon, no ToggleType — see that helper's own remark on the Fluent MenuItem Icon/checkmark
+        // trap), so this now checks for ONE call rather than two inline MenuItems.
         string src = ViewSource();
         int m = src.IndexOf("else if (panelId == HarmonicaPanelId.Loadline)", StringComparison.Ordinal);
         Assert.True(m >= 0);
@@ -119,15 +124,19 @@ public sealed class HarmonicaR6eDialogsAndMenusTests
         Assert.True(mEnd >= 0);
         string body = src[m..mEnd];
 
+        int autoscaleLocked = body.IndexOf("AddAutoscaleLockedItems(items, dcivAutoscaleOn,", StringComparison.Ordinal);
+        int dciv = body.IndexOf("Item(\"DCIV Sweeps…\"", StringComparison.Ordinal);
         int copy = body.IndexOf("BuildCopyMenuItem(panelId)", StringComparison.Ordinal);
-        int autoscale = body.IndexOf("Header = \"Autoscale\"", StringComparison.Ordinal);
-        int dciv = body.IndexOf("Header = \"DCIV Sweeps…\"", StringComparison.Ordinal);
-        Assert.True(copy >= 0 && autoscale >= 0 && dciv >= 0);
-        Assert.True(copy < autoscale && autoscale < dciv,
-            "expected order: Copy, Autoscale, DCIV Sweeps…");
+        Assert.True(autoscaleLocked >= 0 && dciv >= 0 && copy >= 0);
+        // R-hui-1 — Copy is always LAST, with a separator above it.
+        Assert.True(autoscaleLocked < dciv && dciv < copy,
+            "expected order: Autoscale/Locked, DCIV Sweeps…, Copy");
 
-        Assert.Contains("h.SetDcivAutoscale(!h.Model.Settings.DcivAutoscale)", body, StringComparison.Ordinal);
-        Assert.Contains("IsChecked = h.Model.Settings.DcivAutoscale", body, StringComparison.Ordinal);
+        int separator = body.LastIndexOf("new Separator()", copy, StringComparison.Ordinal);
+        Assert.True(separator > dciv && separator < copy, "Copy must be preceded by a separator");
+
+        Assert.Contains("h.SetDcivAutoscale(true); Refresh();", body, StringComparison.Ordinal);
+        Assert.Contains("h.LockDcivAxes(); Refresh();", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -141,10 +150,10 @@ public sealed class HarmonicaR6eDialogsAndMenusTests
         string body = src[m..mEnd];
 
         int separator = body.IndexOf("new Separator()", StringComparison.Ordinal);
-        int autoscale = body.IndexOf("Header = \"Autoscale\"", StringComparison.Ordinal);
-        int axisLimits = body.IndexOf("Header = \"Axis Limits…\"", StringComparison.Ordinal);
-        Assert.True(separator >= 0 && autoscale >= 0 && axisLimits >= 0);
-        Assert.True(separator < autoscale && autoscale < axisLimits);
+        int autoscaleLocked = body.IndexOf("AddAutoscaleLockedItems(items, autoscaleOn,", StringComparison.Ordinal);
+        int axisLimits = body.IndexOf("Item(\"Axis Limits…\"", StringComparison.Ordinal);
+        Assert.True(separator >= 0 && autoscaleLocked >= 0 && axisLimits >= 0);
+        Assert.True(separator < autoscaleLocked && autoscaleLocked < axisLimits);
 
         // Gated on the mode actually on screen — never hardcoded to power-sweep's own settings.
         Assert.Contains("timeDomainMode = h.ShowPowerSweepTimeDomain", body, StringComparison.Ordinal);
@@ -181,5 +190,124 @@ public sealed class HarmonicaR6eDialogsAndMenusTests
         Assert.Contains("_vm.SetPowerSweepAutoscale(on)", src, StringComparison.Ordinal);
         Assert.Contains("ShowError(\"min must be less than max on every axis.\");\n            return;",
             src, StringComparison.Ordinal);
+    }
+
+    // ══ R-hui-6, owner-reported — "Locked" must freeze exactly what is on screen, never a stale ═══
+    // ══ value; a bare Autoscale-off is not the same thing (see LockDcivAxes's own remark)      ═══
+
+    [Fact]
+    public void LockDcivAxes_TurnsAutoscaleOff_AndStoresTheCurrentFramesOwnNaturalFit()
+    {
+        var vm = NewVm();
+        vm.SetDcivAutoscale(true);
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 6, MaxGamma = 0.6 });
+        Assert.True(vm.Model.Settings.DcivAutoscale);
+
+        // The independently-computed expected fit — the SAME function CaptureAxisWindows' own probe
+        // uses, applied to THIS frame — so the test does not just assert "whatever LockDcivAxes wrote".
+        var expected = CircuitRF.Ui.Harmonica.Renderers.HarmonicaPanelRenderer.BuildLoadlinePlot(
+            vm.Frame.Loadline, vm.RenderTheme,
+            CircuitRF.Ui.Harmonica.Renderers.HarmonicaPanelRenderer.DcivLimits(vm.Model.Settings)
+                with { Autoscale = true }).Axes.Window;
+
+        vm.LockDcivAxes();
+
+        Assert.False(vm.Model.Settings.DcivAutoscale);
+        Assert.Equal(expected.X, vm.Model.Settings.DcivXMin);
+        Assert.Equal(expected.X + expected.Width, vm.Model.Settings.DcivXMax);
+        Assert.Equal(expected.Y, vm.Model.Settings.DcivYMin);
+        Assert.Equal(expected.Y + expected.Height, vm.Model.Settings.DcivYMax);
+
+        // And it genuinely holds across a further solve, exactly like plain Autoscale-off already did.
+        vm.SetMarkerImpedance(vm.Markers.First(m => m.Band == 1 && m.Side == TerminationSideKind.Load),
+                              new Complex(150, 40));
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 6, MaxGamma = 0.6 });
+        Assert.Equal(expected.X, vm.Model.Settings.DcivXMin);
+    }
+
+    [Fact]
+    public void LockPowerSweepAxes_TurnsAutoscaleOff_AndStoresTheCurrentFramesOwnNaturalFit()
+    {
+        var vm = NewVm();
+        vm.SetPowerSweepAutoscale(true);
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 6, MaxGamma = 0.6 });
+
+        var expectedAxes = CircuitRF.Ui.Harmonica.Renderers.HarmonicaPanelRenderer.BuildPowerSweepPlot(
+            vm.Frame.PowerSweep, vm.RenderTheme,
+            CircuitRF.Ui.Harmonica.Renderers.HarmonicaPanelRenderer.PowerSweepLimits(vm.Model.Settings)
+                with { Autoscale = true }).Axes;
+
+        vm.LockPowerSweepAxes();
+
+        Assert.False(vm.Model.Settings.PowerSweepAutoscale);
+        Assert.Equal(expectedAxes.Window.X, vm.Model.Settings.PowerSweepXMin);
+        Assert.Equal(expectedAxes.Window.X + expectedAxes.Window.Width, vm.Model.Settings.PowerSweepXMax);
+        Assert.Equal(expectedAxes.WindowSecondary.Y, vm.Model.Settings.PowerSweepY2Min);
+        Assert.Equal(expectedAxes.WindowSecondary.Y + expectedAxes.WindowSecondary.Height,
+                     vm.Model.Settings.PowerSweepY2Max);
+    }
+
+    [Fact]
+    public void LockTimeDomainAxes_TurnsAutoscaleOff_AndStoresTheCurrentFramesOwnNaturalFit()
+    {
+        var vm = NewVm();
+        vm.SetTimeDomainAutoscale(true);
+        vm.SolveFrame(new HarmonicaSolver.Options { Rings = 2, Spokes = 6, MaxGamma = 0.6 });
+
+        var expectedAxes = CircuitRF.Ui.Harmonica.Renderers.HarmonicaPanelRenderer.BuildTimeDomainPlot(
+            vm.Frame.Loadline, vm.RenderTheme,
+            CircuitRF.Ui.Harmonica.Renderers.HarmonicaPanelRenderer.TimeDomainLimits(vm.Model.Settings)
+                with { Autoscale = true }).Axes;
+
+        vm.LockTimeDomainAxes();
+
+        Assert.False(vm.Model.Settings.TimeDomainAutoscale);
+        Assert.Equal(expectedAxes.Window.X, vm.Model.Settings.TimeDomainXMin);
+        Assert.Equal(expectedAxes.Window.X + expectedAxes.Window.Width, vm.Model.Settings.TimeDomainXMax);
+    }
+
+    [Fact]
+    public void LockedMenuItems_CallLockAxes_NeverABareAutoscaleOff()
+    {
+        // Owner-reported regression guard: the Locked menu items must go through the Lock*Axes
+        // methods (which capture the CURRENT frame's fit), never SetXxxAutoscale(false) alone (which
+        // only turns the flag off and can freeze at a stale stored value — see LockDcivAxes's remark).
+        string src = ViewSource();
+
+        int dcivStart = src.IndexOf("else if (panelId == HarmonicaPanelId.Loadline)", StringComparison.Ordinal);
+        int dcivEnd = src.IndexOf("else if (!string.IsNullOrEmpty(panelId)", dcivStart, StringComparison.Ordinal);
+        string dcivBody = src[dcivStart..dcivEnd];
+        Assert.Contains("onLockedClick:    () => { h.LockDcivAxes(); Refresh(); });", dcivBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("h.SetDcivAutoscale(false)", dcivBody, StringComparison.Ordinal);
+
+        int psStart = src.IndexOf("private void BuildPowerSweepTitleMenu(", StringComparison.Ordinal);
+        int psEnd = src.IndexOf("\n    // ── §4 (R2A)", psStart, StringComparison.Ordinal);
+        string psBody = src[psStart..psEnd];
+        Assert.Contains("if (timeDomainMode) h.LockTimeDomainAxes(); else h.LockPowerSweepAxes();",
+            psBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetTimeDomainAutoscale(false)", psBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetPowerSweepAutoscale(false)", psBody, StringComparison.Ordinal);
+
+        // R7A §2.3 — the shared helper itself must route BOTH callers' "Locked" click through the
+        // caller-supplied onLockedClick, never a bare toggle of its own.
+        int helperStart = src.IndexOf("private static void AddAutoscaleLockedItems(", StringComparison.Ordinal);
+        Assert.True(helperStart >= 0);
+        int helperEnd = src.IndexOf("\n    // ── §4 (R2A)", helperStart, StringComparison.Ordinal);
+        string helperBody = src[helperStart..helperEnd];
+        Assert.Contains("locked.Click += (_, _) => onLockedClick();", helperBody, StringComparison.Ordinal);
+        Assert.Contains("autoscale.Click += (_, _) => onAutoscaleClick();", helperBody, StringComparison.Ordinal);
+    }
+
+    // ══ R8B §5.4 — the icon-slot convention is enforced repo-wide in this one file ══════════════
+
+    [Fact]
+    public void HarmonicaView_NeverUsesToggleType_EveryToggleGoesThroughTheSharedHelper()
+    {
+        // R8B §5 finished what R7A §2.3 started: the Fluent MenuItem template's check glyph and Icon
+        // share one leading slot, so ToggleType never appears anywhere in this file any more — every
+        // toggle row is built through Toggle(...) (the icon slot carries the state), matching Data
+        // Display's own loadpull marker menu.
+        string src = ViewSource();
+        Assert.Empty(System.Text.RegularExpressions.Regex.Matches(src, "MenuItemToggleType"));
     }
 }

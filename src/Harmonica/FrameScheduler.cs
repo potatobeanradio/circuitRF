@@ -194,8 +194,7 @@ public sealed class FrameScheduler
         {
             TierAHealthy = false;
             StatusMessage =
-                $"This model cannot hold {1000.0 / TargetFrameMs:F0} fps: one drive-up alone costs " +
-                $"{timing.TierAMs:F0} ms. Contours are degraded as far as they go.";
+                $"Running the coarsest contour grid to keep up — one drive-up costs {timing.TierAMs:F0} ms.";
         }
 
         if (timing.TotalMs > TargetFrameMs)
