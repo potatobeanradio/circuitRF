@@ -872,6 +872,7 @@ public sealed class CnlReader
             TolExpr               = kv.GetValueOrDefault("Tol",                 "1e-6"),
             DriveSteppingExpr     = kv.GetValueOrDefault("DriveStepping",       "IfNecessary"),
             GuardHarmonicExpr     = kv.GetValueOrDefault("GuardHarmonic",       "0"),
+            ContinuityMarginExpr  = kv.GetValueOrDefault("ContinuityMargin",    "3"),
             EffTypeExpr           = kv.GetValueOrDefault("EffType",             "DE"),
             ZsourceOBOExpr        = kv.GetValueOrDefault("ZsourceOBO",          "5"),
             SearchMethodExpr      = kv.GetValueOrDefault("SearchMethod",         "SteepestAscent"),
@@ -945,6 +946,7 @@ public sealed class CnlReader
             TolExpr           = kv.GetValueOrDefault("Tol",            "1e-6"),
             DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping", "IfNecessary"),
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic", "0"),
+            ContinuityMarginExpr = kv.GetValueOrDefault("ContinuityMargin", "3"),
             SourceDirectory   = sourceDirectory,
             Enabled           = ParseEnabledToken(tokens),
         };

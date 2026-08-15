@@ -239,6 +239,7 @@ public sealed class LoadpullPursuitEngine
         double pinStart  = Num(lpa.PinStartExpr, -20.0);
         double pinStep   = Num(lpa.PinStepExpr,    1.0);
         double pinMax    = Num(lpa.PinMaxExpr,     10.0);
+        double contMargin = Num(lpa.ContinuityMarginExpr, DriveLadder.DefaultContinuityMarginDb);
 
         double? tickle = null;
         var ts = lpa.TickleExpr.Trim();
@@ -256,7 +257,7 @@ public sealed class LoadpullPursuitEngine
             tone, maxH, osamp, tol, driveStepping, guard, maxIter,
             lpa.LoadTunerName, lpa.SourceTunerName,
             sweepLoad, tuneHarm, dummyGrid,
-            compress, useGt, pinStart, pinStep, pinMax, tickle);
+            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin);
 
         bool usePae  = lpa.EffTypeExpr.Trim().Equals("PAE", StringComparison.OrdinalIgnoreCase);
         double obo   = Num(lpa.ZsourceOBOExpr, 5.0);
@@ -347,6 +348,31 @@ public sealed class LoadpullPursuitEngine
                 unscorable.Add(z);
                 Console.Error.WriteLine(
                     $"[Pursuit]   → Unscorable (Stop={gpr.StopReason})");
+                return (null, gpr);
+            }
+
+            // Round 11 — the pursuit's own last line of defence, and it belongs HERE rather than in the
+            // ladder. A search ASCENDS this criterion, so a nonphysical rung is not one bad sample among
+            // many: an 89 dBm Pout against a real 36 is a global attractor that steepest-ascent walks
+            // straight to and reports as MXP, converged. `DriveLadder`'s continuity guard is what
+            // prevents nearly all of them (measured: 8 gross energy-violating grid points at a 2 dB step
+            // become 0), so what is left here is the residue.
+            //
+            // PAE, not DE, and NOT AT ALL against an active termination — see
+            // GridPointResult.HasActiveTermination and LoadpullEngine.WarnIfEnergyViolating. A
+            // negative-real termination is a power source, so there is no bound left to test; refusing
+            // to score such a point would make the pursuit unusable for exactly the negative-resistance
+            // PA research the capability exists for.
+            if (!gpr.HasActiveTermination &&
+                gpr.PinSteps.Any(st => st.Converged && !st.IsTickle && st.PdcW > 1e-9 && st.Pae > 1.0))
+            {
+                unscorable.Add(z);
+                warnings.Add(
+                    $"Pursuit: Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j scored a drive-up " +
+                    $"reporting more RF output than the DC supply and the RF drive together can provide — " +
+                    $"a nonphysical harmonic-balance root. Treated as unscorable rather than let the " +
+                    $"search ascend it.");
+                Console.Error.WriteLine("[Pursuit]   → Unscorable (nonphysical: PAE > 100%)");
                 return (null, gpr);
             }
 

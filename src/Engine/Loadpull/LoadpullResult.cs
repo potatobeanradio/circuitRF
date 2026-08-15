@@ -52,15 +52,40 @@ public sealed class GridPointResult
     /// Input return loss is referenced to this, not 50 Ω.</summary>
     public Complex SourceZFund { get; }
 
+    /// <summary>Round 11 — how many ladder rungs were re-walked as a bisection continuation because
+    /// the drive step was too big (the Newton failed, or landed on a different root). Zero on the
+    /// ordinary path; a counter, not a hidden cost.</summary>
+    public int Continuations { get; }
+
+    /// <summary>Round 11 — how many rungs fell all the way through to a cold-seeded retry after the
+    /// continuation could not reach them either.</summary>
+    public int Retries { get; }
+
+    /// <summary>
+    /// Round 11 — true when ANY termination this point presented (either tuner, any harmonic, the swept
+    /// one included) has <c>Re(Z) &lt; 0</c> and is therefore a power SOURCE rather than a load.
+    ///
+    /// <para>Carried on the result because <b>no energy bound can be tested against an active
+    /// termination</b>: <c>Pout ≤ Pdc + Pin_delivered + P_active</c>, and the engine does not compute
+    /// <c>P_active</c>, so PAE above 100% is then perfectly physical rather than a symptom. Negative-real
+    /// terminations are a supported research capability, so every energy screen downstream — the
+    /// engine's own warning and the pursuit's unscorable rule — must read this and stay silent.</para>
+    /// </summary>
+    public bool HasActiveTermination { get; }
+
     public GridPointResult(int gridIndex, Complex gamma, Complex z,
-        IReadOnlyList<PinStepResult> pinSteps, string stopReason, Complex sourceZFund = default)
+        IReadOnlyList<PinStepResult> pinSteps, string stopReason, Complex sourceZFund = default,
+        int continuations = 0, int retries = 0, bool hasActiveTermination = false)
     {
-        GridIndex   = gridIndex;
-        Gamma       = gamma;
-        Z           = z;
-        PinSteps    = pinSteps;
-        StopReason  = stopReason;
-        SourceZFund = sourceZFund;
+        GridIndex     = gridIndex;
+        Gamma         = gamma;
+        Z             = z;
+        PinSteps      = pinSteps;
+        StopReason    = stopReason;
+        SourceZFund   = sourceZFund;
+        Continuations = continuations;
+        Retries       = retries;
+        HasActiveTermination = hasActiveTermination;
     }
 
     /// <summary>Returns the last converged Pin step, or null if none converged.</summary>

@@ -148,6 +148,12 @@ public sealed class LoadpullAnalysis(string name) : Analysis(name)
     public string TolExpr           { get; init; } = "1e-6";
     public string DriveSteppingExpr { get; init; } = "IfNecessary";
     public string GuardHarmonicExpr { get; init; } = "0";
+    /// <summary>
+    /// Round 11 — the drive-up continuity guard's margin, dB. A Pin rung whose Pout moves further than
+    /// its own Pin step did, by more than this, is re-walked by bisection continuation instead of being
+    /// taken in one leap (<c>DriveLadder</c>). <c>0</c> disables the guard. Default 3 dB.
+    /// </summary>
+    public string ContinuityMarginExpr { get; init; } = "3";
 
     // Optional: source directory for resolving relative Grid paths (set by reader).
     public string? SourceDirectory  { get; init; }
@@ -181,6 +187,9 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
     public string TolExpr           { get; init; } = "1e-6";
     public string DriveSteppingExpr { get; init; } = "IfNecessary";
     public string GuardHarmonicExpr { get; init; } = "0";
+    /// <summary>Round 11 — see <see cref="LoadpullAnalysis.ContinuityMarginExpr"/>; the pursuit's own
+    /// inner drive-up is the same one, so it takes the same key.</summary>
+    public string ContinuityMarginExpr { get; init; } = "3";
 
     // ── Pursuit-specific keys ─────────────────────────────────────────────────
     public string EffTypeExpr                { get; init; } = "DE";            // "DE" or "PAE"

@@ -30,7 +30,10 @@ public sealed record LoadpullAnalysisParams(
     double             PinStartDbm,
     double             PinStepDb,
     double             PinMaxDbm,
-    double?            TickleDbm);       // null = disabled
+    double?            TickleDbm,        // null = disabled
+    /// <summary>Round 11 — <see cref="DriveLadder"/>'s continuity margin, dB. 0 disables the guard.
+    /// Defaulted so every existing positional construction keeps compiling and keeps the guard on.</summary>
+    double             ContinuityMarginDb = DriveLadder.DefaultContinuityMarginDb);
 
 /// <summary>
 /// The core loadpull engine — outer Γ/Z grid × inner adaptive Pin sweep (loadpull.md §2–§5).
@@ -123,6 +126,7 @@ public sealed class LoadpullEngine
         double pinStart  = Num(lpa.PinStartExpr, -20.0);
         double pinStep   = Num(lpa.PinStepExpr,    1.0);
         double pinMax    = Num(lpa.PinMaxExpr,     10.0);
+        double contMargin = Num(lpa.ContinuityMarginExpr, DriveLadder.DefaultContinuityMarginDb);
 
         double? tickle = null;
         var ts = lpa.TickleExpr.Trim();
@@ -144,7 +148,7 @@ public sealed class LoadpullEngine
             tone, maxH, osamp, tol, driveStepping, guard, maxIter,
             lpa.LoadTunerName, lpa.SourceTunerName,
             sweepLoad, tuneHarm, grid,
-            compress, useGt, pinStart, pinStep, pinMax, tickle);
+            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin);
     }
 
     // ── Setup context (shared between full sweep and per-termination queries) ───
@@ -484,13 +488,17 @@ public sealed class LoadpullEngine
         string stopReason = "PinMax";
         double gMax   = double.NegativeInfinity;
         Complex[,]? innerSeed = warmStart;
+        int continuations = 0, retries = 0;
 
-        foreach (var (pavlDbm, isTickle) in BuildPinSequence(p))
+        // One solve at an EXPLICIT warm start, packaged as the step this ladder records. Returns null
+        // for non-convergence, which is what DriveLadder's continuation reads as "abandon this depth".
+        // It does NOT touch innerSeed: a continuation probe is a candidate, not yet an accepted rung.
+        PinStepResult? SolveAt(double pavlDbm, bool isTickle, Complex[,]? warm)
         {
             double pavlW = DbmToWatts(pavlDbm);
             ctx.SrcModel.SetSourceDrive(p.ToneHz, pavlW);
 
-            var sr = _hbEngine.RunSinglePoint(ctx.HbParams, innerSeed, ctx.SolveSettings);
+            var sr = _hbEngine.RunSinglePoint(ctx.HbParams, warm, ctx.SolveSettings);
 
             // True current the source delivers into the DUT input node (includes any passives the user
             // wired at the gate, not just INl[gate]). Drives Zin / Zsource / Pin_delivered.
@@ -503,24 +511,69 @@ public sealed class LoadpullEngine
             double vSrc  = ctx.SrcIfIdx  >= 0 && sr.V.GetLength(1) > 0 ? sr.V[ctx.SrcIfIdx,  0].Real : 0;
             double iSrc2 = ctx.SrcIfIdx  >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[ctx.SrcIfIdx, 0].Real : 0;
 
-            pinSteps.Add(new PinStepResult(
+            var step = new PinStepResult(
                 pavlDbm, isTickle,
                 sr.V, sr.INl, iSrcIn,
                 foms.PavlW, foms.PinDeliveredW, foms.PoutW, foms.GtDb, foms.GpDb,
                 vLoad, iLoad, vSrc, iSrc2,
-                sr.Converged, sr.Iterations, sr.FailReason));
+                sr.Converged, sr.Iterations, sr.FailReason);
 
-            if (sr.Converged) innerSeed = sr.V;
+            return sr.Converged ? step : null;
+        }
 
-            if (!sr.Converged)
+        // The previous NON-TICKLE rung — what continuity is measured against. The tickle is deliberately
+        // excluded: it sits tens of dB below PinStart, so it is not a ladder step and the jump from it
+        // says nothing about a branch.
+        PinStepResult? prevRung = null;
+
+        foreach (var (pavlDbm, isTickle) in BuildPinSequence(p))
+        {
+            var step = SolveAt(pavlDbm, isTickle, innerSeed);
+
+            // Round 11 — ONE guard for the ladder's two ways of taking too big a drive step, because
+            // they are the same defect wearing two faces: the Newton either fails outright, or succeeds
+            // onto a DIFFERENT root (a rung whose Pout moved further than its own Pin step did — see
+            // DriveLadder for the measurement). Both are answered by re-walking that one step as a
+            // continuation from the previous rung instead of taking it in a single leap.
+            if (!isTickle && prevRung is not null &&
+                (step is null || DriveLadder.IsDiscontinuous(
+                     prevRung.PavlDbm, DriveLadder.PoutDbm(prevRung.PoutW),
+                     pavlDbm,          DriveLadder.PoutDbm(step.PoutW), p.ContinuityMarginDb)))
             {
+                var refined = DriveLadder.ContinueThroughJump(
+                    prevRung.PavlDbm, DriveLadder.PoutDbm(prevRung.PoutW), prevRung.V, pavlDbm,
+                    (pin, warm) => SolveAt(pin, isTickle: false, warm),
+                    st => DriveLadder.PoutDbm(st.PoutW),
+                    st => st.V,
+                    p.ContinuityMarginDb);
+
+                if (refined is not null) { step = refined; continuations++; }
+                else if (step is null)
+                {
+                    // Last resort: the cold seed. A step this far from its predecessor may simply not
+                    // be reachable by continuation at all.
+                    step = SolveAt(pavlDbm, isTickle, warm: null);
+                    if (step is not null) retries++;
+                }
+            }
+
+            if (step is null)
+            {
+                // Record the failed attempt so the caller can still see WHERE it stopped, exactly as
+                // this loop always did — SolveAt returns null on non-convergence, so the recorded step
+                // is re-made here rather than carried through the guard as a half-valid one.
+                pinSteps.Add(NonConvergedStep(p, ctx, pavlDbm, isTickle, innerSeed));
                 stopReason = "NonConvergence";
                 Console.Error.WriteLine(
-                    $"[LP]   Pin={pavlDbm:F1}: non-convergence ({sr.FailReason}). Stopping.");
+                    $"[LP]   Pin={pavlDbm:F1}: non-convergence. Stopping.");
                 break;
             }
 
-            double gain    = p.UseGt ? foms.GtDb : foms.GpDb;
+            pinSteps.Add(step);
+            innerSeed = step.V;
+            if (!isTickle) prevRung = step;
+
+            double gain    = p.UseGt ? step.GtDb : step.GpDb;
             string gainTag = p.UseGt ? "Gt" : "Gp";
 
             if (!isTickle)
@@ -528,7 +581,7 @@ public sealed class LoadpullEngine
                 if (gain > gMax) gMax = gain;
                 double compression = gMax - gain;
                 Console.Error.WriteLine(
-                    $"[LP]   Pin={pavlDbm:F1} dBm  Pout={WattsToDbm(foms.PoutW):F2} dBm  " +
+                    $"[LP]   Pin={pavlDbm:F1} dBm  Pout={WattsToDbm(step.PoutW):F2} dBm  " +
                     $"{gainTag}={gain:F2} dB  compr={compression:F2} dB");
 
                 // Stop when we have driven at least 0.1 dB past the compression target.
@@ -548,12 +601,118 @@ public sealed class LoadpullEngine
             }
         }
 
+        // Round 11 — the energy tripwire, and it is SKIPPED against an active termination. See
+        // HasActiveTermination / WarnIfEnergyViolating for why that is physics and not a concession.
+        bool active = HasActiveTermination(p, ctx, z);
+        if (!active) WarnIfEnergyViolating(pinSteps, gamma);
+
         // The source impedance the DUT input is actually driven from at the fundamental (grid Z for
         // source-pull; declared Z[1] or a pursuit Zsource override otherwise). Input return loss is
         // referenced to this, captured after the grid point's harmonic override is in effect.
         Complex srcZFund = ctx.SrcModel.FundamentalZ(p.ToneHz);
 
-        return new GridPointResult(gridIndex, gamma, z, pinSteps, stopReason, srcZFund);
+        return new GridPointResult(gridIndex, gamma, z, pinSteps, stopReason, srcZFund,
+                                   continuations, retries, active);
+    }
+
+    /// <summary>
+    /// Whether ANY termination this grid point presents — either tuner, any harmonic 1…K, the swept one
+    /// included — has <c>Re(Z) &lt; 0</c> and is therefore ACTIVE: a power SOURCE, not a load.
+    ///
+    /// <para><b>Negative-real terminations are a supported, deliberate research capability</b>, not an
+    /// input error. They are how a PA study probes regenerative and negative-resistance behaviour, the
+    /// engine stamps them (a negative conductance, warn-and-continue per src/Engine/CLAUDE.md), and a
+    /// <c>.gam</c> grid may legitimately carry <c>|Γ| &gt; 1</c>. Nothing here refuses one.</para>
+    ///
+    /// <para><b>One pre-existing edge stays as it is and is worth knowing about:</b> an active SOURCE
+    /// FUNDAMENTAL leaves available power undefined, and <c>TunerModel.SetSourceDrive</c> already
+    /// answers that by stamping 0 V of drive (<c>reZ1 &gt; 0</c> guard) — the same case harmonicaRF
+    /// refuses by name as <c>InverseFailure.ActiveSourceFundamental</c>. That is not this method's
+    /// business; it only decides whether an energy BALANCE can be checked.</para>
+    /// </summary>
+    private static bool HasActiveTermination(LoadpullAnalysisParams p, PursuitContext ctx, Complex sweptZ)
+    {
+        if (sweptZ.Real < 0) return true;
+
+        for (int k = 1; k <= p.MaxHarmonic; k++)
+        {
+            // The swept harmonic's declared value is overwritten per grid point, so it says nothing —
+            // sweptZ above is the one that counts for it.
+            if (ctx.LoadModel.GetDeclaredZ(k).Real < 0 && !(ReferenceEquals(ctx.SweptModel, ctx.LoadModel) && k == p.TuneHarm))
+                return true;
+            if (ctx.SrcModel.GetDeclaredZ(k).Real < 0 && !(ReferenceEquals(ctx.SweptModel, ctx.SrcModel) && k == p.TuneHarm))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The non-converged step this ladder records before it stops. Re-solved rather than threaded
+    /// through the continuity guard: <c>SolveAt</c> deliberately returns null for a failed solve so the
+    /// continuation can read null as "abandon this depth", and a half-valid step travelling through
+    /// that path would be the sort of thing a later reader trusts by accident.
+    /// </summary>
+    private PinStepResult NonConvergedStep(
+        LoadpullAnalysisParams p, PursuitContext ctx, double pavlDbm, bool isTickle, Complex[,]? warm)
+    {
+        double pavlW = DbmToWatts(pavlDbm);
+        ctx.SrcModel.SetSourceDrive(p.ToneHz, pavlW);
+
+        var sr = _hbEngine.RunSinglePoint(ctx.HbParams, warm, ctx.SolveSettings);
+        Complex[] iSrcIn = ComputeSourceInputCurrent(sr, ctx);
+        var foms = ComputeFoms(sr.V, iSrcIn, sr.INl, ctx.LoadIfIdx, ctx.SrcIfIdx, pavlW, ctx.K);
+
+        double vLoad = ctx.LoadIfIdx >= 0 && sr.V.GetLength(1) > 0 ? sr.V[ctx.LoadIfIdx, 0].Real : 0;
+        double iLoad = ctx.LoadIfIdx >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[ctx.LoadIfIdx, 0].Real : 0;
+        double vSrc  = ctx.SrcIfIdx  >= 0 && sr.V.GetLength(1) > 0 ? sr.V[ctx.SrcIfIdx,  0].Real : 0;
+        double iSrc2 = ctx.SrcIfIdx  >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[ctx.SrcIfIdx, 0].Real : 0;
+
+        return new PinStepResult(
+            pavlDbm, isTickle, sr.V, sr.INl, iSrcIn,
+            foms.PavlW, foms.PinDeliveredW, foms.PoutW, foms.GtDb, foms.GpDb,
+            vLoad, iLoad, vSrc, iSrc2,
+            sr.Converged, sr.Iterations, sr.FailReason);
+    }
+
+    /// <summary>
+    /// Round 11's independent tripwire, and <b>the invariant is PAE, not DE</b>. Routed through the
+    /// engine diagnostics channel (<c>ElaboratedNetlist.AddWarningOnce</c>, src/Engine/CLAUDE.md) rather
+    /// than stderr, so it reaches the Messages pane like every other engine warning. Once per run.
+    ///
+    /// <para><b>Why PAE.</b> At steady state, power out cannot exceed power in:
+    /// <c>Pout ≤ Pdc + Pin_delivered + P_active</c>. With every termination passive, <c>P_active = 0</c>
+    /// and that rearranges to exactly <c>PAE = (Pout − Pin_delivered)/Pdc ≤ 1</c>.
+    /// <c>DE = Pout/Pdc ≤ 1</c> does <b>NOT</b> follow and is a real false positive: a low-gain stage
+    /// driven hard can legitimately put out more than its DC input, with the difference supplied by the
+    /// RF drive. This screen originally tested DE and would have accused such a stage of impossible
+    /// physics.</para>
+    ///
+    /// <para><b>Skipped entirely when any termination is active</b> (<see cref="HasActiveTermination"/>).
+    /// A negative-real termination is a power SOURCE, so <c>P_active &gt; 0</c> and PAE above 100% is
+    /// then perfectly physical — that is much of the point of setting one. The engine does not compute
+    /// <c>P_active</c>, so there is no bound left to test, and asserting one anyway would fire on exactly
+    /// the research case the capability exists for. Silence here is a refusal to guess, not an oversight.</para>
+    ///
+    /// <para><b>Necessary, not sufficient</b>, and deliberately recorded as such: of the four
+    /// nonphysical grid points that motivated this work, this caught two — the other two reported
+    /// Pout 82.5 dBm at DE 51%, which is just as impossible and invisible to any efficiency test. It is
+    /// here because it is nearly free and catches a real class, not because it is a complete screen.</para>
+    /// </summary>
+    private void WarnIfEnergyViolating(IReadOnlyList<PinStepResult> steps, Complex gamma)
+    {
+        foreach (var st in steps)
+        {
+            if (!st.Converged || st.IsTickle || st.PdcW <= 1e-9 || st.Pae <= 1.0) continue;
+
+            _netlist.AddWarningOnce(
+                "loadpull-energy-violation",
+                $"Loadpull: a converged Pin step reports PAE {st.Pae:P1} — more RF output than the DC " +
+                $"supply and the RF drive together can provide, which no passive termination can make up. " +
+                $"The harmonic-balance solve has landed on a nonphysical root. First seen at " +
+                $"Γ = {gamma.Real:F3}{(gamma.Imaginary >= 0 ? "+" : "")}{gamma.Imaginary:F3}j, " +
+                $"Pin = {st.PavlDbm:F1} dBm. Try a smaller PinStep.");
+            return;
+        }
     }
 
     // ── Pin sequence ─────────────────────────────────────────────────────────

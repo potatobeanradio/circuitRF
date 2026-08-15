@@ -157,38 +157,20 @@ public static class PinSearch
     /// turn one Γ point's search into the ladder it was built to avoid.</summary>
     public const int MaxBracketRefineProbes = 4;
 
-    /// <summary>
-    /// Round 11 §2 — how far <see cref="Sweep"/>'s continuity guard may subdivide ONE ladder step
-    /// before giving up: depth d walks 2ᵈ sub-steps, so 4 bottoms out at a sixteenth of the step. A
-    /// bound rather than a budget — the guard fires on the rare rung, and 2+4+8+16 = 30 extra solves is
-    /// its absolute worst case there; the measured cost is depth 1 (2 solves), because one bisection is
-    /// already the 1 dB ladder that walks the same Γ cleanly.
-    /// </summary>
-    public const int MaxContinuationDepth = 4;
+    /// <summary>Round 11 §2 — see <see cref="DriveLadder.MaxContinuationDepth"/>, which this ladder
+    /// and <c>LoadpullEngine</c>'s share.</summary>
+    public const int MaxContinuationDepth = DriveLadder.MaxContinuationDepth;
 
     /// <summary>
     /// Round 11 §2 — whether <paramref name="to"/> can be the same solution branch as
-    /// <paramref name="from"/>, one drive step later. See
-    /// <c>HarmonicaSettings.LadderContinuityMarginDb</c> for the physics: Pout tracks Pin at 1:1 below
-    /// compression and more slowly above it, so a rung whose Pout moved further than its own Pin step
-    /// did — in EITHER direction — did not get there along the physical branch.
-    ///
-    /// <para>False (never discontinuous) when the margin is disabled, when the two rungs sit at the
-    /// same drive, or when either Pout is non-positive and therefore has no dB to compare — a
-    /// zero-output rung is a story for the convergence flag to tell, not for this guard.</para>
+    /// <paramref name="from"/>, one drive step later. <b>A thin adapter over
+    /// <see cref="DriveLadder.IsDiscontinuous"/></b>, which is where the physics is written down and
+    /// which <c>LoadpullEngine</c>'s own ladder reads too — two drive-ups that disagreed about what
+    /// "the same branch" means would be worse than either rule on its own.
     /// </summary>
     public static bool IsDiscontinuous(PinStep from, PinStep to, double marginDb)
-    {
-        if (!(marginDb > 0)) return false;
-
-        double dPin = Math.Abs(to.PavlDbm - from.PavlDbm);
-        if (dPin <= 0) return false;
-
-        double poutFrom = PoutDbmOf(from), poutTo = PoutDbmOf(to);
-        if (double.IsNaN(poutFrom) || double.IsNaN(poutTo)) return false;
-
-        return Math.Abs(poutTo - poutFrom) > dPin + marginDb;
-    }
+        => DriveLadder.IsDiscontinuous(from.PavlDbm, PoutDbmOf(from),
+                                       to.PavlDbm,   PoutDbmOf(to), marginDb);
 
     /// <summary>
     /// Drives one Γ point to its compression target.
@@ -578,38 +560,17 @@ public static class PinSearch
             return SolveFrom(pavlDbm, levelSeed);
         }
 
-        // Round 11 §2 — re-walks ONE ladder step by bisection continuation. Subdivides
-        // [from.PavlDbm, toDbm] into 2^d equal sub-steps for d = 1, 2, … MaxContinuationDepth, each
-        // warm-started from its own predecessor; the first depth whose WHOLE chain is continuous wins.
-        // Returns null when no depth produces a continuous chain — the caller then KEEPS its original
-        // answer, because a jump that survives a 1/16-step walk is a property of the circuit rather
-        // than of the step size, and hiding a real bifurcation is worse than showing it.
+        // Round 11 §2 — re-walks ONE ladder step by bisection continuation. The walk itself is
+        // DriveLadder.ContinueThroughJump, shared with LoadpullEngine's own ladder; all this adds is
+        // this ladder's own types and its `seed`, which must end on whichever branch was accepted.
         PinStep? ContinueThroughJump(PinStep from, double toDbm)
         {
-            var entrySeed = from.Point.V;
-            for (int depth = 1; depth <= MaxContinuationDepth; depth++)
-            {
-                int n = 1 << depth;
-                double sub = (toDbm - from.PavlDbm) / n;
-                var prev = from;
-                var warm = entrySeed;
-                PinStep? last = null;
-                bool ok = true;
+            var accepted = DriveLadder.ContinueThroughJump(
+                from.PavlDbm, PoutDbmOf(from), from.Point.V, toDbm,
+                SolveFrom, PoutDbmOf, step => step.Point.V, s.LadderContinuityMarginDb);
 
-                for (int i = 1; i <= n; i++)
-                {
-                    double pin = i == n ? toDbm : from.PavlDbm + i * sub;
-                    var probe = SolveFrom(pin, warm);
-                    if (probe is null || IsDiscontinuous(prev, probe, s.LadderContinuityMarginDb))
-                    { ok = false; break; }
-                    prev = probe;
-                    warm = probe.Point.V;
-                    last = probe;
-                }
-
-                if (ok && last is not null) { seed = last.Point.V; return last; }
-            }
-            return null;
+            if (accepted is not null) seed = accepted.Point.V;
+            return accepted;
         }
 
         // ── 1. the tickle (R-h9r2-18a) ──────────────────────────────────────────

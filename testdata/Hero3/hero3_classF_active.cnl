@@ -1,0 +1,98 @@
+; ============================================================
+; hero3_classF_active.cnl — Round 11 gate fixture. hero3_classF.cnl with an ACTIVE 2f0 load.
+;
+; The ONLY difference from hero3_classF.cnl is Z[2] = -20 Ohm: a NEGATIVE real termination,
+; which is a power SOURCE rather than a load. This is a supported, deliberate research
+; capability (negative-resistance / regenerative PA studies), not an input error, and the
+; engine stamps it as a negative conductance.
+;
+; It exists to gate TWO things at once:
+;   1. Every energy screen must go SILENT here. With an active termination the balance is
+;      Pout <= Pdc + Pin_delivered + P_active, the engine does not compute P_active, and so
+;      PAE above 100% is perfectly physical rather than a symptom. Accusing this fixture of
+;      impossible physics would break exactly the workflow the capability exists for.
+;   2. The CONTINUITY guard must still work. Measured: at the 2 dB step, guard off, one point
+;      lands on a root reporting PAE = 33,729%; with the guard on it is gone and the answer
+;      agrees with a guarded 0.5 dB walk to 0.1 percentage point.
+;
+; NOT a golden and NOT owner-verified physics.
+; ============================================================
+
+; ============================================================
+; hero3.cnl — Phase-4b-1 loadpull: grounded-source GaN HEMT PA
+; Same SDD FET as Phase 3 / Hero 2. Drive at 2 GHz.
+; Load termination swept over a Gamma grid (.gam file); each grid point
+; driven up in power to 3 dB compression.
+;
+; Source + load are Tuners with internal bias-tees (no explicit chokes/blocks).
+; The SOURCE Tuner also owns the RF drive: when the Loadpull analysis names it
+; SourceTuner, it stamps its own internal V_1Tone and computes |Vs| from its Z[1]
+; and the per-step Pavl the analysis supplies. So there is NO explicit drive
+; source, and NO Pavl/Vs_mag plumbing, in this netlist.
+; ============================================================
+
+; ---- FET model parameters (same as Phase 3 / Hero 2) ----
+Sv=-0.837
+Sc=0.71
+TV0=4.268
+TC=1.507
+th=0.001
+a=0.176
+g=0.089
+lam=0.0012
+B=1130
+
+; ---- analysis fundamental ----
+RFfreq = 2e9
+
+; ---- HB config (exposed as parameters) ----
+MaxHarm   = 3
+OverSamp  = 1
+HBtol     = 1e-8
+DriveStep = IfNecessary
+Guard     = 0
+
+; ---- DC bias ----
+Vgg = -3.05
+Vdd = 48
+
+; ============================================================
+; SOURCE Tuner (DUT port 1 = n_gate)
+;   Two nets: n_src (the tuner's "outer" node, where its internal drive sits)
+;             n_gate (the DUT-facing node).
+;   Z[1] = 25 ohm fundamental source impedance; harmonics near-short (Zdefault).
+;   Internal bias-tee feeds the gate bias Vgg = -3.05 V.
+;   When named SourceTuner by the Loadpull analysis, this Tuner stamps its own
+;   internal RF drive and computes |Vs| from Z[1] + the analysis-supplied Pavl.
+; ============================================================
+Tuner:Src   n_gate 0   Z[1]=50   Zdefault=1e-6   BiasTee=on   Vbias=Vgg
+
+; ============================================================
+; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain
+; ============================================================
+SDD:M1  n_gate 0  n_drain 0  \
+  I[1,0]=_v1/50  \
+  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
+
+; ============================================================
+; LOAD Tuner (DUT port 2 = n_drain) — THE SWEPT TUNER
+;   Z[1] = fundamental load (the loadpull SWEEPS this per .gam grid point via
+;        TuneHarm=1; the Z[1] here is the default/starting value).
+;   Z[2] = 1 ohm 2f0 termination; harmonics above near-short (Zdefault).
+;   Internal bias-tee feeds the drain bias Vdd = 48 V.
+; ============================================================
+Tuner:Load  n_drain 0   Z[1]=92.376   Z[2]=-20   Z[3]=8000   Zdefault=1e-6   BiasTee=on   Vbias=Vdd
+
+; ============================================================
+; Loadpull analysis: sweep the LOAD tuner's fundamental (TuneHarm=1) over the
+; Gamma grid in hero3_load.gam; at each grid point drive Pin up to 3 dB
+; compression (transducer gain Gt), capturing everything. The SourceTuner owns
+; the drive (no explicit drive source in the netlist).
+; ============================================================
+analysis LP1  type=loadpull  Tone=RFfreq  MaxHarm=MaxHarm \
+     LoadTuner=Load  SourceTuner=Src  Sweep=Load  TuneHarm=1 \
+     Grid="hero3_load.gam" \
+     Compression=3  GainType=Gt \
+     PinStart=-10  PinStep=2  PinMax=34  Tickle=-50 \
+     MaxIter=100 \
+     FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard

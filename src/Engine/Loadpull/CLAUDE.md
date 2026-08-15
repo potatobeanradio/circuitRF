@@ -3,6 +3,55 @@
 Standing instructions for `src/Engine/Loadpull`. Read with root `CLAUDE.md` and
 `src/Engine/CLAUDE.md`. Design note: `docs/design/loadpull.md`.
 
+## The inner Pin ladder is a CONTINUATION, and a converged solve is not automatically the right root
+
+`RunOneTermination`'s drive-up may not take a step the Newton cannot follow. Measured on a Class F load
+(near-open at 3f₀) at a 2 dB `PinStep`: the ladder converges at ‖F‖ within tolerance onto roots drawing
+**66.7 kW from a 48 V supply — DE 94,087%**, reported `Converged` and consumed as ordinary data. A rung
+whose Pout moves further than its own Pin step did (by more than `ContinuityMargin=`, default 3 dB) is
+therefore re-walked as a bisection continuation from the previous rung, as is a rung whose Newton fails
+outright — **they are the same defect, and truncating the sweep on the second one was the old
+behaviour.** `DriveLadder` owns both the criterion and the walk, and lives here rather than in
+`src/Harmonica` because `src/Harmonica` references `src/Engine` and not the reverse;
+`PinSearch.IsDiscontinuous` is a thin adapter over it. Never let the two ladders disagree about what
+"the same solution branch" means.
+
+**Free at `PinStep=1`** — the guard fires zero times on Hero 3 / Hero 3B, so the frozen goldens are
+untouched, and `LoadpullLadderContinuityTests` is what keeps saying so. **It catches jumps, not drift:**
+a coarse ladder that stays continuous can still arrive a percent or two past 100% efficiency, and the
+remedy there is a finer `PinStep`. **A spurious fire can never corrupt a correct answer**:
+`ContinueThroughJump` returns null unless every sub-step of the refined chain is continuous, and the
+caller then keeps what it had — so firing is a cost question, never a correctness one.
+
+## The energy screen is PAE, and it is SILENT against an active termination
+
+`Pout ≤ Pdc + Pin_delivered + P_active`. With every termination passive that rearranges to
+**`PAE ≤ 1`** exactly — **`DE ≤ 1` does NOT follow**, because a low-gain stage driven hard can
+legitimately put out more than its DC input. Any screen written against DE is a false positive waiting
+to happen.
+
+**A negative-real termination is a supported research capability** (negative-resistance / regenerative
+PA work), not an input error: the engine stamps it as a negative conductance and a `.gam` may carry
+`|Γ| > 1`. It is a power SOURCE, so `P_active > 0` and PAE past 100% is then perfectly physical.
+`GridPointResult.HasActiveTermination` is computed per grid point from every declared `Z[k]` on both
+tuners plus the swept `Z`, and **both** energy consumers — this engine's `AddWarningOnce` and
+`LoadpullPursuitEngine`'s unscorable rule — must read it and stay silent. Measured on
+`hero3_classF_active.cnl`: worst PAE 33,729% unguarded, **zero warnings**, and the continuity guard
+(which tests smoothness, not a budget, and assumes nothing about passivity) still recovers the physical
+branch to 0.1 percentage point of a guarded fine walk. See `RESOLVED.md`.
+
+*One pre-existing edge, unchanged and worth knowing:* an active SOURCE FUNDAMENTAL leaves available
+power undefined, and `TunerModel.SetSourceDrive` answers that by stamping **0 V of drive**
+(`reZ1 > 0` guard) — the same case harmonicaRF refuses by name as
+`InverseFailure.ActiveSourceFundamental`.
+
+**`TunerModel` holds exactly ONE harmonic override at a time**, and `RunOneTermination` spends it on the
+swept harmonic — so `SetHarmonicOverride(2, …)` followed by `SetHarmonicOverride(3, …)` keeps neither,
+**silently**. Harmonic terminations other than the swept one must come from the netlist's `Z[k]=`.
+
+**`AnalysisSettings.DriveStepping` is documented but has no consumer** — it is resolved and copied
+around and never ramps anything. Do not reach for it as an existing continuation mechanism.
+
 ## Zin uses the source-delivered current, not INl[gate] (brief-loadpull-zin-passives, 2026-06-24)
 
 **Bug fixed:** Zin / Zsource / Pin_delivered divided by `INl[src]` (the SDD's nonlinear gate
