@@ -229,6 +229,82 @@ public sealed class PCellTrustTests : IDisposable
         Assert.Equal(0, ProcessPCellWorkerTransport.StartCount - before);
     }
 
+    // ── A kit that travelled inside an archived workspace ────────────────────
+
+    /// <summary>
+    /// Owner question (2026-08-15): "How are Kit artwork permissions handled when a user unarchives a
+    /// workspace that includes a kit that uses python to generate artwork?"
+    ///
+    /// <para>The answer only works if the kit is FOUND. The manifest scan is deliberately shallow —
+    /// the root and one level down — and an archive puts an included kit at <c>kits/&lt;kit&gt;/</c>,
+    /// which is two. Unscanned means never asked about, and never asked about means every cell it
+    /// draws stays a placeholder with nothing said anywhere. That is the failure this pins.</para>
+    /// </summary>
+    [Fact]
+    public void AKitBundledInsideAnUnarchivedWorkspace_IsStillFound_SoConsentIsStillAsked()
+    {
+        string bundled = WriteKit("kits/vendorkit");
+
+        var kits = NewResolver(new PCellTrustStore()).Kits;
+
+        Assert.Equal(bundled, Assert.Single(kits).Directory);
+    }
+
+    [Fact]
+    public void ABundledKitNobodyHasAnsweredFor_IsUnknown_AndRunsNothing()
+    {
+        string bundled = WriteKit("kits/vendorkit");
+        var trust = new PCellTrustStore();
+
+        int before = ProcessPCellWorkerTransport.StartCount;
+        var resolver = NewResolver(trust);
+
+        // Unknown, so the recipient IS asked — and until they answer, nothing starts.
+        Assert.Equal(PCellTrustDecision.Unknown, trust.Decide(bundled));
+        Assert.Null(resolver.Resolve("TESTCELL"));
+        Assert.Equal(0, ProcessPCellWorkerTransport.StartCount - before);
+    }
+
+    [Fact]
+    public void TheSendersPermission_DoesNotTravel_BecauseTheKitLandsAtADifferentPath()
+    {
+        // The decision is keyed by the kit's absolute directory. The sender allowed the kit where it
+        // sat on THEIR machine; on the recipient's it is a different thing on disk, so the question
+        // is put again — which is the honest answer, and the whole reason the key is a path.
+        string bundled = WriteKit("kits/vendorkit");
+
+        var trust = new PCellTrustStore(
+            [new KeyValuePair<string, bool>("/some/other/machine/vendorkit", true)]);
+
+        Assert.Equal(PCellTrustDecision.Unknown, trust.Decide(bundled));
+    }
+
+    [PythonFact]
+    public void UnarchivingOntoTheSamePathTheUserAlreadyAllowed_DoesNotAskAgain()
+    {
+        // "…unless they have already given permission for that kit."
+        string bundled = WriteKit("kits/vendorkit");
+
+        var trust = new PCellTrustStore([new KeyValuePair<string, bool>(bundled, true)]);
+
+        Assert.Equal(PCellTrustDecision.Allowed, trust.Decide(bundled));
+        Assert.NotNull(NewResolver(trust).Resolve("TESTCELL"));
+    }
+
+    [Fact]
+    public void TheArchivesKitsFolderIsAContainerOfKits_NotAKit()
+    {
+        // A manifest sitting in `kits/` itself would be a kit called "kits"; the folder is scanned
+        // THROUGH, and its own children are what get asked about.
+        WriteKit("kits/one", generatorId: "ONECELL");
+        WriteKit("kits/two", generatorId: "TWOCELL");
+
+        var kits = NewResolver(new PCellTrustStore()).Kits;
+
+        Assert.Equal(2, kits.Count);
+        Assert.DoesNotContain(kits, k => Path.GetFileName(k.Directory) == "kits");
+    }
+
     // ── Where the decision is kept ────────────────────────────────────────────
 
     /// <summary>
@@ -297,9 +373,11 @@ public sealed class PCellTrustTests : IDisposable
         return resolver;
     }
 
+    /// <param name="name">Folder under the workspace root. May name a subfolder ("kits/vendor") —
+    /// which is exactly where an unarchived workspace puts a kit that travelled inside it.</param>
     private string WriteKit(string name, string generatorId = "TESTCELL")
     {
-        string dir = Path.Combine(_root, name);
+        string dir = Path.Combine(_root, name.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(dir);
 
         string package = PythonRunner.PackageRoot;

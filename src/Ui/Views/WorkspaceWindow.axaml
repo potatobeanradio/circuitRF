@@ -65,6 +65,9 @@
                         <NativeMenuItem Header="Save Layout As…"     Command="{Binding SaveLooseLayoutCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Save Workspace As…"  Command="{Binding SaveWorkspaceAsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
                         <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Archive Workspace…"   Command="{Binding ArchiveWorkspaceCommand}"   CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Unarchive Workspace…" Command="{Binding UnarchiveWorkspaceCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Import">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
@@ -369,6 +372,19 @@
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+Shift+S">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveEdit" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Archive Workspace…"
+                          Command="{Binding ArchiveWorkspaceCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Zip this workspace up so it can be sent to someone on another machine.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ZipBox" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Unarchive Workspace…"
+                          Command="{Binding UnarchiveWorkspaceCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Unpack a workspace archive and open it.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ZipBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Import">

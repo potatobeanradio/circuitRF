@@ -108,8 +108,8 @@ public class CircuitRfDockFactory : Factory
     /// active tab, and selection intact) and the existing tool instances.
     /// Used by View → Reset Layout so document content is never discarded.
     /// </summary>
-    public IRootDock CreateLayoutPreservingContent() =>
-        BuildLayout(DockLayoutDefaults.Default(), freshTools: false, preserveDocumentDock: true);
+    public IRootDock CreateLayoutPreservingContent(CwsDockLayout? state = null) =>
+        BuildLayout(state ?? DockLayoutDefaults.Default(), freshTools: false, preserveDocumentDock: true);
 
     /// <summary>
     /// Rebuilds the shell around an arbitrary arrangement while keeping every open document and

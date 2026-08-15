@@ -126,6 +126,23 @@ public partial class ProjectTreeTool : Tool
         if (RootItems.Count > 0) RootItems[0].RevealCommand.Execute(null);
     }
 
+    // ── Workspace-level header items (owner request, 2026-08-15) ──────────────
+    //  On the workspace NAME when one is open, and on the "No workspace open" text when none is —
+    //  the header is where a user looks for something that acts on the workspace as a whole, and
+    //  when nothing is open it is the only thing on the panel to right-click at all.
+
+    [RelayCommand]
+    private Task CloseWorkspace() => _actions?.CloseWorkspaceFromTreeAsync() ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task ArchiveWorkspace() => _actions?.ArchiveWorkspaceFromTreeAsync() ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task OpenWorkspace() => _actions?.OpenWorkspaceFromTreeAsync() ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task UnarchiveWorkspace() => _actions?.UnarchiveWorkspaceFromTreeAsync() ?? Task.CompletedTask;
+
     // ── Construction ──────────────────────────────────────────────────────────
 
     public ProjectTreeTool()

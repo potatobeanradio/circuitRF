@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:arc="using:CircuitRF.Ui.Archive"
+        x:Class="CircuitRF.Ui.Views.Dialogs.ArchiveWorkspaceDialog"
+        Title="Archive Workspace"
+        Width="660"
+        Height="520"
+        MinWidth="480"
+        MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="16">
+
+        <SelectableTextBlock Grid.Row="0" x:Name="HeaderText"
+                             FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+        <SelectableTextBlock Grid.Row="1" x:Name="SubHeaderText"
+                             FontSize="11" Opacity="0.7" TextWrapping="Wrap" Margin="0,4,0,8"
+                             Text="Every cell, technology and workspace file is included automatically. Tick anything below that should travel with it."/>
+
+        <Border Grid.Row="2" BorderThickness="1" CornerRadius="3"
+                BorderBrush="{DynamicResource SystemBaseLowColor}">
+            <TreeView x:Name="Tree" FontSize="12" Padding="2">
+                <TreeView.ItemTemplate>
+                    <TreeDataTemplate x:DataType="arc:ArchiveTreeNode" ItemsSource="{Binding Children}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
+                            <CheckBox Grid.Column="0"
+                                      IsThreeState="True"
+                                      IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                      MinWidth="0" Margin="0,0,4,0"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Title}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip.Tip="{Binding Detail}"/>
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding SizeText}"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.6" FontSize="11" Margin="12,0,6,0"/>
+                        </Grid>
+                    </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+
+                <TreeView.Styles>
+                    <!-- Expansion is a property of the node (it is what triggers the lazy build), so
+                         it has to be a two-way binding on the container, not a visual-only state. -->
+                    <Style Selector="TreeViewItem" x:DataType="arc:ArchiveTreeNode">
+                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                    </Style>
+                </TreeView.Styles>
+            </TreeView>
+        </Border>
+
+        <SelectableTextBlock Grid.Row="3" x:Name="TotalText"
+                             FontSize="11" Opacity="0.8" Margin="0,8,0,0"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,12,0,0">
+            <Button Content="Cancel" Width="90" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Archive…" Width="90" IsDefault="True" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnArchiveClick"/>
+        </StackPanel>
+    </Grid>
+</Window>

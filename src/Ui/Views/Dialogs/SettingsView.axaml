@@ -32,9 +32,9 @@
                                        HorizontalAlignment="Left"
                                        SelectionChanged="OnLaunchSettingChanged"/>
                             <TextBlock Grid.Row="2" Grid.Column="0"
-                                       Text="Focus pane:" VerticalAlignment="Center" FontSize="12"/>
+                                       Text="Window Layout:" VerticalAlignment="Center" FontSize="12"/>
                             <ComboBox  Grid.Row="2" Grid.Column="1"
-                                       Name="LaunchPaneCombo" FontSize="12" MinWidth="180"
+                                       Name="WindowLayoutCombo" FontSize="12" MinWidth="180"
                                        HorizontalAlignment="Left"
                                        SelectionChanged="OnLaunchSettingChanged"/>
                             <CheckBox  Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"

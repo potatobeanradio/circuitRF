@@ -191,7 +191,7 @@ public partial class App : Application
         try
         {
             var prefs = AppPreferencesIo.Load();
-            vm.ApplyLaunchPane(prefs.LaunchPane ?? LaunchPane.Palette);
+            vm.ApplyWindowLayout(prefs.WindowLayout ?? WindowLayout.ProjectTreeAndLibrary);
             await vm.ExecuteLaunchActionAsync(prefs.LaunchAction ?? LaunchAction.Welcome);
             vm.ApplyShowDockersOnLaunchPreference(prefs.ShowDockersOnLaunch ?? true);
         }

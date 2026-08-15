@@ -95,7 +95,28 @@ public static class SymbolPersistence
     }
 
     public static Symbol LoadFromFile(string path)
-        => Deserialize(File.ReadAllText(path));
+    {
+        var symbol = Deserialize(File.ReadAllText(path));
+        ResolveRelativeBitmapPaths(symbol, Path.GetDirectoryName(Path.GetFullPath(path)));
+        return symbol;
+    }
+
+    /// <summary>
+    /// Turns a relative <see cref="BitmapPrimitive.ImagePathRef"/> into an absolute path against the
+    /// <c>.csym</c>'s own folder — the convention the field documents, and the one
+    /// <c>SchematicPersistence</c> already applies to <c>.csch</c> bitmaps. See
+    /// <c>LayoutPersistence.ResolveRelativeBitmapPaths</c> for why this has to happen at load time
+    /// rather than in the renderer.
+    /// </summary>
+    internal static void ResolveRelativeBitmapPaths(Symbol symbol, string? symbolDir)
+    {
+        if (string.IsNullOrEmpty(symbolDir)) return;
+
+        foreach (var bmp in symbol.Primitives.OfType<BitmapPrimitive>())
+            if (!string.IsNullOrEmpty(bmp.ImagePathRef) && !Path.IsPathFullyQualified(bmp.ImagePathRef))
+                bmp.ImagePathRef = Path.GetFullPath(
+                    Path.Combine(symbolDir, bmp.ImagePathRef.Replace('/', Path.DirectorySeparatorChar)));
+    }
 
     // ── Convert Symbol ↔ CsymFile ─────────────────────────────────────────────
 

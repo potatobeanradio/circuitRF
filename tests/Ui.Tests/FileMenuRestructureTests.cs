@@ -112,6 +112,10 @@ public class FileMenuRestructureTests
         "_New", "New _Workspace…", "---",
         "Open _Workspace…", "Open _Recent", "_Open", "---",
         "{Binding SaveMenuHeader}", "Save Schematic _As…", "Save S_ymbol As…", "Save _Layout As…", "Save Workspace _As…", "---",
+        // Sharing a workspace with someone on another machine (owner request, 2026-08-15) — placed
+        // under Save Workspace As… behind its own separator, because it is a different KIND of
+        // save: it writes one portable file, not the workspace itself.
+        "_Archive Workspace…", "_Unarchive Workspace…", "---",
         "_Import", "_Export", "_Manage PDKs…", "---",
         "{Binding CloseWorkspaceOrWindowHeader}", "---",
         "_Settings…", "---",
@@ -123,6 +127,7 @@ public class FileMenuRestructureTests
         "New", "New Workspace…", "---",
         "Open Workspace…", "Open Recent", "Open", "---",
         "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Workspace As…", "---",
+        "Archive Workspace…", "Unarchive Workspace…", "---",
         "Import", "Export", "Manage PDKs…", "---",
         "{Binding CloseWorkspaceOrWindowHeader}",
     ];

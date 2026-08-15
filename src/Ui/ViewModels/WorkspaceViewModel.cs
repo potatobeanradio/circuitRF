@@ -43,6 +43,7 @@ using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.ViewModels.ProjectTree;
+using CircuitRF.Ui.Archive;
 using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.ViewModels;
@@ -273,6 +274,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
         CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
+        ArchiveWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ManagePdksCommand.NotifyCanExecuteChanged();
@@ -838,12 +840,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
            ?.Windows.FirstOrDefault(w => ReferenceEquals(w.DataContext, this));
 
     /// <summary>
-    /// Switches the left ToolDock's active tab to the specified launch pane.
-    /// Called once after the window is shown; a no-op if the dock isn't ready.
+    /// Applies the Settings ▸ On Launch ▸ Window Layout preference. Called once after the window is
+    /// shown, and again by View ▸ Reset Layout through <see cref="PerformLayoutReset"/>.
+    ///
+    /// <para>The two "focus" presets only need the right tab brought to the front — the shell already
+    /// opens in that arrangement. <see cref="WindowLayout.ProjectTreeAndLibrary"/> is a genuinely
+    /// different arrangement, so it rebuilds the dock tree (documents preserved, exactly as Reset
+    /// Layout does).</para>
     /// </summary>
-    public void ApplyLaunchPane(LaunchPane pane)
+    public void ApplyWindowLayout(WindowLayout preset)
     {
-        IDockable? target = pane == LaunchPane.Palette
+        if (preset == WindowLayout.ProjectTreeAndLibrary)
+            RebuildLayoutFrom(Docking.DockLayoutDefaults.For(preset));
+
+        FocusPaneFor(preset);
+    }
+
+    /// <summary>Brings the pane a Window Layout preset names to the front of its group.</summary>
+    private void FocusPaneFor(WindowLayout preset)
+    {
+        IDockable? target = preset == WindowLayout.LibraryFocus
             ? (IDockable?)_factory.PaletteTool
             : _factory.ProjectTreeTool;
         if (target is not null)
@@ -1120,6 +1136,129 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result is null) return;
         CurrentWorkspacePath = result.Path.LocalPath;
         WriteWorkspaceFile(CurrentWorkspacePath);
+    }
+
+    // ── Archive / Unarchive (owner request, 2026-08-15) ───────────────────────
+
+    /// <summary>
+    /// File ▸ Archive Workspace… — zips the workspace so it can be handed to someone on another
+    /// machine.
+    ///
+    /// <para>Unsaved work is offered up first, through the SAME prompt closing a workspace uses.
+    /// An archive is built from what is on disk, so archiving over the top of unsaved edits would
+    /// produce an archive of a design nobody has — a failure that stays invisible until the
+    /// recipient opens it. Declining is still allowed (the archive is then honestly of the saved
+    /// state); cancelling stops.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCloseWorkspace))]
+    private async Task ArchiveWorkspace(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null || CurrentWorkspacePath is null) return;
+
+        if (HasAnyDirtyWork(includeFloated: false) &&
+            !await PromptSaveBeforeClose(window, "archiving the workspace", includeFloated: false))
+            return;
+
+        // The .cws itself is always refreshed: the dock arrangement and open-document list are what
+        // the recipient's window will come up in, and they only reach disk from here.
+        WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        WorkspaceArchivePlan plan;
+        try { plan = WorkspaceArchiveScanner.Scan(workspaceDir); }
+        catch (Exception ex) { Messages.Error($"Archive: could not read the workspace — {ex.Message}"); return; }
+
+        if (await new ArchiveWorkspaceDialog(plan).ShowDialog<bool>(window) is not true) return;
+
+        var suggested = Path.GetFileName(workspaceDir.TrimEnd(Path.DirectorySeparatorChar));
+        var target = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title             = "Archive Workspace",
+            SuggestedFileName = suggested,
+            DefaultExtension  = "zip",
+            FileTypeChoices   = [new FilePickerFileType("Zip Archive") { Patterns = ["*.zip"] }],
+        });
+        if (target is null) return;
+
+        var zipPath = target.Path.LocalPath;
+        try
+        {
+            var result = await Task.Run(() => WorkspaceArchiveWriter.Write(plan, zipPath));
+
+            Messages.Success(
+                $"Archived {result.FileCount} file(s) to {Path.GetFileName(zipPath)} " +
+                $"({WorkspaceArchivePlan.FormatSize(result.ZipBytes)}).");
+
+            if (result.Repointed.Count > 0)
+                Messages.Info($"Repointed references in {result.Repointed.Count} file(s) to the archived copies.");
+
+            // Said out loud rather than left for the recipient to discover: these are the references
+            // that will arrive broken, and the user is the only one who can still do anything about it.
+            foreach (var external in result.StillExternal)
+                Messages.Warning($"Not included, so this reference will not resolve for the recipient: {external}");
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Archive failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// File ▸ Unarchive Workspace… — the reverse: pick a <c>.zip</c>, pick where it goes, unpack it,
+    /// and open what came out.
+    /// </summary>
+    [RelayCommand]
+    private async Task UnarchiveWorkspace(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var picked = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Unarchive Workspace",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Workspace Archive") { Patterns = ["*.zip"] }],
+        });
+        if (picked.Count == 0) return;
+
+        IStorageFolder? startLocation = null;
+        try { startLocation = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        catch { }
+
+        var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title                  = "Unarchive Into",
+            AllowMultiple          = false,
+            SuggestedStartLocation = startLocation,
+        });
+        if (folders.Count == 0) return;
+
+        var zipPath     = picked[0].Path.LocalPath;
+        var destination = folders[0].Path.LocalPath;
+
+        ArchiveExtractResult extracted;
+        try { extracted = await Task.Run(() => WorkspaceArchiveExtractor.Extract(zipPath, destination)); }
+        catch (Exception ex) { Messages.Error($"Unarchive failed: {ex.Message}"); return; }
+
+        foreach (var rejected in extracted.Rejected)
+            Messages.Warning($"Archive entry refused for pointing outside the destination: {rejected}");
+
+        Messages.Success($"Unarchived {extracted.FileCount} file(s) into {extracted.WorkspaceDir}.");
+
+        if (extracted.CwsPath is null)
+        {
+            Messages.Warning("That archive holds no .cws, so there is no workspace to open.");
+            return;
+        }
+
+        if (HasAnyDirtyWork(includeFloated: false) &&
+            !await PromptSaveBeforeClose(window, "opening the unarchived workspace", includeFloated: false))
+            return;
+
+        _lastWorkspaceParentDir = destination;
+        SwitchToWorkspace(extracted.CwsPath);
     }
 
     // silent = true suppresses the "Saved: …" message (used on debounce tick + clean exit).
@@ -2122,17 +2261,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // skeleton, documents preserved) — the two toolbar affordances describe the same operation.
     private void PerformLayoutReset(string message)
     {
-        // Preserve documents: re-host the existing DocumentDock and tool instances
-        // into a fresh proportional skeleton.  Documents, active tab, and per-document
-        // selection are kept; only panel positions/proportions are restored.
-        var newLayout = _factory.CreateLayoutPreservingContent();
-        _factory.InitLayout(newLayout);
-        Layout = newLayout;
-        _factory.PaletteTool?.SetPlacementService(PlacementService);
-        _factory.PaletteTool?.SetMru(_recentlyPlaced);
-        RestoreInstalledPdks();
-        SubscribeToFilterState();
-        SubscribeToTreeSelection();
+        // "Reset" means "back to the layout you chose in Settings ▸ On Launch ▸ Window Layout" —
+        // that setting is the ONLY place a layout is chosen, so this menu deliberately offers no
+        // options of its own.
+        var preset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
+
+        RebuildLayoutFrom(Docking.DockLayoutDefaults.For(preset));
+        FocusPaneFor(preset);
 
         // Resetting the layout to the default means showing the panels — leaving the collapsed
         // toggle armed here would produce a "reset" that still hides everything.
@@ -2140,6 +2275,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _preCollapseLayout = null;
 
         Messages.Info(message);
+    }
+
+    /// <summary>
+    /// Re-hosts the existing DocumentDock and tool instances into a fresh skeleton built from
+    /// <paramref name="state"/>. Documents, active tab, and per-document selection are kept; only
+    /// panel positions/proportions change.
+    /// </summary>
+    private void RebuildLayoutFrom(Docking.CwsDockLayout state)
+    {
+        var newLayout = _factory.CreateLayoutPreservingContent(state);
+        _factory.InitLayout(newLayout);
+        Layout = newLayout;
+        _factory.PaletteTool?.SetPlacementService(PlacementService);
+        _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        RestoreInstalledPdks();
+        SubscribeToFilterState();
+        SubscribeToTreeSelection();
     }
 
     // Dispatches to whichever document is currently focused (per-window, see
@@ -7248,6 +7400,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveRecent();
         RebuildRecentMenuItems();
     }
+
+    // ── ITreeActions: workspace-level items on the tree header ────────────────
+    //  Each routes to the command the File menu already uses rather than repeating its work — the
+    //  dirty-work prompt, the generated-cells cleanup and the picker all live in one place, and a
+    //  second copy of any of them would drift.
+
+    /// <inheritdoc/>
+    public Task CloseWorkspaceFromTreeAsync() => CloseWorkspaceCommand.ExecuteAsync(null);
+
+    /// <inheritdoc/>
+    public Task ArchiveWorkspaceFromTreeAsync() => ArchiveWorkspaceCommand.ExecuteAsync(null);
+
+    /// <inheritdoc/>
+    public Task OpenWorkspaceFromTreeAsync() => OpenWorkspaceCommand.ExecuteAsync(null);
+
+    /// <inheritdoc/>
+    public Task UnarchiveWorkspaceFromTreeAsync() => UnarchiveWorkspaceCommand.ExecuteAsync(null);
 
     // ── ITreeActions: selection change hook (Item 5) ──────────────────────────
 

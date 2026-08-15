@@ -114,7 +114,34 @@ public static class LayoutPersistence
     }
 
     public static LayoutView LoadFromFile(string path)
-        => Deserialize(GzipTextFile.ReadAllTextAutoGzip(path));
+    {
+        var view = Deserialize(GzipTextFile.ReadAllTextAutoGzip(path));
+        ResolveRelativeBitmapPaths(view, Path.GetDirectoryName(Path.GetFullPath(path)));
+        return view;
+    }
+
+    /// <summary>
+    /// Turns a relative <see cref="BitmapShape.ImagePathRef"/> into an absolute path against the
+    /// <c>.clay</c>'s own folder — the convention the field has always documented ("absolute, or
+    /// relative to the containing <c>.clay</c>"), and the one <c>SchematicPersistence</c> already
+    /// applies to <c>.csch</c> bitmaps.
+    ///
+    /// <para>Load-time rather than render-time because the renderer is handed a model, not a path:
+    /// <c>BitmapCache.Load</c> hands the string straight to Skia, which resolves a relative path
+    /// against the PROCESS working directory — i.e. against somewhere the document knows nothing
+    /// about. It matters now because an archived workspace stores exactly such a relative reference,
+    /// so that an underlay copied into the archive still resolves on the machine it is unpacked
+    /// on.</para>
+    /// </summary>
+    internal static void ResolveRelativeBitmapPaths(LayoutView view, string? layoutDir)
+    {
+        if (string.IsNullOrEmpty(layoutDir)) return;
+
+        foreach (var bmp in view.Shapes.OfType<BitmapShape>())
+            if (!string.IsNullOrEmpty(bmp.ImagePathRef) && !Path.IsPathFullyQualified(bmp.ImagePathRef))
+                bmp.ImagePathRef = Path.GetFullPath(
+                    Path.Combine(layoutDir, bmp.ImagePathRef.Replace('/', Path.DirectorySeparatorChar)));
+    }
 
     // ── Convert LayoutView <-> ClayFile ───────────────────────────────────────
 

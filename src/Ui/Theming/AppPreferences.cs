@@ -8,7 +8,27 @@ using CircuitRF.Ui.Messages;
 namespace CircuitRF.Ui.Theming;
 
 public enum LaunchAction { Welcome, NewSchematic, NewWorkspace, OpenWorkspace, NewDataDisplay, NewSymbol, NewLayout, NewHarmonica }
-public enum LaunchPane   { ProjectTree, Palette }
+
+/// <summary>
+/// Settings ▸ On Launch ▸ <b>Window Layout</b> — the dock arrangement the shell opens with, and the
+/// one View ▸ Reset Layout resets TO (there is deliberately no second place to choose a layout).
+///
+/// <para>The first two members were the old <c>LaunchPane</c> enum (<c>ProjectTree</c>/<c>Palette</c>)
+/// and keep its ORDINALS, because the preference is serialized as a number: an existing
+/// <c>preferences.json</c> holding <c>"launch_pane": 1</c> still means "the Library" after the rename.
+/// <see cref="AppPreferences.LegacyLaunchPane"/> is what carries that value across.</para>
+/// </summary>
+public enum WindowLayout
+{
+    /// <summary>Project Tree and Library tabbed together on the left, Project Tree on top.</summary>
+    ProjectTreeFocus,
+
+    /// <summary>The same arrangement, with the Library's tab on top.</summary>
+    LibraryFocus,
+
+    /// <summary>Project Tree on the left, Library in its own column to the RIGHT of the documents.</summary>
+    ProjectTreeAndLibrary,
+}
 
 public sealed class AppPreferences
 {
@@ -35,14 +55,24 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CopyTransparentBackground { get; set; }
 
-    // Launch behavior — null means use defaults (NewSchematic / Palette).
+    // Launch behavior — null means use the defaults (Welcome / WindowLayout.ProjectTreeAndLibrary).
     [JsonPropertyName("launch_action")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LaunchAction? LaunchAction { get; set; }
 
+    // The dock arrangement the shell opens with, and what View ▸ Reset Layout resets to. Null means
+    // the shipped default, WindowLayout.ProjectTreeAndLibrary — including on a machine with no
+    // preferences.json at all, which is exactly the fresh-install case.
+    [JsonPropertyName("window_layout")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WindowLayout? WindowLayout { get; set; }
+
+    // The pre-2026-08-15 name for the same setting, read once on load and never written back (see
+    // AppPreferencesIo.Load). Kept so a user who chose "Palette" before the rename still gets the
+    // Library focused, rather than being silently moved onto the new default.
     [JsonPropertyName("launch_pane")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public LaunchPane? LaunchPane { get; set; }
+    public WindowLayout? LegacyLaunchPane { get; set; }
 
     // Whether the dockers (Project Tree, Library, Properties, Analyses, Messages) are shown at app
     // launch and when a new workspace is created. Null means the default, which is ON (shown) — the
@@ -146,11 +176,28 @@ public static class AppPreferencesIo
         try
         {
             if (File.Exists(PrefsPath))
-                return JsonSerializer.Deserialize<AppPreferences>(File.ReadAllText(PrefsPath), JsonOpts)
-                    ?? new AppPreferences();
+            {
+                return Migrate(JsonSerializer.Deserialize<AppPreferences>(File.ReadAllText(PrefsPath), JsonOpts)
+                               ?? new AppPreferences());
+            }
         }
         catch { /* corrupt prefs — start fresh */ }
         return new AppPreferences();
+    }
+
+    /// <summary>
+    /// Folds retired preference keys into their current ones, on READ rather than by rewriting the
+    /// file — a user who runs an older build in between then still finds their setting where that
+    /// build looks for it. Idempotent; separate from <see cref="Load"/> only so it is testable
+    /// without a real preferences.json.
+    /// </summary>
+    public static AppPreferences Migrate(AppPreferences prefs)
+    {
+        // "launch_pane" (Focus Pane) → "window_layout" (Window Layout), 2026-08-15. The ordinals were
+        // deliberately preserved by the rename, so this carries the value across as-is.
+        prefs.WindowLayout   ??= prefs.LegacyLaunchPane;
+        prefs.LegacyLaunchPane = null;
+        return prefs;
     }
 
     public static void Save(AppPreferences prefs)

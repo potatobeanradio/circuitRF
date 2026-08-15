@@ -223,6 +223,23 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
             // A generated-cells folder is circuitRF's own cache, not a kit.
             if (string.Equals(Path.GetFileName(child), GeneratedCellStore.ReservedFolderName,
                               StringComparison.OrdinalIgnoreCase)) continue;
+
+            // …and the archive's own kits folder is a container OF kits, not a kit — the one place
+            // where the deliberate one-level shallowness would hide something. An unarchived
+            // workspace puts each included kit at `kits/<kit>/`, two levels down; leaving that
+            // unscanned would mean its generator is never found, the recipient is never asked for
+            // permission, and every cell it draws stays a placeholder with nothing said. Still one
+            // named folder rather than a general depth increase.
+            if (string.Equals(Path.GetFileName(child), Archive.WorkspaceArchiveScanner.KitsFolder,
+                              StringComparison.OrdinalIgnoreCase))
+            {
+                IEnumerable<string> kits;
+                try { kits = Directory.EnumerateDirectories(child); }
+                catch { continue; }
+                foreach (string kit in kits) yield return kit;
+                continue;
+            }
+
             yield return child;
         }
     }

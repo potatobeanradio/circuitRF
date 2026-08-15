@@ -26,10 +26,32 @@
                        VerticalAlignment="Center"
                        Margin="0,0,4,0"
                        TextTrimming="CharacterEllipsis">
+                <!-- The menu itself is always available now: with a workspace open it acts on that
+                     workspace, and with none open it is how one gets opened — the "No workspace
+                     open" text is the only thing on this panel to right-click at that point. Each
+                     item's own IsVisible is what switches between the two sets. -->
                 <TextBlock.ContextMenu>
-                    <ContextMenu IsVisible="{Binding HasWorkspace}">
-                        <MenuItem Header="{Binding RevealLabel}" Command="{Binding RevealWorkspaceCommand}">
+                    <ContextMenu>
+                        <MenuItem Header="{Binding RevealLabel}" Command="{Binding RevealWorkspaceCommand}"
+                                  IsVisible="{Binding HasWorkspace}">
                             <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="Archive Workspace…" Command="{Binding ArchiveWorkspaceCommand}"
+                                  IsVisible="{Binding HasWorkspace}">
+                            <MenuItem.Icon><mi:MaterialIcon Kind="ZipBox" Width="14" Height="14"/></MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="Close Workspace" Command="{Binding CloseWorkspaceCommand}"
+                                  IsVisible="{Binding HasWorkspace}">
+                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="14" Height="14"/></MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem Header="Open…" Command="{Binding OpenWorkspaceCommand}"
+                                  IsVisible="{Binding !HasWorkspace}">
+                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/></MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="Unarchive Workspace…" Command="{Binding UnarchiveWorkspaceCommand}"
+                                  IsVisible="{Binding !HasWorkspace}">
+                            <MenuItem.Icon><mi:MaterialIcon Kind="ZipBoxOutline" Width="14" Height="14"/></MenuItem.Icon>
                         </MenuItem>
                     </ContextMenu>
                 </TextBlock.ContextMenu>

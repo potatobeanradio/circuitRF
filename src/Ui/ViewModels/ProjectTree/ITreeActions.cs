@@ -86,6 +86,28 @@ public interface ITreeActions
     /// <summary>Clear all recent workspaces.</summary>
     void ClearRecentWorkspaces();
 
+    // ── Workspace-level actions on the tree header (owner request, 2026-08-15) ─
+
+    /// <summary>
+    /// Close the whole workspace — the tree header's own context item. Deliberately the whole
+    /// workspace and never "close this window": the header names the workspace, so that is what the
+    /// item on it has to mean (see <c>WorkspaceViewModel.CloseWorkspaceOrWindow</c>'s own note).
+    /// </summary>
+    Task CloseWorkspaceFromTreeAsync();
+
+    /// <summary>Archive the workspace — the same command the File menu offers.</summary>
+    Task ArchiveWorkspaceFromTreeAsync();
+
+    /// <summary>
+    /// Open a workspace, through the same picker and the same code File ▸ Open Workspace… uses.
+    /// Reachable from the "No workspace open" header, which is exactly when the File menu's own
+    /// entry is hardest to think of.
+    /// </summary>
+    Task OpenWorkspaceFromTreeAsync();
+
+    /// <summary>Unarchive a workspace archive and open it — the same command the File menu offers.</summary>
+    Task UnarchiveWorkspaceFromTreeAsync();
+
     // ── Selection change hook (Item 5) ────────────────────────────────────────
 
     /// <summary>

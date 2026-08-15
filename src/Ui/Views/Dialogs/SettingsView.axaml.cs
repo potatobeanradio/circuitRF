@@ -79,8 +79,10 @@ public partial class SettingsView : Window
             };
             LaunchActionCombo.SelectedIndex = (int)(prefs.LaunchAction ?? LaunchAction.Welcome);
 
-            LaunchPaneCombo.ItemsSource   = new[] { "Project Tree", "Palette" };
-            LaunchPaneCombo.SelectedIndex = (int)(prefs.LaunchPane ?? LaunchPane.Palette);
+            // Index == enum ordinal, and the ordinals are a FILE FORMAT (see WindowLayout) —
+            // reordering these strings silently changes what every saved preference means.
+            WindowLayoutCombo.ItemsSource   = new[] { "Project Tree Focus", "Library Focus", "Project Tree & Library" };
+            WindowLayoutCombo.SelectedIndex = (int)(prefs.WindowLayout ?? WindowLayout.ProjectTreeAndLibrary);
 
             ShowDockersOnLaunchCheck.IsChecked = prefs.ShowDockersOnLaunch ?? true;
 
@@ -114,8 +116,8 @@ public partial class SettingsView : Window
         {
             if (LaunchActionCombo.SelectedIndex >= 0)
                 p.LaunchAction = (LaunchAction)LaunchActionCombo.SelectedIndex;
-            if (LaunchPaneCombo.SelectedIndex >= 0)
-                p.LaunchPane = (LaunchPane)LaunchPaneCombo.SelectedIndex;
+            if (WindowLayoutCombo.SelectedIndex >= 0)
+                p.WindowLayout = (WindowLayout)WindowLayoutCombo.SelectedIndex;
         });
     }
 

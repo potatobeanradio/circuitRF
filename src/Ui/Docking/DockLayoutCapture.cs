@@ -341,6 +341,17 @@ public static class DockLayoutCapture
     ///
     /// <para>Position is authoritative because it is what the user actually sees, and it stays
     /// correct however Dock chooses to set Alignment during a drag.</para>
+    ///
+    /// <para><b>The second bug, same shape, owner-reported 2026-08-14.</b> Dropping the Library
+    /// BESIDE the documents captured as <c>Bottom</c>, and restored under them. Dock's
+    /// <c>CreateSplitLayout</c> does not move the document dock into the outer row — it wraps
+    /// documents+tool in a NEW horizontal ProportionalDock that takes the document dock's place
+    /// inside <c>DocumentColumn</c>. Both dockables therefore live in the SAME branch of that
+    /// vertical column, so step 1 found <c>toolIdx == docIdx</c> and fell out of
+    /// <c>toolIdx &lt; docIdx</c> as "Bottom" — a coin flip decided by an operator, not by
+    /// position. A container that does not SEPARATE the two says nothing about the side, so it is
+    /// now skipped and the search continues outward, where the inner horizontal split answers
+    /// Left/Right correctly.</para>
     /// </summary>
     private static string SideOf(IToolDock toolDock, IDockable root)
     {
@@ -362,6 +373,9 @@ public static class DockLayoutCapture
             var toolBranch = BranchChildOf(toolDock, column, parents);
             var docBranch  = BranchChildOf(documentDock, column, parents);
             if (toolBranch is null || docBranch is null) continue;
+            // Same branch => this container does not separate the two at all; keep looking outward
+            // (owner-reported 2026-08-14 — "the second bug" in this method's remarks).
+            if (ReferenceEquals(toolBranch, docBranch)) continue;
 
             var toolIdx = children.IndexOf(toolBranch);
             var docIdx  = children.IndexOf(docBranch);
@@ -380,6 +394,7 @@ public static class DockLayoutCapture
             var toolBranch = BranchChildOf(toolDock, outer, parents);
             var docBranch  = BranchChildOf(documentDock, outer, parents);
             if (toolBranch is null || docBranch is null) continue;
+            if (ReferenceEquals(toolBranch, docBranch)) continue;
 
             var toolIdx = children.IndexOf(toolBranch);
             var docIdx  = children.IndexOf(docBranch);
@@ -455,6 +470,12 @@ public static class DockLayoutCapture
     /// <summary>
     /// Yields (side, proportion) for every ProportionalDock that directly hosts tool docks of a
     /// single side — that container's own proportion IS the column width for that side.
+    ///
+    /// <para>…except when that container is a SPLIT the user made by dropping a panel beside the
+    /// documents: there the container spans the whole width (its own proportion is Dock's
+    /// "unset" NaN) and the panel's share lives on the tool dock itself. Falling back to the tool
+    /// dock's proportion there is what makes a Library dropped at 12% of the width come back at
+    /// 12%, rather than at the 20% default column width.</para>
     /// </summary>
     private static IEnumerable<(string Side, double Proportion)> EnumerateSideProportions(IDockable dockable, IDockable root)
     {
@@ -462,14 +483,12 @@ public static class DockLayoutCapture
 
         if (dockable is IProportionalDock pd)
         {
-            var sides = pd.VisibleDockables!
-                .OfType<IToolDock>()
-                .Select(td => SideOf(td, root))
-                .Distinct()
-                .ToList();
+            var toolDocks = pd.VisibleDockables!.OfType<IToolDock>().ToList();
+            var sides = toolDocks.Select(td => SideOf(td, root)).Distinct().ToList();
 
             if (sides.Count == 1 && sides[0] is DockSide.Left or DockSide.Right)
-                yield return (sides[0], pd.Proportion);
+                yield return (sides[0],
+                              pd.Proportion is > 0.0 and < 1.0 ? pd.Proportion : toolDocks[0].Proportion);
         }
 
         foreach (var child in dock.VisibleDockables)

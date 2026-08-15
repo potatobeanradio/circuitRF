@@ -1302,4 +1302,97 @@ public sealed class DockLayoutPersistenceTests
         Assert.Equal(DockSide.Bottom,
             Assert.Single(layout.Panels, p => p.Id == DockPanelIds.Messages).Side);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Owner-reported (2026-08-14, new_layout.cws): drag the Library so it sits BESIDE the Welcome
+    //  document, save, reopen -> it comes back UNDER the documents. Dock's CreateSplitLayout does
+    //  not move the document dock out into the outer row; it wraps documents+tool in a new
+    //  horizontal ProportionalDock that replaces the document dock inside DocumentColumn. Both
+    //  therefore share ONE branch of that vertical column, and the index comparison
+    //  `toolIdx < docIdx` resolved 0 < 0 == false == "Bottom".
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The tree Dock actually produces when a tool is dropped against the document dock's
+    /// side edge: an inner horizontal split standing where the document dock used to be.</summary>
+    private static RootDock ToolSplitBesideDocuments(
+        CircuitRfDockFactory f, bool toolOnTheRight, double toolProportion = 0.125)
+    {
+        var documentDock = new DocumentDock { Id = "Documents" };
+        var palette = new ToolDock
+        {
+            // Exactly what a drop on the document dock's right edge leaves behind.
+            Alignment        = toolOnTheRight ? Alignment.Right : Alignment.Left,
+            Proportion       = toolProportion,
+            VisibleDockables = f.CreateList<IDockable>(new PaletteTool()),
+        };
+
+        var split = new ProportionalDock
+        {
+            Id = "InnerSplit", Orientation = Orientation.Horizontal,
+            Proportion = double.NaN,       // Dock's own "no explicit proportion" — CreateSplitLayout sets this
+            VisibleDockables = toolOnTheRight
+                ? f.CreateList<IDockable>(documentDock, new ProportionalDockSplitter(), palette)
+                : f.CreateList<IDockable>(palette, new ProportionalDockSplitter(), documentDock),
+        };
+
+        var messages = new ToolDock
+        {
+            Alignment = Alignment.Bottom,
+            VisibleDockables = f.CreateList<IDockable>(new MessagesTool()),
+        };
+        var documentColumn = new ProportionalDock
+        {
+            Id = "DocumentColumn", Orientation = Orientation.Vertical,
+            VisibleDockables = f.CreateList<IDockable>(split, new ProportionalDockSplitter(), messages),
+        };
+        var outer = new ProportionalDock
+        {
+            Id = "OuterLayout", Orientation = Orientation.Horizontal,
+            VisibleDockables = f.CreateList<IDockable>(documentColumn),
+        };
+        return new RootDock { VisibleDockables = f.CreateList<IDockable>(outer) };
+    }
+
+    [Theory]
+    [InlineData(true,  DockSide.Right)]
+    [InlineData(false, DockSide.Left)]
+    public void APanelDroppedBesideTheDocuments_IsCapturedAsThatSide_NotBottom(bool onTheRight, string expected)
+    {
+        var f = new CircuitRfDockFactory();
+
+        var layout = DockLayoutCapture.Capture(ToolSplitBesideDocuments(f, onTheRight), []);
+
+        Assert.Equal(expected, Assert.Single(layout.Panels, p => p.Id == DockPanelIds.Palette).Side);
+        // The panel that really is under the documents is unaffected.
+        Assert.Equal(DockSide.Bottom,
+            Assert.Single(layout.Panels, p => p.Id == DockPanelIds.Messages).Side);
+    }
+
+    [Fact]
+    public void APanelDroppedBesideTheDocuments_KeepsItsOwnWidth_NotTheDefaultColumnWidth()
+    {
+        var f = new CircuitRfDockFactory();
+
+        var layout = DockLayoutCapture.Capture(ToolSplitBesideDocuments(f, toolOnTheRight: true, 0.125), []);
+
+        // The split spans the whole width (NaN proportion) — the 12.5% lives on the tool dock, and
+        // that is the number the rebuilt right column has to be given.
+        var side = Assert.Single(layout.Sides, s => s.Side == DockSide.Right);
+        Assert.Equal(0.125, side.Proportion, 6);
+    }
+
+    [Fact]
+    public void APanelDroppedBesideTheDocuments_RebuildsOnThatSide_AndCapturesBackTheSame()
+    {
+        var f = new CircuitRfDockFactory();
+        var captured = DockLayoutCapture.Capture(ToolSplitBesideDocuments(f, toolOnTheRight: true), []);
+
+        // Through the real builder and back — the whole round trip the owner's .cws goes through.
+        var rebuilt = new CircuitRfDockFactory();
+        var root    = rebuilt.CreateLayoutFromState(captured, documentIsOpen: _ => true);
+        var again   = DockLayoutCapture.Capture(root, []);
+
+        Assert.Equal(DockSide.Right, Assert.Single(again.Panels, p => p.Id == DockPanelIds.Palette).Side);
+        Assert.True(Assert.Single(again.Panels, p => p.Id == DockPanelIds.Palette).Open);
+    }
 }
