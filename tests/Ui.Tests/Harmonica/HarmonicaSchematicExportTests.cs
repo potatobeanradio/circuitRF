@@ -88,8 +88,12 @@ public sealed class HarmonicaSchematicExportTests(ITestOutputHelper output)
             var (back, _, _) = SchematicPersistence.Deserialize(File.ReadAllText(path), dir);
             Assert.Equal(sch.Components.Count, back.Components.Count);
             Assert.Equal(sch.Wires.Count, back.Wires.Count);
-            Assert.Single(back.Analyses);
-            Assert.IsType<HarmonicBalanceAnalysis>(back.Analyses[0]);
+            // R10 §4 — the HB analysis plus the Pin sweep that wraps it.
+            Assert.Equal(2, back.Analyses.Count);
+            var hb = Assert.IsType<HarmonicBalanceAnalysis>(back.Analyses[0]);
+            var sweep = Assert.IsType<ParametricSweepAnalysis>(back.Analyses[1]);
+            Assert.Equal(hb.Name, sweep.InnerAnalysisName);
+            Assert.Equal(HarmonicaSchematicExport.PinVariable, sweep.SweepVarName);
         }
         finally { try { Directory.Delete(dir, true); } catch { /* best effort */ } }
     }
@@ -215,7 +219,10 @@ public sealed class HarmonicaSchematicExportTests(ITestOutputHelper output)
         Assert.Empty(extraction.Conflicts);
 
         var nl = new Elaborator(extraction.Library).Elaborate(extraction.TestBench);
-        var hba = Assert.IsType<HarmonicBalanceAnalysis>(Assert.Single(extraction.TestBench.Analyses));
+        // Two analyses since R10 §4 (the HB and the Pin sweep wrapping it); the HB is the one solved
+        // here, at the VAR's own Pin value — the sweep's expansion is exercised by the .csch
+        // round-trip test rather than by re-running the whole ladder in every fixture.
+        var hba = Assert.Single(extraction.TestBench.Analyses.OfType<HarmonicBalanceAnalysis>());
         return (nl, extraction.TestBench, hba);
     }
 }

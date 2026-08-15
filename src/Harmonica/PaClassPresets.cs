@@ -20,11 +20,29 @@ public enum PaClass { B, J, JStar, F, FInverse }
 
 public static class PaClassPresets
 {
-    /// <summary>harmonicaRF's own "undefined" termination — <see cref="TerminationSet.UnmarkedBandOhms"/>,
-    /// read from there rather than re-declared, since "currently 1e-6" is the word that matters.</summary>
-    public const double NearShortOhms = TerminationSet.UnmarkedBandOhms;
+    /// <summary>
+    /// How far a preset's "short" and "open" bands sit from the reference — owner ruling, Round 10
+    /// (2026-08-15): a factor of 100 either side of <c>Z0</c>, i.e. a short is <c>Z0/100</c> and an
+    /// open is <c>Z0·100</c>, replacing the absolute 1e-6 Ω / 1e6 Ω pair these used to be.
+    ///
+    /// <para><b>Why, in the owner's own words: convergence and legibility.</b> A 1e-6 Ω band presented
+    /// to a Class-F device is eleven orders of magnitude below its own fundamental load, which is
+    /// exactly the condition-number spend §6.2 already records for the ideal 1 F block, and it makes
+    /// the contour raster around that band degenerate. Z0/100 and Z0·100 are still a short and an open
+    /// for every practical purpose (at Z0 = 50 Ω: 0.5 Ω and 5 kΩ, |Γ| = 0.980 and 0.980) while leaving
+    /// the solver a well-scaled problem.</para>
+    ///
+    /// <para><b>This governs PRESETS only.</b> A band with no marker of its own is not written by a
+    /// preset at all and stays at <see cref="TerminationSet.UnmarkedBandOhms"/> — the owner's own
+    /// instruction, and the reason that constant is untouched here.</para>
+    /// </summary>
+    public const double ShortOpenFactor = 100.0;
 
-    public const double NearOpenOhms = 1e6;
+    /// <summary>The near-short a preset writes at <paramref name="z0"/> — see <see cref="ShortOpenFactor"/>.</summary>
+    public static double NearShort(double z0) => z0 / ShortOpenFactor;
+
+    /// <summary>The near-open a preset writes at <paramref name="z0"/> — see <see cref="ShortOpenFactor"/>.</summary>
+    public static double NearOpen(double z0) => z0 * ShortOpenFactor;
 
     /// <summary>
     /// The INTRINSIC target for one load band under one class, given <paramref name="z0"/> = R_opt. Pure.
@@ -40,7 +58,7 @@ public static class PaClassPresets
         switch (paClass)
         {
             case PaClass.B:
-                return band == 1 ? new Complex(z0, 0) : new Complex(NearShortOhms, 0);
+                return band == 1 ? new Complex(z0, 0) : new Complex(NearShort(z0), 0);
 
             case PaClass.J:
             case PaClass.JStar:
@@ -51,17 +69,17 @@ public static class PaClassPresets
                 double alpha = paClass == PaClass.J ? 0.5 : -0.5;
                 if (band == 1) return z0 * new Complex(1, -alpha);
                 if (band == 2) return z0 * new Complex(0, 3.0 * Math.PI * alpha / 8.0);
-                return new Complex(NearShortOhms, 0);
+                return new Complex(NearShort(z0), 0);
             }
 
             case PaClass.F:
                 if (band == 1) return new Complex(2.0 * z0 / Math.Sqrt(3), 0);
-                return band % 2 == 0 ? new Complex(NearShortOhms, 0) : new Complex(NearOpenOhms, 0);
+                return band % 2 == 0 ? new Complex(NearShort(z0), 0) : new Complex(NearOpen(z0), 0);
 
             case PaClass.FInverse:
                 if (band == 1)
                     return new Complex(Math.Sqrt(2) * z0 / 2 / (0.5 - 8.0 / 9.0 / Math.PI / Math.PI), 0);
-                return band % 2 == 0 ? new Complex(NearOpenOhms, 0) : new Complex(NearShortOhms, 0);
+                return band % 2 == 0 ? new Complex(NearOpen(z0), 0) : new Complex(NearShort(z0), 0);
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(paClass));

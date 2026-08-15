@@ -21,7 +21,31 @@ namespace CircuitRF.Ui.Harmonica;
 /// </summary>
 public static class IntrinsicGlyphScale
 {
-    /// <summary>How far beyond the unit circle a glyph may ever be drawn, in Γ units.</summary>
+    /// <summary>
+    /// <b>Owner ruling, Round 10 (2026-08-15): the compression is OFF.</b> An intrinsic glyph is drawn
+    /// at its true Γ, on the same raw radial scale a marker is, so that for a DUT whose intrinsic and
+    /// extrinsic planes coincide — the shipped default document: a bare SDD, no capacitances, no
+    /// package — the two land in exactly the same place, which is what the numbers say and what the
+    /// owner reported was not happening once a marker was dragged OUTSIDE the unit circle.
+    ///
+    /// <para><b>What that costs, stated rather than hidden.</b> The compression existed so a glyph
+    /// with a large <c>|Γ_intr|</c> could never be pushed off-panel (see this type's own summary), and
+    /// with it off such a glyph can be clipped at the panel edge again — the same trade the owner
+    /// already accepted for <c>HarmonicaPanelRenderer.AnnulusHeadroom</c> (set to 0 for the same
+    /// "the chart looks wrong" reason). Nothing else changes: every drawn radius stays a genuine Γ
+    /// magnitude, so the drag inverse (<see cref="TrueRadius"/>) is the identity too and render and
+    /// hit-test cannot drift apart.</para>
+    ///
+    /// <para>The curve itself is kept, not deleted, so restoring it is one constant — exactly the
+    /// reasoning <c>AnnulusHeadroom</c> records for keeping its own mechanism at an identity value.</para>
+    /// </summary>
+    // A static readonly field rather than a const on purpose: a const false would make every
+    // line past the early return provably unreachable, and this project treats that warning as
+    // an error — the compression curve is KEPT (see above), not deleted.
+    public static readonly bool Compress = false;
+
+    /// <summary>How far beyond the unit circle a glyph may ever be drawn, in Γ units. Inert while
+    /// <see cref="Compress"/> is false.</summary>
     public const double DefaultMargin = 0.25;
 
     /// <summary>How quickly the region just outside the rim is used up. Larger = more of the margin
@@ -53,6 +77,7 @@ public static class IntrinsicGlyphScale
                                        double margin = DefaultMargin, double rate = DefaultRate)
     {
         if (double.IsNaN(magnitude)) return 0.0;
+        if (!Compress) return Math.Min(Math.Max(0.0, magnitude), MaxTrueMagnitude);
         if (magnitude <= 1.0) return Math.Max(0.0, magnitude);
 
         double m = Math.Max(0.0, margin);
@@ -75,7 +100,7 @@ public static class IntrinsicGlyphScale
 
     /// <summary>True when this glyph is being drawn in the compressed annulus outside the rim — the
     /// panel uses it to draw the marker differently so the compression is never silent.</summary>
-    public static bool IsCompressed(Complex gammaIntrinsic) => gammaIntrinsic.Magnitude > 1.0;
+    public static bool IsCompressed(Complex gammaIntrinsic) => Compress && gammaIntrinsic.Magnitude > 1.0;
 
     /// <summary>
     /// The exact inverse of <see cref="DisplayRadius"/>. H6 needs it because a pointer lands on a
@@ -92,6 +117,7 @@ public static class IntrinsicGlyphScale
                                     double margin = DefaultMargin, double rate = DefaultRate)
     {
         if (double.IsNaN(displayRadius)) return 0.0;
+        if (!Compress) return Math.Min(Math.Max(0.0, displayRadius), MaxTrueMagnitude);
         if (displayRadius <= 1.0) return Math.Max(0.0, displayRadius);
 
         double m = Math.Max(1e-12, margin);

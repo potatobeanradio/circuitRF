@@ -6,6 +6,178 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Round 10 follow-up — current probes, node labels and a PA measurement block on the exported testbench (2026-08-15)
+
+The owner supplied a hand-drawn testbench (`Example.csch`) showing the shape wanted: `IProbe`s in the
+signal and bias paths, net labels on the four interesting nodes, and `MEAS` blocks whose equations
+name them. The export now writes all three, and the exported schematic reports Pout / Gp / Gt / IRL /
+Zin / Idc / Pdc / DE / PAE on its own.
+
+### The orientation question, which is the whole of the risk
+
+An `IProbe` reports the current flowing `np → nm`. Its pins are local `(0, +100)` and `(+100, +100)`,
+so **`np` sits at the component's own X in BOTH mirror states** and `MirrorX` is what decides which
+side `nm` lands on — that asymmetry is what makes the placement arithmetic a single case. Insert one
+backwards and every derived number keeps its magnitude and flips its sign, which is exactly what the
+owner warned about. Four probes, and they are NOT all oriented alike:
+
+| probe | measures | orientation |
+|---|---|---|
+| `Iin` | current into the DUT's gate plane | np left (chain is built outward, power flows inward) |
+| `Iout` | current out of the DUT's drain plane | np left (chain and power both run outward) |
+| `IDC` | current leaving VDD, which sits RIGHT of its choke | np right — **mirrored** |
+| `Igate` | current leaving VGG, which sits LEFT of its choke | np left — **not** mirrored |
+
+`PlaceProbe` takes `currentAlongTravel` rather than a mirror flag, because "does the current I want run
+the same way I am building this chain?" is what a caller actually knows.
+
+**The example file mirrors `Igate` as well as `IDC`**, which makes its own gate term negative. Ours
+does not, deliberately: both probes measure current OUT of their own supply, so `V(supply)·I(probe)` is
+power DELIVERED on both sides with no sign correction anywhere. **That term is not negligible on the
+shipped device** — its gate is a plain 50 Ω to source, so at Vgs = −3.05 V it draws −61 mA and the
+negative supply really delivers +0.186 W. Dropping or flipping it moves DE by about 1.6 points.
+
+### Verified end to end, through the product's own path
+
+`HarmonicaExportedMetricsTests` extracts, elaborates, runs `HbEngine` and evaluates the block through
+`MeasurementEvaluator` — the same four steps `Cli hb` takes. At the shipped default, 20 dBm, load
+80 + j10 Ω:
+
+```
+Pin_avail 20 dBm · Pin_deliv 0.1 W (20 dBm) · IRL −4e-10 dB · Zin 50.000 + j2.0e-7
+Pout 5.545 W (37.44 dBm) · Gp 17.44 dB · Gt 17.44 dB
+Idc 0.2367 A · Pdc 11.543 W (= 48·0.2367 + (−3.05)(−0.061)) · DE 48.04 % · PAE 47.17 %
+```
+
+IRL is identically zero because the source presents 50 Ω and the DUT's gate IS 50 Ω — which also means
+a reversed `Iin` would give a NEGATIVE `Pin_deliv` and `10*log10` would throw rather than land on 0 dB.
+**And the cross-check that matters:** the exported schematic's own `Zin` measurement (a stamped
+netlist, solved by `HbEngine`, read through an `IProbe`) agrees with harmonicaRF's own closed-form
+termination closure to **~1e-11** — two genuinely different routes to one number.
+
+### TWO ROUTER BUGS THIS SHOOK OUT, both silent, both found by the 3-port SDD
+
+- **`AddComponent` registered a component's pins BEFORE its mirror was applied.** `MirrorX` used to be
+  set by the caller afterwards, which was harmless while nothing here was mirrored — `IProbe` is the
+  first. The result is a phantom obstacle at a coordinate no pin occupies AND no obstacle at the one
+  that does. `MirrorX` is a constructor argument now, so the two cannot get out of order.
+- **The staircase's escape leg travels along the very axis the obstacle sits on**, so it only worked
+  while the obstacle was further from `a` than the step. Put a component pin one grid step short of a
+  grounded DUT terminal — routine once a probe is inserted on a 3-port SDD, where two ports share one
+  column and the third sits 200 units off the chain — and every candidate either lands ON the obstacle
+  or crosses it on the way. All were rejected and `ConnectStraightSafely` fell back to the direct wire
+  it was trying to avoid: **a short**, whose only symptom is a `SingularMatrixException` from the
+  engine with nothing in the drawing to point at. `EscapeCandidatesDbu` now leads with **0** — turn
+  perpendicular immediately, an ordinary Z-bend, which needs no room along the blocked axis at all —
+  and ends with the negative half as a last resort. `TryStaircase` became `TryRoute`, a general
+  point-list route that collapses consecutive duplicates first, which is what lets the zero-escape
+  candidate degenerate gracefully instead of failing its own midpoint check against `a`.
+
+## Round 10 — the `.csch` export rebuilt, the VSWR circle unrestricted, the intrinsic glyph un-compressed (harmonicaRF fixes, 2026-08-15)
+
+### The `.csch` export carried a SIGN INVERSION on both supplies, and nobody could see it
+
+`HarmonicaSchematicExport.PlaceTerminationTail` grounded the `Vdc`'s **pin 0** and fed the bias choke
+from **pin 1**. Pin 0 is the "+" terminal (`BuiltInSymbols.BuildVdcSource` draws the `+` marker at
+local y = −100; `VdcModel.Stamp` constrains `V(Nodes[0]) − V(Nodes[1]) = Vdc`) — so **every schematic
+this exporter ever wrote put −Vgs on the gate and −Vds on the drain**. It was invisible because the
+only gate the export had was "does it extract, elaborate and converge", and a sign-flipped bias
+converges perfectly well; it just answers for a different amplifier. Found while implementing the
+owner's §12 (a wire drawn straight down through the Vdc symbol), which is the same code. The supplies
+are now placed to the OUTSIDE — gate supply left, drain supply right, both one pitch above the choke —
+so the "+" wire leaves the pin sideways before turning down, and the "−" is grounded where it stands.
+`HarmonicaSchematicExportR10Tests.BothSupplies_FeedTheirChokeFromThePlusPin_...` pins both halves.
+
+### A Tuner under a plain `type=hb` run presented `Z[1]` AT EVERY HARMONIC — fixed in the engine
+
+The owner asked for the load to be a `LoadTuner` named `Load` (§8) instead of the tone-less `PnTone`
+this file used to write. That exposed a live engine defect: `TunerModel.GetZ` takes its "S-param mode"
+branch whenever `_toneFreqHz <= 0`, and `_toneFreqHz` was only ever set by
+`LoadpullEngine`/`LoadpullPursuitEngine` (`SetTone`) — `HbEngine.Run` configured `P1Tone`/`PnTone` tone
+context and **nothing else**. So *any* Tuner on an ordinary HB testbench declared `Z[2]`, `Z[3]`… and
+had them quietly ignored; it ran, converged, and answered for a different circuit. This is not new to
+the export — it has been true of every hand-written `type=hb` netlist with a Tuner in it.
+
+**Fixed** (owner-approved) by `HbEngine.GiveTunerItsBandRuler`, called from the same tone-context loops
+that already configure `P1Tone`/`PnTone` in both `Run` and the two-tone path. Two things make it safe:
+it is **role-gated to `Load`** (a Source-role tuner's `StampSource` stamps a `V_1Tone` branch as soon as
+its tone is set, at a `|Vs|` only `SetSourceDrive` computes — so an unconfigured one would stamp a
+0 V source, i.e. a SHORT where there was an open; nothing outside the loadpull engines assigns a role,
+so every tuner on a plain-HB testbench is already `Load`), and the loadpull path goes through
+`RunSinglePoint`, which has **no** tone-context pass of its own.
+
+**Measured both ways** (`TunerPerHarmonicZInPlainHbTests`, a square-law SDD into a Tuner whose `Z[2]`
+is the only thing that varies): *without* the fix the second-harmonic load voltage is `5.0000E-002` for
+`Z[2]` = 1e-6, 50 **and** 1e6 Ω alike — bit-identical, all three solved at `Z[1]`. *With* it the
+implied `I₂ = |V₂|/Z[2]` is **1.0000e-3 A across twelve decades of `Z[2]`**, i.e. the tuner presents
+exactly what it declares. (The 1 MΩ case reads 2 ppm low because the ideal 1 H choke is 25 GΩ at 4 GHz
+and no longer utterly negligible next to it — stated in the test rather than tolerated silently.)
+
+### The rest of the rebuild, and one trap that only a 3-port SDD can spring
+
+- **`Num` was `"G17"`** — round-trip-safe by brute force, printing all 17 digits whether or not they
+  carry information (`1e-6 H` came out `9.9999999999999995E-07`). It is `"R"` now, which has meant
+  *shortest* round-trippable since .NET Core 3.0, plus an exponent tidy (`1E-06` → `1e-6`). No value
+  changed; only how much of it is written down.
+- **The bias network's L and C carry a unit whose SI PREFIX is chosen from the magnitude**
+  (`Engineering`). A fixed `uH`/`uF` pair — the literal request — reads well at microscale and badly
+  anywhere else: the shipped default is now the ideal 1 H / 1 F, which a fixed micro prefix would write
+  as `1000000 uH`. The clean single digit the owner asked for is the request; the prefix is the means.
+- **A ground now sits EXACTLY on the pin it grounds**, with no wire and no offset search — a Ground's
+  one pin is at its own origin, so the coincidence rule `NetExtractor` already applies unions them.
+  The SDD's "−" terminals each get their own symbol rather than sharing one through a wire.
+- **A series element is oriented along its own run** (R90 for a left/right run, R0 for up/down), which
+  is what makes the DC blocks horizontal (§7) and removes the L-bend a chain used to need to reach a
+  component lying across it.
+- **`BiasTee` must be written QUOTED (`"off"`), not bare.** A `.cnl` says `BiasTee=off` and a schematic
+  parameter is an *expression*, so a bare `off` resolves as a variable name and elaboration fails with
+  `Unresolved name 'off' in scope 'global'`. `CreateTunerModel` wants a `ValueKind.String` and only ever
+  compares it to `"on"`. (This also means the registry's own `DefaultParameters` spelling for a
+  hand-placed Tuner has the same shape — worth knowing before "fixing" the quotes.)
+- **THE TRAP: `CoincidesWithWireInterior` cannot see a wire's own ENDPOINTS.** `PointOnSegmentInterior`
+  excludes them by definition, so a brand-new component pin landing exactly on an existing wire's
+  *corner* passed every obstruction check and shorted anyway. On the 3-port SDD — whose gate and drain
+  sit on the SAME column, so both bias chains route up it — the drain choke's near pin landed precisely
+  on the corner of the gate supply's route, tying VGG and VDD together through their chokes. The
+  symptom was a `SingularMatrixException` from the engine, with nothing in the drawing to point at.
+  `Ctx.WireVertices` is the fix, and it is checked by `IsObstructed` alongside the interior test.
+
+### VSWR: the restriction was a search BRACKET, and the inverse has a closed form in RfCore
+
+`HarmonicaVswrHandle` bisected `f(v) = |Γ_drag − ctr(v)| − rad(v)` over `[1.001, 10⁶]`, 60 iterations a
+pointer-move. That whole apparatus is unnecessary: the drawn locus is the image of the power-wave
+circle `|s_c| = ρ` about the marker's own impedance, so inverting it is "map the drag point back to
+`s_c` and read its magnitude" — which is exactly `RfCore.RfHelpers.VswrFromGamma`. One call.
+
+**And that is what unlocked the owner's ask.** `ρ > 1` — a drag OUTSIDE the image of the passive disk
+— makes `(1+ρ)/(1−ρ)` *negative*, which `LoadpullSurface.VswrCircleGamma` draws perfectly well (it
+squares ρ for the centre and takes `|ρ|` for the radius). The old bracket could not express it at all,
+which is why every drag past the rim pinned at the ceiling. R8B's own note — "a passive marker's whole
+VSWR family stays strictly inside |Γ| = 1, so it literally cannot be dragged outside the chart" — is
+true only of the **positive** half of the family; the family continues past the rim with ρ > 1 and the
+theorem was being read one clause too far. `MinVswr`/`MaxVswr` are gone, along with the floor in
+`SetMarkerVswr` and the "at least 1" refusal in the Set… dialog; the only two values still refused are
+the two the owner named (NaN is dropped, ±∞ becomes ±`InfiniteVswr` = 1e9).
+
+### The intrinsic glyph was drawn on a DIFFERENT radial scale from its own marker
+
+`IntrinsicGlyphScale` compressed everything past `|Γ| = 1` into a bounded annulus (asymptotic to
+1 + 0.25) while a marker is drawn through the raw `GammaToCanvas`. Inside the disc the two agree
+exactly, which is why this never showed — but drag a marker OUTSIDE the chart on the default DUT (a
+bare SDD: intrinsic plane == extrinsic plane, so the two values are *the same impedance*) and the glyph
+sits at radius ≤ 1.25 while its marker sits at 1.6. `IntrinsicGlyphScale.Compress` is now `false` and
+`DisplayRadius`/`TrueRadius` are the identity up to `MaxTrueMagnitude`. **The cost is stated rather than
+hidden**: a glyph with a large `|Γ_intr|` can be clipped at the panel edge again, which is exactly what
+the compression existed to prevent — the same trade already accepted for `AnnulusHeadroom = 0`. The
+curve is kept behind the flag, not deleted.
+
+### Also: the picker showed `.csch` twice
+
+`SuggestedFileName = "harmonica-testbench.csch"` **plus** a `FileTypeChoices` entry whose pattern is
+`*.csch` — the picker appends the type's extension itself. The suggested name carries no extension now.
+(`ExportGamAsync` has the same shape of `SuggestedFileName` but declares no `FileTypeChoices`, so it was
+left alone.)
+
 ## R9D — S1 "Match to Zin*", and the PA-class preset terminations (brief-harmonicarf-r9d, 2026-08-15)
 
 **§2 — `Match to Zin*` reuses the frame-carried-outcome plumbing verbatim, and costs TWO frames, not

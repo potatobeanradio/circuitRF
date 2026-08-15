@@ -705,7 +705,9 @@ public partial class HarmonicaView : UserControl
         {
             Title             = "Export testbench",
             DefaultExtension  = "csch",
-            SuggestedFileName = "harmonica-testbench.csch",
+            // NO extension here: the picker appends DefaultExtension itself, so a suggested name that
+            // already carries one comes up as "harmonica-testbench.csch.csch" (owner-reported).
+            SuggestedFileName = "harmonica-testbench",
             FileTypeChoices =
             [
                 new FilePickerFileType("circuitRF schematic (.csch)") { Patterns = ["*.csch"] },
@@ -1203,7 +1205,7 @@ public partial class HarmonicaView : UserControl
 
         if (marker.VswrEnabled)
         {
-            bool saturated = marker.VswrValue >= HarmonicaVswrHandle.MaxVswr;
+            bool saturated = Math.Abs(marker.VswrValue) >= HarmonicaVswrHandle.InfiniteVswr;
             var setItem = Item("Set…", MaterialIconKind.Cog,
                 () => RunHook(() => ShowMarkerSetVswrDialogAsync(h, marker)));
             items.Add(new MenuItem

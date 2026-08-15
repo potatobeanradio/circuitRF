@@ -217,11 +217,14 @@ public static class HarmonicaReadoutFormatting
     /// agree).</summary>
     public static string FormatVswr(double vswr) => $"VSWR: {vswr:0.##}";
 
-    /// <summary>R8B §7.3 — the saturated-aware sibling: a drag that has run off the end of
-    /// <see cref="HarmonicaVswrHandle.VswrThroughEx"/>'s search bracket reports <c>"VSWR: &gt; 10⁶"</c>
-    /// rather than the clamped number, which is not a value the drag can actually move — a number the
-    /// user cannot move is worse than a bound the user can read.</summary>
-    public static string FormatVswr(double vswr, bool saturated) => saturated ? "VSWR: > 10⁶" : FormatVswr(vswr);
+    /// <summary>R8B §7.3 — the saturated-aware sibling. Round 10 changed what "saturated" MEANS: there
+    /// is no search bracket to run off any more (<see cref="HarmonicaVswrHandle.VswrThroughEx"/> is a
+    /// closed form), so it is now true only where the answer is genuinely infinite — the drag point
+    /// sits on the rim of the marker's own power-wave circle, the one place no finite VSWR reaches.
+    /// Showing <c>∞</c> there is honest; showing <see cref="HarmonicaVswrHandle.InfiniteVswr"/>'s own
+    /// stand-in 1e9 would read as a measurement.</summary>
+    public static string FormatVswr(double vswr, bool saturated)
+        => saturated ? $"VSWR: {(vswr < 0 ? "-" : "")}∞" : FormatVswr(vswr);
 
     /// <summary>
     /// The format a row's <c>FormatKey</c> resolves to when nothing has overridden it yet — real/

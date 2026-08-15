@@ -128,13 +128,33 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void VswrThrough_NeverGoesBelowMinVswr()
+    public void VswrThrough_OnTheMarkerItself_IsExactlyOne()
     {
-        // The drag point lands exactly on the marker itself (zero distance) — the tightest possible
-        // circle, which is the ONE remaining floor (§1.2's own ruling).
+        // The drag point lands exactly on the marker (zero distance) — the degenerate zero-radius
+        // circle, VSWR = 1. Round 10 removed the old 1.001 floor entirely (owner: "VSWR circles are
+        // restricted in value. They should not be"), so this is now an exact 1 rather than the floor.
         var center = new Complex(0.2, 0.1);
         double vswr = HarmonicaVswrHandle.VswrThrough(center, center, 50.0);
-        Assert.Equal(HarmonicaVswrHandle.MinVswr, vswr, precision: 3);
+        Assert.Equal(1.0, vswr, precision: 9);
+    }
+
+    [Fact]
+    public void VswrThrough_OutsideTheRim_IsNegative_AndItsLocusPassesThroughTheDragPoint()
+    {
+        // Round 10's own ask, as an invariant rather than a magic number: ρ = |s| > 1 there, so
+        // (1+ρ)/(1−ρ) is negative — and LoadpullSurface draws that circle perfectly well.
+        var center = new Complex(0.3, -0.2);
+        var dragGamma = new Complex(-1.6, 0.4);
+
+        double vswr = HarmonicaVswrHandle.VswrThrough(center, dragGamma, 50.0);
+        output.WriteLine($"drag outside the rim recovered VSWR = {vswr:F4}");
+        Assert.True(vswr < 0, $"expected a negative VSWR, got {vswr}");
+
+        var fine = LoadpullSurface.VswrLocus(center, vswr, SurfacePlane.Gamma,
+                                             new Complex(50.0, 0.0), nPoints: 720);
+        double minDist = fine.Min(p => (p - dragGamma).Magnitude);
+        output.WriteLine($"closest approach = {minDist:E3}");
+        Assert.True(minDist < 1e-2, $"expected the locus to pass through the drag point, closest was {minDist:E3}");
     }
 
     // ══ the hit test — grab anywhere on the circumference (§1.1) ═══════════

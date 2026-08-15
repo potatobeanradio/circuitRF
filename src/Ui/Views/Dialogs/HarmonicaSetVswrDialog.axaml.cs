@@ -9,11 +9,13 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// <summary>
 /// brief-harmonicarf-r6b §2.1 — the marker menu's "VSWR: &lt;val&gt; ▸ Set…". A single numeric field,
 /// OK/Cancel gated: bad input is REJECTED-AND-KEPT (the text stays on screen, an error line explains
-/// why) rather than silently substituted or clamped. The only value this refuses is anything less
-/// than 1 or non-finite — 1 is the mathematical floor a VSWR is even defined above; the caller
-/// (<see cref="Harmonica.HarmonicaViewModel.SetMarkerVswr"/>) applies the small further nudge to
-/// <see cref="Harmonica.HarmonicaVswrHandle.MinVswr"/> that keeps the circle non-degenerate, the same
-/// floor a drag already respects.
+/// why) rather than silently substituted or clamped.
+///
+/// <para><b>Round 10 dropped the "at least 1" rule.</b> A VSWR below 1 — negative included — names the
+/// half of the circle family that lies OUTSIDE the Smith chart, which the owner asked to be able to
+/// reach ("VSWR can be any value, except NaN or infinity"). What is left refused is exactly those two:
+/// text that is not a number, and ±∞. The floor that used to be applied downstream in
+/// <see cref="Harmonica.HarmonicaViewModel.SetMarkerVswr"/> is gone with it.
 /// </summary>
 public partial class HarmonicaSetVswrDialog : Window
 {
@@ -52,7 +54,8 @@ public partial class HarmonicaSetVswrDialog : Window
     }
 
     /// <summary>Refuses (leaves the text and the dialog open, shows why) rather than substituting a
-    /// silent default — non-finite, or below the VSWR = 1 floor.</summary>
+    /// silent default. Non-finite input only — every finite value, including one below 1, is a real
+    /// circle (see this type's own summary).</summary>
     private bool TryCommit()
     {
         if (!double.TryParse(VswrBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
@@ -61,12 +64,6 @@ public partial class HarmonicaSetVswrDialog : Window
             ShowError("VSWR must be a number.");
             return false;
         }
-        if (v < 1.0)
-        {
-            ShowError("VSWR must be at least 1.");
-            return false;
-        }
-
         _result = v;
         Close(true);
         return true;

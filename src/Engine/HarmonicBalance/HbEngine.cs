@@ -263,7 +263,7 @@ public sealed class HbEngine
         // ── Commensurability check (harmonic-balance.md §3.1) ────────────────
         CheckCommensurability(f0, K);
 
-        // ── Configure P1Tone / PnTone sources with tone context (must precede extraction) ──
+        // ── Configure P1Tone / PnTone / Tuner terminations with tone context (must precede extraction) ──
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is P1ToneModel p1)
@@ -275,6 +275,10 @@ public sealed class HbEngine
             else if (ec.Model is PnToneModel pn)
             {
                 pn.SetToneContext(fc: f0);   // single-tone band ruler; PnTone drives at its own Freq[i]
+            }
+            else if (ec.Model is TunerModel tn)
+            {
+                GiveTunerItsBandRuler(tn, f0);
             }
         }
 
@@ -517,6 +521,10 @@ public sealed class HbEngine
                 // A PnTone is the natural two-tone driver: it injects each of its Freq[i] tones (f1, f2)
                 // with its own Pavl[i]/Phase[i]. f_c is the band ruler for the shared Z[k] terminations.
                 pn.SetToneContext(fc: fcTwoTone);
+            }
+            else if (ec.Model is TunerModel tn)
+            {
+                GiveTunerItsBandRuler(tn, fcTwoTone);   // the same band ruler the two tone sources get
             }
         }
 
@@ -1383,6 +1391,35 @@ public sealed class HbEngine
     }
 
     // ── Commensurability check (harmonic-balance.md §3.1) ────────────────────
+
+    /// <summary>
+    /// Hands a <see cref="TunerModel"/> the band ruler its own per-harmonic <c>Z[k]</c> lookup needs.
+    ///
+    /// <para><b>Without this a Tuner presents Z[1] AT EVERY HARMONIC under a plain HB run, silently.</b>
+    /// <c>TunerModel.GetZ</c> branches on <c>_toneFreqHz &lt;= 0</c> — its "S-param mode", where a
+    /// termination has no harmonics to speak of and the declared fundamental is the only sensible flat
+    /// answer. That field was only ever set by <c>LoadpullEngine</c>/<c>LoadpullPursuitEngine</c>, so a
+    /// Tuner placed on an ordinary <c>type=hb</c> testbench could declare <c>Z[2]</c>, <c>Z[3]</c>… and
+    /// have them quietly ignored. Found while exporting harmonicaRF's own load termination as a
+    /// <c>LoadTuner</c> (owner, Round 10): the exported schematic ran and answered for a different
+    /// circuit, which is the worst shape a defect can take.</para>
+    ///
+    /// <para><b>Role-gated to Load, and that is not merely defensive.</b> A Source-role tuner's
+    /// <c>StampSource</c> stamps a <c>V_1Tone</c> drive branch as soon as <c>_toneFreqHz &gt; 0</c>, at
+    /// a <c>|Vs|</c> that only <c>SetSourceDrive</c> ever computes — so setting a tone on one whose
+    /// drive has not been configured would stamp a 0 V source, i.e. a SHORT where there was an open.
+    /// Nothing outside the loadpull engines assigns a role, so every tuner on a plain HB testbench is
+    /// already <see cref="TunerRole.Load"/> and this gate costs nothing today; it is what keeps the
+    /// change from reaching into the source path if that ever stops being true.</para>
+    ///
+    /// <para>This is <c>Run</c>/<c>RunTwoTone</c> only. The loadpull path goes through
+    /// <see cref="RunSinglePoint"/>, which has no tone-context pass of its own precisely because
+    /// <c>LoadpullEngine.PrepareContext</c> has already set the roles, the tone and the drive.</para>
+    /// </summary>
+    private static void GiveTunerItsBandRuler(TunerModel tuner, double bandCenterHz)
+    {
+        if (tuner.Role == TunerRole.Load) tuner.SetTone(bandCenterHz);
+    }
 
     private void CheckCommensurability(double f0, int K)
     {

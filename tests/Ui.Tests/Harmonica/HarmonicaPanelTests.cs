@@ -139,31 +139,30 @@ public sealed class HarmonicaPanelTests : IDisposable
     // ══ TIER 7 — |Γ_intr| > 1 lands OUTSIDE the boundary ═════════════════════
 
     [Fact]
-    public void Tier7_TheCompressedRadialScale_IsExactInside_MonotoneOutside_AndBounded()
+    public void Tier7_TheRadialScale_IsTheIdentity_UpToTheWritableCeiling()
     {
-        // Inside the disc the chart is exact — the compression exists only for the region that has
-        // nowhere else to go.
-        foreach (double m in new[] { 0.0, 0.25, 0.5, 0.9, 1.0 })
+        // ROUND 10 (owner) turned the compression OFF: an intrinsic glyph is drawn at its TRUE Γ, on
+        // the same raw radial scale a marker is, so that for a DUT whose two planes coincide the
+        // glyph and its marker land in the same place. This test used to assert the opposite (exact
+        // inside, compressed-and-bounded outside) and is re-pointed rather than deleted, because
+        // "which radius does a |Γ_intr| land at" is still the question that matters.
+        foreach (double m in new[] { 0.0, 0.25, 0.5, 0.9, 1.0, 1.0001, 1.3, 2.0, 5.0 })
             Assert.Equal(m, IntrinsicGlyphScale.DisplayRadius(m), precision: 12);
 
-        // Outside: strictly greater than 1, strictly increasing, and bounded by 1 + margin so no
-        // finite value can be pushed off-panel (which would be "hidden" by another route).
-        double prev = 1.0;
-        foreach (double m in new[] { 1.0001, 1.05, 1.3, 2.0, 5.0, 50.0, 1e6 })
-        {
-            double r = IntrinsicGlyphScale.DisplayRadius(m);
-            Assert.True(r > prev, $"|Γ|={m} must map beyond |Γ|={prev}");
-            Assert.True(r < 1.0 + IntrinsicGlyphScale.DefaultMargin + 1e-12,
-                $"|Γ|={m} mapped to {r}, past the 1+margin bound");
-            prev = r;
-        }
+        // The one bound left is MaxTrueMagnitude — the largest |Γ| a pointer may ever WRITE (R7A §1),
+        // shared with TrueRadius so the two stay each other's exact inverse over the whole writable
+        // range instead of only part of it.
+        Assert.Equal(IntrinsicGlyphScale.MaxTrueMagnitude, IntrinsicGlyphScale.DisplayRadius(1e6), precision: 12);
 
         // The angle is NEVER touched — which band's glyph points where is real information.
         var g = Complex.FromPolarCoordinates(3.7, 1.234);
         var shown = IntrinsicGlyphScale.DisplayPosition(g);
         Assert.Equal(g.Phase, shown.Phase, precision: 12);
-        Assert.True(shown.Magnitude > 1.0);
-        Assert.True(IntrinsicGlyphScale.IsCompressed(g));
+        Assert.Equal(3.7, shown.Magnitude, precision: 12);
+
+        // Nothing is "compressed" any more, so the renderer's own compressed-glyph decoration is off
+        // for every value rather than for values inside the disc only.
+        Assert.False(IntrinsicGlyphScale.IsCompressed(g));
         Assert.False(IntrinsicGlyphScale.IsCompressed(new Complex(0.5, 0.2)));
     }
 
@@ -178,7 +177,13 @@ public sealed class HarmonicaPanelTests : IDisposable
         var marker = new HarmonicaMarker(TerminationSideKind.Load, 1)
         {
             Gamma          = new Complex(0.30, 0.10),
-            GammaIntrinsic = new Complex(1.80, 0.00),      // |Γ_intr| = 1.8, on the +real axis
+            // |Γ_intr| = 1.10, on the +real axis. This was 1.80 while IntrinsicGlyphScale compressed
+            // everything past the rim into a bounded annulus, which kept ANY magnitude on-panel.
+            // Round 10 turned that off (see IntrinsicGlyphScale.Compress), so a large overshoot is
+            // now genuinely clipped at the panel edge — the trade the owner accepted. The claim this
+            // test exists for is unchanged and is what 1.10 still exercises: a glyph outside the unit
+            // circle is drawn OUTSIDE it, never clamped onto the rim and never dropped.
+            GammaIntrinsic = new Complex(1.10, 0.00),
         };
 
         var data = new SmithPanelData { Title = "", Markers = [marker] };

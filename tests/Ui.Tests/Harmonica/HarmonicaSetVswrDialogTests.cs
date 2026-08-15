@@ -34,22 +34,25 @@ public sealed class HarmonicaSetVswrDialogTests
     }
 
     [Fact]
-    public void Commit_RejectsNonFiniteAndBelowOne_LeavingTheDialogOpen()
+    public void Commit_RejectsOnlyNonFinite_LeavingTheDialogOpen()
     {
+        // Round 10 removed the "at least 1" rule (owner: "VSWR can be any value, except NaN or
+        // infinity") — a value below 1, negative included, names the half of the circle family that
+        // lies outside the Smith chart, which is the whole point of the change. What survives is the
+        // one refusal the owner did name.
         string src = DialogSource();
         Assert.Contains("!double.IsFinite(v)", src, StringComparison.Ordinal);
-        Assert.Contains("if (v < 1.0)", src, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (v < 1.0)", src, StringComparison.Ordinal);
         // Rejection shows an error and returns — it never calls Close(true) on the bad-input path.
         Assert.Contains("ShowError(\"VSWR must be a number.\");\n            return false;", src, StringComparison.Ordinal);
-        Assert.Contains("ShowError(\"VSWR must be at least 1.\");\n            return false;", src, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Commit_NeverSilentlySubstitutes_TheAcceptedValueIsExactlyWhatWasTyped()
     {
         string src = DialogSource();
-        // _result is set to the parsed value verbatim — never clamped/rounded here (SetMarkerVswr,
-        // the caller, is what applies the MinVswr floor).
+        // _result is set to the parsed value verbatim — never clamped/rounded here, and since Round
+        // 10 not clamped by SetMarkerVswr afterwards either (that floor is gone).
         Assert.Contains("_result = v;", src, StringComparison.Ordinal);
         Assert.DoesNotContain("Math.Clamp", src, StringComparison.Ordinal);
         Assert.DoesNotContain("Math.Max", src, StringComparison.Ordinal);

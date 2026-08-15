@@ -99,13 +99,16 @@ public sealed class HarmonicaGridPointDragTests(ITestOutputHelper output)
             Assert.True(offset < 1e-4, $"the two transforms differ by {offset:E2} px at |Γ| = {mag}");
         }
 
-        // …and OUTSIDE the rim they diverge, which is what the annulus is for. Stated here so the
-        // "they coincide" claim above is scoped rather than absolute.
+        // …and OUTSIDE the rim they now coincide TOO. This used to assert the opposite (an annulus
+        // offset of tens of pixels) and is re-pointed rather than deleted: Round 10 turned the
+        // compression off precisely so the intrinsic glyph and its own marker stop disagreeing about
+        // where a Γ outside the unit circle is, which the owner reported on the default DUT — the one
+        // whose intrinsic and extrinsic planes are the same impedance.
         var outside = new Complex(1.6, 0.0);
         var rawOut  = HarmonicaPanelRenderer.GammaToCanvas(outside, size);
         var compOut = HarmonicaPanelRenderer.GammaToCanvas(IntrinsicGlyphScale.DisplayPosition(outside), size);
-        output.WriteLine($"  |Γ| = 1.600: offset {Math.Abs(rawOut.X - compOut.X):F1} px (the annulus)");
-        Assert.True(Math.Abs(rawOut.X - compOut.X) > 10.0);
+        output.WriteLine($"  |Γ| = 1.600: offset {Math.Abs(rawOut.X - compOut.X):F1} px");
+        Assert.True(Math.Abs(rawOut.X - compOut.X) < 1e-4);
 
         // …and a point at |Γ| = 0.95 is genuinely grabbable through the renderer's own transform, on
         // the panel's own coordinates rather than the canvas's.

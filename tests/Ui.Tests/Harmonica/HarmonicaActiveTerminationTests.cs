@@ -51,9 +51,12 @@ public sealed class HarmonicaActiveTerminationTests(ITestOutputHelper output)
         Assert.True(rel < 1e-9, $"TrueRadius(DisplayRadius({r})) = {back}, expected {r}");
     }
 
+    // Round 10 turned IntrinsicGlyphScale's compression off, so DisplayRadius is the identity up to
+    // MaxTrueMagnitude and the ceiling now sits at that magnitude itself rather than at the old
+    // asymptotic 1 + margin ≈ 1.245. The fixtures move with it; the property under test does not.
     [Theory]
-    [InlineData(1.6)]   // past DisplayRadius(MaxTrueMagnitude) — used to collapse to Γ ≈ -1e9
-    [InlineData(1.245)] // right at DisplayRadius(MaxTrueMagnitude)
+    [InlineData(15.0)]  // past DisplayRadius(MaxTrueMagnitude) — used to collapse to Γ ≈ -1e9
+    [InlineData(10.0)]  // right at DisplayRadius(MaxTrueMagnitude)
     public void TrueRadius_AtOrPastTheAsymptote_SaturatesExactlyAtMaxTrueMagnitude(double displayRadius)
     {
         double ceilingDisplay = IntrinsicGlyphScale.DisplayRadius(IntrinsicGlyphScale.MaxTrueMagnitude);

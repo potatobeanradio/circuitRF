@@ -4,6 +4,62 @@ Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern: a completed brief's deta
 `##` section per brief, sparingly — only for findings that are still true, still surprising, and
 would cost someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## Round 10 — a preset's short/open bands are Z0/100 and Z0·100, and `Zin` on the default document is the CHOKE (harmonicaRF fixes, 2026-08-15)
+
+**`PaClassPresets.NearShortOhms`/`NearOpenOhms` (absolute 1e-6 Ω / 1e6 Ω) are replaced by
+`NearShort(z0)` = `z0/100` and `NearOpen(z0)` = `z0·100`** — owner ruling: "this helps with convergence
+for Class F and F⁻¹ and makes nice looking contours for the user." At Z0 = 50 Ω that is 0.5 Ω and
+5 kΩ, |Γ| = 0.980 either way, so they are still a short and an open for every practical purpose while
+leaving the solver a well-scaled problem instead of one eleven orders of magnitude below its own
+fundamental load. **`TerminationSet.UnmarkedBandOhms` is UNTOUCHED and stays 1e-6**: a band with no
+marker of its own is never written by a preset at all (`HarmonicaViewModel.ApplyPaClassPreset` only
+walks markers that already exist — §3.2's "a preset never CREATES a marker"), which is the owner's own
+carve-out and is now pinned explicitly rather than left implicit.
+
+### `Zin = 49.999 + j0.199 Ω` on the default document was NOT a solver defect — it was the bias choke, and the choke is now ideal
+
+Reported as "the default model solves to Zin = 49.999−j0.199 even though its `I[1,0] = _v1/50` is
+simply a 50 Ω resistor". Measured directly through `HarmonicaContext.Solve` +
+`HarmonicaDataSet.Build`:
+
+| what | Zin at the source plane, band 1 |
+|---|---|
+| the document as shipped (choke 1 µH) | **49.999208438 + j0.198940529** |
+| `50 ‖ jωL` computed in closed form at L = 1 µH, f = 2 GHz | **49.999208441 + j0.198940529** |
+| the same document with the choke raised to 1 H | 49.999999998 + j2.0e-7 |
+
+Agreement to **twelve significant figures**, and raising the choke removes it. `HarmonicaSettings.
+BiasChokeHenries` and `DcBlockFarads` default to the ideal 1 H / 1 F, but
+`HarmonicaViewModel.DefaultModel` used to override them to **1e-6 H / 1e-9 F** — and 12.57 kΩ at 2 GHz
+shunts the source plane in parallel with the device's own 50 Ω hard enough to be read off the strip. So
+the number was the circuit answering correctly.
+
+**Owner ruling: the overrides are removed and the shipped default document's bias network is ideal.**
+`Zin` is now `49.999999998 + j2.0e-7 Ω`, pinned by
+`tests/Ui.Tests/Harmonica/HarmonicaIdealBiasNetworkTests`. Two details worth keeping: the reported
+**sign was +j, not −j** (an inductive shunt across a resistor makes the parallel combination inductive;
+the magnitude matched exactly either way), and the answer is **independent of the source termination**,
+so the shipped default's unmarked S1 (a 1e-6 Ω near-short) was never involved — verified with S1 at
+50 Ω and with no source marker at all, which agree to 1e-11.
+
+**What this does NOT change, and the reason those overrides existed.** `BiasChokeHenries`/
+`DcBlockFarads`' own doc comments record that a netlist which *stamps* an ideal 1 F block puts
+1.26e10 S next to a termination's ~0.04 S and spends eleven digits of the MNA's condition number —
+which is why the stamped-netlist REFERENCE fixtures (`ReferenceEquivalenceTests`) pick their own
+values deliberately. harmonicaRF's own solve never stamps the block (it is folded into the closed-form
+termination admittance, §6.2), so its answer is exact either way.
+
+**The `.csch`/`.cnl` exports DO stamp both, and this is the one place the change has a cost worth
+stating.** Those doc comments record the measurement: a stamped netlist agrees with harmonicaRF's own
+closure to **~1e-5 with a 1 F block and ~1e-13 with a 1 nF one**. So the exported testbench is now a
+looser cross-check than it was, by roughly eight decades — while the number on screen, which is what
+the owner asked about, is exactly right. The two cannot be optimised at once from one setting, and the
+owner's instruction was explicitly to change both together ("in the document export and in
+harmonicaRF"), so they move together. Re-checked at the ideal values: every
+`HarmonicaSchematicExportTests` fixture — SDD2, SDD3, a native FET, a Diode, a full lumped package —
+still extracts, elaborates and converges. **A document that wants the tighter export can simply set
+its own choke/block in Settings; the export follows the document, never a constant of its own.**
+
 ## R9D §3 — `PaClassPresets`: the five PA-class terminations, closed form (brief-harmonicarf-r9d, 2026-08-15)
 
 Source: Sharma, T. (2018). *Modelling and Design Methodology of Higher-Efficiency Harmonic Tuned Power

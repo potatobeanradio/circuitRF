@@ -35,12 +35,29 @@ public sealed class PaClassPresetsTests(ITestOutputHelper output)
 
     // ── the five pinned tables, at Z0 = 80 ───────────────────────────────────
 
+    /// <summary>Round 10 (owner): a preset's "short"/"open" bands are Z0/100 and Z0·100, not the
+    /// absolute 1e-6 Ω / 1e6 Ω they used to be — "this helps with convergence for Class F and F⁻¹ and
+    /// makes nice looking contours". Pinned explicitly because every other assertion in this file
+    /// spells them through NearShort/NearOpen and would pass for any definition of those.</summary>
+    [Fact]
+    public void TheShortAndOpenBands_AreZ0OverAHundred_AndZ0TimesAHundred()
+    {
+        Assert.Equal(Z0 / 100.0, PaClassPresets.NearShort(Z0), precision: 12);
+        Assert.Equal(Z0 * 100.0, PaClassPresets.NearOpen(Z0),  precision: 12);
+        Assert.Equal(0.8,  PaClassPresets.IntrinsicLoad(PaClass.F, 2, Z0).Real, precision: 12);
+        Assert.Equal(8000, PaClassPresets.IntrinsicLoad(PaClass.F, 3, Z0).Real, precision: 12);
+
+        // An UNMARKED band is not written by a preset at all and keeps harmonicaRF's own 1e-6 —
+        // the owner's own carve-out, and the reason that constant is untouched.
+        Assert.Equal(1e-6, TerminationSet.UnmarkedBandOhms);
+    }
+
     [Fact]
     public void ClassB_Z1IsZ0_AndEveryOtherBandIsNearShort()
     {
         Assert.Equal(new Complex(Z0, 0), PaClassPresets.IntrinsicLoad(PaClass.B, 1, Z0));
         for (int band = 2; band <= 5; band++)
-            Assert.Equal(new Complex(PaClassPresets.NearShortOhms, 0),
+            Assert.Equal(new Complex(PaClassPresets.NearShort(Z0), 0),
                          PaClassPresets.IntrinsicLoad(PaClass.B, band, Z0));
     }
 
@@ -59,7 +76,7 @@ public sealed class PaClassPresetsTests(ITestOutputHelper output)
         Assert.Equal(47.1238898, z2.Imaginary, precision: 5);
 
         for (int band = 3; band <= 5; band++)
-            Assert.Equal(new Complex(PaClassPresets.NearShortOhms, 0),
+            Assert.Equal(new Complex(PaClassPresets.NearShort(Z0), 0),
                          PaClassPresets.IntrinsicLoad(PaClass.J, band, Z0));
     }
 
@@ -92,10 +109,10 @@ public sealed class PaClassPresetsTests(ITestOutputHelper output)
         Assert.Equal(92.376, z1.Real, precision: 3);
         Assert.Equal(0.0, z1.Imaginary, precision: 9);
 
-        Assert.Equal(new Complex(PaClassPresets.NearShortOhms, 0), PaClassPresets.IntrinsicLoad(PaClass.F, 2, Z0));
-        Assert.Equal(new Complex(PaClassPresets.NearOpenOhms,  0), PaClassPresets.IntrinsicLoad(PaClass.F, 3, Z0));
-        Assert.Equal(new Complex(PaClassPresets.NearShortOhms, 0), PaClassPresets.IntrinsicLoad(PaClass.F, 4, Z0));
-        Assert.Equal(new Complex(PaClassPresets.NearOpenOhms,  0), PaClassPresets.IntrinsicLoad(PaClass.F, 5, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearShort(Z0), 0), PaClassPresets.IntrinsicLoad(PaClass.F, 2, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearOpen(Z0),  0), PaClassPresets.IntrinsicLoad(PaClass.F, 3, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearShort(Z0), 0), PaClassPresets.IntrinsicLoad(PaClass.F, 4, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearOpen(Z0),  0), PaClassPresets.IntrinsicLoad(PaClass.F, 5, Z0));
     }
 
     [Fact]
@@ -108,10 +125,10 @@ public sealed class PaClassPresetsTests(ITestOutputHelper output)
         Assert.Equal(137.99, z1.Real, precision: 2);
         Assert.Equal(0.0, z1.Imaginary, precision: 9);
 
-        Assert.Equal(new Complex(PaClassPresets.NearOpenOhms,  0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 2, Z0));
-        Assert.Equal(new Complex(PaClassPresets.NearShortOhms, 0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 3, Z0));
-        Assert.Equal(new Complex(PaClassPresets.NearOpenOhms,  0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 4, Z0));
-        Assert.Equal(new Complex(PaClassPresets.NearShortOhms, 0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 5, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearOpen(Z0),  0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 2, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearShort(Z0), 0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 3, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearOpen(Z0),  0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 4, Z0));
+        Assert.Equal(new Complex(PaClassPresets.NearShort(Z0), 0), PaClassPresets.IntrinsicLoad(PaClass.FInverse, 5, Z0));
     }
 
     // ── the identity check: an empty package/no capacitors makes ExtrinsicFor the identity ─────────

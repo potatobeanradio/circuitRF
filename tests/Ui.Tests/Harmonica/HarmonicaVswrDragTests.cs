@@ -2,11 +2,15 @@
 //  HarmonicaVswrDragTests.cs — R8B §7.3
 //
 //  "I can't drag the VSWR circle outside the Smith Chart." Two findings, not a bug in the drag path
-//  itself: (1) a THEOREM — a passive marker's whole VSWR family stays strictly inside |Γ| = 1 for
-//  every finite VSWR, so it literally cannot be dragged outside the chart; (2) a saturation that hid
-//  (1) badly — VswrThrough silently returned the clamped MaxVswr the instant a drag point fell
-//  outside the loosest circle in its search bracket, which read as "the number stopped moving".
-//  VswrThroughEx reports the clamp instead of hiding it.
+//  itself: (1) a THEOREM — a passive marker's whole POSITIVE-VSWR family stays strictly inside
+//  |Γ| = 1, so it cannot be dragged outside the chart by any VSWR ≥ 1; (2) a saturation that hid (1)
+//  badly — VswrThrough silently returned the clamped MaxVswr the instant a drag point fell outside
+//  the loosest circle in its search bracket, which read as "the number stopped moving".
+//
+//  ROUND 10 finished the story: the family does not STOP at |Γ| = 1, it CONTINUES there with ρ > 1,
+//  i.e. VSWR < 0 — so a passive marker's circle CAN be dragged outside the chart after all, and what
+//  was blocking it was the [1.001, 10⁶] bracket rather than any theorem. The old test that asserted
+//  saturation at Γ = 1.5 is now the test that asserts the negative answer.
 // ================================================================
 
 using System.Linq;
@@ -25,26 +29,36 @@ public class HarmonicaVswrDragTests(ITestOutputHelper output)
     [Fact]
     public void APassiveCentres_WholeFamily_StaysStrictlyInsideTheUnitCircle_EvenAtAnExtremeVswr()
     {
+        const double extremeVswr = 1e6;
         var center = new Complex(0.3, -0.2);
-        var pts = LoadpullSurface.VswrLocus(center, HarmonicaVswrHandle.MaxVswr, SurfacePlane.Gamma,
+        var pts = LoadpullSurface.VswrLocus(center, extremeVswr, SurfacePlane.Gamma,
                                             new Complex(Z0, 0.0), nPoints: 360);
         Assert.NotNull(pts);
 
         double maxMag = pts!.Max(p => p.Magnitude);
-        output.WriteLine($"passive centre {center}, VSWR = {HarmonicaVswrHandle.MaxVswr}: max |Γ| on locus = {maxMag:F6}");
+        output.WriteLine($"passive centre {center}, VSWR = {extremeVswr}: max |Γ| on locus = {maxMag:F6}");
         Assert.All(pts, p => Assert.True(p.Magnitude < 1.0, $"|Γ| = {p.Magnitude} is not < 1"));
     }
 
     [Fact]
-    public void ADragPointJustOutsideTheRim_FromAPassiveCentre_IsSaturated()
+    public void ADragPointOutsideTheRim_FromAPassiveCentre_IsANegativeVswr_NotSaturated()
     {
+        // Round 10 — this used to assert saturation, which is what the old bracket produced and what
+        // the owner reported as "restricted". The point Γ = 1.5 IS on a real member of this marker's
+        // circle family; that member simply has ρ > 1, hence a negative VSWR. The invariant asserted
+        // is the one that matters: the locus the answer produces passes through the drag point.
         var center = new Complex(0.3, -0.2);
         var dragGamma = new Complex(1.5, 0.0);
 
         var (vswr, saturated) = HarmonicaVswrHandle.VswrThroughEx(center, dragGamma, Z0);
         output.WriteLine($"drag Γ = {dragGamma} from passive centre {center} -> VSWR = {vswr}, saturated = {saturated}");
-        Assert.True(saturated);
-        Assert.Equal(HarmonicaVswrHandle.MaxVswr, vswr);
+        Assert.False(saturated);
+        Assert.True(vswr < 0, $"expected a negative VSWR outside the rim, got {vswr}");
+
+        var fine = LoadpullSurface.VswrLocus(center, vswr, SurfacePlane.Gamma, new Complex(Z0, 0.0), nPoints: 720);
+        double closest = fine!.Min(p => (p - dragGamma).Magnitude);
+        output.WriteLine($"closest approach of the resulting locus to the drag point = {closest:E3}");
+        Assert.True(closest < 1e-2, $"locus does not pass through the drag point (closest {closest:E3})");
     }
 
     [Fact]
@@ -80,7 +94,8 @@ public class HarmonicaVswrDragTests(ITestOutputHelper output)
     [Fact]
     public void FormatVswr_Saturated_ReportsTheBound_NotTheClampedNumber()
     {
-        Assert.Equal("VSWR: > 10⁶", HarmonicaReadoutFormatting.FormatVswr(HarmonicaVswrHandle.MaxVswr, saturated: true));
+        Assert.Equal("VSWR: ∞", HarmonicaReadoutFormatting.FormatVswr(HarmonicaVswrHandle.InfiniteVswr, saturated: true));
+        Assert.Equal("VSWR: -∞", HarmonicaReadoutFormatting.FormatVswr(-HarmonicaVswrHandle.InfiniteVswr, saturated: true));
         Assert.Equal("VSWR: 2", HarmonicaReadoutFormatting.FormatVswr(2.0, saturated: false));
     }
 

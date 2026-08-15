@@ -562,12 +562,13 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// enough to move the circle on screen; <see cref="DirtyChanged"/> marks the document unsaved, the
     /// same as every other <c>.charm</c>-persisted edit.</para>
     ///
-    /// <para><b>§1.2 — no clamping beyond <see cref="HarmonicaVswrHandle.MinVswr"/>.</b> This used to
-    /// re-clamp an already-computed VSWR by round-tripping it through ρ
-    /// (<c>VswrOf(RhoOf(vswr))</c>), which silently capped it at the old <c>MaxVswr</c> display ceiling
-    /// — exactly the saturation the owner asked to remove. The only restriction left is the floor VSWR
-    /// ≥ 1 is defined for; a caller (the drag path, the <c>Set…</c> dialog) is responsible for its own
-    /// upstream validation of anything else (finiteness, "reject < 1 with a message").</para>
+    /// <para><b>Round 10 — NO clamping at all, in either direction.</b> The old floor
+    /// (<c>Math.Max(MinVswr, vswr)</c>) forbade the whole <c>VSWR &lt; 1</c> / negative half of the
+    /// family, which is where a circle dragged OUTSIDE the Smith chart lives — owner: "VSWR circles are
+    /// restricted in value. They should not be... VSWR can be any value, except NaN or infinity."
+    /// The only two values refused here are the two the owner named: a NaN is DROPPED (the marker keeps
+    /// whatever it had — a circle that vanishes is worse than one that does not move), and an infinity
+    /// becomes <see cref="HarmonicaVswrHandle.InfiniteVswr"/> with its sign.</para>
     ///
     /// <para><b>§2.1 — setting a value also ENABLES the circle</b> if it was off: typing a number into
     /// <c>Set…</c> and seeing nothing happen is the failure mode to avoid. A no-op for the drag path,
@@ -575,7 +576,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// </summary>
     public void SetMarkerVswr(HarmonicaMarker marker, double vswr)
     {
-        marker.VswrValue = Math.Max(HarmonicaVswrHandle.MinVswr, vswr);
+        if (double.IsNaN(vswr)) return;
+        marker.VswrValue = double.IsInfinity(vswr)
+            ? Math.Sign(vswr) * HarmonicaVswrHandle.InfiniteVswr
+            : vswr;
         marker.VswrEnabled = true;
         RedrawRequested?.Invoke();
         DirtyChanged?.Invoke();
@@ -2267,7 +2271,15 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         Settings = new HarmonicaSettings
         {
             HarmonicCount = 3, FrequencyHz = 2e9,
-            BiasChokeHenries = 1e-6, DcBlockFarads = 1e-9, Tol = 1e-8,
+            // Round 10 (owner): the bias network is IDEAL — HarmonicaSettings' own 1 H / 1 F
+            // defaults, no longer overridden to 1 µH / 1 nF here. A 1 µH choke is 12.57 kΩ at
+            // 2 GHz, which shunts the source plane hard enough to be READ: the shipped device's
+            // gate is a plain 50 Ω (I[1,0] = _v1/50) and Zin came back 49.9992 + j0.1989 Ω,
+            // matching 50 ‖ jωL to twelve significant figures. The owner wants a clean 50, and an
+            // ideal choke gives 49.999999998 + j2.0e-7. Same reasoning for the DC block, from the
+            // other end — see BiasChokeHenries/DcBlockFarads' own doc comments, which already
+            // record 1 H / 1 F as "the ideal-bias value (§4.4) and the default".
+            Tol = 1e-8,
             CompressionDb = 3.0, PinStartDbm = -10, PinMaxDbm = 34,
         },
     };
