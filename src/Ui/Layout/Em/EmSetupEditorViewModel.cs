@@ -437,6 +437,17 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string _truncationHeightsText   = "";
     [ObservableProperty] private string _truncationTailCellsText = "";
 
+    /// <summary>
+    /// Bug report, 2026-08-14: "EM setup has a couple of text boxes that are not validated properly."
+    /// These six shared one silent failure mode the Port Z0 fields above never had: an unparseable or
+    /// out-of-range value fell through <see cref="CommitMeshField"/>'s switch to the unchanged-model
+    /// arm, which called <see cref="RefreshMeshText"/> and silently overwrote whatever the user had
+    /// just typed back to the last-committed value — no message, no red text, nothing. Mirrors
+    /// <see cref="Port1Z0Error"/>'s own contract: set on an invalid commit (and the bad text is left
+    /// in place rather than reverted, so there is something to fix), cleared on the next valid one.
+    /// </summary>
+    [ObservableProperty] private string? _meshFieldError;
+
     // ── L8b's D3 planar mesh controls — THREE, plus the conformal FOURTH ──────────────────────
     //
     // D3 said "exactly three user controls, and no more"; the conformal-boundary-cells brief adds a
@@ -456,6 +467,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string _planarMeshFrequencyText = "";
     [ObservableProperty] private PlanarBoundaryCells _planarBoundaryCells =
         PlanarMeshSettings.DefaultBoundaryCells;
+
+    /// <summary>Same contract as <see cref="MeshFieldError"/>, for this group's three staged-text
+    /// fields (Cells per wavelength, Edge cells, Mesh frequency) — kept separate because the two
+    /// groups are never both visible at once (<c>IsPlanarAnalysis</c> toggles which one shows).</summary>
+    [ObservableProperty] private string? _planarMeshFieldError;
 
     /// <summary>The two boundary models, for the panel's combo. Sourced from the enum rather than
     /// hand-listed so a third member cannot silently fail to appear.</summary>
@@ -490,6 +506,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private bool   _dispersionCorrection;
     [ObservableProperty] private bool   _adaptiveSampling = true;
     [ObservableProperty] private bool   _directVerticalKernel;
+    [ObservableProperty] private bool   _acceleratedSolve;
 
     /// <summary>Non-null when the dispersion opt-in must be disabled, with the reason. The panel
     /// ASKS <see cref="QuasiStaticKernel.TryMicrostripDispersion"/> rather than re-deriving the
@@ -713,35 +730,51 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public void CommitMeshField(string field)
     {
         if (_suppressCommit) return;
-        var m = Working.Mesh;
-        var before = SnapshotJson();
-        EmMeshSettings updated = field switch
-        {
-            nameof(EmMeshSettings.MinCellsAcrossWidth) when TryInt(MinCellsAcrossWidthText, 1, out int v)
-                => m with { MinCellsAcrossWidth = v },
-            nameof(EmMeshSettings.EdgeCells) when TryInt(EdgeCellsText, 0, out int v)
-                => m with { EdgeCells = v },
-            nameof(EmMeshSettings.EdgeFractionOfWidth) when TryDouble(EdgeFractionText, out double v) && v > 0
-                => m with { EdgeFractionOfWidth = v },
-            nameof(EmMeshSettings.EdgeGrowthRatio) when TryDouble(EdgeGrowthText, out double v) && v > 1
-                => m with { EdgeGrowthRatio = v },
-            nameof(EmMeshSettings.TruncationHeights) when TryDouble(TruncationHeightsText, out double v) && v > 0
-                => m with { TruncationHeights = v },
-            nameof(EmMeshSettings.TruncationTailCells) when TryInt(TruncationTailCellsText, 1, out int v)
-                => m with { TruncationTailCells = v },
-            _ => m,
-        };
-
-        // D3's three planar controls share this one committer rather than growing a second: they are
-        // the same kind of staged-text edit and the same undo entry, and two committers would be two
-        // places to forget InvalidateMesh().
+        var m  = Working.Mesh;
         var pm = Working.PlanarMesh;
-        PlanarMeshSettings updatedPlanar = field switch
+
+        EmMeshSettings     updated       = m;
+        PlanarMeshSettings updatedPlanar = pm;
+        string?            error         = null;
+
+        switch (field)
         {
-            "CellsPerWavelength" when TryInt(PlanarCellsPerWavelengthText, 1, out int v)
-                => pm with { Auto = false, CellsPerWavelength = v },
-            "PlanarEdgeCells" when TryInt(PlanarEdgeCellsText, 0, out int v)
-                => pm with { Auto = false, EdgeCells = v },
+            case nameof(EmMeshSettings.MinCellsAcrossWidth):
+                if (TryInt(MinCellsAcrossWidthText, 1, out int minCells)) updated = m with { MinCellsAcrossWidth = minCells };
+                else error = "Enter a whole number of 1 or more.";
+                break;
+            case nameof(EmMeshSettings.EdgeCells):
+                if (TryInt(EdgeCellsText, 0, out int edgeCells)) updated = m with { EdgeCells = edgeCells };
+                else error = "Enter a whole number of 0 or more.";
+                break;
+            case nameof(EmMeshSettings.EdgeFractionOfWidth):
+                if (TryDouble(EdgeFractionText, out double edgeFrac) && edgeFrac > 0) updated = m with { EdgeFractionOfWidth = edgeFrac };
+                else error = "Enter a number greater than 0 (a fraction of the conductor width, e.g. 0.15).";
+                break;
+            case nameof(EmMeshSettings.EdgeGrowthRatio):
+                if (TryDouble(EdgeGrowthText, out double growth) && growth > 1) updated = m with { EdgeGrowthRatio = growth };
+                else error = "Enter a number greater than 1.";
+                break;
+            case nameof(EmMeshSettings.TruncationHeights):
+                if (TryDouble(TruncationHeightsText, out double trunc) && trunc > 0) updated = m with { TruncationHeights = trunc };
+                else error = "Enter a number greater than 0 (in substrate heights).";
+                break;
+            case nameof(EmMeshSettings.TruncationTailCells):
+                if (TryInt(TruncationTailCellsText, 1, out int tail)) updated = m with { TruncationTailCells = tail };
+                else error = "Enter a whole number of 1 or more.";
+                break;
+
+            // D3's three planar controls share this one committer rather than growing a second: they
+            // are the same kind of staged-text edit and the same undo entry, and two committers would
+            // be two places to forget InvalidateMesh().
+            case "CellsPerWavelength":
+                if (TryInt(PlanarCellsPerWavelengthText, 1, out int cpw)) updatedPlanar = pm with { Auto = false, CellsPerWavelength = cpw };
+                else error = "Enter a whole number of 1 or more.";
+                break;
+            case "PlanarEdgeCells":
+                if (TryInt(PlanarEdgeCellsText, 0, out int pec)) updatedPlanar = pm with { Auto = false, EdgeCells = pec };
+                else error = "Enter a whole number of 0 or more.";
+                break;
 
             // M0 / R-emp-5 — the mesh frequency. Two things here are deliberate and easy to get
             // wrong: BLANK is a real value (null = max sweep), not "leave it alone"; and this
@@ -749,16 +782,28 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             // cells — a resolution — and has no opinion about which frequency that resolution is
             // applied at. Clearing Auto here would silently pin the cell size the moment a user
             // touched a performance knob.
-            "MeshFrequency" when PlanarMeshFrequencyText.Trim().Length == 0
-                => pm with { MeshFrequencyHz = null },
-            "MeshFrequency" when TryDouble(PlanarMeshFrequencyText, out double v) && v > 0
-                => pm with { MeshFrequencyHz = v * ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit) },
+            case "MeshFrequency":
+                if (PlanarMeshFrequencyText.Trim().Length == 0)
+                    updatedPlanar = pm with { MeshFrequencyHz = null };
+                else if (TryDouble(PlanarMeshFrequencyText, out double freq) && freq > 0)
+                    updatedPlanar = pm with { MeshFrequencyHz = freq * ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit) };
+                else
+                    error = "Enter a positive frequency, or leave it blank to use the sweep's maximum.";
+                break;
+        }
 
-            _ => pm,
-        };
+        bool isPlanarField = field is "CellsPerWavelength" or "PlanarEdgeCells" or "MeshFrequency";
+        if (isPlanarField) PlanarMeshFieldError = error; else MeshFieldError = error;
+
+        // Bug report, 2026-08-14: an invalid commit used to fall through to RefreshMeshText(), which
+        // silently overwrote the box back to the last-good value — the user's typed text vanished
+        // with no explanation. It now stays exactly as typed, beside the message above, so there is
+        // something to fix — matching how Port1Z0Error/Port2Z0Error already behave.
+        if (error is not null) return;
 
         if (updated == m && updatedPlanar == pm) { RefreshMeshText(); return; }
 
+        var before = SnapshotJson();
         Working.Mesh       = updated;
         Working.PlanarMesh = updatedPlanar;
         CommitEdit(before, $"Change mesh setting {field}");
@@ -853,6 +898,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         CommitEdit(before, "Change vertical-kernel integration");
     }
 
+    partial void OnAcceleratedSolveChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.AcceleratedSolve) return;
+        var before = SnapshotJson();
+        Working.AcceleratedSolve = value;
+        CommitEdit(before, "Change accelerated solve");
+        // Deliberately NO InvalidateMesh(): this chooses a SOLVER for a mesh, and the mesh it would
+        // be solving is the same one either way. Every mesh control in this panel invalidates; this
+        // one is not a mesh control, which is why it sits under Solver options beside the vertical
+        // kernel and the core cap rather than in the Surface-mesh group.
+    }
+
     /// <summary>
     /// R13a — why adaptive sampling is unavailable, or null when it is. It only ever applies to the
     /// planar kernel: a cross-section solve is a closed form per frequency, so modelling one to save
@@ -876,6 +934,24 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             : PlanarProblem is { } pp && pp.ViaList.Count == 0
                 ? "This layout has no vias, so there is no vertical current and G_A^zz is never " +
                   "evaluated — this setting would change nothing."
+                : null;
+
+    /// <summary>
+    /// R13a, for M5's accelerator — why it is unavailable, or null when it is. <b>The multi-level
+    /// case is a refusal the ENGINE already owns</b> (<c>PlanarSolve.SolveAt</c> throws by name when
+    /// <c>Aim</c> is set on a problem needing the general kernel), so this is the panel declining to
+    /// let a user arm a run that cannot start — never a second copy of the judgement. Asking
+    /// <see cref="PlanarProblem.RequiresGeneralKernel"/> is asking the same question the engine asks.
+    /// </summary>
+    public string? AcceleratedSolveDisabledReason =>
+        Working.AnalysisKind == EmAnalysisKind.CrossSection
+            ? "The accelerated solve is part of the planar (full-wave) analysis; this setup uses the " +
+              "cross-section kernel, whose solve is closed-form per frequency."
+            : PlanarProblem is { } ap && ap.RequiresGeneralKernel
+                ? "This layout needs the multi-level kernel (more than one metal level, or a via). " +
+                  "The accelerator models the single-level horizontal basis family only — a via's " +
+                  "vertical current needs its own grid kernel per height pairing, which is a separate " +
+                  "piece of work."
                 : null;
 
     // ── M1 — the solver's core cap: SHOWN here, STORED in AppPreferences (R-emp-6) ──────────────
@@ -916,6 +992,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         DispersionCorrection = Working.DispersionCorrection;
         AdaptiveSampling     = Working.AdaptiveSampling;
         DirectVerticalKernel = Working.DirectVerticalKernel;
+        AcceleratedSolve     = Working.AcceleratedSolve;
         AnalysisKind = Working.AnalysisKind;
         SignalLayerChoice = Working.SignalStackupLayerName is { Length: > 0 } s ? s : InferSignalLayer;
         SnpOutputPathText = Working.SnpOutputPathOverride;
@@ -957,6 +1034,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Problem            = null;
         PlanarProblem      = null;
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
+        OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         Readback           = null;
         ExtractionRefusal  = null;
@@ -1002,6 +1080,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         BuildStackupRows(source.Technology);
         BuildConductorChoices(source.Technology);
 
+        // Same two fields PreparePlanarMesh sets, reused here for BuildMesh's own (kernel A) length
+        // formatter — Refresh() runs entirely on the UI thread, so this could read source.View
+        // directly at the point of use, but keeping ONE place these are captured is what keeps the
+        // two mesh paths from drifting onto two different ideas of "the current display unit".
+        _pendingDisplayUnit  = source.View.DisplayUnit;
+        _pendingDbuPerMicron = source.DbuPerMicron;
+
         // ── R-res-1: the registry chooses, here as at run time, from the same two verdicts ─────
         double fMax = TryMaxFrequency();
 
@@ -1016,7 +1101,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         var planar = PlanarExtractor.Extract(
             geometry.Shapes, source.Technology, source.DbuPerMicron, fMax,
-            Working.ToExtractionSettings(Working.LayoutRef));
+            Working.ToExtractionSettings(Working.LayoutRef), geometry.GeneratorIds);
 
         var choice = EmKernelRegistry.Choose(
             Working.AnalysisKind,
@@ -1083,6 +1168,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         PlanarProblem = planar.Problem;
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
+        OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
 
         var verdict = new PlanarKernel().CanSolve(planar.Problem!);
@@ -1171,6 +1257,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarExtractionRefusal = null;
         PlanarProblem          = null;
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
+        OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         // R-em-17, and it matters MORE for the heat map than for the mesh: a current map drawn over
         // edited artwork looks like it still matches the artwork underneath it.
@@ -1235,10 +1322,17 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                 "The layout this EM setup analyses could not be resolved, or has no technology, so " +
                 "there is nothing to say how thick its metal is or what is underneath it.";
             OnPropertyChanged(nameof(PlanarMeshSummary));
-            OnPropertyChanged(nameof(PlanarBudgetRefusal));
-            AnalysisRefreshed?.Invoke();
+            // (display unit / DBU-per-micron are left at their prior value here — nothing was
+            // resolved, so ComputePlanarMesh is never reached for this attempt)
+            RaiseState();   // PlanarExtractionRefusal feeds BlockingReason/CanRun — see AdoptPlanarMeshReport's note
             return null;
         }
+
+        // Held so ComputePlanarMesh — run off the UI thread — can build the length formatter without
+        // touching the live LayoutView itself: these are plain value types, unlike source.View, so
+        // copying them here carries none of PreparePlanarMesh's own data-race concern (see its header).
+        _pendingDisplayUnit  = source.View.DisplayUnit;
+        _pendingDbuPerMicron = source.DbuPerMicron;
 
         double fMax = 0;
         try
@@ -1255,15 +1349,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         var meshGeometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
         var extraction = PlanarExtractor.Extract(
-            meshGeometry.Shapes, source.Technology, source.DbuPerMicron, fMax, Working.ToExtractionSettings());
+            meshGeometry.Shapes, source.Technology, source.DbuPerMicron, fMax, Working.ToExtractionSettings(),
+            meshGeometry.GeneratorIds);
 
         PlanarMeshNotes = [.. meshGeometry.Notes, .. extraction.Notes];
         if (!extraction.Ok)
         {
             PlanarExtractionRefusal = extraction.Refusal;
             OnPropertyChanged(nameof(PlanarMeshSummary));
-            OnPropertyChanged(nameof(PlanarBudgetRefusal));
-            AnalysisRefreshed?.Invoke();
+            RaiseState();   // PlanarExtractionRefusal feeds BlockingReason/CanRun — see AdoptPlanarMeshReport's note
             return null;
         }
 
@@ -1276,10 +1370,18 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     private IReadOnlyList<string> _pendingPlanarNotes = [];
 
+    // The length-formatter's own two inputs, captured by PreparePlanarMesh (see its own comment
+    // there) — plain value types, so reading them from ComputePlanarMesh's background thread carries
+    // none of the live-LayoutView data race PreparePlanarMesh's own split exists to avoid.
+    private LayoutUnit _pendingDisplayUnit  = LayoutUnit.Um;
+    private int        _pendingDbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
+
     /// <summary>The POOLABLE half: pure, and touches no view-model state. Safe on any thread because
     /// <paramref name="problem"/> is an already-extracted snapshot.</summary>
     public PlanarMeshReport ComputePlanarMesh(PlanarProblem problem, RunControl? control)
-        => SurfaceMesher.Mesh(problem, Working.PlanarMesh, PlanarEdgeReference.ConductorWidth, control);
+        => SurfaceMesher.Mesh(problem, Working.PlanarMesh, PlanarEdgeReference.ConductorWidth, control,
+                              accelerated: Working.AcceleratedSolve,
+                              lengthFormat: EmLengthFormat.For(_pendingDisplayUnit, _pendingDbuPerMicron));
 
     /// <summary>The UI-THREAD half again: adopt the report and everything that follows from it.</summary>
     public void AdoptPlanarMeshReport(PlanarMeshReport report)
@@ -1294,8 +1396,16 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarMeshNotes = [.. notes];
 
         OnPropertyChanged(nameof(PlanarMeshSummary));
-        OnPropertyChanged(nameof(PlanarBudgetRefusal));
-        AnalysisRefreshed?.Invoke();
+
+        // Bug report, 2026-08-14: "Simulate button was disabled once when it should have been
+        // enabled. Had to change a parameter for it to update. (After clicking Mesh)." CanRun's
+        // planar branch folds in PlanarBudgetRefusal (R17's ceiling verdict), and this is the ONLY
+        // place that becomes known — it comes back WITH the mesh, not with extraction. The bare
+        // OnPropertyChanged(PlanarBudgetRefusal) this used to end on told the panel's disabled-reason
+        // TEXT to refresh, but nothing told SimulateCommand its CanExecute might have flipped, so a
+        // mesh that newly cleared (or newly hit) the budget left the button showing its PRE-mesh
+        // state until an unrelated field edit called RaiseState() for an unrelated reason.
+        RaiseState();
     }
 
     /// <summary>
@@ -1357,7 +1467,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             return;
         }
 
-        var report = new QuasiStaticKernel().Mesh(Problem, Working.Mesh);
+        var report = new QuasiStaticKernel().Mesh(Problem, Working.Mesh,
+            EmLengthFormat.For(_pendingDisplayUnit, _pendingDbuPerMicron));
         MeshReport = report;
         // R-em-16: surface the engine's own report VERBATIM. The engine already wrote those
         // sentences carefully — including the R-mom-13 Wheeler-crossover note, which is the one

@@ -224,7 +224,7 @@ public static class EmRunService
 
         var planar = PlanarExtractor.Extract(
             geometry.Shapes, source.Technology, source.DbuPerMicron, fMax,
-            setup.ToExtractionSettings(setup.LayoutRef));
+            setup.ToExtractionSettings(setup.LayoutRef), geometry.GeneratorIds);
 
         var choice = EmKernelRegistry.Choose(
             setup.AnalysisKind,
@@ -257,7 +257,8 @@ public static class EmRunService
         try
         {
             control?.BeginStage("solving the cross-section");
-            solved = kernel.SolveDetailed(problem, setup.Mesh, freqs, ct);
+            solved = kernel.SolveDetailed(problem, setup.Mesh, freqs, ct,
+                EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron));
             control?.Tick(freqs.Length);
         }
         catch (OperationCanceledException) { throw; }
@@ -355,18 +356,41 @@ public static class EmRunService
             // from the .cem — see EmSolveCores. Null (Automatic) reproduces the unbounded behaviour
             // every run had before the control existed, and it enters no provenance hash (R-emp-7)
             // because it cannot change an answer (R-emp-8).
+            // M5 (2026-08-14): the accelerator is a SECOND fill-settings term, so the two are composed
+            // through one base rather than each branching off `PlanarSolveSettings.Default.Fill` —
+            // written as two independent ternaries, turning on the accelerator would silently discard
+            // the direct vertical kernel, which is exactly the sort of quiet setting loss this panel
+            // has been bitten by before.
+            var fill = PlanarSolveSettings.Default.Fill ?? PlanarFillSettings.Default;
+            if (setup.DirectVerticalKernel) fill = fill with { DirectVerticalKernel = true };
+            if (setup.AcceleratedSolve)     fill = fill with { Aim = PlanarAimSettings.Default };
+
             var solveSettings = PlanarSolveSettings.Default with
             {
                 Adaptive = setup.AdaptiveSampling ? PlanarAdaptiveSettings.Default : null,
                 MaxDegreeOfParallelism = EmSolveCores.Preferred,
-                Fill = setup.DirectVerticalKernel
-                    ? (PlanarSolveSettings.Default.Fill ?? PlanarFillSettings.Default)
-                      with { DirectVerticalKernel = true }
+                Fill = setup.DirectVerticalKernel || setup.AcceleratedSolve
+                    ? fill
                     : PlanarSolveSettings.Default.Fill,
             };
-            solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, solveSettings, ct, control);
+            var lengthFormat = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
+            solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, solveSettings, ct, control,
+                                  lengthFormat);
         }
         catch (OperationCanceledException) { throw; }
+        catch (PlanarMeshRefusedException ex)
+        {
+            // R17's ceiling is a REFUSAL, not a crash, and its diagnosis lives in the mesh report's
+            // notes rather than in its one-sentence message (owner report, 2026-08-14: a user was
+            // handed the ceiling and the megabytes with none of the sentences that say why the count
+            // is what it is, and turned the one knob the message named — which on that geometry
+            // changes nothing). Reporting it as EngineError was the second half of the same problem:
+            // it reads as "circuitRF broke" when the answer is "this mesh is too big, and here is the
+            // quantity that made it that big".
+            notes.AddRange(ex.Report.Notes);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
+                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+        }
         catch (Exception ex)
         {
             return new EmRunResult(EmRunStatus.EngineError, null, null, null, null, null,

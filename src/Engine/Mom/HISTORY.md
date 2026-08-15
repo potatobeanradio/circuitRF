@@ -5513,3 +5513,191 @@ call, not a re-association.
   measurement above is what a decision to widen them would be made from; making it is the owner's call.
 - **Restarted GMRES is untested.** `Restart` is a knob at 0 (full) because at 2-6 iterations there is
   nothing to restart, and nothing here has been run at a count where it would matter.
+
+---
+
+## 13. brief-em-aim-ceiling — the ceiling MOVES, to 12,000, single-level only (2026-08-14)
+
+The debt §12 closed with: measurement above N = 3,731, on a via-bearing or cut mesh, plus a decision on
+whether R17's ceiling moves. Triggered by a real refusal (`docs/sonnet-briefs/brief-em-aim-ceiling.md`
+§0): a user's 6.92 Ω → 100 Ω Klopfenstein taper meshed at N = 7,749 — 13% over R17's 5,000 — with no
+combination of panel settings under it.
+
+### §3 first — the near-field radius discrepancy, resolved before the ladder ran
+
+CLAUDE.md's AIM paragraph stated the near-field radius twice, in two different units, as if they were
+one number: §11's decision gate (pre-AIM, testing GMRES viability on the DENSE matrix with a naive
+near-field preconditioner) measured in MESH CELLS — 3 degrades with N, 8 is flat. R-emp-17 (§12, on the
+accelerator actually built) measured `PlanarAimSettings.NearRadiusFactor` in units of the LARGEST BASIS
+SUPPORT and landed the shipped default at 6, not 8 — order 3 there put `|ΔI|` at 8.7e-7, inside L8c's
+5.0e-6 fill accuracy, and radius 8 supports bought a further 3.6× for cost the table itself said was not
+worth it. **The code (`NearRadiusFactor = 6.0`) was always right; the prose conflated two different
+knobs.** Corrected in CLAUDE.md rather than in code.
+
+### A1 — the N ladder, two constructions, and they told two different stories
+
+Built past M5's own N = 3,731 top rung, to and past N = 12,000, on the FR-4 hero cross-section at
+6 GHz. **Dense is a HARD refusal above N = 5,000 through the shipped API** (`PlanarFill.GuardCeiling` /
+`PlanarSystem.GuardCeiling` throw unconditionally) — not merely slow — so "the top of the ladder where
+a dense reference exists" is exactly R17's ceiling itself, not the ~8,000 the brief guessed at before
+measuring. `AimCeilingTests.cs`, `Category=Benchmark`.
+
+**A1a — grow the LENGTH at the shipping mesh (cells/λ = 20, edge grading on).** The construction that
+matches how a real board actually gets big — a wide-to-narrow taper included, since MinCellsAcrossConductor
+pays for the narrow end everywhere and length simply adds more of the same cell:
+
+| L | N | near/row | near % | build s | iters | resid | solve s | dense s | \|Δcurrent\| | MB | dense MB |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 256 mm | 3,731 | 392 | 10.5% | 24.8 | 6 | 1.2e-9 | 0.11 | 28.9 | 1.12e-5 | 53.3 | 212.4 |
+| 320 mm | 4,649 | 394 | 8.5% | 30.1 | 6 | 3.8e-9 | 0.14 | 49.7 | 1.78e-5 | 67.7 | 329.8 |
+| 384 mm | 5,584 | 396 | 7.1% | 37.9 | 6 | 6.1e-9 | 0.16 | — | — | 81.2 | — |
+| 448 mm | 6,485 | 396 | 6.1% | 42.9 | 6 | 9.6e-9 | 0.18 | — | — | 94.0 | — |
+| 512 mm | 7,386 | 397 | 5.4% | 50.4 | 7 | 7.8e-10 | 0.25 | — | — | 106.8 | — |
+| 640 mm | 9,239 | 398 | 4.3% | 70.2 | 7 | 2.3e-9 | 0.31 | — | — | 135.9 | — |
+| 768 mm | 11,041 | 398 | 3.6% | 78.6 | 7 | 4.8e-9 | 0.65 | — | — | 161.6 | — |
+| 896 mm | 12,894 | 399 | 3.1% | 90.1 | 7 | 9.0e-9 | 0.41 | — | — | 188.2 | — |
+
+(Dense reference through N = 4,649 — the last rung under R17's own ceiling; past it dense cannot be
+asked to run at all, per the hard-refusal note above.) **Flat, all the way to N = 12,894**: near/row
+392 → 399 (1.8% drift over 3.5× N), iterations 6 → 7, `|Δcurrent|` stays at 1-2e-5 where a dense
+reference exists, accelerator memory scales linearly (53 → 188 MB, i.e. 3.53× for 3.46× N). This is
+AIM's premise holding — a "stable line" in the brief's own words.
+
+**A1b — refine the RESOLUTION at a FIXED 64 mm footprint instead (cells/λ swept).** The brief's own
+trap check: does the ladder's story change when the mesh's CHARACTER changes (finer cells throughout,
+including inside the edge-grading fan) rather than only its extent?
+
+| cells/λ | N | near/row | near % | build s | iters | resid | solve s | dense s | \|Δcurrent\| | MB | dense MB |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 20 | 994 | 365 | 36.7% | 7.8 | 5 | 1.2e-10 | 0.03 | 3.1 | 5.52e-6 | 13.3 | 15.1 |
+| 40 | 1,895 | 379 | 20.0% | 13.5 | 5 | 5.7e-9 | 0.05 | 6.5 | 1.33e-4 | 26.3 | 54.8 |
+| 60 | 3,454 | 465 | 13.5% | 24.0 | 8 | 5.4e-9 | 0.16 | 23.0 | 1.98e-4 | 59.4 | 182.0 |
+| 80 | 5,437 | 539 | 9.9% | 41.4 | 21 | 1.0e-8 | 0.64 | — | — | 105.9 | — |
+| 100 | 7,873 | 597 | 7.6% | 57.8 | 143 | 9.8e-9 | 8.26 | — | — | 170.5 | — |
+| 120 | 10,708 | 630 | 5.9% | 80.8 | 372 | 9.9e-9 | 36.05 | — | — | 242.1 | — |
+| 140 | 13,967 | 656 | 4.7% | 108.3 | 400 | **9.1e-5** | 52.00 | — | — | 326.7 | — |
+
+**This one BREAKS.** Iterations hold at 5-8 through N = 3,454 (matching A1a), then climb 21 → 143 → 372
+as cells/λ goes 80 → 100 → 120 — still converging inside the 1e-8 tolerance, just much slower (solve
+time 0.64 s → 36.05 s) — and at cells/λ = 140 (N = 13,967) GMRES hits its 400-iteration cap at a
+residual of 9.1e-5, **not converged**. In production this throws (`PlanarAimOperator.Solve`'s own
+non-convergence exception) rather than returning the half-converged current shown here; the table
+catches the exception and reports what it measured for the record.
+
+**Near/row is NOT flat here either** — 365 → 656 (1.8×) over a 14× N range, against A1a's 392 → 399
+(1.02×) over 3.5×. Refining resolution at fixed extent shrinks the largest basis support that
+`GridSpacingFactor`/`NearRadiusFactor` are sized from, so the stencil and the near set both grow
+relative to the geometry in a way that growing the geometry at fixed resolution does not. **A single
+accelerated N is therefore not a perfectly stable line in general** — but the failure mode this ladder
+finds is a mesh refined 7× past the shipping default (cells/λ = 20) on artwork already adequately
+resolved, which is not the shape of the real complaint that opened this brief (§0's own table: N = 7,749
+identically at cells/λ 5, 10 and 20 — the owner's large N came from the taper's WIDTH RATIO, i.e. from
+A1a's construction, not from cranking resolution).
+
+### A2 — accuracy at ceiling-adjacent scale
+
+`AimCeilingTests.A2_DeEmbeddedS_AtTheTopOfTheReachableLadder`: 30 mm FR-4 line, cells/λ = 60, N = 3,726
+(near the DENSE ceiling — the largest a full de-embedded dense-vs-accelerated comparison can still be
+run at), 6 calibration standards, 3 frequencies:
+
+| f | worst \|ΔS\| de-embedded | worst \|ΔS\| raw |
+|---|---|---|
+| 2 GHz | 2.13e-5 | 8.75e-8 |
+| 5 GHz | 9.38e-6 | 2.03e-6 |
+| 10 GHz | 1.42e-5 | 7.72e-6 |
+
+Worst over the band 2.13e-5, against L8d's own measured de-embedding residual of 6.0e-3 — three orders
+of margin, consistent with R-emp-16 gate 2's own N = 94 result (8.07e-4 there, a different fixture and
+frequency). The accelerator is not the error budget at this scale either.
+
+### A3 — the CONFORMAL (cut) single-level mesh, which M5 never measured
+
+`AimCeilingTests.A3_ConformalCutMesh_AimAgainstDense`: a straight-flanked taper (1.0 → 6.71 mm),
+`BoundaryCells.Conformal`, so every cell the flank crosses is genuinely cut rather than staircased:
+
+| L | N | cut cells | near/row | near % | build s | iters | resid | solve s | dense s | \|Δcurrent\| |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 16 mm | 1,538 | 134 | 935 | 60.8% | 15.0 | 4 | 2.8e-9 | 0.06 | 5.8 | 5.50e-5 |
+| 32 mm | 1,577 | 136 | 579 | 36.7% | 12.7 | 5 | 2.0e-9 | 0.06 | 5.7 | 1.55e-5 |
+| 64 mm | 1,690 | 144 | 644 | 38.1% | 20.1 | 5 | 3.5e-10 | 0.06 | 8.7 | 1.65e-6 |
+| 96 mm | 2,232 | 186 | 696 | 31.2% | 33.3 | 5 | 6.7e-10 | 0.09 | 13.9 | 3.18e-6 |
+
+**No penalty from cut cells** — iterations and `|Δcurrent|` are in the same range as the staircased A1
+tables at comparable N. `PlanarFill.WeightNodes` is what the projection reads for a basis's moments
+(cut cells, strips and all — see `PlanarAim.cs`'s own file header), so this is confirming the projection
+is structurally right, not discovering it. The accelerated ceiling therefore does not depend on
+`PlanarBoundaryCells`.
+
+### The decision: (b), a second ceiling, 12,000, single-level only
+
+§1's three candidates, decided on A1/A2/A3's evidence: **(b)**, not (a) (the reported file's own class
+of geometry — width-ratio-driven N growth — is exactly A1a's stable-line construction, and refusing it
+unconditionally would be leaving a real, safe capability unused) and not (c) (A1a's own construction IS
+a stable line — flat near/row, linear memory, flat iterations — so the honest memory-budget formulation
+(c) asks for is not needed to make THIS decision safely; A1b's breakage is handled by GMRES's own
+non-convergence throw rather than by a per-run byte budget, which is the cheaper and already-built
+backstop).
+
+**`SurfaceMesher.AcceleratedUnknownCeiling = 12_000`** — the top of A1a's healthy rung, with margin
+under A1b's failing one (13,967), covering the owner's own N = 7,749 with 1.55× headroom.
+
+**All three call sites move together, as A4 required:**
+- `SurfaceMesher.Mesh`'s own verdict — gained an `accelerated` parameter (default `false`, so every
+  existing caller is unaffected); ignored whenever `problem.RequiresGeneralKernel`, because the
+  accelerator refuses a multi-level/via mesh by name regardless.
+- `PlanarSolveContext`'s constructor — was an unconditional `PlanarSystem.GuardCeiling` (the DENSE
+  ceiling, wrong question for a solver that holds no N×N anything); now `SurfaceMesher.GuardCeiling(n,
+  accelerated)`, accelerated exactly when `Settings.Aim is not null && Levels is null`.
+- `PlanarFill.cs`'s own `GuardCeiling` (dense-only, `BuildCores`/`Fill`/`FillMultiLevel`) — **unchanged
+  on purpose**. It is never on the accelerated path (`BuildGeometryOnlyCores` calls no guard at all,
+  by design — M5's whole cost claim rests on that path staying O(N)), so the dense ceiling it enforces
+  is correctly the dense one.
+- `PlanarSystem.GuardCeiling` — **unchanged on purpose**, for the same reason: `PlanarSystem` IS the
+  dense path, so 5,000 is always the right question to ask it.
+
+**The refusal text is now conditional on the solver, and on whether turning it on would help:**
+`SurfaceMesher.BuildRefusal` used to end unconditionally with "the accelerated solve reduces the
+memory one costs but does not move this ceiling" — true when M5 shipped, false the moment this landed.
+Three cases now: (1) dense-only and turning the accelerator on WOULD let this mesh run — "turn on the
+accelerated solve" is named FIRST, ahead of every mesh-setting remedy, because it is the only one that
+touches nothing about the drawn geometry; (2) dense-only and the accelerator would NOT help either
+(N past 12,000 too) — the old sentence's shape survives, restated against both ceilings so it stays
+true; (3) the accelerator is ALREADY what was asked for and this mesh is STILL past 12,000 — states
+that ceiling by name, notes the accelerator's own working set stays under 200 MB even there (so this
+is not a memory limit either), and points at GMRES's own non-convergence throw as what actually catches
+an over-refined mesh past this point.
+
+### The limitation this surfaced: de-embedding's calibration step is NOT accelerated
+
+Found running gate 5 (the owner's own taper, actually solved, not merely meshed) end to end through
+`PlanarKernel.Solve`: it threw from `PlanarDeembed.CapacitancePerMetre` → `StaticCapacitance` →
+`PlanarFill.BuildCores`, twenty real minutes into a dense fill nobody asked for. **This is a genuinely
+separate, always-dense computation** — an m×m system over CELLS (not the N×N basis system AIM
+accelerates) that recovers a calibration standard's static (ω → 0) capacitance for D7's reference
+impedance — and `PlanarFill.BuildCores`'s own `GuardCeiling` refuses it exactly like any other dense
+fill. A calibration standard reproduces the DUT's own transverse gridlines VERBATIM (D4, §10's own
+finding), so a WIDE-port DUT's standard can be as large as the DUT itself or larger; on the owner's own
+taper it meshed at N = 6,466, past R17's dense ceiling on its own.
+
+**Deliberately not fixed here** — `PlanarDeembed.cs` is the file this brief's own §4 names as
+out-of-scope ("no de-embedding algebra"), and accelerating a second, structurally different m×m system
+is exactly the kind of widening §4 exists to prevent. **So a wide-port DE-EMBEDDED run can still refuse
+past R17's dense ceiling even when the DUT's own accelerated Z-matrix would solve fine** — recorded
+here and in §4's own table so it is not rediscovered as a new bug. `EmCeilingRefusalTests
+.TheOwnersReportedTaper_TheDutsOwnZMatrix_ACTUALLYSOLVES_WithTheAcceleratedSolveOn` gates the DUT's own
+raw (non-de-embedded) solve instead, which is what this brief actually moved, and is the fast (real
+solve, seconds) member of the pair; the full de-embedded attempt is not kept as a test at 20 real
+minutes for a result already known.
+
+### Gate 5 — the owner's own file, re-run
+
+`EmCeilingRefusalTests.TheOwnersReportedTaper_NowFitsUnderTheAcceleratedCeiling` (routine) and its
+`…ACTUALLYSOLVES…` pair (`Category=Benchmark`) reconstruct §0's own reported taper (Z1 = 6.92 Ω,
+Z2 = 100 Ω, L = 28.575 mm, conformal, cells/λ = 5, mesh frequency 500 MHz) from the PCell's own
+defaults — landing at N = 6,581 rather than the owner's exact 7,749 (the PCell's `GammaMax` and similar
+were not stated in the report; the RATIO, not the exact count, was always the point, and 6,581 is past
+the dense ceiling and under the accelerated one either way). Densely refused, unchanged. With the
+accelerated solve on: meshes, and the DUT's own Z-matrix actually solves — `PlanarSolveContext
+.RawScatteringAt` returns a real 2×2 raw S with a positive GMRES iteration count. **The sentence this
+user gets now**: turn on Accelerated solve (Solver options); it is named first in the refusal, and it
+is the one thing that actually works for this class of part.

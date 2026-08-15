@@ -129,6 +129,79 @@ public class EmSetupDocumentTests : IDisposable
         Assert.False(vm.UndoRedo.CanUndo);
     }
 
+    /// <summary>
+    /// Owner report, 2026-08-14: "EM setup has a couple of text boxes that are not validated
+    /// properly." An invalid mesh-field commit used to fall through to <c>RefreshMeshText</c> and
+    /// silently overwrite the box back to the last-good value — no message, and the user's typed
+    /// text was simply gone. It must now show an error AND leave the bad text in place (mirroring
+    /// <see cref="EmSetupEditorViewModel.Port1Z0Error"/>), and a later valid commit must clear it.
+    /// </summary>
+    [Fact]
+    public void AnInvalidMeshField_ShowsAnErrorAndKeepsTheTypedText_InsteadOfSilentlyReverting()
+    {
+        var (vm, _) = NewEditor();
+
+        vm.MinCellsAcrossWidthText = "not a number";
+        vm.CommitMeshField(nameof(EmMeshSettings.MinCellsAcrossWidth));
+
+        Assert.NotNull(vm.MeshFieldError);
+        Assert.Equal("not a number", vm.MinCellsAcrossWidthText);   // never silently reverted
+        Assert.Equal(EmMeshSettings.Default.MinCellsAcrossWidth, vm.Working.Mesh.MinCellsAcrossWidth);
+        Assert.False(vm.IsDirty);
+        Assert.False(vm.UndoRedo.CanUndo);
+
+        vm.MinCellsAcrossWidthText = "11";
+        vm.CommitMeshField(nameof(EmMeshSettings.MinCellsAcrossWidth));
+
+        Assert.Null(vm.MeshFieldError);
+        Assert.Equal(11, vm.Working.Mesh.MinCellsAcrossWidth);
+    }
+
+    /// <summary>Same contract, the Planar group's own error property — kept separate from
+    /// <see cref="EmSetupEditorViewModel.MeshFieldError"/> since the two groups never show together.</summary>
+    [Fact]
+    public void AnInvalidPlanarMeshField_ShowsAnErrorAndKeepsTheTypedText_InsteadOfSilentlyReverting()
+    {
+        var (vm, _) = NewEditor(new EmSetup { Name = "edit", AnalysisKind = EmAnalysisKind.Planar });
+
+        vm.PlanarCellsPerWavelengthText = "-3";
+        vm.CommitMeshField("CellsPerWavelength");
+
+        Assert.NotNull(vm.PlanarMeshFieldError);
+        Assert.Equal("-3", vm.PlanarCellsPerWavelengthText);
+        Assert.Equal(PlanarMeshSettings.Default.CellsPerWavelength, vm.Working.PlanarMesh.CellsPerWavelength);
+        Assert.False(vm.UndoRedo.CanUndo);
+
+        vm.PlanarCellsPerWavelengthText = "20";
+        vm.CommitMeshField("CellsPerWavelength");
+
+        Assert.Null(vm.PlanarMeshFieldError);
+        Assert.Equal(20, vm.Working.PlanarMesh.CellsPerWavelength);
+    }
+
+    /// <summary>
+    /// Owner report, 2026-08-14: "Simulate button was disabled once when it should have been
+    /// enabled. Had to change a parameter for it to update. (After clicking Mesh)." CanRun's planar
+    /// branch folds in PlanarBudgetRefusal (R17's ceiling verdict), which only becomes known once
+    /// BuildPlanarMesh's report lands — so AdoptPlanarMeshReport itself has to notify
+    /// SimulateCommand; it must not rely on some later, unrelated field edit to do that for it.
+    /// </summary>
+    [Fact]
+    public void ClickingMesh_ImmediatelyNotifiesSimulateCanExecuteChanged_ForAPlanarSetup()
+    {
+        var (vm, _) = NewEditor(new EmSetup { Name = "x", LayoutRef = "a.clay", AnalysisKind = EmAnalysisKind.Planar });
+        vm.ResolveLayout = _ => HeroSource();
+        vm.Refresh();
+
+        int fired = 0;
+        vm.SimulateCommand.CanExecuteChanged += (_, _) => fired++;
+
+        vm.BuildPlanarMesh();
+
+        Assert.NotNull(vm.PlanarMeshReport);
+        Assert.True(fired > 0, "SimulateCommand.CanExecuteChanged must fire after a mesh is adopted");
+    }
+
     [Fact]
     public void APortImpedanceAcceptsAComplexValue_AndRefusesNonsenseByName()
     {

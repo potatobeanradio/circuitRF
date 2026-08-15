@@ -100,9 +100,16 @@
                             <!-- Progress bar for a LIVE message (a running simulation). Absent — not
                                  merely empty — on every ordinary message, so the log is unchanged
                                  when nothing is running. Indeterminate while the work has no honest
-                                 denominator (a single HB solve is one Newton loop, not N steps). It
-                                 SURVIVES completion at 100%, so a finished run's own row still shows
-                                 how much work it was. -->
+                                 denominator (a single HB solve is one Newton loop, not N steps).
+                                 Purely data-driven (HasProgress/ProgressValue/ProgressIndeterminate)
+                                 — whether it survives completion or disappears is entirely up to
+                                 whichever IProgressMessage.Finish/Complete call settled the row (see
+                                 LiveProgressMessage.cs). Owner request, 2026-08-14: every long-running
+                                 row (EM, circuit Analysis, Mesh) now drops it on completion
+                                 (Finish(..., keepBar: false)), leaving only the row's text —
+                                 keepBar: true survives as the default for any future caller that
+                                 wants a completed bar to read as its own "how much work that was"
+                                 summary, but nothing currently uses it that way. -->
                             <InlineUIContainer BaselineAlignment="Center">
                                 <ProgressBar Width="100"
                                              Height="6"

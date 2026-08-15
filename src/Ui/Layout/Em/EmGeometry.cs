@@ -32,8 +32,22 @@ namespace CircuitRF.Ui.Layout.Em;
 /// </summary>
 public static class EmGeometry
 {
-    /// <summary>The flattened shape list, plus one note per unresolvable instance.</summary>
-    public sealed record Result(IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<string> Notes);
+    /// <summary>
+    /// The flattened shape list, plus one note per unresolvable instance, plus <b>the PCell generator
+    /// ids the flattened geometry came from</b>.
+    ///
+    /// <para><b><see cref="GeneratorIds"/> is additive and exists because R-msh-8a had never once
+    /// fired in the shipping application</b> (found 2026-08-14). <c>PlanarExtractor.Extract</c> has
+    /// taken an optional <c>generatorIds</c> since L8b and <b>no caller in <c>src/</c> ever passed
+    /// one</b> — so <c>AnalyticAlternativeFor</c>, its three mappings and its note were live, tested,
+    /// and unreachable by any user. Flattening is the right place to collect them for the same reason
+    /// it is the right place to collect shapes: it is the one pass that already walks every instance,
+    /// and the extractors are handed world-coordinate polygons with no hierarchy left to ask.</para>
+    /// </summary>
+    public sealed record Result(
+        IReadOnlyList<LayoutShape> Shapes,
+        IReadOnlyList<string>      Notes,
+        IReadOnlyList<string>      GeneratorIds);
 
     /// <summary>
     /// Flatten <paramref name="view"/> for extraction. <paramref name="clayPath"/> is the layout's
@@ -46,7 +60,7 @@ public static class EmGeometry
         ArgumentNullException.ThrowIfNull(view);
 
         if (view.Instances.Count == 0)
-            return new Result(view.Shapes, []);
+            return new Result(view.Shapes, [], CollectGeneratorIds(view));
 
         string baseDir = Path.GetDirectoryName(clayPath) ?? "";
 
@@ -75,6 +89,62 @@ public static class EmGeometry
             notes.Add($"{flattened} shape(s) came from {view.Instances.Count} placed instance(s), " +
                       "flattened into world coordinates for extraction.");
 
-        return new Result(shapes, notes);
+        return new Result(shapes, notes, CollectGeneratorIds(view));
+    }
+
+    /// <summary>
+    /// Which PCell generators this layout's artwork came from, distinct and in placement order.
+    ///
+    /// <para><b>Read from <see cref="LayoutView.PCellSnapshots"/>, which is exactly the table built to
+    /// answer this.</b> Its own doc comment says it "covers every PCell instance this layout
+    /// references, regardless of whether it arrived via schematic generation, a palette drop, or a
+    /// layout-authored copy-on-write edit", and it is keyed by the generated cell's FOLDER NAME —
+    /// which is the last segment of the instance's <c>CellRef</c>. Nothing has to be parsed out of a
+    /// cell name, and nothing has to be loaded off disk.</para>
+    ///
+    /// <para><b>A miss is silent and that is deliberate.</b> An instance with no snapshot (a
+    /// hand-built cell, a foreign document, a snapshot written by an older version) simply contributes
+    /// no id, and the run behaves exactly as it did before this existed. This is a note, and a note
+    /// that cannot be produced is not a failure.</para>
+    /// </summary>
+    private static IReadOnlyList<string> CollectGeneratorIds(LayoutView view)
+    {
+        var ids = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // The view may itself BE a generated cell (the panel can be pointed straight at one).
+        if (view.PCellOrigin is { GeneratorId: { Length: > 0 } own } && seen.Add(own))
+            ids.Add(own);
+
+        foreach (var inst in view.Instances)
+        {
+            if (inst.CellRef is not { Length: > 0 } cellRef) continue;
+            string folder = LastSegment(cellRef);
+            if (folder.Length == 0) continue;
+            if (view.PCellSnapshots.TryGetValue(folder, out var snap)
+                && snap.GeneratorId is { Length: > 0 } id
+                && seen.Add(id))
+                ids.Add(id);
+        }
+
+        return ids;
+    }
+
+    /// <summary>
+    /// The last path segment of a <see cref="LayoutInstance.CellRef"/>, splitting on <b>both</b>
+    /// separators regardless of the platform running.
+    ///
+    /// <para><b><see cref="Path.GetFileName(string)"/> is wrong here and the failure is silent.</b> On
+    /// Unix a backslash is an ordinary filename character, so
+    /// <c>GetFileName(@"..\..\.generated-cells\MKLOPF_770fa9b3d56e")</c> returns the whole string and
+    /// the snapshot lookup misses. A <c>CellRef</c> is stored with whatever separator the machine that
+    /// wrote it used, and the report that started all of this arrived as a Windows-authored workspace
+    /// opened on macOS — so this is the ordinary case, not an exotic one.</para>
+    /// </summary>
+    private static string LastSegment(string cellRef)
+    {
+        string trimmed = cellRef.TrimEnd('/', '\\');
+        int cut = trimmed.LastIndexOfAny(['/', '\\']);
+        return cut < 0 ? trimmed : trimmed[(cut + 1)..];
     }
 }

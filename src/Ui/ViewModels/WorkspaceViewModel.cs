@@ -336,6 +336,28 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.CloseDockableConfirm = ConfirmCloseDockable;
         _factory.DockableClosed += (_, args) => { if (args.Dockable is not null) OnDockableClosed(args.Dockable); };
 
+        // Owner report, 2026-08-14: "Document tabs did not update/render when a document was
+        // docked." Docking (e.g. dragging a torn-off document's tab back into a tab strip) moves a
+        // dockable into a fresh position in the visual tree via Dock's own drag/drop machinery,
+        // which does not always land in the same layout pass a normal binding update would —
+        // exactly the class of bug the DockDocumentControlCachedContentTemplate fix already
+        // addresses for a document's BODY (see src/Ui/CLAUDE.md's Dock GOTCHA), but that fix is
+        // scoped to content presentation and does not reach the tab STRIP itself. Nudging every
+        // open window's layout after the dock completes is what incidentally already "fixed" this
+        // for anyone who happened to toggle a panel or resize afterward; doing it here makes that
+        // nudge automatic instead of something the user has to trigger by hand.
+        _factory.DockableDocked += (_, _) =>
+        {
+            if (Avalonia.Application.Current?.ApplicationLifetime
+                    is not IClassicDesktopStyleApplicationLifetime desktop) return;
+            foreach (var window in desktop.Windows)
+            {
+                window.InvalidateMeasure();
+                window.InvalidateArrange();
+                window.InvalidateVisual();
+            }
+        };
+
         // A newly floated window needs its per-window wiring — focus tracking, undo key bindings, and
         // the macOS menu attach. The only other trigger is OnDocumentDockPropertyChanged, which a TOOL
         // tear-off never fires (it does not touch the DocumentDock), so a torn-off tool window used to
@@ -2280,8 +2302,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result.Status == RunStatus.Cancelled)
         {
             // Appended, not replaced: "…DC1  1,194 / 2,525 - cancelled" says how far it got, which is
-            // the one thing worth knowing about a run somebody stopped.
-            live.Finish(MessageLevel.Warning, "cancelled, no results written");
+            // the one thing worth knowing about a run somebody stopped. keepBar: false (owner
+            // request, 2026-08-14) — the bar glyph goes once the run settles; the text stays.
+            live.Finish(MessageLevel.Warning, "cancelled, no results written", keepBar: false);
             foreach (var w in result.Warnings) Messages.Warning(w);
             Messages.Info($"Stopped '{testBenchName}'.");
             return;
@@ -2290,23 +2313,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Step 4: surface the result. The outcome is APPENDED to the run's own live row rather than
         // written on a line of its own — the row already names the analysis and its point count, so a
         // separate "1 analysis run(s) complete" would be a second line carrying less than the first.
-        // The bar stays at 100% on it. A short "Finished" line follows, purely for its timestamp:
-        // the live row's own timestamp is when the run STARTED.
+        // Owner request, 2026-08-14: the bar glyph is dropped once the row settles (keepBar: false)
+        // — only the text, including this appended outcome, remains. A short "Finished" line follows,
+        // purely for its timestamp: the live row's own timestamp is when the run STARTED.
         foreach (var w in result.Warnings)
             Messages.Warning(w);
 
         switch (result.Status)
         {
             case RunStatus.NoAnalysis:
-                live.Finish(MessageLevel.Info, result.StatusMessage);
+                live.Finish(MessageLevel.Info, result.StatusMessage, keepBar: false);
                 Messages.Info($"Finished '{testBenchName}'.");
                 break;
             case RunStatus.EngineError:
-                live.Finish(MessageLevel.Error, result.StatusMessage);
+                live.Finish(MessageLevel.Error, result.StatusMessage, keepBar: false);
                 Messages.Info($"Finished '{testBenchName}'.");
                 break;
             case RunStatus.Success:
-                live.Finish(MessageLevel.Success, result.StatusMessage);
+                live.Finish(MessageLevel.Success, result.StatusMessage, keepBar: false);
                 Messages.Info($"Finished '{testBenchName}'.");
 
                 // Loadpull / Loadpull-Pursuit outcome counts. Reported per analysis and only for the
@@ -4649,8 +4673,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result.Status == EmRunStatus.Cancelled)
         {
             // Appended, not replaced: the row keeps the point count it reached, which is the one
-            // thing worth knowing about a run somebody stopped.
-            sweepLive.Finish(MessageLevel.Warning, "EM stopped — no solution was written");
+            // thing worth knowing about a run somebody stopped. keepBar: false (owner request,
+            // 2026-08-14) — the bar glyph goes once the run settles; the text stays.
+            sweepLive.Finish(MessageLevel.Warning, "EM stopped — no solution was written", keepBar: false);
             if (adaptive)
                 Messages.Info(
                     "Adaptive frequency sampling was on, so the points it had solved are not a " +
@@ -4659,7 +4684,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        sweepLive.Finish(MessageLevel.Success, EmRunSummary(result, adaptive, pointCount));
+        // Owner request, 2026-08-14: the bar glyph is dropped once the row settles (keepBar: false)
+        // — only the appended summary text remains.
+        sweepLive.Finish(MessageLevel.Success, EmRunSummary(result, adaptive, pointCount), keepBar: false);
 
         if (result.MeshReport is { } meshReport) vm.AdoptMeshReport(meshReport);
         if (result.PlanarMesh is { } planarMesh)
@@ -4742,7 +4769,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         catch (OperationCanceledException)
         {
-            live.Finish(MessageLevel.Warning, "stopped");
+            live.Finish(MessageLevel.Warning, "stopped", keepBar: false);
             return;
         }
         catch (Exception ex)
@@ -4756,7 +4783,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             vm.CancelMeshRequested = null;
         }
 
-        live.Finish(MessageLevel.Success, vm.MeshOutcomeText());
+        // Owner request, 2026-08-14: the bar glyph is dropped once the row settles (keepBar: false)
+        // — only the appended outcome text remains, same as the Analysis/EM rows above.
+        live.Finish(MessageLevel.Success, vm.MeshOutcomeText(), keepBar: false);
     }
 
     /// <summary>Drives the mesh row. The mesher reports through the STAGE counter only (it also runs

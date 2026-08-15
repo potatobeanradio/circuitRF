@@ -28,7 +28,7 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
                 Entry.ProgressPercent = Math.Clamp(pct, 0, 100);
         });
 
-    public void Finish(MessageLevel level, string outcome)
+    public void Finish(MessageLevel level, string outcome, bool keepBar = true)
         => marshal(() =>
         {
             Entry.Level = level;
@@ -38,10 +38,23 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
             if (Entry.HasProgressText) Entry.ProgressText = $"{Entry.ProgressText} - {outcome}";
             else                       Entry.Text         = $"{Entry.Text} - {outcome}";
 
-            // The bar stays, and an indeterminate one is pinned full: a finished row still showing an
-            // animating bar reads as a run that never stopped.
-            if (Entry.ProgressIndeterminate) Entry.ProgressPercent = 100;
-            Entry.ProgressIndeterminate = false;
+            if (keepBar)
+            {
+                // The bar stays, pinned full if it was indeterminate: a finished row still showing an
+                // animating bar reads as a run that never stopped.
+                if (Entry.ProgressIndeterminate) Entry.ProgressPercent = 100;
+                Entry.ProgressIndeterminate = false;
+            }
+            else
+            {
+                // Owner request, 2026-08-14: "the simulation progress bar glyph should be removed
+                // from the Messages window... after the simulation is complete. The text that says
+                // simulation is complete should remain." ProgressPercent null hides only the
+                // ProgressBar (its IsVisible is bound to HasProgress) — ProgressText/Text, already
+                // appended above, keep rendering as plain text on the same row.
+                Entry.ProgressIndeterminate = false;
+                Entry.ProgressPercent       = null;
+            }
         });
 
     public void Complete(MessageLevel level, string text)

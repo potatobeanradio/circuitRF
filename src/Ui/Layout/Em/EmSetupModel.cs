@@ -170,6 +170,30 @@ public sealed class EmSetup
     /// </summary>
     public bool DirectVerticalKernel { get; set; }
 
+    /// <summary>
+    /// <b>M5 — solve the planar system with the AIM accelerator instead of a dense LU.</b> Planar
+    /// kernel only, single-level meshes only (a via's ẑ current needs a different grid kernel and the
+    /// accelerator refuses it by name).
+    ///
+    /// <para><b>Off by default, and this is the first user-reachable switch it has ever had.</b> M5
+    /// built the accelerator, gated its accuracy and shipped it disabled with no way to enable it
+    /// short of editing <c>PlanarSolveSettings</c> in code — so a capability that exists has been
+    /// unreachable from the application since it landed. Exposed now on the owner's instruction
+    /// (2026-08-14), with its measured trade stated where the user is standing: <b>the win is memory,
+    /// not time</b> (~4× less working set past N ≈ 900), and the time crossover is much later, around
+    /// N ≈ 3,700.</para>
+    ///
+    /// <para><b>It DOES move the ceiling, on a single-level mesh — to 12,000, from 5,000</b>
+    /// (<c>SurfaceMesher.AcceleratedUnknownCeiling</c>, <c>docs/sonnet-briefs/brief-em-aim-ceiling.md</c>,
+    /// 2026-08-14). A multi-level or via-bearing mesh is refused by name regardless of this flag, so
+    /// the effective ceiling there is still 5,000. The refusal names turning this on as the first
+    /// remedy whenever doing so would let a mesh run — but a de-embedded run's calibration-standard
+    /// capacitance step is a separate, always-dense computation this flag does not reach, and can
+    /// still refuse a wide-port DUT past 5,000 even with this on; see that brief's own HISTORY.md
+    /// closing subsection.</para>
+    /// </summary>
+    public bool AcceleratedSolve { get; set; }
+
     /// <summary>Workspace-relative override for the written <c>.snp</c>. Empty = the predictable
     /// path <c>EmRunService</c> derives from the layout and setup names (R-em-19).</summary>
     public string SnpOutputPathOverride { get; set; } = "";
@@ -190,6 +214,7 @@ public sealed class EmSetup
         DispersionCorrection   = DispersionCorrection,
         AdaptiveSampling       = AdaptiveSampling,
         DirectVerticalKernel   = DirectVerticalKernel,
+        AcceleratedSolve       = AcceleratedSolve,
         SnpOutputPathOverride  = SnpOutputPathOverride,
     };
 

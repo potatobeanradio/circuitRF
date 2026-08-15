@@ -50,11 +50,19 @@ public static class PlanarExtractor
     private const int StackupDbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
 
     /// <summary>
-    /// R-msh-8a's mapping, in one place: which built-in PCell generators already have a validated
-    /// closed-form model, and why full-wave is not needed for them. <b>Kernel B exists for
-    /// discontinuities, radiation and resonance</b> — bends, stubs, junctions, spirals, coupled
-    /// structures — not for smooth tapers, and a user should be told that before spending 5,000
-    /// unknowns reproducing something that is effectively free.
+    /// R-msh-8a's mapping, in one place: which built-in PCell generators also have a validated
+    /// closed-form model, and — <b>as reworded on the owner's instruction, 2026-08-14</b> — what the
+    /// full-wave run ADDS over it.
+    ///
+    /// <para><b>The direction of this note is the whole design, and it used to point the wrong way.</b>
+    /// Each `Reason` read as an argument for the cheap model: "a slowly-varying quasi-TEM structure…
+    /// effectively free". But the only person who ever sees it has opened an EM setup, pointed it at
+    /// this part, and pressed Simulate — they know the analytic model exists, and being told so reads
+    /// as being told they are wasting their time. The note is worth having for the opposite reason:
+    /// full-wave genuinely does buy something on these parts (radiation and surface-wave loss, the end
+    /// discontinuities, coupling to neighbouring metal), and it genuinely does NOT move the quantity
+    /// the analytic model already gets right — so a user who knows both halves can tell a confirming
+    /// result from a wasted one. **Never reword these back into a recommendation.**</para>
     ///
     /// <para>A mitred bend is deliberately ABSENT: <c>MicrostripBendModel</c> exists, but a bend is
     /// exactly the discontinuity kernel B is for, and R-pc-18 records that mitred and unmitred are
@@ -67,16 +75,23 @@ public static class PlanarExtractor
         return generatorId.ToUpperInvariant() switch
         {
             "MKLOPF" => new PlanarAnalyticAlternative(subject, "MicrostripKlopfModel",
-                "A Klopfenstein taper is a slowly-varying quasi-TEM structure — the regime a cascade " +
-                "of short uniform sections models extremely well, which circuitRF already ships " +
-                "(Klopfenstein 1956 plus Kajfez & Prewitt's endpoint correction), adaptive in " +
-                "frequency and effectively free."),
+                "a Klopfenstein taper. What full-wave adds over a cascade of uniform sections is what " +
+                "the cascade cannot see: radiation and surface-wave loss along the flare, the " +
+                "discontinuity at each end, and coupling to whatever else is on the board. What it " +
+                "will not move much is the in-band match, which the taper profile already sets and " +
+                "which MicrostripKlopfModel integrates directly (Klopfenstein 1956 plus Kajfez & " +
+                "Prewitt's endpoint correction) — so a result close to that one is the two methods " +
+                "agreeing, not the solve being wasted."),
             "MTAPER" => new PlanarAnalyticAlternative(subject, "MicrostripTaperModel",
-                "A linear taper is a slowly-varying quasi-TEM structure that the shipped uniform-" +
-                "section cascade models extremely well and at no cost."),
+                "a linear taper. What full-wave adds over the uniform-section cascade is radiation " +
+                "and surface-wave loss along the flare, the end discontinuities, and coupling to " +
+                "nearby metal; the in-band transformation itself is what MicrostripTaperModel already " +
+                "computes, so close agreement there is confirmation rather than a wasted run."),
             "MLIN" => new PlanarAnalyticAlternative(subject, "MicrostripLineModel",
-                "A uniform line is exactly what the shipped Hammerstad-Jensen + Kirschning-Jansen " +
-                "model computes, dispersion and loss included, at no cost."),
+                "a uniform line. Its impedance, dispersion and loss are what MicrostripLineModel " +
+                "computes (Hammerstad-Jensen plus Kirschning-Jansen); what full-wave adds is the end " +
+                "discontinuities and any coupling to neighbouring metal, which a closed form has no " +
+                "way to express."),
             _ => null,
         };
     }

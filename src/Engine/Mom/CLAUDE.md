@@ -439,6 +439,22 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   domain; strips across the wrong axis span a gap in the metal.
 - `MergedSliverCount` counts **absorptions, not hosts** — 32 merges into 28 hosts; the counts should
   not match.
+- **Naming a remedy in a refusal or a note without asking whether it BINDS** (owner report,
+  2026-08-14). `hx`/`hy` are `Math.Min(hWave, narrow/MinCellsAcrossConductor)`, and on any part with a
+  wide-to-narrow width ratio the second term wins by orders of magnitude — so "lower Cells per
+  wavelength" and "lower Mesh frequency" change **nothing**, and a user who follows them halves a knob,
+  sees the identical unknown count, and stops. Measured on a 6.9 → 100 Ω Klopfenstein taper: **7,749
+  unknowns at 5, 10 and 20 cells/λ alike**, and at f_mesh of 500 MHz and 5 GHz alike. `BuildRefusal`
+  now asks `waveBinds` and offers only remedies that act on the binding quantity, saying outright when
+  the frequency knobs do not. **The same defect was live in a NOTE**: the below-sweep-top mesh-frequency
+  note computes its effective cells/λ from the CAP, so where the cap does not bind it stated
+  "the cells are λ_g/1" about cells that were λ_g/1120, and recommended the two inert knobs. Both are
+  gated by `tests/Ui.Tests/Em/EmCeilingRefusalTests.cs`.
+- **Building a diagnostic and then throwing it away.** R17's refusal left `PlanarKernel.Solve` as a
+  bare `InvalidOperationException`, so `PlanarMeshReport.Notes` — the narrowest conductor and how many
+  cells it got, whether the edge mesh acted on anything, R-msh-8a's note — were assembled and dropped,
+  and the caller reported the whole thing as an *engine error*. It is a **refusal** and it now carries
+  its report (`PlanarMeshRefusedException`).
 
 **Ports / solve**
 - **Treating "the feed is not uniform at the plane" as an accuracy note.** It is not: D6's diagonal is
@@ -491,11 +507,13 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | `PlanarSolveSettings.Adaptive` | `null` (off) | OFF is bit-identical |
 | `PlanarSolveSettings.CurrentDensityPortNumber` / `…FrequencyHz` | null | captured during the existing sweep, no second factorisation |
 | `PlanarFillSettings.DirectVerticalKernel` | `false` | ẑẑ from `SommerfeldIntegral.EvaluateInterior`; skips the ρ/λ refusal and says so |
+| **`PlanarFillSettings.Aim`** | **`null` = OFF, but REACHABLE from the panel since 2026-08-14** | `EmSetup.AcceleratedSolve`, persisted in the `.cem`. **It MOVES the ceiling** (`brief-em-aim-ceiling.md`, 2026-08-14) — see `SurfaceMesher.AcceleratedUnknownCeiling` below — on a single-level mesh; a multi-level/via problem is refused by name regardless (`PlanarAimOperator.Build`), so the effective ceiling there is still the dense one. The refusal names turning it on as the first remedy whenever doing so would let the mesh run. |
 | `PlanarFillDiagnostics` / `ConformalDiagnostics` | `null` | instruments; fill is bit-identical with them attached |
 | `SurfaceMesher.PlanarRimGrading` | `None` | a **measurement seam, not a user control** — do not promote it |
 | `DefaultSliverAreaFraction` | 0.05 | conservative, on a plateau (0.005…0.05 identical at cells/λ = 130); **no conditioning cliff was located** |
 | `PlanarLevels.MaxElectricalLength` | **0.30** | bounds the **BASIS** (one z-rooftop per gap ⇒ uniform current), not the quadrature |
-| `SurfaceMesher.UnknownCeiling` | **5,000** | R17's per-mesh N ceiling, checked in three places |
+| `SurfaceMesher.UnknownCeiling` | **5,000** | R17's per-mesh N ceiling for the DENSE path, checked in three places. **A COMPILE-TIME CONSTANT, not a probe of the machine** — say so when it refuses; the megabytes it quotes read as a RAM limit and a 2026-08-14 owner report asked exactly that. **Does not move** — 16N² plus the LU's own cost is real. |
+| **`SurfaceMesher.AcceleratedUnknownCeiling`** | **12,000** | R17's ceiling for the ACCELERATED solve, single-level meshes only (`brief-em-aim-ceiling.md`, 2026-08-14) — see §8's own AIM paragraph and `HISTORY.md` §12's closing subsection for the measurement. **A de-embedded run's calibration-standard capacitance step is NOT accelerated** (`PlanarDeembed.StaticCapacitance` is always dense, out of this brief's scope) and can still refuse on a wide port even when the DUT's own solve would succeed — see that subsection's own limitation note. |
 | `QuasiStaticKernel` K-J dispersion | off | opt-in ctor flag, single microstrip only |
 
 - **`MaxLengthOverWidth` is RETIRED** (with `PlanarKernel.NarrowestViaFootprint`). Retiring it
@@ -680,8 +698,11 @@ premise was tested before it was built and its ceiling is 1.09–1.15×), **M4 i
 (290 → 392 entries per row over 12× N) and GMRES stays flat (2 → 6 iterations) on the accelerated
 product, but the FILL time falls far more slowly than the entry count, because AIM's near field keeps
 exactly the pairs L8c's singular-extraction machinery makes expensive. Time crossover N ≈ 3,700;
-58 MB against 223 MB there. What M5 still owes is measurement above N = 3,731 and on a via-bearing or
-cut mesh, plus a decision on whether R17's ceiling moves.
+58 MB against 223 MB there. **What M5 owed — measurement above N = 3,731, on a via-bearing or cut
+mesh, and a decision on whether R17's ceiling moves — is PAID, by `brief-em-aim-ceiling.md`
+(2026-08-14).** The ceiling moves, to **12,000, for the accelerated solve on a single-level mesh
+only**; see §8's own AIM paragraph for the number and §12's own closing subsection in `HISTORY.md`
+for the two ladders, the conformal check and the calibration-standard limit that decided it.
 
 
 ---
@@ -710,14 +731,46 @@ cut mesh, plus a decision on whether R17's ceiling moves.
   *time* crossover is much later (≈ N 3,700) and even past it the saving is only ~1.4× up to R17's
   5,000-unknown ceiling — because AIM's near field keeps exactly the pairs L8c's singular-extraction
   machinery already makes expensive, not the cheap far-field ones an entry-count reduction implies.
-  **The near-field radius must be 8 basis-supports, not the naive 3** — 3 cells degrades with N and
-  is beaten by no preconditioner at all on a refined mesh; 8 is flat (3–6 GMRES iterations across a
-  6.7× N range). Shipped defaults where it's turned on: projection order 3, auxiliary-grid pitch 0.5
-  of the largest basis support, near radius 6 supports. **Multi-level/via meshes are refused by
+  **These are two different measurements in two different units, and CLAUDE.md used to state them as
+  if they were one — corrected 2026-08-14 (brief-em-aim-ceiling.md §3).** §11's decision gate (the
+  question of whether an iterative solve converges AT ALL, run before a line of AIM existed) measured
+  a near-field radius in MESH CELLS on the dense matrix: **3 cells degrades with N and is beaten by no
+  preconditioner at all on a refined mesh; 8 cells is flat (3–6 GMRES iterations across a 6.7× N
+  range)**. That settled viability, nothing more. R-emp-17 (§12), on the accelerator that was actually
+  built, measured `PlanarAimSettings.NearRadiusFactor` in units of the LARGEST BASIS SUPPORT — a
+  different, coarser unit by construction — and its own order × radius table put the shipped default
+  at **radius 6 supports**, not 8: order 3 landed `|ΔI|` at 8.7e-7 there, inside L8c's own 5.0e-6 fill
+  accuracy, and radius 8 supports bought a further 3.6× for cost that table itself showed was not
+  worth spending. **`NearRadiusFactor = 6.0` in code is correct and was never the discrepancy; the
+  prose was the bug**, conflating the pre-build viability check's "8" with R-emp-17's shipped "6" as
+  though they were the same knob. Shipped defaults where it's turned on: projection order 3,
+  auxiliary-grid pitch 0.5 of the largest basis support, near radius 6 supports. **Multi-level/via
+  meshes are refused by
   name** — a ẑ basis needs a different grid kernel per height pairing, a separate phase. A
   non-converged GMRES throws rather than returning a smooth-but-wrong current distribution. Turning
   it on changes no provenance hash, same reasoning as the parallelism cap above.
+- **The ceiling MOVES for the accelerated solve, to `SurfaceMesher.AcceleratedUnknownCeiling` =
+  12,000, single-level meshes only** (`brief-em-aim-ceiling.md`, 2026-08-14 — the decision M5 left
+  open). Grown from N = 3,731 by two ladder constructions that told two different stories: growing a
+  part's LENGTH at the shipping mesh (the construction that matches how a real board gets big — a
+  wide-to-narrow taper included) stayed flat to N = 12,894 (near/row 392 → 399, GMRES 6 → 7 iterations,
+  accelerator working set 53 → 188 MB); refining the RESOLUTION at a FIXED footprint instead — the
+  brief's own trap check for a ladder that changes the mesh's CHARACTER rather than only its size — is
+  a genuinely different regime and broke: GMRES climbed 21 → 143 → 372 iterations as cells/λ went
+  80 → 100 → 120 (still converging), then FAILED to converge at cells/λ = 140 (N = 13,967). 12,000 sits
+  at the healthy construction's own top rung, with margin under the one that failed, and leans on
+  `PlanarAimOperator.Solve`'s own non-convergence throw as the backstop for the residual risk an
+  over-refined mesh still carries. A CONFORMALLY CUT mesh carries no penalty of its own (measured: 4-5
+  GMRES iterations, `|Δcurrent|` 1.6e-6 to 5.5e-5 across N = 1,538 to 2,232), so the ceiling does not
+  depend on `PlanarBoundaryCells`. **A de-embedded run's calibration-standard capacitance step is a
+  SEPARATE, always-DENSE m×m cell system** (`PlanarDeembed.StaticCapacitance`, out of this brief's
+  scope) that can still refuse on a wide port even when the DUT's own accelerated solve would succeed
+  — measured on the owner's own reported taper (§0), where the wide port's calibration standard alone
+  meshed at N = 6,466. `SurfaceMesher.Mesh`'s own `accelerated` parameter and `PlanarSolveContext`'s
+  constructor are the two places this is enforced, alongside the dense path's unchanged three
+  (`SurfaceMesher.Mesh`'s verdict, `PlanarSystem.GuardCeiling`, `PlanarFill.cs`'s own copy).
 
 Full derivations, every measured table, and the M3/Jacobi/3-cell negative results behind these
 numbers are in `HISTORY.md` §"Sections 8–12" — grep `AIM`, `MaxDegreeOfParallelism`, or
-`GammaBest`.
+`GammaBest`. The ceiling decision's own two ladders, the conformal check and the calibration-standard
+finding are in `HISTORY.md`'s closing AIM subsection — grep `AcceleratedUnknownCeiling`.

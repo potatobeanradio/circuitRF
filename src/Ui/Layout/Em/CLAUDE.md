@@ -283,10 +283,32 @@ no ground plane at all.
 ### R-msh-8a — name the analytic alternative, never refuse for it
 
 `PlanarExtractor.AnalyticAlternativeFor` maps a PCell generator id to the validated closed-form model
-that already covers it: MKLOPF → `MicrostripKlopfModel`, MTAPER → `MicrostripTaperModel`, MLIN →
+that also covers it: MKLOPF → `MicrostripKlopfModel`, MTAPER → `MicrostripTaperModel`, MLIN →
 `MicrostripLineModel`. The note rides through to `PlanarMeshReport.Notes` and is surfaced verbatim.
 **MBEND is deliberately absent** — `MicrostripBendModel` exists, but a bend is exactly the
 discontinuity kernel B is FOR, and R-pc-18 records that mitred and unmitred are distinct.
+
+**It had NEVER ONCE FIRED in the shipping application, from L8b until 2026-08-14.** `Extract`'s
+`generatorIds` parameter is optional, and **no caller in `src/` ever passed one** — so three mappings,
+their note and their test were live, correct and unreachable by any user. Found while diagnosing an
+owner report; the lesson generalises past this feature. **An optional parameter that carries a whole
+capability is a capability with no caller, and nothing fails when it has none.** The ids now come from
+`EmGeometry.Result.GeneratorIds`, read off `LayoutView.PCellSnapshots` (keyed by the generated cell's
+folder name — the last segment of the instance's `CellRef`) plus the view's own `PCellOrigin`. Two
+traps in that one lookup: **`Path.GetFileName` is wrong**, because a backslash is an ordinary filename
+character on Unix and these `.clay` files are routinely Windows-authored — split on both separators;
+and a **miss must stay silent**, since a cell with no snapshot simply contributes no id and the run
+behaves as it always did.
+
+**The wording is the owner's, and it points the OPPOSITE way from the original** (2026-08-14). The
+notes used to argue for the cheap model — *"already has a validated analytic model, which is
+effectively free"*. The only person who ever reads one has deliberately opened an EM setup on that
+part and pressed Simulate: they know the closed form exists, and being told so reads as being told
+they are wasting their time. Each `Reason` now says **what full-wave ADDS** (radiation and
+surface-wave loss along a flare, the end discontinuities, coupling to neighbouring metal) and what it
+will **not** move (the in-band behaviour the analytic model already integrates) — so a user can tell a
+confirming result from a wasted afternoon. `SurfaceMesher` no longer wraps them in a frame of its own.
+**Never reword these back into a recommendation**; `SurfaceMesherTests.T5_3b` fails if you do.
 
 ### D7 — the `.cem` says which analysis it is; there is no automatic selection
 
@@ -702,3 +724,37 @@ a core count and sees a different number needs to be able to rule this out immed
 appears only when the run actually fans out (de-embedding on, cap ≠ 1).
 
 Gate: `tests/Ui.Tests/Em/EmCoreCountTests.cs` (12 tests, ~0.1 s).
+
+## The accelerated solve — M5's accelerator gets a switch
+
+Owner request, 2026-08-14. `EmSetup.AcceleratedSolve` → `PlanarFillSettings.Aim`. M5 built the AIM
+accelerator, gated it and shipped it disabled **with no way to enable it short of editing
+`PlanarSolveSettings` in code**, so a capability that exists has been unreachable from the application
+since it landed — the same shape of loss as R-msh-8a's unpassed `generatorIds` above, found in the
+same afternoon.
+
+- **`.cem`** — `CemFile.AcceleratedSolve` is nullable and omitted at its default, exactly like
+  `DirectVerticalKernel` beside it, so a file written before this gains no byte. Asserted.
+- **It enters NO provenance hash**, on the core cap's reasoning (R-emp-7/8): with the accelerator's
+  own accuracy gates passed it changes how the answer is computed, not what it is. Asserted as a
+  negative, because that arrangement is what a later refactor quietly undoes.
+- **It does NOT call `InvalidateMesh()`, unlike every mesh control in this panel.** It picks a
+  *solver* for a mesh, and the mesh is the same one either way — invalidating would throw away a
+  report the user is reading. This is why it sits under **Solver options**, beside the vertical kernel
+  and the core cap, rather than in the Surface-mesh group.
+- **`EmRunService` composes the two fill terms onto ONE `fill` local.** Written as two independent
+  ternaries off `PlanarSolveSettings.Default.Fill`, turning the accelerator on silently discards
+  `DirectVerticalKernel`. Pinned by a source scan, since the alternative is a minutes-long solve.
+- **The label states the measured trade rather than selling it**: the win is MEMORY (~4× less working
+  set past N ≈ 900), the time crossover is much later (N ≈ 3,700), and **it DOES raise the unknown
+  ceiling, on a single-level mesh** — from 5,000 to 12,000 (`SurfaceMesher.AcceleratedUnknownCeiling`,
+  `docs/sonnet-briefs/brief-em-aim-ceiling.md`, 2026-08-14, the decision M5 left open). A multi-level
+  or via-bearing mesh is refused by name regardless, so the ceiling there is still 5,000; a de-embedded
+  run's calibration-standard capacitance step is a separate, always-dense computation this flag does
+  not reach and can still refuse a wide-port DUT past 5,000 — see that brief's own closing subsection
+  in `HISTORY.md`.
+- **Disabled by name on the cross-section kernel and on any multi-level/via layout** — the second is
+  the engine's own refusal (`PlanarSolve.SolveAt`), asked here as `PlanarProblem.RequiresGeneralKernel`
+  so the panel declines to arm a run that cannot start. It is not a second copy of the judgement.
+
+Gate: `tests/Ui.Tests/Em/AcceleratedSolveUiTests.cs` (7 tests, ~0.1 s).

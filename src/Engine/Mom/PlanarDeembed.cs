@@ -213,6 +213,9 @@ public static class PlanarDeembed
     public static double StaticCapacitance(PlanarMesh mesh, PlanarKernelTerms staticScalar,
                                            PlanarFillSettings? settings = null)
     {
+        ArgumentNullException.ThrowIfNull(mesh);
+        GuardCapacitanceCeiling(mesh);
+
         var st    = settings ?? PlanarFillSettings.Default;
         var cores = PlanarFill.BuildCores(mesh, st);
         var p     = PlanarFill.ScalarPotentialMatrix(cores, staticScalar.With(st.Order, cores.RhoFloorM));
@@ -230,6 +233,40 @@ public static class PlanarDeembed
         Complex total = Complex.Zero;
         for (int i = 0; i < m; i++) total += q[i];
         return total.Real;
+    }
+
+    /// <summary>
+    /// C2 (brief-em-deembed-ceiling-closeout.md) — <see cref="PlanarFill.BuildCores"/>'s own shared
+    /// guard asks about <c>mesh.Bases.Count</c> and quotes an n×n DENSE COMPLEX MATRIX, because that
+    /// is what its OTHER callers (<see cref="PlanarFill.Fill"/> / <c>PlanarSystem.Build</c>) go on to
+    /// allocate. <see cref="StaticCapacitance"/> never does: its own working set is TWO m×m complex
+    /// matrices over CELLS (<see cref="PlanarFill.ScalarPotentialMatrix"/>'s own P, then the copy this
+    /// method builds and factors) — a different, and materially smaller, number, because a mesh's
+    /// basis count runs roughly 2× its cell count (an ordinary tensor grid, same ratio §L8b's own N
+    /// report states generally). Measured, not estimated, on a real standard —
+    /// <c>EmDeembedCeilingTests</c> carries the ratio — exactly like §7's own "381 MB vs 607 MB"
+    /// defect this is the same class of: quote what a machine will actually see.
+    ///
+    /// <para>The THRESHOLD stays <see cref="SurfaceMesher.UnknownCeiling"/> asked of <c>n</c> —
+    /// unchanged, and deliberately so: <see cref="PlanarFill.BuildCores"/> is shared by callers for
+    /// whom <c>n</c> genuinely is the right question (its own guard's comment), and this does not
+    /// tighten or loosen that. It only replaces the MESSAGE a caller reaching the ceiling through
+    /// <see cref="StaticCapacitance"/> would otherwise see with one describing what this call site
+    /// actually allocates.</para>
+    /// </summary>
+    private static void GuardCapacitanceCeiling(PlanarMesh mesh)
+    {
+        int n = mesh.Bases.Count;
+        if (n <= SurfaceMesher.UnknownCeiling) return;
+
+        int m = mesh.Cells.Count;
+        double mb = 2.0 * m * (double)m * 16.0 / (1024.0 * 1024.0);
+        throw new InvalidOperationException(
+            $"This calibration standard's static capacitance solve (D7's reference impedance) needs " +
+            $"{m:N0} cells ({n:N0} basis functions), past the {SurfaceMesher.UnknownCeiling:N0}-" +
+            $"unknown ceiling — {mb:N0} MB for the two m×m complex matrices this solve holds at once " +
+            "(the potential-coefficient matrix and its own copy, factored by a general LU), not the " +
+            "n×n matrix PlanarFill's shared fill guard describes, because this solve never builds one.");
     }
 
     /// <summary>

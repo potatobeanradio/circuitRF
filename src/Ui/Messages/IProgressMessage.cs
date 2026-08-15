@@ -30,15 +30,21 @@ public interface IProgressMessage
 
     /// <summary>
     /// Settles the line: raises it to <paramref name="level"/> and APPENDS the outcome to the END of
-    /// the row — after the counter when there is one — keeping its bar.
+    /// the row — after the counter when there is one.
     ///
     /// <para>Appending rather than replacing is what keeps the finished row worth reading — it still
     /// names the analysis and the point count the run got through, with the outcome on the end,
-    /// instead of collapsing to a bare "complete" that says nothing about what was done. The bar
-    /// stays for the same reason, and an indeterminate one is pinned full so a finished row never
-    /// shows a still-animating bar.</para>
+    /// instead of collapsing to a bare "complete" that says nothing about what was done.</para>
+    ///
+    /// <para><paramref name="keepBar"/> (default <c>true</c>) keeps the bar visible, pinning an
+    /// indeterminate one full so a finished row never shows a still-animating bar — the original
+    /// behaviour, kept as the default for any future caller that wants it. Owner request,
+    /// 2026-08-14, extended the same day to every existing call site (EM, circuit Analysis, and
+    /// Mesh): pass <c>false</c> to drop the bar/percent entirely once the row settles, leaving only
+    /// the appended text — a completed run's row should read as text, not keep showing a
+    /// stalled-looking bar glyph.</para>
     /// </summary>
-    void Finish(MessageLevel level, string outcome);
+    void Finish(MessageLevel level, string outcome, bool keepBar = true);
 
     /// <summary>Settles the line by REPLACING its text and dropping its bar — for an outcome that
     /// makes the progress so far irrelevant rather than context for it.</summary>
@@ -54,7 +60,7 @@ internal sealed class PostOnlyProgressMessage(IMessageSink sink) : IProgressMess
 {
     public void Update(string text, string? counter = null, double? percentComplete = null, bool indeterminate = false) { }
 
-    public void Finish(MessageLevel level, string outcome) => sink.Post(level, outcome);
+    public void Finish(MessageLevel level, string outcome, bool keepBar = true) => sink.Post(level, outcome);
 
     public void Complete(MessageLevel level, string text) => sink.Post(level, text);
 }

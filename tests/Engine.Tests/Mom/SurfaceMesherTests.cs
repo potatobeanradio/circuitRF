@@ -425,19 +425,51 @@ public class SurfaceMesherTests
     public void T5_3_AnAnalyticAlternativeIsNOTED_NeverRefused()
     {
         // R-msh-8a: name the thing, name the alternative — the R-mom-17 shape applied to a COST.
+        //
+        // UPDATED 2026-08-14 on the owner's instruction, not loosened. The note used to be framed by
+        // this file as "X already has a validated analytic model, which is effectively free … this is
+        // a note about cost, not a refusal", and the frame is now gone: the whole sentence comes from
+        // the alternative's own Reason, which is written to say what FULL-WAVE ADDS. The reason is
+        // that the only person who ever sees this note has deliberately opened an EM setup on this
+        // part — telling them the cheap model exists reads as telling them they are wasting their
+        // time. What survives unchanged is the half this test is named for: it is a NOTE, and the
+        // mesh still solves.
         var problem = Fr4Hero() with
         {
             AnalyticAlternatives =
             [
                 new PlanarAnalyticAlternative("MKLOPF1", "MicrostripKlopfModel",
-                    "A Klopfenstein taper is a slowly-varying quasi-TEM structure."),
+                    "a Klopfenstein taper. What full-wave adds is radiation along the flare."),
             ],
         };
         var r = SurfaceMesher.Mesh(problem);
 
         Assert.True(r.CanSolve);
-        Assert.Contains(r.Notes, n => n.Contains("MicrostripKlopfModel") && n.Contains("MKLOPF1"));
-        Assert.Contains(r.Notes, n => n.Contains("not a refusal"));
+        Assert.Contains(r.Notes, n => n.StartsWith("MKLOPF1 — ", StringComparison.Ordinal)
+                                   && n.Contains("What full-wave adds"));
+    }
+
+    [Fact]
+    public void T5_3b_TheAnalyticAlternativeNote_DoesNotReadAsARECOMMENDATION()
+    {
+        // The owner's correction of 2026-08-14, asserted rather than left to wording discipline: the
+        // mesher must not editorialise about the alternative on top of whatever the alternative says
+        // about itself. A future edit that reinstates "already has a validated analytic model, which
+        // is effectively free" fails here rather than reaching a user who is standing in the EM setup
+        // precisely because they want the full-wave answer for this part.
+        var problem = Fr4Hero() with
+        {
+            AnalyticAlternatives =
+            [
+                new PlanarAnalyticAlternative("MKLOPF1", "MicrostripKlopfModel", "a Klopfenstein taper."),
+            ],
+        };
+        var note = Assert.Single(SurfaceMesher.Mesh(problem).Notes, n => n.Contains("MKLOPF1"));
+
+        Assert.Equal("MKLOPF1 — a Klopfenstein taper.", note);
+        foreach (string steer in new[] { "effectively free", "at no cost", "instead", "not needed",
+                                         "already has" })
+            Assert.DoesNotContain(steer, note, StringComparison.OrdinalIgnoreCase);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

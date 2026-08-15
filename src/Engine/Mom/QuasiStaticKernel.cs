@@ -274,16 +274,26 @@ public sealed class QuasiStaticKernel : IEmKernel
     public EmMeshReport Mesh(EmProblem problem, EmMeshSettings settings)
         => BoundaryMesher.Mesh(problem, settings);
 
+    /// <summary>The same, with a <see cref="SurfaceMesher.PlanarLengthFormat"/> — a genuine overload
+    /// rather than an optional parameter on the interface member above, since <see cref="IEmKernel"/>
+    /// fixes that one's signature. Owner request, 2026-08-15.</summary>
+    public EmMeshReport Mesh(EmProblem problem, EmMeshSettings settings,
+                             SurfaceMesher.PlanarLengthFormat? lengthFormat)
+        => BoundaryMesher.Mesh(problem, settings, lengthFormat);
+
     public DataSet Solve(EmProblem problem, EmMeshSettings settings, double[] freqsHz, CancellationToken ct)
         => SolveDetailed(problem, settings, freqsHz, ct).Data;
 
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — see <see cref="BoundaryMesher.Mesh"/>'s
+    /// own parameter of the same name.</param>
     public EmSolveResult SolveDetailed(EmProblem problem, EmMeshSettings settings,
-                                       double[] freqsHz, CancellationToken ct = default)
+                                       double[] freqsHz, CancellationToken ct = default,
+                                       SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         var ok = CanSolve(problem);
         if (!ok.Ok) throw new InvalidOperationException($"{Name} cannot solve this problem. {ok.Reason}");
 
-        var report = BoundaryMesher.Mesh(problem, settings);
+        var report = BoundaryMesher.Mesh(problem, settings, lengthFormat);
         var rlgc   = RlgcExtractor.Extract(problem, report);
 
         var ports = new List<EmPort>(problem.Ports);

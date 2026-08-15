@@ -118,3 +118,28 @@ public sealed record PlanarMeshReport(
     /// <summary>True when the problem may be handed to a solver — R17's gate, asked once.</summary>
     public bool CanSolve => Verdict != PlanarBudgetVerdict.Refused;
 }
+
+/// <summary>
+/// <b>R17's refusal, carrying the report that produced it.</b>
+///
+/// <para>It exists because of a measured failure, not for tidiness. The refusal leaves
+/// <see cref="PlanarKernel.Solve"/> as an exception, and every caller upstream can see is
+/// <c>ex.Message</c> — so the mesh report's own <see cref="PlanarMeshReport.Notes"/> were built,
+/// filled with exactly the sentences that explain the number (the narrowest conductor and how many
+/// cells it was meshed across, whether the edge mesh acted on anything at all, R-msh-8a's note about
+/// what full-wave is adding on this part), and then dropped on the floor. A user who ran the
+/// owner's 6.9 Ω Klopfenstein taper on 2026-08-14 got the ceiling and the megabytes and none of the
+/// diagnosis, and turned the one knob the message named — which on that geometry moves the unknown
+/// count by exactly zero.</para>
+///
+/// <para><b>A refusal is not an engine error and must not be reported as one.</b> The report rides
+/// along so the caller can surface the notes beside the message and classify the outcome correctly.</para>
+/// </summary>
+public sealed class PlanarMeshRefusedException : InvalidOperationException
+{
+    public PlanarMeshReport Report { get; }
+
+    public PlanarMeshRefusedException(PlanarMeshReport report)
+        : base(report.Refusal ?? "The mesh is over the R17 budget.")
+        => Report = report;
+}

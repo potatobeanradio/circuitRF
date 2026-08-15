@@ -109,7 +109,16 @@ public class EmMeshOverlayTests
         vm.Refresh();
         vm.BuildMeshCommand.Execute(null);
 
-        var engineReport = HeroMesh();
+        // The panel's own notes go through EmLengthFormat (owner request, 2026-08-15: every distance
+        // in an EM-run message respects the layout's display unit) — HeroSource()'s layout leaves
+        // DisplayUnit at its own default (Um), so the reference computation below has to use the same
+        // formatter to stay a fair "unmodified" comparison; the un-formatted 2-arg overload used
+        // elsewhere in this file is a DIFFERENT text (raw G4 metres) by design, not a discrepancy.
+        var r = CrossSectionExtractor.Extract(HeroLayout().Shapes, StarterTechnologies.Pcb2Layer(), Dbu, null);
+        Assert.True(r.Ok, r.Refusal);
+        var engineReport = new QuasiStaticKernel().Mesh(r.Problem!, EmMeshSettings.Default,
+            EmLengthFormat.For(LayoutUnit.Um, Dbu));
+
         Assert.Equal(engineReport.UnknownCount,         vm.MeshReport!.UnknownCount);
         Assert.Equal(engineReport.MinCellLength,        vm.MeshReport.MinCellLength, 12);
         Assert.Equal(engineReport.MaxCellLength,        vm.MeshReport.MaxCellLength, 12);

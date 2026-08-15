@@ -114,6 +114,14 @@ public sealed class CemFile
     /// byte-identically, exactly as <see cref="AnalysisKind"/> and <see cref="PlanarMesh"/> do.
     /// </summary>
     public bool?   DirectVerticalKernel  { get; set; }
+
+    /// <summary>
+    /// M5's accelerator — <b>null means off</b>, which is what every <c>.cem</c> written before it was
+    /// reachable means. Same nullable + omit-at-default rule as
+    /// <see cref="DirectVerticalKernel"/> directly above, so such a file loads AND re-serialises
+    /// byte-identically. That is an asserted property of this format, not a nicety.
+    /// </summary>
+    public bool?   AcceleratedSolve      { get; set; }
     public string? SnpOutputPathOverride { get; set; }
 
     /// <summary>
@@ -202,6 +210,7 @@ public static class EmSetupPersistence
         DispersionCorrection  = s.DispersionCorrection,
         AdaptiveSampling      = s.AdaptiveSampling ? null : false,
         DirectVerticalKernel  = s.DirectVerticalKernel ? true : null,
+        AcceleratedSolve      = s.AcceleratedSolve ? true : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         AnalysisKind          = s.AnalysisKind == EmAnalysisKind.Auto ? null : s.AnalysisKind,
         PlanarMesh            = s.PlanarMesh == PlanarMeshSettings.Default ? null : new CemPlanarMesh
@@ -236,6 +245,7 @@ public static class EmSetupPersistence
         DispersionCorrection  = f.DispersionCorrection,
         AdaptiveSampling      = f.AdaptiveSampling ?? true,
         DirectVerticalKernel  = f.DirectVerticalKernel ?? false,
+        AcceleratedSolve      = f.AcceleratedSolve ?? false,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         PlanarMesh            = f.PlanarMesh is { } pm

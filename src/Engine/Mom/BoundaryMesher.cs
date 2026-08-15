@@ -36,10 +36,22 @@ public static class BoundaryMesher
     /// Mesh a problem. Assumes <see cref="QuasiStaticKernel.CanSolve"/> has already accepted it;
     /// it is defensive about degenerate geometry only to the extent needed not to divide by zero.
     /// </summary>
-    public static EmMeshReport Mesh(EmProblem problem, EmMeshSettings settings)
+    /// <summary>Kernel A's own default: the existing <c>{v:G4} m</c> spelling, byte for byte, so
+    /// every caller that passes no formatter keeps the text it always had.</summary>
+    private static string DefaultLengthFormat(double v) =>
+        v.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) + " m";
+
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — every distance this report's notes
+    /// quote goes through this. <c>null</c> is kernel A's own pre-existing <c>{v:G4} m</c> text; a UI
+    /// caller with a layout open supplies one that reads in the layout's own display unit instead.
+    /// See <see cref="SurfaceMesher.PlanarLengthFormat"/> — the same delegate type, shared with kernel
+    /// B rather than a second one invented for this file.</param>
+    public static EmMeshReport Mesh(EmProblem problem, EmMeshSettings settings,
+                                    SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(settings);
+        var fmt = lengthFormat ?? DefaultLengthFormat;
 
         var outlines = new List<IReadOnlyList<EmPoint>>(problem.Conductors.Count);
         var names    = new List<string>(problem.Conductors.Count);
@@ -63,7 +75,7 @@ public static class BoundaryMesher
         var notes = new List<string>();
 
         // ── conductor perimeters ──────────────────────────────────────────────────────────────
-        var interfaceYs = InterfaceYs(problem, tol, notes);
+        var interfaceYs = InterfaceYs(problem, tol, notes, fmt);
         var template    = BuildConductorTemplate(outlines, settings, interfaceYs, tol);
         var segments    = new List<EmSegment>();
         segments.AddRange(BuildConductorSegments(outlines, template,
@@ -132,7 +144,7 @@ public static class BoundaryMesher
         }
 
         notes.Add($"Dielectric interfaces truncated {settings.TruncationHeights:G3} substrate heights " +
-                  $"({truncation:G4} m) beyond the outermost conductor on each side.");
+                  $"({fmt(truncation)}) beyond the outermost conductor on each side.");
 
         var mesh = new EmMesh(segments, names, problem.Ground);
         return new EmMeshReport(
@@ -351,7 +363,8 @@ public static class BoundaryMesher
 
     // ── interfaces ────────────────────────────────────────────────────────────────────────────
 
-    private static List<double> InterfaceYs(EmProblem problem, double tol, List<string> notes)
+    private static List<double> InterfaceYs(EmProblem problem, double tol, List<string> notes,
+                                            SurfaceMesher.PlanarLengthFormat fmt)
     {
         var ys = new List<double>();
         for (int i = 0; i + 1 < problem.Regions.Count; i++)
@@ -365,7 +378,7 @@ public static class BoundaryMesher
             // The image already enforces φ = 0 there exactly, dielectrics included.
             if (problem.Ground is not null && Math.Abs(y - problem.Ground.Y) <= tol)
             {
-                notes.Add($"Dielectric interface at y = {y:G4} m coincides with the ground plane and was " +
+                notes.Add($"Dielectric interface at y = {fmt(y)} coincides with the ground plane and was " +
                           "dropped — the exact image already enforces φ = 0 there.");
                 continue;
             }

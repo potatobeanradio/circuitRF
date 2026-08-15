@@ -128,7 +128,22 @@
                 <!-- TWO rows, not three (owner request, 2026-08-11). The name and the output file
                      share a line; the layout reference gets the second one. -->
                 <StackPanel Grid.Column="0" Orientation="Vertical" Margin="0,0,14,0">
-                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10">
+                    <!-- Owner report, 2026-08-14: "the Output file '…' picker button is hugging the
+                         Mesh button; it needs to hug its related text box (with some padding)."
+                         The picker sat in a trailing Auto column with the TextBox in the STAR column,
+                         and the TextBox is HorizontalAlignment=Left with MaxWidth 420 — so every pixel
+                         of surplus width opened up BETWEEN the box and its own button, parking the
+                         button against the Mesh/Simulate cluster it has nothing to do with.
+
+                         Fixed by moving the star to a TRAILING SPACER column: the label, the box and
+                         its picker are now consecutive Auto columns, so the picker is always exactly
+                         one ColumnSpacing from the box it belongs to, and the surplus collects on the
+                         far side where it belongs. **The 2026-08-09 collision does not come back** —
+                         what protects against it is that each element is still its OWN grid column
+                         (never a StackPanel, which hands children unbounded width along its axis), so
+                         under squeeze the empty spacer yields first and then the TextBox compresses to
+                         its MinWidth and clips inside its own box, exactly as before. -->
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
                         <TextBlock Grid.Column="0"
                                    Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
@@ -144,8 +159,7 @@
                                  Text="{Binding ViewModel.SnpOutputPathText}"
                                  PlaceholderText="{Binding ViewModel.SnpOutputPlaceholder}"
                                  FontSize="11" Padding="4,2"
-                                 MinWidth="80" MaxWidth="420"
-                                 HorizontalAlignment="Left"
+                                 MinWidth="20" MaxWidth="210" Width="120"
                                  VerticalAlignment="Center"
                                  ToolTip.Tip="Where the s-parameters are written. Blank uses the layout's own name with an .sNp suffix, in the workspace's results folder. A relative path is taken from there; an absolute path is used as given. The .sNp suffix is added from the port count, so you do not need to type it."/>
                         <Button Grid.Column="3" Name="BrowseSnpOutputButton" Classes="ellipsis" Content="…"
@@ -583,6 +597,10 @@
                                Text="{Binding ViewModel.TruncationTailCellsText}"
                                LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                 </Grid>
+                <TextBlock FontSize="10" TextWrapping="Wrap"
+                           Foreground="{DynamicResource CrfWarningBrush}"
+                           Text="{Binding ViewModel.MeshFieldError}"
+                           IsVisible="{Binding ViewModel.MeshFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
                 <!-- R-em-16: the engine's own report, VERBATIM. -->
                 <TextBlock Classes="sect" Text="Mesh report"
@@ -654,6 +672,10 @@
                                    Text="{Binding ViewModel.MeshFrequencyUnit}"/>
                     </StackPanel>
                 </Grid>
+                <TextBlock FontSize="10" TextWrapping="Wrap"
+                           Foreground="{DynamicResource CrfWarningBrush}"
+                           Text="{Binding ViewModel.PlanarMeshFieldError}"
+                           IsVisible="{Binding ViewModel.PlanarMeshFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                 <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
                            Text="{Binding ViewModel.PlanarMeshSummary}"
                            IsVisible="{Binding ViewModel.PlanarMeshReport, Converter={x:Static ObjectConverters.IsNotNull}}"/>
@@ -692,6 +714,25 @@
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.DirectVerticalKernelDisabledReason}"
                            IsVisible="{Binding ViewModel.DirectVerticalKernelDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                <!-- ── M5's accelerator — its FIRST user-reachable switch (owner request, 2026-08-14).
+                     Under Solver options rather than Surface mesh on purpose: it picks how the same
+                     mesh is solved, changes no cell, and therefore does not invalidate the mesh.
+
+                     The label states the measured trade rather than selling the feature. The win is
+                     MEMORY, not time (~4x less working set past N ~ 900; the time crossover is around
+                     N ~ 3,700), and it does NOT raise the unknown ceiling - a mesh over 5,000 unknowns
+                     is refused before any solver is chosen. Saying otherwise here would send a user
+                     straight back into the refusal that sent them looking. -->
+                <TextBlock Classes="colhdr" Margin="0,8,0,0" Text="Accelerated solve"/>
+                <CheckBox Name="AcceleratedSolveCheck" FontSize="11"
+                          Content="Use the AIM accelerator (much less memory; faster only on large meshes)"
+                          IsChecked="{Binding ViewModel.AcceleratedSolve}"
+                          IsEnabled="{Binding ViewModel.AcceleratedSolveDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
+                          ToolTip.Tip="Solves the same system iteratively against a grid-accelerated matrix-vector product instead of forming and factoring the full dense matrix. It computes the same answer a different way, to its own accuracy gates. The win is working-set memory - roughly 4x less past about 900 unknowns - while the time crossover is much later, around 3,700 unknowns; below that the dense path is faster. It does NOT raise the unknown ceiling: a mesh past the ceiling is refused before a solver is chosen. Single metal level only, no vias."/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.AcceleratedSolveDisabledReason}"
+                           IsVisible="{Binding ViewModel.AcceleratedSolveDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
                 <!-- ── Dispersion (disabled with a stated reason) ───────────── -->
                 <TextBlock Classes="colhdr" Margin="0,8,0,0" Text="Dispersion"/>

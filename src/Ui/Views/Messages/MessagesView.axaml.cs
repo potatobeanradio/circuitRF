@@ -46,14 +46,25 @@ public partial class MessagesView : UserControl
             }
         });
 
+    /// <summary>
+    /// Bug report, 2026-08-14: "sometimes the Messages window does not scroll all the way to
+    /// bottom after a new message is posted." <c>ObservableCollection&lt;T&gt;.CollectionChanged</c>
+    /// fires the instant the item is added to the model — BEFORE Avalonia has run a layout pass for
+    /// it, so the ListBox's <c>ScrollViewer.Extent</c> still reflects the size WITHOUT the new row.
+    /// Calling <c>ScrollToEnd()</c> synchronously here scrolls to what was the bottom a moment ago,
+    /// not the new one — visible whenever the new row adds height (wrapped text, a fresh live-progress
+    /// row) rather than landing exactly where the old bottom already was. Deferred to
+    /// <c>DispatcherPriority.Loaded</c>, the same fix already used for this exact class of race
+    /// in <see cref="CircuitRF.Ui.Views.DataDisplay.PlotInspectorView.ScrollToEnd"/> — that priority
+    /// runs after the pending layout pass, so <c>Extent</c> is current by the time this reads it.
+    /// </summary>
     private void ScrollToBottom()
-    {
-        // Find the ListBox and scroll its ScrollViewer to the end.
-        var listBox = this.FindControl<ListBox>("MessagesListBox");
-        if (listBox is null) return;
-        var scroll = listBox.FindDescendantOfType<ScrollViewer>();
-        scroll?.ScrollToEnd();
-    }
+        => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            var listBox = this.FindControl<ListBox>("MessagesListBox");
+            var scroll  = listBox?.FindDescendantOfType<ScrollViewer>();
+            scroll?.ScrollToEnd();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
 
     private void OnRevealPathTapped(object? sender, TappedEventArgs e)
     {

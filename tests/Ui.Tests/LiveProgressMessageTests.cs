@@ -127,6 +127,45 @@ public sealed class LiveProgressMessageTests
         Assert.Equal(47.3, entry.ProgressValue);
     }
 
+    /// <summary>
+    /// Owner request, 2026-08-14: "the simulation progress bar glyph should be removed from the
+    /// Messages window (both EM and Analysis) after the simulation is complete. The text that says
+    /// simulation is complete should remain." <c>keepBar: false</c> is what
+    /// <see cref="WorkspaceViewModel"/>'s Analysis-run and EM-run completions now pass — the outcome
+    /// is still appended exactly like the default (<c>true</c>) path, but the bar itself (and the
+    /// indeterminate spinner) goes.
+    /// </summary>
+    [Fact]
+    public void Finish_WithKeepBarFalse_DropsTheBar_ButKeepsTheAppendedText()
+    {
+        var (live, entry) = NewLive("Running…");
+
+        live.Update("Running 'Amp' — DC1", "2,525 / 2,525", 100);
+        live.Finish(MessageLevel.Success, "1 analysis run(s) complete", keepBar: false);
+
+        Assert.Equal(MessageLevel.Success, entry.Level);
+        Assert.Equal("Running 'Amp' — DC1", entry.Text);
+        Assert.Equal("2,525 / 2,525 - 1 analysis run(s) complete", entry.ProgressText);
+        Assert.True(entry.HasProgressText);   // the text survives...
+        Assert.False(entry.HasProgress);      // ...but the ProgressBar itself (bound to HasProgress) is gone
+        Assert.False(entry.ProgressIndeterminate);
+    }
+
+    /// <summary>Same as above for an indeterminate run (no counter) — the outcome lands in
+    /// <see cref="MessageEntry.Text"/> instead, and the bar still drops.</summary>
+    [Fact]
+    public void Finish_WithKeepBarFalse_AndNoCounter_DropsTheBar()
+    {
+        var (live, entry) = NewLive("Running…");
+
+        live.Update("Running 'Amp' — HB1…", indeterminate: true);
+        live.Finish(MessageLevel.Success, "1 analysis run(s) complete", keepBar: false);
+
+        Assert.Equal("Running 'Amp' — HB1… - 1 analysis run(s) complete", entry.Text);
+        Assert.False(entry.HasProgress);
+        Assert.False(entry.ProgressIndeterminate);
+    }
+
     [Fact]
     public void Complete_ReplacesTheText_AndDropsTheBar()
     {

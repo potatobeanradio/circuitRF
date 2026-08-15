@@ -219,7 +219,11 @@ public partial class PlotCanvasView : UserControl
         var display = Display;
         if (display is null) return;
 
-        double factor = e.Delta.Y > 0 ? 1.0 / CanvasZoomStep : CanvasZoomStep;
+        // DataDisplayViewModel.ZoomAtPoint multiplies (factor > 1 zooms in), unlike the other
+        // canvases' divide-by-factor convention — so this ternary must be the OPPOSITE of theirs to
+        // land on the same on-screen direction. Every other document (schematic, layout, symbol
+        // editor, wBond profile) zooms IN on Delta.Y > 0; this canvas used to zoom OUT instead.
+        double factor = e.Delta.Y > 0 ? CanvasZoomStep : 1.0 / CanvasZoomStep;
         var    cursor = e.GetPosition(_plotCanvas);
         display.ZoomAtPoint(cursor.X, cursor.Y, factor);
 

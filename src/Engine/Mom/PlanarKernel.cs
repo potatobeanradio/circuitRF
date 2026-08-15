@@ -206,9 +206,16 @@ public sealed class PlanarKernel
 
     /// <summary>The pre-solve mesh and R17's verdict — §10.5's "report the unknown count before
     /// solving", which is L8b's own product and is simply forwarded.</summary>
+    /// <param name="accelerated">brief-em-aim-ceiling.md — whether the accelerated solve will be used,
+    /// so the verdict is judged against the right ceiling. See <see cref="SurfaceMesher.Mesh"/>'s own
+    /// parameter of the same name.</param>
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — see <see cref="SurfaceMesher.Mesh"/>'s
+    /// own parameter of the same name.</param>
     public PlanarMeshReport Mesh(PlanarProblem problem, PlanarMeshSettings settings,
-                                RunControl? control = null)
-        => SurfaceMesher.Mesh(problem, settings, PlanarEdgeReference.ConductorWidth, control);
+                                RunControl? control = null, bool accelerated = false,
+                                SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
+        => SurfaceMesher.Mesh(problem, settings, PlanarEdgeReference.ConductorWidth, control,
+                              accelerated: accelerated, lengthFormat: lengthFormat);
 
     /// <summary>
     /// Mesh → resolve ports → sweep → <see cref="DataSet"/>.
@@ -220,6 +227,9 @@ public sealed class PlanarKernel
     /// says they may be</b>, which <see cref="PlanarSolve"/> already decides port by port. Sharing one
     /// across two DIFFERENT feed cross-sections is the trap L8d's own D4 exists for — it moved a
     /// supposedly invariant answer by 1.8e-1 — so nothing here shares one on its own initiative.</para>
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — every distance any message from this
+    /// run quotes goes through this. See <see cref="SurfaceMesher.Mesh"/>'s own parameter of the same
+    /// name.</param>
     public PlanarKernelResult Solve(
         PlanarProblem              problem,
         PlanarMeshSettings         meshSettings,
@@ -227,7 +237,8 @@ public sealed class PlanarKernel
         IReadOnlyList<double>      freqsHz,
         PlanarSolveSettings?       settings = null,
         CancellationToken          ct       = default,
-        RunControl?                control  = null)
+        RunControl?                control  = null,
+        SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
@@ -250,14 +261,14 @@ public sealed class PlanarKernel
         // that is already uniform grows nothing, which is what keeps every recorded number
         // reproducible. See PlanarFeedExtension's header.
         var (meshed, leads, feedNotes) =
-            PlanarFeedExtension.Extend(problem, ports, st.Calibration);
+            PlanarFeedExtension.Extend(problem, ports, st.Calibration, lengthFormat);
 
         // Meshing is fast next to the sweep but is not instant, and it is the first thing that
         // happens after the user presses Simulate — so it gets its own named stage rather than
         // leaving the row saying nothing until the first frequency lands.
-        var report = Mesh(meshed, meshSettings, control);
-        if (!report.CanSolve)
-            throw new InvalidOperationException(report.Refusal ?? "The mesh is over the R17 budget.");
+        var report = Mesh(meshed, meshSettings, control, accelerated: st.Fill?.Aim is not null,
+                          lengthFormat: lengthFormat);
+        if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
 
         ct.ThrowIfCancellationRequested();
 
@@ -276,7 +287,8 @@ public sealed class PlanarKernel
         var midpoint = MidpointRuleVerdict(meshed, fHi);
         if (!midpoint.Ok) throw new InvalidOperationException(midpoint.Reason);
 
-        var sweep = PlanarSolve.Run(meshed, report.Mesh, resolved, freqsHz, st, control, leads);
+        var sweep = PlanarSolve.Run(meshed, report.Mesh, resolved, freqsHz, st, control, leads,
+                                    lengthFormat);
 
         var notes = new List<string>(report.Notes);
         notes.AddRange(feedNotes);
@@ -302,13 +314,16 @@ public sealed class PlanarKernel
     /// matrix at 4.6 MB on §10.7's hero and 371 MB at R17's ceiling; keeping one per frequency is not
     /// a trade this kernel makes).
     /// </summary>
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — see <see cref="SurfaceMesher.Mesh"/>'s
+    /// own parameter of the same name.</param>
     public PlanarCurrentDensityMap CurrentDensityAt(
         PlanarProblem              problem,
         PlanarMeshSettings         meshSettings,
         IReadOnlyList<PlanarPort>  ports,
         double                     fHz,
         int                        drivenPortNumber,
-        PlanarSolveSettings?       settings = null)
+        PlanarSolveSettings?       settings = null,
+        SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
@@ -319,11 +334,11 @@ public sealed class PlanarKernel
         // different structure than the sweep beside it: Solve() meshes the extended problem, so a
         // recomputed map that meshed the drawn one would disagree with the currents the sweep kept,
         // cell for cell, for no visible reason.
-        var meshed = PlanarFeedExtension.Extend(problem, ports, st0.Calibration).Problem;
+        var meshed = PlanarFeedExtension.Extend(problem, ports, st0.Calibration, lengthFormat).Problem;
 
-        var report   = Mesh(meshed, meshSettings);
-        if (!report.CanSolve)
-            throw new InvalidOperationException(report.Refusal ?? "The mesh is over the R17 budget.");
+        var report   = Mesh(meshed, meshSettings, accelerated: st0.Fill?.Aim is not null,
+                            lengthFormat: lengthFormat);
+        if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
 
         var resolved = PlanarPorts.ResolveAll(report.Mesh, ports);
         int j = -1;

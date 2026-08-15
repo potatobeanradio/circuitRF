@@ -125,9 +125,13 @@ public sealed class PlanarSolveContext
         Settings = settings ?? PlanarFillSettings.Default;
 
         // R-fil-10, before the core allocates. The accelerator holds no N×N anything, so the DENSE
-        // ceiling is the wrong question to ask of it — but the mesher's own N ceiling is still the
-        // ceiling, and widening it is a separate, measured act rather than a side effect of M5.
-        PlanarSystem.GuardCeiling(mesh.Bases.Count);
+        // ceiling is the wrong question to ask of it — brief-em-aim-ceiling.md answered what the
+        // right one is (AcceleratedUnknownCeiling), and it applies only on a single-level mesh: a
+        // multi-level/via problem carries a non-null Levels and the accelerator refuses it by name
+        // regardless of Settings.Aim (PlanarSolveContext.SolveAt), so asking for the wider ceiling
+        // there would promise a run that cannot start.
+        bool accelerated = Settings.Aim is not null && levels is null;
+        SurfaceMesher.GuardCeiling(mesh.Bases.Count, accelerated);
 
         Cores = Settings.Aim is null
             ? PlanarFill.BuildCores(mesh, Settings)
@@ -612,9 +616,9 @@ public static class PlanarSolve
     public static PlanarSolveResult Run(
         PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports, GroundedSlab slab,
         IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings = null,
-        RunControl? control = null)
+        RunControl? control = null, SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
         => Run(new PlanarProblem([new PlanarConductorLayer("Metal", [], 0, 0)], slab, 0),
-               mesh, ports, freqsHz, settings, control);
+               mesh, ports, freqsHz, settings, control, lengthFormat: lengthFormat);
 
     /// <summary>
     /// <b>L9d/M1 — the same sweep for a problem of any level count.</b> Which kernel each frequency
@@ -631,12 +635,16 @@ public static class PlanarSolve
     /// needed none. Each one is peeled back off the de-embedded matrix
     /// (<see cref="PlanarFeedExtension.Peel"/>) so the published reference planes are the user's own
     /// drawn metal edges.</param>
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — every distance this sweep's own notes
+    /// quote (feed leads, port peels, via z-extents, layer thicknesses) goes through this. See
+    /// <see cref="SurfaceMesher.Mesh"/>'s own parameter of the same name.</param>
     public static PlanarSolveResult Run(
         PlanarProblem problem,
         PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports,
         IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings = null,
         RunControl? control = null,
-        IReadOnlyList<PlanarFeedLead>? leads = null)
+        IReadOnlyList<PlanarFeedLead>? leads = null,
+        SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
@@ -646,6 +654,7 @@ public static class PlanarSolve
         if (freqsHz.Count == 0) throw new ArgumentException("A sweep needs at least one frequency.", nameof(freqsHz));
 
         var st    = settings ?? PlanarSolveSettings.Default;
+        var fmt   = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;
         var notes = new List<string>();
 
         // Ascending, because both branch resolutions are continuations (PlanarPortCalibrator).
@@ -698,7 +707,7 @@ public static class PlanarSolve
         // different instructions and only one of them is the right one.
         if (general)
         {
-            var (verdict, scoped) = VerticalRangeVerdict(problem, mesh, fHi, st.Fill);
+            var (verdict, scoped) = VerticalRangeVerdict(problem, mesh, fHi, st.Fill, fmt);
             if (!verdict.Ok) throw new InvalidOperationException(verdict.Reason);
             notes.AddRange(scoped);
         }
@@ -759,9 +768,9 @@ public static class PlanarSolve
                 if (d < 0)
                 {
                     notes.Add(
-                        $"Port {ports[i].Number}'s automatic feed lead ({SurfaceMesher.Eng(lead.LengthM)}m) " +
+                        $"Port {ports[i].Number}'s automatic feed lead ({fmt(lead.LengthM)}) " +
                         $"is shorter than the outermost mesh cell, so its reference plane sits " +
-                        $"{SurfaceMesher.Eng(-d)}m INSIDE your drawn metal rather than on its edge. Raise " +
+                        $"{fmt(-d)} INSIDE your drawn metal rather than on its edge. Raise " +
                         "Cells per wavelength — a finer mesh at the port puts the plane back on the edge.");
                     continue;
                 }
@@ -771,7 +780,7 @@ public static class PlanarSolve
             var moved = new List<string>();
             for (int i = 0; i < ports.Count; i++)
                 if (peelM[i] > 0)
-                    moved.Add($"port {ports[i].Number} by {SurfaceMesher.Eng(peelM[i])}m");
+                    moved.Add($"port {ports[i].Number} by {fmt(peelM[i])}");
             if (moved.Count > 0)
                 notes.Add("The automatic feed lead is peeled back off the de-embedded matrix as a " +
                           "matched section in the line's own Z_c, using the γ the calibration measured " +
@@ -810,8 +819,8 @@ public static class PlanarSolve
                     if (general && !problem.LevelIsOnSlabTop(ports[i].LayerIndex))
                         throw new InvalidOperationException(
                             $"Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at " +
-                            $"z = {SurfaceMesher.Eng(problem.LevelZ(ports[i].LayerIndex))}m, which is not " +
-                            $"the top surface of the grounded slab ({SurfaceMesher.Eng(slab.HeightM)}m). " +
+                            $"z = {fmt(problem.LevelZ(ports[i].LayerIndex))}, which is not " +
+                            $"the top surface of the grounded slab ({fmt(slab.HeightM)}). " +
                             "De-embedding references the answer to the line's own Z_c = γ/(jωC_pul), " +
                             "and C_pul comes from differencing two electrostatic solves that use an " +
                             "IMAGE SERIES over the slab — correct for a line on the slab's top surface, " +
@@ -846,6 +855,36 @@ public static class PlanarSolve
             int totalN = 0;
             foreach (int n in sizes) totalN += n;
 
+            // ── R-dcl-1..4 (brief-em-deembed-ceiling-closeout.md) — refuse a de-embedded run AT
+            // SETUP, honestly, rather than let it succeed here and throw twenty real minutes later
+            // out of PlanarDeembed.CapacitancePerMetre. D7's reference impedance needs a static
+            // ω → 0 capacitance solve on EACH calibration standard (PlanarDeembed.StaticCapacitance
+            // → PlanarFill.BuildCores), and that solve is ALWAYS dense: it is a structurally
+            // different m×m system over CELLS, not the N×N frequency-domain basis system the
+            // accelerated solve covers, so turning the accelerator on does not move THIS ceiling
+            // even when it moved the DUT's. A calibration standard reproduces the DUT's own
+            // transverse gridlines VERBATIM (D4), so a wide-port DUT's standard can be as large as
+            // the DUT itself or larger — the mesh remedies §0 of the parent brief already measured
+            // inert on this class of geometry are not offered here either, for the same reason.
+            for (int ci = 0; ci < calibrators.Count; ci++)
+                foreach (var std in calibrators[ci].Standards)
+                {
+                    int nStd = std.Mesh.Bases.Count;
+                    if (nStd <= SurfaceMesher.UnknownCeiling) continue;
+
+                    throw new InvalidOperationException(
+                        $"Port {owners[ci].Number}'s calibration standard needs {nStd:N0} unknowns to " +
+                        $"solve for its reference impedance, past the {SurfaceMesher.UnknownCeiling:N0}-" +
+                        "unknown ceiling. This is de-embedding's OWN static capacitance solve " +
+                        "(Z_c = γ/(jωC_pul)), not the DUT's frequency-domain system — it is always " +
+                        "dense, so turning on the accelerated solve will NOT help here even though it " +
+                        "let the DUT's own mesh through. Turn de-embedding off and read the raw solve " +
+                        "instead: those s-parameters include the port discontinuity rather than being " +
+                        "the structure's own response, and are for diagnostics only. The DUT's own " +
+                        $"mesh is N = {mesh.Bases.Count:N0}; the calibration standard(s) this run " +
+                        $"needs are N = {string.Join(" / ", sizes)}.");
+                }
+
             notes.Add($"De-embedding costs {calibrators.Count} calibration(s) over {ports.Count} port(s), " +
                       $"{standards} standard mesh(es) of N = {string.Join(" / ", sizes)} against the DUT's " +
                       $"N = {mesh.Bases.Count} — {(double)totalN / Math.Max(mesh.Bases.Count, 1):F2}× the " +
@@ -868,7 +907,7 @@ public static class PlanarSolve
                           ". The core count is a machine setting and changes no answer: the same sweep at " +
                           "any cap produces bit-identical s-parameters.");
 
-            if (general) notes.Add(GeneralStackCalibrationNote(problem, ports));
+            if (general) notes.Add(GeneralStackCalibrationNote(problem, ports, fmt));
         }
         else notes.Add("De-embedding is OFF: these s-parameters include the port discontinuity and are " +
                        "NOT the structure's response. This path exists for diagnostics only.");
@@ -1341,7 +1380,8 @@ public static class PlanarSolve
     /// C_pul neglects everything above the port's own level.
     /// </summary>
     private static string GeneralStackCalibrationNote(
-        PlanarProblem problem, IReadOnlyList<PlanarPortResolution> ports)
+        PlanarProblem problem, IReadOnlyList<PlanarPortResolution> ports,
+        SurfaceMesher.PlanarLengthFormat fmt)
     {
         var stack = problem.EffectiveStack;
         double zPort = problem.LevelZ(ports[0].LayerIndex);
@@ -1349,7 +1389,7 @@ public static class PlanarSolve
         var above = new List<string>();
         for (int i = 0; i < stack.Layers.Count; i++)
             if (stack.InterfaceZ[i] >= zPort - 1e-15)
-                above.Add($"{SurfaceMesher.Eng(stack.Layers[i].ThicknessM)}m of " +
+                above.Add($"{fmt(stack.Layers[i].ThicknessM)} of " +
                           $"εᵣ = {stack.Layers[i].Material.EpsR:G4}");
 
         return "The calibration standards are SINGLE-LEVEL uniform lines on the port's own level — a " +
@@ -1393,10 +1433,12 @@ public static class PlanarSolve
     /// a pre-flight verdict is worth having before committing to a sweep.</para>
     /// </summary>
     public static (EmSuitability Verdict, List<string> Notes) VerticalRangeVerdict(
-        PlanarProblem problem, PlanarMesh mesh, double fHiHz, PlanarFillSettings? fill = null)
+        PlanarProblem problem, PlanarMesh mesh, double fHiHz, PlanarFillSettings? fill = null,
+        SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         var notes  = new List<string>();
         double lam = EmConstants.C0 / fHiHz;
+        var    fmt = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;
 
         // ── The ẑẑ block, and ONLY it ─────────────────────────────────────────────────────────
         //
@@ -1445,11 +1487,11 @@ public static class PlanarSolve
             }
             else if (!range.Ok)
                 return (EmSuitability.No(
-                    $"This structure's vertical (via) current spans {SurfaceMesher.Eng(extent)}m " +
+                    $"This structure's vertical (via) current spans {fmt(extent)} " +
                     $"between its most distant VIA FOOTPRINT cells, which at " +
                     $"{SurfaceMesher.Eng(fHiHz)}Hz is ρ/λ = {extent / lam:G3}. This is a separation " +
                     $"between VIAS, not the size of the board: the mesh itself is " +
-                    $"{SurfaceMesher.Eng(Diagonal(mesh))}m across and that is NOT what is refused " +
+                    $"{fmt(Diagonal(mesh))} across and that is NOT what is refused " +
                     $"here. Bringing the vias closer together, or lowering the sweep's top, acts on " +
                     $"this; shrinking the surrounding metal does not. Alternatively set " +
                     $"PlanarFillSettings.DirectVerticalKernel, which replaces the FIT with direct " +
@@ -1457,9 +1499,9 @@ public static class PlanarSolve
                     $"far slower (see M2's own cost measurement). " + range.Reason), notes);
 
             else notes.Add(
-                $"G_A^zz's range was checked over the via footprints ({SurfaceMesher.Eng(extent)}m, " +
+                $"G_A^zz's range was checked over the via footprints ({fmt(extent)}, " +
                 $"ρ/λ = {extent / lam:G3}) rather than over the whole mesh " +
-                $"({SurfaceMesher.Eng(Diagonal(mesh))}m, ρ/λ = {Diagonal(mesh) / lam:G3}) — that " +
+                $"({fmt(Diagonal(mesh))}, ρ/λ = {Diagonal(mesh) / lam:G3}) — that " +
                 $"kernel is only ever asked about pairs of vertical bases.");
         }
 

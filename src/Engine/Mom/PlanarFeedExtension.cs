@@ -107,14 +107,19 @@ public static class PlanarFeedExtension
     /// <see cref="PlanarPort.Location"/> and <see cref="PlanarPort.LayerIndex"/> are read.</param>
     /// <param name="calibration">Supplies <see cref="PlanarCalibrationSettings.EndRunHeights"/> —
     /// the same setting that decides how much feed the standard reproduces, so the two cannot drift.</param>
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — every distance this method's own notes
+    /// quote goes through this. See <see cref="SurfaceMesher.Mesh"/>'s own parameter of the same
+    /// name.</param>
     public static (PlanarProblem Problem, IReadOnlyList<PlanarFeedLead> Leads, IReadOnlyList<string> Notes)
         Extend(PlanarProblem problem,
                IReadOnlyList<PlanarPort> ports,
-               PlanarCalibrationSettings? calibration = null)
+               PlanarCalibrationSettings? calibration = null,
+               SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
 
+        var fmt      = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;
         var cal      = calibration ?? PlanarCalibrationSettings.Default;
         double wanted = cal.EndRunHeights * problem.Slab.HeightM;
         if (!(wanted > 0)) return (problem, [], []);
@@ -153,7 +158,7 @@ public static class PlanarFeedExtension
             if (Obstructed(polys, alongX, edgeS, edgeS + outward, tLo, tHi))
             {
                 notes.Add(
-                    $"Port {port.Number}'s feed is not uniform for the {SurfaceMesher.Eng(wanted)}m the " +
+                    $"Port {port.Number}'s feed is not uniform for the {fmt(wanted)} the " +
                     "calibration replaces, and the uniform lead that would fix it cannot be grown — " +
                     "there is other metal on this level directly behind the port. The de-embedding " +
                     "therefore removes an error box measured on a straight line from a feed that is " +
@@ -176,7 +181,7 @@ public static class PlanarFeedExtension
                 ? problem.Layers[i] with { Polygons = e }
                 : problem.Layers[i];
 
-        notes.Add(FeedNote(leads, wanted));
+        notes.Add(FeedNote(leads, wanted, fmt));
         return (problem with { Layers = layers }, leads, notes);
     }
 
@@ -462,14 +467,15 @@ public static class PlanarFeedExtension
     // Notes
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
-    private static string FeedNote(IReadOnlyList<PlanarFeedLead> leads, double wanted)
+    private static string FeedNote(IReadOnlyList<PlanarFeedLead> leads, double wanted,
+                                   SurfaceMesher.PlanarLengthFormat fmt)
     {
         var parts = leads.Select(l =>
-            $"port {l.PortNumber} {SurfaceMesher.Eng(l.LengthM)}m" +
-            (l.ExistingUniformM > 0 ? $" (on top of {SurfaceMesher.Eng(l.ExistingUniformM)}m it already had)" : ""));
+            $"port {l.PortNumber} {fmt(l.LengthM)}" +
+            (l.ExistingUniformM > 0 ? $" (on top of {fmt(l.ExistingUniformM)} it already had)" : ""));
 
         return $"{leads.Count} port(s) sit on metal that changes cross-section inside the " +
-               $"{SurfaceMesher.Eng(wanted)}m of feed the calibration standard replaces, so a UNIFORM " +
+               $"{fmt(wanted)} of feed the calibration standard replaces, so a UNIFORM " +
                $"LEAD of the port's own width was added for the solve and removed again afterwards: " +
                string.Join(", ", parts) + ". Your reference planes are still your own drawn metal " +
                "edges — the lead is meshed, solved and then peeled as a matched section of the line " +

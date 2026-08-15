@@ -88,9 +88,48 @@ public static class SurfaceMesher
     /// R-msh-7 / R17 — <b>the hard ceiling, declared</b>. §10.7's own table: 5,000 unknowns is a
     /// 400 MB dense complex matrix and "the practical ceiling for lightweight". Above it the mesher
     /// refuses by name. A "lightweight" simulator that silently tries to allocate 12 GB is not
-    /// lightweight.
+    /// lightweight. <b>This is the DENSE path's ceiling and it does not move</b> — 16N² plus the LU's
+    /// own working set is a real, measured cost and more RAM does not change that a "lightweight"
+    /// simulator should not chase it. See <see cref="AcceleratedUnknownCeiling"/> for the accelerated
+    /// solver's own, higher, separately-measured ceiling.
     /// </summary>
     public const int UnknownCeiling = 5000;
+
+    /// <summary>
+    /// brief-em-aim-ceiling.md's answer to "does R17's ceiling move for the accelerated solver, and to
+    /// what" — **YES, to this, on a SINGLE-LEVEL mesh (no vias, no second metal level).** M5 shipped
+    /// the AIM accelerator measured only to N = 3,731; this is the number the ladder built past it.
+    ///
+    /// <para><b>Chosen from two ladder constructions that told two different stories, and the number
+    /// sits with margin under the worse one.</b> Growing the LENGTH of the §10.7 hero at the shipping
+    /// mesh (cells/λ = 20 — the construction that actually matches how a real board gets big, a
+    /// wide-to-narrow taper included) stayed flat all the way to N = 12,894: near-field entries per row
+    /// 392 → 399, GMRES 6 → 7 iterations, accelerator working set 53 → 188 MB (against a dense matrix
+    /// that was never built — 16N² there is 2.66 GB, structurally unreachable through
+    /// <see cref="UnknownCeiling"/>). REFINING the RESOLUTION at a FIXED 64 mm footprint instead — the
+    /// brief's own trap check — is a genuinely different regime: iterations held at 5-8 through
+    /// N = 3,454, then climbed 21 → 143 → 372 as cells/λ went 80 → 100 → 120 (N = 5,437 → 10,708,
+    /// still converging, just slower), and FAILED TO CONVERGE at cells/λ = 140 (N = 13,967, residual
+    /// 9.1e-5 against a 1e-8 tolerance, GMRES's own cap of 400 iterations reached). A non-converged
+    /// GMRES throws rather than returning a smooth-but-wrong current distribution
+    /// (<see cref="PlanarAimOperator.Solve"/>) — that is the backstop this ceiling leans on for the
+    /// residual risk an over-refined mesh still carries above it.</para>
+    ///
+    /// <para><b>12,000 sits at the top of the construction that is actually representative</b> (measured
+    /// healthy there) <b>and with real margin under the construction that broke</b> (measured failing at
+    /// 13,967). It covers the 2026-08-14 owner report (N = 7,749) with 1.55× headroom. A conformally CUT
+    /// mesh carries no penalty of its own — measured on a straight-flanked taper, 4-5 GMRES iterations
+    /// and |Δcurrent| 1.6e-6 to 5.5e-5 across N = 1,538 to 2,232 — so this ceiling does not depend on
+    /// <see cref="PlanarBoundaryCells"/>.</para>
+    ///
+    /// <para><b>Never applied to a multi-level or via-bearing mesh</b> — <c>PlanarAimOperator.Build</c>
+    /// refuses that class by name regardless, so the effective ceiling for such a mesh is always
+    /// <see cref="UnknownCeiling"/> even when the accelerator is requested. See
+    /// <c>SurfaceMesher.Mesh</c>'s own <c>accelerated</c> parameter and
+    /// <c>PlanarSolveContext</c>'s constructor, the two places (with <see cref="UnknownCeiling"/>'s own
+    /// dense-path call sites) this is enforced.</para>
+    /// </summary>
+    public const int AcceleratedUnknownCeiling = 12_000;
 
     /// <summary>Warn — do not refuse — from this fraction of the ceiling upward.</summary>
     public const double WarnFraction = 0.6;
@@ -102,6 +141,29 @@ public static class SurfaceMesher
     /// fires.
     /// </summary>
     public const long MaxGridCells = 4_000_000;
+
+    /// <summary>
+    /// R-fil-10's defense-in-depth, for the ONE call site that is not <see cref="Mesh"/> itself:
+    /// <c>PlanarSolveContext</c>'s constructor, before it decides which cores to build. Solving is
+    /// asked to mesh first and check <see cref="PlanarMeshReport.CanSolve"/> — this exists for the
+    /// same reason <c>PlanarSystem.GuardCeiling</c> and <c>PlanarFill</c>'s own copy exist: so a caller
+    /// that skips the report cannot reach an allocation past either ceiling. Throws the same wording
+    /// <see cref="Mesh"/>'s own refusal would have used, minus the mesh-specific "why" clause, which
+    /// this call site has no mesh geometry left to derive.
+    /// </summary>
+    public static void GuardCeiling(int n, bool accelerated)
+    {
+        int ceiling = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
+        if (n <= ceiling) return;
+        throw new InvalidOperationException(
+            $"This mesh has {n:N0} unknowns, which is past the {ceiling:N0}-unknown " +
+            (accelerated ? "ACCELERATED " : "") + "ceiling this kernel is built for" +
+            (accelerated
+                ? $" (brief-em-aim-ceiling.md; the accelerator's own working set stays under 200 MB " +
+                  "even at this ceiling — it is not a memory limit either)."
+                : $" ({MatrixMegabytes(n):N0} MB of dense complex matrix, against " +
+                  $"{MatrixMegabytes(ceiling):N0} MB at the ceiling)."));
+    }
 
     /// <summary>
     /// Builds the surface mesh and the N report. <b>Nothing is solved</b>; nothing here evaluates a
@@ -125,6 +187,20 @@ public static class SurfaceMesher
     /// so the sweep that chose it can be re-run; see <see cref="DefaultSliverAreaFraction"/>.</param>
     /// <param name="diagnostics">brief-convex-decomposition.md's M0 instrument, or null for none.
     /// <b>The mesh is bit-identical either way</b> — nothing on it feeds back.</param>
+    /// <param name="accelerated">
+    /// brief-em-aim-ceiling.md — whether the run this report is FOR would use the AIM accelerator
+    /// (<c>PlanarFillSettings.Aim</c> non-null). <b>Affects only which ceiling the verdict is judged
+    /// against</b> — <see cref="AcceleratedUnknownCeiling"/> in place of <see cref="UnknownCeiling"/> —
+    /// never the mesh itself, which is identical either way. Ignored (falls back to
+    /// <see cref="UnknownCeiling"/>) whenever <c>problem.RequiresGeneralKernel</c>, because the
+    /// accelerator refuses a multi-level or via-bearing mesh by name regardless of this flag
+    /// (<c>PlanarAimOperator.Build</c>) — asking for the wider ceiling there would promise a run that
+    /// cannot start.
+    /// </param>
+    /// <param name="lengthFormat">Owner request, 2026-08-15 — every distance this report's notes and
+    /// refusal quote goes through this. <c>null</c> (the default) is SI engineering notation, byte for
+    /// byte what every caller got before this parameter existed; a UI caller supplies one built from
+    /// the open layout's own display unit.</param>
     public static PlanarMeshReport Mesh(
         PlanarProblem       problem,
         PlanarMeshSettings? settings      = null,
@@ -132,10 +208,15 @@ public static class SurfaceMesher
         RunControl?         control       = null,
         PlanarRimGrading    rimGrading    = PlanarRimGrading.None,
         double              sliverAreaFraction = DefaultSliverAreaFraction,
-        ConformalDiagnostics? diagnostics = null)
+        ConformalDiagnostics? diagnostics = null,
+        bool                accelerated   = false,
+        PlanarLengthFormat? lengthFormat  = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
+        bool accel = accelerated && !problem.RequiresGeneralKernel;
+        int  ceiling = accel ? AcceleratedUnknownCeiling : UnknownCeiling;
+        var  fmt = lengthFormat ?? DefaultLengthFormat;
 
         var notes = new List<string>();
 
@@ -209,10 +290,17 @@ public static class SurfaceMesher
             notes.Add($"The mesh this geometry demands is about {estX * estY:N0} grid cells before " +
                       "any of them are tested against the metal, which is past what can be built at all.");
             return Refused(layerNames, meshFreqHz, lambdaG, hWave, narrowest, edgeRef, staircased, notes,
-                $"This geometry needs on the order of {estX * estY:N0} mesh cells at " +
-                $"{s.CellsPerWavelength} cells per wavelength, which is far past the {UnknownCeiling:N0}-unknown " +
-                "ceiling this kernel is built for. Lower Cells per wavelength, turn the edge mesh off, " +
-                "or analyse a smaller region.");
+                $"This geometry needs on the order of {estX * estY:N0} mesh cells, far past the " +
+                $"{UnknownCeiling:N0}-unknown ceiling this kernel is built for — the grid alone cannot " +
+                "be built, let alone solved. " +
+                (hWave <= Math.Min(narrowX, narrowY) / PlanarMeshSettings.MinCellsAcrossConductor
+                    ? $"The cell size is set by wavelength (λ_g/{s.CellsPerWavelength} = {fmt(hWave)}): " +
+                      "lower Cells per wavelength, size the mesh at a lower Mesh frequency, or analyse " +
+                      "a smaller region."
+                    : $"The cell size is set by the narrowest metal ({fmt(Math.Min(narrowX, narrowY))}, " +
+                      $"meshed {PlanarMeshSettings.MinCellsAcrossConductor} cells across), not by " +
+                      "wavelength, so Cells per wavelength will not reduce it — narrow the range of " +
+                      "widths in the analysed region, or analyse a smaller region."));
         }
 
         double[] gx = BuildGridLines(x0, x1, hardX, attractX, hx, c0, ratioX - 1.0);
@@ -432,7 +520,7 @@ public static class SurfaceMesher
             // the exact class of silently wrong statement this area keeps finding.
             bool sizedAtSweepTop = !(s.MeshFrequencyHz is { } setF && setF > 0)
                                    || meshFreqHz >= problem.MaxFrequencyHz;
-            notes.Add($"Cell size capped at λ_g/{s.CellsPerWavelength} = {Eng(hWave)}m — λ_g = {Eng(lambdaG)}m " +
+            notes.Add($"Cell size capped at λ_g/{s.CellsPerWavelength} = {fmt(hWave)} — λ_g = {fmt(lambdaG)} " +
                       $"in εᵣ = {problem.Slab.Material.EpsR:G4} at {Eng(meshFreqHz)}Hz, " +
                       (sizedAtSweepTop
                           ? "the highest frequency of the sweep. Widening the sweep upward will change " +
@@ -441,7 +529,17 @@ public static class SurfaceMesher
 
             // The second note quantifies the trade in the unit the user set, and fires ONLY below the
             // sweep's top — at or above it there is nothing under-resolved to report.
-            if (!sizedAtSweepTop && problem.MaxFrequencyHz > 0)
+            //
+            // …AND ONLY WHEN THE CAP ACTUALLY BINDS (2026-08-14). `effCellsPerLambda` is computed from
+            // the CAP, not from the realised cell size, so where MinCellsAcrossConductor sets the
+            // pitch instead this note states a flatly false number and then recommends two knobs that
+            // change nothing. On the owner's reported taper it read "at 5 GHz the cells are λ_g/1"
+            // while the cells were in fact 56 µm — λ_g/1120 — and told the user to raise the very
+            // controls the refusal beside it had just said were inert. Same defect as the refusal's
+            // own, in a note.
+            bool capBinds = hWave <= narrowX / PlanarMeshSettings.MinCellsAcrossConductor
+                         || hWave <= narrowY / PlanarMeshSettings.MinCellsAcrossConductor;
+            if (!sizedAtSweepTop && problem.MaxFrequencyHz > 0 && capBinds)
             {
                 double effCellsPerLambda =
                     s.CellsPerWavelength * meshFreqHz / problem.MaxFrequencyHz;
@@ -453,13 +551,13 @@ public static class SurfaceMesher
             }
         }
 
-        notes.Add($"Narrowest conductor dimension {Eng(narrowest)}m, meshed {across} cell(s) across " +
+        notes.Add($"Narrowest conductor dimension {fmt(narrowest)}, meshed {across} cell(s) across " +
                   $"(target {PlanarMeshSettings.MinCellsAcrossConductor}).");
 
         if (s.EdgeMesh && s.EdgeCells > 0)
         {
             notes.Add($"Edge mesh on: {s.EdgeCells} graded cell(s) at every axis-parallel conductor edge, " +
-                      $"outermost {Eng(c0)}m ({PlanarMeshSettings.EdgeFractionOfReference:P0} of {Eng(edgeRef)}m, " +
+                      $"outermost {fmt(c0)} ({PlanarMeshSettings.EdgeFractionOfReference:P0} of {fmt(edgeRef)}, " +
                       $"{DescribeReference(edgeReference)}), growing by {ratioX:G3}× across and {ratioY:G3}× along.");
 
             // …and when there is no such edge, SAY SO. "at every axis-parallel conductor edge" is
@@ -496,7 +594,7 @@ public static class SurfaceMesher
             int used  = Math.Max(usedX, usedY);
             if (used > 0 && used != s.EdgeCells)
                 notes.Add($"The edge grading ratio is bounded to {MinGrowthRatio:G3}–{MaxGrowthRatio:G3}×, so " +
-                          $"the ramp from {Eng(c0)}m to the bulk cell reaches it in about {used} cell(s), " +
+                          $"the ramp from {fmt(c0)} to the bulk cell reaches it in about {used} cell(s), " +
                           $"not the {s.EdgeCells} requested — on this geometry any value " +
                           (used < s.EdgeCells ? "above" : "below") + $" ~{used} meshes the same. " +
                           "Edge cells sets how far the refinement REACHES, never how fine the finest " +
@@ -568,23 +666,39 @@ public static class SurfaceMesher
                           "separates the two crossings into different cells and the count falls.");
         }
 
+        // R-msh-8a — and the WORDING here is the owner's correction of 2026-08-14, not a rephrasing.
+        //
+        // This note used to open "X already has a validated analytic model, which is effectively free"
+        // and then argue for it. A user reading it is standing in the EM setup, having deliberately
+        // chosen the full-wave kernel for this exact part; being told the cheap model exists is
+        // something they already know, and leading with it reads as "you are doing this wrong". The
+        // note's real job is the opposite one: say what the expensive run BUYS over the cheap one, so
+        // the user can tell whether they want it — and, when the two answers land close together, know
+        // that is agreement rather than a wasted afternoon.
         foreach (var alt in problem.Alternatives)
-            notes.Add($"{alt.Subject} already has a validated analytic model ({alt.ModelName}), which " +
-                      $"is effectively free. {alt.Reason} Full-wave is still a legitimate choice here — " +
-                      "this is a note about cost, not a refusal.");
+            notes.Add($"{alt.Subject} — {alt.Reason}");
 
         int n = bases.Count;
-        var verdict = n > UnknownCeiling ? PlanarBudgetVerdict.Refused
-                    : n >= (int)(UnknownCeiling * WarnFraction) ? PlanarBudgetVerdict.Warn
+        var verdict = n > ceiling ? PlanarBudgetVerdict.Refused
+                    : n >= (int)(ceiling * WarnFraction) ? PlanarBudgetVerdict.Warn
                     : PlanarBudgetVerdict.Ok;
 
         string? refusal = null;
         if (verdict == PlanarBudgetVerdict.Refused)
-            refusal = BuildRefusal(n, s);
+            refusal = BuildRefusal(n, s, narrowX, narrowY, hx, hy, hWave, x1 - x0, y1 - y0,
+                                   accelerated: accel,
+                                   acceleratedWouldFit: !accel && n <= AcceleratedUnknownCeiling
+                                                      && !problem.RequiresGeneralKernel,
+                                   fmt: fmt);
         else if (verdict == PlanarBudgetVerdict.Warn)
-            notes.Add($"{n:N0} unknowns is within {1 - WarnFraction:P0} of the {UnknownCeiling:N0} " +
-                      $"ceiling ({MatrixMegabytes(n):N0} MB of dense complex matrix). It will solve, " +
-                      "but a coarser mesh will solve much faster.");
+            notes.Add(accel
+                ? $"{n:N0} unknowns is within {1 - WarnFraction:P0} of the {ceiling:N0}-unknown " +
+                  "ACCELERATED ceiling (brief-em-aim-ceiling.md). It will solve, but a coarser mesh " +
+                  "will solve much faster, and GMRES's own iteration count grows well before this " +
+                  "ceiling on a mesh refined mainly by resolution rather than by extent."
+                : $"{n:N0} unknowns is within {1 - WarnFraction:P0} of the {ceiling:N0} " +
+                  $"ceiling ({MatrixMegabytes(n):N0} MB of dense complex matrix). It will solve, " +
+                  "but a coarser mesh will solve much faster.");
 
         return new PlanarMeshReport(
             Mesh:                          mesh,
@@ -616,15 +730,131 @@ public static class SurfaceMesher
     /// <summary>
     /// R-msh-7's wording, in one place: <b>the predicted N, the ceiling, and WHAT TO CHANGE</b>. A
     /// refusal that names only the first two leaves the user with nothing to do about it.
+    ///
+    /// <para><b>It named the wrong things to change, and a real user turned one of them (owner report,
+    /// 2026-08-14).</b> The old text said "Lower Cells per wavelength, turn the edge mesh off, or
+    /// analyse a smaller region" unconditionally. On the reported geometry — a 6.9 → 100 Ω
+    /// Klopfenstein taper, 13.1 mm of metal at one end and 299 µm at the other — <b>Cells per
+    /// wavelength does not move the unknown count by one</b>, and neither does Mesh frequency:
+    /// <see cref="PlanarMeshSettings.MinCellsAcrossConductor"/> sets the pitch from the NARROWEST run
+    /// (74.6 µm) and the λ_g cap sits 42× coarser at 3.13 mm, so it never binds. Measured:
+    /// 7,749 unknowns at 5, 10 and 20 cells/λ alike; 5,772 with the edge mesh off; still refused. The
+    /// user halved the knob the message named, saw the identical number, and stopped.
+    ///
+    /// <para>So the refusal now asks which quantity is actually binding and names only remedies that
+    /// act on THAT one — and, when the wavelength cap is not binding, says so outright rather than
+    /// leaving the user to discover it by experiment. The megabytes moved to the end and lost the
+    /// lead, because quoting them first reads as a memory limit and invites "does my machine need
+    /// more RAM": <see cref="UnknownCeiling"/> is a compile-time constant, identical on every
+    /// machine, and the same file refuses identically everywhere.</para>
+    ///
+    /// <para><b>brief-em-aim-ceiling.md, 2026-08-14 — the accelerated solve moved from an inert remedy
+    /// to a real one, and the wording has to tell the three resulting cases apart.</b> When this mesh
+    /// would fit under <see cref="AcceleratedUnknownCeiling"/> but was checked against the dense one
+    /// (<paramref name="acceleratedWouldFit"/>), turning the accelerator on is named FIRST — it is the
+    /// only remedy here that changes nothing about the drawn geometry or the mesh settings. When the
+    /// accelerator is already what was asked for and this mesh is STILL past its own, higher, ceiling
+    /// (<paramref name="accelerated"/>), the old "does not move this ceiling" sentence is false on its
+    /// face — it moved, and the mesh is past the new one too — so it is replaced with that ceiling's
+    /// own number instead of the dense path's.</para>
     /// </summary>
-    private static string BuildRefusal(int n, PlanarMeshSettings s)
-        => $"This geometry needs {n:N0} unknowns at {s.CellsPerWavelength} cells per wavelength" +
-           (s.EdgeMesh ? $" with a {s.EdgeCells}-cell edge mesh" : " with the edge mesh off") +
-           $", which is past the {UnknownCeiling:N0}-unknown ceiling this kernel is built for " +
-           $"({MatrixMegabytes(n):N0} MB of dense complex matrix, against {MatrixMegabytes(UnknownCeiling):N0} MB " +
-           "at the ceiling). Lower Cells per wavelength, turn the edge mesh off, or analyse a smaller " +
-           "region — full-wave analysis of a structure this size needs matrix compression, which is " +
-           "not built.";
+    private static string BuildRefusal(
+        int n, PlanarMeshSettings s,
+        double narrowX, double narrowY, double hx, double hy, double hWave,
+        double extentX, double extentY, bool accelerated, bool acceleratedWouldFit,
+        PlanarLengthFormat fmt)
+    {
+        double pitch     = Math.Min(hx, hy);
+        double narrowest = Math.Min(narrowX, narrowY);
+        int    ceiling   = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
+
+        // WHICH quantity set the cell size. This is the whole difference between a refusal a user can
+        // act on and one they can only argue with: hx/hy are Math.Min(hWave, narrow/MinCells), so the
+        // wavelength cap is binding exactly when it is the smaller of the two on at least one axis.
+        bool waveBinds = hWave <= narrowX / PlanarMeshSettings.MinCellsAcrossConductor
+                      || hWave <= narrowY / PlanarMeshSettings.MinCellsAcrossConductor;
+
+        var why = waveBinds
+            ? $" The cell size is set by wavelength here — λ_g/{s.CellsPerWavelength} = {fmt(hWave)} " +
+              $"across {fmt(extentX)} × {fmt(extentY)} of artwork."
+            : $" The cell size is set by the NARROWEST metal, not by wavelength: the narrowest " +
+              $"conductor run is {fmt(narrowest)}, and meshing it " +
+              $"{PlanarMeshSettings.MinCellsAcrossConductor} cells across forces a {fmt(pitch)} " +
+              $"pitch over all {fmt(extentX)} × {fmt(extentY)} of the artwork — the grid is one " +
+              $"tensor product over the whole layout, so the narrow end is paid for everywhere. The " +
+              $"λ_g/{s.CellsPerWavelength} cap is {fmt(hWave)}, {hWave / pitch:G3}× coarser, so " +
+              "LOWERING CELLS PER WAVELENGTH OR MESH FREQUENCY WILL NOT REDUCE THIS COUNT.";
+
+        // Short imperatives only. An action carrying its own explanatory clause reads as part of the
+        // NEXT action once the list is joined ("…its narrowest, turn the edge mesh off or analyse a
+        // smaller region"), so the explanation goes in its own sentence after the list.
+        var acts = new List<string>();
+        // FIRST, when it is real: the one remedy that touches neither the drawn geometry nor the mesh
+        // settings — see the class-level note on AcceleratedUnknownCeiling for the measurement.
+        if (acceleratedWouldFit)
+            acts.Add("turn on the accelerated solve (Solver options)");
+        if (waveBinds)
+        {
+            acts.Add("lower Cells per wavelength");
+            acts.Add("size the mesh at a lower Mesh frequency");
+        }
+        else
+        {
+            acts.Add("narrow the range of widths in the analysed region");
+        }
+        if (s.EdgeMesh && s.EdgeCells > 0)
+            acts.Add("turn the edge mesh off");
+        acts.Add("analyse a smaller region");
+
+        string how = waveBinds
+            ? ""
+            : " Splitting the structure at a uniform-width plane, analysing the pieces separately and " +
+              "cascading them is the usual way through a part whose widest metal is many times its " +
+              "narrowest.";
+
+        string costNote = accelerated
+            ? // The dense byte count is meaningless here — this mesh will never see a dense matrix —
+              // and the accelerator's own working set has no closed form (it depends on geometry), so
+              // this states the measured ballpark rather than a number nothing computed for this run.
+              $"(This is already the ACCELERATED ceiling — {AcceleratedUnknownCeiling:N0} unknowns, " +
+              "measured healthy on a wide-to-narrow taper's own growth pattern and, separately, on a " +
+              "conformally cut mesh; the accelerator's own working set stays under 200 MB even at that " +
+              "ceiling. A mesh refined mainly by RESOLUTION rather than by extent can fail to converge " +
+              "before reaching it — GMRES throws rather than returning a wrong answer when that " +
+              "happens, so it is reported at solve time, not here. Solving a mesh this size at all " +
+              "needs matrix compression, which is not built.)"
+            : acceleratedWouldFit
+              ? // The remedy above already says what to do; this says WHY it works, in the same terms
+                // the dense-only sentence used, so a user comparing the two ceilings sees real numbers.
+                $"(The dense path's {UnknownCeiling:N0}-unknown ceiling is a fixed property of this " +
+                $"kernel, not of your machine — {n:N0} unknowns is {MatrixMegabytes(n):N0} MB of dense " +
+                $"complex matrix against {MatrixMegabytes(UnknownCeiling):N0} MB at the ceiling, and " +
+                "the same geometry refuses identically everywhere. The accelerated solve's own ceiling " +
+                $"is higher — {AcceleratedUnknownCeiling:N0} unknowns, measured — because its working " +
+                "set is a near-field sparse correction plus a uniform auxiliary grid rather than the " +
+                "full N×N matrix, which is why turning it on is the first remedy above rather than a " +
+                "change to this mesh.)"
+              : $"(The ceiling is a fixed property of this kernel, not of your machine — {n:N0} " +
+                $"unknowns is {MatrixMegabytes(n):N0} MB of dense complex matrix against " +
+                $"{MatrixMegabytes(UnknownCeiling):N0} MB at the ceiling, and the same geometry " +
+                "refuses identically everywhere. Solving a mesh this size directly needs matrix " +
+                "compression, which is not built; the accelerated solve would not help either — this " +
+                $"mesh is past its {AcceleratedUnknownCeiling:N0}-unknown ceiling too.)";
+
+        return $"This geometry needs {n:N0} unknowns, past the {ceiling:N0}-unknown ceiling " +
+               "this kernel is built for." + why +
+               " What acts on the count here: " + JoinOr(acts) + "." + how + " " + costNote;
+    }
+
+    /// <summary>"a, b or c" — a remedy list reads as prose, and a bare comma list reads as a checklist
+    /// the user has to do all of.</summary>
+    private static string JoinOr(IReadOnlyList<string> parts)
+        => parts.Count switch
+        {
+            0 => "",
+            1 => parts[0],
+            _ => string.Join(", ", parts.Take(parts.Count - 1)) + " or " + parts[^1],
+        };
 
     private static double MatrixMegabytes(int n) => (double)n * n * 16.0 / (1024.0 * 1024.0);
 
@@ -1647,6 +1877,22 @@ public static class SurfaceMesher
                PlanarBudgetVerdict.Refused, refusal, notes);
 
     // ── Formatting ────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a DISTANCE for a message a user reads. <c>null</c> everywhere below means SI
+    /// engineering notation (<see cref="Eng"/> plus a bare "m") — the shipped behaviour before this
+    /// existed, and what a headless run (no <c>.clay</c>, no display unit) still gets. A UI caller
+    /// with a layout open supplies one that reads in the layout's own display unit instead (owner
+    /// request, 2026-08-15). <b>A plain delegate over a double, never a UI type</b> — <c>src/Ui</c>'s
+    /// <c>LayoutUnits</c> cannot be referenced from here, so the conversion is built on the other
+    /// side of the firewall and handed down as this.
+    /// </summary>
+    public delegate string PlanarLengthFormat(double metres);
+
+    /// <summary>The default <see cref="PlanarLengthFormat"/> — every call site below falls back to
+    /// this when handed <c>null</c>, so passing no formatter reproduces the exact pre-2026-08-15
+    /// text.</summary>
+    internal static string DefaultLengthFormat(double metres) => Eng(metres) + "m";
 
     /// <summary>Engineering notation for a note. The report carries raw doubles; this is only ever
     /// used inside a note string.</summary>
