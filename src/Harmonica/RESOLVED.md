@@ -4,6 +4,110 @@ Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern: a completed brief's deta
 `##` section per brief, sparingly — only for findings that are still true, still surprising, and
 would cost someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## Round 11 — one drive-up ladder, two ways of taking a step it could not take (harmonicaRF fixes, 2026-08-15)
+
+Two owner reports with the same shape underneath: **a Pin ladder that moves further in one rung than
+the Newton can follow, and reports the wrong root as converged.** They arrive by different routes.
+
+### §1 — a prior-FRAME spectrum at a different harmonic order silently cold-started the whole ladder
+
+`PinSearch.Sweep`'s lever-1 seed (`priorLevelSpectra`, the previous frame's converged spectrum keyed
+by Pin level) is a *dictionary keyed by drive level*. A K = 5 frame's dictionary is therefore a perfect
+lookup hit at every rung of a later K = 3 ladder — and its arrays are `[N, 6]` where the K = 3 solve
+needs `[N, 4]`. `HarmonicaContext.Solve` rejected the shape and fell back to the real-DC seed, which
+is right as a last resort and wrong as a routine outcome: **the ladder lost its rung-to-rung warm
+start at EVERY rung, not just the first.**
+
+Measured on the shipped default under the Class F preset, K = 3 → 5 → 3, tier A only:
+
+| frame | what the drive-up did |
+|---|---|
+| K = 3, first | full ladder to 26 dBm, smooth |
+| K = 5 | **+6 dB gain step at 13 dBm**, then stopped at 15 |
+| K = 3, back | **truncated at 11 dBm** on a non-convergent rung |
+| K = 3, again | full ladder to 26 dBm — identical to the first |
+
+That last row is the tell: the *fourth* frame was right because by then the stale dictionary had been
+replaced by a same-K one. Nothing about the circuit differed between rows 1 and 3.
+
+Fixed in three places, deliberately: **`HarmonicaContext.AcceptsWarmStart`** is now a public predicate
+(`Solve` uses it too, so there is one rule); **`PinSearch.Sweep`** asks it before letting a prior-level
+spectrum WIN over the ladder's own running seed, so a rejected candidate falls back to the caller's
+second choice rather than to no seed at all; and **`HarmonicaSolver`** drops `_lastSweepLevelSpectra`
+and `_lastTerminationGammas` outright when `CircuitModel.StructuralKey` moves, because a spectrum from
+a different circuit is misleading even where the shape happens to match.
+`HarmonicaSolver.StructuralSeedResetCount` is the counter.
+
+### §2 — the contour grid's 2 dB ladder converged onto a NONPHYSICAL root, and it was drawn as data
+
+The owner's "Class F at K = 3 makes contour islands; K = 5 looks perfect". Not a hole and not a fit
+artefact: **four of the 37 grid points converged, at ‖F‖ ≈ 2e-9, onto a root of the same harmonic-
+balance residual that draws 353 kW from a 48 V supply.**
+
+| Γ | rung | Pout | Pdc | DE | Newton iters |
+|---|---|---|---|---|---|
+| −0.267 + j0.462 | 10 dBm | 19.2 dBm | 3.49 W | 2.4% | 4 |
+| " | **12 dBm** | **89.5 dBm** | **353 kW** | **251%** | **21** |
+| " | 14 dBm | 89.6 dBm | 355 kW | 257% | 5 |
+
+`Compressed` was true, so the point entered the RBF fit as ordinary data; the level set stretched to
+64.6 dBm and the top levels existed only as tiny closed loops around those four points. **That is what
+the islands were.** It reconciles the owner's own observation that dragging L1 there and running a
+power sweep looks normal — tier A walks a 1 dB ladder, the grid walks
+`HarmonicaSettings.ContourLadderStepDbm` = 2 dB, and the step size is the entire difference. Measured
+at the same Γ: **2 dB → Pout 89.5 dBm; 1 dB, 0.5 dB, 0.25 dB → P3dB at 27 dBm, Pout 36.3 dBm, DE 27%,
+all three identical.**
+
+**The guard is a continuity test, not a plausibility filter on the answer.** Along the physical branch
+Pout tracks Pin at 1:1 below compression and more slowly above it, so `|ΔPout| > ΔPin + margin` — in
+either direction — says the rung did not get there along that branch.
+`HarmonicaSettings.LadderContinuityMarginDb` (default 3 dB, 0 disables) is slack around a physical
+statement rather than a tuned threshold. A rung that trips it is **re-walked** from the previous rung's
+converged spectrum in 2ᵈ sub-steps, d = 1…`PinSearch.MaxContinuationDepth`, taking the first depth
+whose whole chain is continuous. **A rung still discontinuous after a 1/16-step walk is KEPT** — a
+genuine bifurcation is a property of the circuit, and hiding it would be worse than showing it.
+
+**The same guard answers non-convergence, because it is the same defect.** A rung whose Newton fails
+outright and a rung that succeeds onto a different root are both "the drive step was too big"; the
+ladder now tries continuation first and the cold DC seed only after (`Retries`, as `Run` already did),
+instead of truncating the sweep on the spot. That second half is what turned an early version of this
+fix from a partial win into the numbers below — recovering the runaway points put the ladder onto the
+physical branch, where the *coarse step* then failed to converge a few rungs further up.
+
+Measured on the shipped default's 37-point ring grid under Class F:
+
+| | before | after |
+|---|---|---|
+| K = 3 holes | 1 (+ **4 nonphysical points reported as data**) | **1** |
+| K = 3 contour level range | 29.8 … **64.6 dBm** | 30.2 … **40.7 dBm** |
+| K = 3 solves | 729 | 840 (+15%) |
+| K = 5 holes | **4** | **0** |
+| K = 5 solves | 752 | 777 (+3%) |
+
+An ordinary drive-up pays nothing: `Continuations` is 0 and the answer is bit-identical to the same
+sweep with the margin set to 0 (gated). Gate: `tests/Harmonica.Tests/LadderContinuityTests.cs`, whose
+own assertion on the bad answer is **DE > 100%** — more RF out than DC in with no other source in the
+circuit — rather than "far from the good one", so it is a physics gate and not a tuned one.
+
+### §3 — a K edit invented an S1 marker, and the per-band menus depended on it doing so
+
+`HarmonicaViewModel.RetargetTerminations` called `RebuildMarkersFromTerminations`, whose §4.2 rule is
+"S1/L1 are always present" — and `TerminationSet`'s constructor marks source band 1 unconditionally
+(50 Ω, so removing the marker never changes the circuit). So **editing HB Order made an S1 marker
+appear on a document that deliberately had none** (R8B §3: S1/S2 start with no marker). The load path
+genuinely needs that rule — a loaded `.charm` has nothing but its terminations to reconstruct markers
+from — so the fix is not to weaken it but to stop a K change from going through it: retarget now
+PRUNES `Markers` (dropping only bands above the new K) and keeps the surviving instances, which also
+preserves the session state hanging off them (`TopmostMarker`, a VSWR circle, a drag in progress).
+
+**The trap this exposed, and the reason it is written down.** Every per-band menu list
+(`HarmonicaMenuViewModel.RebuildBandMenus`) learned about a K change only by observing
+`Markers.CollectionChanged` — its own doc comment said so and called it "one signal, three lists".
+That worked by accident of the wholesale rebuild; removing the rebuild broke *raising* K (which drops
+no marker and so notified nobody) while lowering K still worked. K now raises
+`HarmonicaViewModel.HarmonicCountChanged` in its own right. Band count and marker presence are
+separate facts and now have separate signals.
+
 ## Round 10 — a preset's short/open bands are Z0/100 and Z0·100, and `Zin` on the default document is the CHOKE (harmonicaRF fixes, 2026-08-15)
 
 **`PaClassPresets.NearShortOhms`/`NearOpenOhms` (absolute 1e-6 Ω / 1e6 Ω) are replaced by

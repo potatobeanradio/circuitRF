@@ -142,7 +142,11 @@
               </NativeMenuItem.Menu>
             </NativeMenuItem>
             <NativeMenuItem Header="Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"/>
-            <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"/>
+            <!-- Round 11 §4 — ⌘L here, Ctrl+L as a KeyBinding on HarmonicaView; see
+                 HarmonicaAppMenuInjector's matching note for why the two modifiers live on two
+                 different surfaces rather than both on each. -->
+            <NativeMenuItem Header="Grid Points" Command="{Binding ToggleShowGridPointsCommand}"
+                            Gesture="Cmd+L"/>
             <!-- brief-harmonicarf-r6a §4 — owner request: the "Cursor Snap to Compression" menu item
                  is removed (this menu-only; ToggleCursorSnapCommand and
                  HarmonicaViewModel.SnapCursorToCompression stay wired, default true, behaviour on). -->
@@ -307,8 +311,12 @@
       </MenuItem>
       <MenuItem Header="_Iso-line Labels" Command="{Binding ToggleIsoLineLabelsCommand}"
                 ToolTip.Tip="Off by default — a dense unfilled contour set reads better without them, and labelling is the most expensive part of the extract."/>
+      <!-- Round 11 §4 — InputGesture is DISPLAY ONLY in Avalonia (HotKey is the functional one), which
+           is exactly what is wanted: the keystroke itself is HarmonicaView's own KeyBinding, so this
+           label cannot become a second handler for it. -->
       <MenuItem Header="_Grid Points" Command="{Binding ToggleShowGridPointsCommand}"
-                ToolTip.Tip="The Γ grid sample dots. Off by default; draggable once shown."/>
+                InputGesture="Ctrl+L"
+                ToolTip.Tip="The Γ grid sample dots. Off by default; draggable once shown. Ctrl/⌘+L toggles them."/>
       <!-- brief-harmonicarf-r6a §4 — owner request: the "Cursor Snap to Compression" menu item is
            removed (this menu-only; ToggleCursorSnapCommand and
            HarmonicaViewModel.SnapCursorToCompression stay wired, default true, behaviour on). -->

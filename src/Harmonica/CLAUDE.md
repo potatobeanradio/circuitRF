@@ -14,6 +14,25 @@ untouched bracket code (no hint, no neighbour spectra). Found while gating `Cont
 (brief-harmonicarf-r3b §4), pre-dates that brief, and is NOT fixed — see `RESOLVED.md`'s §4 entry
 before trusting a `Run()` answer at face value on a device whose gain does not fall off monotonically.
 
+## Round 11 — the drive-up ladder's continuity guard (2026-08-15)
+
+**A converged HB solve is not automatically the RIGHT root.** `PinSearch.Sweep` now treats a rung
+whose `|ΔPout|` exceeds its own `ΔPin` by more than `HarmonicaSettings.LadderContinuityMarginDb`
+(default 3 dB) as a basin jump and re-walks that one step as a bisection continuation from the previous
+rung — the same treatment a rung whose Newton fails outright gets, because both mean "the drive step
+was too big". Measured: the contour grid's own 2 dB ladder converged, at four Γ points of the shipped
+default under Class F, onto a root drawing 353 kW from a 48 V supply and reporting DE = 251%, at
+‖F‖ ≈ 2e-9 — reported `Compressed` and drawn as ordinary contour data. **A rung still discontinuous
+after a 1/16-step walk is kept, not discarded**: a real bifurcation is a property of the circuit.
+`PinSearchResult.Continuations` counts it. Detail and the full measurement in `RESOLVED.md`.
+
+**A warm start's SHAPE is the caller's problem, not `Solve`'s.** `HarmonicaContext.AcceptsWarmStart`
+is public for that reason: `Solve` falling back to the DC seed on a mismatch is right as a last resort
+and quietly wrong as a routine outcome, and a caller choosing between a stale candidate and a good one
+of its own must ask before handing over the stale one. Anything holding a spectrum ACROSS a structural
+change must also drop it — `CircuitModel.StructuralKey` is the arbiter, and `HarmonicaSolver` does
+exactly this for its own frame-to-frame lever.
+
 ## Round 3B — evaluator speedup, grid parallelised, loadpull holes mostly cured (2026-08-13)
 
 See `RESOLVED.md` for the detail: `PinSearch.Run`'s neighbour-by-level seeding + a real nonlinear DC

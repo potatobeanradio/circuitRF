@@ -181,7 +181,12 @@ public static class HarmonicaAppMenuInjector
                 Item("Loadline Plane", vm.ToggleLoadlinePlaneCommand),
                 contourLevels,
                 Item("Iso-line Labels",            vm.ToggleIsoLineLabelsCommand),
-                Item("Grid Points",                vm.ToggleShowGridPointsCommand),
+                // Round 11 §4 — ⌘L. The Ctrl+L half of "Control/Cmd L" is a KeyBinding on
+                // HarmonicaView, not a second gesture here: a NativeMenu key equivalent is consumed by
+                // the OS before Avalonia's input pipeline sees it, so declaring BOTH modifiers on both
+                // surfaces would give macOS two live handlers for one keystroke and toggle it twice.
+                Item("Grid Points",                vm.ToggleShowGridPointsCommand,
+                     gesture: new KeyGesture(Key.L, KeyModifiers.Meta)),
                 Sep(),
                 Item("Power Sweep…", vm.PowerSweepCommand),
                 Item("Set Z0…",      vm.SetZ0Command)),

@@ -87,6 +87,7 @@ public partial class HarmonicaView : UserControl
         var menus = new HarmonicaMenuViewModel(_doc.ViewModel.Harmonica);
         WireMenuHooks(menus);
         Menus.DataContext = menus;
+        InstallShortcuts(menus);
         _doc.ViewModel.Harmonica.EditDisplay.UnlockedChanged += OnRedraw;
 
         // The view binds AFTER the activation request in the first-open case — see src/Ui/CLAUDE.md's
@@ -392,6 +393,33 @@ public partial class HarmonicaView : UserControl
     /// <c>Harmonica.ReadoutText</c>.</summary>
     private static IBrush ToBrush(SkiaSharp.SKColor c)
         => new SolidColorBrush(Color.FromArgb(c.Alpha, c.Red, c.Green, c.Blue));
+
+    // ── §7.6's document-scoped keyboard shortcuts ────────────────────────────
+
+    /// <summary>
+    /// Round 11 §4 — <b>Ctrl+L</b> toggles Display ▸ Grid Points, through the SAME command the menu
+    /// item runs, so the two can never disagree about what the toggle means or about persisting it.
+    ///
+    /// <para><b>Ctrl only, deliberately — ⌘L is declared on the NativeMenu surfaces instead</b>
+    /// (<c>HarmonicaMenuView.axaml</c> and <c>HarmonicaAppMenuInjector</c>). A macOS menu key
+    /// equivalent is consumed by AppKit before Avalonia's input pipeline runs, so a gesture declared
+    /// on BOTH surfaces would be one keystroke with two live handlers and would toggle twice — i.e.
+    /// do nothing. Splitting the two modifiers across the two surfaces gives the user one working
+    /// shortcut per platform with no overlap anywhere.</para>
+    ///
+    /// <para>Rebuilt on every <c>DataContextChanged</c> rather than added once, because the binding
+    /// targets THIS document's menu view model; a view reused for a second document would otherwise
+    /// keep toggling the first one's grid points.</para>
+    /// </summary>
+    private void InstallShortcuts(HarmonicaMenuViewModel menus)
+    {
+        KeyBindings.Clear();
+        KeyBindings.Add(new Avalonia.Input.KeyBinding
+        {
+            Gesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.L, Avalonia.Input.KeyModifiers.Control),
+            Command = menus.ToggleShowGridPointsCommand,
+        });
+    }
 
     // ── §7.6's document-scoped hooks ─────────────────────────────────────────
 

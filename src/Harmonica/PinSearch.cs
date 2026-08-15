@@ -85,6 +85,13 @@ public sealed record PinSearchResult(PinStopReason Reason, int Solves)
     /// whose ladder has no bracket to refine.</summary>
     public int BracketRefineProbes { get; init; }
 
+    /// <summary>Round 11 §2 — how many ladder rungs <see cref="PinSearch.Sweep"/>'s continuity guard
+    /// re-walked by bisection continuation because the rung's Pout moved further than its own Pin step
+    /// did (<c>HarmonicaSettings.LadderContinuityMarginDb</c>). Zero on the ordinary path; a counter
+    /// rather than a hidden cost, exactly like <see cref="Retries"/>. Always 0 for
+    /// <see cref="PinSearch.Run"/>, which walks no ladder.</summary>
+    public int Continuations { get; init; }
+
     public bool Compressed => Reason == PinStopReason.Compression && AtCompression is not null;
 }
 
@@ -149,6 +156,39 @@ public static class PinSearch
     /// bisecting a coarse bracket to find the true first crossing, so a pathological gain curve cannot
     /// turn one Γ point's search into the ladder it was built to avoid.</summary>
     public const int MaxBracketRefineProbes = 4;
+
+    /// <summary>
+    /// Round 11 §2 — how far <see cref="Sweep"/>'s continuity guard may subdivide ONE ladder step
+    /// before giving up: depth d walks 2ᵈ sub-steps, so 4 bottoms out at a sixteenth of the step. A
+    /// bound rather than a budget — the guard fires on the rare rung, and 2+4+8+16 = 30 extra solves is
+    /// its absolute worst case there; the measured cost is depth 1 (2 solves), because one bisection is
+    /// already the 1 dB ladder that walks the same Γ cleanly.
+    /// </summary>
+    public const int MaxContinuationDepth = 4;
+
+    /// <summary>
+    /// Round 11 §2 — whether <paramref name="to"/> can be the same solution branch as
+    /// <paramref name="from"/>, one drive step later. See
+    /// <c>HarmonicaSettings.LadderContinuityMarginDb</c> for the physics: Pout tracks Pin at 1:1 below
+    /// compression and more slowly above it, so a rung whose Pout moved further than its own Pin step
+    /// did — in EITHER direction — did not get there along the physical branch.
+    ///
+    /// <para>False (never discontinuous) when the margin is disabled, when the two rungs sit at the
+    /// same drive, or when either Pout is non-positive and therefore has no dB to compare — a
+    /// zero-output rung is a story for the convergence flag to tell, not for this guard.</para>
+    /// </summary>
+    public static bool IsDiscontinuous(PinStep from, PinStep to, double marginDb)
+    {
+        if (!(marginDb > 0)) return false;
+
+        double dPin = Math.Abs(to.PavlDbm - from.PavlDbm);
+        if (dPin <= 0) return false;
+
+        double poutFrom = PoutDbmOf(from), poutTo = PoutDbmOf(to);
+        if (double.IsNaN(poutFrom) || double.IsNaN(poutTo)) return false;
+
+        return Math.Abs(poutTo - poutFrom) > dPin + marginDb;
+    }
 
     /// <summary>
     /// Drives one Γ point to its compression target.
@@ -505,19 +545,71 @@ public static class PinSearch
         var s = ctx.Model.Settings;
         var steps  = new List<PinStep>();
         int solves = 0;
+        int continuations = 0;
+        int retries = 0;
 
         Complex[,]? seed = warmStart;
 
-        PinStep? Solve(double pavlDbm)
+        // One solve at an EXPLICIT warm start, leaving `seed` on its converged spectrum. The
+        // continuation below needs this: a sub-step at 11 dBm has no prior-frame entry and must
+        // continue from the rung below it, not from whatever `seed` happens to hold.
+        PinStep? SolveFrom(double pavlDbm, Complex[,]? warm)
         {
             solves++;
-            Complex[,]? levelSeed = priorLevelSpectra is not null &&
-                                    priorLevelSpectra.TryGetValue(Math.Round(pavlDbm, 6), out var prior)
-                ? prior : seed;
-            var pt = ctx.Solve(terminations, pavlDbm, levelSeed);
+            var pt = ctx.Solve(terminations, pavlDbm, warm);
             if (!pt.Converged) return null;
             seed = pt.V;
             return Measure(ctx, pt, terminations);
+        }
+
+        PinStep? Solve(double pavlDbm)
+        {
+            // A prior-level spectrum only WINS over the ladder's own running seed when this context
+            // can actually use it. Round 11 §1: a prior frame's spectrum solved at a different
+            // harmonic order has the same LEVEL keys and a different SHAPE, so the lookup hits, the
+            // stale array is handed to ctx.Solve, ctx.Solve silently falls back to the cold DC seed —
+            // and the ladder loses its rung-to-rung warm start for EVERY rung, not just the first.
+            // Measured on the shipped default under Class F: that is a sweep truncating at 12 dBm on a
+            // non-convergent rung where the warm-started identical circuit reaches 26 dBm.
+            Complex[,]? levelSeed = priorLevelSpectra is not null &&
+                                    priorLevelSpectra.TryGetValue(Math.Round(pavlDbm, 6), out var prior) &&
+                                    ctx.AcceptsWarmStart(prior)
+                ? prior : seed;
+            return SolveFrom(pavlDbm, levelSeed);
+        }
+
+        // Round 11 §2 — re-walks ONE ladder step by bisection continuation. Subdivides
+        // [from.PavlDbm, toDbm] into 2^d equal sub-steps for d = 1, 2, … MaxContinuationDepth, each
+        // warm-started from its own predecessor; the first depth whose WHOLE chain is continuous wins.
+        // Returns null when no depth produces a continuous chain — the caller then KEEPS its original
+        // answer, because a jump that survives a 1/16-step walk is a property of the circuit rather
+        // than of the step size, and hiding a real bifurcation is worse than showing it.
+        PinStep? ContinueThroughJump(PinStep from, double toDbm)
+        {
+            var entrySeed = from.Point.V;
+            for (int depth = 1; depth <= MaxContinuationDepth; depth++)
+            {
+                int n = 1 << depth;
+                double sub = (toDbm - from.PavlDbm) / n;
+                var prev = from;
+                var warm = entrySeed;
+                PinStep? last = null;
+                bool ok = true;
+
+                for (int i = 1; i <= n; i++)
+                {
+                    double pin = i == n ? toDbm : from.PavlDbm + i * sub;
+                    var probe = SolveFrom(pin, warm);
+                    if (probe is null || IsDiscontinuous(prev, probe, s.LadderContinuityMarginDb))
+                    { ok = false; break; }
+                    prev = probe;
+                    warm = probe.Point.V;
+                    last = probe;
+                }
+
+                if (ok && last is not null) { seed = last.Point.V; return last; }
+            }
+            return null;
         }
 
         // ── 1. the tickle (R-h9r2-18a) ──────────────────────────────────────────
@@ -527,7 +619,8 @@ public static class PinSearch
         {
             var tickle = Solve(s.TickleDbm);
             if (tickle is null)
-                return new PinSearchResult(PinStopReason.NonConvergence, solves) { Steps = steps };
+                return new PinSearchResult(PinStopReason.NonConvergence, solves)
+                    { Steps = steps, Retries = retries, Continuations = continuations };
             gss  = tickle.GainDb;
             gMax = gss.Value;
         }
@@ -566,9 +659,33 @@ public static class PinSearch
         foreach (double pin in Ladder(startDbm, stopDbm, stepDbm))
         {
             var step = Solve(pin);
+
+            // Round 11 §2 — ONE guard for the ladder's two ways of taking too big a drive step, because
+            // they are the same defect wearing two faces: the Newton either fails outright, or succeeds
+            // onto a DIFFERENT root (a rung whose Pout moved further than its own Pin step did — see
+            // HarmonicaSettings.LadderContinuityMarginDb for the measurement). Both are answered by
+            // re-walking that one step as a continuation from the previous rung's converged spectrum
+            // instead of taking it in a single leap.
+            if (steps.Count > 0 && (step is null || IsDiscontinuous(steps[^1], step, s.LadderContinuityMarginDb)))
+            {
+                var refined = ContinueThroughJump(steps[^1], pin);
+                if (refined is not null) { step = refined; continuations++; }
+                else if (step is null)
+                {
+                    // Last resort, and the SAME one Run() already makes: the cold DC seed. A step this
+                    // far from its predecessor may simply not be reachable by continuation at all.
+                    step = SolveFrom(pin, null);
+                    if (step is not null) retries++;
+                }
+            }
+
             if (step is null)
                 return new PinSearchResult(PinStopReason.NonConvergence, solves)
-                    { Steps = steps, SmallSignalGainDb = gss };
+                    { Steps = steps, SmallSignalGainDb = gss, Retries = retries, Continuations = continuations };
+
+            // Whatever path produced the accepted answer, the ladder continues from ITS branch — never
+            // from a rejected root, and never from a mid-continuation probe the refinement abandoned.
+            seed = step.Point.V;
 
             if (!s.TickleEnabled && steps.Count == 0) gMax = step.GainDb;
             double c = CompressionAt(step);
@@ -583,7 +700,8 @@ public static class PinSearch
         }
 
         if (steps.Count == 0)
-            return new PinSearchResult(PinStopReason.PinMax, solves) { Steps = steps, SmallSignalGainDb = gss };
+            return new PinSearchResult(PinStopReason.PinMax, solves)
+                { Steps = steps, SmallSignalGainDb = gss, Retries = retries, Continuations = continuations };
 
         CompressionReadout interpolated;
         if (cross < 0)
@@ -591,7 +709,8 @@ public static class PinSearch
             if (steps[0].Compression < target)
                 // Never compressed before Stop. A NORMAL outcome (R-h9r2-17), not an error — the
                 // panel's own "did not compress" note is what draws this.
-                return new PinSearchResult(PinStopReason.PinMax, solves) { Steps = steps, SmallSignalGainDb = gss };
+                return new PinSearchResult(PinStopReason.PinMax, solves)
+                    { Steps = steps, SmallSignalGainDb = gss, Retries = retries, Continuations = continuations };
 
             // Compressed at (or past) the very first ladder point — nothing to bracket; that point IS
             // the reading, by construction (WasInterpolated: false — it is not a blend of two points).
@@ -629,6 +748,7 @@ public static class PinSearch
         return new PinSearchResult(PinStopReason.Compression, solves)
         {
             Steps = steps, SmallSignalGainDb = gss, AtCompression = atStep, SweepCompression = reading,
+            Retries = retries, Continuations = continuations,
         };
     }
 

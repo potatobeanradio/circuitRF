@@ -6,6 +6,31 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Round 11 — a K edit must not invent a marker, and per-band menus need their own signal (2026-08-15)
+
+`HarmonicaViewModel.RetargetTerminations` used to rebuild the marker list wholesale, which applied
+§4.2's "S1/L1 are always present" rule and so **made an S1 marker appear whenever HB Order was
+edited**, on a document that deliberately had none (R8B §3: S1/S2 start with no marker). It now prunes
+`Markers` instead — dropping only bands above the new K, keeping the surviving instances and the
+session state hanging off them. The load path still rebuilds wholesale, and must: a loaded `.charm`
+has nothing but its terminations to reconstruct markers from.
+
+**The coupling that broke when it was removed, and the reason this is here.**
+`HarmonicaMenuViewModel.RebuildBandMenus` learned about a K change ONLY by observing
+`Markers.CollectionChanged` — its own doc comment called that "one signal, three lists". It worked by
+accident of the wholesale rebuild, so removing the rebuild broke *raising* K (which drops no marker
+and notified nobody) while lowering K still worked, and the failure surfaced as a Contour Harmonic
+menu stuck at 3 items. K now raises `HarmonicaViewModel.HarmonicCountChanged` in its own right.
+
+**Ctrl/⌘+L toggles Display ▸ Grid Points, and the two modifiers live on DIFFERENT surfaces on
+purpose.** ⌘L is a `Gesture` on both NativeMenu surfaces (`HarmonicaAppMenuInjector` and
+`HarmonicaMenuView.axaml`); Ctrl+L is a `KeyBinding` installed on `HarmonicaView` alongside the menu
+view model. A macOS menu key equivalent is consumed by AppKit before Avalonia's input pipeline runs,
+so declaring the same gesture on both surfaces would give one keystroke two live handlers and toggle
+the setting twice — i.e. do nothing. The in-window `MenuItem`'s `InputGesture` is display-only in
+Avalonia (`HotKey` is the functional one), which is why it can safely label Ctrl+L without becoming a
+second handler for it.
+
 ## Round 10 follow-up — current probes, node labels and a PA measurement block on the exported testbench (2026-08-15)
 
 The owner supplied a hand-drawn testbench (`Example.csch`) showing the shape wanted: `IProbe`s in the

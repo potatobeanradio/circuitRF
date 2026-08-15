@@ -260,6 +260,25 @@ public sealed class HarmonicaContext
     }
 
     /// <summary>
+    /// Whether <paramref name="spectrum"/> has the shape THIS context's unknown vector has — N
+    /// interface nodes by K+1 harmonic bins — and can therefore actually be used as a warm start.
+    ///
+    /// <para><b>Public because the interesting decision is the CALLER's, not this one's.</b>
+    /// <see cref="Solve"/> falls back to the real DC seed on a mismatched warm start, which is right
+    /// as a last resort and quietly wrong as a routine outcome: a caller choosing between a stale
+    /// candidate and a perfectly good one of its own (<c>PinSearch.Sweep</c> picking a prior FRAME's
+    /// spectrum over the previous LADDER RUNG's) would otherwise hand over the stale one, have it
+    /// silently rejected here, and cold-seed the whole sweep — which is exactly the K=3→5→3 drive-up
+    /// hysteresis this predicate exists to make impossible (brief round 11 §1). Ask first, so a
+    /// rejected candidate falls back to the caller's own second choice rather than to no seed at all.
+    /// </para>
+    /// </summary>
+    public bool AcceptsWarmStart(Complex[,]? spectrum)
+        => spectrum is not null
+           && spectrum.GetLength(0) == _interface.InterfaceCount
+           && spectrum.GetLength(1) == _model.Settings.HarmonicCount + 1;
+
+    /// <summary>
     /// Solves one operating point. The terminations are closed algebraically — no MNA solve, no
     /// re-elaboration, no netlist mutation — and the Newton loop is the engine's own.
     /// </summary>
@@ -274,8 +293,8 @@ public sealed class HarmonicaContext
         int gridN = HbFft.GridSize(K, _model.Settings.FftOverSample);
 
         Complex[,] v = new Complex[N, K + 1];
-        if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == K + 1)
-            Array.Copy(warmStart, v, warmStart.Length);
+        if (AcceptsWarmStart(warmStart))
+            Array.Copy(warmStart!, v, warmStart!.Length);
         else
             SeedFromRealDc(v, N);
 

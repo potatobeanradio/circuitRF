@@ -75,10 +75,27 @@ public sealed class HarmonicaSolver
     /// spectrum meant for a different termination entirely.</summary>
     private Dictionary<(TerminationSide Side, int Band), Complex> _lastTerminationGammas = [];
 
+    /// <summary>
+    /// The <see cref="CircuitModel.StructuralKey"/> <see cref="_lastSweepLevelSpectra"/> and
+    /// <see cref="_lastTerminationGammas"/> were built under. Round 11 §1 — lever 1 carries a
+    /// converged spectrum from the PREVIOUS frame, and a structural edit (harmonic order, DUT,
+    /// frequency, package, a capacitance) makes that spectrum describe a DIFFERENT CIRCUIT. A
+    /// different harmonic order also gives it a different SHAPE, which is the case the owner hit:
+    /// K=3 → 5 → 3 left every K=3 rung reading a K=5 spectrum. Dropping the carry-over on a
+    /// structural change is what makes the drive-up depend only on the settings the user can see,
+    /// rather than on the order they were reached in.
+    /// </summary>
+    private string? _lastStructuralKey;
+
     /// <summary>How many frames disabled lever 1 because the termination moved past
     /// <see cref="LeverOneDeltaGammaThreshold"/> since the previous frame — a counter, not a stopwatch,
     /// this repo's own convention for making a hedge's own hit rate visible rather than inferred.</summary>
     public int Lever1DisabledCount { get; private set; }
+
+    /// <summary>How many frames dropped the carried-over seed state because the STRUCTURE changed
+    /// (see <see cref="_lastStructuralKey"/>) — a counter, not a stopwatch, so the invalidation's own
+    /// hit rate is visible rather than inferred.</summary>
+    public int StructuralSeedResetCount { get; private set; }
 
     private static readonly TerminationSide[] Sides = [TerminationSide.Source, TerminationSide.Load];
 
@@ -231,6 +248,16 @@ public sealed class HarmonicaSolver
         // the user's own ladder now, every point a real solve, on every frame including a drag.
         ct.ThrowIfCancellationRequested();
         var s0 = ctx.Model.Settings;
+
+        // Round 11 §1 — a structural edit invalidates lever 1 outright. See _lastStructuralKey.
+        string structuralKey = ctx.Model.StructuralKey;
+        if (_lastStructuralKey != structuralKey)
+        {
+            _lastSweepLevelSpectra = null;
+            _lastTerminationGammas = [];
+            _lastStructuralKey     = structuralKey;
+            StructuralSeedResetCount++;
+        }
 
         // §5.2/§5.3 — Policy C. Judged by the LARGEST single-band Γ move, not an average across
         // bands: one band jumping while the others sit still is exactly the case a hidden average

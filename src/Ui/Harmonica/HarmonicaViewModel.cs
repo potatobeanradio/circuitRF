@@ -233,6 +233,20 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// <summary>Raised when anything that belongs in the <c>.charm</c> changes.</summary>
     public event Action? DirtyChanged;
 
+    /// <summary>
+    /// Raised when the harmonic order moved and <see cref="Terminations"/> was retargeted onto it —
+    /// the ONE signal for "K changed", which is what any per-band menu has to rebuild against.
+    ///
+    /// <para><b>An explicit event because the implicit one was a bug.</b> Every per-band list used to
+    /// key off <see cref="Markers"/>'s own <c>CollectionChanged</c>, on the reasoning that a K change
+    /// always went through a wholesale marker rebuild and therefore always fired it. Round 11 §3
+    /// removed that rebuild (it was inventing an S1 marker on every K edit — see
+    /// <see cref="RetargetTerminations"/>), and with it the accidental signal: RAISING K adds no
+    /// marker and so changed nothing anyone was listening to. Naming the signal is what makes the two
+    /// facts independent, rather than leaving one riding on a side effect of the other.</para>
+    /// </summary>
+    public event Action? HarmonicCountChanged;
+
     // ── theme ────────────────────────────────────────────────────────────────
 
     /// <summary>The active variant. Follows <c>ActualThemeVariant</c>, as the schematic canvas does;
@@ -1063,6 +1077,19 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// Moves the marker set onto a new harmonic count. A band above the new K is DROPPED — with its
     /// marker — rather than clamped: clamping would put two markers on one band, and the file format
     /// has no way to express that.
+    ///
+    /// <para><b>Prunes the live marker list rather than rebuilding it, and that is the whole fix for
+    /// Round 11 §3.</b> This used to call <see cref="RebuildMarkersFromTerminations"/>, whose §4.2 rule
+    /// is "S1/L1 are always present" — so merely editing HB Order made an S1 marker appear on a
+    /// document that deliberately had none. R8B §3 is the rule that actually governs the source side
+    /// (S1/S2 start with NO marker and are turned on from Add Source Marker), and the two rules
+    /// disagree; the load path is where the S1-is-always-there rule is REALLY needed, because a loaded
+    /// <c>.charm</c>'s marker set genuinely has to be reconstructed from its terminations and there is
+    /// nothing else to read it from. A K change is not that case — every marker the user wants already
+    /// exists in <see cref="Markers"/>, so the answer is to remove what no longer fits and touch
+    /// nothing else. Keeping the surviving marker INSTANCES also preserves the session state hanging
+    /// off them (<see cref="TopmostMarker"/>, a VSWR circle, a drag in progress), which a wholesale
+    /// rebuild silently dropped.</para>
     /// </summary>
     private void RetargetTerminations(int harmonicCount)
     {
@@ -1073,7 +1100,15 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                     next.Set(side, band, Terminations.Z(side, band));
 
         Terminations = next;
-        RebuildMarkersFromTerminations();
+
+        foreach (var dropped in Markers.Where(m => m.Band > harmonicCount).ToArray())
+        {
+            if (ReferenceEquals(TopmostMarker, dropped)) TopmostMarker = null;
+            Markers.Remove(dropped);
+        }
+
+        HarmonicCountChanged?.Invoke();
+        RedrawRequested?.Invoke();
     }
 
     // ── solving ──────────────────────────────────────────────────────────────
@@ -1109,6 +1144,12 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// Exposed here so §1's diagnostics overlay can show it without reaching into the solver directly.
     /// </summary>
     public int Lever1DisabledCount => _solver.Lever1DisabledCount;
+
+    /// <summary>Round 11 §1's own counter — how many frames dropped the carried-over seed state
+    /// because the STRUCTURE changed (see <c>HarmonicaSolver</c>'s own field). Exposed here for the
+    /// same reason <see cref="Lever1DisabledCount"/> is: so the hedge's hit rate is readable without
+    /// reaching into the solver.</summary>
+    public int SolverStructuralSeedResetCount => _solver.StructuralSeedResetCount;
 
     /// <summary>
     /// Solves one frame and publishes it. <b>Never throws</b> — a live instrument that dies on a bad

@@ -116,6 +116,9 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
         _vm = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         RebuildBandMenus();
         _vm.Markers.CollectionChanged += OnMarkersChanged;
+        // Round 11 §3 — K now has its own signal; see HarmonicaViewModel.HarmonicCountChanged for why
+        // riding on the marker list was a bug rather than a shortcut.
+        _vm.HarmonicCountChanged += RebuildBandMenus;
     }
 
     private void OnMarkersChanged(object? sender,
@@ -125,7 +128,11 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     /// <summary>Detaches from the view model. The view calls this when its DataContext changes —
     /// without it a replaced menu view model stays alive on the marker list's event and keeps
     /// rebuilding submenus nothing is showing.</summary>
-    public void Detach() => _vm.Markers.CollectionChanged -= OnMarkersChanged;
+    public void Detach()
+    {
+        _vm.Markers.CollectionChanged -= OnMarkersChanged;
+        _vm.HarmonicCountChanged      -= RebuildBandMenus;
+    }
 
     public HarmonicaViewModel Harmonica => _vm;
 
@@ -198,11 +205,14 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
     /// <summary>
     /// Rebuilds the band submenus AND Contour Harmonic from the model. Called on construction and
     /// whenever the marker list changes — including from a <c>.charm</c> load, so the menu can never
-    /// claim a band is marked (or a harmonic is reachable) that the file did not actually have. K only
-    /// ever moves through <c>RetargetTerminations</c>/<c>RebuildMarkersFromTerminations</c>
-    /// (structural — no direct "K changed" event exists), both of which always touch
-    /// <see cref="HarmonicaViewModel.Markers"/>, so the SAME trigger this method already had for the
-    /// band checkboxes is exactly the right one for Contour Harmonic too — one signal, three lists.
+    /// claim a band is marked (or a harmonic is reachable) that the file did not actually have.
+    ///
+    /// <para><b>Two triggers, not one</b> (corrected, Round 11 §3). It used to be only
+    /// <c>Markers.CollectionChanged</c>, on the reasoning that a K change always rebuilt the marker
+    /// list wholesale and so always fired it. That reasoning was load-bearing for the wrong reason —
+    /// the wholesale rebuild was itself the S1-appears-on-a-K-edit bug — so K now raises
+    /// <see cref="HarmonicaViewModel.HarmonicCountChanged"/> in its own right and this method listens
+    /// to both. Band count and marker presence are separate facts and now have separate signals.</para>
     /// </summary>
     public void RebuildBandMenus()
     {

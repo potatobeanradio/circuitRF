@@ -388,6 +388,35 @@ public sealed record HarmonicaSettings
     public const double ContourLadderStepDbmMin = 0.5, ContourLadderStepDbmMax = 3.0;
 
     /// <summary>
+    /// Round 11 §2 — how far, in dB, a drive-up rung's <b>Pout</b> may move MORE than its own Pin step
+    /// before the ladder treats that rung as a BASIN JUMP rather than a drive-up and re-walks it by
+    /// bisection continuation (<c>PinSearch.Sweep</c>). Default 3 dB; 0 or negative disables the guard
+    /// entirely.
+    ///
+    /// <para><b>Why Pout-against-Pin rather than a gain threshold.</b> Along the physical branch, output
+    /// power tracks input power at 1:1 below compression and MORE SLOWLY above it — a device whose Pout
+    /// moves further than its Pin did is expanding faster than any real amplifier, and one whose Pout
+    /// collapses by more than the step is not saturating either. So <c>|ΔPout| &gt; ΔPin + margin</c> is a
+    /// statement about the physics, not a tuned number, and 3 dB is slack around it rather than the
+    /// criterion itself.</para>
+    ///
+    /// <para><b>What it catches, measured on the shipped default under the Class F preset at K=3.</b> The
+    /// contour grid's own 2 dB ladder (<see cref="ContourLadderStepDbm"/>) jumped, at four Γ points, from
+    /// a sane rung (Pout 19.2 dBm, Pdc 3.5 W) to a runaway root of the SAME residual (Pout 89.5 dBm,
+    /// Pdc 353 kW, DE 251%) in ONE 2 dB step — ‖F‖ ≈ 2e-9, so <c>Converged</c> was true and the point
+    /// entered the RBF fit as ordinary data. That is where the owner's "contour islands" came from: the
+    /// level set stretched to 64 dBm and the top levels existed only as tiny loops around those four
+    /// points. Walking the identical Γ at 1 dB reaches P3dB at 27 dBm / 36.3 dBm Pout / DE 27% — an
+    /// entirely ordinary Class-F point — which is what the continuation recovers.</para>
+    ///
+    /// <para><b>Not a plausibility filter on the ANSWER.</b> A rung that is still discontinuous after
+    /// refinement is KEPT, not discarded: a genuine bifurcation is a real property of the circuit and
+    /// hiding it would be worse than showing it. The guard only ever changes which root the ladder
+    /// CONVERGES TO, by refusing to take the drive step in one leap.</para>
+    /// </summary>
+    public double LadderContinuityMarginDb { get; init; } = 3.0;
+
+    /// <summary>
     /// brief-harmonicarf-r4 §1 — R-h9r2-19 is superseded for the compression case: the explicit
     /// power sweep now stops once compression reaches <see cref="CompressionDb"/> +
     /// <see cref="SweepOverdriveDb"/>, rather than always running to <see cref="PinMaxDbm"/>. This
