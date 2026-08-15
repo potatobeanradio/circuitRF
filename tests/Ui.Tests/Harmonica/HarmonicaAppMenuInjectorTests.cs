@@ -190,10 +190,11 @@ public class HarmonicaAppMenuInjectorTests
         // list validator throws InvalidOperationException for an item that already has a Parent — a
         // reused (already-parented) instance would trip it immediately.
         Assert.Contains(
-            "private static NativeMenuItem Item(string header, System.Windows.Input.ICommand? command, object? parameter = null)",
+            "private static NativeMenuItem Item(string header, System.Windows.Input.ICommand? command,\n" +
+            "        object? parameter = null, KeyGesture? gesture = null)",
             src, System.StringComparison.Ordinal);
         Assert.Contains(
-            "=> new(header) { Command = command, CommandParameter = parameter };",
+            "=> new(header) { Command = command, CommandParameter = parameter, Gesture = gesture };",
             src, System.StringComparison.Ordinal);
 
         // Stateless: no field (this repo's convention: a leading underscore) could hand back a
@@ -242,5 +243,18 @@ public class HarmonicaAppMenuInjectorTests
         Assert.DoesNotContain("\"Redo\"", body, System.StringComparison.Ordinal);
         Assert.Contains("\"Settings…\"", body, System.StringComparison.Ordinal);
         Assert.Contains("\"Close\"", body, System.StringComparison.Ordinal);
+    }
+
+    // ── R9A §9 — Display ▸ Efficiency Metric ▸ "DE" reads "Drain Efficiency" (display text only;
+    //    the CommandParameter stays the string "DE") ──────────────────────────────────────────────
+
+    [Fact]
+    public void EfficiencyMetricItem_ReadsDrainEfficiency_WithTheDECommandParameterUnchanged()
+    {
+        string src = InjectorSource();
+        Assert.Contains(
+            "Item(\"Drain Efficiency\",  vm.SetEfficiencyMetricCommand, \"DE\")",
+            src, System.StringComparison.Ordinal);
+        Assert.DoesNotContain("Item(\"DE\",", src, System.StringComparison.Ordinal);
     }
 }

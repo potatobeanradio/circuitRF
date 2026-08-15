@@ -14,6 +14,18 @@ namespace CircuitRF.Harmonica.Tests;
 /// solve count, and which STAGE failed (tickle/PinStart/bracket/secant, and at what Pin); the totals;
 /// the same grid with the warm start and Pin hint disabled; and, for three failing points, whether
 /// <see cref="PinSearch.Sweep"/> converges at the same termination.
+///
+/// <para><b>R9C — this diagnosis is CONFIRMED AND CLOSED.</b> <see cref="ContourGrid.Build"/> and
+/// <see cref="ContourGrid.BuildParallel"/> no longer call <see cref="PinSearch.Run"/> for a grid point
+/// at all — both now walk <see cref="PinSearch.Sweep"/>'s ladder (R9C §3), which is exactly the fix
+/// this file's own §3's finding pointed at. <see cref="FailingPoints_RunUnderSweep_ForComparison"/>'s
+/// own output labels ("Run()=...") are therefore now a HISTORICAL comparison — <c>p.Result</c> there
+/// comes from the grid's OWN (now ladder-based) search, not literally <c>PinSearch.Run</c>; kept
+/// unrenamed so this file still reads as the record of what was found and fixed. A residual handful of
+/// genuine holes remain on this file's own larger/denser 61-point grid (2/61 at maxGamma 0.8, measured)
+/// — this project's 37-point shipped-default fixture is the one R9C's own gate holds to zero
+/// (<c>ContourGridTests.R9C_ShippedDefault_3x12Grid_HasNoHoles</c>); see <c>src/Harmonica/RESOLVED.md</c>'s
+/// own R9C entry for the measurement this file's finding fed into.</para>
 /// </summary>
 [Collection("HarmonicaBenchmarks")]
 public sealed class LoadpullHoleDiagnosticTests(ITestOutputHelper output)

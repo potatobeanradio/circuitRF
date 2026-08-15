@@ -41,7 +41,10 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         // (50 Ω, matching the default DUT's own input impedance) so REMOVING the marker never changes
         // the circuit — AddMarkerBand's own invariant, read backwards; band 2 keeps
         // TerminationSet.UnmarkedBandOhms exactly as before, unchanged from R-h9r2-1's own ruling.
-        // L1 (80+j10 Ω) and the L2/L3 unmarked-epsilon markers are UNCHANGED.
+        // R9A §7 — L1 is now 80+j0 Ω, not 80+j10: 80 Ω is the default DUT's own R_opt AND the default
+        // HarmonicaSettings.Z0 (CircuitModel.cs), so the default document now opens with L1 at the
+        // CENTRE of its own Smith chart — which is what Z0 = R_opt is for. The L2/L3 unmarked-epsilon
+        // markers are UNCHANGED.
         //
         // A LOADED .charm is completely unaffected: this only ever runs in the constructor's own
         // default-model path, never on load — RebuildMarkersFromTerminations (the load path) replaces
@@ -54,7 +57,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         Terminations.Set(TerminationSide.Source, 1, new Complex(50.0, 0.0));
 
         Markers.Add(new HarmonicaMarker(TerminationSideKind.Load, 1));
-        SetMarkerImpedance(Markers[0], new Complex(80, 10));
+        SetMarkerImpedance(Markers[0], new Complex(80, 0));
 
         var unmarked = new Complex(TerminationSet.UnmarkedBandOhms, 0);
         SetMarkerImpedance(AddMarkerBand(TerminationSideKind.Load, 2), unmarked);
@@ -415,6 +418,25 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     }
 
     /// <summary>
+    /// R9A §1 — re-stamps the CURRENT frame's marker snapshot from the live <see cref="Markers"/> list.
+    /// The panels draw <c>SmithPanelData.Markers</c>, not this collection (see HarmonicaSolver's own
+    /// snapshot at RequestFrame), so a marker added or removed between frames is otherwise invisible
+    /// until the next solve completes — while being fully hit-testable, because HarmonicaHitTest reads
+    /// the live list. UI-thread only, and a pure re-projection of an already-published immutable frame:
+    /// nothing is re-solved, and PublishFrame's own `frame with { PowerSweep = ... }` is the precedent.
+    /// </summary>
+    private void SyncMarkerSnapshotIntoFrame()
+    {
+        var snapshot = Markers.ToArray();
+        Frame = Frame with
+        {
+            Markers         = snapshot,
+            SmithPower      = Frame.SmithPower      with { Markers = snapshot },
+            SmithEfficiency = Frame.SmithEfficiency with { Markers = snapshot },
+        };
+    }
+
+    /// <summary>
     /// §4.2 / R-h7-2 — adds a band marker, or returns the existing one.
     ///
     /// <para><b>The marker and the <see cref="TerminationSet"/> entry are created TOGETHER</b>, through
@@ -444,6 +466,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         Markers.Insert(at, marker);
 
         SetMarkerImpedance(marker, Terminations.Z(engineSide, band));
+        SyncMarkerSnapshotIntoFrame();
         return marker;
 
         static int Rank(HarmonicaMarker m)
@@ -472,6 +495,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                                 band);
         Markers.Remove(marker);
 
+        SyncMarkerSnapshotIntoFrame();
         RedrawRequested?.Invoke();
         DirtyChanged?.Invoke();
         return true;
@@ -492,6 +516,17 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         if (!RemoveMarkerBand(marker.Side, marker.Band)) return false;
         RequestScheduledFrame(dragging: false);
         return true;
+    }
+
+    /// <summary>R9A §1 — the context menu's "Add Load/Source Marker". Adds the band, makes it visible
+    /// THIS instant (§1.2a), then asks for a frame so the strip gains its row and the intrinsic glyph
+    /// appears. <b>The circuit does not change</b> — AddMarkerBand's own invariant — so the frame is a
+    /// re-read of an unchanged state, not a correction.</summary>
+    public HarmonicaMarker AddMarkerBandAndShow(TerminationSideKind side, int band)
+    {
+        var marker = AddMarkerBand(side, band);
+        RequestScheduledFrame(dragging: false);
+        return marker;
     }
 
     /// <summary>Markers ▸ Reset to defaults — back to S1 and L1 alone, at 50 Ω.</summary>
@@ -1180,6 +1215,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     public void PublishFrame(HarmonicaFrame frame)
     {
         if (frame.Inverse is { } outcome) ApplyInverseOutcome(outcome);
+        if (frame.ConjugateMatch is { } match) ApplyConjugateMatch(match);
 
         Frame         = frame with { PowerSweep = frame.PowerSweep with { XUnit = PowerSweepXUnit } };
         SolveError    = null;
@@ -1963,6 +1999,145 @@ public sealed partial class HarmonicaViewModel : ObservableObject
                 _ => null,
             };
         }
+    }
+
+    /// <summary>
+    /// R9D §2 — writes S1 to conj(Zin) at the reported backoff and asks for a normal frame, which is what
+    /// re-renders the marker and regenerates the iso-lines ("as per normal usage"). A NOT-FOUND outcome
+    /// writes nothing and only sets the message — R-h6-9's rule ("nothing but a converged solve may write
+    /// a termination") applies here for the same reason: a marker that lands somewhere the solve did not
+    /// actually reach is worse than one that does not move.
+    ///
+    /// <para><b>Interaction with brief-harmonicarf-r9a §11:</b> that brief blanks the message line while
+    /// a gesture is live. This message is posted from a menu click, never mid-drag, so the two do not
+    /// collide.</para>
+    /// </summary>
+    private void ApplyConjugateMatch(ConjugateMatchOutcome match)
+    {
+        if (!match.Found) { InverseMessage = match.Reason; return; }
+
+        var s1 = Markers.FirstOrDefault(m => m.Side == TerminationSideKind.Source && m.Band == 1);
+        if (s1 is null) return;                       // the marker was removed between request and reply
+
+        SetMarkerImpedance(s1, Complex.Conjugate(match.Zin));
+        InverseMessage = $"S1 set to conj(Zin) = {HarmonicaReadoutFormatting.FormatZ(Complex.Conjugate(match.Zin), ReadoutFormat.RealImaginary)} " +
+                         $"at {match.ActualBackoffDb:0.0} dB backoff (Pin {match.PinDbm:0.0} dBm).";
+        RequestScheduledFrame(dragging: false);
+    }
+
+    /// <summary>R9D §2.5 — the S1 marker menu's "Match to Zin*" default backoff.</summary>
+    public const double ConjugateMatchBackoffDb = 5.0;
+
+    /// <summary>R9D §2.5 — the S1 marker's "Match to Zin*" command: a measurement-only frame
+    /// (<c>SkipContours</c>) that reports the backoff Zin, followed by <see cref="ApplyConjugateMatch"/>'s
+    /// own real re-solve once it lands. Two frames, one grid.</summary>
+    public long RequestConjugateMatch(double backoffDb)
+        => RequestFrame(OptionsFor(Scheduler.NextPlan(false), dragging: false) with
+        {
+            ConjugateMatchBackoffDb = backoffDb,
+            SkipContours = true,
+        });
+
+    // ── R9D §3 — PA-class preset terminations ───────────────────────────────
+
+    /// <summary>
+    /// Markers ▸ Preset Terminations ▸ Class B / J / J* / F / F⁻¹ (§3.6). Writes ONLY the Load-side
+    /// markers that already exist (§3.2 — a preset never CREATES a marker), computing each band's
+    /// INTRINSIC target from <see cref="PaClassPresets"/> and transforming it to the extrinsic plane
+    /// through <see cref="IntrinsicAbcd"/> (§3.3).
+    ///
+    /// <para><b>"Best effort", per §3.4.</b> A nonlinear capacitor is replaced by its LINEARIZED value
+    /// (the same number the readout strip already shows, from <see cref="HarmonicaSolver.
+    /// LinearizedCapacitanceFarads"/>) for the transform only — never written back to <see
+    /// cref="Model"/> — and the transform then proceeds normally. Every OTHER refusal in
+    /// <see cref="CircuitModel.IntrinsicDragAllowed"/>'s table (a non-SDD DUT, a non-absent Cdg, or a
+    /// package that couples the input and output loops) writes the intrinsic values straight AT the
+    /// extrinsic plane instead, and says so — never a solver, per the owner's own instruction.</para>
+    /// </summary>
+    public void ApplyPaClassPreset(PaClass paClass)
+    {
+        var loadMarkers = Markers.Where(m => m.Side == TerminationSideKind.Load).ToArray();
+        if (loadMarkers.Length == 0) { InverseMessage = null; return; }
+
+        double z0   = Model.Settings.Z0;
+        var    caps = Model.Dut.Capacitances;
+
+        CircuitModel transformModel = Model;
+        string? linearizedFallbackNote = null;
+        if (caps.Cgs.IsNonlinear || caps.Cdg.IsNonlinear || caps.Cds.IsNonlinear)
+        {
+            var ctx = EnsureContext();
+            var (cgs, cgsFellBack) = LinearizeForTransform(ctx, caps.Cgs, DutCapacitanceKind.Cgs);
+            var (cdg, cdgFellBack) = LinearizeForTransform(ctx, caps.Cdg, DutCapacitanceKind.Cdg);
+            var (cds, cdsFellBack) = LinearizeForTransform(ctx, caps.Cds, DutCapacitanceKind.Cds);
+
+            // R9D §3.4 — a model COPY, used for the transform only: substituting a linearized
+            // capacitor into the document would change the circuit the engine solves, which is not
+            // what "best effort" means.
+            transformModel = Model with
+            {
+                Dut = Model.Dut with { Capacitances = new DutCapacitances
+                {
+                    Cgs = cgs, Cdg = cdg, Cds = cds, RgsOhms = caps.RgsOhms,
+                } },
+            };
+
+            if (cgsFellBack || cdgFellBack || cdsFellBack)
+                linearizedFallbackNote = "no linearized value was available for a nonlinear capacitor " +
+                    "(nothing solved yet, or the intrinsic plane is not located) — its own C(V=0) " +
+                    "coefficient was used for the transform instead.";
+        }
+
+        bool bestEffortAtExtrinsic = !CircuitModel.IntrinsicDragAllowed(transformModel, out string refusalReason);
+        var poleFailures = new List<string>();
+
+        foreach (var marker in loadMarkers)
+        {
+            var zIntr = PaClassPresets.IntrinsicLoad(paClass, marker.Band, z0);
+            Complex zWrite;
+            if (bestEffortAtExtrinsic)
+            {
+                zWrite = zIntr;
+            }
+            else
+            {
+                var zExt = IntrinsicAbcd.ExtrinsicFor(transformModel, TerminationSide.Load, marker.Band, zIntr);
+                if (!double.IsFinite(zExt.Real) || !double.IsFinite(zExt.Imaginary))
+                {
+                    poleFailures.Add(marker.Name);
+                    continue;                          // R9D §3.3 item 1 — left unchanged, never clamped.
+                }
+                zWrite = zExt;
+            }
+            SetMarkerImpedance(marker, zWrite);
+        }
+
+        var messages = new List<string>();
+        if (bestEffortAtExtrinsic)
+            messages.Add($"Preset applied at the EXTRINSIC plane — {refusalReason} " +
+                         "The intrinsic terminations will differ.");
+        if (poleFailures.Count > 0)
+            messages.Add($"{string.Join(", ", poleFailures)} could not be transformed to the extrinsic " +
+                         $"plane and {(poleFailures.Count == 1 ? "was" : "were")} left as " +
+                         $"{(poleFailures.Count == 1 ? "it was" : "they were")}.");
+        if (linearizedFallbackNote is not null) messages.Add(linearizedFallbackNote);
+
+        InverseMessage = messages.Count > 0 ? string.Join(" ", messages) : null;
+        RequestScheduledFrame(dragging: false);
+    }
+
+    /// <summary>R9D §3.4 — the strip's own "linearized, or fall back to C(V=0)" pattern
+    /// (<see cref="Inputs"/>), reused verbatim for the transform. A linear/absent capacitor passes
+    /// through untouched.</summary>
+    private (DutCapacitance Cap, bool FellBack) LinearizeForTransform(
+        HarmonicaContext ctx, DutCapacitance cap, DutCapacitanceKind kind)
+    {
+        if (!cap.IsNonlinear) return (cap, false);
+
+        double? linearized = HarmonicaSolver.LinearizedCapacitanceFarads(ctx, Frame.Published, cap.Coefficients!, kind);
+        bool haveLinearized = linearized is { } lf && double.IsFinite(lf);
+        double farads = haveLinearized ? linearized!.Value : cap.Coefficients![0];
+        return (new DutCapacitance { Farads = farads }, !haveLinearized);
     }
 
     // ── persistence ──────────────────────────────────────────────────────────

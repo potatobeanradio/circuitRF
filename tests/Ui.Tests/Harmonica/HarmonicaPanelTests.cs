@@ -414,14 +414,34 @@ public sealed class HarmonicaPanelTests : IDisposable
         return SKBitmap.FromImage(surface.Snapshot());
     }
 
-    /// <summary>A PinMax most Γ points reach and the extreme-|Γ| ones do not — chosen by measurement
-    /// on this fixture, not guessed.</summary>
+    /// <summary>A PinMax comfortably reached everywhere on this fixture's own grid — R9C made the
+    /// ladder-based search robust enough that this SDD device now converges at every point up to
+    /// maxGamma≈0.99 at this PinMax (measured; the pre-R9C fixture's own 2/31-holes-at-34-dBm figure
+    /// relied on <c>PinSearch.Run</c>'s bracket being fragile near the compression boundary, which the
+    /// ladder no longer is). See <see cref="BuildGridWithADeliberateHole"/>'s own remarks for how this
+    /// fixture now gets its hole instead.</summary>
     private const double PinMaxForAFewHoles = 34.0;
 
     /// <summary>
-    /// A real <see cref="ContourGrid"/> with a deliberate hole: the device is given a PinMax it can
-    /// reach almost everywhere, and one Γ point is placed where it cannot — the same mechanism §6.3
-    /// describes, rather than a NaN written in by hand.
+    /// A real, converged <see cref="ContourGrid"/> with ONE point's own result overwritten to a hole.
+    ///
+    /// <para><b>R9C changed how this fixture gets its hole.</b> It used to rely on
+    /// <c>PinSearch.Run</c>'s bracket search being fragile enough near a tuned PinMax boundary that a
+    /// couple of Γ points would fail while the rest converged — measured at the time to be 2/31 at
+    /// maxGamma 0.90. The ladder-based search R9C replaced <c>Run</c> with for grid points is
+    /// deliberately more robust (that robustness is the whole point of R9C §3), so this fixture now
+    /// converges EVERYWHERE up to maxGamma≈0.99 at the same PinMax — scanned directly, not assumed —
+    /// which starved the old "tune PinMax until a few holes appear" approach: the transition from 0 to
+    /// "most points" holing is a near-vertical cliff (this SDD's whole grid tends to cross the
+    /// compression target within the SAME ladder rung), not the smooth few-holes gradient the old
+    /// approach exploited. So the grid is now solved to full convergence first (a genuine "mostly
+    /// converged" precondition, checked below), and exactly ONE already-converged point's own
+    /// <see cref="GridPoint"/> is overwritten with a hand-built <see cref="PinStopReason.PinMax"/>
+    /// result — the same mechanism §6.3 describes (a point that did not reach compression before
+    /// PinMax), just placed rather than hunted for. This is a strictly BETTER fixture than the one it
+    /// replaces: it no longer depends on a specific SDD's convergence boundary lining up with a hand-
+    /// tuned PinMax, so it cannot be starved again by a future search-robustness improvement.
+    /// </para>
     /// </summary>
     private static ContourGrid BuildGridWithADeliberateHole(out Complex holeGamma, out double holeRadius)
     {
@@ -460,24 +480,32 @@ public sealed class HarmonicaPanelTests : IDisposable
         terms.Set(TerminationSide.Source, 1, new Complex(25, 0));
         terms.Set(TerminationSide.Load,   1, new Complex(80, 10));
 
-        // maxGamma 0.90, not the original 0.85 — re-measured after brief-harmonicarf-r4 §3's
-        // PinSearch.Run bracket fix (src/Harmonica/RESOLVED.md's own §3 entry), which closed most of
-        // the bracket-stage holes this fixture used to rely on: at 0.85 this grid now converges with
-        // ZERO holes (0/31), which starved this test's own precondition below. Scanned 0.85–0.98 in
-        // 0.02 steps: 0.90 reproduces 2/31 holes reliably (deterministic — no RNG in this path) and is
-        // otherwise the same "PinMax reaches almost everywhere, not quite everywhere" fixture the
-        // original comment describes.
         var grid = new ContourGrid();
         grid.Build(ctx, terms, ContourGrid.RingGrid(rings: 3, spokes: 10, maxGamma: 0.90));
 
-        // The fixture must be a MOSTLY-converged grid with A FEW holes. An all-holes grid has no
-        // surface to draw and would pass the in-hole assertion vacuously; a no-holes grid has nothing
-        // to assert about. Guarding here means a future engine change that degenerates the fixture
-        // fails loudly instead of quietly making the test meaningless.
-        Assert.InRange(grid.HoleCount, 1, grid.Points.Count - 8);
+        // R9C — the fixture's OWN precondition is now "fully converged", not "a few holes": the hole
+        // is injected below, deliberately, rather than hunted for via PinMax tuning (see this method's
+        // own remarks for why). A future engine change degenerating THIS precondition still fails
+        // loudly rather than quietly making the test meaningless.
+        Assert.Equal(0, grid.HoleCount);
 
-        var hole = grid.Points.First(p => p.IsHole);
-        holeGamma  = hole.Gamma;
+        // Overwrite one INTERIOR point (not Γ=0, and not an outer-ring point the convex hull would clip
+        // anyway) with a hand-built PinMax hole — §6.3's own mechanism (a point that did not reach
+        // compression before PinMax), just placed at a known location instead of hunted for.
+        var points = (List<GridPoint>)typeof(ContourGrid)
+            .GetField("_points", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(grid)!;
+        int holeIndex = points.FindIndex(p => p.Gamma != Complex.Zero);
+        Assert.True(holeIndex >= 0, "no non-origin point to hole");
+        var target = points[holeIndex];
+        points[holeIndex] = target with
+        {
+            Result = new PinSearchResult(PinStopReason.PinMax, target.Result.Solves) { Steps = [] },
+        };
+
+        Assert.Equal(1, grid.HoleCount);
+
+        holeGamma  = points[holeIndex].Gamma;
         holeRadius = grid.HoleRadius;
         return grid;
     }
@@ -755,6 +783,42 @@ public sealed class HarmonicaPanelTests : IDisposable
         var watts = PowerSweepXUnit.PoutW.Values(d with { PoutDbm = [30.0, 0.0] });
         Assert.Equal(1.0,   watts[0], precision: 9);
         Assert.Equal(1e-3,  watts[1], precision: 12);
+    }
+
+    // ══ R9A §5 — owner ruling: the dashed operating-point cursor is removed from the power-sweep
+    //    plot entirely. A pixel probe at one column cannot separate the cursor from a grid line (the
+    //    same trap H4–H5 recorded for iso-lines vs Smith chrome), so the honest oracle is DIFFERENTIAL:
+    //    the same panel drawn at CursorIndex = -1 (no cursor) and at a valid index must now be
+    //    pixel-identical, because nothing reads CursorIndex to draw a mark any more.
+
+    [Fact]
+    public void PowerSweepPanel_RendersIdentically_RegardlessOfCursorIndex()
+    {
+        const int W = 480, H = 380;
+        var theme = HarmonicaRenderTheme.Dark;
+
+        int n = 33;
+        var pin  = Enumerable.Range(0, n).Select(i => -10.0 + i * 1.25).ToArray();
+        var gain = pin.Select(p => 14.5 - 4.0 * Math.Log(1 + Math.Exp((p - 18) * 0.45))).ToArray();
+        PowerSweepPanelData Data(int cursorIndex) => new()
+        {
+            PinAvailDbm   = pin,
+            PoutDbm       = pin.Zip(gain, (p, g) => p + g).ToArray(),
+            GainDb        = gain,
+            EfficiencyPct = pin.Select(p => 72.0 / (1 + Math.Exp(-(p - 14) * 0.30))).ToArray(),
+            CursorIndex   = cursorIndex,
+        };
+
+        byte[] Render(int cursorIndex)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(W, H));
+            surface.Canvas.Clear(theme.Background);
+            HarmonicaPanelRenderer.DrawPowerSweepPanel(surface.Canvas, (W, H), Data(cursorIndex), theme, darkMode: true);
+            using var bmp = SKBitmap.FromImage(surface.Snapshot());
+            return bmp.Bytes;
+        }
+
+        Assert.Equal(Render(-1), Render(20));
     }
 
     // ══ brief-harmonicarf-r6d §2 — right-side headroom past the sweep stop ═════════════════════════

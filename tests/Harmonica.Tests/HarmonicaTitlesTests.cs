@@ -77,4 +77,13 @@ public sealed class HarmonicaTitlesTests
     [Fact]
     public void MxHeaderRow_EmptyZText_KeepsTheOldPlaneOnlyHeader()
         => Assert.Equal("MXE 3f0 Source", HarmonicaTitles.MxHeaderRow("MXE", TerminationSide.Source, 3, zText: ""));
+
+    // ── R9A §4 — the header still just carries WHATEVER zText the caller hands it; the compact
+    //    (1-decimal) formatting itself is HarmonicaReadoutFormatting.FormatZCompact's job (src/Ui), so
+    //    this only pins that a compact zText slots into the header shape unchanged.
+
+    [Fact]
+    public void MxHeaderRow_WithACompactOneDecimalZText_CarriesItUnchanged()
+        => Assert.Equal("MXP 1f0 ZL1=96.3-j0.2 Ω",
+            HarmonicaTitles.MxHeaderRow("MXP", TerminationSide.Load, 1, "96.3-j0.2 Ω"));
 }

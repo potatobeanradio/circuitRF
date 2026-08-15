@@ -232,15 +232,25 @@ public static class HarmonicaReadoutFormatting
     public static ReadoutFormat DefaultReadoutFormat(string key)
         => IsIntrinsicVoltageOrCurrentKey(key) ? ReadoutFormat.MagnitudeAngle : ReadoutFormat.RealImaginary;
 
-    public static string FormatComplex(Complex z, ReadoutFormat format)
+    public static string FormatComplex(Complex z, ReadoutFormat format,
+        int partDecimals = ComplexPartDecimals, int magDecimals = ComplexMagDecimals)
     {
         if (double.IsNaN(z.Real) || double.IsNaN(z.Imaginary)) return "—";
         if (format == ReadoutFormat.MagnitudeAngle)
-            return $"{FixedWidth(z.Magnitude, ComplexMagDecimals, ComplexMagBudget)}" +
+            return $"{FixedWidth(z.Magnitude, magDecimals, ComplexMagBudget)}" +
                    $"∠{FixedWidth(z.Phase * 180.0 / Math.PI, AngleDecimals, AngleBudget)}°";
-        return $"{FixedWidth(z.Real, ComplexPartDecimals, ComplexPartBudget)}" +
-               $"{(z.Imaginary >= 0 ? "+j" : "-j")}{FixedWidth(Math.Abs(z.Imaginary), ComplexPartDecimals, ComplexPartBudget)}";
+        return $"{FixedWidth(z.Real, partDecimals, ComplexPartBudget)}" +
+               $"{(z.Imaginary >= 0 ? "+j" : "-j")}{FixedWidth(Math.Abs(z.Imaginary), partDecimals, ComplexPartBudget)}";
     }
+
+    /// <summary>R9A §4 — the MXP/MXE header's own impedance, at ONE decimal. This is the argmax of a
+    /// fitted RBF surface, not a measured value: three decimals (<see cref="ComplexPartDecimals"/>, which
+    /// every other complex row uses and which stays untouched) reads as a precision the fit does not
+    /// carry. One named constant, so the digit count is changed in one place.</summary>
+    public const int MxHeaderZDecimals = 1;
+
+    public static string FormatZCompact(Complex z, ReadoutFormat format)
+        => FormatComplex(z, format, partDecimals: MxHeaderZDecimals, magDecimals: MxHeaderZDecimals) + " Ω";
 
     /// <summary>
     /// Parses text back into a <see cref="Complex"/>, in the format it was DISPLAYED in. Refuses

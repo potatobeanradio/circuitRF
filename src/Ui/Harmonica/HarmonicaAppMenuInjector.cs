@@ -20,6 +20,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Controls;
+using Avalonia.Input;
 
 namespace CircuitRF.Ui.Harmonica;
 
@@ -116,11 +117,23 @@ public static class HarmonicaAppMenuInjector
         FillBands(sourceBands.Menu!, vm.SourceBands);
         FillBands(loadBands.Menu!,   vm.LoadBands);
 
+        // R9D §3.6 — writes ONLY the Load-side markers that already exist; never creates one.
+        var presetTerminations = new NativeMenuItem("Preset Terminations")
+        {
+            Menu = MenuOf(
+                Item("Class B",   vm.SetPaClassPresetCommand, "B",        new KeyGesture(Key.B, KeyModifiers.Meta)),
+                Item("Class J",   vm.SetPaClassPresetCommand, "J",        new KeyGesture(Key.J, KeyModifiers.Meta)),
+                Item("Class J*",  vm.SetPaClassPresetCommand, "JStar",    new KeyGesture(Key.J, KeyModifiers.Meta | KeyModifiers.Shift)),
+                Item("Class F",   vm.SetPaClassPresetCommand, "F",        new KeyGesture(Key.F, KeyModifiers.Meta)),
+                Item("Class F⁻¹", vm.SetPaClassPresetCommand, "FInverse", new KeyGesture(Key.F, KeyModifiers.Meta | KeyModifiers.Shift))),
+        };
+
         return new NativeMenuItem("Markers")
         {
             Menu = MenuOf(
                 sourceBands,
                 loadBands,
+                presetTerminations,
                 Sep(),
                 Item("Reset to Defaults", vm.ResetMarkersCommand)),
         };
@@ -144,7 +157,7 @@ public static class HarmonicaAppMenuInjector
         var efficiencyMetric = new NativeMenuItem("Efficiency Metric")
         {
             Menu = MenuOf(
-                Item("DE",  vm.SetEfficiencyMetricCommand, "DE"),
+                Item("Drain Efficiency",  vm.SetEfficiencyMetricCommand, "DE"),
                 Item("PAE", vm.SetEfficiencyMetricCommand, "PAE")),
         };
         var contourLevels = new NativeMenuItem("Contour Levels")
@@ -221,8 +234,9 @@ public static class HarmonicaAppMenuInjector
         return menu;
     }
 
-    private static NativeMenuItem Item(string header, System.Windows.Input.ICommand? command, object? parameter = null)
-        => new(header) { Command = command, CommandParameter = parameter };
+    private static NativeMenuItem Item(string header, System.Windows.Input.ICommand? command,
+        object? parameter = null, KeyGesture? gesture = null)
+        => new(header) { Command = command, CommandParameter = parameter, Gesture = gesture };
 
     private static NativeMenuItemSeparator Sep() => new();
 }

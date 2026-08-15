@@ -133,6 +133,22 @@ public sealed class ContourGridParallelTests(ITestOutputHelper output)
         // hint-propagation sensitivity — a ContourGrid-level concern, outside §3's own scope (which is
         // PinSearch.Run's bracket sampling, not ContourGrid's hint-selection). Flagged here rather than
         // chased further this pass, per this repo's own "explained residual" precedent (RESOLVED.md §3).
+        //
+        // brief-harmonicarf-r9c §3.4 (2026-08-15) — MEASURED, NOT ASSUMED: the brief's own expectation
+        // ("should shrink or vanish, because a uniform ladder does not depend on which neighbour seeded
+        // it") does NOT hold on this fixture. The worst-case PAE deviation is now ~8.6 pts, UP from the
+        // ~3.7-3.8 pts recorded above — the paragraphs above describing Run()'s own doubling-stride
+        // bracket no longer describe the current code AT ALL (neither Build nor BuildParallel calls
+        // PinSearch.Run for a grid point any more; both walk PinSearch.Sweep's ladder, see this class's
+        // own R9C-updated remarks). The hole SET still matches exactly (0/0 here) — the hard assertion
+        // this gate exists for — so this is reported as the honest new number, not chased further: the
+        // likely mechanism is NeighborLevelSeedMaxGammaDistance's own guard (ContourGrid.cs) admitting a
+        // DIFFERENT set of "close enough" neighbours to seed from between the serial (whole-grid search)
+        // and parallel (per-batch search) builders, which on this fixture's own non-monotone
+        // (gain-EXPANSION) curve can settle two otherwise-valid ladders at genuinely different points
+        // along a locally flat region — not a correctness defect (both sides still hit the SAME
+        // compression target from a still-converged, still-legitimate ladder), but a real sensitivity,
+        // recorded rather than hidden.
         double worstPoutDb = 0, worstDePts = 0, worstPaePts = 0;
         int compared = 0;
         for (int i = 0; i < gammaGrid.Length; i++)

@@ -289,13 +289,15 @@ public sealed class HarmonicaR6eDialogsAndMenusTests
         Assert.DoesNotContain("SetPowerSweepAutoscale(false)", psBody, StringComparison.Ordinal);
 
         // R7A §2.3 — the shared helper itself must route BOTH callers' "Locked" click through the
-        // caller-supplied onLockedClick, never a bare toggle of its own.
+        // caller-supplied onLockedClick, never a bare toggle of its own. R9A §10 — both rows now go
+        // through the shared Toggle(...) helper (see Toggle's own Click wiring), rather than a
+        // hand-built MenuItem with its own Click lambda.
         int helperStart = src.IndexOf("private static void AddAutoscaleLockedItems(", StringComparison.Ordinal);
         Assert.True(helperStart >= 0);
         int helperEnd = src.IndexOf("\n    // ── §4 (R2A)", helperStart, StringComparison.Ordinal);
         string helperBody = src[helperStart..helperEnd];
-        Assert.Contains("locked.Click += (_, _) => onLockedClick();", helperBody, StringComparison.Ordinal);
-        Assert.Contains("autoscale.Click += (_, _) => onAutoscaleClick();", helperBody, StringComparison.Ordinal);
+        Assert.Contains("Toggle(\"Locked\", !autoscaleOn, onLockedClick)", helperBody, StringComparison.Ordinal);
+        Assert.Contains("Toggle(\"Autoscale\", autoscaleOn, onAutoscaleClick)", helperBody, StringComparison.Ordinal);
     }
 
     // ══ R8B §5.4 — the icon-slot convention is enforced repo-wide in this one file ══════════════

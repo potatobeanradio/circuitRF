@@ -219,14 +219,14 @@ public sealed class HarmonicaAddedGridPointsTests(ITestOutputHelper output)
         // rather than a bare `new MenuItem { Header = … }`, so the source pattern to look for changed
         // from `Header = "…"` to `Item("…"`.
         int snap        = body.IndexOf("Toggle(\"Snap to Grid\",", System.StringComparison.Ordinal);
-        int addPoint    = body.IndexOf("Item(\"Add Point\"", System.StringComparison.Ordinal);
-        int addVswr     = body.IndexOf("Item(\"Add Points to VSWR\"", System.StringComparison.Ordinal);
+        int addPoint    = body.IndexOf("Item(\"Add Grid Points\"", System.StringComparison.Ordinal);
+        int addVswr     = body.IndexOf("Item(\"Add Grid Points to VSWR\"", System.StringComparison.Ordinal);
         int lastSep     = body.LastIndexOf("new Separator()", System.StringComparison.Ordinal);
         int remove      = body.IndexOf("Item($\"Remove {marker.Name}\"", System.StringComparison.Ordinal);
 
         Assert.True(snap >= 0 && addPoint >= 0 && addVswr >= 0 && lastSep >= 0 && remove >= 0);
-        Assert.True(snap < addPoint,     "Add Point must come after Snap to Grid");
-        Assert.True(addPoint < addVswr,  "Add Points to VSWR must come directly after Add Point");
+        Assert.True(snap < addPoint,     "Add Grid Points must come after Snap to Grid");
+        Assert.True(addPoint < addVswr,  "Add Grid Points to VSWR must come directly after Add Grid Points");
         Assert.True(addVswr < lastSep,   "the separator before Remove must come after both");
         Assert.True(lastSep < remove,    "Remove is the last item");
 

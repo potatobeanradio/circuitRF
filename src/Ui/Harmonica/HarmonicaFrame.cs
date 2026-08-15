@@ -208,7 +208,30 @@ public sealed record SmithPanelData
     /// <param name="Published">Zin/AM-PM and the rest of §5's cubes at that solve, or null.</param>
     public sealed record SmithOptimum(
         Complex Gamma, double MetricValue,
-        CircuitRF.Harmonica.PinStep? Solved, RfCore.Data.DataSet? Published);
+        CircuitRF.Harmonica.PinStep? Solved, RfCore.Data.DataSet? Published)
+    {
+        /// <summary>
+        /// R9C §2.1 — why this optimum has no <see cref="Solved"/>/<see cref="Published"/> from a
+        /// full-quality frame's OWN drive-up: the search itself ran and failed (read off its
+        /// <c>PinStopReason</c> — <c>PinMax</c> and <c>NonConvergence</c> are different stories and
+        /// stay distinguishable rather than merged into one refusal), never a fabricated fallback like
+        /// the search's last surviving probe. Null when <see cref="Solved"/> is non-null, and also null
+        /// on a degraded/<c>SkipContours</c> frame — that case never ran a drive-up at all this frame,
+        /// which is a different story from one that ran and failed.
+        /// </summary>
+        public string? UnsolvedReason { get; init; }
+
+        /// <summary>
+        /// R9C §2.3 — the compression point's own SCALAR figures (Pout/Gain/DE/PAE/Pdc), read from the
+        /// ladder's <c>SweepCompression</c> — the interpolated (or, with <c>ExactCompressionSolve</c>,
+        /// one-real-solve) reading AT the target — rather than from <see cref="Solved"/>'s own (nearest
+        /// ladder RUNG) numbers, exactly the <c>AtCompression</c>-vs-<c>SweepCompression</c> split every
+        /// other reader of a <c>PinSearchResult</c> already follows (<c>HarmonicaSolver</c>'s own
+        /// operating-point column). Null for a <c>Run()</c>-based caller, whose own
+        /// <c>AtCompression</c> already sits exactly on target.
+        /// </summary>
+        public CircuitRF.Harmonica.CompressionReadout? SolvedCompression { get; init; }
+    }
 
     /// <summary>This panel's own resolved optimum (R-h9b-15/16/17). Null means "no optimum" —
     /// every grid point a hole, or a <c>SkipContours</c> frame — never a cross at the origin.</summary>
@@ -377,6 +400,13 @@ public sealed record HarmonicaFrame
     /// </summary>
     public InverseOutcome? Inverse { get; init; }
 
+    /// <summary>
+    /// R9D §2 — the S1 "Match to Zin*" command's answer, or null on every ordinary frame. Carried on
+    /// the frame for the same reason <see cref="Inverse"/> is: the answer is computed on a WORKER and
+    /// the termination it writes is UI-visible state.
+    /// </summary>
+    public ConjugateMatchOutcome? ConjugateMatch { get; init; }
+
     /// <summary>Every marker, once. Both Smith panels hold references INTO this list (R-h45-3).</summary>
     public IReadOnlyList<HarmonicaMarker> Markers { get; init; } = [];
 
@@ -419,3 +449,17 @@ public sealed record InverseOutcome(
     CircuitRF.Harmonica.InverseBand[] Bands,
     Complex[] Gammas,
     double Residual);
+
+/// <summary>
+/// R9D §2 — the S1 "Match to Zin*" command's answer, as it crosses back to the UI thread.
+/// </summary>
+/// <param name="Found">False means NOTHING is written — R-h6-9's rule, applied here.</param>
+/// <param name="Reason">Why not, when it was not found. Shown on the message line, never thrown.</param>
+/// <param name="RequestedBackoffDb">What was asked for (5 dB).</param>
+/// <param name="ActualBackoffDb">What the nearest ALREADY-SOLVED ladder rung actually is, which is
+/// what "approximately" in the owner's request means and what the message line must state.</param>
+/// <param name="PinDbm">That rung's own Pin.</param>
+/// <param name="Zin">Zin there, at the extrinsic source plane, fundamental.</param>
+public sealed record ConjugateMatchOutcome(
+    bool Found, string? Reason, double RequestedBackoffDb, double ActualBackoffDb,
+    double PinDbm, Complex Zin);

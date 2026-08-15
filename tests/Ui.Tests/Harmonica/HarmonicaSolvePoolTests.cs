@@ -79,6 +79,38 @@ public sealed class HarmonicaSolvePoolTests(ITestOutputHelper output)
                          $"{used.Grid.Points.Count} Γ points on worker {used.Index}");
     }
 
+    // ── R9C §4 — the first frame is solved at full quality, like every other frame ──────────
+
+    [Fact]
+    public void TheFirstScheduledFrame_PlansFullQuality_WithTheFullRingSet()
+    {
+        // HarmonicaView.EnsureFirstSolve now calls RequestScheduledFrame(dragging: false) — exactly
+        // this call — instead of a bare RequestFrame(), which used to take Options' own (coarse)
+        // defaults. NextPlan(dragging: false) always resolves to FrameQuality.Full regardless of the
+        // ladder's current rung (§6.8's "freeze-and-snap": a released drag always gets the full grid).
+        var vm = new HarmonicaViewModel();
+        vm.RequestScheduledFrame(dragging: false);
+
+        Assert.NotNull(vm.LastPlan);
+        var plan = vm.LastPlan!.Value;
+        Assert.Equal(FrameQuality.Full, plan.Quality);
+        Assert.Equal(FrameScheduler.FullRings,  plan.Rings);
+        Assert.Equal(FrameScheduler.FullSpokes, plan.Spokes);
+        Assert.False(plan.SkipContours);
+        Assert.Equal(HarmonicaSolver.Options.FullRasterResolution, plan.RasterResolution);
+    }
+
+    [Fact]
+    public void ABareOptionsRecord_AlsoDefaultsToTheFullRingSet()
+    {
+        // R9C §4 — a bare `new Options()` (used by tests, and reachable by any future caller) must not
+        // silently stay on the coarse rung: that is precisely the trap that let a document's LAUNCH
+        // frame (the old bare RequestFrame()) diverge from every later frame.
+        var opt = new HarmonicaSolver.Options();
+        Assert.Equal(FrameScheduler.FullRings,  opt.Rings);
+        Assert.Equal(FrameScheduler.FullSpokes, opt.Spokes);
+    }
+
     [Fact]
     public async Task TierC_IsComputedOnce_EvenThoughEveryWorkerHasItsOwnContext()
     {

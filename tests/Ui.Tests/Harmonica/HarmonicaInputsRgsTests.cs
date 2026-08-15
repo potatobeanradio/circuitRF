@@ -3,9 +3,12 @@
 // ================================================================
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using CircuitRF.Harmonica;
 using CircuitRF.Ui.Harmonica;
+using CircuitRF.Ui.Views.Harmonica;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Harmonica;
@@ -95,5 +98,74 @@ public sealed class HarmonicaInputsRgsTests
         var row = HarmonicaInputs.Build(SddModel(caps)).Single(i => i.Key == HarmonicaInputs.KeyRgs);
         Assert.Equal("12.5", row.Text);
         Assert.Equal("Ω", row.Unit);
+    }
+
+    // ══ R9A §2 — rgs moves into the ReadoutStripView Settings/Capacitance chunk ═══════════════════
+    // ReadoutStripView cannot be instantiated headlessly, so these reach its private static members
+    // through reflection, the pattern HarmonicaR3cStripTests already uses.
+
+    private static readonly Type StripType = typeof(ReadoutStripView);
+
+    private static string[] SettingsColumnKeys()
+        => (string[])StripType
+            .GetField("SettingsColumnKeys", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetValue(null)!;
+
+    private static string[] EffectiveSettingsColumnKeys(IReadOnlyDictionary<string, HarmonicaInput> named)
+    {
+        var method = StripType.GetMethod("EffectiveSettingsColumnKeys",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return (string[])method!.Invoke(null, [named])!;
+    }
+
+    private static string SettingsWorstCaseValueText(string key)
+    {
+        var method = StripType.GetMethod("SettingsWorstCaseValueText",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return (string)method!.Invoke(null, [key])!;
+    }
+
+    private static bool IsCapacitanceKey(string key)
+    {
+        var method = StripType.GetMethod("IsCapacitanceKey",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return (bool)method!.Invoke(null, [key])!;
+    }
+
+    [Fact]
+    public void SettingsColumnKeys_PlacesRgsImmediatelyBeforeCgs()
+    {
+        var keys = SettingsColumnKeys();
+        int rgsIndex = Array.IndexOf(keys, HarmonicaInputs.KeyRgs);
+        int cgsIndex = Array.IndexOf(keys, HarmonicaInputs.KeyCgs);
+
+        Assert.True(rgsIndex >= 0);
+        Assert.Equal(cgsIndex - 1, rgsIndex);
+    }
+
+    [Fact]
+    public void EffectiveSettingsColumnKeys_IncludesRgs_OnlyWhenCgsIsPresent()
+    {
+        var sddNamed = HarmonicaInputs.Build(SddModel()).ToDictionary(i => i.Key, i => i, StringComparer.Ordinal);
+        var fetNamed = HarmonicaInputs.Build(NativeFetModel()).ToDictionary(i => i.Key, i => i, StringComparer.Ordinal);
+
+        Assert.Contains(HarmonicaInputs.KeyRgs, EffectiveSettingsColumnKeys(sddNamed));
+        Assert.DoesNotContain(HarmonicaInputs.KeyRgs, EffectiveSettingsColumnKeys(fetNamed));
+        Assert.DoesNotContain(HarmonicaInputs.KeyCgs, EffectiveSettingsColumnKeys(fetNamed));
+    }
+
+    [Fact]
+    public void SettingsWorstCaseValueText_ForRgs_IsNotTheDefaultFallback()
+    {
+        Assert.NotEqual("0000000000", SettingsWorstCaseValueText(HarmonicaInputs.KeyRgs));
+    }
+
+    [Fact]
+    public void IsCapacitanceKey_IsFalseForRgs()
+    {
+        Assert.False(IsCapacitanceKey(HarmonicaInputs.KeyRgs));
     }
 }

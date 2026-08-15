@@ -457,6 +457,158 @@ public sealed class ContourGridTests(ITestOutputHelper output)
         output.WriteLine("three metrics and a values-only invalidation: 1 factorization");
     }
 
+    // ── R9C §3 — the contour grid's per-point search becomes a ladder ─────────
+
+    /// <summary>
+    /// The SHIPPED DEFAULT document's own physics — <c>HarmonicaViewModel.DefaultModel()</c>'s SDD
+    /// (Hero 2's GaN HEMT, folded coefficients, <c>Periphery_mm=1</c> so it is algebraically identical
+    /// to that document's own equations), Vgs −3.05, Vds 48, K = 3, PinMax 34, S1 = 50 Ω, L1 = 80 Ω
+    /// (the document's own default Z0) — reproduced here rather than referenced across the UI/framework
+    /// boundary this project must never cross (<c>src/Harmonica/CLAUDE.md</c>: "references no UI
+    /// framework and never may").
+    /// </summary>
+    private static CircuitModel ShippedDefaultModel() => new()
+    {
+        Dut = new DutSpec
+        {
+            Kind = DutKind.Sdd, TypeName = "SDD",
+            Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["I[1,0]"] = "_v1/50",
+                ["I[2,0]"] = "(1130*1.507*tanh(_v2*0.176*(tanh(0.089*(4.268-_v1+_v2*0.001+0.71*ln(exp(-(-0.837-_v1)/0.71)+1)))+1))" +
+                             "*ln(exp(-(2*4.268-2*_v1+2*_v2*0.001+2*0.71*ln(exp(-(-0.837-_v1)/0.71)+1))/1.507)+1)*(_v2*0.0012+1))/2",
+            },
+        },
+        Bias     = new BiasSpec { Vgs = -3.05, Vds = 48 },
+        Settings = new HarmonicaSettings { HarmonicCount = 3, PinMaxDbm = 34 },   // everything else: HarmonicaSettings' own defaults
+    };
+
+    private static TerminationSet ShippedDefaultTerminations(CircuitModel m)
+    {
+        var t = new TerminationSet(m.Settings.HarmonicCount);
+        t.Set(TerminationSide.Source, 1, new Complex(50, 0));
+        t.Set(TerminationSide.Load,   1, new Complex(m.Settings.Z0, 0));   // the document's own Z0 = 80 Ω
+        return t;
+    }
+
+    [Fact]
+    public void R9C_ShippedDefault_3x12Grid_HasNoHoles()
+    {
+        // R9C §0.1/§0.3 — the owner's own hole report, as a gate. Before this brief, the 37-point grid
+        // carried 4 holes on the launch (coarse) frame and 1 on every later (full-quality, 3×12) one —
+        // that one survivor was Γ = 0.8 (Z = 720 Ω), where PinSearch.Run's doubling bracket returned
+        // NonConvergence (9 solves, 2 retries) while PinSearch.Sweep compresses there cleanly at
+        // 12.7 dBm / 32.0 dBm (matches the brief's own measured 12.74 dBm / 32.05 dBm at the same
+        // termination). Measured here, not merely asserted: 0 holes on the current code.
+        var model = ShippedDefaultModel();
+        var ctx = HarmonicaContext.Create(model);
+        var terms = ShippedDefaultTerminations(model);
+        var gammaGrid = ContourGrid.RingGrid(rings: 3, spokes: 12, maxGamma: 0.8);
+
+        var grid = new ContourGrid();
+        grid.Build(ctx, terms, gammaGrid);
+
+        output.WriteLine($"{gammaGrid.Length}-point grid: {grid.HoleCount} holes, {grid.SolveCount} solves");
+        Assert.Equal(0, grid.HoleCount);
+
+        var atZ720 = grid.Points.Single(p => Math.Abs(p.Z.Real - 720.0) < 1e-6 && Math.Abs(p.Z.Imaginary) < 1e-6);
+        Assert.False(atZ720.IsHole);
+        Assert.NotNull(atZ720.Result.SweepCompression);
+        output.WriteLine($"Z=720 Ω: Pin={atZ720.Result.SweepCompression!.PinDbm:F2} dBm, " +
+                         $"Pout={atZ720.Result.SweepCompression.PoutDbm:F2} dBm");
+    }
+
+    [Theory]
+    [InlineData(720.0, 0.0)]
+    [InlineData(132.319, -1.786)]
+    [InlineData(96.331, -0.152)]
+    public void R9C_LadderStep_AgreesWithTheFinerPanelStep_WithinFiveHundredthsOfADb(double zRe, double zIm)
+    {
+        // R9C §6's own A/B: the grid's own per-point ladder step (ContourLadderStepDbm, 2 dB) against
+        // the panel's finer default step (PinStepDbm, 1 dB), driven directly at the SAME termination —
+        // §0.4's own claim ("1 dB and 2 dB agree to 0.03 dB in Pin and 0.002 dB in Pout") measured at
+        // three named terminations rather than only over the whole-grid average. Measured worst case
+        // here is 0.0134 dB (at Z = 132.319 − j1.786); 0.05 dB is comfortable headroom above that.
+        const double ToleranceDb = 0.05;
+
+        var model = ShippedDefaultModel();
+        var ctx = HarmonicaContext.Create(model);
+        var terms = ShippedDefaultTerminations(model);
+        var z = new Complex(zRe, zIm);
+
+        var tCoarse = terms.Clone(); tCoarse.Set(TerminationSide.Load, 1, z);
+        var coarse = PinSearch.Sweep(ctx, tCoarse, model.Settings.PinStartDbm, model.Settings.PinMaxDbm,
+                                     model.Settings.ContourLadderStepDbm);
+
+        var tFine = terms.Clone(); tFine.Set(TerminationSide.Load, 1, z);
+        var fine = PinSearch.Sweep(ctx, tFine, model.Settings.PinStartDbm, model.Settings.PinMaxDbm,
+                                   model.Settings.PinStepDbm);
+
+        Assert.True(coarse.Compressed, $"the 2 dB ladder did not compress at Z={z}");
+        Assert.True(fine.Compressed,   $"the 1 dB ladder did not compress at Z={z}");
+
+        double diff = Math.Abs(coarse.SweepCompression!.PoutDbm - fine.SweepCompression!.PoutDbm);
+        output.WriteLine($"Z={z}: 2 dB Pout={coarse.SweepCompression.PoutDbm:F4} dBm, " +
+                         $"1 dB Pout={fine.SweepCompression.PoutDbm:F4} dBm, diff={diff:F4} dB");
+        Assert.True(diff < ToleranceDb,
+            $"2 dB and 1 dB ladders disagree by {diff:F4} dB at Z={z} — more than the {ToleranceDb} dB budget");
+    }
+
+    [Fact]
+    public void Metric_ReadsSweepCompression_NotTheNearestLadderRung()
+    {
+        // R9C §3.3 — a GridPoint built from a ladder result whose SweepCompression differs from its
+        // AtCompression's own (nearest-rung) numbers must report the INTERPOLATED reading, or every
+        // contour value quantises to the ladder's own step size.
+        var pt = new OperatingPoint(new Complex[1, 1], new Complex[1, 1], true, 3, 0)
+        {
+            YNN = [], ISrc = [], INlTotal = new Complex[1, 1], Residual = 0,
+        };
+        var rungStep = new PinStep(24.0, 3.0, pt)
+        {
+            Foms = new CircuitRF.Engine.Loadpull.LoadpullEngine.FomResult(1, 0.5, PoutWFor(30.0), 0, 0),
+            PdcW = 5.0,
+        };
+        var interpolated = new CompressionReadout(
+            PinDbm: 23.4, PoutDbm: 31.2, GainDb: 14.0, De: 0.55, Pae: 0.5, PdcW: 5.1,
+            Spectrum: rungStep, WasInterpolated: true);
+
+        var result = new PinSearchResult(PinStopReason.Compression, 20)
+        {
+            Steps = [rungStep], AtCompression = rungStep, SweepCompression = interpolated,
+        };
+        var gridPoint = new GridPoint(new Complex(0.1, 0), new Complex(96, 0), result);
+
+        double metricPout = gridPoint.Metric(GridMetric.PoutDbm);
+        Assert.NotEqual(30.0, metricPout, precision: 3);     // NOT the nearest-rung (AtCompression) Pout
+        Assert.Equal(31.2, metricPout, precision: 6);        // the interpolated (SweepCompression) Pout
+
+        Assert.Equal(0.55 * 100.0, gridPoint.Metric(GridMetric.DrainEfficiency), precision: 6);
+        Assert.Equal(0.5  * 100.0, gridPoint.Metric(GridMetric.Pae),             precision: 6);
+    }
+
+    [Fact]
+    public void Metric_FallsBackToAtCompression_WhenSweepCompressionIsAbsent()
+    {
+        // A Run()-based result never populates SweepCompression (its own AtCompression already sits
+        // exactly on target) — Metric must still read a sensible number in that case.
+        var pt = new OperatingPoint(new Complex[1, 1], new Complex[1, 1], true, 3, 0)
+        {
+            YNN = [], ISrc = [], INlTotal = new Complex[1, 1], Residual = 0,
+        };
+        var step = new PinStep(24.0, 3.0, pt)
+        {
+            Foms = new CircuitRF.Engine.Loadpull.LoadpullEngine.FomResult(1, 0.5, PoutWFor(30.0), 0, 0),
+            PdcW = 5.0,
+        };
+        var result = new PinSearchResult(PinStopReason.Compression, 10) { Steps = [step], AtCompression = step };
+        var gridPoint = new GridPoint(new Complex(0.1, 0), new Complex(96, 0), result);
+
+        Assert.Equal(30.0, gridPoint.Metric(GridMetric.PoutDbm), precision: 3);
+    }
+
+    private static double PoutWFor(double dbm) => Math.Pow(10.0, (dbm - 30.0) / 10.0);
+
     // ── §3 (R1C) — the grid-build progress callback ────────────────────────────
 
     [Fact]

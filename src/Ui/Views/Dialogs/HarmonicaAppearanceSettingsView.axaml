@@ -1,56 +1,155 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dialogs="clr-namespace:CircuitRF.Ui.Views.Dialogs"
              x:Class="CircuitRF.Ui.Views.Dialogs.HarmonicaAppearanceSettingsView">
 
   <!--
-    brief-harmonicarf-r6a §2.2 — lifted verbatim from the former HarmonicaPreferencesDialog (its own
-    §7.9.4 colour editor), as a UserControl tab of HarmonicaSettingsDialog. Reuses circuitRF's existing
-    colour UI rather than a new one — the role-list + hex-field pattern from Views/Dialogs/SettingsView,
-    and Views/Dialogs/ColorPickerDialog for the picker itself — because that code has already absorbed
-    two non-obvious fixes worth inheriting rather than rediscovering:
+    brief-harmonicarf-r9b — this view's LAYOUT now mirrors circuitRF's own Color Theme tab
+    (Views/Dialogs/SettingsView.axaml's "Color Theme" TabItem) as closely as possible, per the owner's
+    own instruction, including its double-click-a-swatch gesture (OnRoleDoubleTapped) in place of the
+    former "Pick…" button. RoleRowModel is SettingsView's own namespace-level type (declared there so
+    XAML's x:DataType can see it), reused here rather than redeclared.
 
-      • THE HEX-FIELD KEY HANDLING. Return applies AND sets e.Handled = true, or the window's default
-        button closes the dialog instead of applying; Escape reverts; LostFocus applies; the value is
-        RRGGBBAA, with a 6-digit entry taken as opaque.
-      • ColorView must be GIVEN its Fluent theme or it instantiates blank. It is included in the
-        app's App.axaml today; §3.1 warns that the standalone harmonicaRF entry point has its own
-        Application.Styles and must carry the same include, because it fails silently.
+    ONE STRUCTURAL DIFFERENCE IS DELIBERATE AND MUST NOT BE "FINISHED" AWAY: circuitRF's tab edits
+    WORKING COPIES, previews through ThemeService, and commits/discards at the dialog's Close/Cancel —
+    it also carries a theme-NAME combo and a "Save Theme…" button. harmonicaRF has none of that: it
+    runs with no workspace open and ships standalone, so a theme name plus a search path has nothing to
+    resolve against (HarmonicaColorEditor's own header, R-h7-15). Every edit here still writes straight
+    through HarmonicaColorEditor.Set immediately — nothing here is deferred or cancellable — which is
+    also what makes live preview free (R-h7-16: nothing on this path can reach a ContourGrid, a
+    HarmonicaContext or a scheduler). Do NOT add a theme combo, a "Save Theme…" button,
+    ForkToCustomIfNeeded, ThemeService preview, or working-copy dictionaries to this view. The
+    Import .ccolor… / Export .ccolor… / Reset All Colours row keeps its place — it is harmonicaRF's
+    answer to the theme combo, not a leftover to be replaced by one.
+
+    THE HEX-FIELD KEY HANDLING and the ColorView Fluent-theme requirement are unchanged from before
+    this brief:
+      • Return applies AND sets e.Handled = true, or the window's default button closes the dialog
+        instead of applying; Escape reverts; LostFocus applies; the value is RRGGBBAA, with a 6-digit
+        entry taken as opaque.
+      • ColorView must be GIVEN its Fluent theme or it instantiates blank. The standalone harmonicaRF
+        entry point (HarmonicaApp.axaml) is a superset by construction of App.axaml's style set
+        (CircuitRfStyles.axaml, which pulls in Avalonia.Controls.ColorPicker's Fluent theme), so
+        ColorPickerDialog renders correctly there too. This brief makes the picker the ONLY way to
+        reach a colour wheel — there is no more "Pick…" button — so a missing include would now be
+        felt everywhere this view is used, not just on one button; it would still fail SILENTLY (a
+        blank box, no exception) if that include ever regressed.
   -->
 
   <Grid RowDefinitions="Auto,*,Auto" Margin="12">
 
-    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
-      <TextBlock Text="Variant" VerticalAlignment="Center" Opacity="0.7"/>
-      <RadioButton x:Name="LightRadio" Content="Light" GroupName="Variant" IsCheckedChanged="OnVariantChanged"/>
-      <RadioButton x:Name="DarkRadio"  Content="Dark"  GroupName="Variant" IsChecked="True" IsCheckedChanged="OnVariantChanged"/>
-    </StackPanel>
+    <!-- Row 0 — variant row, laid out like circuitRF's theme-selector row (radios right-docked first
+         so they don't collapse). The left slot that holds circuitRF's theme combo carries a plain
+         section label here, since harmonicaRF has no theme to name. -->
+    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+        <RadioButton x:Name="LightRadio" Content="Light" GroupName="Variant"
+                     IsCheckedChanged="OnVariantChanged" FontSize="12"/>
+        <RadioButton x:Name="DarkRadio"  Content="Dark"  GroupName="Variant" IsChecked="True"
+                     IsCheckedChanged="OnVariantChanged" FontSize="12"/>
+      </StackPanel>
+      <TextBlock Text="Colours" VerticalAlignment="Center" FontSize="12"/>
+    </DockPanel>
 
-    <Grid Grid.Row="1" ColumnDefinitions="240,*">
+    <!-- Row 1 — role list (left) + colour editor (right), transcribed from
+         SettingsView.axaml:186-281 -->
+    <Grid Grid.Row="1" ColumnDefinitions="200,10,*">
 
-      <ListBox x:Name="RoleList" Grid.Column="0" SelectionChanged="OnRoleSelected"
-               ToolTip.Tip="Right-click a role to reset just that one, in both variants."/>
+      <!-- Role list -->
+      <Border Grid.Column="0" BorderBrush="{DynamicResource ThemeBorderMidBrush}"
+              BorderThickness="1" CornerRadius="4" ClipToBounds="True">
+        <ListBox x:Name="RoleList" SelectionMode="Single"
+                 SelectionChanged="OnRoleSelected" DoubleTapped="OnRoleDoubleTapped"
+                 FontSize="11.5" Padding="2"
+                 ToolTip.Tip="Double-click a colour sample to open the picker. Right-click a role to reset just that one, in both variants.">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="dialogs:RoleRowModel">
+              <StackPanel Orientation="Horizontal" Spacing="7" Margin="2,1">
+                <Rectangle Width="14" Height="14" RadiusX="2" RadiusY="2" VerticalAlignment="Center">
+                  <Rectangle.Fill>
+                    <SolidColorBrush Color="{Binding SwatchColor}"/>
+                  </Rectangle.Fill>
+                </Rectangle>
+                <TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
 
-      <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="8">
+      <!-- Colour editor (right panel) -->
+      <StackPanel Grid.Column="2" Spacing="10">
 
-        <TextBlock x:Name="RoleNameLabel" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <!-- Colour preview swatch -->
+        <Border CornerRadius="4" ClipToBounds="True" Height="40">
+          <Rectangle x:Name="ColorPreviewRect"/>
+        </Border>
 
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Border x:Name="ColorPreviewRect" Width="48" Height="24"
-                  BorderThickness="1" BorderBrush="{DynamicResource CrfTileBorderBrush}"/>
-          <TextBox x:Name="HexBox" Width="110" PlaceholderText="RRGGBBAA"
-                   KeyDown="OnHexKeyDown" LostFocus="OnHexLostFocus"
-                   ToolTip.Tip="RRGGBBAA. A six-digit entry is taken as fully opaque. Return applies, Escape reverts."/>
-          <Button  x:Name="PickButton" Content="Pick…" Click="OnPickClick"/>
-          <Button  x:Name="RevertButton" Content="Reset This Role" Click="OnRevertClick"/>
+        <!-- RGBA sliders + linked integer edit boxes -->
+        <Grid ColumnDefinitions="14,*,46" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+          <Slider    Grid.Row="0" Grid.Column="1" x:Name="SliderR" Minimum="0" Maximum="255"
+                     IsSnapToTickEnabled="True" TickFrequency="1"
+                     ValueChanged="OnSliderChanged" Margin="6,0"/>
+          <TextBox   Grid.Row="0" Grid.Column="2" x:Name="LabelR"
+                     FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                     HorizontalAlignment="Center"
+                     FontFamily="Courier New,Consolas,monospace"
+                     LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="G" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+          <Slider    Grid.Row="1" Grid.Column="1" x:Name="SliderG" Minimum="0" Maximum="255"
+                     IsSnapToTickEnabled="True" TickFrequency="1"
+                     ValueChanged="OnSliderChanged" Margin="6,0"/>
+          <TextBox   Grid.Row="1" Grid.Column="2" x:Name="LabelG"
+                     FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                     HorizontalAlignment="Center"
+                     FontFamily="Courier New,Consolas,monospace"
+                     LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="B" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+          <Slider    Grid.Row="2" Grid.Column="1" x:Name="SliderB" Minimum="0" Maximum="255"
+                     IsSnapToTickEnabled="True" TickFrequency="1"
+                     ValueChanged="OnSliderChanged" Margin="6,0"/>
+          <TextBox   Grid.Row="2" Grid.Column="2" x:Name="LabelB"
+                     FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                     HorizontalAlignment="Center"
+                     FontFamily="Courier New,Consolas,monospace"
+                     LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="A" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+          <Slider    Grid.Row="3" Grid.Column="1" x:Name="SliderA" Minimum="0" Maximum="255"
+                     IsSnapToTickEnabled="True" TickFrequency="1"
+                     ValueChanged="OnSliderChanged" Margin="6,0"/>
+          <TextBox   Grid.Row="3" Grid.Column="2" x:Name="LabelA"
+                     FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                     HorizontalAlignment="Center"
+                     FontFamily="Courier New,Consolas,monospace"
+                     LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+        </Grid>
+
+        <!-- Hex input -->
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="#" VerticalAlignment="Center" FontSize="12" FontWeight="Medium" Width="14"/>
+          <TextBox x:Name="HexBox" FontSize="12" Width="88" MaxLength="8"
+                   LostFocus="OnHexLostFocus" KeyDown="OnHexKeyDown"
+                   FontFamily="Courier New,Consolas,monospace"/>
         </StackPanel>
+
+        <!-- Role path label — the "  (edited)" suffix keeps living here -->
+        <TextBlock x:Name="RoleNameLabel" FontSize="10.5" Opacity="0.5"/>
 
       </StackPanel>
     </Grid>
 
+    <!-- Row 2 — footer -->
     <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
       <Button x:Name="ImportButton" Content="Import .ccolor…" Click="OnImportClick"/>
       <Button x:Name="ExportButton" Content="Export .ccolor…" Click="OnExportClick"/>
       <Button x:Name="ResetAllButton" Content="Reset All Colours" Click="OnResetAllClick"/>
+      <Button x:Name="RevertButton" Content="Reset This Role" Click="OnRevertClick"/>
       <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
     </StackPanel>
 

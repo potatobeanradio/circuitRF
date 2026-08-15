@@ -428,6 +428,26 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
 
     [RelayCommand] private void ResetGrid() => _vm.ResetGrid();
 
+    // ── R9D §3.6 — Markers ▸ Preset Terminations ────────────────────────────
+
+    /// <summary>Same parametrized-string shape <see cref="SetEfficiencyMetric"/>/<see cref="SetGridSide"/>
+    /// already use, and for the same reason — a <c>NativeMenuItem</c> binds a command and a parameter,
+    /// nothing richer.</summary>
+    [RelayCommand]
+    private void SetPaClassPreset(string? name)
+    {
+        PaClass? paClass = name switch
+        {
+            "B"          => PaClass.B,
+            "J"          => PaClass.J,
+            "JStar"      => PaClass.JStar,
+            "F"          => PaClass.F,
+            "FInverse"   => PaClass.FInverse,
+            _            => null,
+        };
+        if (paClass is { } c) _vm.ApplyPaClassPreset(c);
+    }
+
     /// <summary>§1 (R1C) — the removed toolbar's "Solve" button: a forced full-quality re-solve.</summary>
     [RelayCommand] private void SolveNow() => _vm.SolveFullGrid();
 }

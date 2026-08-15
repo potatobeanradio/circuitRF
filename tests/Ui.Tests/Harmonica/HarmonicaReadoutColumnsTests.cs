@@ -157,7 +157,9 @@ public sealed class HarmonicaReadoutColumnsTests(ITestOutputHelper output)
 
         double z0 = vm.Frame.SmithPower.Z0;
         var expectedZ = HarmonicaDataSet.ImpedanceOf(optimum!.Gamma, z0);
-        string expectedZText = HarmonicaReadoutFormatting.FormatZ(expectedZ, ReadoutFormat.RealImaginary);
+        // R9A §4 — the header's own Z is the COMPACT (1-decimal) form, not FormatZ's three decimals:
+        // an argmax off a fitted RBF surface does not carry that precision.
+        string expectedZText = HarmonicaReadoutFormatting.FormatZCompact(expectedZ, ReadoutFormat.RealImaginary);
 
         var mxp = vm.Frame.Readouts.Where(r => r.Column == ReadoutColumn.Mxp).ToArray();
         Assert.StartsWith($"MXP 1f0 ZL1={expectedZText}", mxp[0].Label, StringComparison.Ordinal);

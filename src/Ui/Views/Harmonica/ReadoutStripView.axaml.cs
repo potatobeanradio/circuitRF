@@ -315,10 +315,6 @@ public partial class ReadoutStripView : UserControl
         UpdateReadoutColumn(IntrinsicIdsColumn, ReadoutColumn.IntrinsicIds, intrIds,
                             foreground, fontSize, formatFor, onFormatChanged, onCommitEdit, onOpenSetDialog);
 
-        ColumnRule.IsVisible    = operating.Count > 0 || source.Count > 0 || load.Count > 0 ||
-                                  mxp.Count > 0 || mxe.Count > 0 || intrVds.Count > 0 || intrIds.Count > 0;
-        ColumnRule.Background   = foreground;
-
         sw.Stop();
         LastSetItemsMs = sw.Elapsed.TotalMilliseconds;
     }
@@ -993,8 +989,6 @@ public partial class ReadoutStripView : UserControl
         _inputSignature = signature;
 
         Inputs.Children.Clear();
-        InputRule.IsVisible       = rest.Count > 0;
-        InputRule.Background      = foreground;
 
         foreach (var input in rest)
         {
@@ -1124,6 +1118,7 @@ public partial class ReadoutStripView : UserControl
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCompression,
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyZ0,
         CapacitanceSpacerKey,
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyRgs,     // R9A §2 — into the Capacitance chunk, above Cgs.
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCgs,
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCdg,
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCds,
@@ -1414,6 +1409,7 @@ public partial class ReadoutStripView : UserControl
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyHarmonicCount => "00",
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCompression   => "-000.000",
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyZ0            => "00000.000",
+        CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyRgs           => "00000.000",   // R9A §2
         // R7D §3.2 — 2 decimals, always, plus the longest possible suffix.
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCgs or
         CircuitRF.Ui.Harmonica.HarmonicaInputs.KeyCdg or

@@ -28,13 +28,17 @@ public sealed record GridPoint(Complex Gamma, Complex Z, PinSearchResult Result)
 
     public double Metric(GridMetric metric)
     {
+        // R9C §3.3 — SweepCompression first: it is the reading AT the compression target, while
+        // AtCompression is only the nearest solved ladder rung. Falling back to the step keeps a Run()
+        // result (whose secant already lands on target, and whose SweepCompression is null) unchanged.
+        var sc = Result.SweepCompression;
         var at = Result.AtCompression;
-        if (at is null) return double.NaN;
+        if (sc is null && at is null) return double.NaN;
         return metric switch
         {
-            GridMetric.PoutDbm         => at.PoutW > 0 ? 10.0 * Math.Log10(at.PoutW) + 30.0 : double.NaN,
-            GridMetric.DrainEfficiency => at.De  * 100.0,
-            GridMetric.Pae             => at.Pae * 100.0,
+            GridMetric.PoutDbm         => sc?.PoutDbm  ?? (at!.PoutW > 0 ? 10 * Math.Log10(at.PoutW) + 30 : double.NaN),
+            GridMetric.DrainEfficiency => (sc?.De  ?? at!.De)  * 100.0,
+            GridMetric.Pae             => (sc?.Pae ?? at!.Pae) * 100.0,
             _ => double.NaN,
         };
     }
@@ -108,6 +112,15 @@ public sealed class ContourGrid
     public double    ContourSmooth  { get; private set; } = 0.1;    // R8A §5 — mirrors CircuitModel's own default
     public double?   ContourEpsilon { get; private set; } = 0.5;    // R8A §5 — mirrors CircuitModel's own default
 
+    /// <summary>
+    /// R9C §3.1 — the per-point ladder step, re-read from <c>ctx.Model.Settings.ContourLadderStepDbm</c>
+    /// at the start of every <see cref="Build"/>/<see cref="BuildParallel"/> (the same live-tracking
+    /// pattern <see cref="Z0"/> and the RBF knobs already use), clamped to
+    /// <see cref="HarmonicaSettings.ContourLadderStepDbmMin"/>/<c>Max</c> — see that setting's own
+    /// remarks for why raising it is not just a suggestion.
+    /// </summary>
+    public double ContourLadderStepDbm { get; private set; } = 2.0;
+
     public ContourGrid(double z0 = 50.0) => Z0 = z0;
 
     public IReadOnlyList<GridPoint> Points => _points;
@@ -172,6 +185,9 @@ public sealed class ContourGrid
     /// brief-harmonicarf-r3b §3.1 — purely additive diagnostic hook, called once per solve attempt
     /// (tickle/PinStart/bracket/secant, success or failure) for every Γ point actually solved (never
     /// for a reused point). Null in every production call site; changes nothing about the search.
+    /// <b>R9C §3.2 — inert since the per-point search became <see cref="PinSearch.Sweep"/>'s ladder,
+    /// which has no bracket/secant STAGE to report and takes no probe callback.</b> Kept only for
+    /// call-site compatibility; never invoked.
     /// </param>
     public void Build(HarmonicaContext ctx, TerminationSet terminations,
                       IReadOnlyList<Complex> gammaGrid, TerminationSide side = TerminationSide.Load,
@@ -182,10 +198,13 @@ public sealed class ContourGrid
         // R-h9b-6 — this grid is a long-lived, per-worker object (§6.7); re-read Z0 from the document
         // on every build rather than freezing it at construction, or a Z0 change would silently keep
         // sweeping the OLD reference on every worker until the process restarted.
-        Z0             = ctx.Model.Settings.Z0;
-        ContourKernel  = ctx.Model.Settings.ContourKernel;
-        ContourSmooth  = ctx.Model.Settings.ContourSmooth;
-        ContourEpsilon = ctx.Model.Settings.ContourEpsilon;
+        var s = ctx.Model.Settings;
+        Z0             = s.Z0;
+        ContourKernel  = s.ContourKernel;
+        ContourSmooth  = s.ContourSmooth;
+        ContourEpsilon = s.ContourEpsilon;
+        ContourLadderStepDbm = Math.Clamp(s.ContourLadderStepDbm,
+            HarmonicaSettings.ContourLadderStepDbmMin, HarmonicaSettings.ContourLadderStepDbmMax);
 
         // R-h7-12 — a DRAGGED grid point invalidates exactly one Γ sample. Everything else in the
         // scatter is at the identical Γ and was solved against the identical terminations, so its
@@ -241,10 +260,19 @@ public sealed class ContourGrid
 
             working.Set(side, tuneHarmonic, z);
 
-            var (seed, hint, neighborSteps) = NearestByVswr(converged, gamma);
-            var result = onPointProbe is null
-                ? PinSearch.Run(ctx, working, seed, hint, neighborSteps: neighborSteps)
-                : PinSearch.Run(ctx, working, seed, hint, probe => onPointProbe(gamma, probe), neighborSteps);
+            // R9C §3.2 — the VSWR-nearest converged neighbour's ladder becomes this point's per-LEVEL
+            // warm start. PinSearch.Sweep already takes exactly this shape (priorLevelSpectra, keyed
+            // by the rounded Pin level) for R-h9r2-19's frame-to-frame lever, so nothing new is
+            // invented here — the neighbour simply plays the role the previous frame plays there. It
+            // is strictly better than Run's single `seed`: every rung starts from a converged solution
+            // at the SAME drive level rather than from one 20+ dB away. `onPointProbe` has no analogue
+            // on Sweep's ladder (there is no bracket stage to diagnose), so it is simply not invoked
+            // here — kept as a parameter only for call-site compatibility (LoadpullHoleDiagnosticTests).
+            var (_, neighborGamma, neighborSteps) = NearestByVswr(converged, gamma);
+            var priorSpectra = neighborGamma is { } ng && (ng - gamma).Magnitude < NeighborLevelSeedMaxGammaDistance
+                ? LevelSpectraOf(neighborSteps) : null;
+            var result = PinSearch.Sweep(ctx, working, s.PinStartDbm, s.PinMaxDbm, ContourLadderStepDbm,
+                                         warmStart: null, priorLevelSpectra: priorSpectra);
 
             _points.Add(new GridPoint(gamma, z, result));
 
@@ -313,10 +341,13 @@ public sealed class ContourGrid
                               bool reuseUnchanged = false, Action<int, int>? onProgress = null,
                               int batchSize = 12, int? maxParallelism = null)
     {
-        Z0             = ctx.Model.Settings.Z0;
-        ContourKernel  = ctx.Model.Settings.ContourKernel;
-        ContourSmooth  = ctx.Model.Settings.ContourSmooth;
-        ContourEpsilon = ctx.Model.Settings.ContourEpsilon;
+        var s = ctx.Model.Settings;
+        Z0             = s.Z0;
+        ContourKernel  = s.ContourKernel;
+        ContourSmooth  = s.ContourSmooth;
+        ContourEpsilon = s.ContourEpsilon;
+        ContourLadderStepDbm = Math.Clamp(s.ContourLadderStepDbm,
+            HarmonicaSettings.ContourLadderStepDbmMin, HarmonicaSettings.ContourLadderStepDbmMax);
 
         Dictionary<Complex, GridPoint>? previous = null;
         if (reuseUnchanged && _points.Count > 0 && _reusableAgainst == StateKey(ctx, terminations, side, tuneHarmonic))
@@ -366,7 +397,10 @@ public sealed class ContourGrid
                 Complex lz = Z0 * (Complex.One + lg) / (Complex.One - lg);
                 var lt = terminations.Clone();
                 lt.Set(side, tuneHarmonic, lz);
-                var lr = PinSearch.Run(ctx, lt);
+                // R9C §3.4 — the leader walks the same ladder every other point does; it has no
+                // neighbour of its own to seed from (it is the FIRST point solved), which is exactly
+                // what a null priorLevelSpectra already means to Sweep.
+                var lr = PinSearch.Sweep(ctx, lt, s.PinStartDbm, s.PinMaxDbm, ContourLadderStepDbm);
                 results[leaderIdx] = new GridPoint(lg, lz, lr);
                 if (lr.Steps.Count > 0) leader = (lg, lr.Steps, lr.AtCompression?.PavlDbm);
                 pending.Remove(leaderIdx);
@@ -412,8 +446,17 @@ public sealed class ContourGrid
                         Complex z = Z0 * (Complex.One + gamma) / (Complex.One - gamma);
                         batchTerms.Set(side, tuneHarmonic, z);
 
-                        var (seed, hint, neighborSteps) = NearestByVswr(batchConverged, gamma);
-                        var result = PinSearch.Run(batchCtx, batchTerms, seed, hint, neighborSteps: neighborSteps);
+                        // R9C §3.4 — identical treatment to the serial path (§3.2), guard included: the
+                        // batch's own converged-so-far list plays the neighbour role, keyed by level
+                        // rather than handed over as a single bracket hint, and only trusted within
+                        // NeighborLevelSeedMaxGammaDistance (see that constant's own remarks).
+                        var (_, neighborGamma, neighborSteps) = NearestByVswr(batchConverged, gamma);
+                        var priorSpectra = neighborGamma is { } ng &&
+                                          (ng - gamma).Magnitude < NeighborLevelSeedMaxGammaDistance
+                            ? LevelSpectraOf(neighborSteps) : null;
+                        var result = PinSearch.Sweep(batchCtx, batchTerms, s.PinStartDbm, s.PinMaxDbm,
+                                                     ContourLadderStepDbm, warmStart: null,
+                                                     priorLevelSpectra: priorSpectra);
 
                         results[idx] = new GridPoint(gamma, z, result);
                         if (result.Steps.Count > 0)
@@ -465,6 +508,10 @@ public sealed class ContourGrid
           .Append('|').Append(ctx.Model.Settings.PinStartDbm)
           .Append('|').Append(ctx.Model.Settings.PinMaxDbm)
           .Append('|').Append(ctx.Model.Settings.Z0)
+          // R9C §3.1 — the ladder step now decides each point's own PinSearchResult (not merely the
+          // fitted surface, which is what ContourKernel/Smooth/Epsilon affect and why THEY stay out of
+          // this key), so a step change must invalidate a reused grid exactly like PinStart/PinMax do.
+          .Append('|').Append(ctx.Model.Settings.ContourLadderStepDbm)
           .Append('|').Append(side).Append('|').Append(tuneHarmonic);
 
         for (int s = 0; s < 2; s++)
@@ -481,23 +528,67 @@ public sealed class ContourGrid
 
     /// <summary>
     /// The existing warm-start rule: seed from the converged neighbour closest in VSWR-like distance,
-    /// which on the Γ plane is ordinary Euclidean distance. Now also returns that neighbour's WHOLE
-    /// ladder (§3.3 item 2), so <see cref="PinSearch.Run"/> can pick the level-nearest step for each
-    /// probe rather than only ever seeding its very first solve from the neighbour.
+    /// which on the Γ plane is ordinary Euclidean distance. Also returns that neighbour's WHOLE
+    /// ladder (§3.3 item 2 / R9C §3.2), so a caller can pick the level-nearest step for each probe
+    /// rather than only ever seeding its very first solve from the neighbour.
+    ///
+    /// <para><b>R9C §3.2 — <c>PinHint</c> is retired in favour of <c>NeighborGamma</c>.</b> Neither
+    /// <see cref="Build"/> nor <see cref="BuildParallel"/> calls <see cref="PinSearch.Run"/> any more
+    /// (both now walk <see cref="PinSearch.Sweep"/>'s ladder), so the bracket hint a Run-style search
+    /// needed has no remaining caller; the neighbour's own Γ is what the ladder path needs instead, to
+    /// guard <see cref="Build"/>'s per-level neighbour seed against a genuinely distant neighbour — see
+    /// that guard's own remarks for why the guard exists.</para>
     /// </summary>
-    private static (Complex[,]? Seed, double? PinHint, IReadOnlyList<PinStep>? NeighborSteps) NearestByVswr(
+    private static (Complex[,]? Seed, Complex? NeighborGamma, IReadOnlyList<PinStep>? NeighborSteps) NearestByVswr(
         List<(Complex Gamma, IReadOnlyList<PinStep> Steps, double? PinAtCompression)> converged, Complex gamma)
     {
         IReadOnlyList<PinStep>? bestSteps = null;
-        double? hint = null;
+        Complex? bestGamma = null;
         double bestD = double.MaxValue;
-        foreach (var (g, steps, pin) in converged)
+        foreach (var (g, steps, _) in converged)
         {
             double d = (g - gamma).Magnitude;
-            if (d < bestD) { bestD = d; bestSteps = steps; hint = pin; }
+            if (d < bestD) { bestD = d; bestSteps = steps; bestGamma = g; }
         }
         Complex[,]? seed = bestSteps is { Count: > 0 } s ? s[^1].Point.V : null;
-        return (seed, hint, bestSteps);
+        return (seed, bestGamma, bestSteps);
+    }
+
+    /// <summary>
+    /// R9C §3.2 — how close (Γ-plane Euclidean distance) a converged neighbour must be before its
+    /// ladder is trusted as a per-LEVEL warm start for a NEW point. <b>Measured, not assumed:</b>
+    /// seeding every rung from the Γ-nearest neighbour's own matching level unconditionally — no
+    /// distance guard — turned the shipped default's 3-hole grid into a DIFFERENT 3-hole grid: the
+    /// three points along its own known hard radial line (Γ = 0.267/0.533/0.8 on the real axis) each
+    /// converge fine standalone (and fine warm-started only from their OWN in-ladder predecessor,
+    /// which is always at the identical Γ), but a Γ-nearest neighbour at that point in the build order
+    /// sits ~0.43 Γ away — well past this threshold — and <see cref="PinSearch.Sweep"/> has no per-rung
+    /// retry the way <see cref="PinSearch.Run"/> does (§3.3 item 3's cold-DC-seed fallback), so ONE bad
+    /// cross-Γ rung aborts the whole ladder rather than merely costing a retry. This is the exact
+    /// hazard <c>HarmonicaSolver.LeverOneDeltaGammaThreshold</c> already guards against for the
+    /// frame-to-frame lever (brief-harmonicarf-r4 §5.2/§5.3: "HB solutions across the termination
+    /// plane are NOT a smooth family... on a LARGE jump [the prior state] can be an actively misleading
+    /// [seed]") — the identical mechanism, applied here to a grid neighbour rather than a previous
+    /// frame. Reusing that threshold's own value (0.20) rather than inventing a second number: with the
+    /// guard in place, the shipped default's 3×12 grid measures 0 holes (see
+    /// <c>src/Harmonica/RESOLVED.md</c>'s own R9C entry for the full before/after table).
+    /// </summary>
+    private const double NeighborLevelSeedMaxGammaDistance = 0.20;
+
+    /// <summary>
+    /// R9C §3.2 — a neighbour's whole converged ladder, reshaped into <c>PinSearch.Sweep</c>'s own
+    /// <c>priorLevelSpectra</c> input: the neighbour's own step nearest each rounded Pin LEVEL, so a
+    /// point's ladder can warm-start every rung from a converged solution at the SAME drive level
+    /// rather than only its very first solve from the neighbour. Later entries win on a duplicate
+    /// rounded level (never thrown), which cannot happen on an ordinary ladder result in practice
+    /// (every step in a completed <c>Sweep</c> sits on the ladder's own fixed spacing).
+    /// </summary>
+    private static IReadOnlyDictionary<double, Complex[,]>? LevelSpectraOf(IReadOnlyList<PinStep>? steps)
+    {
+        if (steps is not { Count: > 0 }) return null;
+        var map = new Dictionary<double, Complex[,]>();
+        foreach (var st in steps) map[Math.Round(st.PavlDbm, 6)] = st.Point.V;
+        return map;
     }
 
     // ── D6 — the extrema ──────────────────────────────────────────────────────

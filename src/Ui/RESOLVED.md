@@ -6,6 +6,226 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## R9D — S1 "Match to Zin*", and the PA-class preset terminations (brief-harmonicarf-r9d, 2026-08-15)
+
+**§2 — `Match to Zin*` reuses the frame-carried-outcome plumbing verbatim, and costs TWO frames, not
+one.** `HarmonicaSolver.Options.ConjugateMatchBackoffDb` asks a frame to also read Zin off an
+already-solved rung of the tier-A drive-up (`HarmonicaSolver.IndexOfBackoffStep`, a pure function
+pinned on a synthetic ladder — including the "target below the ladder's first rung lands on the first
+rung" case); the answer rides home as `HarmonicaFrame.ConjugateMatch`
+(`ConjugateMatchOutcome`), exactly the shape `HarmonicaFrame.Inverse` already uses and for the same
+stated reason ("computed on a WORKER, UI-visible state"). `HarmonicaViewModel.RequestConjugateMatch`
+submits a `SkipContours` measurement-only frame first; its `PublishFrame` → `ApplyConjugateMatch` then
+writes S1 (via `SetMarkerImpedance`, never a second mechanism) and requests the REAL frame that
+regenerates the iso-lines. A `Found: false` outcome writes nothing (R-h6-9) and only sets the message.
+
+**§3 — the preset walk is a straight read of `CircuitModel.IntrinsicDragAllowed`'s existing four-way
+predicate, not a hand-rolled re-diagnosis.** `HarmonicaViewModel.ApplyPaClassPreset` builds a
+transform-only model copy (nonlinear Cgs/Cdg/Cds replaced by the SAME linearized value
+`Inputs`'s own strip row already shows, falling back to `Coefficients[0]` — "(at V=0)" — when nothing
+has been solved yet, exactly the strip's own fallback) and then asks `IntrinsicDragAllowed` about
+THAT copy: true means the ABCD transform runs per band (`IntrinsicAbcd.ExtrinsicFor`, refusing only a
+per-band pole with the band left unchanged); false — for whichever of the OTHER three reasons the
+predicate names (non-SDD DUT, a non-absent Cdg, or a package that couples input/output) — means every
+band is written straight at the extrinsic plane, with a message naming why. One predicate call handles
+every row of §3.4's table without the view-model code needing to know which refusal it hit. Only
+Load-side markers that ALREADY EXIST are written (`Markers.Where(Side == Load)`) — a preset never
+creates one, so `K=5` with markers only up to L3 leaves L4/L5 reporting `TerminationSet.
+UnmarkedBandOhms`, exactly the owner's own example, now a gate. One `RequestScheduledFrame` after
+every band is written, never one per band.
+
+**The menu item wiring caught a stale source-scan pin, not a design bug.** Adding the optional
+`KeyGesture? gesture` parameter to `HarmonicaAppMenuInjector.Item` broke
+`HarmonicaAppMenuInjectorTests.Item_AlwaysConstructsAFreshInstance...`, which pins the method's exact
+source text — expected, since the whole point of that test is to catch an accidental change to how a
+`NativeMenuItem` is built; its expected strings were updated alongside the signature, not relaxed.
+
+Gate: `tests/Ui.Tests/Harmonica/HarmonicaConjugateMatchTests.cs` (8 tests — the found/not-found/no-marker
+cases via the same `PublishFrame` seam `ApplyInverseOutcome`'s own tests use, the
+"only-when-set" check, and `IndexOfBackoffStep` pinned directly), `HarmonicaPaClassPresetTests.cs` (6
+tests — the owner's own K=5/L1-L3 example, no-marker-created, source-untouched, the Cdg best-effort
+path, the nonlinear-Cgs linearized-copy path with a real Rd/Ld to prove the transform actually ran, and
+the one-frame-per-application count), `HarmonicaR9dPresetTerminationsSourceScanTests.cs` (8 tests — all
+three menu surfaces' headers/parameters/gestures, plus the command's own string→enum mapping exercised
+end to end). All existing `Ui.Tests` (7,048) and `Harmonica.Tests` (241) still green.
+
+## R9C — SolveAtOptimum never reports a failed search, and the launch frame stops lying about grid size (brief-harmonicarf-r9c, 2026-08-15)
+
+Companion entry to `src/Harmonica/RESOLVED.md`'s own R9C section (the ladder fix and the neighbour-seed
+distance-guard finding); this one covers the two things that changed in `src/Ui`. §0's investigation
+and its two measurement tables are recorded there, not duplicated here.
+
+**§2 — `SolveAtOptimum` used to fall back to a failed search's LAST SURVIVING PROBE and hand it to
+`AddMxColumn` as though it were the compression point.** On the shipped default at ZL1 = 132.3 Ω that
+probe was Pin 11 dBm at 15.72 dB gain, published as "MXE Pout 26.72 dBm" while the strip's own P-3dB
+read 39.28 dBm at the identical termination — the owner's exact bug report. Fixed two ways together:
+
+1. **The drive-up is now `PinSearch.Sweep` at the document's own ladder settings**
+   (`PinStartDbm`/`PinMaxDbm`/`PinStepDbm`) — literally the same call tier-A's own drive-up makes — not
+   `PinSearch.Run`. MXP/MXE and the strip's operating-point column then agree by construction (one
+   function, one definition of "P-x dB", one running-`gMax` rule), not by coincidence. Cost: ~38 solves
+   each, two per full-quality frame (was ~11 with `Run`), measured on
+   `HarmonicaOptimumSolveTests.MeasuredCost_TheOptimumSolvesCostRoughlyTwoDriveUps`.
+2. **A search that did not reach the compression target now REFUSES rather than reports.**
+   `SmithPanelData.SmithOptimum` gained `string? UnsolvedReason` (populated from the failed search's
+   own `PinStopReason` — `PinMax` and `NonConvergence` read as different sentences, per R3B §3.3's own
+   rule that the two stay distinguishable) and `CompressionReadout? SolvedCompression` (the ladder's
+   own interpolated/one-real-solve reading AT the target — read for Pout/Eff/PAE/Gain/Pdc, falling back
+   to `Solved`'s own nearest-rung numbers only for a hypothetical future `Run()`-based caller, the
+   identical `sc?.X ?? at.X` shape the operating-point column already uses). `AddMxColumn`'s "no
+   optimum" tooltip now reads `optimum.UnsolvedReason` when present, falling back to the original two
+   sentences (every grid point a hole / mid-drag) otherwise — R7C §1.4's row-SHAPE rule is untouched:
+   the same ten rows either way, gated by `HarmonicaOptimumSolveTests.RowCount_IsIdenticalBetween-
+   ASolvedAndAFailedSearch`.
+
+**`SolveAtOptimum` and `AddMxColumn` are now `internal` (not `private`), for the gate tests' own
+sake.** Reproducing "the interpolated argmax lands somewhere that genuinely fails to re-solve" through
+the natural pipeline (drive `InterpolatedArgmax` toward a real failure by tuning `PinMaxDbm`) turned out
+to be a narrow, fixture-specific band rather than a reliable scenario — scanned directly on the shipped
+default: `PinMaxDbm` from 14 to 20 dBm moves the grid from "36/37 holes, `Optimum` itself null" straight
+to "33/37 holes, cleanly solved", with no dBm step in between landing on "an interpolated optimum exists
+but its own fresh re-solve fails" (the InterpolatedArgmax seed and a fresh `Sweep` at that exact Γ
+apparently succeed or fail together almost everywhere on this device). Rather than chase a fragile
+fixture, the two methods are exposed via `InternalsVisibleTo("CircuitRF.Ui.Tests")` (already wired for
+several other Ui view-model test seams) and called directly with a hand-picked failing termination
+(`PinMaxDbm` set far below `PinStartDbm`, mirroring `ContourGridTests`' own
+`D4_ANonCompressingPointStopsAtPinMaxAndSaysSo` fixture) and a hand-crafted `SmithOptimum`.
+
+**§4 — the launch frame is solved at full quality, like every other frame.** Two changes, both
+needed:
+
+1. `HarmonicaView.EnsureFirstSolve` now calls `RequestScheduledFrame(dragging: false)` instead of a
+   bare `RequestFrame()`. The bare call took `Options`' own (coarse) defaults, so a document's FIRST
+   frame swept 25 points while every later one swept 37 — measured (§0, `src/Harmonica/RESOLVED.md`) to
+   move the DE optimum from Z = 122.579 − j0.805 to Z = 132.319 − j1.786 and carry 4 holes instead of 1,
+   which is what the owner saw as "the contours change when I move L1". Cost: ~65 extra solves on the
+   document's own opening frame (measured 451 ms whole, in Debug) — paid once, deliberately.
+2. **`HarmonicaSolver.Options`' `Rings`/`Spokes` defaults changed from `FrameScheduler.CoarseRings`/
+   `CoarseSpokes` to `FullRings`/`FullSpokes`.** A bare `new Options()` is used by tests and reachable
+   by any future caller; leaving it silently coarse would re-arm the same trap under a different name.
+   Nothing reads the OLD doc comment's "fast rather than correct-and-slow" framing any more — the
+   record's own comment now states the opposite and why.
+
+**Benchmarks re-measured and their recorded numbers updated, per §5's own instruction that a
+tripled grid solve does not free anyone from re-checking the ladder threshold or the recorded cost
+comments:**
+
+- **`FrameScheduler` was checked, not just reasoned about** — `HarmonicaFrameTierCostTests.
+  Tier9_FrameTimeAtEachDegradationTier` still passes with only RELATIVE assertions (no rung threshold
+  hardcodes an absolute number that could go stale), so no threshold needed moving. Re-measured on the
+  shipped default: Full 37 pts / 892 solves / 468.9 ms total; CoarseRaster 37 pts / 892 solves /
+  309.2 ms; CoarseGrid 25 pts / 639 solves / 227.3 ms; FrozenContours 0 pts / 40 solves / 11.7 ms.
+- **`HarmonicaGridDragCostTests`'s recorded numbers changed, and its OWN doc comment now says why:**
+  the per-point search became `PinSearch.Sweep`'s ladder (every 2 dB rung from PinStart to PinMax,
+  rather than a ~5-solve secant), so both halves' SOLVE COUNTS rose — full rebuild 272 → **1319** HB
+  solves, one dragged point 3 → **23** HB solves. R-h7-12's own reuse mechanism (keyed on Γ,
+  search-independent) is UNCHANGED — still exactly 60 of 61 points reused, confirming the reuse itself
+  was never the thing that moved. Wall-clock stayed well inside budget despite the solve-count rise:
+  full rebuild 547.8 → **476.2** ms (each ladder rung is a cheap, well-warm-started solve), one dragged
+  point 3.3 → **7.3** ms — still ~65× faster than a full rebuild, which is the number that actually
+  gates whether a drag holds frame rate.
+
+## R9B — the Appearance tab becomes circuitRF's Color Theme layout (brief-harmonicarf-r9b, 2026-08-15)
+
+Pure layout/gesture parity — `HarmonicaColorEditor` (the model) did not move, and
+`HarmonicaColorEditorTests` needed no edits. `HarmonicaAppearanceSettingsView.axaml`/`.axaml.cs` were
+rewritten to transcribe `SettingsView.axaml`'s "Color Theme" tab shape: a role list with a 14 px colour
+swatch per row (bound to a reused, namespace-level `RoleRowModel` — no second row-model type), RGBA
+sliders + linked integer boxes, a hex field, and double-click-a-swatch (`OnRoleDoubleTapped`) opening
+`ColorPickerDialog` in place of the former "Pick…" button, which is gone.
+
+**The one structural difference from `SettingsView` is deliberate and stated at the top of the new
+`.axaml`:** no theme-name combo, no `Save Theme…`, no `ForkToCustomIfNeeded`, no working-copy
+dictionaries — harmonicaRF runs standalone with no workspace open, so a theme name has nothing to
+resolve against (`HarmonicaColorEditor`'s own header, R-h7-15). Every edit still writes straight
+through `HarmonicaColorEditor.Set` immediately (R-h7-16, live preview stays free — no re-solve,
+re-fit, or re-factorization on this path). `Import .ccolor…` / `Export .ccolor…` / `Reset All Colours`
+keep their place as harmonicaRF's answer to the theme combo.
+
+**One addition beyond the brief's letter, needed once swatches exist:** `RefreshAllSwatches()` (the
+`OnVariantChanged` counterpart the brief specifies) is also called from `OnRevertClick`,
+`OnResetAllClick`, and `OnImportClick` — each can change a role's resolved colour without the user
+touching that row directly, and without the call the list would show a stale swatch until the next
+variant flip. `SettingsView` has no equivalent case (it has no per-role revert), so there was nothing
+to transcribe here.
+
+**§5 checked, not assumed:** the standalone harmonicaRF entry point (`HarmonicaApp.axaml`) already
+carries `CircuitRfStyles.axaml`'s `Application.Styles` include (its own header calls this a
+"superset by construction"), which pulls in `Avalonia.Controls.ColorPicker`'s Fluent theme
+(`CircuitRfStyles.axaml:31`) — so `ColorPickerDialog`'s `ColorView` renders correctly standalone.
+Nothing needed to change there; this brief just raises the stakes on it staying true, since the
+picker is now the only way to reach a colour wheel at all.
+
+**Gate:** `HarmonicaAppearanceSettingsView` is a `UserControl` and cannot be constructed headlessly
+(same limitation as `HarmonicaSetTerminationDialogTests`), so the check is a source scan —
+`HarmonicaR9bAppearanceParityTests` — asserting the double-tap gesture, all four RGBA sliders/boxes,
+the hex box, the swatch-bound `Rectangle` inside the role list's `DataTemplate`, `PickButton`'s and the
+theme-combo/Save-Theme controls' absence, and that `SettingsView.axaml` (the file this one was copied
+from) still carries the same gesture and binding. `dotnet build`, `dotnet test tests/Ui.Tests`, and
+`dotnet test tests/Firewall.Tests` all green. No screenshot verification (per brief). No `CLAUDE.md`
+edit.
+
+## R9A — the readout strip, the menus, and four defaults (brief-harmonicarf-r9a, 2026-08-15)
+
+Eleven small, independent owner items. Nothing here moves a solved number except §7/§8, which are
+explicitly defaults.
+
+**§1 — "Add Source Marker" not drawing was a stale SNAPSHOT, not a missing redraw.** The panels draw
+`SmithPanelData.Markers`, a copy taken once inside `RequestFrame` and carried onto the frame — not
+`HarmonicaViewModel.Markers`, which `HarmonicaHitTest` reads live. `Refresh()`/`InvalidateVisual()`
+after `AddMarkerBand` redrew the SAME stale snapshot, so the new marker was immediately hit-testable
+and completely invisible. Fixed with `SyncMarkerSnapshotIntoFrame` (a pure re-projection via `Frame
+with { Markers = …, SmithPower = Frame.SmithPower with { Markers = … }, … }`, no re-solve) called from
+both `AddMarkerBand` and `RemoveMarkerBand`, plus `AddMarkerBandAndShow` (now the menu's own call site)
+requesting a real frame afterward so the strip gains its row and the intrinsic glyph appears.
+
+**§2 — `rgs` moved into the Capacitance chunk by inserting one key into `SettingsColumnKeys`,
+between the spacer and `KeyCgs`.** Everything else (the label's `(Ω):` suffix, the missing `*`,
+double-click-to-edit) fell out for free from the existing per-key dispatch — re-implementing any of
+it would have been two answers to the same question. `EffectiveSettingsColumnKeys`'s existing
+`ContainsKey(KeyCgs)` gate already covers `rgs` too (both are SDD-only, emitted by the same branch),
+so it needed no second condition.
+
+**§3/§6/§9 — pure text/structure removals**, gated by source-scan (`HarmonicaR9aSourceScanTests`):
+the two rule `Border`s are gone from `ReadoutStripView.axaml` (kept `Spacing="3"`, only the lines
+went); "Add Point(s)" → "Add Grid Points" on both menu rows; "DE" → "Drain Efficiency" on all three
+menu surfaces (`HarmonicaView.axaml.cs`, `HarmonicaMenuView.axaml` ×2, `HarmonicaAppMenuInjector.cs`)
+— `CommandParameter` stays the string `"DE"` everywhere, only the display text changed.
+
+**§4 — `FormatComplex` gained optional `partDecimals`/`magDecimals` parameters (default the existing
+constants) rather than a second formatter body.** `FormatZCompact` (1 decimal, `MxHeaderZDecimals`) is
+the MXP/MXE header's own impedance now — an argmax off a fitted RBF surface does not carry the three
+digits every other complex row (`FormatZ`) claims. `AddMxColumn`'s own `Zin` row is untouched.
+
+**§5 — the power-sweep plot's dashed operating-point cursor is gone, by owner ruling, not superseded
+by anything.** `PowerSweepPanelData.CursorIndex` still drives which step the glyphs/loadline/readouts
+read; it simply has no mark on the curve any more. Pinned by a DIFFERENTIAL render test (same panel
+at `CursorIndex = -1` vs. a valid index must be pixel-identical) — a single-column pixel probe cannot
+tell a cursor line from a grid line, the same trap H4–H5 recorded for iso-lines vs. Smith chrome.
+
+**§7 — the default L1 marker is `80+j0 Ω`, not `80+j10 Ω`.** 80 Ω is both the default DUT's own
+R_opt and the default `HarmonicaSettings.Z0`, so the shipped document now opens with L1 at Γ = 0, the
+centre of its own Smith chart. Default-model path only — `RebuildMarkersFromTerminations` (the load
+path) is untouched, and every test fixture elsewhere in the suite that explicitly sets `80+j10`
+(there are many, all independent of the constructor default) is unaffected.
+
+**§10 — "Locked" now shares `Toggle`'s own checkbox glyph pair** (`CheckboxOutline`/
+`CheckboxBlankOutline`, the same pair "Show Grid Points" uses) instead of a `Lock`/`LockOpenVariant`
+pair, by routing both `AddAutoscaleLockedItems` rows through the shared `Toggle(header, on, onClick)`
+helper (`Toggle("Autoscale", autoscaleOn, …)` / `Toggle("Locked", !autoscaleOn, …)`) rather than
+hand-building two `MenuItem`s. `Toggle` never sets `ToggleType` (R7A §2.3's own finding about the
+Fluent template's icon/check-glyph slot collision), so that invariant carries over unchanged.
+
+**§11 — nothing is posted to the message line while a gesture is live**, gated on
+`HarmonicaCanvas.Gesture.IsLive` (covers a marker drag, an intrinsic-glyph drag, a grid-point drag,
+and an Edit Display grab — every case the owner can be inside). Extracted as a pure
+`HarmonicaView.MessageLineText(gestureLive, statusMessage, idleSummary)` so `Ui.Tests` can pin all
+combinations without a live control. The idle solve-cost summary used to update on every mid-drag
+frame — a changing line under a moving hand, which is exactly what R1C's §2 said this line must
+never be. A solve error raised mid-drag still surfaces, one `Refresh()` after release.
+
+**§8's blast radius is in `src/Harmonica/RESOLVED.md`** (touches `CircuitModel`/`CharmIo`, not `src/Ui`).
+
 ## R8C — the readouts carry live impedance, γ suppresses its own noise, and the intrinsic drag stops solving (brief-harmonicarf-r8c, 2026-08-15)
 
 **§1 — `HarmonicaTitles.MxHeaderRow` gained a `zText` parameter rather than an `HarmonicaReadoutFormatting`

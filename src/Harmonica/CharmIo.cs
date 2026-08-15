@@ -238,6 +238,7 @@ public static class CharmIo
             DcivVdsMax    = m.Settings.DcivVdsMax,
             DcivVdsSteps  = m.Settings.DcivVdsSteps,
             PinStepDbm    = m.Settings.PinStepDbm,
+            ContourLadderStepDbm = m.Settings.ContourLadderStepDbm,
             TickleEnabled = m.Settings.TickleEnabled,
             TickleDbm     = m.Settings.TickleDbm,
             ExactCompressionSolve = m.Settings.ExactCompressionSolve,
@@ -346,6 +347,7 @@ public static class CharmIo
                 DcivVdsMax       = s?.DcivVdsMax,
                 DcivVdsSteps     = s?.DcivVdsSteps,
                 PinStepDbm       = s?.PinStepDbm       ?? defaults.PinStepDbm,
+                ContourLadderStepDbm = s?.ContourLadderStepDbm ?? defaults.ContourLadderStepDbm,
                 TickleEnabled    = s?.TickleEnabled    ?? defaults.TickleEnabled,
                 TickleDbm        = s?.TickleDbm        ?? defaults.TickleDbm,
                 ExactCompressionSolve = s?.ExactCompressionSolve ?? defaults.ExactCompressionSolve,
@@ -540,6 +542,10 @@ public static class CharmIo
         /// <summary>R-h9r2-18 — the explicit power sweep's own Step. Absent on every .charm written
         /// before this brief; such a file opens at the default 1 dB.</summary>
         public double? PinStepDbm { get; set; }
+
+        /// <summary>R9C §3.1 — the contour grid's own per-point ladder step. Absent on every .charm
+        /// written before this brief; such a file opens at the default 2 dB.</summary>
+        public double? ContourLadderStepDbm { get; set; }
 
         /// <summary>R-h9r2-18a — absent on every .charm written before this brief; such a file opens
         /// at the default (tickle on, −50 dBm).</summary>

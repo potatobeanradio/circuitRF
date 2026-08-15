@@ -40,12 +40,14 @@ public class HarmonicaDefaultMarkerSetTests
     }
 
     [Fact]
-    public void AFreshDocument_L1IsUnchanged_At80Plus10j()
+    public void AFreshDocument_L1IsAt80PlusJ0_TheCentreOfTheDefaultSmithChart()
     {
+        // R9A §7 — 80 Ω is the default DUT's own R_opt AND the default HarmonicaSettings.Z0, so the
+        // default document now opens with L1 at Γ = 0 (the centre of its own Smith chart).
         var vm = new HarmonicaViewModel();
         var l1 = vm.Markers.Single(m => m.Side == TerminationSideKind.Load && m.Band == 1);
-        Assert.Equal(new Complex(80, 10), vm.Terminations.Z(TerminationSide.Load, 1));
-        Assert.Equal(HarmonicaDataSet.GammaOf(new Complex(80, 10), vm.Model.Settings.Z0), l1.Gamma);
+        Assert.Equal(new Complex(80, 0), vm.Terminations.Z(TerminationSide.Load, 1));
+        Assert.Equal(Complex.Zero, l1.Gamma);
     }
 
     [Fact]

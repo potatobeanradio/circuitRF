@@ -372,6 +372,22 @@ public sealed record HarmonicaSettings
     public const int MaxSweepPoints = 1001;
 
     /// <summary>
+    /// R9C §3 — the Pin ladder step, in dB, that each CONTOUR GRID point's drive-up walks. Separate from
+    /// <see cref="PinStepDbm"/> (the power-sweep PANEL's own step, default 1 dB) because the grid pays it
+    /// once per Γ point: measured on the shipped default's 37-point grid, 1 dB is 1370 solves and 2 dB is
+    /// 736, and the two agree to 0.03 dB in Pin and 0.002 dB in Pout.
+    ///
+    /// <para><b>Do not raise this past 3 dB.</b> Measured, not assumed: at 4 dB the same grid grew 2
+    /// holes and at 6 dB more — a large Pin jump breaks the HB warm start, which is the identical
+    /// mechanism that made PinSearch.Run's doubling stride fail (§0.2). Clamped on read for that reason.</para>
+    /// </summary>
+    public double ContourLadderStepDbm { get; init; } = 2.0;
+
+    /// <summary>Clamp for <see cref="ContourLadderStepDbm"/> — see its own remarks for why the top end
+    /// is not just a suggestion.</summary>
+    public const double ContourLadderStepDbmMin = 0.5, ContourLadderStepDbmMax = 3.0;
+
+    /// <summary>
     /// brief-harmonicarf-r4 §1 — R-h9r2-19 is superseded for the compression case: the explicit
     /// power sweep now stops once compression reaches <see cref="CompressionDb"/> +
     /// <see cref="SweepOverdriveDb"/>, rather than always running to <see cref="PinMaxDbm"/>. This
@@ -405,13 +421,13 @@ public sealed record HarmonicaSettings
     public double TickleDbm { get; init; } = -50.0;
 
     /// <summary>
-    /// R-h9r2-17a — off by default. When true, the explicit power sweep (<c>PinSearch.Sweep</c>) takes
-    /// ONE extra real HB solve at the interpolated compression Pin, and every figure at compression —
-    /// scalar and spectrum alike — comes from that one solved state instead of the default
-    /// interpolation. Never touches the contour grid's own <c>PinSearch.Run</c>, whose secant is
-    /// already exact and needs no such option.
+    /// R9A §8 — on by default (was off, R-h9r2-17a). When true, the explicit power sweep
+    /// (<c>PinSearch.Sweep</c>) takes ONE extra real HB solve at the interpolated compression Pin, and
+    /// every figure at compression — scalar and spectrum alike — comes from that one solved state
+    /// instead of the default interpolation. Never touches the contour grid's own
+    /// <c>PinSearch.Run</c>, whose secant is already exact and needs no such option.
     /// </summary>
-    public bool ExactCompressionSolve { get; init; }
+    public bool ExactCompressionSolve { get; init; } = true;     // R9A §8
 
     /// <summary>Whether the DUT's charge terms are evaluated — the strip's compute-charge toggle.</summary>
     public bool ComputeCharge { get; init; } = true;

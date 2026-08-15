@@ -1052,7 +1052,11 @@ public static class HarmonicaPanelRenderer
         var plot = BuildPowerSweepPlot(d, theme, PowerSweepLimits(settings ?? new HarmonicaSettings()));
         DrawWithSuppressedSecondaryChrome(canvas, size, plot, theme, darkMode);
         DrawSecondaryAxisOverlay(canvas, size, plot, theme, theme.EfficiencyTrace);
-        DrawOperatingCursor(canvas, size, plot, d, theme);
+        // R9A §5 — owner ruling: the dashed vertical operating-point cursor is removed from this plot
+        // entirely (DrawOperatingCursor deleted below). PowerSweepPanelData.CursorIndex still drives
+        // which step the glyphs/loadline/readouts read (HarmonicaViewModel.OperatingPointDbm) and is
+        // still readable in the strip — a USER-PLACED cursor (Display ▸ Cursor Snap to Compression
+        // off) simply no longer has a mark on the curve itself. The owner chose that knowingly.
         if (!d.ReachedCompression) DrawDidNotCompressNote(canvas, size, theme);
     }
 
@@ -1311,25 +1315,6 @@ public static class HarmonicaPanelRenderer
     }
 
     private static double DbmToWatts(double dbm) => Math.Pow(10.0, (dbm - 30.0) / 10.0);
-
-    private static void DrawOperatingCursor(SKCanvas canvas, (double W, double H) size, Plot plot,
-                                            PowerSweepPanelData d, HarmonicaRenderTheme theme)
-    {
-        double[] x = d.XUnit.Values(d);
-        if (d.CursorIndex < 0 || d.CursorIndex >= x.Length) return;
-
-        var tf  = PlotRenderer.BuildTransforms(plot, size);
-        var top = tf.PrimaryToCanvas(x[d.CursorIndex], plot.Axes.Window.Top);
-        var bot = tf.PrimaryToCanvas(x[d.CursorIndex], plot.Axes.Window.Bottom);
-
-        using var paint = new SKPaint
-        {
-            Style = SKPaintStyle.Stroke, StrokeWidth = 1.4f, IsAntialias = true,
-            Color = theme.OperatingCursor.WithAlpha(210),
-            PathEffect = SKPathEffect.CreateDash([4f, 3f], 0),
-        };
-        canvas.DrawLine(top.X, top.Y, bot.X, bot.Y, paint);
-    }
 
     /// <summary>§6.3 — "the power-sweep panel still shows the full drive-up at the current L1
     /// position, annotated 'did not reach P-x dB'."</summary>

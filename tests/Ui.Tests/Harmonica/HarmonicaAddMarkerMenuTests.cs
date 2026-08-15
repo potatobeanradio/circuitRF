@@ -6,6 +6,7 @@
 //  directly, in the shape of HarmonicaR6eDialogsAndMenusTests.
 // ================================================================
 
+using System.Linq;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Views.Harmonica;
 using Xunit;
@@ -80,5 +81,48 @@ public class HarmonicaAddMarkerMenuTests
         int countAtCapacity = vm.Markers.Count;
         Assert.Null(HarmonicaView.NextUnusedBand(vm.Markers, TerminationSideKind.Source, vm.Terminations.HarmonicCount));
         Assert.Equal(countAtCapacity, vm.Markers.Count);
+    }
+
+    // R9A §1 — the markers a Smith panel DRAWS are the frame's own snapshot, not vm.Markers. Adding
+    // or removing a band must re-stamp that snapshot immediately, with no frame published in between,
+    // or the new/removed marker is fully hit-testable and completely invisible.
+
+    [Fact]
+    public void AddingASourceBandMarker_WithNoFramePublished_AppearsInBothPanelsSnapshotsImmediately()
+    {
+        var vm = new HarmonicaViewModel();
+        vm.AddMarkerBand(TerminationSideKind.Source, 1);
+
+        Assert.Contains(vm.Frame.SmithPower.Markers,
+            m => m.Side == TerminationSideKind.Source && m.Band == 1);
+        Assert.Contains(vm.Frame.SmithEfficiency.Markers,
+            m => m.Side == TerminationSideKind.Source && m.Band == 1);
+    }
+
+    [Fact]
+    public void RemovingABandTwoMarker_WithNoFramePublished_LeavesBothPanelsSnapshotsImmediately()
+    {
+        var vm = new HarmonicaViewModel();
+        var marker = vm.Markers.Single(m => m.Side == TerminationSideKind.Load && m.Band == 2);
+
+        vm.RemoveMarkerBand(TerminationSideKind.Load, 2);
+
+        Assert.DoesNotContain(vm.Frame.SmithPower.Markers, m => ReferenceEquals(m, marker));
+        Assert.DoesNotContain(vm.Frame.SmithEfficiency.Markers, m => ReferenceEquals(m, marker));
+    }
+
+    [Fact]
+    public void SyncingTheMarkerSnapshot_DoesNotDisturbTheContourLayer()
+    {
+        var vm = new HarmonicaViewModel();
+        var contours = vm.Frame.SmithPower.Contours;
+        var gridPoints = vm.Frame.SmithPower.GridPoints;
+        var optimum = vm.Frame.SmithPower.Optimum;
+
+        vm.AddMarkerBand(TerminationSideKind.Source, 1);
+
+        Assert.Same(contours, vm.Frame.SmithPower.Contours);
+        Assert.Same(gridPoints, vm.Frame.SmithPower.GridPoints);
+        Assert.Same(optimum, vm.Frame.SmithPower.Optimum);
     }
 }

@@ -116,10 +116,16 @@ public sealed class HarmonicaR7aMenuTests
         string body = StripComments(MethodBody(ViewSource(),
             "private static void AddAutoscaleLockedItems(", "\n    // ── §4 (R2A)"));
 
+        // R9A §10 — Locked now shares Toggle's own checkbox glyph pair (CheckboxOutline/
+        // CheckboxBlankOutline), the same pair "Show Grid Points" uses, rather than a Lock/
+        // LockOpenVariant pair — the owner wants Locked to read as the checkbox toggle it is.
+        // Toggle itself never sets ToggleType (see Toggle's own doc comment), so this still holds.
         Assert.DoesNotContain("ToggleType", body, StringComparison.Ordinal);
-        Assert.Contains("MaterialIconKind.ArrowExpandAll", body, StringComparison.Ordinal);
-        Assert.Contains("MaterialIconKind.Lock", body, StringComparison.Ordinal);
-        Assert.Contains("MaterialIconKind.LockOpenVariant", body, StringComparison.Ordinal);
+        Assert.Contains("Toggle(\"Autoscale\", autoscaleOn, onAutoscaleClick)", body, StringComparison.Ordinal);
+        Assert.Contains("Toggle(\"Locked\", !autoscaleOn, onLockedClick)", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaterialIconKind.ArrowExpandAll", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaterialIconKind.Lock", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaterialIconKind.LockOpenVariant", body, StringComparison.Ordinal);
     }
 
     // ── §2.2 — every leaf action item routes through the ONE Item(...) helper ──────────────────────
@@ -133,15 +139,15 @@ public sealed class HarmonicaR7aMenuTests
             src, StringComparison.Ordinal);
 
         // Spot-check a representative item from each of §2.2's call sites — Copy, the three format
-        // rows (R8B §6: icon: null, not a substitute glyph), Set… (VSWR), Add Point, Add Points to
-        // VSWR, Remove, DCIV Sweeps…, Axis Limits….
+        // rows (R8B §6: icon: null, not a substitute glyph), Set… (VSWR), Add Grid Points, Add Grid
+        // Points to VSWR (R9A §6), Remove, DCIV Sweeps…, Axis Limits….
         foreach (string needle in new[]
         {
             "Item(\"Copy\", MaterialIconKind.ContentCopy,",
             "Item(header, icon: null,",
             "Item(\"Set…\", MaterialIconKind.Cog,",
-            "Item(\"Add Point\", MaterialIconKind.PlusCircleOutline,",
-            "Item(\"Add Points to VSWR\", MaterialIconKind.PlusCircleMultipleOutline,",
+            "Item(\"Add Grid Points\", MaterialIconKind.PlusCircleOutline,",
+            "Item(\"Add Grid Points to VSWR\", MaterialIconKind.PlusCircleMultipleOutline,",
             "Item($\"Remove {marker.Name}\", MaterialIconKind.Delete,",
             "Item(\"DCIV Sweeps…\", MaterialIconKind.Cog,",
             "Item(\"Axis Limits…\", MaterialIconKind.Cog,",

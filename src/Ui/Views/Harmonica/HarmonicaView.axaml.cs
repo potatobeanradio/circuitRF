@@ -162,15 +162,19 @@ public partial class HarmonicaView : UserControl
     }
 
     /// <summary>
-    /// The first frame is solved LAZILY, on first attach, and at the coarse ring set — §6.8's tier B
-    /// default. A new document that spent a second solving a full grid before it drew anything would
-    /// contradict §1's whole claim about liveness.
+    /// R9C §4 — the first frame goes through the SAME scheduled path every later frame does. It used
+    /// to call <c>RequestFrame()</c> bare, which took <c>Options</c>' own defaults — the ladder's
+    /// COARSE rung — so the launch picture was a 25-point grid while every frame after it was 37:
+    /// measured, that moved the DE optimum from Z = 122.579 − j0.805 to Z = 132.319 − j1.786 and
+    /// carried 4 holes instead of 1, which is what the owner saw as "the contours change when I move
+    /// L1" (brief-harmonicarf-r9c §0.1). The saving was ~65 solves on a grid that measured 451 ms
+    /// whole, in Debug — paid once, on open, deliberately.
     /// </summary>
     private void EnsureFirstSolve()
     {
         if (_solvedOnce || _doc is null) return;
         _solvedOnce = true;
-        _doc.ViewModel.Harmonica.RequestFrame();
+        _doc.ViewModel.Harmonica.RequestScheduledFrame(dragging: false);
     }
 
     private void Refresh()
@@ -186,10 +190,16 @@ public partial class HarmonicaView : UserControl
         // frame, not continuously, so it is a populated line rather than a changing one.
         var messagesBrush = ToBrush(h.RenderTheme.Messages);
         MessageText.Foreground = messagesBrush;
-        MessageText.Text = h.StatusMessage is { Length: > 0 } msg
-            ? msg
-            : $"{h.LastSolveCount} HB solves · {h.Frame.SmithPower.GridPoints.Count} Γ points · " +
-              $"{h.Frame.SmithPower.GridPoints.Count(p => p.IsHole)} holes · {h.Frame.Quality}";
+        // R9A §11 — owner ruling: nothing is posted to the message line while a gesture is live. The
+        // idle solve-cost summary updates on every published mid-drag frame, which is a changing line
+        // under a moving hand — the one thing §2 (R1C) said this line must not be. IsLive covers a
+        // marker drag, an intrinsic-glyph drag, a grid-point drag and an Edit Display grab, which is
+        // every case the owner can be inside. The line is restored by the very next Refresh after
+        // release, so a solve error raised mid-drag is still reported — one frame later, when it can
+        // be read.
+        MessageText.Text = MessageLineText(Canvas.Gesture is { IsLive: true }, h.StatusMessage,
+            $"{h.LastSolveCount} HB solves · {h.Frame.SmithPower.GridPoints.Count} Γ points · " +
+            $"{h.Frame.SmithPower.GridPoints.Count(p => p.IsHole)} holes · {h.Frame.Quality}");
 
         // §3 (R1C) — "Solving…" plus an inline bar, shown only for a frame that actually sweeps a
         // grid (h.IsSolvingGrid). Reset to empty when idle so a later grid frame starts the bar at 0
@@ -224,6 +234,10 @@ public partial class HarmonicaView : UserControl
 
         Canvas.InvalidateVisual();
     }
+
+    /// <summary>R9A §11 — what the message line shows. Pure, so Ui.Tests can pin it without a control.</summary>
+    internal static string MessageLineText(bool gestureLive, string? statusMessage, string idleSummary)
+        => gestureLive ? "" : (statusMessage is { Length: > 0 } m ? m : idleSummary);
 
     // ── §5 (R1C) — the readout strip's per-row format, inline editor and Set… dialog ────────────
 
@@ -1144,21 +1158,12 @@ public partial class HarmonicaView : UserControl
     private static void AddAutoscaleLockedItems(List<object> items, bool autoscaleOn,
         Action onAutoscaleClick, Action onLockedClick)
     {
-        var autoscale = new MenuItem
-        {
-            Header = "Autoscale",
-            Icon = Icon(MaterialIconKind.ArrowExpandAll, autoscaleOn ? 1.0 : 0.35),
-        };
-        autoscale.Click += (_, _) => onAutoscaleClick();
-        items.Add(autoscale);
-
-        var locked = new MenuItem
-        {
-            Header = "Locked",
-            Icon = Icon(autoscaleOn ? MaterialIconKind.LockOpenVariant : MaterialIconKind.Lock),
-        };
-        locked.Click += (_, _) => onLockedClick();
-        items.Add(locked);
+        // R9A §10 — Locked now uses the SAME checkbox glyph pair Toggle already gives "Show Grid
+        // Points" (CheckboxOutline/CheckboxBlankOutline), rather than a Lock/LockOpenVariant pair — the
+        // owner wants Locked to read as the checkbox toggle it is. Autoscale/Locked are a
+        // mutually-exclusive pair of the ONE state (autoscaleOn), so Locked's own "on" is !autoscaleOn.
+        items.Add(Toggle("Autoscale", autoscaleOn, onAutoscaleClick));
+        items.Add(Toggle("Locked", !autoscaleOn, onLockedClick));
     }
 
     // ── §4 (R2A) — the per-marker context menu ──────────────────────────────
@@ -1166,7 +1171,7 @@ public partial class HarmonicaView : UserControl
     /// <summary>
     /// R-h9r2-6/7/8/9/10, extended by brief-harmonicarf-r6b §2 — three read-only format rows (each
     /// with its own "Set…"), a "VSWR: &lt;val&gt;" toggle with its own "Set…" submenu, a Snap to Grid
-    /// toggle, Add Point, Add Points to VSWR, a separator, then Remove — disabled with a stated reason
+    /// toggle, Add Grid Points, Add Grid Points to VSWR (R9A §6), a separator, then Remove — disabled with a stated reason
     /// on band 1, on BOTH sides, per §4's own rule.
     /// </summary>
     private void BuildMarkerMenu(List<object> items, HarmonicaViewModel h, HarmonicaMarker marker)
@@ -1215,16 +1220,26 @@ public partial class HarmonicaView : UserControl
             () => { h.ToggleMarkerSnapToGrid(marker); Refresh(); },
             tooltip: hasGrid ? null : "No grid has been solved yet — this takes effect once one has."));
 
+        // R9D §2 — S1 only. On any other marker the row is absent rather than disabled: "match the SOURCE to
+        // the device's own input impedance" is not a thing a load marker or a harmonic marker can mean, so
+        // there is nothing to explain in a tooltip (R13a's "disabled with a stated reason" rule is for items
+        // that are meaningful but unavailable, which this is not).
+        if (marker.Side == TerminationSideKind.Source && marker.Band == 1)
+            items.Add(Item("Match to Zin*", MaterialIconKind.SwapHorizontal,
+                () => { h.RequestConjugateMatch(HarmonicaViewModel.ConjugateMatchBackoffDb); Refresh(); },
+                tooltip: "Sets ZS1 to the conjugate of Zin at the nearest already-solved drive level about " +
+                         "5 dB below compression, then re-solves the loadpull."));
+
         // brief-harmonicarf-r6b §2.2 — a Γ point AT the marker's own Γ, additive on top of the
         // current ring/spoke preset; persists in the .charm.
-        items.Add(Item("Add Point", MaterialIconKind.PlusCircleOutline,
+        items.Add(Item("Add Grid Points", MaterialIconKind.PlusCircleOutline,
             () => { h.AddGridPoint(marker.Gamma); Refresh(); },
             tooltip: "Adds this marker's own Γ to the loadpull grid, on top of the current preset — " +
                      "persists in the file. Grid ▸ Reset Grid or picking a new Grid Preset clears it."));
 
         // brief-harmonicarf-r6b §2.3 — 12 points uniformly spaced on the marker's own VSWR locus,
         // through the same path. Disabled (greyed) when the circle itself is off.
-        items.Add(Item("Add Points to VSWR", MaterialIconKind.PlusCircleMultipleOutline,
+        items.Add(Item("Add Grid Points to VSWR", MaterialIconKind.PlusCircleMultipleOutline,
             () => { h.AddGridPointsOnVswrCircle(marker); Refresh(); },
             enabled: marker.VswrEnabled,
             tooltip: marker.VswrEnabled ? null : "Turn on this marker's VSWR circle first."));
@@ -1285,7 +1300,7 @@ public partial class HarmonicaView : UserControl
         int? next = NextUnusedBand(h.Markers, side, h.Terminations.HarmonicCount);
 
         return Item(label, MaterialIconKind.PlusCircleOutline,
-            () => { if (next is { } band) { h.AddMarkerBand(side, band); Refresh(); } },
+            () => { if (next is { } band) { h.AddMarkerBandAndShow(side, band); Refresh(); } },
             enabled: next is not null,
             tooltip: next is not null ? null :
                 $"All {(side == TerminationSideKind.Load ? "load" : "source")} bands up to the " +
@@ -1333,7 +1348,7 @@ public partial class HarmonicaView : UserControl
         if (panelId == HarmonicaPanelId.SmithEfficiency)
         {
             var eff = new MenuItem { Header = "Efficiency Metric", Icon = Icon(MaterialIconKind.Percent) };
-            var de = Toggle("DE", h.EfficiencyMetric == GridMetric.DrainEfficiency,
+            var de = Toggle("Drain Efficiency", h.EfficiencyMetric == GridMetric.DrainEfficiency,
                 () => { menus.SetEfficiencyMetricCommand.Execute("DE"); Refresh(); }, glyph: MenuGlyph.Radio);
             var pae = Toggle("PAE", h.EfficiencyMetric == GridMetric.Pae,
                 () => { menus.SetEfficiencyMetricCommand.Execute("PAE"); Refresh(); }, glyph: MenuGlyph.Radio);

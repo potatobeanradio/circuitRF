@@ -33,7 +33,8 @@ public sealed class HarmonicaDefaultMarkersTests
     {
         // R-h9r2-1 (§2): S2/L2/L3 default to the SAME unmarked-band epsilon TerminationSet already
         // answers for "no marker at all" (Z = 1e-6 Ω). L1 is the one band this constructor still gives
-        // a real starting impedance (80+j10 Ω) — see HarmonicaViewModel's own constructor comment.
+        // a real starting impedance (80+j0 Ω as of R9A §7) — see HarmonicaViewModel's own constructor
+        // comment.
         var vm = new HarmonicaViewModel();
         var expected = HarmonicaDataSet.GammaOf(new Complex(TerminationSet.UnmarkedBandOhms, 0),
                                                 vm.Model.Settings.Z0);

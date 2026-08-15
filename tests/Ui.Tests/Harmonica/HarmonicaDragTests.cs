@@ -426,7 +426,10 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         // Avalonia host, so this asserts on the view's own source — the same route
         // HarmonicaPanelTests uses for "the renderer has no fill path".
         string src = ReadSource("src", "Ui", "Views", "Harmonica", "HarmonicaView.axaml.cs");
-        Assert.Contains("MessageText.Text = h.StatusMessage", src, StringComparison.Ordinal);
+        // R9A §11 — the assignment now routes through MessageLineText, which still reads
+        // h.StatusMessage as its own middle argument (gated on whether a gesture is live).
+        Assert.Contains("MessageText.Text = MessageLineText(", src, StringComparison.Ordinal);
+        Assert.Contains("h.StatusMessage,", src, StringComparison.Ordinal);
     }
 
     // ── §1/§2/§3 (R1C) — the toolbar is gone; the bottom message/progress line replaces it ────

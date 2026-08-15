@@ -14,7 +14,7 @@
 //  R8B §3's changed fresh-document default (L1/L2/L3 only, no source marker). S2/L2/L3 default to
 //  TerminationSet.UnmarkedBandOhms (a near-short, Γ magnitude ≈ 1 — right at the rim), which is a
 //  degenerate fixture for VSWR-circle geometry (the circle has nowhere to expand into before hitting
-//  the unit circle). Tests here use S1 (vm.Markers[0], Z=25 Ω) or L1 (vm.Markers[2], Z=80+j10 Ω) —
+//  the unit circle). Tests here use S1 (vm.Markers[0], Z=25 Ω) or L1 (vm.Markers[2], Z=80+j0 Ω, R9A §7) —
 //  both comfortably inside the disk — and never vm.Markers[1]/[3]/[4] (the unmarked S2/L2/L3) unless
 //  the test overrides Gamma itself.
 // ================================================================
@@ -35,7 +35,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
 {
     /// <summary>R8B §3 changed a fresh document's default marker set to L1/L2/L3 with no source
     /// marker at all. Every fixture in this file was written against the PRE-R8B five-marker default
-    /// (<c>[S1, S2, L1, L2, L3]</c>, S1 = 25 Ω, L1 = 80+j10 Ω — see this file's own header) and relies
+    /// (<c>[S1, S2, L1, L2, L3]</c>, S1 = 25 Ω, L1 = 80+j0 Ω as of R9A §7 — see this file's own header) and relies
     /// on that exact index/value pairing throughout, so it is reconstructed here rather than
     /// hand-editing every index below. <c>AddMarkerBand</c> inserts in RANK order (source ascending,
     /// then load ascending), so adding S1 then S2 back onto a fresh L1/L2/L3 document reproduces the
@@ -148,7 +148,7 @@ public sealed class HarmonicaVswrHandleTests(ITestOutputHelper output)
     {
         var vm = NewVm();
         const double W = 1200, H = 800;
-        var marker = vm.Markers[2]; // L1, Z=80+j10Ω — comfortably off the rim
+        var marker = vm.Markers[2]; // L1, Z=80+j0Ω (R9A §7) — comfortably off the rim
         double z0 = Z0Of(vm);
         marker.VswrEnabled = true;
 

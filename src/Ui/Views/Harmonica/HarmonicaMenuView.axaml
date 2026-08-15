@@ -79,6 +79,18 @@
             <NativeMenuItem Header="Load Bands">
               <NativeMenuItem.Menu><NativeMenu/></NativeMenuItem.Menu>
             </NativeMenuItem>
+            <!-- R9D §3.6 — writes ONLY the Load-side markers that already exist; never creates one. -->
+            <NativeMenuItem Header="Preset Terminations">
+              <NativeMenuItem.Menu>
+                <NativeMenu>
+                  <NativeMenuItem Header="Class B"   Command="{Binding SetPaClassPresetCommand}" CommandParameter="B"        Gesture="Meta+B"/>
+                  <NativeMenuItem Header="Class J"   Command="{Binding SetPaClassPresetCommand}" CommandParameter="J"        Gesture="Meta+J"/>
+                  <NativeMenuItem Header="Class J*"  Command="{Binding SetPaClassPresetCommand}" CommandParameter="JStar"    Gesture="Meta+Shift+J"/>
+                  <NativeMenuItem Header="Class F"   Command="{Binding SetPaClassPresetCommand}" CommandParameter="F"        Gesture="Meta+F"/>
+                  <NativeMenuItem Header="Class F⁻¹" Command="{Binding SetPaClassPresetCommand}" CommandParameter="FInverse" Gesture="Meta+Shift+F"/>
+                </NativeMenu>
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Reset to Defaults" Command="{Binding ResetMarkersCommand}"/>
           </NativeMenu>
@@ -114,7 +126,7 @@
             <NativeMenuItem Header="Efficiency Metric">
               <NativeMenuItem.Menu>
                 <NativeMenu>
-                  <NativeMenuItem Header="DE"  Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="DE"/>
+                  <NativeMenuItem Header="Drain Efficiency"  Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="DE"/>
                   <NativeMenuItem Header="PAE" Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="PAE"/>
                 </NativeMenu>
               </NativeMenuItem.Menu>
@@ -244,6 +256,14 @@
           </Style>
         </MenuItem.Styles>
       </MenuItem>
+      <!-- R9D §3.6 — writes ONLY the Load-side markers that already exist; never creates one. -->
+      <MenuItem Header="_Preset Terminations">
+        <MenuItem Header="Class _B"   Command="{Binding SetPaClassPresetCommand}" CommandParameter="B"        InputGesture="Ctrl+B"/>
+        <MenuItem Header="Class _J"   Command="{Binding SetPaClassPresetCommand}" CommandParameter="J"        InputGesture="Ctrl+J"/>
+        <MenuItem Header="Class J_*"  Command="{Binding SetPaClassPresetCommand}" CommandParameter="JStar"    InputGesture="Ctrl+Shift+J"/>
+        <MenuItem Header="Class _F"   Command="{Binding SetPaClassPresetCommand}" CommandParameter="F"        InputGesture="Ctrl+F"/>
+        <MenuItem Header="Class F⁻¹"  Command="{Binding SetPaClassPresetCommand}" CommandParameter="FInverse" InputGesture="Ctrl+Shift+F"/>
+      </MenuItem>
       <Separator/>
       <MenuItem Header="_Reset to Defaults" Command="{Binding ResetMarkersCommand}"/>
     </MenuItem>
@@ -275,7 +295,7 @@
         </MenuItem.Styles>
       </MenuItem>
       <MenuItem Header="E_fficiency Metric">
-        <MenuItem Header="_DE"  Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="DE"/>
+        <MenuItem Header="_Drain Efficiency"  Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="DE"/>
         <MenuItem Header="_PAE" Command="{Binding SetEfficiencyMetricCommand}" CommandParameter="PAE"/>
       </MenuItem>
       <MenuItem Header="Loadline P_lane" Command="{Binding ToggleLoadlinePlaneCommand}"

@@ -170,8 +170,24 @@ public sealed class PinSweepTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void ExactCompressionSolve_Default_IsOff()
-        => Assert.False(new HarmonicaSettings().ExactCompressionSolve);
+    public void ExactCompressionSolve_Default_IsOn()
+        // R9A §8 — flipped from off to on.
+        => Assert.True(new HarmonicaSettings().ExactCompressionSolve);
+
+    [Fact]
+    public void ExactCompressionSolve_RoundTripsExplicitlyOff_EvenThoughTheNewDefaultIsOn()
+    {
+        // R9A §8 — the persisted value must win over the new C# default: a document saved with it
+        // explicitly off (pre-R9A, or an owner who turned it off) must not silently flip on at load.
+        var model = Model(pinMax: 22.5, pinStep: 0.5, exact: false);
+        var terms = Terms(model);
+
+        string json = CharmIo.Write(model, terms);
+        var (back, _) = CharmIo.Read(json, null, out var unresolved, withMarkers: true);
+
+        Assert.Empty(unresolved);
+        Assert.False(back.Settings.ExactCompressionSolve);
+    }
 
     [Fact]
     public void ExactCompressionSolve_On_CostsExactlyOneExtraSolve_AndSpectrumMatchesTheReading()

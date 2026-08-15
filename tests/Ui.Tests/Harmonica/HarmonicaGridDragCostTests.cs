@@ -4,6 +4,17 @@
 //  "Dragging one grid point invalidates exactly one Γ sample — ~8 solves ≈ 8 ms plus a re-fit. Live."
 //  §8: at or above ~5 s ⇒ Category=Benchmark, in a NON-PARALLEL collection, best-of-N MINIMUM, and
 //  every reported number measured ALONE.
+//
+//  R9C §5.2 re-measurement (2026-08-15) — the FIRST half changed, the SECOND did not, exactly as the
+//  brief predicted: the per-point search became PinSearch.Sweep's ladder (R9C §3), which walks EVERY
+//  rung from PinStart to PinMax rather than a ~5-solve secant, so both the full-rebuild and the
+//  one-point counts rose. R-h7-12's own reuse mechanism (keyed on Γ, search-independent) is UNCHANGED —
+//  still exactly 60 of 61 points reused. New numbers: full rebuild 1319 HB solves / 476.2 ms (was 272 /
+//  547.8 ms); one dragged point 23 HB solves / 7.3 ms (was 3 / 3.3 ms) with 60 points reused (unchanged).
+//  Wall-clock for a drag stayed well under budget (7.3 ms, still ~65× faster than a full rebuild) even
+//  though the solve COUNT per point rose ~7.7×, because each ladder rung is a cheap, well-warm-started
+//  solve — the accuracy/robustness R9C bought is not free in solve count, but is still free in the
+//  frame-rate sense that actually matters for a live drag.
 // ================================================================
 
 using System;
@@ -102,9 +113,13 @@ public sealed class HarmonicaGridDragCostTests(ITestOutputHelper output)
             $"a dragged point took {dragMs:F1} ms against a full rebuild's {fullMs:F1} ms — that is " +
             "not one Γ sample's worth of work");
 
-        // §6.4's own claim: "~8 solves". Reported rather than pinned tightly — the count depends on
-        // how far the point moved and on its warm-start neighbour.
-        Assert.True(movedSolves <= 16,
-            $"the moved point cost {movedSolves} solves; §6.4 predicts ~8");
+        // §6.4's own original claim was "~8 solves", against PinSearch.Run's secant. R9C §3 replaced
+        // the per-point search with PinSearch.Sweep's ladder (walking every 2 dB rung from PinStart to
+        // PinMax, rather than a ~5-solve secant), so the honest budget is now the ladder's own rung
+        // count — measured 23 on this fixture, comfortably under PinMax(50)−PinStart(−10) / 2 dB = 30
+        // rungs (the tickle plus the SweepOverdriveDb early-stop trims it below the theoretical max).
+        Assert.True(movedSolves <= 30,
+            $"the moved point cost {movedSolves} solves; R9C's ladder predicts at most ~30 rungs " +
+            "(PinStart to PinMax at ContourLadderStepDbm, plus the tickle)");
     }
 }

@@ -82,15 +82,23 @@ public sealed class HarmonicaSolver
 
     private static readonly TerminationSide[] Sides = [TerminationSide.Source, TerminationSide.Load];
 
-    /// <summary>Options a frame is solved under. Defaults are the coarse ring set of §6.8, so the
-    /// first frame after opening a document is fast rather than correct-and-slow.</summary>
+    /// <summary>
+    /// Options a frame is solved under. <b>R9C §4 — defaults are the FULL ring set</b>, not the coarse
+    /// one: a bare <c>new Options()</c> used to be the coarse rung, which is what let
+    /// <c>HarmonicaView.EnsureFirstSolve</c>'s old bare <c>RequestFrame()</c> silently launch a document
+    /// on a 25-point grid while every later frame ran the full 37 — measured to move the DE optimum
+    /// from Z = 122.579 − j0.805 to Z = 132.319 − j1.786 and carry 4 holes instead of 1 (§0.1 of
+    /// brief-harmonicarf-r9c). A bare <c>new Options()</c> is used by tests and could be used by a
+    /// future caller, so leaving it silently coarse would re-arm the same trap under a different name —
+    /// the scheduled path (<c>RequestScheduledFrame</c>) is unaffected either way, since it always
+    /// supplies its own Rings/Spokes from the ladder's current rung.
+    /// </summary>
     public sealed record Options
     {
-        /// <summary>brief-harmonicarf-r6a §5.1 — tracks <see cref="FrameScheduler"/>'s own coarse ring
-        /// set (now 2 × 12 = 25 points; was 3 × 12 = 37) rather than a literal that would silently
-        /// drift from the ladder's actual "fast" tier the next time it moves.</summary>
-        public int Rings  { get; init; } = FrameScheduler.CoarseRings;
-        public int Spokes { get; init; } = FrameScheduler.CoarseSpokes;
+        /// <summary>R9C §4 — the FULL ring set (<see cref="FrameScheduler.FullRings"/>/<c>FullSpokes</c>,
+        /// 3 × 12 = 37 points), not the coarse one. See this record's own remarks for why.</summary>
+        public int Rings  { get; init; } = FrameScheduler.FullRings;
+        public int Spokes { get; init; } = FrameScheduler.FullSpokes;
         public double MaxGamma { get; init; } = 0.8;
 
         /// <summary>D8 — auto with override, defaulting to 10 levels.</summary>
@@ -175,6 +183,11 @@ public sealed class HarmonicaSolver
         /// frame's grid has nothing in common with the previous one's.
         /// </summary>
         public bool ReuseUnchangedGridPoints { get; init; }
+
+        /// <summary>R9D §2 — when set, this frame ALSO computes the source-side Zin at approximately this
+        /// many dB of backoff from the compression point, and reports it on the frame. Null on every
+        /// ordinary frame; nothing about the grid, the panels or the readouts changes when it is set.</summary>
+        public double? ConjugateMatchBackoffDb { get; init; }
     }
 
     /// <summary>
@@ -245,6 +258,14 @@ public sealed class HarmonicaSolver
             ? sweep.Steps.ToDictionary(st => Math.Round(st.PavlDbm, 6), st => st.Point.V)
             : _lastSweepLevelSpectra;
         tierAMs = stage.Elapsed.TotalMilliseconds;
+
+        // R9D §2 — the backoff point is chosen from the rungs the drive-up ALREADY SOLVED ("find the nearest
+        // backoff point that was already pre-calculated"), never by a new search: the ladder's own steps are
+        // the pre-calculated set, and re-searching would answer a question the owner did not ask and cost a
+        // second sweep. Only the ONE chosen rung pays a HarmonicaDataSet.Build.
+        ConjugateMatchOutcome? conjugateMatch = opt.ConjugateMatchBackoffDb is { } backoffDb
+            ? ComputeConjugateMatch(ctx, terminations, sweep, backoffDb)
+            : null;
 
         // The operating point the glyphs, the loadline and the readouts are all evaluated at: R-h6-11's
         // cursor — the compression point when the user has not placed it, else the nearest step to
@@ -367,6 +388,7 @@ public sealed class HarmonicaSolver
             Readouts        = BuildReadouts(ctx, sweep, at, markers, opt, smithP, smithE, readoutFormat, published),
             Published       = published,
             Quality         = opt.Quality,
+            ConjugateMatch  = conjugateMatch,
             // RenderMs is deliberately left at zero: the solver cannot know it. The view fills it in
             // from its own last draw before handing the whole thing to FrameScheduler.RecordFrame.
             Timing          = new FrameTiming(tierAMs, gridSolveMs, fitMs, rasterMs, 0),
@@ -525,29 +547,64 @@ public sealed class HarmonicaSolver
     }
 
     /// <summary>
-    /// R-h9b-16 — solves ONE Pin drive-up at <paramref name="seed"/>'s interpolated Γ, substituted
-    /// into the band the contour grid swept (<c>opt.GridSide</c>/<c>GridHarmonic</c>), and publishes
-    /// §5's cubes there. This is the single defensible route: every number the caller reads off the
-    /// result — Pout, DE, PAE, Gain, Zin, AM-PM — is then the SAME state, consistently, rather than
-    /// values interpolated off N independently-fitted surfaces that need not even satisfy the DE that
-    /// a third surface reports.
+    /// R-h9b-16, revised by R9C §2 — solves ONE Pin drive-up at <paramref name="seed"/>'s interpolated
+    /// Γ, substituted into the band the contour grid swept (<c>opt.GridSide</c>/<c>GridHarmonic</c>),
+    /// and publishes §5's cubes there. This is the single defensible route: every number the caller
+    /// reads off the result — Pout, DE, PAE, Gain, Zin, AM-PM — is then the SAME state, consistently,
+    /// rather than values interpolated off N independently-fitted surfaces that need not even satisfy
+    /// the DE that a third surface reports.
+    ///
+    /// <para><b>R9C §2.2 — the drive-up is now <see cref="PinSearch.Sweep"/> at the document's own
+    /// ladder settings</b> (literally the call tier-A's own drive-up already makes), not
+    /// <see cref="PinSearch.Run"/>. MXP/MXE and the strip's operating-point column then agree by
+    /// construction rather than by coincidence: one function, one definition of "P-x dB", one running-
+    /// <c>gMax</c> rule.</para>
+    ///
+    /// <para><b>R9C §2.1 — a search that did NOT reach the compression target has no optimum to
+    /// report.</b> This used to fall back to <c>sweep.Steps[^1]</c> — the last surviving probe of a
+    /// FAILED search — and hand it to <see cref="AddMxColumn"/> as though it were the compression
+    /// point: on the shipped default at Z_L1 = 132.3 Ω that probe was Pin 11 dBm at 15.72 dB gain,
+    /// published as "MXE Pout 26.72 dBm" while the strip's own P-3dB read 39.28 dBm at the same
+    /// termination. A stated "no optimum" is not a worse answer than a wrong one; it is the only
+    /// honest one.</para>
     /// </summary>
-    private SmithPanelData.SmithOptimum SolveAtOptimum(
+    // internal (not private) — R9C §2.4's gate tests call this directly, at a hand-picked seed Γ,
+    // rather than relying on InterpolatedArgmax to naturally land on a failing search (measured to be
+    // a narrow, hard-to-reproduce band on any real fixture). Exposed via InternalsVisibleTo, same as
+    // several other Ui view-model test seams in this project.
+    internal SmithPanelData.SmithOptimum SolveAtOptimum(
         HarmonicaContext ctx, TerminationSet terminations, Options opt, SmithPanelData.SmithOptimum seed)
     {
         var t = terminations.Clone();
         t.Set(opt.GridSide, opt.GridHarmonic, HarmonicaDataSet.ImpedanceOf(seed.Gamma, ctx.Model.Settings.Z0));
 
-        var sweep = PinSearch.Run(ctx, t);
+        var s = ctx.Model.Settings;
+        var sweep = PinSearch.Sweep(ctx, t, s.PinStartDbm, s.PinMaxDbm, s.PinStepDbm);
         LastSolveCount += sweep.Solves;
 
-        int idx = sweep.AtCompression is null
-            ? sweep.Steps.Count - 1
-            : IndexOfNearestPin(sweep.Steps, sweep.AtCompression.PavlDbm);
-        var step = idx >= 0 && idx < sweep.Steps.Count ? sweep.Steps[idx] : null;
+        if (sweep.SweepCompression is not { } reading || sweep.AtCompression is not { } spectrumStep)
+        {
+            string reason = sweep.Reason switch
+            {
+                PinStopReason.PinMax =>
+                    "this termination did not reach P-x dB before PinMax.",
+                PinStopReason.NonConvergence =>
+                    "the drive-up at this optimum did not converge.",
+                _ => "the drive-up at this optimum did not reach the compression target.",
+            };
+            return seed with { Solved = null, Published = null, SolvedCompression = null, UnsolvedReason = reason };
+        }
 
-        var published = step is not null ? HarmonicaDataSet.Build(ctx, step.Point, t) : null;
-        return seed with { Solved = step, Published = published };
+        // R9C §2.3 — the spectrum every glyph/loadline/Zin/AM-PM reads is the NEAREST solved ladder
+        // point (AtCompression); the SCALAR figures at compression come from the ladder's own
+        // interpolated (or one-real-solve) reading (SweepCompression). Reading AtCompression's own
+        // scalars instead would round every MX figure to the nearest whole ladder step — precisely the
+        // error interpolation exists to remove.
+        var published = HarmonicaDataSet.Build(ctx, spectrumStep.Point, t);
+        return seed with
+        {
+            Solved = spectrumStep, Published = published, SolvedCompression = reading, UnsolvedReason = null,
+        };
     }
 
     private static int IndexOfNearestPin(IReadOnlyList<PinStep> steps, double pavlDbm)
@@ -559,6 +616,43 @@ public sealed class HarmonicaSolver
             if (d < bestD) { bestD = d; best = i; }
         }
         return best;
+    }
+
+    /// <summary>R9D §2.6 — the backoff rung selection, as a pure function. The target is
+    /// <paramref name="compressionPinDbm"/> minus <paramref name="backoffDb"/>; the answer is the
+    /// index of the ALREADY-SOLVED ladder step nearest it (reusing <see cref="IndexOfNearestPin"/>,
+    /// the same helper <see cref="SolveAtOptimum"/> uses) — including the case where the target falls
+    /// below the ladder's first rung, which lands on that first rung rather than extrapolating.</summary>
+    internal static int IndexOfBackoffStep(IReadOnlyList<PinStep> steps, double compressionPinDbm, double backoffDb)
+        => IndexOfNearestPin(steps, compressionPinDbm - backoffDb);
+
+    /// <summary>R9D §2 — the S1 "Match to Zin*" command's answer, computed on the solve worker from the
+    /// tier-A drive-up already in hand (never a second sweep). See <see cref="ConjugateMatchOutcome"/>.</summary>
+    private static ConjugateMatchOutcome ComputeConjugateMatch(
+        HarmonicaContext ctx, TerminationSet terminations, PinSearchResult sweep, double backoffDb)
+    {
+        if (sweep.SweepCompression is not { } reading)
+            return new ConjugateMatchOutcome(Found: false,
+                "the drive-up did not reach the compression target, so there is no backoff point to measure from",
+                backoffDb, 0, 0, Complex.Zero);
+
+        double pinC = reading.PinDbm;
+        int idx = IndexOfBackoffStep(sweep.Steps, pinC, backoffDb);
+        if (idx < 0)
+            return new ConjugateMatchOutcome(Found: false,
+                "the drive-up did not reach the compression target, so there is no backoff point to measure from",
+                backoffDb, 0, 0, Complex.Zero);
+
+        var step = sweep.Steps[idx];
+        var ds   = HarmonicaDataSet.Build(ctx, step.Point, terminations);
+        var zin  = ReadComplex(ds, "Zin", (int)TerminationSide.Source, 1);
+        if (!double.IsFinite(zin.Real) || !double.IsFinite(zin.Imaginary))
+            return new ConjugateMatchOutcome(Found: false,
+                "Zin at that operating point is not finite",
+                backoffDb, pinC - step.PavlDbm, step.PavlDbm, Complex.Zero);
+
+        return new ConjugateMatchOutcome(Found: true, Reason: null, backoffDb, pinC - step.PavlDbm,
+                                         step.PavlDbm, zin);
     }
 
     // ── §4.5 — the glyphs, READ from Gamma_intr ──────────────────────────────
@@ -787,7 +881,9 @@ public sealed class HarmonicaSolver
     /// the identical <see cref="SmithPanelData.SmithOptimum"/>, so they can never describe two
     /// different states.
     /// </summary>
-    private static void AddMxColumn(List<HarmonicaReadout> r, ReadoutColumn column, string label,
+    // internal (not private) — R9C §2.4's gate tests call this directly with a hand-crafted
+    // SmithOptimum, for the same reason SolveAtOptimum is internal (see its own remarks).
+    internal static void AddMxColumn(List<HarmonicaReadout> r, ReadoutColumn column, string label,
                                     Options opt, SmithPanelData.SmithOptimum? optimum,
                                     Func<string, ReadoutFormat> format, HarmonicaContext ctx)
     {
@@ -806,7 +902,11 @@ public sealed class HarmonicaSolver
         if (optimum is not { Solved: { } step, Published: { } ds })
         {
             string baseHeader = HarmonicaTitles.MxHeaderRow(label, opt.GridSide, opt.GridHarmonic);
-            const string tip = "No optimum is available this frame — every grid point is a hole, or " +
+            // R9C §2.1 — the third case now has its own name: a search that RAN this frame and failed
+            // (UnsolvedReason set) is a different story from a degraded rung or a SkipContours frame
+            // that never ran a drive-up at all (UnsolvedReason null, the two original sentences).
+            string tip = optimum?.UnsolvedReason ??
+                "No optimum is available this frame — every grid point is a hole, or " +
                 "this frame is mid-drag and has not yet solved a fresh optimum.";
             r.Add(new HarmonicaReadout($"{baseHeader} — no optimum", "", "", column));
             r.Add(new HarmonicaReadout("Pout", "—", tip, column, Unit: "dBm"));
@@ -825,18 +925,29 @@ public sealed class HarmonicaSolver
         // surface), never the marker's, and never read from the published DataSet. Resolved through
         // the column's own saved format key so the header agrees with whatever the column's Zin row
         // is showing rather than being independently spelled.
-        string zText = HarmonicaReadoutFormatting.FormatZ(
+        string zText = HarmonicaReadoutFormatting.FormatZCompact(
             HarmonicaDataSet.ImpedanceOf(optimum.Gamma, ctx.Model.Settings.Z0), format($"{label}.MxZ"));
         r.Add(new HarmonicaReadout(HarmonicaTitles.MxHeaderRow(label, opt.GridSide, opt.GridHarmonic, zText),
             "", "", column));
-        r.Add(new HarmonicaReadout("Pout",
-            HarmonicaReadoutFormatting.FormatDbm(step.PoutW > 0 ? 10 * Math.Log10(step.PoutW) + 30 : double.NaN),
+
+        // R9C §2.3 — the MX column now follows the IDENTICAL rule the operating-point column already
+        // does (HarmonicaSolver.cs's own §617-634): SolvedCompression, when present, is the reading AT
+        // the compression target; step's own numbers are only the nearest solved ladder rung and would
+        // round every figure to the nearest whole ladder step otherwise. Null for a Run()-based caller
+        // (its own AtCompression already sits exactly on target), so the fallback is the old behaviour.
+        var sc = optimum.SolvedCompression;
+        double poutDbm = sc?.PoutDbm ?? (step.PoutW > 0 ? 10 * Math.Log10(step.PoutW) + 30 : double.NaN);
+        double deFrac  = sc?.De      ?? step.De;
+        double paeFrac = sc?.Pae     ?? step.Pae;
+        double gainDb  = sc?.GainDb  ?? step.GainDb;
+
+        r.Add(new HarmonicaReadout("Pout", HarmonicaReadoutFormatting.FormatDbm(poutDbm),
             "Output power at this optimum.", column, Unit: "dBm"));
-        r.Add(new HarmonicaReadout("Eff", HarmonicaReadoutFormatting.FormatPercent(step.De * 100),
+        r.Add(new HarmonicaReadout("Eff", HarmonicaReadoutFormatting.FormatPercent(deFrac * 100),
             "Drain efficiency at this optimum.", column, Unit: "%"));
-        r.Add(new HarmonicaReadout("PAE", HarmonicaReadoutFormatting.FormatPercent(step.Pae * 100),
+        r.Add(new HarmonicaReadout("PAE", HarmonicaReadoutFormatting.FormatPercent(paeFrac * 100),
             "Power-added efficiency at this optimum.", column, Unit: "%"));
-        r.Add(new HarmonicaReadout("Gain", HarmonicaReadoutFormatting.FormatDb(step.GainDb),
+        r.Add(new HarmonicaReadout("Gain", HarmonicaReadoutFormatting.FormatDb(gainDb),
             "Transducer gain (Gt) at this optimum.", column, Unit: "dB"));
         r.Add(new HarmonicaReadout("Gp", HarmonicaReadoutFormatting.FormatDb(step.Foms.GpDb),
             "Power gain (Gp = Pout / Pin_delivered) at this optimum — free off the solved PinStep's " +
@@ -861,7 +972,8 @@ public sealed class HarmonicaSolver
             column));
 
         // R-hui-7 — Pdc, matching the P-3dB (OperatingPoint) chunk's own row set, last here too.
-        r.Add(new HarmonicaReadout("Pdc", HarmonicaReadoutFormatting.FormatWatt(step.PdcW),
+        // R9C §2.3 — same sc?.PdcW ?? step.PdcW fallback as the other four scalars above.
+        r.Add(new HarmonicaReadout("Pdc", HarmonicaReadoutFormatting.FormatWatt(sc?.PdcW ?? step.PdcW),
             "DC power drawn at this optimum.", column, Unit: "W"));
         AddGammaRow(r, column, ctx, ds);
     }

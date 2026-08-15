@@ -4,6 +4,156 @@ Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern: a completed brief's deta
 `##` section per brief, sparingly — only for findings that are still true, still surprising, and
 would cost someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## R9D §3 — `PaClassPresets`: the five PA-class terminations, closed form (brief-harmonicarf-r9d, 2026-08-15)
+
+Source: Sharma, T. (2018). *Modelling and Design Methodology of Higher-Efficiency Harmonic Tuned Power
+Amplifiers for 5G Applications* (Doctoral thesis, University of Calgary).
+<https://prism.ucalgary.ca/handle/1880/106695>. All five are **intrinsic** and assume `Z0 = R_opt`.
+
+| class | ZL1 | ZL2 | band ≥ 3 |
+|---|---|---|---|
+| B | `Z0` | `NearShortOhms` | `NearShortOhms` |
+| J | `Z0·(1 − j·0.5)` = `80 − j40` at Z0=80 | `j·(3π·0.5/8)·Z0` ≈ `+j47.12` at Z0=80 | `NearShortOhms` |
+| J* | `Z0·(1 + j·0.5)` (α = −0.5 negated) | ≈ `−j47.12` | `NearShortOhms` |
+| F | `2·Z0/√3` ≈ 92.376 at Z0=80 | even → `NearShortOhms`, odd → `NearOpenOhms` (band 2 falls out of the SAME even/odd rule, no special case) | as ZL2's rule |
+| F⁻¹ | `√2·Z0/2/(0.5 − 8/9/π²)` ≈ 137.99 at Z0=80 | even → `NearOpenOhms`, odd → `NearShortOhms` | as ZL2's rule |
+
+Transcribed **exactly as the owner wrote them** — `Math.Sqrt(2) * z0 / 2 / (0.5 - 8.0 / 9.0 / Math.PI /
+Math.PI)`, `2.0 * z0 / Math.Sqrt(3)` — rather than pre-simplified to a decimal, so a reader can check
+the formula against the thesis directly. `NearShortOhms` is `TerminationSet.UnmarkedBandOhms` itself
+(read, never re-declared) — the owner's own words call it "the harmonicaRF 'undefined' termination
+(which is currently 1e-6)", and *currently* is the word that matters if it ever changes.
+
+**J* is provably the complex conjugate of J, band by band, from the SAME formula** — negating α is
+exactly conjugation of both the band-1 and band-2 expressions (Z0 is real), so `IntrinsicLoad(JStar,
+band, z0) == Complex.Conjugate(IntrinsicLoad(J, band, z0))` for every band, gated directly rather than
+by two independent decimal literals.
+
+`PaClassPresets.IntrinsicLoad(PaClass, band, z0)` is the only public surface — pure `Complex`/`double`
+math, no UI reference, testable with no view model. The extrinsic transform (which capacitor/package
+element matters on which side, the linearized-nonlinear-capacitor substitution, the per-band pole
+refusal) is entirely `src/Ui`'s own — see `src/Ui/RESOLVED.md`'s own R9D entry.
+
+Gate: `tests/Harmonica.Tests/PaClassPresetsTests.cs` — the five pinned tables at Z0 = 80 (including the
+J/J* conjugate check), the identity check (`IntrinsicAbcd.ExtrinsicFor` with no package/no capacitors
+reproduces the intrinsic table exactly, band by band), and a round trip through the LOAD side's
+Rd/Ld/Cds combination (independently hand-derived, never re-calling `IntrinsicAbcd.Chain`) recovering
+the intrinsic target to 1e-9 — the same discipline `IntrinsicAbcdTests`'s own §5.4 item 3 round trip
+established, applied here for a new caller.
+
+## R9C — the contour grid's per-point search becomes a ladder (brief-harmonicarf-r9c, 2026-08-15)
+
+**The investigation (§0), verbatim.** Two owner reports traced to ONE root cause: `PinSearch.Run`'s
+doubling-stride bracket, called once per Γ point by `ContourGrid`. Measured headlessly on the shipped
+default DUT (SDD, Vgs −3.05, Vds 48, f₀ 2 GHz, K = 3, PinStart −10, PinMax 34, CompressionDb 3), Z0 = 80,
+S1 = 50 Ω, L2/L3 near-short, Debug build, single-threaded:
+
+| grid | points | holes | DE argmax Z | Pout argmax Z |
+|---|---|---|---|---|
+| launch, 2 × 12 | 25 | **4** | 122.579 − j0.805 | 78.749 − j0.957 |
+| every later frame, 3 × 12 | 37 | **1** | **132.319 − j1.786** | 78.795 + j0.464 |
+
+At ZL1 = 132.319 − j1.786, `Run` (the contour grid + MXP/MXE) returned a HOLE (NonConvergence, 7
+solves) while `Sweep` (the panel + the strip) compressed at Pin 23.104 dBm, Pout 39.276 dBm, DE 69.90%.
+`HarmonicaSolver.SolveAtOptimum` reported the wreckage anyway: a failed `Run` search's `AtCompression`
+was null, so the code fell back to `sweep.Steps[^1]` — the LAST SURVIVING PROBE, Pin = 11 dBm at
+15.72 dB gain — and `11 + 15.72 = 26.72 dBm`, the owner's exact reported number. Cost, over the whole
+37-point grid:
+
+| per-point search | solves | holes | wall (Debug) |
+|---|---|---|---|
+| `PinSearch.Run` (shipped) | 222 | 1 | 116 ms |
+| ladder @ 1 dB | 1370 | **0** | 480 ms |
+| ladder @ 2 dB | 736 | **0** | 248 ms |
+| ladder @ 4 dB | 420 | 2 | 169 ms |
+
+1 dB and 2 dB agreed to 0.03 dB in Pin and 0.002 dB in Pout; 4 dB re-introduced non-convergence. Owner
+rulings: the per-point search becomes `PinSearch.Sweep` at a 2 dB ladder step, for the contour grid AND
+for MXP/MXE's own solve (`HarmonicaSolver.SolveAtOptimum`, `src/Ui/RESOLVED.md`'s own R9C entry); the
+launch frame is solved at full quality like every other frame; a failed search is refused, never
+reported as an answer, regardless.
+
+**`CircuitModel.HarmonicaSettings.ContourLadderStepDbm`** (new, default 2.0, clamped `[0.5, 3.0]` on
+read by `ContourGrid`) is the grid's own step — separate from `PinStepDbm` (the power-sweep panel's own
+1 dB default) because the grid pays it once per Γ point. Persisted in `CharmIo` beside `PinStepDbm`,
+absent-means-default.
+
+**`ContourGrid.Build`/`BuildParallel` now call `PinSearch.Sweep`, never `PinSearch.Run`, for a grid
+point.** `GridPoint.Metric` was changed to prefer `Result.SweepCompression` (the reading AT the
+compression target) over `Result.AtCompression`'s own nearest-rung numbers, falling back to the latter
+for a (hypothetical future) `Run()`-based result — otherwise every contour value would quantise to the
+ladder's own step size. `PinSearch.Run` itself is UNTOUCHED and still reachable directly; only the two
+call sites inside `ContourGrid` changed.
+
+**A real correctness bug found by measurement, not by the brief's own text.** The brief's own §3.2
+snippet (seed every rung of a new point's ladder from its Γ-nearest converged neighbour's own
+matching-level spectrum, via `PinSearch.Sweep`'s existing `priorLevelSpectra` — the same shape
+R-h9r2-19's frame-to-frame lever already uses) was implemented literally first and MEASURED to
+introduce holes rather than remove them: on the shipped default's 3 × 12 grid, the three points along
+its own known hard radial line (Γ = 0.267/0.533/0.8 on the real axis) each converge fine standalone
+(and fine warm-started only from their own in-ladder predecessor), but their Γ-nearest converged
+neighbour at that point in the build order sits ~0.43 Γ away — and `PinSearch.Sweep` has NO per-rung
+retry the way `PinSearch.Run` does (its own cold-DC-seed fallback, §3.3 item 3) — so one bad cross-Γ
+rung aborts the whole ladder rather than merely costing a retry, converting three previously-fine
+points into three NEW holes. This is the exact hazard `HarmonicaSolver.LeverOneDeltaGammaThreshold`
+already names for the frame-to-frame lever ("HB solutions across the termination plane are NOT a
+smooth family... on a LARGE jump [the prior state] can be an actively misleading [seed]",
+brief-harmonicarf-r4 §5.2/§5.3) — applied here to a grid neighbour instead of a previous frame. Fixed
+by `ContourGrid.NeighborLevelSeedMaxGammaDistance` (new, 0.20 — reusing the lever's own measured
+threshold rather than inventing a second number): a neighbour's per-level spectrum is only trusted
+within that Γ distance, else the point solves with no cross-point seed at all (a genuine cold DC start
+for its first rung, exactly as robust as an isolated `Sweep` call). With the guard, the shipped
+default's 3 × 12 grid measures **0 holes, 773 solves** — very close to §0's own "ladder @ 2 dB" figure
+(736 solves, 0 holes; the small difference is this measurement's real S1/Z0 fixture vs. §0's own).
+`NearestByVswr`'s `PinHint` return (unused once neither `Build` nor `BuildParallel` calls `Run` any
+more) was replaced with `NeighborGamma`, which the guard needs; `ContourGrid.StateKey` gained
+`ContourLadderStepDbm` so a step-size change invalidates a reused grid the same way `PinStartDbm`/
+`PinMaxDbm` already do.
+
+**`ContourGridParallelTests`' own worst-case serial-vs-parallel PAE deviation, re-measured, GREW rather
+than shrank — reported honestly, per this file's own convention, not chased further.** The brief's own
+expectation ("should shrink or vanish, because a uniform ladder does not depend on which neighbour
+seeded it") does not hold on this fixture: the worst-case deviation is now ~8.6 pts, up from the
+~3.7–3.8 pts the pre-R9C `Run`-based bracket left recorded. The hole SET still matches exactly (0/0 on
+the 61-point benchmark fixture) — the hard assertion this gate exists for — so this is not a
+correctness regression; the likely mechanism is `NeighborLevelSeedMaxGammaDistance`'s own guard
+admitting a DIFFERENT set of "close enough" neighbours between the serial (whole-grid search) and
+parallel (per-batch search) builders, which on this fixture's own non-monotone (gain-EXPANSION) curve
+can settle two still-valid, still-converged ladders at genuinely different points along a locally flat
+region. See `ContourGridParallelTests.cs`'s own updated remarks.
+
+**`LoadpullHoleDiagnosticTests`'s own finding is CONFIRMED AND CLOSED** — its class doc comment now
+says so; `FailingPoints_RunUnderSweep_ForComparison`'s "Run()=" output label is a HISTORICAL comparison
+now (the grid's own search is Sweep-based, not literally `Run`), kept unrenamed so the file still
+reads as the record of what was found and fixed. Its own larger/denser 61-point fixture (5 × 12,
+maxGamma 0.8) still measures 2 genuine holes even with the guard — a residual, reported rather than
+chased, and outside this brief's own gate (which holds the 37-point shipped-default fixture to zero).
+
+**A pre-existing test fixture broke, and the fix is a strictly better fixture, not a narrower one.**
+`tests/Ui.Tests/Harmonica/HarmonicaPanelTests.BuildGridWithADeliberateHole` used to tune `PinMaxDbm` so
+that `PinSearch.Run`'s bracket would fail on 2 of 31 points while the rest converged — a technique that
+exploited `Run`'s own fragility near a hand-tuned boundary. With the ladder, this same SDD device
+converges EVERYWHERE up to maxGamma≈0.99 at the original PinMax (scanned directly), and the transition
+from 0 holes to "most points" holing is a near-vertical cliff rather than the smooth few-holes gradient
+the old approach relied on. Fixed by building a genuinely fully-converged grid first, then overwriting
+ONE already-converged point's own result with a hand-built `PinStopReason.PinMax` hole (the same
+`PinSearchResult` shape `ContourGridTests.SeedSyntheticFor` already uses) — a fixture that no longer
+depends on a specific device's convergence boundary lining up with a hand-tuned PinMax, and so cannot
+be starved again by a future search-robustness improvement.
+
+## R9A §8 — `ExactCompressionSolve` defaults ON (brief-harmonicarf-r9a, 2026-08-15)
+
+`CircuitModel.cs`'s `HarmonicaSettings.ExactCompressionSolve` flipped from `false` to `true`. **Blast
+radius, stated because it is not obvious:** `CharmIo` writes this field on every save and reads it
+`s?.ExactCompressionSolve ?? defaults.ExactCompressionSolve` — so flipping the C# default changes both
+brand-new documents AND any pre-R2B `.charm` that predates the field entirely (no block at all, so the
+`??` falls through to the new default). Every document saved since the field landed carries its own
+explicit value in its own `.charm` and opens exactly as the owner left it, on or off — the persisted
+value always wins over the C# default, pinned by `PinSweepTests.
+ExactCompressionSolve_RoundTripsExplicitlyOff_EvenThoughTheNewDefaultIsOn`. That asymmetry (new/ancient
+documents flip; every document saved in between does not) is the correct and intended shape of this
+change, not a gap.
+
 ## R8C — rgs, and the intrinsic drag's closed form replaces the inverse solve (brief-harmonicarf-r8c, 2026-08-15)
 
 **§3 — rgs is a series resistor in the Cgs branch, and `IntrinsicPlane.SourceImpedance`'s own claim
