@@ -54,10 +54,9 @@
           <NativeMenu>
             <NativeMenuItem Header="Undo" Command="{Binding UndoCommand}" Gesture="Meta+Z"/>
             <NativeMenuItem Header="Redo" Command="{Binding RedoCommand}" Gesture="Meta+Shift+Z"/>
-            <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Copy Plot"            Command="{Binding CopyPlotCommand}"/>
-            <NativeMenuItem Header="Copy Readouts"        Command="{Binding CopyReadoutsCommand}"/>
-            <NativeMenuItem Header="Copy Termination Set" Command="{Binding CopyTerminationsCommand}"/>
+            <!-- Owner request: Copy Plot / Copy Readouts / Copy Termination Set are removed from BOTH
+                 menu surfaces (this one and the MenuItem block below). CopyPlotCommand/
+                 CopyReadoutsCommand/CopyTerminationsCommand and their hooks stay wired underneath. -->
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Settings…"            Command="{Binding SettingsCommand}"/>
           </NativeMenu>
@@ -92,7 +91,12 @@
               </NativeMenuItem.Menu>
             </NativeMenuItem>
             <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Reset to Defaults" Command="{Binding ResetMarkersCommand}"/>
+            <!-- Same functional behaviour as the Smith chart context menu's own "Add Load/Source
+                 Marker" (HarmonicaView.BuildAddMarkerMenuItem): adds the next unused band, lowest
+                 first. ⌘A here; Ctrl+A is a KeyBinding on HarmonicaView instead — the same
+                 Ctrl/⌘ split Grid Points' ⌘L below already uses, for the same reason. -->
+            <NativeMenuItem Header="Add Load Marker"   Command="{Binding AddLoadMarkerCommand}" Gesture="Meta+A"/>
+            <NativeMenuItem Header="Add Source Marker" Command="{Binding AddSourceMarkerCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -166,8 +170,10 @@
       <NativeMenuItem Header="Grid">
         <NativeMenuItem.Menu>
           <NativeMenu>
-            <NativeMenuItem Header="Solve Now"    Command="{Binding SolveNowCommand}"/>
-            <NativeMenuItemSeparator/>
+            <!-- Owner request: "Solve Now" (and the separator below it) is removed from BOTH menu
+                 surfaces (this one and the MenuItem block below) — harmonicaRF solves continuously,
+                 so a forced-refresh button has little left to do. SolveNowCommand and
+                 HarmonicaViewModel.SolveFullGrid stay wired underneath. -->
             <NativeMenuItem Header="Grid Preset">
               <NativeMenuItem.Menu>
                 <NativeMenu>
@@ -228,11 +234,8 @@
     <MenuItem Header="_Edit" Padding="8,4">
       <MenuItem Header="_Undo" Command="{Binding UndoCommand}" InputGesture="Ctrl+Z"/>
       <MenuItem Header="_Redo" Command="{Binding RedoCommand}" InputGesture="Ctrl+Shift+Z"/>
-      <Separator/>
-      <MenuItem Header="Copy _Plot"     Command="{Binding CopyPlotCommand}"/>
-      <MenuItem Header="Copy _Readouts" Command="{Binding CopyReadoutsCommand}"/>
-      <MenuItem Header="Copy _Termination Set" Command="{Binding CopyTerminationsCommand}"
-                ToolTip.Tip="A Tuner pair ready to paste into a schematic."/>
+      <!-- Owner request: Copy Plot / Copy Readouts / Copy Termination Set are removed from BOTH menu
+           surfaces (this one and the NativeMenu block above) — see that block's matching comment. -->
       <Separator/>
       <MenuItem Header="_Settings…"      Command="{Binding SettingsCommand}"/>
     </MenuItem>
@@ -269,7 +272,12 @@
         <MenuItem Header="Class F⁻¹"  Command="{Binding SetPaClassPresetCommand}" CommandParameter="FInverse" InputGesture="Ctrl+Shift+F"/>
       </MenuItem>
       <Separator/>
-      <MenuItem Header="_Reset to Defaults" Command="{Binding ResetMarkersCommand}"/>
+      <!-- Same functional behaviour as the Smith chart context menu's own "Add Load/Source Marker"
+           (HarmonicaView.BuildAddMarkerMenuItem): adds the next unused band, lowest first.
+           InputGesture is DISPLAY ONLY (Round 11 §4's own convention) — the real Ctrl+A binding is a
+           KeyBinding on HarmonicaView, so this label cannot become a second handler for it. -->
+      <MenuItem Header="_Add Load Marker"   Command="{Binding AddLoadMarkerCommand}" InputGesture="Ctrl+A"/>
+      <MenuItem Header="Add _Source Marker" Command="{Binding AddSourceMarkerCommand}"/>
     </MenuItem>
 
     <MenuItem Header="_Display" Padding="8,4">
@@ -334,11 +342,8 @@
     </MenuItem>
 
     <MenuItem Header="_Grid" Padding="8,4">
-      <MenuItem Header="_Solve Now" Command="{Binding SolveNowCommand}"
-                ToolTip.Tip="Re-solve at the full grid. harmonicaRF solves continuously; this forces a full-quality refresh.">
-        <MenuItem.Icon><mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/></MenuItem.Icon>
-      </MenuItem>
-      <Separator/>
+      <!-- Owner request: "Solve Now" and the separator below it are removed from BOTH menu surfaces
+           (this one and the NativeMenu block above) — see that block's matching comment. -->
       <MenuItem Header="Grid _Preset">
         <MenuItem Header="3 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="3×12"/>
         <MenuItem Header="5 × 12" Command="{Binding SetGridPresetCommand}" CommandParameter="5×12"/>

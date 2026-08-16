@@ -220,11 +220,24 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
         _rebuilding = true;
         try
         {
+            // SyncContourHarmonics FIRST, deliberately. HarmonicaMenuView's macOS NativeMenu rebuild
+            // (both the standalone/torn-off surface and the docked-injected one) has no subscription
+            // of its own on ContourHarmonics — it piggybacks on SourceBands/LoadBands.CollectionChanged
+            // (OnBandsChanged), which fires SYNCHRONOUSLY out of Sync's own Clear()/Add() calls below.
+            // With ContourHarmonics rebuilt AFTER those, that handler would read the OLD K-length list
+            // — Display ▸ Contour Harmonic on macOS then stayed one edit behind, or never grew past
+            // whatever K a fresh document started at, until some LATER unrelated band change happened
+            // to fire the handler again (owner-reported: "sometimes does not get updated"). The
+            // in-window Menu was never affected — its ContourHarmonics ItemsSource binding updates
+            // independently of this method's own call order.
+            SyncContourHarmonics();
             Sync(SourceBands, TerminationSideKind.Source);
             Sync(LoadBands,   TerminationSideKind.Load);
-            SyncContourHarmonics();
         }
         finally { _rebuilding = false; }
+
+        AddLoadMarkerCommand.NotifyCanExecuteChanged();
+        AddSourceMarkerCommand.NotifyCanExecuteChanged();
 
         void Sync(ObservableCollection<HarmonicaBandMenuItem> into, TerminationSideKind side)
         {
@@ -290,6 +303,38 @@ public sealed partial class HarmonicaMenuViewModel : ObservableObject
         _vm.ResetMarkers();
         RebuildBandMenus();
         _vm.RequestScheduledFrame(dragging: false);
+    }
+
+    /// <summary>Markers ▸ Add Load Marker / Add Source Marker — the menu-bar route to the same
+    /// behaviour the Smith chart context menu's own "Add Load/Source Marker" already offers
+    /// (<c>HarmonicaView.BuildAddMarkerMenuItem</c>): adds the next unused band, lowest first.
+    /// Disabled once every band up to the harmonic order already has a marker — <see cref="CanAddLoadMarker"/>/
+    /// <see cref="CanAddSourceMarker"/> keep the menu item's own enabled state in sync, refreshed from
+    /// <see cref="RebuildBandMenus"/> whenever K or the marker set changes.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddLoadMarker))]
+    private void AddLoadMarker() => AddMarker(TerminationSideKind.Load);
+
+    private bool CanAddLoadMarker() => NextUnusedMarkerBand(TerminationSideKind.Load) is not null;
+
+    [RelayCommand(CanExecute = nameof(CanAddSourceMarker))]
+    private void AddSourceMarker() => AddMarker(TerminationSideKind.Source);
+
+    private bool CanAddSourceMarker() => NextUnusedMarkerBand(TerminationSideKind.Source) is not null;
+
+    private void AddMarker(TerminationSideKind side)
+    {
+        if (NextUnusedMarkerBand(side) is not { } band) return;
+        _vm.AddMarkerBandAndShow(side, band);
+        RebuildBandMenus();
+        _vm.RequestScheduledFrame(dragging: false);
+    }
+
+    private int? NextUnusedMarkerBand(TerminationSideKind side)
+    {
+        var taken = _vm.Markers.Where(m => m.Side == side).Select(m => m.Band).ToHashSet();
+        for (int band = 1; band <= _vm.Terminations.HarmonicCount; band++)
+            if (!taken.Contains(band)) return band;
+        return null;
     }
 
     // ── Display ──────────────────────────────────────────────────────────────

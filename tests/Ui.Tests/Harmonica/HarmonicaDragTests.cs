@@ -394,7 +394,7 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
     // ══ R-h6-5 — StatusMessage reaches the strip ════════════════════════════
 
     [Fact]
-    public void Tier5_WhenTierAAloneMissesTheTarget_TheStatusMessageIsWhatTheStripShows()
+    public void Tier5_WhenTierAAloneMissesTheTarget_TierAHealthyLatchesFalse()
     {
         var clock = new Clock();
         var vm = new HarmonicaViewModel { Scheduler = new FrameScheduler(clock.Read, 33.3) };
@@ -405,17 +405,13 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
         vm.RequestScheduledFrame(dragging: true);
         vm.RecordFrameCost(new FrameTiming(TierAMs: 120, GridSolveMs: 0, FitMs: 0, RasterMs: 0, RenderMs: 4));
 
+        // The "running the coarsest contour grid" wording is retired (owner: harmonicaRF no longer
+        // simulates a coarse grid to keep up, so the message no longer describes reality) — the
+        // strip shows nothing for this case now, and TierAHealthy is the signal a caller reads.
         Assert.False(vm.Scheduler.TierAHealthy);
-        Assert.NotNull(vm.StatusMessage);
-        // R-hui-1 — the message says what the scheduler DID (ran the coarsest grid), never "cannot
-        // hold" or "degraded" (owner: describe what harmonicaRF did, not what it couldn't do).
-        Assert.Contains("coarsest contour grid", vm.StatusMessage!, StringComparison.Ordinal);
-        Assert.DoesNotContain("cannot hold", vm.StatusMessage!, StringComparison.Ordinal);
-        Assert.DoesNotContain("degraded", vm.StatusMessage!, StringComparison.Ordinal);
-        Assert.Contains("120", vm.StatusMessage!, StringComparison.Ordinal);
-        output.WriteLine(vm.StatusMessage!);
+        Assert.Null(vm.StatusMessage);
 
-        // And it is the SCHEDULER's message, not a copy this view model invented.
+        // And it is the SCHEDULER's message (or lack of one), not a copy this view model invented.
         Assert.Equal(vm.Scheduler.StatusMessage, vm.StatusMessage);
     }
 

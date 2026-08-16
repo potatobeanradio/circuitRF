@@ -1675,3 +1675,60 @@ now pinned by a dedicated test, rather than left as "today's ordering happens to
 the fix** — it exists only because a queued `DoLayoutReset` throw is, structurally, unreachable by
 any call-site `try`/`catch`. It matches ONLY `ArgumentException("...menu being updated does not
 match...")` whose stack contains `Avalonia.Native`; a blanket handler was rejected on purpose.
+
+## harmonicaRF menu round (owner bug list, 2026-08-15)
+
+**Display ▸ Contour Harmonic going stale after a K edit was real, and had TWO independent causes —
+the first fix pass only caught the first one.**
+
+1. `HarmonicaAppMenuInjector.BuildDisplay` — the THIRD rendering of the menu, injected into
+   circuitRF's own app menu while a **docked** harmonicaRF document has focus (the in-window `Menu`
+   and the standalone/torn-off `NativeMenu` are the other two) — built Contour Harmonic from three
+   hardcoded items (`f₀`/`2f₀`/`3f₀` via `SetGridHarmonicCommand`), the exact bug
+   `HarmonicaHarmonicMenuItem`'s own doc comment already named as fixed elsewhere. Fixed by building
+   the submenu from `vm.ContourHarmonics` directly, the same collection the other two surfaces read.
+
+2. **The real reason the bug survived that fix, on macOS specifically.** Neither NativeMenu-based
+   surface (standalone/torn-off, or docked-injected) subscribes to `ContourHarmonics` directly —
+   `HarmonicaMenuView` only listens to `SourceBands`/`LoadBands.CollectionChanged`
+   (`OnBandsChanged`), and rebuilds the NativeMenu's Contour Harmonic submenu as a side effect of
+   that. `HarmonicaMenuViewModel.RebuildBandMenus` used to call `Sync(SourceBands, …)` /
+   `Sync(LoadBands, …)` — whose own `Clear()`/`Add()` raise that CollectionChanged SYNCHRONOUSLY —
+   **before** `SyncContourHarmonics()`. So by the time `OnBandsChanged` fired and read
+   `vm.ContourHarmonics`, that collection had not been rebuilt for the new K yet — it read the OLD
+   K-length list, one call behind. `SyncContourHarmonics()` never got a rebuild trigger of its own,
+   so nothing rebuilt the NativeMenu submenu again once it finally did update. This is why it looked
+   *intermittent* even after fix #1: correct immediately after some OTHER band edit trips
+   `OnBandsChanged` a second time, wrong right after the K edit itself. The in-window `Menu` was never
+   affected — its `ContourHarmonics` `ItemsSource` binding updates independently of call order. Fixed
+   by reordering `RebuildBandMenus` to call `SyncContourHarmonics()` FIRST, so every later
+   `SourceBands`/`LoadBands` subscriber — on any surface, present or future — sees the new K's
+   `ContourHarmonics` already in place. Pinned by
+   `HarmonicaMenuAndInputTests.ContourHarmonicMenu_IsAlreadyAtTheNewK_WhenSourceBandsCollectionChangedFires`,
+   which reproduces the ordering directly against a `SourceBands.CollectionChanged` subscriber with no
+   Avalonia/NativeMenu platform involved (confirmed to fail — observed count 3, not 5 — against the
+   old call order before the fix).
+
+**"harmonicaRF ▸ Copy Plot/Copy Readouts/Copy Termination Set" (owner's literal wording) turned out
+to mean the *Edit* menu's copy of these three items, not only the docked-injected `harmonicaRF`
+top-level menu's copy.** The first pass removed them from `HarmonicaAppMenuInjector.BuildHarmonicaRf`
+(the one place literally titled "harmonicaRF") on the reasoning that the other `X->Y` bugs in the same
+report all named their literal parent menu. The owner still saw them on macOS afterward — they meant
+Edit ▸ Copy Plot / Copy Readouts / Copy Termination Set, which every surface still carried. Removed
+from both the NativeMenu and in-window Edit menus too; `CopyPlotCommand`/`CopyReadoutsCommand`/
+`CopyTerminationsCommand` and their hooks stay wired, same convention as Grid ▸ Solve Now and
+Markers ▸ Reset to Defaults above.
+
+**The `.npy.npy` suggested-filename bug (Export Data…) was the identical class of bug
+`ExportTestbenchAsync` had already fixed once, in the same file, and the fix note said so at the
+time.** `SaveFilePickerAsync`'s `DefaultExtension` already appends the extension; `ExportDataAsync`'s
+`SuggestedFileName` was separately appending `".npy"` on top of it. `ExportTestbenchAsync`
+(`HarmonicaView.axaml.cs`) carries a comment recording the exact same trap for `.csch` — the two call
+sites simply hadn't been kept in sync.
+
+**"Running the coarsest contour grid to keep up" (`FrameScheduler.RecordFrame`'s D4 message) is
+retired** — harmonicaRF no longer has a coarse-grid tier-B rung worth naming in a user-facing string
+(R-h9r2-2 already retired every OTHER per-rung message for the same reason; D4's was the one
+message that survived that pass). `TierAHealthy` still latches `false` and is still the signal any
+future caller should read — only the string is gone, so `StatusMessage` is simply `null` in this
+case now.

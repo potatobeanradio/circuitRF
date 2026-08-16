@@ -185,16 +185,17 @@ public sealed class FrameSchedulerTests(ITestOutputHelper output)
         s.RecordFrame(s.NextPlan(true), new FrameTiming(
             TierAMs: 90.0, GridSolveMs: 0, FitMs: 0, RasterMs: 0, RenderMs: 0));
 
+        // The status strip no longer carries a message for this case (owner: the coarsest-grid
+        // wording is stale now that harmonicaRF no longer simulates a coarse grid to keep up) —
+        // TierAHealthy is the latched signal a caller reads instead.
         Assert.False(s.TierAHealthy);
-        Assert.NotNull(s.StatusMessage);
-        Assert.Contains("90", s.StatusMessage);
-        output.WriteLine(s.StatusMessage!);
+        Assert.Null(s.StatusMessage);
 
-        // Latched: the message must not flicker off on the next merely-comfortable tier-B frame.
+        // Latched: the unhealthy flag must not flicker off on the next merely-comfortable tier-B frame.
         clock.Advance(1000);
         s.RecordFrame(s.NextPlan(true), Comfortable());
         Assert.False(s.TierAHealthy);
-        Assert.NotNull(s.StatusMessage);
+        Assert.Null(s.StatusMessage);
     }
 
     [Fact]

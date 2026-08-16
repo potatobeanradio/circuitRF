@@ -152,9 +152,10 @@ public sealed class FrameScheduler
 
     /// <summary>
     /// D4. False once tier A ALONE has been measured over the frame target: no tier-B degradation
-    /// can recover that, so the honest answer is to say so. Latching is deliberate — a model that
-    /// cannot hold 30 fps on one drive-up does not become able to between two frames, and flickering
-    /// the message would be worse than the stutter.
+    /// can recover that. Latching is deliberate — a model that cannot hold 30 fps on one drive-up
+    /// does not become able to between two frames. The status-strip message this used to drive
+    /// ("running the coarsest contour grid to keep up") is retired; this flag is the signal a
+    /// caller reads instead.
     /// </summary>
     public bool TierAHealthy { get; private set; } = true;
 
@@ -193,8 +194,6 @@ public sealed class FrameScheduler
         if (timing.TierAMs > TargetFrameMs)
         {
             TierAHealthy = false;
-            StatusMessage =
-                $"Running the coarsest contour grid to keep up — one drive-up costs {timing.TierAMs:F0} ms.";
         }
 
         if (timing.TotalMs > TargetFrameMs)

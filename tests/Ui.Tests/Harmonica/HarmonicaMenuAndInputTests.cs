@@ -10,6 +10,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
 using System.Xml.Linq;
@@ -252,6 +253,37 @@ public sealed class HarmonicaMenuAndInputTests(ITestOutputHelper output)
         Assert.True(vm.ApplyInput(HarmonicaInputs.KeyHarmonicCount, "2"));
         Assert.Equal(2, menus.ContourHarmonics.Count);
         Assert.Equal(["f₀", "2f₀"], menus.ContourHarmonics.Select(h => h.Header));
+    }
+
+    /// <summary>
+    /// Owner-reported (macOS, after the first fix pass): Display ▸ Contour Harmonic still did not
+    /// update on a K edit. The hardcoded-3-items bug (above) was real but was not the whole story —
+    /// <c>HarmonicaMenuView</c>'s NativeMenu rebuild (both the standalone/torn-off surface and the
+    /// docked-injected one) has no subscription of its own on <c>ContourHarmonics</c>; it piggybacks
+    /// on <c>SourceBands</c>/<c>LoadBands.CollectionChanged</c>. <c>RebuildBandMenus</c> used to call
+    /// <c>Sync(SourceBands, …)</c>/<c>Sync(LoadBands, …)</c> — which fire that CollectionChanged
+    /// SYNCHRONOUSLY out of their own <c>Clear()</c>/<c>Add()</c> calls — BEFORE
+    /// <c>SyncContourHarmonics()</c>, so a subscriber reacting to the bands event read the OLD
+    /// K-length <c>ContourHarmonics</c> list. This reproduces that ordering directly against the view
+    /// model, with no Avalonia/NativeMenu platform involved: a subscriber on
+    /// <c>SourceBands.CollectionChanged</c> is exactly what <c>HarmonicaMenuView.OnBandsChanged</c>
+    /// is, and must see <see cref="HarmonicaMenuViewModel.ContourHarmonics"/> already at the NEW K by
+    /// the time it runs.
+    /// </summary>
+    [Fact]
+    public void ContourHarmonicMenu_IsAlreadyAtTheNewK_WhenSourceBandsCollectionChangedFires()
+    {
+        var vm = new HarmonicaViewModel();
+        var menus = new HarmonicaMenuViewModel(vm);
+
+        int observedCount = -1;
+        ((INotifyCollectionChanged)menus.SourceBands).CollectionChanged +=
+            (_, _) => observedCount = menus.ContourHarmonics.Count;
+
+        Assert.True(vm.ApplyInput(HarmonicaInputs.KeyHarmonicCount, "5"));
+
+        Assert.Equal(5, observedCount);
+        Assert.Equal(5, menus.ContourHarmonics.Count);
     }
 
     [Theory]

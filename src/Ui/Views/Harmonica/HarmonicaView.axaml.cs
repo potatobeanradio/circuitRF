@@ -399,17 +399,18 @@ public partial class HarmonicaView : UserControl
     /// <summary>
     /// Round 11 §4 — <b>Ctrl+L</b> toggles Display ▸ Grid Points, through the SAME command the menu
     /// item runs, so the two can never disagree about what the toggle means or about persisting it.
+    /// Markers ▸ Add Load Marker's own <b>Ctrl+A</b> follows the identical convention below.
     ///
-    /// <para><b>Ctrl only, deliberately — ⌘L is declared on the NativeMenu surfaces instead</b>
+    /// <para><b>Ctrl only, deliberately — ⌘L/⌘A are declared on the NativeMenu surfaces instead</b>
     /// (<c>HarmonicaMenuView.axaml</c> and <c>HarmonicaAppMenuInjector</c>). A macOS menu key
     /// equivalent is consumed by AppKit before Avalonia's input pipeline runs, so a gesture declared
     /// on BOTH surfaces would be one keystroke with two live handlers and would toggle twice — i.e.
     /// do nothing. Splitting the two modifiers across the two surfaces gives the user one working
     /// shortcut per platform with no overlap anywhere.</para>
     ///
-    /// <para>Rebuilt on every <c>DataContextChanged</c> rather than added once, because the binding
-    /// targets THIS document's menu view model; a view reused for a second document would otherwise
-    /// keep toggling the first one's grid points.</para>
+    /// <para>Rebuilt on every <c>DataContextChanged</c> rather than added once, because the bindings
+    /// target THIS document's menu view model; a view reused for a second document would otherwise
+    /// keep toggling/adding markers on the first one's.</para>
     /// </summary>
     private void InstallShortcuts(HarmonicaMenuViewModel menus)
     {
@@ -418,6 +419,11 @@ public partial class HarmonicaView : UserControl
         {
             Gesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.L, Avalonia.Input.KeyModifiers.Control),
             Command = menus.ToggleShowGridPointsCommand,
+        });
+        KeyBindings.Add(new Avalonia.Input.KeyBinding
+        {
+            Gesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.A, Avalonia.Input.KeyModifiers.Control),
+            Command = menus.AddLoadMarkerCommand,
         });
     }
 
@@ -790,8 +796,11 @@ public partial class HarmonicaView : UserControl
         {
             Title            = "Export data",
             DefaultExtension = "npy",
-            SuggestedFileName = (_doc?.FilePath is { } p
-                ? System.IO.Path.GetFileNameWithoutExtension(p) : "harmonica") + ".npy",
+            // NO extension here: the picker appends DefaultExtension itself, so a suggested name that
+            // already carries one comes up as "harmonica.npy.npy" (owner-reported — the same trap
+            // ExportTestbenchAsync's own SuggestedFileName comment already names).
+            SuggestedFileName = _doc?.FilePath is { } p
+                ? System.IO.Path.GetFileNameWithoutExtension(p) : "harmonica",
             FileTypeChoices =
             [
                 new FilePickerFileType("NumPy (.npy)")     { Patterns = ["*.npy"] },

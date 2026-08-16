@@ -19,6 +19,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 
@@ -101,10 +102,6 @@ public static class HarmonicaAppMenuInjector
                 Item("Export Data…",       vm.ExportDataCommand),
                 Item("Export Testbench…",  vm.ExportTestbenchCommand),
                 Sep(),
-                Item("Copy Plot",             vm.CopyPlotCommand),
-                Item("Copy Readouts",         vm.CopyReadoutsCommand),
-                Item("Copy Termination Set",  vm.CopyTerminationsCommand),
-                Sep(),
                 Item("Settings…", vm.SettingsCommand),
                 Sep(),
                 Item("Close", vm.CloseDocumentCommand)),
@@ -135,7 +132,8 @@ public static class HarmonicaAppMenuInjector
                 loadBands,
                 presetTerminations,
                 Sep(),
-                Item("Reset to Defaults", vm.ResetMarkersCommand)),
+                Item("Add Load Marker",   vm.AddLoadMarkerCommand,   gesture: new KeyGesture(Key.A, KeyModifiers.Meta)),
+                Item("Add Source Marker", vm.AddSourceMarkerCommand)),
         };
     }
 
@@ -147,12 +145,17 @@ public static class HarmonicaAppMenuInjector
                 Item("Load",   vm.SetGridSideCommand, "Load"),
                 Item("Source", vm.SetGridSideCommand, "Source")),
         };
+        // Owner-reported (the same bug HarmonicaMenuViewModel.ContourHarmonics/RebuildBandMenus fixed
+        // on the other two surfaces): this used to be three hardcoded items and never tracked K, so
+        // a docked-and-focused document's injected app menu still offered only f₀/2f₀/3f₀ once K > 3
+        // — even though InjectDockedItemsIfNeeded/RefreshInjectedItemsIfAny rebuild this whole set on
+        // every band change. Built from vm.ContourHarmonics, the SAME K-length collection the other
+        // two surfaces already read, so this one can no longer fall behind them.
         var contourHarmonic = new NativeMenuItem("Contour Harmonic")
         {
-            Menu = MenuOf(
-                Item("f₀",  vm.SetGridHarmonicCommand, "1"),
-                Item("2f₀", vm.SetGridHarmonicCommand, "2"),
-                Item("3f₀", vm.SetGridHarmonicCommand, "3")),
+            Menu = MenuOf(vm.ContourHarmonics
+                .Select(band => Item(band.Header, band.SelectCommand))
+                .ToArray()),
         };
         var efficiencyMetric = new NativeMenuItem("Efficiency Metric")
         {
@@ -206,8 +209,6 @@ public static class HarmonicaAppMenuInjector
         return new NativeMenuItem("Grid")
         {
             Menu = MenuOf(
-                Item("Solve Now", vm.SolveNowCommand),
-                Sep(),
                 gridPreset,
                 Item("Reset Grid", vm.ResetGridCommand),
                 Sep(),
