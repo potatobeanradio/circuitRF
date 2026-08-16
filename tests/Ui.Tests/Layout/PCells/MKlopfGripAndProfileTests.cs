@@ -158,6 +158,14 @@ public sealed class MKlopfGripAndProfileTests : IDisposable
         // leaving the end-cap grips on the outline's OLD position until release put them right.
         var vm = PlaceMklopf();
 
+        // The live-preview budget is measured WALL CLOCK, and it decides what this test can observe:
+        // once a drag defers, PreviewHandles is null and only the dragged grip moves — which is
+        // correct behaviour and would fail the assertion below. Under a full-solution run the first
+        // solve genuinely overran 16 ms and this test failed twice in five runs while passing alone
+        // (2026-08-16). What it is pinning is not a statement about machine speed, so the budget is
+        // put out of reach rather than the test being taken out of the routine gate.
+        vm.LivePreviewBudgetMs = 1e9;
+
         int far = Array.FindIndex([.. vm.Overlay.PCellHandles], h => h.Label == "L" && h.AxisDx > 0);
         Assert.True(far >= 0);
 

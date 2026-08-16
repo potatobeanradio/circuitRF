@@ -13,8 +13,18 @@
     </UserControl.Styles>
 
     <Grid RowDefinitions="*">
-        <TextBlock Text="{Binding EmptyMessage}" IsVisible="{Binding IsEmptyState}"
-                   Margin="8" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+        <!-- The empty state is where a MULTI-wire selection lands, and it is exactly where "Group
+             Wires As…" belongs: regrouping is normally done to a marquee-full of wires at once, so
+             this was the one panel state that had nothing to offer the commonest bulk edit. The
+             button carries the count as its own sanity check (owner). -->
+        <StackPanel IsVisible="{Binding IsEmptyState}" Margin="8" Spacing="8">
+            <TextBlock Text="{Binding EmptyMessage}"
+                       FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+            <Button Content="{Binding GroupWiresLabel}" IsVisible="{Binding CanGroupWires}"
+                    Click="OnGroupWiresClick"
+                    FontSize="11" HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"/>
+        </StackPanel>
 
         <Grid IsVisible="{Binding !IsEmptyState}" RowDefinitions="Auto,*">
 
@@ -32,6 +42,16 @@
                               ItemsSource="{Binding AvailableGroups}"
                               SelectionChanged="OnGroupChanged"
                               HorizontalAlignment="Stretch" FontSize="11"/>
+                </Grid>
+
+                <!-- The same dialog the layout view's context menu opens. Offered here as well as
+                     the combo above because it is the route that also works on a MULTI-wire
+                     selection, and because it states the count before it acts. -->
+                <Grid ColumnDefinitions="62,*">
+                    <Button Grid.Column="1" Content="{Binding GroupWiresLabel}"
+                            Click="OnGroupWiresClick"
+                            FontSize="11" Padding="6,2" HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"/>
                 </Grid>
 
                 <Grid ColumnDefinitions="62,*">

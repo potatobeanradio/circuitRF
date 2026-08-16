@@ -35,7 +35,7 @@ public static class ProfileProjection
     /// nanometres along the chord.
     /// </param>
     /// <param name="azimuthRadians">
-    /// <b>The plane the view is looking at</b>, measured from +x — 0 for X-Z, π/2 for Y-Z. Null is
+    /// <b>The plane the view is looking at</b>, measured from +x — 0 for XZ, π/2 for YZ. Null is
     /// AUTO: each wire is projected onto its OWN chord, which is §6.2's parameterisation and the
     /// reason wire angle and wire length stop being profile differences at all.
     ///

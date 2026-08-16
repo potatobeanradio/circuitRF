@@ -450,7 +450,7 @@ public class WBondEditorRound2Tests
             document.ViewModel.ViewMode = WBondViewMode.Profile;
             document.ViewModel.PanelVisible = false;
             document.ViewModel.Editor.DisplayUnit = WBondUnit.Um;
-            document.ViewModel.Editor.CommitProfileAxisText("Y-Z");
+            document.ViewModel.Editor.CommitProfileAxisText("YZ");
 
             document.Save();
 
@@ -459,7 +459,7 @@ public class WBondEditorRound2Tests
             Assert.Equal(WBondViewMode.Profile, reopened.ViewModel.ViewMode);
             Assert.False(reopened.ViewModel.PanelVisible);
             Assert.Equal(WBondUnit.Um, reopened.ViewModel.Editor.DisplayUnit);
-            Assert.Equal("Y-Z", reopened.ViewModel.Editor.ProfileAxisText);
+            Assert.Equal("YZ", reopened.ViewModel.Editor.ProfileAxisText);
 
             // The format version is unchanged: an older build still reads this file.
             Assert.Contains($"\"FormatVersion\": {WBondIo.CurrentFormatVersion}", File.ReadAllText(path));
@@ -488,7 +488,27 @@ public class WBondEditorRound2Tests
 
         Assert.Equal(WBondViewMode.Both, state.ViewMode);
         Assert.True(state.PanelVisible);
-        Assert.Null(state.ProfileAzimuthRadians);
+
+        // The shipped plane is YZ (owner, 2026-08-16), not Auto — see the round trip below for why a
+        // deliberately-chosen Auto still survives a save despite sharing null with "never set".
+        Assert.Equal(WBondViewState.DefaultProfileAxisDegrees,
+                     state.ProfileAzimuthRadians!.Value * 180.0 / Math.PI, 9);
+    }
+
+    /// <summary>
+    /// <b>AUTO round-trips even though the DEFAULT is YZ.</b> Null means Auto and also means "the key
+    /// was not written", so with a non-null default the two would collide: a design deliberately left
+    /// on Auto would reopen in YZ. <c>WBondViewState</c> serialises nulls explicitly for exactly this
+    /// reason, and this is the test that says so.
+    /// </summary>
+    [Fact]
+    public void AutoProfilePlane_SurvivesASaveEvenThoughTheDefaultIsYz()
+    {
+        var design = Design();
+
+        new WBondViewState { ProfileAxisDegrees = null }.To(design);
+
+        Assert.Null(WBondViewState.From(design).ProfileAzimuthRadians);
     }
 
     // ---------------------------------------------------------------- Zoom to Fit

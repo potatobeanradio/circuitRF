@@ -351,9 +351,9 @@ public sealed partial class WBondViewModel
     }
 
     /// <summary>
-    /// Deletes every wire the selection touches, leaving empty groups behind rather than removing
-    /// them — a group is a named terminal (§3.4), and deleting the last wire on a pin is not the same
-    /// statement as deleting the pin.
+    /// Deletes every wire the selection touches, and removes any group left empty by it — see
+    /// <see cref="PruneEmptyGroups"/> for why the appealing alternative (keep the pin) is not
+    /// available at this layer.
     /// </summary>
     /// <returns>The number of wires removed.</returns>
     public int DeleteSelectedWires()
@@ -381,6 +381,8 @@ public sealed partial class WBondViewModel
             array.Wires.Clear();
             array.Wires.AddRange(keep);
         }
+
+        PruneEmptyGroups();
 
         // Every remaining flat index has shifted; an outstanding selection would now point at the
         // wrong wires, so it is dropped rather than silently re-pointed.
@@ -495,8 +497,9 @@ public sealed partial class WBondViewModel
         source.Wires.Remove(wire);
         target.Wires.Add(wire);
 
-        // The empty source group is LEFT in place: a group is a named terminal, and moving the last
-        // wire off a pin is not the same statement as deleting the pin.
+        // A source left empty is REMOVED — see PruneEmptyGroups. Leaving it makes the array-basis
+        // reduction singular, so the whole move would be refused and rolled back.
+        PruneEmptyGroups();
         CommitStructuralChange();
 
         int newIndex = _design.AllWires().ToList().IndexOf(wire);
@@ -504,6 +507,122 @@ public sealed partial class WBondViewModel
 
         return true;
     }
+
+    /// <summary>
+    /// Moves EVERY wire the selection touches into one group, creating it when the name is new —
+    /// the "Group Wires As…" command (owner, 2026-08-16).
+    ///
+    /// <para><b>One structural rebuild for the whole batch, and one undo entry</b>, which is the
+    /// reason this is not a loop over <see cref="MoveWireToGroup"/> at the call site: that would cost
+    /// N mesh rebuilds and leave N entries on the undo stack, so Ctrl+Z would walk the regrouping
+    /// back one wire at a time.</para>
+    ///
+    /// <para>The wires are collected BEFORE anything moves. Membership is what the flat index space
+    /// is built from, so resolving indices as the arrays change under them would move the wrong
+    /// wires — the same ordering trap <see cref="Restore"/> already documents.</para>
+    ///
+    /// <para><b>A source group left empty is REMOVED</b>, and it has to be: <c>WBondDesign.Validate</c>
+    /// refuses an array with no wires outright — "an empty array makes the mapping matrix
+    /// rank-deficient and the array-basis inductance singular". The appealing alternative (a group is
+    /// a named terminal, so keep the pin) is not available at this layer; leaving one behind makes the
+    /// whole edit unevaluable, so the refusal fires and the regroup silently rolls back. See
+    /// <see cref="PruneEmptyGroups"/>.</para>
+    /// </summary>
+    /// <returns>How many wires actually changed group.</returns>
+    public int MoveWiresToGroup(IEnumerable<int> wireIndices, string groupName)
+    {
+        ArgumentNullException.ThrowIfNull(wireIndices);
+        if (string.IsNullOrWhiteSpace(groupName)) return 0;
+
+        string name = groupName.Trim();
+        var all = _design.AllWires().ToList();
+
+        // Resolve to wire OBJECTS first — see the remarks.
+        var moving = wireIndices
+            .Where(i => i >= 0 && i < all.Count)
+            .Select(i => all[i])
+            .Distinct()
+            .Where(w => _design.Arrays.FirstOrDefault(a => a.Wires.Contains(w)) is { } src
+                        && !string.Equals(src.Name, name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (moving.Count == 0) return 0;
+
+        PushUndo();
+
+        var target = _design.Arrays
+            .FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        if (target is null)
+        {
+            target = new WireArray { Name = name };
+            _design.Arrays.Add(target);
+        }
+
+        foreach (var wire in moving)
+        {
+            _design.Arrays.FirstOrDefault(a => a.Wires.Contains(wire))?.Wires.Remove(wire);
+            target.Wires.Add(wire);
+        }
+
+        PruneEmptyGroups();
+        CommitStructuralChange();
+
+        // Re-pointed rather than dropped: the user is looking at these wires and expects them to stay
+        // highlighted where they landed — the same courtesy MoveWireToGroup extends to its one wire.
+        var moved = _design.AllWires().ToList();
+        var selection = new WireSelection();
+        foreach (var wire in moving)
+        {
+            int index = moved.IndexOf(wire);
+            if (index >= 0) selection.Wires.Add(index);
+        }
+        Selection = selection;
+
+        return moving.Count;
+    }
+
+    /// <summary>Every group name in the design, in the order the profile view draws them.</summary>
+    public IReadOnlyList<string> GroupNames => [.. _design.Arrays.Select(a => a.Name)];
+
+    /// <summary>
+    /// Drops every group that has no wires left in it.
+    ///
+    /// <para><b>Not tidiness — a validity rule.</b> <c>WBondDesign.Validate</c> rejects an empty
+    /// array, because the array-basis reduction maps wires onto groups and a group with no wires is a
+    /// zero row: the mapping matrix is rank-deficient and the reduced inductance singular. Every edit
+    /// that can empty a group therefore has to call this, or the edit is refused and rolled back the
+    /// moment the mesh is rebuilt — which is how it reads to the user: the command appears to do
+    /// nothing and reports a physics error it has no way to connect to what they did.</para>
+    ///
+    /// <para>A design with ONE group left is not pruned to nothing: <see cref="_design"/> must keep at
+    /// least one array, which is the same rule from the other end.</para>
+    /// </summary>
+    private void PruneEmptyGroups()
+    {
+        for (int i = _design.Arrays.Count - 1; i >= 0 && _design.Arrays.Count > 1; i--)
+            if (_design.Arrays[i].Wires.Count == 0) _design.Arrays.RemoveAt(i);
+    }
+
+    /// <summary>The group a flat wire index belongs to, or null when the index names no wire.</summary>
+    public string? GroupNameOfWire(int flatIndex)
+    {
+        if (flatIndex < 0) return null;
+
+        int flat = 0;
+        foreach (var array in _design.Arrays)
+        {
+            if (flatIndex < flat + array.Wires.Count) return array.Name;
+            flat += array.Wires.Count;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A group name not yet in use — <c>G1</c>, <c>G2</c>, … — for seeding the "New Group…" prompt so
+    /// the user is offered a valid answer rather than an empty box.
+    /// </summary>
+    public string SuggestGroupName() => NextArrayName();
 
     /// <summary>Sets one wire's diameter. Structural: the filament radius is in the self term.</summary>
     public bool SetWireDiameter(int wireIndex, long diameterNm)

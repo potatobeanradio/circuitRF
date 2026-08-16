@@ -152,6 +152,39 @@ public static class ColorRole
     public static string HarmonicaMarkerBand(int band)
         => HarmonicaMarkerBands[((band - 1) % 5 + 5) % 5];
 
+    // ── wBond (wbond.md §6.2) ────────────────────────────────────────────────────────────────────
+    //
+    // Owner request, 2026-08-16: the wire overlay and the profile view were the last canvases still
+    // drawing from a hardcoded palette (`WBondRenderTheme.Fallback`), so they ignored the light/dark
+    // variant entirely — which is how the selection accent came to be WHITE in light mode, invisible
+    // over the canvas. They join the shared role vocabulary rather than getting a palette of their
+    // own, for the same reason harmonicaRF's did: one editor, one `.ccolor`, one fallback rule.
+
+    /// <summary>An ordinary wire, in both the layout overlay and the profile view.</summary>
+    public const string WBondWire = "wBond.Wire";
+
+    /// <summary>
+    /// The wire's START (input) end — the dot marking which foot the traversal begins at. It is not
+    /// decoration: the sign of every mutual inductance depends on it (WB3), so it has to be readable
+    /// at a glance. Its default is <see cref="WBondWire"/>'s colour at a much darker shade (owner),
+    /// so it reads as "the same wire, this end" rather than as a second kind of object.
+    /// </summary>
+    public const string WBondWireStart = "wBond.WireStart";
+
+    /// <summary>
+    /// The selection accent for wires, points and segments. <b>Deliberately dark in the light
+    /// variant</b> — the old hardcoded white was unreadable against the light canvas, which is the
+    /// report this role exists to answer.
+    /// </summary>
+    public const string WBondSelected = "wBond.Selected";
+
+    /// <summary>The translucent min/max band over an array's bound members (§6.2 idea 3). Carries
+    /// its own alpha.</summary>
+    public const string WBondEnvelope = "wBond.Envelope";
+
+    /// <summary>A wire detached from its profile, drawn as its own curve.</summary>
+    public const string WBondFreeWire = "wBond.FreeWire";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -177,5 +210,6 @@ public static class ColorRole
         HarmonicaMessages, HarmonicaProgressBar,
         HarmonicaMarkerBand1, HarmonicaMarkerBand2, HarmonicaMarkerBand3,
         HarmonicaMarkerBand4, HarmonicaMarkerBand5,
+        WBondWire, WBondWireStart, WBondSelected, WBondEnvelope, WBondFreeWire,
     ];
 }

@@ -78,10 +78,18 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     private double _rotateStartAngle;
     private double _rotateApplied;
 
-    public WBondLayoutOverlay(WBondViewModel viewModel)
+    /// <param name="frameBudgetMs">
+    /// Passed straight to the drag's <see cref="QualityLadder"/> — 60 fps for every real caller. See
+    /// <see cref="WBondPointerController"/>'s own constructor for why a test needs to be able to put
+    /// it out of reach: the ladder is fed measured wall clock, so a test that only ever asserts
+    /// COUNTERS still fails under a loaded machine once the ladder degrades and the drag stops
+    /// committing at all.
+    /// </param>
+    public WBondLayoutOverlay(WBondViewModel viewModel,
+                              double frameBudgetMs = QualityLadder.FrameBudgetMs)
     {
         _vm = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
-        _controller = new WBondPointerController(_vm);
+        _controller = new WBondPointerController(_vm, frameBudgetMs);
     }
 
     /// <summary>The layout being used as reference geometry, or null (§10's third entry point).</summary>
@@ -215,7 +223,7 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
         // against the viewport before it is drawn; wires are not — every wire in the design is drawn
         // whether or not it is on screen. Unclipped, a wire that is off to the left paints straight
         // across the inductance panel docked beside the canvas (the owner's "a wire from the layout
-        // view is partially rendering in the Array inductance view").
+        // view is partially rendering in the Array Inductance view").
         canvas.Save();
         canvas.ClipRect(new SKRect(0, 0, (float)viewport.Width, (float)viewport.Height));
 

@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.WBondGroupWiresDialog"
+        Title="Group Wires As"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+    <StackPanel Margin="16" Spacing="8" MinWidth="300" MaxWidth="380">
+
+        <!-- The COUNT is the sanity check the owner asked for: regrouping is a statement about which
+             pin these wires land on, and doing it to more (or fewer) wires than intended is silent
+             and expensive to notice later. -->
+        <TextBlock x:Name="CountText" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+        <TextBlock Text="A group is a named terminal — the inductance panel reports one row per group, and the array reduction sums over it."
+                   FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+
+        <ComboBox x:Name="GroupCombo" HorizontalAlignment="Stretch" FontSize="12"
+                  SelectionChanged="OnGroupChanged"/>
+
+        <!-- Shown only for the "New Group…" entry. A combo cannot offer a name nobody has typed, and
+             making the user create the group somewhere else first would be a detour. -->
+        <TextBox x:Name="NewNameBox" IsVisible="False" FontSize="12"
+                 Watermark="New group name"
+                 KeyDown="OnNewNameKeyDown" TextChanged="OnNewNameChanged"/>
+
+        <TextBlock x:Name="ErrorText" FontSize="11" IsVisible="False" TextWrapping="Wrap"
+                   Foreground="{DynamicResource CrfWarningBrush}"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
+            <Button Content="Cancel" IsCancel="True" MinWidth="80"
+                    HorizontalContentAlignment="Center" Click="OnCancel"/>
+            <Button x:Name="OkButton" Content="Group" IsDefault="True" MinWidth="80"
+                    HorizontalContentAlignment="Center" Click="OnOk"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

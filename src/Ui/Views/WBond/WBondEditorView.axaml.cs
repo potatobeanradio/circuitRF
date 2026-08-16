@@ -34,6 +34,11 @@ public partial class WBondEditorView : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
 
+        // One resolution of the wire palette, pushed to both canvases. The profile canvas is the
+        // control — it has the theme notifications — and the overlay is a plain object, so it follows.
+        ProfileCanvas.ThemeRefreshed += SyncOverlayWireTheme;
+        ActualThemeVariantChanged += (_, _) => SyncOverlayWireTheme();
+
         // Tunnel + handledEventsToo, for the reason src/Ui/CLAUDE.md already records: a window-level
         // KeyBinding is processed before visual-tree routing and marks the event handled, so a plain
         // bubble handler here would silently never run after a toolbar click moved focus.
@@ -163,6 +168,12 @@ public partial class WBondEditorView : UserControl
     /// <para>A single-kind selection writes the plain single-kind payload, so it still pastes into
     /// another wBond editor or into the Layout Editor. Only a genuinely mixed selection is wrapped in
     /// <see cref="WBondMixedClipboard"/>'s envelope.</para>
+    ///
+    /// <para><b>The JSON rides alongside a PDF, an SVG and a PNG</b> (owner, 2026-08-16: copy into
+    /// PowerPoint/Keynote did nothing, because the JSON was all that was ever written). The
+    /// multi-format write is <see cref="WBondClipboardWriter"/>, a transcription of the Layout
+    /// Editor's own — including its Windows bypass, which is the half that took several rounds to get
+    /// right and must not be re-derived here.</para>
     /// </summary>
     internal async Task<bool> CopyAsync()
     {
@@ -171,25 +182,46 @@ public partial class WBondEditorView : UserControl
 
         string? wires = _bound.Editor.CopySelection();
 
-        string? layout = null;
-        if (_bound.ReferenceLayout?.BuildCopyPayload() is { } fragment)
-            layout = LayoutFragment.Serialize(fragment);
+        var fragment = _bound.ReferenceLayout?.BuildCopyPayload();
+        string? layout = fragment is null ? null : LayoutFragment.Serialize(fragment);
 
         if (WBondMixedClipboard.Compose(wires, layout) is not { } text) return false;
 
-        await clipboard.SetTextAsync(text);
-        return true;
+        return await WBondClipboardWriter.CopyAsync(
+            this, clipboard, text,
+            WBondClipboardWriter.SelectionDesign(_bound.Editor.Design, _bound.Editor.Selection),
+            WBondClipboardWriter.TransientLayout(fragment),
+            _bound.ReferenceLayout?.Technology,
+            _bound.ReferenceLayout?.InstanceBaseDir,
+            _bound.Overlay.Theme,
+            LayoutRenderTheme.FromTheme(ThemeService.Active, CurrentVariant),
+            _bound.Overlay.Thickness);
     }
 
     /// <summary>
     /// §6.7 — copies the design to other applications as a GRAPHIC (PDF + SVG + bitmap at once),
     /// through the shared <c>PlotExporter</c> clipboard path rather than a second implementation.
     /// </summary>
+    /// <summary>
+    /// Gives the layout overlay the wire palette the profile canvas just resolved, so the two views
+    /// of the same wires cannot show them in different colours.
+    /// </summary>
+    private void SyncOverlayWireTheme()
+    {
+        if (_bound is null) return;
+
+        _bound.Overlay.Theme = ProfileCanvas.WireTheme;
+        LayoutCanvasCtrl.InvalidateOverlay();
+    }
+
+    private ColorVariant CurrentVariant =>
+        ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
+
     internal async Task CopyGraphicAsync()
     {
         if (_bound is null) return;
 
-        var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
+        var variant = CurrentVariant;
 
         await WBondGraphicExport.CopyToClipboardAsync(
             this,
@@ -236,12 +268,18 @@ public partial class WBondEditorView : UserControl
         // and each refuses what is not its own.
         var (wiresJson, layoutJson) = WBondMixedClipboard.Unwrap(text);
 
-        // Offset by one nudge step so the copies are visibly distinct from their originals rather
-        // than hiding exactly on top of them — which would also make the fill singular.
-        long step = WireEdits.CoarseNudgeNm;
+        // Offset ACROSS the wires by the Settings dialog's paste pitch — stepped until nothing lands
+        // on top of a wire already there. Pasting the SAME clipboard twice used to place the second
+        // copy exactly on the first, which makes the fill singular; see PasteWiresAtFreePitch.
+        var payload = WBondClipboard.TryParse(wiresJson);
+        var (dx, dy) = payload is null
+            ? (0L, WBondDefaults.PastePitchNm)
+            : _bound.Editor.FreePasteOffset(payload, WBondDefaults.PastePitchNm);
 
-        int pasted = _bound.Editor.PasteWires(wiresJson, 0, step);
-        pasted += PasteLayoutHalf(layoutJson, step);
+        int pasted = _bound.Editor.PasteWires(wiresJson, dx, dy);
+
+        // The geometry half moves by the SAME displacement, so a mixed paste arrives together.
+        pasted += PasteLayoutHalf(layoutJson, dx, dy);
 
         if (pasted <= 0) return false;
 
@@ -256,14 +294,17 @@ public partial class WBondEditorView : UserControl
     /// <c>CellRef</c> is resolved against THIS document exactly as it would be in the Layout Editor —
     /// never a second placement path.</para>
     /// </summary>
-    private int PasteLayoutHalf(string? json, long stepNm)
+    private int PasteLayoutHalf(string? json, long dxNm, long dyNm)
     {
         if (_bound?.ReferenceLayout is not { } layout) return 0;
         if (!LayoutFragment.TryDeserialize(json, out var payload) || payload is null) return 0;
 
-        var shapes = LayoutFragment.Translate(payload.Shapes, stepNm, stepNm);
+        // The SAME displacement the wire half took — the two must arrive on top of each other or a
+        // mixed paste comes apart. (nm and DBU coincide at the 1,000 DBU/µm default this editor
+        // works at; see WBondSnap for why that bridge is restated wherever it is crossed.)
+        var shapes = LayoutFragment.Translate(payload.Shapes, dxNm, dyNm);
         var instances = layout.RebaseFragmentInstances(payload);
-        if (instances.Count > 0) instances = LayoutFragment.Translate(instances, stepNm, stepNm);
+        if (instances.Count > 0) instances = LayoutFragment.Translate(instances, dxNm, dyNm);
 
         if (shapes.Count == 0 && instances.Count == 0) return 0;
 
@@ -315,6 +356,7 @@ public partial class WBondEditorView : UserControl
 
         SyncProfileAxisCombo();
         ProfileCanvas.Azimuth = _bound.Editor.ProfileAzimuthRadians;
+        SyncOverlayWireTheme();
         RebindReferenceLayout();
         ApplyArrangement();
         RefreshQualityText();
@@ -599,7 +641,7 @@ public partial class WBondEditorView : UserControl
 
     /// <summary>
     /// Commits a plane and puts the box back on the CANONICAL spelling of what was accepted — so
-    /// typing "90" reads back as "Y-Z", and text that means nothing snaps back rather than sitting
+    /// typing "90" reads back as "YZ", and text that means nothing snaps back rather than sitting
     /// there looking as though it took.
     /// </summary>
     private void Commit(string text)

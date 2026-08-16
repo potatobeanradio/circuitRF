@@ -7,7 +7,7 @@ namespace CircuitRF.WBond;
 ///
 /// <para><b>Three named choices and an open one.</b> <c>Auto</c> projects each wire onto its own
 /// chord — §6.2's parameterisation, and the only mode in which two wires of different angle and
-/// length are directly comparable. <c>X-Z</c> and <c>Y-Z</c> fix the plane, which is what a user
+/// length are directly comparable. <c>XZ</c> and <c>YZ</c> fix the plane, which is what a user
 /// wants when they are looking at one array's real geometry rather than comparing shapes. Any other
 /// angle is accepted as a number of degrees, because an array bonded at 37° is ordinary and rounding
 /// it to an axis would draw a foreshortened picture with no warning.</para>
@@ -19,8 +19,15 @@ namespace CircuitRF.WBond;
 public static class ProfileAxisSetting
 {
     public const string AutoLabel = "Auto";
-    public const string XzLabel = "X-Z";
-    public const string YzLabel = "Y-Z";
+    /// <summary>
+    /// Spelled without the hyphen (owner, 2026-08-16) — every wBond surface says <c>XZ</c>/<c>YZ</c>.
+    /// <see cref="TryParse"/> strips hyphens before matching, so a <c>.wBond</c> or a habit that still
+    /// says "X-Z" is read as this and re-shown in the current spelling.
+    /// </summary>
+    public const string XzLabel = "XZ";
+
+    /// <inheritdoc cref="XzLabel"/>
+    public const string YzLabel = "YZ";
 
     /// <summary>The picker's presets. Any angle may still be typed.</summary>
     public static IReadOnlyList<string> Presets { get; } = [AutoLabel, XzLabel, YzLabel];
@@ -29,7 +36,8 @@ public static class ProfileAxisSetting
     private const double AxisToleranceRadians = 1e-9;
 
     /// <summary>
-    /// Parses "Auto", "X-Z", "Y-Z", or an angle in degrees ("45", "37.5°", "-90 deg").
+    /// Parses "Auto", "XZ", "YZ", or an angle in degrees ("45", "37.5°", "-90 deg"). The hyphenated
+    /// spellings this control used to show ("X-Z", "Y-Z") are still accepted.
     /// </summary>
     /// <returns>False on text that means none of those — the caller puts the combo back.</returns>
     public static bool TryParse(string? text, out double? azimuthRadians)

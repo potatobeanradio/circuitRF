@@ -29,7 +29,26 @@ public sealed partial class LayoutEditorViewModel
     /// drag would visibly stutter, and a 743-shape vendor cell issuing a hundred boolean round trips
     /// per generate cannot be asked to keep up. Not an error and not reported — the readout still
     /// tracks, because the sensitivity was measured before the first correction.</summary>
-    private const double LivePreviewBudgetMs = 16.0;
+    private const double DefaultLivePreviewBudgetMs = 16.0;
+
+    /// <summary>
+    /// The live-preview budget this editor actually uses. One frame at 60 Hz for every real caller.
+    ///
+    /// <para><b>Settable so a TEST can make the fallback unreachable</b>, and that is not a nicety.
+    /// The budget is measured wall-clock, so it silently decides what a test OBSERVES: once a drag
+    /// defers, <c>PreviewHandles</c> is null and only the dragged grip moves. That is what broke
+    /// <c>MKlopfGripAndProfileTests.DraggingTheFarMiddleGrip_MovesTheFarEndCapGripsLive…</c> under a
+    /// full-solution run (2026-08-16, twice in five runs) while it passed in isolation — with 7,000
+    /// other tests on the cores the FIRST solve of the gesture overran 16 ms, the drag deferred, and
+    /// the end-cap grip correctly stopped following. The behaviour that test exists to pin — every
+    /// grip on a cell moves when the cell regenerates — is not a statement about machine speed, so it
+    /// hands itself an unreachable budget rather than being tagged out of the routine gate.</para>
+    ///
+    /// <para><b>Instance-scoped on purpose</b>: a process-wide switch would leak between the tests
+    /// running in parallel beside it — including <c>PCellHandleDegradationTests</c>, whose whole
+    /// subject is a genuinely slow cell hitting this budget for real.</para>
+    /// </summary>
+    internal double LivePreviewBudgetMs { get; set; } = DefaultLivePreviewBudgetMs;
 
     // The grab radius is the caller's `tolDbu` — the SAME several-device-pixel tolerance L1d's own
     // handle hit-test uses, computed fresh per query from the live zoom by LayoutCanvas.HitTolDbu()

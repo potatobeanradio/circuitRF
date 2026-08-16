@@ -159,13 +159,14 @@ public class WBondEditorFixesTests
     [Theory]
     [InlineData("Auto", null, "Auto")]
     [InlineData("", null, "Auto")]            // an emptied box means the default
-    [InlineData("X-Z", 0.0, "X-Z")]
-    [InlineData("xz", 0.0, "X-Z")]
-    [InlineData("Y-Z", 90.0, "Y-Z")]
-    [InlineData("90", 90.0, "Y-Z")]           // a typed right angle IS the Y-Z plane
+    [InlineData("XZ", 0.0, "XZ")]
+    [InlineData("X-Z", 0.0, "XZ")]      // the old hyphenated spelling is still read
+    [InlineData("xz", 0.0, "XZ")]
+    [InlineData("YZ", 90.0, "YZ")]
+    [InlineData("90", 90.0, "YZ")]            // a typed right angle IS the YZ plane
     [InlineData("45", 45.0, "45°")]
     [InlineData("37.5°", 37.5, "37.5°")]      // its own output is accepted back
-    [InlineData("-90 deg", -90.0, "Y-Z")]     // a plane and its opposite are one plane
+    [InlineData("-90 deg", -90.0, "YZ")]      // a plane and its opposite are one plane
     public void TheProfilePlane_RoundTripsThroughTheToolbarsOwnText(
         string typed, double? expectedDegrees, string shownBack)
     {
@@ -184,15 +185,15 @@ public class WBondEditorFixesTests
     public void TheProfilePlane_RefusesTextThatIsNotAPlane()
     {
         var vm = new WBondViewModel(Design(wires: 1));
-        vm.CommitProfileAxisText("Y-Z");
+        vm.CommitProfileAxisText("YZ");
 
         Assert.False(vm.CommitProfileAxisText("sideways"));
-        Assert.Equal("Y-Z", vm.ProfileAxisText);   // unchanged
+        Assert.Equal("YZ", vm.ProfileAxisText);    // unchanged
     }
 
     /// <summary>
     /// <b>A fixed plane really is a projection.</b> A wire running north-south has no extent in the
-    /// X-Z plane, and the profile view must draw it foreshortened to nothing rather than quietly
+    /// XZ plane, and the profile view must draw it foreshortened to nothing rather than quietly
     /// falling back on its own chord — which would show a picture the plane setting does not describe.
     /// </summary>
     [Fact]

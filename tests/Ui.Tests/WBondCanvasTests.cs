@@ -305,12 +305,23 @@ public class WBondCanvasTests
         Assert.NotEmpty(vm.Selection.Points);
     }
 
-    /// <summary>A drag frame commits through the incremental path and never rebuilds.</summary>
+    /// <summary>
+    /// A drag frame commits through the incremental path and never rebuilds.
+    ///
+    /// <para><b>The ladder is made inert with an unreachable frame budget</b>, and it has to be: this
+    /// looks like a pure counter assertion but is not. The <c>QualityLadder</c> is fed measured
+    /// wall-clock, so under a full-solution run a frame overruns 16.7 ms, the ladder drops to
+    /// <c>FreezeAndSnap</c>, <c>DragFrame</c> stops calling <c>CommitPointMove</c> — and
+    /// <c>IncrementalUpdateCount</c> stops rising while nothing at all is wrong. Observed failing that
+    /// way, 2026-08-16. The invariant this test exists for (a point move must not take the structural
+    /// path) has nothing to do with how busy the machine is, so the timing is removed rather than the
+    /// test being tagged out of the routine gate.</para>
+    /// </summary>
     [Fact]
     public void ADragFrame_UsesTheIncrementalPath()
     {
         var vm = new WBondViewModel(Design(wires: 4));
-        var controller = new WBondPointerController(vm);
+        var controller = new WBondPointerController(vm, frameBudgetMs: 1e9);
 
         vm.Selection = new WireSelection { Wires = { 0 } };
         int rebuilds = vm.RebuildCount;

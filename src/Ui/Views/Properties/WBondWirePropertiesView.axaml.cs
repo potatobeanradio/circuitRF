@@ -135,6 +135,21 @@ public partial class WBondWirePropertiesView : UserControl
         SyncGroupSelection();
     }
 
+    /// <summary>
+    /// "Group Wires As…" — the same dialog the layout view's wire context menu opens, on the same
+    /// shared command (<see cref="WBondGroupCommand"/>), so the two routes cannot behave differently.
+    /// </summary>
+    private async void OnGroupWiresClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm?.Editor is not { } editor) return;
+
+        await WBondGroupCommand.RunAsync(TopLevel.GetTopLevel(this) as Window, editor);
+
+        // The move re-points the selection, which raises the panel's own refresh — but the group
+        // combo tracks the wire rather than the panel, so it is put back explicitly.
+        SyncGroupSelection();
+    }
+
     /// <summary>Puts the combo back on the wire's ACTUAL group, without re-entering the handler.</summary>
     private void SyncGroupSelection()
     {

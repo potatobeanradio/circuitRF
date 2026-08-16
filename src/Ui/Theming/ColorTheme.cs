@@ -124,6 +124,18 @@ public sealed class ColorTheme
             [ColorRole.HarmonicaMarkerBand3]      = new(214, 178,  54),   // 3f₀  pastel yellow
             [ColorRole.HarmonicaMarkerBand4]      = new(108, 152, 226),   // 4f₀  pastel blue
             [ColorRole.HarmonicaMarkerBand5]      = new(166, 124, 214),   // 5f₀  pastel purple
+
+            // ── wBond, LIGHT ────────────────────────────────────────────────────────────────────
+            // Gold, darkened until it holds up against the near-white Layout.Background (246,246,244)
+            // these are drawn over — the old hardcoded (224,192,96) was a dark-theme colour shown in
+            // both variants. WireStart is the SAME hue two steps darker (owner: "the same as the
+            // wire, but a much darker shade of it"). Selected is a deep saturated blue rather than
+            // the old WHITE, which was the owner's "can't be seen over the canvas background".
+            [ColorRole.WBondWire]      = new(150, 110,  20),
+            [ColorRole.WBondWireStart] = new( 70,  50,   8),
+            [ColorRole.WBondSelected]  = new( 10,  70, 180),
+            [ColorRole.WBondEnvelope]  = new(150, 110,  20,  56),
+            [ColorRole.WBondFreeWire]  = new(180,  70,  30),
         },
         new Dictionary<string, Rgba>
         {
@@ -191,5 +203,16 @@ public sealed class ColorTheme
             [ColorRole.HarmonicaMarkerBand3]      = new(214, 178,  54),
             [ColorRole.HarmonicaMarkerBand4]      = new(108, 152, 226),
             [ColorRole.HarmonicaMarkerBand5]      = new(166, 124, 214),
+
+            // ── wBond, DARK ─────────────────────────────────────────────────────────────────────
+            // The gold/orange the editor has always drawn with, kept: it was already a dark-ground
+            // palette. WireStart follows the same "much darker shade of the wire" rule as light — it
+            // still reads against the dark canvas, and it now means the same thing in both variants
+            // (it used to be an unrelated blue in one and nothing at all in the other).
+            [ColorRole.WBondWire]      = new(224, 192,  96),
+            [ColorRole.WBondWireStart] = new(140, 112,  40),
+            [ColorRole.WBondSelected]  = new(255, 255, 255),
+            [ColorRole.WBondEnvelope]  = new(224, 192,  96,  64),
+            [ColorRole.WBondFreeWire]  = new(224, 128,  96),
         });
 }

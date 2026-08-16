@@ -226,6 +226,12 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
     {
         var vm = Place("MKLOPF", OffsetTaper(20e-3), snapDbu: 1_000);
 
+        // The overlap guard only runs on the LIVE preview path — a deferred drag regenerates once, on
+        // release, and has no intermediate artwork to stop on. Deferral is decided by a measured 16 ms
+        // budget, so under a full-solution run this test failed with the guard never getting a chance.
+        // Put the budget out of reach: what is being pinned is the guard, not the machine's speed.
+        vm.LivePreviewBudgetMs = 1e9;
+
         double startL = ParametersOf(vm)["L"].AsReal();
         var grip = Grip(vm, "L", 1, 0);
 

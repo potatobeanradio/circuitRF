@@ -28,13 +28,13 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
     /// Which canvases are showing (owner, 2026-08-16). Cycled by the toolbar button and by <c>V</c>,
     /// and persisted in the <c>.wBond</c>'s view state.
     ///
-    /// <para>The Array inductance panel is deliberately NOT part of this: it is never hidden by a view
+    /// <para>The Array Inductance panel is deliberately NOT part of this: it is never hidden by a view
     /// mode, because the whole reason to enlarge a canvas is to look at geometry while watching the
     /// inductance change. <see cref="PanelVisible"/> is its own switch, on its own key.</para>
     /// </summary>
     [ObservableProperty] private WBondViewMode _viewMode = WBondViewMode.Both;
 
-    /// <summary>Whether the Array inductance panel is showing — the <c>I</c> key. Persisted.</summary>
+    /// <summary>Whether the Array Inductance panel is showing — the <c>I</c> key. Persisted.</summary>
     [ObservableProperty] private bool _panelVisible = true;
 
     public bool ProfileVisible => ViewMode is WBondViewMode.Both or WBondViewMode.Profile;

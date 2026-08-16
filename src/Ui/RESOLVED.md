@@ -6,6 +6,139 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Full-suite flakes: a WALL-CLOCK BUDGET decides what a counter test observes (2026-08-16)
+
+Owner: *"that same test always fails under load and passed in isolation — do something so that it
+doesn't slow us down all the time."* Six tests were failing intermittently under a full
+`dotnet test` while passing alone. They are **two mechanisms**, and only one of them is what it
+looks like.
+
+**Genuinely wall-clock gates — tagged `Category=Benchmark`, the documented remedy.**
+`Hero1BTests`'s 10 s import+solve budget (SPLIT: the correctness half — component and port counts,
+reciprocity, passivity — stays in the default gate at ~2 s, only the budget is tagged) and
+`PerfBenchmarkTests.BuildRenderModel_10k_Under50ms`. The latter had already been hardened once
+(best-of-5 instead of the mean, threshold widened to 500 ms) and flaked anyway, which is exactly the
+`Rbf2DPerfTests` precedent in root `CLAUDE.md`: fast, but wall-clock-sensitive, and no statistic
+survives the parallel-start burst. **Do not untag either on the grounds that it runs quickly.**
+
+**The interesting four: tests that assert only COUNTERS or POSITIONS, and still fail under load.**
+`WBondCanvasTests.ADragFrame_UsesTheIncrementalPath`,
+`WBondOverlayTests.ADrag_MovesTheWire_ViaTheIncrementalPath`,
+`MKlopfGripAndProfileTests.DraggingTheFarMiddleGrip_MovesTheFarEndCapGripsLive…`, and
+`PCellGripSnapAndOverlapTests.DraggingLShort_StopsBeforeTheGeometryFolds`. Nothing in any of them
+measures time. **Each sits downstream of a live-degradation budget that does:**
+
+- `QualityLadder.FrameBudgetMs` (16.7 ms) — overrun it and `WBondPointerController.DragFrame` stops
+  calling `CommitPointMove` at all, so `IncrementalUpdateCount` stops rising.
+- `LayoutEditorViewModel.LivePreviewBudgetMs` (16 ms) — overrun it on a gesture's FIRST solve and the
+  drag defers: `PreviewHandles` goes null, so only the dragged grip moves and the overlap guard never
+  gets intermediate artwork to stop on.
+
+Both are correct behaviour on a busy machine, which is why the failures look like real bugs and are
+not. **The fix is to make the budget unreachable in those four tests, not to tag them out** — what
+they pin (a point move must not take the structural path; every grip on a cell moves when the cell
+regenerates; the guard stops a fold) is not a statement about machine speed. `WBondPointerController`
+and `WBondLayoutOverlay` gained an optional `frameBudgetMs` constructor parameter, and
+`LivePreviewBudgetMs` became an internal instance property — **instance-scoped on purpose**, since a
+process-wide switch would leak into `PCellHandleDegradationTests`, whose whole subject is a genuinely
+slow cell hitting that budget for real.
+
+**The general lesson, worth applying before adding the next such budget:** any test downstream of a
+measured-time fallback is a timing test whether or not it contains a `Stopwatch`. Give the budget a
+seam when you add it.
+
+**Not fixed, observed once:** `Core.Tests`'s `SpiceCornerDiscoveryTests.C5_AFileThatIsNothingButSectionsIsStillRecognised`
+also failed once under load. Different area, different mechanism, untouched by this round — recorded
+rather than guessed at.
+
+## wBond editor, round 3 — an empty group is illegal, copy was text-only, and visibility was a function of the selection (2026-08-16)
+
+Nine owner items. Six were straightforward; the three below cost real time and would cost it again.
+
+**An EMPTY wire group is not legal, and four call sites believed it was.** `MoveWireToGroup`,
+`DeleteSelectedWires` and (as written) the new `DeleteWire` all carried the same comment: *"the empty
+source group is LEFT in place — a group is a named terminal (§3.4), and moving the last wire off a pin
+is not the same statement as deleting the pin."* It is a good argument and this layer cannot honour
+it: **`WBondDesign.Validate` rejects an array with no wires outright** — a group with no wires is a
+zero row in the mapping matrix, so the array-basis reduction is rank-deficient and the reduced
+inductance singular. The failure mode is the expensive part: the edit runs, `CommitStructuralChange`
+rebuilds, `Validate` throws, `RefuseEdit` rolls the whole thing back, and the user sees the command
+**do nothing** while a message about a singular inductance matrix appears in the toolbar strip. It
+looks like a physics problem and is a bookkeeping one. `WBondViewModel.PruneEmptyGroups` is now called
+by every edit that can empty a group, and it deliberately stops at one array — because `Validate`
+refuses a design with *no* arrays too, which is the same rule from the other end and is why
+`WhyCannotDeleteWire` refuses the last wire in its own words rather than letting that message escape.
+
+**Presence must be a function of geometry; colour is the function of selection.** §6.2 idea 3's
+clutter rule ("one editable curve per array plus a translucent band") was implemented in
+`WBondRenderer.DrawProfile` as *hide every bound member but the representative unless the selection
+touches it* — with no geometric test anywhere in it. So a group whose members differ in shape or
+position drew one of them, and the rest materialised only when a marquee caught them: the owner's
+*"some previously invisible wires become visible… I don't like having wires appear to disappear
+depending on wire selection."* The fix is a coincidence test (`ProjectsOnto`, compared in **projected**
+(span, z) rather than world coordinates, because the projection is exactly what differs — two wires
+5 mil apart are one curve under AUTO and two curves in the YZ plane).
+
+**The selection still has to be consulted, and the pixel test is what proved it.** The obvious version
+of the fix — drop the selection from the visibility test entirely — turns red on
+`WBondEditorRound2Tests.TheProfileView_AccentsSelectedPointsOfABoundMember`, and rightly: under AUTO a
+same-shape array's members genuinely coincide, so with the selection out of the test a marquee over
+one of them highlights nothing at all. The rule that satisfies both reports is *skip a member only if
+it coincides **and** is untouched*: drawing a coincident member adds no curve anywhere, it recolours
+pixels already on screen, so nothing "appears". Do not simplify this back to a pure geometry test.
+
+**wBond's Copy had never written anything but text.** `clipboard.SetTextAsync(json)`, full stop —
+which is why pasting into PowerPoint or Keynote produced raw JSON or nothing, while the separate
+Shift+⌘C "Copy as Graphic" worked. `WBondClipboardWriter` is a deliberate transcription of
+`LayoutClipboard.CopyAsync`, not a new design: content-framed page from what is actually PAINTED,
+PDF/SVG/PNG best-effort with the JSON always present as the fallback, and **the Windows bypass** —
+one P/Invoke session, CF_ENHMETAFILE first, because Word and PowerPoint take the first format they
+recognise. See `WindowsClipboard`'s header for why a second Avalonia clipboard session fails on
+Windows. The layout half of a mixed paste now moves by **(0, dy)** rather than (dy, dy), so it stays
+on top of the wire half.
+
+**Follow-ups the owner found on the built round.**
+
+- **The clipboard picture clipped its own points, worst on a straight wire.** The content bbox is of
+  the wire POINTS; what is drawn at each is a dot of `theme.DotRadiusPx` and a stroke of
+  `theme.LineWidthPx`, both in SCREEN pixels that no world-space bbox knows about. Two compounding
+  causes: no pixel allowance for the glyph, and a pan derived as `MinX − W·Pad` — which equals
+  centring only while the page is exactly the padded content size, and it never is, because the two
+  axes share one zoom and each page dimension is clamped to an 80 px floor. **A north/south wire has
+  W = 1 DBU**, so its page clamped up to 80 px wide while the pan still said "start 0.15 DBU left of
+  the wire", putting the wire on the left EDGE with its dots hanging off. Fixed by reserving a
+  `GlyphMarginPx` before choosing the zoom and by **centring on the content**, which makes both the
+  shared zoom and the clamp harmless. Note `WBondGraphicExport.FitViewport` (Shift+⌘C) never had this
+  — it already centres, against a fixed page with a 6 % margin ≈ 47 px.
+- **A pasted north/south wire landed end-to-end with its original.** The offset was hardcoded to +y.
+  A bond array is pitched PERPENDICULAR to its wires — that is what a pitch is — so the step now runs
+  across the mean chord azimuth of the payload: east/west steps +y (what it always did), north/south
+  steps +x, and a wire at 37° steps at 127° rather than being forced onto an axis it does not lie on.
+  Two details worth keeping: the chords are summed as **vectors folded onto a half-plane**, or two
+  anti-parallel members of one array cancel out of the mean and leave a direction perpendicular to
+  neither; and the perpendicular is **canonicalised to face east, or north when purely vertical**, so
+  the copy lands to the right of a north/south wire rather than to its left. Off-axis the offset
+  cannot be exact — it rounds to integer nm like every wBond coordinate — so a test of its length
+  needs a ±1 nm tolerance, not `Assert.Equal`.
+
+**Naming, at the owner's request (2026-08-16).** Role keys are `wBond.*` with a lowercase w (the
+product's own spelling), and **the Settings colour list shows every role under its full key**. The
+schematic dozen used to be shortened there — `Schematic.Wire` as "Wire", `System.Warning` as
+"Warning" — from when they were the only roles that existed; every family added since shows its
+prefix, so the short ones read as a nameless group and three different colours all appeared as
+"Wire". Deleting the `RoleLabels` map was the whole change; the row label already fell back to the
+key. No migration was asked for and none exists: a `.ccolor` holding stale `WBond.*` keys loads
+fine, those entries match no role, and `ColorTheme.Resolve`'s built-in fallback answers — and every
+`ColorThemeIo.LoadFile` call in `ThemeResolver` was already inside a `catch`, so an unreadable file
+cannot crash the app either.
+
+**Two smaller traps.** (1) The wBond canvases drew `WBondRenderTheme.Fallback` in light and dark
+alike — no `FromTheme` existed — so "the light selection colour is too pale" was a **wiring** bug, not
+a tuning one: nothing was reading a light palette at all. `Fallback` is now the built-in *dark*
+projection rather than a private copy of it, so the two cannot drift again. (2) `WBondViewState` must
+serialise **nulls explicitly** now that the default plane is YZ: null means AUTO *and* means "key
+absent", and with a non-null default a design deliberately left on Auto reopens in YZ.
+
 ## wBond editor, round 2 — the toolbar, the arrangement, and four gesture rules that were quietly inverted or absent (2026-08-16)
 
 **Two invariants worth keeping in mind before touching either canvas** (they were written into

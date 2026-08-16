@@ -72,7 +72,7 @@
                 BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,1,0">
             <DockPanel DataContext="{Binding ViewModel.Panel}">
                 <StackPanel DockPanel.Dock="Top" Margin="10,10,10,6" Spacing="3">
-                    <TextBlock Text="Array inductance" FontWeight="SemiBold"/>
+                    <TextBlock Text="Array Inductance" FontWeight="SemiBold"/>
 
                     <!-- WB20/RW13: the return path is stated whenever it is NOT the ordinary image
                          plane at z = 0. Saying so on every document all the time cost a row and told
@@ -191,7 +191,7 @@
                     </Button>
 
                     <ToggleButton x:Name="PanelToggle" IsChecked="{Binding ViewModel.PanelVisible, Mode=TwoWay}"
-                                  ToolTip.Tip="Array inductance panel  (I)">
+                                  ToolTip.Tip="Hide/Show Inductance panel  (I)">
                         <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
                     </ToggleButton>
 
@@ -226,7 +226,7 @@
                               ItemsSource="{x:Static wbc:ProfileAxisSetting.Presets}"
                               LostFocus="OnProfileAxisCommit" KeyDown="OnProfileAxisKeyDown"
                               SelectionChanged="OnProfileAxisSelectionChanged"
-                              ToolTip.Tip="Profile view plane — Auto, X-Z, Y-Z, or an angle in degrees"/>
+                              ToolTip.Tip="Profile view plane — Auto, XZ, YZ, or an angle in degrees"/>
 
                     <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
 
@@ -291,13 +291,13 @@
                     <!-- §9.4 — the assembly-house bridge. Export writes the layout AND the wires;
                          Import Wires reads only 3D polylines into THIS document. -->
                     <Button x:Name="ExportDxfBtn" Click="OnExportDxf"
-                            ToolTip.Tip="Export DXF (layout and wires)"
+                            ToolTip.Tip="Export DXF…"
                             Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
                     </Button>
 
                     <Button x:Name="ImportWiresBtn" Click="OnImportWires"
-                            ToolTip.Tip="Import Wires from a DXF (3D polylines on Wires_* layers)"
+                            ToolTip.Tip="Import Wires from DXF…"
                             Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="FileImportOutline" Width="16" Height="16"/>
                     </Button>
@@ -306,7 +306,7 @@
                          off-diagonals carrying the coupling. Reachable here as well as from the
                          standalone binary's File ▸ Export, through the same one method. -->
                     <Button x:Name="ExportTouchstoneBtn" Click="OnExportTouchstone"
-                            ToolTip.Tip="Export Touchstone (one port per wire array)"
+                            ToolTip.Tip="Export Touchstone…"
                             Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
                     </Button>

@@ -310,8 +310,12 @@ public class WBondOverlayTests
     [Fact]
     public void ADrag_MovesTheWire_ViaTheIncrementalPath()
     {
+        // Unreachable frame budget: the QualityLadder is fed measured wall clock, so under a
+        // full-solution run a frame overruns 16.7 ms, the ladder degrades and the drag stops
+        // committing — and this counter assertion fails with nothing wrong. The invariant (a point
+        // move takes the incremental path, never the structural one) is not about machine speed.
         var vm = new WBondViewModel(Design());
-        var overlay = new WBondLayoutOverlay(vm) { SnapEnabled = false };
+        var overlay = new WBondLayoutOverlay(vm, frameBudgetMs: 1e9) { SnapEnabled = false };
 
         var foot = vm.Design.AllWires().First().Points[0];
         long startY = foot.Y;

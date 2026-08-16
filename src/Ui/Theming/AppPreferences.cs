@@ -132,6 +132,20 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? WBondWireMaterial { get; set; }
 
+    /// <summary>
+    /// How far a PASTED wire is offset from whatever is already there (owner, 2026-08-16). It governs
+    /// PLACEMENT only: the pitch WITHIN a copied group is whatever the copied wires had, and pasting
+    /// never re-spaces them. Null means the shipped 5 mil.
+    ///
+    /// <para>It exists because paste used to apply one fixed 5 mil offset every time, so a second
+    /// paste of the same clipboard landed exactly on the first — two wires on identical geometry,
+    /// which makes the inductance matrix singular and was reported as an error with no third wire.
+    /// See <c>WBondViewModel.PasteWiresAtFreePitch</c>.</para>
+    /// </summary>
+    [JsonPropertyName("wbond_paste_pitch_nm")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? WBondPastePitchNm { get; set; }
+
     // R-emp-6: the EM solver's core cap. Null means automatic (unbounded, i.e. what every run did
     // before it existed). DELIBERATELY here and not in the .cem: a core count is a property of the
     // MACHINE, not of the design, and a .cem travels with the workspace — opening a colleague's EM

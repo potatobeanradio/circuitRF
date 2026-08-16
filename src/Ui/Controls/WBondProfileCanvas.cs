@@ -80,8 +80,21 @@ public sealed class WBondProfileCanvas : Control
     {
         var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
         LayoutTheme = LayoutRenderTheme.FromTheme(ThemeService.Active, variant);
+
+        // The WIRE colours follow the variant too, and did not before — this canvas drew the same
+        // hardcoded dark palette in light mode, which is where the invisible white selection came from.
+        WireTheme = WBondRenderTheme.FromTheme(ThemeService.Active, variant);
+
+        ThemeRefreshed?.Invoke();
         InvalidateVisual();
     }
+
+    /// <summary>
+    /// Raised after <see cref="WireTheme"/> has been re-resolved, so the hosting view can push the
+    /// same colours into the LAYOUT overlay — which draws the same wires and must not disagree about
+    /// them. The overlay is not a control and has no theme notifications of its own.
+    /// </summary>
+    public event Action? ThemeRefreshed;
 
     /// <summary>Per-view, per WB22a.</summary>
     public WireThicknessMode Thickness { get; set; } = WireThicknessMode.ConstantPixels;
@@ -89,8 +102,8 @@ public sealed class WBondProfileCanvas : Control
     public ProfileProjection.SpanMode SpanMode { get; set; } = ProfileProjection.SpanMode.Absolute;
 
     /// <summary>
-    /// The plane this view projects onto — null for AUTO (each wire on its own chord), 0 for X-Z,
-    /// π/2 for Y-Z, anything for a diagonal. Pushed in from the toolbar's own combo.
+    /// The plane this view projects onto — null for AUTO (each wire on its own chord), 0 for XZ,
+    /// π/2 for YZ, anything for a diagonal. Pushed in from the toolbar's own combo.
     ///
     /// <para>Every gesture in this control reads it: the render, the hit test, the marquee and the
     /// horizontal drag. One value, so a point cannot be drawn in one place and moved in another.</para>

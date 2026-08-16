@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Theming;
 using CircuitRF.WBond;
 using SkiaSharp;
 
@@ -48,15 +49,48 @@ public sealed class WBondRenderTheme
 
     public float LineWidthPx { get; init; } = 1.5f;
 
-    /// <summary>A sensible default so a canvas can render without a theme wired up yet.</summary>
-    public static WBondRenderTheme Fallback => new()
+    /// <summary>
+    /// Projects the five wBond roles of the active colour theme into the SKColors this renderer
+    /// draws with — the L2 "renderer tokens are a projection of the theme, never hardcoded" rule
+    /// (docs/design/color-themes.md), which this theme was the last canvas in the application to be
+    /// outside of.
+    ///
+    /// <para><b>This is what makes the variant matter.</b> Before it, both canvases drew
+    /// <see cref="Fallback"/> in light and dark alike, so the selection accent was white on a
+    /// near-white canvas in light mode — the owner's report, and not a tuning problem: nothing was
+    /// reading the light palette at all.</para>
+    /// </summary>
+    public static WBondRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
-        Wire = new SKColor(0xE0, 0xC0, 0x60),
-        InputEnd = new SKColor(0x60, 0xC0, 0xE0),
-        Selected = new SKColor(0xFF, 0xFF, 0xFF),
-        Envelope = new SKColor(0xE0, 0xC0, 0x60, 0x40),
-        FreeWire = new SKColor(0xE0, 0x80, 0x60),
-    };
+        ArgumentNullException.ThrowIfNull(theme);
+
+        SKColor SK(string role)
+        {
+            var c = theme.Resolve(role, variant);
+            return new SKColor(c.R, c.G, c.B, c.A);
+        }
+
+        return new WBondRenderTheme
+        {
+            Wire     = SK(ColorRole.WBondWire),
+            InputEnd = SK(ColorRole.WBondWireStart),
+            Selected = SK(ColorRole.WBondSelected),
+            Envelope = SK(ColorRole.WBondEnvelope),
+            FreeWire = SK(ColorRole.WBondFreeWire),
+        };
+    }
+
+    /// <summary>
+    /// A sensible default so a canvas can render without a theme wired up yet — the BUILT-IN dark
+    /// palette, not a private copy of it, so "the fallback" and "the shipped dark theme" cannot drift
+    /// apart the way they had.
+    /// </summary>
+    public static WBondRenderTheme Fallback { get; } =
+        FromTheme(ColorTheme.BuiltIn, ColorVariant.Dark);
+
+    /// <summary>The built-in light palette — the counterpart <see cref="Fallback"/> never had.</summary>
+    public static WBondRenderTheme Light { get; } =
+        FromTheme(ColorTheme.BuiltIn, ColorVariant.Light);
 }
 
 /// <summary>
@@ -245,14 +279,37 @@ public static class WBondRenderer
 
                 bool wholeSelected = selection?.Wires.Contains(flatIndex) == true;
 
-                // A SELECTED wire is always drawn individually, bound or not. The band cannot carry a
-                // highlight — it is one shape over the whole array — so a marquee that caught three
-                // members of a twenty-wire array would otherwise show nothing at all, which is the
-                // owner's "marquee selection in profile view does not update highlighting". The
-                // remaining bound members stay represented by the band: that is the clutter answer,
-                // one curve plus a band, not 200 curves.
+                // ── Nothing may APPEAR because it was selected ──────────────────────────────────
+                //
+                // A bound member is collapsed onto the array's one editable curve (§6.2 idea 3) only
+                // when it genuinely PROJECTS onto it — when drawing it would put a second polyline on
+                // exactly the pixels the representative already covers. Anything that projects
+                // somewhere else is drawn unconditionally.
+                //
+                // The rule used to be "hidden unless the selection touches it", with no geometric
+                // test at all, which is the owner's report (2026-08-16): "when wires with different
+                // geometry are in the same group, if I use marquee select in the profile view, some
+                // previously invisible wires become visible… I don't like having wires appear to
+                // disappear depending on wire selection." Those members were represented by nothing —
+                // the band spans min to max and says nothing about where the members between them
+                // are — so selecting one was the only way to discover it existed.
+                //
+                // The selection is still consulted, but ONLY for a member that coincides: drawing it
+                // then adds no curve anywhere, it recolours a curve already on screen, which is what
+                // makes a marquee over a same-shape array visibly do something. So presence is a
+                // function of geometry and colour is a function of selection, which is the split the
+                // report is really asking for.
+                //
+                // §6.2's clutter rule survives intact where it applies: under AUTO every member of a
+                // same-shape array projects onto the same chord, so it is still one curve plus a
+                // band. Under a fixed plane, members at different positions project to different
+                // places, and there is no honest picture in which they are one curve.
                 bool touched = wholeSelected || Touches(selection, flatIndex);
-                if (w != representative && !touched && envelope.BoundWires.Contains(w)) continue;
+                if (w != representative
+                    && envelope.BoundWires.Contains(w)
+                    && representative >= 0
+                    && !touched
+                    && ProjectsOnto(wire, array.Wires[representative], mode, azimuthRadians)) continue;
 
                 linePaint.Color = wholeSelected ? theme.Selected
                                 : w == representative ? theme.Wire
@@ -314,6 +371,41 @@ public static class WBondRenderer
             || (PointSelected(selection, wire, index) && PointSelected(selection, wire, index + 1));
     }
 
+    /// <summary>
+    /// Whether <paramref name="wire"/> lands on top of <paramref name="representative"/> in THIS
+    /// projection — the test that decides whether the array's one editable curve genuinely stands
+    /// for it (§6.2 idea 3) or merely hides it.
+    ///
+    /// <para>Compared in projected (span, z) rather than in world coordinates, because the projection
+    /// is exactly what differs: two wires 5 mil apart in y are the same curve under AUTO (each on its
+    /// own chord) and two separate curves in the YZ plane. A rule stated in world coordinates would
+    /// get one of those two wrong whichever way it was written.</para>
+    /// </summary>
+    private static bool ProjectsOnto(
+        Wire wire, Wire representative, ProfileProjection.SpanMode mode, double? azimuthRadians)
+    {
+        if (ReferenceEquals(wire, representative)) return true;
+        if (wire.Points.Count != representative.Points.Count) return false;
+
+        for (int i = 0; i < wire.Points.Count; i++)
+        {
+            var a = ProfileProjection.Project(wire, i, mode, azimuthRadians);
+            var b = ProfileProjection.Project(representative, i, mode, azimuthRadians);
+
+            if (Math.Abs(a.Span - b.Span) > CoincidenceToleranceNm) return false;
+            if (Math.Abs(a.Z - b.Z) > CoincidenceToleranceNm) return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// How close two projected curves have to be to count as one. 1 µm — four hundredths of a mil,
+    /// far below anything that can be seen at any usable zoom, and far above the ~1 nm quantisation
+    /// every wBond transform lands on (§6.4's measured note).
+    /// </summary>
+    private const double CoincidenceToleranceNm = 1_000.0;
+
     /// <summary>Whether a selection touches this wire at ALL — whole, by point, or by segment.</summary>
     private static bool Touches(WireSelection? selection, int wire)
     {
@@ -325,6 +417,7 @@ public static class WBondRenderer
 
         return false;
     }
+
 
     private static bool PointSelected(WireSelection? selection, int wire, int index)
     {

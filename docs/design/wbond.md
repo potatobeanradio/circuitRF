@@ -708,7 +708,7 @@ The layout is:
 
 ```
 ┌──────────────┬──────────────────────────────────────┐
-│              │  PROFILE VIEW   (X-Z / Y-Z / any az) │
+│              │  PROFILE VIEW   (XZ / YZ / any az) │
 │  ARRAY       │  Z is always up                      │
 │  INDUCTANCE  ├──────────────────────────────────────┤
 │  PANEL       │                                      │
@@ -851,7 +851,7 @@ cannot be drawn in the profile view without self-overlap. Such wires are drawn f
 panel, and excluded from envelopes. They are legal geometry and they solve correctly; they are just
 not profile-editable. That is a real edge and it is stated rather than prevented.
 
-**Profile view projection.** Y-Z, X-Z, or an arbitrary azimuth, with **Z always up**, per the owner.
+**Profile view projection.** YZ, XZ, or an arbitrary azimuth, with **Z always up**, per the owner.
 The azimuth is a control on the view; the recommended default is **the mean chord azimuth of the
 displayed arrays**, which makes an array of wires at 37° render as a clean side-on loop rather than a
 foreshortened one.
@@ -876,7 +876,7 @@ foreshortened one.
 | **Esc** | disarm Draw Wire / Rotate (abandoning any half-placed wire) → else clear the selection → else pass through |
 | **Del** / **Backspace** | delete the selected wires (undoable and redoable) |
 | **V** | cycle the visible canvases: both → profile only → layout only |
-| **I** | show/hide the Array inductance panel |
+| **I** | show/hide the Array Inductance panel |
 
 > **`V`, not `Tab`** — `Tab` is the focus-navigation key every control expects, and claiming it would
 > leave keyboard users unable to walk the toolbar.
@@ -884,7 +884,7 @@ foreshortened one.
 > **The two view switches persist in the file** (2026-08-16), in the `.wBond`'s own opaque `ViewState`
 > field — the field that exists so the UI can store what WB-A must not parse. **No `FormatVersion`
 > bump**: an older build reads the string, understands none of it, and writes it back unaltered. The
-> Array inductance panel is never hidden by a view MODE, only by its own switch: the reason to enlarge
+> Array Inductance panel is never hidden by a view MODE, only by its own switch: the reason to enlarge
 > a canvas is to watch geometry while watching the inductance change.
 
 > **Added 2026-08-16, at the owner's request: the profile view's horizontal axis moves geometry.** A
@@ -902,7 +902,7 @@ foreshortened one.
 > about, and it still overlays wires of any angle and length. `Absolute`'s stated purpose is "true
 > geometry", and a true picture cannot re-origin itself on the point being dragged.
 >
-> **The profile view's PLANE is a toolbar setting** (`ProfileAxisSetting`): `Auto`, `X-Z`, `Y-Z`, or a
+> **The profile view's PLANE is a toolbar setting** (`ProfileAxisSetting`): `Auto`, `XZ`, `YZ`, or a
 > typed angle in degrees. Auto is the default and is §6.2's own parameterisation — every wire on its
 > own chord, which is the only mode in which two wires of different angle and length are directly
 > comparable. A fixed plane answers the other question, "what does this array look like from over
@@ -1038,6 +1038,91 @@ readout must not create. Wirebond inductances live in the tens-to-thousands of p
 Mutual terms are additionally offered as the dimensionless **coupling coefficient**
 k = M_ij/√(L_ii·L_jj), because it is scale-free and is the number that tells a user whether two arrays
 are meaningfully coupled — a bare pH mutual does not, without mentally dividing by the selfs.
+
+### 6.10 Owner round 3 (2026-08-16)
+
+**Spelling.** The profile plane is **`XZ`** and **`YZ`** everywhere — no hyphen. `ProfileAxisSetting`
+still *accepts* `X-Z`/`Y-Z`, because a saved `.wBond` and a user's habit both carry them and a rename
+that stopped reading the old text would silently reset the plane of every design written before it.
+
+**Shipped defaults.** The default wire runs **north/south over 30 mil**, and the profile view opens on
+**YZ**, which is the plane that shows it side-on rather than foreshortened to nothing. Every number the
+shipped wire is built from is a named constant on `WBondEmbedding.DefaultWire` — the owner expects to
+tweak it repeatedly, so a tweak is one edit to one constant rather than a hunt through a constructor.
+The default plane forced one file-format detail: `WBondViewState` now serialises **nulls explicitly**,
+because null means AUTO *and* means "the key was never written", and with a non-null default those two
+would collide — a design deliberately left on Auto would reopen in YZ.
+
+**Colours are theme roles, at last.** `wBond.Wire`, `wBond.WireStart`, `wBond.Selected`,
+`wBond.Envelope` and `wBond.FreeWire` join the shared `ColorRole` vocabulary with light and dark
+defaults — spelled with a lowercase `w`, like the product — and `WBondRenderTheme.FromTheme` projects
+them the way every other canvas's token bundle
+already did (`color-themes.md` L2). Both wBond canvases previously drew **one hardcoded palette in
+light and dark alike** — which is not a tuning problem but a wiring one, and is why the light-mode
+selection accent was pure white on a near-white canvas. The light accent is now a deep blue; the
+start-of-wire dot defaults to the wire's own colour much darkened, in both variants, so "which foot is
+the input" reads as the same wire rather than a second kind of object. That dot is load-bearing: the
+sign of every mutual depends on it (WB3).
+
+**Copy writes a picture, not just JSON.** wBond's ordinary Copy wrote `SetTextAsync(json)` and nothing
+else, so pasting into PowerPoint or Keynote produced raw JSON or nothing. `WBondClipboardWriter` is a
+transcription of `LayoutClipboard.CopyAsync` — content-framed page, PDF + SVG + PNG best-effort with
+the JSON always present as the fallback, and **the Windows bypass that writes every format in one
+P/Invoke session with CF_ENHMETAFILE first**. That half took the Layout Editor several rounds to get
+right across three platforms and is deliberately reused rather than re-derived.
+
+**Paste pitch.** Paste applied one fixed 5 mil offset, so pasting the same clipboard twice put the
+second copy exactly on the first — two wires on identical geometry, an inductance matrix that is
+singular, and the owner's *"'The inductance matrix is not positive…' and a 3rd wire does not appear"*.
+The offset is now a Settings value (`Paste pitch`, default 5 mil) and paste **steps until nothing
+lands on a wire already there**, testing the feet. The pitch governs **placement only** — the wires
+arrive with whatever spacing they were copied with, and a paste never re-spaces them.
+
+**And the step runs ACROSS the wires, not along a fixed axis.** A bond array is pitched perpendicular
+to its wires — that is what a pitch *is* — so an east/west wire steps in y (what paste always did), a
+north/south wire steps in x, and a wire at 37° steps at 127° rather than being forced onto an axis it
+does not lie on. Stepping along +y regardless slid a north/south copy **end-to-end** with its
+original. The direction comes from the payload's mean chord azimuth, summed as vectors **folded onto
+a half-plane** (two anti-parallel members of one array would otherwise cancel out of the mean and
+leave a direction perpendicular to neither), then canonicalised to face east — or north when it is
+purely vertical — so the copy lands to the right of a north/south wire rather than to its left.
+
+**Three deletes and a regroup, on the layout view's wire context menu.** Selection commands above the
+separator, then `Group Wires As…`, then `Delete Vertex` / `Delete Segment` / `Delete Wire` — resolved
+against what the right-click actually landed on, and shown disabled with a reason rather than absent.
+Two rules worth keeping:
+
+- **Removing a point DETACHES the wire from its profile.** A `LoopProfile` *is* the point set, so a
+  wire that has had one removed no longer follows it; leaving the binding would mean the next Re-apply
+  Profile silently put the point back.
+- **Delete Segment removes the segment's far endpoint**, so the wire comes back as ONE wire with
+  exactly one fewer segment. Splitting is not offered: the reduction sums current along one continuous
+  path (§3.4), and two disconnected halves are not something the physics can evaluate.
+
+**An emptied group is REMOVED, and the comment that said otherwise was wrong.** Several edits carried
+the note "the empty source group is left in place — a group is a named terminal, and moving the last
+wire off a pin is not the same statement as deleting the pin". It is a good argument that this layer
+cannot honour: `WBondDesign.Validate` rejects an array with no wires outright, because a group with no
+wires is a zero row in the mapping matrix and makes the array-basis inductance singular. Leaving one
+behind therefore made the whole edit unevaluable, so the refusal fired and the edit rolled back — the
+command appearing to do nothing while reporting a physics error the user could not connect to it.
+Every edit that can empty a group now prunes. For the same reason **the last wire in a design cannot
+be deleted**, and the menu says so in those words rather than letting `Validate` report "wBond design
+has no arrays".
+
+**Profile-view visibility no longer depends on the selection.** §6.2 idea 3's clutter rule was
+implemented as "hide every bound member but the representative *unless the selection touches it*",
+with no geometric test at all — so members of a group whose geometry differed were invisible until a
+marquee happened to catch them, and wires appeared and disappeared as the user selected. The rule is
+now **geometric**: a bound member is collapsed onto the representative only when it actually *projects
+onto it*, i.e. when drawing it would put a second polyline on pixels the representative already
+covers. The selection is still consulted for a *coincident* member, because drawing one of those adds
+no curve anywhere — it recolours a curve already on screen, which is what makes a marquee over a
+same-shape array visibly do something. Presence is a function of geometry; colour is a function of
+selection. §6.2's rule survives intact where it means something: under AUTO every member of a
+same-shape array projects onto the same chord, so it is still one curve plus a band. Under a fixed
+plane, members at different positions project to different places, and there is no honest picture in
+which they are one curve.
 
 ---
 

@@ -40,16 +40,32 @@ public enum WBondModifiers
 public sealed class WBondPointerController
 {
     private readonly WBondViewModel _vm;
-    private readonly QualityLadder _ladder = new();
+    private readonly QualityLadder _ladder;
     private readonly Stopwatch _frameTimer = new();
 
     private readonly Dictionary<int, Point3[]> _collapsed = [];
     private bool _dragging;
     private long _pressX, _pressY;
 
-    public WBondPointerController(WBondViewModel viewModel)
+    /// <param name="frameBudgetMs">
+    /// The per-frame budget the <see cref="QualityLadder"/> degrades against — 60 fps by default,
+    /// which is what the editor wants and what every real caller uses.
+    ///
+    /// <para><b>It is settable so a TEST can make the ladder inert</b>, and that is not a nicety.
+    /// The ladder is fed measured wall-clock, so anything downstream of it is wall-clock-sensitive —
+    /// including tests that look like pure counter assertions. <c>ADragFrame_UsesTheIncrementalPath</c>
+    /// asserts only <c>RebuildCount</c> and <c>IncrementalUpdateCount</c>, yet it fails under a
+    /// full-solution run: with 7,000 other tests on the cores a frame overruns 16.7 ms, the ladder
+    /// drops to <see cref="DragQuality.FreezeAndSnap"/>, <see cref="DragFrame"/> stops calling
+    /// <c>CommitPointMove</c> at all, and the incremental count stops rising. Handing such a test an
+    /// unreachable budget lets it assert the thing it means — that a point move takes the incremental
+    /// path — independently of how busy the machine is.</para>
+    /// </param>
+    public WBondPointerController(WBondViewModel viewModel,
+                                  double frameBudgetMs = QualityLadder.FrameBudgetMs)
     {
         _vm = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+        _ladder = new QualityLadder(frameBudgetMs);
     }
 
     /// <summary>The rung the current drag frame is running at.</summary>

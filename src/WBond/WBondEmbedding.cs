@@ -136,25 +136,66 @@ public static class WBondEmbedding
     private static readonly Lock _gate = new();
 
     /// <summary>
+    /// <b>The default wire, as five numbers in one place.</b> Owner, 2026-08-16: "make it easy to
+    /// change the default wire — we may tweak it many times." Every value the shipped wire is built
+    /// from lives here, so a tweak is an edit to a constant rather than a hunt through a constructor.
+    ///
+    /// <para>The wire runs <b>north/south</b> (along +y) and spans <see cref="DefaultWire.SpanMils"/>
+    /// foot-to-foot. It used to run east/west over 100 mil; both were arbitrary, and north/south is
+    /// the orientation the profile view's new default plane (YZ) shows side-on rather than
+    /// foreshortened to nothing.</para>
+    /// </summary>
+    public static class DefaultWire
+    {
+        /// <summary>Foot-to-foot span, in mils — the length of the shipped wire.</summary>
+        public const double SpanMils = 30.0;
+
+        /// <summary>Peak loop height above the chord, in mils, for the shipped ball-bond profile.</summary>
+        public const double LoopHeightMils = 20.0;
+
+        /// <summary>Wire diameter, in mils.</summary>
+        public const double DiameterMils = 1.0;
+
+        /// <summary>Height of the INPUT foot (the die pad), in mils.</summary>
+        public const double InputFootZMils = 4.0;
+
+        /// <summary>Height of the OUTPUT foot (the package lead), in mils.</summary>
+        public const double OutputFootZMils = 1.0;
+
+        /// <summary>The group the shipped wire lands in.</summary>
+        public const string GroupName = "G1";
+
+        /// <summary>The input foot's position.</summary>
+        public static Point3 Start => Point3.Mils(0, 0, InputFootZMils);
+
+        /// <summary>
+        /// The output foot's position — <b>north of the input foot</b>, which is what makes the
+        /// shipped wire north/south. Change the axis here and nothing else needs to move.
+        /// </summary>
+        public static Point3 End => Point3.Mils(0, SpanMils, OutputFootZMils);
+    }
+
+    /// <summary>
     /// A minimal valid design: one array, one wire on a ball-bond profile.
     ///
     /// <para><b>This is the one definition</b> — the blank wBond editor and a freshly-dropped
     /// schematic component both start here, so "what a new wBond is" cannot come to mean two
-    /// different things.</para>
+    /// different things. Every number it uses is a named constant on <see cref="DefaultWire"/>.</para>
     /// </summary>
     public static WBondDesign DefaultDesign()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil));
+        var profile = LoopProfile.BallBond(WBondUnits.ToNm(DefaultWire.LoopHeightMils, WBondUnit.Mil));
         var design = new WBondDesign();
         design.Profiles.Add(profile);
         design.Arrays.Add(new WireArray
         {
-            Name = "G1",
+            Name = DefaultWire.GroupName,
             Profile = profile.Name,
             Wires =
             {
-                profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
-                                   WBondUnits.ToNm(1.0, WBondUnit.Mil), WireMaterials.Default.Name),
+                profile.CreateWire(DefaultWire.Start, DefaultWire.End,
+                                   WBondUnits.ToNm(DefaultWire.DiameterMils, WBondUnit.Mil),
+                                   WireMaterials.Default.Name),
             },
         });
         return design;

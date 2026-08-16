@@ -37,14 +37,24 @@ public sealed class WBondViewState
 {
     public WBondViewMode ViewMode { get; set; } = WBondViewMode.Both;
 
-    /// <summary>Whether the Array inductance panel is showing (the <c>I</c> key).</summary>
+    /// <summary>Whether the Array Inductance panel is showing (the <c>I</c> key).</summary>
     public bool PanelVisible { get; set; } = true;
+
+    /// <summary>
+    /// The shipped profile plane — <b>YZ</b> (owner, 2026-08-16), matching the north/south default
+    /// wire, which YZ shows side-on. Auto was the previous default and remains selectable.
+    /// </summary>
+    public const double DefaultProfileAxisDegrees = 90.0;
 
     /// <summary>
     /// The profile view's plane, in degrees, or null for AUTO (each wire on its own chord).
     /// Degrees rather than radians because this is a file a person may read.
+    ///
+    /// <para><b>Null is a real value here, not "absent"</b>, which is why this class serialises nulls
+    /// (see <see cref="Options"/>): the default is now YZ, so a design saved in AUTO has to write its
+    /// null explicitly or it would reopen in YZ.</para>
     /// </summary>
-    public double? ProfileAxisDegrees { get; set; }
+    public double? ProfileAxisDegrees { get; set; } = DefaultProfileAxisDegrees;
 
     /// <summary>The editor's display unit (§6.5) — independent of the layout's own, by design.</summary>
     public WBondUnit DisplayUnit { get; set; } = WBondUnit.Mil;
@@ -52,7 +62,10 @@ public sealed class WBondViewState
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+
+        // NOT WhenWritingNull: a null ProfileAxisDegrees MEANS Auto, and the property's own default is
+        // now YZ — so an omitted key would silently reopen an Auto design in YZ.
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         Converters = { new JsonStringEnumConverter() },
     };
 

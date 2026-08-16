@@ -25,6 +25,25 @@ public static class WBondDefaults
     /// </summary>
     public static string ShippedMaterial => WireMaterials.Default.Name;
 
+    /// <summary>
+    /// The shipped paste pitch — 5 mil, which is what paste has always offset by (the coarse nudge
+    /// step). Stated here rather than reached for at the call site, because it is now a setting.
+    /// </summary>
+    public static long ShippedPastePitchNm => WireEdits.CoarseNudgeNm;
+
+    /// <summary>
+    /// How far the next PASTE is placed from what is already in the design (owner, 2026-08-16).
+    /// Placement only — a paste never re-spaces the wires it is carrying.
+    /// </summary>
+    public static long PastePitchNm
+    {
+        get
+        {
+            long? stored = AppPreferencesIo.Load().WBondPastePitchNm;
+            return stored is > 0 ? stored.Value : ShippedPastePitchNm;
+        }
+    }
+
     public static int Points => Clamp(AppPreferencesIo.Load().WBondWirePoints);
 
     public static long DiameterNm

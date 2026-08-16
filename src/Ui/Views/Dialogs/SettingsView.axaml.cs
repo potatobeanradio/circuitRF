@@ -103,6 +103,7 @@ public partial class SettingsView : Window
 
             WBondMaterialCombo.ItemsSource = WireMaterials.All.Select(m => m.Name).ToArray();
             WBondMaterialCombo.SelectedItem = WBondDefaults.Material;
+            WBondPastePitchUpDown.Value = (decimal)WBondUnits.FromNm(WBondDefaults.PastePitchNm, WBondUnit.Mil);
 
             UpdatePCellTrustStatus(prefs.PCellTrust?.Count ?? 0);
         }
@@ -155,6 +156,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral || WBondDiameterUpDown.Value is not { } mils || mils <= 0) return;
         AppPreferencesIo.Update(p => p.WBondWireDiameterNm = WBondUnits.ToNm((double)mils, WBondUnit.Mil));
+    }
+
+    private void OnWBondPastePitchChanged(object? sender, NumericUpDownValueChangedEventArgs e)
+    {
+        if (_updatingGeneral || WBondPastePitchUpDown.Value is not { } mils || mils <= 0) return;
+        AppPreferencesIo.Update(p => p.WBondPastePitchNm = WBondUnits.ToNm((double)mils, WBondUnit.Mil));
     }
 
     private void OnWBondMaterialChanged(object? sender, SelectionChangedEventArgs e)
@@ -270,22 +277,17 @@ public partial class SettingsView : Window
 
     // ── Role list ────────────────────────────────────────────────────────────
 
-    private static readonly Dictionary<string, string> RoleLabels = new()
-    {
-        [ColorRole.SchematicBackground]        = "Background",
-        [ColorRole.SchematicGrid]              = "Grid",
-        [ColorRole.SchematicWire]              = "Wire",
-        [ColorRole.SchematicWireRouting]       = "Wire Routing",
-        [ColorRole.SchematicNodeLabelText]     = "Node Label Text",
-        [ColorRole.SchematicInstanceNameText]  = "Instance Name Text",
-        [ColorRole.SchematicParameterNameText] = "Parameter Text",
-        [ColorRole.SchematicComponentNameText] = "Component Name Text",
-        [ColorRole.SchematicConnectedPin]      = "Connected Pin",
-        [ColorRole.SchematicWireJunctionDot]   = "Wire Junction Dot",
-        [ColorRole.SchematicSymbolLine]        = "Symbol Lines",
-        [ColorRole.SchematicSymbolPlus]        = "Symbol +/−",
-        [ColorRole.SystemWarning]              = "Warning",
-    };
+    /// <summary>
+    /// <b>Every role is listed under its own key, prefix and all</b> (owner, 2026-08-16).
+    ///
+    /// <para>The schematic roles used to be shortened here — <c>Schematic.Wire</c> shown as "Wire",
+    /// <c>System.Warning</c> as "Warning" — dating from when they were the only roles there were.
+    /// Every family added since (<c>Layout.</c>, <c>Harmonica.</c>, <c>wBond.</c>) shows its full key,
+    /// so the shortened dozen read as a nameless group at the top of a list of qualified ones, and
+    /// three different colours all appeared as "Wire". Removing the map is the whole change: the row
+    /// label already falls back to the role key.</para>
+    /// </summary>
+    private static readonly Dictionary<string, string> RoleLabels = [];
 
     private List<RoleRowModel> _roleRows = [];
 

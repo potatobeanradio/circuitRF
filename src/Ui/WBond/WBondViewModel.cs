@@ -68,17 +68,21 @@ public sealed partial class WBondViewModel : ObservableObject
     /// <b>Which plane the profile view projects onto</b> — the toolbar's own setting (§6.2).
     ///
     /// <para>Null is AUTO: each wire projects onto its OWN chord, which is what makes wire angle and
-    /// wire length stop being profile differences at all. A number fixes the plane — 0 for X-Z, π/2
-    /// for Y-Z, anything for a diagonal — and answers the other question, "what does this array look
+    /// wire length stop being profile differences at all. A number fixes the plane — 0 for XZ, π/2
+    /// for YZ, anything for a diagonal — and answers the other question, "what does this array look
     /// like from over there". It was previously derived from the geometry and merely LABELLED, which
     /// gave the user no way to ask for the other picture.</para>
     ///
     /// <para>The canvas, the hit test, the horizontal drag and the marquee all read this one value,
     /// so a point cannot render in one place and move in another.</para>
     /// </summary>
-    [ObservableProperty] private double? _profileAzimuthRadians;
+    /// <remarks>Defaults to YZ (owner, 2026-08-16) — <see cref="WBondViewState.DefaultProfileAxisDegrees"/>
+    /// is the same number, stated once there and mirrored here so a view-model built without a
+    /// document behind it opens on the same plane as one that was.</remarks>
+    [ObservableProperty] private double? _profileAzimuthRadians =
+        WBondViewState.DefaultProfileAxisDegrees * Math.PI / 180.0;
 
-    /// <summary>The toolbar combo's text for <see cref="ProfileAzimuthRadians"/> — "Auto", "X-Z", "Y-Z", or an angle.</summary>
+    /// <summary>The toolbar combo's text for <see cref="ProfileAzimuthRadians"/> — "Auto", "XZ", "YZ", or an angle.</summary>
     public string ProfileAxisText => ProfileAxisSetting.Format(ProfileAzimuthRadians);
 
     partial void OnProfileAzimuthRadiansChanged(double? value) => OnPropertyChanged(nameof(ProfileAxisText));
@@ -601,6 +605,147 @@ public sealed partial class WBondViewModel : ObservableObject
 
         return added;
     }
+
+    /// <summary>
+    /// Pastes at the first multiple of <paramref name="pitchNm"/> <b>across the wires' own
+    /// direction</b> at which no pasted wire would land exactly on a wire already in the design.
+    ///
+    /// <h3>The bug (owner, 2026-08-16)</h3>
+    /// <para><i>"When I copy and then paste a wire, a new wire appears 5 mil in +y. Good. However, if
+    /// I paste the same wire again, I get an error: 'The inductance matrix is not positive…' and a 3rd
+    /// wire does not appear."</i> Paste applied one FIXED offset, so the second paste of an unchanged
+    /// clipboard placed a wire exactly on top of the first paste's. Two wires on identical geometry
+    /// have identical filaments, the mutual equals the self, and the matrix is singular — the refusal
+    /// was correct, and the placement was the bug.</para>
+    ///
+    /// <para><b>The step runs ACROSS the wires, not along a fixed axis</b> (owner, 2026-08-16: "pasting
+    /// a north-south wire uses the wrong dimension for the offset"). A bond array is pitched
+    /// perpendicular to its wires — that is what a pitch IS — so an east/west wire steps in y and a
+    /// north/south wire steps in x, and a wire at 37° steps at 37°+90° rather than being forced onto
+    /// an axis it does not lie on. Stepping along a fixed axis slid a north/south copy END-TO-END with
+    /// its original instead of beside it.</para>
+    ///
+    /// <para><b>The pitch governs PLACEMENT, never the clipboard's own spacing</b> (the owner's own
+    /// distinction): the wires arrive with whatever spacing they were copied with, and the whole batch
+    /// is translated as one body.</para>
+    ///
+    /// <para>Occupancy is tested on the FEET — the two bonded ends. Two wires sharing both feet
+    /// exactly are the degenerate case this exists to avoid, whatever their loops do in between.</para>
+    /// </summary>
+    /// <returns>How many wires were added; 0 for a foreign or empty clipboard.</returns>
+    public int PasteWiresAtFreePitch(string? clipboardText, long pitchNm)
+    {
+        if (WBondClipboard.TryParse(clipboardText) is not { } payload) return 0;
+
+        var (dx, dy) = FreePasteOffset(payload, pitchNm);
+        return PasteWires(clipboardText, dx, dy);
+    }
+
+    /// <summary>
+    /// How far, and in which direction, a paste has to step to miss everything already there. Always
+    /// at least one pitch, so a paste is visibly a paste even when the design is empty.
+    /// </summary>
+    internal (long Dx, long Dy) FreePasteOffset(WBondClipboard.Payload payload, long pitchNm)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        long pitch = pitchNm > 0 ? pitchNm : WireEdits.CoarseNudgeNm;
+        var (ux, uy) = PasteDirection(payload);
+
+        var occupied = new HashSet<(long, long, long, long, long, long)>();
+        foreach (var wire in _design.AllWires())
+        {
+            if (wire.Points.Count < 2) continue;
+            var a = wire.Points[0];
+            var b = wire.Points[^1];
+            occupied.Add((a.X, a.Y, a.Z, b.X, b.Y, b.Z));
+        }
+
+        (long Dx, long Dy) At(int step) =>
+            ((long)Math.Round(pitch * step * ux), (long)Math.Round(pitch * step * uy));
+
+        for (int step = 1; step <= MaxPasteProbeSteps; step++)
+        {
+            var (dx, dy) = At(step);
+            bool clash = false;
+
+            foreach (var entry in payload.Wires)
+            {
+                int n = entry.Points.Length;
+                if (n < 6 || n % 3 != 0) continue;
+
+                var key = (entry.Points[0] + dx, entry.Points[1] + dy, entry.Points[2],
+                           entry.Points[n - 3] + dx, entry.Points[n - 2] + dy, entry.Points[n - 1]);
+
+                if (occupied.Contains(key)) { clash = true; break; }
+            }
+
+            if (!clash) return (dx, dy);
+        }
+
+        // Nothing free within the probe range — hand back the last candidate rather than refusing.
+        // The physics guard still catches a genuine coincidence and rolls the paste back with a
+        // message, which is strictly better than silently doing nothing here.
+        return At(MaxPasteProbeSteps);
+    }
+
+    /// <summary>
+    /// The unit direction a paste steps in: <b>perpendicular, in the layout plane, to the mean chord
+    /// azimuth of the wires being pasted</b>.
+    ///
+    /// <para>Canonicalised to point east where it can and north otherwise, so the copy lands to the
+    /// RIGHT of a north/south wire and ABOVE an east/west one rather than behind or below it. Both
+    /// perpendiculars are equally valid geometrically; only one of them is the direction a user reads
+    /// as "the next wire along".</para>
+    ///
+    /// <para>Falls back to +y for a payload with no usable chord — every wire's feet coincident in xy,
+    /// which is degenerate geometry that has no across-direction to speak of.</para>
+    /// </summary>
+    private static (double X, double Y) PasteDirection(WBondClipboard.Payload payload)
+    {
+        // Summed as VECTORS, not as angles: averaging 179° and −179° as numbers gives 0°, which is the
+        // direction perpendicular to both of them.
+        double sx = 0, sy = 0;
+
+        foreach (var entry in payload.Wires)
+        {
+            int n = entry.Points.Length;
+            if (n < 6 || n % 3 != 0) continue;
+
+            double dx = entry.Points[n - 3] - entry.Points[0];
+            double dy = entry.Points[n - 2] - entry.Points[1];
+
+            double length = Math.Sqrt(dx * dx + dy * dy);
+            if (length <= 0) continue;
+
+            // Folded onto a half-plane first: a wire and its reverse are the same LINE, and two
+            // anti-parallel members of one array must not cancel each other out of the mean.
+            if (dx < 0 || (dx == 0 && dy < 0)) { dx = -dx; dy = -dy; }
+
+            sx += dx / length;
+            sy += dy / length;
+        }
+
+        double norm = Math.Sqrt(sx * sx + sy * sy);
+        if (norm <= 0) return (0.0, 1.0);   // no usable chord — the old fixed +y
+
+        // Rotate the chord direction a quarter turn: (x, y) → (−y, x).
+        double px = -sy / norm, py = sx / norm;
+
+        // …then face it east, or north when it is purely vertical. An east/west chord (1, 0) gives
+        // (0, 1) — +y, which is what paste already did and must keep doing. A north/south chord
+        // (0, 1) gives (−1, 0), which is flipped here to +x.
+        if (px < -1e-12 || (Math.Abs(px) <= 1e-12 && py < 0)) { px = -px; py = -py; }
+
+        return (px, py);
+    }
+
+    /// <summary>
+    /// How many pitches a paste will walk before giving up. Bounded because the search is over a
+    /// user-supplied pitch that could be a nanometre; a thousand steps is far past any real bond
+    /// array and costs nothing.
+    /// </summary>
+    private const int MaxPasteProbeSteps = 1000;
 
     /// <summary>The selected wires, bounds-checked once so every transform above can trust the list.</summary>
     private List<int> TouchedWireList()

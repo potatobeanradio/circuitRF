@@ -749,6 +749,15 @@ public sealed class LayoutCanvas : Control
     /// once per opening and cancels the menu when it returns null.</summary>
     public (double Wx, double Wy)? ContextMenuTarget { get; private set; }
 
+    /// <summary>
+    /// The hit tolerance a context menu should test with, in DBU at the CURRENT zoom — the same
+    /// several-pixel figure <see cref="BuildContextMenuItems"/> uses. Exposed because the wBond editor
+    /// builds its OWN item list on this control (its right-click has to find a WIRE, which this
+    /// control knows nothing about) and a second tolerance would let the menu offer to delete a vertex
+    /// the click did not actually land on.
+    /// </summary>
+    internal long ContextMenuHitTolDbu => HitTolDbu();
+
     /// <summary>Returns and clears the pending target — atomic so a stale target can never be reused
     /// for a later, unrelated opening.</summary>
     internal (double Wx, double Wy)? ConsumeContextMenuTarget()

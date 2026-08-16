@@ -148,6 +148,29 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
             Refresh();
     }
 
+    /// <summary>
+    /// How many wires the selection touches — the count the "Group Wires As…" button shows, and the
+    /// sanity check the owner asked for. Zero means the button is hidden entirely.
+    /// </summary>
+    [ObservableProperty] private int _selectedWireCount;
+
+    /// <summary>The regroup button's label, carrying the count (see <c>WBondGroupCommand.Label</c>).</summary>
+    [ObservableProperty] private string _groupWiresLabel = "Group Wires As…";
+
+    /// <summary>
+    /// Whether the regroup button is shown. Deliberately live in the MULTI-wire state too, where the
+    /// rest of this panel is empty: regrouping is normally done to a marquee-full of wires at once,
+    /// so the one place a multi-selection was previously good for nothing is exactly where the
+    /// command belongs.
+    /// </summary>
+    public bool CanGroupWires => SelectedWireCount > 0;
+
+    partial void OnSelectedWireCountChanged(int value)
+    {
+        GroupWiresLabel = WBondGroupCommand.Label(value);
+        OnPropertyChanged(nameof(CanGroupWires));
+    }
+
     /// <summary>Re-reads everything from the model. Cheap, and safe to call per drag frame.</summary>
     public void Refresh()
     {
@@ -155,9 +178,11 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
         // it depends on the design, not on the selection, so it is read before the empty-state exits.
         SyncGroupsList();
 
-        if (_vm is null) { SetEmpty("No wBond document."); return; }
+        if (_vm is null) { SelectedWireCount = 0; SetEmpty("No wBond document."); return; }
 
         var touched = _vm.Selection.TouchedWires();
+        SelectedWireCount = touched.Count;
+
         if (touched.Count == 0) { SetEmpty("Select a single wire."); return; }
         if (touched.Count > 1) { SetEmpty($"{touched.Count} wires selected."); return; }
 
