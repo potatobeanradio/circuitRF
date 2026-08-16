@@ -1271,7 +1271,7 @@ public partial class HarmonicaView : UserControl
 
         // brief-harmonicarf-r6b §2.2 — a Γ point AT the marker's own Γ, additive on top of the
         // current ring/spoke preset; persists in the .charm.
-        items.Add(Item("Add Grid Points", MaterialIconKind.PlusCircleOutline,
+        items.Add(Item("Add Grid Point to Marker", MaterialIconKind.PlusCircleOutline,
             () => { h.AddGridPoint(marker.Gamma); Refresh(); },
             tooltip: "Adds this marker's own Γ to the loadpull grid, on top of the current preset — " +
                      "persists in the file. Grid ▸ Reset Grid or picking a new Grid Preset clears it."));

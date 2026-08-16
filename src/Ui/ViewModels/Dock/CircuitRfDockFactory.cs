@@ -103,6 +103,15 @@ public class CircuitRfDockFactory : Factory
     public IRootDock CreateDefaultLayout() => CreateLayout();
 
     /// <summary>
+    /// Full reset (fresh tool instances, welcome stub DocumentDock) built around an arbitrary
+    /// arrangement rather than the hardcoded §2.0 default — lets a caller honor the Settings ▸ On
+    /// Launch ▸ Window Layout preference (<see cref="DockLayoutDefaults.For"/>) when starting a
+    /// completely clean session, e.g. New Workspace, Open Workspace, or Close Workspace.
+    /// </summary>
+    public IRootDock CreateDefaultLayout(CwsDockLayout state) =>
+        BuildLayout(state, freshTools: true, preserveDocumentDock: false);
+
+    /// <summary>
     /// Geometry-only reset — rebuilds the default proportional skeleton while
     /// re-hosting the EXISTING <see cref="DocumentDock"/> (with all open tabs,
     /// active tab, and selection intact) and the existing tool instances.

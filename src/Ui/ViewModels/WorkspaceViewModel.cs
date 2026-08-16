@@ -1039,9 +1039,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ResetTechCache();
             CurrentWorkspacePath = cwsPath;
 
-            var newLayout = _factory.CreateDefaultLayout();
+            // Honor Settings ▸ On Launch ▸ Window Layout here too — this is the shell's clean-slate
+            // rebuild, the same case ApplyWindowLayout/PerformLayoutReset cover for launch and Reset
+            // Layout, but New Workspace never routed through either, so it silently reverted to the
+            // hardcoded §2.0 default.
+            var windowLayoutPreset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
+            var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
             _factory.InitLayout(newLayout);
             Layout = newLayout;
+            FocusPaneFor(windowLayoutPreset);
             _factory.PaletteTool?.SetPlacementService(PlacementService);
             _factory.PaletteTool?.SetMru(_recentlyPlaced);
             RestoreInstalledPdks();
@@ -1569,9 +1575,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ResetTechCache();
         CurrentWorkspacePath = cwsPath;
 
-        var newLayout = _factory.CreateDefaultLayout();
+        // Honor Settings ▸ On Launch ▸ Window Layout for the clean-slate rebuild — a saved .cws
+        // arrangement (applied below via ApplyRestoredDockLayout, when present) still wins, but a
+        // workspace with no saved layout block should fall back to the chosen preset, not the
+        // hardcoded §2.0 default.
+        var windowLayoutPreset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
+        var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
         _factory.InitLayout(newLayout);
         Layout = newLayout;
+        FocusPaneFor(windowLayoutPreset);
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         RestoreInstalledPdks();
@@ -2010,9 +2022,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         CurrentWorkspacePath = null;   // fires OnCurrentWorkspacePathChanged → tree.ClearWorkspace()
 
-        var newLayout = _factory.CreateDefaultLayout();
+        // Honor Settings ▸ On Launch ▸ Window Layout for the clean-slate rebuild — see the matching
+        // note in NewWorkspace/SwitchToWorkspace.
+        var windowLayoutPreset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
+        var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
         _factory.InitLayout(newLayout);
         Layout = newLayout;
+        FocusPaneFor(windowLayoutPreset);
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         RestoreInstalledPdks();

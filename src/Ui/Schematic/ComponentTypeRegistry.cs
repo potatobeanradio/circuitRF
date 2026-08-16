@@ -23,6 +23,11 @@ public enum ComponentCategory
     DataFiles,
     Terminals,
     Other,
+    /// <summary>Nonlinear built-ins — NonlinearC, VerilogA, Diode, the FET family, and every SDD
+    /// tile — gathered as one filter regardless of their primary category (owner request,
+    /// 2026-08-16). Always an <see cref="ComponentTypeInfo.ExtraCategories"/> membership, never a
+    /// primary <see cref="ComponentTypeInfo.Category"/>.</summary>
+    Nonlinear,
 }
 
 /// <summary>Physical dimension of a component parameter — drives the closed Unit ComboBox.</summary>
@@ -179,7 +184,8 @@ public static class ComponentTypeRegistry
             IsCommon: true),
         [SymbolKind.Sdd]           = new("SDD",   "X",
             Category: ComponentCategory.Other,
-            SearchTerms: ["SDD", "Sdd", "nonlinear", "behavioral"]),
+            SearchTerms: ["SDD", "Sdd", "nonlinear", "behavioral"],
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.ZPort]         = new("Z",     "Z",
             Category: ComponentCategory.Other,
             SearchTerms: ["Z", "ZPort", "impedance", "network"]),
@@ -232,7 +238,8 @@ public static class ComponentTypeRegistry
         [SymbolKind.NonlinearC]    = new("NonlinearC",   "C",
             Category: ComponentCategory.Lumped,
             SearchTerms: ["NLC", "NonlinearC", "nonlinear capacitor", "nonlinear", "varactor", "varicap", "CV", "C(V)"],
-            IsCommon: false),
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         // ── Semiconductor devices ────────────────────────────────────────────
         // A model the USER supplies. Sits with the built-in devices because that is what a user is
         // looking for when they reach for it — a transistor circuitRF does not ship — and it needs
@@ -241,11 +248,13 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Devices,
             SearchTerms: ["VerilogA", "Verilog-A", "OSDI", "compact model", "compiled", "custom",
                           "transistor", "device", "nonlinear", "BSIM", "PSP", "HICUM", "external"],
-            IsCommon: false),
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.Diode]         = new("Diode", "D",
             Category: ComponentCategory.Devices,
             SearchTerms: ["Diode", "D", "junction", "rectifier", "varactor", "schottky", "pn", "nonlinear"],
-            IsCommon: true),
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         // Five distinct types, not five settings of one — see SymbolKind for why. Each tile places
         // a different engine component with its own parameter set; "FET" and "MESFET" are search
         // terms on every one of them so a user who does not know which law they want still finds
@@ -253,23 +262,28 @@ public static class ComponentTypeRegistry
         [SymbolKind.FetCurtice]    = new("Curtice", "Q",
             Category: ComponentCategory.Devices,
             SearchTerms: ["Curtice", "FET", "MESFET", "GaAs", "quadratic", "transistor", "nonlinear", "device"],
-            IsCommon: true),
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.FetCurticeCubic] = new("CurticeCubic", "Q",
             Category: ComponentCategory.Devices,
             SearchTerms: ["CurticeCubic", "Curtice", "cubic", "Ettenberg", "FET", "MESFET", "transistor", "nonlinear", "device", "intermod"],
-            IsCommon: false),
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.FetStatz]      = new("Statz", "Q",
             Category: ComponentCategory.Devices,
             SearchTerms: ["Statz", "FET", "MESFET", "transistor", "nonlinear", "device"],
-            IsCommon: false),
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.FetMaterka]    = new("Materka", "Q",
             Category: ComponentCategory.Devices,
             SearchTerms: ["Materka", "Kacprzak", "FET", "MESFET", "transistor", "nonlinear", "device"],
-            IsCommon: false),
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.FetAngelov]    = new("Angelov", "Q",
             Category: ComponentCategory.Devices,
             SearchTerms: ["Angelov", "Chalmers", "HEMT", "FET", "MESFET", "pHEMT", "transistor", "nonlinear", "device"],
-            IsCommon: false),
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.Mutual]        = new("M",   "M",
             Category: ComponentCategory.Lumped,
             SearchTerms: ["Mutual", "mutual", "M", "coupling", "inductance", "transformer"],

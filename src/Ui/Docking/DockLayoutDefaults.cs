@@ -26,7 +26,7 @@ public static class DockLayoutDefaults
     public const double MessagesProportion = 0.20;
 
     /// <summary>Library column's share of the window width in the two-column preset.</summary>
-    public const double LibraryColumnProportion = 0.125;
+    public const double LibraryColumnProportion = 0.1125;
 
     /// <summary>Project Tree's share of the left column when the Library is not tabbed with it.</summary>
     public const double ProjectTreeAloneProportion = 0.466;
@@ -75,10 +75,13 @@ public static class DockLayoutDefaults
     /// The shipped default since 2026-08-15: Project Tree above Properties + Analyses on the left,
     /// the Library in its OWN column on the RIGHT of the documents, Messages + DRC below them.
     ///
-    /// <para>Transcribed from the owner's own <c>new_layout.cws</c>, which is why the proportions are
-    /// the untidy numbers a dragged splitter leaves rather than round ones. Its Library sat beside the
-    /// documents, so 0.125 is a share of the window WIDTH — the same number
-    /// <c>DockLayoutCapture.EnumerateSideProportions</c> now records for that arrangement.</para>
+    /// <para>Originally transcribed from the owner's own <c>new_layout.cws</c>, which is why most of
+    /// these proportions are the untidy numbers a dragged splitter leaves rather than round ones. Its
+    /// Library sat beside the documents as a share of the window WIDTH — the same number
+    /// <c>DockLayoutCapture.EnumerateSideProportions</c> would record for that arrangement — but
+    /// <see cref="LibraryColumnProportion"/> was retuned starting 2026-08-16 (0.125 → 0.09 → 0.1, still
+    /// being tuned) so the Palette's width matches two columns of component symbols at the default
+    /// window width.</para>
     /// </summary>
     public static CwsDockLayout ProjectTreeAndLibrary() => new()
     {

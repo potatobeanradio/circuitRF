@@ -107,6 +107,61 @@ public static class LibraryCatalog
     /// </summary>
     public static IReadOnlyList<PaletteItem> AllItems => _allItems.Value;
 
+    /// <summary>
+    /// The Library Palette's "All" filter order (owner request, 2026-08-16): a curated pin list of
+    /// the components scanned most, in the exact sequence requested, followed by every remaining
+    /// built-in in the ordinary category-then-name order (<see cref="AllItems"/>'s own order, with
+    /// the pinned rows removed). Identified by (Kind, PortCount) rather than DisplayName, because a
+    /// dynamic type (Snp/ZPort/Sdd) has several <see cref="AllItems"/> rows sharing one Kind — the
+    /// explicit port-count entry points (S2P/S3P, Z1P here).
+    /// </summary>
+    private static readonly (SymbolKind Kind, int PortCount)[] AllFilterPinnedOrder =
+    [
+        (SymbolKind.Resistor,      0),
+        (SymbolKind.Ground,    0),
+        (SymbolKind.Inductor,    0),
+        (SymbolKind.Mutual,      0),
+        (SymbolKind.Capacitor,   0),
+        (SymbolKind.NonlinearC,  0),
+        (SymbolKind.Term,        0),
+        (SymbolKind.TermG,       0),
+        (SymbolKind.Var,         0),
+        (SymbolKind.Meas,        0),
+        (SymbolKind.Vdc,         0),
+        (SymbolKind.IProbe,      0),
+        (SymbolKind.P1Tone,      0),
+        (SymbolKind.ToneSource,  0),   // "V1Tone" — the single-tone voltage source, displayed as VTone.
+        (SymbolKind.Snp,         2),   // S2P
+        (SymbolKind.Snp,         3),   // S3P
+        (SymbolKind.Tline,       0),   // TLIN
+        (SymbolKind.Mlin,        0),   // MLIN
+        (SymbolKind.SourceTuner, 0),
+        (SymbolKind.LoadTuner,   0),
+        (SymbolKind.ZPort,       1),   // Z1P
+        (SymbolKind.WBond,       0),
+    ];
+
+    /// <summary>Built-ins in <see cref="AllFilterPinnedOrder"/> order, then everything else in the
+    /// ordinary <see cref="AllItems"/> order. Never throws on a pinned row that does not (or no
+    /// longer) resolve — it is just skipped, so a future SymbolKind rename degrades gracefully rather
+    /// than crashing the palette.</summary>
+    public static IReadOnlyList<PaletteItem> AllItemsPinnedOrder()
+    {
+        var byKey = AllItems.ToDictionary(i => (i.Kind, i.PortCount));
+        var pinned = new List<PaletteItem>(AllFilterPinnedOrder.Length);
+        foreach (var key in AllFilterPinnedOrder)
+            if (byKey.TryGetValue(key, out var item))
+                pinned.Add(item);
+
+        var pinnedSet = new HashSet<PaletteItem>(pinned);
+        return [.. pinned, .. AllItems.Where(i => !pinnedSet.Contains(i))];
+    }
+
+    /// <summary>Built-ins sorted purely alphabetically by <see cref="PaletteItem.DisplayName"/>, with
+    /// no category grouping — the built-in half of the "All - Alphabetical" filter.</summary>
+    public static IReadOnlyList<PaletteItem> AllItemsAlphabetical()
+        => AllItems.OrderBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+
     /// <summary>Virtual category Common: items marked <see cref="PaletteItem.IsCommon"/> in the registry.</summary>
     public static IReadOnlyList<PaletteItem> Common
         => AllItems.Where(i => i.IsCommon).ToList();

@@ -68,9 +68,10 @@ public sealed class PaletteCategoryEntry
     /// </summary>
     internal string? KitCategory { get; private init; }
 
-    internal static PaletteCategoryEntry ForAll()          => new("All",           PaletteCategoryKind.All);
-    internal static PaletteCategoryEntry ForCommon()       => new("Common",        PaletteCategoryKind.Common);
-    internal static PaletteCategoryEntry ForRecentlyUsed() => new("Recently Used", PaletteCategoryKind.RecentlyUsed);
+    internal static PaletteCategoryEntry ForAll()             => new("All",               PaletteCategoryKind.All);
+    internal static PaletteCategoryEntry ForAllAlphabetical() => new("All - Alphabetical", PaletteCategoryKind.AllAlphabetical);
+    internal static PaletteCategoryEntry ForCommon()          => new("Common",             PaletteCategoryKind.Common);
+    internal static PaletteCategoryEntry ForRecentlyUsed()    => new("Recently Used",       PaletteCategoryKind.RecentlyUsed);
 
     internal static PaletteCategoryEntry ForReal(ComponentCategory cat) =>
         new(RealDisplayName(cat), PaletteCategoryKind.Real, cat);
@@ -99,7 +100,7 @@ public sealed class PaletteCategoryEntry
     };
 }
 
-internal enum PaletteCategoryKind { All, Common, RecentlyUsed, Real, Kit }
+internal enum PaletteCategoryKind { All, AllAlphabetical, Common, RecentlyUsed, Real, Kit }
 
 // ── PaletteTool ───────────────────────────────────────────────────────────────
 
@@ -182,6 +183,7 @@ public sealed partial class PaletteTool : Tool
         var list = new List<PaletteCategoryEntry>
         {
             PaletteCategoryEntry.ForAll(),
+            PaletteCategoryEntry.ForAllAlphabetical(),
             PaletteCategoryEntry.ForCommon(),
             PaletteCategoryEntry.ForRecentlyUsed(),
         };
@@ -189,6 +191,7 @@ public sealed partial class PaletteTool : Tool
         {
             ComponentCategory.Lumped,
             ComponentCategory.Devices,
+            ComponentCategory.Nonlinear,
             ComponentCategory.Sources,
             ComponentCategory.Terminals,
             ComponentCategory.TransmissionLine,
@@ -303,7 +306,7 @@ public sealed partial class PaletteTool : Tool
 
     private IReadOnlyList<PaletteItem> ComputeRawItems()
     {
-        if (SelectedCategory is null) return WithPdk(LibraryCatalog.AllItems);
+        if (SelectedCategory is null) return WithPdk(LibraryCatalog.AllItemsPinnedOrder());
 
         var q = SearchQuery?.Trim() ?? "";
 
@@ -328,9 +331,10 @@ public sealed partial class PaletteTool : Tool
             {
                 // Common and Recently Used stay built-in-only; both are curated over the built-in
                 // library, and neither has a defined meaning for a kit part yet.
-                PaletteCategoryKind.Common       => LibraryCatalog.Common,
-                PaletteCategoryKind.RecentlyUsed => LibraryCatalog.RecentlyUsed(_mruList),
-                _                                => WithPdk(LibraryCatalog.AllItems),
+                PaletteCategoryKind.Common          => LibraryCatalog.Common,
+                PaletteCategoryKind.RecentlyUsed    => LibraryCatalog.RecentlyUsed(_mruList),
+                PaletteCategoryKind.AllAlphabetical => WithPdkAlphabeticalByKit(LibraryCatalog.AllItemsAlphabetical()),
+                _                                   => WithPdk(LibraryCatalog.AllItemsPinnedOrder()),
             };
         }
 
@@ -339,6 +343,24 @@ public sealed partial class PaletteTool : Tool
 
     private IReadOnlyList<PaletteItem> WithPdk(IReadOnlyList<PaletteItem> builtIns) =>
         _pdkItems.Count == 0 ? builtIns : [.. builtIns, .. _pdkItems];
+
+    /// <summary>
+    /// "All - Alphabetical"'s PDK half: kit parts grouped by kit (kits themselves in alphabetical
+    /// order, matching <see cref="BuildCategories"/>'s own kit ordering) and sorted alphabetically by
+    /// <see cref="PaletteItem.DisplayName"/> WITHIN each kit — never interleaved across kits, per the
+    /// owner's own spec (2026-08-16).
+    /// </summary>
+    private IReadOnlyList<PaletteItem> WithPdkAlphabeticalByKit(IReadOnlyList<PaletteItem> builtIns)
+    {
+        if (_pdkItems.Count == 0) return builtIns;
+
+        var pdkOrdered = _pdkItems
+            .GroupBy(i => i.Pdk?.KitName ?? "", StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(g => g.OrderBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase));
+
+        return [.. builtIns, .. pdkOrdered];
+    }
 
     /// <summary>Same case-insensitive substring rule <see cref="LibraryCatalog.Search"/> applies.</summary>
     private static IReadOnlyList<PaletteItem> FilterBySearch(IReadOnlyList<PaletteItem> items, string query)

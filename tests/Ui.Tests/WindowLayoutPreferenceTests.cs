@@ -177,6 +177,33 @@ public sealed class WindowLayoutPreferenceTests
         Assert.Contains("\"Project Tree Focus\", \"Library Focus\", \"Project Tree & Library\"", code);
     }
 
+    // ── New Workspace / Switch Workspace / Close Workspace also read the preference ───
+
+    /// <summary>
+    /// The bug this guards (owner report, 2026-08-16): these three clean-slate rebuilds all called
+    /// the parameterless <c>_factory.CreateDefaultLayout()</c>, which is hardcoded to
+    /// <see cref="DockLayoutDefaults.Default"/> — so a workspace created (or switched into, or closed
+    /// back out of) mid-session silently reverted to the old tabbed arrangement regardless of the
+    /// configured Window Layout, even though <see cref="ApplyWindowLayout"/> had set it correctly at
+    /// launch a moment before.
+    /// </summary>
+    [Theory]
+    [InlineData("private async Task NewWorkspace")]
+    [InlineData("private void SwitchToWorkspace")]
+    [InlineData("private void ResetToBlankShell")]
+    public void CleanSlateRebuilds_HonorTheConfiguredWindowLayout(string methodSignature)
+    {
+        var vm = ReadSource("src/Ui/ViewModels/WorkspaceViewModel.cs");
+
+        var body = vm[vm.IndexOf(methodSignature)..];
+        body = body[..body.IndexOf("\n    }")];
+
+        Assert.Contains("AppPreferencesIo.Load().WindowLayout", body);
+        Assert.Contains("DockLayoutDefaults.For(", body);
+        // The bug: rebuilding via the parameterless overload, which ignores the preference entirely.
+        Assert.DoesNotContain("_factory.CreateDefaultLayout();", body);
+    }
+
     [Fact]
     public void TheComboBoxOrder_MatchesTheEnumOrdinals_BecauseTheOrdinalsAreSerialized()
     {

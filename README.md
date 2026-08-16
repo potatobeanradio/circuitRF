@@ -12,13 +12,13 @@ circuitRF is an EDA tool for developing RF circuits.  It can analyze the frequen
 circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
-> **Status:** v1 *alpha*. The engine (S-parameters, nonlinear DC, single/two-tone harmonic balance,
+> **Status:** v1 *beta*. The engine (S-parameters, nonlinear DC, single/two-tone harmonic balance,
 > parametric sweeps, loadpull) runs the acceptance circuits from both the CLI and the GUI; the Avalonia
 > schematic/symbol editors and the Data Display — including end-to-end loadpull simulation, contour plotting
-> and interactive contour markers — are in place. The **layout editor** is landing now: geometry editing,
+> and interactive contour markers — are in place. The **layout editor** also finished: geometry editing,
 > technologies/stackups, hierarchy, GDSII/DXF/Gerber interchange, parametric microstrip components, and
 > schematic↔layout generation all work; the **2.5D method-of-moments EM solver** that consumes those layouts
-> is next. What's left after that is packaging and hardening
+> is complete. What's left after that is packaging and hardening
 > ([Roadmap & status](#roadmap--status)). Expect rough edges, and please file issues.
 
 ---
@@ -60,6 +60,11 @@ parameters and sweeps, and Run.*
 <!-- IMAGE PLACEHOLDER: docs/images/layout-editor.png — to be supplied by the repo owner. -->
 *Draw and edit physical geometry on a technology-defined layer stack: microstrip components generated from
 their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and Gerber.*
+
+---
+
+## Binaries
+Add links to the released Windows/Linux/macOS binaries here.
 
 ---
 
@@ -163,9 +168,9 @@ Avalonia types) draws a model + transform onto a surface, and a thin **Avalonia 
 surface and pumps input events. The rendering investment lives in the renderer; the Avalonia control is
 just a host.
 
-### The framework firewall (any UI could replace Avalonia)
+### The framework firewall
 
-Avalonia may someday be replaced by something better. The circuitRF *engines* must be skinnable by a new
+The circuitRF *engines* must be skinnable by any new
 UI with as little trouble as possible — so **`RfCore`, `src/Core`, `src/Engine`, and `src/Cli` reference no
 UI framework at all** (no Avalonia). This is **not** a hope; it's an **enforced invariant** — a CI test
 loads each non-UI assembly and fails the build if it references `Avalonia*`.
@@ -248,18 +253,15 @@ dotnet --version      # should print 10.x.x
 ### 2. Clone circuitRF
 
 ```bash
-# pick a working folder, e.g. ~/code
-cd ~/code
-
+# cd to a working folder, then:
 git clone https://github.com/potatobeanradio/circuitRF.git
 ```
 
-That's it — one repository, everything included.
 
 ### 3. Build and test
 
 ```bash
-cd ~/code/circuitRF
+cd circuitRF
 
 dotnet build      # restores packages + compiles everything
 dotnet test       # runs the regression suite (engine math, file round-trips, UI logic)
@@ -274,6 +276,17 @@ the terminal; on macOS/Linux use any shell.)
 `.gitignore`). On a fresh clone those tests report as **Skipped**, with a reason naming the missing
 path — they never fail. Contact the repo owner if you need the files for full coverage.
 
+
+### 4. Optional - Packaging from source
+
+### Windows
+
+### Linux
+
+### macOS
+
+
+
 ---
 
 ## Running circuitRF
@@ -281,7 +294,7 @@ path — they never fail. Contact the repo owner if you need the files for full 
 ### Launch the GUI
 
 ```bash
-cd ~/code/circuitRF
+# from the circuitRF/ directory:
 dotnet run --project src/Ui
 ```
 
@@ -378,17 +391,21 @@ geometry against its technology stackup and returns S-parameters:
 quasi-static per-unit-length and full-wave over a general layered stack
 with vias and z-directed current. See [`docs/design/layout-view.md`](docs/design/layout-view.md) §10.
 
-What's left for the v1 release is **hardening** —  improved UX and broader
+**Done: harmonicaRF.** A waveform engineering solver with convenient UI that shows you what the current generator is actually doing, and what it costs in power and efficiency. It mimics what an active loadpull measurement system does.  View loadpull contours, time-domain waveforms and loadline simultaneously in a realtime envrionment. See [`docs/design/harmonicarf.md`](docs/design/harmonicarf.md).
+
+
+What's left for the v1 release is **hardening** — improved UX and broader
 docs.
 
 **Deferred to v2:**
 ** open green fields for development**
-- **Noise analysis** — noise figure, phase noise, or noise-parameter (Fmin, Γopt, Rn) extraction. 
+- Parameter **tuning** and design **optimization**
 - **Advanced stability** analysis (NDF, Winslow Probe etc)
+- **Noise analysis** — noise figure, phase noise, or noise-parameter (Fmin, Γopt, Rn) extraction. 
 - **LVS**
 - **Transient Analysis**
 - **Envelope Analysis** for modulated waveforms
-- **FEM Analysis** (electromagnetic and thermal)
+- **FEM Analysis?** (electromagnetic and thermal)
 - **Sparse block Jacobian for HB at scale.** v1 uses a dense per-block Jacobian; a sparse solve is the path to very large nonlinear problems.
 
 Full roadmap and current status: [`docs/Development_Plan.md`](docs/Development_Plan.md).
@@ -443,9 +460,10 @@ future commercial superset, if any, layers on through a clean extension boundary
 
 ## Acknowledgments
 
-- **[Avalonia](https://avaloniaui.net/)** (cross-platform UI), **[SkiaSharp](https://github.com/mono/SkiaSharp)**
-  (2D rendering), **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU),
-  **NumFlat** (dense linear algebra), **[Clipper2](https://github.com/AngusJohnson/Clipper2)**
-  (integer-coordinate polygon clipping and offsetting, used by the layout editor — Boost Software
-  License), and **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)**.
-```
+- **[Avalonia](https://avaloniaui.net/)** (cross-platform UI)
+- **[SkiaSharp](https://github.com/mono/SkiaSharp)** (2D rendering)
+- **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU)
+- **[NumFlat](https://github.com/sinshu/numflat)** (dense linear algebra)
+- **[Clipper2](https://github.com/AngusJohnson/Clipper2)** (integer-coordinate polygon clipping and offsetting, used by the layout editor)
+- **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)**
+

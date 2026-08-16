@@ -592,19 +592,26 @@ public static class BuiltInSymbols
     ], SymbolKind.Meas);
 
     // ── Mutual — 0-port coupling annotation: letter M + two outward-curved arrows ──
-    // No electrical pins. Two arcs (center=(0,110), R=110) flank the M glyph.
-    // Arc 1: 230°→255° (left side).  Arc 2: 285°→310° (right side).
-    // Arrowheads computed so each triangle base is exactly orthogonal to its arc
+    // No electrical pins. Two gentle curves flank the M glyph, each a QuadCurve tracing what used
+    // to be a 25°-wide slice of a huge (center=(0,110), R=110) Arc — same endpoints, same ~2.6-unit
+    // sagitta, visually identical, but NOT an ArcPrimitive any more: SymbolGeometry.ComputeBb bounds
+    // an Arc by its full CONTAINING CIRCLE (conservative, correct for an arc that is a real fraction
+    // of its circle), and for a 25° sliver of an R=110 circle that circle's own box (y: 0→220) swamps
+    // the glyph's real content (y: −35→45), pulling every ComputeBb-driven centering — the Palette
+    // tile, the Symbol Editor canvas, the schematic's own selection box — down so the visible M+arcs
+    // rendered pinned to the top (owner report, 2026-08-16). QuadCurve bounds on its own small local
+    // control polygon instead, which is what fixes it.
+    // Arrowheads computed so each triangle base is exactly orthogonal to its curve's original arc
     // at the outer endpoint (230° and 310°).  CW-tangent at θ = (−sin θ, cos θ).
     //   Left  tip=(−75,30); base corners=(−66,9) and (−54,25).
     //   Right tip=( 75,30); base corners=( 66,9) and ( 54,25).
-    // RoundedRect frames the full content (M + arcs + arrowheads) with ~15 u margin.
+    // RoundedRect frames the full content (M + curves + arrowheads) with ~15 u margin.
 
     private static Symbol BuildMutual() => Sym([
         Txt("M", 0, 0, fontSize: 36, align: SymbolTextAlign.Center, vAlign: SymbolTextVAlign.Middle),
         RRect(0, 5, 200, 80, 8),
-        A(0, 110, 110, 230, 25),   // left arc
-        A(0, 110, 110, 285, 25),   // right arc
+        QC(-71, 26, -52, 10, -28, 4),   // left curve  (was: A(0, 110, 110, 230, 25))
+        QC( 71, 26,  52, 10,  28, 4),   // right curve (was: A(0, 110, 110, 285, 25))
         Poly(true, -75,30, -66,9, -54,25),   // left arrowhead
         Poly(true,  75,30,  66,9,  54,25),   // right arrowhead
     ], SymbolKind.Mutual);
