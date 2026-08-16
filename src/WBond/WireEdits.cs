@@ -116,9 +116,16 @@ public static class WireEdits
     /// spans — a fan-out from a common pad — keeps their ratios. Setting a common absolute span would
     /// silently destroy exactly the geometry the flexible model exists to allow.</para>
     /// </summary>
+    /// <param name="moveOutputFoot">
+    /// Which foot the span scale moves. <b>The pinned foot is the one the user is NOT dragging</b> —
+    /// the same rule the rotate-about-end-point tool uses (WB26a), and the same reason: grabbing near
+    /// an end IS the instruction to move that end, so no mode switch is needed. Always pinning
+    /// <c>Points[0]</c> made an alt-drag on the left end of a wire pull the RIGHT end towards the
+    /// cursor, which is the opposite of what the hand asked for.
+    /// </param>
     /// <returns>How many wires were rescaled.</returns>
     public static int ScaleBoundWires(WBondDesign design, LoopProfile profile, double heightFactor,
-                                      double spanFactor)
+                                      double spanFactor, bool moveOutputFoot = true)
     {
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(profile);
@@ -129,12 +136,36 @@ public static class WireEdits
             if (!string.Equals(wire.ProfileBinding, profile.Name, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            if (spanFactor != 1.0) ScaleSpan(wire, spanFactor);
+            if (spanFactor != 1.0) ScaleSpan(wire, spanFactor, moveOutputFoot);
             if (heightFactor != 1.0) ScaleHeightAboutChord(wire, heightFactor);
             moved++;
         }
 
         if (heightFactor != 1.0) profile.ScaleHeight(heightFactor);
+        return moved;
+    }
+
+    /// <summary>
+    /// Scales an explicit set of wires — the <b>detached</b> counterpart of
+    /// <see cref="ScaleBoundWires"/>, used when the alt-drag's selection follows no shared profile.
+    ///
+    /// <para>Without it an alt-drag on a free wire did nothing at all and said nothing about why,
+    /// which reads as the gesture being broken rather than as the wire having no profile.</para>
+    /// </summary>
+    /// <returns>How many wires were rescaled.</returns>
+    public static int ScaleWires(IEnumerable<Wire> wires, double heightFactor, double spanFactor,
+                                 bool moveOutputFoot = true)
+    {
+        ArgumentNullException.ThrowIfNull(wires);
+
+        int moved = 0;
+        foreach (var wire in wires)
+        {
+            if (spanFactor != 1.0) ScaleSpan(wire, spanFactor, moveOutputFoot);
+            if (heightFactor != 1.0) ScaleHeightAboutChord(wire, heightFactor);
+            moved++;
+        }
+
         return moved;
     }
 
@@ -335,15 +366,35 @@ public static class WireEdits
     ///
     /// <para><paramref name="dyOrDzNm"/> is +y in the layout view and +z in the profile view, the
     /// same mapping <see cref="Nudge"/> documents.</para>
+    ///
+    /// <para><b><paramref name="dxNm"/> is world x in the layout view, and displacement ALONG EACH
+    /// WIRE'S OWN XY CHORD in the profile view.</b> That is what the profile view's horizontal axis
+    /// actually is — span along the chord (<see cref="ProfileProjection"/>) — so a wire running at 90°
+    /// moves in y and one running at 0° moves in x, which is exactly what a user dragging sideways in
+    /// that view is pointing at. Treating profile dx as world x instead was silently wrong for every
+    /// wire not already parallel to the x axis: the point moved off the chord rather than along it,
+    /// and its span barely changed.</para>
+    ///
+    /// <para>Each wire's chord direction is read ONCE, before any of its points move, so a selection
+    /// that includes a foot cannot rotate its own reference direction part-way through the move. A
+    /// wire with coincident feet in XY has no chord direction and its horizontal component is skipped
+    /// rather than guessed.</para>
+    ///
+    /// <para><paramref name="azimuthRadians"/> is the profile view's own fixed plane, when it has
+    /// one: horizontal then means that direction for every wire rather than each wire's own chord.
+    /// It comes from <see cref="ProfileProjection.HorizontalDirection"/>, the SAME function the
+    /// projection uses, so a point cannot render in one place and move in another.</para>
     /// </summary>
     public static void Translate(WBondDesign design, WireSelection selection,
-                                 long dxNm, long dyOrDzNm, EditorView view)
+                                 long dxNm, long dyOrDzNm, EditorView view,
+                                 double? azimuthRadians = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(selection);
 
-        long lateral = view == EditorView.Layout ? dyOrDzNm : 0;
-        long vertical = view == EditorView.Profile ? dyOrDzNm : 0;
+        bool profile = view == EditorView.Profile;
+        long lateral = profile ? 0 : dyOrDzNm;
+        long vertical = profile ? dyOrDzNm : 0;
 
         var wires = design.AllWires().ToList();
 
@@ -352,12 +403,39 @@ public static class WireEdits
             if (index < 0 || index >= wires.Count) continue;
             var wire = wires[index];
 
+            long stepX = dxNm, stepY = lateral;
+            if (profile && dxNm != 0)
+            {
+                var (ux, uy) = ProfileProjection.HorizontalDirection(wire, azimuthRadians);
+                stepX = (long)Math.Round(dxNm * ux);
+                stepY = (long)Math.Round(dxNm * uy);
+            }
+
             foreach (int i in selection.MovingPoints(index, wire.Points.Count))
             {
                 var p = wire.Points[i];
-                wire.Points[i] = new Point3(p.X + dxNm, p.Y + lateral, p.Z + vertical);
+                wire.Points[i] = new Point3(p.X + stepX, p.Y + stepY, p.Z + vertical);
             }
         }
+    }
+
+    /// <summary>
+    /// A wire's foot-to-foot direction in XY as a unit vector, or (0,0) when its feet coincide there.
+    ///
+    /// <para>XY only, for the same reason <see cref="ChordParameter"/> is XY only: the profile view's
+    /// horizontal coordinate is position along the wire's own horizontal path, so a wire's rise must
+    /// not tilt the direction "sideways" means in it.</para>
+    /// </summary>
+    public static (double X, double Y) ChordDirectionXY(Wire wire)
+    {
+        ArgumentNullException.ThrowIfNull(wire);
+        if (wire.Points.Count < 2) return (0.0, 0.0);
+
+        double dx = wire.Points[^1].X - wire.Points[0].X;
+        double dy = wire.Points[^1].Y - wire.Points[0].Y;
+        double length = Math.Sqrt(dx * dx + dy * dy);
+
+        return length <= 0.0 ? (0.0, 0.0) : (dx / length, dy / length);
     }
 
     /// <summary>The shipped nudge steps (WB25). Both are settings; these are the defaults.</summary>

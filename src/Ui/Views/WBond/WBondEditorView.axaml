@@ -1,27 +1,85 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:wb="using:CircuitRF.Ui.WBond"
+             xmlns:wbc="using:CircuitRF.WBond"
              xmlns:ctrl="using:CircuitRF.Ui.Controls"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:converters="using:CircuitRF.Ui.Converters"
              x:Class="CircuitRF.Ui.Views.WBond.WBondEditorView"
              x:DataType="wb:WBondDocument"
              Background="{DynamicResource SystemChromeLowColor}">
 
+    <UserControl.Resources>
+        <converters:ToLowerStringConverter x:Key="ToLower"/>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <!-- The view-mode button's three states, transcribed from the Symbol Editor's own snap-mode
+             button: an OPAQUE accent for the "one view, maximised" modes and a semi-transparent one
+             for the default split. Same visual language, so a user who has learned one has learned
+             both. -->
+        <Style Selector="Button.modeStrong /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.modeStrong">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.modeStrong:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style Selector="Button.modeSoft /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.4"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.modeSoft:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.65"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
     <!-- wbond.md §6.1: the inductance panel is docked LEFT at full window height; the profile view
-         sits above the layout view, and either split is user-adjustable. -->
-    <Grid ColumnDefinitions="260,4,*">
+         sits above the layout view, and either split is user-adjustable.
+
+         The three column/row widths are driven from code-behind (ApplyViewMode / ApplyPanelVisible)
+         rather than from bindings: a GridSplitter writes a concrete GridLength into the definition it
+         resizes, so a binding on the same property is overwritten the first time the user drags it.
+         Collapsing is therefore done by remembering the last dragged size and restoring it. -->
+    <Grid x:Name="RootGrid">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="156"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
         <!-- ── The inductance panel (§6.8) ─────────────────────────────────────────────── -->
-        <Border Grid.Column="0" Background="{DynamicResource SystemChromeMediumLowColor}"
+        <Border Grid.Column="0" x:Name="PanelBorder"
+                Background="{DynamicResource SystemChromeMediumLowColor}"
                 BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,1,0">
             <DockPanel DataContext="{Binding ViewModel.Panel}">
                 <StackPanel DockPanel.Dock="Top" Margin="10,10,10,6" Spacing="3">
                     <TextBlock Text="Array inductance" FontWeight="SemiBold"/>
 
-                    <!-- WB20/RW13: the active return path is stated at all times — an inductance
-                         without a stated return is not a number anyone can act on. -->
+                    <!-- WB20/RW13: the return path is stated whenever it is NOT the ordinary image
+                         plane at z = 0. Saying so on every document all the time cost a row and told
+                         nobody anything; the UNDECLARED case, which is the one that matters, is
+                         unconditional. -->
                     <SelectableTextBlock Text="{Binding ReturnPath}" FontSize="11" TextWrapping="Wrap"
-                                         Opacity="0.75"/>
+                                         Opacity="0.75" IsVisible="{Binding ShowReturnPath}"/>
                     <SelectableTextBlock Text="{Binding ReturnPath}" FontSize="11" TextWrapping="Wrap"
                                          Foreground="{DynamicResource CrfWarningBrush}"
                                          IsVisible="{Binding ReturnPathUndeclared}"/>
@@ -36,30 +94,59 @@
                             <DataTemplate x:DataType="wb:WBondArrayRowViewModel">
                                 <Border Background="{DynamicResource SystemChromeLowColor}"
                                         BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
-                                        CornerRadius="6" Padding="8,6" Margin="0,0,0,6">
+                                        CornerRadius="6" Padding="8,5" Margin="0,0,0,5">
                                     <StackPanel Spacing="2">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                                        <SelectableTextBlock Text="{Binding Self}" FontSize="12"/>
-
-                                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Wires" FontSize="10" Opacity="0.6"/>
-                                            <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Wires}"
-                                                                 FontSize="10" HorizontalAlignment="Right"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Total length" FontSize="10" Opacity="0.6"/>
-                                            <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TotalLength}"
-                                                                 FontSize="10" HorizontalAlignment="Right"/>
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Landing span" FontSize="10" Opacity="0.6"/>
-                                            <SelectableTextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LandingSpan}"
-                                                                 FontSize="10" HorizontalAlignment="Right"/>
+                                        <!-- The card's whole job in one row: which array, and what it
+                                             measures. A column of these is comparable at a glance,
+                                             which is what the panel exists for. -->
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <SelectableTextBlock Grid.Column="1" Text="{Binding Self}" FontSize="12"
+                                                                 HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                                 Margin="8,0,4,0"/>
+                                            <ToggleButton Grid.Column="2" IsChecked="{Binding IsExpanded}"
+                                                          Background="Transparent" BorderThickness="0"
+                                                          Padding="2,0" MinHeight="0" MinWidth="0"
+                                                          VerticalAlignment="Center"
+                                                          ToolTip.Tip="Show wire count, total length and landing span">
+                                                <Panel>
+                                                    <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"
+                                                                     IsVisible="{Binding !IsExpanded}"/>
+                                                    <mi:MaterialIcon Kind="ChevronUp" Width="14" Height="14"
+                                                                     IsVisible="{Binding IsExpanded}"/>
+                                                </Panel>
+                                            </ToggleButton>
                                         </Grid>
 
-                                        <ItemsControl ItemsSource="{Binding Mutuals}" Margin="0,4,0,0">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="x:String">
-                                                    <SelectableTextBlock Text="{Binding}" FontSize="10" Opacity="0.8"/>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                                        <StackPanel IsVisible="{Binding IsExpanded}" Spacing="2">
+                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="0,3,0,0">
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Wires" FontSize="10" Opacity="0.6"/>
+                                                <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Wires}"
+                                                                     FontSize="10" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Total length" FontSize="10" Opacity="0.6"/>
+                                                <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TotalLength}"
+                                                                     FontSize="10" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Landing span" FontSize="10" Opacity="0.6"/>
+                                                <SelectableTextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LandingSpan}"
+                                                                     FontSize="10" HorizontalAlignment="Right"/>
+                                            </Grid>
+
+                                            <!-- Mutuals to OTHER arrays only — the self term is the
+                                                 headline number above. Absent entirely on a
+                                                 single-array design. -->
+                                            <StackPanel IsVisible="{Binding HasMutuals}" Margin="0,3,0,0">
+                                                <TextBlock Text="Mutual" FontSize="10" Opacity="0.6"/>
+                                                <ItemsControl ItemsSource="{Binding Mutuals}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="x:String">
+                                                            <SelectableTextBlock Text="{Binding}" FontSize="10" Opacity="0.8"
+                                                                                 HorizontalAlignment="Right"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -69,13 +156,80 @@
             </DockPanel>
         </Border>
 
-        <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns"/>
+        <GridSplitter Grid.Column="1" x:Name="PanelSplitter"
+                      Background="Transparent" ResizeDirection="Columns"/>
 
         <!-- ── The two canvases ────────────────────────────────────────────────────────── -->
         <DockPanel Grid.Column="2">
             <Border DockPanel.Dock="Top" Background="{DynamicResource SystemChromeMediumLowColor}"
                     BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
-                <StackPanel Orientation="Horizontal" Margin="6,4" Spacing="4">
+                <!-- WrapPanel, for the reason LayoutEditorView's own toolbar records: a horizontal
+                     StackPanel inside an unbounded-width ScrollViewer can be measured with infinite
+                     width on the first pass and paint at a degenerate size until something forces a
+                     relayout. This toolbar is now long enough to matter. -->
+                <WrapPanel Orientation="Horizontal" Margin="6,4" ItemSpacing="4" LineSpacing="4">
+
+                    <!-- ── View arrangement ────────────────────────────────────────────
+                         Which canvases are showing, and whether the inductance panel is. Both
+                         persist in the .wBond's view state; V and I are their keys. -->
+                    <!-- A Button, not a ToggleButton: this is a three-state CYCLE, and a
+                         ToggleButton's own IsChecked would fight a one-way binding that describes
+                         three states with two. The Symbol Editor's snap-mode button is the same
+                         shape for the same reason — a plain Button whose CLASSES carry the state. -->
+                    <Button x:Name="ViewModeToggle" Click="OnCycleViewMode" Padding="6,3"
+                            Classes.modeStrong="{Binding !ViewModel.SplitterVisible}"
+                            Classes.modeSoft="{Binding ViewModel.SplitterVisible}"
+                            ToolTip.Tip="{Binding ViewModel.ViewModeTooltip}">
+                        <Panel>
+                            <mi:MaterialIcon Kind="ViewSplitHorizontal" Width="16" Height="16"
+                                             IsVisible="{Binding ViewModel.SplitterVisible}"/>
+                            <mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"
+                                             IsVisible="{Binding ViewModel.ProfileOnly}"/>
+                            <mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"
+                                             IsVisible="{Binding ViewModel.LayoutOnly}"/>
+                        </Panel>
+                    </Button>
+
+                    <ToggleButton x:Name="PanelToggle" IsChecked="{Binding ViewModel.PanelVisible, Mode=TwoWay}"
+                                  ToolTip.Tip="Array inductance panel  (I)">
+                        <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
+                    </ToggleButton>
+
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+
+                    <!-- ── Zoom — the Layout Editor's own four, acting on whichever canvases are
+                         showing (§6.1's two viewports are independent by design). -->
+                    <Button Click="OnZoomToFit" ToolTip.Tip="Zoom to Fit" Padding="6,3"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                    </Button>
+                    <Button Click="OnZoomIn" ToolTip.Tip="Zoom In" Padding="6,3"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
+                    </Button>
+                    <Button Click="OnZoomOut" ToolTip.Tip="Zoom Out" Padding="6,3"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="16" Height="16"/>
+                    </Button>
+                    <Button Click="OnZoom1To1" ToolTip.Tip="Zoom 1:1 (1 px per display-unit tick)" Padding="6,3"
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                    </Button>
+
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+
+                    <!-- Which PLANE the profile view projects onto. Auto puts every wire on its own
+                         chord (§6.2's parameterisation, and the only mode in which two wires of
+                         different angle are comparable); a fixed plane shows real geometry. Editable,
+                         so an array bonded at 37° can say so. -->
+                    <ComboBox x:Name="ProfileAxisCombo" Width="96" FontSize="11" IsEditable="True"
+                              ItemsSource="{x:Static wbc:ProfileAxisSetting.Presets}"
+                              LostFocus="OnProfileAxisCommit" KeyDown="OnProfileAxisKeyDown"
+                              SelectionChanged="OnProfileAxisSelectionChanged"
+                              ToolTip.Tip="Profile view plane — Auto, X-Z, Y-Z, or an angle in degrees"/>
+
+                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
+
                     <!-- §6.4: click the start point, click the end point, with a live ghost of the
                          full generated loop in between. -->
                     <ToggleButton x:Name="DrawWireToggle" ToolTip.Tip="Draw wire (click start, click end; Shift constrains)"
@@ -83,25 +237,12 @@
                         <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
                     </ToggleButton>
 
-                    <Button x:Name="FitProfileBtn" ToolTip.Tip="Fit profile view" Click="OnFitProfile"
-                            Background="Transparent" BorderThickness="0">
-                        <mi:MaterialIcon Kind="ArrowExpandVertical" Width="16" Height="16"/>
-                    </Button>
-                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
-
-                    <!-- §6.5: independent of the .ctech display unit, by the owner's requirement.
-                         Storage stays in DBU, so switching is lossless and free. -->
-                    <ComboBox x:Name="UnitCombo" Width="72" FontSize="11"
-                              ToolTip.Tip="Display unit (independent of the layout's own)"
-                              SelectionChanged="OnUnitChanged"/>
-                    <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
-
                     <!-- WB22a: true-diameter mode is what makes wire-to-wire and wire-to-pad
                          clearance judgeable by eye before the DRC is run. -->
                     <ToggleButton x:Name="TrueDiameterToggle" Content="Ø" FontSize="12"
                                   ToolTip.Tip="Draw wires at their true diameter"
                                   IsCheckedChanged="OnThicknessModeChanged"/>
-                    <ToggleButton x:Name="SnapToggle" IsChecked="True" ToolTip.Tip="Snap wire points to layout geometry"
+                    <ToggleButton x:Name="SnapToggle" IsChecked="True" ToolTip.Tip="Snap wire points — to layout geometry first, then to the grid"
                                   IsCheckedChanged="OnSnapChanged">
                         <mi:MaterialIcon Kind="MagnetOn" Width="16" Height="16"/>
                     </ToggleButton>
@@ -178,11 +319,82 @@
 
                     <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
                     <TextBlock x:Name="QualityText" VerticalAlignment="Center" FontSize="11" Opacity="0.7"/>
+                </WrapPanel>
+            </Border>
+
+            <!-- ── The metadata bar, transcribed from LayoutEditorView's own ──────────────
+                 Unit and Snap live here rather than in the toolbar, in the same order, with the same
+                 label styling and the same two ComboBox height/font setters. Those setters are not
+                 decoration: see the long note in LayoutEditorView.axaml for the two Avalonia facts
+                 (an editable ComboBox is templated around an inner TextBox with its own metrics; the
+                 chevron makes Width a clipping cap, so it is expressed as MinWidth). -->
+            <Border DockPanel.Dock="Bottom"
+                    Background="{DynamicResource SystemChromeMediumLowColor}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="0,1,0,0" Padding="10,4">
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <StackPanel.Styles>
+                        <Style Selector="TextBlock.label">
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+                        </Style>
+                        <Style Selector="ComboBox.metaCombo">
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="Height" Value="22"/>
+                            <Setter Property="MinHeight" Value="0"/>
+                            <Setter Property="Padding" Value="6,2"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                        </Style>
+                        <Style Selector="ComboBox.metaCombo /template/ TextBox">
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="MinHeight" Value="0"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                        </Style>
+                    </StackPanel.Styles>
+
+                    <!-- §6.5: independent of the .ctech display unit, by the owner's requirement.
+                         Storage stays in DBU, so switching is lossless and free. -->
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Classes="label" Text="Unit:"/>
+                        <ComboBox x:Name="UnitCombo" Classes="metaCombo" MinWidth="64"
+                                  ToolTip.Tip="Display unit (independent of the layout's own)"
+                                  SelectionChanged="OnUnitChanged"/>
+                    </StackPanel>
+
+                    <!-- The reference layout's OWN snap ladder and its own committing text field, bound
+                         straight through — same properties, same three handlers, so the wBond editor's
+                         snap behaves identically to the Layout Editor's rather than approximately. It
+                         also sets the grid pitch both canvases draw. -->
+                    <StackPanel Orientation="Horizontal" Spacing="4"
+                                IsVisible="{Binding ViewModel.ReferenceLayout, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Classes="label" Text="Snap:"/>
+                        <ComboBox x:Name="SnapCombo" Classes="metaCombo" MinWidth="90" IsEditable="True"
+                                  ItemsSource="{Binding ViewModel.ReferenceLayout.SnapLadderOptions}"
+                                  Text="{Binding ViewModel.ReferenceLayout.SnapDistanceText, Mode=TwoWay}"
+                                  LostFocus="OnSnapDistanceCommit" KeyDown="OnSnapDistanceKeyDown"
+                                  SelectionChanged="OnSnapDistanceSelectionChanged"
+                                  ToolTip.Tip="Snap distance — also the grid pitch in both views"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Classes="label" Text="Wires:"/>
+                        <TextBlock Classes="label" Text="{Binding ViewModel.WireCountText}"
+                                   Foreground="{DynamicResource SystemBaseHighColor}"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
-            <Grid RowDefinitions="2*,4,3*">
-                <Border Grid.Row="0" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
+            <Grid x:Name="CanvasGrid">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="2*"/>
+                    <RowDefinition Height="4"/>
+                    <RowDefinition Height="3*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" x:Name="ProfileBorder"
+                        BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
                     <ctrl:WBondProfileCanvas x:Name="ProfileCanvas"
                                              ViewModel="{Binding ViewModel.Editor}">
                         <!-- ONE menu instance, rebuilt on Opening (Pattern B). Constructing a fresh
@@ -194,7 +406,8 @@
                     </ctrl:WBondProfileCanvas>
                 </Border>
 
-                <GridSplitter Grid.Row="1" Background="Transparent" ResizeDirection="Rows"/>
+                <GridSplitter Grid.Row="1" x:Name="CanvasSplitter"
+                              Background="Transparent" ResizeDirection="Rows"/>
 
                 <!-- The layout view IS the layout editor's own canvas; the wires ride over it as an
                      overlay (WB23), so a wire drag never invalidates the layout's path cache. -->

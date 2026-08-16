@@ -31,13 +31,42 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     private readonly WBondViewModel _vm;
     private readonly WBondPointerController _controller;
 
-    private bool _dragging;
+    private bool _pressed;     // a left press is down on a wire and may yet become a drag
+    private bool _dragging;    // ...and has passed the threshold
     private long _lastXNm, _lastYNm;
+    private long _pressXNm, _pressYNm;
+    private double _dragThresholdNm;
     private bool _wHeld, _gHeld;
+
+    // Alt-drag (span scaling) in THIS view — the layout half of WB24b.
+    private bool _altDrag;
+    private bool _altMoveOutputFoot = true;
+    private double _altReferenceSpan;
+    private double _altApplied = 1.0;
+    private double _altAxisX, _altAxisY;
+
+    /// <summary>
+    /// A press that deliberately LEFT the selection alone, held in case the gesture turns out to be a
+    /// plain click — see the click-through note at the call site.
+    /// </summary>
+    private (long X, long Y, double TolNm, WBondModifiers Modifiers, int ClickCount)? _deferredPress;
 
     private bool _marqueeActive;
     private long _marqueeStartX, _marqueeStartY, _marqueeX, _marqueeY;
     private WBondModifiers _lastModifiers = WBondModifiers.None;
+
+    /// <summary>The selection the marquee is adding to — captured after the press has resolved it.</summary>
+    private WireSelection _marqueeBase = new();
+
+    /// <summary>
+    /// What the live marquee is currently highlighting, or null when no marquee is in progress.
+    ///
+    /// <para>Held on the shared view-model (<c>WBondViewModel.PreviewSelection</c>) rather than here,
+    /// so the PROFILE view highlights the same wires this box is catching — a wire is a thing both
+    /// views draw, and highlighting it in only the canvas the pointer is over is half an answer. The
+    /// committed selection is <c>WBondViewModel.Selection</c> and is not touched until release.</para>
+    /// </summary>
+    public WireSelection? MarqueePreview => _marqueeActive ? _vm.PreviewSelection : null;
 
     private bool _drawArmed;
     private Point3? _drawStart;
@@ -73,6 +102,18 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
     /// <summary>Snap tolerance in nanometres; the host refreshes it from the current zoom per event.</summary>
     public long SnapToleranceNm { get; set; } = WBondUnits.ToNm(1.0, WBondUnit.Mil);
+
+    /// <summary>
+    /// The grid pitch a wire point falls back to when no layout GEOMETRY is within reach — the
+    /// reference layout's own <c>SnapDbu</c>, in nanometres, or 0 for none.
+    ///
+    /// <para>Geometry first, grid second, and that order matters: landing exactly on a pad corner is
+    /// the thing snapping exists for (§6.6), and a grid that overrode it would pull the foot back off
+    /// the pad. The grid is what catches everything else — and without it the metadata bar would show
+    /// a Snap distance, both canvases would draw a grid at that pitch, and the wires would ignore
+    /// both.</para>
+    /// </summary>
+    public long GridPitchNm { get; set; }
 
     /// <summary>
     /// Whether a drag on empty space marquee-selects WIRES rather than falling through to the layout
@@ -166,28 +207,44 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
     // ---------------------------------------------------------------- draw
 
-    public void Draw(SKCanvas canvas, LayoutViewport viewport)
+    public void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme layoutTheme)
     {
         if (IsAtDepth && !CanPlaceAtDepth) return;
 
-        var transform = WBondDescent.FrameTransform(DescentChain, DbuPerMicron);
+        // CLIPPED to the canvas, because nothing else clips this pass. The layout underneath is culled
+        // against the viewport before it is drawn; wires are not — every wire in the design is drawn
+        // whether or not it is on screen. Unclipped, a wire that is off to the left paints straight
+        // across the inductance panel docked beside the canvas (the owner's "a wire from the layout
+        // view is partially rendering in the Array inductance view").
+        canvas.Save();
+        canvas.ClipRect(new SKRect(0, 0, (float)viewport.Width, (float)viewport.Height));
 
-        WBondRenderer.Draw(
-            canvas, _vm.Design, viewport, Theme,
-            // Selection is deliberately not drawn at depth: nothing there is selectable, and an accent
-            // on an unselectable wire reads as an editing affordance that does not exist.
-            selection: IsAtDepth ? null : _vm.Selection,
-            thickness: Thickness,
-            frameTransform: transform,
-            opacity: IsAtDepth ? WBondDescent.DimmedAlpha : (byte)255,
-            dbuPerMicron: DbuPerMicron);
+        try
+        {
+            var transform = WBondDescent.FrameTransform(DescentChain, DbuPerMicron);
 
-        if (_marqueeActive)
-            WBondRenderer.DrawMarquee(canvas, viewport, Theme,
-                                      _marqueeStartX, _marqueeStartY, _marqueeX, _marqueeY, DbuPerMicron);
+            WBondRenderer.Draw(
+                canvas, _vm.Design, viewport, Theme,
+                // Selection is deliberately not drawn at depth: nothing there is selectable, and an accent
+                // on an unselectable wire reads as an editing affordance that does not exist.
+                // While a marquee is live the PREVIEW is what renders, so the highlight tracks the box.
+                // EffectiveSelection, never Selection: it is the live preview while any marquee is
+                // running — in EITHER canvas — and the committed selection the rest of the time.
+                selection: IsAtDepth ? null : _vm.EffectiveSelection,
+                thickness: Thickness,
+                frameTransform: transform,
+                opacity: IsAtDepth ? WBondDescent.DimmedAlpha : (byte)255,
+                dbuPerMicron: DbuPerMicron);
 
-        if (_drawGhost is { } ghost)
-            WBondRenderer.DrawGhostWire(canvas, ghost, viewport, Theme, DbuPerMicron);
+            if (_marqueeActive)
+                WBondRenderer.DrawMarquee(canvas, viewport, Theme,
+                                          _marqueeStartX, _marqueeStartY, _marqueeX, _marqueeY, DbuPerMicron,
+                                          accent: layoutTheme.Selection);
+
+            if (_drawGhost is { } ghost)
+                WBondRenderer.DrawGhostWire(canvas, ghost, viewport, Theme, DbuPerMicron);
+        }
+        finally { canvas.Restore(); }
     }
 
     // ---------------------------------------------------------------- pointer
@@ -233,7 +290,23 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
         // marquee that read the modifiers again at release would change meaning if Shift was let go
         // mid-drag.
         _lastModifiers = Modifiers(modifiers);
-        _controller.Press(xNm, yNm, tolNm, _lastModifiers, clickCount, EditorView.Layout);
+
+        // A press on something ALREADY SELECTED picks the whole selection up rather than replacing it
+        // — see SelectionCovers. Shift still re-resolves, because extending is the one case where a
+        // press on a selected thing means something else.
+        bool keepSelection = hit.Found
+                          && !_lastModifiers.HasFlag(WBondModifiers.Shift)
+                          && SelectionCovers(hit);
+
+        // ...and if the press turns out to be a plain CLICK, the re-resolve happens on release
+        // instead. That is the standard click-through: a drag moves what was selected, a click still
+        // narrows to what is under the cursor. Doing only the first would make an element inside a
+        // selected wire unreachable by clicking it.
+        _deferredPress = keepSelection ? (xNm, yNm, tolNm, _lastModifiers, clickCount) : null;
+
+        if (!keepSelection)
+            _controller.Press(xNm, yNm, tolNm, _lastModifiers, clickCount, EditorView.Layout);
+
         OverlayChanged?.Invoke();
 
         if (!hit.Found)
@@ -245,20 +318,85 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
             _marqueeStartY = yNm;
             _marqueeX = xNm;
             _marqueeY = yNm;
+
+            // AFTER Press, which has already cleared the selection unless Shift was held — so this is
+            // exactly the base the release-time union will be taken against.
+            _marqueeBase = _vm.Selection;
+            _vm.PreviewSelection = _marqueeBase;
             return true;
         }
 
         if (_rotateArmed && BeginRotate(hit.Wire, xNm, yNm)) return true;
 
-        _lastXNm = xNm;
-        _lastYNm = yNm;
-        _dragging = true;
+        // The baseline is the SNAPPED press point, not the raw one. Measuring the first frame's delta
+        // from an unsnapped press made a click with a pixel of hand-shake jump the grabbed point onto
+        // the nearest pad corner — and a jumped FOOT is a changed span, which is exactly what the
+        // owner saw when clicking a wire's start point.
+        (_lastXNm, _lastYNm) = SnapPoint(xNm, yNm);
 
-        // One undo entry for the whole drag — and without it the drag is not undoable AT ALL, because
-        // the per-frame commit deliberately pushes nothing.
-        _vm.BeginGesture();
-        _controller.BeginDrag();
+        _pressXNm = xNm;
+        _pressYNm = yNm;
+
+        // The pointer must leave the distance that counts as "on" the thing it grabbed before this is
+        // a drag at all — so a click cannot move geometry, and cannot leave an undo entry behind
+        // either (the gesture is opened when the threshold is crossed, not here).
+        _dragThresholdNm = Math.Max(tolNm, 1.0);
+        _pressed = true;
+
+        _altDrag = (modifiers & KeyModifiers.Alt) != 0;
+        _altApplied = 1.0;
+        _altReferenceSpan = ChordLengthNm(hit.Wire);
+        _altMoveOutputFoot = GrabMovesOutputFoot(hit);
+        (_altAxisX, _altAxisY) = ChordDirection(hit.Wire);
+
         return true;
+    }
+
+    /// <summary>
+    /// Whether the current selection already covers what the pointer is over — the test that makes a
+    /// multi-element selection draggable instead of collapsing to whatever is under the cursor.
+    /// </summary>
+    private bool SelectionCovers(WireHitTest.Hit hit)
+    {
+        var selection = _vm.Selection;
+        if (selection.Wires.Contains(hit.Wire)) return true;
+        if (selection.Points.Contains(new PointRef(hit.Wire, hit.Point))) return true;
+
+        return hit.IsSegment && selection.Segments.Contains(new SegmentRef(hit.Wire, hit.Point));
+    }
+
+    /// <summary>
+    /// Which foot an alt-drag should MOVE — the one the grab landed nearer.
+    ///
+    /// <para>WB26a's rule, reused: grabbing near an end IS the instruction to move that end, so the
+    /// far foot is pinned and the gesture needs no mode switch. Stated as "which one moves" rather
+    /// than "which one was grabbed" because that is what <c>ScaleSpan</c> takes, and the double
+    /// negative in between is exactly where this was wrong first time — an alt-drag on the output end
+    /// pulled the INPUT end and the wire shrank when the hand said grow.</para>
+    /// </summary>
+    private bool GrabMovesOutputFoot(WireHitTest.Hit hit)
+    {
+        var wires = _vm.Design.AllWires().ToList();
+        if (hit.Wire < 0 || hit.Wire >= wires.Count) return true;
+
+        int last = wires[hit.Wire].Points.Count - 1;
+        return last > 0 && hit.Point > last / 2.0;
+    }
+
+    private double ChordLengthNm(int wireIndex)
+    {
+        var wires = _vm.Design.AllWires().ToList();
+        if (wireIndex < 0 || wireIndex >= wires.Count) return 0;
+
+        return wires[wireIndex].ChordLengthMetres() * WBondUnits.NmPerMetre;
+    }
+
+    private (double X, double Y) ChordDirection(int wireIndex)
+    {
+        var wires = _vm.Design.AllWires().ToList();
+        return wireIndex < 0 || wireIndex >= wires.Count
+            ? (0.0, 0.0)
+            : WireEdits.ChordDirectionXY(wires[wireIndex]);
     }
 
     public bool OnPointerMoved(long worldX, long worldY, long tolDbu, bool leftButtonDown,
@@ -288,26 +426,40 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
         if (_marqueeActive)
         {
-            if (!leftButtonDown) { _marqueeActive = false; OverlayChanged?.Invoke(); return false; }
+            if (!leftButtonDown) { EndMarquee(); OverlayChanged?.Invoke(); return false; }
 
-            _marqueeX = WBondSnap.ToNm(worldX, DbuPerMicron);
-            _marqueeY = WBondSnap.ToNm(worldY, DbuPerMicron);
+            long mx = WBondSnap.ToNm(worldX, DbuPerMicron);
+            long my = WBondSnap.ToNm(worldY, DbuPerMicron);
+            if (mx == _marqueeX && my == _marqueeY) return true;   // consumed, nothing moved
+
+            _marqueeX = mx;
+            _marqueeY = my;
+            _vm.PreviewSelection = ResolveMarqueeNow(mx, my);
             OverlayChanged?.Invoke();
             return true;
         }
 
-        if (!_dragging) return false;
+        if (!_pressed) return false;
         if (!leftButtonDown) { EndDrag(); return false; }
 
-        long xNm = WBondSnap.ToNm(worldX, DbuPerMicron);
-        long yNm = WBondSnap.ToNm(worldY, DbuPerMicron);
+        long rawX = WBondSnap.ToNm(worldX, DbuPerMicron);
+        long rawY = WBondSnap.ToNm(worldY, DbuPerMicron);
 
-        if (SnapEnabled)
+        if (!_dragging)
         {
-            var snap = WBondSnap.Snap(ReferenceLayout, ReferenceTechnology, ReferenceBaseDir,
-                                      xNm, yNm, SnapToleranceNm);
-            if (snap.Snapped) { xNm = snap.XNm; yNm = snap.YNm; }
+            double moved = Math.Max(Math.Abs(rawX - _pressXNm), Math.Abs(rawY - _pressYNm));
+            if (moved < _dragThresholdNm) return true;   // consumed, but still a click so far
+
+            // The threshold is crossed: NOW open the gesture, so a click leaves nothing behind.
+            _dragging = true;
+            _vm.BeginGesture();
+            _controller.BeginDrag();
         }
+
+        if (_altDrag) return AltDragFrame(rawX, rawY);
+
+        // ONE snap rule for the whole editor — geometry first, then the grid (see SnapPoint).
+        var (xNm, yNm) = SnapPoint(rawX, rawY);
 
         long dx = xNm - _lastXNm;
         long dy = yNm - _lastYNm;
@@ -325,13 +477,47 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
         return true;
     }
 
+    /// <summary>
+    /// <b>Alt-drag in the LAYOUT view scales span</b> (WB24b), which it previously did not do at all —
+    /// the gesture existed only in the profile view, so holding Alt here just moved the wire.
+    ///
+    /// <para>The displacement is PROJECTED onto the wire's own chord, because that is the only
+    /// component of a layout-view drag that means "longer" or "shorter"; a drag perpendicular to the
+    /// wire changes no span and correctly does nothing. Height is untouched here: this view has no z
+    /// axis to drag along, so there is nothing for the user to have meant by it.</para>
+    ///
+    /// <para>The pinned foot is the one further from the grab — the same anchor rule the profile
+    /// view's alt-drag and the rotate tool both use.</para>
+    /// </summary>
+    private bool AltDragFrame(long xNm, long yNm)
+    {
+        if (_altReferenceSpan <= 0) return true;
+
+        double along = (xNm - _pressXNm) * _altAxisX + (yNm - _pressYNm) * _altAxisY;
+
+        // Grabbing near the INPUT foot moves that foot, so pulling the cursor "backwards" along the
+        // chord is what lengthens the wire — the sign has to follow the anchor or the wire shrinks
+        // when the hand says grow.
+        if (!_altMoveOutputFoot) along = -along;
+
+        double target = Math.Max((_altReferenceSpan + along) / _altReferenceSpan, 1e-3);
+        double frame = target / _altApplied;
+        if (Math.Abs(frame - 1.0) < 1e-9) return true;
+        _altApplied = target;
+
+        _controller.DragFrame(_ => _vm.ScaleSelection(frame, 1.0, _altMoveOutputFoot));
+
+        OverlayChanged?.Invoke();
+        return true;
+    }
+
     public bool OnPointerReleased(long worldX, long worldY)
     {
         if (_rotating) { EndRotate(); return true; }
 
         if (_marqueeActive)
         {
-            _marqueeActive = false;
+            EndMarquee();
 
             // The controller owns the enclose-versus-crossing rule (and the crossing promotion to
             // whole wires) — this only supplies where the hand started and finished.
@@ -341,17 +527,78 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
             return true;
         }
 
-        if (!_dragging) return false;
+        if (!_pressed) return false;
         EndDrag();
         return true;
     }
 
     private void EndDrag()
     {
+        bool wasDragging = _dragging;
+
+        _pressed = false;
         _dragging = false;
-        _controller.EndDrag();      // restores exact geometry and publishes the final, non-provisional answer
-        _vm.EndGesture();
+        _altDrag = false;
+
+        // A press that never crossed the threshold opened nothing, so there is nothing to close —
+        // calling EndDrag on the controller would publish a spurious final answer for a plain click.
+        if (wasDragging)
+        {
+            _controller.EndDrag();  // restores exact geometry and publishes the final, non-provisional answer
+            _vm.EndGesture();
+        }
+        else if (_deferredPress is { } press)
+        {
+            // It was a click on an already-selected thing after all: resolve it now.
+            _controller.Press(press.X, press.Y, press.TolNm, press.Modifiers, press.ClickCount,
+                              EditorView.Layout);
+        }
+
+        _deferredPress = null;
         OverlayChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Every wire's XY extent, in the HOST LAYOUT's database units — what Zoom to Fit must include.
+    ///
+    /// <para>Points are stored in nanometres and the canvas works in the layout's own DBU, so the
+    /// bridge is crossed here, through the same <see cref="WBondSnap"/> conversion the draw and the
+    /// hit test use. At depth the wires are drawn through the descent transform, so the extent is
+    /// taken after it — a fit that framed their untransformed coordinates would be framing a place
+    /// they are not.</para>
+    /// </summary>
+    public Bbox ContentBounds()
+    {
+        if (IsAtDepth && !CanPlaceAtDepth) return Bbox.Empty;
+
+        var transform = WBondDescent.FrameTransform(DescentChain, DbuPerMicron);
+        var bb = Bbox.Empty;
+
+        foreach (var wire in _vm.Design.AllWires())
+        {
+            foreach (var p in wire.Points)
+            {
+                var (nx, ny) = transform is null ? (p.X, (double)p.Y) : transform(p.X, p.Y);
+
+                long x = WBondSnap.ToDbu((long)Math.Round(nx), DbuPerMicron);
+                long y = WBondSnap.ToDbu((long)Math.Round(ny), DbuPerMicron);
+
+                bb = bb.Union(new Bbox(x, y, x, y));
+            }
+        }
+
+        return bb;
+    }
+
+    /// <summary>The live preview, resolved by the SAME rule the release will commit.</summary>
+    private WireSelection ResolveMarqueeNow(long xNm, long yNm) =>
+        _controller.ResolveMarquee(xNm, yNm, _lastModifiers, _marqueeBase, EditorView.Layout);
+
+    /// <summary>Closes a marquee gesture and drops its preview, so a stale highlight cannot outlive it.</summary>
+    private void EndMarquee()
+    {
+        _marqueeActive = false;
+        _vm.PreviewSelection = null;
     }
 
     /// <summary>Abandons a half-placed wire. Nothing was added, so there is nothing to undo.</summary>
@@ -457,8 +704,14 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
         var snap = WBondSnap.Snap(ReferenceLayout, ReferenceTechnology, ReferenceBaseDir,
                                   xNm, yNm, SnapToleranceNm);
-        return snap.Snapped ? (snap.XNm, snap.YNm) : (xNm, yNm);
+        if (snap.Snapped) return (snap.XNm, snap.YNm);
+
+        return GridPitchNm > 0 ? (Round(xNm, GridPitchNm), Round(yNm, GridPitchNm)) : (xNm, yNm);
     }
+
+    /// <summary>Nearest multiple of <paramref name="pitch"/>, correct for negatives.</summary>
+    private static long Round(long value, long pitch) =>
+        (long)Math.Round((double)value / pitch) * pitch;
 
     // ---------------------------------------------------------------- keyboard
 

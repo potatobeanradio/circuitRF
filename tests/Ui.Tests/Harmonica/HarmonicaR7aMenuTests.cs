@@ -139,14 +139,14 @@ public sealed class HarmonicaR7aMenuTests
             src, StringComparison.Ordinal);
 
         // Spot-check a representative item from each of §2.2's call sites — Copy, the three format
-        // rows (R8B §6: icon: null, not a substitute glyph), Set… (VSWR), Add Grid Points, Add Grid
-        // Points to VSWR (R9A §6), Remove, DCIV Sweeps…, Axis Limits….
+        // rows (R8B §6: icon: null, not a substitute glyph), Set… (VSWR), Add Grid Point to Marker,
+        // Add Grid Points to VSWR (R9A §6), Remove, DCIV Sweeps…, Axis Limits….
         foreach (string needle in new[]
         {
             "Item(\"Copy\", MaterialIconKind.ContentCopy,",
             "Item(header, icon: null,",
             "Item(\"Set…\", MaterialIconKind.Cog,",
-            "Item(\"Add Grid Points\", MaterialIconKind.PlusCircleOutline,",
+            "Item(\"Add Grid Point to Marker\", MaterialIconKind.PlusCircleOutline,",
             "Item(\"Add Grid Points to VSWR\", MaterialIconKind.PlusCircleMultipleOutline,",
             "Item($\"Remove {marker.Name}\", MaterialIconKind.Delete,",
             "Item(\"DCIV Sweeps…\", MaterialIconKind.Cog,",

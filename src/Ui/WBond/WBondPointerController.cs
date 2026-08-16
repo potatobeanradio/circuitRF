@@ -218,15 +218,33 @@ public sealed class WBondPointerController
     /// hand actually did rather than a mode they had to select.</para>
     /// </summary>
     public void Marquee(long releaseX, long releaseY, WBondModifiers modifiers,
-                        EditorView view = EditorView.Layout)
+                        EditorView view = EditorView.Layout) =>
+        _vm.Selection = ResolveMarquee(releaseX, releaseY, modifiers, _vm.Selection, view);
+
+    /// <summary>
+    /// What a marquee ending at the given point WOULD select, without committing it.
+    ///
+    /// <para>The live preview and the release both come through here, so the highlight a user watches
+    /// while dragging cannot disagree with what they get when they let go — including the
+    /// crossing-versus-enclose flip when the box is dragged back past its own start.</para>
+    /// </summary>
+    /// <param name="baseSelection">
+    /// What a Shift-marquee adds to. For a live preview this must be the selection as it stood when
+    /// the box began, not the previewed one, or the box would accumulate its own previews.
+    /// </param>
+    public WireSelection ResolveMarquee(long currentX, long currentY, WBondModifiers modifiers,
+                                        WireSelection baseSelection,
+                                        EditorView view = EditorView.Layout)
     {
-        var direction = releaseX < _pressX ? MarqueeDirection.RightToLeft : MarqueeDirection.LeftToRight;
+        ArgumentNullException.ThrowIfNull(baseSelection);
+
+        var direction = currentX < _pressX ? MarqueeDirection.RightToLeft : MarqueeDirection.LeftToRight;
 
         var resolved = SelectionResolver.ResolveMarquee(
-            _vm.Mesh, _pressX, _pressY, releaseX, releaseY, direction, view);
+            _vm.Mesh, _pressX, _pressY, currentX, currentY, direction, view);
 
-        _vm.Selection = modifiers.HasFlag(WBondModifiers.Shift)
-            ? SelectionResolver.Union(_vm.Selection, resolved)
+        return modifiers.HasFlag(WBondModifiers.Shift)
+            ? SelectionResolver.Union(baseSelection, resolved)
             : resolved;
     }
 }

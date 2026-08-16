@@ -21,11 +21,19 @@ public partial class WBondWirePropertiesView : UserControl
 
     private WBondWirePropertiesViewModel? Vm => DataContext as WBondWirePropertiesViewModel;
 
+    private WBondWirePropertiesViewModel? _boundVm;
+
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
 
-        if (Vm is not null) Vm.PropertyChanged += OnVmPropertyChanged;
+        // Unsubscribe first. This fires again every time the panel is re-hosted or its context is
+        // re-assigned, and a handler added per attach is a handler RUN per attach.
+        if (_boundVm is not null) _boundVm.PropertyChanged -= OnVmPropertyChanged;
+
+        _boundVm = Vm;
+        if (_boundVm is not null) _boundVm.PropertyChanged += OnVmPropertyChanged;
+
         SyncGroupSelection();
     }
 
@@ -93,16 +101,21 @@ public partial class WBondWirePropertiesView : UserControl
     /// a cancelled prompt puts the combo back where it was.
     ///
     /// <para><b>Guarded against re-entry</b> — putting the selection back is itself a selection
-    /// change, and without the guard a cancelled prompt would re-open itself forever.</para>
+    /// change, and without the guard a cancelled prompt would re-open itself forever. The guard is
+    /// held across the commit too, because a commit that creates a group REPLACES this combo's item
+    /// list, and a rebuilt list re-raises the selection.</para>
     /// </summary>
     private async void OnGroupChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_updatingGroup || Vm is null) return;
-        if (sender is not ComboBox { SelectedItem: string picked } combo) return;
+        if (sender is not ComboBox { SelectedItem: string picked }) return;
 
         if (picked != WBondWirePropertiesViewModel.NewGroupSentinel)
         {
-            Vm.CommitGroup(picked);
+            _updatingGroup = true;
+            try { Vm.CommitGroup(picked); }
+            finally { _updatingGroup = false; }
+
             SyncGroupSelection();
             return;
         }
@@ -111,7 +124,12 @@ public partial class WBondWirePropertiesView : UserControl
             ? await new InputNameDialog("New Group", "Group name:").ShowDialog<string?>(owner)
             : null;
 
-        if (!string.IsNullOrWhiteSpace(name)) Vm.CommitGroup(name.Trim());
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            _updatingGroup = true;
+            try { Vm.CommitGroup(name.Trim()); }
+            finally { _updatingGroup = false; }
+        }
 
         // Whether the prompt was answered or cancelled, the combo must stop showing the sentinel.
         SyncGroupSelection();

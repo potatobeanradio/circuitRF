@@ -34,7 +34,19 @@ public static class ProfileProjection
     /// <see cref="SpanMode.Normalised"/> returns span in 0..1; <see cref="SpanMode.Absolute"/> returns
     /// nanometres along the chord.
     /// </param>
-    public static Projected Project(Wire wire, int pointIndex, SpanMode mode = SpanMode.Absolute)
+    /// <param name="azimuthRadians">
+    /// <b>The plane the view is looking at</b>, measured from +x — 0 for X-Z, π/2 for Y-Z. Null is
+    /// AUTO: each wire is projected onto its OWN chord, which is §6.2's parameterisation and the
+    /// reason wire angle and wire length stop being profile differences at all.
+    ///
+    /// <para>A FIXED azimuth is the other thing a user sometimes wants, and the two are genuinely
+    /// different pictures: auto answers "do these wires have the same loop shape", a fixed plane
+    /// answers "what does this array look like from the south". Under a fixed azimuth a wire running
+    /// perpendicular to the view is foreshortened to nothing, which is what looking down a wire
+    /// actually looks like and is why auto is still the default.</para>
+    /// </param>
+    public static Projected Project(Wire wire, int pointIndex, SpanMode mode = SpanMode.Absolute,
+                                    double? azimuthRadians = null)
     {
         ArgumentNullException.ThrowIfNull(wire);
         if (wire.Points.Count < 2) return new Projected(0.0, wire.Points.Count == 0 ? 0.0 : wire.Points[0].Z);
@@ -43,14 +55,68 @@ public static class ProfileProjection
         var end = wire.Points[^1];
         var p = wire.Points[pointIndex];
 
-        double s = WireEdits.ChordParameter(start, end, p);
-        if (mode == SpanMode.Normalised) return new Projected(s, p.Z);
+        if (azimuthRadians is { } azimuth) return ProjectOntoPlane(start, end, p, mode, azimuth);
 
-        double dx = WBondUnits.ToMetres(end.X - start.X);
-        double dy = WBondUnits.ToMetres(end.Y - start.Y);
-        double chordNm = Math.Sqrt(dx * dx + dy * dy) * WBondUnits.NmPerMetre;
+        if (mode == SpanMode.Normalised)
+            return new Projected(WireEdits.ChordParameter(start, end, p), p.Z);
 
-        return new Projected(s * chordNm, p.Z);
+        // ABSOLUTE span has a FIXED origin — the world's, not the wire's own input foot.
+        //
+        // Measuring from Points[0] pinned that point at span 0 permanently: it could not move in this
+        // view whatever happened to it in the world, and any motion of it was rendered as motion of
+        // everything ELSE. Both of the owner's 2026-08-16 reports are that one fact — an alt-drag
+        // anchored on the output foot DREW the output foot moving (while the layout view drew the
+        // truth, so the two views disagreed about the same gesture), and a plain drag of the start
+        // point left it glued in place while the rest of the curve slid out from under the cursor.
+        //
+        // The overlay property §6.2 wants — wires of different angle and length lying on top of each
+        // other — is what SpanMode.Normalised is for, and it still has it. Absolute is the mode whose
+        // whole purpose is "true geometry", and a true picture cannot re-origin itself on the point
+        // being dragged.
+        var (ux, uy) = WireEdits.ChordDirectionXY(wire);
+        return new Projected(p.X * ux + p.Y * uy, p.Z);
+    }
+
+    /// <summary>
+    /// The fixed-plane projection.
+    ///
+    /// <para><b>Absolute is measured from the WORLD origin</b>, for the reason the auto branch above
+    /// gives at length: a view that re-origins on the wire's own input foot cannot show that foot
+    /// move. Normalised stays foot-relative by definition — 0 at the input foot, 1 at the output —
+    /// which is what makes it the shape-comparison mode.</para>
+    /// </summary>
+    private static Projected ProjectOntoPlane(Point3 start, Point3 end, Point3 p, SpanMode mode,
+                                              double azimuth)
+    {
+        double cos = Math.Cos(azimuth), sin = Math.Sin(azimuth);
+
+        if (mode == SpanMode.Absolute) return new Projected(p.X * cos + p.Y * sin, p.Z);
+
+        double span = (p.X - start.X) * cos + (p.Y - start.Y) * sin;
+        double chord = (end.X - start.X) * cos + (end.Y - start.Y) * sin;
+
+        // A wire seen end-on has no extent in this plane and therefore no normalised coordinate.
+        // Zero, rather than a division that would blow up or a chord-based fallback that would
+        // silently disagree with the curve drawn beside it.
+        return new Projected(Math.Abs(chord) < 1.0 ? 0.0 : span / chord, p.Z);
+    }
+
+    /// <summary>
+    /// The direction, in XY, that "horizontal" means in the profile view for a given wire — a unit
+    /// vector. Under a fixed azimuth that is the view direction; under AUTO it is the wire's own
+    /// chord.
+    ///
+    /// <para>One definition, because the same answer has to serve the projection above, the
+    /// horizontal drag (<see cref="WireEdits.Translate"/>) and the arrow-key nudge. Two would let a
+    /// point render in one place and move in another.</para>
+    /// </summary>
+    public static (double X, double Y) HorizontalDirection(Wire wire, double? azimuthRadians)
+    {
+        ArgumentNullException.ThrowIfNull(wire);
+
+        return azimuthRadians is { } azimuth
+            ? (Math.Cos(azimuth), Math.Sin(azimuth))
+            : WireEdits.ChordDirectionXY(wire);
     }
 
     /// <summary>
@@ -150,13 +216,14 @@ public static class WireHitTest
     /// </summary>
     public static Hit HitTestProfile(WireMesh mesh, double span, long z, double toleranceNm,
                                      ProfileProjection.SpanMode mode = ProfileProjection.SpanMode.Absolute,
-                                     double pointBias = 2.0)
+                                     double pointBias = 2.0,
+                                     double? azimuthRadians = null)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         return HitTest(mesh, toleranceNm, pointBias,
             (wire, index) =>
             {
-                var projected = ProfileProjection.Project(mesh.Wires[wire], index, mode);
+                var projected = ProfileProjection.Project(mesh.Wires[wire], index, mode, azimuthRadians);
                 return (projected.Span, projected.Z);
             },
             span, z);

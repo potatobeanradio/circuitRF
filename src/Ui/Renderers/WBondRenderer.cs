@@ -144,24 +144,38 @@ public static class WBondRenderer
             linePaint.Color = Fade(wholeSelected ? theme.Selected : free ? theme.FreeWire : theme.Wire, opacity);
             linePaint.StrokeWidth = StrokeWidth(wire, viewport, theme, thickness, dbuPerMicron);
 
+            var baseColor = linePaint.Color;
+
             for (int i = 1; i < wire.Points.Count; i++)
             {
                 var (ax, ay) = Screen(wire.Points[i - 1]);
                 var (bx, by) = Screen(wire.Points[i]);
 
+                // A SEGMENT accent, which this view did not have at all: it coloured whole wires and
+                // nothing finer, so clicking a segment in the profile view highlighted it there and
+                // showed nothing here. The two views draw the same selection and must agree about it.
+                linePaint.Color = SegmentSelected(selection, index, i - 1, wholeSelected)
+                    ? Fade(theme.Selected, opacity)
+                    : baseColor;
+
                 canvas.DrawLine(ax, ay, bx, by, linePaint);
                 segments++;
             }
+
+            linePaint.Color = baseColor;
 
             for (int i = 0; i < wire.Points.Count; i++)
             {
                 var (px, py) = Screen(wire.Points[i]);
 
                 // The INPUT end gets its own colour. Rendering, but not decoration: the sign of every
-                // mutual inductance depends on which end this is (WB3).
-                bool pointSelected = wholeSelected || selection?.Points.Contains(new PointRef(index, i)) == true;
-                dotPaint.Color = i == 0 ? Fade(theme.InputEnd, opacity)
-                               : pointSelected ? Fade(theme.Selected, opacity)
+                // mutual inductance depends on which end this is (WB3). A SELECTED point outranks it,
+                // though — the accent is transient and says what the user is holding, and without this
+                // picking the input foot lit up nothing at all. The end is still identifiable while
+                // selected: it is still the wire's first dot.
+                bool pointSelected = wholeSelected || PointSelected(selection, index, i);
+                dotPaint.Color = pointSelected ? Fade(theme.Selected, opacity)
+                               : i == 0 ? Fade(theme.InputEnd, opacity)
                                : linePaint.Color;
 
                 canvas.DrawCircle(px, py, theme.DotRadiusPx, dotPaint);
@@ -179,12 +193,18 @@ public static class WBondRenderer
     /// </summary>
     /// <param name="spanToScreen">Maps a projected span coordinate to screen x.</param>
     /// <param name="zToScreen">Maps a z coordinate (nanometres) to screen y.</param>
+    /// <param name="azimuthRadians">
+    /// The fixed plane to project onto, or null for AUTO (each wire on its own chord). Passed straight
+    /// through to <see cref="ProfileProjection.Project"/> — the same value the canvas hit-tests and
+    /// drags with, so what is drawn and what is grabbed cannot disagree.
+    /// </param>
     public static Result DrawProfile(
         SKCanvas canvas, WBondDesign design, WBondRenderTheme theme,
         Func<double, float> spanToScreen, Func<double, float> zToScreen,
         ProfileProjection.SpanMode mode = ProfileProjection.SpanMode.Absolute,
         WireSelection? selection = null,
-        IReadOnlyList<int>? visibleArrays = null)
+        IReadOnlyList<int>? visibleArrays = null,
+        double? azimuthRadians = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(design);
@@ -207,7 +227,15 @@ public static class WBondRenderer
             var envelope = ProfileEnvelope.Build(array);
 
             if (visible && envelope.Bands.Count > 1)
-                DrawBand(canvas, array, envelope, spanToScreen, zToScreen, mode, bandPaint);
+                DrawBand(canvas, array, envelope, spanToScreen, zToScreen, mode, bandPaint, azimuthRadians);
+
+            // §6.2 idea 3 is "ONE editable curve per array PLUS a translucent band", and the curve
+            // half was missing. Without it an array whose members all share one shape draws a band of
+            // zero thickness — min == max at every sample — so the whole array renders as nothing.
+            // That is the ordinary case, not an edge case: a one-wire array, and any array mid-drag
+            // once the quality ladder has collapsed its members onto their chords (WB15), both hit it,
+            // which is why the profile view "sometimes disappears" while dragging in the layout view.
+            int representative = visible && envelope.BoundWires.Count > 0 ? envelope.BoundWires[0] : -1;
 
             for (int w = 0; w < array.Wires.Count; w++)
             {
@@ -215,27 +243,49 @@ public static class WBondRenderer
                 var wire = array.Wires[w];
                 if (!visible || wire.Points.Count < 2) continue;
 
-                // BOUND members are represented by the band; only the free ones are drawn
-                // individually. That is the clutter answer — one curve plus a band, not 200 curves.
-                if (envelope.BoundWires.Contains(w)) continue;
+                bool wholeSelected = selection?.Wires.Contains(flatIndex) == true;
 
-                bool selected = selection?.Wires.Contains(flatIndex) == true;
-                linePaint.Color = selected ? theme.Selected : theme.FreeWire;
+                // A SELECTED wire is always drawn individually, bound or not. The band cannot carry a
+                // highlight — it is one shape over the whole array — so a marquee that caught three
+                // members of a twenty-wire array would otherwise show nothing at all, which is the
+                // owner's "marquee selection in profile view does not update highlighting". The
+                // remaining bound members stay represented by the band: that is the clutter answer,
+                // one curve plus a band, not 200 curves.
+                bool touched = wholeSelected || Touches(selection, flatIndex);
+                if (w != representative && !touched && envelope.BoundWires.Contains(w)) continue;
+
+                linePaint.Color = wholeSelected ? theme.Selected
+                                : w == representative ? theme.Wire
+                                : theme.FreeWire;
 
                 for (int i = 1; i < wire.Points.Count; i++)
                 {
-                    var p0 = ProfileProjection.Project(wire, i - 1, mode);
-                    var p1 = ProfileProjection.Project(wire, i, mode);
+                    var p0 = ProfileProjection.Project(wire, i - 1, mode, azimuthRadians);
+                    var p1 = ProfileProjection.Project(wire, i, mode, azimuthRadians);
+
+                    var previous = linePaint.Color;
+                    if (SegmentSelected(selection, flatIndex, i - 1, wholeSelected))
+                        linePaint.Color = theme.Selected;
 
                     canvas.DrawLine(spanToScreen(p0.Span), zToScreen(p0.Z),
                                     spanToScreen(p1.Span), zToScreen(p1.Z), linePaint);
+                    linePaint.Color = previous;
                     segments++;
                 }
 
                 for (int i = 0; i < wire.Points.Count; i++)
                 {
-                    var p = ProfileProjection.Project(wire, i, mode);
-                    dotPaint.Color = i == 0 ? theme.InputEnd : linePaint.Color;
+                    var p = ProfileProjection.Project(wire, i, mode, azimuthRadians);
+
+                    // Per-POINT accent, which this view did not have at all: only whole wires were
+                    // ever highlighted, so an enclose marquee — whose whole job is catching some of a
+                    // wire's vertices — appeared to select nothing.
+                    bool pointSelected = wholeSelected || PointSelected(selection, flatIndex, i);
+
+                    dotPaint.Color = pointSelected ? theme.Selected
+                                   : i == 0 ? theme.InputEnd
+                                   : linePaint.Color;
+
                     canvas.DrawCircle(spanToScreen(p.Span), zToScreen(p.Z), theme.DotRadiusPx, dotPaint);
                     dots++;
                 }
@@ -245,6 +295,46 @@ public static class WBondRenderer
         }
 
         return new Result(wires, segments, dots);
+    }
+
+    /// <summary>
+    /// Whether the segment from point <paramref name="index"/> to <paramref name="index"/>+1 draws
+    /// accented.
+    ///
+    /// <para>Selected in its own right, or with BOTH endpoints selected — which is what an enclose
+    /// marquee over part of a loop produces. One definition, used by both views: the layout view had
+    /// none at all, so a segment picked in the profile view lit up there and nowhere else.</para>
+    /// </summary>
+    private static bool SegmentSelected(WireSelection? selection, int wire, int index, bool wholeSelected)
+    {
+        if (wholeSelected) return true;
+        if (selection is null) return false;
+
+        return selection.Segments.Contains(new SegmentRef(wire, index))
+            || (PointSelected(selection, wire, index) && PointSelected(selection, wire, index + 1));
+    }
+
+    /// <summary>Whether a selection touches this wire at ALL — whole, by point, or by segment.</summary>
+    private static bool Touches(WireSelection? selection, int wire)
+    {
+        if (selection is null) return false;
+        if (selection.Wires.Contains(wire)) return true;
+
+        foreach (var p in selection.Points) if (p.Wire == wire) return true;
+        foreach (var s in selection.Segments) if (s.Wire == wire) return true;
+
+        return false;
+    }
+
+    private static bool PointSelected(WireSelection? selection, int wire, int index)
+    {
+        if (selection is null) return false;
+        if (selection.Points.Contains(new PointRef(wire, index))) return true;
+
+        // A selected SEGMENT carries both its endpoints — the same rule WireSelection.MovingPoints
+        // applies when it decides what a drag moves, so the highlight cannot disagree with the move.
+        return selection.Segments.Contains(new SegmentRef(wire, index))
+            || selection.Segments.Contains(new SegmentRef(wire, index - 1));
     }
 
     /// <summary>
@@ -301,11 +391,24 @@ public static class WBondRenderer
     /// right-to-left crossing marquee promotes to the WHOLE wire for any wire with a point in the box,
     /// so a user who cannot tell which mode they are in cannot predict what they are about to select.
     /// The direction comes from the hand (press versus release x), not from a mode the user set.</para>
+    ///
+    /// <para><b>Colour, alpha, hairline stroke and dash period are all transcribed from
+    /// <c>LayoutRenderer.DrawMarquee</c>, deliberately.</b> This box is drawn over the layout editor's
+    /// own canvas, often in the same session as the layout editor's own marquee — a second selection
+    /// rectangle that is a different colour or a different dash reads as a different KIND of
+    /// selection. <paramref name="accent"/> is the layout theme's own <c>Selection</c> colour, handed
+    /// down from the same theme object the layout underneath was drawn with, so the two cannot drift.
+    /// </para>
     /// </summary>
+    /// <param name="accent">
+    /// The selection accent to draw in. Null falls back to the wBond theme's own selected colour, for
+    /// callers with no layout theme in hand.
+    /// </param>
     public static void DrawMarquee(
         SKCanvas canvas, LayoutViewport viewport, WBondRenderTheme theme,
         long startXNm, long startYNm, long currentXNm, long currentYNm,
-        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
+        SKColor? accent = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(theme);
@@ -317,12 +420,13 @@ public static class WBondRenderer
 
         var rect = new SKRect(Math.Min(x0, x1), Math.Min(y0, y1), Math.Max(x0, x1), Math.Max(y0, y1));
         bool crossing = currentXNm < startXNm;
+        var colour = accent ?? theme.Selected;
 
         using var fill = new SKPaint
         {
             IsAntialias = true,
             Style = SKPaintStyle.Fill,
-            Color = theme.Selected.WithAlpha(0x22),
+            Color = colour.WithAlpha(50),
         };
         canvas.DrawRect(rect, fill);
 
@@ -330,9 +434,9 @@ public static class WBondRenderer
         {
             IsAntialias = true,
             Style = SKPaintStyle.Stroke,
-            StrokeWidth = 1.0f,
-            Color = theme.Selected,
-            PathEffect = crossing ? SKPathEffect.CreateDash([4f, 4f], 0f) : null,
+            StrokeWidth = 0,
+            Color = colour.WithAlpha(255),
+            PathEffect = crossing ? SKPathEffect.CreateDash([6f, 4f], 0f) : null,
         };
         canvas.DrawRect(rect, stroke);
         stroke.PathEffect?.Dispose();
@@ -341,7 +445,7 @@ public static class WBondRenderer
     private static void DrawBand(
         SKCanvas canvas, WireArray array, ProfileEnvelope.ArrayProfile envelope,
         Func<double, float> spanToScreen, Func<double, float> zToScreen,
-        ProfileProjection.SpanMode mode, SKPaint paint)
+        ProfileProjection.SpanMode mode, SKPaint paint, double? azimuthRadians)
     {
         // The band is expressed as height ABOVE THE CHORD, so it has to be lifted back onto the
         // chord to be drawn — otherwise a wire whose feet are at different z draws its band flat.
@@ -349,12 +453,20 @@ public static class WBondRenderer
         var start = reference.Points[0];
         var end = reference.Points[^1];
 
-        double chordNm = 1.0;
+        // The band's own span coordinate is NORMALISED (0..1 along the chord); drawing it against an
+        // absolute axis means mapping it onto the reference wire's OWN projected extent — both its
+        // origin and its length, taken from the projection rather than from the geometry. Reading the
+        // plain chord length instead would leave the band at full width in a plane the wires are
+        // foreshortened in, and dropping the origin would pin it at span 0 while the curves sit
+        // wherever they actually are — either way the band and the curves disagree about where the
+        // wire is.
+        double originNm = 0.0, chordNm = 1.0;
         if (mode == ProfileProjection.SpanMode.Absolute)
         {
-            double dx = WBondUnits.ToMetres(end.X - start.X);
-            double dy = WBondUnits.ToMetres(end.Y - start.Y);
-            chordNm = Math.Sqrt(dx * dx + dy * dy) * WBondUnits.NmPerMetre;
+            var first = ProfileProjection.Project(reference, 0, mode, azimuthRadians);
+            var last = ProfileProjection.Project(reference, reference.Points.Count - 1, mode, azimuthRadians);
+            originNm = first.Span;
+            chordNm = last.Span - first.Span;
         }
 
         using var path = new SKPath();
@@ -363,7 +475,7 @@ public static class WBondRenderer
         {
             var band = envelope.Bands[i];
             double chordZ = start.Z + (end.Z - start.Z) * band.Span;
-            float x = spanToScreen(band.Span * chordNm);
+            float x = spanToScreen(originNm + band.Span * chordNm);
             float y = zToScreen(chordZ + band.MaxHeightNm);
 
             if (i == 0) path.MoveTo(x, y);
@@ -374,7 +486,7 @@ public static class WBondRenderer
         {
             var band = envelope.Bands[i];
             double chordZ = start.Z + (end.Z - start.Z) * band.Span;
-            path.LineTo(spanToScreen(band.Span * chordNm), zToScreen(chordZ + band.MinHeightNm));
+            path.LineTo(spanToScreen(originNm + band.Span * chordNm), zToScreen(chordZ + band.MinHeightNm));
         }
 
         path.Close();

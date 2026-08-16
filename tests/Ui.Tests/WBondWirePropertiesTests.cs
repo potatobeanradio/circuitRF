@@ -459,6 +459,84 @@ public class WBondWirePropertiesTests
         Assert.Equal(["GND", WBondWirePropertiesViewModel.NewGroupSentinel], panel.AvailableGroups);
     }
 
+    /// <summary>
+    /// <b>Stack-overflow regression.</b> The group ComboBox binds <c>ItemsSource</c> to
+    /// <c>AvailableGroups</c>, and a ComboBox whose item list is replaced re-resolves and re-raises its
+    /// selection — which calls <c>CommitGroup</c>. So a refresh that hands out a NEW list every time
+    /// closed a cycle (Refresh → list changed → SelectionChanged → CommitGroup → Refresh), and since
+    /// Refresh runs on every selection change, merely clicking a wire overflowed the stack.
+    ///
+    /// <para>The two halves are tested together, because either one alone re-opens the crash: the list
+    /// must not notify when nothing changed, and the list must be the SAME reference so the bound
+    /// ItemsSource is not replaced regardless.</para>
+    /// </summary>
+    [Fact]
+    public void Refresh_DoesNotChurnTheGroupList_WhenNoGroupWasAddedOrRemoved()
+    {
+        var vm = MakeEditor();
+        var panel = Bind(vm);
+        vm.Selection = new WireSelection { Wires = [0] };
+
+        var before = panel.AvailableGroups;
+
+        int notifications = 0;
+        panel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(WBondWirePropertiesViewModel.AvailableGroups)) notifications++;
+        };
+
+        // Every channel that reaches Refresh: re-selecting a wire, and the per-drag-frame readout.
+        vm.Selection = new WireSelection { Wires = [1] };
+        vm.Selection = new WireSelection { Wires = [0] };
+        panel.Refresh();
+
+        Assert.Equal(0, notifications);
+        Assert.Same(before, panel.AvailableGroups);
+    }
+
+    /// <summary>
+    /// The other half of the same crash: the combo re-raises its selection with the group the wire is
+    /// ALREADY in, so that commit must be inert — no move, and above all no refresh to feed back.
+    /// </summary>
+    [Fact]
+    public void CommitGroup_ToTheGroupTheWireIsAlreadyIn_DoesNothingAtAll()
+    {
+        var vm = MakeEditor();
+        var panel = Bind(vm);
+        vm.Selection = new WireSelection { Wires = [0] };
+
+        int refreshes = 0;
+        panel.PropertyChanged += (_, _) => refreshes++;
+
+        panel.CommitGroup("GND");
+
+        Assert.Equal(0, refreshes);
+        Assert.Single(vm.Design.Arrays);
+        Assert.Equal("GND", panel.GroupName);
+        Assert.False(vm.CanUndo);   // no undo entry for a move that did not happen
+    }
+
+    /// <summary>Creating a group DOES change the list, so that notification must still be raised —
+    /// the fix above must not silence a real change.</summary>
+    [Fact]
+    public void CommitGroup_ToANewName_NotifiesTheGroupListOnce()
+    {
+        var vm = MakeEditor();
+        var panel = Bind(vm);
+        vm.Selection = new WireSelection { Wires = [0] };
+
+        int notifications = 0;
+        panel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(WBondWirePropertiesViewModel.AvailableGroups)) notifications++;
+        };
+
+        panel.CommitGroup("Vdd");
+
+        Assert.Equal(1, notifications);
+        Assert.Equal(["GND", "Vdd", WBondWirePropertiesViewModel.NewGroupSentinel], panel.AvailableGroups);
+    }
+
     /// <summary>Moving a wire to a NEW group creates it, and the panel keeps showing that wire.</summary>
     [Fact]
     public void CommitGroup_ToANewName_CreatesTheGroup_AndKeepsTheWireSelected()

@@ -63,7 +63,21 @@ public sealed partial class LayoutEditorViewModel
     /// <see cref="Technology"/>/<see cref="DisplayUnit"/> that a selection can never perturb.</summary>
     public ObservableCollection<string> SnapLadderOptions { get; } = [];
 
-    private static readonly long[] SnapLadderMultipliers = [1, 5, 10, 25, 50];
+    /// <summary>
+    /// The ladder's rungs, as multiples of the technology's own default snap.
+    ///
+    /// <para><b>Two SUB-unit rungs, added at the owner's request (2026-08-16)</b> — on a PCB
+    /// technology whose default snap is 1 mil these are the "0.5 mil" and "0.1 mil" asked for, and on
+    /// any other technology they are the same fractions of that process's own step, which is what
+    /// R-snp-2's relative ladder means by "the equivalent in the other units". A fixed
+    /// <c>0.1 · 0.5 · 1 · 5 · 10</c> list of ABSOLUTE lengths would be the "one WHAT" defect R-snp-2
+    /// exists to avoid.</para>
+    ///
+    /// <para><c>decimal</c>, not <c>double</c>, for the reason <see cref="LayoutUnits"/> gives at
+    /// length: a double cannot represent 1 mil = 25,400 nm exactly, and these products are rounded to
+    /// integer DBU. In decimal, 0.1 × 25,400 is 2,540 on the nose.</para>
+    /// </summary>
+    private static readonly decimal[] SnapLadderMultipliers = [0.1m, 0.5m, 1m, 5m, 10m, 25m, 50m];
 
     /// <summary>Rebuilds <see cref="SnapLadderOptions"/> — called ONLY when the resolved technology
     /// changes (<c>OnTechnologyChanged</c>, which also covers a later retarget — R-cmb-2), the display
@@ -79,18 +93,57 @@ public sealed partial class LayoutEditorViewModel
     /// brief-snap-ladder-crash.md R-crash-1: deliberately NEVER called from <c>OnSnapDbuChanged</c> or
     /// any selection path — see this method's own doc comment on <see cref="SnapLadderOptions"/> for
     /// why that specific wiring is what caused the reported crash.</summary>
+    /// <summary>
+    /// An explicit ladder base for a document with no resolved technology, or 0 for none.
+    ///
+    /// <para>Exists so a host can state the process step its ladder should describe INDEPENDENTLY of
+    /// what the document's snap happens to be set to — the wBond editor ships a 0.1 mil default snap
+    /// off a 1 mil ladder, and without this the fallback would re-derive the whole ladder from that
+    /// 0.1 mil and offer a 0.01 mil finest rung.</para>
+    ///
+    /// <para>It is a base, never a selection, so R-crash-1's invariant is untouched: the list is still
+    /// a pure function of things the user's choice of rung cannot move.</para>
+    /// </summary>
+    internal long SnapLadderBaseDbu { get; set; }
+
     private void RebuildSnapLadderOptions()
     {
-        long baseDbu = Technology is { DefaultSnapDbu: > 0 } tech ? tech.DefaultSnapDbu : Model.SnapDbu;
+        long baseDbu = Technology is { DefaultSnapDbu: > 0 } tech ? tech.DefaultSnapDbu
+                     : SnapLadderBaseDbu > 0 ? SnapLadderBaseDbu
+                     : Model.SnapDbu;
+
         if (baseDbu <= 0) baseDbu = LayoutUnits.ToDbu(1m, LayoutUnit.Um, Model.DbuPerMicron);
 
         SnapLadderOptions.Clear();
+
+        long previous = 0;
         foreach (var mult in SnapLadderMultipliers)
         {
-            long dbu = baseDbu * mult;
+            long dbu = (long)decimal.Round(baseDbu * mult, MidpointRounding.AwayFromZero);
+
+            // A sub-unit rung on an already-tiny base quantises to zero DBU — which is not a fine snap
+            // but the OFF state (LayoutSnapping's "SnapDbu <= 0 means none"), so offering it as a
+            // distance would be a trap. It can also collapse onto the rung below it. Multipliers
+            // ascend, so comparing against the last one kept is enough to drop both.
+            if (dbu <= 0 || dbu == previous) continue;
+            previous = dbu;
+
             SnapLadderOptions.Add($"{LayoutUnits.Format(dbu, DisplayUnit, Model.DbuPerMicron)} {UnitSuffix(DisplayUnit)}");
         }
     }
+
+    /// <summary>
+    /// Re-derives the ladder after the caller has changed what it is derived FROM — the resolved
+    /// technology, or, when there is none, the document's own snap.
+    ///
+    /// <para>Exists for the wBond editor, which attaches a scratch reference layout and seeds its snap
+    /// afterwards: the constructor's own rebuild ran against a snap of zero and produced a µm-scale
+    /// fallback ladder that no longer described anything.</para>
+    ///
+    /// <para><b>Never call this from a selection path</b> — brief-snap-ladder-crash.md R-crash-1. See
+    /// <see cref="SnapLadderOptions"/>'s own remarks for the crash that wiring caused.</para>
+    /// </summary>
+    internal void RefreshSnapLadder() => RebuildSnapLadderOptions();
 
     /// <summary>Staged typed-entry text for the snap-distance combo — same commit-on-LostFocus/Enter
     /// idiom as <see cref="CornerRadiusText"/>/<see cref="PathWidthText"/>. Bound to

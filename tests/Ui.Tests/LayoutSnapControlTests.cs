@@ -27,21 +27,66 @@ public class LayoutSnapControlTests
 
     private static LayoutEditorViewModel Vm(LayoutView model) => new(model);
 
+    /// <summary>
+    /// R-snp-2's relative ladder, now with two SUB-unit rungs (owner, 2026-08-16) — on a 1 mil process
+    /// those are the "0.5 mil" and "0.1 mil" asked for, and on this 1 µm one they are the same
+    /// fractions of ITS step, which is what "the equivalent in the other units" means for a ladder
+    /// that is relative rather than a fixed list of absolute lengths.
+    /// </summary>
     [Fact]
-    public void SnapLadder_DerivedFromTechnologyDefault_FiveMultiples()
+    public void SnapLadder_DerivedFromTechnologyDefault_SevenMultiples()
     {
         var model = FreshModel();
         var vm = Vm(model);
         var tech = new Technology { DefaultSnapDbu = 1000 }; // 1 um
         vm.ApplyTechResolution(new TechResolution(tech, null, TechResolutionSource.WorkspaceDefault, []));
 
-        Assert.Equal(5, vm.SnapLadderOptions.Count);
+        Assert.Equal(7, vm.SnapLadderOptions.Count);
         // LayoutUnits.Suffix(Um) renders the µ glyph (U+00B5), not the ASCII "um" spelling.
-        Assert.Equal("1 µm", vm.SnapLadderOptions[0]);
-        Assert.Equal("5 µm", vm.SnapLadderOptions[1]);
-        Assert.Equal("10 µm", vm.SnapLadderOptions[2]);
-        Assert.Equal("25 µm", vm.SnapLadderOptions[3]);
-        Assert.Equal("50 µm", vm.SnapLadderOptions[4]);
+        Assert.Equal("0.1 µm", vm.SnapLadderOptions[0]);
+        Assert.Equal("0.5 µm", vm.SnapLadderOptions[1]);
+        Assert.Equal("1 µm", vm.SnapLadderOptions[2]);
+        Assert.Equal("5 µm", vm.SnapLadderOptions[3]);
+        Assert.Equal("10 µm", vm.SnapLadderOptions[4]);
+        Assert.Equal("25 µm", vm.SnapLadderOptions[5]);
+        Assert.Equal("50 µm", vm.SnapLadderOptions[6]);
+    }
+
+    /// <summary>The owner's own case, stated in the owner's own units: a 1 mil process.</summary>
+    [Fact]
+    public void SnapLadder_OnAOneMilProcess_Offers0Point1And0Point5Mil()
+    {
+        var model = FreshModel();
+        model.DisplayUnit = LayoutUnit.Mil;
+        var vm = Vm(model);
+        vm.DisplayUnit = LayoutUnit.Mil;
+
+        var tech = new Technology { DefaultSnapDbu = 25_400 };   // 1 mil at 1000 dbu/um
+        vm.ApplyTechResolution(new TechResolution(tech, null, TechResolutionSource.WorkspaceDefault, []));
+
+        Assert.Equal(["0.1 mil", "0.5 mil", "1 mil", "5 mil", "10 mil", "25 mil", "50 mil"],
+                     vm.SnapLadderOptions);
+    }
+
+    /// <summary>
+    /// A sub-unit rung that quantises to zero DBU is DROPPED rather than offered. Zero is not a fine
+    /// snap — it is <c>LayoutSnapping</c>'s off state — so a "0 nm" entry in a distance list would be
+    /// a trap. A rung that collapses onto the one below it goes for the same reason.
+    /// </summary>
+    [Fact]
+    public void SnapLadder_DropsSubUnitRungsThatQuantiseAway()
+    {
+        var model = FreshModel();
+        model.DisplayUnit = LayoutUnit.Nm;
+        var vm = Vm(model);
+        vm.DisplayUnit = LayoutUnit.Nm;
+
+        var tech = new Technology { DefaultSnapDbu = 1 };   // 1 nm — nothing finer is representable
+        vm.ApplyTechResolution(new TechResolution(tech, null, TechResolutionSource.WorkspaceDefault, []));
+
+        Assert.DoesNotContain("0 nm", vm.SnapLadderOptions);
+        Assert.Equal("1 nm", vm.SnapLadderOptions[0]);
+        Assert.Equal(vm.SnapLadderOptions.Distinct(), vm.SnapLadderOptions);
     }
 
     [Fact]
@@ -59,8 +104,9 @@ public class LayoutSnapControlTests
         var tech = new Technology { DefaultSnapDbu = 25_400 }; // 1 mil at 1000 dbu/um
         vm.ApplyTechResolution(new TechResolution(tech, null, TechResolutionSource.WorkspaceDefault, []));
 
-        Assert.Equal("1 mil", vm.SnapLadderOptions[0]);
-        Assert.Equal("5 mil", vm.SnapLadderOptions[1]);
+        Assert.Equal("0.1 mil", vm.SnapLadderOptions[0]);
+        Assert.Equal("1 mil", vm.SnapLadderOptions[2]);
+        Assert.Equal("5 mil", vm.SnapLadderOptions[3]);
     }
 
     // ── brief-snap-ladder-crash.md — the reported crash and its fix ─────────────────────────────────
@@ -97,7 +143,7 @@ public class LayoutSnapControlTests
         Assert.Equal("0.5 mil", vm.SnapDistanceText);
         Assert.NotEmpty(vm.SnapDistanceText);
 
-        vm.CommitSnapLadderSelection(vm.SnapLadderOptions[0]); // "1 mil"
+        vm.CommitSnapLadderSelection(vm.SnapLadderOptions[2]); // "1 mil"
         Assert.Equal("1 mil", vm.SnapDistanceText);
         Assert.NotEmpty(vm.SnapDistanceText);
 
@@ -118,7 +164,7 @@ public class LayoutSnapControlTests
         vm.CommitSnapDistanceText("3.7um"); // not a member of the 1/5/10/25/50 ladder
         Assert.Equal(3700, vm.SnapDbu);
 
-        vm.CommitSnapLadderSelection(vm.SnapLadderOptions[2]); // "10 um" — must not throw
+        vm.CommitSnapLadderSelection(vm.SnapLadderOptions[4]); // "10 um" — must not throw
         Assert.Equal(10_000, vm.SnapDbu);
     }
 
@@ -164,8 +210,9 @@ public class LayoutSnapControlTests
         var tech2 = new Technology { DefaultSnapDbu = 50_800 }; // 2 mil
         vm.ApplyTechResolution(new TechResolution(tech2, null, TechResolutionSource.WorkspaceDefault, []));
 
-        Assert.Equal(5, vm.SnapLadderOptions.Count); // repopulated to exactly the 5 standard rungs, nothing extra
-        Assert.Equal("2 mil", vm.SnapLadderOptions[0]);
+        Assert.Equal(7, vm.SnapLadderOptions.Count); // repopulated to exactly the standard rungs, nothing extra
+        Assert.Equal("0.2 mil", vm.SnapLadderOptions[0]);
+        Assert.Equal("2 mil", vm.SnapLadderOptions[2]);
         Assert.Equal(25_400, vm.SnapDbu); // untouched
         Assert.Equal("1 mil", vm.SnapDistanceText); // still shown
         Assert.NotEmpty(vm.SnapDistanceText);
@@ -179,13 +226,13 @@ public class LayoutSnapControlTests
         var vm = Vm(model);
         var tech = new Technology { DefaultSnapDbu = 1000 }; // 1 um
         vm.ApplyTechResolution(new TechResolution(tech, null, TechResolutionSource.WorkspaceDefault, []));
-        Assert.Equal("1 µm", vm.SnapLadderOptions[0]);
+        Assert.Equal("1 µm", vm.SnapLadderOptions[2]);
         Assert.NotEmpty(vm.SnapDistanceText);
 
         vm.DisplayUnit = LayoutUnit.Mil;
 
         // Same underlying DBU rungs, relabeled in the new unit (1 um == 1/25.4 mil) — never blank.
-        Assert.Equal("0.0394 mil", vm.SnapLadderOptions[0]);
+        Assert.Equal("0.0394 mil", vm.SnapLadderOptions[2]);
         Assert.NotEmpty(vm.SnapDistanceText);
     }
 
@@ -221,7 +268,7 @@ public class LayoutSnapControlTests
         var tech = new Technology { DefaultSnapDbu = 1000 };
         vm.ApplyTechResolution(new TechResolution(tech, null, TechResolutionSource.WorkspaceDefault, []));
 
-        vm.CommitSnapLadderSelection(vm.SnapLadderOptions[2]); // "10 um"
+        vm.CommitSnapLadderSelection(vm.SnapLadderOptions[4]); // "10 um"
         Assert.Equal(10_000, vm.SnapDbu);
     }
 

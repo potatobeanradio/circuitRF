@@ -6,7 +6,10 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
+using Avalonia.Styling;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
+using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 using SkiaSharp;
@@ -21,12 +24,16 @@ namespace CircuitRF.Ui.Controls;
 /// against a 20 mil loop — so sharing the layout canvas's pan/zoom would make one of the two views
 /// useless. WB22a's thickness mode is likewise per-view for the same reason.</para>
 ///
-/// <h3>What a drag means here, and what it deliberately does not</h3>
-/// <para>A plain drag moves the selection in <b>z only</b>. Horizontal free-dragging is not offered,
-/// and that is a decision rather than an omission: span is a <i>derived</i> coordinate — cumulative
-/// XY arc length — so "move this point 10 mil to the right in the profile" has no single answer in
-/// the geometry that is actually stored. Changing span is <b>alt-drag</b>, which scales the whole
-/// bound array by a factor (WB24b) and is well defined.</para>
+/// <h3>What a drag means here</h3>
+/// <para>A plain drag moves the selection in <b>both</b> axes of this view: vertically in z, and
+/// horizontally <b>along each wire's own XY chord</b> — so a wire running north-south moves in y and
+/// one running east-west moves in x, which is what the horizontal axis of this view means
+/// (<see cref="WireEdits.Translate"/> owns that mapping). An earlier version offered z only, on the
+/// grounds that span is a derived coordinate; the owner's answer is that a point you can see move
+/// sideways under the pointer has to actually move, and the chord direction is the single answer the
+/// argument said did not exist.</para>
+/// <para>Alt-drag is unchanged and still means something different: it SCALES the whole bound array
+/// by a factor (WB24b) rather than translating the selection.</para>
 /// </summary>
 public sealed class WBondProfileCanvas : Control
 {
@@ -60,10 +67,41 @@ public sealed class WBondProfileCanvas : Control
 
     public WBondRenderTheme WireTheme { get; set; } = WBondRenderTheme.Fallback;
 
+    /// <summary>
+    /// The layout theme, for the grid and the marquee — resolved exactly as <c>LayoutCanvas</c>
+    /// resolves its own, so the two canvases sitting one above the other cannot disagree about what
+    /// the grid or a selection box looks like. Settable, for callers with no visual tree.
+    /// </summary>
+    public LayoutRenderTheme LayoutTheme { get; set; } = LayoutRenderTheme.Light;
+
+    private void OnThemeChanged(object? sender, EventArgs e) => RefreshTheme();
+
+    private void RefreshTheme()
+    {
+        var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
+        LayoutTheme = LayoutRenderTheme.FromTheme(ThemeService.Active, variant);
+        InvalidateVisual();
+    }
+
     /// <summary>Per-view, per WB22a.</summary>
     public WireThicknessMode Thickness { get; set; } = WireThicknessMode.ConstantPixels;
 
     public ProfileProjection.SpanMode SpanMode { get; set; } = ProfileProjection.SpanMode.Absolute;
+
+    /// <summary>
+    /// The plane this view projects onto — null for AUTO (each wire on its own chord), 0 for X-Z,
+    /// π/2 for Y-Z, anything for a diagonal. Pushed in from the toolbar's own combo.
+    ///
+    /// <para>Every gesture in this control reads it: the render, the hit test, the marquee and the
+    /// horizontal drag. One value, so a point cannot be drawn in one place and moved in another.</para>
+    /// </summary>
+    public double? Azimuth { get; set; }
+
+    /// <summary>
+    /// The grid pitch in nanometres, or 0 for no grid — the same snap distance the layout view's own
+    /// grid is drawn from, pushed in by the view so one Snap box governs both canvases.
+    /// </summary>
+    public long GridPitchNm { get; set; }
 
     // ── Viewport (span across, z up) ──────────────────────────────────────────
 
@@ -85,6 +123,10 @@ public sealed class WBondProfileCanvas : Control
     {
         Focusable = true;
         ClipToBounds = true;
+
+        AttachedToVisualTree += (_, _) => { ThemeService.ThemeChanged += OnThemeChanged; RefreshTheme(); };
+        DetachedFromVisualTree += (_, _) => ThemeService.ThemeChanged -= OnThemeChanged;
+        ActualThemeVariantChanged += (_, _) => RefreshTheme();
 
         PointerPressed  += OnPointerPressedInternal;
         PointerMoved    += OnPointerMovedInternal;
@@ -151,7 +193,8 @@ public sealed class WBondProfileCanvas : Control
         // rule every other hit test in this codebase follows.
         double tolNm = HitTolerancePixels / _zoom;
 
-        var hit = WireHitTest.HitTestProfile(mesh, span, (long)Math.Round(z), tolNm, SpanMode);
+        var hit = WireHitTest.HitTestProfile(mesh, span, (long)Math.Round(z), tolNm, SpanMode,
+                                             azimuthRadians: Azimuth);
         if (!hit.Found) return -1;
 
         return mesh.ArrayOfWire[hit.Wire];
@@ -187,7 +230,7 @@ public sealed class WBondProfileCanvas : Control
         {
             for (int i = 0; i < wire.Points.Count; i++)
             {
-                var p = ProfileProjection.Project(wire, i, SpanMode);
+                var p = ProfileProjection.Project(wire, i, SpanMode, Azimuth);
                 minSpan = Math.Min(minSpan, p.Span); maxSpan = Math.Max(maxSpan, p.Span);
                 minZ = Math.Min(minZ, p.Z); maxZ = Math.Max(maxZ, p.Z);
                 any = true;
@@ -212,23 +255,97 @@ public sealed class WBondProfileCanvas : Control
         InvalidateVisual();
     }
 
+    // ── Zoom, mirroring LayoutCanvas's own four commands ──────────────────────
+
+    public void ZoomIn() => ZoomAtCenter(_zoom * ZoomFactor);
+
+    public void ZoomOut() => ZoomAtCenter(_zoom / ZoomFactor);
+
+    /// <summary>
+    /// One device pixel per one tick of the given display unit — the same "actual size" definition
+    /// <c>LayoutCanvas.Zoom1To1</c> uses, expressed in this view's own units (nanometres).
+    /// </summary>
+    public void Zoom1To1(WBondUnit unit)
+    {
+        long nmPerUnit = WBondUnits.NmPerUnit(unit);
+        if (nmPerUnit > 0) ZoomAtCenter(1.0 / nmPerUnit);
+    }
+
+    private void ZoomAtCenter(double newZoom)
+    {
+        if (Bounds.Width <= 1 || Bounds.Height <= 1) return;
+
+        double cx = Bounds.Width / 2.0, cy = Bounds.Height / 2.0;
+        double spanUnder = ScreenToSpan(cx), zUnder = ScreenToZ(cy);
+
+        _zoom = Math.Clamp(newZoom, MinZoom, MaxZoom);
+        _panSpan = spanUnder - cx / _zoom;
+        _panZ = zUnder - (Bounds.Height - cy) / _zoom;
+
+        InvalidateVisual();
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
 
     public override void Render(DrawingContext context) =>
         context.Custom(new ProfileDrawOperation(
-            new Rect(Bounds.Size), _viewModel?.Design, WireTheme, SpanMode,
-            _viewModel?.Selection, SpanToScreen, ZToScreen));
+            new Rect(Bounds.Size), _viewModel?.Design, WireTheme, LayoutTheme, SpanMode, Azimuth,
+            // EffectiveSelection, never Selection: the live preview while any marquee is running — in
+            // EITHER canvas — and the committed selection the rest of the time.
+            _viewModel?.EffectiveSelection,
+            SpanToScreen, ZToScreen,
+            _marqueeActive ? MarqueeRect() : null,
+            GridPitchNm, _zoom, _panSpan, _panZ));
+
+    /// <summary>The live marquee in SCREEN coordinates, plus which way the hand went.</summary>
+    private (Rect Box, bool Crossing) MarqueeRect()
+    {
+        double x0 = SpanToScreen(_marqueeStartSpan), x1 = SpanToScreen(_marqueeSpan);
+        double y0 = ZToScreen(_marqueeStartZ), y1 = ZToScreen(_marqueeZ);
+
+        return (new Rect(Math.Min(x0, x1), Math.Min(y0, y1), Math.Abs(x1 - x0), Math.Abs(y1 - y0)),
+                _marqueeSpan < _marqueeStartSpan);
+    }
 
     // ── Pointer ───────────────────────────────────────────────────────────────
 
-    private bool _dragging;
+    /// <summary>
+    /// How far the pointer must travel before a press becomes a DRAG rather than a click.
+    ///
+    /// <para><b>This is a correctness threshold, not a comfort one.</b> Without it every click moved
+    /// the grabbed point by whatever sub-pixel jitter the hand contributed between press and release,
+    /// and — because a press opened a gesture — left an undo entry behind as well. Clicking a wire's
+    /// input foot to select it therefore changed that wire's span, which is exactly what the owner
+    /// reported.</para>
+    /// </summary>
+    private const double DragThresholdPixels = 3.0;
+
+    private bool _pressed;              // a left press is down and may yet become a drag
+    private bool _dragging;             // ...and has passed the threshold
     private double _lastZNm;
+    private double _lastSpanNm;
+    private double _pressScreenX, _pressScreenY;
     private double _dragStartSpan, _dragStartZ;
     private bool _altDrag;
-    private char _altAxis;              // '\0' until the drag has declared an axis, then 'z' or 's'
-    private double _altReference;       // the quantity the factor is measured against
-    private double _altApplied = 1.0;   // factor applied so far, so each frame applies only the change
-    private string? _altProfile;
+    private bool _altMoveOutputFoot = true;
+    private double _altReferenceSpan, _altReferenceHeight;
+    private double _altSpanApplied = 1.0, _altHeightApplied = 1.0;
+
+    /// <summary>A press that left the selection alone, held in case the gesture is a plain click.</summary>
+    private (long Span, long Z, WBondModifiers Modifiers, int ClickCount)? _deferredPress;
+
+    private bool _marqueeActive;
+    private double _marqueeStartSpan, _marqueeStartZ, _marqueeSpan, _marqueeZ;
+    private WireSelection _marqueeBase = new();
+    private WBondModifiers _marqueeModifiers = WBondModifiers.None;
+
+    /// <summary>
+    /// What the live marquee would select, or null when none is in progress.
+    ///
+    /// <para>Held on the shared view-model (<c>WBondViewModel.PreviewSelection</c>), so a box dragged
+    /// HERE highlights the same wires in the layout view too — a wire is a thing both views draw.</para>
+    /// </summary>
+    public WireSelection? MarqueePreview => _marqueeActive ? _viewModel?.PreviewSelection : null;
 
     private void OnPointerPressedInternal(object? sender, PointerPressedEventArgs e)
     {
@@ -250,25 +367,96 @@ public sealed class WBondProfileCanvas : Control
 
         double span = ScreenToSpan(pos.X);
         double z = ScreenToZ(pos.Y);
+        var modifiers = Modifiers(e.KeyModifiers);
 
-        _controller.Press((long)Math.Round(span), (long)Math.Round(z), HitToleranceNm,
-                          Modifiers(e.KeyModifiers), e.ClickCount, EditorView.Profile);
-
-        if (_viewModel.Selection.IsEmpty) { InvalidateVisual(); return; }
-
-        _dragging = true;
+        _pressScreenX = pos.X;
+        _pressScreenY = pos.Y;
         _dragStartSpan = span;
         _dragStartZ = z;
         _lastZNm = z;
-        _altDrag = (e.KeyModifiers & KeyModifiers.Alt) != 0;
-        _altAxis = '\0';
-        _altApplied = 1.0;
-        _altProfile = SelectedProfileName();
+        _lastSpanNm = span;
 
-        // One undo entry for the whole gesture, not one per frame.
-        _viewModel.BeginGesture();
-        _controller.BeginDrag();
+        // Is the thing under the pointer ALREADY selected? If so the press means "pick this selection
+        // up", not "start a new one" — see PressKeepingSelection.
+        var hit = WireHitTest.HitTestProfile(_viewModel.Mesh, span, (long)Math.Round(z),
+                                             HitToleranceNm, SpanMode, azimuthRadians: Azimuth);
+
+        bool keepSelection = hit.Found && !modifiers.HasFlag(WBondModifiers.Shift) && SelectionCovers(hit);
+
+        // ...and if the press turns out to be a plain CLICK it is re-resolved on release instead —
+        // the standard click-through, so an element inside a selected wire is still reachable.
+        _deferredPress = keepSelection
+            ? ((long)Math.Round(span), (long)Math.Round(z), modifiers, e.ClickCount)
+            : null;
+
+        if (!keepSelection)
+            _controller.Press((long)Math.Round(span), (long)Math.Round(z), HitToleranceNm,
+                              modifiers, e.ClickCount, EditorView.Profile);
+
+        if (!hit.Found)
+        {
+            // Empty space: a marquee, exactly as the layout view's own overlay does it. The press has
+            // already cleared the selection unless Shift was held, so this is the union base.
+            _marqueeActive = true;
+            _marqueeStartSpan = _marqueeSpan = span;
+            _marqueeStartZ = _marqueeZ = z;
+            _marqueeModifiers = modifiers;
+            _marqueeBase = _viewModel.Selection;
+            _viewModel.PreviewSelection = _marqueeBase;
+            InvalidateVisual();
+            return;
+        }
+
+        if (_viewModel.Selection.IsEmpty) { InvalidateVisual(); return; }
+
+        // Armed, not yet dragging. Nothing is committed and no undo entry is pushed until the pointer
+        // clears DragThresholdPixels — a click must not move geometry.
+        _pressed = true;
+        _altDrag = (e.KeyModifiers & KeyModifiers.Alt) != 0;
+        _altSpanApplied = _altHeightApplied = 1.0;
+        _altReferenceSpan = ReferenceSpanNm();
+        _altReferenceHeight = ReferenceHeightNm();
+
+        // The pinned foot is the one FURTHER from the grab — grabbing near an end IS the instruction
+        // to move that end (WB26a's rule, reused here so alt-drag needs no mode switch either).
+        _altMoveOutputFoot = GrabMovesOutputFoot(hit);
+
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Whether the current selection already covers what the pointer is over.
+    ///
+    /// <para><b>This is what makes a selection draggable.</b> The press used to re-resolve the hit
+    /// unconditionally, so pressing on three selected segments to move them collapsed the selection to
+    /// the one element under the cursor and then dragged only that — "clicking on the selection starts
+    /// a new selection", as reported. Shift still re-resolves, because extending a selection is the
+    /// one case where a press on something already selected means something else.</para>
+    /// </summary>
+    private bool SelectionCovers(WireHitTest.Hit hit)
+    {
+        if (_viewModel is null) return false;
+
+        var selection = _viewModel.Selection;
+        if (selection.Wires.Contains(hit.Wire)) return true;
+        if (selection.Points.Contains(new PointRef(hit.Wire, hit.Point))) return true;
+
+        return hit.IsSegment && selection.Segments.Contains(new SegmentRef(hit.Wire, hit.Point));
+    }
+
+    /// <summary>
+    /// Which foot an alt-drag should MOVE — the one the grab landed nearer, with the far one pinned
+    /// (WB26a's rule). Stated as "which one moves" because that is what <c>ScaleSpan</c> takes.
+    /// </summary>
+    private bool GrabMovesOutputFoot(WireHitTest.Hit hit)
+    {
+        if (_viewModel is null) return true;
+
+        var wires = _viewModel.Design.AllWires().ToList();
+        if (hit.Wire < 0 || hit.Wire >= wires.Count) return true;
+
+        int last = wires[hit.Wire].Points.Count - 1;
+        return last > 0 && hit.Point > last / 2.0;
     }
 
     private void OnPointerMovedInternal(object? sender, PointerEventArgs e)
@@ -283,8 +471,32 @@ public sealed class WBondProfileCanvas : Control
             return;
         }
 
-        if (!_dragging || _viewModel is null || _controller is null) return;
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) { EndDrag(); return; }
+        bool leftDown = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
+
+        if (_marqueeActive)
+        {
+            if (!leftDown) { EndMarquee(); InvalidateVisual(); return; }
+
+            _marqueeSpan = ScreenToSpan(pos.X);
+            _marqueeZ = ScreenToZ(pos.Y);
+            _viewModel!.PreviewSelection = ResolveMarqueeNow();
+            InvalidateVisual();
+            return;
+        }
+
+        if (!_pressed || _viewModel is null || _controller is null) return;
+        if (!leftDown) { EndDrag(); return; }
+
+        if (!_dragging)
+        {
+            double moved = Math.Max(Math.Abs(pos.X - _pressScreenX), Math.Abs(pos.Y - _pressScreenY));
+            if (moved < DragThresholdPixels) return;
+
+            // The threshold is crossed: NOW open the gesture, so a click leaves no undo entry.
+            _dragging = true;
+            _viewModel.BeginGesture();
+            _controller.BeginDrag();
+        }
 
         double span = ScreenToSpan(pos.X);
         double z = ScreenToZ(pos.Y);
@@ -292,68 +504,145 @@ public sealed class WBondProfileCanvas : Control
         if (_altDrag) { AltDragFrame(span, z); return; }
 
         long dz = (long)Math.Round(z - _lastZNm);
-        if (dz == 0) return;
-        _lastZNm += dz;
+        long dSpan = (long)Math.Round(span - _lastSpanNm);
+        if (dz == 0 && dSpan == 0) return;
 
+        _lastZNm += dz;
+        _lastSpanNm += dSpan;
+
+        // ONE Translate call, so the horizontal and vertical components of a diagonal drag land in the
+        // same frame — two calls would make the quality ladder time half a gesture as a whole one.
         _controller.DragFrame(
-            _ => WireEdits.Translate(_viewModel.Design, _viewModel.Selection, 0, dz, EditorView.Profile));
+            _ => WireEdits.Translate(_viewModel.Design, _viewModel.Selection, dSpan, dz,
+                                     EditorView.Profile, Azimuth));
 
         InvalidateVisual();
     }
 
     /// <summary>
-    /// Alt-drag: scale the whole bound array (WB24a/b/c). The axis is declared once, by whichever
-    /// component first moves past a few pixels — re-deciding it every frame would let a wobbling hand
-    /// alternate between scaling height and scaling span within one gesture.
+    /// Alt-drag: scale the selection's span AND height, live, as the hand moves (WB24a/b/c).
+    ///
+    /// <para><b>Both axes, every frame.</b> An earlier version declared one axis on the first few
+    /// pixels of travel and ignored the other for the rest of the gesture, so a diagonal alt-drag
+    /// silently did half of what it looked like. Each axis is measured independently against its own
+    /// reference, so a purely vertical or purely horizontal drag still changes only that quantity.</para>
+    ///
+    /// <para>The span anchor is the foot FURTHER from the grab, decided once at press.</para>
     /// </summary>
     private void AltDragFrame(double span, double z)
     {
-        if (_viewModel is null || _controller is null || _altProfile is null) return;
+        if (_viewModel is null || _controller is null) return;
 
+        // Grabbing near the INPUT foot moves that foot, so pulling the cursor BACKWARDS along the axis
+        // is what lengthens the wire — the sign has to follow the anchor or the wire shrinks when the
+        // hand says grow. The layout overlay's own alt-drag has carried this flip since it was
+        // written; this one did not, which is half of the "wrong anchor" the owner saw here.
         double dSpan = span - _dragStartSpan;
-        double dZ = z - _dragStartZ;
-        double threshold = 4.0 / Math.Max(_zoom, MinZoom);
+        if (!_altMoveOutputFoot) dSpan = -dSpan;
 
-        if (_altAxis == '\0')
-        {
-            if (Math.Abs(dZ) < threshold && Math.Abs(dSpan) < threshold) return;
-            _altAxis = Math.Abs(dZ) >= Math.Abs(dSpan) ? 'z' : 's';
-            _altReference = _altAxis == 'z' ? ReferenceHeightNm() : ReferenceSpanNm();
-            if (_altReference <= 0) { _altAxis = '\0'; return; }
-        }
+        double spanFactor = FrameFactor(_altReferenceSpan, dSpan, ref _altSpanApplied);
+        double heightFactor = FrameFactor(_altReferenceHeight, z - _dragStartZ, ref _altHeightApplied);
 
-        double target = _altAxis == 'z'
-            ? (_altReference + dZ) / _altReference
-            : (_altReference + dSpan) / _altReference;
+        if (spanFactor == 1.0 && heightFactor == 1.0) return;
+
+        _controller.DragFrame(_ => _viewModel.ScaleSelection(spanFactor, heightFactor, _altMoveOutputFoot));
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// The factor to apply THIS frame for one axis: the target factor since the drag began, divided by
+    /// what has already been applied. Returns exactly 1.0 when the axis has no usable reference (a
+    /// flat wire has no height to scale) or has not moved, so the caller can skip it.
+    /// </summary>
+    private static double FrameFactor(double reference, double delta, ref double applied)
+    {
+        if (reference <= 0) return 1.0;
 
         // A non-positive factor would fold the array through itself; clamp rather than refuse, so the
         // drag stays live and the user simply cannot push it past flat.
-        target = Math.Max(target, 1e-3);
+        double target = Math.Max((reference + delta) / reference, 1e-3);
 
-        double frameFactor = target / _altApplied;
-        if (Math.Abs(frameFactor - 1.0) < 1e-9) return;
-        _altApplied = target;
+        double frame = target / applied;
+        if (Math.Abs(frame - 1.0) < 1e-9) return 1.0;
 
-        _controller.DragFrame(_ =>
-        {
-            if (_altAxis == 'z') _viewModel.ScaleProfileHeight(_altProfile, frameFactor);
-            else _viewModel.ScaleProfileSpan(_altProfile, frameFactor);
-        });
-
-        InvalidateVisual();
+        applied = target;
+        return frame;
     }
 
     private void OnPointerReleasedInternal(object? sender, PointerReleasedEventArgs e)
     {
         if (_isPanning) { _isPanning = false; e.Pointer.Capture(null); return; }
-        if (_dragging) EndDrag();
+
+        if (_marqueeActive)
+        {
+            var pos = e.GetPosition(this);
+            _marqueeSpan = ScreenToSpan(pos.X);
+            _marqueeZ = ScreenToZ(pos.Y);
+
+            var resolved = ResolveMarqueeNow();
+            EndMarquee();
+
+            if (_viewModel is not null) _viewModel.Selection = resolved;
+            InvalidateVisual();
+            return;
+        }
+
+        if (_pressed) EndDrag();
+    }
+
+    /// <summary>The live preview, resolved by the same rule the release commits.</summary>
+    private WireSelection ResolveMarqueeNow()
+    {
+        if (_viewModel is null) return new WireSelection();
+
+        var direction = _marqueeSpan < _marqueeStartSpan
+            ? MarqueeDirection.RightToLeft
+            : MarqueeDirection.LeftToRight;
+
+        // The marquee's own axes are THIS view's — span and z — so the resolver is handed the same
+        // projection the curves were drawn with rather than left to fall back on world x.
+        var resolved = SelectionResolver.ResolveMarquee(
+            _viewModel.Mesh,
+            (long)Math.Round(_marqueeStartSpan), (long)Math.Round(_marqueeStartZ),
+            (long)Math.Round(_marqueeSpan), (long)Math.Round(_marqueeZ),
+            direction, EditorView.Profile,
+            spanOf: (wire, index) =>
+                (long)Math.Round(ProfileProjection.Project(_viewModel.Mesh.Wires[wire], index,
+                                                           SpanMode, Azimuth).Span));
+
+        return _marqueeModifiers.HasFlag(WBondModifiers.Shift)
+            ? SelectionResolver.Union(_marqueeBase, resolved)
+            : resolved;
+    }
+
+    private void EndMarquee()
+    {
+        _marqueeActive = false;
+        if (_viewModel is not null) _viewModel.PreviewSelection = null;
     }
 
     private void EndDrag()
     {
+        bool wasDragging = _dragging;
+
+        _pressed = false;
         _dragging = false;
-        _controller?.EndDrag();
-        _viewModel?.EndGesture();
+
+        // A press that never crossed the threshold opened nothing, so there is nothing to close —
+        // calling EndDrag on the controller would publish a spurious final answer for a plain click.
+        if (wasDragging)
+        {
+            _controller?.EndDrag();
+            _viewModel?.EndGesture();
+        }
+        else if (_deferredPress is { } press && _controller is not null)
+        {
+            // It was a click on an already-selected thing after all: resolve it now.
+            _controller.Press(press.Span, press.Z, HitToleranceNm, press.Modifiers, press.ClickCount,
+                              EditorView.Profile);
+        }
+
+        _deferredPress = null;
         InvalidateVisual();
     }
 
@@ -426,11 +715,29 @@ public sealed class WBondProfileCanvas : Control
         return null;
     }
 
-    /// <summary>The quantity a height scale is measured against — the bound profile's loop height.</summary>
+    /// <summary>
+    /// The quantity a height scale is measured against — the bound profile's loop height, or, for a
+    /// wire that follows no profile, the wire's own max-minus-min z.
+    ///
+    /// <para>The fallback is what makes alt-drag work on a detached wire at all: reading the profile
+    /// alone returned zero there, and a zero reference silently disables the whole gesture.</para>
+    /// </summary>
     private double ReferenceHeightNm()
     {
-        if (_viewModel is null || _altProfile is null) return 0;
-        return _viewModel.Design.ProfileByName(_altProfile)?.LoopHeightNm ?? 0;
+        if (_viewModel is null) return 0;
+
+        if (SelectedProfileName() is { } name &&
+            _viewModel.Design.ProfileByName(name)?.LoopHeightNm is { } bound && bound > 0)
+            return bound;
+
+        var wires = _viewModel.Design.AllWires().ToList();
+        foreach (int index in _viewModel.Selection.TouchedWires())
+        {
+            if (index < 0 || index >= wires.Count) continue;
+            if (wires[index].LoopHeightNm is > 0 and var h) return h;
+        }
+
+        return 0;
     }
 
     /// <summary>The quantity a span scale is measured against — the selected wire's own chord.</summary>
@@ -445,8 +752,8 @@ public sealed class WBondProfileCanvas : Control
             var wire = wires[index];
             if (wire.Points.Count < 2) continue;
 
-            var last = ProfileProjection.Project(wire, wire.Points.Count - 1, SpanMode);
-            var first = ProfileProjection.Project(wire, 0, SpanMode);
+            var last = ProfileProjection.Project(wire, wire.Points.Count - 1, SpanMode, Azimuth);
+            var first = ProfileProjection.Project(wire, 0, SpanMode, Azimuth);
             double chord = Math.Abs(last.Span - first.Span);
             if (chord > 0) return chord;
         }
@@ -461,17 +768,28 @@ public sealed class WBondProfileCanvas : Control
         private readonly Rect _bounds;
         private readonly WBondDesign? _design;
         private readonly WBondRenderTheme _theme;
+        private readonly LayoutRenderTheme _layoutTheme;
         private readonly ProfileProjection.SpanMode _mode;
+        private readonly double? _azimuth;
         private readonly WireSelection? _selection;
         private readonly Func<double, double> _spanToScreen;
         private readonly Func<double, double> _zToScreen;
+        private readonly (Rect Box, bool Crossing)? _marquee;
+        private readonly long _gridPitchNm;
+        private readonly double _zoom, _panSpan, _panZ;
 
         public ProfileDrawOperation(Rect bounds, WBondDesign? design, WBondRenderTheme theme,
-                                    ProfileProjection.SpanMode mode, WireSelection? selection,
-                                    Func<double, double> spanToScreen, Func<double, double> zToScreen)
+                                    LayoutRenderTheme layoutTheme,
+                                    ProfileProjection.SpanMode mode, double? azimuth,
+                                    WireSelection? selection,
+                                    Func<double, double> spanToScreen, Func<double, double> zToScreen,
+                                    (Rect Box, bool Crossing)? marquee,
+                                    long gridPitchNm, double zoom, double panSpan, double panZ)
         {
-            _bounds = bounds; _design = design; _theme = theme; _mode = mode;
-            _selection = selection; _spanToScreen = spanToScreen; _zToScreen = zToScreen;
+            _bounds = bounds; _design = design; _theme = theme; _layoutTheme = layoutTheme;
+            _mode = mode; _azimuth = azimuth; _selection = selection;
+            _spanToScreen = spanToScreen; _zToScreen = zToScreen; _marquee = marquee;
+            _gridPitchNm = gridPitchNm; _zoom = zoom; _panSpan = panSpan; _panZ = panZ;
         }
 
         public bool Equals(ICustomDrawOperation? other) => false;
@@ -480,15 +798,107 @@ public sealed class WBondProfileCanvas : Control
 
         public void Render(ImmediateDrawingContext context)
         {
-            if (_design is null) return;
             var leaseFeature = context.TryGetFeature<ISkiaSharpApiLeaseFeature>();
             if (leaseFeature is null) return;
 
             using var lease = leaseFeature.Lease();
-            WBondRenderer.DrawProfile(
-                lease.SkCanvas, _design, _theme,
-                s => (float)_spanToScreen(s), z => (float)_zToScreen(z),
-                _mode, _selection);
+            var canvas = lease.SkCanvas;
+
+            DrawGrid(canvas);
+
+            if (_design is not null)
+                WBondRenderer.DrawProfile(
+                    canvas, _design, _theme,
+                    s => (float)_spanToScreen(s), z => (float)_zToScreen(z),
+                    _mode, _selection, azimuthRadians: _azimuth);
+
+            if (_marquee is { } m) DrawMarquee(canvas, m.Box, m.Crossing);
+        }
+
+        /// <summary>
+        /// The same dot grid the layout view draws — <see cref="LayoutGridMath.ComputeGridPitch"/>'s
+        /// decimation, the same major-every-five rule, and the same two theme colours.
+        ///
+        /// <para>Reusing the math rather than the renderer is deliberate: <c>LayoutRenderer.DrawGrid</c>
+        /// is bound to a <c>LayoutView</c> and a <c>LayoutViewport</c>, and this view has neither — it
+        /// works in (span, z) nanometres with its own independent pan and zoom (§6.1). The part that
+        /// can be WRONG is the decimation, and that is the part that is shared.</para>
+        /// </summary>
+        private void DrawGrid(SKCanvas canvas)
+        {
+            if (LayoutGridMath.ComputeGridPitch(_gridPitchNm, _zoom) is not { } minorPitch) return;
+
+            long majorPitch = minorPitch * LayoutGridMath.MajorGridStepCount;
+
+            double maxSpan = _panSpan + _bounds.Width / _zoom;
+            double maxZ = _panZ + _bounds.Height / _zoom;
+
+            long iStart = (long)Math.Floor(_panSpan / minorPitch);
+            long iEnd = (long)Math.Ceiling(maxSpan / minorPitch);
+            long jStart = (long)Math.Floor(_panZ / minorPitch);
+            long jEnd = (long)Math.Ceiling(maxZ / minorPitch);
+
+            // The same safety cap the layout renderer uses: a degenerate zoom must cost nothing rather
+            // than emit millions of points.
+            const long SafetyCap = 4096;
+            if (iEnd - iStart > SafetyCap || jEnd - jStart > SafetyCap) return;
+
+            var minor = new List<SKPoint>();
+            var major = new List<SKPoint>();
+
+            for (long i = iStart; i <= iEnd; i++)
+            {
+                long span = i * minorPitch;
+                float sx = (float)_spanToScreen(span);
+                bool iMajor = span % majorPitch == 0;
+
+                for (long j = jStart; j <= jEnd; j++)
+                {
+                    long z = j * minorPitch;
+                    (iMajor && z % majorPitch == 0 ? major : minor)
+                        .Add(new SKPoint(sx, (float)_zToScreen(z)));
+                }
+            }
+
+            using var minorPaint = new SKPaint
+            {
+                IsAntialias = true, Color = _layoutTheme.GridMinor,
+                StrokeWidth = 1.5f, StrokeCap = SKStrokeCap.Round,
+            };
+            using var majorPaint = new SKPaint
+            {
+                IsAntialias = true, Color = _layoutTheme.GridMajor,
+                StrokeWidth = 2.5f, StrokeCap = SKStrokeCap.Round,
+            };
+
+            if (minor.Count > 0) canvas.DrawPoints(SKPointMode.Points, [.. minor], minorPaint);
+            if (major.Count > 0) canvas.DrawPoints(SKPointMode.Points, [.. major], majorPaint);
+        }
+
+        /// <summary>
+        /// The marquee, in the layout's own selection accent with the same alpha, hairline stroke and
+        /// dash period — one selection rectangle across the whole application.
+        /// </summary>
+        private void DrawMarquee(SKCanvas canvas, Rect box, bool crossing)
+        {
+            var rect = new SKRect((float)box.X, (float)box.Y,
+                                  (float)(box.X + box.Width), (float)(box.Y + box.Height));
+
+            using var fill = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Fill,
+                Color = _layoutTheme.Selection.WithAlpha(50),
+            };
+            canvas.DrawRect(rect, fill);
+
+            using var stroke = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 0,
+                Color = _layoutTheme.Selection.WithAlpha(255),
+                PathEffect = crossing ? SKPathEffect.CreateDash([6f, 4f], 0f) : null,
+            };
+            canvas.DrawRect(rect, stroke);
+            stroke.PathEffect?.Dispose();
         }
 
         public void Dispose() { }

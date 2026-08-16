@@ -464,6 +464,6 @@ future commercial superset, if any, layers on through a clean extension boundary
 - **[SkiaSharp](https://github.com/mono/SkiaSharp)** (2D rendering)
 - **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU)
 - **[NumFlat](https://github.com/sinshu/numflat)** (dense linear algebra)
-- **[Clipper2](https://github.com/AngusJohnson/Clipper2)** (integer-coordinate polygon clipping and offsetting, used by the layout editor)
+- **[Clipper2](https://github.com/AngusJohnson/Clipper2)** (integer-coordinate polygon clipping and offsetting, used by the layout editor — Boost Software License)
 - **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)**
 

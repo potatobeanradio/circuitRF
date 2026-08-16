@@ -1,5 +1,6 @@
 using Avalonia.Input;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Renderers;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.Controls;
@@ -31,7 +32,23 @@ public interface ILayoutCanvasOverlay
     /// <summary>
     /// Draws the overlay, after the layout itself and inside the same Skia lease.
     /// </summary>
-    void Draw(SKCanvas canvas, LayoutViewport viewport);
+    /// <param name="theme">
+    /// The SAME theme object the layout underneath was just drawn with. Handed down rather than
+    /// re-derived so shared visual language — the selection accent above all — cannot drift between
+    /// the layout and whatever is drawn over it.
+    /// </param>
+    void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme);
+
+    /// <summary>
+    /// The overlay's own extent in the canvas's world units (the layout's DBU), or
+    /// <see cref="Bbox.Empty"/> when it has nothing to show.
+    ///
+    /// <para><b>Zoom to Fit has to include this or it frames the wrong thing.</b> The canvas fits the
+    /// union of the layout's shapes and instances; an overlay's content is in neither, so a wBond
+    /// document on an empty scratch layout fitted to an EMPTY extent and landed at an arbitrary
+    /// default — with every wire off screen, which is exactly what the owner saw.</para>
+    /// </summary>
+    Bbox ContentBounds();
 
     /// <summary>Returns true when the press was consumed and must not reach the layout editor.</summary>
     bool OnPointerPressed(long worldX, long worldY, long tolDbu, KeyModifiers modifiers, int clickCount);

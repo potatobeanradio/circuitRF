@@ -1210,7 +1210,7 @@ public partial class HarmonicaView : UserControl
     /// <summary>
     /// R-h9r2-6/7/8/9/10, extended by brief-harmonicarf-r6b §2 — three read-only format rows (each
     /// with its own "Set…"), a "VSWR: &lt;val&gt;" toggle with its own "Set…" submenu, a Snap to Grid
-    /// toggle, Add Grid Points, Add Grid Points to VSWR (R9A §6), a separator, then Remove — disabled with a stated reason
+    /// toggle, Add Grid Point to Marker, Add Grid Points to VSWR (R9A §6), a separator, then Remove — disabled with a stated reason
     /// on band 1, on BOTH sides, per §4's own rule.
     /// </summary>
     private void BuildMarkerMenu(List<object> items, HarmonicaViewModel h, HarmonicaMarker marker)

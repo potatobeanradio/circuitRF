@@ -326,9 +326,13 @@ public class WBondOverlayTests
 
         overlay.OnPointerReleased(foot.X, foot.Y + 5 * step);
 
+        // The TOTAL displacement is exact even though the first frames were below the drag threshold:
+        // deltas are measured from the press point, not from the frame that first crossed it. (With a
+        // 3 mil hit tolerance the threshold is 3 mil, so frames 1 and 2 are still a click.)
         Assert.Equal(startY + 5 * step, vm.Design.AllWires().First().Points[0].Y);
         Assert.Equal(rebuilds, vm.RebuildCount);
-        Assert.True(vm.IncrementalUpdateCount >= 5);
+        Assert.True(vm.IncrementalUpdateCount >= 3,
+                    $"the drag must run through the incremental path; {vm.IncrementalUpdateCount} updates");
     }
 
     /// <summary>Arrow keys are the overlay's only when it has a selection — otherwise they nudge the layout.</summary>
@@ -403,10 +407,18 @@ public class WBondOverlayTests
 
         overlay.OnKeyDown(Key.W, KeyModifiers.None);
         overlay.OnPointerPressed(foot.X, foot.Y, tol, KeyModifiers.None, clickCount: 1);
+        overlay.OnPointerReleased(foot.X, foot.Y);
         Assert.Equal([0], vm.Selection.Wires);
 
+        // The RELEASE is what narrows the selection here, not the press — a press on something already
+        // selected picks it up so it can be dragged, and only a gesture that turns out to be a plain
+        // click re-resolves (the click-through in WBondLayoutOverlay.EndDrag). Without releasing, the
+        // whole-wire selection would still be standing, correctly.
         overlay.OnKeyUp(Key.W, KeyModifiers.None);
         overlay.OnPointerPressed(foot.X, foot.Y, tol, KeyModifiers.None, clickCount: 1);
+        Assert.Equal([0], vm.Selection.Wires);
+
+        overlay.OnPointerReleased(foot.X, foot.Y);
         Assert.Empty(vm.Selection.Wires);
         Assert.NotEmpty(vm.Selection.Points);
     }

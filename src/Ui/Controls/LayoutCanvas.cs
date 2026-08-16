@@ -375,6 +375,11 @@ public sealed class LayoutCanvas : Control
                 bb = bb.Union(CellHierarchy.InstanceBbox(inst, _viewModel.InstanceBaseDir));
         }
 
+        // Whatever rides ON the canvas counts too. A wBond document's wires are an overlay by design
+        // (WB23) and are in neither Shapes nor Instances, so without this a wBond on an empty scratch
+        // layout fitted to an EMPTY extent and framed nothing the user could see.
+        if (_canvasOverlay is { } overlay) bb = bb.Union(overlay.ContentBounds());
+
         var vp = bb.IsEmpty
             ? LayoutViewport.Default(Bounds.Width, Bounds.Height, _viewModel?.Model.SnapDbu ?? 0, _viewModel?.Model.DbuPerMicron ?? LayoutUnits.DefaultDbuPerMicron)
             : LayoutViewport.ZoomToFit(bb, Bounds.Width, Bounds.Height);
@@ -1254,7 +1259,7 @@ public sealed class LayoutCanvas : Control
 
             // After the layout, inside the same lease — the overlay draws ON the layout (WB23), and
             // its own pass never reaches LayoutRenderer's caches.
-            _overlay?.Draw(lease.SkCanvas, _vp);
+            _overlay?.Draw(lease.SkCanvas, _vp, _opts.Theme);
 
             _onResult(result);
         }

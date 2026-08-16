@@ -6,6 +6,229 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## wBond editor, round 2 — the toolbar, the arrangement, and four gesture rules that were quietly inverted or absent (2026-08-16)
+
+**Two invariants worth keeping in mind before touching either canvas** (they were written into
+`src/Ui/CLAUDE.md` in round 1 and moved here):
+
+- **A `LayoutCanvas` overlay clips ITSELF, and is handed the layout's own `LayoutRenderTheme`.**
+  Nothing else clips the overlay pass — the layout underneath is culled against the viewport before it
+  is drawn, but an overlay draws whatever it holds, on screen or not, and `LayoutCanvas` sets no
+  `ClipToBounds`. `ILayoutCanvasOverlay.Draw` takes the theme so shared visual language (the selection
+  accent above all) cannot drift from the layout's own.
+- **A wire edit repaints through `WBondViewModel.ReadoutChanged`, and BOTH canvases must listen** — a
+  wBond edit deliberately never touches `LayoutView.Changed` (WB23/WB17), which is the only thing that
+  repaints `LayoutCanvas` on its own. A SELECTION change raises neither, so it needs its own
+  subscription; without it, clicking empty space in the layout view left the same wires drawn as
+  selected in the profile view.
+
+**The profile view's absolute span axis had its origin on the wire's own input foot, and three
+owner-reported bugs were that one fact.** `Points[0]` sat at span 0 permanently: it could not move in
+that view whatever happened to it in the world, and any motion of it was rendered as motion of
+everything ELSE. So an alt-drag anchored on the output foot DREW the output foot moving — while the
+layout view drew the truth, which is why the two views disagreed about the same gesture — and a plain
+drag of the start point left it glued in place while the rest of the curve slid out from under the
+cursor ("regular click-drag of the start of a wire is changing span"). Absolute now measures from the
+WORLD origin, along the wire's own chord direction under AUTO and along the view direction under a
+fixed plane. **`SpanMode.Normalised` keeps the foot-relative 0..1 origin** — that is the
+shape-comparison mode §6.2 argues for, and it still overlays wires of any angle and length; Absolute's
+whole stated purpose is "true geometry", and a true picture cannot re-origin itself on the point being
+dragged. The envelope band had to follow: it carries a NORMALISED span, so it is mapped onto the
+reference wire's projected origin AND extent, not just its length. Separately, the profile canvas's
+alt-drag was missing the anchor SIGN FLIP the layout overlay has carried since it was written — pulling
+the input foot backwards along the axis is what lengthens a wire.
+
+**`LayoutCanvas.ZoomToFit` unions the layout's shapes and instances — and an overlay's content is in
+neither.** A wBond document on an empty scratch layout therefore fitted to an EMPTY extent and landed
+at `LayoutViewport.Default`, with every wire off screen. `ILayoutCanvasOverlay` now declares
+`ContentBounds()`, in the canvas's own DBU (the nm→DBU bridge crossed there, and the descent transform
+applied first — framing untransformed coordinates would frame a place the wires are not). Note that a
+wire-less design is unreachable: `WBondDesign.Validate` refuses both an empty array and an array-less
+design, because either makes the array-basis inductance singular. The one reachable empty case is
+depth with an uncomposable chain (WB27), where the wires are deliberately not drawn.
+
+**The layout renderer accented whole WIRES and nothing finer**, so a segment picked in the profile view
+lit up there and showed nothing in the layout view — and a picked INPUT foot lit up nowhere at all,
+because the input-end colour (WB3) outranked the accent unconditionally. Both views now share one
+`SegmentSelected`/`PointSelected` pair, and a selected point outranks the input-end colour: the accent
+is transient and says what the user is holding, and the end is still identifiable while selected
+because it is still the wire's first dot. The per-kind nature of this defect is why it kept resurfacing
+— whole-wire selection always worked, which is exactly what hid it — so the guard is a pixel oracle run
+over all four kinds (wire, segment, interior point, input foot) in BOTH views.
+
+**A live marquee's contents belong on the shared view-model, not inside the canvas that owns the
+gesture** (`WBondViewModel.PreviewSelection` / `EffectiveSelection`; every renderer reads the latter,
+none reads `Selection` to draw). A wire caught by a box dragged in the profile view is the same wire in
+the layout view and has to light up in both. Two more things had to change for the profile half to
+show anything at all: **it accented whole WIRES only**, so an enclose marquee — whose whole job is
+catching some of a wire's vertices — appeared to select nothing; and it **skipped every bound member
+but the representative**, so a marquee catching members of a twenty-wire array highlighted nothing. A
+selected wire is now always drawn individually, because the band is one shape over the whole array and
+cannot carry a highlight. A counter cannot tell "drawn" from "drawn highlighted", so that one is
+guarded by a pixel oracle.
+
+**A press must not resolve the selection, and a press must not open a gesture.** Three separate
+owner-reported defects were the same two lines of `OnPointerPressed` in each canvas:
+
+- *"Clicking on the selection starts a new selection."* The press re-resolved the hit unconditionally,
+  so grabbing three selected segments to move them collapsed the selection to the one element under
+  the cursor and dragged only that. Now a press on something the selection already covers **keeps** it
+  — and, so an element inside a selected wire stays reachable, a gesture that turns out to be a plain
+  click re-resolves on RELEASE (`_deferredPress`). That click-through is why
+  `HoldingW_PromotesAClickToTheWholeWire` now has to release before asserting.
+- *"Clicking on the start point of a wire changes the span."* The press opened the gesture immediately
+  and the first move measured its delta from the UNSNAPPED press point — so a click with a pixel of
+  hand-shake snapped the grabbed foot onto the nearest pad corner, and a moved foot is a changed span.
+  Two fixes: the drag baseline is the **snapped** press point, and nothing happens at all until the
+  pointer leaves the hit tolerance (`_dragThresholdNm`, `DragThresholdPixels`). A click therefore also
+  leaves no undo entry, which it previously did on every single click.
+
+**The alt-drag anchor was inverted, and the double negative is where it went wrong.** WB26a's rule is
+"grabbing near an end IS the instruction to move that end". `ScaleSpan` takes `moveOutputFoot`, so the
+helper must answer *which foot moves* — a first version answered *which foot was grabbed near*, and an
+alt-drag on the output end pulled the INPUT end, shrinking the wire when the hand said grow. The
+helper is now named `GrabMovesOutputFoot` for that reason. **Alt-drag also now scales span AND height
+together, every frame**: the old code declared one axis on the first few pixels of travel and ignored
+the other for the rest of the gesture, so a diagonal alt-drag silently did half of what it looked
+like. And it **works on a detached wire** — it used to look up the selection's bound profile, find
+none, and do nothing while saying nothing (`WireEdits.ScaleWires` / `WBondViewModel.ScaleSelection`).
+**Alt-drag in the LAYOUT view scales span too**, which it never did; the displacement is projected onto
+the wire's own chord, so a drag perpendicular to the wire correctly changes nothing.
+
+**The profile view's plane is now a SETTING, not a derivation.** Round 1 labelled the plane it happened
+to be showing; the owner's answer is that a user needs to *choose* it. `ProfileProjection.Project`
+takes an optional azimuth: null is AUTO (each wire on its own chord — §6.2's parameterisation, and the
+only mode in which two wires of different angle are comparable), a number fixes the plane. Under a
+fixed plane a wire running perpendicular is foreshortened to **nothing**, which is what looking down a
+wire actually looks like and is why AUTO is still the default. `ProfileAxisSetting` owns the text round
+trip so the combo, the persisted view state and the parser cannot disagree ("90" reads back as "Y-Z").
+The **band** had to be projected too: it carries normalised span, so it is scaled by the reference
+wire's extent *in the current projection* — reading the plain chord length would leave the band at full
+width in a plane the curves are foreshortened in.
+
+**The profile view got its own marquee, and it is resolved against span and z**, not world x —
+`SelectionResolver.ResolveMarquee`'s `spanOf` hook exists for exactly this and was previously unused.
+Live preview, kept separate from the committed selection, same as the layout side.
+
+**A `LayoutView`'s `SnapDbu` defaults to ZERO, and zero means "no grid" to `LayoutRenderer` as well as
+"no snapping" to the editor** — which is why the wBond layout view drew no grid at all. A reference
+layout attached to a wBond document now gets 1 mil if it has none (`OnReferenceLayoutChanged`). The
+metadata bar's Snap box is the reference layout's OWN ladder and its own three handlers, bound
+straight through; it sets the grid pitch for **both** canvases and the fallback wire-point snap
+(geometry first, grid second — a grid that overrode a pad corner would pull the foot back off the pad).
+The profile canvas reuses `LayoutGridMath.ComputeGridPitch` rather than `LayoutRenderer.DrawGrid`,
+which is bound to a `LayoutView` and a `LayoutViewport` this view does not have: the part that can be
+*wrong* is the decimation, and that is the part that is shared.
+
+**Hiding a focused control orphans the focus, and this view's key handler is gated on
+`IsKeyboardFocusWithin`** — so cycling away from the canvas the user was working in left the editor
+deaf to its own shortcuts until they clicked something ("pressing V repeatedly does not cycle unless I
+click on a canvas between keystrokes"). `ApplyArrangement(restoreFocus: true)` puts focus back on a
+canvas that is still on screen, and only ever when focus was already inside this view, so it can never
+yank focus out of a field elsewhere in the application. **The cycle key is `V`, not `Tab`**: Tab is the
+focus-navigation key every Avalonia control expects, so claiming it would have to out-race the focus
+manager in every host this view is embedded in, and would leave keyboard users unable to walk the
+toolbar.
+
+**The Snap box is formatted in the LAYOUT's `DisplayUnit`, which defaults to microns** — so a document
+set to `mil` offered a snap ladder in µm right beside a Unit box saying mil. The editor's chosen unit
+is now mirrored into the reference layout (`PushDisplayUnitToReferenceLayout`), which carries the
+ladder, the snap text, the cursor readout, the extent and Zoom 1:1 with it. §6.5's "independent of the
+`.ctech` display unit" is untouched: that rule is about the wBond not being FORCED to follow the
+technology's unit, and the arrow here still points the other way. The two enums list the same five
+units in the same order, and the mapping is written out rather than cast for exactly that reason — an
+ordinal cast would keep compiling and start lying the moment either gains a member.
+
+**The snap ladder gained two SUB-unit rungs** (`SnapLadderMultipliers` is now
+`0.1 · 0.5 · 1 · 5 · 10 · 25 · 50`, in `decimal` because a `double` cannot hold 1 mil = 25,400 nm
+exactly). It stays R-snp-2's RELATIVE ladder — multiples of the technology's own default snap — so on a
+1 mil process the new rungs are the "0.5 mil" and "0.1 mil" the owner asked for, and on any other
+process they are the same fractions of its step. A rung that quantises to zero DBU is dropped: zero is
+`LayoutSnapping`'s OFF state, not a fine snap, so offering it in a distance list would be a trap.
+**This changes the Layout Editor's ladder too**, deliberately — it is one control with one rule.
+
+**A new wBond document snaps at 0.1 mil off a 1 mil LADDER, and those are two separate statements.**
+With no technology the ladder falls back to the document's own snap, so seeding the snap to 0.1 mil
+would have re-based the whole ladder and offered a 0.01 mil finest rung. `SnapLadderBaseDbu` is the
+explicit base a host can state; it is a base and never a selection, so R-crash-1's "an items collection
+must not be a function of the selection made from it" is untouched. `RefreshSnapLadder()` exists
+because the layout view-model's constructor builds the ladder before the wBond document has seeded
+anything — without it the editor kept offering the µm-scale fallback rungs all session.
+
+**View arrangement persists in the `.wBond`'s own opaque `ViewState` field, with NO format-version
+bump** — that field exists so the UI can persist what the framework-free half must not parse, and an
+older build reads the string, understands none of it and writes it back unaltered. Every field is
+optional and malformed JSON takes the defaults: a view setting is never worth refusing to open a design
+over. **The row/column collapse is written from code-behind, not bound**: a `GridSplitter` writes a
+concrete `GridLength` straight into the definition it resizes, silently replacing any binding on that
+property, so a bound collapse would work exactly until the first time the user dragged the splitter.
+
+**Panel:** lengths now carry per-unit precision (`Decimals`) chosen so one digit is worth roughly the
+same physical amount in every unit — mil pinned at one decimal per the owner, pH likewise. The card is
+name + inductance + expander, collapsed by default; the "redundant pH readout" was the SELF term being
+listed again among the mutuals, so only that entry is dropped and cross-array mutuals stay (under the
+fold). The return-path line is suppressed for the ordinary image plane at z = 0 — a sentence that says
+the same expected thing on every document costs a row and tells nobody anything, while the UNDECLARED
+case WB20/RW13 exists for is unconditional.
+
+## wBond editor — eleven owner-reported defects, and the two that were the same bug wearing two faces (2026-08-16)
+
+**The profile view's "one editable curve per array" was never drawn — only the band was.** `wbond.md`
+§6.2 idea 3 is *one curve plus a translucent min/max envelope*; `WBondRenderer.DrawProfile` drew the
+envelope and `continue`d past every bound member. The envelope is a min/max over the bound members, so
+**whenever those members share a shape, min == max at every sample and the band is a zero-area path
+that fills nothing.** Two ordinary situations hit that: a ONE-WIRE array (the shipped default
+document), and *any* array mid-drag once `QualityLadder` has collapsed its members onto their chords
+(WB15) — which is exactly the owner's "the profile view sometimes disappears while dragging wire
+segments in the layout view". The fix draws `envelope.BoundWires[0]` as the representative curve in
+`theme.Wire`. **A counter test cannot see this**: the old code emitted a path, it just filled nothing,
+so the guard is a rendered-pixel oracle on a single bound wire.
+
+**Nothing clipped the wire pass.** The layout underneath is culled against the viewport before it is
+drawn; `WBondRenderer.Draw` iterates *every* wire in the design regardless of where it lands on
+screen, and `LayoutCanvas` sets no `ClipToBounds`. So a wire off the left edge painted straight across
+the inductance panel docked beside the canvas. `WBondLayoutOverlay.Draw` now saves/clips/restores
+against `viewport.Width`/`Height`. Verified by removing the clip and watching the test go red.
+
+**A Properties-panel edit repainted the profile canvas and not the layout canvas**, because only
+`WBondProfileCanvas` listened to `WBondViewModel.ReadoutChanged` — the overlay only ever raised
+`OverlayChanged` from its own gestures, and the layout canvas repaints on `LayoutView.Changed`, which
+a wire edit deliberately never touches (WB23/WB17). Reported as "changing the Span takes seconds; Loop
+ht is fast", and the asymmetry is the tell rather than the cost: **the model path is ~0.05 ms per
+commit, measured, and Span and Loop height are within noise of each other** — span's visible effect is
+in the layout view (a foot moves in XY) and loop height's is in the profile view, which was already
+repainting. `WBondEditorView` now subscribes `ReadoutChanged → RepaintBoth`.
+
+**The profile view's horizontal axis now moves geometry, and the mapping is the chord.** A plain drag
+used to be z-only, on the stated grounds that span is derived and "move this point sideways" has no
+single answer. It does: displacement **along that wire's own XY chord**. `WireEdits.Translate` owns
+it, so the drag and the arrow-key nudge got it together, and a wire with coincident feet in XY is
+skipped rather than guessed. The old code's profile `dx` was applied as world x, which for any wire
+not already parallel to x moved the point *off* its chord and barely changed its span.
+
+Smaller, but each a real defect: the panel's Total length / Landing span were **hard-coded to mm**
+(now `WBondPanelViewModel.Unit`, pushed from `Editor.DisplayUnit`; inductance deliberately stays pH
+per WB27a/D9); the toolbar unit picker showed the bare enum (`Mil`, `Um`, `Inch`) and now shows the
+**suffix strings themselves**, so the picker offers exactly what `WBondUnits.TryParseUnit` accepts;
+the marquee's fill alpha, hairline stroke and dash period are now transcribed from
+`LayoutRenderer.DrawMarquee` and its colour is the **same `LayoutRenderTheme` object the layout
+underneath was drawn with** — `ILayoutCanvasOverlay.Draw` takes the theme for that reason; the marquee
+highlight is live, with the preview kept **separate from the committed selection** for the reason L1i
+already established (the committed selection is also the Shift-base, so a self-writing preview can
+never shrink), and preview and commit share one `WBondPointerController.ResolveMarquee`.
+
+**Escape belongs to the VIEW, not the canvases.** `WBondLayoutOverlay.OnKeyDown` could already cancel
+a half-placed wire and clear a selection — but it cannot un-press a `ToggleButton`, so the tool stayed
+armed, the next click started another wire, and Escape read as doing nothing. `WBondEditorView`'s
+tunnel handler now unwinds one step at a time: disarm Draw/Rotate (which cancels a half-placed wire
+through `WireDrawArmed`'s own setter) → clear the selection → leave the key **unhandled** so an
+ancestor still sees it.
+
+**The profile view states its plane** (`ProfileProjection.AxisLabel` → `WBondViewModel.ProfileAxisLabel`):
+X-Z, Y-Z, or the azimuth for a diagonal array. The layout view needs no counterpart — it is always
+X-Y. An axis is named only within 5°; rounding 45° to "X-Z" would be a plausible-looking wrong answer.
+Rendered as a `TextBlock` over the canvas, not Skia text, to stay clear of the headless-typeface trap.
+
 ## Round 11 — a K edit must not invent a marker, and per-band menus need their own signal (2026-08-15)
 
 `HarmonicaViewModel.RetargetTerminations` used to rebuild the marker list wholesale, which applied

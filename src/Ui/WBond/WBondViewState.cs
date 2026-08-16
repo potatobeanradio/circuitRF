@@ -1,0 +1,92 @@
+using System;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using CircuitRF.WBond;
+
+namespace CircuitRF.Ui.WBond;
+
+/// <summary>Which of the editor's two canvases are showing (owner, 2026-08-16).</summary>
+public enum WBondViewMode
+{
+    /// <summary>Both, split — the shipped default.</summary>
+    Both,
+
+    /// <summary>The profile view alone, at the full size of the canvas area.</summary>
+    Profile,
+
+    /// <summary>The layout view alone.</summary>
+    Layout,
+}
+
+/// <summary>
+/// The <c>.wBond</c> file's view state — how the editor was arranged, as distinct from what the
+/// design is.
+///
+/// <para><b>It travels in <see cref="WBondDesign.ViewStateJson"/>, which the file format has always
+/// carried as an opaque string.</b> That field exists precisely so the UI can persist things the
+/// framework-free half must not know about, and it is why none of this needs a
+/// <c>WBondIo.CurrentFormatVersion</c> bump: an older build reads the string, understands none of it,
+/// and writes it back unaltered. A file saved by this build therefore still opens in one that
+/// predates it.</para>
+///
+/// <para><b>Every field is optional and every reader takes a default.</b> Malformed or absent JSON is
+/// not an error — it is a document that was never arranged, which is the normal state of a new one.
+/// A view setting is never worth refusing to open a design over.</para>
+/// </summary>
+public sealed class WBondViewState
+{
+    public WBondViewMode ViewMode { get; set; } = WBondViewMode.Both;
+
+    /// <summary>Whether the Array inductance panel is showing (the <c>I</c> key).</summary>
+    public bool PanelVisible { get; set; } = true;
+
+    /// <summary>
+    /// The profile view's plane, in degrees, or null for AUTO (each wire on its own chord).
+    /// Degrees rather than radians because this is a file a person may read.
+    /// </summary>
+    public double? ProfileAxisDegrees { get; set; }
+
+    /// <summary>The editor's display unit (§6.5) — independent of the layout's own, by design.</summary>
+    public WBondUnit DisplayUnit { get; set; } = WBondUnit.Mil;
+
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    /// <summary>Reads the state out of a design, falling back to defaults on anything unreadable.</summary>
+    public static WBondViewState From(WBondDesign design)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+
+        if (string.IsNullOrWhiteSpace(design.ViewStateJson)) return new WBondViewState();
+
+        try
+        {
+            return JsonSerializer.Deserialize<WBondViewState>(design.ViewStateJson, Options)
+                   ?? new WBondViewState();
+        }
+        catch (JsonException)
+        {
+            // A view setting is never worth refusing to open a design over — see the class remarks.
+            return new WBondViewState();
+        }
+    }
+
+    /// <summary>Writes the state into a design, ready for <c>WBondIo.WriteFile</c>.</summary>
+    public void To(WBondDesign design)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+        design.ViewStateJson = JsonSerializer.Serialize(this, Options);
+    }
+
+    /// <summary>The azimuth as the view-model holds it — radians, or null for AUTO.</summary>
+    [JsonIgnore]
+    public double? ProfileAzimuthRadians
+    {
+        get => ProfileAxisDegrees is { } d ? d * Math.PI / 180.0 : null;
+        set => ProfileAxisDegrees = value is { } r ? r * 180.0 / Math.PI : null;
+    }
+}

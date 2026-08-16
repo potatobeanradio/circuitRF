@@ -121,11 +121,19 @@ public class WBondCanvasTests
     }
 
     /// <summary>
-    /// The profile view draws the BAND for bound members and individual curves only for free wires —
-    /// the clutter answer (§6.2 idea 3). 200 bound wires must not become 200 curves.
+    /// The profile view draws ONE curve per array plus the BAND for its bound members, and individual
+    /// curves for free wires — the clutter answer (§6.2 idea 3). 200 bound wires must not become 200
+    /// curves; they must not become ZERO curves either.
+    ///
+    /// <para><b>The representative curve is the half that was missing, and its absence was visible as
+    /// a blank view.</b> The band is a min/max envelope: with one bound member — or with several that
+    /// momentarily share a shape, which is exactly what the quality ladder produces when it collapses
+    /// them onto their chords mid-drag — min equals max at every sample and the band is a zero-area
+    /// path that fills nothing. With the bound members also skipped, the array rendered as nothing at
+    /// all. That is the owner's "the profile view sometimes disappears while dragging".</para>
     /// </summary>
     [Fact]
-    public void TheProfileView_DrawsTheBandNotEveryBoundMember()
+    public void TheProfileView_DrawsOneCurvePerArrayPlusTheBand_NotEveryBoundMember()
     {
         var (surface, canvas) = Target();
         using (surface)
@@ -136,10 +144,10 @@ public class WBondCanvasTests
                 canvas, design, WBondRenderTheme.Fallback,
                 span => (float)(span / 1000.0), z => (float)(600 - z / 1000.0));
 
-            // All 20 are bound, so none is drawn individually.
-            Assert.Equal(0, result.WiresDrawn);
+            // All 20 are bound: one representative curve, not 20 and not 0.
+            Assert.Equal(1, result.WiresDrawn);
 
-            // Detach two and they appear.
+            // Detach two and they appear alongside the representative.
             ProfileEnvelope.Detach(design.Arrays[0].Wires[3]);
             ProfileEnvelope.Detach(design.Arrays[0].Wires[7]);
 
@@ -147,7 +155,39 @@ public class WBondCanvasTests
                 canvas, design, WBondRenderTheme.Fallback,
                 span => (float)(span / 1000.0), z => (float)(600 - z / 1000.0));
 
-            Assert.Equal(2, after.WiresDrawn);
+            Assert.Equal(3, after.WiresDrawn);
+        }
+    }
+
+    /// <summary>
+    /// A ONE-WIRE array — the shipped default document — puts pixels on the profile canvas.
+    ///
+    /// <para>The pixel oracle is the point: the counter above says a curve was emitted, but the bug
+    /// this guards was a path that was emitted and filled nothing. Only a rendered surface can tell
+    /// those apart, and a single bound wire is the smallest case that produces a degenerate band.</para>
+    /// </summary>
+    [Fact]
+    public void TheProfileView_OfASingleBoundWire_ActuallyMarksTheSurface()
+    {
+        var (surface, canvas) = Target();
+        using (surface)
+        {
+            canvas.Clear(SKColors.Black);
+
+            using var before = surface.Snapshot();
+            using var beforeBitmap = SKBitmap.FromImage(before);
+            int beforeLit = CountLitPixels(beforeBitmap);
+
+            WBondRenderer.DrawProfile(
+                canvas, Design(wires: 1), WBondRenderTheme.Fallback,
+                span => (float)(span / 1000.0), z => (float)(600 - z / 1000.0));
+            canvas.Flush();
+
+            using var after = surface.Snapshot();
+            using var afterBitmap = SKBitmap.FromImage(after);
+
+            Assert.True(CountLitPixels(afterBitmap) > beforeLit + 50,
+                        "A single bound wire must still draw a profile curve.");
         }
     }
 

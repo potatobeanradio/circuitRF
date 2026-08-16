@@ -29,6 +29,16 @@ namespace CircuitRF.Ui.WBond;
 /// a <see cref="LazyIndexedList{T}"/> so a long wire materialises only the rows on screen, and rows
 /// refreshed IN PLACE (never a rebuilt collection) while the point count is unchanged, so a drag
 /// cannot thrash scroll position or steal focus from a field being typed into.</para>
+///
+/// <para><b>The picker lists are CACHED, and notified only when their contents change.</b> This is a
+/// crash fix, not an optimisation. <c>ItemsSource</c> is bound to <see cref="AvailableGroups"/>, and a
+/// ComboBox whose item list is replaced re-resolves — and re-raises — its selection. So a property
+/// notification that hands out a freshly allocated list every time closes a cycle through the view:
+/// <c>Refresh</c> → <c>AvailableGroups</c> changed → <c>ItemsSource</c> replaced → <c>SelectionChanged</c>
+/// → <c>CommitGroup</c> → <c>Refresh</c>. Since <see cref="Refresh"/> runs on every selection change,
+/// merely CLICKING A WIRE entered that cycle and overflowed the stack. Two things close it: the lists
+/// below are stable references, and <see cref="CommitGroup"/> does nothing at all — not even a refresh —
+/// when the wire is already in the named group.</para>
 /// </summary>
 public sealed partial class WBondWirePropertiesViewModel : ObservableObject
 {
@@ -59,9 +69,11 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
     [ObservableProperty] private string _material = "";
     [ObservableProperty] private string _profileBinding = "";
 
+    private string[] _materialsCache = [];
+    private string[] _groupsCache = [];
+
     /// <summary>The materials a wire may be set to — a closed set, so a typo is not possible.</summary>
-    public IReadOnlyList<string> Materials =>
-        _vm is null ? [] : [.. _vm.Design.Materials.Select(m => m.Name)];
+    public IReadOnlyList<string> Materials => _materialsCache;
 
     /// <summary>
     /// Chosen when the user wants a group that does not exist yet. The VIEW recognises it and prompts
@@ -71,8 +83,29 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
     public const string NewGroupSentinel = "New Group Name…";
 
     /// <summary>Every existing group, plus the "new group" entry, for the group picker.</summary>
-    public IReadOnlyList<string> AvailableGroups =>
-        _vm is null ? [] : [.. _vm.Design.Arrays.Select(a => a.Name), NewGroupSentinel];
+    public IReadOnlyList<string> AvailableGroups => _groupsCache;
+
+    /// <summary>
+    /// Re-reads a picker's item list, and raises its change notification ONLY if the contents differ.
+    /// Handing the same reference back is what stops a bound ComboBox rebuilding — and re-raising its
+    /// selection — on every refresh; see the class remarks for the crash that caused.
+    /// </summary>
+    private void SyncList(ref string[] cache, string propertyName, IEnumerable<string> live)
+    {
+        string[] next = _vm is null ? [] : [.. live];
+        if (cache.AsSpan().SequenceEqual(next)) return;
+
+        cache = next;
+        OnPropertyChanged(propertyName);
+    }
+
+    private void SyncMaterialsList() =>
+        SyncList(ref _materialsCache, nameof(Materials),
+                 _vm?.Design.Materials.Select(m => m.Name) ?? []);
+
+    private void SyncGroupsList() =>
+        SyncList(ref _groupsCache, nameof(AvailableGroups),
+                 (_vm?.Design.Arrays.Select(a => a.Name) ?? []).Append(NewGroupSentinel));
 
     /// <summary>One row per point. Never replaced while the point count is unchanged.</summary>
     public LazyIndexedList<WireVertexRowViewModel>? VertexRows { get; private set; }
@@ -105,7 +138,7 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
             _vm.ReadoutChanged += Refresh;
         }
 
-        OnPropertyChanged(nameof(Materials));
+        SyncMaterialsList();
         Refresh();
     }
 
@@ -118,6 +151,10 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
     /// <summary>Re-reads everything from the model. Cheap, and safe to call per drag frame.</summary>
     public void Refresh()
     {
+        // Groups can be created by an edit here, so the picker's own list is re-read each refresh —
+        // it depends on the design, not on the selection, so it is read before the empty-state exits.
+        SyncGroupsList();
+
         if (_vm is null) { SetEmpty("No wBond document."); return; }
 
         var touched = _vm.Selection.TouchedWires();
@@ -136,9 +173,6 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
         ProfileBinding = wire.ProfileBinding ?? "(free)";
 
         WireSummary = $"{wire.Points.Count} points";
-
-        // Groups can be created by an edit here, so the picker's own list is re-read each refresh.
-        OnPropertyChanged(nameof(AvailableGroups));
 
         if (_focusedField != "LoopHeight") LoopHeightText = Format(wire.LoopHeightNm);
         if (_focusedField != "Span")
@@ -323,6 +357,12 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
 
     /// <summary>
     /// Moves this wire into <paramref name="groupName"/>, creating that group when the name is new.
+    ///
+    /// <para><b>A commit to the group the wire is already in does nothing — not even a refresh.</b>
+    /// The combo re-raises <c>SelectionChanged</c> whenever its item list is rebuilt, so a refresh here
+    /// would feed straight back into this method; the earlier "calling it again is harmless" comment
+    /// was wrong, and that feedback path is what overflowed the stack on a plain wire click. Mirrors
+    /// <see cref="CommitMaterial"/>'s guard.</para>
     /// </summary>
     public void CommitGroup(string? groupName)
     {
@@ -330,11 +370,12 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(groupName)) return;
         if (groupName == NewGroupSentinel) return;   // the view resolves this to a real name first
 
-        _vm.MoveWireToGroup(_wireIndex, groupName);
+        if (string.Equals(GroupOf(_wireIndex), groupName.Trim(), StringComparison.OrdinalIgnoreCase))
+            return;
 
         // MoveWireToGroup re-points the selection to the wire's new flat index, and that raises
-        // Selection -> Refresh. Calling it again here is harmless and keeps the panel correct even if
-        // the move was refused.
+        // Selection -> Refresh; refreshing again keeps the panel correct if the move was refused.
+        _vm.MoveWireToGroup(_wireIndex, groupName);
         Refresh();
     }
 

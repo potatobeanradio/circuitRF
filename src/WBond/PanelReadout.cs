@@ -51,6 +51,17 @@ public sealed class PanelReadout
     /// </summary>
     public required string ReturnPath { get; init; }
 
+    /// <summary>
+    /// True when the return path is the ORDINARY one — the image plane at z = 0.
+    ///
+    /// <para>The panel suppresses the sentence in that case (owner, 2026-08-16). WB20/RW13's point is
+    /// that a reader must never be left guessing what an inductance is referred to; a line that says
+    /// the same expected thing on every document all the time does not achieve that, it just costs a
+    /// row on every card. The line that matters — the UNDECLARED one — is unaffected, and this flag is
+    /// what lets the view tell them apart without string-matching.</para>
+    /// </summary>
+    public required bool ReturnPathIsDefault { get; init; }
+
     /// <summary>Builds the readout from a reduction and its design.</summary>
     public static PanelReadout Build(WBondDesign design, WireMesh mesh, ArrayReduction reduction)
     {
@@ -97,6 +108,7 @@ public sealed class PanelReadout
             ReturnPath = design.GroundPlane.Enabled
                 ? "image plane at z = 0"
                 : "UNDECLARED — the ground plane is disabled and no array is nominated as the return",
+            ReturnPathIsDefault = design.GroundPlane.Enabled,
         };
     }
 

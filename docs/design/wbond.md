@@ -792,6 +792,13 @@ outside the band is drawn individually. Cost is O(members) to compute the band a
 draw. Additionally, **the profile view draws only the arrays touched by the current selection plus
 pinned arrays** — the default clutter level is then near zero and the user opts in to more.
 
+> **The "one editable profile curve" half of that is load-bearing, not decorative (2026-08-16).** The
+> band is a *min/max envelope over the members*, so whenever the members share a shape min equals max
+> and the band is a zero-area path that fills nothing. Two ordinary cases hit it: a one-wire array, and
+> any array mid-drag once `QualityLadder` has collapsed its members onto their chords (WB15). Drawing
+> only the band therefore renders such an array as **nothing at all** — which is how it shipped, and
+> what the owner saw as the profile view "disappearing" during a layout drag.
+
 **WB24. Dragging the profile curve edits the `LoopProfile`, which regenerates every bound wire.
 Dragging an individual wire's curve detaches that wire from the profile, with an undoable "N wires
 detached" toast.** No best-effort propagation heuristic exists, because there is nothing to guess.
@@ -864,6 +871,49 @@ foreshortened one.
 | **shift+arrow** | move selection **5 mil** |
 | **↑** in profile view | **+z** |
 | **↑** in layout view | **+y** |
+| **→** in profile view | **+span — along the view's horizontal direction** (see the note below) |
+| **→** in layout view | **+x** |
+| **Esc** | disarm Draw Wire / Rotate (abandoning any half-placed wire) → else clear the selection → else pass through |
+| **Del** / **Backspace** | delete the selected wires (undoable and redoable) |
+| **V** | cycle the visible canvases: both → profile only → layout only |
+| **I** | show/hide the Array inductance panel |
+
+> **`V`, not `Tab`** — `Tab` is the focus-navigation key every control expects, and claiming it would
+> leave keyboard users unable to walk the toolbar.
+>
+> **The two view switches persist in the file** (2026-08-16), in the `.wBond`'s own opaque `ViewState`
+> field — the field that exists so the UI can store what WB-A must not parse. **No `FormatVersion`
+> bump**: an older build reads the string, understands none of it, and writes it back unaltered. The
+> Array inductance panel is never hidden by a view MODE, only by its own switch: the reason to enlarge
+> a canvas is to watch geometry while watching the inductance change.
+
+> **Added 2026-08-16, at the owner's request: the profile view's horizontal axis moves geometry.** A
+> plain drag there used to be z-only, on the grounds that span is a *derived* coordinate so "move this
+> point sideways" has no single answer in what is stored. It does have one — displacement **along the
+> view's own horizontal direction**, which under AUTO is that wire's XY chord and under a fixed plane
+> is the plane itself (`ProfileProjection.HorizontalDirection`). `WireEdits.Translate` owns the
+> mapping, so the drag and the arrow-key nudge above cannot disagree, and a wire whose feet coincide
+> in XY has no chord direction and is skipped rather than guessed.
+>
+> **The absolute axis has a FIXED origin — the world's, not the wire's own input foot.** Measuring
+> from `Points[0]` pinned that point at span 0 permanently, so it could not move in this view whatever
+> happened to it in the world, and any motion of it rendered as motion of everything else. `Normalised`
+> keeps the foot-relative 0..1 origin: that is the mode this section's overlay argument is really
+> about, and it still overlays wires of any angle and length. `Absolute`'s stated purpose is "true
+> geometry", and a true picture cannot re-origin itself on the point being dragged.
+>
+> **The profile view's PLANE is a toolbar setting** (`ProfileAxisSetting`): `Auto`, `X-Z`, `Y-Z`, or a
+> typed angle in degrees. Auto is the default and is §6.2's own parameterisation — every wire on its
+> own chord, which is the only mode in which two wires of different angle and length are directly
+> comparable. A fixed plane answers the other question, "what does this array look like from over
+> there", and foreshortens a perpendicular wire to nothing, which is what looking down a wire actually
+> looks like. The layout view needs no such control: it is always X-Y.
+>
+> **Alt-drag means something different from a plain drag and always has** — it *scales* rather than
+> translates (§6.2.1) — but two of its rules changed here. It now scales **span and height together**,
+> live, instead of declaring one axis on the first few pixels of travel; and its span anchor is the
+> foot the user is **not** dragging, matching WB26a's rotate rule. It is also offered in the **layout
+> view**, where the pointer displacement is projected onto the wire's own chord.
 
 > **Measured 2026-08-07, WB-C1.** Every geometric edit quantises to **one nanometre**, because
 > `Point3` stores integer DBU — the choice that makes unit switching lossless (§6.5). So no transform

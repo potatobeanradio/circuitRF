@@ -35,7 +35,65 @@ public sealed partial class WBondViewModel : ObservableObject
 
     [ObservableProperty] private WireSelection _selection = new();
 
+    /// <summary>
+    /// What is being previewed right now — a live marquee's contents — or null when nothing is.
+    ///
+    /// <para><b>It lives here, on the shared view-model, rather than inside whichever canvas owns the
+    /// gesture.</b> A marquee dragged in the profile view selects WIRES, and a wire is a thing both
+    /// views draw; highlighting it in only the canvas the pointer happens to be over is half an
+    /// answer. Publishing it once means either canvas can start a marquee and both show what it has
+    /// caught, live, without either knowing the other exists.</para>
+    ///
+    /// <para><b>Never the committed selection.</b> It is dropped at release, and the release is what
+    /// writes <see cref="Selection"/> — the L1i rule: the committed selection is also the base a
+    /// Shift-marquee adds to, so a preview that wrote itself into it could never shrink again.</para>
+    /// </summary>
+    [ObservableProperty] private WireSelection? _previewSelection;
+
+    /// <summary>
+    /// What the canvases should DRAW as selected: the live preview while one is running, the committed
+    /// selection otherwise. Every renderer reads this; nothing reads <see cref="Selection"/> to draw.
+    /// </summary>
+    public WireSelection EffectiveSelection => PreviewSelection ?? Selection;
+
+    partial void OnPreviewSelectionChanged(WireSelection? value) =>
+        OnPropertyChanged(nameof(EffectiveSelection));
+
+    partial void OnSelectionChanged(WireSelection value) =>
+        OnPropertyChanged(nameof(EffectiveSelection));
+
     [ObservableProperty] private WBondUnit _displayUnit = WBondUnit.Mil;
+
+    /// <summary>
+    /// <b>Which plane the profile view projects onto</b> — the toolbar's own setting (§6.2).
+    ///
+    /// <para>Null is AUTO: each wire projects onto its OWN chord, which is what makes wire angle and
+    /// wire length stop being profile differences at all. A number fixes the plane — 0 for X-Z, π/2
+    /// for Y-Z, anything for a diagonal — and answers the other question, "what does this array look
+    /// like from over there". It was previously derived from the geometry and merely LABELLED, which
+    /// gave the user no way to ask for the other picture.</para>
+    ///
+    /// <para>The canvas, the hit test, the horizontal drag and the marquee all read this one value,
+    /// so a point cannot render in one place and move in another.</para>
+    /// </summary>
+    [ObservableProperty] private double? _profileAzimuthRadians;
+
+    /// <summary>The toolbar combo's text for <see cref="ProfileAzimuthRadians"/> — "Auto", "X-Z", "Y-Z", or an angle.</summary>
+    public string ProfileAxisText => ProfileAxisSetting.Format(ProfileAzimuthRadians);
+
+    partial void OnProfileAzimuthRadiansChanged(double? value) => OnPropertyChanged(nameof(ProfileAxisText));
+
+    /// <summary>
+    /// Sets the profile plane from what the user typed or picked. Unparseable text is refused rather
+    /// than silently reinterpreted — the view puts the combo back.
+    /// </summary>
+    public bool CommitProfileAxisText(string? text)
+    {
+        if (!ProfileAxisSetting.TryParse(text, out double? azimuth)) return false;
+
+        ProfileAzimuthRadians = azimuth;
+        return true;
+    }
 
     /// <summary>Raised whenever the readout changes — the panel and the canvas both listen.</summary>
     public event Action? ReadoutChanged;
@@ -248,15 +306,75 @@ public sealed partial class WBondViewModel : ObservableObject
     }
 
     /// <summary>Alt + horizontal drag on a profile curve — scales span by FACTOR across the array (WB24b/c).</summary>
-    public int ScaleProfileSpan(string profileName, double factor)
+    public int ScaleProfileSpan(string profileName, double factor, bool moveOutputFoot = true)
     {
         var profile = _design.ProfileByName(profileName);
         if (profile is null) return 0;
 
         PushUndo();
-        int moved = WireEdits.ScaleBoundWires(_design, profile, heightFactor: 1.0, spanFactor: factor);
+        int moved = WireEdits.ScaleBoundWires(_design, profile, heightFactor: 1.0, spanFactor: factor,
+                                              moveOutputFoot: moveOutputFoot);
         if (moved > 0) CommitPointMove([.. BoundWireIndices(profileName)]);
         return moved;
+    }
+
+    /// <summary>
+    /// <b>The alt-drag primitive: scale the selection's span and height together, in one frame.</b>
+    ///
+    /// <para>Span and height are applied TOGETHER rather than a gesture declaring one axis and
+    /// ignoring the other — a diagonal alt-drag means both, and the axis-declaration rule made the
+    /// second half of the gesture silently inert (owner, 2026-08-16). Passing 1.0 for either factor
+    /// leaves that quantity exactly alone, so a purely vertical or purely horizontal drag still does
+    /// only what it looks like.</para>
+    ///
+    /// <para><b>A bound wire scales its whole array by FACTOR</b> (WB24c / D4) — never to a common
+    /// value, which would destroy a deliberate fan-out. A wire that follows no profile scales on its
+    /// own, which is what makes alt-drag work at all on a detached wire; it previously did nothing
+    /// and said nothing.</para>
+    /// </summary>
+    /// <param name="moveOutputFoot">
+    /// Which foot the span scale moves. The caller decides it from WHICH END the user grabbed — the
+    /// pinned foot is the far one — matching the rotate tool's own rule (WB26a).
+    /// </param>
+    /// <returns>How many wires were rescaled.</returns>
+    public int ScaleSelection(double spanFactor, double heightFactor, bool moveOutputFoot)
+    {
+        var touched = TouchedWireList();
+        if (touched.Count == 0) return 0;
+        if (spanFactor == 1.0 && heightFactor == 1.0) return 0;
+
+        var wires = _design.AllWires().ToList();
+        bool pushed = PushUndo();
+
+        var moved = new HashSet<int>();
+
+        foreach (string profileName in touched
+                     .Select(i => wires[i].ProfileBinding)
+                     .Where(n => n is not null)
+                     .Select(n => n!)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (_design.ProfileByName(profileName) is not { } profile) continue;
+
+            WireEdits.ScaleBoundWires(_design, profile, heightFactor, spanFactor, moveOutputFoot);
+            foreach (int i in BoundWireIndices(profileName)) moved.Add(i);
+        }
+
+        var free = touched.Where(i => wires[i].ProfileBinding is null).ToList();
+        if (free.Count > 0)
+        {
+            WireEdits.ScaleWires(free.Select(i => wires[i]), heightFactor, spanFactor, moveOutputFoot);
+            foreach (int i in free) moved.Add(i);
+        }
+
+        if (moved.Count == 0)
+        {
+            if (pushed) _undo.Pop();   // nothing happened; do not leave a no-op on the undo stack
+            return 0;
+        }
+
+        CommitPointMove([.. moved]);
+        return moved.Count;
     }
 
     /// <summary>
