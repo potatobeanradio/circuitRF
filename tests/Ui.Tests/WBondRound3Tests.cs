@@ -498,22 +498,28 @@ public class WBondRound3Tests
     }
 
     /// <summary>
-    /// <b>The LAST wire cannot be deleted, and says so in the user's terms.</b>
-    /// <c>WBondDesign.Validate</c> refuses a design with no arrays, so the delete would go through,
-    /// fail the rebuild, roll back, and report "wBond design has no arrays" — true, and no help at all
-    /// to someone who just chose Delete Wire. The menu item is disabled with the real reason instead.
+    /// <b>The LAST wire CAN be deleted, and leaves an empty design</b> (owner, 2026-08-16: "make it
+    /// support 0 wires").
+    ///
+    /// <para>This test used to assert the opposite, and the reason it did is worth keeping: while
+    /// <c>WBondDesign.Validate</c> rejected a design with no arrays, the delete would go through, fail
+    /// the rebuild, roll back, and report a mapping-matrix error to someone who had just chosen
+    /// Delete Wire. An empty design is now valid — the last group is pruned with the rest — so the
+    /// refusal is gone rather than reworded, and only an index naming no wire is refused.</para>
     /// </summary>
     [Fact]
-    public void DeleteWire_RefusesTheLastWireWithAReadableReason()
+    public void DeleteWire_TakesTheLastWireAndLeavesAnEmptyDesign()
     {
         var vm = new WBondViewModel(Design(wires: 1));
 
-        string? why = vm.WhyCannotDeleteWire(0);
+        Assert.Null(vm.WhyCannotDeleteWire(0));
+        Assert.True(vm.DeleteWire(0));
 
-        Assert.NotNull(why);
-        Assert.Contains("at least one wire", why);
-        Assert.False(vm.DeleteWire(0));
-        Assert.Equal(1, vm.Design.WireCount);
+        Assert.Equal(0, vm.Design.WireCount);
+        Assert.Empty(vm.Design.Arrays);
+        vm.Design.Validate();
+
+        Assert.NotNull(vm.WhyCannotDeleteWire(0));   // …and now there is nothing there to delete
     }
 
     /// <summary>All three are undoable — they are structural, and an undo must put the wire back.</summary>

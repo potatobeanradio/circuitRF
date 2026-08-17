@@ -97,7 +97,7 @@ public sealed class WBondProfileCanvas : Control
     public event Action? ThemeRefreshed;
 
     /// <summary>Per-view, per WB22a.</summary>
-    public WireThicknessMode Thickness { get; set; } = WireThicknessMode.ConstantPixels;
+    public WireThicknessMode Thickness { get; set; } = WireThicknessMode.Thin;
 
     public ProfileProjection.SpanMode SpanMode { get; set; } = ProfileProjection.SpanMode.Absolute;
 
@@ -115,6 +115,87 @@ public sealed class WBondProfileCanvas : Control
     /// grid is drawn from, pushed in by the view so one Snap box governs both canvases.
     /// </summary>
     public long GridPitchNm { get; set; }
+
+    // ── The Wire tool, in THIS view (owner, 2026-08-16) ───────────────────────
+    //
+    // It existed only on the layout overlay, so arming Draw Wire and clicking here did nothing at
+    // all — no wire, no ghost, no reason given.
+    //
+    // Placing a wire from a profile view is well defined only when the view has an INVERSE: a fixed
+    // plane in absolute span, where a screen x means one world direction. Under AUTO every wire is
+    // drawn on its own chord, so "span" names a different direction per wire and none at all for a
+    // wire that does not exist yet; under Normalised it is a fraction of a chord the new wire does
+    // not have. Those two REFUSE, with the reason in the toolbar strip — see
+    // ProfileProjection.Unproject, which owns that rule for both the ghost and the commit.
+
+    /// <summary>Whether a click here starts/finishes a wire. Set from the toolbar's active tool.</summary>
+    public bool WireDrawArmed
+    {
+        get => _drawArmed;
+        set
+        {
+            if (_drawArmed == value) return;
+            _drawArmed = value;
+            CancelWireDraw();          // an armed-state change abandons any half-placed wire
+            InvalidateVisual();
+        }
+    }
+
+    private bool _drawArmed;
+    private Point3? _drawStart;
+    private Wire? _ghost;
+
+    /// <summary>The z a new foot lands at when the click carries no better answer. Unused — both feet
+    /// take the z the user actually clicked, which is the whole reason this view can place a wire
+    /// whose ends sit at different heights in one gesture.</summary>
+    private void CancelWireDraw()
+    {
+        _drawStart = null;
+        _ghost = null;
+    }
+
+    /// <summary>
+    /// Handles a press while the Wire tool is armed. Returns true when the press was consumed.
+    /// </summary>
+    private bool HandleWireDrawPress(double span, double z)
+    {
+        if (_viewModel is null) return false;
+
+        if (ProfileProjection.Unproject(span, z, SpanMode, Azimuth) is not { } world)
+        {
+            _viewModel.ReportRefusal(
+                "The Wire tool needs a fixed profile plane — pick XZ, YZ or an angle in the toolbar. " +
+                "Auto draws every wire on its own chord, which names no place to put a new one.");
+            InvalidateVisual();
+            return true;
+        }
+
+        if (_drawStart is null)
+        {
+            _drawStart = world;
+            InvalidateVisual();
+            return true;
+        }
+
+        _viewModel.AddWire(_drawStart.Value, world,
+                           WBondDefaults.DiameterNm, WBondDefaults.Material,
+                           pointsIfProfileCreated: WBondDefaults.Points);
+
+        CancelWireDraw();
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>Rebuilds the live ghost as the pointer moves between the two clicks.</summary>
+    private void UpdateWireDrawGhost(double span, double z)
+    {
+        if (_viewModel is null || _drawStart is not { } start) return;
+        if (ProfileProjection.Unproject(span, z, SpanMode, Azimuth) is not { } world) return;
+
+        _ghost = _viewModel.Design.Profiles.FirstOrDefault()
+                          ?.CreateWire(start, world, WBondDefaults.DiameterNm, WBondDefaults.Material);
+        InvalidateVisual();
+    }
 
     // ── Viewport (span across, z up) ──────────────────────────────────────────
 
@@ -144,6 +225,7 @@ public sealed class WBondProfileCanvas : Control
         PointerPressed  += OnPointerPressedInternal;
         PointerMoved    += OnPointerMovedInternal;
         PointerReleased += OnPointerReleasedInternal;
+        PointerExited   += (_, _) => CursorWorldChanged?.Invoke(this, null);
         PointerWheelChanged += OnPointerWheelInternal;
         KeyDown += OnKeyDownInternal;
         LayoutUpdated += OnLayoutUpdated;
@@ -213,6 +295,28 @@ public sealed class WBondProfileCanvas : Control
         return mesh.ArrayOfWire[hit.Wire];
     }
 
+    /// <summary>
+    /// This canvas's pan/zoom expressed as a <see cref="LayoutViewport"/>, so the Layout Editor's own
+    /// <c>LayoutRulerControl</c> can be reused here unchanged.
+    ///
+    /// <para><b>The two conventions already coincide</b> — pan is the world value at the LEFT and
+    /// BOTTOM edges and zoom is pixels per world unit in both — so this is a rename, not a
+    /// conversion. The world unit here is the NANOMETRE, which is why the ruler is driven at
+    /// 1,000 DBU/µm: that is the resolution at which one DBU is one nanometre.</para>
+    /// </summary>
+    public LayoutViewport CurrentViewport => new(_panSpan, _panZ, _zoom, Bounds.Width, Bounds.Height);
+
+    /// <summary>Raised whenever <see cref="CurrentViewport"/> changes — pan, zoom, fit, or resize.</summary>
+    public event EventHandler? ViewportChanged;
+
+    /// <summary>
+    /// The pointer's position in this view's own axes (span, z) in nanometres, or null when it has
+    /// left the canvas — the rulers' cursor indicator.
+    /// </summary>
+    public event EventHandler<(double Span, double Z)?>? CursorWorldChanged;
+
+    private void RaiseViewportChanged() => ViewportChanged?.Invoke(this, EventArgs.Empty);
+
     private double SpanToScreen(double span) => (span - _panSpan) * _zoom;
 
     private double ZToScreen(double z) => Bounds.Height - (z - _panZ) * _zoom;
@@ -225,6 +329,10 @@ public sealed class WBondProfileCanvas : Control
 
     private void OnLayoutUpdated(object? sender, EventArgs e)
     {
+        // The viewport CARRIES the pixel size (it is what the Y-up flip is measured against), so a
+        // resize alone changes it — the rulers have to be told even when nothing was panned.
+        RaiseViewportChanged();
+
         if (!_needsInitialFit || _viewModel is null || Bounds.Width <= 1 || Bounds.Height <= 1) return;
         _needsInitialFit = false;
         ZoomToFit();
@@ -265,6 +373,7 @@ public sealed class WBondProfileCanvas : Control
         _panSpan = minSpan - (Bounds.Width / _zoom - spanExtent) / 2.0;
         _panZ = minZ - (Bounds.Height / _zoom - zExtent) / 2.0;
 
+        RaiseViewportChanged();
         InvalidateVisual();
     }
 
@@ -295,6 +404,7 @@ public sealed class WBondProfileCanvas : Control
         _panSpan = spanUnder - cx / _zoom;
         _panZ = zUnder - (Bounds.Height - cy) / _zoom;
 
+        RaiseViewportChanged();
         InvalidateVisual();
     }
 
@@ -308,7 +418,7 @@ public sealed class WBondProfileCanvas : Control
             _viewModel?.EffectiveSelection,
             SpanToScreen, ZToScreen,
             _marqueeActive ? MarqueeRect() : null,
-            GridPitchNm, _zoom, _panSpan, _panZ));
+            GridPitchNm, _zoom, _panSpan, _panZ, _ghost, Thickness));
 
     /// <summary>The live marquee in SCREEN coordinates, plus which way the hand went.</summary>
     private (Rect Box, bool Crossing) MarqueeRect()
@@ -380,6 +490,11 @@ public sealed class WBondProfileCanvas : Control
 
         double span = ScreenToSpan(pos.X);
         double z = ScreenToZ(pos.Y);
+
+        // The Wire tool owns the click entirely when it is armed — before any hit test, exactly as
+        // the layout overlay's own draw branch does.
+        if (_drawArmed) { HandleWireDrawPress(span, z); return; }
+
         var modifiers = Modifiers(e.KeyModifiers);
 
         _pressScreenX = pos.X;
@@ -480,7 +595,16 @@ public sealed class WBondProfileCanvas : Control
         {
             _panSpan = _panStartSpan - (pos.X - _panStartScreen.X) / _zoom;
             _panZ = _panStartZ + (pos.Y - _panStartScreen.Y) / _zoom;
+            RaiseViewportChanged();
             InvalidateVisual();
+            return;
+        }
+
+        CursorWorldChanged?.Invoke(this, (ScreenToSpan(pos.X), ScreenToZ(pos.Y)));
+
+        if (_drawArmed)
+        {
+            UpdateWireDrawGhost(ScreenToSpan(pos.X), ScreenToZ(pos.Y));
             return;
         }
 
@@ -671,6 +795,7 @@ public sealed class WBondProfileCanvas : Control
         _panSpan = spanUnder - pos.X / _zoom;
         _panZ = zUnder - (Bounds.Height - pos.Y) / _zoom;
 
+        RaiseViewportChanged();
         InvalidateVisual();
         e.Handled = true;
     }
@@ -790,6 +915,8 @@ public sealed class WBondProfileCanvas : Control
         private readonly (Rect Box, bool Crossing)? _marquee;
         private readonly long _gridPitchNm;
         private readonly double _zoom, _panSpan, _panZ;
+        private readonly Wire? _ghost;
+        private readonly WireThicknessMode _thickness;
 
         public ProfileDrawOperation(Rect bounds, WBondDesign? design, WBondRenderTheme theme,
                                     LayoutRenderTheme layoutTheme,
@@ -797,12 +924,14 @@ public sealed class WBondProfileCanvas : Control
                                     WireSelection? selection,
                                     Func<double, double> spanToScreen, Func<double, double> zToScreen,
                                     (Rect Box, bool Crossing)? marquee,
-                                    long gridPitchNm, double zoom, double panSpan, double panZ)
+                                    long gridPitchNm, double zoom, double panSpan, double panZ,
+                                    Wire? ghost, WireThicknessMode thickness)
         {
             _bounds = bounds; _design = design; _theme = theme; _layoutTheme = layoutTheme;
             _mode = mode; _azimuth = azimuth; _selection = selection;
             _spanToScreen = spanToScreen; _zToScreen = zToScreen; _marquee = marquee;
             _gridPitchNm = gridPitchNm; _zoom = zoom; _panSpan = panSpan; _panZ = panZ;
+            _ghost = ghost; _thickness = thickness;
         }
 
         public bool Equals(ICustomDrawOperation? other) => false;
@@ -823,10 +952,22 @@ public sealed class WBondProfileCanvas : Control
                 WBondRenderer.DrawProfile(
                     canvas, _design, _theme,
                     s => (float)_spanToScreen(s), z => (float)_zToScreen(z),
-                    _mode, _selection, azimuthRadians: _azimuth);
+                    _mode, _selection, azimuthRadians: _azimuth,
+                    // This view's world unit IS the nanometre, so its zoom already is pixels per nm —
+                    // what the segment's true-diameter width and the vertex dot both scale with.
+                    pixelsPerNm: _zoom, thickness: _thickness);
+
+            if (_ghost is { } ghost) DrawGhost(canvas, ghost);
 
             if (_marquee is { } m) DrawMarquee(canvas, m.Box, m.Crossing);
         }
+
+        /// <summary>The half-placed wire's live preview — the full generated loop, not a rubber band.</summary>
+        private void DrawGhost(SKCanvas canvas, Wire ghost) =>
+            WBondRenderer.DrawGhostProfile(
+                canvas, ghost, _theme,
+                s => (float)_spanToScreen(s), z => (float)_zToScreen(z),
+                _mode, _azimuth, _zoom, _thickness);
 
         /// <summary>
         /// The same dot grid the layout view draws — <see cref="LayoutGridMath.ComputeGridPitch"/>'s

@@ -64,18 +64,21 @@ public class WBondEditorRound2Tests
     }
 
     /// <summary>
-    /// The self term is NOT repeated under the fold. It is the card's headline number, and listing it
-    /// again as a "mutual" put the same value on the card twice on every single-array document —
-    /// the redundant pH readout the owner asked to remove.
+    /// The self term is NOT repeated as a mutual — it is the card's headline number, and listing it
+    /// again put the same value on the panel twice on every single-array document.
+    ///
+    /// <para>Updated for the 2026-08-16 round: the mutuals moved off the cards into the panel's own
+    /// <c>MutualPairs</c> box. The requirement is unchanged — a single-array design has no mutual to
+    /// report — only where it is asserted.</para>
     /// </summary>
     [Fact]
-    public void ASingleArrayCard_HasNoMutualsAtAll()
+    public void ASingleArrayDesign_HasNoMutualsAtAll()
     {
         var document = new WBondDocumentViewModel(new WBondViewModel(Design(arrays: 1)));
 
-        var row = Assert.Single(document.Panel.Rows);
-        Assert.Empty(row.Mutuals);
-        Assert.False(row.HasMutuals);
+        Assert.Single(document.Panel.Rows);
+        Assert.Empty(document.Panel.MutualPairs);
+        Assert.False(document.Panel.HasMutualPairs);
     }
 
     /// <summary>
@@ -83,17 +86,17 @@ public class WBondEditorRound2Tests
     /// quietly remove coupling data with it.
     /// </summary>
     [Fact]
-    public void ATwoArrayCard_KeepsTheCrossArrayMutualAndDropsOnlyItsOwn()
+    public void ATwoArrayDesign_KeepsTheCrossArrayMutualAndDropsOnlyItsOwn()
     {
         var document = new WBondDocumentViewModel(new WBondViewModel(Design(wires: 2, arrays: 2)));
 
         Assert.Equal(2, document.Panel.Rows.Count);
-        foreach (var row in document.Panel.Rows)
-        {
-            Assert.Single(row.Mutuals);          // one other array, not two entries
-            Assert.True(row.HasMutuals);
-            Assert.DoesNotContain(row.Self, row.Mutuals);
-        }
+
+        // Two arrays make exactly ONE pair — not one row per array, which is what listing them on
+        // the cards produced.
+        var pair = Assert.Single(document.Panel.MutualPairs);
+        Assert.True(document.Panel.HasMutualPairs);
+        Assert.DoesNotContain(pair.Mutual, document.Panel.Rows.Select(r => r.Self));
     }
 
     /// <summary>

@@ -45,6 +45,15 @@ public sealed class WBondModel : ComponentModel
         ArgumentNullException.ThrowIfNull(design);
         design.Validate();
 
+        // A DESIGN may hold no wires (a document not drawn in yet, or one just cleared); a placed
+        // COMPONENT may not. Its pins are its array names, so a design with no arrays gives a part
+        // with nothing to connect and no branch to stamp — refused here, where the word "component"
+        // is available to say it with, rather than left to surface as a zero-port netlist.
+        if (design.Arrays.Count == 0)
+            throw new InvalidOperationException(
+                $"The wBond design '{sourceDescription}' has no wires, so the component has no pins. " +
+                "Add at least one wire to the design before placing it.");
+
         _design = design;
         _sourceDescription = sourceDescription;
 

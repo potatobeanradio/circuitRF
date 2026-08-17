@@ -7,14 +7,28 @@ using SkiaSharp;
 
 namespace CircuitRF.Ui.Renderers;
 
-/// <summary>How a wire's line thickness is chosen (wbond.md WB22a).</summary>
+/// <summary>
+/// How a wire's line thickness is chosen (wbond.md WB22a).
+///
+/// <para><b>Both modes scale with zoom</b> (owner, 2026-08-16: "as I zoom in, the wire segment and
+/// wire vertex is supposed to render bigger"). What they differ in is how WIDE the wire is drawn,
+/// not whether it grows: one is the wire's actual size, the other a deliberately thinner drawing
+/// line. <see cref="Thin"/> was a fixed screen width until that report, which is why a wire stayed a
+/// hairline however far the user zoomed in.</para>
+/// </summary>
 public enum WireThicknessMode
 {
     /// <summary>
-    /// A constant screen width. The default, because at whole-package zoom a 1 mil wire is
-    /// sub-pixel and would vanish.
+    /// A thin drawing line — a fixed FRACTION of the wire's real diameter
+    /// (<see cref="WBondRenderer.ThinStrokeFraction"/>), floored at
+    /// <see cref="WBondRenderTheme.LineWidthPx"/> so a 1 mil wire is still visible at whole-package
+    /// zoom, which is what this mode is for.
+    ///
+    /// <para>The default. It shows where the wires GO without their bulk — and, being a fraction of
+    /// each wire's own diameter rather than one width for all, a fat wire still draws fatter than a
+    /// thin one.</para>
     /// </summary>
-    ConstantPixels,
+    Thin,
 
     /// <summary>
     /// The wire's real diameter in design units, scaled with zoom like layout geometry.
@@ -37,6 +51,13 @@ public sealed class WBondRenderTheme
     /// </summary>
     public SKColor InputEnd { get; init; }
 
+    /// <summary>
+    /// A vertex dot's colour — an ACCENT to <see cref="Wire"/> rather than a shade of it, because a
+    /// dot in the wire's own colour is invisible on the wire (owner, 2026-08-16). Outranked by
+    /// <see cref="Selected"/> and, on the input foot, by <see cref="InputEnd"/>.
+    /// </summary>
+    public SKColor Vertex { get; init; }
+
     public SKColor Selected { get; init; }
 
     /// <summary>The translucent min/max band over an array's bound members (§6.2 idea 3).</summary>
@@ -45,8 +66,18 @@ public sealed class WBondRenderTheme
     /// <summary>A wire detached from its profile, drawn individually.</summary>
     public SKColor FreeWire { get; init; }
 
-    public float DotRadiusPx { get; init; } = 3.0f;
-
+    /// <summary>
+    /// The FLOOR on a wire's drawn width, in pixels — the whole-package case, where a 1 mil wire is
+    /// sub-pixel and would otherwise vanish.
+    ///
+    /// <para><b>It is the only floor in the wire's geometry, deliberately</b> (owner, 2026-08-16:
+    /// "the relative sizes between the wire vertex and wire segment change as I zoom in or out —
+    /// their relative size should be independent of zoom level"). A vertex dot used to carry a
+    /// second, independent floor, and two floors that bind at different zooms are exactly a ratio
+    /// that drifts: below the crossover the dot sat still while the line kept shrinking. The dot is
+    /// now derived from the drawn stroke, so it inherits this floor with it and the ratio is constant
+    /// everywhere — see <see cref="WBondRenderer.VertexRadiusPx"/>.</para>
+    /// </summary>
     public float LineWidthPx { get; init; } = 1.5f;
 
     /// <summary>
@@ -74,6 +105,7 @@ public sealed class WBondRenderTheme
         {
             Wire     = SK(ColorRole.WBondWire),
             InputEnd = SK(ColorRole.WBondWireStart),
+            Vertex   = SK(ColorRole.WBondWireVertex),
             Selected = SK(ColorRole.WBondSelected),
             Envelope = SK(ColorRole.WBondEnvelope),
             FreeWire = SK(ColorRole.WBondFreeWire),
@@ -143,7 +175,7 @@ public static class WBondRenderer
     public static Result Draw(
         SKCanvas canvas, WBondDesign design, LayoutViewport viewport, WBondRenderTheme theme,
         WireSelection? selection = null,
-        WireThicknessMode thickness = WireThicknessMode.ConstantPixels,
+        WireThicknessMode thickness = WireThicknessMode.Thin,
         Func<long, long, (double X, double Y)>? frameTransform = null,
         byte opacity = 255,
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
@@ -164,7 +196,19 @@ public static class WBondRenderer
                     (float)viewport.WorldToScreenY(NmToDbu(ny, dbuPerMicron)));
         }
 
-        using var linePaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke };
+        // ROUND caps and joins (owner, 2026-08-16: "when wires are rendered at true diameter, the
+        // segments look joined badly"). A wire is drawn segment by segment — it has to be, because a
+        // single segment can be selected and recoloured on its own — so there is no polyline for a
+        // join style to act on: the JOIN is the two round caps meeting at the shared vertex, which is
+        // exactly the disc a mitre would have to be replaced by anyway. StrokeJoin is set as well so
+        // the intent survives if anyone later batches a wire into one path.
+        using var linePaint = new SKPaint
+        {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+        };
         using var dotPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
 
         foreach (var wire in design.AllWires())
@@ -210,9 +254,9 @@ public static class WBondRenderer
                 bool pointSelected = wholeSelected || PointSelected(selection, index, i);
                 dotPaint.Color = pointSelected ? Fade(theme.Selected, opacity)
                                : i == 0 ? Fade(theme.InputEnd, opacity)
-                               : linePaint.Color;
+                               : Fade(theme.Vertex, opacity);
 
-                canvas.DrawCircle(px, py, theme.DotRadiusPx, dotPaint);
+                canvas.DrawCircle(px, py, VertexRadiusPx(linePaint.StrokeWidth, thickness), dotPaint);
                 dots++;
             }
 
@@ -232,13 +276,29 @@ public static class WBondRenderer
     /// through to <see cref="ProfileProjection.Project"/> — the same value the canvas hit-tests and
     /// drags with, so what is drawn and what is grabbed cannot disagree.
     /// </param>
+    /// <param name="pixelsPerNm">
+    /// This view's zoom, in device pixels per nanometre — what the segment's true-diameter width and
+    /// the vertex dot's radius both scale with (owner, 2026-08-16). Zero, the default, leaves every
+    /// wire at <see cref="WBondRenderTheme.LineWidthPx"/> and every dot at
+    /// <see cref="WBondRenderTheme.DotRadiusPx"/>, which is what a caller with no viewport in hand
+    /// can honestly say.
+    /// </param>
+    /// <param name="thickness">
+    /// <b>Honoured here as it is in the layout view</b> (owner, 2026-08-16: "also want the wire
+    /// segment to render larger when zoomed in"). This view used to draw every wire at the constant
+    /// hairline whatever the toolbar's Ø said — the property existed on the canvas and was never
+    /// passed through — so a wire that grew with zoom in one view stayed 1.5 px in the other, and
+    /// once the vertex dots started scaling that read as beads strung along a hairline.
+    /// </param>
     public static Result DrawProfile(
         SKCanvas canvas, WBondDesign design, WBondRenderTheme theme,
         Func<double, float> spanToScreen, Func<double, float> zToScreen,
         ProfileProjection.SpanMode mode = ProfileProjection.SpanMode.Absolute,
         WireSelection? selection = null,
         IReadOnlyList<int>? visibleArrays = null,
-        double? azimuthRadians = null)
+        double? azimuthRadians = null,
+        double pixelsPerNm = 0.0,
+        WireThicknessMode thickness = WireThicknessMode.Thin)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(design);
@@ -249,9 +309,30 @@ public static class WBondRenderer
         int wires = 0, segments = 0, dots = 0;
         int flatIndex = -1;
 
-        using var linePaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = theme.LineWidthPx };
+        using var linePaint = new SKPaint
+        {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = theme.LineWidthPx,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+        };
         using var dotPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
         using var bandPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Envelope };
+
+        // The envelope's own OUTLINE (owner, 2026-08-16). Same colour, less transparency: the band is
+        // faint enough that its edge is hard to place, which is what made "some wires are drawn
+        // outside the envelope" hard to read as the true statement it is — the band spans only the
+        // array's PROFILE-BOUND members, and a detached wire is legitimately outside it. A visible
+        // edge makes that a fact the user can see rather than one they have to be told.
+        using var bandEdgePaint = new SKPaint
+        {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 1.25f,
+            StrokeJoin = SKStrokeJoin.Round,
+            Color = Opaquer(theme.Envelope, EnvelopeEdgeAlphaFactor),
+        };
 
         for (int a = 0; a < design.Arrays.Count; a++)
         {
@@ -261,7 +342,8 @@ public static class WBondRenderer
             var envelope = ProfileEnvelope.Build(array);
 
             if (visible && envelope.Bands.Count > 1)
-                DrawBand(canvas, array, envelope, spanToScreen, zToScreen, mode, bandPaint, azimuthRadians);
+                DrawBand(canvas, array, envelope, spanToScreen, zToScreen, mode,
+                         bandPaint, bandEdgePaint, azimuthRadians);
 
             // §6.2 idea 3 is "ONE editable curve per array PLUS a translucent band", and the curve
             // half was missing. Without it an array whose members all share one shape draws a band of
@@ -315,6 +397,10 @@ public static class WBondRenderer
                                 : w == representative ? theme.Wire
                                 : theme.FreeWire;
 
+                // Per WIRE, like the layout view's own: a design may mix diameters, and at true
+                // diameter that difference is the thing the mode exists to show.
+                linePaint.StrokeWidth = StrokeWidthPx(wire.DiameterNm, pixelsPerNm, theme, thickness);
+
                 for (int i = 1; i < wire.Points.Count; i++)
                 {
                     var p0 = ProfileProjection.Project(wire, i - 1, mode, azimuthRadians);
@@ -341,9 +427,10 @@ public static class WBondRenderer
 
                     dotPaint.Color = pointSelected ? theme.Selected
                                    : i == 0 ? theme.InputEnd
-                                   : linePaint.Color;
+                                   : theme.Vertex;
 
-                    canvas.DrawCircle(spanToScreen(p.Span), zToScreen(p.Z), theme.DotRadiusPx, dotPaint);
+                    canvas.DrawCircle(spanToScreen(p.Span), zToScreen(p.Z),
+                                      VertexRadiusPx(linePaint.StrokeWidth, thickness), dotPaint);
                     dots++;
                 }
 
@@ -440,7 +527,8 @@ public static class WBondRenderer
     /// </summary>
     public static void DrawGhostWire(
         SKCanvas canvas, Wire wire, LayoutViewport viewport, WBondRenderTheme theme,
-        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
+        WireThicknessMode thickness = WireThicknessMode.Thin)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(wire);
@@ -453,7 +541,9 @@ public static class WBondRenderer
         {
             IsAntialias = true,
             Style = SKPaintStyle.Stroke,
-            StrokeWidth = theme.LineWidthPx,
+            StrokeWidth = StrokeWidth(wire, viewport, theme, thickness, dbuPerMicron),
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
             Color = theme.Wire.WithAlpha(0xC0),
             PathEffect = dash,
         };
@@ -466,13 +556,67 @@ public static class WBondRenderer
             canvas.DrawLine(Sx(wire.Points[i - 1].X), Sy(wire.Points[i - 1].Y),
                             Sx(wire.Points[i].X), Sy(wire.Points[i].Y), line);
 
+        float radius = VertexRadiusPx(line.StrokeWidth, thickness);
+
         for (int i = 0; i < wire.Points.Count; i++)
         {
             // The input end keeps its own colour even in the ghost — which end starts the wire is
             // what fixes the sign of every mutual it will have (WB3), so it is worth seeing BEFORE
             // committing rather than after.
-            dot.Color = (i == 0 ? theme.InputEnd : theme.Wire).WithAlpha(0xC0);
-            canvas.DrawCircle(Sx(wire.Points[i].X), Sy(wire.Points[i].Y), theme.DotRadiusPx, dot);
+            dot.Color = (i == 0 ? theme.InputEnd : theme.Vertex).WithAlpha(0xC0);
+            canvas.DrawCircle(Sx(wire.Points[i].X), Sy(wire.Points[i].Y), radius, dot);
+        }
+    }
+
+    /// <summary>
+    /// The same dashed ghost as <see cref="DrawGhostWire"/>, drawn in the PROFILE view's projection —
+    /// so placing a wire from that view previews the full generated loop exactly as placing one from
+    /// the layout view does (owner, 2026-08-16).
+    /// </summary>
+    public static void DrawGhostProfile(
+        SKCanvas canvas, Wire wire, WBondRenderTheme theme,
+        Func<double, float> spanToScreen, Func<double, float> zToScreen,
+        ProfileProjection.SpanMode mode = ProfileProjection.SpanMode.Absolute,
+        double? azimuthRadians = null,
+        double pixelsPerNm = 0.0,
+        WireThicknessMode thickness = WireThicknessMode.Thin)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+        ArgumentNullException.ThrowIfNull(wire);
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(spanToScreen);
+        ArgumentNullException.ThrowIfNull(zToScreen);
+
+        if (wire.Points.Count < 2) return;
+
+        using var dash = SKPathEffect.CreateDash([5f, 4f], 0f);
+        using var line = new SKPaint
+        {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = StrokeWidthPx(wire.DiameterNm, pixelsPerNm, theme, thickness),
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+            Color = theme.Wire.WithAlpha(0xC0),
+            PathEffect = dash,
+        };
+        using var dot = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+
+        for (int i = 1; i < wire.Points.Count; i++)
+        {
+            var a = ProfileProjection.Project(wire, i - 1, mode, azimuthRadians);
+            var b = ProfileProjection.Project(wire, i, mode, azimuthRadians);
+            canvas.DrawLine(spanToScreen(a.Span), zToScreen(a.Z),
+                            spanToScreen(b.Span), zToScreen(b.Z), line);
+        }
+
+        float radius = VertexRadiusPx(line.StrokeWidth, thickness);
+
+        for (int i = 0; i < wire.Points.Count; i++)
+        {
+            var p = ProfileProjection.Project(wire, i, mode, azimuthRadians);
+            dot.Color = (i == 0 ? theme.InputEnd : theme.Vertex).WithAlpha(0xC0);
+            canvas.DrawCircle(spanToScreen(p.Span), zToScreen(p.Z), radius, dot);
         }
     }
 
@@ -535,10 +679,113 @@ public static class WBondRenderer
         stroke.PathEffect?.Dispose();
     }
 
+    /// <summary>
+    /// How much more opaque the envelope's OUTLINE is than its fill. Three, clamped — enough for the
+    /// edge to be locatable at a glance without the outline becoming a second curve competing with
+    /// the wires it is drawn behind.
+    /// </summary>
+    private const double EnvelopeEdgeAlphaFactor = 3.0;
+
+    /// <summary>
+    /// How thick an envelope has to be, in pixels, to be worth drawing at all. Two — the outline that
+    /// describes it is 1.25 px, so anything thinner is described by a line wider than itself.
+    /// </summary>
+    internal const double MinimumVisibleBandPx = 2.0;
+
+    /// <summary>
+    /// The envelope's greatest thickness, in device pixels — the measurement
+    /// <see cref="MinimumVisibleBandPx"/> is compared against.
+    ///
+    /// <para>Measured in SCREEN space, not in nanometres, because "is this band worth drawing" is a
+    /// question about the picture: the same array is a hairline at package zoom and a wide ribbon
+    /// zoomed in, and only the second one has room for an outline that describes it.</para>
+    /// </summary>
+    internal static double BandThicknessPx(
+        Wire reference, ProfileEnvelope.ArrayProfile envelope, Func<double, float> zToScreen)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(zToScreen);
+
+        if (reference.Points.Count < 2) return 0.0;
+
+        long startZ = reference.Points[0].Z;
+        long endZ = reference.Points[^1].Z;
+
+        double worst = 0.0;
+        foreach (var band in envelope.Bands)
+        {
+            double chordZ = startZ + (endZ - startZ) * band.Span;
+            worst = Math.Max(worst,
+                Math.Abs(zToScreen(chordZ + band.MaxHeightNm) - zToScreen(chordZ + band.MinHeightNm)));
+        }
+
+        return worst;
+    }
+
+    /// <summary>The same colour, less transparent. Never brighter than fully opaque.</summary>
+    private static SKColor Opaquer(SKColor color, double factor) =>
+        color.WithAlpha((byte)Math.Clamp(color.Alpha * factor, 0, 255));
+
+    /// <summary>
+    /// A vertex dot's radius, in pixels — <b>always three fifths of the wire's APPARENT DIAMETER</b>,
+    /// whatever mode the segment is drawn in.
+    ///
+    /// <para>That one sentence is the whole rule, and it satisfies all three things asked of it:</para>
+    /// <list type="bullet">
+    /// <item><b>It scales with zoom, with no clamp</b> — the dot keeps growing as the user zooms in
+    ///   (owner, 2026-08-16). It was a flat constant.</item>
+    /// <item><b>Its size relative to the segment is constant at every zoom</b> — because it is derived
+    ///   from the DRAWN stroke, it inherits that stroke's floor rather than carrying a second one of
+    ///   its own. Two floors binding at different zooms is precisely a ratio that drifts, which is
+    ///   what the owner saw: below the crossover the dot sat still while the line went on shrinking.</item>
+    /// <item><b>It is WIDER than a thin segment and narrower than a true-diameter one</b> (owner).
+    ///   Both fall out of the same fraction: thin draws at a third of the apparent diameter, so a dot
+    ///   at three fifths of it is 1.8× the line; true diameter draws at the whole of it, so the same
+    ///   dot is a bead sitting inside the wire — which it must be there, or it would cover the segment
+    ///   join at that very vertex and hide the rounded joins.</item>
+    /// </list>
+    ///
+    /// <para>A pleasant consequence worth keeping: the dot is the SAME SIZE in both modes, so toggling
+    /// Ø changes how fat the wire looks without moving the handles the user is aiming at. It is also
+    /// why <see cref="WireHitTest.VertexRadiusNm"/> — one number, mode-free — matches what is drawn in
+    /// both modes exactly.</para>
+    /// </summary>
+    internal static float VertexRadiusPx(float strokeWidthPx, WireThicknessMode mode)
+    {
+        double radius = strokeWidthPx * 0.5 * VertexToSegmentRatio(mode);
+        return (float)Math.Max(double.IsFinite(radius) ? radius : 0.0, 0.0);
+    }
+
+    /// <summary>
+    /// The dot's diameter as a multiple of the SEGMENT's drawn width, per mode — above 1 for a thin
+    /// segment, below 1 for a true-diameter one. Both are the same fraction of the wire's apparent
+    /// diameter; only the segment's own fraction differs.
+    /// </summary>
+    internal static double VertexToSegmentRatio(WireThicknessMode mode) =>
+        mode == WireThicknessMode.TrueDiameter
+            ? VertexToWireDiameterRatio
+            : VertexToWireDiameterRatio / ThinStrokeFraction;
+
+    /// <summary>
+    /// A vertex dot's diameter as a fraction of the wire's APPARENT diameter — its real diameter at
+    /// the current zoom, before either mode has decided how wide to draw the line.
+    ///
+    /// <para><b>Below 1 on purpose</b>, and the true-diameter case is why: there the segment IS the
+    /// apparent diameter, so a dot at or above 1 would cover the segment join at that very vertex —
+    /// hiding the rounded joins asked for in the same breath, and drawing the wire as a chain of beads.
+    /// Visibility comes from the CONTRAST (<see cref="ColorRole.WBondWireVertex"/>), not from the size;
+    /// three fifths is comfortably enough to read.</para>
+    ///
+    /// <para><b>Defined once, in <see cref="WireHitTest.VertexToWireDiameterRatio"/></b>, because the
+    /// hit test has to agree with it exactly — a dot drawn at one size and clickable at another is
+    /// the owner's "the hitbox does not match the vertex size".</para>
+    /// </summary>
+    internal const double VertexToWireDiameterRatio = WireHitTest.VertexToWireDiameterRatio;
+
     private static void DrawBand(
         SKCanvas canvas, WireArray array, ProfileEnvelope.ArrayProfile envelope,
         Func<double, float> spanToScreen, Func<double, float> zToScreen,
-        ProfileProjection.SpanMode mode, SKPaint paint, double? azimuthRadians)
+        ProfileProjection.SpanMode mode, SKPaint paint, SKPaint? edgePaint, double? azimuthRadians)
     {
         // The band is expressed as height ABOVE THE CHORD, so it has to be lifted back onto the
         // chord to be drawn — otherwise a wire whose feet are at different z draws its band flat.
@@ -562,6 +809,16 @@ public static class WBondRenderer
             chordNm = last.Span - first.Span;
         }
 
+        // ── A band with no visible thickness is not drawn at all ────────────────────────────────
+        //
+        // The ordinary array — every member the same shape — has min == max at every sample, so the
+        // band is a zero-area sliver. As a translucent FILL that was simply invisible; the moment it
+        // gained an outline it became a second line lying on the array's own curve, which is not a
+        // thing the picture should contain (owner, 2026-08-16). Below a couple of pixels the band
+        // says nothing the representative curve does not already say, and the outline that would
+        // describe it is thicker than the band itself.
+        if (BandThicknessPx(reference, envelope, zToScreen) < MinimumVisibleBandPx) return;
+
         using var path = new SKPath();
 
         for (int i = 0; i < envelope.Bands.Count; i++)
@@ -584,6 +841,10 @@ public static class WBondRenderer
 
         path.Close();
         canvas.DrawPath(path, paint);
+
+        // The outline goes on TOP of its own fill, so the edge stays crisp where the band overlaps a
+        // neighbouring array's.
+        if (edgePaint is not null) canvas.DrawPath(path, edgePaint);
     }
 
     /// <summary>
@@ -596,11 +857,45 @@ public static class WBondRenderer
                                       WireThicknessMode mode,
                                       int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
     {
-        if (mode == WireThicknessMode.ConstantPixels) return theme.LineWidthPx;
-
-        // Zoom is device pixels per DBU, so the diameter has to be in DBU too.
-        return (float)Math.Max(NmToDbu(wire.DiameterNm, dbuPerMicron) * viewport.Zoom, 1.0);
+        ArgumentNullException.ThrowIfNull(wire);
+        return StrokeWidthPx(wire.DiameterNm, NmToDbu(1.0, dbuPerMicron) * viewport.Zoom, theme, mode);
     }
+
+    /// <summary>
+    /// The same rule, stated in the unit BOTH canvases can supply: device pixels per NANOMETRE.
+    ///
+    /// <para>The layout view works in the host layout's database units and the profile view works in
+    /// nanometres, so <see cref="StrokeWidth"/>'s viewport form cannot serve the profile view at all —
+    /// which is exactly why the profile view drew every wire at a constant hairline whatever the
+    /// thickness mode said (owner, 2026-08-16: "also want the wire segment to render larger when
+    /// zoomed in"). One rule, two entry points, no second definition of what a wire's width is.</para>
+    /// </summary>
+    internal static float StrokeWidthPx(long diameterNm, double pixelsPerNm, WBondRenderTheme theme,
+                                        WireThicknessMode mode)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+
+        double px = diameterNm * pixelsPerNm;
+        if (!double.IsFinite(px)) px = 0.0;
+
+        return mode == WireThicknessMode.TrueDiameter
+            ? (float)Math.Max(px, 1.0)
+            : (float)Math.Max(px * ThinStrokeFraction, theme.LineWidthPx);
+    }
+
+    /// <summary>
+    /// How wide <see cref="WireThicknessMode.Thin"/> draws a wire, as a fraction of its real diameter.
+    ///
+    /// <para><b>A fraction, not a constant</b> (owner, 2026-08-16). It was a fixed
+    /// <see cref="WBondRenderTheme.LineWidthPx"/>, so zooming in made everything else on the canvas
+    /// bigger and left the wires as hairlines — with, once the dots started scaling, beads strung
+    /// along them. Scaling from each wire's OWN diameter keeps the two modes genuinely different (this
+    /// one is not actual size and must not be mistaken for it, which is what Ø exists to settle) while
+    /// still letting a fat wire draw fatter than a thin one.</para>
+    ///
+    /// <para>A third: thin enough to read as a line rather than as bulk at any zoom.</para>
+    /// </summary>
+    internal const double ThinStrokeFraction = 1.0 / 3.0;
 
     /// <summary>
     /// Nanometres to the host layout's database units — the layout viewport's world unit.

@@ -106,18 +106,33 @@ public class WBondCanvasTests
         Assert.Equal(atDefault / 10.0f, atCoarse, 3);
     }
 
-    /// <summary>Constant-pixel mode ignores zoom entirely — that is what makes it the safe default.</summary>
+    /// <summary>
+    /// <b>Thin mode scales with zoom too</b> (owner, 2026-08-16: "as I zoom in, the wire segment and
+    /// wire vertex is supposed to render bigger").
+    ///
+    /// <para>This test used to assert the opposite — that the mode "ignores zoom entirely, which is
+    /// what makes it the safe default" — and the half of that which was really load-bearing is the
+    /// FLOOR, not the constancy: a 1 mil wire must still be visible at whole-package zoom. It keeps
+    /// the floor and drops the ceiling. What separates the two modes now is WIDTH, not whether the
+    /// wire grows: thin is a fixed fraction of the real diameter, Ø is the real diameter.</para>
+    /// </summary>
     [Fact]
-    public void ConstantPixelMode_IgnoresZoom()
+    public void ThinMode_ScalesWithZoomButNeverBelowItsFloor()
     {
         var wire = Design().AllWires().First();
         var theme = WBondRenderTheme.Fallback;
 
-        float a = WBondRenderer.StrokeWidth(wire, new LayoutViewport { Zoom = 1e-4 }, theme, WireThicknessMode.ConstantPixels);
-        float b = WBondRenderer.StrokeWidth(wire, new LayoutViewport { Zoom = 500 }, theme, WireThicknessMode.ConstantPixels);
+        float zoomedOut = WBondRenderer.StrokeWidth(wire, new LayoutViewport { Zoom = 1e-9 }, theme, WireThicknessMode.Thin);
+        float middling  = WBondRenderer.StrokeWidth(wire, new LayoutViewport { Zoom = 1e-3 }, theme, WireThicknessMode.Thin);
+        float zoomedIn  = WBondRenderer.StrokeWidth(wire, new LayoutViewport { Zoom = 1e-1 }, theme, WireThicknessMode.Thin);
 
-        Assert.Equal(a, b);
-        Assert.Equal(theme.LineWidthPx, a);
+        Assert.Equal(theme.LineWidthPx, zoomedOut);        // the floor — a sub-pixel wire stays visible
+        Assert.True(zoomedIn > middling, "Thin mode stopped growing with zoom.");
+        Assert.True(middling >= theme.LineWidthPx);
+
+        // …and it is genuinely THINNER than true diameter at the same zoom, or the toggle says nothing.
+        float trueDiameter = WBondRenderer.StrokeWidth(wire, new LayoutViewport { Zoom = 1e-1 }, theme, WireThicknessMode.TrueDiameter);
+        Assert.True(zoomedIn < trueDiameter);
     }
 
     /// <summary>

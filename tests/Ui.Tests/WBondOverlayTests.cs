@@ -400,29 +400,46 @@ public class WBondOverlayTests
         Assert.False(overlay.OnPointerReleased(far / 2, far / 2));
     }
 
-    /// <summary>Hold-<c>w</c> promotes a single click to the whole wire, and releasing it stops promoting.</summary>
+    /// <summary>
+    /// <b>Hold-<c>w</c> is gone</b> (owner, 2026-08-16): <c>W</c> selects the Draw Wire tool, so the
+    /// overlay must not also latch a whole-wire promotion on the same key — a held W would otherwise
+    /// leave every later click selecting a whole wire with nothing on screen saying why. A single
+    /// click narrows to the element under the cursor, as it does with no key held at all.
+    ///
+    /// <para>Hold-<c>g</c> is unaffected and still promotes to the whole ARRAY: it was never in
+    /// conflict with a tool key, and the assertion is kept here so retiring one promotion cannot
+    /// quietly take the other with it.</para>
+    /// </summary>
     [Fact]
-    public void HoldingW_PromotesAClickToTheWholeWire_AndReleasingItStops()
+    public void HoldingW_NoLongerPromotesAClick_ButHoldingGStillDoes()
     {
         var vm = new WBondViewModel(Design());
         var overlay = new WBondLayoutOverlay(vm);
         var foot = vm.Design.AllWires().First().Points[0];
         long tol = WBondUnits.ToNm(3.0, WBondUnit.Mil);
 
+        // The RELEASE is what narrows the selection, not the press — a press on something already
+        // selected picks it up so it can be dragged, and only a gesture that turns out to be a plain
+        // click re-resolves (the click-through in WBondLayoutOverlay.EndDrag).
         overlay.OnKeyDown(Key.W, KeyModifiers.None);
         overlay.OnPointerPressed(foot.X, foot.Y, tol, KeyModifiers.None, clickCount: 1);
         overlay.OnPointerReleased(foot.X, foot.Y);
-        Assert.Equal([0], vm.Selection.Wires);
 
-        // The RELEASE is what narrows the selection here, not the press — a press on something already
-        // selected picks it up so it can be dragged, and only a gesture that turns out to be a plain
-        // click re-resolves (the click-through in WBondLayoutOverlay.EndDrag). Without releasing, the
-        // whole-wire selection would still be standing, correctly.
+        Assert.Empty(vm.Selection.Wires);
+        Assert.NotEmpty(vm.Selection.Points);
+
         overlay.OnKeyUp(Key.W, KeyModifiers.None);
+        overlay.OnKeyDown(Key.G, KeyModifiers.None);
         overlay.OnPointerPressed(foot.X, foot.Y, tol, KeyModifiers.None, clickCount: 1);
-        Assert.Equal([0], vm.Selection.Wires);
-
         overlay.OnPointerReleased(foot.X, foot.Y);
+
+        // Design() is one array of three wires, so the whole array is caught.
+        Assert.Equal(3, vm.Selection.Wires.Count);
+
+        overlay.OnKeyUp(Key.G, KeyModifiers.None);
+        overlay.OnPointerPressed(foot.X, foot.Y, tol, KeyModifiers.None, clickCount: 1);
+        overlay.OnPointerReleased(foot.X, foot.Y);
+
         Assert.Empty(vm.Selection.Wires);
         Assert.NotEmpty(vm.Selection.Points);
     }

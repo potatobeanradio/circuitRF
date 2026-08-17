@@ -218,12 +218,19 @@ public sealed class WBondDesign
     /// <para><b>An empty array is refused here rather than in the linear algebra.</b> It makes the
     /// mapping matrix <b>A</b> rank-deficient and <c>L_arr</c> singular, and the failure would
     /// otherwise surface as a confusing Cholesky error far from its cause.</para>
+    ///
+    /// <para><b>NO arrays, on the other hand, is a valid design</b> (owner, 2026-08-16: "make it
+    /// support 0 wires"). The two look alike and are not: an empty ARRAY is a named terminal with
+    /// nothing behind it, which the reduction cannot describe; an empty DESIGN is a document the user
+    /// has not drawn in yet, or has just cleared, and every quantity it publishes is honestly empty —
+    /// no wires, no groups, no matrix, a panel with no rows. Refusing it meant the editor could not
+    /// delete its own last wire, and the message it gave for trying was about matrix rank.</para>
+    ///
+    /// <para>A design with no arrays is still not a thing you can SIMULATE: a placed component needs
+    /// pins. That refusal belongs to the component, and lives in <c>WBondModel</c>.</para>
     /// </summary>
     public void Validate()
     {
-        if (Arrays.Count == 0)
-            throw new InvalidOperationException("wBond design has no arrays.");
-
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var array in Arrays)
         {

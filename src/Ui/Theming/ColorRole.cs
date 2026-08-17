@@ -172,6 +172,21 @@ public static class ColorRole
     public const string WBondWireStart = "wBond.WireStart";
 
     /// <summary>
+    /// A wire's VERTEX dot — the points a drag grabs (owner, 2026-08-16).
+    ///
+    /// <para><b>An accent to <see cref="WBondWire"/>, not a shade of it.</b> The dots used to be drawn
+    /// in the wire's own colour, which is invisible against the wire — and completely invisible in
+    /// true-diameter mode, where the wire is wider than the dot. A vertex is the thing a user aims at,
+    /// so it has to be findable without hunting; the defaults are the gold's complement in both
+    /// variants, which reads against the wire AND against the canvas behind it.</para>
+    ///
+    /// <para><see cref="WBondSelected"/> still outranks it, and so does <see cref="WBondWireStart"/> on
+    /// the input foot — which end a wire starts at fixes the sign of every mutual (WB3) and stays the
+    /// more important thing to see.</para>
+    /// </summary>
+    public const string WBondWireVertex = "wBond.WireVertex";
+
+    /// <summary>
     /// The selection accent for wires, points and segments. <b>Deliberately dark in the light
     /// variant</b> — the old hardcoded white was unreadable against the light canvas, which is the
     /// report this role exists to answer.
@@ -210,6 +225,6 @@ public static class ColorRole
         HarmonicaMessages, HarmonicaProgressBar,
         HarmonicaMarkerBand1, HarmonicaMarkerBand2, HarmonicaMarkerBand3,
         HarmonicaMarkerBand4, HarmonicaMarkerBand5,
-        WBondWire, WBondWireStart, WBondSelected, WBondEnvelope, WBondFreeWire,
+        WBondWire, WBondWireStart, WBondWireVertex, WBondSelected, WBondEnvelope, WBondFreeWire,
     ];
 }

@@ -271,7 +271,9 @@ public class WBondViewModelTests
 
         Assert.True(document.IsScratch);
         Assert.False(document.IsDirty);
-        Assert.Equal("wBond", document.Title);
+        // Named the way every other scratch document is (owner, 2026-08-16) — it used to open as the
+        // bare word "wBond", which named the tool rather than the document.
+        Assert.Equal(WBondDocument.DefaultScratchTitle, document.Title);
 
         document.ViewModel.Editor.Selection = new WireSelection { Wires = { 0 } };
         document.ViewModel.Editor.NudgeSelection(0, 1, coarse: false, EditorView.Profile);

@@ -43,11 +43,13 @@ public partial class WBondTransformDialog : Window
         BendUnitZ.Text = suffix;
 
         int wires = _vm?.Selection.TouchedWires().Count ?? 0;
+        // The count alone, matching the Group Wires As dialog (owner, 2026-08-16). "Nothing selected"
+        // keeps its sentence: there the point IS that there is nothing, not how many.
         SelectionText.Text = wires switch
         {
             0 => "Nothing selected.",
-            1 => "1 wire selected.",
-            _ => wires.ToString(CultureInfo.InvariantCulture) + " wires selected.",
+            1 => "1 wire",
+            _ => wires.ToString(CultureInfo.InvariantCulture) + " wires",
         };
     }
 

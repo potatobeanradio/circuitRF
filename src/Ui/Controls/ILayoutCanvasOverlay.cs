@@ -69,9 +69,24 @@ public interface ILayoutCanvasOverlay
 
     /// <summary>
     /// Key release. Exists because a HELD key can be a modifier in its own right — wbond.md §6.3's
-    /// hold-<c>w</c> (promote a click to the whole wire) and hold-<c>g</c> (to the whole array) are
-    /// exactly that, and a modifier that is set on press and never cleared is worse than one that was
-    /// never offered. Return value is advisory; a release is never "consumed" the way a press is.
+    /// hold-<c>g</c> (promote a click to the whole array) is exactly that, and a modifier that is set
+    /// on press and never cleared is worse than one that was never offered. Return value is advisory;
+    /// a release is never "consumed" the way a press is.
     /// </summary>
     void OnKeyUp(Key key, KeyModifiers modifiers);
+
+    /// <summary>
+    /// Keyboard focus has left the canvas: drop every HELD-key latch, whether or not its release was
+    /// ever seen.
+    ///
+    /// <para><b>A key-up is not guaranteed to arrive.</b> Press a promotion key over the canvas, then
+    /// click a toolbar button or a combo before letting go, and the release is delivered to whatever
+    /// took focus — never here. The latch then stays set for the rest of the session, silently
+    /// changing what every later click means, with nothing on screen saying why. That is not a
+    /// hypothetical: the same shape on <c>LayoutCanvas</c>'s own space-to-pan latch turns every
+    /// subsequent left-drag into a pan, which reads exactly as "marquee select stopped working".</para>
+    ///
+    /// <para>Defaulted, so an overlay that latches nothing needs no code.</para>
+    /// </summary>
+    void OnFocusLost() { }
 }

@@ -376,5 +376,5 @@ internal static class WBondClipboardWriter
     private static ExportContext Context(WBondDesign design, LayoutView? layout, int dbuPerMicron)
         => new(design, layout, null, null,
                WBondRenderTheme.Fallback, LayoutRenderTheme.Dark,
-               WireThicknessMode.ConstantPixels, dbuPerMicron);
+               WireThicknessMode.Thin, dbuPerMicron);
 }

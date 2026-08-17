@@ -36,7 +36,7 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     private long _lastXNm, _lastYNm;
     private long _pressXNm, _pressYNm;
     private double _dragThresholdNm;
-    private bool _wHeld, _gHeld;
+    private bool _gHeld;
 
     // Alt-drag (span scaling) in THIS view — the layout half of WB24b.
     private bool _altDrag;
@@ -103,7 +103,7 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     public WBondRenderTheme Theme { get; set; } = WBondRenderTheme.Fallback;
 
     /// <summary>Per-view (WB22a) — the profile view is usually at a different zoom.</summary>
-    public WireThicknessMode Thickness { get; set; } = WireThicknessMode.ConstantPixels;
+    public WireThicknessMode Thickness { get; set; } = WireThicknessMode.Thin;
 
     /// <summary>Snap wire points to the layout's own geometry (§6.6). On by default, as in the layout editor.</summary>
     public bool SnapEnabled { get; set; } = true;
@@ -250,7 +250,7 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
                                           accent: layoutTheme.Selection);
 
             if (_drawGhost is { } ghost)
-                WBondRenderer.DrawGhostWire(canvas, ghost, viewport, Theme, DbuPerMicron);
+                WBondRenderer.DrawGhostWire(canvas, ghost, viewport, Theme, DbuPerMicron, Thickness);
         }
         finally { canvas.Restore(); }
     }
@@ -725,8 +725,11 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
     public bool OnKeyDown(Key key, KeyModifiers modifiers)
     {
-        if (key == Key.W) { _wHeld = true; return false; }   // a held promotion key, not a command
-        if (key == Key.G) { _gHeld = true; return false; }
+        // W is the DRAW WIRE tool now (owner, 2026-08-16) and is claimed by the editor view, so the
+        // old w+click "promote to the whole wire" gesture is gone rather than fighting it for the
+        // key. Double-clicking a point or a segment already selects the whole wire, which is the
+        // gesture every other editor in this application uses for the same promotion.
+        if (key == Key.G) { _gHeld = true; return false; }   // a held promotion key, not a command
 
         if (IsAtDepth) return false;
 
@@ -769,16 +772,20 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
     public void OnKeyUp(Key key, KeyModifiers modifiers)
     {
-        if (key == Key.W) _wHeld = false;
         if (key == Key.G) _gHeld = false;
     }
+
+    /// <summary>
+    /// Focus has left the canvas — drop the held-<c>g</c> latch whether or not its release arrived.
+    /// See <see cref="ILayoutCanvasOverlay.OnFocusLost"/> for why it may not have.
+    /// </summary>
+    public void OnFocusLost() => _gHeld = false;
 
     private WBondModifiers Modifiers(KeyModifiers modifiers)
     {
         var result = WBondModifiers.None;
         if ((modifiers & KeyModifiers.Shift) != 0) result |= WBondModifiers.Shift;
         if ((modifiers & KeyModifiers.Alt) != 0) result |= WBondModifiers.Alt;
-        if (_wHeld) result |= WBondModifiers.WholeWire;
         if (_gHeld) result |= WBondModifiers.WholeGroup;
         return result;
     }

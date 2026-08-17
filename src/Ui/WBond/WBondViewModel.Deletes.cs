@@ -96,18 +96,17 @@ public sealed partial class WBondViewModel
         return DeleteWirePoint(wireIndex, segmentIndex + 1);
     }
 
-    /// <inheritdoc cref="WhyCannotDeletePoint"/>
-    public string? WhyCannotDeleteWire(int wireIndex)
-    {
-        if (wireIndex < 0 || wireIndex >= _design.WireCount) return "No wire here.";
-
-        // Said HERE, in the user's terms, rather than left to the model: WBondDesign.Validate refuses
-        // a design with no arrays, so deleting the last wire would be rolled back and reported as
-        // "wBond design has no arrays" — true, and no help at all to someone who just pressed Delete.
-        return _design.WireCount <= 1
-            ? "A wBond design needs at least one wire."
-            : null;
-    }
+    /// <summary>
+    /// Why the whole wire cannot be deleted, or null.
+    ///
+    /// <para><b>The last wire CAN be deleted</b> (owner, 2026-08-16: "make it support 0 wires"). This
+    /// used to refuse it, because <c>WBondDesign.Validate</c> rejected a design with no arrays and the
+    /// delete would have been rolled back and reported as a mapping-matrix failure. An empty design is
+    /// now a valid one — the last group is pruned with the rest — so the only thing left to refuse is
+    /// an index that names no wire.</para>
+    /// </summary>
+    public string? WhyCannotDeleteWire(int wireIndex) =>
+        wireIndex < 0 || wireIndex >= _design.WireCount ? "No wire here." : null;
 
     /// <summary>
     /// Removes one whole wire, and its group with it when that leaves the group empty — see

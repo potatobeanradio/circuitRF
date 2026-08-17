@@ -43,6 +43,150 @@ public partial class WBondEditorView : UserControl
         // KeyBinding is processed before visual-tree routing and marks the event handled, so a plain
         // bubble handler here would silently never run after a toolbar click moved focus.
         AddHandler(KeyDownEvent, OnViewKeyDownTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        // ── Rulers. Each strip MIRRORS its canvas's viewport — there is no independent state, which
+        // is the whole contract LayoutRulerControl was built to; see LayoutEditorView's identical
+        // three subscriptions.
+        LayoutCanvasCtrl.ViewportChanged    += (_, _) => SyncLayoutRulers();
+        LayoutCanvasCtrl.LayoutUpdated      += (_, _) => SyncLayoutRulers();
+        LayoutCanvasCtrl.CursorWorldChanged += OnLayoutCursorWorldChanged;
+
+        ProfileCanvas.ViewportChanged    += (_, _) => SyncProfileRulers();
+        ProfileCanvas.CursorWorldChanged += OnProfileCursorWorldChanged;
+    }
+
+    // ── Rulers (owner, 2026-08-16) ────────────────────────────────────────────
+
+    /// <summary>
+    /// Pushes the layout canvas's pan/zoom and the reference layout's units onto its two strips.
+    /// </summary>
+    private void SyncLayoutRulers()
+    {
+        var vp = LayoutCanvasCtrl.CurrentViewport;
+        LayoutHRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
+        LayoutVRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
+
+        int dbuPerMicron = _bound?.ReferenceLayout?.Model.DbuPerMicron ?? LayoutUnits.DefaultDbuPerMicron;
+        var unit = WBondDocumentViewModel.ToLayoutUnit(_bound?.Editor.DisplayUnit ?? WBondUnit.Mil);
+
+        LayoutHRuler.SetUnits(dbuPerMicron, unit);
+        LayoutVRuler.SetUnits(dbuPerMicron, unit);
+    }
+
+    /// <summary>
+    /// The same, for the profile view — whose world unit is the NANOMETRE.
+    ///
+    /// <para>That is why the strips are driven at 1,000 DBU/µm rather than at the reference layout's
+    /// resolution: one DBU is one nanometre there, so <c>LayoutUnits.Format</c> labels this canvas's
+    /// own coordinates correctly with no conversion. Driving it at the layout's resolution would put
+    /// a ruler on the profile view that disagreed with the profile view by that factor.</para>
+    /// </summary>
+    private void SyncProfileRulers()
+    {
+        var vp = ProfileCanvas.CurrentViewport;
+        ProfileHRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
+        ProfileVRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
+
+        var unit = WBondDocumentViewModel.ToLayoutUnit(_bound?.Editor.DisplayUnit ?? WBondUnit.Mil);
+        ProfileHRuler.SetUnits(NanometreDbuPerMicron, unit);
+        ProfileVRuler.SetUnits(NanometreDbuPerMicron, unit);
+    }
+
+    /// <summary>The resolution at which one database unit IS one nanometre — the profile view's own.</summary>
+    private const int NanometreDbuPerMicron = 1000;
+
+    private void OnLayoutCursorWorldChanged(object? sender, (double X, double Y)? world)
+    {
+        LayoutHRuler.SetCursorWorld(world?.X);
+        LayoutVRuler.SetCursorWorld(world?.Y);
+    }
+
+    private void OnProfileCursorWorldChanged(object? sender, (double Span, double Z)? world)
+    {
+        ProfileHRuler.SetCursorWorld(world?.Span);
+        ProfileVRuler.SetCursorWorld(world?.Z);
+    }
+
+    /// <summary>
+    /// Pushes the active tool into BOTH canvases.
+    ///
+    /// <para>The overlay's two armed flags follow <c>ActiveTool</c> on the view-model already; the
+    /// PROFILE canvas is a control and cannot see it, which is exactly why the Wire tool did nothing
+    /// there (owner, 2026-08-16). Rotate stays layout-only: it rotates a wire about an end point in
+    /// the XY plane, and the profile view has no XY plane to rotate in.</para>
+    /// </summary>
+    private void ApplyActiveTool()
+    {
+        ProfileCanvas.WireDrawArmed = _bound?.ActiveTool == WBondTool.DrawWire;
+        LayoutCanvasCtrl.InvalidateOverlay();
+        ProfileCanvas.InvalidateVisual();
+    }
+
+    /// <summary>Applies the ruler toggle to both views at once — one switch, two canvases.</summary>
+    private void ApplyRulerVisibility()
+    {
+        bool show = _bound?.RulersVisible ?? true;
+
+        ProfileRulerRow.IsVisible = show;
+        ProfileVRuler.IsVisible   = show;
+        LayoutRulerRow.IsVisible  = show;
+        LayoutVRuler.IsVisible    = show;
+    }
+
+    // ── Save (owner, 2026-08-16) ──────────────────────────────────────────────
+    //
+    // The button asks; the HOST answers. The workspace routes it through SaveWBondDoc (which knows
+    // the workspace's picker, its open-document map and its message log) and the standalone binary
+    // through its own — so neither gains a second way to write a .wBond.
+
+    private void OnSave(object? sender, RoutedEventArgs e) => _subscribedDoc?.RequestSave(saveAs: false);
+
+    private void OnSaveAs(object? sender, RoutedEventArgs e) => _subscribedDoc?.RequestSave(saveAs: true);
+
+    /// <summary>
+    /// Double-clicking an array's name in the inductance panel selects that array's wires (owner,
+    /// 2026-08-16).
+    ///
+    /// <para>The row carries its own array INDEX, so membership is read from the mesh rather than
+    /// matched by name — two arrays may not share a name today, but resolving a selection by string
+    /// would make that a silent selection bug the day one does.</para>
+    /// </summary>
+    private void OnArrayNameDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_bound is null || sender is not Control { DataContext: WBondArrayRowViewModel row }) return;
+
+        _bound.Editor.SelectArray(row.ArrayIndex);
+        RepaintBoth();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Double-clicking a card's Loop height / Span / Diameter / Material opens the SAME prompt the
+    /// profile view's context menu opens, on the same array (owner, 2026-08-16), and applies to every
+    /// wire in it.
+    ///
+    /// <para>The panel is where a user reads those four numbers, so it is where they reach for them.
+    /// Both routes land on <c>SetGroup…Async</c> — one implementation, one undo entry, one refusal
+    /// path.</para>
+    /// </summary>
+    private void OnArrayLoopHeightDoubleTapped(object? sender, TappedEventArgs e) =>
+        PromptForArray(sender, e, SetGroupLoopHeightAsync);
+
+    private void OnArraySpanDoubleTapped(object? sender, TappedEventArgs e) =>
+        PromptForArray(sender, e, SetGroupSpanAsync);
+
+    private void OnArrayDiameterDoubleTapped(object? sender, TappedEventArgs e) =>
+        PromptForArray(sender, e, SetGroupDiameterAsync);
+
+    private void OnArrayMaterialDoubleTapped(object? sender, TappedEventArgs e) =>
+        PromptForArray(sender, e, SetGroupMaterialAsync);
+
+    private void PromptForArray(object? sender, TappedEventArgs e, Func<int, Task> prompt)
+    {
+        if (_bound is null || sender is not Control { DataContext: WBondArrayRowViewModel row }) return;
+
+        e.Handled = true;
+        _ = prompt(row.ArrayIndex);
     }
 
     // ── Clipboard (§6.7) ──────────────────────────────────────────────────────
@@ -63,6 +207,27 @@ public partial class WBondEditorView : UserControl
         {
             switch (e.Key)
             {
+                // The two TOOL keys (owner, 2026-08-16). W was previously a held promotion modifier
+                // for a click (w+click selected the whole wire); that gesture is gone rather than
+                // sharing the key, because double-clicking a point or a segment already promotes to
+                // the whole wire and is the gesture the rest of the application uses.
+                case Key.W:
+                    _bound.ActiveTool = WBondTool.DrawWire;
+                    e.Handled = true;
+                    return;
+
+                case Key.R:
+                    _bound.ActiveTool = WBondTool.Rotate;
+                    e.Handled = true;
+                    return;
+
+                // T is the Transform DIALOG, not a tool — the same button, and gated the same way:
+                // with nothing selected the button is disabled, so the key does nothing either.
+                case Key.T:
+                    if (_bound.HasSelection) OnTransform(this, new RoutedEventArgs());
+                    e.Handled = true;
+                    return;
+
                 // Delete removes the selected WIRES. Structural, and therefore one undo entry that
                 // restores the deleted wire objects themselves — see WBondViewModel.Restore.
                 case Key.Delete:
@@ -134,20 +299,19 @@ public partial class WBondEditorView : UserControl
     /// </list>
     ///
     /// <para><b>Why not in the canvases.</b> The overlay could already cancel a half-placed wire and
-    /// clear a selection, but it cannot un-press a ToggleButton — so the tool stayed armed, the next
-    /// click started another wire, and Escape read as doing nothing. The toolbar toggles are the
-    /// source of truth for arming (their handlers push into the overlay), so the unwind has to start
-    /// from them.</para>
+    /// clear a selection, but it cannot change the active TOOL — so the tool stayed armed, the next
+    /// click started another wire, and Escape read as doing nothing. <c>ActiveTool</c> is the source
+    /// of truth for arming (the overlay's two flags are derived from it), so the unwind starts
+    /// there and the toolbar's Select button lights up as the visible proof it happened.</para>
     /// </summary>
     /// <returns>True when the key was consumed.</returns>
     private bool HandleEscape()
     {
         if (_bound is null) return false;
 
-        if (DrawWireToggle.IsChecked == true || RotateToolToggle.IsChecked == true)
+        if (_bound.ActiveTool != WBondTool.Select)
         {
-            DrawWireToggle.IsChecked = false;
-            RotateToolToggle.IsChecked = false;
+            _bound.ActiveTool = WBondTool.Select;
             RepaintBoth();
             return true;
         }
@@ -356,9 +520,13 @@ public partial class WBondEditorView : UserControl
 
         SyncProfileAxisCombo();
         ProfileCanvas.Azimuth = _bound.Editor.ProfileAzimuthRadians;
+        ApplyActiveTool();
         SyncOverlayWireTheme();
         RebindReferenceLayout();
         ApplyArrangement();
+        ApplyRulerVisibility();
+        SyncLayoutRulers();
+        SyncProfileRulers();
         RefreshQualityText();
     }
 
@@ -424,6 +592,11 @@ public partial class WBondEditorView : UserControl
             _updatingUnits = true;
             UnitCombo.SelectedItem = WBondUnits.Suffix(_bound!.Editor.DisplayUnit);
             _updatingUnits = false;
+
+            // §6.5 — the rulers are a READOUT and follow the editor's unit, exactly as the panel's
+            // length rows and the metadata bar do.
+            SyncLayoutRulers();
+            SyncProfileRulers();
         }
     }
 
@@ -432,8 +605,15 @@ public partial class WBondEditorView : UserControl
         if (e.PropertyName is nameof(WBondDocumentViewModel.ViewMode)
                            or nameof(WBondDocumentViewModel.PanelVisible))
             ApplyArrangement(restoreFocus: true);
+        else if (e.PropertyName == nameof(WBondDocumentViewModel.RulersVisible))
+            ApplyRulerVisibility();
+        else if (e.PropertyName == nameof(WBondDocumentViewModel.ActiveTool))
+            ApplyActiveTool();
         else if (e.PropertyName == nameof(WBondDocumentViewModel.ReferenceLayout))
+        {
             RebindReferenceLayout();
+            SyncLayoutRulers();
+        }
     }
 
     /// <summary>
@@ -466,7 +646,26 @@ public partial class WBondEditorView : UserControl
     /// ~0.05 ms, measured; what took seconds was the picture catching up. Loop height looked fast
     /// because its visible effect is in the profile view, which was already repainting.</para>
     /// </summary>
-    private void OnReadoutChanged() => RepaintBoth();
+    private void OnReadoutChanged()
+    {
+        // A REFUSAL is cleared by the next successful edit, and this is that edit (owner, 2026-08-16:
+        // "the 'inductance matrix is not positive definite' message does not ever go away").
+        //
+        // It was meant to be cleared by RefreshQualityText, which is called on every overlay repaint
+        // — but that method's guard read "keep the refusal unless the readout is PROVISIONAL", so on
+        // an ordinary (non-degraded) frame it returned early and left the message standing forever.
+        // The condition was inverted against its own intent, and the intent is here instead: a
+        // readout change is the one event that means "an edit went through", which is exactly when a
+        // rolled-back edit's message has stopped being true.
+        //
+        // Ordering is what makes this safe: WBondViewModel.RefuseEdit restores the snapshot — which
+        // republishes and lands here — BEFORE it raises EditRefused, so a genuine refusal still ends
+        // with its own message on screen.
+        _refusalShowing = false;
+        RefreshQualityText();
+
+        RepaintBoth();
+    }
 
     /// <summary>
     /// WB15: while the ladder is degraded the readout is an approximation, and the panel says so.
@@ -476,13 +675,11 @@ public partial class WBondEditorView : UserControl
     {
         if (_bound is null) { QualityText.Text = ""; return; }
 
-        // A refusal outranks the ladder's own status until the next edit clears it — the user needs
-        // to read why their edit came back before being told how fast the last frame was.
-        if (_refusalShowing)
-        {
-            if (!_bound.Overlay.ReadoutIsProvisional) return;
-            _refusalShowing = false;
-        }
+        // A refusal outranks the ladder's own status, and is cleared by the next successful edit —
+        // which is OnReadoutChanged, not this method. This one runs on every overlay repaint,
+        // including ones that changed no geometry at all (a selection, a theme change, a pan), so
+        // clearing here would drop the message before it had been read.
+        if (_refusalShowing) return;
 
         QualityText.ClearValue(TextBlock.ForegroundProperty);
         QualityText.Text = _bound.Overlay.ReadoutIsProvisional ? "provisional — " + _bound.Overlay.Quality : "";
@@ -540,7 +737,7 @@ public partial class WBondEditorView : UserControl
         splitRow.Height = split ? new GridLength(4) : new GridLength(0);
 
         ProfileBorder.IsVisible = profile;
-        LayoutCanvasCtrl.IsVisible = layout;
+        LayoutCanvasHost.IsVisible = layout;   // the canvas AND its two ruler strips
         CanvasSplitter.IsVisible = split;
 
         var panelColumn = RootGrid.ColumnDefinitions[0];
@@ -711,7 +908,7 @@ public partial class WBondEditorView : UserControl
     {
         var mode = TrueDiameterToggle.IsChecked == true
             ? WireThicknessMode.TrueDiameter
-            : WireThicknessMode.ConstantPixels;
+            : WireThicknessMode.Thin;
 
         // Per-view (WB22a) — but this one toggle drives both, because the two views are showing the
         // same wires and a mode that applied to only one of them would read as a bug.
@@ -732,30 +929,7 @@ public partial class WBondEditorView : UserControl
         if (_bound is not null) _bound.Overlay.WireMarqueeEnabled = WireMarqueeToggle.IsChecked == true;
     }
 
-    private void OnDrawWireChanged(object? sender, RoutedEventArgs e)
-    {
-        if (_bound is null) return;
-
-        _bound.Overlay.WireDrawArmed = DrawWireToggle.IsChecked == true;
-        if (_bound.Overlay.WireDrawArmed && RotateToolToggle.IsChecked == true)
-            RotateToolToggle.IsChecked = false;
-
-        LayoutCanvasCtrl.InvalidateOverlay();
-    }
-
     // ── Transforms (§6.4) ─────────────────────────────────────────────────────
-
-    private void OnRotateToolChanged(object? sender, RoutedEventArgs e)
-    {
-        if (_bound is null) return;
-
-        _bound.Overlay.WireRotateArmed = RotateToolToggle.IsChecked == true;
-
-        // The two tools want the same press, so arming one disarms the other rather than leaving the
-        // user to discover which of them their click went to.
-        if (_bound.Overlay.WireRotateArmed && DrawWireToggle.IsChecked == true)
-            DrawWireToggle.IsChecked = false;
-    }
 
     private void OnReverse(object? sender, RoutedEventArgs e) => Apply(() => _bound!.Editor.ReverseSelection());
 

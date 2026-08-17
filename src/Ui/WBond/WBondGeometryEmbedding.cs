@@ -73,6 +73,23 @@ public static class WBondGeometryEmbedding
     };
 
     /// <summary>
+    /// Whether there is any reference geometry for a save to be asked about at all (owner,
+    /// 2026-08-16).
+    ///
+    /// <para><b>A question with one possible answer is not a question.</b> A wBond holding nothing but
+    /// wires — the ordinary state of a new document, and of every document opened from the palette —
+    /// was still shown "Include the layout geometry in this file?" with nothing on either side of the
+    /// choice. The dialog now appears only when the layout actually holds something: a shape, or an
+    /// instance of a cell.</para>
+    ///
+    /// <para>Deliberately asked of the ROOT view rather than of <see cref="Analyze"/>'s plan: an
+    /// unresolvable instance is still geometry the user put there and still something they may want
+    /// to be told about, whereas <c>Analyze</c> would report it only as a loss.</para>
+    /// </summary>
+    public static bool HasGeometryToEmbed(LayoutView? root) =>
+        root is not null && (root.Shapes.Count > 0 || root.Instances.Count > 0);
+
+    /// <summary>
     /// Walks what <paramref name="root"/> references and reports what embedding would cost.
     /// Never mutates anything.
     /// </summary>

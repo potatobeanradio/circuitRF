@@ -123,6 +123,10 @@ public partial class WBondShellWindow : Window
             if (e.PropertyName is nameof(WBondDocumentViewModel.IsDirty)) UpdateTitle();
         };
 
+        // The editor's own Save / Save As buttons (owner, 2026-08-16) land on THIS window's picker —
+        // the same method File ▸ Save already uses, never a second way to write a .wBond.
+        document.SaveRequested += saveAs => _ = SaveAsync(saveAs);
+
         UpdateTitle();
         ReportUnresolvedReferences();
     }
@@ -322,7 +326,12 @@ public partial class WBondShellWindow : Window
         }
 
         bool embed = false;
-        if (Document.ViewModel.ReferenceLayout is { } layout)
+
+        // Asked only when the layout actually HOLDS something (owner, 2026-08-16) — a design with no
+        // reference geometry has nothing on either side of the choice. Same rule, same helper, as the
+        // workspace's own SaveWBondDoc.
+        if (Document.ViewModel.ReferenceLayout is { } layout &&
+            WBondGeometryEmbedding.HasGeometryToEmbed(layout.Model))
         {
             // WB33 — what a save costs is stated BEFORE it happens. The same plan dialog circuitRF
             // shows, for the same reason: a file that quietly lost parametricity on a vendor PCell is

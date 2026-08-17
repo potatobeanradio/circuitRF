@@ -5,6 +5,27 @@ using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.WBond;
 
+/// <summary>
+/// Which editing tool a click means — the wBond editor's own three, mirroring the Layout Editor's
+/// <c>Tool</c> exactly in shape (owner, 2026-08-16).
+///
+/// <para><b>Mutually exclusive by construction.</b> Draw Wire and Rotate used to be two independent
+/// <c>ToggleButton</c>s that each had to remember to un-press the other, and "no tool" was a state
+/// with no button of its own — so Escape could leave the toolbar showing nothing selected while the
+/// editor was in select mode. One enum makes the third state nameable and the exclusion free.</para>
+/// </summary>
+public enum WBondTool
+{
+    /// <summary>Pick, marquee and drag — the resting tool, and where Escape returns.</summary>
+    Select,
+
+    /// <summary>Click a start point, click an end point (§6.4). The <c>W</c> key.</summary>
+    DrawWire,
+
+    /// <summary>Rotate about an end point (WB26a). The <c>R</c> key.</summary>
+    Rotate,
+}
+
 /// <summary>Which of the editor's two canvases are showing (owner, 2026-08-16).</summary>
 public enum WBondViewMode
 {
@@ -39,6 +60,12 @@ public sealed class WBondViewState
 
     /// <summary>Whether the Array Inductance panel is showing (the <c>I</c> key).</summary>
     public bool PanelVisible { get; set; } = true;
+
+    /// <summary>
+    /// Whether both canvases show the Layout Editor's rulers along their top and left edges
+    /// (owner, 2026-08-16). One switch for both views, because they are one editor.
+    /// </summary>
+    public bool RulersVisible { get; set; } = true;
 
     /// <summary>
     /// The shipped profile plane — <b>YZ</b> (owner, 2026-08-16), matching the north/south default

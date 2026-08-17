@@ -9,16 +9,24 @@
     <StackPanel Margin="16" Spacing="8" MinWidth="300" MaxWidth="380">
         <TextBlock x:Name="PromptText" FontWeight="SemiBold" TextWrapping="Wrap"/>
 
-        <TextBlock x:Name="SubText" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
-
         <!-- Free text, not a numeric stepper: the whole point is that a unit may be typed with the
-             number ("2 mil"), which a numeric control cannot accept. -->
+             number ("2 mil"), which a numeric control cannot accept.
+
+             LEFT-ALIGNED and narrow (owner, 2026-08-16): nothing anyone types here is more than ten
+             characters, and a box stretched across the dialog reads as an invitation to a sentence.
+             HorizontalAlignment is what actually limits it — a StackPanel stretches its children by
+             default, so Width alone would be a minimum rather than a cap. -->
         <TextBox x:Name="ValueBox" PlaceholderText="e.g. 2 mil" FontSize="12"
+                 Width="120" HorizontalAlignment="Left"
                  KeyDown="OnValueKeyDown" TextChanged="OnValueChanged"/>
 
         <!-- Choice form: used for Material, where the valid values are a closed set and free text
              would only invite a typo the model would then have to reject. -->
         <ComboBox x:Name="ChoiceBox" IsVisible="False" HorizontalAlignment="Stretch" FontSize="12"/>
+
+        <!-- BELOW the field (owner): it explains how what you type will be read, which is worth
+             reading after you have looked at the box rather than before you have found it. -->
+        <TextBlock x:Name="SubText" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
 
         <TextBlock x:Name="ErrorText" FontSize="11" IsVisible="False" TextWrapping="Wrap"
                    Foreground="{DynamicResource CrfWarningBrush}"/>

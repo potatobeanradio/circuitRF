@@ -102,6 +102,33 @@ public static class ProfileProjection
     }
 
     /// <summary>
+    /// The world point a profile-view click at (<paramref name="span"/>, <paramref name="z"/>) means
+    /// — the inverse of <see cref="Project"/>, for placing NEW geometry from this view (owner,
+    /// 2026-08-16: the Wire tool could not draw here at all).
+    /// </summary>
+    /// <returns>
+    /// The world point, or <b>null when this view has no inverse</b>. That is not a defensive nicety
+    /// and it is not fixable:
+    /// <list type="bullet">
+    /// <item><b>AUTO</b> projects each wire onto its OWN chord, so "span" names a different direction
+    ///   for every wire in the design and none at all for a wire that does not exist yet.</item>
+    /// <item><b>Normalised</b> span is 0..1 along a chord — again, a chord the new wire does not have.</item>
+    /// </list>
+    /// Under a FIXED azimuth in absolute span the inverse is exact: span is
+    /// <c>x·cos θ + y·sin θ</c>, so a point on the view direction reproduces it identically.
+    /// </returns>
+    public static Point3? Unproject(double span, double z, SpanMode mode, double? azimuthRadians)
+    {
+        if (mode != SpanMode.Absolute || azimuthRadians is not { } azimuth) return null;
+
+        double cos = Math.Cos(azimuth), sin = Math.Sin(azimuth);
+
+        return new Point3((long)Math.Round(span * cos),
+                          (long)Math.Round(span * sin),
+                          (long)Math.Round(z));
+    }
+
+    /// <summary>
     /// The direction, in XY, that "horizontal" means in the profile view for a given wire — a unit
     /// vector. Under a fixed azimuth that is the view direction; under AUTO it is the wire's own
     /// chord.
@@ -180,6 +207,35 @@ public static class ProfileProjection
 /// </summary>
 public static class WireHitTest
 {
+    /// <summary>
+    /// A vertex dot's diameter as a fraction of its WIRE's — the ONE definition, read by the renderer
+    /// that draws the dot and by the hit test that decides whether a click landed on it.
+    ///
+    /// <para><b>Two constants would be the bug this exists to prevent</b> (owner, 2026-08-16: "the
+    /// hitbox of the wire vertex does not match the vertex size"). The dot grows with zoom because it
+    /// is tied to the wire's real diameter; a hit tolerance that stayed at a few screen pixels is
+    /// smaller than the dot the moment the user zooms past the crossover, so clicking the visible dot
+    /// anywhere but dead centre misses it.</para>
+    ///
+    /// <para>Below 1 on purpose — see <c>WBondRenderer.VertexToWireDiameterRatio</c>, which is this.</para>
+    /// </summary>
+    public const double VertexToWireDiameterRatio = 0.6;
+
+    /// <summary>
+    /// The world-space radius a vertex dot is drawn at, in nanometres.
+    ///
+    /// <para><b>Zoom-independent by construction</b>, which is what lets the hit test take it as a
+    /// FLOOR without knowing anything about pixels: zoomed out, the caller's own screen-derived
+    /// tolerance is far larger and wins; zoomed in past the crossover, this one is, and it is exactly
+    /// the circle on screen.</para>
+    ///
+    /// <para><b>Mode-free, and it can be</b>: the dot is drawn at this same fraction of the wire's
+    /// apparent diameter whether the segment is drawn thin or at true diameter — only the SEGMENT's
+    /// width changes between the two. So one number matches what is on screen in both.</para>
+    /// </summary>
+    public static double VertexRadiusNm(long diameterNm) =>
+        Math.Max(0.0, diameterNm) * 0.5 * VertexToWireDiameterRatio;
+
     /// <summary>What a hit test found.</summary>
     /// <param name="Wire">Index of the wire hit, or −1 for nothing.</param>
     /// <param name="Point">
@@ -239,6 +295,12 @@ public static class WireHitTest
         {
             var points = mesh.Wires[w].Points;
 
+            // A vertex is hittable anywhere within the DOT THAT IS DRAWN, never only within the
+            // caller's screen-derived tolerance — see VertexRadiusNm. The segment tolerance below is
+            // untouched: a segment's target is the line, whose width is a display mode rather than a
+            // property of the geometry.
+            double pointTolerance = Math.Max(toleranceNm, VertexRadiusNm(mesh.Wires[w].DiameterNm));
+
             for (int i = 0; i < points.Count; i++)
             {
                 var (a, b) = project(w, i);
@@ -246,7 +308,7 @@ public static class WireHitTest
 
                 // Vertices are preferred within the same tolerance, so the comparison is made on a
                 // biased distance while the REPORTED distance stays true.
-                if (distance <= toleranceNm && distance / pointBias < Bias(best, pointBias))
+                if (distance <= pointTolerance && distance / pointBias < Bias(best, pointBias))
                     best = new Hit(w, i, false, distance);
             }
 

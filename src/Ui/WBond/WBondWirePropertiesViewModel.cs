@@ -48,8 +48,14 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
     private string? _focusedField;
     private LazyIndexedList<WireVertexRowViewModel>? _rowsBacking;
 
+    /// <summary>
+    /// What the Properties Inspector says with nothing selected (owner, 2026-08-16) — the panel's
+    /// resting state, phrased as the thing to do rather than as the thing that is absent.
+    /// </summary>
+    public const string NothingSelectedMessage = "Select objects to inspect.";
+
     [ObservableProperty] private bool _isEmptyState = true;
-    [ObservableProperty] private string _emptyMessage = "Select a single wire.";
+    [ObservableProperty] private string _emptyMessage = NothingSelectedMessage;
 
     [ObservableProperty] private string _groupName = "";
     [ObservableProperty] private string _wireSummary = "";
@@ -183,8 +189,12 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
         var touched = _vm.Selection.TouchedWires();
         SelectedWireCount = touched.Count;
 
-        if (touched.Count == 0) { SetEmpty("Select a single wire."); return; }
-        if (touched.Count > 1) { SetEmpty($"{touched.Count} wires selected."); return; }
+        // Nothing selected is the RESTING state of this panel, not a near-miss, so it says what to do
+        // rather than what is missing (owner, 2026-08-16). "Select a single wire" is kept for the two
+        // cases that ARE near-misses — several wires, or one the panel cannot describe — where the
+        // word "single" is the whole of the information.
+        if (touched.Count == 0) { SetEmpty(NothingSelectedMessage); return; }
+        if (touched.Count > 1) { SetEmpty($"{touched.Count} wires selected — select a single wire."); return; }
 
         int index = touched.First();
         var wire = _vm.Design.AllWires().ElementAtOrDefault(index);

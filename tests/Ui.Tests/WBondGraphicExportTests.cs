@@ -128,7 +128,7 @@ public class WBondGraphicExportTests : IDisposable
         WBondGraphicExport.Render(
             surface.Canvas, design, layout, technology: null, instanceBaseDir: null,
             WBondRenderTheme.Fallback, LayoutRenderTheme.Light,
-            WireThicknessMode.ConstantPixels, w, h);
+            WireThicknessMode.Thin, w, h);
 
         using var snapshot = surface.Snapshot();
         using var bitmap = SKBitmap.FromImage(snapshot);
@@ -157,7 +157,7 @@ public class WBondGraphicExportTests : IDisposable
         WBondGraphicExport.Render(
             surface.Canvas, design, layout, technology: null, instanceBaseDir: null,
             WBondRenderTheme.Fallback, LayoutRenderTheme.Light,
-            WireThicknessMode.ConstantPixels, w, h);
+            WireThicknessMode.Thin, w, h);
 
         using var snapshot = surface.Snapshot();
         using var bitmap = SKBitmap.FromImage(snapshot);

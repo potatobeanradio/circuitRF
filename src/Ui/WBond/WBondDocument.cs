@@ -5,6 +5,7 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Assembly;
 using CircuitRF.WBond;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Mvvm.Controls;
 
 namespace CircuitRF.Ui.WBond;
@@ -36,6 +37,48 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
 
     /// <summary>Whether the Array Inductance panel is showing — the <c>I</c> key. Persisted.</summary>
     [ObservableProperty] private bool _panelVisible = true;
+
+    /// <summary>
+    /// Whether both canvases carry rulers along their top and left edges. One toolbar button drives
+    /// both, and it persists with the document.
+    /// </summary>
+    [ObservableProperty] private bool _rulersVisible = true;
+
+    /// <summary>
+    /// Which tool a click means (owner, 2026-08-16) — the Layout Editor's own <c>ActiveTool</c>
+    /// shape, so the two editors' toolbars behave identically rather than approximately.
+    ///
+    /// <para><b>The overlay's two armed flags are DERIVED from this, never set beside it.</b> They
+    /// were previously the source of truth, one per <c>ToggleButton</c>, each responsible for
+    /// un-pressing the other — which left "neither armed" as a state the toolbar could not show and
+    /// Escape could not be seen to have reached.</para>
+    /// </summary>
+    [ObservableProperty] private WBondTool _activeTool = WBondTool.Select;
+
+    partial void OnActiveToolChanged(WBondTool value)
+    {
+        Overlay.WireDrawArmed   = value == WBondTool.DrawWire;
+        Overlay.WireRotateArmed = value == WBondTool.Rotate;
+    }
+
+    /// <summary>
+    /// Whether anything is selected — the gate on every toolbar command that acts on a selection
+    /// (owner, 2026-08-16: Straighten and Transform were live with nothing selected and silently did
+    /// nothing).
+    ///
+    /// <para>Mirrored from the editor rather than read through a binding path, because a
+    /// <c>WireSelection</c> is replaced wholesale on every change and a binding to
+    /// <c>Editor.Selection.IsEmpty</c> would never be re-evaluated: nothing raises a notification for
+    /// a property OF the selection object, only for the selection itself.</para>
+    /// </summary>
+    public bool HasSelection => !Editor.Selection.IsEmpty;
+
+    /// <summary>
+    /// The toolbar's three tool buttons, bound by NAME exactly as the Layout Editor's are — same
+    /// command shape, same <c>EnumEqualsBool</c> highlight, so one toolbar teaches the other.
+    /// </summary>
+    public IRelayCommand<string> SetActiveToolCommand { get; }
+
 
     public bool ProfileVisible => ViewMode is WBondViewMode.Both or WBondViewMode.Profile;
 
@@ -81,6 +124,7 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
     {
         ViewMode = ViewMode,
         PanelVisible = PanelVisible,
+        RulersVisible = RulersVisible,
         ProfileAzimuthRadians = Editor.ProfileAzimuthRadians,
         DisplayUnit = Editor.DisplayUnit,
     }.To(Editor.Design);
@@ -92,6 +136,7 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
 
         ViewMode = state.ViewMode;
         PanelVisible = state.PanelVisible;
+        RulersVisible = state.RulersVisible;
         Editor.ProfileAzimuthRadians = state.ProfileAzimuthRadians;
         Editor.DisplayUnit = state.DisplayUnit;
     }
@@ -117,6 +162,12 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
         // so the panel stays a plain formatter with no reference back to the editor.
         Editor.PropertyChanged += (_, e) =>
         {
+            if (e.PropertyName is nameof(WBondViewModel.Selection))
+            {
+                OnPropertyChanged(nameof(HasSelection));
+                return;
+            }
+
             if (e.PropertyName != nameof(WBondViewModel.DisplayUnit)) return;
 
             Panel.Unit = Editor.DisplayUnit;
@@ -124,6 +175,11 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
         };
 
         Overlay = new WBondLayoutOverlay(Editor);
+
+        SetActiveToolCommand = new RelayCommand<string>(name =>
+        {
+            if (name is not null && Enum.TryParse<WBondTool>(name, out var tool)) ActiveTool = tool;
+        });
 
         Panel.Unit = Editor.DisplayUnit;
         Panel.Update(Editor.Readout);
@@ -280,6 +336,18 @@ public sealed class WBondDocument : Document
     public void RequestCopy()  => CopyRequested?.Invoke();
     public void RequestPaste() => PasteRequested?.Invoke();
 
+    /// <summary>
+    /// Raised by the toolbar's Save / Save As buttons (owner, 2026-08-16). <b>The host answers it</b>,
+    /// because where a <c>.wBond</c> goes is a question only the host can answer: the workspace routes
+    /// it through <c>SaveWBondDoc</c>, which owns the picker, the open-document map and the message
+    /// log; the standalone binary routes it through its own window's <c>SaveAsync</c>. Neither gains a
+    /// second way to write a file. The argument is true for Save As.
+    /// </summary>
+    public event Action<bool>? SaveRequested;
+
+    /// <summary>Asks the host to save this document; <paramref name="saveAs"/> forces the picker.</summary>
+    public void RequestSave(bool saveAs) => SaveRequested?.Invoke(saveAs);
+
     /// <summary>Absolute path of the <c>.wBond</c>, or null for a scratch document.</summary>
     public string? FilePath { get; private set; }
 
@@ -296,13 +364,28 @@ public sealed class WBondDocument : Document
         }
     }
 
-    public WBondDocument(WBondViewModel? editor = null, string? filePath = null)
+    /// <summary>
+    /// The tab name a scratch wBond opens under when the host supplies none.
+    ///
+    /// <para>Hosts that can see the other open documents pass a numbered title
+    /// (<c>Untitled-wBond-1</c>, <c>-2</c>, …), matching every other scratch document type; this is
+    /// the fallback for the standalone binary, which shows one document per WINDOW and therefore has
+    /// no tab strip to disambiguate.</para>
+    /// </summary>
+    public const string DefaultScratchTitle = "Untitled-wBond-1";
+
+    public WBondDocument(WBondViewModel? editor = null, string? filePath = null, string? title = null)
     {
         ViewModel = new WBondDocumentViewModel(editor);
         FilePath = filePath;
-        _baseTitle = filePath is null ? "wBond" : Path.GetFileNameWithoutExtension(filePath);
+        _baseTitle = filePath is not null
+            ? Path.GetFileNameWithoutExtension(filePath)
+            : title ?? DefaultScratchTitle;
 
-        Id = "wbond-" + Guid.NewGuid().ToString("N");
+        // The scratch title IS the identity, exactly as HarmonicaDocument's is — the close-confirm
+        // dialog and the "next free Untitled-N" search both read Id, and a Guid there would name the
+        // document to the user as "wbond-3f8c…".
+        Id = filePath is null ? _baseTitle : "wbond-" + Guid.NewGuid().ToString("N");
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(WBondDocumentViewModel.IsDirty))

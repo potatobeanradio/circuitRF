@@ -361,6 +361,9 @@ public sealed partial class WBondViewModel
         var touched = Selection.TouchedWires();
         if (touched.Count == 0) return 0;
 
+        // Deleting EVERY wire is allowed (owner, 2026-08-16: "make it support 0 wires") — the design
+        // comes back with no wires and, through PruneEmptyGroups, no arrays either. See
+        // WBondDesign.Validate for why an EMPTY array is still refused while NO arrays is not.
         PushUndo();
 
         // Walk the flat index space once, keeping what is not selected — rebuilding each array in
@@ -595,12 +598,15 @@ public sealed partial class WBondViewModel
     /// moment the mesh is rebuilt — which is how it reads to the user: the command appears to do
     /// nothing and reports a physics error it has no way to connect to what they did.</para>
     ///
-    /// <para>A design with ONE group left is not pruned to nothing: <see cref="_design"/> must keep at
-    /// least one array, which is the same rule from the other end.</para>
+    /// <para><b>The LAST group is pruned too</b> (owner, 2026-08-16: "make it support 0 wires"). It
+    /// used to be kept, on the grounds that a design needs at least one array — so deleting the only
+    /// wire left one empty array behind, which is precisely the state the paragraph above says is
+    /// invalid, and the user got the mapping-matrix sentence for pressing Delete. A design with no
+    /// wires has no groups either: a group is a named terminal, and there is nothing to terminate.</para>
     /// </summary>
     private void PruneEmptyGroups()
     {
-        for (int i = _design.Arrays.Count - 1; i >= 0 && _design.Arrays.Count > 1; i--)
+        for (int i = _design.Arrays.Count - 1; i >= 0; i--)
             if (_design.Arrays[i].Wires.Count == 0) _design.Arrays.RemoveAt(i);
     }
 

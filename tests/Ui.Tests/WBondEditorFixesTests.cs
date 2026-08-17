@@ -63,8 +63,12 @@ public class WBondEditorFixesTests
 
         var row = Assert.Single(document.Panel.Rows);
 
+        // Every length row, including the three settable ones the 2026-08-16 round added — "Landing
+        // span" was replaced by the wires' own median Span, which is a length like the rest.
         Assert.EndsWith(" " + suffix, row.TotalLength, StringComparison.Ordinal);
-        Assert.EndsWith(" " + suffix, row.LandingSpan, StringComparison.Ordinal);
+        Assert.EndsWith(" " + suffix, row.Span, StringComparison.Ordinal);
+        Assert.EndsWith(" " + suffix, row.LoopHeight, StringComparison.Ordinal);
+        Assert.EndsWith(" " + suffix, row.Diameter, StringComparison.Ordinal);
     }
 
     /// <summary>

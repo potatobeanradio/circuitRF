@@ -133,6 +133,12 @@ public sealed class ColorTheme
             // the old WHITE, which was the owner's "can't be seen over the canvas background".
             [ColorRole.WBondWire]      = new(150, 110,  20),
             [ColorRole.WBondWireStart] = new( 70,  50,   8),
+
+            // The gold's COMPLEMENT, dark enough for the near-white canvas: a vertex has to be
+            // findable against the wire it sits on, and any shade of the wire's own hue is not
+            // (owner, 2026-08-16 — "completely blend in with the segments if wires are drawn at their
+            // actual diameter").
+            [ColorRole.WBondWireVertex] = new( 20,  95, 125),
             [ColorRole.WBondSelected]  = new( 10,  70, 180),
             [ColorRole.WBondEnvelope]  = new(150, 110,  20,  56),
             [ColorRole.WBondFreeWire]  = new(180,  70,  30),
@@ -211,6 +217,9 @@ public sealed class ColorTheme
             // (it used to be an unrelated blue in one and nothing at all in the other).
             [ColorRole.WBondWire]      = new(224, 192,  96),
             [ColorRole.WBondWireStart] = new(140, 112,  40),
+
+            // The same complement, lifted for the dark ground — see the light variant's note.
+            [ColorRole.WBondWireVertex] = new(110, 210, 235),
             [ColorRole.WBondSelected]  = new(255, 255, 255),
             [ColorRole.WBondEnvelope]  = new(224, 192,  96,  64),
             [ColorRole.WBondFreeWire]  = new(224, 128,  96),

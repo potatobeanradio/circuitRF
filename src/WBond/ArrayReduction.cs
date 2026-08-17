@@ -121,8 +121,16 @@ public sealed class ArrayReduction
             throw new ArgumentException(
                 $"The wire-to-array map has {arrayOfWire.Length} entries but the matrix is {n} x {n}.",
                 nameof(arrayOfWire));
-        if (m <= 0)
-            throw new ArgumentOutOfRangeException(nameof(arrayCount), m, "There must be at least one array.");
+        if (m < 0)
+            throw new ArgumentOutOfRangeException(nameof(arrayCount), m, "An array count cannot be negative.");
+
+        // ZERO arrays is a valid, fully-defined reduction (owner, 2026-08-16: "make it support 0
+        // wires") — every matrix here is 0 × 0, every loop below runs zero times, and the result is
+        // an object whose every accessor is honestly empty. It used to be refused, which is why a
+        // wBond editor could not delete its own last wire. An empty ARRAY is still refused just
+        // below: that one really does make A rank-deficient.
+        if (m == 0 && n == 0)
+            return new ArrayReduction([], [], [], 0, 0, arrayOfWire, arrayNames ?? []);
 
         // Every array must be non-empty, or A loses column rank and Gamma_arr is singular. Caught
         // here with a message naming the array rather than as a Cholesky pivot failure.

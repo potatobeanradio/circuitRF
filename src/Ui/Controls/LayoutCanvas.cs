@@ -235,6 +235,7 @@ public sealed class LayoutCanvas : Control
         DoubleTapped        += OnDoubleTapped;
         KeyDown             += OnKeyDown;
         KeyUp               += OnKeyUp;
+        LostFocus           += OnCanvasLostFocus;
         TextInput           += OnTextInput;
         ((IResourceHost)this).ResourcesChanged += (_, _) => InvalidateVisual();
         LayoutUpdated += OnLayoutUpdated;
@@ -510,6 +511,17 @@ public sealed class LayoutCanvas : Control
             if (_canvasOverlay?.OnPointerPressed(
                     (long)Math.Round(wx), (long)Math.Round(wy), HitTolDbu(), e.KeyModifiers, e.ClickCount) == true)
             {
+                // CAPTURE for the whole gesture (owner, 2026-08-16: "when I drag many wires around in
+                // the layout view, the dragging appears to glitch").
+                //
+                // Without it, a drag that leaves this control — over a ruler strip, the inductance
+                // panel, the splitter, another window — simply stops receiving moves: the wires
+                // freeze under a still-moving cursor, and the release is delivered somewhere else so
+                // the gesture is only unwound on the next move that happens to come back. The
+                // slower the drag, the easier it is to outrun the canvas, which is why it shows up
+                // on MANY wires and not on one.
+                e.Pointer.Capture(this);
+
                 InvalidateVisual();
                 e.Handled = true;
                 return;
@@ -1154,6 +1166,11 @@ public sealed class LayoutCanvas : Control
         var pos = e.GetPosition(this);
         var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
 
+        // Released UNCONDITIONALLY, whatever the overlay says about this particular release: a press
+        // it consumed as a plain click (placing a wire's first foot) captures just the same, and a
+        // capture that outlives its gesture would swallow every later click on the panel beside it.
+        if (ReferenceEquals(e.Pointer.Captured, this)) e.Pointer.Capture(null);
+
         if (_canvasOverlay?.OnPointerReleased((long)Math.Round(wx), (long)Math.Round(wy)) == true)
         {
             InvalidateVisual();
@@ -1221,6 +1238,24 @@ public sealed class LayoutCanvas : Control
     {
         _canvasOverlay?.OnKeyUp(e.Key, e.KeyModifiers);
         if (e.Key == Key.Space) { _spaceHeld = false; UpdateCursor(); }
+    }
+
+    /// <summary>
+    /// Drops every held-key latch when focus leaves, because <b>the matching key-up is not
+    /// guaranteed to arrive here</b>.
+    ///
+    /// <para>Hold Space to pan, then — still holding it — click a toolbar button, a combo, or another
+    /// tab. The release is delivered to whatever took focus and this control never sees it, so
+    /// <see cref="_spaceHeld"/> stays set: from that moment every left-drag is a PAN, the marquee
+    /// never starts, and nothing on screen explains it. (The cursor does change to a hand, which is
+    /// the only clue there ever was.) An overlay's own promotion latches have the same shape and are
+    /// cleared through <see cref="ILayoutCanvasOverlay.OnFocusLost"/>.</para>
+    /// </summary>
+    private void OnCanvasLostFocus(object? _, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _spaceHeld = false;
+        _canvasOverlay?.OnFocusLost();
+        UpdateCursor();
     }
 
     private void OnTextInput(object? _, TextInputEventArgs e)

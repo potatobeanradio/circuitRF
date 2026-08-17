@@ -50,9 +50,9 @@ public partial class WBondGroupWiresDialog : Window
 
         var dlg = new WBondGroupWiresDialog { _suggested = suggestedNewName };
 
-        dlg.CountText.Text = wireCount == 1
-            ? "1 wire selected."
-            : $"{wireCount} wires selected.";
+        // The count alone (owner, 2026-08-16). It is a header over the picker, not a sentence about
+        // the selection — "selected." was a word the dialog's own existence already implied.
+        dlg.CountText.Text = wireCount == 1 ? "1 wire" : $"{wireCount} wires";
 
         var items = new List<string>(groups) { NewGroupSentinel };
         dlg.GroupCombo.ItemsSource = items;

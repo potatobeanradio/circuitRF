@@ -193,6 +193,14 @@ public sealed partial class WBondViewModel : ObservableObject
     public event Action<string>? EditRefused;
 
     /// <summary>
+    /// Reports a refusal that was decided BEFORE any edit was attempted, so there is nothing to roll
+    /// back — the profile view's "this plane has no world coordinate to place a wire at" is the one
+    /// case (owner, 2026-08-16). It reaches the same toolbar strip <see cref="RefuseEdit"/> uses,
+    /// because a gesture that visibly does nothing has to say why wherever the reason comes from.
+    /// </summary>
+    public void ReportRefusal(string reason) => EditRefused?.Invoke(reason);
+
+    /// <summary>
     /// An edit that made the inductance matrix singular is UNDONE and reported, never thrown.
     ///
     /// <para>This is reachable from ordinary use, not a defensive nicety: a wire lying in the ground
@@ -280,6 +288,26 @@ public sealed partial class WBondViewModel : ObservableObject
 
     /// <summary>Clears the wire selection, leaving any layout-geometry selection alone.</summary>
     public void ClearSelection() => Selection = new WireSelection();
+
+    /// <summary>
+    /// Selects every wire belonging to one array — the inductance panel's own double-click gesture
+    /// (owner, 2026-08-16).
+    ///
+    /// <para>Membership is read from <see cref="WireMesh.ArrayOfWire"/> rather than by re-walking the
+    /// design, because the mesh's flat wire index is the SAME index a <see cref="WireSelection"/>
+    /// holds; deriving it a second way is how the panel and the canvas would come to disagree about
+    /// which wires are in "G2".</para>
+    /// </summary>
+    /// <returns>The number of wires selected — zero for an index that names no array.</returns>
+    public int SelectArray(int arrayIndex)
+    {
+        var wires = new HashSet<int>();
+        for (int w = 0; w < _mesh.WireCount; w++)
+            if (_mesh.ArrayOfWire[w] == arrayIndex) wires.Add(w);
+
+        Selection = new WireSelection { Wires = wires };
+        return wires.Count;
+    }
 
     // ---------------------------------------------------------------- edits
 
@@ -586,7 +614,12 @@ public sealed partial class WBondViewModel : ObservableObject
         int before = _design.AllWires().Count();
         bool pushed = PushUndo();
 
-        int added = WBondClipboard.Paste(_design, payload, dxNm, dyNm, dzNm);
+        // The indices the paste ACTUALLY created, resolved before the commit — a paste is not an
+        // append, because each wire rejoins an array of its own name and so may land in the middle of
+        // the flat order. See WBondClipboard.Paste's own note for the owner-reported bug this is.
+        var pasted = WBondClipboard.Paste(_design, payload, dxNm, dyNm, dzNm);
+        int added = pasted.Count;
+
         if (added == 0)
         {
             if (pushed) _undo.Pop();
@@ -596,12 +629,11 @@ public sealed partial class WBondViewModel : ObservableObject
         CommitStructuralChange();
 
         // The refusal path rolls the design back, so "did it survive" is asked of the design itself
-        // rather than assumed from the paste having run.
+        // rather than assumed from the paste having run. It also invalidates the indices above, which
+        // is why nothing is selected when it fires.
         if (_design.AllWires().Count() != before + added) return 0;
 
-        var selection = new WireSelection();
-        for (int i = before; i < before + added; i++) selection.Wires.Add(i);
-        Selection = selection;
+        Selection = new WireSelection { Wires = [.. pasted] };
 
         return added;
     }

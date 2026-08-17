@@ -13,9 +13,6 @@
              and expensive to notice later. -->
         <TextBlock x:Name="CountText" FontWeight="SemiBold" TextWrapping="Wrap"/>
 
-        <TextBlock Text="A group is a named terminal — the inductance panel reports one row per group, and the array reduction sums over it."
-                   FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
-
         <ComboBox x:Name="GroupCombo" HorizontalAlignment="Stretch" FontSize="12"
                   SelectionChanged="OnGroupChanged"/>
 

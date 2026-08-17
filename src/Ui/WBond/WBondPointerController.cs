@@ -18,7 +18,13 @@ public enum WBondModifiers
     /// <summary>Alt — proportional reshaping rather than moving one vertex (§6.2.1).</summary>
     Alt = 2,
 
-    /// <summary>The <c>w</c> key: promote a click to the whole wire.</summary>
+    /// <summary>
+    /// Promote a click to the whole wire.
+    ///
+    /// <para>No longer bound to a key: <c>w</c> is the Draw Wire tool (owner, 2026-08-16) and the
+    /// promotion is a double-click. The flag stays because <see cref="WBondPointerController.ScopeFor"/>
+    /// is the one place a click count and a modifier are reconciled, and both still arrive here.</para>
+    /// </summary>
     WholeWire = 4,
 
     /// <summary>The <c>g</c> key: promote a click to the whole array group.</summary>

@@ -5360,7 +5360,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand]
     private void NewWBond()
     {
-        var doc = new WBondDocument();
+        var doc = new WBondDocument(title: NextWBondTitle());
 
         // §6.6/§10: a blank editor's layout view is where the user drags cells in from the project
         // tree as references. It needs a real (if empty) layout to drop into, or the existing
@@ -5368,10 +5368,45 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         doc.ViewModel.EnsureReferenceLayout(
             Path.Combine(_recovery.SessionDir, "wbond-reference", Guid.NewGuid().ToString("N")[..8]));
 
-        ResolveWBondAssemblyRules(doc);
+        TrackNewWBond(doc);
 
         _scratchWBonds.Add(doc);
         _factory.OpenDocument(doc);
+    }
+
+    /// <summary>
+    /// The lowest free "Untitled-wBond-N" across every open wBond, scratch or path-keyed — the same
+    /// shape <see cref="NextHarmonicaTitle"/> and <see cref="NextDataDisplayTitle"/> already use, so
+    /// a new wBond tab is named the way every other new document tab is (owner, 2026-08-16).
+    /// </summary>
+    private string NextWBondTitle()
+    {
+        const string prefix = "Untitled-wBond-";
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in _scratchWBonds) used.Add(d.Id);
+        foreach (var d in _openDocsByPath.Values)
+            if (d is WBondDocument wd) used.Add(wd.Id);
+
+        for (int n = 1; ; n++)
+        {
+            var candidate = $"{prefix}{n}";
+            if (!used.Contains(candidate)) return candidate;
+        }
+    }
+
+    /// <summary>
+    /// Everything a wBond document needs from the workspace the moment it comes into existence:
+    /// its assembly rules, and the answer to its toolbar's Save / Save As buttons.
+    ///
+    /// <para>Called at each of the three creation points, and <b>only</b> there — unlike
+    /// <see cref="ResolveWBondAssemblyRules"/>, which is also re-run over already-open documents when
+    /// the workspace's rule file changes, and would double-subscribe the save hook if it carried
+    /// it.</para>
+    /// </summary>
+    private void TrackNewWBond(WBondDocument doc)
+    {
+        ResolveWBondAssemblyRules(doc);
+        doc.SaveRequested += saveAs => _ = SaveWBondDoc(doc, null, saveAs);
     }
 
     private readonly List<WBondDocument> _scratchWBonds = [];
@@ -5539,7 +5574,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                                           Math.Abs(full.GetHashCode()).ToString(System.Globalization.CultureInfo.InvariantCulture));
 
             var doc = WBondDocument.Open(full, scratch);
-            ResolveWBondAssemblyRules(doc);
+            TrackNewWBond(doc);
 
             _openDocsByPath[full] = doc;
             _factory.OpenDocument(doc);
@@ -5630,9 +5665,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// PDK cell is discovered by whoever receives it — which is the worst possible moment to find
     /// out.</para>
     /// </summary>
-    private async Task SaveWBondDoc(WBondDocument doc, Window? owner)
+    private async Task SaveWBondDoc(WBondDocument doc, Window? owner, bool saveAs = false)
     {
-        string? target = doc.FilePath;
+        string? target = saveAs ? null : doc.FilePath;
 
         if (target is null)
         {
@@ -5640,8 +5675,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Title = "Save wBond",
-                SuggestedFileName = "wirebonds.wBond",
+                Title = saveAs ? "Save wBond As" : "Save wBond",
+                SuggestedFileName = (doc.FilePath is { } p
+                    ? Path.GetFileNameWithoutExtension(p)
+                    : "wirebonds") + ".wBond",
                 DefaultExtension = "wBond",
                 FileTypeChoices = [new FilePickerFileType("wBond design") { Patterns = ["*.wBond"] }],
             });
@@ -5653,7 +5690,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         bool embed = false;
         var layout = doc.ViewModel.ReferenceLayout;
 
-        if (layout is not null && ResolveOwner(owner) is { } dialogOwner)
+        // Asked only when there is geometry for the answer to be about (owner, 2026-08-16). A wBond
+        // holding nothing but wires used to be shown "Include the layout geometry in this file?" with
+        // nothing on either side of the choice — see WBondGeometryEmbedding.HasGeometryToEmbed.
+        if (layout is not null &&
+            WBondGeometryEmbedding.HasGeometryToEmbed(layout.Model) &&
+            ResolveOwner(owner) is { } dialogOwner)
         {
             var plan = WBondGeometryEmbedding.Analyze(layout.Model, layout.InstanceBaseDir);
             var choice = await WBondSaveGeometryDialog.ShowAsync(dialogOwner, plan);
@@ -5881,8 +5923,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             var design = WireTableCsv.ReadFile(path);
 
-            var doc = new WBondDocument(new WBondViewModel(design));
-            ResolveWBondAssemblyRules(doc);
+            var doc = new WBondDocument(new WBondViewModel(design), title: NextWBondTitle());
+            TrackNewWBond(doc);
 
             _scratchWBonds.Add(doc);
             _factory.OpenDocument(doc);
@@ -9240,6 +9282,28 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     return !techDoc.IsDirty;
                 default:
                     return false;
+            }
+        }
+
+        // wBond editor document (owner, 2026-08-16: a dirty one closed silently). Same three answers
+        // as every other document type, and the same rule for a cancelled picker: SaveWBondDoc leaves
+        // the document dirty when the user backs out, and that must cancel the close too — otherwise
+        // "Save" would quietly behave as "Don't Save".
+        if (dockable is WBond.WBondDocument wbCloseDoc && wbCloseDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{wbCloseDoc.Title?.TrimEnd(' ', '•')}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:   return false;
+                case SaveChangesResult.DontSave: return true;
+                case SaveChangesResult.Save:
+                    await SaveWBondDoc(wbCloseDoc, window);
+                    return !wbCloseDoc.IsDirty;
+                default:                         return false;
             }
         }
 

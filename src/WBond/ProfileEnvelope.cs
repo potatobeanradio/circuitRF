@@ -104,11 +104,12 @@ public static class ProfileEnvelope
 
     private static Band[] BuildBands(WireArray array, List<int> bound, int samples)
     {
-        var bands = new Band[samples];
+        var spans = SampleSpans(array, bound, samples);
+        var bands = new Band[spans.Count];
 
-        for (int k = 0; k < samples; k++)
+        for (int k = 0; k < spans.Count; k++)
         {
-            double span = (double)k / (samples - 1);
+            double span = spans[k];
             double min = double.MaxValue, max = double.MinValue;
 
             foreach (int index in bound)
@@ -123,6 +124,59 @@ public static class ProfileEnvelope
 
         return bands;
     }
+
+    /// <summary>
+    /// Where the band is sampled: a uniform ladder <b>plus every bound wire's own vertices</b>
+    /// (owner, 2026-08-16).
+    ///
+    /// <para><b>Uniform samples alone cut every corner.</b> A member's height is piecewise linear
+    /// between its own points, so a band edge that steps over a vertex joins the two samples on
+    /// either side with a straight line and misses the corner between them. Drawn as a translucent
+    /// fill that was invisible; drawn with an OUTLINE it is a second line diverging from the wire at
+    /// exactly the place two segments join — which is the report. Sampling at the vertices makes the
+    /// band's edge follow the same polyline the wires do, by construction rather than by having
+    /// enough samples.</para>
+    ///
+    /// <para>Duplicates are collapsed with a tolerance, so an array whose members share their vertex
+    /// positions — the ordinary case — does not sample the same span N times.</para>
+    /// </summary>
+    private static List<double> SampleSpans(WireArray array, List<int> bound, int samples)
+    {
+        var spans = new List<double>(samples + bound.Count * 8);
+
+        for (int k = 0; k < samples; k++) spans.Add((double)k / (samples - 1));
+
+        foreach (int index in bound)
+        {
+            var wire = array.Wires[index];
+            if (wire.Points.Count < 2) continue;
+
+            var start = wire.Points[0];
+            var end = wire.Points[^1];
+
+            // The feet are already the ladder's own 0 and 1; only the interior vertices are new.
+            for (int i = 1; i < wire.Points.Count - 1; i++)
+            {
+                double s = WireEdits.ChordParameter(start, end, wire.Points[i]);
+                if (s > 0.0 && s < 1.0) spans.Add(s);
+            }
+        }
+
+        spans.Sort();
+
+        var unique = new List<double>(spans.Count) { spans[0] };
+        for (int i = 1; i < spans.Count; i++)
+            if (spans[i] - unique[^1] > SampleSpanTolerance) unique.Add(spans[i]);
+
+        return unique;
+    }
+
+    /// <summary>
+    /// How close two sample positions have to be to count as one. A thousandth of the chord — far
+    /// finer than any corner a reader can see, and coarse enough that two members whose vertices
+    /// differ only in the last bits of a division do not double the sample count.
+    /// </summary>
+    private const double SampleSpanTolerance = 1e-3;
 
     /// <summary>
     /// A wire's height above its chord at a normalised span position, linearly interpolated between

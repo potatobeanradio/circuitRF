@@ -124,7 +124,7 @@
 
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Select}"
                                 Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Select"
-                                ToolTip.Tip="Select (L1c)" Padding="6,3">
+                                ToolTip.Tip="Select" Padding="6,3">
                             <mi:MaterialIcon Kind="CursorDefault" Width="16" Height="16"/>
                         </Button>
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Rect}"

@@ -51,10 +51,10 @@ public partial class WBondEditorView
     {
         var items = new List<object>
         {
-            Item($"Set Loop Height… ({groupName})", () => SetGroupLoopHeightAsync()),
-            Item("Set Span…",     () => SetGroupSpanAsync()),
-            Item("Set Diameter…", () => SetGroupDiameterAsync()),
-            Item("Set Material…", () => SetGroupMaterialAsync()),
+            Item($"Set Loop Height… ({groupName})", () => SetGroupLoopHeightAsync(_profileMenuArray)),
+            Item("Set Span…",     () => SetGroupSpanAsync(_profileMenuArray)),
+            Item("Set Diameter…", () => SetGroupDiameterAsync(_profileMenuArray)),
+            Item("Set Material…", () => SetGroupMaterialAsync(_profileMenuArray)),
             Item("Rotate…",       () => RotateGroupAsync()),
             Item("Reverse Wires", () => { Apply(() => _bound!.Editor.ReverseGroup(_profileMenuArray)); return Task.CompletedTask; }),
             Item("Flip Wires",    () => { Apply(() => _bound!.Editor.FlipGroup(_profileMenuArray)); return Task.CompletedTask; }),
@@ -82,60 +82,78 @@ public partial class WBondEditorView
     }
 
     // ---------------------------------------------------------------- the "…" prompts
+    //
+    // Each takes the array it acts on rather than reading _profileMenuArray, because there are now
+    // TWO ways in: this menu, and a double-click on the inductance panel's own Loop height / Span /
+    // Diameter / Material row (owner, 2026-08-16). One implementation for both — a second copy would
+    // be a second chance to get the undo grouping, the seed value or the refusal wrong.
 
-    private async Task SetGroupLoopHeightAsync()
+    internal async Task SetGroupLoopHeightAsync(int arrayIndex)
     {
         if (Owner() is not { } owner || _bound is null) return;
-
-        long current = _bound.Editor.ProfileForGroup(_profileMenuArray)?.LoopHeightNm ?? 0;
 
         long? nm = await WBondValuePromptDialog.PromptLengthAsync(
             owner, "Set Loop Height", "Peak height above the chord, for every wire in this group.",
-            current, _bound.Editor.DisplayUnit);
+            SeedNm(arrayIndex, r => r.LoopHeightMm.Value), _bound.Editor.DisplayUnit);
 
-        if (nm is { } v) Apply(() => _bound.Editor.SetGroupLoopHeight(_profileMenuArray, v));
+        if (nm is { } v) Apply(() => _bound.Editor.SetGroupLoopHeight(arrayIndex, v));
     }
 
-    private async Task SetGroupSpanAsync()
+    internal async Task SetGroupSpanAsync(int arrayIndex)
     {
         if (Owner() is not { } owner || _bound is null) return;
-
-        long current = FirstWireOfGroup() is { } w
-            ? (long)Math.Round(w.ChordLengthMetres() * WBondUnits.NmPerMetre)
-            : 0;
 
         long? nm = await WBondValuePromptDialog.PromptLengthAsync(
             owner, "Set Span", "Foot-to-foot span. The output foot moves; the input foot stays put.",
-            current, _bound.Editor.DisplayUnit);
+            SeedNm(arrayIndex, r => r.SpanMm.Value), _bound.Editor.DisplayUnit);
 
-        if (nm is { } v) Apply(() => _bound.Editor.SetGroupSpan(_profileMenuArray, v));
+        if (nm is { } v) Apply(() => _bound.Editor.SetGroupSpan(arrayIndex, v));
     }
 
-    private async Task SetGroupDiameterAsync()
+    internal async Task SetGroupDiameterAsync(int arrayIndex)
     {
         if (Owner() is not { } owner || _bound is null) return;
 
-        long current = FirstWireOfGroup()?.DiameterNm ?? 0;
-
         long? nm = await WBondValuePromptDialog.PromptLengthAsync(
             owner, "Set Diameter", "Wire diameter, for every wire in this group.",
-            current, _bound.Editor.DisplayUnit);
+            SeedNm(arrayIndex, r => r.DiameterMm.Value), _bound.Editor.DisplayUnit);
 
-        if (nm is { } v) Apply(() => _bound.Editor.SetGroupDiameter(_profileMenuArray, v));
+        if (nm is { } v) Apply(() => _bound.Editor.SetGroupDiameter(arrayIndex, v));
     }
 
-    private async Task SetGroupMaterialAsync()
+    internal async Task SetGroupMaterialAsync(int arrayIndex)
     {
         if (Owner() is not { } owner || _bound is null) return;
 
         var choices = _bound.Editor.Design.Materials.Select(m => m.Name).ToList();
         if (choices.Count == 0) choices = WireMaterials.All.Select(m => m.Name).ToList();
 
+        string? current = Row(arrayIndex)?.Material.Value;
+
         string? picked = await WBondValuePromptDialog.PromptChoiceAsync(
             owner, "Set Material", "Conductor material, for every wire in this group.",
-            choices, FirstWireOfGroup()?.Material);
+            choices, string.IsNullOrEmpty(current) ? null : current);
 
-        if (picked is { Length: > 0 }) Apply(() => _bound.Editor.SetGroupMaterial(_profileMenuArray, picked));
+        if (picked is { Length: > 0 }) Apply(() => _bound.Editor.SetGroupMaterial(arrayIndex, picked));
+    }
+
+    /// <summary>
+    /// What the prompt opens on: the SAME median the inductance panel is showing for that array,
+    /// converted back to nanometres.
+    ///
+    /// <para>Seeding from the group's bound profile (as Loop Height used to) reads 0 on a group of
+    /// free wires — a prompt that opens on zero when the panel beside it says 18.5 mil. Seeding from
+    /// the FIRST wire (as the other three used to) is a lie on exactly the non-uniform arrays the
+    /// <c>*</c> exists to flag. The median is the number on screen, which is the number the user
+    /// believes they are editing.</para>
+    /// </summary>
+    private long SeedNm(int arrayIndex, Func<PanelReadout.ArrayRow, double> millimetres) =>
+        Row(arrayIndex) is { } row ? (long)Math.Round(millimetres(row) * 1e6) : 0;
+
+    private PanelReadout.ArrayRow? Row(int arrayIndex)
+    {
+        var rows = _bound?.Editor.Readout.Rows;
+        return rows is not null && arrayIndex >= 0 && arrayIndex < rows.Count ? rows[arrayIndex] : null;
     }
 
     private async Task RotateGroupAsync()
@@ -194,13 +212,6 @@ public partial class WBondEditorView
     }
 
     // ---------------------------------------------------------------- helpers
-
-    private Wire? FirstWireOfGroup() =>
-        _bound is not null
-        && _profileMenuArray >= 0
-        && _profileMenuArray < _bound.Editor.Arrays.Count
-            ? _bound.Editor.Arrays[_profileMenuArray].Wires.FirstOrDefault()
-            : null;
 
     private Window? Owner() => TopLevel.GetTopLevel(this) as Window;
 }

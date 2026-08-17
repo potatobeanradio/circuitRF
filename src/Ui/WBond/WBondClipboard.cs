@@ -131,8 +131,21 @@ public static class WBondClipboard
     /// loop shape rather than silently rebinding to whatever the destination happened to call its
     /// first profile.</para>
     /// </summary>
-    /// <returns>How many wires were added.</returns>
-    public static int Paste(WBondDesign design, Payload payload, long dxNm, long dyNm, long dzNm = 0)
+    /// <returns>
+    /// <b>The flat <see cref="WBondDesign.AllWires"/> indices of the wires that were added</b>, in
+    /// ascending order — not merely how many, and that distinction is the fix for an owner-reported
+    /// bug (2026-08-16: "pasting many wires with different groups and position clusters results in
+    /// the wrong selection after paste").
+    ///
+    /// <para><b>A paste is not an append.</b> Each wire rejoins an array of its own NAME, so a paste
+    /// touching any array other than the last one INSERTS into the middle of the flat order and
+    /// shifts every index above it. The caller used to select <c>[before, before + added)</c> — the
+    /// last N — which on a multi-group paste names some of the ORIGINAL wires and none of the new
+    /// ones. On a single-group paste into a one-array design those two answers coincide exactly,
+    /// which is why it went unnoticed.</para>
+    /// </returns>
+    public static IReadOnlyList<int> Paste(WBondDesign design, Payload payload,
+                                           long dxNm, long dyNm, long dzNm = 0)
     {
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(payload);
@@ -141,7 +154,10 @@ public static class WBondClipboard
             if (design.ProfileByName(profile.Name) is null)
                 design.Profiles.Add(profile);
 
-        int added = 0;
+        // Held by REFERENCE while the arrays are being filled, because a wire's flat index is not
+        // knowable until every insertion is done — inserting into an earlier array moves the ones
+        // already placed.
+        var pasted = new List<Wire>();
 
         foreach (var entry in payload.Wires)
         {
@@ -169,9 +185,22 @@ public static class WBondClipboard
                                            entry.Points[i + 2] + dzNm));
 
             array.Wires.Add(wire);
-            added++;
+            pasted.Add(wire);
         }
 
-        return added;
+        // Resolved in ONE walk of the final layout, by reference identity: a pasted wire may be an
+        // exact geometric duplicate of one already there (the paste-pitch search exists because that
+        // is a real case), so matching on coordinates would select the wrong one.
+        var wanted = new HashSet<Wire>(pasted, ReferenceEqualityComparer.Instance as IEqualityComparer<Wire>);
+        var indices = new List<int>(pasted.Count);
+
+        int flat = 0;
+        foreach (var wire in design.AllWires())
+        {
+            if (wanted.Contains(wire)) indices.Add(flat);
+            flat++;
+        }
+
+        return indices;
     }
 }
