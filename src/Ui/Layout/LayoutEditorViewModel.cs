@@ -2762,6 +2762,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             SaveError?.Invoke($"Couldn't save layout to '{path}': {ex.Message}");
             return;
         }
+        // WB40: the wires are stem-paired to the .clay, so a Save As has to take them with it —
+        // before MarkSaved, which is what writes them. See RetargetWiresForSaveAs.
+        RetargetWiresForSaveAs(CurrentLayoutPath, path);
+
         CurrentLayoutPath = path;
         MarkSaved();
         LayoutSaved?.Invoke(path);

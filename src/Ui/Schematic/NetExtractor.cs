@@ -1570,17 +1570,50 @@ public static class NetExtractor
                 wbNets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
             }
 
+            // WB45 — which of the two wire sources this instance's netlist NAMES. `Design` and `File`
+            // have both always been accepted by the factory (with `Design` winning where both are
+            // present); which one the elaborator EMITS was never an explicit decision, and this is it.
+            //
+            // A linked instance's netlist carries the path and NOT the payload, which is what makes one
+            // copy of the wires the only copy. The payload stays on the component regardless — it is
+            // what draws the symbol and what a Carried instance falls back to, and §3.3 is explicit
+            // that retiring it is not in scope.
+            bool wbLinked = WBondPlacement.SourceOf(comp) == WBondPlacement.WireSource.Linked;
+            string? wbLinkedPath = wbLinked
+                ? WBondPlacement.ResolveLinkedPath(comp, model.SchematicDirectory)
+                : null;
+
+            if (wbLinked && wbLinkedPath is null)
+            {
+                // Source says Linked but nothing usable is stored — a state only a hand-edited
+                // document can reach, and one that must not silently simulate the OTHER source's
+                // wires. Reported by name, and the carried payload is what runs.
+                warningsOut?.Add(
+                    $"wBond '{comp.InstanceName}' is set to Linked but names no wirebond file that can " +
+                    "be resolved (the schematic may never have been saved). Its carried wires were " +
+                    "simulated instead — set Source back to Carried, or run Update Layout from Schematic.");
+                wbLinked = false;
+            }
+
             var wbOverrides = comp.Parameters
-                // `Arrays` is circuitRF's own record of the array list this instance was wired
-                // against (§5 question 3) — editor bookkeeping, never an engine parameter. Same
-                // rule CvData and ShowBias already follow. `SymbolPitch` is the same kind of thing:
-                // artwork, deciding how far apart the symbol's port rows sit and nothing else.
+                // `SymbolPitch` is artwork, deciding how far apart the symbol's port rows sit and
+                // nothing else. `Source` is the WB45 axis itself — the extractor ACTS on it below and
+                // the engine has no use for it. Same rule CvData and ShowBias already follow.
+                //
+                // `Arrays` is circuitRF's own record of the array list this instance was wired against
+                // (§5 question 3) — editor bookkeeping. It is dropped for a CARRIED instance, whose
+                // payload cannot drift against itself, and re-added below for a LINKED one, where it is
+                // the only thing the elaboration-time drift check of §3.2/WB35a has to compare against.
+                //
+                // `Design` and `File` are both handled below rather than forwarded here: exactly one of
+                // them names this instance's wires.
                 //
                 // `RefPin` is deliberately NOT in this list. It looks like artwork and is not: it
                 // decides whether the component has 2M or 2M+1 terminals, so the engine has to be
                 // told, or the model's port count disagrees with the net list the extractor just
                 // built from the symbol.
-                .Where(p => p.Name is not ("Arrays" or "SymbolPitch"))
+                .Where(p => p.Name is not ("Arrays" or "SymbolPitch" or "Source" or "File"))
+                .Where(p => !(wbLinked && p.Name == WBondEmbedding.DesignParameter))
                 // A blank value means "use the design's own", and it must be DROPPED rather than
                 // emitted: `Temp=` with nothing after it is the empty-parameter-value trap already
                 // recorded in src/Core/CLAUDE.md, where the .cnl reader glues the next token on as
@@ -1592,6 +1625,20 @@ public static class NetExtractor
                     return new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null);
                 })
                 .ToList();
+
+            if (wbLinked)
+            {
+                // Absolute in the NETLIST, relative in the DOCUMENT. The netlist is a generated
+                // intermediate written wherever the run writes it, so resolving here — where the
+                // schematic's own directory is known — is what keeps the stored value portable while
+                // the run still finds the file.
+                wbOverrides.Add(new ParameterAssignment("File", wbLinkedPath!, null));
+
+                string recorded = comp.Parameters
+                    .FirstOrDefault(p => p.Name == WBondPlacement.ArraysParameter)?.Expression ?? "";
+                if (!string.IsNullOrWhiteSpace(recorded))
+                    wbOverrides.Add(new ParameterAssignment(WBondPlacement.ArraysParameter, recorded, null));
+            }
 
             return new Instance(comp.InstanceName, reference, wbNets, wbOverrides);
         }

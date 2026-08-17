@@ -1,6 +1,8 @@
 # circuitRF — wBond: the wirebond component and the wBond Editor
 
-**Status:** Proposal — rev 1 · **Date:** 2026-08-07 · **Phase:** LW0 (design layer, ahead of LW1)
+**Status:** Proposal — rev 1 · **rev 2 additions 2026-08-17** (WB40 revised; §5.5.1/WB44 controlling
+parameters; §9.7/WB45 carried-or-linked; owner decisions O-8…O-12) ·
+**Date:** 2026-08-17 · **Phase:** LW0 (design layer, ahead of LW1)
 
 Companion to two existing documents, and it does not repeat either:
 
@@ -687,6 +689,47 @@ cold fill is 0.54 s while an incremental one is milliseconds, so a 21-point loop
 seconds, not minutes. This is the feature a PA designer will actually use the tool for, and it exists
 because WB2 made the polyline generated rather than hand-placed.
 
+#### 5.5.1 Controlling parameters on the SCHEMATIC symbol *(added 2026-08-17)*
+
+WB21 is about the wBond editor's own dialog. The owner's question is the schematic one: *a placed wBond
+exposes no loop height, so once schematic-based tuning, `VAR` sweeps and optimisation arrive there is no
+handle to turn.* Owner's own framing, and it is the right one: **these are not the geometry, they are
+*controlling* parameters — the 3D coordinates are the truth, and these manipulate them.**
+
+**WB44. A placed wBond exposes CONTROLLING parameters that regenerate geometry at elaboration and never
+write back into the design.** Loop height, wire diameter, wire material, operating temperature and the
+ground-plane switch. Four properties make this work, and none may be traded away:
+
+1. **They are an override layer, not an edit.** The `.wBond` (or the embedded payload) stores geometry
+   **as drawn**; a controlling parameter reshapes the *decoded* design on its way to the solver. WB2 is
+   untouched — `Wire.Points` is still the truth — and a 21-point sweep re-elaborates 21 times while
+   mutating the stored design **zero** times. This is also what makes them survive §9.6: Layout →
+   Schematic replaces the *base* geometry, and the override still sits on top of it.
+2. **Absent means "as drawn."** A controlling parameter is **optional and unset by default**, never
+   defaulted to a number. A wBond that shipped with `LoopHeight = 20 mil` in its defaults would silently
+   regenerate every existing design's wires to 20 mil on its next run.
+3. **Scope is the ARRAY, suffixed** — `LoopHeight_G1`, `Diameter_G1`, `Material_G2`; unsuffixed applies
+   to every array. Array names **are** the pin names on the symbol, so the array is the only sub-scope a
+   schematic user can see. (A `LoopProfile` may be shared by two arrays; overriding one array must
+   therefore give that array its own copy of the profile rather than dragging the other array with it —
+   free, because the override is per-elaboration and never persisted.)
+4. **Loop height is a length, diameter is a length, material is a name.** So the first two sweep and the
+   third parameterises. *This only became possible on 2026-08-07*: a length-dimensioned global could not
+   previously be swept and failed **silently** — the unit table had no symbol for the metre, `"m"` being
+   the SI prefix *milli* — so a loop-height sweep clamped to the wire's own foot drop and drew a
+   perfectly plausible flat curve. WB21 was blocked on that and is no longer.
+
+**WB44a. Span is NOT among them, and the reason is structural rather than schedule.** Span is not a
+profile property at all — it is the distance between the two feet, i.e. *where the pads are*. Two
+consequences follow from §6.2.1, which already settled both for the layout gesture: an array's span
+scales **by factor, not to a common value** (WB24c), because an absolute span would silently flatten a
+fan-out whose wires deliberately differ; and changing span **moves a bonded foot and may take it off its
+pad** (WB24b), which the layout editor makes safe with live snapping and a foot highlight and the
+schematic cannot, being blind to the artwork. A schematic span control is therefore honest only as a
+dimensionless scale factor, with a stated pinned foot and with §8's loop-height-vs-span envelope
+reported on every solve. **Owner decision, 2026-08-17: deferred** — the other five carry the use case,
+and span is the only one of the six needing new geometry rules rather than exposure of existing ones.
+
 ---
 
 ## 6. The wBond Editor
@@ -1162,11 +1205,46 @@ does what a Layout Editor handler already does is the smell; the fix is to host,
 
 #### What a wirebond CELL is
 
-**WB40. A wirebond cell is an ordinary cell whose folder holds a `.wBond` beside its `.clay`.** The
-artwork (pads, traces, the die outline) is the layout view, exactly as for any other cell. The wires
-are the `.wBond`. Nothing new is invented: `LayoutEditorViewModel.WireDesign` is already the seam that
-puts a wire overlay over a layout, and `WBondLayoutOverlay` already draws and edits through it — today
-only the wBond document sets them.
+**WB40. A wirebond cell is an ordinary cell whose `layout/` sub-folder holds a `.wBond` beside its
+`.clay`, sharing that `.clay`'s stem.** The artwork (pads, traces, the die outline) is the layout view,
+exactly as for any other cell. The wires are the `.wBond`. Nothing new is invented:
+`LayoutEditorViewModel.WireDesign` is already the seam that puts a wire overlay over a layout, and
+`WBondLayoutOverlay` already draws and edits through it — today only the wBond document sets them.
+
+```
+AmpStage/
+├── .ccell
+├── layout/
+│      amp_v1.clay             artwork — pads, traces, die outline
+│      amp_v1.wBond            the wires for THAT artwork
+│      amp_v2.clay
+└── schematic/…                unchanged
+```
+
+> **Revised 2026-08-17 — the `.wBond` moved from the cell root into `layout/`, stem-paired.** WB40 as
+> first written put it at `<cell>/<cell>.wBond`, reasoning that it "is not a view of the cell in the way
+> a schematic or a layout is." That half was right and is unchanged — it is an **attachment**, the file
+> category now defined in `workspace-and-project-tree.md` §1.2.1 — but cell-root placement was a
+> rationalisation of a one-`.wBond`-per-cell assumption the model never actually made:
+>
+> - **A cell may hold several `.clay` files.** Wires are drawn over *specific pads at specific
+>   coordinates*, so "the cell's wires" stops being well formed the moment there are two layouts. Stem
+>   pairing makes the association **defined** instead of assumed; cell-root placement could only guess
+>   — prefer the cell-named file, else the sole one, else give up.
+> - **A `wires/` view sub-folder was considered and rejected**, because a view sub-folder means *at most
+>   one primary, the rest inert* — and WB28 deliberately refuses a wBond singleton, so two `.wBond` in
+>   one cell means both are real and both are solved. Primacy would encode the opposite of WB28.
+> - **It costs nothing structurally.** Primacy resolves per view type by extension, so a `.wBond` in
+>   `layout/` can never be miscounted as a second `.clay`; there is no new view type, no
+>   `primary_wires` in `.ccell`, and no fourth empty sub-folder in every resistor in the standard
+>   library.
+>
+> **A `.wBond` still at a cell's root is read, reported and left alone** — pre-2026-08-17 workspaces
+> exist, and silently ignoring their wires is the one outcome that is not acceptable. The report names
+> the move (*"amp.wBond is at the cell root; move it to layout/ beside the .clay it belongs to"*).
+> Symmetrically, a `.wBond` in `layout/` whose stem matches no `.clay` is an **orphan** and is reported
+> rather than ignored — §1.2.1 makes that report the price of the placement, because a Finder rename of
+> a `.clay` would otherwise remove wires from a simulation the user believes includes them.
 
 **This keeps WB23 exactly as written.** No 3D shape enters `.clay`, the layout canvas stays 2D, no
 volumetric mesher is written, and a wire drag still invalidates only the overlay. The alternative —
@@ -1508,7 +1586,7 @@ So the emitted cell is an ordinary one:
 ```
 <workspace>/<cell>/
 ├── layout/<cell>.clay      artwork — pads, traces, die outline
-├── <cell>.wBond            the wires  (WB40)
+├── layout/<cell>.wBond     the wires — stem-paired to that .clay  (WB40)
 └── schematic/…             unchanged
 ```
 
@@ -1540,6 +1618,66 @@ whose payload no longer matches its cell's `.wBond` is a normal, recoverable sta
 schematic and its layout are in between any two runs of the round trip — and the remedy is one command
 away. What must never happen is simulating a payload the user believes they have edited; the drift
 report is what makes that impossible to do quietly.
+
+### 9.7 Carried or Linked — a per-instance choice *(added 2026-08-17)*
+
+WB42 above assumes the payload is the only simulation source. It is not the only *possible* one: the
+component has always accepted either a carried design **or** a path to a `.wBond`, with the carried one
+winning where both are present. Which the elaborator emits was never an explicit decision, and the
+owner's question — *should the netlist reference the `.wBond` instead of carrying a copy?* — is that
+decision.
+
+> **Naming, and why it is not "embedded".** §9.1 already spends the words *referenced* and *embedded* on
+> a **different axis** — whether a `.wBond` file **embeds the layout artwork** it was drawn over or
+> **references** the cells by path. That axis is about what is inside the `.wBond`; this one is about
+> where a placed schematic component's **wires** come from. Using the same two words for both is how
+> "does embedded actually mean referenced?" becomes a reasonable question (owner, 2026-08-17). This
+> section therefore says **Carried**, which is §5.0's own verb — *"the component carries its design"* —
+> and leaves *embedded* to mean exactly what §9.1 has always meant by it. **The two axes are
+> independent:** a Linked instance may point at a `.wBond` that embeds its artwork, or at one that
+> references cells, and neither choice constrains the other.
+
+**WB45. A placed wBond declares its wire source: `Carried` or `Linked`. `Linked` is the default whenever
+the instance resolves to a workspace cell whose `layout/` owns a `.wBond`; `Carried` is the default
+otherwise, and remains the only option for an imported, foreign or workspace-less design.**
+
+This is the same answer, and the same shape, as D10 gave on its own axis: **both**, chosen explicitly,
+with the consequence stated where the choice is made.
+
+- **`Linked`** — the netlist names the `.wBond` by a path relative to the schematic. **One copy of the
+  wires**, so staleness becomes *unrepresentable* rather than reported: §9.6's reconcile command is
+  unnecessary rather than merely convenient, which is exactly what §9.5's layout-driven flow wants. The
+  netlist also becomes readable — §5.0's unpadded-base64 rule exists solely because a padded payload
+  silently swallows whichever parameter follows it on the instance line, a trap a path does not have.
+- **`Carried`** — today's behaviour, unchanged and still the portable one: no path to break, nothing to
+  resolve, a schematic that travels alone.
+
+**WB45a. The state changes only at a moment the user can see, and is announced there.** A freshly placed
+wBond is `Carried` by construction — there is no cell and no file to link to yet. The file comes into
+existence when **Update Layout from Schematic** runs (§9.5), and *that command* is where the instance
+flips to `Linked` and says so. It must never flip as a silent side effect of a later scan noticing that a
+file now exists: that would change which wires simulate without anything happening on screen.
+
+**Why §5.0/WB17b is not thereby overturned.** Its argument — self-containment, no path to break, no
+"Not Found" state — is strongest for a schematic that travels on its own and weakest for one that lives
+in a workspace cell. A schematic instantiating workspace cells is *already* not self-contained: §4 of
+`workspace-and-project-tree.md` resolves cells by relative path and renders "Not Found" when they move.
+A linked wBond is in exactly that boat, under machinery that already exists — and WB17b keeps governing
+the case it was written for, which is now the `Carried` default rather than the only behaviour.
+
+**One consequence must be built with it, not after it.** Under `Linked`, the array-drift check of
+§9.2/WB35a becomes **more** load-bearing, not less. Carried drift is introduced by an explicit re-import;
+linked drift arrives the moment someone reorders arrays in the `.wBond`, changing the symbol's pin order
+live beneath an already-wired schematic — the same defect, arriving more quietly. The drift check
+therefore has to run at elaboration for a linked instance and report, or linking is strictly more
+dangerous than carrying on that one axis.
+
+**What does NOT differ between the two.** Both are editable in the layout, because WB40 attaches wires to
+a layout by what is on disk beside the `.clay`, and both routes put the same file there. Both accept the
+controlling parameters of §5.5.1, because those are applied to the *decoded* design and cannot tell where
+it came from. The only difference is **what the next Run simulates after a layout edit**: under `Linked`
+it is the edit; under `Carried` it is still the payload until §9.6 is run, which is precisely the drift
+WB42's report exists to make loud.
 
 ---
 
@@ -1741,6 +1879,16 @@ or fast-but-wall-clock-sensitive):
 | O-3 | Staging of `CouplingDomain` | **v2.** The audit (WB30) ships in v1 and carries the whole safety burden; domains need elaboration-layer gather work for a case the one-wBond-per-cell convention makes uncommon | §7, WB29/WB30a |
 | O-5 | Warn when the equipotential assumption is stretched? | **No warning — document it.** There is no threshold separating the good case from the bad without sheet resistance and frequency, so a span-based warning would be noise on most designs and silent on some real failures. Lives in this doc and the user documentation; landing span stays an ordinary panel readout | §3.6, WB9a |
 | O-7 | Is 85 °C the right default? | **Yes — a flat default.** Visible, editable, and closer than 20 °C; not junction-referred, which would need thermal input the tool does not have | §2.3, WB4a |
+
+### Resolved by the owner, 2026-08-17
+
+| # | question | decision | where it landed |
+|---|---|---|---|
+| O-8 | Should the cell's `.wBond` move to a `wires/` view sub-folder? | **No — into `layout/`, stem-paired with its `.clay`.** It is an **attachment**, not a view: views are alternatives with one primary, and WB28 makes two `.wBond` in a cell *both real*, so primacy would encode the opposite. Stem pairing also answers the question cell-root placement could only guess at — *which* `.clay` are these wires drawn over | WB40 (revised), `workspace-and-project-tree.md` §1.2.1 |
+| O-9 | A view sub-folder for "assembly" / "application"? | **Neither.** An **assembly** contains instances of other cells, so it is an ordinary cell with a hierarchical layout — already expressible, mixed technologies included; what it still needs is **z** on a layout instance, a model change rather than a directory. An **application** board *instantiates* this cell, so it is a sibling cell reached by an association reference, not a view of it | `workspace-and-project-tree.md` §1.2.1 |
+| O-10 | Loop height, diameter and material on the schematic symbol? | **Yes — as controlling parameters**, array-scoped and suffixed, applied as an override at elaboration that never writes back, unset by default meaning "as drawn". This is what makes them sweepable and optimisable without a sweep mutating the design once | §5.5.1, WB44 |
+| O-11 | Span too? | **Deferred.** Span is not a profile property but the pad positions; it scales by *factor* not to a value (WB24c), and it moves a bonded foot off its pad (WB24b) — safe under the layout editor's live snapping, blind from the schematic. The only one of the six needing new geometry rules rather than exposure of existing ones | §5.5.1, WB44a |
+| O-12 | Should the netlist reference the `.wBond` rather than carry a copy? | **Per-instance choice, `Linked` by default** when the instance resolves to a workspace cell that owns one; `Carried` otherwise and for imported/foreign designs. **Named `Carried`, not `Embedded`** — §9.1 already spends *embedded/referenced* on a different axis (what is inside the `.wBond`), and reusing them made the two indistinguishable. Linking makes §9.6's reconcile unnecessary rather than merely convenient — but the array-drift check must then run at elaboration, or linked drift arrives more quietly than carried drift | §9.7, WB45 |
 
 ### Open — for the owner
 

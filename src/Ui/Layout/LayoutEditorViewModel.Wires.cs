@@ -116,6 +116,36 @@ public sealed partial class LayoutEditorViewModel
         WireDesign = design;
     }
 
+    /// <summary>
+    /// Tells this session that its wire design was changed by something OUTSIDE the wire editor —
+    /// today, Update Layout from Schematic merging an array the schematic has gained
+    /// (<see cref="WBond.WBondCellSeeding"/>).
+    ///
+    /// <para><b>Why the mutation happens in place and this exists instead of a re-attach.</b> Attaching
+    /// builds a whole new <see cref="WBondViewModel"/>, which throws away the wire undo history and the
+    /// selection, and hands the view a different overlay object to bind to. For an edit that only
+    /// APPENDS arrays that is far too big a hammer — so the merge mutates the design the editor already
+    /// holds, and this rebuilds what depends on its structure.</para>
+    ///
+    /// <para><b>The selection is cleared, and that is not tidiness.</b> A wire selection is a set of
+    /// FLAT indices across the whole design; realigning the array order (which the merge does, because
+    /// array order is pin order) moves every wire's flat index, so a surviving selection would point at
+    /// different wires than the ones the user picked. <c>WBondViewModel.Restore</c> clears it on a
+    /// structural undo for exactly this reason.</para>
+    ///
+    /// <para><see cref="WBondViewModel.CommitStructuralChange"/> rebuilds the mesh and the incremental
+    /// fill — a wire count change invalidates both — and raises <c>DirtyChanged</c>, which is what marks
+    /// the layout dirty so the merged design is actually written on the next save.</para>
+    /// </summary>
+    public void NotifyWireDesignChangedExternally()
+    {
+        if (WireEditor is not { } editor) return;
+
+        editor.ClearSelection();
+        editor.CommitStructuralChange();
+        WireOverlay?.NotifyChanged();
+    }
+
     private long GridPitchNm() => SnapDbu > 0 ? WBondSnap.ToNm(SnapDbu, Model.DbuPerMicron) : 0;
 
     /// <summary>
@@ -214,6 +244,41 @@ public sealed partial class LayoutEditorViewModel
     public string UndoLastDescription => UndoTakesWires ? "Undo wirebond edit" : UndoRedo.UndoDescription;
 
     public string RedoLastDescription => RedoTakesWires ? "Redo wirebond edit" : UndoRedo.RedoDescription;
+
+    /// <summary>
+    /// Follows the wires to a new <c>.clay</c> name when the layout is saved somewhere else (Save As,
+    /// or a scratch layout written for the first time).
+    ///
+    /// <para><b>Why this is needed, and why it was not before 2026-08-17.</b> A <c>.wBond</c> is now an
+    /// ATTACHMENT: it is found by sharing its <c>.clay</c>'s stem (WB40, revised). Under the old
+    /// cell-root placement, Save As happened to keep working by accident — the sidecar was found by
+    /// looking one level UP from the artwork, so <c>amp_v2.clay</c> resolved to the same
+    /// <c>&lt;cell&gt;.wBond</c> as <c>amp_v1.clay</c> did. Stem pairing removes that accident: without
+    /// this, Save As would write the artwork to <c>amp_v2.clay</c> and the wires back into
+    /// <c>amp_v1.wBond</c>, and the layout the user just created would open with **no wires at all**
+    /// while their edits sat in the old file.</para>
+    ///
+    /// <para><b>Save As COPIES, so the wires are copied too</b> — the original <c>.clay</c> and its
+    /// <c>.wBond</c> are both left alone, and the new pair is complete. That is why the dirty flag is
+    /// forced: a Save As with no wire edits at all must still produce wires at the new name, or the
+    /// copy is silently missing the thing the cell is about.</para>
+    ///
+    /// <para><b>An ordinary Save never retargets</b>, which is what keeps a legacy cell-root file where
+    /// it is. Migrating it silently on save would leave a stale duplicate at the root that then loses
+    /// resolution to the new one — the move is the user's to make, and it is reported to them.</para>
+    /// </summary>
+    private void RetargetWiresForSaveAs(string? previousClayPath, string newClayPath)
+    {
+        if (WireDesign is null) return;
+
+        if (previousClayPath is { Length: > 0 } old &&
+            string.Equals(Path.GetFullPath(old), Path.GetFullPath(newClayPath),
+                          StringComparison.OrdinalIgnoreCase))
+            return;   // ordinary Save — nothing moved
+
+        WireDesignPath = Path.ChangeExtension(newClayPath, ".wBond");
+        _wireDirty     = true;
+    }
 
     /// <summary>
     /// Writes the wire layer back beside the <c>.clay</c>, if it has one and it changed.

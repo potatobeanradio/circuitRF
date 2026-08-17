@@ -490,4 +490,111 @@ public static class WireEdits
         a.X + (long)Math.Round((b.X - a.X) * t),
         a.Y + (long)Math.Round((b.Y - a.Y) * t),
         a.Z + (long)Math.Round((b.Z - a.Z) * t));
+
+    // ---------------------------------------------------------------- loop height, in place
+
+    /// <summary>
+    /// Sets a wire's loop height <b>by rescaling its own rise above the chord</b> — keeping every
+    /// point's X and Y exactly, and both feet bit-exactly.
+    ///
+    /// <h3>Why this exists rather than re-applying a <see cref="LoopProfile"/></h3>
+    /// <para>Owner, 2026-08-17: <i>"I don't like this ball/wedge profile thing. It doesn't offer the
+    /// user anything. Its setting should never affect the geometry that the user authors."</i></para>
+    ///
+    /// <para><see cref="LoopProfile.ApplyTo"/> writes a wire's X and Y by linear interpolation between
+    /// the feet, so applying a loop height through a profile <b>straightens any path the user routed by
+    /// hand</b> — a wire taken around an obstacle comes back as a plain planar arc. That is fine when a
+    /// profile is genuinely generating the wire and destructive the moment someone has shaped it. This
+    /// changes the one quantity that was asked for and nothing else.</para>
+    ///
+    /// <para><b>No span ordering is required</b>, which is the second reason not to route this through a
+    /// profile: <see cref="LoopProfile.Validate"/> demands strictly increasing spans, and a hand-routed
+    /// wire that doubles back in XY does not have them. Nothing here needs the points ordered along the
+    /// chord at all.</para>
+    ///
+    /// <h3>The solve</h3>
+    /// <para>Every point moves as <c>z(k) = chord(t) + k·rise</c>, so the measured height
+    /// <c>max z − min z</c> is a convex function of <c>k</c> that starts at the foot drop (<c>k = 0</c>,
+    /// every point on the chord) and increases — so the <c>k</c> reaching a requested height is unique
+    /// and is found by bisection. A closed form over the positive rises alone would be exact only while
+    /// no point dips BELOW the chord, which a hand-routed wire may well do.</para>
+    ///
+    /// <para><b>Clamped at the foot drop</b>, exactly as <see cref="LoopProfile.SolveAmplitudeNm"/> is
+    /// and for the same reason: with the feet <c>|z₁ − z₂|</c> apart even a dead-straight wire measures
+    /// that much, so a smaller request is not achievable by any shape (see
+    /// <see cref="Wire.LoopHeightNm"/>).</para>
+    /// </summary>
+    /// <returns>False when there is nothing to scale — fewer than two points, or a wire that is already
+    /// dead straight and so has no rise to grow from.</returns>
+    public static bool SetLoopHeightPreservingPath(Wire wire, long targetNm)
+    {
+        ArgumentNullException.ThrowIfNull(wire);
+        if (targetNm <= 0 || wire.Points.Count < 2) return false;
+
+        var start = wire.Points[0];
+        var end = wire.Points[^1];
+
+        int n = wire.Points.Count;
+        var chord = new double[n];
+        var rise = new double[n];
+        bool anyRise = false;
+
+        for (int i = 0; i < n; i++)
+        {
+            double t = ChordParameter(start, end, wire.Points[i]);
+            chord[i] = start.Z + t * (end.Z - start.Z);
+            rise[i] = wire.Points[i].Z - chord[i];
+            if (Math.Abs(rise[i]) > 0.5) anyRise = true;
+        }
+
+        // The feet ARE the chord by construction; force them so rounding in ChordParameter cannot
+        // creep a nanometre into a pad position.
+        chord[0] = start.Z; rise[0] = 0.0;
+        chord[^1] = end.Z;  rise[^1] = 0.0;
+
+        if (!anyRise) return false;   // a straight wire has no shape to scale; nothing honest to do
+
+        double MeasuredAt(double k)
+        {
+            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+            for (int i = 0; i < n; i++)
+            {
+                double z = chord[i] + k * rise[i];
+                if (z < lo) lo = z;
+                if (z > hi) hi = z;
+            }
+            return hi - lo;
+        }
+
+        double footDrop = Math.Abs((double)end.Z - start.Z);
+        double k;
+
+        if (targetNm <= footDrop)
+        {
+            k = 0.0;   // not achievable by any shape — the wire comes back at its floor
+        }
+        else
+        {
+            // Grow an upper bound rather than assuming one: the current shape may be very shallow, so
+            // the k reaching a tall request can be large.
+            double hiK = 1.0;
+            for (int guard = 0; guard < 64 && MeasuredAt(hiK) < targetNm; guard++) hiK *= 2.0;
+
+            double loK = 0.0;
+            for (int iter = 0; iter < 60; iter++)
+            {
+                double mid = 0.5 * (loK + hiK);
+                if (MeasuredAt(mid) < targetNm) loK = mid; else hiK = mid;
+            }
+            k = 0.5 * (loK + hiK);
+        }
+
+        for (int i = 1; i < n - 1; i++)
+        {
+            var p = wire.Points[i];
+            wire.Points[i] = p with { Z = (long)Math.Round(chord[i] + k * rise[i]) };
+        }
+
+        return true;
+    }
 }

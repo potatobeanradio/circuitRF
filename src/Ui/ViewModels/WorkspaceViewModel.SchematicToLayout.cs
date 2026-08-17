@@ -163,14 +163,26 @@ public partial class WorkspaceViewModel
     private void SeedWBondSidecar(SchematicEditModel model, string cellDir, string cellName,
                                   LayoutEditorViewModel layoutVm, EditableComponent? only = null)
     {
-        var seeded = WBondCellSeeding.Seed(model, cellDir, cellName, only);
+        // The LIVE design when this cell's layout is already open with wires on it. Passing it is what
+        // makes the merge correct rather than merely visible: an open editor holds its own design object
+        // and writes it back on save, so merging through the file would change nothing on screen and be
+        // overwritten moments later (owner, 2026-08-17, with the workspace attached — the `.wBond` held
+        // G1 and G2 while the layout showed only G1).
+        var seeded = WBondCellSeeding.Seed(model, cellDir, cellName, only, layoutVm.WireDesign);
         if (seeded.Outcome == WBondCellSeeding.Outcome.NoWBond) return;
+
+        // Before the messages, so a repaint is not waiting behind a message sink.
+        if (seeded.LiveDesignChanged) layoutVm.NotifyWireDesignChangedExternally();
 
         foreach (string line in seeded.Messages)
         {
             // The written file rides along on the success line so the Messages pane's own reveal
             // affordance points at it — the same shape every other "wrote a file" report here uses.
-            if (seeded.Outcome is WBondCellSeeding.Outcome.Created) Messages.Success(line, seeded.Path);
+            // A MERGE is an ordinary success too (an array the schematic added arrived in the layout,
+            // and nothing already drawn was touched); the lines it emits about what could NOT be
+            // resolved are the ones that read as warnings, and they are worded to say so.
+            if (seeded.Outcome is WBondCellSeeding.Outcome.Created or WBondCellSeeding.Outcome.Merged)
+                Messages.Success(line, seeded.Path);
             else Messages.Warning(line);
         }
 
@@ -244,6 +256,23 @@ public partial class WorkspaceViewModel
         ReportGenerationResult(result.Command, result.Lines, [],
             result.CreatedCount, result.UpdatedCount, result.UnchangedCount, 0,
             result.OverwrittenParameterCount, "Update Schematic from Layout", overwrittenNoun: "schematic edits");
+
+        // §9.6/WB42 — the WIRE layer, which this command had no knowledge of at all (owner,
+        // 2026-08-17: "if I change loop height in layout editor, the component in the schematic is not
+        // updated. Even if I use Update Schematic from Layout"). Separate from the instance walk above
+        // because it is a separate layer: LayoutToSchematicGenerator reads LayoutInstances, and no wire
+        // is ever one of those (WB23 — no wire enters a .clay).
+        //
+        // The LIVE design, not the file on disk, so an unsaved wire edit reconciles too — matching the
+        // instance half, which reads layoutVm.Model rather than re-reading the .clay.
+        var wires = WBondSchematicReconcile.Run(schematicVm.EditModel, layoutVm.WireDesign);
+        if (wires.Command is not null) schematicVm.Execute(wires.Command);
+
+        foreach (string line in wires.Messages)
+        {
+            if (wires.ArraysMoved) Messages.Warning(line);
+            else Messages.Success(line);
+        }
 
         if (createdNewFile)
         {

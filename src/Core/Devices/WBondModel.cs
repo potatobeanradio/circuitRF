@@ -31,11 +31,20 @@ namespace CircuitRF.Core.Devices;
 /// see <see cref="Stamp"/>'s refusal. That is RW13's "a port carries an explicit reference conductor"
 /// applied to the array basis.</para>
 /// </summary>
-public sealed class WBondModel : ComponentModel
+public sealed class WBondModel : ComponentModel, IReportsWarnings
 {
     private readonly WBondDesign _design;
     private readonly string _sourceDescription;
     private ImpedanceReduction? _reduction;
+
+    /// <summary>
+    /// What the controlling parameters (§5.5.1/WB44) did that the user cannot see for themselves —
+    /// detached wires an override could not reach (§2.0), a name that is both an array and a profile,
+    /// a linked file whose arrays have drifted (§3.2/WB35a). Queued at construction, phrased with the
+    /// instance path at the first <see cref="Stamp"/>, and drained from there by the engine.
+    /// </summary>
+    private readonly List<string> _notes;
+    private List<(string Key, string Message)>? _pending;
 
     /// <summary>Branch index per array, set during each <see cref="Stamp"/> call. −1 before the first.</summary>
     public int[] ArrayBranchIndices { get; }
@@ -51,11 +60,18 @@ public sealed class WBondModel : ComponentModel
     /// this flag: <c>REF</c> never stamped. It is a place to SAY which net is the reference plane,
     /// for the designs where that is not simply ground.</para>
     /// </param>
+    /// <param name="notes">
+    /// Non-fatal things the controlling-parameter layer found while reshaping the decoded design
+    /// (<c>ComponentModelFactory.ApplyControllingParameters</c>). Empty for every design that sets
+    /// none of them, which is why an existing schematic's run is unchanged by their existence.
+    /// </param>
     public WBondModel(WBondDesign design, string sourceDescription = "<inline>",
-                      bool referencePin = false)
+                      bool referencePin = false, IReadOnlyList<string>? notes = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         design.Validate();
+
+        _notes = notes is null ? [] : [.. notes];
 
         // A DESIGN may hold no wires (a document not drawn in yet, or one just cleared); a placed
         // COMPONENT may not. Its pins are its array names, so a design with no arrays gives a part
@@ -132,6 +148,7 @@ public sealed class WBondModel : ComponentModel
         ArgumentNullException.ThrowIfNull(c);
 
         RefuseIfReturnPathUndeclared(c);
+        QueueNotes(c);
 
         int m = ArrayCount;
         double hz = omega / (2.0 * Math.PI);
@@ -184,6 +201,35 @@ public sealed class WBondModel : ComponentModel
             "Either re-enable the ground plane (the image plane at z = 0 then IS the return), or add " +
             "ground bond wires and nominate their array as the reference — they are ordinary wires in " +
             "the model and get their own inductance and coupling.");
+    }
+
+    /// <summary>
+    /// Phrases the queued controlling-parameter notes with the instance path and hands them to the
+    /// engine's post-<c>Stamp</c> drain.
+    ///
+    /// <para><b>Here rather than in the constructor</b> for one reason: the instance path is what a
+    /// user needs to find the component, and a model does not know its own — <c>Stamp</c> is the first
+    /// moment an <see cref="ElaboratedComponent"/> is in hand. Queued once; an S-parameter sweep stamps
+    /// per frequency, and <c>ElaboratedNetlist.AddWarningOnce</c> would dedup anyway, but there is no
+    /// reason to hand it the same string 201 times.</para>
+    /// </summary>
+    private void QueueNotes(ElaboratedComponent c)
+    {
+        if (_notes.Count == 0 || _pending is not null) return;
+
+        _pending = [];
+        for (int i = 0; i < _notes.Count; i++)
+            _pending.Add(($"wbond-ctrl:{c.InstancePath}:{i}", $"wBond '{c.InstancePath}': {_notes[i]}"));
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+    {
+        if (_pending is not { Count: > 0 }) return [];
+
+        var drained = _pending;
+        _pending = [];
+        return drained;
     }
 
     /// <summary>

@@ -459,28 +459,105 @@ public class WBondOneEditorTests
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// <b>A wirebond cell is an ordinary cell whose folder holds a <c>.wBond</c> beside its
-    /// <c>.clay</c>.</b> The sidecar sits in the CELL folder, one level up from the artwork, because
-    /// it is not a view of the cell — it is a second file the layout view draws over.
+    /// <b>WB40, revised 2026-08-17 — the wires are an ATTACHMENT: <c>layout/&lt;stem&gt;.wBond</c>
+    /// beside <c>layout/&lt;stem&gt;.clay</c>.</b> Not a view (a view sub-folder means one primary and
+    /// the rest inert, which WB28 makes wrong), and not the cell root (a cell may hold several
+    /// <c>.clay</c> files, and wires are drawn over SPECIFIC pads).
     /// </summary>
     [Fact]
-    public void TheSidecar_IsFoundInTheCellFolder()
+    public void TheAttachment_IsFoundBesideItsOwnClay()
     {
         using var cell = new TempCell("amp");
 
         Assert.Null(WBondCell.FindFor(cell.ClayPath));
 
-        File.WriteAllText(Path.Combine(cell.CellDir, "amp.wBond"), "{}");
-        Assert.Equal(Path.Combine(cell.CellDir, "amp.wBond"), WBondCell.FindFor(cell.ClayPath));
+        File.WriteAllText(cell.WBondPath, "{}");
+        Assert.Equal(cell.WBondPath, WBondCell.FindFor(cell.ClayPath));
+    }
+
+    /// <summary>
+    /// <b>Stem pairing is the whole point: a second layout in the same cell gets its own wires.</b>
+    /// This is what cell-root placement could not express — it had one slot for a cell that may have
+    /// many layouts, and could only guess which artwork a bond list belonged to.
+    /// </summary>
+    [Fact]
+    public void TwoLayoutsInOneCell_EachResolveTheirOwnWires()
+    {
+        using var cell = new TempCell("amp");
+
+        string clayB  = Path.Combine(cell.LayoutDir, "amp_revB.clay");
+        string wiresB = Path.Combine(cell.LayoutDir, "amp_revB.wBond");
+        File.WriteAllText(clayB, "{}");
+        File.WriteAllText(cell.WBondPath, "{}");
+        File.WriteAllText(wiresB, "{}");
+
+        Assert.Equal(cell.WBondPath, WBondCell.FindFor(cell.ClayPath));
+        Assert.Equal(wiresB,         WBondCell.FindFor(clayB));
+    }
+
+    /// <summary>
+    /// <b>A pre-2026-08-17 workspace still opens with its wires, and the move is NAMED.</b> Silently
+    /// dropping them is the one outcome that is not acceptable; silently reading them forever is how a
+    /// migration never happens.
+    /// </summary>
+    [Fact]
+    public void ALegacyCellRootSidecar_StillResolves_AndSaysSo()
+    {
+        using var cell = new TempCell("amp");
+        File.WriteAllText(cell.LegacyWBondPath, "{}");
+
+        var (path, note) = WBondCell.Resolve(cell.ClayPath);
+
+        Assert.Equal(cell.LegacyWBondPath, path);
+        Assert.NotNull(note);
+        Assert.Contains("layout/amp.wBond", note, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The attachment wins over a legacy root file, and silently.</b> Once the file has been moved
+    /// there is nothing left to say — and a stale copy left behind at the root must not be able to
+    /// shadow the one that is correctly placed.
+    /// </summary>
+    [Fact]
+    public void TheAttachment_WinsOverALegacyRootFile()
+    {
+        using var cell = new TempCell("amp");
+        File.WriteAllText(cell.LegacyWBondPath, "{}");
+        File.WriteAllText(cell.WBondPath, "{}");
+
+        var (path, note) = WBondCell.Resolve(cell.ClayPath);
+
+        Assert.Equal(cell.WBondPath, path);
+        Assert.Null(note);
+    }
+
+    /// <summary>
+    /// <b>An ORPHAN is reported — the price of stem pairing, not a nicety.</b> Renaming a <c>.clay</c>
+    /// in Finder detaches its wires, and unlike every other Finder-edit failure mode (a "Not Found"
+    /// glyph, a warning row) this one would otherwise remove wires from a simulation the user believes
+    /// includes them.
+    /// </summary>
+    [Fact]
+    public void WiresPairingWithNoClay_AreReportedRatherThanIgnored()
+    {
+        using var cell = new TempCell("amp");
+        File.WriteAllText(Path.Combine(cell.LayoutDir, "amp_old.wBond"), "{}");
+
+        var (path, note) = WBondCell.Resolve(cell.ClayPath);
+
+        Assert.Null(path);
+        Assert.NotNull(note);
+        Assert.Contains("amp_old.wBond", note, StringComparison.Ordinal);
+        Assert.Contains("amp.wBond",     note, StringComparison.Ordinal);   // …and the rename that fixes it
     }
 
     /// <summary>
     /// A hand-named bond list dropped in beside the artwork is a normal thing for an assembly house
-    /// to send, so a single differently-named <c>.wBond</c> still resolves. TWO is ambiguous and
-    /// resolves to none rather than to whichever sorts first.
+    /// to send, so a single differently-named <c>.wBond</c> at the cell root still resolves through the
+    /// legacy branch. TWO is ambiguous and resolves to none rather than to whichever sorts first.
     /// </summary>
     [Fact]
-    public void OneOddlyNamedSidecarResolves_TwoDoNot()
+    public void OneOddlyNamedLegacySidecarResolves_TwoDoNot()
     {
         using var cell = new TempCell("amp");
 
@@ -500,7 +577,7 @@ public class WBondOneEditorTests
     public void ACellWithASidecar_OpensWithItsWiresAttached()
     {
         using var cell = new TempCell("amp");
-        WBondIo.WriteFile(Path.Combine(cell.CellDir, "amp.wBond"), Design(3));
+        WBondIo.WriteFile(cell.WBondPath, Design(3));
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
         Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
@@ -521,7 +598,7 @@ public class WBondOneEditorTests
     public void ACellsOverlay_LeavesTheLayoutsOwnGesturesAlone()
     {
         using var cell = new TempCell("amp");
-        WBondIo.WriteFile(Path.Combine(cell.CellDir, "amp.wBond"), Design());
+        WBondIo.WriteFile(cell.WBondPath, Design());
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
         Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
@@ -544,7 +621,7 @@ public class WBondOneEditorTests
     public void EditingACellsWires_DirtiesItAndSurvivesASave()
     {
         using var cell = new TempCell("amp");
-        string sidecar = Path.Combine(cell.CellDir, "amp.wBond");
+        string sidecar = cell.WBondPath;
         WBondIo.WriteFile(sidecar, Design(3));
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
@@ -571,7 +648,7 @@ public class WBondOneEditorTests
     public void AnUnreadableSidecar_IsReportedAndTheLayoutStillOpens()
     {
         using var cell = new TempCell("amp");
-        File.WriteAllText(Path.Combine(cell.CellDir, "amp.wBond"), "this is not a wBond file");
+        File.WriteAllText(cell.WBondPath, "this is not a wBond file");
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
 
@@ -591,14 +668,24 @@ public class WBondOneEditorTests
     {
         public string Root { get; }
         public string CellDir { get; }
+        public string LayoutDir { get; }
         public string ClayPath { get; }
+
+        /// <summary>Where an attachment belongs since WB40's 2026-08-17 revision.</summary>
+        public string WBondPath { get; }
+
+        /// <summary>Where the pre-2026-08-17 sidecar sat — the legacy branch, still read.</summary>
+        public string LegacyWBondPath { get; }
 
         public TempCell(string name)
         {
             Root = Path.Combine(Path.GetTempPath(), "crf-wb40-" + Guid.NewGuid().ToString("N")[..8]);
             CellDir = Path.Combine(Root, name);
-            Directory.CreateDirectory(Path.Combine(CellDir, "layout"));
-            ClayPath = Path.Combine(CellDir, "layout", name + ".clay");
+            LayoutDir = Path.Combine(CellDir, "layout");
+            Directory.CreateDirectory(LayoutDir);
+            ClayPath = Path.Combine(LayoutDir, name + ".clay");
+            WBondPath = Path.Combine(LayoutDir, name + ".wBond");
+            LegacyWBondPath = Path.Combine(CellDir, name + ".wBond");
             File.WriteAllText(ClayPath, "{}");
         }
 
@@ -622,7 +709,7 @@ public class WBondOneEditorTests
     public void TheTwoPanels_FollowTheActiveLayout()
     {
         using var cell = new TempCell("amp");
-        WBondIo.WriteFile(Path.Combine(cell.CellDir, "amp.wBond"), Design(3));
+        WBondIo.WriteFile(cell.WBondPath, Design(3));
 
         var wirebond = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
         Assert.True(WBondCell.TryAttach(wirebond, cell.ClayPath));
@@ -727,5 +814,103 @@ public class WBondOneEditorTests
         foreach (var file in new[] { "WBondInductancePanelView.axaml.cs", "WBondProfileView.ContextMenu.cs" })
             Assert.Contains("WBondGroupEdits.",
                             Read("src", "Ui", "Views", "WBond", file), StringComparison.Ordinal);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    //  9. Dirty tracking and persistence of the wire layer
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>A wire edit dirties the DOCUMENT, and an ordinary Save writes the <c>.wBond</c>.</b>
+    ///
+    /// <para>The separate <c>_wireDirty</c> flag is why this works: a wire edit carries no entry on the
+    /// LAYOUT's undo stack (the wires have their own history), so a dirty state derived from the undo
+    /// position alone would report the cell clean with unsaved wires in it.</para>
+    ///
+    /// <para>WB23 still holds — the <c>.clay</c>'s own content is unchanged by a wire edit. It is the
+    /// document that is dirty, not the artwork.</para>
+    /// </summary>
+    [Fact]
+    public void AWireEdit_DirtiesTheDocument_AndSaveWritesTheWBond()
+    {
+        using var cell = new TempCell("amp");
+        WBondIo.WriteFile(cell.WBondPath, Design(2));
+
+        var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
+        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        vm.MarkSaved();
+        Assert.False(vm.IsDirty);
+
+        // A structural wire edit — the same commit path an array add/rename/delete takes.
+        vm.WireEditor!.Design.Arrays[0].Wires.Add(
+            vm.WireEditor.Design.Profiles[0].CreateWire(
+                Point3.Mils(0, 40, 4), Point3.Mils(100, 40, 1),
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+        vm.WireEditor.CommitStructuralChange();
+
+        Assert.True(vm.IsDirty);                          // …the document, not the .clay's content
+        Assert.Equal(2, WBondIo.ReadFile(cell.WBondPath).WireCount);   // not yet on disk
+
+        vm.PerformSave(cell.ClayPath);
+
+        Assert.False(vm.IsDirty);
+        Assert.Equal(3, WBondIo.ReadFile(cell.WBondPath).WireCount);   // …written by MarkSaved
+    }
+
+    /// <summary>
+    /// <b>Save As carries the wires to the new stem — including when they were never edited.</b>
+    ///
+    /// <para>This is a REGRESSION GUARD for stem pairing itself. Under WB40's original cell-root
+    /// placement Save As worked by accident: the sidecar was found one level UP from the artwork, so
+    /// <c>amp_v2.clay</c> resolved to the same <c>&lt;cell&gt;.wBond</c>. Stem pairing removes that
+    /// accident — without <c>RetargetWiresForSaveAs</c>, the artwork lands at the new name and the
+    /// wires are written back into the OLD file, so the layout the user just created opens with no
+    /// wires while their edits sit somewhere they did not ask for.</para>
+    /// </summary>
+    [Fact]
+    public void SaveAs_CarriesTheWiresToTheNewStem_AndLeavesTheOriginalIntact()
+    {
+        using var cell = new TempCell("amp");
+        WBondIo.WriteFile(cell.WBondPath, Design(2));
+
+        var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
+        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        vm.MarkSaved();
+
+        // No wire edit at all — the copy must still be complete.
+        string clayB = Path.Combine(cell.LayoutDir, "amp_revB.clay");
+        vm.PerformSave(clayB);
+
+        string wiresB = Path.Combine(cell.LayoutDir, "amp_revB.wBond");
+        Assert.True(File.Exists(wiresB));
+        Assert.Equal(2, WBondIo.ReadFile(wiresB).WireCount);
+
+        // Save As copies: the original pair is untouched and still resolves to itself.
+        Assert.True(File.Exists(cell.WBondPath));
+        Assert.Equal(cell.WBondPath, WBondCell.FindFor(cell.ClayPath));
+        Assert.Equal(wiresB,         WBondCell.FindFor(clayB));
+    }
+
+    /// <summary>
+    /// <b>An ordinary Save never retargets, so a legacy cell-root file stays where it is.</b>
+    /// Migrating it silently would leave a stale duplicate at the root that then LOSES resolution to
+    /// the file just written beside the artwork — the move is the user's to make, and it is reported.
+    /// </summary>
+    [Fact]
+    public void APlainSave_WritesBackToALegacyRootFile_WithoutMigratingIt()
+    {
+        using var cell = new TempCell("amp");
+        WBondIo.WriteFile(cell.LegacyWBondPath, Design(2));
+
+        var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
+        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        vm.MarkSaved();
+
+        vm.WireEditor!.Design.Arrays[0].Wires.RemoveAt(1);
+        vm.WireEditor.CommitStructuralChange();
+        vm.PerformSave(cell.ClayPath);
+
+        Assert.Equal(1, WBondIo.ReadFile(cell.LegacyWBondPath).WireCount);   // written where it lives
+        Assert.False(File.Exists(cell.WBondPath));                           // and NOT duplicated
     }
 }

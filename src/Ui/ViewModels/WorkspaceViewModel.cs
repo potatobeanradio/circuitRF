@@ -1823,7 +1823,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             SaveRecent();
             RebuildRecentMenuItems();
             var missingName = Path.GetFileName(Path.GetDirectoryName(cwsPath)) ?? cwsPath;
-            Messages.Error($"Workspace '{missingName}' was not found and has been removed from Recent.");
+            Messages.Error($"Workspace '{missingName}' was not found.");
             return;
         }
 

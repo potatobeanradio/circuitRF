@@ -333,7 +333,7 @@ public class WBondRound5Tests
 
         Assert.Equal(WBondCellSeeding.Outcome.Created, result.Outcome);
         Assert.True(result.HasSidecar);
-        Assert.True(File.Exists(Path.Combine(cell.CellDir, "amp.wBond")));
+        Assert.True(File.Exists(cell.WBondPath));
 
         // …and it is exactly the file the layout side goes looking for.
         Assert.Equal(result.Path, WBondCell.FindFor(cell.ClayPath));
@@ -347,6 +347,36 @@ public class WBondRound5Tests
         Assert.Empty(layout.Model.Shapes);
     }
 
+    /// <summary>
+    /// <b>A pre-2026-08-17 cell keeps the wires it has, and is not given a second set.</b> Seeding a
+    /// fresh file into <c>layout/</c> would SHADOW the legacy one (attachment resolution prefers the
+    /// stem-paired file), so the wires the user has been editing would silently stop being the ones
+    /// drawn and simulated — a re-run of Update Layout would quietly revert their work to whatever the
+    /// schematic payload last held. Keep theirs; name the move.
+    /// </summary>
+    [Fact]
+    public void ALegacyRootWirebondFile_IsKept_AndNotShadowedByANewOne()
+    {
+        using var cell = new TempCell("amp");
+
+        // What a pre-move workspace looks like: wires at the cell root, edited to 3 wires in layout.
+        string legacy = Path.Combine(cell.CellDir, "amp.wBond");
+        WBondIo.WriteFile(legacy, Design(3));
+
+        var model = new SchematicEditModel();
+        model.Components.Add(WBondPlacement.BuildCarrying(null, "W1"));
+
+        var result = WBondCellSeeding.Seed(model, cell.CellDir, "amp");
+
+        Assert.Equal(WBondCellSeeding.Outcome.KeptExisting, result.Outcome);
+        Assert.Equal(legacy, result.Path);
+        Assert.False(File.Exists(cell.WBondPath));                 // nothing was written to shadow it
+        Assert.Contains(result.Messages, m => m.Contains("layout/amp.wBond", StringComparison.Ordinal));
+
+        // …and the layout still resolves to the user's edited wires, not to a regenerated pair.
+        Assert.Equal(legacy, WBondCell.FindFor(cell.ClayPath));
+    }
+
     /// <summary>A schematic with no wBond is left completely alone, and says nothing.</summary>
     [Fact]
     public void NoWBondInTheSchematic_WritesNothingAndSaysNothing()
@@ -357,7 +387,7 @@ public class WBondRound5Tests
 
         Assert.Equal(WBondCellSeeding.Outcome.NoWBond, result.Outcome);
         Assert.Empty(result.Messages);
-        Assert.Empty(Directory.GetFiles(cell.CellDir, "*.wBond"));
+        Assert.Empty(Directory.GetFiles(cell.LayoutDir, "*.wBond"));
     }
 
     /// <summary>
@@ -369,7 +399,7 @@ public class WBondRound5Tests
     public void ARerun_KeepsTheWiresTheUserEditedInTheLayout()
     {
         using var cell = new TempCell("amp");
-        string sidecar = Path.Combine(cell.CellDir, "amp.wBond");
+        string sidecar = cell.WBondPath;
 
         var model = new SchematicEditModel();
         model.Components.Add(WBondPlacement.BuildCarrying(null, "W1"));
@@ -396,12 +426,20 @@ public class WBondRound5Tests
     }
 
     /// <summary>
-    /// An array list that has diverged since the sidecar was written is REPORTED as drift, through the
-    /// same <c>WBondPlacement.DriftBetween</c> the import path uses — never silently repaired, because
-    /// array order IS pin order (§9.2/WB35a).
+    /// An array ADDED on the schematic since the sidecar was written is <b>merged into it</b>, and the
+    /// addition is named.
+    ///
+    /// <para><b>This test used to assert the opposite</b> — <c>KeptExisting</c> plus a "pins have moved"
+    /// drift report — and the owner reported that as a bug on 2026-08-17: <i>"add another array, then do
+    /// another Update Layout from Schematic, the new array that I created in schematic does not show up
+    /// in the layout."</i> WB41's never-overwrite rule is right about EXISTING arrays and was wrong
+    /// about a new one: adding an array touches no wire that is already drawn, so refusing to add it
+    /// protected nothing and dropped the thing the command had just been asked to do. Drift is still
+    /// reported for the direction that genuinely cannot be resolved — an array drawn in the layout that
+    /// the component no longer declares (<see cref="AnArrayOnlyInTheLayout_IsKeptAndReported"/>).</para>
     /// </summary>
     [Fact]
-    public void AnArrayListThatDiverged_IsReportedAsDrift()
+    public void AnArrayAddedOnTheSchematic_IsMergedIntoTheSidecar()
     {
         using var cell = new TempCell("amp");
 
@@ -424,8 +462,54 @@ public class WBondRound5Tests
 
         var again = WBondCellSeeding.Seed(model, cell.CellDir, "amp");
 
-        Assert.Equal(WBondCellSeeding.Outcome.KeptExisting, again.Outcome);
-        Assert.Contains("pins have moved", again.Messages[0], StringComparison.Ordinal);
+        Assert.Equal(WBondCellSeeding.Outcome.Merged, again.Outcome);
+        Assert.Contains("'G2'", again.Messages[0], StringComparison.Ordinal);
+
+        var onDisk = WBondIo.ReadFile(Path.Combine(cell.CellDir, "layout", "amp.wBond"));
+        Assert.Equal(2, onDisk.Arrays.Count);
+        Assert.Equal("G2", onDisk.Arrays[1].Name);
+    }
+
+    /// <summary>
+    /// The direction that genuinely cannot be resolved: an array drawn in the LAYOUT that the component
+    /// no longer declares. It is kept and reported — deleting is the one direction that destroys drawn
+    /// work irrecoverably, and the array may have been removed from the component by accident.
+    ///
+    /// <para>The remedy named must match this direction. The message this replaces said "use Update
+    /// Schematic from Layout, or delete the file to re-seed it", which told a user who had just ADDED an
+    /// array on the schematic to pull the layout back over it — i.e. to throw that array away.</para>
+    /// </summary>
+    [Fact]
+    public void AnArrayOnlyInTheLayout_IsKeptAndReported()
+    {
+        using var cell = new TempCell("amp");
+
+        var model = new SchematicEditModel();
+        var comp = WBondPlacement.BuildCarrying(null, "W1");
+        model.Components.Add(comp);
+        WBondCellSeeding.Seed(model, cell.CellDir, "amp");
+
+        // The layout gains an array the component knows nothing about.
+        string sidecar = Path.Combine(cell.CellDir, "layout", "amp.wBond");
+        var edited = WBondIo.ReadFile(sidecar);
+        edited.Arrays.Add(new WireArray
+        {
+            Name = "D1",
+            Profile = edited.Profiles[0].Name,
+            Wires = { edited.Profiles[0].CreateWire(
+                Point3.Mils(0, 40, 4), Point3.Mils(30, 40, 1),
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold") },
+        });
+        WBondIo.WriteFile(sidecar, edited);
+
+        var again = WBondCellSeeding.Seed(model, cell.CellDir, "amp");
+
+        Assert.Equal(2, WBondIo.ReadFile(sidecar).Arrays.Count);   // kept, not deleted
+
+        string said = string.Join("\n", again.Messages);
+        Assert.Contains("'D1'", said, StringComparison.Ordinal);
+        Assert.Contains("add the array back", said, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Update Schematic from Layout", said, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -471,7 +555,7 @@ public class WBondRound5Tests
     public void AttachingWiresToAnOpenSession_NotifiesTheView()
     {
         using var cell = new TempCell("amp");
-        WBondIo.WriteFile(Path.Combine(cell.CellDir, "amp.wBond"), Design(2));
+        WBondIo.WriteFile(cell.WBondPath, Design(2));
 
         var layout = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = Dbu }, cell.ClayPath);
 
@@ -498,14 +582,21 @@ public class WBondRound5Tests
     {
         public string Root { get; }
         public string CellDir { get; }
+        public string LayoutDir { get; }
         public string ClayPath { get; }
+
+        /// <summary>Where the wires belong since WB40's 2026-08-17 revision: in <c>layout/</c>, stem-paired
+        /// with the <c>.clay</c>. NOT the cell root, which is now the legacy branch.</summary>
+        public string WBondPath { get; }
 
         public TempCell(string name)
         {
             Root = Path.Combine(Path.GetTempPath(), "crf-wb5-" + Guid.NewGuid().ToString("N")[..8]);
             CellDir = Path.Combine(Root, name);
-            Directory.CreateDirectory(Path.Combine(CellDir, "layout"));
-            ClayPath = Path.Combine(CellDir, "layout", name + ".clay");
+            LayoutDir = Path.Combine(CellDir, "layout");
+            Directory.CreateDirectory(LayoutDir);
+            ClayPath = Path.Combine(LayoutDir, name + ".clay");
+            WBondPath = Path.Combine(LayoutDir, name + ".wBond");
             File.WriteAllText(ClayPath, "{}");
         }
 
@@ -967,7 +1058,7 @@ public class WBondRound5Tests
 
         Assert.Equal(WBondCellSeeding.Outcome.NoWBond, result.Outcome);
         Assert.Contains("'W9'", result.Messages[0], StringComparison.Ordinal);
-        Assert.Empty(Directory.GetFiles(cell.CellDir, "*.wBond"));
+        Assert.Empty(Directory.GetFiles(cell.LayoutDir, "*.wBond"));
     }
 
     /// <summary>
@@ -2489,7 +2580,7 @@ public class WBondRound5Tests
         string clay = Path.Combine(cellDir, "layout", "amp.clay");
         File.WriteAllText(clay, "{}");
 
-        string sidecar = Path.Combine(cellDir, "amp.wBond");
+        string sidecar = Path.Combine(cellDir, "layout", "amp.wBond");
         WBondIo.WriteFile(sidecar, Design(wires));
 
         var layout = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = Dbu }, clay);

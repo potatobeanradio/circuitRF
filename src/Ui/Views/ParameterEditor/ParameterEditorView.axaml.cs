@@ -288,4 +288,40 @@ public partial class ParameterEditorView : UserControl
         row.Commit();
         e.Handled = true;
     }
+
+    // ── §5.5.1/WB44: the per-array controlling parameters ─────────────────────
+    //
+    // Committed on Enter or lost focus, exactly as the array-name box above and for the same reason:
+    // a half-typed expression is routinely unparseable, and committing per keystroke would fight the
+    // user for the box — here it would also re-run elaboration on every character.
+
+    private void OnWBondControlLoopHeightCommit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { DataContext: ViewModels.WBondControlRow row })
+            row.CommitLoopHeight();
+    }
+
+    private void OnWBondControlLoopHeightKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key is not (Avalonia.Input.Key.Enter or Avalonia.Input.Key.Return)) return;
+        if (sender is not Avalonia.Controls.Control { DataContext: ViewModels.WBondControlRow row }) return;
+
+        row.CommitLoopHeight();
+        e.Handled = true;
+    }
+
+    private void OnWBondControlDiameterCommit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { DataContext: ViewModels.WBondControlRow row })
+            row.CommitDiameter();
+    }
+
+    private void OnWBondControlDiameterKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key is not (Avalonia.Input.Key.Enter or Avalonia.Input.Key.Return)) return;
+        if (sender is not Avalonia.Controls.Control { DataContext: ViewModels.WBondControlRow row }) return;
+
+        row.CommitDiameter();
+        e.Handled = true;
+    }
 }

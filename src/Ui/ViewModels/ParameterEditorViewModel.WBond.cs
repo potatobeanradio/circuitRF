@@ -50,11 +50,24 @@ public partial class ParameterEditorViewModel
 
     /// <summary>
     /// The parameters this panel owns, and which must therefore NOT also appear as generic text rows.
-    /// <c>Design</c> and <c>Arrays</c> are hidden by design (§5.0); the other two have real controls.
+    ///
+    /// <para><c>Design</c> and <c>Arrays</c> are hidden by design (§5.0); <c>SymbolPitch</c>/<c>RefPin</c>
+    /// have real controls; <c>Source</c>/<c>File</c> are WB45's carried-or-linked axis, which is a
+    /// choice with a consequence rather than a value to type; <c>Material</c> is an ENUMERATION over the
+    /// design's own metals, so it gets a dropdown rather than a text box a typo can reach.</para>
+    ///
+    /// <para><b><c>LoopHeight</c>, <c>Diameter</c>, <c>Temp</c> and <c>GroundPlane</c> are deliberately
+    /// NOT here.</b> They are expression fields like any other — which is the point: a generic row is
+    /// what makes <c>LoopHeight = loopH</c> typable, and a <c>VAR</c> reference is what a sweep or an
+    /// optimiser turns (WB44 property 4). The per-ARRAY spellings of all three do live here, because
+    /// their names come from the instance's own array list.</para>
     /// </summary>
     internal static bool IsWBondPanelParameter(string name) =>
         name is WBondEmbedding.DesignParameter or WBondPlacement.ArraysParameter
-             or "SymbolPitch" or "RefPin";
+             or "SymbolPitch" or "RefPin" or "Source" or "File" or "Material"
+        || name.StartsWith("LoopHeight_", StringComparison.Ordinal)
+        || name.StartsWith("Diameter_", StringComparison.Ordinal)
+        || name.StartsWith("Material_", StringComparison.Ordinal);
 
     // ── The three simple controls ─────────────────────────────────────────────
 
@@ -119,6 +132,117 @@ public partial class ParameterEditorViewModel
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         ApplyWBondParam("RefPin", newValue ? "true" : "false");
     }
+
+    // ── WB45: Carried or Linked ───────────────────────────────────────────────
+
+    /// <summary>Carried / Linked — the two wire sources, in the order the lifecycle visits them.</summary>
+    public static string[] WBondSourceOptions { get; } =
+        [nameof(WBondPlacement.WireSource.Carried), nameof(WBondPlacement.WireSource.Linked)];
+
+    [ObservableProperty] private int _wBondSourceIndex;
+    [ObservableProperty] private string _wBondSourceNote = "";
+
+    /// <summary>
+    /// The consequence, stated where the choice is made — the same shape as the MKlopf Z1/Z2-vs-W1/W2
+    /// entry-mode toggle. The two options differ in exactly one thing (what the next Run simulates
+    /// after a layout edit) and nothing on screen says which one is in force.
+    /// </summary>
+    partial void OnWBondSourceIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        // Linked with nothing to link to would be a Not-Found on the next Run and no way back except
+        // this same box. Refused by snapping back, and the reason is on the note line below it.
+        if (newValue == 1 && WBondPlacement.LinkedPathOf(_target) is null)
+        {
+            RefreshWBondProperties();
+            return;
+        }
+
+        ApplyWBondParam("Source", WBondSourceOptions[(uint)newValue < 2 ? newValue : 0]);
+    }
+
+    // ── §5.5.1/WB44: the controlling parameters, per array ────────────────────
+
+    /// <summary>
+    /// One row per wire array, carrying that array's own <c>LoopHeight_&lt;array&gt;</c>,
+    /// <c>Diameter_&lt;array&gt;</c> and <c>Material_&lt;array&gt;</c>.
+    ///
+    /// <para>Generated from the instance's OWN array list, so the rows name G1/G2 rather than asking
+    /// the user to spell a suffix — which is also the only way this can be offered at all, since the
+    /// names are not knowable until the payload is decoded.</para>
+    /// </summary>
+    public ObservableCollection<WBondControlRow> WBondControls { get; } = [];
+
+    /// <summary>The metals this design declares — Au/Al/Cu/Ag plus anything the design added.</summary>
+    public ObservableCollection<string> WBondMaterialOptions { get; } = [];
+
+    /// <summary>
+    /// The unsuffixed <c>Material</c> override — an enumeration, so a dropdown rather than a text box
+    /// a typo can reach. The <b>first</b> entry is "As drawn", which is what unset means and is
+    /// deliberately distinct from any metal's name.
+    /// </summary>
+    [ObservableProperty] private int _wBondMaterialIndex;
+
+    partial void OnWBondMaterialIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        ApplyWBondParam("Material", MaterialValueAt(newValue));
+    }
+
+    /// <summary>Index 0 is "As drawn" — the empty expression that means the parameter is unset.</summary>
+    private string MaterialValueAt(int index) =>
+        index >= 1 && index - 1 < WBondMaterialOptions.Count - 1
+            ? WBondMaterialOptions[index]
+            : "";
+
+    /// <summary>Writes one per-array controlling parameter, removing it entirely when it is blanked.</summary>
+    internal void SetWBondControlParameter(string name, string value)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        var existing = updated.FirstOrDefault(p => p.Name == name);
+        string trimmed = value.Trim();
+
+        // An unset parameter is REMOVED, not left blank. Both mean "as drawn" to the extractor, which
+        // drops a blank — but a row that is no longer there is what makes the panel honest about which
+        // arrays actually carry an override.
+        if (trimmed.Length == 0)
+        {
+            if (existing is null) return;
+            updated.Remove(existing);
+        }
+        else if (existing is not null)
+        {
+            if (existing.Expression == trimmed) return;
+            existing.Expression = trimmed;
+        }
+        else
+        {
+            updated.Add(new EditableParameter
+            {
+                Name = name,
+                Expression = trimmed,
+                Unit = name.StartsWith("Material_", StringComparison.Ordinal) ? "" : "mil",
+                Dimension = name.StartsWith("Material_", StringComparison.Ordinal)
+                    ? UnitDimension.None : UnitDimension.Length,
+            });
+        }
+
+        // A per-array override is APPENDED when its box is first committed, so without this the
+        // on-symbol label order is the order the user's focus happened to visit the boxes in — the
+        // owner's "LoopHeight_G2, LoopHeight_G1, LoopHeight_G3" (2026-08-17). Sorting the list itself,
+        // not at render time, is what makes the dialog and the symbol agree.
+        _schematicVm.Execute(new SetParametersCommand(
+            _schematicVm.EditModel, _target, WBondPlacement.InCanonicalOrder(updated)));
+    }
+
+    private string WBondParameterValue(string name) =>
+        _target?.Parameters.FirstOrDefault(p => p.Name == name)?.Expression ?? "";
+
+    /// <summary>A per-array controlling parameter's current expression, for a row to display.</summary>
+    internal string ValueOfControl(string name) => WBondParameterValue(name);
 
     // ── The array editor ──────────────────────────────────────────────────────
 
@@ -210,10 +334,11 @@ public partial class ParameterEditorViewModel
             return;
         }
 
-        if (design.Arrays[row.Index].Name.Equals(trimmed, StringComparison.Ordinal)) return;
+        string previous = design.Arrays[row.Index].Name;
+        if (previous.Equals(trimmed, StringComparison.Ordinal)) return;
 
         design.Arrays[row.Index].Name = trimmed;
-        CommitWBondDesign(design);
+        CommitWBondDesign(design, renamedFrom: previous, renamedTo: trimmed);
     }
 
     private static string NextFreeArrayName(WBondDesign design)
@@ -246,7 +371,13 @@ public partial class ParameterEditorViewModel
     /// same fact — what this instance's wiring is drawn against — and a design edited without its
     /// record updated would report drift against itself on the next import.</para>
     /// </summary>
-    private void CommitWBondDesign(WBondDesign design)
+    /// <param name="renamedFrom">
+    /// The array's previous name when this edit was a RENAME — so its controlling parameters travel
+    /// with it. An override left behind under the old suffix silently stops applying, with its value
+    /// still in the dialog and still drawn on the symbol.
+    /// </param>
+    /// <param name="renamedTo">Its new name.</param>
+    private void CommitWBondDesign(WBondDesign design, string? renamedFrom = null, string? renamedTo = null)
     {
         if (_target is null || _schematicVm is null) return;
 
@@ -254,13 +385,21 @@ public partial class ParameterEditorViewModel
         Set(WBondEmbedding.DesignParameter, WBondEmbedding.Encode(design));
         Set(WBondPlacement.ArraysParameter, WBondSymbolProvider.ArraysKeyOf(design));
 
-        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+        // Follow a rename, drop an override whose array has just been deleted, then order the whole
+        // list so the symbol's labels come out in array order. All three ride in the SAME command as
+        // the design edit, so undo takes them back together — they are one statement about one change.
+        var reconciled = WBondPlacement.ReconcilePerArrayParameters(
+            updated, [.. design.Arrays.Select(a => a.Name)], renamedFrom, renamedTo);
+
+        _schematicVm.Execute(new SetParametersCommand(
+            _schematicVm.EditModel, _target, WBondPlacement.InCanonicalOrder(reconciled)));
 
         void Set(string name, string value)
         {
             var param = updated.FirstOrDefault(p => p.Name == name);
             if (param is not null) param.Expression = value;
-            else updated.Add(new EditableParameter { Name = name, Expression = value });
+            else updated.Add(new EditableParameter
+                { Name = name, Expression = value, ShowOnSchematic = false });
         }
     }
 
@@ -307,13 +446,125 @@ public partial class ParameterEditorViewModel
             ? ""
             : "This wBond's embedded design could not be read. Use File ▸ Import ▸ Wirebond Wires… to replace it.";
         // The workspace technology's own unit, not a hard-coded one (owner, 2026-08-17).
-        WBondSummary = readable
-            ? WBondSymbolGenerator.Describe(design!, _schematicVm?.LengthDisplayUnit ?? LayoutUnit.Mil)
-            : "";
+        WBondSummary = readable ? SummaryOf(design!) : "";
 
         RebuildWBondArrayRows(design);
+        RefreshWBondSource();
+        RebuildWBondControlRows(design);
         _isRefreshing = false;
     }
+
+    /// <summary>
+    /// The one-line summary, describing what will actually SIMULATE rather than what was drawn.
+    ///
+    /// <para>Total wire length moves with loop height, so a component carrying <c>LoopHeight = 45 mil</c>
+    /// over 20 mil wires would otherwise report a length no run ever uses — the same disagreement the
+    /// owner hit at Update Layout on 2026-08-17, one surface over. When an override is in force the line
+    /// says so, because a number that changes as you type in a box below it should explain itself.</para>
+    ///
+    /// <para><b>The design handed in is a fresh decode local to this refresh and is never committed</b>
+    /// — the write-back paths (<see cref="AddWBondArray"/> and friends) each decode their own. Applying
+    /// an override on a path that then writes back would bake it into the payload and break WB44
+    /// property 1. A refused value (a zero, an unknown metal) falls back to the drawn summary rather
+    /// than throwing inside a UI refresh; the run refuses it by name, which is where that belongs.</para>
+    /// </summary>
+    private string SummaryOf(WBondDesign design)
+    {
+        var unit = _schematicVm?.LengthDisplayUnit ?? LayoutUnit.Mil;
+        string asDrawn = WBondSymbolGenerator.Describe(design, unit);
+
+        if (_target is null) return asDrawn;
+
+        var read = WBondPlacement.ReadControllingParameters(_target);
+        if (read.Overrides.IsEmpty) return asDrawn;
+
+        // A SECOND decode, and only on the uncommon path where an override is actually set: the
+        // caller's design goes on to build the array rows, and reshaping the object it is holding
+        // would leave this method's cost paid by whoever adds the next thing that reads geometry
+        // from it. Decoding twice on every selection change would not be worth it; decoding twice
+        // when the user has typed a loop height is.
+        if (!TryReadWBondDesign(out var scratch) || scratch is null) return asDrawn;
+
+        try { ControllingParameters.ApplyTo(scratch, read.Overrides); }
+        catch (InvalidOperationException) { return asDrawn; }
+
+        return WBondSymbolGenerator.Describe(scratch, unit) + " · with overrides";
+    }
+
+    /// <summary>
+    /// Pulls WB45's source state, and states the consequence of the one that is in force.
+    ///
+    /// <para>A linked instance whose file is missing is named HERE as well as refused at the next Run:
+    /// the parameter panel is where the user can act on it, and "Not Found" arriving only as a run
+    /// failure is the state §5.0/WB17b was right to want to avoid.</para>
+    /// </summary>
+    private void RefreshWBondSource()
+    {
+        if (_target is null) return;
+
+        bool linked = WBondPlacement.SourceOf(_target) == WBondPlacement.WireSource.Linked;
+        WBondSourceIndex = linked ? 1 : 0;
+
+        string? stored = WBondPlacement.LinkedPathOf(_target);
+        string? resolved = WBondPlacement.ResolveLinkedPath(_target, _schematicVm?.EditModel.SchematicDirectory);
+
+        // Linking buys GEOMETRY, not the array list — the symbol's pins come from this component's own
+        // payload either way, so an array added or removed in the layout still has to be reconciled.
+        // Saying only the first half is what produced the owner's report of 2026-08-17.
+        WBondSourceNote = linked
+            ? resolved is not null && File.Exists(resolved)
+                ? $"The wires in \"{stored}\" are what runs — move a wire or change a loop height in the " +
+                  "layout and just Run. Adding or removing an ARRAY there still needs Update Schematic " +
+                  "from Layout, because the symbol's pins come from this component's own copy."
+                : $"Not found: \"{stored}\". The next Run will refuse until the file is restored or " +
+                  "Source is set back to Carried."
+            : stored is null
+                ? "The wires travel inside this schematic. Run Update Layout from Schematic to write " +
+                  "them into the cell's layout and link to them there."
+                : $"The wires travel inside this schematic. \"{stored}\" is on disk and is what the " +
+                  "layout edits, but it is NOT what runs until Source is set to Linked — or until " +
+                  "Update Schematic from Layout brings those wires back into this component.";
+    }
+
+    /// <summary>
+    /// Rebuilds the per-array controlling-parameter rows, and the material list they choose from.
+    ///
+    /// <para>The materials come from the DESIGN (<c>WBondDesign.Materials</c>), not from the built-in
+    /// four: the table is user-extensible, and restricting the dropdown to what shipped would make a
+    /// design's own metal unnameable from the schematic. An unknown name is refused BY NAME at
+    /// elaboration, so a hand-authored <c>.cnl</c> is still checked.</para>
+    /// </summary>
+    private void RebuildWBondControlRows(WBondDesign? design)
+    {
+        var materials = new List<string> { AsDrawn };
+        if (design is not null) materials.AddRange(design.Materials.Select(m => m.Name));
+
+        if (!materials.SequenceEqual(WBondMaterialOptions))
+        {
+            WBondMaterialOptions.Clear();
+            foreach (string m in materials) WBondMaterialOptions.Add(m);
+        }
+
+        string current = WBondParameterValue("Material");
+        int index = current.Length == 0
+            ? 0
+            : materials.FindIndex(m => m.Equals(current, StringComparison.OrdinalIgnoreCase));
+        WBondMaterialIndex = index < 0 ? 0 : index;
+
+        var names = design?.Arrays.Select(a => a.Name).ToList() ?? [];
+
+        if (names.Count != WBondControls.Count
+            || names.Where((n, i) => WBondControls[i].ArrayName != n).Any())
+        {
+            WBondControls.Clear();
+            foreach (string name in names) WBondControls.Add(new WBondControlRow(this, name));
+        }
+
+        foreach (var row in WBondControls) row.Pull();
+    }
+
+    /// <summary>What an UNSET controlling parameter reads as. Never a metal's name, and never "0".</summary>
+    internal const string AsDrawn = "As drawn";
 
     /// <summary>
     /// Rebuilds the array rows — <b>only when the list has actually changed</b>.
@@ -382,4 +633,90 @@ public sealed partial class WBondArrayEditRow : ObservableObject
 
     /// <summary>Commits the typed name. Called from the view on Enter or lost focus.</summary>
     public void Commit() => _owner.RenameWBondArray(this, Name);
+}
+
+/// <summary>
+/// One array's controlling parameters (<c>wbond.md</c> §5.5.1/WB44): <c>LoopHeight_&lt;array&gt;</c>,
+/// <c>Diameter_&lt;array&gt;</c> and <c>Material_&lt;array&gt;</c>.
+///
+/// <h3>Unset must be visibly distinct from zero</h3>
+/// <para>An empty box means "as drawn" — the parameter is not written at all — and <c>0</c> is an
+/// error the elaboration refuses by name. They are not the same statement and cannot be allowed to
+/// look the same: a wire flattened onto the ground plane and a wire left as the user drew it differ
+/// by everything the component reports.</para>
+///
+/// <h3>Precedence against a layout edit, which the user cannot see from here</h3>
+/// <para>A loop-height override regenerates a wire between its own existing FEET and skips a wire that
+/// was individually dragged loose from its profile (WB2/WB24). So a dragged FOOT survives the
+/// override, a dragged LOOP on a bound wire does not, and a dragged loop on a DETACHED wire does. Only
+/// the last of those is silent, and it is reported at the run — see
+/// <c>ComponentModelFactory.ReportDetached</c>, whose message names the count and the remedy.</para>
+/// </summary>
+public sealed partial class WBondControlRow : ObservableObject
+{
+    private readonly ParameterEditorViewModel _owner;
+    private bool _pulling;
+
+    public WBondControlRow(ParameterEditorViewModel owner, string arrayName)
+    {
+        _owner = owner;
+        ArrayName = arrayName;
+        _materials = owner.WBondMaterialOptions;
+    }
+
+    /// <summary>The array this row controls — which is also a pin-pair name on the symbol.</summary>
+    public string ArrayName { get; }
+
+    /// <summary>Shared with the panel: the design's own metals, "As drawn" first.</summary>
+    [ObservableProperty] private ObservableCollection<string> _materials;
+
+    /// <summary>The loop-height expression, in the row's own unit. Empty means "as drawn".</summary>
+    [ObservableProperty] private string _loopHeight = "";
+
+    /// <summary>The wire-diameter expression. Empty means "as drawn".</summary>
+    [ObservableProperty] private string _diameter = "";
+
+    [ObservableProperty] private int _materialIndex;
+
+    /// <summary>Reads this row's three parameters back off the component.</summary>
+    internal void Pull()
+    {
+        _pulling = true;
+
+        LoopHeight = _owner.ValueOfControl("LoopHeight_" + ArrayName);
+        Diameter   = _owner.ValueOfControl("Diameter_" + ArrayName);
+
+        string material = _owner.ValueOfControl("Material_" + ArrayName);
+        int index = material.Length == 0
+            ? 0
+            : IndexOfMaterial(material);
+        MaterialIndex = index < 0 ? 0 : index;
+
+        _pulling = false;
+    }
+
+    private int IndexOfMaterial(string name)
+    {
+        for (int i = 0; i < Materials.Count; i++)
+            if (Materials[i].Equals(name, StringComparison.OrdinalIgnoreCase)) return i;
+        return -1;
+    }
+
+    partial void OnMaterialIndexChanged(int value)
+    {
+        if (_pulling) return;
+        _owner.SetWBondControlParameter(
+            "Material_" + ArrayName,
+            value >= 1 && value < Materials.Count ? Materials[value] : "");
+    }
+
+    /// <summary>
+    /// Commits the two length boxes. Called from the view on Enter or lost focus rather than per
+    /// keystroke — a half-typed expression is routinely unparseable, and re-elaborating on every
+    /// character would fight the user for the box exactly as the array-name box would.
+    /// </summary>
+    public void CommitLoopHeight() => _owner.SetWBondControlParameter("LoopHeight_" + ArrayName, LoopHeight);
+
+    /// <inheritdoc cref="CommitLoopHeight"/>
+    public void CommitDiameter() => _owner.SetWBondControlParameter("Diameter_" + ArrayName, Diameter);
 }

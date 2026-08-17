@@ -947,13 +947,22 @@ public sealed class Elaborator
                     raw = raw[1..^1];
                 result[ov.Name] = new Value(ResolveSnpFilePath(raw));
             }
-            else if (ov.Name.Equals("RefPin", StringComparison.OrdinalIgnoreCase))
+            else if (ov.Name.Equals("RefPin", StringComparison.OrdinalIgnoreCase)
+                  || IsWBondNameValued(ov.Name))
             {
                 // Verbatim, like Design: the schematic writes the WORD "true"/"false", and running
                 // that through the evaluator would depend on whether a bare `true` happens to parse
                 // as a literal — a dependency with nothing to gain. The factory reads either
                 // spelling. It is not sweepable and there is nothing to sweep it over.
-                result[ov.Name] = new Value(ov.Expression);
+                //
+                // The same rule covers the NAME-valued controlling parameters of §5.5.1/WB44:
+                // `Material`/`Material_<array>` is a metal's name, `Arrays` is the recorded array list
+                // ("G1|G2") the linked-instance drift check reads, and `Source` is Carried/Linked.
+                // Every one of them is an identifier or a delimited list the evaluator would either
+                // fail on or — worse — resolve against some unrelated variable that happens to share
+                // the name. Loop height and diameter are NOT here: they are lengths, and being
+                // ordinary expressions is exactly what makes them sweepable (WB44 property 4).
+                result[ov.Name] = new Value(Unquote(ov.Expression));
             }
             else
             {
@@ -963,6 +972,19 @@ public sealed class Elaborator
         }
         return result;
     }
+
+    /// <summary>
+    /// True for a wBond parameter whose value is a NAME rather than an expression — see
+    /// <see cref="ResolveWBondParameters"/>'s own note for why each one is on this list.
+    /// </summary>
+    private static bool IsWBondNameValued(string name) =>
+        name.Equals("Material", StringComparison.OrdinalIgnoreCase)
+        || name.StartsWith("Material_", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Arrays", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Source", StringComparison.OrdinalIgnoreCase);
+
+    private static string Unquote(string raw) =>
+        raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"' ? raw[1..^1] : raw;
 
     // ── P1Tone parameter resolution ───────────────────────────────────────────
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using CircuitRF.Core.Devices.External;
@@ -1349,8 +1350,16 @@ public static class ComponentModelFactory
                     "wBond: neither 'Design' (the embedded wires) nor 'File' (a .wBond to load) is set.");
 
             path = fileValue.AsString();
+
+            // WB45's own "Not Found" state (§3.1). §5.0/WB17b's argument against a referenced design
+            // was precisely that it reintroduces one; a Linked instance accepts that, so the refusal
+            // has to read like the cell-reference one the user already knows — the path that failed,
+            // and the two ways out of it.
             if (!File.Exists(path))
-                throw new FileNotFoundException($"wBond: design file not found: '{path}'", path);
+                throw new FileNotFoundException(
+                    $"wBond: its linked wirebond file was not found: '{path}'. Either restore the file, " +
+                    "or set the component's Source back to Carried so it simulates the wires it carries.",
+                    path);
 
             design = WBondIo.ReadFile(path);
         }
@@ -1359,9 +1368,11 @@ public static class ComponentModelFactory
             design.OperatingTempC = temp.AsReal();
 
         if (parameters.TryGetValue("GroundPlane", out var plane))
-            design.GroundPlane.Enabled = plane.AsReal() != 0.0;
+            design.GroundPlane.Enabled = IsTrue(plane);
 
-        ApplyLoopHeightOverrides(design, parameters);
+        var notes = new List<string>();
+        ApplyControllingParameters(design, parameters, notes);
+        ReportArrayDrift(design, parameters, notes);
 
         // Artwork AND terminal count: with the floating reference pin off (the default) the component
         // has 2M terminals, with it on 2M+1. REF is always the LAST one, so this changes nothing about
@@ -1369,7 +1380,7 @@ public static class ComponentModelFactory
         // number because that is how the schematic writes it and how the elaborator stores it.
         bool refPin = parameters.TryGetValue("RefPin", out var pin) && IsTrue(pin);
 
-        return new WBondModel(design, path, refPin);
+        return new WBondModel(design, path, refPin, notes);
     }
 
     /// <summary>
@@ -1386,51 +1397,103 @@ public static class ComponentModelFactory
     };
 
     /// <summary>
-    /// Applies loop-height overrides, which is what makes a loop height SWEEPABLE (R-wbb-6 / WB21).
+    /// Reduces the resolved parameter dictionary to the <b>controlling parameters</b> of
+    /// <c>wbond.md</c> §5.5.1/WB44 and applies them — loop height, wire diameter and wire material,
+    /// globally or array-scoped.
     ///
-    /// <para><c>LoopHeight</c> sets every profile; <c>LoopHeight_&lt;profile&gt;</c> sets one. Values
-    /// are in metres, because that is what the expression engine's unit handling produces — a netlist
-    /// writes <c>LoopHeight=25 mil</c> and the elaborator has already converted it.</para>
-    ///
-    /// <para><b>Setting a height regenerates every bound wire's polyline</b>, so the inductance
-    /// matrix is refilled from new geometry rather than scaled. That is the whole point: a sweep over
-    /// loop height is a sweep over geometry, and <c>ParametricSweepEngine</c> re-elaborates each
-    /// point, so it arrives here as a fresh model with a fresh design.</para>
+    /// <para><b>The geometry itself lives in <c>ControllingParameters.ApplyTo</c>, not here</b>, because
+    /// Update Layout from Schematic needs exactly the same reshaping (owner, 2026-08-17: three arrays
+    /// set to 30/20/15 mil all arrived in the layout at the drawn 20 mil). A second copy in
+    /// <c>src/Ui</c> would be a second set of clone-on-write and detached-wire rules to keep in step.
+    /// What is left here is the TRANSLATION: the expression engine has already resolved every length to
+    /// SI metres, so a netlist writing <c>LoopHeight=25 mil</c> arrives converted.</para>
     /// </summary>
-    private static void ApplyLoopHeightOverrides(
-        WBondDesign design, IReadOnlyDictionary<string, Value> parameters)
+    private static void ApplyControllingParameters(
+        WBondDesign design, IReadOnlyDictionary<string, Value> parameters, List<string> notes)
     {
-        double? all = parameters.TryGetValue("LoopHeight", out var v) ? v.AsReal() : null;
+        var overrides = new WBondOverrides();
 
-        foreach (var profile in design.Profiles)
+        foreach (var (key, value) in parameters)
         {
-            double? height = all;
-            if (parameters.TryGetValue($"LoopHeight_{profile.Name}", out var perProfile))
-                height = perProfile.AsReal();
-
-            if (height is null) continue;
-
-            if (height.Value <= 0.0)
-                throw new InvalidOperationException(
-                    $"wBond: loop height for profile '{profile.Name}' must be positive; got {height.Value}.");
-
-            profile.LoopHeightNm = WBondUnits.FromMetres(height.Value);
+            if (IsControllingLength(key, "LoopHeight") || IsControllingLength(key, "Diameter"))
+                overrides.SetLength(key, value.Kind == ValueKind.Real ? value.AsReal() : null);
+            else if (IsControllingName(key, "Material"))
+                overrides.SetName(key, value.Kind == ValueKind.String ? value.AsString() : null);
         }
 
-        if (all is null && !parameters.Keys.Any(k => k.StartsWith("LoopHeight_", StringComparison.OrdinalIgnoreCase)))
-            return;
+        notes.AddRange(ControllingParameters.ApplyTo(design, overrides));
+    }
 
-        // Regenerate every wire bound to a profile, between its own existing feet.
-        foreach (var array in design.Arrays)
-        {
-            foreach (var wire in array.Wires)
-            {
-                if (wire.ProfileBinding is null) continue;
-                var profile = design.ProfileByName(wire.ProfileBinding);
-                if (profile is null || wire.Points.Count < 2) continue;
+    /// <summary>
+    /// True for <c>&lt;parameter&gt;</c> or <c>&lt;parameter&gt;_&lt;scope&gt;</c>, case-insensitively.
+    /// A schematic writes the exact spelling; a hand-authored <c>.cnl</c> need not, and silently
+    /// ignoring <c>loopheight_g1</c> is the flat-curve failure this area is haunted by.
+    /// </summary>
+    private static bool IsControllingLength(string key, string parameter) =>
+        key.Equals(parameter, StringComparison.OrdinalIgnoreCase)
+        || key.StartsWith(parameter + "_", StringComparison.OrdinalIgnoreCase);
 
-                profile.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
-            }
-        }
+    /// <inheritdoc cref="IsControllingLength"/>
+    private static bool IsControllingName(string key, string parameter) =>
+        IsControllingLength(key, parameter);
+
+    /// <summary>
+    /// §3.2/WB35a — <b>the array-drift check, run at elaboration for a LINKED instance.</b>
+    ///
+    /// <para>Under <c>Linked</c> this check becomes MORE load-bearing, not less. Carried drift is
+    /// introduced by an explicit re-import, so it can be reported at the moment of the import; linked
+    /// drift arrives the moment someone reorders arrays in the <c>.wBond</c>, changing the symbol's pin
+    /// order live beneath an already-wired schematic. Pin order IS array order, so every pin keeps its
+    /// position while its name moves to a different row — the same defect, arriving more quietly.
+    /// Without this, linking would be strictly more dangerous than carrying on that one axis.</para>
+    ///
+    /// <para><c>Arrays</c> is the record the schematic maintains (the array editor is the only thing
+    /// that writes it), and <c>NetExtractor</c> forwards it for a linked instance ALONE — a carried
+    /// instance's payload cannot drift against itself.</para>
+    /// </summary>
+    private static void ReportArrayDrift(
+        WBondDesign design, IReadOnlyDictionary<string, Value> parameters, List<string> notes)
+    {
+        if (NameOf(parameters, "Arrays") is not { } recorded || recorded.Length == 0) return;
+
+        string current = string.Join("|", design.Arrays.Select(a => a.Name));
+        if (string.Equals(current, recorded, StringComparison.Ordinal)) return;
+
+        bool reorder = recorded.Split('|').OrderBy(s => s, StringComparer.Ordinal)
+            .SequenceEqual(current.Split('|').OrderBy(s => s, StringComparer.Ordinal));
+
+        notes.Add(reorder
+            ? $"the arrays in its linked wirebond file are REORDERED relative to what this instance was "
+              + $"wired against ({recorded} → {current}). Every pin keeps its position while its name "
+              + "moves, so the wires now connect to different arrays. Check the wiring."
+            : $"the array list in its linked wirebond file has changed since this instance was wired "
+              + $"({recorded} → {current}), so its pins have moved. Check the wiring.");
+    }
+
+    // ── Reading one controlling parameter ─────────────────────────────────────
+
+    /// <summary>
+    /// A parameter by name, case-insensitively. The resolved dictionary is ordinal-keyed and a
+    /// schematic writes the exact spelling, but a hand-authored <c>.cnl</c> need not — and silently
+    /// ignoring <c>loopheight_g1</c> is exactly the flat-curve failure §1 warns about.
+    /// </summary>
+    private static bool TryFindParameter(
+        IReadOnlyDictionary<string, Value> parameters, string name, out Value value)
+    {
+        if (parameters.TryGetValue(name, out value!)) return true;
+
+        foreach (var kv in parameters)
+            if (kv.Key.Equals(name, StringComparison.OrdinalIgnoreCase)) { value = kv.Value; return true; }
+
+        value = default!;
+        return false;
+    }
+
+    /// <summary>A name-valued parameter, or null when it is not set or is blank.</summary>
+    private static string? NameOf(IReadOnlyDictionary<string, Value> parameters, string name)
+    {
+        if (!TryFindParameter(parameters, name, out var v)) return null;
+        string s = v.Kind == ValueKind.String ? v.AsString().Trim() : "";
+        return s.Length == 0 ? null : s;
     }
 }

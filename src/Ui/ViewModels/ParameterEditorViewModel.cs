@@ -432,11 +432,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             {
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
 
-                // A wBond's own panel owns four of its parameters. Two are documented HIDDEN and were
-                // showing as unreadable text — `Design` is the base64 of the whole wirebond design
-                // (the owner's "gibberish"), `Arrays` is drift-detection bookkeeping — and the other
-                // two have real controls there. `Temp` and `GroundPlane` are ordinary engine values
-                // and stay as generic rows.
+                // A wBond's own panel owns the parameters that are not text — see
+                // IsWBondPanelParameter for the list and the reason each is on it. `Temp`,
+                // `GroundPlane`, and the unsuffixed `LoopHeight`/`Diameter` are ordinary expression
+                // values and stay as generic rows, which is what makes a VAR reference typable in
+                // them (WB44 property 4).
                 if (comp.Symbol == SymbolKind.WBond && IsWBondPanelParameter(param.Name)) continue;
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;

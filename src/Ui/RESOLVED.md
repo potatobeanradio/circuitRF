@@ -6,6 +6,465 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## WB-G — controlling parameters on the schematic symbol, and Carried-or-Linked (2026-08-17)
+
+`brief-wbond-controlling-parameters.md`. Design authority: `wbond.md` §5.5.1 (WB44/WB44a), §9.7
+(WB45/WB45a), owner decisions O-10/O-11/O-12. Gates 1–8 all green;
+`tests/Ui.Tests/WBondControllingParametersTests.cs` (27) and six new cases in
+`WBondParameterPanelTests`. Full `Ui.Tests` 7,558 · `Core.Tests` 1,361 · `Engine.Tests` 1,195 ·
+`Firewall.Tests` 6, all passing.
+
+**The engine half was already there and the brief was right to say so.** `CreateWBondModel` honoured
+`Temp`, `GroundPlane`, `LoopHeight` and `LoopHeight_<profile>`; `ApplyLoopHeightOverrides` already
+regenerated bound wires so **L** was refilled from new geometry rather than scaled. What was missing was
+entirely on the schematic side — `ComponentTypeRegistry.DefaultParameters` declared none of them, so the
+user could not select them and could not type them either. Extending that method rather than replacing it
+is what kept gate 1 cheap.
+
+**Gate 2's numbers land exactly on the existing M4 gate's**: `LoopHeight` 10 mil → **1086.2 pH**,
+45 mil → **2206.7 pH**, driven through the placed-component path from the new `LoopHeight` parameter
+rather than a hand-added one. Gate 4: `Diameter` 0.7 mil → 1544.0 pH against 2.0 mil → 1245.0 pH;
+`Material` Gold → 439.138 mΩ against Aluminium → 465.309 mΩ, cross-checked against `InternalImpedance`
+at 5 GHz with `QParameter > 3` asserted so the R-tier is provably skin-effect-active rather than a DC
+comparison wearing a 5 GHz label.
+
+**Gate 1 moved nothing.** A placed wBond with the parameters declared-but-blank produces
+**bit-identical** S-parameters to the same schematic with them removed entirely — asserted with no
+tolerance, because a tolerance is exactly where a leaked default would hide. Two things make that safe
+and both were already in place: `NetExtractor` drops a blank-valued wBond parameter rather than emitting
+it (the empty-parameter-value trap in `src/Core/CLAUDE.md`), and the elaborator's own `catch` skips an
+unresolvable override.
+
+**§2.1's clone-on-write WAS needed in practice — the data model does not prevent it.** The brief asks
+this be recorded either way. `WireArray.Profile` and `Wire.ProfileBinding` are both plain names into one
+shared `design.Profiles` list, and `MakeDesign`-style fixtures (and the real editor) routinely put two
+arrays on ONE `LoopProfile` — which is the whole point of a profile. Without the clone, `LoopHeight_G1`
+mutates the object G2's wires are also generated from, and G2 regenerates to a height nobody asked for
+with every number still finite. Gate 3's oracle is therefore **G2's z-coordinates**, not its measured
+loop height and not a message.
+
+**The clone is scoped to a per-ARRAY override only.** A global `LoopHeight` sets every array to the same
+value, so there is nothing for a shared profile to be dragged away from; cloning there would work and
+would leave the decoded design carrying one profile per array for no reason.
+
+**Found while implementing, not in the brief: the legacy profile spelling had to gain its own
+regeneration.** The old code regenerated wires if *any* `LoopHeight_` key existed at all. Restructuring
+around the array scope broke that for `LoopHeight_<profile>` — the profile's `LoopHeightNm` was set and
+no wire was rewritten, so the design stated one height and measured another, and the solver reads the
+wires. Caught by the test written for O-10's fall-through rule, not by review. A profile touched only by
+the legacy spelling now triggers regeneration of every array bound to it.
+
+**§2.0's precedence table is the part with no prior specification, and it is resolved by REPORTING.**
+Three different precedences live under one parameter, because `ApplyLoopHeightOverrides` regenerates
+between a wire's own existing feet and skips a wire whose `ProfileBinding` is null (WB2/WB24 — an
+individually-dragged wire detaches):
+
+| the layout edit | with `LoopHeight_G1` also set |
+|---|---|
+| moved a foot (XY or z) | **layout wins** — the override never moves feet |
+| dragged the loop of a **bound** wire | **schematic wins** — regenerated at solve time |
+| dragged the loop of a **detached** wire | **layout wins** — silently skipped |
+
+Rows two and three are both silent and point in opposite directions, from one design. Making the
+override touch detached wires would fix the asymmetry by breaking WB2, which is load-bearing for the
+whole editor — so `ReportDetached` names the count and the remedy instead. Gate 3a asserts **both** the
+z-coordinates and the message, because the message alone passes while the geometry is wrong and the
+geometry alone is the silent behaviour the gate exists to prevent.
+
+**Diameter and material deliberately DO reach a detached wire**, and that asymmetry is the point rather
+than an oversight: detachment is about the loop *shape*. A wire dragged loose still has a diameter and a
+metal, and there is nothing to regenerate to apply them.
+
+**`Material` is refused by name, per §5's proposal** — validated against the decoded `design.Materials`
+(user-extensible) rather than the built-in four, so a design's own metal stays nameable from the
+schematic while a typo does not silently fall back to gold.
+
+**The warning channel wBond needed did not exist.** `WBondModel` now implements `IReportsWarnings`. The
+notes are built in the factory (which has the parameters) and **phrased at the first `Stamp`** (which is
+the first moment an `ElaboratedComponent`, and therefore the instance path, is in hand) — a model does
+not know its own name, and a message without one is not actionable.
+
+### WB45 — Carried or Linked
+
+`Source` (Carried/Linked) and `File` are declared on the component; `WBondPlacement` owns the axis.
+**Carried by construction** for anything that does not say, which covers every schematic written before
+this phase.
+
+- **The netlist names exactly one source.** `NetExtractor` emits `Design` for a carried instance and
+  `File` + `Arrays` for a linked one, dropping the payload. The payload stays on the *component*
+  regardless — it is what draws the symbol, and §3.3 is explicit that retiring it is not in scope.
+- **Relative in the DOCUMENT, absolute in the NETLIST.** The stored value is relative to the schematic
+  (`../layout/<cell>.wBond`), exactly as `workspace-and-project-tree.md` §4 resolves a cell reference;
+  the extractor resolves it, because that is where `SchematicDirectory` is known and the netlist is a
+  generated intermediate written wherever the run writes it. Gate 6 moves the whole cell folder and
+  asserts the answer is unchanged to 12 places.
+- **WB45a: the flip lives in `WBondCellSeeding.Seed` and only on `Created`.** A `Carried` instance whose
+  cell already has a `.wBond` is a legitimate state — someone who kept the portable payload — and is not
+  auto-converted. A flip on a later scan noticing the file exists would change which wires simulate with
+  nothing on screen.
+- **§3.2's drift check runs at ELABORATION**, in the factory, against the `Arrays` record the netlist now
+  forwards for a linked instance. Worth knowing: that record is written as `G1|G2`, and gate 7's
+  end-to-end case exists specifically to pin that the `|` survives the `.cnl` round trip — a blank record
+  is (correctly) read as "nothing is known about what this was wired against", so a regression there
+  would silently retire the check rather than fail loudly.
+
+### Not built, on purpose
+
+- **`Span`** — WB44a/O-11. Not a profile property but the pad positions; scales by factor not to a value,
+  and moves a bonded foot off its pad. Needs a pinned-foot rule and §8 envelope reporting, neither of
+  which exists.
+- **Retiring the `Design` payload** (§3.3). WB45 is *both*, chosen per instance.
+- The panel does not offer `Linked` when nothing is linked — the box snaps back and the note says why.
+  §5's second owner question (should `Linked` be offered for a `.wBond` outside the workspace?) is
+  **unanswered**: nothing here forbids it, and `LinkTo` will store a relative path to anywhere, but no
+  UI offers a picker outside the seeding path.
+
+### Two owner reports the same day, and they are the same shape
+
+**Report 1: three arrays set to 30/20/15 mil all arrived in the layout at 20 mil.** 20 mil is
+`WBondEmbedding.DefaultWire.LoopHeightMils` — the drawn default. `WBondCellSeeding` wrote the raw
+`Design` payload, because the override layer had only ever been applied on the way to the *solver*.
+**Update Layout from Schematic writes what the schematic asks for**, so the geometry moved out of
+`ComponentModelFactory` into **`src/WBond/ControllingParameters.cs`**, with a `WBondOverrides` input
+(lengths already in metres, names as strings) that both callers reduce to. A second copy in `src/Ui`
+would have been a second set of clone-on-write and detached-wire rules to keep in step.
+
+**Applying a controlling parameter twice is the identity, and the fix depends on it.** Seeding bakes
+the value into the file and then flips the instance to `Linked`, so the next Run reads the baked file
+and applies the same parameter again. That is only safe because every one of them sets an ABSOLUTE
+value — a height, a diameter, a metal — never a delta or a factor. **This is the same property that
+made `Span` (which scales by FACTOR, WB24c) the one of the six that had to be deferred**, so the gate
+is worth keeping if Span is ever revisited. The parameters are deliberately NOT cleared off the
+instance afterwards: that would be an edit-on-write, would break WB44 property 1, and would silently
+retire the handle a sweep turns.
+
+**A `VAR` reference cannot be baked, and that is principled rather than a shortfall.** It is the whole
+point of these being sweepable, and it is exactly why it has no single value to draw. Those wires are
+written as drawn and the parameter is named. There is no scope to resolve one against on this path
+either — the command runs on a schematic that need not elaborate at all.
+
+**The panel's own summary had the same defect one surface over** and was fixed with it: total wire
+length moves with loop height, so a component carrying a 45 mil override over 20 mil wires reported a
+length no run ever uses. It now describes the effective geometry and appends "· with overrides".
+**It decodes a SECOND design to do it**, and only when an override is actually set — the caller's
+design goes on to build the array rows, and the write-back paths (`AddWBondArray` and friends) each
+decode their own. Applying an override on a path that writes back would bake it into the payload.
+
+**Report 2: a loop-height change in the layout never reached the schematic, "even if I use Update
+Schematic from Layout".** `LayoutToSchematicGenerator` walks a layout's `LayoutInstance`s and had **no
+knowledge of the wire layer whatsoever** — and no wire is ever a `LayoutInstance` (WB23: no wire enters
+a `.clay`). §9.6 specifies this reconcile and **two shipped messages already named the command as the
+remedy**, including `WBondCellSeeding`'s own. The command existed; the half that handles wires did not.
+`WBondSchematicReconcile` is that half, called from `UpdateSchematicFromLayout` after the instance walk,
+reading the **live** `LayoutEditorViewModel.WireDesign` so an unsaved wire edit reconciles too.
+
+**Linking buys GEOMETRY, not the array list — and that is why the deletion case is the important one.**
+A placed wBond's **pins come from its carried payload** (`WBondSymbolProvider`), so deleting an array in
+the layout leaves the symbol still showing that array's two terminals, still wired to whatever the user
+connected them to, while the model behind it has one branch fewer. Under `Carried` this command is how a
+layout edit reaches the simulation at all; under `Linked` it is how a layout edit reaches the *symbol*.
+Neither is optional.
+
+**The Source note was overselling and the owner caught it.** It said a wire edited in the layout "no
+longer needs bringing back into the schematic" — true of geometry, false of the array list. Both the
+seeding message and the panel's own note now say which half is which, and name the command for the
+other half. **Whenever a note claims something no longer needs doing, the claim needs the same scoping
+the mechanism has.**
+
+### Label ORDER on the symbol, and two orphan cases it exposed
+
+**Report 3 (owner, 2026-08-17): "G1, G2, G3 in the dialog render as `LoopHeight_G2`, `LoopHeight_G1`,
+`LoopHeight_G3` on the symbol."** Labels are built by walking `Parameters` in list order
+(`EditableComponent.BuildRenderModel`), and a per-array override is **appended** when its box is first
+committed — so the on-symbol order was the order the user's focus happened to visit the boxes in.
+Nothing made it wrong; nothing made it right either.
+
+**Sorted at the SOURCE, not at render time** (`WBondPlacement.InCanonicalOrder`): registry-declared
+names in registry order, then one group per array in ARRAY order — which is pin order, and is what the
+dialog lists — each group being loop height, diameter, material, then anything unrecognised keeping its
+relative position. Sorting the list itself is what makes the dialog, the symbol, the `.csch` and the
+netlist all agree; re-sorting on the way out would leave three of them disagreeing. The array order is
+read from the **`Arrays` record**, not by decoding the payload — it is the same string
+`WBondSymbolProvider.RefFor` generates pin order from, so the two cannot drift, and it costs no base64
+decode on a path that runs per keystroke-commit.
+
+**Writing this exposed two orphan cases, both of which draw a wrong label rather than merely an untidy
+one** (`ReconcilePerArrayParameters`):
+- **Renaming an array** left `LoopHeight_G2` behind. The override stops reaching anything — silently —
+  while its value is still in the dialog and still drawn on the symbol.
+- **Deleting an array** (from the panel, or from the layout via the reconcile) left its override behind,
+  drawing a label for a pin pair the symbol no longer has. The layout-side case was caught by the
+  render-model test, not by review.
+
+**On the redraw half of that report:** the chain `SetParametersCommand.Execute` → `NotifyChanged` →
+`SchematicViewModel.RebuildRenderModel` is now gated directly, asserting the symbol's **pin count** and
+its **labels** off `vm.RenderModel` after the reconcile executes. Nothing below the view model is
+reachable from a test, so if the on-screen canvas still fails to repaint, the cause is the view's own
+invalidation and not this path — worth knowing before anyone re-investigates the model side.
+
+**Still open, deliberately not decided here:** after Update Schematic from Layout the payload holds the
+layout's geometry *and* the controlling parameters are still set, so the next Run re-applies them on
+top. That is §2.0's row-two precedence ("schematic wins") behaving as specified, but it arrives
+confusingly right after a command whose whole purpose was to make the schematic match the layout —
+change the loop height in the layout, reconcile, and the schematic override silently forces it back.
+Clearing the overrides would fix that and would destroy a `VAR`-bound sweep handle, so it needs an
+owner decision rather than a default.
+
+### Report 4: a re-run of Update Layout dropped an array added since — WB41 was too broad
+
+**Owner, 2026-08-17: "Update Layout from Schematic, add another array in Component Parameters, Update
+Layout again — the new array does not show up in the layout."** The sidecar was created ONCE and
+thereafter left *entirely* alone. WB41's rule — *a re-run never overwrites wires the user has moved* —
+is what that was protecting, and **it is right about existing arrays and was wrong about a new one.**
+Adding an array touches no wire that is already drawn, so refusing to add it protected nothing and
+silently dropped the thing the command had just been asked to do.
+
+`MergeIntoExisting` narrows the rule to what it was actually defending: **existing wires are never
+regenerated, re-pointed or moved; a missing array is appended with the wires the schematic draws for
+it.** New outcome `Merged`, distinct from `Created` because the WB45a flip to `Linked` belongs on a
+first write only — a merge changes what is *drawn*, never which of the two sources the next Run reads.
+
+**Array ORDER is realigned to the schematic's, and that is not cosmetic.** Under `Linked` the model's
+terminals come from the file while the symbol's pins come from the payload, so leaving the two lists in
+different orders wires every array to the wrong branch. Reordering moves no wire in space — it only
+realigns the two lists — which is what makes it safe to do unasked.
+
+**Two things deliberately still not done**, each a refusal rather than an omission:
+- **An existing array's geometry is never rewritten.** Those wires may have been dragged onto real pads,
+  and a schematic-side loop-height change already reaches the SOLVER as an override without overwriting
+  the drawing. Re-baking here would undo layout work to change a number that has already taken effect.
+- **An array the schematic no longer has is kept, not deleted.** Deleting is the one direction that
+  destroys drawn work irrecoverably, and the array may have been removed from the component by accident.
+
+**The old message named the wrong remedy, and in the dangerous direction.** It said *"use Update
+Schematic from Layout to bring them back into the component, or delete the file to re-seed it"* — advice
+that told a user who had just ADDED an array on the schematic to pull the layout back over it, i.e. to
+throw away the array they had come there to add. Each direction now names the remedy that matches it.
+
+**A test asserted the old behaviour and had to be inverted** (`WBondRound5Tests`,
+`AnArrayListThatDiverged_IsReportedAsDrift` → `AnArrayAddedOnTheSchematic_IsMergedIntoTheSidecar`). Worth
+knowing that the previous contract was deliberate and gated, not an oversight — what changed is which
+half of "the array list diverged" is resolvable.
+
+**…and that fix was still not visible, because it went through the FILE while an editor was open.**
+The owner came back with the workspace attached: the `.wBond` on disk held G1 *and* G2 with real
+distinct geometry, while the layout on screen showed only G1. **Reading the artifact settled in two
+commands what four rounds of reasoning had not** — the merge was demonstrably working and the bug was
+somewhere else entirely.
+
+An open `LayoutEditorViewModel` **holds its own `WBondDesign` object and mutates it in place** (that is
+`AttachWireDesign`'s explicit contract — "the design object itself, not a copy"). So writing the file
+underneath it changed nothing on screen. **And it was worse than a stale view: the live design still
+held G1 alone, and the layout's own save path writes that object back — the next save of the layout
+would have silently deleted the array the merge had just added.** Reading and writing a document's file
+behind a live editor is not a display bug, it is a lost-edit bug.
+
+`Seed` now takes the live design; when it is there it is the authority, the merge mutates *it*, and the
+file is left for that editor to write — dirty until saved, exactly as after any other edit to an open
+document. `LayoutEditorViewModel.NotifyWireDesignChangedExternally` rebuilds what depends on the
+design's structure. **A re-attach would have been the wrong hammer**: it builds a whole new
+`WBondViewModel`, discarding the wire undo history and handing the view a different overlay to bind to,
+for an edit that only appends arrays. **The wire selection IS cleared**, and not for tidiness — a
+selection is a set of flat indices across the whole design, and realigning array order moves every
+one of them, so a surviving selection would point at different wires than the user picked
+(`WBondViewModel.Restore` clears it on a structural undo for exactly this reason).
+
+**The generalisable rule: any command that edits a document's file must ask whether that document is
+open, and go through the session if it is.** This is the second time in this phase — `WBondSchematicReconcile`
+reads `layoutVm.WireDesign` rather than the `.wBond` for the same reason, and that one was got right
+first time only because the reconcile direction made the live object the obvious source.
+
+### Report 5, and the owner decision that changed the answer: a loop height RESCALES a wire, it does not regenerate one
+
+**"I changed the G1 loop height to 10 mil in schematic, then did an Update Layout from Schematic, but
+the loop height still looks like it's 20 mil."** Confirmed straight from the attached workspace:
+`LoopHeight_G1 = '10' mil` on the component, both wires at 508000 nm (20 mil) in the layout, G1 still
+bound to profile `ball`. A re-run applied the controlling parameters only to arrays it was ADDING — the
+refusal recorded one round earlier as deliberate.
+
+**Then, mid-fix: "I don't like this ball/wedge profile thing. It doesn't offer the user anything. Its
+setting should never affect the geometry that the user authors."** That is what settled the shape of
+the fix rather than merely its existence.
+
+**The old application went through `LoopProfile.ApplyTo`, which writes X and Y by linear interpolation
+between the feet** — so applying a loop height *straightened any path the user had routed by hand*.
+The owner's own G1 wire is exactly that case: its interior points wander to x = −203200 nm while its
+feet stay put, and re-applying the profile would have returned a plain planar arc. WB41 was defending
+something real; it was defending it with far too blunt an instrument.
+
+`WireEdits.SetLoopHeightPreservingPath` changes the one quantity asked for and nothing else: every
+point's X and Y are kept, both feet are bit-exact, and only the rise above the chord is rescaled. The
+scale factor is found by **bisection**, not by the closed form `LoopProfile.SolveAmplitudeNm` uses —
+that form is exact only while no point dips BELOW the chord, which a hand-routed wire may well do.
+It also needs no span ordering, which matters because `LoopProfile.Validate` demands strictly
+increasing spans and a wire that doubles back in XY does not have them.
+
+**Three things fell out, and all three are simplifications:**
+- **The shared-profile clone-on-write is gone.** Nothing writes a profile any more, so one array's
+  override cannot drag another's wires. *This supersedes this phase's own earlier finding that the
+  clone "was needed in practice" — it was needed by the mechanism that has now been retired.*
+- **The bound-vs-detached asymmetry is gone**, and with it §2.0's whole precedence table and its
+  "N wires were skipped" report. Loop height is a property of the WIRE (`Wire.LoopHeightNm` is defined
+  as its own max z minus min z), not of its generator, so a wire dragged loose is reached like any
+  other. §2.0's three-way precedence collapses to one rule: **the layout owns the route and the feet,
+  the schematic sets the height.**
+- **`Update Layout from Schematic` now applies the settings to arrays already drawn**, which is the
+  reported bug. Two things make that safe rather than a WB41 violation: the wBond editor's OWN "set
+  this array's loop height" command does exactly this (`SetGroupLoopHeight` → `ReapplyToArray`), so
+  there is no destruction here the editor would not also do; and what WB41 was actually protecting —
+  the route and the feet — now survives it.
+
+**The measured inductances did not move: 10 mil → 1086.2 pH, 45 mil → 2206.7 pH, identical to before
+the change.** That is the useful cross-check on a semantic rewrite of this size: for a wire that its
+profile genuinely generated, rescaling its own rise reproduces regenerating it, so the new path differs
+only where the old one was destroying something.
+
+**A re-run that has nothing left to apply must stay silent**, and is gated — the before/after wire
+comparison exists so Update Layout does not mark the layout dirty every single time it is run.
+
+**Still open, and NOT decided here.** The owner's objection was to the profile mechanism itself, not
+only to its effect on this one path. `LoopProfile` still exists: it is what the profile view edits, what
+a freshly-seeded wire is generated from, and what `.wBond` stores. Removing it is a data-model change
+touching the profile panel, `WBondViewModel`'s group commands, WB2/D1's "a binding is a generator", and
+the file format — its own phase, not a fix folded into this one. What has changed is that **no
+controlling parameter reads or writes a profile any more**, so the setting can no longer affect authored
+geometry, which is the half of the objection this report was about.
+
+### Report 6: the reconcile brought geometry back but left the override stating the old number
+
+**"I changed the loop height in layout using the Array Inductance double-click. Then I did an Update
+Schematic from Layout, but the loop height was not updated in the schematic."** This was the item
+flagged two rounds earlier as *"still open, deliberately not decided"* — the owner has now decided it.
+
+The reconcile wrote the payload and never touched `LoopHeight_G1`. Two consequences, and the second is
+the severe one: the dialog went on showing the old number, **and the next Run applied that old number
+straight back over the wires that had just been imported**, silently undoing the command the user had
+just run. The override is the schematic's *statement* of the loop height; after a command whose whole
+purpose is to make the schematic match the layout, it has to state what the layout has.
+
+`WBondPlacement.WriteBackControllingParameters` writes each array's measured loop height, diameter and
+material back, **in the parameter's own unit** so the dialog reads "15" rather than 0.000381. Three
+rules keep it from doing damage:
+- **Only what is already SET.** Blank means "as drawn" and the payload now carries what was drawn —
+  writing a number into every blank row on every reconcile would invent overrides nobody asked for.
+- **An expression is never overwritten.** `LoopHeight_G1 = loopH` is the handle a sweep turns;
+  replacing it with a literal would silently retire the sweep. Reported with the measured value, so
+  the decision stays the user's.
+- **Wires that disagree are reported, not averaged.** An individually dragged wire can leave an array
+  with no single loop height, and inventing one states something about the layout that is not true.
+
+**The hole underneath it is worth more than the fix.** "Nothing changed" was decided by comparing the
+`Design` payload alone — so a layout whose geometry *already* matched the payload returned "already
+identical" and left the stale override in place, which is very close to the owner's own state on disk
+(`LoopHeight_G1 = 10` against a layout at 20 mil). **Whatever a command would write is what decides
+whether it has anything to do**; comparing one of the several things it writes is how a no-op check
+silently stops covering the rest. It now compares the finished parameter list, order included.
+
+### Not interactively verified
+
+Everything below was gated by test only; none of it has been driven in a running application.
+
+- The parameter panel's new controls — the `Source` combo and its note line, the `Material` dropdown, and
+  the per-array `LoopHeight`/`Diameter`/`Material` row grid. **The XAML layout in particular is
+  unverified**: the per-array row is a four-column grid inside a panel whose other rows are
+  `80,*`-shaped, and nothing has looked at it.
+- `File`'s Browse… picker for a wBond (`IsFilePathParameter` now returns true for it) — the row is built
+  by the shared `ParameterRowViewModel` path, but a wBond has never had one before.
+- The Messages-pane rendering of the new elaboration warnings (detached-wire counts, array drift). The
+  drain path itself is exercised end to end through `RunResult.Warnings`.
+- Update Layout from Schematic performing the flip in the real command, with the schematic then needing
+  a save. `Seed` calls `model.NotifyChanged()`; whether that reaches the dirty indicator the way the
+  owner expects has not been watched.
+- **Update Schematic from Layout's wire half driven from the menu.** `WBondSchematicReconcile.Run` is
+  gated directly (7 cases) and the call site is three lines, but the whole command — layout open, wires
+  edited, menu item, Messages pane, symbol repaint after the pin count changes — has not been run. The
+  symbol *does* repaint in test (`WBondSymbolProvider.Resolve` returns the new pin count after the
+  command executes), but that is not the same as watching the schematic redraw.
+
+## WB40 revised: a `.wBond` is an ATTACHMENT, and lives in `layout/` (2026-08-17)
+
+Owner asked whether the cell architecture should gain a `wires/` view sub-folder, since Update Layout
+from Schematic dropped a `.wBond` at the cell root. **Answer: no — into `layout/`, stem-paired with the
+`.clay`.** Design authority is now `workspace-and-project-tree.md` §1.2.1 and `wbond.md` WB40 (revised),
+with owner decisions O-8/O-9 in that document's table. Three things are worth knowing before touching it.
+
+**A view sub-folder would have encoded the OPPOSITE of WB28.** A view sub-folder is not merely "a folder
+in a cell" — it carries §2's contract: N files, **at most one primary**, and an instance resolves
+*through* that primacy. That means a view is an alternative description of the cell, of which one is in
+force. But WB28 deliberately refuses a wBond singleton, so two `.wBond` in one cell means **both are real
+and both are solved**. "One primary, the rest inert" would silently drop one from the simulation. The
+mechanical cost (a `ViewType` member, a `primary_wires` in `.ccell`, a fourth empty sub-folder in every
+resistor in the standard library) was the smaller objection.
+
+**Cell-root placement was a rationalisation of an assumption the model never made.** WB40's original text
+argued the sidecar "is not a view of the cell… which is why it is found by looking one level up." The
+first half is right and survives — it is an *attachment*, the third file shape, now defined in §1.2.1
+alongside cell views and loose workspace files. The second half assumed one `.wBond` per cell. A cell may
+hold several `.clay` files, and wires are drawn over **specific pads at specific coordinates**, so "the
+cell's wires" stops being well formed the moment there are two layouts — the old `FindFor` could only
+guess (prefer `<cell>.wBond`, else the sole `*.wBond`, else give up).
+
+**Two branches must SPEAK, and they are the price of the placement, not decoration.**
+- **Legacy.** Pre-2026-08-17 workspaces keep wires at the cell root. They are still read, and the move is
+  named. More importantly `WBondCellSeeding` must *not* write a fresh `layout/<cell>.wBond` when a legacy
+  one exists: attachment resolution prefers the stem-paired file, so seeding would **shadow** the user's
+  edited wires with a regeneration from the schematic payload — a re-run of Update Layout quietly
+  reverting their layout work. It returns `KeptExisting` pointing at the legacy file instead.
+- **Orphan.** A `.wBond` in `layout/` pairing with no `.clay` is reported. Renaming a `.clay` in Finder
+  detaches its wires, and unlike every other Finder-edit failure mode (§4.1's "Not Found" glyph, the
+  tree's System.Warning row) that one would otherwise remove wires from a simulation the user believes
+  includes them — silent, and in the direction of a wrong answer.
+
+`WBondCell.Resolve` returns `(Path, Note)` so both branches have somewhere to say it; `FindFor` is now
+just its path half. **Not built here:** the project tree does not yet render an attachment as a child of
+its view file, nor surface the orphan at the sub-folder level — §1.2.1 and §3.1 specify both.
+
+**Stem pairing broke Save As, which had been working by accident.** Found the same day, tracing the
+owner's question about how wire geometry reaches disk. `WireDesignPath` was set once in
+`AttachWireDesign` and never followed `CurrentLayoutPath`; under cell-root placement that did not matter,
+because resolution looked one level UP and `amp_v2.clay` found the same `<cell>.wBond` as `amp_v1.clay`
+did. Stem pairing removes the accident: Save As wrote the artwork to the new name and the wires back into
+the OLD file, so the layout the user had just created opened with **no wires at all** while their edits
+sat somewhere they never asked for. `RetargetWiresForSaveAs` re-points the path and **forces the dirty
+flag** — a Save As with no wire edits must still produce wires at the new name, or the copy is silently
+missing the thing the cell is about. An ordinary Save deliberately does not retarget, so a legacy
+cell-root file is written back where it lives rather than silently migrated into a duplicate that then
+wins resolution over it. The guard was **verified by disabling the fix and watching it go red**, not
+assumed.
+
+**How the wire layer is persisted, since it is not obvious from either file alone.** A wire edit raises
+`WBondViewModel.Republish` → `DirtyChanged` → sets `_wireDirty` *and* `IsDirty`. The separate flag is
+load-bearing: a wire edit puts **no entry on the layout's undo stack** (the wires have their own
+history), so `RefreshDirty`'s `_undoRedo.IsModified` term alone would report the cell clean with unsaved
+wires in it. The write happens in `MarkSaved` → `SaveWireDesignIfDirty`, **not** in `PerformSave`, because
+the workspace writes sub-cell sessions with a bare `LayoutPersistence.SaveToFile` — `MarkSaved` is the
+one call every save path shares. A failed `.wBond` write reports through the same `SaveError` seam as a
+failed `.clay` write and does **not** clear the flag, so the next save retries instead of dropping the
+edits.
+**Not interactively verified:** only the resolution, seeding and attach paths are covered by tests; the
+legacy-workspace open was not exercised against a real pre-move workspace.
+
+**Also settled the same day, specified and NOT built** — `docs/sonnet-briefs/brief-wbond-controlling-parameters.md`:
+loop height / diameter / material as array-scoped *controlling* parameters on the schematic symbol
+(`wbond.md` §5.5.1, WB44), span deferred (WB44a), and Carried-or-Linked wire source (§9.7, WB45). The
+engine half of the loop-height parameter **already exists** in `ComponentModelFactory` and must not be
+rebuilt; the gap is that `ComponentTypeRegistry` declares none of them, so nothing is offerable.
+
+Two things were found the same day by the owner asking what these states actually mean, both now in the
+brief and neither previously specified anywhere:
+
+- **`Carried`, not `Embedded`.** §9.1 has always spent *embedded* and *referenced* on a **different
+  axis** — whether a `.wBond` file embeds the layout artwork it was drawn over or references cells by
+  path. WB45 first reused those two words for where a placed component's *wires* come from, which made
+  "does embedded actually mean referenced?" an entirely reasonable question. The axes are independent
+  and now have separate vocabulary; `Carried` is §5.0's own verb.
+- **A schematic loop-height override and a layout loop drag have no specified precedence, and today's
+  code gives three different ones.** `ApplyLoopHeightOverrides` regenerates between a wire's own feet
+  (so a moved foot survives — correct), but it regenerates only wires with a `ProfileBinding` — and an
+  individually-dragged wire **detaches** (WB2/WB24). So a schematic parameter silently overwrites a
+  layout loop edit on a bound wire, and silently does nothing on a detached one, within the same array.
+  The fix is a report, not a behaviour change: touching detached wires would break WB2.
+
 ## P/A: the key was not repeatable, and the panel came back floating (2026-08-17)
 
 Owner: *"Pressing 'A' hides the Array Inductance panel (good). But pressing 'A' again does not bring it

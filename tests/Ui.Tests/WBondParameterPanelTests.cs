@@ -294,4 +294,231 @@ public class WBondParameterPanelTests
             comp.Parameters.First(p => p.Name == "Design").Expression, out var design));
         Assert.Single(design!.Arrays);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  WB-G — §2.3's panel, and WB45's Source control
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// §2.3 — <b>the per-array rows are generated from the instance's OWN array list</b>, so they name
+    /// G1/G2 rather than asking anyone to spell a suffix. That is also the only way this can be offered
+    /// at all: the array names are not knowable until the payload is decoded.
+    /// </summary>
+    [Fact]
+    public void ThePerArrayControlRows_AreGeneratedFromTheInstancesOwnArrays()
+    {
+        var (_, _, editor) = Place();
+
+        Assert.Single(editor.WBondControls);
+        Assert.Equal("G1", editor.WBondControls[0].ArrayName);
+
+        editor.AddWBondArrayCommand.Execute(null);
+
+        Assert.Equal(2, editor.WBondControls.Count);
+        Assert.Equal(["G1", "G2"], editor.WBondControls.Select(r => r.ArrayName));
+    }
+
+    /// <summary>
+    /// §2.3 — <b>unset must be visibly distinct from zero.</b> An empty box means "as drawn" and the
+    /// parameter is not written at all; <c>0</c> is a mistake the run refuses by name. A row that
+    /// blanks its value has its parameter REMOVED rather than left as an empty string, which is what
+    /// keeps the panel honest about which arrays actually carry an override.
+    /// </summary>
+    [Fact]
+    public void BlankingAPerArrayOverride_RemovesTheParameterRatherThanLeavingItEmpty()
+    {
+        var (_, comp, editor) = Place();
+
+        var row = editor.WBondControls[0];
+        Assert.DoesNotContain(comp.Parameters, p => p.Name == "LoopHeight_G1");
+
+        row.LoopHeight = "12";
+        row.CommitLoopHeight();
+
+        var written = comp.Parameters.First(p => p.Name == "LoopHeight_G1");
+        Assert.Equal("12", written.Expression);
+        Assert.Equal("mil", written.Unit);   // a wirebond is authored in mils
+
+        row.LoopHeight = "";
+        row.CommitLoopHeight();
+
+        Assert.DoesNotContain(comp.Parameters, p => p.Name == "LoopHeight_G1");
+    }
+
+    /// <summary>
+    /// <c>Material</c> is an ENUMERATION over the design's own metals, so it is a dropdown — and its
+    /// first entry is "As drawn", which is what unset means and is deliberately not a metal's name.
+    /// </summary>
+    [Fact]
+    public void TheMaterialDropdown_OffersAsDrawnFirst_AndThenTheDesignsOwnMetals()
+    {
+        var (_, comp, editor) = Place();
+
+        Assert.Equal(ParameterEditorViewModel.AsDrawn, editor.WBondMaterialOptions[0]);
+        Assert.Contains("Gold", editor.WBondMaterialOptions);
+        Assert.Contains("Aluminium", editor.WBondMaterialOptions);
+        Assert.Equal(0, editor.WBondMaterialIndex);
+
+        editor.WBondMaterialIndex = editor.WBondMaterialOptions.IndexOf("Aluminium");
+        Assert.Equal("Aluminium", comp.Parameters.First(p => p.Name == "Material").Expression);
+
+        editor.WBondMaterialIndex = 0;
+        Assert.Equal("", comp.Parameters.First(p => p.Name == "Material").Expression);
+    }
+
+    /// <summary>
+    /// The panel-owned parameters are not ALSO generic text rows — but <c>LoopHeight</c>,
+    /// <c>Diameter</c>, <c>Temp</c> and <c>GroundPlane</c> deliberately still are. They are ordinary
+    /// expression fields, and that is what makes <c>LoopHeight = loopH</c> typable and therefore
+    /// sweepable (WB44 property 4).
+    /// </summary>
+    [Fact]
+    public void TheUnsuffixedLengths_StayGenericExpressionRows()
+    {
+        var (_, _, editor) = Place();
+
+        foreach (string owned in new[] { "Design", "Arrays", "SymbolPitch", "RefPin", "Source", "File", "Material" })
+            Assert.DoesNotContain(editor.Rows, r => r.Name == owned);
+
+        foreach (string generic in new[] { "LoopHeight", "Diameter", "Temp", "GroundPlane" })
+            Assert.Contains(editor.Rows, r => r.Name == generic);
+    }
+
+    /// <summary>
+    /// <b>The summary describes what will SIMULATE, not what was drawn</b> — the owner's Update Layout
+    /// report of 2026-08-17 one surface over. Total wire length moves with loop height, so a component
+    /// carrying a 45 mil override over 20 mil wires would otherwise report a length no run ever uses.
+    /// The line says when an override is in force, because a number that changes as you type in a box
+    /// below it should explain itself.
+    /// </summary>
+    [Fact]
+    public void TheSummary_ReportsTheOverriddenGeometry_AndSaysThatItHas()
+    {
+        var (_, comp, editor) = Place();
+
+        string asDrawn = editor.WBondSummary;
+        Assert.DoesNotContain("with overrides", asDrawn);
+
+        var lh = comp.Parameters.First(p => p.Name == "LoopHeight");
+        lh.Expression = "45";
+        lh.Unit = "mil";
+        editor.SetTargetDirect(new SchematicViewModel(new SchematicEditModel()), comp, showClose: false);
+
+        Assert.Contains("with overrides", editor.WBondSummary);
+        Assert.NotEqual(asDrawn, editor.WBondSummary);
+
+        // …and the payload is untouched by having been summarised. Applying an override on a path that
+        // writes back would bake it in and break WB44 property 1.
+        Assert.True(WBondEmbedding.TryDecode(
+            comp.Parameters.First(p => p.Name == "Design").Expression, out var design));
+        Assert.Equal(WBondUnits.ToNm(20.0, WBondUnit.Mil), design!.Arrays[0].Wires[0].LoopHeightNm);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Label ORDER on the symbol (owner, 2026-08-17)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>Owner report.</b> <i>"When I create G1, G2, G3 arrays in the Component Parameters dialog, the
+    /// symbol rendering lists them as LoopHeight_G2, LoopHeight_G1, LoopHeight_G3."</i>
+    ///
+    /// <para>Labels are built by walking <c>Parameters</c> in list order, and a per-array override is
+    /// APPENDED when its box is first committed — so the on-symbol order was the order the user's focus
+    /// happened to visit the boxes in. This test commits them deliberately out of order (G2, G1, G3, the
+    /// reported sequence) and asserts the SYMBOL comes out in array order regardless.</para>
+    ///
+    /// <para>The oracle is the render model's own <c>Labels</c>, not the parameter list — that is the
+    /// thing the user is looking at.</para>
+    /// </summary>
+    [Fact]
+    public void PerArrayLabels_RenderInArrayOrder_WhateverOrderTheyWereTypedIn()
+    {
+        var model = new SchematicEditModel();
+        var comp = WBondPlacement.BuildCarrying(null, "W1");
+        model.Components.Add(comp);
+
+        var vm = new SchematicViewModel(model);
+        var editor = new ParameterEditorViewModel();
+        editor.SetTargetDirect(vm, comp, showClose: false);
+
+        editor.AddWBondArrayCommand.Execute(null);
+        editor.AddWBondArrayCommand.Execute(null);
+        Assert.Equal(["G1", "G2", "G3"], editor.WBondControls.Select(r => r.ArrayName));
+
+        // The reported sequence: the middle box committed FIRST. Each array's value is tied to the
+        // array rather than to the commit position, so the assertion below distinguishes the two.
+        string[] byArray = ["11", "22", "33"];
+        foreach (int i in new[] { 1, 0, 2 })
+        {
+            editor.WBondControls[i].LoopHeight = byArray[i];
+            editor.WBondControls[i].CommitLoopHeight();
+        }
+
+        var labels = model.BuildRenderModel().Model.Components.Single().Labels
+            .Where(l => l.StartsWith("LoopHeight_", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Equal(
+            ["LoopHeight_G1 = 11 mil", "LoopHeight_G2 = 22 mil", "LoopHeight_G3 = 33 mil"],
+            labels);
+    }
+
+    /// <summary>
+    /// Renaming an array takes its controlling parameters with it. An override left behind under the
+    /// old suffix silently stops applying — with its value still in the dialog and still drawn on the
+    /// symbol, which is the worst of both.
+    /// </summary>
+    [Fact]
+    public void RenamingAnArray_RenamesItsControllingParameters()
+    {
+        var (_, comp, editor) = Place();
+
+        editor.WBondControls[0].LoopHeight = "30";
+        editor.WBondControls[0].CommitLoopHeight();
+        Assert.Contains(comp.Parameters, p => p.Name == "LoopHeight_G1");
+
+        editor.RenameWBondArray(editor.WBondArrays[0], "D1");
+
+        Assert.DoesNotContain(comp.Parameters, p => p.Name == "LoopHeight_G1");
+        Assert.Equal("30", comp.Parameters.First(p => p.Name == "LoopHeight_D1").Expression);
+    }
+
+    /// <summary>
+    /// Deleting an array drops its controlling parameters. Left behind, they would draw a label for a
+    /// pin pair that is no longer on the symbol.
+    /// </summary>
+    [Fact]
+    public void DeletingAnArray_DropsItsControllingParameters()
+    {
+        var (_, comp, editor) = Place();
+
+        editor.AddWBondArrayCommand.Execute(null);
+        editor.WBondControls[1].LoopHeight = "30";
+        editor.WBondControls[1].CommitLoopHeight();
+        Assert.Contains(comp.Parameters, p => p.Name == "LoopHeight_G2");
+
+        editor.RemoveWBondArrayCommand.Execute(editor.WBondArrays[1]);
+
+        Assert.DoesNotContain(comp.Parameters, p => p.Name == "LoopHeight_G2");
+    }
+
+    /// <summary>
+    /// WB45 — <b>a freshly placed wBond is Carried, and cannot be set to Linked with nothing to link
+    /// to.</b> Linked with no path would be a Not-Found on the next Run with no way back except this
+    /// same box; the box snaps back and the note line says why.
+    /// </summary>
+    [Fact]
+    public void TheSourceControl_StartsCarried_AndRefusesLinkedWithNothingToLinkTo()
+    {
+        var (_, comp, editor) = Place();
+
+        Assert.Equal(0, editor.WBondSourceIndex);
+        Assert.Contains("Update Layout from Schematic", editor.WBondSourceNote);
+
+        editor.WBondSourceIndex = 1;
+
+        Assert.Equal(0, editor.WBondSourceIndex);
+        Assert.Equal(nameof(WBondPlacement.WireSource.Carried),
+            comp.Parameters.First(p => p.Name == "Source").Expression);
+    }
 }

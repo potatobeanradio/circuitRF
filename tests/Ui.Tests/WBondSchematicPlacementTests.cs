@@ -159,11 +159,23 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.Contains(defaults, p => p.Name == WBondPlacement.DesignParameter);
         Assert.Contains(defaults, p => p.Name == WBondPlacement.ArraysParameter);
 
-        // There is no File parameter any more, and no path to browse for: a placed wBond carries its
-        // wires. A leftover Browse... row would invite pointing a component at a design whose artwork
-        // it cannot express, which is the state that produced the Not-Found placeholder.
-        Assert.DoesNotContain(defaults, p => p.Name == "File");
-        Assert.False(ComponentTypeRegistry.IsFilePathParameter(SymbolKind.WBond, "File"));
+        // WB-G / WB45 (wbond.md §9.7) REVERSES what this used to assert. `File` is declared again —
+        // but BLANK, and inert until `Source` says Linked. The old assertion ("there is no File
+        // parameter any more") was right for §5.0's world, where carrying was the only behaviour;
+        // carrying is now the DEFAULT rather than the only option, and a linked instance genuinely
+        // points at a path, so there is again something to browse for.
+        Assert.Contains(defaults, p => p.Name == "File" && p.Expression.Length == 0);
+        Assert.True(ComponentTypeRegistry.IsFilePathParameter(SymbolKind.WBond, "File"));
+
+        // Carried by construction: a freshly placed wBond has no cell and no file to link to.
+        Assert.Contains(defaults, p => p.Name == "Source"
+                                    && p.Expression == nameof(WBondPlacement.WireSource.Carried));
+
+        // §2.2 — the trap that must not ship. Every controlling parameter is declared and UNSET;
+        // a wBond arriving with `LoopHeight = 20 mil` among its defaults would silently regenerate
+        // every existing design's wires to 20 mil on its next run.
+        foreach (string name in new[] { "LoopHeight", "Diameter", "Material", "Temp", "GroundPlane" })
+            Assert.Contains(defaults, p => p.Name == name && p.Expression.Length == 0);
     }
 
     /// <summary>

@@ -449,11 +449,12 @@ public static class ComponentTypeRegistry
     /// it is stated here. A path is exactly the kind of value nobody should be asked to type, and a
     /// mistyped one fails much later with a worse message.</para>
     /// </summary>
-    /// <para>wBond is deliberately NOT here any more: it carries its wires rather than naming a file
-    /// (see <c>WBondEmbedding</c>), so there is no path to browse for. Bringing in a design is
-    /// File ▸ Import ▸ Wirebond Wires…, which has its own picker.</para>
+    /// <para>wBond's `File` is back, and only for the LINKED half of WB45 (wbond.md §9.7). A carried
+    /// wBond still names no file and still has nothing to browse for — bringing wires in is
+    /// File ▸ Import ▸ Wirebond Wires…, which has its own picker. A linked one genuinely points at a
+    /// path, and a path is exactly the kind of value nobody should be asked to type.</para>
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
-        => kind is SymbolKind.VerilogA
+        => kind is SymbolKind.VerilogA or SymbolKind.WBond
         && parameterName.Equals("File", StringComparison.Ordinal);
 
     /// <summary>
@@ -688,14 +689,37 @@ public static class ComponentTypeRegistry
             // `RefPin` exposes the floating REF terminal, and is OFF by default — matching SnP's own
             // `RefNode`. Unlike the two above it IS forwarded to the engine, because it changes the
             // terminal count (2M vs 2M+1); see WBondModel.
+            //
+            // `LoopHeight`, `Diameter` and `Material` are the CONTROLLING parameters of wbond.md
+            // §5.5.1/WB44 — the handles a VAR, a parametric sweep or an optimiser can turn. Every one
+            // of them is declared BLANK, and that is the part that would silently break every existing
+            // design if it were got wrong: a wBond shipping `LoopHeight = 20 mil` among its defaults
+            // regenerates every placed instance's wires to 20 mil on its next run. Blank means "as
+            // drawn"; NetExtractor drops a blank rather than emitting it, so an unset parameter never
+            // reaches the engine at all (WB44 property 2).
+            //
+            // Array-scoped spellings — `LoopHeight_G1`, `Diameter_G1`, `Material_G2` (O-10: array names
+            // ARE the pin names, and a LoopProfile is an editor-internal sharing mechanism a schematic
+            // user never sees) — are not here because the array names are not knowable until the design
+            // is decoded. The wBond parameter panel generates them from the instance's own array list.
+            //
+            // `Source` and `File` are WB45's carried-or-linked axis. `Carried` by construction: a
+            // freshly placed wBond has no cell and no file to link to. Only Update Layout from
+            // Schematic flips it, and says so (WB45a) — never a later scan noticing a file exists,
+            // which would change which wires simulate with nothing on screen.
             case SymbolKind.WBond:
                 return [
                     new("Design",      WBondEmbedding.DefaultPayload, "", false, UnitDimension.None),
                     new("Arrays",      WBondSymbolProvider.DefaultArraysKey, "", false, UnitDimension.None),
+                    new("Source",      nameof(WBondPlacement.WireSource.Carried), "", false, UnitDimension.None),
+                    new("File",        "", "", false, UnitDimension.None),
                     new("SymbolPitch", nameof(WBondSymbolPitch.Loose), "", false, UnitDimension.None),
                     new("RefPin",      "false", "", false, UnitDimension.None),
                     new("Temp",        "", "", false, UnitDimension.None),
                     new("GroundPlane", "", "", false, UnitDimension.None),
+                    new("LoopHeight",  "", "mil", false, UnitDimension.Length),
+                    new("Diameter",    "", "mil", false, UnitDimension.Length),
+                    new("Material",    "", "",    false, UnitDimension.None),
                 ];
 
             // ── Semiconductor devices ────────────────────────────────────────

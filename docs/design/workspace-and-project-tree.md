@@ -1,6 +1,7 @@
 # circuitRF — Workspace & Project Tree Design
 
-**Status:** Steps 1–7 done · project-tree arc complete · §5A added · **Date:** 2026-07-28 · **Phase:** 6g (post-symbol-editor)
+**Status:** Steps 1–7 done · project-tree arc complete · §5A added · **§1.2.1 attachments added 2026-08-17** ·
+**Date:** 2026-08-17 · **Phase:** 6g (post-symbol-editor)
 
 Specifies the **workspace model** (filesystem structure), the **Project Tree** (the tree view that reads it),
 the **cell reference model** (how a placed component resolves to a cell's primary symbol — the linkage that
@@ -47,6 +48,7 @@ A **cell is a filesystem folder**. The **folder name is the cell name**. It cont
   **`layout/`**. `layout/` exists but is unused in v1 (created empty; layout is v2).
 - inside each sub-folder, **any number** of view files: `schematic/*.csch`, `symbol/*.csym`,
   `layout/*.clay`. A cell may have many schematics, many symbols.
+- optionally, **attachments** beside those view files (§1.2.1) — e.g. `layout/amp_v1.wBond`.
 
 ```
 AmpStage/                        ← cell name = folder name
@@ -56,11 +58,59 @@ AmpStage/                        ← cell name = folder name
        amp_v2.csch               ← (one of these is primary, recorded in .ccell)
    symbol/
        amp.csym                  ← (sole symbol ⇒ primary by default, §2)
-   layout/                       ← present but empty in v1
+   layout/
+       amp_v1.clay
+       amp_v1.wBond              ← an ATTACHMENT to that .clay (§1.2.1)
 ```
 
 A cell is authored **incrementally** — any view may be absent while the user works (a cell with a `.ccell`
 but no `.csch` or `.csym` yet is normal and **not** an error, §3.4).
+
+#### 1.2.1 Attachments — the third file shape *(added 2026-08-17)*
+
+Until now the workspace had exactly **two** shapes of file: a **cell view** (in a view sub-folder,
+primacy-resolved, §2) and a **loose workspace file** (`.cdd`, `.ccolor`, in an arbitrary user folder,
+§1.1). The `.wBond` fits neither, and that — not its directory — is why it looked out of place sitting
+at a cell's root. Its category had never been named. Others are coming (a package stack-up, assembly
+notes, a thermal map), so the category is settled here rather than one folder at a time.
+
+> **An ATTACHMENT is a file that is always used *together with* one view file, never *instead of* it.**
+> It lives **in that view's sub-folder, sharing that view file's stem**. It has **no primacy** and never
+> appears in `.ccell`. The tree renders it as a **child of the view it attaches to**. An **orphaned**
+> attachment — one whose view file is absent — is **reported**, never silently ignored.
+
+**Why an attachment is not a view.** A view sub-folder carries a specific contract: N files, **at most
+one primary**, and an instance in a parent resolves *through* that primacy (§4). That means a view is
+*an alternative description of the same cell, of which one is in force at a time* — which is exactly
+what "Make Primary" is for. Wires and artwork are not alternatives: they are used together, always. A
+`wires/` view sub-folder would have imported primacy semantics that are not merely unnecessary but
+**wrong** — `wbond.md` WB28 deliberately refuses a wBond singleton, so two `.wBond` files in one cell
+means *both are real and both are solved*, whereas "one primary, the rest inert" would silently drop
+one from the simulation.
+
+**Why the stem, and not the cell root.** A cell may hold `layout/amp_v1.clay` *and* `layout/amp_v2.clay`.
+Wires are drawn over *specific artwork* — pads at specific coordinates — so "the cell's wires" is not
+a well-formed idea the moment a cell has two layouts. Stem-pairing makes the association **defined**
+instead of assumed, and it costs nothing elsewhere: primacy already resolves per view type **by
+extension** (§2), so an attachment in a view sub-folder can never be miscounted as a second view file.
+
+**The cost, stated rather than discovered later.** Renaming or copying a `.clay` in Finder detaches its
+attachment. §4.1 already accepts Finder-edits as at-risk, but every existing failure mode there is
+*loud* (a "Not Found" glyph, a System.Warning row); a silently dropped attachment could instead remove
+wires from a simulation the user believes includes them. That is why the orphan **must** be reported —
+the report is not a nicety, it is the price of the placement.
+
+**What is NOT an attachment, and stays a plain cell:**
+- **An assembly** (multiple die + substrate + wires in a package) *contains instances of other cells*, so
+  it is an ordinary cell whose **layout view is hierarchical** — already expressible today, including
+  a mix of technologies, because flatten resolves each sub-cell's own technology reference rather than
+  imposing the parent's. What assembly actually still needs is **z** — a die-attach height on a layout
+  instance — which is a model change, not a directory.
+- **An application / evaluation board** *instantiates* this cell; it does not describe it. Making it a
+  view inverts the hierarchy and immediately poses a meaningless question ("which of the three boards
+  is *primary*?"). It is a sibling cell, and what is wanted from it is **association and navigation** —
+  a `.ccell` reference field to that cell, resolved by §4's existing relative-path model and surfaced
+  by §3.2's existing broken-reference warning.
 
 ### 1.3 Library
 A **library is a folder of cell folders** plus a **`.clib`** manifest (lightweight: name, version, metadata —
@@ -122,6 +172,13 @@ is planned for a future version — documented now, not built in v1.)*
   **referenced libraries** (each its own sub-tree of cells), and **Known Files** (§5).
 - **Empty view sub-folders show no disclosure triangle** (a cell with no symbols yet shows no `symbol/`
   expander). Don't render empty expanders.
+- **Attachments (§1.2.1) render as children of the view file they attach to**, not as siblings of it —
+  `layout/amp_v1.clay` discloses to `amp_v1.wBond`. They are never bold (they have no primacy) and they
+  are never a separate sub-folder node.
+- **An ORPHANED attachment** — one whose stem matches no view file in that sub-folder — renders at the
+  sub-folder level in **System.Warning + italics**, with the reason in a tooltip (*"amp_v1.wBond has no
+  amp_v1.clay — its wires are not attached to any layout."*). This is the §1.2.1 rule that keeps a
+  Finder rename from quietly removing wires from a simulation, so it is not optional.
 - **Ordering is customizable** (user-arrangeable) **and the tree is filterable** (§3.3).
 
 ### 3.2 Visual states (color + weight)

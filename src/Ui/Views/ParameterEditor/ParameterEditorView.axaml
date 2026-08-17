@@ -122,6 +122,31 @@
                                FontSize="11" TextWrapping="Wrap"
                                Foreground="{DynamicResource CrfWarningBrush}"/>
 
+                    <!-- ── WB45: where the wires come from ─────────────────────────────────
+                         Carried (today's behaviour, and still the portable one — the wires travel
+                         inside the schematic, no path to break) or Linked (the netlist names the
+                         cell's .wBond, so there is ONE copy of the wires and staleness becomes
+                         unrepresentable rather than reported).
+
+                         The CONSEQUENCE is stated on the note line directly under the box, the same
+                         shape as the MKlopf entry-mode toggle: the two differ in exactly one thing —
+                         what the next Run simulates after a layout edit — and nothing else on screen
+                         would say which is in force. -->
+                    <Grid ColumnDefinitions="80,*">
+                        <TextBlock Grid.Column="0" Text="Source"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="Whether this component's wires travel inside the schematic (Carried) or are read from the cell's wirebond file (Linked)"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding WBondSourceOptions}"
+                                  SelectedIndex="{Binding WBondSourceIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                    </Grid>
+                    <TextBlock Text="{Binding WBondSourceNote}"
+                               Margin="80,0,0,0"
+                               FontSize="10" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
                     <!-- ── The arrays ───────────────────────────────────────────────────────
                          An array IS a port: its name is the pin-pair name, and its position is the
                          pin-pair position. That is why this list is the one place the array list
@@ -178,6 +203,86 @@
                                             Command="{Binding $parent[ItemsControl].((vm:ParameterEditorViewModel)DataContext).RemoveWBondArrayCommand}"
                                             CommandParameter="{Binding}"
                                             ToolTip.Tip="Remove this array AND every wire in it"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- ── §5.5.1/WB44: the controlling parameters ─────────────────────────
+                         These are NOT the geometry — the 3D coordinates in the design are the truth.
+                         They are an override layer applied to the DECODED design on its way to the
+                         solver, which never writes back: a 21-point sweep re-elaborates 21 times and
+                         mutates the stored wires zero times.
+
+                         `Material` is an enumeration over the design's OWN metals (the table is
+                         user-extensible), so it is a dropdown rather than a text box a typo can reach.
+                         The unsuffixed `LoopHeight` and `Diameter` are generic rows at the bottom of
+                         this dialog on purpose: they are ordinary expression fields, which is what
+                         makes `LoopHeight = loopH` typable and therefore sweepable.
+
+                         "As drawn" is the FIRST entry and means unset. It is deliberately not a blank
+                         row and never "0": zero is an error the run refuses by name, and a wire
+                         flattened onto the ground plane is not the same statement as a wire left as
+                         the user drew it. -->
+                    <Grid ColumnDefinitions="80,*">
+                        <TextBlock Grid.Column="0" Text="Material"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="Overrides every wire's metal at simulation time. As drawn = leave each wire's own metal alone."/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding WBondMaterialOptions}"
+                                  SelectedIndex="{Binding WBondMaterialIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                    </Grid>
+
+                    <!-- Per-ARRAY overrides. The scope is the array because array names ARE the pin
+                         names on the symbol (O-10) — a LoopProfile is an editor-internal sharing
+                         mechanism a schematic user never sees. The rows are generated from THIS
+                         instance's array list, so they name G1/G2 instead of asking anyone to spell a
+                         suffix.
+
+                         Span is deliberately absent (WB44a/O-11): it is not a profile property but the
+                         pad positions, it scales by factor rather than to a value, and it moves a
+                         bonded foot off its pad — which the layout editor makes safe with live
+                         snapping and the schematic, being blind to the artwork, cannot. -->
+                    <Grid ColumnDefinitions="80,*"
+                          IsVisible="{Binding WBondControls.Count}">
+                        <TextBlock Grid.Column="0" Text="Per array"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="Blank = as drawn. A wire dragged loose from its profile keeps its drawn loop height, and the run says how many."
+                                   FontSize="10" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding WBondControls}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WBondControlRow">
+                                <Grid ColumnDefinitions="80,*,*,*" Margin="0,0,0,3">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding ArrayName}"
+                                               FontSize="11" VerticalAlignment="Center"
+                                               Margin="0,0,4,0"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding LoopHeight, Mode=TwoWay}"
+                                             PlaceholderText="height"
+                                             FontSize="11" Padding="4,3" Margin="0,0,3,0"
+                                             LostFocus="OnWBondControlLoopHeightCommit"
+                                             KeyDown="OnWBondControlLoopHeightKeyDown"
+                                             ToolTip.Tip="Loop height for this array, in mil unless a unit is given. A VAR name is typable, which is what makes it sweepable."/>
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding Diameter, Mode=TwoWay}"
+                                             PlaceholderText="diameter"
+                                             FontSize="11" Padding="4,3" Margin="0,0,3,0"
+                                             LostFocus="OnWBondControlDiameterCommit"
+                                             KeyDown="OnWBondControlDiameterKeyDown"
+                                             ToolTip.Tip="Wire diameter for this array, in mil unless a unit is given"/>
+                                    <ComboBox Grid.Column="3"
+                                              ItemsSource="{Binding Materials}"
+                                              SelectedIndex="{Binding MaterialIndex}"
+                                              FontSize="11" Padding="4,3"
+                                              HorizontalAlignment="Stretch"
+                                              ToolTip.Tip="Wire metal for this array"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
