@@ -55,6 +55,32 @@ public sealed class CwsDockPanel
 
     /// <summary>True for the visible tab of its group.</summary>
     public bool Active { get; set; }
+
+    /// <summary>
+    /// <b>This panel's column sits BETWEEN the outer side column and the documents</b> — the arrangement
+    /// a user gets by dropping a panel against the document area's own left or right edge, rather than
+    /// against the outer edge of the window.
+    ///
+    /// <para>Owner report this exists for (2026-08-17): the Array Inductance panel docked immediately
+    /// left of the layout document came back <i>below the Properties inspector</i> — because
+    /// <see cref="Side"/> alone cannot tell the two apart. It correctly captured <c>Left</c>, and the
+    /// restore put it in the one place the schema could express: another row of the outer left column.
+    /// </para>
+    ///
+    /// <para><b>Only meaningful for <see cref="DockSide.Left"/> and <see cref="DockSide.Right"/>.</b> Top
+    /// and bottom panels are inboard by construction — the builder has always placed them inside the
+    /// document column, above and below the documents — so the flag is normalised to false for them
+    /// rather than carrying a distinction that does not exist.</para>
+    ///
+    /// <para>An inboard column's WIDTH is this panel's own <see cref="Proportion"/>, not a
+    /// <see cref="CwsDockSide"/> entry: there can be two Left columns at different widths, and a value
+    /// keyed on the side alone cannot hold both. That also matches what Dock itself stores — its
+    /// <c>CreateSplitLayout</c> writes the panel's share of the split onto the tool dock.</para>
+    ///
+    /// <para>Additive and defaulted false, so a <c>.cws</c> written before this existed reads back
+    /// exactly as it did.</para>
+    /// </summary>
+    public bool Inboard { get; set; }
 }
 
 /// <summary>
@@ -68,6 +94,23 @@ public sealed class CwsDockSide
 {
     public string Side       { get; set; } = DockSide.Left;
     public double Proportion { get; set; }
+
+    /// <summary>
+    /// True for the column that sits <b>between</b> the tool columns and the documents — the one Dock
+    /// builds when a panel is dropped beside the documents. A side can have both, so this is part of the
+    /// key, not a variant.
+    ///
+    /// <para><b>Why an inboard column needs an entry of its own</b> (owner, 2026-08-17: "the width of my
+    /// layout document was not respected when I re-opened my workspace"). Its width used to be read off
+    /// its first PANEL's <c>Proportion</c> — but a panel's proportion is its share of its own column,
+    /// measured DOWN, while a column's is its share of the document row, measured ACROSS. Two unrelated
+    /// quantities in one field: a workspace whose two wirebond panels were stacked 0.67/0.33 reopened with
+    /// the column taking 0.67 of the window's width and the layout document squeezed into what was left.</para>
+    ///
+    /// <para>Additive, so the format version does not move: a file written before this reads back
+    /// <c>false</c> everywhere, which is what every entry in such a file meant.</para>
+    /// </summary>
+    public bool Inboard { get; set; }
 }
 
 /// <summary>One torn-off window: logical geometry (R-dock-7) plus which panels it contains.</summary>
@@ -231,8 +274,22 @@ public static class DockPanelIds
     /// to tell you about this design", and neither is worth its own permanent strip of window.</summary>
     public const string Drc         = "Drc";
 
+    /// <summary>
+    /// wbond.md §10.1 (WB39a/M3) — the profile view and the Array Inductance panel, as dockable tools
+    /// that follow the active layout. That is what makes "the wBond Editor" stop being a separate
+    /// editor and become the Layout Editor with two panels open: push into a wirebond cell (WB40) and
+    /// these two show its wires' shape and its arrays' inductance.
+    ///
+    /// <para>Absent from both shipped default layouts, deliberately — most designs have no wirebonds,
+    /// and a panel that would be empty for most users is one they would have to learn about only to
+    /// close. They are opened from View ▸ Panels and, once opened, are captured and restored with
+    /// every other panel.</para>
+    /// </summary>
+    public const string WBondProfile    = "WBondProfile";
+    public const string WBondInductance = "WBondInductance";
+
     public static readonly string[] All =
     [
-        ProjectTree, Palette, Properties, Analyses, Messages, Drc,
+        ProjectTree, Palette, Properties, Analyses, Messages, Drc, WBondProfile, WBondInductance,
     ];
 }

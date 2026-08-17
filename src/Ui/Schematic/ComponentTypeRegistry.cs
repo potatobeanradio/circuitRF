@@ -674,10 +674,26 @@ public static class ComponentTypeRegistry
             // `Temp` and `GroundPlane` are real engine overrides (ComponentModelFactory reads both)
             // and are deliberately left BLANK: blank means "use the design's own value", and a
             // seeded default here would silently override what the payload itself states.
+            //
+            // `SymbolPitch` is artwork only — Tight or Loose, exactly as SnP's `Pitch` means them
+            // (owner, 2026-08-16). It changes how far apart the port ROWS sit on the symbol and
+            // nothing else; the pin ORDER, and therefore the wiring, is the array order either way.
+            // Like `Arrays` it is filtered out of the extracted netlist.
+            //
+            // **Named `SymbolPitch`, not `Pitch`** (owner): on a wirebond component "pitch" is what a
+            // reader will take to mean the WIRE pitch — the centre-to-centre spacing of the bonds
+            // themselves, a physical quantity this parameter has nothing to do with. SnP has no such
+            // collision, which is why it can keep the short name.
+            //
+            // `RefPin` exposes the floating REF terminal, and is OFF by default — matching SnP's own
+            // `RefNode`. Unlike the two above it IS forwarded to the engine, because it changes the
+            // terminal count (2M vs 2M+1); see WBondModel.
             case SymbolKind.WBond:
                 return [
                     new("Design",      WBondEmbedding.DefaultPayload, "", false, UnitDimension.None),
                     new("Arrays",      WBondSymbolProvider.DefaultArraysKey, "", false, UnitDimension.None),
+                    new("SymbolPitch", nameof(WBondSymbolPitch.Loose), "", false, UnitDimension.None),
+                    new("RefPin",      "false", "", false, UnitDimension.None),
                     new("Temp",        "", "", false, UnitDimension.None),
                     new("GroundPlane", "", "", false, UnitDimension.None),
                 ];

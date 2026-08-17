@@ -1534,13 +1534,17 @@ public static class NetExtractor
         // makes that true rather than coincidental; a transposition here produces a circuit that
         // solves and reports the wrong array's inductance on the wrong net.
         //
-        // §5 question 2 — REF *does* appear in NetBindings, and the model ignores the last one.
-        // WBondModel.PortCount is 2M+1 and its TerminalNames end in "REF", so the elaborator binds
-        // 2M+1 nets; the stamp then uses 2M of them. The alternative (omit REF and make PortCount
-        // mean something other than the symbol's pin count) would put two different meanings on one
-        // number, and both sides would have to remember which. WB20 makes REF a DECLARATION — the
-        // user has to be able to SAY which net is the reference plane — and a declaration nobody can
-        // wire is not one.
+        // §5 question 2 — when REF is present it *does* appear in NetBindings, and the model ignores
+        // the last one. `WBondModel.PortCount` is then 2M+1 and its `TerminalNames` end in "REF", so
+        // the elaborator binds 2M+1 nets and the stamp uses 2M of them. The alternative (bind 2M and
+        // make PortCount mean something other than the symbol's pin count) would put two different
+        // meanings on one number, and both sides would have to remember which.
+        //
+        // **The pin is optional and OFF by default since 2026-08-16** (owner), matching SnP's
+        // `RefNode`. Both sides read the same `RefPin` instance parameter — the symbol generator to
+        // decide whether to draw the pin, and `ComponentModelFactory` to decide the model's port
+        // count — so the two cannot disagree. That is why `RefPin`, alone among the wBond artwork
+        // parameters, is forwarded to the engine rather than filtered out below.
         if (comp.Symbol == SymbolKind.WBond)
         {
             var wbDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
@@ -1569,8 +1573,14 @@ public static class NetExtractor
             var wbOverrides = comp.Parameters
                 // `Arrays` is circuitRF's own record of the array list this instance was wired
                 // against (§5 question 3) — editor bookkeeping, never an engine parameter. Same
-                // rule CvData and ShowBias already follow.
-                .Where(p => p.Name != "Arrays")
+                // rule CvData and ShowBias already follow. `SymbolPitch` is the same kind of thing:
+                // artwork, deciding how far apart the symbol's port rows sit and nothing else.
+                //
+                // `RefPin` is deliberately NOT in this list. It looks like artwork and is not: it
+                // decides whether the component has 2M or 2M+1 terminals, so the engine has to be
+                // told, or the model's port count disagrees with the net list the extractor just
+                // built from the symbol.
+                .Where(p => p.Name is not ("Arrays" or "SymbolPitch"))
                 // A blank value means "use the design's own", and it must be DROPPED rather than
                 // emitted: `Temp=` with nothing after it is the empty-parameter-value trap already
                 // recorded in src/Core/CLAUDE.md, where the .cnl reader glues the next token on as

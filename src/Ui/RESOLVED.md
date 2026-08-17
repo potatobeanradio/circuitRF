@@ -6,6 +6,693 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## P/A: the key was not repeatable, and the panel came back floating (2026-08-17)
+
+Owner: *"Pressing 'A' hides the Array Inductance panel (good). But pressing 'A' again does not bring it
+back — I have to click on the layout canvas first. Also, when I press 'A' to bring it back, it appears as a
+floating window."* Two independent defects behind one gesture.
+
+### Two states, not three — the middle one made the key non-deterministic
+
+Follow-up the same day: *"I press 'A' to open Array Inductance but the Wire Profile gets focus, so pressing
+'A' does not hide the Array Inductance… I should be able to press A repeatedly and the view toggle on and
+off."*
+
+**Two defects, and the first one is mine from the round above.** `ToggleToolPanel` had a middle state —
+showing but behind another tab meant *bring it forward* — which reads reasonably in a spec and is wrong at
+the keyboard: a panel tabbed with another needed THREE presses for one cycle, and which press did what
+depended on a tab order the user was not thinking about. **A key that means "show/hide this" has to mean
+that every time.** Showing ANYWHERE now means the next press hides it. (The View ▸ Panels menu is
+unaffected — it still means "show me that panel", which is why it stays a separate command.)
+
+**And the panel really was coming back behind the other one.** `BuildSide` resolves a group's front tab as
+`ordered.FirstOrDefault(p => p.Active)` over panels sorted by `Order`, and the live capture the restore
+builds on already had the OTHER panel marked active — so the lower `Order` won. Only one panel in a group
+can be in front, so the restore clears the flag across the group it is rejoining, and the targeted path
+states `dock.ActiveDockable = tool` directly rather than trusting an insert to imply it.
+
+### The two are ONE root cause: restoring by REBUILD
+
+Reported three times before it was actually fixed, and the third report — *"I also see the entire workspace
+dock redraw when the Array Inductance is brought back… when I dock it manually using the Dock system there
+is no flash"* — is what finally named it.
+
+**Closing a panel lets its emptied `ToolDock` collapse out of the tree, so the only way back was
+`ApplyDockLayout` — a full rebuild.** That rebuild is both symptoms: the flash the owner could see, and the
+reason the key stopped working, because the view handling it was re-created underneath it.
+
+**Dock has the mechanism already: `HideDockable` / `RestoreDockable`.** Hide moves the dockable to the
+root's `HiddenDockables` and records `IDockable.OriginalOwner`; restore puts it back into that owner at the
+same proportion, touching nothing else. Verified directly against the library before building on it — and
+the test asserts the tree is byte-identical afterwards, which is what "no flash" means structurally.
+
+Hide leaves an **empty `ToolDock`** behind, which is correct for the library — it is what makes the restore
+exact — and is left strictly alone. An early version detached it, on the untested belief that an empty
+proportional child would show as a blank strip; it renders at 0 px, and the detach caused a bug of its own.
+See *The panel shrank on every toggle*, below.
+
+The rebuild path survives for the two cases hide/restore cannot serve: a placement read back from a `.cws`
+(nothing is hidden in a session that just started), and a parent that has since left the tree.
+
+### And the key: gated on focus, performing an action that moves focus
+
+The P/A handler was a tunnel handler on the layout view gated on `LayoutCanvasCtrl.IsKeyboardFocusWithin`.
+**That shape cannot work for this action.** Closing a dockable moves keyboard focus off the canvas — Dock
+focuses what is left in the dock it just emptied, and the surrounding content is re-realised — so *the very
+act the key performs disarms the key*. The first press worked; the second needed a click first.
+
+**Re-asserting canvas focus afterwards did not fix it, and was the wrong shape too.** It is a patch on the
+symptom, it races Dock's own focus handling, and it loses often enough to be useless — the owner reported
+the same bug again with that patch in place.
+
+**The handler belongs on the SHELL WINDOW** — `WorkspaceWindow.OnWindowKeyDownTunnel`, beside the
+placement-rotate shortcut that is there for the identical stated reason ("regardless of which control has
+focus"). The gate stops being *which control is focused*, which the action changes, and becomes *which
+document is active*, which it does not (`WorkspaceViewModel.WirePanelKeysApply`).
+
+An intermediate attempt registered per-view on the `TopLevel`; that removed the focus dependency but kept a
+lifetime problem (attach/detach, `IsEffectivelyVisible`, an `e.Handled` backstop for split panes). One
+registration on the window has none of those. Its two guards are `WirePanelKeysApply` — a layout with
+wirebonds, not mid-label — and `IsTypingInAField()`, the same three control types `WBondEditorView` uses,
+so a bare letter typed into a field stays a letter.
+
+`ToggleWirePanel` now touches focus not at all, so it is left wherever the user wants it — including inside
+the panel that has just appeared.
+
+**The general lesson:** a keyboard shortcut gated on a specific control's focus is only safe when the action
+cannot disturb focus. When it can, the gate belongs at the window, with the *intent* (which document, is the
+user typing) as the guard instead of a focus location.
+
+### It came back floating because `ShowToolPanel` has only one answer
+
+Its answer for a panel that is not in the tree is *float one* — right for a View-menu item, wrong for a
+toggle whose whole purpose is to undo the hide. **Nothing had remembered where the panel was.**
+
+`_panelHomes` records **two** things per panel, because they answer different questions:
+
+- **The live `IToolDock` plus the index in it** — an exact restore via `InsertDockable` that needs no
+  rebuild. **This path exists to avoid a rebuild, and that is not an optimisation:** `ApplyDockLayout`
+  re-realises every document's view, which would throw away the pan and zoom of every open canvas. Not a
+  price a keystroke should pay. The remembered dock is verified with `DockLayoutCapture.Contains` before
+  use — a collapsed or dragged-away dock is a live object with a stale place in it, and inserting there
+  puts the panel where nobody can see it.
+- **The schema placement** (side, group, order, width, inboard, or the floating rectangle) — for when the
+  column no longer exists at all because that panel was the only thing in it, and for a place read back
+  from a `.cws`.
+
+Remembering happens on `DockableClosing` as well as inside the toggle, so closing by the tab's own X leaves
+the same trail back.
+
+### And the place survives a restart
+
+A closed panel is not in the live tree, so `Capture` cannot see it — the place would be forgotten the moment
+the workspace was saved with the panel hidden, and next session's first press would float it again.
+`CaptureDockLayoutForPersistence` adds an `Open = false` entry for each remembered place; every reader
+already ignores it (`BuildSide` filters on `Open`), and `SeedPanelHomesFrom` reads them back **before** the
+layout is applied, since the apply drops them. Deliberately not folded into `DockLayoutCapture.Capture`,
+which is a pure walker of a live tree and has no business knowing what a view model remembers.
+
+### The same two symptoms again, for a panel in a FLOATING window (2026-08-17)
+
+Owner: *"lots of issues getting A or P to toggle when they are floating — their window contents disappears
+and the window is not closed, and I see that flash bug too."*
+
+Both are one measured fact about the library, and it was **checked against a real `Factory` before anything
+was built on it** — the previous three attempts at this bug were each reasoned out and each wrong.
+**`HideDockable` files a floating tool under the FLOAT's own root, not the shell's:**
+
+```
+after HideDockable(arr):
+  shellRoot.Hidden = []          ← where the restore looks
+  floatRoot.Hidden = [arr]       ← where it actually went
+  floatToolDock.Visible = []     ← the vanished contents
+  shellRoot.Windows = 1          ← the window that stayed open
+```
+
+So the empty window sits there, and the shell-root hidden check misses, and the restore falls all the way
+through to `ApplyDockLayout` — the flash. That measurement is pinned as a test
+(`DocksOwnHide_FilesAFloatingToolUnderTheFloatRootAndLeavesTheWindowOpen`); if a future Dock release changes
+it, the test says so and the floating branch can go.
+
+**The fix is not a workaround for that — it is what the two cases actually are.** A docked panel's place is a
+*slot in a tree*, which the library holds open for us — hence hide/restore and nothing more. A floating panel's place is a *rectangle on a screen*, which is a **value**: write it
+down, close the window outright, and re-open one at that rectangle on the way back
+(`FloatTool` → no shell rebuild → no flash). The remembered rectangle still goes through
+`FloatingWindowPlacer` (R-dock-6) — the monitor it was on may be gone.
+
+Two things fall out of it:
+
+- **A float the user dragged a second panel into is still that other panel's window.** `HoldsOtherTools`
+  decides; a shared float closes only the one panel. `RememberPanelHome` already promised the restore its
+  *own* rectangle rather than a seat back in a window it no longer shares.
+- **Closing raises `DockableClosing`, which arrives back at `RememberPanelHome` after the window has left the
+  tree** — a second pass that finds nothing and would overwrite the rectangle recorded a moment earlier with
+  "nowhere". A record naming no place carries no information, so `RememberPanelHome` now keeps the older one.
+  Ordering, not defensive padding: without it the panel reappears as a fresh default-placed float.
+
+`CircuitRfDockFactory.CloseFloatingWindow` is `CloseFloatingToolWindows`' body, extracted rather than
+copied — the `HostWindows` deregistration in it was paid for once already (a missed removal crashes the next
+window drag inside `SortWindowsByZOrder`), and there must be exactly one copy of that.
+
+### The panel shrank on every toggle — the "tidying up" was the bug
+
+Owner: *"if the panels are docked and I press A or P repeatedly, the height is not respected — the panel
+gets smaller and smaller."*
+
+`Hide` used to detach the emptied `ToolDock` and one adjacent splitter and re-attach them on the way back,
+reasoning that *a proportional child with no content is a blank strip taking its share of the window*.
+**That reasoning was never measured, and it is false.** Laid out for real, an emptied dock and its splitter
+both render at **0 px** — Dock collapses them itself.
+
+The detach was also the cause of the shrink, by a route that **cannot be fixed from the layer that caused
+it**:
+
+1. Removing the dock leaves its sibling alone in the column, so `ProportionalStackPanel` renormalises the
+   sibling's **control** to 1.0 as a *local* value, which two-way-binds back to the model.
+2. Re-inserting the dock and re-asserting the remembered proportions on the **model** cannot undo that: a
+   local value on a control outranks the style-priority binding, so the survivor's control keeps its 1.0 and
+   never sees the model write.
+3. The next layout pass normalises 0.668 against 1.0 → 0.40/0.60 and writes *that* back. Measured across
+   cycles: 0.668 → 0.4005 → 0.2860 → 0.2224 → 0.1819.
+
+Left alone, the collapse is Dock's own and reverses exactly — 0.668/0.332 returns to 0.668/0.332 for as many
+cycles as you like. **The fix was deleting the mechanism**, not adding to it: `DockPanelHiding` is now
+`HideDockable` / `RestoreDockable` plus a reachability guard, and the `DetachedOwner` record, the proportion
+bookkeeping and `_detachedOwners` are all gone.
+
+**Two failed attempts preceded this, both from reasoning about the library instead of measuring it**, and
+the second is the more instructive: recording every sibling's proportion at hide time and writing it back on
+restore is a correct-sounding fix that passes a model-level test and changes nothing on screen, because the
+value it writes never reaches the control. The escape was a throwaway headless Avalonia probe — a real
+`DockControl`, the real Fluent theme, a real layout pass — which reproduced the exact drift in one run and
+then showed the no-detach variant holding steady. **When a mechanism spans model and view, a model-only
+experiment cannot settle it**; standing up the real stack in a scratch project is cheap next to a third
+wrong answer.
+
+The in-repo tests can only gate the model half (`Ui.Tests` calls no Avalonia runtime API), so they assert the
+thing that *is* model-visible and that the probe identified as decisive: hiding a panel leaves its column's
+children and every proportion in the tree **byte-identical**, over five cycles. That is exactly the property
+whose absence caused the bug.
+
+### …and then the key died after exactly two presses — a float is another `TopLevel`
+
+Owner: *"when those windows are floating I can only toggle them twice before I am forced to click on the
+canvas. This works perfectly when they are docked."* Two presses is the tell, and it counts out exactly:
+press (close, focus never left the shell), press (reopen — **presenting a window activates it**), press
+(delivered to the panel's own OS window, which had no handler on it). Docked panels never showed it because
+everything is inside the one window.
+
+**The handler is now registered per `TopLevel`** — the shell and every `CrfHostWindow` — with one shared
+body in `Views/WirePanelKeys.cs`. A float has no view model of its own, so it resolves the workspace through
+the shell window's DataContext; in the standalone wBond app that finds nothing and the shortcut is simply
+absent, rather than needing a second gate.
+
+**Explicitly not solved by keeping focus in the shell when a panel floats.** Stealing focus back from a
+window the user just asked to see is the same class of patch as the three that lost to Dock's own focus
+handling, and it would make the panel unusable — its own fields could never be typed into.
+
+**The rule, now stated in the code:** a shortcut whose own action can move focus must not be gated on focus,
+*and* must be reachable from every surface focus can land on. The previous fix got the first half (off the
+view, onto the window, gated on which document is active); this is the second. Each attempt covered one more
+surface — canvas, then window, then every window — which is the shape of the mistake: the question was never
+"where is focus", it was "where can focus be".
+
+## `Side` could not say WHICH column — a panel docked beside the documents restored below the outer one (2026-08-17)
+
+Owner: *"I docked the Array Inductance window to the left of the layout document (kind of 'inside' the
+document), but when I re-opened the workspace it was loaded on the left side, but below the Properties
+Inspector."*
+
+**`SideOf` was right; the schema was not expressive enough.** It captured `Left` correctly — it
+deliberately walks outward past any container that does not separate the tool from the documents, which is
+the 2026-08-14 fix and still correct. What it is silent on is **which left column**, and there are two: the
+outer one at the window edge, and one between it and the document tabs. With only "Left" to work from,
+`BuildSide` did the only thing it could — stacked the panel as another ROW of the outer column, under
+whatever was already there.
+
+**This is the THIRD owner-reported bug from this one area**, and worth naming as a family: `Alignment` is
+not a column (2026-07-30); a container that does not separate says nothing about the side (2026-08-14); and
+a side does not identify a column (this one). Anything added to `SideOf` needs a test that the *other*
+arrangements still capture — a naive fix for one has twice traded it for another.
+
+### `CwsDockPanel.Inboard`
+
+One additive bool. Capture answers it with a single question asked at the OUTERMOST proportional container:
+*does it separate the tool from the documents?* Same branch → everything distinguishing them happens
+further in, which is what inboard means. Different branches → an outer column.
+
+Three consequences worth knowing:
+
+- **The group counter is keyed on `(Side, Inboard)`.** Two Left columns are two places; a shared counter
+  would tell an inboard panel and an outer one they are in the same group and rebuild them into one
+  column — the reported bug in a second form.
+- **An inboard column gets its OWN `Sides` entry, flagged `Inboard`.** Two Left columns can have two
+  widths, so the side alone cannot be the key — it is `(Side, Inboard)`, and the caller keeps the first
+  entry per key, which is also what stops an inboard column from silently replacing the outer one's width.
+  *This is the corrected form: the width used to be inferred from the panel instead — see below for what
+  that cost.*
+- **The builder wraps the DOCUMENT AREA**, not the document column, in the inboard horizontal split. That
+  is the shape Dock's own drop produces — the split replaces the document dock and leaves top/bottom docks
+  outside it — so a restore is indistinguishable from the drag that made it.
+
+### The layout document lost its width — a proportion that answered a different question
+
+Owner, 2026-08-17, with the workspace that showed it: *"the width of my layout document was not respected
+when I re-opened my workspace."*
+
+An inboard column's width was read off its first PANEL's `Proportion`. **A panel's proportion is its share
+of its own column, measured DOWN; a column's is its share of the document row, measured ACROSS.** The
+owner's `.cws` stacked two wirebond panels 0.668/0.332 in a right inboard column, so it reopened with the
+column claiming **0.668 of the window's width** and the layout document squeezed into the third left over.
+
+The 0.668 is the whole trap in one number: a perfectly valid proportion, in the right range, in the right
+field — simply an answer to a different question, so nothing could complain. The original note above
+reasoned its way to the panel because `Sides` was keyed on the side alone and could not hold two Left
+widths; the answer was to widen the key to `(Side, Inboard)`, not to find another field that happened to
+have a number in it.
+
+`CwsDockSide.Inboard` is additive, so the version does not move (same reasoning as below). A file written
+before it has no inboard entry and takes the default width — correct, because there is nothing trustworthy
+in it to recover; the exact width is kept from that workspace's next save onward. Verified by running the
+owner's actual `.cws` through the real factory: the column comes out at 0.20 rather than 0.668, leaving the
+document ~80% of the row instead of 33%.
+
+### Not a version bump, deliberately
+
+`CwsDockLayout.CurrentVersion` stays 1. Bumping it would make an older build refuse the whole block as
+"newer than this build understands" and fall back to the default layout — **losing every panel position to
+gain one flag.** An unknown JSON property is simply ignored on read, so an additive field costs a round
+trip through an older build nothing. `Inboard` is normalised to false on top/bottom, which are inboard by
+construction and where the distinction does not exist.
+
+## Nothing wrote the `.cws` because a PANEL MOVED (2026-08-17)
+
+Owner: *"The Wire Profile and Array Inductance dockable positions are not respected when I re-open the
+saved workspace."*
+
+**The persistence chain was not the bug.** Capture → JSON → read → re-apply on a fresh factory round-trips
+both panels exactly, docked and floating; that is now pinned by `BothPanels_SurviveASaveAndReopen_Docked`
+and `…_Floating`, which run the whole two-session sequence.
+
+**The bug is that the `.cws` was only ever written by accident.** Its callers are an explicit save, the
+tree-filter debounce, clean exit, and a workspace switch — **none of them a dock rearrangement.** So an
+arrangement was recorded only when something unrelated happened to trigger a save while the panels were
+where the user wanted them. That is the *identical* failure shape already documented one layer along on
+`PersistOutgoingWorkspaceSession` ("no path that LEAVES a workspace called it, so the session was only
+ever recorded by accident") — the same hole, a different trigger.
+
+### Why it showed up on these two panels and nothing else
+
+**Every other panel is in the shipped default layout, at roughly where users expect it.** So when the
+saved block is missing or stale they still land somewhere plausible and *look* respected. The two wBond
+panels are deliberately absent from both defaults (most designs have no wirebonds), so a stale block loses
+them completely and they come back **closed** — "including whether they were docked or not", exactly as
+reported. **A defect in this mechanism is invisible on any panel that has a default position.**
+
+### The fix, and the guard that matters more than the fix
+
+`WireDockArrangementPersistence` subscribes to the Dock events that mean "the arrangement changed"
+(`DockableDocked/Undocked/Closed/Moved/Swapped`, `WindowMoveDragEnd/Opened/Closed`) and arms the existing
+3-second `ScheduleCwsSave` debounce. Deliberately **not** `DockableAdded`/`DockableRemoved` or the
+activation events: those fire in bulk while a layout is being built, and on every tab switch, which is not
+an arrangement change and would arm a disk write on every click.
+
+**`_layoutRebuildDepth` is the half that prevents data loss.** Applying a layout raises those very events,
+so a restore would arm a save of what it just applied — and when a restore has DEGRADED to the default
+(R-dock-5's own fallback), that debounced write lands three seconds later and **overwrites the user's good
+saved arrangement with the fallback**. Raised around `ApplyDockLayout` and around the workspace-open
+clean-slate rebuild, which is the one that could actually clobber.
+
+**Known limit, stated rather than papered over:** dragging a floating panel by its ordinary OS title bar
+routes through no Dock event at all (the same fact `LiveGeometryOf` exists for), so that move alone arms
+nothing. Its geometry is read LIVE at capture time, so the position is still correct in whatever save comes
+next — clean exit and workspace-switch both do.
+
+## wBond round 5d — the docked panels became first-class surfaces (2026-08-17)
+
+Six items, all about the two dockables being real places to work rather than side views of the wBond app.
+
+### The plane control belonged to the profile VIEW, not to a toolbar
+
+It lived in the wBond editor's toolbar, so **it did not exist at all in the dockable Wire Profile panel**
+— where the setting matters just as much. Moved onto the canvas as a floating control in the top-right
+corner, which means it travels with the view into every host: one control, one implementation, always
+reachable. Top RIGHT because this canvas is read from the left (span increases rightwards, the wires
+start at the left edge), so that corner is the one a control can occupy without covering the geometry.
+Its `DockPanel` wrapper in the wBond toolbar went with it — it existed only to right-align that combo.
+
+### Each panel's tab now says WHOSE wires it shows
+
+A workspace can hold several cells with a wBond in each, and both panels follow whichever layout is
+active — so a tab reading only "Wire Profile" says nothing, and the answer changes under the user as they
+switch tabs. `WBondToolBase.Subject` appends the cell name. **The `Id` deliberately does not move**: it is
+what a `.cws` stores and what layout capture/restore matches on, so a retitled panel still comes back
+where the user put it. The wBond app does not have the problem (one document, one layout) and does not use
+these panels.
+
+### "The wires are already in the layout" is not news
+
+Owner: *"I already know that the wires are in the layout. I am updating it, so why would the system give
+me this warning?"* Removed. `DescribeExisting` returns **null** for the agreed-and-kept case now, and null
+is the ordinary outcome. The two messages that remain are things the user cannot see for themselves: an
+unreadable sidecar, and array-list DRIFT. Reporting the expected outcome as a warning trains people to
+skim the pane, which costs the messages that matter.
+
+### Revealing the panels, and reaching them afterwards
+
+- **Shown on the FIRST seed only** (`Outcome.Created`). Someone who has just generated wires has no
+  reason to know two panels exist. A re-run leaves the arrangement exactly as they have since set it —
+  a command that re-opens a panel you closed on purpose is worse than one that never opened it. Through
+  `ShowToolPanel`, never `ToggleToolPanel`, so a reveal can never CLOSE an already-open panel.
+- **Two toolbar buttons on the hosted layout editor, plus `P` and `A`.** They TOGGLE
+  (`WorkspaceViewModel.ToggleToolPanel`: open when closed, bring forward when behind another tab, close
+  when already in front) — which is what makes them read as state rather than as two more "open
+  something" buttons, and is why they are not the View ▸ Panels command, where closing what you asked for
+  would be a trap.
+- **Gated on wires AND on a reachable workspace shell.** The second half is what keeps them out of the
+  standalone wBond app (owner): that window hosts both panels inline and has no dock at all, so a button
+  to show one has nothing to show it in. Same "is a shell reachable" test the DRC and EM buttons beside
+  them already use.
+- Bare `P`/`A` are free in the layout editor (only `Ctrl+A` is taken), and are gated on
+  `!IsTypingLabel` so a letter typed into a label stays a letter.
+
+### The Properties panel had no wire route from a wirebond cell
+
+Clicking a wire changed `WireEditor.Selection` — which the layout inspector cannot see and nothing was
+watching, so the panel went on showing the artwork's own empty selection.
+`RefreshLayoutPropertiesContext` mirrors `RefreshWBondPropertiesContext`'s rule exactly, including why
+**wires win a tie**: a layout selection can outlive a wire press, because the overlay consumes a press on
+a wire without the layout editor ever seeing it, so reading that stale one as intent would flip the panel
+away from the wire just clicked. Watched only while a layout document is active, on the same rule as the
+wBond watch beside it.
+
+## wBond round 5c — the docked panels had no coupling to the layout they follow (2026-08-17)
+
+Six owner items. Four of them are one omission.
+
+### The wires were never coupled to the layout's Snap and Unit
+
+In the wBond editor `WBondDocumentViewModel` keeps the wires' snap pitch and display unit in step with
+its reference layout. **A wirebond cell in the ordinary Layout Editor had nothing doing that**, and three
+of the six reports fall straight out of it:
+
+- the docked Wire Profile view drew **no grid at all** (pitch 0, because nobody pushed one);
+- its **rulers stayed on the wBond default** while the layout's own Unit box said something else;
+- and Snap changes reached neither.
+
+`LayoutEditorViewModel.PushLayoutSnapAndUnitToWires` is the coupling, run at attach and on every
+`SnapDbu`/`DisplayUnit` change — so the one Snap box and the one Unit box in that editor govern the wires
+too. The docked profile tool needs the pitch as a value it can push into a plain CLR property on the
+control, hence `WBondProfileTool.GridPitchNm` + `WireGridPitchChanged`.
+
+### The array double-click: the FIRST fix was inert, and the real cause was a one-shot push
+
+Reported twice. The first round made a selection change REPAINT — and that was correct but inert,
+**because the selection was never happening at all.**
+
+`WBondInductancePanelView` had its editor pushed in by each host, and the docked host pushed it exactly
+once: on its own `DataContextChanged`, which fires when the TOOL is bound and never again. **A dock tool
+instance lives for the whole session while the editor it points at changes with every document
+activation** — so the property was null for the life of the panel, and every gesture on it (the array
+double-click and all four settable rows) returned immediately.
+
+It lives on the FORMATTER now (`WBondPanelViewModel.Editor`), set beside `Unit` by both hosts: every host
+that has rows to format has the editor that produced them, and both are assigned together, so **there is
+no second moment to forget**. `NoHostPushesTheEditorIntoThePanel` is the source scan that keeps a push
+from being added back.
+
+**The lesson worth carrying:** a one-shot `DataContextChanged` push is safe only when the pushed value
+cannot outlive the DataContext. For a dock tool it never can — the tool IS the long-lived object.
+
+### And the repaint half, which was still needed
+
+Double-clicking an array name **did** then select its wires — and still nothing redrew. The canvas
+repaints on `ReadoutChanged`, and a selection raises none; the overlay object itself was never touched
+either. Two subscriptions fix it, and both belong where they are:
+
+- `LayoutEditorViewModel` watches `WireEditor.Selection`/`PreviewSelection` and pokes
+  `WBondLayoutOverlay.NotifyChanged()` — the overlay's first API for "something changed that was not one
+  of my gestures".
+- `WBondProfileView` watches the same two, so the SHARED control repaints itself in either host rather
+  than relying on the wBond editor's code-behind, which is the only reason this ever worked there.
+
+**Also fixed while in there:** `WBondProfileCanvas` never unsubscribed `ReadoutChanged` when its view
+model was replaced. Harmless while it was constructed once per editor; now that it is also a dock tool
+re-pointed on every document activation, a stale handler repaints it for a design it no longer shows and
+keeps that design alive.
+
+### The parameter dialog
+
+- **Temp and GroundPlane moved to the bottom** by putting the custom panels ABOVE the generic
+  `ItemsControl` in the StackPanel. Nothing changes for any type without a custom panel (all the rest),
+  and SnP hides the generic rows entirely, so order cannot matter there.
+- **The panel's own "Update Layout" button** sits on the Design row, directly above the arrays' Add
+  button. It runs `WorkspaceViewModel.UpdateLayoutForWBond`, which is `RunLayoutUpdate` with an
+  `onlyWBond` component — **the instance generator is skipped entirely**, so nothing else in the layout
+  moves under a user who is editing wires. Three details worth keeping:
+  - The schematic document is found **from the view model**, not from the active dockable: this is a
+    NON-MODAL dialog, so the user may well have clicked another tab since it opened.
+  - **The dialog closes on the view model's `WBondLayoutUpdated` event, not from a `Click` handler** —
+    Avalonia raises `Click` *before* it executes `Command`, so closing from there would tear the
+    DataContext down before the update ran. Gated on the host being a `ParameterEditorDialog`
+    specifically, because the same control is also the docked Properties inspector.
+  - The button is **absent** with no workspace rather than present and only able to refuse.
+- **A targeted seed refuses by name** when its component is no longer in the schematic (deleted while the
+  dialog was open), instead of silently falling back to a different wBond's wires.
+
+### The Wire Profile view drew a grid it then ignored
+
+Owner: *"the Wire Profile view is not respecting the snap resolution."* `WBondProfileCanvas.GridPitchNm`
+was read in exactly one place — the renderer. Nothing in its pointer handling snapped: a vertex dragged
+there went wherever the pixel said, and a wire drawn there placed both feet off-grid.
+
+**That is verbatim the failure the layout overlay's own note warns about** — *"the metadata bar would show
+a Snap distance, both canvases would draw a grid at that pitch, and the wires would ignore both"* —
+guarded there when it was written and never guarded here. Four places now snap, and the set is the point:
+
+- the drag's **baseline** at press (measured from the raw point, the whole drag inherits whatever
+  sub-step offset the hand pressed at);
+- the drag's **per-frame** cursor, so it steps grid point to grid point;
+- the wire tool's **ghost** and its **commit**, which must be the same snapped point or the wire lands
+  somewhere the ghost was not.
+
+**Alt-drag is deliberately NOT snapped** — it scales rather than places, and Alt is the app-wide snap
+suppressor anyway (R-snp-11), so both readings agree. **Grid only, no geometry**: this canvas's axes are
+span and z, and there is no artwork in that plane to land on.
+
+### The panel said its own name twice
+
+A dock TAB titled "Array Inductance" over a panel whose first row is the words "Array Inductance".
+`WBondInductancePanelView.ShowHeading` is false for the dock tool and true inline in the wBond editor,
+which has no tab of its own and where that heading is the only label there is.
+
+## wBond round 5b — a wirebond CELL had no undo and no marquee, and pressing a pad ate the wire selection (2026-08-17)
+
+Two owner reports about a wirebond cell in the ordinary Layout Editor, plus a third defect found while
+fixing the second.
+
+### Undo could not reach a wire edit, and the menu item was DISABLED
+
+The workspace routes Undo to `LayoutDocument.UndoRedo` — the session's **command** stack — and a wire
+edit lives in `WireEditor`'s **snapshot** stack. Nothing reached it from the Layout Editor at all.
+
+`IUndoableDocument` gained four defaulted members (`UndoLast`/`RedoLast`/`CanUndoLast`/`CanRedoLast`,
+plus the two descriptions) so **every other document type is untouched**, and `LayoutDocument` forwards
+them to the active session, which picks the history with the newer `EditSequence` stamp. The rule itself
+is now `EditSequence.UndoTakesFirst`/`RedoTakesFirst`, shared with the wBond editor's own Ctrl+Z — the
+two ask the identical question and a second copy of the comparison is a second chance to get the
+direction backwards (undo takes the LARGER stamp, redo the SMALLER).
+
+**The half that made it look completely dead:** a wire edit raises no `UndoRedoStack` notification, so
+`CanUndo` was never re-evaluated and the command stayed disabled — Ctrl+Z did literally nothing rather
+than the wrong thing. `LayoutEditorViewModel.WireHistoryChanged` is the signal, raised off
+`WBondViewModel.DirtyChanged` (which `Republish` fires on edits **and** on undo/redo, so one hook covers
+both), and both the shell's Undo command and a torn-off window's key bindings subscribe to it.
+
+**A pre-existing bug found on the way:** `SetActiveUndoTarget` followed a `SchematicDocument`'s
+`ActiveViewModelChanged` but not a `LayoutDocument`'s — so after pushing into a sub-cell, Undo stayed
+hooked to the PARENT cell's stack. Same shape, one line.
+
+### The marquee: one gesture, two selections, and the overlay consumes nothing
+
+A wirebond cell ships `WireMarqueeEnabled = false` (there the artwork is the subject), which meant wires
+could not be marquee-selected at all. The answer is **a companion marquee**: the overlay follows the box
+the LAYOUT editor is dragging and declines every event, so one drag selects the shapes it caught *and*
+the wires it caught. That is §6.3's "two independent selections held at once" applied to a drag instead
+of a click, and it needs no new mode.
+
+Two details worth keeping:
+
+- **`_marqueeActive` stays false for it.** The layout editor draws its own box for the same gesture, and
+  a second one at the same coordinates is a visible double stroke. Only the wire PREVIEW is published.
+- **A press on layout geometry starts no companion box** — that gesture is a MOVE drag, and a box there
+  would replace the wire selection every time a pad was nudged.
+
+### Pressing a bond pad cleared the wire selection
+
+Found by the companion-marquee test, and a defect of its own. `WBondLayoutOverlay.OnPointerPressed`
+resolved the WIRE selection *before* discovering the press belonged to the layout editor — so nudging a
+pad silently threw away the wires the user had picked. **That contradicts §6.3's own contract**, which is
+the entire basis for holding both selections at once. The routing decision now comes FIRST: a press on a
+thing the layout owns is declined untouched; a press on genuinely empty space still clears, because
+nothing was clicked. Round 4's own gate test
+(`APressOnLayoutGeometry_IsDeclinedSoTheLayoutEditorCanHaveIt`) still passes unchanged — it asserted the
+routing, which is what moved, not the clearing, which is what was wrong.
+
+## wBond round 5 — three of the five reports were ONE seam, and the wBond finally reaches the layout (2026-08-17)
+
+Five owner items, all downstream of WB-F's hosting change.
+
+### The snap glyph and the layout selection: one root cause
+
+`LayoutCanvas` offers the overlay every press and move first, and **anything it consumes never reaches
+`LayoutEditorViewModel.OnPointerMoved`** — which is the only thing that ever refreshed or cleared
+`_currentSnapCandidate`, and the only thing that ever cleared the layout's own selection. Three
+symptoms:
+
+- **The glyph freezes** on the vertex a wire was grabbed by, while the wire is dragged away from it. It
+  is the last HOVER's marker, left standing for the whole gesture.
+- **No glyph mid-draw**, even though the second foot is snapped on every frame — the answer existed and
+  had nowhere to go.
+- **Clicking empty space did not deselect layout geometry**, because the wire marquee consumed that
+  press.
+
+Both halves are now published by the overlay, through two defaulted `ILayoutCanvasOverlay` members
+(`SnapMarker`, `ConsumedPressWasEmptySpace`) that the canvas reads after every consumed gesture.
+**`WBondLayoutOverlay.SnapPoint` is the single place the marker is set**, so what is drawn is by
+construction the feature the geometry actually landed on rather than a second computation of it.
+
+Three things about it that are decisions, not accidents:
+
+- **`SetOverlaySnapMarker` is DISPLAY-only** — `_snapCandidateIsRealTarget` stays false, exactly as for
+  the synthetic grab echo. Letting it feed `RecomputeMoveDelta`'s absolute-position branch would move
+  layout SHAPES to a point chosen for a wire.
+- **A GRID snap marks nothing.** The layout editor's own marker has never marked the grid, and a glyph
+  under every cursor position carries no information.
+- **A ROTATE marks nothing either**, and this one is a trap: `BeginRotate` returns from the press path
+  *before* `SnapPoint` is reached, so a rotate never computes a snap — a marker during one could only be
+  the previous gesture's. The guard is `_drawStart is not null || _dragging`, deliberately not
+  `_rotating`, and the press clears the field as well.
+
+### `Update Layout from Schematic` and a wBond: the wires go in the CELL, not in an instance
+
+A wBond was `IsPhysical` to `SchematicToLayoutGenerator`, resolved no layout view, and reported
+*"no layout view — skipped"* — a true statement about a mechanism the user has no reason to know about.
+**WB23 is why there is nothing to place: no wire ever enters a `.clay`.** So §9.5/WB41's answer is the
+cell's own `.wBond` sidecar (`WBondCellSeeding`), which is the SAME file `WBondCell` already loads —
+**one change answers both halves of the report**, the wires-after-generate one and the
+wires-when-I-reopen-the-`.clay` one.
+
+- **A re-run never overwrites wires the user moved.** That is the entire reason WB41 refuses to make
+  this a PCell. The sidecar is written once and thereafter kept, with a drift line through
+  `WBondPlacement.DriftBetween` when the array lists have since diverged, naming §9.6 as the remedy.
+- **`WireDesign` is assigned LAST in `AttachWireDesign`**, because it is the notification a view attaches
+  the overlay on — and attaching to an *already open* document is now the ordinary case, since the seed
+  writes into a layout the command has just brought to the front.
+- Two wBonds in one schematic have no single answer (merging arrays breaks each one's array-to-pin
+  mapping), so the first is written and **the rest are named**.
+- **Not done, on purpose:** a cell whose layout predates this change has no sidecar, and opening its
+  `.clay` shows no wires until Update Layout from Schematic is run once. Seeding on OPEN would violate
+  R-L5-23 ("no save hook, no open hook, no document-activation hook") and that guardrail is worth more
+  than the one-time convenience.
+
+### The parameter panel painted over itself because its container was a `Panel`
+
+`ParameterEditorView`'s parameter area was a `Panel` — every child gets the whole area. Harmless while
+SnP was the only custom panel, because SnP *replaces* the generic rows (`IsVisible="{Binding !IsSnp}"`).
+**The wBond panel shows BESIDE them** (`Temp` and `GroundPlane` stay ordinary rows), so it painted
+straight over them: the owner's "the Add button and some other text render overtop of the parameters
+fields". A vertical `StackPanel` fixes it and changes nothing for SnP, since a hidden child takes no
+space either way.
+
+Also: `WBondSymbolGenerator.Describe` now takes a `LayoutUnit` — the workspace `.ctech`'s
+`DefaultDisplayUnit`, reached through a new `SchematicViewModel.WorkspaceDisplayUnitProvider`. **Wired on
+the schematic session, not on each parameter editor**, because three places construct one of those and
+exactly one place builds a session. The fallback is **mils**, not millimetres: the only length a
+schematic currently reports is a wirebond's, and a bonder works in mils. And the `G1.i / G1.o` column is
+gone — it was an internal spelling of "this array's + and − terminals", and the terminals are on the
+symbol where they are actually wired.
+
+## WB-F — the wBond editor HOSTS `LayoutEditorView` instead of transcribing it (2026-08-16)
+
+The owner, after round 4: *"I just tried the new geometry shape tools in wBond and there are many many
+bugs (that we had previously resolved when we hardened the Layout Editor)."* **They were not in the
+geometry.** `LayoutEditorViewModel` is one object shared by both editors and always has been — its
+snapping, hit-testing, drawing tools, commands and undo stack are the hardened ones. What was
+duplicated was the ~2,700-line *view shell*, and that is where every one of those bugs lived: a tool
+armed with no Escape to disarm it, arrow keys reaching the wrong handler, no breadcrumb bar, focus that
+never came back after a toolbar click. Hosting the real control deletes them all at once.
+
+**The seam needed nothing new.** `LayoutDocument(title, viewModel, path)` already takes an existing
+view model, so `WBondDocumentViewModel` builds one around its reference layout in
+`OnReferenceLayoutChanged` — the single funnel all three creation points share — and the XAML binds
+`ViewModel.LayoutDocument`. No interface extraction, no view-model surgery. Push-in, pop-out and the
+breadcrumb bar arrive with it; the wBond editor never had any of the three.
+
+### Four things that had to move rather than be deleted, and why each is where it is
+
+- **The wire context menu is on the OVERLAY** (`ILayoutCanvasOverlay.BuildContextMenuItems`, defaulted
+  to empty). One shared canvas means one `ContextMenu` and one `Opening` handler — the Layout
+  Editor's. A second menu declared by the wBond view would have to replace it, which is how the shell
+  got duplicated in the first place. **This is also what gives a wirebond CELL its wire menu in the
+  ordinary Layout Editor with no wBond code in that view at all.**
+- **`Ctrl+Z` routes by an `EditSequence` stamp, not by focus.** There are two genuine histories now:
+  wire snapshots and the layout's command stack. Routing by focus is *wrong* — a WIRE drag happens on
+  the LAYOUT canvas — and "wires first" would undo a wire move made ten minutes ago instead of the
+  rectangle just drawn. Each recorded entry carries a stamp from one process-wide counter, and undo
+  takes the newer. **An undone entry keeps the stamp it was recorded with**; re-stamping on undo would
+  make every later Ctrl+Z pick the same history forever. An edit that changed nothing drops its stamp
+  with its entry (`WBondViewModel.DropUndoEntry`), or that history would look more recently edited
+  than it is.
+- **`Delete` is now gated on a non-empty WIRE selection.** The wBond key handler is a *tunnel* handler
+  on an ancestor of the hosted view, so its unconditional `e.Handled` would have swallowed every
+  Delete meant for a selected shape or instance.
+- **The Unit arrow runs both ways.** The wBond metadata bar is gone in favour of the hosted one, so
+  the visible picker writes `LayoutEditorViewModel.DisplayUnit` while every wBond readout follows
+  `Editor.DisplayUnit`. §6.5 is untouched — its rule is that a wBond is not forced onto the `.ctech`'s
+  unit, and it still is not.
+
+### Two traps in hosting a document view inside another document
+
+- **`TornOffFileMenuView` keys off the TopLevel being a `CrfHostWindow`** — which a torn-off wBond tab
+  is, so the nested layout half would have shown a second File menu describing a different file.
+  `LayoutEditorView.IsHostedInAnotherDocument` suppresses it.
+- **A host's overlay must outrank the frame's own.** In the wBond editor the wires are the *document*
+  and stay on screen while the user pushes into a sub-cell to nudge the pad under them (WB27); a
+  wirebond cell reached from there must not replace them with its own.
+
+### WB27 was unreachable until this landed
+
+`WBondDescent` — the descent transform, the locked-reference-at-depth rule and its refusal path — has
+existed since WB-C with **no push-in in the wBond editor to trigger any of it**, so it was reachable
+only from its own tests. Hosting gives the editor a frame stack, and `PushDescentChain` is the wiring
+that milestone always needed.
+
+### WB40 — a wirebond cell, and where its save hook has to go
+
+A cell folder holding a `.wBond` beside its `.clay` (`WBondCell.FindFor`, one level UP from the
+artwork) loads it into `WireDesign` at `WorkspaceViewModel.BuildLayoutSessionVm` — the one funnel both
+"open as a tab" and "push in" go through. **The write-back hangs off `LayoutEditorViewModel.MarkSaved`,
+not off `PerformSave`**: the workspace saves sub-cell sessions with a bare
+`LayoutPersistence.SaveToFile`, so no single writer sees them all. A cell overlay ships with
+`WireMarqueeEnabled = false` and an armed-tool check — the opposite of the wBond editor's defaults,
+because there the wires are the subject and here the artwork is.
+
+### The measurement, after — and where the subtraction actually is
+
+The wBond view shell was **2,452 lines** (`.axaml` 803, `.axaml.cs` 988, `LayoutTools.cs` 226,
+`Selection.cs` 211, `ProfileMenu.cs` 224). After: **1,401** in the editor view itself, **706** in the
+profile view and inductance panel — which are now controls **hosted twice**, inline by this editor and
+by a dock tool — and **183** in the overlay's context menu, likewise shared. `LayoutEditorView` gained
+~100 lines of host surface and the WB40 overlay wiring.
+
+**Deleting the transcribed toolbar alone was −430**; the rest of the phase is roughly flat, because M3
+turned two panels into shared controls rather than deleting them, and M4 added ~420 lines of genuinely
+new capability (wirebond cells, the two dock tools, the edit-sequence stamp). **Do not read a flat
+total as the phase having failed its own §4.3 test** — what §4.3 is about is the SHELL, and the shell
+is smaller and no longer duplicated. `EverySurvivingClickHandler_IsWBondsOwn` is the test that keeps a
+new transcribed handler from creeping back.
+
 ## Full-suite flakes: a WALL-CLOCK BUDGET decides what a counter test observes (2026-08-16)
 
 Owner: *"that same test always fails under load and passed in isolation — do something so that it
@@ -50,6 +737,136 @@ seam when you add it.
 **Not fixed, observed once:** `Core.Tests`'s `SpiceCornerDiscoveryTests.C5_AFileThatIsNothingButSectionsIsStillRecognised`
 also failed once under load. Different area, different mechanism, untouched by this round — recorded
 rather than guessed at.
+
+## wBond editor, round 4 — the drag slip was the quality ladder throwing the drag away; the wire marquee owned every press (2026-08-16)
+
+Twelve owner items. Most were mechanical. The four below have root causes nobody would guess from the
+symptom, and two of them are questions the owner asked outright.
+
+### "The cursor slips off the vertex I grabbed" — the LADDER, not the pointer
+
+Fast dragging is the whole tell. `QualityLadder` is fed measured frame times, so it degrades only when
+frames overrun, and at `DragQuality.Chord` `WBondPointerController` collapses every MOVING wire onto
+its two feet (WB15). Two independent defects follow, both invisible at 60 fps:
+
+- **`RestoreFromChord` put the CAPTURED array back verbatim**, discarding every frame of motion applied
+  while the wire was a chord. The wire sprang back to where it stood at the instant the ladder stepped
+  down, while the cursor had moved on. It now re-places the interior points by their own chord
+  parameter and height above the chord — `ScaleSpan`'s parameterisation — so translate, span-scale and
+  rotate all carry through with one rule. Byte-exact short-circuit when the feet have not moved, so
+  "a solving shortcut, never an edit" still holds.
+- **A collapsed wire has no interior point to move at all.** `WireSelection.MovingPoints` went on
+  naming point 3 of a two-point wire, so an interior-vertex drag froze — and indexed past the end.
+  `ChordIsFaithful` now skips the collapse for any wire whose moving set is not just its feet; the
+  case the shortcut was built for (many whole wires at once) still collapses. `WireEdits.Translate`
+  additionally skips an out-of-range index rather than throwing: a selection legitimately outlives the
+  point list it was resolved against.
+
+Gate: `WBondRound4Tests.AnInteriorVertexDrag_IsNeverCollapsedOntoTheChord`, **verified to fail with the
+guard removed** (7 points became 2). It runs at a 1 ns frame budget, so the ladder is at its most
+degraded — anything less proves nothing.
+
+### A cell instance could not be moved because the WIRE MARQUEE had already eaten the press
+
+`LayoutCanvas` offers the overlay every left press first. The overlay's miss branch read *"no wire
+here → start a wire marquee"*, which is every press on a pad, a shape or a placed instance. The only
+way through was the marquee toggle — a mode switch for something that is not a mode. It now asks
+`LayoutHitTest.HitStack` **and** `HitInstanceStack` and declines when either answers; the toggle still
+decides who gets genuinely empty space, which is the real ambiguity it was added for. Asking only about
+shapes fixes pads and leaves instances exactly as stuck.
+
+An armed LAYOUT tool (the new second toolbar row) takes every press outright, wire or not —
+`WBondLayoutOverlay.LayoutToolArmed`. Without it, arming Rectangle draws nothing and starts a marquee.
+The two tool states are made mutually exclusive in `WBondEditorView.LayoutTools.cs`, in both
+directions; either toolbar can be clicked at any moment.
+
+### A PCell drop was refused with "no workspace is open" while one plainly was
+
+`ResolvePCellCellRef` needs `WorkspaceRootDir`, which derives from `WorkspaceTechDir`, which walks up
+from `CurrentLayoutPath` to the nearest ancestor `.cws`. The wBond editor's reference layout HAS a path
+— under the recovery session directory, outside any workspace — so the walk found nothing and the
+fallback was deliberately skipped (`CurrentLayoutPath is not null` means "a real document with its own
+workspace", brief-foreign-documents R-fgn-3). **`LayoutEditorViewModel.IsScratchSurface` is the opt-in
+that says "this file is not a document at all"**, and only then is the host's own workspace used. An
+ordinary loose `.clay` is untouched and still reads null — that rule is not being relaxed.
+
+The same seam had never been wired at all for wBond: `WorkspaceViewModel.TrackNewWBond` now installs
+`WireRetargetSeam` through `WBondDocumentViewModel.ConfigureReferenceLayout`, a hook rather than a
+constructor argument because the reference layout is created on demand, replaced on unpack, and set
+from three creation points.
+
+### The envelope "disappears when I move the segment too far" — `IsProfileEditable`
+
+Asked outright, and the answer is one method. `ProfileEnvelope.Build` puts a wire in `BoundWires` only
+when it follows its array's profile **and** `IsProfileEditable(wire)` — which requires the wire's
+points to be MONOTONE in normalised span. Drag one vertex past its neighbour along the chord and the
+span goes backwards, the wire moves to `FreeWires`, and the band is rebuilt over what is left. If it
+was the array's only bound member, `bound.Count == 0` → no bands → `envelope.Bands.Count > 1` is false
+and **no band is drawn at all**. The wire itself keeps rendering, in the free-wire colour.
+
+That is correct behaviour (a band spanning a curve that folds back on itself would be meaningless) and
+it is silent, which is the actual complaint. Left as-is this round; the two profile-binding buttons'
+tooltips now state what a binding is and that detaching leaves the band. **Do not "fix" this by
+loosening the monotonicity test** — the band's whole coordinate is normalised span, and a non-monotone
+member has no single height at a given span.
+
+## wBond editor, round 4b — the parameter panel, and the measurement that settles "how much of wBond is a duplicate of the Layout Editor" (2026-08-16)
+
+### `Design` was "gibberish" because it was never meant to be a row
+
+`Design` (the base64 of the whole wirebond design) and `Arrays` (the drift-detection record) are both
+documented HIDDEN in `wbond.md` §5.0/§9.2 — and both were rendering as generic text rows anyway. The
+fix is a wBond panel in the Parameter Editor, mirroring SnP's: `ParameterEditorViewModel.SetTarget`
+filters the four panel-owned parameters out of the generic rows, and the panel shows a SUMMARY where
+`Design` was. `Temp` and `GroundPlane` stay generic rows — they are real engine values, and asserting
+that in the test is what keeps this a filter rather than a blanket suppression.
+
+**`Pitch` is now `SymbolPitch`** (owner): on a wirebond component "pitch" reads as the WIRE pitch, the
+centre-to-centre bond spacing. SnP has no such collision and keeps the short name.
+
+### The floating reference pin: WB20 said mandatory, and what WB20 protects is elsewhere
+
+`REF` is now optional and **off by default**, matching SnP's `RefNode`. §5.4/WB20 wrote it as
+mandatory — *"the UI does not permit a port without one"* — but what WB20 actually protects is
+`WBondModel.RefuseIfReturnPathUndeclared`, and **that keys off `GroundPlane.Enabled`, not off the
+pin**. `REF` never stamped. So an undeclared return path is still refused by name either way, and
+nothing about the physics moved.
+
+Two facts make the flag safe, and both are worth keeping: **`REF` is the LAST terminal**, so removing
+it renumbers nothing; and the symbol generator and `ComponentModelFactory` read the **same `RefPin`
+instance parameter**, so the pin count and the port count cannot disagree. `RefPin` is therefore the
+one wBond artwork parameter NOT filtered out of the extracted netlist — `Arrays` and `SymbolPitch`
+are.
+
+### An added array carries one wire, deliberately
+
+The array editor answers "there's no way to add new arrays". A new array arrives with **one default
+wire**, offset from the ones already there. Not empty, because `WBondDesign.Validate` refuses an empty
+array (rank-deficient mapping matrix, singular array-basis inductance) — a schematic that could
+declare one would place a component that cannot be simulated until someone visits another editor. And
+offset, because two wires at the same place have infinite mutual coupling. Reordering is deliberately
+NOT offered: pin order IS array order (§9.2/WB35a).
+
+### The measurement: the ENGINE is shared, only the SHELL is duplicated
+
+Worth writing down because the intuition runs the other way. Counted:
+
+| | lines | copies |
+|---|---|---|
+| `LayoutEditorViewModel` (+10 partials), `LayoutCanvas`, `LayoutSnapQuery`, `LayoutHitTest` | ~9,500 | **one**, used by both editors |
+| `LayoutEditorView` shell (XAML + code-behind) | ~1,750 | Layout Editor only |
+| `WBondEditorView` shell (XAML + code-behind) | ~2,690 | wBond only |
+
+The wBond editor's layout half **is** a `LayoutEditorViewModel` inside a `LayoutCanvas` — the same
+objects, not a port of them. So a fix to snapping, hit-testing, rendering, the commands or the undo
+stack lands in both editors automatically, and always has. What is duplicated is the **view shell**:
+the toolbar, the keyboard routing, the context menu, the breadcrumbs, the focus handling.
+
+**That is exactly where round 4's new geometry-tool bugs live**, and it is why they read as "the
+Layout Editor's hardening was thrown away" when the hardening is all still there, one layer down. The
+fix is not to re-fix the tools; it is for the wBond editor to HOST `LayoutEditorView` (over a
+`LayoutDocument` wrapping its own reference layout — that constructor already exists) instead of
+transcribing its toolbar. Do not fix the transcribed row bug-by-bug.
 
 ## wBond editor, round 3 — an empty group is illegal, copy was text-only, and visibility was a function of the selection (2026-08-16)
 

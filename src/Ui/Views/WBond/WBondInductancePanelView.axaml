@@ -1,0 +1,175 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wb="using:CircuitRF.Ui.WBond"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.WBond.WBondInductancePanelView"
+             x:DataType="wb:WBondPanelViewModel">
+
+    <!-- wbond.md §6.8 — the Array Inductance panel.
+         ONE control, TWO hosts (WB39a/M3): the wBond editor docks it left at full window height
+         (§6.1), and the workspace offers it as a dock tool that follows the active layout, so a
+         wirebond cell pushed into in the ordinary Layout Editor reads the same numbers. That is
+         §0.2's rule applied to a panel rather than to a toolbar: if a change would be needed in both
+         places, it belongs in neither. -->
+    <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+                BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,1,0">
+        <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="10,10,10,6" Spacing="3">
+                    <!-- Hidden when a DOCK TAB already carries this name (owner, 2026-08-17): the tab
+                         says "Array Inductance" and repeating it in the first row of the panel is the
+                         same word twice with nothing between them. The wBond editor hosts this inline,
+                         with no tab of its own, so there the heading is the only label there is. -->
+                    <TextBlock Text="Array Inductance" FontWeight="SemiBold"
+                               x:Name="HeadingText"/>
+
+                    <!-- WB20/RW13: the return path is stated whenever it is NOT the ordinary image
+                         plane at z = 0. Saying so on every document all the time cost a row and told
+                         nobody anything; the UNDECLARED case, which is the one that matters, is
+                         unconditional. -->
+                    <SelectableTextBlock Text="{Binding ReturnPath}" FontSize="11" TextWrapping="Wrap"
+                                         Opacity="0.75" IsVisible="{Binding ShowReturnPath}"/>
+                    <SelectableTextBlock Text="{Binding ReturnPath}" FontSize="11" TextWrapping="Wrap"
+                                         Foreground="{DynamicResource CrfWarningBrush}"
+                                         IsVisible="{Binding ReturnPathUndeclared}"/>
+                    <SelectableTextBlock Text="{Binding CouplingWarning}" FontSize="11" TextWrapping="Wrap"
+                                         Foreground="{DynamicResource CrfWarningBrush}"
+                                         IsVisible="{Binding CouplingWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </StackPanel>
+
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel>
+                    <ItemsControl ItemsSource="{Binding Rows}" Margin="10,0,10,10">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="wb:WBondArrayRowViewModel">
+                                <Border Background="{DynamicResource SystemChromeLowColor}"
+                                        BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                                        CornerRadius="6" Padding="8,5" Margin="0,0,0,5">
+                                    <StackPanel Spacing="2">
+                                        <!-- The card's whole job in one row: which array, and what it
+                                             measures. A column of these is comparable at a glance,
+                                             which is what the panel exists for. -->
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <!-- Double-clicking the NAME selects that array's wires
+                                                 (owner, 2026-08-16) — the panel is where a user is
+                                                 already looking at "which array is this", so it is
+                                                 also the natural place to say "that one". -->
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
+                                                       VerticalAlignment="Center" Cursor="Hand"
+                                                       DoubleTapped="OnArrayNameDoubleTapped"
+                                                       ToolTip.Tip="Double-click to select every wire in this array"/>
+                                            <SelectableTextBlock Grid.Column="1" Text="{Binding Self}" FontSize="12"
+                                                                 HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                                 Margin="8,0,4,0"/>
+                                            <ToggleButton Grid.Column="2" IsChecked="{Binding IsExpanded}"
+                                                          Background="Transparent" BorderThickness="0"
+                                                          Padding="2,0" MinHeight="0" MinWidth="0"
+                                                          VerticalAlignment="Center"
+                                                          ToolTip.Tip="Show wire count, total length and landing span">
+                                                <Panel>
+                                                    <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"
+                                                                     IsVisible="{Binding !IsExpanded}"/>
+                                                    <mi:MaterialIcon Kind="ChevronUp" Width="14" Height="14"
+                                                                     IsVisible="{Binding IsExpanded}"/>
+                                                </Panel>
+                                            </ToggleButton>
+                                        </Grid>
+
+                                        <!-- Wires, Loop height, Span, Diameter, Material, Total length —
+                                             the owner's own order (2026-08-16). The middle FOUR are
+                                             settable: each shows the MEDIAN across the array's wires,
+                                             suffixed "*" when they differ, and a double-click sets
+                                             every wire in the array. Plain TextBlocks rather than
+                                             SelectableTextBlocks for exactly that reason — a
+                                             double-click on selectable text means "select the word",
+                                             and the two gestures cannot share the control. -->
+                                        <StackPanel IsVisible="{Binding IsExpanded}" Spacing="2">
+                                            <StackPanel.Styles>
+                                                <Style Selector="TextBlock.detailLabel">
+                                                    <Setter Property="FontSize" Value="10"/>
+                                                    <Setter Property="Opacity" Value="0.6"/>
+                                                </Style>
+                                                <Style Selector="TextBlock.detailValue">
+                                                    <Setter Property="FontSize" Value="10"/>
+                                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                </Style>
+                                                <!-- The four settable ones read as editable and say so. -->
+                                                <Style Selector="TextBlock.settable">
+                                                    <Setter Property="Cursor" Value="Hand"/>
+                                                </Style>
+                                            </StackPanel.Styles>
+
+                                            <Grid ColumnDefinitions="Auto,*"
+                                                  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,3,0,0">
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Classes="detailLabel" Text="Wires"/>
+                                                <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Wires}"
+                                                                     FontSize="10" HorizontalAlignment="Right"/>
+
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Classes="detailLabel" Text="Loop height"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Classes="detailValue settable"
+                                                           Text="{Binding LoopHeight}"
+                                                           DoubleTapped="OnArrayLoopHeightDoubleTapped"
+                                                           ToolTip.Tip="{x:Static wb:WBondPanelViewModel.SettableRowTip}"/>
+
+                                                <TextBlock Grid.Row="2" Grid.Column="0" Classes="detailLabel" Text="Span"/>
+                                                <TextBlock Grid.Row="2" Grid.Column="1" Classes="detailValue settable"
+                                                           Text="{Binding Span}"
+                                                           DoubleTapped="OnArraySpanDoubleTapped"
+                                                           ToolTip.Tip="{x:Static wb:WBondPanelViewModel.SettableRowTip}"/>
+
+                                                <TextBlock Grid.Row="3" Grid.Column="0" Classes="detailLabel" Text="Diameter"/>
+                                                <TextBlock Grid.Row="3" Grid.Column="1" Classes="detailValue settable"
+                                                           Text="{Binding Diameter}"
+                                                           DoubleTapped="OnArrayDiameterDoubleTapped"
+                                                           ToolTip.Tip="{x:Static wb:WBondPanelViewModel.SettableRowTip}"/>
+
+                                                <TextBlock Grid.Row="4" Grid.Column="0" Classes="detailLabel" Text="Material"/>
+                                                <TextBlock Grid.Row="4" Grid.Column="1" Classes="detailValue settable"
+                                                           Text="{Binding Material}"
+                                                           DoubleTapped="OnArrayMaterialDoubleTapped"
+                                                           ToolTip.Tip="{x:Static wb:WBondPanelViewModel.SettableRowTip}"/>
+
+                                                <TextBlock Grid.Row="5" Grid.Column="0" Classes="detailLabel" Text="Total length"/>
+                                                <SelectableTextBlock Grid.Row="5" Grid.Column="1" Text="{Binding TotalLength}"
+                                                                     FontSize="10" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- ── Mutual inductance, once per PAIR (owner, 2026-08-16) ────────────────
+                         M is symmetric, so listing it on each array's card printed every pair twice
+                         under two names (G1-G3 on one card, G3-G1 on the other) and never side by
+                         side. Here it is n(n-1)/2 rows, each named by the pair, at the SAME size as
+                         a self inductance — a mutual is not a detail, it is the other half of the
+                         answer. The whole box is absent on a single-array design, where there is no
+                         pair to report. -->
+                    <Border IsVisible="{Binding HasMutualPairs}"
+                            Background="{DynamicResource SystemChromeLowColor}"
+                            BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="8,5" Margin="10,0,10,10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Mutual" FontWeight="SemiBold"/>
+                            <ItemsControl ItemsSource="{Binding MutualPairs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="wb:WBondMutualPairViewModel">
+                                        <Grid ColumnDefinitions="Auto,*" Margin="0,1,0,0"
+                                              ToolTip.Tip="{Binding Coupling, StringFormat='Coupling k = {0}'}">
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12"
+                                                       Opacity="0.75" VerticalAlignment="Center"/>
+                                            <SelectableTextBlock Grid.Column="1" Text="{Binding Mutual}" FontSize="12"
+                                                                 HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                                 Margin="8,0,4,0"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                  </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+</UserControl>

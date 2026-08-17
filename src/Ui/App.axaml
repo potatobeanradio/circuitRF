@@ -11,6 +11,7 @@
              xmlns:schemDoc="using:CircuitRF.Ui.Schematic"
              xmlns:mv="using:CircuitRF.Ui.Views.Messages"
              xmlns:drcv="using:CircuitRF.Ui.Views.Drc"
+             xmlns:wbondv="using:CircuitRF.Ui.Views.WBond"
              xmlns:av="using:CircuitRF.Ui.Views.Analyses"
              xmlns:palv="using:CircuitRF.Ui.Views.Palette"
              xmlns:dd="using:CircuitRF.Ui.DataDisplay"
@@ -61,6 +62,12 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type dockVm:PaletteTool}">
             <palv:PaletteToolView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:WBondProfileTool}">
+            <wbondv:WBondProfileToolView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:WBondInductanceTool}">
+            <wbondv:WBondInductanceToolView/>
         </DataTemplate>
         <DataTemplate DataType="{x:Type dockVm:DrcTool}">
             <drcv:DrcToolView/>

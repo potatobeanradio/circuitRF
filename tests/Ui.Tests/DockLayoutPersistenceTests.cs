@@ -948,7 +948,11 @@ public sealed class DockLayoutPersistenceTests
         // … then restore from the stash, which is §2's schema — no second representation (R-dock-10).
         var after = Capture(Apply(factory, before));
 
-        foreach (var id in DockPanelIds.All.Where(i => i != DockPanelIds.Messages))
+        // Over what was actually PLACED, not over every known id: wbond.md §10.1's two wBond panels
+        // are absent from both shipped default layouts on purpose (most designs have no wirebonds), so
+        // they are never in a capture unless the user opened one — and a panel that was never placed
+        // has no facts to bring back.
+        foreach (var id in before.Panels.Select(p => p.Id).Where(i => i != DockPanelIds.Messages))
         {
             var b = Panel(before, id);
             var a = Panel(after, id);
@@ -1031,7 +1035,11 @@ public sealed class DockLayoutPersistenceTests
     public void Gate14_ViewModelPersistsTheStashWhileCollapsed_SourceScan()
     {
         var src = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.Docking.cs");
-        Assert.Contains("DockersCollapsed ? _preCollapseLayout : CaptureDockLayout()", src);
+
+        // The live capture is CaptureDockLayoutForPersistence since 2026-08-17 — the same capture plus the
+        // remembered place of each closed panel — but the collapsed branch is unchanged: the STASH, never a
+        // capture of the collapsed shell.
+        Assert.Contains("DockersCollapsed ? _preCollapseLayout : CaptureDockLayoutForPersistence()", src);
 
         var vm = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs");
         Assert.Contains("DockLayoutToPersist()", vm);
@@ -1375,10 +1383,17 @@ public sealed class DockLayoutPersistenceTests
 
         var layout = DockLayoutCapture.Capture(ToolSplitBesideDocuments(f, toolOnTheRight: true, 0.125), []);
 
-        // The split spans the whole width (NaN proportion) — the 12.5% lives on the tool dock, and
-        // that is the number the rebuilt right column has to be given.
-        var side = Assert.Single(layout.Sides, s => s.Side == DockSide.Right);
-        Assert.Equal(0.125, side.Proportion, 6);
+        // The split spans the whole width (NaN proportion) and the 12.5% lives on the TOOL DOCK — so
+        // that is where the width is recorded, on the panel itself.
+        //
+        // It is no longer a `Sides` entry (2026-08-17): a panel dropped beside the documents is now
+        // captured as INBOARD, and there can be an outer column on the same side at a different width —
+        // one value keyed on the side cannot hold both. See CwsDockPanel.Inboard.
+        var panel = Assert.Single(layout.Panels, p => p.Id == DockPanelIds.Palette);
+        Assert.True(panel.Inboard);
+        Assert.Equal(0.125, panel.Proportion, 6);
+
+        Assert.DoesNotContain(layout.Sides, s => s.Side == DockSide.Right);
     }
 
     [Fact]

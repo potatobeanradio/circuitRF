@@ -484,7 +484,14 @@ public static class SchematicToLayoutGenerator
     /// Ground symbol has no layout existence to report as missing).</summary>
     private static bool IsPhysical(EditableComponent comp) =>
         comp.Disable is not (DisableState.Open or DisableState.Short)
-        && comp.Symbol is not (SymbolKind.Ground or SymbolKind.Pin or SymbolKind.Var or SymbolKind.Meas);
+        && comp.Symbol is not (SymbolKind.Ground or SymbolKind.Pin or SymbolKind.Var or SymbolKind.Meas
+                            // wbond.md §9.5/WB41: a wBond is emitted as the CELL's own `.wBond`
+                            // sidecar (WBondCellSeeding), not as a placed instance — WB23 is explicit
+                            // that no wire ever enters a `.clay`. Left in this set it resolved no
+                            // layout view and reported "no layout view — skipped", which is a true
+                            // statement about a mechanism the user has no reason to know about
+                            // (owner, 2026-08-17).
+                            or SymbolKind.WBond);
 
     /// <summary>Resolves a schematic parameter's raw expression to the SI value a PCell generator
     /// expects: metres for a length unit, Ohms for a resistance unit, and DEGREES (not radians) for

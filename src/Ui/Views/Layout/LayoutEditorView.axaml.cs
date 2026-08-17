@@ -4,16 +4,21 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Ui.Clipboard;
+using CircuitRF.Ui.Controls;
+using CircuitRF.Ui.Docking;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Drc;
 using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Theming;
+using CircuitRF.Ui.WBond;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views.Dialogs;
 
@@ -49,6 +54,10 @@ public partial class LayoutEditorView : UserControl
         DataContextChanged += (_, _) => SyncRulerUnits();
         DataContextChanged += OnDataContextChangedForFocus;
 
+        // A wirebond cell's overlay resolves its wire palette from the theme, and it is a plain
+        // object with no theme notifications of its own (WB40).
+        ActualThemeVariantChanged += (_, _) => ApplyCanvasOverlay();
+
         // Focus-independent Escape handler — mirrors SchematicView/SymbolEditorView's
         // OnViewKeyDownTunnel. Window.KeyBindings (WorkspaceWindow.axaml's "Escape" ->
         // DisarmPlacementCommand) are processed before visual-tree routing and always mark the
@@ -60,6 +69,157 @@ public partial class LayoutEditorView : UserControl
             OnViewKeyDownTunnel,
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
+    }
+
+    // ── The host surface (WB39a) ──────────────────────────────────────────────
+    //
+    // wbond.md §6.11: the wBond editor HOSTS this control rather than transcribing it. Everything a
+    // host legitimately needs from the canvas is reached through these few members — deliberately a
+    // handful of pass-throughs rather than exposing LayoutCanvas itself, and never by walking the
+    // visual tree, which would break silently the first time this view's XAML is restructured.
+
+    /// <summary>
+    /// Something drawn over the layout canvas and given first refusal on its input — the wBond wire
+    /// layer (WB23) is the one implementation. Null for an ordinary layout document.
+    ///
+    /// <para><b>A host's overlay outranks the frame's own.</b> In the wBond editor the wires are the
+    /// DOCUMENT, and they stay on screen while the user pushes into a sub-cell to nudge the pad under
+    /// them (WB27) — so a wirebond cell reached from there must not replace them with its own. In the
+    /// ordinary Layout Editor there is no host overlay, and each frame brings whatever wires its cell
+    /// has (WB40).</para>
+    /// </summary>
+    public ILayoutCanvasOverlay? CanvasOverlay
+    {
+        get => _hostOverlay;
+        set { _hostOverlay = value; ApplyCanvasOverlay(); }
+    }
+
+    private ILayoutCanvasOverlay? _hostOverlay;
+    private WBondLayoutOverlay? _frameOverlay;
+
+    /// <summary>
+    /// Puts the right overlay on the canvas for the frame currently on screen, and gives a wirebond
+    /// cell's own overlay the two things it cannot resolve for itself: the wire palette, and a repaint
+    /// when its geometry changes.
+    /// </summary>
+    private void ApplyCanvasOverlay()
+    {
+        var frameOverlay = _hostOverlay is null
+            ? (DataContext as LayoutDocument)?.ActiveViewModel.WireOverlay
+            : null;
+
+        if (!ReferenceEquals(_frameOverlay, frameOverlay))
+        {
+            if (_frameOverlay is not null) _frameOverlay.OverlayChanged -= OnFrameOverlayChanged;
+            _frameOverlay = frameOverlay;
+            if (_frameOverlay is not null) _frameOverlay.OverlayChanged += OnFrameOverlayChanged;
+        }
+
+        if (_frameOverlay is not null) _frameOverlay.Theme = ResolveWireTheme();
+
+        LayoutCanvasCtrl.CanvasOverlay = _hostOverlay ?? _frameOverlay;
+    }
+
+    private void OnFrameOverlayChanged() => LayoutCanvasCtrl.InvalidateOverlay();
+
+    // ── The two wBond panel buttons (wbond.md §10.1) ──────────────────────────
+
+    /// <summary>
+    /// Shows the two wBond panel buttons only where they can do something: on a WIREBOND CELL, and only
+    /// with a workspace shell in reach.
+    ///
+    /// <para>The second half is what keeps them out of the standalone wBond app (owner, 2026-08-17): that
+    /// window hosts both panels inline and has no dock at all, so a button to show one has nothing to
+    /// show it in. It is the same "is a shell reachable" test <see cref="OnCheckDesignRules"/> and
+    /// <see cref="OnOpenEmSetup"/> already use for "can I open a document from here".</para>
+    /// </summary>
+    private void UpdateWirePanelButtonStates()
+    {
+        bool show = (DataContext as LayoutDocument)?.ActiveViewModel.HasWireDesign == true
+                 && ResolveWorkspace() is not null;
+
+        WirePanelSeparator.IsVisible = show;
+        WireProfileBtn.IsVisible = show;
+        WireInductanceBtn.IsVisible = show;
+    }
+
+    // P and A are handled by the SHELL WINDOW's own tunnel handler, not here — see
+    // WorkspaceWindow.TryHandleWirePanelKeys. A key handler on a view, gated on where keyboard focus is,
+    // cannot survive an action that MOVES focus, which is exactly what showing or hiding a dockable does.
+
+    private void OnToggleWireProfilePanel(object? sender, RoutedEventArgs e) =>
+        ToggleWirePanel(DockPanelIds.WBondProfile);
+
+    private void OnToggleWireInductancePanel(object? sender, RoutedEventArgs e) =>
+        ToggleWirePanel(DockPanelIds.WBondInductance);
+
+    /// <summary>
+    /// Toggles a wBond panel — and deliberately does NOT touch keyboard focus.
+    ///
+    /// <para>An earlier version re-asserted canvas focus here, to keep the P/A keys working after a close
+    /// moved focus away. That was a patch on the symptom and lost the race often enough to be useless; the
+    /// shell window handles those keys now, without caring where focus is, so nothing here has to fight
+    /// for it — and focus is left wherever the user actually wants it, including inside the panel that has
+    /// just appeared.</para>
+    /// </summary>
+    private void ToggleWirePanel(string panelId) =>
+        ResolveWorkspace()?.ToggleToolPanelCommand.Execute(panelId);
+
+    /// <summary>
+    /// The workspace shell's view model, or null when there is none — a torn-off window with no shell in
+    /// reach, or the standalone wBond binary, which has no <c>WorkspaceWindow</c> at all.
+    ///
+    /// <para>Resolved by walking the application's own windows, the same mechanism
+    /// <c>TornOffFileMenuView</c> and this view's own DRC and EM buttons already use, and for the same
+    /// reason: this view's DataContext is a <see cref="LayoutDocument"/>, not the workspace.</para>
+    /// </summary>
+    private static WorkspaceViewModel? ResolveWorkspace() =>
+        Avalonia.Application.Current?.ApplicationLifetime
+                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.Windows.OfType<WorkspaceWindow>()
+                              .Select(w => w.DataContext as WorkspaceViewModel)
+                              .FirstOrDefault(v => v is not null)
+            : null;
+
+    private WBondRenderTheme ResolveWireTheme() =>
+        WBondRenderTheme.FromTheme(
+            ThemeService.Active,
+            ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light);
+
+    /// <summary>Repaints the overlay without disturbing the layout's path cache (WB17).</summary>
+    public void InvalidateOverlay() => LayoutCanvasCtrl.InvalidateOverlay();
+
+    /// <summary>Repaints the layout itself.</summary>
+    public void InvalidateCanvas() => LayoutCanvasCtrl.InvalidateVisual();
+
+    /// <summary>Puts keyboard focus on the canvas, so its own key handling applies.</summary>
+    public void FocusCanvas() => LayoutCanvasCtrl.Focus();
+
+    public void ZoomCanvasToFit() => LayoutCanvasCtrl.ZoomToFit();
+    public void ZoomCanvasIn()    => LayoutCanvasCtrl.ZoomIn();
+    public void ZoomCanvasOut()   => LayoutCanvasCtrl.ZoomOut();
+    public void ZoomCanvas1To1()  => LayoutCanvasCtrl.Zoom1To1();
+
+    /// <summary>
+    /// Whether this view's own rulers are showing. A host with a ruler switch of its own drives it
+    /// from here rather than hosting a second pair of ruler strips — the wBond editor's one toggle
+    /// covers both of its canvases that way (owner, 2026-08-16).
+    /// </summary>
+    public bool RulersVisible
+    {
+        get => RulerRow.IsVisible;
+        set { RulerRow.IsVisible = value; VRuler.IsVisible = value; }
+    }
+
+    /// <summary>
+    /// Suppresses the torn-off File menu. Set by a host that is itself a document: a wBond editor
+    /// floated into its own window already has one File menu, and the layout half must not add a
+    /// second one describing a different file.
+    /// </summary>
+    public bool IsHostedInAnotherDocument
+    {
+        get => !FileMenuHost.IsVisible;
+        set => FileMenuHost.IsVisible = !value;
     }
 
     // ── Keyboard shortcuts (tunnel — see constructor comment) ─────────────────
@@ -265,7 +425,9 @@ public partial class LayoutEditorView : UserControl
             RebindDrcZoomSubscription(_subscribedDoc.ActiveViewModel);
             if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
+        ApplyCanvasOverlay();   // WB40 — this frame's own wires, if its cell has any
         UpdateHierarchyButtonStates();
+        UpdateWirePanelButtonStates();
     }
 
     // L3b: DisplayUnit/DbuPerMicron and the hierarchy button enable-state are both read off whichever
@@ -283,7 +445,9 @@ public partial class LayoutEditorView : UserControl
             // subscription on the ACTIVE frame's own view model, and a push-in swaps that instance.
             RebindDrcZoomSubscription(doc.ActiveViewModel);
         }
+        ApplyCanvasOverlay();   // WB40 — pushing into a wirebond cell brings ITS wires with it
         UpdateHierarchyButtonStates();
+        UpdateWirePanelButtonStates();
     }
 
     // ── L5b DRC ───────────────────────────────────────────────────────────────
@@ -489,6 +653,15 @@ public partial class LayoutEditorView : UserControl
         else if (e.PropertyName is nameof(LayoutEditorViewModel.SelectionStatusText))
         {
             UpdateHierarchyButtonStates();
+        }
+        // WB40: a wirebond cell's wires can arrive while this document is already open — Update Layout
+        // from Schematic writes the sidecar into a layout it has just brought to the front (§9.5). The
+        // overlay is attached at DataContext and frame changes, neither of which happens then.
+        else if (e.PropertyName is nameof(LayoutEditorViewModel.WireDesign))
+        {
+            ApplyCanvasOverlay();
+            UpdateWirePanelButtonStates();
+            LayoutCanvasCtrl.InvalidateOverlay();
         }
     }
 

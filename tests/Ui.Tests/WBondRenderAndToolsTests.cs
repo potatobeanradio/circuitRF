@@ -656,9 +656,12 @@ public class WBondRenderAndToolsTests
         Assert.Contains("_viewModel.AddWire(", canvas, StringComparison.Ordinal);
         Assert.Contains("ReportRefusal", canvas, StringComparison.Ordinal);
 
-        // …and the view pushes the active tool into it. Without this the property is dead code and
-        // the bug is unchanged.
-        Assert.Contains("ProfileCanvas.WireDrawArmed = _bound?.ActiveTool == WBondTool.DrawWire",
+        // …and the view pushes the active tool into it, through the profile view's own pass-through
+        // (WB39a/M3 made that canvas a control of its own, hosted twice). Without this the property is
+        // dead code and the bug is unchanged.
+        Assert.Contains("ProfileCanvas.WireDrawArmed",
+                        Read("src/Ui/Views/WBond/WBondProfileView.axaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("ProfileView.WireDrawArmed = _bound?.ActiveTool == WBondTool.DrawWire",
                         Read("src/Ui/Views/WBond/WBondEditorView.axaml.cs"), StringComparison.Ordinal);
     }
 

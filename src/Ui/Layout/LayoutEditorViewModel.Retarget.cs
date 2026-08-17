@@ -46,12 +46,34 @@ public sealed partial class LayoutEditorViewModel
     /// automatically with nothing to re-wire; for a scratch document (no path yet) falls back to
     /// <see cref="FallbackWorkspaceTechDir"/> — whichever workspace is currently open.
     /// </summary>
+    /// <summary>
+    /// Marks this view-model as a <b>scratch SURFACE</b>: it has a path (so its <c>CellRef</c>s
+    /// resolve against a real directory) but that path is a session-scratch location that is not, and
+    /// never will be, inside a workspace.
+    ///
+    /// <para>The wBond editor's reference layout is the case (<c>WBondDocumentViewModel.EnsureReferenceLayout</c>).
+    /// It lives under the recovery session directory, so the ancestor-<c>.cws</c> walk finds nothing
+    /// and <see cref="WorkspaceTechDir"/> read null — which made <see cref="WorkspaceRootDir"/> null,
+    /// and that is what refused every PCell dropped into a wBond editor with "no workspace is open"
+    /// (owner, 2026-08-16: "can't drag and drop PCells from the Library palette into the layout view").
+    /// A generated PCell cell needs a workspace to live in, and there IS one open — this document's
+    /// own path simply is not in it.</para>
+    ///
+    /// <para><b>Opt-in, so an ordinary loose <c>.clay</c> is untouched.</b> A layout the user opened
+    /// from outside any workspace is genuinely foreign and must keep reading null here — that is
+    /// brief-foreign-documents' own rule and it is not being relaxed. This flag says "this file is not
+    /// a document at all", which only the code that created the scratch file can know.</para>
+    /// </summary>
+    internal bool IsScratchSurface { get; set; }
+
     public string? WorkspaceTechDir
     {
         get
         {
             if (CurrentLayoutPath is not null)
-                return OwnAncestorWorkspaceRootDir is { } root ? Path.Combine(root, "tech") : null;
+                return OwnAncestorWorkspaceRootDir is { } root ? Path.Combine(root, "tech")
+                     : IsScratchSurface ? FallbackWorkspaceTechDir
+                     : null;
             return FallbackWorkspaceTechDir;
         }
     }

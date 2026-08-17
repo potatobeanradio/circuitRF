@@ -79,7 +79,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// </summary>
     private bool _prefsDirty;
 
-    private void RefreshDirty() => IsDirty = _prefsDirty || _undoRedo.IsModified;
+    private void RefreshDirty() => IsDirty = _prefsDirty || _wireDirty || _undoRedo.IsModified;
 
     /// <summary>Records the current state (undo position + preference edits) as the clean,
     /// just-saved baseline. Call after the document has been written to disk.</summary>
@@ -87,6 +87,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         _prefsDirty = false;
         _undoRedo.MarkSaved();
+        // WB40: a wirebond cell's wires live in a `.wBond` beside its `.clay` and travel with it.
+        // Here rather than in PerformSave because the workspace writes sub-cell sessions with a bare
+        // LayoutPersistence.SaveToFile — this method is the one call every save path shares.
+        SaveWireDesignIfDirty();
         RefreshDirty();
     }
 

@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
@@ -36,7 +37,7 @@ public partial class WBondEditorView : UserControl
 
         // One resolution of the wire palette, pushed to both canvases. The profile canvas is the
         // control — it has the theme notifications — and the overlay is a plain object, so it follows.
-        ProfileCanvas.ThemeRefreshed += SyncOverlayWireTheme;
+        ProfileView.ThemeRefreshed += SyncOverlayWireTheme;
         ActualThemeVariantChanged += (_, _) => SyncOverlayWireTheme();
 
         // Tunnel + handledEventsToo, for the reason src/Ui/CLAUDE.md already records: a window-level
@@ -44,67 +45,6 @@ public partial class WBondEditorView : UserControl
         // bubble handler here would silently never run after a toolbar click moved focus.
         AddHandler(KeyDownEvent, OnViewKeyDownTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
 
-        // ── Rulers. Each strip MIRRORS its canvas's viewport — there is no independent state, which
-        // is the whole contract LayoutRulerControl was built to; see LayoutEditorView's identical
-        // three subscriptions.
-        LayoutCanvasCtrl.ViewportChanged    += (_, _) => SyncLayoutRulers();
-        LayoutCanvasCtrl.LayoutUpdated      += (_, _) => SyncLayoutRulers();
-        LayoutCanvasCtrl.CursorWorldChanged += OnLayoutCursorWorldChanged;
-
-        ProfileCanvas.ViewportChanged    += (_, _) => SyncProfileRulers();
-        ProfileCanvas.CursorWorldChanged += OnProfileCursorWorldChanged;
-    }
-
-    // ── Rulers (owner, 2026-08-16) ────────────────────────────────────────────
-
-    /// <summary>
-    /// Pushes the layout canvas's pan/zoom and the reference layout's units onto its two strips.
-    /// </summary>
-    private void SyncLayoutRulers()
-    {
-        var vp = LayoutCanvasCtrl.CurrentViewport;
-        LayoutHRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
-        LayoutVRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
-
-        int dbuPerMicron = _bound?.ReferenceLayout?.Model.DbuPerMicron ?? LayoutUnits.DefaultDbuPerMicron;
-        var unit = WBondDocumentViewModel.ToLayoutUnit(_bound?.Editor.DisplayUnit ?? WBondUnit.Mil);
-
-        LayoutHRuler.SetUnits(dbuPerMicron, unit);
-        LayoutVRuler.SetUnits(dbuPerMicron, unit);
-    }
-
-    /// <summary>
-    /// The same, for the profile view — whose world unit is the NANOMETRE.
-    ///
-    /// <para>That is why the strips are driven at 1,000 DBU/µm rather than at the reference layout's
-    /// resolution: one DBU is one nanometre there, so <c>LayoutUnits.Format</c> labels this canvas's
-    /// own coordinates correctly with no conversion. Driving it at the layout's resolution would put
-    /// a ruler on the profile view that disagreed with the profile view by that factor.</para>
-    /// </summary>
-    private void SyncProfileRulers()
-    {
-        var vp = ProfileCanvas.CurrentViewport;
-        ProfileHRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
-        ProfileVRuler.SetViewport(vp.PanX, vp.PanY, vp.Zoom, vp.Width, vp.Height);
-
-        var unit = WBondDocumentViewModel.ToLayoutUnit(_bound?.Editor.DisplayUnit ?? WBondUnit.Mil);
-        ProfileHRuler.SetUnits(NanometreDbuPerMicron, unit);
-        ProfileVRuler.SetUnits(NanometreDbuPerMicron, unit);
-    }
-
-    /// <summary>The resolution at which one database unit IS one nanometre — the profile view's own.</summary>
-    private const int NanometreDbuPerMicron = 1000;
-
-    private void OnLayoutCursorWorldChanged(object? sender, (double X, double Y)? world)
-    {
-        LayoutHRuler.SetCursorWorld(world?.X);
-        LayoutVRuler.SetCursorWorld(world?.Y);
-    }
-
-    private void OnProfileCursorWorldChanged(object? sender, (double Span, double Z)? world)
-    {
-        ProfileHRuler.SetCursorWorld(world?.Span);
-        ProfileVRuler.SetCursorWorld(world?.Z);
     }
 
     /// <summary>
@@ -117,20 +57,30 @@ public partial class WBondEditorView : UserControl
     /// </summary>
     private void ApplyActiveTool()
     {
-        ProfileCanvas.WireDrawArmed = _bound?.ActiveTool == WBondTool.DrawWire;
-        LayoutCanvasCtrl.InvalidateOverlay();
-        ProfileCanvas.InvalidateVisual();
+        ProfileView.WireDrawArmed = _bound?.ActiveTool == WBondTool.DrawWire;
+
+        // A WIRE tool taking over disarms whatever the hosted Layout Editor's toolbar had armed. The
+        // converse lives in OnLayoutToolChanged; both are needed, because either toolbar can be
+        // clicked at any time and two "the next click places something" tools armed at once has no
+        // correct behaviour.
+        if (_bound?.ActiveTool != WBondTool.Select) DisarmLayoutTool();
+
+        HostedLayoutView.InvalidateOverlay();
+        ProfileView.Repaint();
     }
 
-    /// <summary>Applies the ruler toggle to both views at once — one switch, two canvases.</summary>
+    /// <summary>
+    /// Applies the ruler toggle to both views at once — one switch, two canvases.
+    ///
+    /// <para>The layout half's strips belong to the hosted <c>LayoutEditorView</c> now (WB39a), so
+    /// this reaches them through its own <c>RulersVisible</c> rather than hosting a second pair.</para>
+    /// </summary>
     private void ApplyRulerVisibility()
     {
         bool show = _bound?.RulersVisible ?? true;
 
-        ProfileRulerRow.IsVisible = show;
-        ProfileVRuler.IsVisible   = show;
-        LayoutRulerRow.IsVisible  = show;
-        LayoutVRuler.IsVisible    = show;
+        ProfileView.RulersVisible      = show;
+        HostedLayoutView.RulersVisible = show;
     }
 
     // ── Save (owner, 2026-08-16) ──────────────────────────────────────────────
@@ -142,52 +92,6 @@ public partial class WBondEditorView : UserControl
     private void OnSave(object? sender, RoutedEventArgs e) => _subscribedDoc?.RequestSave(saveAs: false);
 
     private void OnSaveAs(object? sender, RoutedEventArgs e) => _subscribedDoc?.RequestSave(saveAs: true);
-
-    /// <summary>
-    /// Double-clicking an array's name in the inductance panel selects that array's wires (owner,
-    /// 2026-08-16).
-    ///
-    /// <para>The row carries its own array INDEX, so membership is read from the mesh rather than
-    /// matched by name — two arrays may not share a name today, but resolving a selection by string
-    /// would make that a silent selection bug the day one does.</para>
-    /// </summary>
-    private void OnArrayNameDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if (_bound is null || sender is not Control { DataContext: WBondArrayRowViewModel row }) return;
-
-        _bound.Editor.SelectArray(row.ArrayIndex);
-        RepaintBoth();
-        e.Handled = true;
-    }
-
-    /// <summary>
-    /// Double-clicking a card's Loop height / Span / Diameter / Material opens the SAME prompt the
-    /// profile view's context menu opens, on the same array (owner, 2026-08-16), and applies to every
-    /// wire in it.
-    ///
-    /// <para>The panel is where a user reads those four numbers, so it is where they reach for them.
-    /// Both routes land on <c>SetGroup…Async</c> — one implementation, one undo entry, one refusal
-    /// path.</para>
-    /// </summary>
-    private void OnArrayLoopHeightDoubleTapped(object? sender, TappedEventArgs e) =>
-        PromptForArray(sender, e, SetGroupLoopHeightAsync);
-
-    private void OnArraySpanDoubleTapped(object? sender, TappedEventArgs e) =>
-        PromptForArray(sender, e, SetGroupSpanAsync);
-
-    private void OnArrayDiameterDoubleTapped(object? sender, TappedEventArgs e) =>
-        PromptForArray(sender, e, SetGroupDiameterAsync);
-
-    private void OnArrayMaterialDoubleTapped(object? sender, TappedEventArgs e) =>
-        PromptForArray(sender, e, SetGroupMaterialAsync);
-
-    private void PromptForArray(object? sender, TappedEventArgs e, Func<int, Task> prompt)
-    {
-        if (_bound is null || sender is not Control { DataContext: WBondArrayRowViewModel row }) return;
-
-        e.Handled = true;
-        _ = prompt(row.ArrayIndex);
-    }
 
     // ── Clipboard (§6.7) ──────────────────────────────────────────────────────
 
@@ -230,8 +134,15 @@ public partial class WBondEditorView : UserControl
 
                 // Delete removes the selected WIRES. Structural, and therefore one undo entry that
                 // restores the deleted wire objects themselves — see WBondViewModel.Restore.
+                //
+                // Gated on there actually BEING a wire selection, and that gate is load-bearing now
+                // that the layout half is the real Layout Editor (WB39a): this tunnel handler sits on
+                // an ANCESTOR of it, so an unconditional e.Handled here would swallow every Delete
+                // meant for a selected shape or instance and the layout's own delete would look
+                // broken. Left unhandled, the key reaches LayoutEditorViewModel.OnKeyDown as usual.
                 case Key.Delete:
                 case Key.Back:
+                    if (_bound.Editor.Selection.IsEmpty) return;
                     if (_bound.Editor.DeleteSelectedWires() > 0) RepaintBoth();
                     e.Handled = true;
                     return;
@@ -267,10 +178,63 @@ public partial class WBondEditorView : UserControl
             case Key.C: e.Handled = await CopyAsync(); break;
             case Key.X: e.Handled = await CopyAsync() && Cut(); break;
             case Key.V: e.Handled = await PasteAsync(); break;
-            case Key.Z when (e.KeyModifiers & KeyModifiers.Shift) != 0: _bound.Editor.Redo(); RepaintBoth(); e.Handled = true; break;
-            case Key.Z: _bound.Editor.Undo(); RepaintBoth(); e.Handled = true; break;
-            case Key.Y: _bound.Editor.Redo(); RepaintBoth(); e.Handled = true; break;
+            case Key.Z when (e.KeyModifiers & KeyModifiers.Shift) != 0: RedoLast(); e.Handled = true; break;
+            case Key.Z: UndoLast(); e.Handled = true; break;
+            case Key.Y: RedoLast(); e.Handled = true; break;
         }
+    }
+
+    /// <summary>
+    /// <b>Ctrl+Z undoes whichever edit was made last</b> — a wire edit or a layout edit.
+    ///
+    /// <para>WB39a put two real histories in front of one user: this editor's wire snapshots and the
+    /// hosted Layout Editor's command stack, which follows whichever frame is pushed in. They cannot
+    /// be one stack (one restores whole-design snapshots, the other replays commands) and neither can
+    /// simply win: routing by focus is wrong because a WIRE drag happens on the LAYOUT canvas, and
+    /// "wires first" would undo a wire move the user made ten minutes ago rather than the rectangle
+    /// they just drew. Each recorded entry carries an <c>EditSequence</c> stamp, so the question
+    /// "which did I do last" has one total answer.</para>
+    /// </summary>
+    private void UndoLast()
+    {
+        if (_bound is null) return;
+
+        var wires = _bound.Editor;
+        var layout = _bound.LayoutDocument?.UndoRedo;
+
+        // The rule itself is EditSequence's, shared with LayoutEditorViewModel.UndoLast — a wirebond
+        // cell in the ordinary Layout Editor asks the identical question, and two copies of the
+        // comparison would be two chances to get the direction wrong.
+        if (layout is not null && EditSequence.UndoTakesFirst(
+                layout.CanUndo, layout.TopUndoStamp, wires.CanUndo, wires.TopUndoStamp))
+        {
+            layout.Undo();
+            HostedLayoutView.InvalidateCanvas();
+            return;
+        }
+
+        wires.Undo();
+        RepaintBoth();
+    }
+
+    /// <summary>The mirror image: redo takes the OLDEST undone entry, which is the one undo produced last.</summary>
+    private void RedoLast()
+    {
+        if (_bound is null) return;
+
+        var wires = _bound.Editor;
+        var layout = _bound.LayoutDocument?.UndoRedo;
+
+        if (layout is not null && EditSequence.RedoTakesFirst(
+                layout.CanRedo, layout.TopRedoStamp, wires.CanRedo, wires.TopRedoStamp))
+        {
+            layout.Redo();
+            HostedLayoutView.InvalidateCanvas();
+            return;
+        }
+
+        wires.Redo();
+        RepaintBoth();
     }
 
     /// <summary>
@@ -374,8 +338,8 @@ public partial class WBondEditorView : UserControl
     {
         if (_bound is null) return;
 
-        _bound.Overlay.Theme = ProfileCanvas.WireTheme;
-        LayoutCanvasCtrl.InvalidateOverlay();
+        _bound.Overlay.Theme = ProfileView.WireTheme;
+        HostedLayoutView.InvalidateOverlay();
     }
 
     private ColorVariant CurrentVariant =>
@@ -511,43 +475,166 @@ public partial class WBondEditorView : UserControl
         _bound.Editor.ReadoutChanged += OnReadoutChanged;
         _bound.Editor.PropertyChanged += OnEditorPropertyChanged;
         _bound.PropertyChanged += OnDocumentPropertyChanged;
-        LayoutCanvasCtrl.CanvasOverlay = _bound.Overlay;
 
-        _updatingUnits = true;
-        UnitCombo.ItemsSource = UnitLabels;
-        UnitCombo.SelectedItem = WBondUnits.Suffix(_bound.Editor.DisplayUnit);
-        _updatingUnits = false;
+        // The wires ride over the HOSTED editor's canvas (WB39a) — reached through its own
+        // pass-through property, never by walking into its visual tree.
+        HostedLayoutView.CanvasOverlay = _bound.Overlay;
 
-        SyncProfileAxisCombo();
-        ProfileCanvas.Azimuth = _bound.Editor.ProfileAzimuthRadians;
+        // A wBond document IS a document, so the layout half must not offer a second torn-off File
+        // menu describing a different file.
+        HostedLayoutView.IsHostedInAnotherDocument = true;
+
+
+        // The MENU's Copy is the mixed one (§6.7) — wires + geometry + the picture formats — which
+        // only a host with a layout half can perform. The profile view offers it because this host
+        // supplies it, and omits it where nobody does.
+        ProfileView.CopyRequested = () => CopyAsync();
+
         ApplyActiveTool();
         SyncOverlayWireTheme();
-        RebindReferenceLayout();
+        RebindHostedLayout();
         ApplyArrangement();
         ApplyRulerVisibility();
-        SyncLayoutRulers();
-        SyncProfileRulers();
         RefreshQualityText();
     }
 
     /// <summary>
-    /// Follows the reference layout's SNAP, which is the pitch both canvases draw their grid from and
-    /// the step wire points land on.
+    /// Re-points everything this view keeps in code-behind at whichever layout frame is on screen.
     ///
-    /// <para>One control governs both views deliberately: a visible grid the wires ignored — or two
-    /// grids at different pitches in two views of the same wires — would be worse than none.</para>
+    /// <para><b>The frame can change now</b>, which it never could before WB39a: hosting
+    /// <c>LayoutEditorView</c> hands the wBond editor push-in and pop-out, so the active view model is
+    /// no longer the same object for the life of the document. XAML bindings through
+    /// <c>ActiveViewModel</c> re-point themselves; these subscriptions do not.</para>
     /// </summary>
-    private void RebindReferenceLayout()
+    private void RebindHostedLayout()
     {
-        if (_snapVm is not null) _snapVm.PropertyChanged -= OnLayoutVmPropertyChanged;
+        if (_hostedDoc is not null) _hostedDoc.ActiveViewModelChanged -= OnHostedFrameChanged;
 
-        _snapVm = _bound?.ReferenceLayout;
-        if (_snapVm is not null) _snapVm.PropertyChanged += OnLayoutVmPropertyChanged;
+        _hostedDoc = _bound?.LayoutDocument;
+        if (_hostedDoc is not null) _hostedDoc.ActiveViewModelChanged += OnHostedFrameChanged;
 
+        RebindActiveLayoutFrame();
+    }
+
+    private LayoutDocument? _hostedDoc;
+
+    private void OnHostedFrameChanged(object? sender, EventArgs e) => RebindActiveLayoutFrame();
+
+    /// <summary>
+    /// Follows the active frame's SNAP — the pitch both canvases draw their grid from and the step
+    /// wire points land on — its armed TOOL, and the descent chain the wires have to be drawn through.
+    ///
+    /// <para>One snap control governs both views deliberately: a visible grid the wires ignored — or
+    /// two grids at different pitches in two views of the same wires — would be worse than none.</para>
+    /// </summary>
+    private void RebindActiveLayoutFrame()
+    {
+        if (_activeLayoutVm is not null) _activeLayoutVm.PropertyChanged -= OnLayoutVmPropertyChanged;
+
+        _activeLayoutVm = _hostedDoc?.ActiveViewModel;
+        if (_activeLayoutVm is not null) _activeLayoutVm.PropertyChanged += OnLayoutVmPropertyChanged;
+
+        WireLayoutToolExclusion();
+        PushDescentChain();
         PushSnapPitch();
     }
 
-    private LayoutEditorViewModel? _snapVm;
+    private LayoutEditorViewModel? _activeLayoutVm;
+
+    // ── Whose gesture is it: the wire tools' or the layout tools'? ────────────
+    //
+    // The wire overlay is offered every left press before the layout editor sees it
+    // (LayoutCanvas.OnPointerPressed), so an armed LAYOUT tool has to MEAN something to the overlay —
+    // otherwise arming Rectangle on the hosted toolbar would silently start a wire marquee and the
+    // tool would appear to do nothing. Two rules, both here, and this is ALL that survives of the
+    // transcribed toolbar row WB39a deleted:
+    //
+    //   • An armed layout tool takes the canvas (WBondLayoutOverlay.LayoutToolArmed). The overlay
+    //     still handles a press that lands ON a wire, so a wire stays clickable; it simply stops
+    //     claiming empty space.
+    //   • Arming one disarms the other. Draw Wire and Rectangle are both "the next click places
+    //     something", and two of those armed at once is a state with no correct behaviour.
+
+    /// <summary>Connects the two toolbars' tool states, in both directions, for the active frame.</summary>
+    private void WireLayoutToolExclusion()
+    {
+        if (_toolExclusionVm is not null) _toolExclusionVm.PropertyChanged -= OnLayoutToolChanged;
+
+        _toolExclusionVm = _activeLayoutVm;
+        if (_toolExclusionVm is not null) _toolExclusionVm.PropertyChanged += OnLayoutToolChanged;
+
+        if (_bound is not null)
+            _bound.Overlay.LayoutToolArmed = () =>
+                _activeLayoutVm is { } layout && layout.ActiveTool != LayoutEditorViewModel.Tool.Select;
+    }
+
+    private LayoutEditorViewModel? _toolExclusionVm;
+
+    /// <summary>
+    /// A layout tool was armed on the hosted toolbar — so the WIRE tool goes back to Select, and both
+    /// canvases repaint so the wBond toolbar's highlight moves with it.
+    /// </summary>
+    private void OnLayoutToolChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(LayoutEditorViewModel.ActiveTool)) return;
+        if (_bound is null) return;
+
+        if (_activeLayoutVm?.ActiveTool != LayoutEditorViewModel.Tool.Select
+            && _bound.ActiveTool != WBondTool.Select)
+            _bound.ActiveTool = WBondTool.Select;
+
+        RepaintBoth();
+    }
+
+    /// <summary>The converse: a WIRE tool was armed, so the layout tool goes back to Select.</summary>
+    private void DisarmLayoutTool()
+    {
+        if (_activeLayoutVm is { } layout && layout.ActiveTool != LayoutEditorViewModel.Tool.Select)
+            layout.ActiveTool = LayoutEditorViewModel.Tool.Select;
+    }
+
+    /// <summary>
+    /// Select All means everything selectable in this editor — every wire AND every piece of layout
+    /// geometry — because the two are one design as far as the user is concerned. Reached from the
+    /// standalone binary's Edit menu; the canvas's own right-click reaches the same pair through
+    /// <c>WBondLayoutOverlay.BuildContextMenuItems</c>.
+    /// </summary>
+    internal void SelectAllIncludingWires()
+    {
+        if (_bound is null) return;
+
+        _bound.Editor.SelectAllWires();
+        _activeLayoutVm?.SelectAllCommand.Execute(null);
+        RepaintBoth();
+    }
+
+    /// <summary>
+    /// WB27 — pushed into a sub-cell, the wires are drawn in that cell's own frame, dimmed and locked.
+    ///
+    /// <para>This is the wiring that milestone always needed and never had: before the wBond editor
+    /// hosted <c>LayoutEditorView</c> there was no push-in here to trigger it, so
+    /// <c>WBondDescent</c> was reachable only from its tests. <c>CanPlace</c> answers false for a
+    /// descent that cannot be composed exactly, and the overlay then draws nothing at all — a wire
+    /// foot at a silently wrong offset is worse than no wire, because judging where it sits relative
+    /// to the pad under it is the whole reason to be down there.</para>
+    /// </summary>
+    private void PushDescentChain()
+    {
+        if (_bound is null) return;
+
+        if (_hostedDoc is not { } doc)
+        {
+            _bound.Overlay.DescentChain = [];
+            _bound.Overlay.CanPlaceAtDepth = true;
+            return;
+        }
+
+        _bound.Overlay.DescentChain = doc.DescentChain;
+        _bound.Overlay.CanPlaceAtDepth =
+            WBondDescent.CanPlace(doc, doc.ViewModel.Model, doc.ActiveViewModel.Model);
+
+        HostedLayoutView.InvalidateOverlay();
+    }
 
     private void OnLayoutVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -556,15 +643,15 @@ public partial class WBondEditorView : UserControl
 
     private void PushSnapPitch()
     {
-        int dbuPerMicron = _snapVm?.Model.DbuPerMicron ?? LayoutUnits.DefaultDbuPerMicron;
-        long snapDbu = _snapVm?.SnapDbu ?? 0;
+        int dbuPerMicron = _activeLayoutVm?.Model.DbuPerMicron ?? LayoutUnits.DefaultDbuPerMicron;
+        long snapDbu = _activeLayoutVm?.SnapDbu ?? 0;
         long pitchNm = snapDbu > 0 ? WBondSnap.ToNm(snapDbu, dbuPerMicron) : 0;
 
-        ProfileCanvas.GridPitchNm = pitchNm;
+        ProfileView.GridPitchNm = pitchNm;
         if (_bound is not null) _bound.Overlay.GridPitchNm = pitchNm;
 
-        ProfileCanvas.InvalidateVisual();
-        LayoutCanvasCtrl.InvalidateOverlay();
+        ProfileView.Repaint();
+        HostedLayoutView.InvalidateOverlay();
     }
 
     /// <summary>
@@ -581,23 +668,6 @@ public partial class WBondEditorView : UserControl
         // view and has to light up in both.
         if (e.PropertyName is nameof(WBondViewModel.Selection)
                            or nameof(WBondViewModel.PreviewSelection)) RepaintBoth();
-        else if (e.PropertyName == nameof(WBondViewModel.ProfileAzimuthRadians))
-        {
-            ProfileCanvas.Azimuth = _bound?.Editor.ProfileAzimuthRadians;
-            SyncProfileAxisCombo();
-            ProfileCanvas.InvalidateVisual();
-        }
-        else if (e.PropertyName == nameof(WBondViewModel.DisplayUnit))
-        {
-            _updatingUnits = true;
-            UnitCombo.SelectedItem = WBondUnits.Suffix(_bound!.Editor.DisplayUnit);
-            _updatingUnits = false;
-
-            // §6.5 — the rulers are a READOUT and follow the editor's unit, exactly as the panel's
-            // length rows and the metadata bar do.
-            SyncLayoutRulers();
-            SyncProfileRulers();
-        }
     }
 
     private void OnDocumentPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -609,29 +679,14 @@ public partial class WBondEditorView : UserControl
             ApplyRulerVisibility();
         else if (e.PropertyName == nameof(WBondDocumentViewModel.ActiveTool))
             ApplyActiveTool();
-        else if (e.PropertyName == nameof(WBondDocumentViewModel.ReferenceLayout))
-        {
-            RebindReferenceLayout();
-            SyncLayoutRulers();
-        }
+        else if (e.PropertyName == nameof(WBondDocumentViewModel.LayoutDocument))
+            RebindHostedLayout();
     }
-
-    /// <summary>
-    /// The display units, spelled the way they are WRITTEN — lower case, and the same spellings
-    /// <see cref="WBondUnits.TryParseUnit"/> accepts and <see cref="WBondUnits.Suffix"/> emits.
-    ///
-    /// <para>Binding the bare enum put <c>Mil</c>/<c>Um</c>/<c>Inch</c> in the toolbar, which is not
-    /// how anyone writes a unit and did not match the suffix shown in every readout beside it. Using
-    /// the suffix strings themselves means there is nothing to keep in sync: the picker offers exactly
-    /// what the parser takes.</para>
-    /// </summary>
-    private static readonly string[] UnitLabels =
-        [.. Enum.GetValues<WBondUnit>().Select(WBondUnits.Suffix)];
 
     private void OnOverlayChanged()
     {
         // The wires moved; the layout did not. Repaint without touching LayoutPathCache.
-        LayoutCanvasCtrl.InvalidateOverlay();
+        HostedLayoutView.InvalidateOverlay();
         RefreshQualityText();
     }
 
@@ -736,8 +791,8 @@ public partial class WBondEditorView : UserControl
                                   : new GridLength(0);
         splitRow.Height = split ? new GridLength(4) : new GridLength(0);
 
-        ProfileBorder.IsVisible = profile;
-        LayoutCanvasHost.IsVisible = layout;   // the canvas AND its two ruler strips
+        ProfileView.IsVisible = profile;
+        HostedLayoutView.IsVisible = layout;   // toolbar, breadcrumbs, canvas, rulers and all
         CanvasSplitter.IsVisible = split;
 
         var panelColumn = RootGrid.ColumnDefinitions[0];
@@ -747,7 +802,7 @@ public partial class WBondEditorView : UserControl
 
         panelColumn.Width = _bound.PanelVisible ? _panelColumnSize : new GridLength(0);
         panelSplitColumn.Width = _bound.PanelVisible ? new GridLength(4) : new GridLength(0);
-        PanelBorder.IsVisible = _bound.PanelVisible;
+        InductancePanel.IsVisible = _bound.PanelVisible;
         PanelSplitter.IsVisible = _bound.PanelVisible;
 
         if (restoreFocus && hadFocus) FocusVisibleCanvas();
@@ -769,8 +824,11 @@ public partial class WBondEditorView : UserControl
     {
         if (_bound is null) return;
 
-        Control target = _bound.ProfileVisible ? ProfileCanvas : LayoutCanvasCtrl;
-        if (target.IsEffectivelyVisible) target.Focus();
+        if (_bound.ProfileVisible)
+        {
+            if (ProfileView.CanvasIsVisible) ProfileView.FocusCanvas();
+        }
+        else if (HostedLayoutView.IsEffectivelyVisible) HostedLayoutView.FocusCanvas();
     }
 
     private GridLength _profileRowSize = new(2, GridUnitType.Star);
@@ -792,19 +850,19 @@ public partial class WBondEditorView : UserControl
     /// </summary>
     private void OnZoomToFit(object? sender, RoutedEventArgs e)
     {
-        ProfileCanvas.ZoomToFit();
-        LayoutCanvasCtrl.ZoomToFit();
+        ProfileView.ZoomToFit();
+        HostedLayoutView.ZoomCanvasToFit();
     }
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => ForEachVisibleCanvas(
-        () => ProfileCanvas.ZoomIn(), () => LayoutCanvasCtrl.ZoomIn());
+        ProfileView.ZoomIn, HostedLayoutView.ZoomCanvasIn);
 
     private void OnZoomOut(object? sender, RoutedEventArgs e) => ForEachVisibleCanvas(
-        () => ProfileCanvas.ZoomOut(), () => LayoutCanvasCtrl.ZoomOut());
+        ProfileView.ZoomOut, HostedLayoutView.ZoomCanvasOut);
 
     private void OnZoom1To1(object? sender, RoutedEventArgs e) => ForEachVisibleCanvas(
-        () => ProfileCanvas.Zoom1To1(_bound?.Editor.DisplayUnit ?? WBondUnit.Mil),
-        () => LayoutCanvasCtrl.Zoom1To1());
+        () => ProfileView.Zoom1To1(_bound?.Editor.DisplayUnit ?? WBondUnit.Mil),
+        HostedLayoutView.ZoomCanvas1To1);
 
     private void ForEachVisibleCanvas(Action profile, Action layout)
     {
@@ -812,88 +870,20 @@ public partial class WBondEditorView : UserControl
         if (_bound?.LayoutVisible != false) layout();
     }
 
-    // ── The profile view's plane (§6.2) ───────────────────────────────────────
-
-    private void OnProfileAxisCommit(object? sender, RoutedEventArgs e)
-    {
-        if (sender is ComboBox box) CommitProfileAxis(box);
-    }
-
-    private void OnProfileAxisKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key is not (Key.Enter or Key.Return) || sender is not ComboBox box) return;
-
-        CommitProfileAxis(box);
-        e.Handled = true;
-        ProfileCanvas.Focus();
-    }
-
-    private void OnProfileAxisSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (_updatingProfileAxis || sender is not ComboBox { SelectedItem: string preset }) return;
-        Commit(preset);
-    }
-
-    private void CommitProfileAxis(ComboBox box) => Commit(box.Text ?? "");
-
-    /// <summary>
-    /// Commits a plane and puts the box back on the CANONICAL spelling of what was accepted — so
-    /// typing "90" reads back as "YZ", and text that means nothing snaps back rather than sitting
-    /// there looking as though it took.
-    /// </summary>
-    private void Commit(string text)
-    {
-        if (_bound is null) return;
-
-        _bound.Editor.CommitProfileAxisText(text);
-        SyncProfileAxisCombo();
-
-        ProfileCanvas.Azimuth = _bound.Editor.ProfileAzimuthRadians;
-        ProfileCanvas.InvalidateVisual();
-    }
-
-    private void SyncProfileAxisCombo()
-    {
-        if (_bound is null) return;
-
-        _updatingProfileAxis = true;
-        ProfileAxisCombo.SelectedItem = null;
-        ProfileAxisCombo.Text = _bound.Editor.ProfileAxisText;
-        _updatingProfileAxis = false;
-    }
-
-    private bool _updatingProfileAxis;
-
-    // ── Snap (the reference layout's own ladder, reused verbatim) ─────────────
-
-    private LayoutEditorViewModel? LayoutVm => _bound?.ReferenceLayout;
-
-    private void OnSnapDistanceCommit(object? sender, RoutedEventArgs e)
-    {
-        if (sender is ComboBox box) LayoutVm?.CommitSnapDistanceText(box.Text ?? "");
-    }
-
-    private void OnSnapDistanceKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key is not (Key.Enter or Key.Return) || sender is not ComboBox box) return;
-
-        LayoutVm?.CommitSnapDistanceText(box.Text ?? "");
-        e.Handled = true;
-        LayoutCanvasCtrl.Focus();
-    }
-
-    private void OnSnapDistanceSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (sender is ComboBox { SelectedItem: string text }) LayoutVm?.CommitSnapLadderSelection(text);
-    }
+    // The Snap ladder and the Unit picker were this editor's own once, transcribed from the Layout
+    // Editor's metadata bar. Both are the hosted LayoutEditorView's now (WB39a) — its bar carries
+    // technology, unit, snap, shape and instance counts, extent and cursor, and a second bar
+    // underneath restating three of them would disagree with it the first time either was touched.
+    // What the wBond side still needs from the snap is the GRID PITCH, which PushSnapPitch reads
+    // straight off the active frame.
 
     // View->Zoom to Fit dispatches here from WorkspaceViewModel via WBondDocument.RequestZoomToFit().
     // A wBond editor shows two canvases at once; fit both, mirroring the "Fit profile view" button
     // for the profile side and the ordinary layout Zoom to Fit for the artwork side.
     private void OnZoomToFitRequestedFromMenu()
     {
-        ProfileCanvas.ZoomToFit();
-        LayoutCanvasCtrl.ZoomToFit();
+        ProfileView.ZoomToFit();
+        HostedLayoutView.ZoomCanvasToFit();
     }
 
     // Workspace toolbar Cut/Copy/Paste dispatch here — mirrors OnViewKeyDownTunnel's Ctrl+C/X/V case
@@ -912,11 +902,11 @@ public partial class WBondEditorView : UserControl
 
         // Per-view (WB22a) — but this one toggle drives both, because the two views are showing the
         // same wires and a mode that applied to only one of them would read as a bug.
-        ProfileCanvas.Thickness = mode;
+        ProfileView.Thickness = mode;
         if (_bound is not null) _bound.Overlay.Thickness = mode;
 
-        ProfileCanvas.InvalidateVisual();
-        LayoutCanvasCtrl.InvalidateOverlay();
+        ProfileView.Repaint();
+        HostedLayoutView.InvalidateOverlay();
     }
 
     private void OnSnapChanged(object? sender, RoutedEventArgs e)
@@ -961,21 +951,8 @@ public partial class WBondEditorView : UserControl
 
     private void RepaintBoth()
     {
-        LayoutCanvasCtrl.InvalidateOverlay();
-        ProfileCanvas.InvalidateVisual();
+        HostedLayoutView.InvalidateOverlay();
+        ProfileView.Repaint();
     }
 
-    private bool _updatingUnits;
-
-    private void OnUnitChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (_updatingUnits || _bound is null) return;
-        if (UnitCombo.SelectedItem is not string label) return;
-        if (!WBondUnits.TryParseUnit(label, out var unit)) return;
-
-        // §6.5: readouts only. Storage stays in DBU, so this is lossless and changes no geometry —
-        // and it deliberately does NOT touch the nudge step, which is a bonder-process quantity
-        // (WB25) rather than a display convenience.
-        _bound.Editor.DisplayUnit = unit;
-    }
 }

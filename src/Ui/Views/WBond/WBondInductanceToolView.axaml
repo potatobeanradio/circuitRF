@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:wbv="using:CircuitRF.Ui.Views.WBond"
+             x:Class="CircuitRF.Ui.Views.WBond.WBondInductanceToolView"
+             x:DataType="vm:WBondInductanceTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- wbond.md §10.1 (WB39a/M3) — the Array Inductance panel, following the active layout.
+         The control, not a copy: the wBond editor docks the same one left at full window height.
+
+         Nothing is pushed into it. The panel reads BOTH the rows it formats and the editor its gestures
+         act on from the one WBondPanelViewModel below — see that type's own Editor note for why the
+         push-from-host version could not be made correct. -->
+    <Panel>
+        <Panel IsVisible="{Binding HasWires}">
+            <wbv:WBondInductancePanelView x:Name="Panel" DataContext="{Binding Panel}"/>
+        </Panel>
+
+        <TextBlock Text="No wirebonds in the active layout."
+                   IsVisible="{Binding !HasWires}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="12"/>
+    </Panel>
+</UserControl>

@@ -26,6 +26,38 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
     [ObservableProperty] private LayoutEditorViewModel? _referenceLayout;
 
     /// <summary>
+    /// The reference layout wrapped as a <see cref="LayoutDocument"/> — <b>what the hosted
+    /// <c>LayoutEditorView</c> binds to</b> (wbond.md §6.11/WB39a).
+    ///
+    /// <para>This is the whole trick, and it needed no new abstraction: <c>LayoutDocument</c>'s
+    /// constructor already takes an existing view model, and its own frame stack is what hands the
+    /// wBond editor push-in, pop-out and a breadcrumb bar — three things the transcribed shell never
+    /// had at all. Null exactly when <see cref="ReferenceLayout"/> is (§10's third entry point, before
+    /// a cell has been dragged in).</para>
+    /// </summary>
+    [ObservableProperty] private LayoutDocument? _layoutDocument;
+
+    /// <summary>
+    /// The workspace's hierarchy service, for the hosted editor's Push Into Cell / Pop Out / Save.
+    ///
+    /// <para>Set by the host, in the same shape and for the same reason as
+    /// <see cref="ConfigureReferenceLayout"/>: the layout document is created on demand and replaced
+    /// when a bundle is unpacked, so the setter applies to whichever one exists now and the document
+    /// re-applies it to every later one. Null in the standalone binary, which has no workspace — there
+    /// the hosted toolbar's hierarchy buttons stay disabled, which is what they already do with no
+    /// pushable selection.</para>
+    /// </summary>
+    public ILayoutHierarchyHost? LayoutHierarchy
+    {
+        get;
+        set
+        {
+            field = value;
+            if (LayoutDocument is { } doc) doc.Hierarchy = value;
+        }
+    }
+
+    /// <summary>
     /// Which canvases are showing (owner, 2026-08-16). Cycled by the toolbar button and by <c>V</c>,
     /// and persisted in the <c>.wBond</c>'s view state.
     ///
@@ -182,6 +214,11 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
         });
 
         Panel.Unit = Editor.DisplayUnit;
+
+        // The panel's gestures act on this editor — set beside Unit, because both are "what these rows
+        // describe" and neither can be right while the other is stale.
+        Panel.Editor = Editor;
+
         Panel.Update(Editor.Readout);
     }
 
@@ -205,6 +242,12 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
         ReferenceLayout = new LayoutEditorViewModel(new LayoutView())
         {
             CurrentLayoutPath = Path.Combine(scratchLayoutDir, "reference.clay"),
+
+            // The path above is a session-scratch location OUTSIDE any workspace, so the ordinary
+            // ancestor-.cws walk finds nothing. Saying so is what lets the host's own workspace
+            // answer instead — without it a PCell dropped here is refused with "no workspace is
+            // open" while one plainly is. See LayoutEditorViewModel.IsScratchSurface.
+            IsScratchSurface = true,
         };
     }
 
@@ -229,13 +272,34 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
         if (ReferenceLayout is { } layout) layout.AssemblyRules = resolution;
     }
 
+    /// <summary>
+    /// The HOST's chance to finish wiring a reference layout the moment one appears — the workspace's
+    /// technology/retarget seam, so the layout half of this editor resolves cells, technologies and
+    /// generated PCells exactly as the Layout Editor does.
+    ///
+    /// <para>A hook rather than a constructor argument because the reference layout is not there when
+    /// the document is: it is created on demand (<see cref="EnsureReferenceLayout"/>), replaced when a
+    /// bundle is unpacked, and set from three different creation points. One place to apply it, at the
+    /// one moment it can be applied, is the only version of this that cannot be forgotten at a call
+    /// site. Null in the standalone binary, which has no workspace to offer.</para>
+    /// </summary>
+    public Action<LayoutEditorViewModel>? ConfigureReferenceLayout
+    {
+        get;
+        set
+        {
+            field = value;
+            if (ReferenceLayout is { } layout) value?.Invoke(layout);
+        }
+    }
+
     partial void OnReferenceLayoutChanged(LayoutEditorViewModel? value)
     {
         Overlay.ReferenceLayout = value?.Model;
         Overlay.ReferenceTechnology = value?.Technology;
         Overlay.ReferenceBaseDir = value?.InstanceBaseDir;
 
-        if (value is null) return;
+        if (value is null) { LayoutDocument = null; return; }
 
         // A LayoutView's SnapDbu defaults to ZERO, and zero means "no grid" to LayoutRenderer as well
         // as "no snapping" to the editor — so a wBond opened on a scratch layout drew no grid at all,
@@ -257,12 +321,31 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
         }
 
         PushDisplayUnitToReferenceLayout();
+        FollowReferenceLayoutDisplayUnit(value);
 
         // The design object itself, not a copy: the editor mutates its wires in place, so a snapshot
         // would leave the DRC checking geometry the user has since moved.
         value.WireDesign    = Editor.Design;
         value.AssemblyRules = AssemblyRules;
+
+        ConfigureReferenceLayout?.Invoke(value);
+
+        // WB39a — LAST, so the document is built over a layout the host has already finished wiring
+        // (its technology resolvers above all: LayoutDocument's constructor reads IsForeign and the
+        // resolved path to compose its title).
+        LayoutDocument = new LayoutDocument(LayoutDocumentTitle(value), value, value.CurrentLayoutPath)
+        {
+            Hierarchy = LayoutHierarchy,
+        };
     }
+
+    /// <summary>
+    /// The tab title the hosted layout document carries. It is never shown as a tab — the wBond
+    /// document owns the tab — but it IS the breadcrumb bar's base crumb, so it has to name the
+    /// artwork rather than say "Untitled".
+    /// </summary>
+    private static string LayoutDocumentTitle(LayoutEditorViewModel layout) =>
+        layout.CurrentLayoutPath is { Length: > 0 } path ? Path.GetFileName(path) : "Layout";
 
     /// <summary>
     /// Puts the reference layout on the SAME display unit the wBond editor is showing.
@@ -287,6 +370,56 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
         var unit = ToLayoutUnit(Editor.DisplayUnit);
         if (layout.DisplayUnit != unit) layout.DisplayUnit = unit;
     }
+
+    private LayoutEditorViewModel? _unitFollowVm;
+
+    /// <summary>
+    /// Makes the arrow run BOTH ways, so there is exactly one Unit control in the editor.
+    ///
+    /// <para>WB39a deleted the wBond editor's own metadata bar in favour of the hosted
+    /// <c>LayoutEditorView</c>'s — which means the visible Unit picker now writes
+    /// <see cref="LayoutEditorViewModel.DisplayUnit"/>, and the wBond readouts (the inductance panel's
+    /// length rows, the profile rulers, every dialog's default unit) follow <c>Editor.DisplayUnit</c>.
+    /// Left one-way they would disagree the moment anyone touched the picker.</para>
+    ///
+    /// <para>§6.5 is untouched: its rule is that a wBond is not forced onto the <c>.ctech</c>'s display
+    /// unit, and it still is not — this couples the editor to its own reference layout, whose unit the
+    /// document seeds on open from the <c>.wBond</c>'s own saved view state.</para>
+    ///
+    /// <para>The two setters each compare before assigning, so the pair converges rather than
+    /// ping-ponging.</para>
+    /// </summary>
+    private void FollowReferenceLayoutDisplayUnit(LayoutEditorViewModel layout)
+    {
+        if (_unitFollowVm is not null) _unitFollowVm.PropertyChanged -= OnReferenceLayoutUnitChanged;
+
+        _unitFollowVm = layout;
+        layout.PropertyChanged += OnReferenceLayoutUnitChanged;
+    }
+
+    private void OnReferenceLayoutUnitChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(LayoutEditorViewModel.DisplayUnit)) return;
+        if (sender is not LayoutEditorViewModel layout) return;
+
+        var unit = ToWBondUnit(layout.DisplayUnit);
+        if (unit is { } u && Editor.DisplayUnit != u) Editor.DisplayUnit = u;
+    }
+
+    /// <summary>
+    /// The wBond spelling of a layout unit — the inverse of <see cref="ToLayoutUnit"/>, and written
+    /// out for the same reason. Null for a layout unit a wBond cannot express, which is not an error:
+    /// the editor simply keeps the unit it had.
+    /// </summary>
+    internal static WBondUnit? ToWBondUnit(LayoutUnit unit) => unit switch
+    {
+        LayoutUnit.Nm => WBondUnit.Nm,
+        LayoutUnit.Um => WBondUnit.Um,
+        LayoutUnit.Mm => WBondUnit.Mm,
+        LayoutUnit.Mil => WBondUnit.Mil,
+        LayoutUnit.Inch => WBondUnit.Inch,
+        _ => null,
+    };
 
     /// <summary>
     /// The layout editor's spelling of a wBond unit.
@@ -417,6 +550,10 @@ public sealed class WBondDocument : Document
             var layout = new LayoutEditorViewModel(unpacked.Root)
             {
                 CurrentLayoutPath = Path.Combine(unpacked.BaseDir, "embedded.clay"),
+
+                // The unpack directory is scratch, outside any workspace — same reason
+                // EnsureReferenceLayout says so. See LayoutEditorViewModel.IsScratchSurface.
+                IsScratchSurface = true,
             };
 
             document.ViewModel.ReferenceLayout = layout;

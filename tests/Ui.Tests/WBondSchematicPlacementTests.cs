@@ -86,10 +86,24 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     }
 
     /// <summary>A placed wBond carrying <paramref name="design"/> — the production shape.</summary>
-    private static EditableComponent WBondAt(string instanceName, WBondDesign? design, double x, double y)
+    /// <param name="referencePin">
+    /// Whether the placed component exposes the floating <c>REF</c> terminal.
+    ///
+    /// <para><b>True here, against the shipped default of false</b> (owner, 2026-08-16 — the pin is
+    /// now optional and off, matching SnP's own <c>RefNode</c>). Most of the tests in this file were
+    /// written about the 2M+1-terminal shape — REF's position in <c>NetBindings</c>, the terminal
+    /// order the model publishes, a testbench that grounds it — and that shape is still a supported
+    /// configuration, so they go on testing it rather than being weakened to the new default. The
+    /// DEFAULT's own shape is pinned separately, by
+    /// <see cref="APaletteDroppedWBond_RendersItsOwnSymbol_NotTheNotFoundPlaceholder"/> and by the
+    /// round-4 tests.</para>
+    /// </param>
+    private static EditableComponent WBondAt(string instanceName, WBondDesign? design, double x, double y,
+                                             bool referencePin = true)
     {
         var comp = WBondPlacement.BuildCarrying(design, instanceName);
         comp.X = x; comp.Y = y;
+        comp.Parameters.First(p => p.Name == "RefPin").Expression = referencePin ? "true" : "false";
         return comp;
     }
 
@@ -201,8 +215,11 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     /// <b>The reported bug.</b> A wBond dropped from the palette — no file, no configuration — must
     /// render a real symbol and extract, not the Not-Found placeholder.
     ///
-    /// <para>It carries the default one-array, one-wire design, so it has G1.i / G1.o / REF from the
-    /// moment it lands.</para>
+    /// <para>It carries the default one-array, one-wire design, so it has G1.i / G1.o from the moment
+    /// it lands — and NOT REF, which is off by default since 2026-08-16 (owner), matching SnP's own
+    /// floating-reference-pin checkbox. This test is the one that pins the SHIPPED DEFAULT's shape;
+    /// every other test in this file opts the pin back on through <c>WBondAt</c>, because the
+    /// 2M+1-terminal configuration is what they were written about and is still supported.</para>
     /// </summary>
     [Fact]
     public void APaletteDroppedWBond_RendersItsOwnSymbol_NotTheNotFoundPlaceholder()
@@ -217,10 +234,10 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         model.Components.Add(comp);
 
         var rendered = model.BuildRenderModel().Model.Components.Single();
-        Assert.Equal(3, rendered.Ports.Count);
+        Assert.Equal(2, rendered.Ports.Count);
         Assert.Equal("G1.i", rendered.Ports[0].Name);
         Assert.Equal("G1.o", rendered.Ports[1].Name);
-        Assert.Equal("REF",  rendered.Ports[^1].Name);
+        Assert.DoesNotContain(rendered.Ports, p => p.Name == "REF");
 
         // Resolved, not the placeholder — the state the report was about.
         Assert.Equal(CellSymbolState.Resolved,
@@ -274,11 +291,14 @@ public sealed class WBondSchematicPlacementTests : IDisposable
 
         var model = NewSchematic();
         model.Components.Add(comp);
-        Assert.Equal(5, model.BuildRenderModel().Model.Components.Single().Ports.Count);
+
+        // Two arrays, two pins each. WBondPlacement.TryBuild seeds the SHIPPED defaults, and the
+        // floating reference pin is off among them (owner, 2026-08-16).
+        Assert.Equal(4, model.BuildRenderModel().Model.Components.Single().Ports.Count);
 
         File.Delete(abs);
 
-        Assert.Equal(5, model.BuildRenderModel().Model.Components.Single().Ports.Count);
+        Assert.Equal(4, model.BuildRenderModel().Model.Components.Single().Ports.Count);
     }
 
     /// <summary>
@@ -385,7 +405,10 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.Equal(1, vm.ImportWBondWires(abs));
         var comp = Assert.Single(model.Components);
         Assert.Equal(SymbolKind.WBond, comp.Symbol);
-        Assert.Equal(5, model.BuildRenderModel().Model.Components.Single().Ports.Count);
+
+        // Two arrays, two pins each: an imported component gets the shipped defaults, and the
+        // floating reference pin is off among them (owner, 2026-08-16).
+        Assert.Equal(4, model.BuildRenderModel().Model.Components.Single().Ports.Count);
     }
 
     /// <summary>One import is ONE undo entry, and undo puts the previous wires back.</summary>
@@ -527,7 +550,9 @@ public sealed class WBondSchematicPlacementTests : IDisposable
 
         // The same order WBondModel declares, read from the model itself rather than restated:
         // no independent list of terminal names to drift from the one the stamp uses.
-        var wbModel = new CircuitRF.Core.Devices.WBondModel(design);
+        // referencePin: true to match WBondAt's own default — this test is about the 2M+1 shape,
+        // in which REF is the last terminal and does appear in NetBindings.
+        var wbModel = new CircuitRF.Core.Devices.WBondModel(design, referencePin: true);
         Assert.Equal(wbModel.PortCount, inst.NetBindings.Count);
         Assert.Equal("REF", wbModel.TerminalNames[^1]);
         Assert.Equal("wbref", inst.NetBindings[^1]);
@@ -544,7 +569,9 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     {
         var design = MakeDesign(20.0, "G1", "G2");
 
-        var symbol = WBondSymbolGenerator.Build(design)!;
+        // referencePin: true to match WBondAt below — the point of this test is the ORDER a shuffled
+        // pin list resolves in, so both halves must describe the same component.
+        var symbol = WBondSymbolGenerator.Build(design, referencePin: true)!;
         var shuffled = new Symbol(symbol.Primitives, [.. symbol.Pins.AsEnumerable().Reverse()]);
 
         var model = NewSchematic();
@@ -993,11 +1020,13 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.Equal(CellLayoutState.Resolved,
             CellLayoutResolver.Resolve(instance.CellRef, layoutDir).State);
 
-        // The schematic view holds the wBond, and it resolves to its 2M+1 pins from inside the cell.
+        // The schematic view holds the wBond, and it resolves to its 2M pins from inside the cell —
+        // two arrays, two pins each, and no REF, which is off in the shipped defaults an imported
+        // component is seeded with (owner, 2026-08-16).
         var (reloadedSch, _, _) = SchematicPersistence.LoadFromFile(Path.Combine(schematicDir, schematicFile));
         var placed = reloadedSch.BuildRenderModel().Model.Components.Single();
-        Assert.Equal(5, placed.Ports.Count);
-        Assert.Equal("REF", placed.Ports[^1].Name);
+        Assert.Equal(4, placed.Ports.Count);
+        Assert.DoesNotContain(placed.Ports, p => p.Name == "REF");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

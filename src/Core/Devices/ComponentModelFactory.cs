@@ -1363,8 +1363,27 @@ public static class ComponentModelFactory
 
         ApplyLoopHeightOverrides(design, parameters);
 
-        return new WBondModel(design, path);
+        // Artwork AND terminal count: with the floating reference pin off (the default) the component
+        // has 2M terminals, with it on 2M+1. REF is always the LAST one, so this changes nothing about
+        // the signal terminals or the stamp — see WBondModel's own note. Read as text rather than as a
+        // number because that is how the schematic writes it and how the elaborator stores it.
+        bool refPin = parameters.TryGetValue("RefPin", out var pin) && IsTrue(pin);
+
+        return new WBondModel(design, path, refPin);
     }
+
+    /// <summary>
+    /// A boolean-ish parameter value: <c>true</c> either as a real non-zero or as the word. Both
+    /// spellings reach here — a schematic writes "true"/"false", and a hand-authored <c>.cnl</c> may
+    /// write 1/0.
+    /// </summary>
+    private static bool IsTrue(Value value) => value.Kind switch
+    {
+        ValueKind.String => value.AsString().Equals("true", StringComparison.OrdinalIgnoreCase),
+        ValueKind.Bool => value.AsBool(),
+        ValueKind.Real => value.AsReal() != 0.0,
+        _ => false,
+    };
 
     /// <summary>
     /// Applies loop-height overrides, which is what makes a loop height SWEEPABLE (R-wbb-6 / WB21).

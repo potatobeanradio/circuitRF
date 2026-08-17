@@ -69,8 +69,147 @@
                       IsVisible="{Binding IsNotEmptyState}"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
-            <Panel>
-                <!-- Generic parameter rows: hidden for SnP (which uses the custom panel below) -->
+            <!-- A vertical StackPanel, NOT a Panel, and the difference is a shipped bug.
+                 A Panel gives every child the whole area, which was harmless while SnP was the only
+                 custom panel — it REPLACES the generic rows (`IsVisible="{Binding !IsSnp}"`). The wBond
+                 panel shows BESIDE them (Temp and GroundPlane stay ordinary rows), so on a Panel it
+                 painted straight over them: the owner's "the Add button and some other text render
+                 overtop of the parameters fields". Hidden children take no space in a StackPanel, so
+                 SnP's replace-the-rows arrangement is unchanged. -->
+            <StackPanel>
+                <!-- ══ wBond custom panel ═══════════════════════════════════════════════════
+                     Above the generic rows, deliberately — see their own note below.
+
+                     Four of a wBond's parameters are not text and were showing as text: `Design` is
+                     the base64 of the entire wirebond design (the owner's "gibberish" — documented
+                     as HIDDEN in wbond.md §5.0), `Arrays` is drift-detection bookkeeping (also
+                     hidden), and the other two want the controls SnP's equivalents already have.
+                     They are filtered out of the generic rows above; this is where they live.
+                     `Temp` and `GroundPlane` are ordinary engine values and stay generic rows. -->
+                <StackPanel IsVisible="{Binding IsWBond}"
+                            Margin="6,4"
+                            Spacing="8">
+
+                    <!-- What this component IS, at a glance — the same one-line summary the symbol
+                         body carries. This is what replaces the unreadable `Design` row: the payload
+                         is machine-written and there is nothing in it to type, but "how much wire is
+                         in here" is exactly what the row was failing to answer. -->
+                    <Grid ColumnDefinitions="80,*,Auto">
+                        <TextBlock Grid.Column="0" Text="Design"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <SelectableTextBlock Grid.Column="1"
+                                             Text="{Binding WBondSummary}"
+                                             FontSize="11" VerticalAlignment="Center"
+                                             Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                        <!-- Update Layout — deliberately on the DESIGN row, directly above the arrays'
+                             own Add button (owner, 2026-08-17): "here is what this component is" and
+                             "put it in the layout" are one thought, and the two buttons then line up in
+                             the same column. Narrower than Design ▸ Update Layout from Schematic: it
+                             writes THIS wBond and nothing else, so no other instance moves under the
+                             user while they are editing wires. Absent with no workspace to write into,
+                             rather than present and only able to refuse. -->
+                        <Button Grid.Column="2" Content="Update Layout"
+                                FontSize="11" Padding="8,3"
+                                IsVisible="{Binding CanUpdateWBondLayout}"
+                                Command="{Binding UpdateWBondLayoutCommand}"
+                                ToolTip.Tip="Write this wBond's wires into the cell's layout and open it — this component only, and closes this dialog"/>
+                    </Grid>
+
+                    <!-- An unreadable payload is a reported, repairable state — never an empty panel
+                         that reads as "this component has nothing in it". -->
+                    <TextBlock Text="{Binding WBondPayloadError}"
+                               IsVisible="{Binding WBondPayloadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource CrfWarningBrush}"/>
+
+                    <!-- ── The arrays ───────────────────────────────────────────────────────
+                         An array IS a port: its name is the pin-pair name, and its position is the
+                         pin-pair position. That is why this list is the one place the array list
+                         should ever be edited from the schematic — and why reordering is deliberately
+                         NOT offered here: pin order is array order, so a reorder moves every pin
+                         while its name moves to a different row, which is the silent re-pointing
+                         wbond.md §9.2/WB35a exists to prevent. -->
+                    <Grid ColumnDefinitions="80,*,Auto">
+                        <TextBlock Grid.Column="0" Text="Arrays"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="Each array is one port: a + terminal left, a − terminal right."
+                                   FontSize="10" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                        <Button Grid.Column="2" Content="Add"
+                                FontSize="11" Padding="8,3"
+                                Command="{Binding AddWBondArrayCommand}"
+                                ToolTip.Tip="Add a wire array — a new pin pair on the symbol, carrying one wire to move into place"/>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding WBondArrays}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WBondArrayEditRow">
+                                <!-- No pin-name column. "G1.i / G1.o" was an internal spelling of
+                                     "this array's + and − terminals" and told the user nothing they
+                                     needed (owner, 2026-08-17) — the terminals are on the symbol,
+                                     where they are actually wired up.
+
+                                     Column 0 stays as an EMPTY 80px gutter: every other row in this
+                                     panel (Design, Arrays, Symbol Pitch) puts its label there, so the
+                                     name boxes line up under their values instead of hanging out to
+                                     the left of them. -->
+                                <Grid ColumnDefinitions="80,*,Auto,Auto" Margin="0,0,0,3">
+                                    <!-- Committed on Enter or lost focus, never per keystroke: a
+                                         half-typed name is routinely blank or a duplicate, and both
+                                         are refused, so committing per character would fight the
+                                         user for the box. -->
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding Name, Mode=TwoWay}"
+                                             FontSize="11" Padding="4,3"
+                                             VerticalAlignment="Center"
+                                             LostFocus="OnWBondArrayNameCommit"
+                                             KeyDown="OnWBondArrayNameKeyDown"
+                                             ToolTip.Tip="The array's name — this is the pin name on the symbol"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding WiresText}"
+                                               FontSize="10" VerticalAlignment="Center"
+                                               Margin="8,0,4,0"
+                                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                    <Button Grid.Column="3" Content="✕"
+                                            FontSize="10" Padding="5,1" Margin="2,0,0,0"
+                                            VerticalAlignment="Center"
+                                            IsEnabled="{Binding $parent[ItemsControl].((vm:ParameterEditorViewModel)DataContext).CanRemoveWBondArray, FallbackValue=False}"
+                                            Command="{Binding $parent[ItemsControl].((vm:ParameterEditorViewModel)DataContext).RemoveWBondArrayCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="Remove this array AND every wire in it"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Symbol Pitch + floating reference pin — the two artwork controls.
+                         "Symbol Pitch", not "Pitch" (owner): on a wirebond component "pitch" reads as
+                         the WIRE pitch, the centre-to-centre spacing of the bonds themselves, which
+                         this has nothing to do with. It is how far apart the symbol's port ROWS sit. -->
+                    <Grid ColumnDefinitions="80,*">
+                        <TextBlock Grid.Column="0" Text="Symbol Pitch"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="How far apart the symbol's port rows sit — artwork only, not the wire pitch"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding WBondSymbolPitchOptions}"
+                                  SelectedIndex="{Binding WBondSymbolPitchIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                    </Grid>
+
+                    <CheckBox IsChecked="{Binding WBondRefPin}"
+                              Content="Floating reference pin"
+                              FontSize="11"
+                              ToolTip.Tip="Adds a REF terminal for saying which net is the reference plane. It carries no current — the return path is the ground plane (see the GroundPlane parameter), and a design with the plane disabled is refused whether or not this pin is shown."/>
+                </StackPanel>
+
+                <!-- Generic parameter rows, LAST — after every custom panel.
+                     Hidden entirely for SnP, which replaces them. For a wBond they are `Temp` and
+                     `GroundPlane`, and the owner wants them at the BOTTOM (2026-08-17): the panel above
+                     is what the component IS — its wires, its arrays, its artwork — and these two are
+                     ordinary engine values that belong under it rather than in front of it. Nothing
+                     changes for any type with no custom panel of its own, which is all the rest. -->
                 <ItemsControl ItemsSource="{Binding Rows}"
                               IsVisible="{Binding !IsSnp}"
                               Grid.IsSharedSizeScope="True"
@@ -293,7 +432,7 @@
                                   ToolTip.Tip="Interp Domain — RI: interpolate real/imaginary parts (default). MA: interpolate magnitude/angle."/>
                     </Grid>
                 </StackPanel>
-            </Panel>
+            </StackPanel>
         </ScrollViewer>
 
         <!-- A compiled model file that could not be read, said at the moment it is chosen rather

@@ -19,7 +19,7 @@
         <!-- Shown only for the "New Group…" entry. A combo cannot offer a name nobody has typed, and
              making the user create the group somewhere else first would be a detour. -->
         <TextBox x:Name="NewNameBox" IsVisible="False" FontSize="12"
-                 Watermark="New group name"
+                 PlaceholderText="New group name"
                  KeyDown="OnNewNameKeyDown" TextChanged="OnNewNameChanged"/>
 
         <TextBlock x:Name="ErrorText" FontSize="11" IsVisible="False" TextWrapping="Wrap"

@@ -44,12 +44,25 @@ public static class DockLayoutCapture
         };
 
         // ── Docked tool panels ────────────────────────────────────────────────
-        var groupsBySide = new Dictionary<string, int>(StringComparer.Ordinal);
+        var parentMap = BuildParentMap(root);
+        var shellDocuments = FindDocumentDock(root);
+
+        // Two Left columns are two different places, so the group counter is keyed on BOTH — otherwise
+        // an inboard panel and an outer one would be told they are in the same group and rebuilt into
+        // one column, which is the reported bug in a second form.
+        var groupsBySide = new Dictionary<(string Side, bool Inboard), int>();
         foreach (var toolDock in EnumerateToolDocks(root))
         {
             var side = SideOf(toolDock, root);
-            int group = groupsBySide.TryGetValue(side, out var g) ? g : 0;
-            groupsBySide[side] = group + 1;
+
+            // Top and bottom are inboard by construction (the builder has always put them inside the
+            // document column), so the flag would carry a distinction that does not exist there.
+            bool inboard = side is DockSide.Left or DockSide.Right
+                        && shellDocuments is not null
+                        && IsInboard(toolDock, shellDocuments, root, parentMap);
+
+            int group = groupsBySide.TryGetValue((side, inboard), out var g) ? g : 0;
+            groupsBySide[(side, inboard)] = group + 1;
 
             int order = 0;
             foreach (var dockable in toolDock.VisibleDockables ?? Enumerable.Empty<IDockable>())
@@ -66,16 +79,21 @@ public static class DockLayoutCapture
                     Group      = group,
                     Order      = order++,
                     Active     = ReferenceEquals(toolDock.ActiveDockable, dockable),
+                    Inboard    = inboard,
                 });
             }
         }
 
         // ── Side column sizes ─────────────────────────────────────────────────
         // The left/right column's own width lives on the ProportionalDock that CONTAINS the tool
-        // docks, not on any of them — recorded once per side.
-        foreach (var (side, proportion) in EnumerateSideProportions(root, root))
-            if (!layout.Sides.Any(s => s.Side == side))
-                layout.Sides.Add(new CwsDockSide { Side = side, Proportion = FiniteProportion(proportion) });
+        // docks, not on any of them — recorded once per side. Keyed on (side, inboard): a side can have
+        // BOTH an outer column and an inboard one, at different widths, and they are different columns.
+        foreach (var (side, proportion, inboard) in EnumerateSideProportions(root, root))
+            if (!layout.Sides.Any(s => s.Side == side && s.Inboard == inboard))
+                layout.Sides.Add(new CwsDockSide
+                {
+                    Side = side, Proportion = FiniteProportion(proportion), Inboard = inboard,
+                });
 
         // ── Floating windows ──────────────────────────────────────────────────
         foreach (var window in root.Windows ?? Enumerable.Empty<IDockWindow>())
@@ -407,6 +425,35 @@ public static class DockLayoutCapture
         return SideFromAlignment(toolDock);
     }
 
+    /// <summary>
+    /// Whether <paramref name="toolDock"/> sits INSIDE the documents' own branch — i.e. it is a column
+    /// between the outer side column and the document tabs, not part of that outer column.
+    ///
+    /// <para>The test is one question asked at the OUTERMOST proportional container: does that container
+    /// separate the tool from the documents? If it puts them in the same branch, everything that
+    /// distinguishes them happens further in, which is exactly what "inboard" means. If it separates
+    /// them, the tool is in an outer column.</para>
+    ///
+    /// <para><b>Why the side alone was not enough.</b> <see cref="SideOf"/> answers Left/Right correctly
+    /// for both arrangements — it deliberately walks outward past any container that does not separate
+    /// the two (see its own remarks). That is the right answer to "which side", and it is silent on
+    /// "which column", which is the part the owner's report is about.</para>
+    /// </summary>
+    private static bool IsInboard(IToolDock toolDock, IDockable documentDock, IDockable root,
+                                  Dictionary<IDockable, IDock> parents)
+    {
+        // Outermost first — ChainToRoot is nearest-first, so the last proportional dock in it is the
+        // one that holds the columns.
+        var outermost = ChainToRoot(documentDock, parents).OfType<IProportionalDock>().LastOrDefault();
+        if (outermost is null) return false;
+
+        var toolBranch = BranchChildOf(toolDock, outermost, parents);
+        var docBranch  = BranchChildOf(documentDock, outermost, parents);
+        if (toolBranch is null || docBranch is null) return false;
+
+        return ReferenceEquals(toolBranch, docBranch);
+    }
+
     /// <summary>Last-resort inference for a tree we did not assemble. See <see cref="SideOf"/>.</summary>
     private static string SideFromAlignment(IToolDock toolDock) => toolDock.Alignment switch
     {
@@ -418,6 +465,24 @@ public static class DockLayoutCapture
     };
 
     /// <summary>child → parent for every dockable under <paramref name="root"/>.</summary>
+    /// <summary>
+    /// Whether <paramref name="target"/> is still somewhere in <paramref name="root"/>'s tree.
+    ///
+    /// <para>The question a caller holding a REFERENCE to a dock has to ask before using it: a dock the
+    /// user has since collapsed, closed or dragged away is a live object with a stale place in it, and
+    /// inserting into one puts a panel somewhere nobody can see.</para>
+    /// </summary>
+    public static bool Contains(IDockable root, IDockable target)
+    {
+        if (ReferenceEquals(root, target)) return true;
+        if (root is not IDock dock || dock.VisibleDockables is null) return false;
+
+        foreach (var child in dock.VisibleDockables)
+            if (child is not null && Contains(child, target)) return true;
+
+        return false;
+    }
+
     private static Dictionary<IDockable, IDock> BuildParentMap(IDockable root)
     {
         var map = new Dictionary<IDockable, IDock>(ReferenceEqualityComparer.Instance as IEqualityComparer<IDockable>
@@ -477,7 +542,7 @@ public static class DockLayoutCapture
     /// dock's proportion there is what makes a Library dropped at 12% of the width come back at
     /// 12%, rather than at the 20% default column width.</para>
     /// </summary>
-    private static IEnumerable<(string Side, double Proportion)> EnumerateSideProportions(IDockable dockable, IDockable root)
+    private static IEnumerable<(string Side, double Proportion, bool Inboard)> EnumerateSideProportions(IDockable dockable, IDockable root)
     {
         if (dockable is not IDock dock || dock.VisibleDockables is null) yield break;
 
@@ -486,9 +551,29 @@ public static class DockLayoutCapture
             var toolDocks = pd.VisibleDockables!.OfType<IToolDock>().ToList();
             var sides = toolDocks.Select(td => SideOf(td, root)).Distinct().ToList();
 
+            // An INBOARD column gets an entry of its own, flagged, rather than being skipped — see
+            // CwsDockSide.Inboard for the bug that came of inferring its width from a panel instead.
+            // Flagging rather than sharing the side's entry matters twice over: a side can have both
+            // columns at once, and the caller keeps the FIRST entry per key, so an unflagged inboard
+            // column would silently replace the outer one's real width.
+            var parents = BuildParentMap(root);
+            var documents = FindDocumentDock(root);
+            bool inboard = toolDocks.Count > 0 && documents is not null
+                        && IsInboard(toolDocks[0], documents, root, parents);
+
             if (sides.Count == 1 && sides[0] is DockSide.Left or DockSide.Right)
-                yield return (sides[0],
-                              pd.Proportion is > 0.0 and < 1.0 ? pd.Proportion : toolDocks[0].Proportion);
+            {
+                // An inboard column's share of the document row is the CONTAINER's own proportion and
+                // nothing else's. The outer column can fall back to its first tool dock, which for a
+                // single-dock column is the same number; for an inboard one that fallback would be the
+                // vertical share again, so it is better to emit nothing and let the default stand.
+                if (!inboard)
+                    yield return (sides[0],
+                                  pd.Proportion is > 0.0 and < 1.0 ? pd.Proportion : toolDocks[0].Proportion,
+                                  false);
+                else if (pd.Proportion is > 0.0 and < 1.0)
+                    yield return (sides[0], pd.Proportion, true);
+            }
         }
 
         foreach (var child in dock.VisibleDockables)

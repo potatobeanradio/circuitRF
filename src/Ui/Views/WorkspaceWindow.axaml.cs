@@ -62,6 +62,8 @@ public partial class WorkspaceWindow : Window
     // SchematicView tunnel and the canvas bubble, so it wins when armed and they don't double-rotate.
     private void OnWindowKeyDownTunnel(object? sender, KeyEventArgs e)
     {
+        if (TryHandleWirePanelKeys(e)) return;
+
         if (_vm is null || _vm.PlacementService.Pending is null) return;  // only when armed
         if (e.Key != Key.R) return;
         if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0) return;  // leave ⌘/Ctrl+R alone
@@ -69,6 +71,27 @@ public partial class WorkspaceWindow : Window
 
         _vm.PlacementService.Rotate(clockwise: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// <c>P</c> / <c>A</c> toggle the Wire Profile and Array Inductance panels (wbond.md §10.1).
+    ///
+    /// <para><b>On the WINDOW, and not on a view</b> — owner-reported three times. These keys were handled
+    /// by the layout view, gated on where keyboard focus was; and showing or hiding a dockable MOVES focus
+    /// (Dock focuses what is left in the dock it emptied, and the surrounding content is re-realised), so
+    /// the very act the key performs disarmed the key. Every attempt to put focus back afterwards was a
+    /// patch on the symptom that raced Dock's own handling and lost.</para>
+    ///
+    /// <para>The logic itself lives in <see cref="WirePanelKeys"/> because this window is not the only
+    /// surface that needs it — a floating panel is its own <c>TopLevel</c>, and takes focus when presented.
+    /// See that class for the whole reasoning.</para>
+    /// </summary>
+    private bool TryHandleWirePanelKeys(KeyEventArgs e)
+    {
+        if (!WirePanelKeys.Handle(this, _vm, e)) return false;
+
+        e.Handled = true;
+        return true;
     }
 
     // True only when focus is inside a schematic editor or the Library Palette (and not a text field),

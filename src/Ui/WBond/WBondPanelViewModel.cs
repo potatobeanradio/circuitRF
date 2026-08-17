@@ -114,6 +114,22 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private WBondUnit _unit = WBondUnit.Mil;
 
+    /// <summary>
+    /// The editor these rows describe, and the one the panel's own gestures act on — double-clicking an
+    /// array name to select its wires, and the four settable rows.
+    ///
+    /// <para><b>It lives on the FORMATTER, not on the view, and that is the whole point.</b> The view had
+    /// it pushed in by each host, and the docked host pushed it exactly once — on its own
+    /// <c>DataContextChanged</c>, which fires when the TOOL is bound and never again, because a dock tool
+    /// instance lives for the whole session while the editor it points at changes with every document
+    /// activation. So it was null for the life of the panel and the array double-click returned
+    /// immediately, selecting nothing (owner, 2026-08-17, reported twice).</para>
+    ///
+    /// <para>Here it cannot go stale: every host that has a readout to format has the editor that
+    /// produced it, and both are assigned together — there is no second moment to forget.</para>
+    /// </summary>
+    [ObservableProperty] private WBondViewModel? _editor;
+
     /// <summary>What the return path currently is — stated at all times (WB20 / RW13).</summary>
     [ObservableProperty] private string _returnPath = "";
 

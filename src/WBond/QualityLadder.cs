@@ -162,13 +162,68 @@ public sealed class QualityLadder
         return original;
     }
 
-    /// <summary>Restores the exact geometry captured by <see cref="CollapseToChord"/>.</summary>
+    /// <summary>
+    /// Restores the geometry captured by <see cref="CollapseToChord"/>, <b>carried onto wherever the
+    /// chord has since been dragged to</b>.
+    ///
+    /// <h3>Restoring the captured points verbatim was the drag-slip bug</h3>
+    /// <para>While the wire is collapsed the drag moves the only two points it has — its feet. Putting
+    /// the captured array back unchanged therefore threw away every frame of motion that happened at
+    /// the degraded rung: the wire sprang back to where it stood at the instant the ladder stepped
+    /// down, while the cursor was somewhere else entirely. That is the owner's report (2026-08-16) —
+    /// "drag them around the screen very fast, eventually the cursor will slip and my mouse will no
+    /// longer be over the wire vertex I originally clicked on" — and the profile view's "glitch" is
+    /// the same event seen from the other canvas, because the wire it draws jumps too.</para>
+    ///
+    /// <para>Fast dragging is exactly what makes it appear: the ladder is fed measured frame times, so
+    /// it only degrades when frames overrun, and it only overruns when the pointer is generating more
+    /// work than 60 fps allows.</para>
+    ///
+    /// <para>The interior points are re-placed by their own <b>chord parameter and height above the
+    /// chord</b> — the same parameterisation <see cref="WireEdits.ScaleSpan"/> preserves — so a
+    /// translate, a span scale and a rotate performed while collapsed all carry through with one
+    /// rule. When the feet have NOT moved the captured array is put back byte-for-byte, so a collapse
+    /// with no drag in between is still exactly reversible.</para>
+    /// </summary>
     public static void RestoreFromChord(Wire wire, Point3[] original)
     {
         ArgumentNullException.ThrowIfNull(wire);
         ArgumentNullException.ThrowIfNull(original);
 
+        // Nothing to map onto (the collapse was a no-op, or the wire has been restructured under us).
+        if (original.Length <= 2 || wire.Points.Count < 2)
+        {
+            wire.Points.Clear();
+            wire.Points.AddRange(original);
+            return;
+        }
+
+        Point3 oldStart = original[0], oldEnd = original[^1];
+        Point3 newStart = wire.Points[0], newEnd = wire.Points[^1];
+
+        if (oldStart == newStart && oldEnd == newEnd)
+        {
+            wire.Points.Clear();
+            wire.Points.AddRange(original);
+            return;
+        }
+
         wire.Points.Clear();
-        wire.Points.AddRange(original);
+        wire.Points.Add(newStart);
+
+        for (int i = 1; i < original.Length - 1; i++)
+        {
+            double s = WireEdits.ChordParameter(oldStart, oldEnd, original[i]);
+            long oldChordZ = oldStart.Z + (long)Math.Round((oldEnd.Z - oldStart.Z) * s);
+            long height = original[i].Z - oldChordZ;
+
+            long x = newStart.X + (long)Math.Round((newEnd.X - newStart.X) * s);
+            long y = newStart.Y + (long)Math.Round((newEnd.Y - newStart.Y) * s);
+            long chordZ = newStart.Z + (long)Math.Round((newEnd.Z - newStart.Z) * s);
+
+            wire.Points.Add(new Point3(x, y, chordZ + height));
+        }
+
+        wire.Points.Add(newEnd);
     }
 }

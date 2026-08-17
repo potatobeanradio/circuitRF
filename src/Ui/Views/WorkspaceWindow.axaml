@@ -133,6 +133,8 @@
                                     <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
                                     <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
                                     <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
+                                    <NativeMenuItem Header="Wire Profile"     Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile"/>
+                                    <NativeMenuItem Header="Array Inductance" Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -534,6 +536,16 @@
                     <MenuItem Header="_DRC"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- wbond.md §10.1 — the two wBond panels, which follow the active layout. Not in
+                         either shipped default layout: most designs have no wirebonds. -->
+                    <MenuItem Header="Wire Pro_file"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Array Induc_tance"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>
                 <Separator/>

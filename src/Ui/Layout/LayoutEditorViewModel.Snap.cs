@@ -222,6 +222,36 @@ public sealed partial class LayoutEditorViewModel
     /// only when it genuinely has a real feature to offer, never merely because the mode is enabled.</summary>
     private bool _snapCandidateIsRealTarget;
 
+    /// <summary>
+    /// Installs a snap marker computed by a CANVAS OVERLAY (the wBond wire layer, WB23) rather than by
+    /// this view model's own query.
+    ///
+    /// <para><b>Why the marker cannot be left to this view model alone.</b> The overlay is offered every
+    /// press and move before the layout editor sees it, and anything it consumes never reaches
+    /// <see cref="OnPointerMoved"/> — the only place that refreshes or clears
+    /// <see cref="_currentSnapCandidate"/>. So a wire drag left the last HOVER's glyph frozen on the
+    /// vertex the wire had just been dragged away from, and drawing a wire showed no glyph at all
+    /// despite both feet being snapped every frame (owner, 2026-08-17).</para>
+    ///
+    /// <para><b>Display only.</b> <see cref="_snapCandidateIsRealTarget"/> stays false, exactly as it
+    /// does for the synthetic grab echo: the overlay has already applied its own snap to its own
+    /// geometry, and letting this feed <c>RecomputeMoveDelta</c>'s absolute-position branch would move
+    /// layout shapes to a point chosen for a wire.</para>
+    /// </summary>
+    internal void SetOverlaySnapMarker(SnapCandidate? candidate)
+    {
+        if (Equals(_currentSnapCandidate, candidate)) return;
+
+        _currentSnapCandidate = candidate;
+        _snapCandidateIsRealTarget = false;
+
+        // The next hover this view model DOES see must re-query rather than be skipped by R-snp-16's
+        // sub-pixel guard, which would otherwise compare against a point this marker never came from.
+        _snapQueryLastComputedPoint = null;
+
+        RebuildOverlay();
+    }
+
     /// <summary>R-snp-9: reuses the SAME generic cycling primitive the shape-selection overlap cache
     /// uses (see <see cref="ClickCycleCache{T}"/>'s own header) — not a second mechanism.</summary>
     private readonly ClickCycleCache<SnapCandidate> _snapCycleCache = new();
@@ -362,6 +392,8 @@ public sealed partial class LayoutEditorViewModel
             Model, Technology, InstanceBaseDir, px, py, snapTolDbu, IncludeIntersectionsEnabled,
             excludeShapes, excludeInstances, ref counters);
 
+        candidates = WithWireCandidates(candidates, px, py, snapTolDbu);
+
         _snapCandidateIsRealTarget = candidates.Count > 0;
         _currentSnapCandidate = _snapCandidateIsRealTarget
             ? candidates[0]
@@ -385,6 +417,71 @@ public sealed partial class LayoutEditorViewModel
             : _snapDragActive
                 ? MakeGrabEcho(px, py)
                 : null;
+    }
+
+    /// <summary>
+    /// Adds the WIRES riding over this layout to the snap answer — their vertices and their segments
+    /// (owner, 2026-08-16: "this wire vertex/segment snapping will also be needed when moving regular
+    /// geometry in the layout editor, so make sure it works for both editors").
+    ///
+    /// <para>Returns <paramref name="candidates"/> unchanged when there is no wire design, which is
+    /// every layout that is not open under a wBond editor — so an ordinary layout's snap does exactly
+    /// what it did before, with no extra work per pointer move.</para>
+    ///
+    /// <para><b>Wire points are stored in NANOMETRES and this query is in the layout's own database
+    /// units</b> (<see cref="LayoutView.DbuPerMicron"/>). The two coincide only at the 1,000 DBU/µm
+    /// default, which is exactly why the bridge is crossed explicitly here — see
+    /// <c>WBondSnap</c>'s own note on the same conversion.</para>
+    ///
+    /// <para>Nothing is excluded: this path moves SHAPES, and a shape is never a wire, so there is no
+    /// self-snap to guard against. (The wBond overlay, which moves wires, does exclude what it is
+    /// dragging.) The result is re-sorted by the same (priority, distance) rule
+    /// <see cref="LayoutSnapQuery.FindCandidates"/> uses, so a wire vertex and a pad corner compete on
+    /// equal terms.</para>
+    /// </summary>
+    private IReadOnlyList<SnapCandidate> WithWireCandidates(
+        IReadOnlyList<SnapCandidate> candidates, long px, long py, long snapTolDbu)
+    {
+        if (WireDesign is not { } design) return candidates;
+
+        int dbuPerMicron = Model.DbuPerMicron;
+        long tolNm = CircuitRF.Ui.WBond.WBondSnap.ToNm(snapTolDbu, dbuPerMicron);
+
+        var hit = CircuitRF.WBond.WireSnap.Nearest(
+            design,
+            CircuitRF.Ui.WBond.WBondSnap.ToNm(px, dbuPerMicron),
+            CircuitRF.Ui.WBond.WBondSnap.ToNm(py, dbuPerMicron),
+            tolNm);
+
+        if (!hit.Found) return candidates;
+
+        // OwnerIndex −1 = "no owning shape", the same value a PCell pin already carries. Only the
+        // marker's position and kind are read from a candidate on this path; the click-through GRAB
+        // path runs its own query and never sees this one, so there is no owner to resolve.
+        var wireCandidate = new SnapCandidate(
+            hit.Kind == CircuitRF.WBond.WireSnapKind.Vertex
+                ? SnapFeatureKind.CornerEndpoint
+                : SnapFeatureKind.Nearest,
+            CircuitRF.Ui.WBond.WBondSnap.ToDbu(hit.XNm, dbuPerMicron),
+            CircuitRF.Ui.WBond.WBondSnap.ToDbu(hit.YNm, dbuPerMicron),
+            default, false, -1);
+
+        var merged = new List<SnapCandidate>(candidates.Count + 1);
+        merged.AddRange(candidates);
+        merged.Add(wireCandidate);
+
+        double DistSq(SnapCandidate c)
+        {
+            double dx = c.X - px, dy = c.Y - py;
+            return dx * dx + dy * dy;
+        }
+        merged.Sort((a, b) =>
+        {
+            int k = a.Kind.CompareTo(b.Kind);
+            return k != 0 ? k : DistSq(a).CompareTo(DistSq(b));
+        });
+
+        return merged;
     }
 
     private SnapCandidate MakeGrabEcho(long px, long py)

@@ -81,6 +81,10 @@ public class CircuitRfDockFactory : Factory
     public PaletteTool?      PaletteTool      { get; private set; }
     public DrcTool?          DrcTool          { get; private set; }
 
+    /// <summary>wbond.md §10.1 (WB39a/M3) — the two wBond panels, following the active layout.</summary>
+    public WBondProfileTool?    WBondProfileTool    { get; private set; }
+    public WBondInductanceTool? WBondInductanceTool { get; private set; }
+
     public CircuitRfDockFactory()
     {
         // Required for tab tear-off: tells Dock what window type to create when a tab
@@ -164,6 +168,8 @@ public class CircuitRfDockFactory : Factory
             PaletteTool     = new PaletteTool();
             MessagesTool    = new MessagesTool();
             DrcTool         = new DrcTool();
+            WBondProfileTool    = new WBondProfileTool();
+            WBondInductanceTool = new WBondInductanceTool();
         }
         else
         {
@@ -175,6 +181,8 @@ public class CircuitRfDockFactory : Factory
             PaletteTool     ??= new PaletteTool();
             MessagesTool    ??= new MessagesTool();
             DrcTool         ??= new DrcTool();
+            WBondProfileTool    ??= new WBondProfileTool();
+            WBondInductanceTool ??= new WBondInductanceTool();
         }
 
         ITool? ToolFor(string id) => id switch
@@ -185,6 +193,8 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Analyses    => AnalysesTool,
             DockPanelIds.Messages    => MessagesTool,
             DockPanelIds.Drc         => DrcTool,
+            DockPanelIds.WBondProfile    => WBondProfileTool,
+            DockPanelIds.WBondInductance => WBondInductanceTool,
             _                        => null,
         };
 
@@ -213,11 +223,17 @@ public class CircuitRfDockFactory : Factory
         state = DockLayoutDefaults.WithMissingPanelsFilled(state);
 
         // ── Tool docks, per side ──────────────────────────────────────────────
-        List<IDock> BuildSide(string side)
+        //
+        // `inboard` splits each side into its TWO possible columns: the outer one at the window edge, and
+        // one sitting between it and the document tabs — the arrangement a user gets by dropping a panel
+        // against the document area's own edge. They are different places, and before CwsDockPanel.Inboard
+        // the schema could only say "Left", so a panel docked beside the documents came back as another
+        // row of the outer left column, under whatever was already there (owner, 2026-08-17).
+        List<IDock> BuildSide(string side, bool inboard = false)
         {
             var docks = new List<IDock>();
             var groups = state.Panels
-                .Where(p => p.Open && p.Side == side)
+                .Where(p => p.Open && p.Side == side && p.Inboard == inboard)
                 .GroupBy(p => p.Group)
                 .OrderBy(g => g.Key);
 
@@ -255,10 +271,29 @@ public class CircuitRfDockFactory : Factory
         var topDocks    = BuildSide(DockSide.Top);
         var bottomDocks = BuildSide(DockSide.Bottom);
 
+        var leftInboardDocks  = BuildSide(DockSide.Left,  inboard: true);
+        var rightInboardDocks = BuildSide(DockSide.Right, inboard: true);
+
         double SideProportion(string side, double fallback)
         {
-            var s = state.Sides.FirstOrDefault(x => x.Side == side);
+            var s = state.Sides.FirstOrDefault(x => x.Side == side && !x.Inboard);
             return s is { Proportion: > 0.0 and < 1.0 } ? s.Proportion : fallback;
+        }
+
+        /// <summary>
+        /// An inboard column's share of the document row — its own recorded width, and nothing inferred.
+        ///
+        /// <para>It used to be read off the column's first PANEL, which is a different measurement
+        /// entirely: a panel's proportion is its share of its own column, measured DOWN, not the column's
+        /// share of the row, measured ACROSS. Two stacked panels at 0.67/0.33 therefore reopened with the
+        /// column claiming 0.67 of the width and the layout document squeezed into the rest (owner,
+        /// 2026-08-17). A file written before <see cref="CwsDockSide.Inboard"/> existed has no entry and
+        /// takes the default, which is right: there is nothing trustworthy to recover from it.</para>
+        /// </summary>
+        double InboardProportion(string side)
+        {
+            var s = state.Sides.FirstOrDefault(x => x.Side == side && x.Inboard);
+            return s is { Proportion: > 0.0 and < 1.0 } ? s.Proportion : DockLayoutDefaults.LeftColumnProportion;
         }
 
         // ── Document area: one tab strip, or the saved split ─────────────────
@@ -267,6 +302,42 @@ public class CircuitRfDockFactory : Factory
         var panes = new List<RestoredDocumentPane>();
         var documentArea = BuildDocumentArea(state.DocumentRegion, documentDock, documentIsOpen, panes);
         RestoredDocumentPanes = panes;
+
+        // ── Inboard columns: [left inboard] | documents | [right inboard] ─────
+        // Wrapped around the DOCUMENT AREA rather than added to the document column, because that is the
+        // shape Dock's own CreateSplitLayout produces for this gesture: it replaces the document dock with
+        // a horizontal split holding the tool and the documents, leaving any top/bottom docks outside it.
+        // Building the same shape is what makes the restore indistinguishable from the drag.
+        if (leftInboardDocks.Count > 0 || rightInboardDocks.Count > 0)
+        {
+            var inboardChildren = new List<IDockable>();
+
+            // An inboard column's width is the panel's OWN proportion — see CwsDockPanel.Inboard.
+            if (leftInboardDocks.Count > 0)
+            {
+                inboardChildren.Add(BuildColumn("LeftInboardColumn", leftInboardDocks,
+                                                InboardProportion(DockSide.Left)));
+                inboardChildren.Add(new ProportionalDockSplitter());
+            }
+
+            inboardChildren.Add(documentArea);
+
+            if (rightInboardDocks.Count > 0)
+            {
+                inboardChildren.Add(new ProportionalDockSplitter());
+                inboardChildren.Add(BuildColumn("RightInboardColumn", rightInboardDocks,
+                                                InboardProportion(DockSide.Right)));
+            }
+
+            documentArea = new ProportionalDock
+            {
+                Id               = "DocumentRow",
+                Title            = "DocumentRow",
+                Orientation      = Orientation.Horizontal,
+                ActiveDockable   = documentDock,
+                VisibleDockables = CreateList(inboardChildren.ToArray()),
+            };
+        }
 
         // ── Document column: [top docks…] / documents / [bottom docks…] ───────
         var columnChildren = new List<IDockable>();
@@ -403,25 +474,45 @@ public class CircuitRfDockFactory : Factory
             if (window?.Layout is null) continue;
             if (!ContainsTool(window.Layout)) continue;
 
-            windows.Remove(window);
-
-            var host = window.Host;
-            window.Owner = null;
-            window.Host  = null;
-
-            // Deregister HERE, from the factory that owns the collection, rather than relying on the
-            // host to reach it through window.Factory: that chain is null whenever Dock has already
-            // run RemoveWindow, and a MISSED removal leaves a closed Window in HostWindows —
-            // which crashes the very next window drag inside
-            // Window.SortWindowsByZOrder ("Invalid window at index N", thrown for a null PlatformImpl).
-            if (host is not null) HostWindows.Remove(host);
-
-            // CrfHostWindow knows how to close without triggering Dock's crashing CloseWindow
-            // cascade; anything else falls back to Dock's own exit.
-            if (host is CrfHostWindow crf) crf.CloseForLayoutRebuild();
-            else                           host?.Exit();
+            CloseFloatingWindow(root, window);
         }
     }
+
+    /// <summary>
+    /// Closes ONE floating window and deregisters it completely.
+    ///
+    /// <para>Split out of <see cref="CloseFloatingToolWindows"/> so the P/A panel toggle can close the
+    /// single window it is hiding without going anywhere near a layout rebuild — and, more to the point,
+    /// so it cannot teardown a float by hand and get the <c>HostWindows</c> bookkeeping subtly wrong. Every
+    /// caveat below was paid for once already; there must be exactly one copy of it.</para>
+    ///
+    /// <para>Headless-safe: a window that was built but never presented has no <c>Host</c>, so nothing here
+    /// touches Avalonia.</para>
+    /// </summary>
+    public void CloseFloatingWindow(IRootDock? root, IDockWindow window)
+    {
+        root?.Windows?.Remove(window);
+
+        var host = window.Host;
+        window.Owner = null;
+        window.Host  = null;
+
+        // Deregister HERE, from the factory that owns the collection, rather than relying on the
+        // host to reach it through window.Factory: that chain is null whenever Dock has already
+        // run RemoveWindow, and a MISSED removal leaves a closed Window in HostWindows —
+        // which crashes the very next window drag inside
+        // Window.SortWindowsByZOrder ("Invalid window at index N", thrown for a null PlatformImpl).
+        if (host is not null) HostWindows.Remove(host);
+
+        // CrfHostWindow knows how to close without triggering Dock's crashing CloseWindow
+        // cascade; anything else falls back to Dock's own exit.
+        if (host is CrfHostWindow crf) crf.CloseForLayoutRebuild();
+        else                           host?.Exit();
+    }
+
+    /// <summary>The root this factory's layout is currently built on, for callers that need to reach its
+    /// floating windows (the panel toggle) without re-deriving it.</summary>
+    public IRootDock? CurrentRoot => _currentRoot;
 
     /// <summary>
     /// Drops any already-closed window from <see cref="Dock.Model.Core.IFactory.HostWindows"/>.
@@ -504,6 +595,8 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Analyses    => AnalysesTool,
         DockPanelIds.Messages    => MessagesTool,
         DockPanelIds.Drc         => DrcTool,
+        DockPanelIds.WBondProfile    => WBondProfileTool,
+        DockPanelIds.WBondInductance => WBondInductanceTool,
         _                        => null,
     };
 

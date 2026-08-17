@@ -8,6 +8,7 @@ using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.WBond;
@@ -41,6 +42,40 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <summary>The current workspace root, or null. Evaluated lazily so it always reflects the
     /// currently-open workspace.</summary>
     public string? WorkspaceRoot => WorkspaceRootProvider?.Invoke();
+
+    /// <summary>
+    /// The workspace technology's own display unit (<c>.ctech</c>'s <c>DefaultDisplayUnit</c>), or null
+    /// when no workspace or no technology is open. Supplied by <c>WorkspaceViewModel</c>, which owns the
+    /// technology cache and the resolution order.
+    ///
+    /// <para>Wired HERE rather than on each parameter-editor instance because there are three places one
+    /// of those is constructed (the docked Properties panel, the schematic's double-click dialog, and
+    /// Harmonica's C(V) editor) and exactly one place a schematic session is built — so this cannot be
+    /// forgotten at a call site.</para>
+    /// </summary>
+    public Func<LayoutUnit?>? WorkspaceDisplayUnitProvider { get; set; }
+
+    /// <summary>
+    /// The unit a LENGTH should be reported in on a schematic surface: the workspace technology's, or
+    /// mils when nothing resolves.
+    ///
+    /// <para>Mils rather than millimetres as the fallback because the one length a schematic currently
+    /// reports is a wirebond's (owner, 2026-08-17), and a bonder works in mils — the same default the
+    /// wBond editor itself opens on.</para>
+    /// </summary>
+    public LayoutUnit LengthDisplayUnit => WorkspaceDisplayUnitProvider?.Invoke() ?? LayoutUnit.Mil;
+
+    /// <summary>
+    /// Runs <b>Update Layout</b> for one wBond component and nothing else — the button on the wBond
+    /// parameter panel (owner, 2026-08-17). Supplied by <c>WorkspaceViewModel</c>, which owns the layout
+    /// documents, the cell folders and the report; null when there is no workspace, and the panel hides
+    /// the button rather than offering one that cannot work.
+    ///
+    /// <para>Wired on the schematic SESSION for the same reason
+    /// <see cref="WorkspaceDisplayUnitProvider"/> is: three places construct a parameter editor and
+    /// exactly one builds a session.</para>
+    /// </summary>
+    public Action<SchematicViewModel, EditableComponent>? UpdateWBondLayout { get; set; }
 
     // ── Render snapshot ───────────────────────────────────────────────────────
 

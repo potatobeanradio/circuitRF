@@ -431,6 +431,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             foreach (var param in comp.Parameters)
             {
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
+
+                // A wBond's own panel owns four of its parameters. Two are documented HIDDEN and were
+                // showing as unreadable text — `Design` is the base64 of the whole wirebond design
+                // (the owner's "gibberish"), `Arrays` is drift-detection bookkeeping — and the other
+                // two have real controls there. `Temp` and `GroundPlane` are ordinary engine values
+                // and stay as generic rows.
+                if (comp.Symbol == SymbolKind.WBond && IsWBondPanelParameter(param.Name)) continue;
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
                 built.Add(row);
@@ -463,12 +470,14 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _isRefreshing = false;
 
         OnPropertyChanged(nameof(IsSnp));
+        OnPropertyChanged(nameof(IsWBond));
         OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(ShowAddModelParameter));
         OnPropertyChanged(nameof(AllowsAddParameter));
         NotifyMklopfState();
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
         SyncVerilogAFromModelFile();
     }
 

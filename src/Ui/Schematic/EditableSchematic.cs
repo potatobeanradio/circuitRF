@@ -385,7 +385,13 @@ public sealed class EditableComponent
         CellRef
         ?? (Symbol == SymbolKind.WBond
                 ? WBondSymbolProvider.RefFor(
-                      Parameters.FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression)
+                      Parameters.FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression,
+                      // Artwork only — Tight or Loose, as SnP means them. Read live from the instance
+                      // for the same reason the design payload is: the reference IS the cache key, so
+                      // changing the parameter re-points the symbol with nothing to keep in step.
+                      WBondSymbolProvider.ParsePitch(
+                          Parameters.FirstOrDefault(p => p.Name == "SymbolPitch")?.Expression),
+                      GetBoolParam("RefPin"))
                 : null);
 
     public double         X            { get; set; }

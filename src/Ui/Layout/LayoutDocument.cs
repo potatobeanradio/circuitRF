@@ -262,9 +262,39 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     /// </summary>
     public UndoRedoStack UndoRedo => ActiveViewModel.UndoRedo;
 
+    // WB40 — a layout showing a wirebond cell has TWO edit histories: this stack, and the wires' own
+    // snapshot stack. Ctrl+Z asks one question, so the ACTIVE SESSION answers it (see
+    // LayoutEditorViewModel.UndoLast, and EditSequence for how the answer is made total). Everything
+    // else about undo routing is unchanged: a layout with no wires behaves exactly as it always did,
+    // because that is what UndoLast falls through to.
+
+    /// <inheritdoc/>
+    public void UndoLast() => ActiveViewModel.UndoLast();
+
+    /// <inheritdoc/>
+    public void RedoLast() => ActiveViewModel.RedoLast();
+
+    /// <inheritdoc/>
+    public bool CanUndoLast => ActiveViewModel.CanUndoLast;
+
+    /// <inheritdoc/>
+    public bool CanRedoLast => ActiveViewModel.CanRedoLast;
+
+    /// <inheritdoc/>
+    public string UndoLastDescription => ActiveViewModel.UndoLastDescription;
+
+    /// <inheritdoc/>
+    public string RedoLastDescription => ActiveViewModel.RedoLastDescription;
+
     /// <summary>Workspace-level hierarchy service for Push In / Pop Out / Open Cell in New Tab.
-    /// Injected at creation; null in tests.</summary>
-    public ILayoutHierarchyHost? Hierarchy { get; init; }
+    /// Injected at creation; null in tests, in the standalone wBond binary, and for any document the
+    /// host has not adopted yet.
+    ///
+    /// <para>Settable rather than <c>init</c>-only because a wBond editor's layout document is created
+    /// by its own view model the moment a reference layout appears (WB39a) — before the workspace has
+    /// had a chance to hand it anything. <c>WBondDocumentViewModel.LayoutHierarchy</c> is the one
+    /// place that assigns it late.</para></summary>
+    public ILayoutHierarchyHost? Hierarchy { get; set; }
 
     // ── Scratch / dirty identity ─────────────────────────────────────────────
 

@@ -1,0 +1,80 @@
+{
+  "format_version": 1,
+  "name": "wBond-Copper",
+  "light": {
+    "wBond.Envelope": {
+      "r": 165,
+      "g": 98,
+      "b": 64,
+      "a": 52
+    },
+    "wBond.FreeWire": {
+      "r": 43,
+      "g": 159,
+      "b": 182,
+      "a": 255
+    },
+    "wBond.Selected": {
+      "r": 46,
+      "g": 39,
+      "b": 36,
+      "a": 255
+    },
+    "wBond.Wire": {
+      "r": 165,
+      "g": 98,
+      "b": 64,
+      "a": 255
+    },
+    "wBond.WireStart": {
+      "r": 84,
+      "g": 47,
+      "b": 28,
+      "a": 255
+    },
+    "wBond.WireVertex": {
+      "r": 243,
+      "g": 27,
+      "b": 207,
+      "a": 255
+    }
+  },
+  "dark": {
+    "wBond.Envelope": {
+      "r": 214,
+      "g": 153,
+      "b": 122,
+      "a": 60
+    },
+    "wBond.FreeWire": {
+      "r": 115,
+      "g": 204,
+      "b": 222,
+      "a": 255
+    },
+    "wBond.Selected": {
+      "r": 244,
+      "g": 242,
+      "b": 241,
+      "a": 255
+    },
+    "wBond.Wire": {
+      "r": 214,
+      "g": 153,
+      "b": 122,
+      "a": 255
+    },
+    "wBond.WireStart": {
+      "r": 142,
+      "g": 75,
+      "b": 41,
+      "a": 255
+    },
+    "wBond.WireVertex": {
+      "r": 255,
+      "g": 122,
+      "b": 233,
+      "a": 255
+    }
+  }
+}

@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.WBond;
 using CircuitRF.Ui.ViewModels.Dock;
 
 namespace CircuitRF.Ui.ViewModels;
@@ -27,8 +28,43 @@ public partial class WorkspaceViewModel
     [RelayCommand(CanExecute = nameof(IsSchematicDocumentActive))]
     private void UpdateLayoutFromSchematic()
     {
-        if (ResolveActiveDocumentForCommands() is not SchematicDocument doc) return;
+        if (ResolveActiveDocumentForCommands() is SchematicDocument doc)
+            RunLayoutUpdate(doc, onlyWBond: null);
+    }
 
+    /// <summary>
+    /// The wBond parameter dialog's own <b>Update Layout</b> button (owner, 2026-08-17): the same command
+    /// as far as the layout and the wires are concerned, but it touches <b>only this wBond</b> — every
+    /// other component in the schematic is left exactly as the layout already has it.
+    ///
+    /// <para>Why the restriction is worth having its own entry point: a user editing a wBond's arrays
+    /// wants to see the wires, not to have every instance in the layout re-resolved, re-placed and
+    /// re-reported around them. The full command is one menu item away when that IS what they want.</para>
+    ///
+    /// <para>The document is found from the VIEW MODEL rather than from the active dockable: this is
+    /// raised by a NON-MODAL dialog, so the user may well have clicked another tab since it opened, and
+    /// "the active document" would then be the wrong schematic — or not a schematic at all.</para>
+    /// </summary>
+    internal void UpdateLayoutForWBond(SchematicViewModel schematic, EditableComponent comp)
+    {
+        var doc = _openDocsByPath.Values.OfType<SchematicDocument>().Concat(_scratchDocs)
+            .FirstOrDefault(d => ReferenceEquals(d.ViewModel, schematic));
+
+        if (doc is null)
+        {
+            Messages.Error("Update Layout: this schematic is no longer open.");
+            return;
+        }
+
+        RunLayoutUpdate(doc, onlyWBond: comp);
+    }
+
+    /// <param name="onlyWBond">
+    /// When non-null, ONLY this wBond component is written — the instance generator does not run at all.
+    /// Null is the ordinary whole-schematic command.
+    /// </param>
+    private void RunLayoutUpdate(SchematicDocument doc, EditableComponent? onlyWBond)
+    {
         if (doc.IsScratch)
         {
             Messages.Error("Update Layout from Schematic: save the schematic first — a scratch schematic has no cell to write into.");
@@ -67,22 +103,29 @@ public partial class WorkspaceViewModel
         OpenOrActivateLayout(targetPath);
         var layoutVm = GetOrCreateLayoutSession(targetPath);
 
-        if (layoutVm.WorkspaceRootDir is not { Length: > 0 } workspaceRoot)
+        // The INSTANCE half is skipped entirely for a wBond-only update: nothing else in the schematic
+        // is re-resolved, so nothing else can move, be re-parameterised, or be reported.
+        if (onlyWBond is null)
         {
-            Messages.Error("Update Layout from Schematic: no workspace is open — generated PCell cells need a workspace to live in.");
-            return;
+            if (layoutVm.WorkspaceRootDir is not { Length: > 0 } workspaceRoot)
+            {
+                Messages.Error("Update Layout from Schematic: no workspace is open — generated PCell cells need a workspace to live in.");
+                return;
+            }
+
+            var result = SchematicToLayoutGenerator.Run(
+                doc.ViewModel.EditModel, layoutVm.Model, schematicDir, workspaceRoot, layoutDir,
+                layoutVm.Technology, layoutVm.ResolvedTechPath, this);
+
+            if (result.Command is not null)
+                layoutVm.Execute(result.Command);
+
+            ReportGenerationResult(result.Command, result.Lines, result.NoLayoutWarnings,
+                result.AddedCount, result.UpdatedCount, result.UnchangedCount, result.RemovedCount,
+                result.OverwrittenParameterCount, "Update Layout from Schematic");
         }
 
-        var result = SchematicToLayoutGenerator.Run(
-            doc.ViewModel.EditModel, layoutVm.Model, schematicDir, workspaceRoot, layoutDir,
-            layoutVm.Technology, layoutVm.ResolvedTechPath, this);
-
-        if (result.Command is not null)
-            layoutVm.Execute(result.Command);
-
-        ReportGenerationResult(result.Command, result.Lines, result.NoLayoutWarnings,
-            result.AddedCount, result.UpdatedCount, result.UnchangedCount, result.RemovedCount,
-            result.OverwrittenParameterCount, "Update Layout from Schematic");
+        SeedWBondSidecar(doc.ViewModel.EditModel, cellDir, schematicName, layoutVm, onlyWBond);
 
         // R-L5-17: primacy — new file with no prior real primary becomes primary automatically
         // (CellFolder's own SoleFile branch handles the common case for free); only the ambiguous
@@ -101,6 +144,61 @@ public partial class WorkspaceViewModel
                 Messages.Warning($"'{primaryBeforeName}' remains this cell's primary layout — '{Path.GetFileName(targetPath)}' was written but not made primary.");
             }
         }
+    }
+
+    /// <summary>
+    /// wbond.md §9.5/WB41 — the wBond half of Update Layout from Schematic.
+    ///
+    /// <para>A wBond has no layout view to place, so the generator above emits nothing for it (WB23: no
+    /// wire enters a <c>.clay</c>). Its wires are the CELL's own <c>.wBond</c> sidecar instead, which is
+    /// the same file <see cref="WBondCell"/> already loads for any cell that has one — so writing it
+    /// here is what makes both halves of the owner's report work: the wires appear after Update Layout
+    /// from Schematic, and they appear again every later time that <c>.clay</c> is opened.</para>
+    ///
+    /// <para><b>The session has to be told, not just the disk.</b> The layout document is already open
+    /// by this point — created moments ago by the branch above, or long since — and a session built
+    /// before the sidecar existed has no wire overlay on it. Attaching here is what puts the wires on
+    /// screen now rather than on the next reopen.</para>
+    /// </summary>
+    private void SeedWBondSidecar(SchematicEditModel model, string cellDir, string cellName,
+                                  LayoutEditorViewModel layoutVm, EditableComponent? only = null)
+    {
+        var seeded = WBondCellSeeding.Seed(model, cellDir, cellName, only);
+        if (seeded.Outcome == WBondCellSeeding.Outcome.NoWBond) return;
+
+        foreach (string line in seeded.Messages)
+        {
+            // The written file rides along on the success line so the Messages pane's own reveal
+            // affordance points at it — the same shape every other "wrote a file" report here uses.
+            if (seeded.Outcome is WBondCellSeeding.Outcome.Created) Messages.Success(line, seeded.Path);
+            else Messages.Warning(line);
+        }
+
+        if (!seeded.HasSidecar) return;
+
+        // Already attached (this cell was opened after the sidecar existed) — nothing to do, and
+        // re-attaching would replace the live editor the user may have unsaved wire edits in.
+        if (layoutVm.WireDesign is not null) return;
+
+        if (WBondCell.TryAttach(layoutVm, layoutVm.CurrentLayoutPath, m => Messages.Warning(m)))
+        {
+            layoutVm.AssemblyRules = ResolveWorkspaceAssemblyRules(layoutVm.CurrentLayoutPath!);
+            _factory.WBondProfileTool?.SetActiveLayout(layoutVm);
+            _factory.WBondInductanceTool?.SetActiveLayout(layoutVm);
+        }
+
+        // §10.1's two panels, shown the FIRST time a cell's wires reach its layout — and only then
+        // (owner, 2026-08-17). Someone who has just generated wires has no reason to know two panels
+        // exist, and the layout toolbar's own P/A buttons are how they are reached from then on. A
+        // re-run deliberately leaves the arrangement exactly as the user has since set it: nothing is
+        // more irritating than a command that re-opens a panel you closed on purpose.
+        if (seeded.Outcome == WBondCellSeeding.Outcome.Created)
+        {
+            ShowToolPanel(Docking.DockPanelIds.WBondProfile);
+            ShowToolPanel(Docking.DockPanelIds.WBondInductance);
+        }
+
+        _factory.ProjectTreeTool?.Refresh();
     }
 
     // ── Update Schematic from Layout (§3A) ───────────────────────────────────────────────────────

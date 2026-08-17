@@ -33,6 +33,12 @@ public sealed partial class WBondViewModel : ObservableObject
     private readonly Stack<DesignSnapshot> _undo = new();
     private readonly Stack<DesignSnapshot> _redo = new();
 
+    // Kept in lockstep with the two stacks above: entry N's EditSequence stamp, so a host holding
+    // BOTH this history and the hosted Layout Editor's can answer "which did the user do last"
+    // (WB39a). See CircuitRF.Ui.Commands.EditSequence.
+    private readonly Stack<long> _undoStamps = new();
+    private readonly Stack<long> _redoStamps = new();
+
     [ObservableProperty] private WireSelection _selection = new();
 
     /// <summary>
@@ -129,6 +135,15 @@ public sealed partial class WBondViewModel : ObservableObject
     public bool CanUndo => _undo.Count > 0;
 
     public bool CanRedo => _redo.Count > 0;
+
+    /// <summary>
+    /// The <see cref="CircuitRF.Ui.Commands.EditSequence"/> stamp of the entry <see cref="Undo"/>
+    /// would take next, or 0 when there is none.
+    /// </summary>
+    public long TopUndoStamp => _undoStamps.Count > 0 ? _undoStamps.Peek() : 0;
+
+    /// <summary>The same, for the entry <see cref="Redo"/> would take next.</summary>
+    public long TopRedoStamp => _redoStamps.Count > 0 ? _redoStamps.Peek() : 0;
 
     // ---------------------------------------------------------------- the two update paths
 
@@ -227,6 +242,7 @@ public sealed partial class WBondViewModel : ObservableObject
             try
             {
                 var snapshot = _undo.Pop();
+                if (_undoStamps.Count > 0) _undoStamps.Pop();
                 _inGesture = false;   // the gesture cannot continue from a state that was rolled back
                 Restore(snapshot);
             }
@@ -401,7 +417,7 @@ public sealed partial class WBondViewModel : ObservableObject
 
         if (moved.Count == 0)
         {
-            if (pushed) _undo.Pop();   // nothing happened; do not leave a no-op on the undo stack
+            if (pushed) DropUndoEntry();   // nothing happened; do not leave a no-op on the undo stack
             return 0;
         }
 
@@ -428,7 +444,7 @@ public sealed partial class WBondViewModel : ObservableObject
         }
 
         if (detached > 0) { DirtyChanged?.Invoke(); ReadoutChanged?.Invoke(); }
-        else if (pushed) _undo.Pop();   // nothing happened; do not leave a no-op on the undo stack
+        else if (pushed) DropUndoEntry();   // nothing happened; do not leave a no-op on the undo stack
 
         return detached;
     }
@@ -589,7 +605,7 @@ public sealed partial class WBondViewModel : ObservableObject
         }
 
         if (applied.Count > 0) CommitPointMove(applied);
-        else if (pushed) _undo.Pop();
+        else if (pushed) DropUndoEntry();
 
         return applied.Count;
     }
@@ -622,7 +638,7 @@ public sealed partial class WBondViewModel : ObservableObject
 
         if (added == 0)
         {
-            if (pushed) _undo.Pop();
+            if (pushed) DropUndoEntry();
             return 0;
         }
 
@@ -872,7 +888,7 @@ public sealed partial class WBondViewModel : ObservableObject
             // The primitive already refuses a pitch that would stack copies on the source. Surfacing
             // that refusal is the editor's job — letting it escape would take down the dialog that
             // asked for it.
-            if (pushed) _undo.Pop();
+            if (pushed) DropUndoEntry();
             EditRefused?.Invoke(ex.Message);
             return 0;
         }
@@ -942,12 +958,25 @@ public sealed partial class WBondViewModel : ObservableObject
     /// <summary>Closes a gesture. Safe to call when none is open.</summary>
     public void EndGesture() => _inGesture = false;
 
+    /// <summary>
+    /// Removes the entry <see cref="PushUndo"/> just added, for an edit that turned out to change
+    /// nothing. Stamp and snapshot come off together — a stamp left behind would make this history
+    /// look more recently edited than it is, and Ctrl+Z would come here instead of to the layout's.
+    /// </summary>
+    private void DropUndoEntry()
+    {
+        _undo.Pop();
+        if (_undoStamps.Count > 0) _undoStamps.Pop();
+    }
+
     /// <summary>Pushes an undo entry, unless a gesture is open. Returns whether it actually pushed.</summary>
     private bool PushUndo()
     {
         if (_inGesture) return false;
         _undo.Push(Capture());
+        _undoStamps.Push(CircuitRF.Ui.Commands.EditSequence.Next());
         _redo.Clear();
+        _redoStamps.Clear();
         return true;
     }
 
@@ -955,6 +984,9 @@ public sealed partial class WBondViewModel : ObservableObject
     {
         if (_undo.Count == 0) return;
         _redo.Push(Capture());
+        // The entry keeps the stamp it was recorded with — undo moves a cursor through history
+        // rather than adding to it.
+        _redoStamps.Push(_undoStamps.Count > 0 ? _undoStamps.Pop() : 0);
         Restore(_undo.Pop());
     }
 
@@ -962,6 +994,7 @@ public sealed partial class WBondViewModel : ObservableObject
     {
         if (_redo.Count == 0) return;
         _undo.Push(Capture());
+        _undoStamps.Push(_redoStamps.Count > 0 ? _redoStamps.Pop() : 0);
         Restore(_redo.Pop());
     }
 

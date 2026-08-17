@@ -20,8 +20,14 @@ public partial class ParameterEditorView : UserControl
         DataContextChanged += OnDataContextChanged;
     }
 
+    private ParameterEditorViewModel? _boundVm;
+
     private void OnDataContextChanged(object? sender, System.EventArgs e)
     {
+        if (_boundVm is not null) _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
+        _boundVm = DataContext as ParameterEditorViewModel;
+        if (_boundVm is not null) _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
+
         if (DataContext is ParameterEditorViewModel vm)
         {
             vm.PickSnpFileAsync       = PickSnpFileAsync;
@@ -219,6 +225,25 @@ public partial class ParameterEditorView : UserControl
             win.Close();
     }
 
+    /// <summary>
+    /// The wBond panel's Update Layout button closes the dialog once the command has run — the owner
+    /// asked for the layout to be left focused, and a parameter dialog still floating over it is exactly
+    /// what would not be.
+    ///
+    /// <para>Driven by the view model's own <c>WBondLayoutUpdated</c> event rather than by a second
+    /// <c>Click</c> handler on the same button: Avalonia raises <c>Click</c> BEFORE it executes
+    /// <c>Command</c>, so closing from there would tear the DataContext down first and the update would
+    /// never run.</para>
+    ///
+    /// <para>Gated on the host being a <see cref="ParameterEditorDialog"/> specifically, because this
+    /// same control is also the DOCKED Properties inspector — which must not disappear — and Harmonica's
+    /// own C(V) host, which is not this dialog either.</para>
+    /// </summary>
+    private void OnWBondLayoutUpdated()
+    {
+        if (TopLevel.GetTopLevel(this) is ParameterEditorDialog dialog) dialog.Close();
+    }
+
     private async void OnParamBrowseClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Avalonia.Controls.Control { DataContext: ViewModels.ParameterRowViewModel row })
@@ -240,5 +265,27 @@ public partial class ParameterEditorView : UserControl
     {
         if (sender is Avalonia.Controls.Control { DataContext: ViewModels.ParameterRowViewModel row })
             row.RemoveSelf();
+    }
+
+    // ── wBond array names ─────────────────────────────────────────────────────
+    //
+    // Committed on Enter or lost focus — the staged-text idiom every other name field in this
+    // application uses. Never per keystroke: an array name must be non-blank and unique (it is a pin
+    // name), and a half-typed one is routinely neither, so a per-character commit would be refused
+    // and snap the box back mid-word.
+
+    private void OnWBondArrayNameCommit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { DataContext: ViewModels.WBondArrayEditRow row })
+            row.Commit();
+    }
+
+    private void OnWBondArrayNameKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key is not (Avalonia.Input.Key.Enter or Avalonia.Input.Key.Return)) return;
+        if (sender is not Avalonia.Controls.Control { DataContext: ViewModels.WBondArrayEditRow row }) return;
+
+        row.Commit();
+        e.Handled = true;
     }
 }

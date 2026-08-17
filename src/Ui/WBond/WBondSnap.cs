@@ -1,5 +1,6 @@
 using System;
 using CircuitRF.Ui.Layout;
+using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.WBond;
 
@@ -51,15 +52,31 @@ public static class WBondSnap
     /// Off by default, matching the layout editor: intersections are computed live over the near-shape
     /// set rather than indexed (R-snp-12), so they cost something on every query.
     /// </param>
+    /// <param name="wires">
+    /// The wires to snap to as well as the layout's own geometry (owner, 2026-08-16: "snap wire points
+    /// does not snap to wire vertices or segments"). Null snaps to layout geometry only, which is what
+    /// this did before it existed.
+    /// </param>
+    /// <param name="excludeWire">
+    /// Which wires the current gesture is MOVING, and must therefore not snap to — a dragged wire's
+    /// own vertices are at distance zero from themselves, so without this the drag would pin itself in
+    /// place. See <see cref="WireSnap"/>.
+    /// </param>
     public static Result Snap(LayoutView? view, Technology? tech, string? baseDir,
                               long xNm, long yNm, long toleranceNm,
-                              bool includeIntersections = false)
+                              bool includeIntersections = false,
+                              WBondDesign? wires = null,
+                              Func<int, bool>? excludeWire = null)
     {
-        if (view is null || toleranceNm <= 0) return Result.Miss(xNm, yNm);
+        // The WIRE half needs no layout at all — a design with no reference geometry still has wires
+        // to land on, and that is exactly §10's third entry point.
+        var wireHit = WireSnap.Nearest(wires, xNm, yNm, toleranceNm, excludeWire);
+
+        if (view is null || toleranceNm <= 0) return FromWire(wireHit, xNm, yNm);
 
         int dbuPerMicron = view.DbuPerMicron;
         long tolDbu = ToDbu(toleranceNm, dbuPerMicron);
-        if (tolDbu <= 0) return Result.Miss(xNm, yNm);
+        if (tolDbu <= 0) return FromWire(wireHit, xNm, yNm);
 
         var counters = new SnapQueryCounters();
         var candidates = LayoutSnapQuery.FindCandidates(
@@ -71,9 +88,45 @@ public static class WBondSnap
         // FindCandidates already sorts by priority then distance (R-snp-5), so the first is the one
         // the layout editor's own marker would show. Taking any other would make the wBond overlay
         // disagree with the marker under the same cursor.
-        if (candidates.Count == 0) return Result.Miss(xNm, yNm);
+        if (candidates.Count == 0) return FromWire(wireHit, xNm, yNm);
 
         var best = candidates[0];
-        return new Result(true, ToNm(best.X, dbuPerMicron), ToNm(best.Y, dbuPerMicron), best.Kind);
+        var geometry = new Result(true, ToNm(best.X, dbuPerMicron), ToNm(best.Y, dbuPerMicron), best.Kind);
+
+        return Better(geometry, wireHit, xNm, yNm);
     }
+
+    /// <summary>
+    /// Which of the two answers wins — <b>by the same (priority, then distance) rule the layout engine
+    /// sorts its own candidates with</b>, so a wire competes with a pad corner on exactly the terms two
+    /// pad corners compete with each other.
+    ///
+    /// <para>A wire VERTEX is ranked <see cref="SnapFeatureKind.CornerEndpoint"/> and a point along a
+    /// wire <see cref="SnapFeatureKind.Nearest"/>: a vertex is an intentional feature (it is where a
+    /// bond lands and where the loop bends), a point mid-segment is the same "somewhere on this edge"
+    /// answer nearest-on-edge already means. Mapping them into the existing vocabulary rather than
+    /// inventing wire-specific kinds is also what lets the snap MARKER draw with no new case.</para>
+    /// </summary>
+    private static Result Better(Result geometry, WireSnapResult wire, long xNm, long yNm)
+    {
+        if (!wire.Found) return geometry;
+
+        var wireResult = FromWire(wire, xNm, yNm);
+        if (!geometry.Snapped) return wireResult;
+
+        if (wireResult.Kind != geometry.Kind)
+            return wireResult.Kind < geometry.Kind ? wireResult : geometry;
+
+        // Same rank: nearest to the cursor wins.
+        double gx = geometry.XNm - (double)xNm, gy = geometry.YNm - (double)yNm;
+        return wire.DistanceNm * wire.DistanceNm < gx * gx + gy * gy ? wireResult : geometry;
+    }
+
+    private static Result FromWire(WireSnapResult wire, long xNm, long yNm) =>
+        wire.Found
+            ? new Result(true, wire.XNm, wire.YNm,
+                         wire.Kind == WireSnapKind.Vertex
+                             ? SnapFeatureKind.CornerEndpoint
+                             : SnapFeatureKind.Nearest)
+            : Result.Miss(xNm, yNm);
 }

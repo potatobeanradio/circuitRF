@@ -78,7 +78,15 @@ public sealed class WBondRenderTheme
     /// now derived from the drawn stroke, so it inherits this floor with it and the ratio is constant
     /// everywhere — see <see cref="WBondRenderer.VertexRadiusPx"/>.</para>
     /// </summary>
-    public float LineWidthPx { get; init; } = 1.5f;
+    /// <remarks>
+    /// 1.575 = the shipped 1.5 plus 5 % (owner, 2026-08-16: "increase the thickness of the wire
+    /// render by 5 % of its current thickness"). It moves WITH
+    /// <see cref="WBondRenderer.ThinStrokeFraction"/>, which took the same 5 %: the floor and the
+    /// zoom-scaled width are the two halves of one drawn thickness, so raising only one of them
+    /// would make a wire 5 % thicker at some zooms and unchanged at others — and would move the
+    /// vertex dot, which is derived from the drawn stroke.
+    /// </remarks>
+    public float LineWidthPx { get; init; } = 1.575f;
 
     /// <summary>
     /// Projects the five wBond roles of the active colour theme into the SKColors this renderer
@@ -893,9 +901,17 @@ public static class WBondRenderer
     /// one is not actual size and must not be mistaken for it, which is what Ø exists to settle) while
     /// still letting a fat wire draw fatter than a thin one.</para>
     ///
-    /// <para>A third: thin enough to read as a line rather than as bulk at any zoom.</para>
+    /// <para>A third, plus 5 % (owner, 2026-08-16) — <c>1.05 / 3</c>, written that way so the
+    /// original "a third" and the increase asked for on top of it both stay legible. Still thin
+    /// enough to read as a line rather than as bulk at any zoom.</para>
+    ///
+    /// <para><b>Changing this does NOT change the vertex dot.</b> The dot is
+    /// <see cref="VertexToWireDiameterRatio"/> of the wire's APPARENT diameter, and the thin stroke
+    /// is this fraction of the same quantity — so the ratio in
+    /// <see cref="VertexToSegmentRatio"/> divides the fraction straight back out. That is what
+    /// keeps "5 % thicker line" and "10 % bigger dot" two independent knobs.</para>
     /// </summary>
-    internal const double ThinStrokeFraction = 1.0 / 3.0;
+    internal const double ThinStrokeFraction = 1.05 / 3.0;
 
     /// <summary>
     /// Nanometres to the host layout's database units — the layout viewport's world unit.

@@ -123,7 +123,14 @@ public static class DockLayoutSerialization
         // no longer exists, R-dock-5's own example) and an unknown side.
         layout.Panels = layout.Panels
             .Where(p => p is not null && !string.IsNullOrWhiteSpace(p.Id) && DockPanelIds.All.Contains(p.Id))
-            .Select(p => { if (!DockSide.IsValid(p.Side)) p.Side = DockSide.Left; return p; })
+            .Select(p =>
+            {
+                if (!DockSide.IsValid(p.Side)) p.Side = DockSide.Left;
+                // Inboard only means something on the left and right — top and bottom panels are inside
+                // the document column by construction. See CwsDockPanel.Inboard.
+                if (p.Side is not (DockSide.Left or DockSide.Right)) p.Inboard = false;
+                return p;
+            })
             .ToList();
 
         layout.Sides = layout.Sides

@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wb="using:CircuitRF.Ui.WBond"
+             xmlns:ctrl="using:CircuitRF.Ui.Controls"
+             xmlns:wbc="using:CircuitRF.WBond"
+             x:Class="CircuitRF.Ui.Views.WBond.WBondProfileView"
+             x:DataType="wb:WBondViewModel">
+
+    <!-- wbond.md §6.2 — the profile view: every wire seen along its own chord, with the array's
+         envelope band over it.
+
+         ONE control, TWO hosts (WB39a/M3): the wBond editor stacks it above the layout view (§6.1),
+         and the workspace offers it as a dock tool that follows the active layout (§10.1), so a
+         wirebond cell pushed into in the ordinary Layout Editor gets the same picture.
+
+         The rulers here are wBond's own and stay so — the Layout Editor's LayoutRulerControl is
+         REUSED (a corner box, a horizontal strip on top, a vertical strip down the left, the canvas
+         filling what is left, exactly LayoutEditorView's own hosting shape), but there is no shared
+         control for a span/z axis and no reason to invent one. Both strips mirror the canvas's
+         viewport exactly; there is no independent state. -->
+    <Border x:Name="ProfileBorder"
+            BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
+        <DockPanel>
+            <DockPanel x:Name="ProfileRulerRow" DockPanel.Dock="Top" Height="22">
+                <Border DockPanel.Dock="Left" Width="22"
+                        Background="{DynamicResource SystemChromeMediumLowColor}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                        BorderThickness="0,0,1,1"/>
+                <ctrl:LayoutRulerControl x:Name="ProfileHRuler" Orientation="Horizontal" ClipToBounds="True"/>
+            </DockPanel>
+            <ctrl:LayoutRulerControl x:Name="ProfileVRuler" DockPanel.Dock="Left" Width="22"
+                                     Orientation="Vertical" ClipToBounds="True"/>
+
+            <!-- The canvas, with the PLANE control floating over its top-right corner.
+                 It used to live in the wBond editor's toolbar, which meant it did not exist at all in
+                 the dockable Wire Profile panel — where the setting matters just as much (owner,
+                 2026-08-17). It belongs to this view, so it travels with it: one control, both hosts,
+                 always reachable.
+
+                 Top RIGHT, and floating rather than in a strip of its own: this canvas is read from the
+                 left (span increases rightwards, and the wires start at the left edge), so the corner
+                 furthest from the geometry is the one a control can sit in without covering it. -->
+            <Panel>
+                <ctrl:WBondProfileCanvas x:Name="ProfileCanvas" ViewModel="{Binding}">
+                    <!-- ONE menu instance, rebuilt on Opening (Pattern B). Constructing a fresh
+                         ContextMenu per right-click is the stacking bug already fixed twice in this
+                         codebase — see src/Ui/CLAUDE.md. -->
+                    <ctrl:WBondProfileCanvas.ContextMenu>
+                        <ContextMenu Opening="OnProfileContextMenuOpening"/>
+                    </ctrl:WBondProfileCanvas.ContextMenu>
+                </ctrl:WBondProfileCanvas>
+
+                <!-- Which PLANE this view projects onto. Auto puts every wire on its own chord (§6.2's
+                     parameterisation, and the only mode in which two wires of different angle are
+                     comparable); a fixed plane shows real geometry. Editable, so an array bonded at 37°
+                     can say so.
+
+                     A Border behind it because it sits ON the drawing: an unbacked combo over wires is
+                     unreadable, and the same accent-free chrome the rest of the app uses for a floating
+                     control keeps it from reading as part of the design. -->
+                <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,6,6,0" Padding="4,3" CornerRadius="4"
+                        Background="{DynamicResource SystemChromeMediumLowColor}"
+                        BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Plane:" FontSize="11" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                        <ComboBox x:Name="ProfileAxisCombo"
+                                  Width="96" FontSize="11" IsEditable="True"
+                                  VerticalAlignment="Center"
+                                  ItemsSource="{x:Static wbc:ProfileAxisSetting.Presets}"
+                                  LostFocus="OnProfileAxisCommit" KeyDown="OnProfileAxisKeyDown"
+                                  SelectionChanged="OnProfileAxisSelectionChanged"
+                                  ToolTip.Tip="Profile view plane — Auto, XZ, YZ, or an angle in degrees"/>
+                    </StackPanel>
+                </Border>
+            </Panel>
+        </DockPanel>
+    </Border>
+</UserControl>

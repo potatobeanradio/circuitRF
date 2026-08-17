@@ -13,6 +13,21 @@ public sealed partial class UndoRedoStack : ObservableObject
     private readonly Stack<IUiCommand> _undoStack = new();
     private readonly Stack<IUiCommand> _redoStack = new();
 
+    // Kept in lockstep with the two stacks above: entry N's EditSequence stamp. A parallel stack
+    // rather than a tuple element, so nothing that peeks at a command has to be rewritten.
+    private readonly Stack<long> _undoStamps = new();
+    private readonly Stack<long> _redoStamps = new();
+
+    /// <summary>
+    /// The <see cref="EditSequence"/> stamp of the entry Undo would take next, or 0 when there is
+    /// none. Compared against another history's own to answer "which of these did the user do last" —
+    /// see <see cref="EditSequence"/> for why that question needs asking at all.
+    /// </summary>
+    public long TopUndoStamp => _undoStamps.Count > 0 ? _undoStamps.Peek() : 0;
+
+    /// <summary>The same, for the entry Redo would take next.</summary>
+    public long TopRedoStamp => _redoStamps.Count > 0 ? _redoStamps.Peek() : 0;
+
     // The command on top of the undo stack at the last save (MarkSaved); null = "saved at the
     // empty stack".  Dirty (IsModified) means the current top differs from this marker, so it
     // clears on undo back to the saved position and re-dirties on any edit after a save
@@ -48,7 +63,9 @@ public sealed partial class UndoRedoStack : ObservableObject
     {
         command.Execute();
         _undoStack.Push(command);
+        _undoStamps.Push(EditSequence.Next());
         _redoStack.Clear();
+        _redoStamps.Clear();
         Refresh();
     }
 
@@ -57,6 +74,10 @@ public sealed partial class UndoRedoStack : ObservableObject
         if (!_undoStack.TryPop(out var cmd)) return;
         cmd.Undo();
         _redoStack.Push(cmd);
+        // The entry keeps the stamp it was recorded with: undo MOVES a cursor through history, it
+        // does not add to it. Re-stamping here would make the next Ctrl+Z pick this same history
+        // again forever.
+        _redoStamps.Push(_undoStamps.Count > 0 ? _undoStamps.Pop() : 0);
         Refresh();
     }
 
@@ -65,6 +86,7 @@ public sealed partial class UndoRedoStack : ObservableObject
         if (!_redoStack.TryPop(out var cmd)) return;
         cmd.Execute();
         _undoStack.Push(cmd);
+        _undoStamps.Push(_redoStamps.Count > 0 ? _redoStamps.Pop() : 0);
         Refresh();
     }
 
@@ -73,6 +95,8 @@ public sealed partial class UndoRedoStack : ObservableObject
     {
         _undoStack.Clear();
         _redoStack.Clear();
+        _undoStamps.Clear();
+        _redoStamps.Clear();
         _savedCommand = null;
         Refresh();
     }

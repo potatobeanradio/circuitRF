@@ -108,6 +108,19 @@ public sealed class LayoutCanvas : Control
     /// </summary>
     public void InvalidateOverlay() => InvalidateVisual();
 
+    /// <summary>
+    /// Hands the overlay's own snap answer to the layout editor's marker slot, so ONE glyph mechanism
+    /// serves both gestures.
+    ///
+    /// <para>Called after every press, move and release the overlay CONSUMED — those never reach
+    /// <c>LayoutEditorViewModel.OnPointerMoved</c>, which is the only other thing that ever refreshes
+    /// or clears that marker. Without it the last hover's glyph is simply left on screen for the
+    /// duration of the gesture, sitting on a vertex the wire has since been dragged away from, and a
+    /// wire being DRAWN shows no glyph at all despite its feet being snapped every frame.</para>
+    /// </summary>
+    private void PushOverlaySnapMarker() =>
+        _viewModel?.SetOverlaySnapMarker(_canvasOverlay?.SnapMarker);
+
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(LayoutEditorViewModel.ActiveTool))
@@ -522,6 +535,16 @@ public sealed class LayoutCanvas : Control
                 // on MANY wires and not on one.
                 e.Pointer.Capture(this);
 
+                // The overlay owns the gesture from here, so the layout editor will not run its own
+                // snap recompute again until the gesture ends — its marker has to come from the
+                // overlay or it freezes where the last hover left it. See ILayoutCanvasOverlay.SnapMarker.
+                PushOverlaySnapMarker();
+
+                // A press that landed on nothing means "deselect" whichever selection the user was
+                // holding — including the layout's, which the overlay cannot reach.
+                if (_canvasOverlay.ConsumedPressWasEmptySpace)
+                    _viewModel.DeselectAllCommand.Execute(null);
+
                 InvalidateVisual();
                 e.Handled = true;
                 return;
@@ -785,8 +808,13 @@ public sealed class LayoutCanvas : Control
     /// Nth opening — the exact mistake this fix must not reintroduce).</summary>
     internal List<object> BuildContextMenuItems(double wx, double wy)
     {
+        // WB39a: the overlay contributes FIRST, and it may be the only contributor — a wBond editor
+        // (or a Layout Editor pushed into a wirebond cell) has wire commands to offer whether or not
+        // this canvas has a view model bound yet. The canvas's own items follow after a separator.
+        var overlayItems = _canvasOverlay?.BuildContextMenuItems(wx, wy, HitTolDbu(), _viewModel, this) ?? [];
+
         var items = new List<object>();
-        if (_viewModel is null) return items;
+        if (_viewModel is null) return [.. overlayItems];
 
         var foundEdge = _viewModel.FindEdgeForContextMenu(wx, wy, HitTolDbu());
         if (foundEdge is { } f)
@@ -835,7 +863,14 @@ public sealed class LayoutCanvas : Control
 
         AddBooleanAndFlattenMenuItems(items);
         AddInstanceHierarchyMenuItems(items);
-        return items;
+
+        if (overlayItems.Count == 0) return items;
+
+        var combined = new List<object>(overlayItems.Count + items.Count + 1);
+        combined.AddRange(overlayItems);
+        if (items.Count > 0) combined.Add(new Separator());
+        combined.AddRange(items);
+        return combined;
     }
 
     /// <summary>
@@ -1143,6 +1178,7 @@ public sealed class LayoutCanvas : Control
         if (_canvasOverlay?.OnPointerMoved(
                 (long)Math.Round(wx), (long)Math.Round(wy), HitTolDbu(), leftDown, e.KeyModifiers) == true)
         {
+            PushOverlaySnapMarker();
             InvalidateVisual();
             return;
         }
@@ -1173,6 +1209,7 @@ public sealed class LayoutCanvas : Control
 
         if (_canvasOverlay?.OnPointerReleased((long)Math.Round(wx), (long)Math.Round(wy)) == true)
         {
+            PushOverlaySnapMarker();   // the gesture is over, so this clears the glyph
             InvalidateVisual();
             return;
         }

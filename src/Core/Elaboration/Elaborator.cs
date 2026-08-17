@@ -947,6 +947,14 @@ public sealed class Elaborator
                     raw = raw[1..^1];
                 result[ov.Name] = new Value(ResolveSnpFilePath(raw));
             }
+            else if (ov.Name.Equals("RefPin", StringComparison.OrdinalIgnoreCase))
+            {
+                // Verbatim, like Design: the schematic writes the WORD "true"/"false", and running
+                // that through the evaluator would depend on whether a bare `true` happens to parse
+                // as a literal — a dependency with nothing to gain. The factory reads either
+                // spelling. It is not sweepable and there is nothing to sweep it over.
+                result[ov.Name] = new Value(ov.Expression);
+            }
             else
             {
                 try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }

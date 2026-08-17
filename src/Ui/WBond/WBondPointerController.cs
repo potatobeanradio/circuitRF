@@ -187,6 +187,33 @@ public sealed class WBondPointerController
         _ladder.BeginDrag();
     }
 
+    /// <summary>
+    /// Whether a wire can be represented by its CHORD for this drag without changing what the drag
+    /// does — true when every point the selection moves is a FOOT.
+    ///
+    /// <para><b>A wire collapsed to two points has no interior points to move</b>, so a drag on an
+    /// interior vertex simply stopped: <see cref="WireSelection.MovingPoints"/> still named point 3,
+    /// the wire now had two, and the frame moved nothing (or indexed past the end). The geometry froze
+    /// under a still-moving cursor — the other half of the owner's "the cursor slips off the vertex I
+    /// grabbed" (2026-08-16), and the reason it shows up while dragging fast: the ladder only steps
+    /// down when frames overrun.</para>
+    ///
+    /// <para>The shortcut is kept exactly where it pays. The case it was built for — many whole wires
+    /// dragged at once — moves both feet of each wire and is still collapsed; a single interior vertex
+    /// moves one wire, which is the cheap case that never needed the shortcut.</para>
+    /// </summary>
+    private bool ChordIsFaithful(int index, Wire wire)
+    {
+        var selection = _vm.Selection;
+        if (selection.Wires.Contains(index)) return true;   // rigid: both feet move together
+
+        int last = wire.Points.Count - 1;
+        foreach (int i in selection.MovingPoints(index, wire.Points.Count))
+            if (i != 0 && i != last) return false;
+
+        return true;
+    }
+
     private void ApplyQualityToGeometry(IReadOnlyList<int> moving)
     {
         if (_ladder.Current == DragQuality.Chord)
@@ -196,6 +223,7 @@ public sealed class WBondPointerController
             {
                 if (_collapsed.ContainsKey(index)) continue;
                 if (index < 0 || index >= wires.Count) continue;
+                if (!ChordIsFaithful(index, wires[index])) continue;
 
                 _collapsed[index] = QualityLadder.CollapseToChord(wires[index]);
             }

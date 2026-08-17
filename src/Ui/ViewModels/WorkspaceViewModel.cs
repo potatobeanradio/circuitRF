@@ -194,8 +194,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private IDockable? ResolveActiveDocumentForCommands()
         => _focusedWindowDocument ?? _factory.DocumentDock?.ActiveDockable;
 
-    public string UndoDescription => _activeUndoTarget?.UndoRedo.UndoDescription ?? "Undo";
-    public string RedoDescription => _activeUndoTarget?.UndoRedo.RedoDescription ?? "Redo";
+    // Through the DOCUMENT, not its command stack: with two histories in play the label has to describe
+    // the entry Undo would really take, or it names a shape move while Ctrl+Z undoes a wire drag.
+    public string UndoDescription => _activeUndoTarget?.UndoLastDescription ?? "Undo";
+    public string RedoDescription => _activeUndoTarget?.RedoLastDescription ?? "Redo";
 
     // ---- Window title --------------------------------------------------------
 
@@ -336,6 +338,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // for dirty/scratch documents. FactoryBase.DockableClosed fires from base.CloseDockable
         // and cleans up _scratchDocs/_openDocsByPath.
         _factory.CloseDockableConfirm = ConfirmCloseDockable;
+        WireDockArrangementPersistence();
         _factory.DockableClosed += (_, args) => { if (args.Dockable is not null) OnDockableClosed(args.Dockable); };
 
         // Owner report, 2026-08-14: "Document tabs did not update/render when a document was
@@ -1580,10 +1583,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // workspace with no saved layout block should fall back to the chosen preset, not the
         // hardcoded §2.0 default.
         var windowLayoutPreset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
-        var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
-        _factory.InitLayout(newLayout);
-        Layout = newLayout;
-        FocusPaneFor(windowLayoutPreset);
+
+        // Suppressed: this CLEAN-SLATE rebuild is not an arrangement the user chose, and the workspace's
+        // own saved one is applied a few steps below. Left unsuppressed, the rebuild's own dock events
+        // would arm a debounced `.cws` write of the DEFAULT layout — which lands three seconds later,
+        // after the restore, and only looks harmless while the restore succeeds. See
+        // WhileRebuildingLayout.
+        WhileRebuildingLayout(() =>
+        {
+            var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
+            _factory.InitLayout(newLayout);
+            Layout = newLayout;
+            FocusPaneFor(windowLayoutPreset);
+        });
+
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         RestoreInstalledPdks();
@@ -2025,10 +2038,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Honor Settings ▸ On Launch ▸ Window Layout for the clean-slate rebuild — see the matching
         // note in NewWorkspace/SwitchToWorkspace.
         var windowLayoutPreset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
-        var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
-        _factory.InitLayout(newLayout);
-        Layout = newLayout;
-        FocusPaneFor(windowLayoutPreset);
+
+        // Suppressed: this CLEAN-SLATE rebuild is not an arrangement the user chose, and the workspace's
+        // own saved one is applied a few steps below. Left unsuppressed, the rebuild's own dock events
+        // would arm a debounced `.cws` write of the DEFAULT layout — which lands three seconds later,
+        // after the restore, and only looks harmless while the restore succeeds. See
+        // WhileRebuildingLayout.
+        WhileRebuildingLayout(() =>
+        {
+            var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
+            _factory.InitLayout(newLayout);
+            Layout = newLayout;
+            FocusPaneFor(windowLayoutPreset);
+        });
+
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         RestoreInstalledPdks();
@@ -2137,13 +2160,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Edit commands (route to the active document's stack) ---------------
 
+    // Through UndoLast/CanUndoLast rather than UndoRedo directly: a document may hold more than one
+    // edit history (a layout showing a wirebond cell has the wires' snapshot stack beside its own
+    // command stack, WB40), and only the document can say which of them the user edited last. Defaulted
+    // on IUndoableDocument to the single-stack behaviour, so every other document type is unaffected.
     [RelayCommand(CanExecute = nameof(CanUndo))]
-    private void Undo() => _activeUndoTarget?.UndoRedo.Undo();
-    private bool CanUndo() => _activeUndoTarget?.UndoRedo.CanUndo ?? false;
+    private void Undo() => _activeUndoTarget?.UndoLast();
+    private bool CanUndo() => _activeUndoTarget?.CanUndoLast ?? false;
 
     [RelayCommand(CanExecute = nameof(CanRedo))]
-    private void Redo() => _activeUndoTarget?.UndoRedo.Redo();
-    private bool CanRedo() => _activeUndoTarget?.UndoRedo.CanRedo ?? false;
+    private void Redo() => _activeUndoTarget?.RedoLast();
+    private bool CanRedo() => _activeUndoTarget?.CanRedoLast ?? false;
 
     private void SetActiveUndoTarget(IUndoableDocument? target)
     {
@@ -2155,6 +2182,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             oldDoc.ActiveViewModelChanged -= OnActiveDocFrameChanged;
         _activeUndoDoc = null;
 
+        if (_activeUndoLayoutDoc is { } oldLayoutDoc)
+            oldLayoutDoc.ActiveViewModelChanged -= OnActiveDocFrameChanged;
+        _activeUndoLayoutDoc = null;
+
         _activeUndoTarget = target;
 
         // A schematic tab can retarget its undo stack via Push In / Pop Out WITHOUT the active
@@ -2165,8 +2196,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             sd.ActiveViewModelChanged += OnActiveDocFrameChanged;
         }
 
+        // A LAYOUT tab retargets its stack on Push In / Pop Out for exactly the same reason
+        // (LayoutDocument.UndoRedo follows ActiveViewModel) and was never followed — so Undo stayed
+        // hooked to the parent cell's stack after pushing into a sub-cell. Found while wiring the
+        // wire history below; same shape, same one-line answer.
+        if (target is LayoutDocument layoutDoc)
+        {
+            _activeUndoLayoutDoc = layoutDoc;
+            layoutDoc.ActiveViewModelChanged += OnActiveDocFrameChanged;
+        }
+
         HookActiveStack();
     }
+
+    private LayoutDocument? _activeUndoLayoutDoc;
+
+    // The wire history the Undo command is currently following, or null. A wirebond cell's wires
+    // (WB40) are a second edit history on one document, and it raises no UndoRedoStack notification —
+    // so without this the menu item and the keybinding stay DISABLED after a wire edit and Ctrl+Z
+    // appears to do nothing, which is exactly what the owner reported (2026-08-17).
+    private LayoutEditorViewModel? _subscribedWireHistory;
 
     // The exact stack OnActiveStackPropertyChanged is subscribed to. Tracked separately because a
     // SchematicDocument's UndoRedo changes on Push In / Pop Out — we must unsubscribe the stack we
@@ -2189,14 +2238,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             stack.PropertyChanged += OnActiveStackPropertyChanged;
         }
 
+        if (_subscribedWireHistory is { } oldWires)
+            oldWires.WireHistoryChanged -= OnWireHistoryChanged;
+        _subscribedWireHistory = null;
+
+        if (_activeUndoTarget is LayoutDocument { ActiveViewModel: { WireDesign: not null } wireVm })
+        {
+            _subscribedWireHistory = wireVm;
+            wireVm.WireHistoryChanged += OnWireHistoryChanged;
+        }
+
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(UndoDescription));
         OnPropertyChanged(nameof(RedoDescription));
     }
 
-    // Push In / Pop Out on the active schematic swaps its UndoRedo stack; re-hook to the new one.
+    // Push In / Pop Out on the active schematic or layout swaps its UndoRedo stack; re-hook to the new
+    // one — and, for a layout, to whatever wire history the new frame has (or has not).
     private void OnActiveDocFrameChanged(object? sender, EventArgs e) => HookActiveStack();
+
+    // A wire edit, undo or redo moved a history the UndoRedoStack knows nothing about.
+    private void OnWireHistoryChanged()
+    {
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(UndoDescription));
+        OnPropertyChanged(nameof(RedoDescription));
+    }
 
     private void OnActiveStackPropertyChanged(object? sender,
         System.ComponentModel.PropertyChangedEventArgs e)
@@ -2780,6 +2849,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.ComponentPlaced         += OnComponentPlaced;
         vm.CellSymbolAutoGenerated += OnCellSymbolAutoGenerated;
         vm.WorkspaceRootProvider    = () => CurrentWorkspaceRoot;
+        vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
+        vm.UpdateWBondLayout            = UpdateLayoutForWBond;
         // filePath = null → scratch; IsScratch = true, IsDirty = false (starts clean), Title = "<title>"
         var doc   = new SchematicDocument(title, vm) { Messages = Messages, Hierarchy = this };
 
@@ -5232,6 +5303,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// torn-off layout window has focus.</summary>
     private bool IsLayoutDocumentActive() => ResolveActiveDocumentForCommands() is LayoutDocument;
 
+    /// <summary>
+    /// Whether the <c>P</c> / <c>A</c> panel keys apply right now — the active document is a layout that
+    /// actually has wirebonds, and the user is not typing a label into it.
+    ///
+    /// <para>Asked by the SHELL WINDOW's own tunnel handler rather than by a view, and that is the whole
+    /// point (owner, 2026-08-17, reported three times). A key handler that lives on a view and is gated on
+    /// where keyboard focus is cannot survive an action that MOVES focus — which is exactly what showing
+    /// or hiding a dockable does. The window sees every key in it whatever has focus, so the gate becomes
+    /// a question about the DOCUMENT, which does not move.</para>
+    /// </summary>
+    public bool WirePanelKeysApply =>
+        ResolveActiveDocumentForCommands() is LayoutDocument { ActiveViewModel: { } vm }
+        && vm.HasWireDesign
+        && !vm.IsTypingLabel;
+
     /// <summary>Gates "Save Schematic As…" — disabled (greyed out) unless a schematic document is the
     /// active document, mirroring <see cref="IsLayoutDocumentActive"/> exactly (incl. its R-menu-4
     /// per-window resolution).</summary>
@@ -5407,6 +5493,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         ResolveWBondAssemblyRules(doc);
         doc.SaveRequested += saveAs => _ = SaveWBondDoc(doc, null, saveAs);
+
+        // The wBond editor's layout half IS the Layout Editor's own view-model, so it needs the same
+        // workspace seam every LayoutEditorViewModel gets — the technology resolvers and, through
+        // WorkspaceTechDir, the workspace root a generated PCell cell is written into. Without it a
+        // PCell dragged from the Library palette into a wBond editor was refused with "no workspace
+        // is open" (owner, 2026-08-16). The setter applies it to a reference layout that already
+        // exists and the document re-applies it to every later one.
+        doc.ViewModel.ConfigureReferenceLayout = WireRetargetSeam;
+
+        // WB39a — the wBond editor HOSTS LayoutEditorView over a LayoutDocument of its own, so it
+        // gets Push Into Cell / Pop Out / Save exactly as a layout tab does. Same "apply now, and to
+        // every later one" setter shape as ConfigureReferenceLayout above, and for the same reason:
+        // that document is created on demand and replaced when a bundle is unpacked.
+        doc.ViewModel.LayoutHierarchy = this;
     }
 
     private readonly List<WBondDocument> _scratchWBonds = [];
@@ -5554,6 +5654,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         foreach (var diagnostic in resolution.Diagnostics)
             Messages.Warning(diagnostic);
+    }
+
+    /// <summary>
+    /// WB40 — the assembly rules a WIREBOND CELL's wire DRC checks against.
+    ///
+    /// <para>Same resolution order as a wBond document's (§M1: the file's own <c>AssemblyRef</c>,
+    /// then the workspace default, then none) minus the first term, which a cell has nowhere to
+    /// carry. Every outcome is non-fatal, and "none" is an absence of rules rather than a failure.</para>
+    /// </summary>
+    private WasmResolution? ResolveWorkspaceAssemblyRules(string absClayPath)
+    {
+        if (CurrentWorkspacePath is null) return null;
+
+        string? defaultRef;
+        try { defaultRef = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath).DefaultAssemblyRef; }
+        catch { return null; }   // corrupt .cws — treated as "no default", matching ResolveTechFor
+
+        return WasmResolver.Resolve(
+            null, Path.GetDirectoryName(absClayPath),
+            Path.GetDirectoryName(CurrentWorkspacePath), defaultRef, _wasmCache);
     }
 
     /// <summary>
@@ -6618,8 +6738,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.ComponentPlaced         += OnComponentPlaced;
         vm.CellSymbolAutoGenerated += OnCellSymbolAutoGenerated;
         vm.WorkspaceRootProvider    = () => CurrentWorkspaceRoot;
+        vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
+        vm.UpdateWBondLayout            = UpdateLayoutForWBond;
         return vm;
     }
+
+    /// <summary>
+    /// The workspace technology's own display unit, or null when nothing resolves — the <c>.ctech</c>'s
+    /// <c>DefaultDisplayUnit</c>, read LIVE so a technology change or a workspace switch is picked up
+    /// with no re-wiring (the same rule <see cref="WireRetargetSeam"/>'s own resolvers follow).
+    ///
+    /// <para>Owner, 2026-08-17: a length reported on a schematic surface — a wirebond's total wire
+    /// length is the first — has to be in the unit the rest of the workspace is drawn in, not a
+    /// hard-coded one.</para>
+    /// </summary>
+    private LayoutUnit? WorkspaceDisplayUnit() =>
+        ResolveTechFor(techRef: null, clayPath: null).Tech?.DefaultDisplayUnit;
 
     /// <summary>
     /// Registers a VM in the session registry and subscribes to its UndoRedo so
@@ -6701,6 +6835,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.SaveError += OnLayoutSaveError;
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         WireRetargetSeam(vm);
+
+        // WB40 — a wirebond cell holds a `.wBond` beside its `.clay`, and its wires ride over the
+        // artwork as an overlay. Here rather than at either caller because this is the ONE funnel
+        // both "open as a tab" and "push in" go through, so a cell pushed into from a parent gets its
+        // wires on exactly the same terms as one opened directly. Also where the assembly rules the
+        // wire DRC checks against are resolved, for the same reason.
+        if (WBondCell.TryAttach(vm, absClayPath, m => Messages.Warning(m)))
+            vm.AssemblyRules = ResolveWorkspaceAssemblyRules(absClayPath);
+
         return vm;
     }
 
@@ -7249,17 +7392,196 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void ActivateWBondDocumentForProperties(WBondDocument doc)
     {
-        _factory.PropertiesTool?.SetActiveWire(doc.ViewModel.Editor);
+        WatchWBondProperties(doc);
+        RefreshWBondPropertiesContext();
         _factory.DrcTool?.SetActiveLayout(null);
+
+        // §10.1's second surface: here the wires ARE the document, so the two panels follow the
+        // document's own editor rather than a cell's. The wBond editor already shows both inline —
+        // these are the same controls, and a user who has torn one off keeps seeing it.
+        _factory.WBondProfileTool?.SetActiveWBond(doc.ViewModel.Editor, doc.Title);
+        _factory.WBondInductanceTool?.SetActiveWBond(doc.ViewModel.Editor, doc.Title);
+    }
+
+    /// <summary>
+    /// The wBond document whose two selections the Properties panel is currently following, and its
+    /// reference layout — held so the subscriptions can be moved when the active document changes.
+    /// </summary>
+    private WBondDocument? _wbondPropertiesDoc;
+
+    private LayoutEditorViewModel? _wbondPropertiesLayout;
+
+    /// <summary>
+    /// Follows BOTH of a wBond document's selections, so the Properties panel shows whichever the user
+    /// is actually working in.
+    ///
+    /// <para><b>The panel used to be pinned to the wire inspector</b> and never routed the layout
+    /// context at all — so a cell instance, a PCell or a pad selected in the wBond editor's layout
+    /// view had nowhere to be edited (owner, 2026-08-16: PCells "also want to edit these"). The stated
+    /// reason for pinning it was that two coordinate lists on screen at once would be ambiguous about
+    /// where an edit lands; that reason is intact, and this does not put both up — it picks one, from
+    /// the selection that is actually non-empty.</para>
+    /// </summary>
+    private void WatchWBondProperties(WBondDocument doc)
+    {
+        if (!ReferenceEquals(_wbondPropertiesDoc, doc))
+        {
+            if (_wbondPropertiesDoc is { } previous)
+            {
+                previous.ViewModel.Editor.PropertyChanged -= OnWBondPropertiesSourceChanged;
+                previous.ViewModel.PropertyChanged -= OnWBondPropertiesSourceChanged;
+            }
+
+            _wbondPropertiesDoc = doc;
+            doc.ViewModel.Editor.PropertyChanged += OnWBondPropertiesSourceChanged;
+            doc.ViewModel.PropertyChanged += OnWBondPropertiesSourceChanged;
+        }
+
+        // The reference layout is created on demand and replaced when a bundle is unpacked, so its
+        // subscription is re-pointed separately from the document's.
+        var layout = doc.ViewModel.ReferenceLayout;
+        if (ReferenceEquals(_wbondPropertiesLayout, layout)) return;
+
+        if (_wbondPropertiesLayout is not null)
+            _wbondPropertiesLayout.PropertyChanged -= OnWBondPropertiesSourceChanged;
+
+        _wbondPropertiesLayout = layout;
+        if (layout is not null) layout.PropertyChanged += OnWBondPropertiesSourceChanged;
+    }
+
+    /// <summary>Drops both subscriptions — called the moment a non-wBond document becomes active.</summary>
+    private void StopWatchingWBondProperties()
+    {
+        if (_wbondPropertiesDoc is { } doc)
+        {
+            doc.ViewModel.Editor.PropertyChanged -= OnWBondPropertiesSourceChanged;
+            doc.ViewModel.PropertyChanged -= OnWBondPropertiesSourceChanged;
+        }
+
+        if (_wbondPropertiesLayout is not null)
+            _wbondPropertiesLayout.PropertyChanged -= OnWBondPropertiesSourceChanged;
+
+        _wbondPropertiesDoc = null;
+        _wbondPropertiesLayout = null;
+    }
+
+    private void OnWBondPropertiesSourceChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        // The layout view-model republishes Overlay on every selection change — that is the signal the
+        // layout inspector itself already follows, reused here rather than a second one.
+        if (e.PropertyName is not (nameof(WBondViewModel.Selection)
+                                or nameof(WBondDocumentViewModel.ReferenceLayout)
+                                or nameof(LayoutEditorViewModel.Overlay))) return;
+
+        if (_wbondPropertiesDoc is { } doc) WatchWBondProperties(doc);
+        RefreshWBondPropertiesContext();
+    }
+
+    /// <summary>
+    /// Picks the context: the WIRE inspector whenever wires are selected, the LAYOUT inspector when
+    /// they are not and layout geometry is, and the wire inspector (empty) when neither is — which is
+    /// the resting state a wBond editor should look like.
+    ///
+    /// <para>Wires win a tie because they are what this editor is FOR: a layout selection can outlive
+    /// a wire press (the overlay consumes a press on a wire without the layout editor seeing it, so it
+    /// never gets to clear its own), and reading a stale one as the user's intent would flip the panel
+    /// away from the wire they just clicked.</para>
+    /// </summary>
+    private void RefreshWBondPropertiesContext()
+    {
+        if (_factory.PropertiesTool is not { } panel) return;
+        if (_wbondPropertiesDoc is not { } doc) return;
+
+        bool wires = !doc.ViewModel.Editor.Selection.IsEmpty;
+        var layout = doc.ViewModel.ReferenceLayout;
+
+        bool geometry = !wires && layout is not null
+                     && (layout.SelectedIndices.Count > 0 || layout.SelectedInstanceIndices.Count > 0);
+
+        if (geometry) panel.SetActiveLayout(layout);
+        else panel.SetActiveWire(doc.ViewModel.Editor);
     }
 
     private void ActivateLayoutDocumentForProperties(LayoutDocument doc)
     {
-        _factory.PropertiesTool?.SetActiveLayout(doc.ActiveViewModel);
+        WatchWirebondCellProperties(doc);
+        RefreshLayoutPropertiesContext(doc);
         // L5b: the violations panel follows the same active-layout signal — a DRC result belongs to
         // the layout that was checked, so showing one document's violations beside another document's
         // artwork would be worse than showing none.
         _factory.DrcTool?.SetActiveLayout(doc.ActiveViewModel);
+
+        // wbond.md §10.1 (WB39a/M3): so do the two wBond panels, and that is the milestone — push into
+        // a wirebond cell (WB40) and its wires' profile and its arrays' inductance are right there,
+        // with no second editor to open. A layout with no wires leaves both saying so.
+        _factory.WBondProfileTool?.SetActiveLayout(doc.ActiveViewModel);
+        _factory.WBondInductanceTool?.SetActiveLayout(doc.ActiveViewModel);
+    }
+
+    /// <summary>
+    /// Picks the Properties context for a LAYOUT document: the WIRE inspector when wires are selected,
+    /// the layout inspector otherwise.
+    ///
+    /// <para><b>A wirebond cell had no wire routing at all</b> (owner, 2026-08-17: "the Properties
+    /// inspector does not update when I click on a wire in the wBond layout hosted canvas"). Clicking a
+    /// wire changed <c>WireEditor.Selection</c>, which the layout inspector cannot see and nothing else
+    /// was watching — so the panel went on showing the artwork's own (empty) selection.</para>
+    ///
+    /// <para>The rule is <see cref="RefreshWBondPropertiesContext"/>'s, deliberately: wires win a tie
+    /// because a LAYOUT selection can outlive a wire press — the overlay consumes a press on a wire
+    /// without the layout editor seeing it, so it never gets to clear its own — and reading that stale
+    /// one as the user's intent would flip the panel away from the wire they just clicked. A layout with
+    /// no wires at all takes the layout branch unconditionally, exactly as it always did.</para>
+    /// </summary>
+    private void RefreshLayoutPropertiesContext(LayoutDocument doc)
+    {
+        if (_factory.PropertiesTool is not { } panel) return;
+
+        var vm = doc.ActiveViewModel;
+
+        if (vm.WireEditor is { } wires && !wires.Selection.IsEmpty) panel.SetActiveWire(wires);
+        else panel.SetActiveLayout(vm);
+    }
+
+    /// <summary>
+    /// Follows a wirebond cell's WIRE selection, so the Properties panel can switch to it. Re-pointed on
+    /// every activation and on every push-in, since each frame has its own wires (or none).
+    /// </summary>
+    private void WatchWirebondCellProperties(LayoutDocument doc)
+    {
+        var wires = doc.ActiveViewModel.WireEditor;
+        if (ReferenceEquals(_wirebondCellPropertiesEditor, wires))
+        {
+            _wirebondCellPropertiesDoc = doc;
+            return;
+        }
+
+        if (_wirebondCellPropertiesEditor is not null)
+            _wirebondCellPropertiesEditor.PropertyChanged -= OnWirebondCellSelectionChanged;
+
+        _wirebondCellPropertiesDoc = doc;
+        _wirebondCellPropertiesEditor = wires;
+
+        if (wires is not null) wires.PropertyChanged += OnWirebondCellSelectionChanged;
+    }
+
+    /// <summary>Drops it — called the moment a non-layout document becomes active.</summary>
+    private void StopWatchingWirebondCellProperties()
+    {
+        if (_wirebondCellPropertiesEditor is not null)
+            _wirebondCellPropertiesEditor.PropertyChanged -= OnWirebondCellSelectionChanged;
+
+        _wirebondCellPropertiesEditor = null;
+        _wirebondCellPropertiesDoc = null;
+    }
+
+    private LayoutDocument? _wirebondCellPropertiesDoc;
+    private WBond.WBondViewModel? _wirebondCellPropertiesEditor;
+
+    private void OnWirebondCellSelectionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(WBond.WBondViewModel.Selection)) return;
+        if (_wirebondCellPropertiesDoc is { } doc) RefreshLayoutPropertiesContext(doc);
     }
 
     // Cell dir for a view file at .../cell/<viewfolder>/file.ext → .../cell (two levels up); else null.
@@ -8765,6 +9087,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // violations on screen beside unrelated artwork by simply not knowing about this panel.
         _factory.DrcTool?.SetActiveLayout(null);
 
+        // wbond.md §10.1 — the two wBond panels follow the same rule, for the same reason: a wire
+        // profile shown beside a schematic is worse than an empty panel that says so.
+        _factory.WBondProfileTool?.SetActiveWBond(null);
+        _factory.WBondInductanceTool?.SetActiveWBond(null);
+
+        // The wBond selection watch is live only while a wBond document IS the active one — otherwise
+        // its own selection changes would go on flipping the Properties panel while the user is
+        // looking at a schematic. Dropped FIRST, and re-armed below by the wBond branch alone, on the
+        // same "no document type can leave another's context on screen" principle as the DRC panel.
+        if (activeDockable is not WBondDocument) StopWatchingWBondProperties();
+
+        // The same rule for a wirebond CELL's wire selection: watched only while its layout document is
+        // the active one, or its own selection changes would go on flipping the Properties panel while
+        // the user is looking at something else.
+        if (activeDockable is not LayoutDocument) StopWatchingWirebondCellProperties();
+
         // Properties panel — route to data display, schematic, symbol-editor, or cell inspector.
         if (activeDockable is DataDisplayDocument ddDoc)
         {
@@ -9147,9 +9485,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         _wiredHostWindows.Add(window);
 
+        // Through the DOCUMENT's UndoLast/CanUndoLast, exactly as the shell's own Undo command is: a
+        // torn-off layout window showing a wirebond cell has the same two histories, and Ctrl+Z there
+        // has to reach the same one.
         var stack   = undoDoc.UndoRedo;
-        var undoCmd = new RelayCommand(stack.Undo, () => stack.CanUndo);
-        var redoCmd = new RelayCommand(stack.Redo, () => stack.CanRedo);
+        var undoCmd = new RelayCommand(undoDoc.UndoLast, () => undoDoc.CanUndoLast);
+        var redoCmd = new RelayCommand(undoDoc.RedoLast, () => undoDoc.CanRedoLast);
 
         void OnStackChanged(object? _, System.ComponentModel.PropertyChangedEventArgs e)
         {
@@ -9157,6 +9498,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) redoCmd.NotifyCanExecuteChanged();
         }
         stack.PropertyChanged += OnStackChanged;
+
+        // …and the WIRE history raises no UndoRedoStack notification of its own, so it needs its own
+        // subscription or the binding stays disabled after a wire edit (WB40).
+        LayoutEditorViewModel? wireVm = undoDoc is LayoutDocument { ActiveViewModel: { WireDesign: not null } vm } ? vm : null;
+        void OnWiresChanged() { undoCmd.NotifyCanExecuteChanged(); redoCmd.NotifyCanExecuteChanged(); }
+        if (wireVm is not null) wireVm.WireHistoryChanged += OnWiresChanged;
 
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Control),                       Command = undoCmd });
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta),                          Command = undoCmd });
@@ -9167,6 +9514,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         window.Closed += (_, _) =>
         {
             stack.PropertyChanged -= OnStackChanged;
+            if (wireVm is not null) wireVm.WireHistoryChanged -= OnWiresChanged;
             _wiredHostWindows.Remove(window);
         };
     }

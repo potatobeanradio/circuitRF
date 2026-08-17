@@ -40,7 +40,19 @@ public sealed class WBondModel : ComponentModel
     /// <summary>Branch index per array, set during each <see cref="Stamp"/> call. −1 before the first.</summary>
     public int[] ArrayBranchIndices { get; }
 
-    public WBondModel(WBondDesign design, string sourceDescription = "<inline>")
+    /// <param name="referencePin">
+    /// Whether the component exposes the floating <c>REF</c> terminal.
+    ///
+    /// <para><b>Off by default</b> (owner, 2026-08-16), matching SnP's own <c>RefNode</c> — which is
+    /// what this is modelled on, and off there too. §5.4/WB20 wrote the pin as mandatory; what WB20 is
+    /// actually protecting is the REFUSAL in <see cref="RefuseIfReturnPathUndeclared"/>, and that
+    /// keys off <c>GroundPlane.Enabled</c>, not off the pin. So an undeclared return path is still
+    /// refused by name whether or not the pin is there, and nothing about the physics changes with
+    /// this flag: <c>REF</c> never stamped. It is a place to SAY which net is the reference plane,
+    /// for the designs where that is not simply ground.</para>
+    /// </param>
+    public WBondModel(WBondDesign design, string sourceDescription = "<inline>",
+                      bool referencePin = false)
     {
         ArgumentNullException.ThrowIfNull(design);
         design.Validate();
@@ -56,6 +68,7 @@ public sealed class WBondModel : ComponentModel
 
         _design = design;
         _sourceDescription = sourceDescription;
+        HasReferencePin = referencePin;
 
         ArrayBranchIndices = new int[design.Arrays.Count];
         for (int k = 0; k < ArrayBranchIndices.Length; k++) ArrayBranchIndices[k] = -1;
@@ -70,13 +83,26 @@ public sealed class WBondModel : ComponentModel
     /// <summary>The number of wire arrays, and so the number of coupled branches.</summary>
     public int ArrayCount => _design.Arrays.Count;
 
-    /// <summary>2M signal pins plus one <c>REF</c>.</summary>
-    public override int PortCount => 2 * ArrayCount + 1;
+    /// <summary>
+    /// Whether the floating <c>REF</c> terminal is exposed. See the constructor's own parameter note —
+    /// it is a declaration, never a stamped connection, and the return-path refusal does not depend
+    /// on it.
+    /// </summary>
+    public bool HasReferencePin { get; }
+
+    /// <summary>2M signal pins, plus one <c>REF</c> when <see cref="HasReferencePin"/>.</summary>
+    public override int PortCount => 2 * ArrayCount + (HasReferencePin ? 1 : 0);
 
     public override ModelKind Kind => ModelKind.Linear;
 
     /// <summary>
-    /// <c>G1.i, G1.o, G2.i, G2.o, …, REF</c> — input left, output right, in array order (D3).
+    /// <c>G1.i, G1.o, G2.i, G2.o, …</c> — input left, output right, in array order (D3) — followed by
+    /// <c>REF</c> when the reference pin is exposed.
+    ///
+    /// <para><b>The signal terminals are unchanged either way</b>, and that is what makes the pin
+    /// optional at all: <c>REF</c> is the LAST terminal, so removing it renumbers nothing. The
+    /// schematic symbol generator relies on exactly this — it appends its own <c>REF</c> pin last, and
+    /// the two lists have a test asserting they agree.</para>
     /// </summary>
     public override string[] TerminalNames
     {
@@ -88,7 +114,7 @@ public sealed class WBondModel : ComponentModel
                 names[2 * k] = $"{_design.Arrays[k].Name}.i";
                 names[2 * k + 1] = $"{_design.Arrays[k].Name}.o";
             }
-            names[^1] = "REF";
+            if (HasReferencePin) names[^1] = "REF";
             return names;
         }
     }

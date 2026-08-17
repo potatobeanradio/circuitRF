@@ -26,7 +26,13 @@ public class WBondSymbolGeneratorTests
         return design;
     }
 
-    /// <summary>TIER 6 — two pins per array plus REF, in array order, input left and output right.</summary>
+    /// <summary>
+    /// TIER 6 — two pins per array plus REF, in array order, input left and output right.
+    ///
+    /// <para>Built with the reference pin explicitly ON: it is optional and off by default since
+    /// 2026-08-16 (owner), and this test is about the 2M+1 shape. The DEFAULT's shape has its own
+    /// test below.</para>
+    /// </summary>
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -35,7 +41,7 @@ public class WBondSymbolGeneratorTests
     public void Tier6_PinCountAndOrder_FollowTheArrayList(int arrays)
     {
         var names = Enumerable.Range(1, arrays).Select(i => $"G{i}").ToArray();
-        var symbol = WBondSymbolGenerator.Build(Design(names));
+        var symbol = WBondSymbolGenerator.Build(Design(names), referencePin: true);
 
         Assert.NotNull(symbol);
         Assert.Equal(2 * arrays + 1, symbol!.Pins.Count);
@@ -68,12 +74,20 @@ public class WBondSymbolGeneratorTests
     /// <para>Two independent statements of the same ordering would drift, and the symptom would be a
     /// correctly-labelled pin wired to the wrong net. This test is what ties them together.</para>
     /// </summary>
-    [Fact]
-    public void Tier6_SymbolPinNames_MatchTheModelsTerminalNames()
+    /// <param name="referencePin">
+    /// Checked BOTH ways since the pin became optional (2026-08-16). The symbol generator and the
+    /// model each decide independently whether to append <c>REF</c>, from the same instance
+    /// parameter — so "both agree" is exactly the thing that could come apart, and a test that only
+    /// ever exercised one setting would not see it.
+    /// </param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Tier6_SymbolPinNames_MatchTheModelsTerminalNames(bool referencePin)
     {
         var design = Design("G1", "G2", "D1", "MT");
-        var symbol = WBondSymbolGenerator.Build(design);
-        var model = new CircuitRF.Core.Devices.WBondModel(design);
+        var symbol = WBondSymbolGenerator.Build(design, referencePin: referencePin);
+        var model = new CircuitRF.Core.Devices.WBondModel(design, referencePin: referencePin);
 
         Assert.NotNull(symbol);
         Assert.Equal(model.PortCount, symbol!.Pins.Count);
@@ -162,7 +176,14 @@ public class WBondSymbolGeneratorTests
 
         Assert.Contains("2 arrays", text, System.StringComparison.Ordinal);
         Assert.Contains("2 wires", text, System.StringComparison.Ordinal);
-        Assert.Contains("mm", text, System.StringComparison.Ordinal);
+
+        // The unit is the WORKSPACE technology's, never a hard-coded one (owner, 2026-08-17). Mils is
+        // the default — what a bonder works in, and what the wBond editor opens on.
+        Assert.Contains("mil", text, System.StringComparison.Ordinal);
+        Assert.Contains("mm", WBondSymbolGenerator.Describe(design, CircuitRF.Ui.Layout.LayoutUnit.Mm),
+                        System.StringComparison.Ordinal);
+        Assert.Contains("µm", WBondSymbolGenerator.Describe(design, CircuitRF.Ui.Layout.LayoutUnit.Um),
+                        System.StringComparison.Ordinal);
     }
 
     /// <summary>Singular forms, because "1 arrays · 1 wires" reads as a bug.</summary>

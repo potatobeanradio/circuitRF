@@ -26,7 +26,7 @@ namespace CircuitRF.Ui.WBond;
 /// so the layout editor underneath keeps working normally: the designer nudges a bond pad and drags a
 /// wire onto it in the same view, with the same mouse.</para>
 /// </summary>
-public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
+public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
 {
     private readonly WBondViewModel _vm;
     private readonly WBondPointerController _controller;
@@ -52,6 +52,25 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     private (long X, long Y, double TolNm, WBondModifiers Modifiers, int ClickCount)? _deferredPress;
 
     private bool _marqueeActive;
+
+    /// <summary>
+    /// A marquee the LAYOUT editor is running, which this overlay follows without consuming anything —
+    /// so one drag selects the shapes it caught AND the wires it caught.
+    ///
+    /// <para>Used where <see cref="WireMarqueeEnabled"/> is off, which is the wirebond-CELL
+    /// configuration (WB40): there the artwork is the subject and the layout's own marquee has to keep
+    /// working, but the wires are content of that same cell and the owner expects a box round them to
+    /// pick them up (2026-08-17: "I also cannot select wires using marquee select"). It is the same
+    /// answer §6.3 already gives for a CLICK — the two selections are independent and can be held at
+    /// once — applied to the gesture that resolves several things instead of one.</para>
+    ///
+    /// <para><b>The BOX is not drawn by this overlay.</b> The layout editor draws its own for the same
+    /// gesture, and a second one over it at the same coordinates would be a visible double stroke;
+    /// <see cref="_marqueeActive"/> stays false for exactly that reason, and only the wire PREVIEW
+    /// highlight is published.</para>
+    /// </summary>
+    private bool _companionMarquee;
+
     private long _marqueeStartX, _marqueeStartY, _marqueeX, _marqueeY;
     private WBondModifiers _lastModifiers = WBondModifiers.None;
 
@@ -136,6 +155,21 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     public bool WireMarqueeEnabled { get; set; } = true;
 
     /// <summary>
+    /// Whether the LAYOUT editor underneath has a drawing tool armed — Rectangle, Path, Via, and the
+    /// rest of the wBond editor's second toolbar row.
+    ///
+    /// <para><b>Armed means the canvas is theirs.</b> The overlay is offered every press first, so
+    /// without this a wire marquee would swallow the click that was meant to start a rectangle, and
+    /// the tool would appear to do nothing at all. A press that lands ON a wire is still the
+    /// overlay's — a wire stays clickable while a layout tool is armed, exactly as a shape stays
+    /// clickable while the wire tools are.</para>
+    ///
+    /// <para>Null (the default) means "no layout tool can be armed", which is the standalone binary
+    /// and every test that constructs an overlay on its own.</para>
+    /// </summary>
+    public Func<bool>? LayoutToolArmed { get; set; }
+
+    /// <summary>
     /// The draw-a-wire tool (§6.4): click the start point, click the end point, with a live ghost of
     /// the full generated loop in between. Arming it takes every click until it is disarmed or a wire
     /// is placed, so it is a mode the toolbar shows rather than a hidden modifier.
@@ -206,6 +240,43 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     /// <summary>Raised when the overlay's own state changed and the canvas should repaint.</summary>
     public event Action? OverlayChanged;
 
+    /// <summary>
+    /// Asks for a repaint from OUTSIDE the overlay's own gestures.
+    ///
+    /// <para>The wires can change without this object being touched at all: the docked Array Inductance
+    /// panel selects an array by double-clicking its name, and its four settable rows edit a whole
+    /// group's geometry. Those write the view-model directly, so the canvas showing the wires had no
+    /// reason to redraw and the selection appeared not to take (owner, 2026-08-17). The wBond editor
+    /// never saw it because it repaints both canvases off the view-model's own notifications.</para>
+    /// </summary>
+    public void NotifyChanged() => OverlayChanged?.Invoke();
+
+    /// <summary>
+    /// The snap answer the LAST <see cref="SnapPoint"/> produced — what the glyph on screen should be
+    /// showing, published for the canvas to hand to the layout editor's own marker slot.
+    ///
+    /// <para>Guarded on one of the two gestures that actually SNAP being live, so it disappears the
+    /// instant the drag or the draw ends rather than lingering as a stale mark on the canvas. A ROTATE
+    /// is deliberately excluded: it swings a wire about a pinned end and consults no snap at all, so a
+    /// marker during one could only be a leftover from the gesture before it.</para>
+    /// </summary>
+    public SnapCandidate? SnapMarker => _drawStart is not null || _dragging ? _snapMarker : null;
+
+    private SnapCandidate? _snapMarker;
+
+    /// <summary>
+    /// Whether the press just consumed landed on nothing — every wire missed and the layout had nothing
+    /// there either, so a wire marquee was started on genuinely empty space.
+    ///
+    /// <para>The canvas reads it and clears the LAYOUT's selection, which this overlay cannot reach.
+    /// A click on empty space means "deselect" whichever selection the user was holding, and before
+    /// this the layout half of the wBond editor kept its selection through every such click (owner,
+    /// 2026-08-17).</para>
+    /// </summary>
+    public bool ConsumedPressWasEmptySpace => _pressWasEmptySpace;
+
+    private bool _pressWasEmptySpace;
+
     /// <summary>Which rung the last drag frame ran at, for the panel's provisional marker (WB15).</summary>
     public DragQuality Quality => _controller.Quality;
 
@@ -259,11 +330,28 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
     public bool OnPointerPressed(long worldX, long worldY, long tolDbu, KeyModifiers modifiers, int clickCount)
     {
+        _pressWasEmptySpace = false;
+
+        // Whatever the last gesture snapped to is not this one's answer. Cleared here rather than at
+        // the end of a gesture because a press is the one event that always precedes a new one.
+        _snapMarker = null;
+
+        // A companion marquee whose release was delivered elsewhere (the layout editor captures the
+        // pointer for its own drag) must not survive into this press — the same "a release is not
+        // guaranteed to arrive" rule OnFocusLost exists for.
+        _companionMarquee = false;
+
         if (IsAtDepth) return false;   // locked reference — every gesture belongs to the layout editor
 
         long xNm = WBondSnap.ToNm(worldX, DbuPerMicron);
         long yNm = WBondSnap.ToNm(worldY, DbuPerMicron);
         double tolNm = WBondSnap.ToNm(tolDbu, DbuPerMicron);
+
+        // A layout drawing tool is armed: every press belongs to it, including one on a wire — a
+        // rectangle started on top of a bond wire is an ordinary thing to draw. This is checked
+        // before the wire tools rather than beside them because the two are mutually exclusive
+        // upstream (WBondEditorView.LayoutTools.cs), so at most one of them can be true.
+        if (LayoutToolArmed?.Invoke() == true) return false;
 
         if (_drawArmed)
         {
@@ -299,6 +387,23 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
         // mid-drag.
         _lastModifiers = Modifiers(modifiers);
 
+        // ── ROUTE FIRST, then resolve the selection ───────────────────────────────────────────────
+        //
+        // The order matters and it used to be the other way round. A press that misses every wire and
+        // lands on a bond pad belongs to the layout editor — and resolving the WIRE selection before
+        // discovering that CLEARED it, so nudging a pad silently threw away the wires the user had
+        // selected. That contradicts §6.3's own contract ("neither selection clears the other, so
+        // 'select the pads and the wires landing on them' is one gesture"), which is the whole basis for
+        // holding both at once.
+        //
+        // A press on genuinely EMPTY space is different and still clears: nothing was clicked, so
+        // nothing is selected — see the empty-space branch below, which resolves before it routes.
+        if (!hit.Found && LayoutHasSomethingAt(worldX, worldY, tolDbu))
+        {
+            OverlayChanged?.Invoke();
+            return false;
+        }
+
         // A press on something ALREADY SELECTED picks the whole selection up rather than replacing it
         // — see SelectionCovers. Shift still re-resolves, because extending is the one case where a
         // press on a selected thing means something else.
@@ -319,18 +424,39 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
 
         if (!hit.Found)
         {
-            if (!WireMarqueeEnabled) return false;
+            // ── The press missed every wire, and the layout has nothing there either ──────────────
+            //
+            // A press on a THING belongs to whatever owns that thing — that is how a bond pad gets
+            // nudged and how a placed cell instance gets moved, in this same view, and it is handled
+            // above. This is the genuinely ambiguous case the marquee toggle was added for: who gets
+            // EMPTY space.
+            //
+            // Without that routing the wire marquee took EVERY press on non-wire space, including one
+            // squarely on an instance, so a cell dragged in from the project tree could never be picked
+            // up again (owner, 2026-08-16: "wBond editor has no way to move cell instances in the
+            // layout view once they are placed"). Turning the marquee toggle off was the only way
+            // through, which is a mode switch for something that is not a mode.
 
-            _marqueeActive = true;
+            // AFTER Press, which has already cleared the selection unless Shift was held — so this is
+            // exactly the base the release-time union will be taken against, on either path below.
             _marqueeStartX = xNm;
             _marqueeStartY = yNm;
             _marqueeX = xNm;
             _marqueeY = yNm;
-
-            // AFTER Press, which has already cleared the selection unless Shift was held — so this is
-            // exactly the base the release-time union will be taken against.
             _marqueeBase = _vm.Selection;
             _vm.PreviewSelection = _marqueeBase;
+
+            if (!WireMarqueeEnabled)
+            {
+                // The gesture is the LAYOUT's — its own marquee runs — and this overlay only follows
+                // the box so the wires inside it come along. Declined, so nothing is consumed.
+                _companionMarquee = true;
+                return false;
+            }
+
+            // The press hit nothing at all — the canvas clears the LAYOUT's selection for it.
+            _pressWasEmptySpace = true;
+            _marqueeActive = true;
             return true;
         }
 
@@ -358,6 +484,27 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
         (_altAxisX, _altAxisY) = ChordDirection(hit.Wire);
 
         return true;
+    }
+
+    /// <summary>
+    /// Whether the reference layout has a shape or an instance under the given point, in the layout's
+    /// OWN database units — the question "is this press the layout editor's rather than mine".
+    ///
+    /// <para>Both stacks are asked because both are draggable: a shape and a placed cell instance are
+    /// selected and moved by the same press, through two different hit tests
+    /// (<see cref="LayoutHitTest.HitStack"/> and <see cref="LayoutHitTest.HitInstanceStack"/>). Asking
+    /// only about shapes would fix pads and leave instances exactly as stuck as they were.</para>
+    /// </summary>
+    private bool LayoutHasSomethingAt(long worldX, long worldY, long tolDbu)
+    {
+        if (ReferenceLayout is not { } view) return false;
+
+        if (LayoutHitTest.HitStack(view, ReferenceTechnology, worldX, worldY, tolDbu).Count > 0)
+            return true;
+
+        return LayoutHitTest.HitInstanceStack(
+            view, ReferenceTechnology, ReferenceBaseDir ?? string.Empty,
+            worldX, worldY, tolDbu).Count > 0;
     }
 
     /// <summary>
@@ -447,6 +594,22 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
             return true;
         }
 
+        // A marquee the layout editor owns: follow the box, publish the wire preview, consume NOTHING.
+        if (_companionMarquee)
+        {
+            if (!leftButtonDown) { CommitCompanionMarquee(worldX, worldY); return false; }
+
+            long cx = WBondSnap.ToNm(worldX, DbuPerMicron);
+            long cy = WBondSnap.ToNm(worldY, DbuPerMicron);
+            if (cx == _marqueeX && cy == _marqueeY) return false;
+
+            _marqueeX = cx;
+            _marqueeY = cy;
+            _vm.PreviewSelection = ResolveMarqueeNow(cx, cy);
+            OverlayChanged?.Invoke();
+            return false;
+        }
+
         if (!_pressed) return false;
         if (!leftButtonDown) { EndDrag(); return false; }
 
@@ -522,6 +685,9 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     public bool OnPointerReleased(long worldX, long worldY)
     {
         if (_rotating) { EndRotate(); return true; }
+
+        // Declined, so the layout editor still gets its own release and commits its own marquee.
+        if (_companionMarquee) { CommitCompanionMarquee(worldX, worldY); return false; }
 
         if (_marqueeActive)
         {
@@ -601,6 +767,21 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     /// <summary>The live preview, resolved by the SAME rule the release will commit.</summary>
     private WireSelection ResolveMarqueeNow(long xNm, long yNm) =>
         _controller.ResolveMarquee(xNm, yNm, _lastModifiers, _marqueeBase, EditorView.Layout);
+
+    /// <summary>
+    /// Commits the wires the LAYOUT's marquee caught, through the same controller call the overlay's own
+    /// marquee release uses — so the enclose-versus-crossing rule and the crossing promotion to whole
+    /// wires are one implementation, not two.
+    /// </summary>
+    private void CommitCompanionMarquee(long worldX, long worldY)
+    {
+        _companionMarquee = false;
+        _vm.PreviewSelection = null;
+
+        _controller.Marquee(WBondSnap.ToNm(worldX, DbuPerMicron), WBondSnap.ToNm(worldY, DbuPerMicron),
+                            _lastModifiers, EditorView.Layout);
+        OverlayChanged?.Invoke();
+    }
 
     /// <summary>Closes a marquee gesture and drops its preview, so a stale highlight cannot outlive it.</summary>
     private void EndMarquee()
@@ -706,12 +887,40 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
             : (start.X, yNm);
     }
 
+    /// <summary>
+    /// Geometry first, then the grid — and "geometry" now includes the OTHER WIRES (owner,
+    /// 2026-08-16), their vertices and their segments alike.
+    ///
+    /// <para>Everything the current gesture is moving is excluded, or the drag would snap to itself and
+    /// the wires could not be moved at all. That is the selection while a drag or a marquee is live,
+    /// and nothing at all while a wire is being DRAWN — a wire that does not exist yet cannot be its
+    /// own snap target, and the two feet being placed must be free to land on a wire already there.</para>
+    /// </summary>
     private (long X, long Y) SnapPoint(long xNm, long yNm)
     {
-        if (!SnapEnabled) return (xNm, yNm);
+        if (!SnapEnabled) { _snapMarker = null; return (xNm, yNm); }
+
+        HashSet<int>? moving = _dragging || _rotating
+            ? [.. _vm.Selection.TouchedWires()]
+            : null;
 
         var snap = WBondSnap.Snap(ReferenceLayout, ReferenceTechnology, ReferenceBaseDir,
-                                  xNm, yNm, SnapToleranceNm);
+                                  xNm, yNm, SnapToleranceNm,
+                                  includeIntersections: false,
+                                  wires: _vm.Design,
+                                  excludeWire: moving is null ? null : moving.Contains);
+
+        // The GLYPH is published from here rather than computed a second time by whoever draws it, so
+        // what the user sees is by construction the feature the point actually landed on. A GRID snap
+        // deliberately publishes nothing: the layout editor's own marker has never marked the grid
+        // either, and a mark on every pointer position would say nothing.
+        _snapMarker = snap.Snapped
+            ? new SnapCandidate(snap.Kind,
+                                WBondSnap.ToDbu(snap.XNm, DbuPerMicron),
+                                WBondSnap.ToDbu(snap.YNm, DbuPerMicron),
+                                default, false, -1)
+            : null;
+
         if (snap.Snapped) return (snap.XNm, snap.YNm);
 
         return GridPitchNm > 0 ? (Round(xNm, GridPitchNm), Round(yNm, GridPitchNm)) : (xNm, yNm);
@@ -779,7 +988,20 @@ public sealed class WBondLayoutOverlay : ILayoutCanvasOverlay
     /// Focus has left the canvas — drop the held-<c>g</c> latch whether or not its release arrived.
     /// See <see cref="ILayoutCanvasOverlay.OnFocusLost"/> for why it may not have.
     /// </summary>
-    public void OnFocusLost() => _gHeld = false;
+    public void OnFocusLost()
+    {
+        _gHeld = false;
+
+        // A held-key latch is not the only thing a lost release can strand: a companion marquee left
+        // set would go on re-resolving the wire selection on every later hover. Its preview is dropped
+        // with it — and ONLY with it, because the profile canvas publishes into the same slot and its
+        // own live marquee must survive this canvas losing focus.
+        if (_companionMarquee)
+        {
+            _companionMarquee = false;
+            _vm.PreviewSelection = null;
+        }
+    }
 
     private WBondModifiers Modifiers(KeyModifiers modifiers)
     {

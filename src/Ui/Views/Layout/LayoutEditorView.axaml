@@ -66,8 +66,13 @@
 
     <DockPanel>
 
-        <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off. -->
-        <shared:TornOffFileMenuView DockPanel.Dock="Top"/>
+        <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off.
+             Wrapped in a Panel so a HOST can suppress it wholesale (WB39a: the wBond editor hosts
+             this control inside its own document, where a torn-off window would otherwise show a
+             second File menu belonging to the layout half). -->
+        <Panel x:Name="FileMenuHost" DockPanel.Dock="Top">
+            <shared:TornOffFileMenuView/>
+        </Panel>
 
         <!-- brief-foreign-documents.md §4 item 2: edge band — a foreign document (its own file does
              not belong to the currently open workspace, R-fgn-1: regardless of docked/torn-off) shows
@@ -279,6 +284,32 @@
                                 IsEnabled="False"
                                 Padding="6,3">
                             <mi:MaterialIcon Kind="ArrowUp" Width="16" Height="16"/>
+                        </Button>
+
+                        <!-- ── The two wBond panels (wbond.md §10.1) ────────────────────────────
+                             Shown only on a WIREBOND CELL (a `.wBond` beside the `.clay`, WB40) and only
+                             where there is a dock to put a panel in — so they are absent from every
+                             ordinary layout and from the standalone wBond app, whose own window hosts
+                             both panels inline and has no dock at all (owner, 2026-08-17).
+
+                             They TOGGLE: a second press closes what the first opened. That is what makes
+                             them read as state rather than as two more "open something" buttons, and it
+                             is why they are not the View ▸ Panels command. -->
+                        <Border x:Name="WirePanelSeparator" Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                        <Button x:Name="WireProfileBtn"
+                                Click="OnToggleWireProfilePanel"
+                                ToolTip.Tip="Wire Profile panel  (P)"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"/>
+                        </Button>
+
+                        <Button x:Name="WireInductanceBtn"
+                                Click="OnToggleWireInductancePanel"
+                                ToolTip.Tip="Array Inductance panel  (A)"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
                         </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
@@ -587,7 +618,7 @@
         <DockPanel>
 
             <!-- Top row: corner box + horizontal ruler -->
-            <DockPanel DockPanel.Dock="Top" Height="22">
+            <DockPanel x:Name="RulerRow" DockPanel.Dock="Top" Height="22">
                 <Border DockPanel.Dock="Left" Width="22"
                         Background="{DynamicResource SystemChromeMediumLowColor}"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"

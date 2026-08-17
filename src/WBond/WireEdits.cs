@@ -413,6 +413,11 @@ public static class WireEdits
 
             foreach (int i in selection.MovingPoints(index, wire.Points.Count))
             {
+                // A selection outlives the point list it was resolved against — the quality ladder's
+                // chord collapse changes a wire's point COUNT mid-drag (WB15), and an undo can too. An
+                // index that no longer exists is a point that is not there to move, not a crash.
+                if ((uint)i >= (uint)wire.Points.Count) continue;
+
                 var p = wire.Points[i];
                 wire.Points[i] = new Point3(p.X + stepX, p.Y + stepY, p.Z + vertical);
             }

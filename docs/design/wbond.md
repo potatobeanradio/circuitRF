@@ -1124,6 +1124,81 @@ same-shape array projects onto the same chord, so it is still one curve plus a b
 plane, members at different positions project to different places, and there is no honest picture in
 which they are one curve.
 
+### 6.11 The wBond cell's layout view — and what "the wBond Editor" becomes (2026-08-16)
+
+The owner, after using the round-4 editor: *"I just tried the new geometry shape tools in wBond and
+there are many many bugs (that we had previously resolved when we hardened the Layout Editor)… any
+changes to the Layout editor will have to be changed in the wBond editor too - I
+wish we had simply adapted the Layout Editor to work with wires."*
+
+**WB39. That wish is §6.1/WB22, and WB22 is what was built — one layer down. Only the SHELL was
+duplicated.** Counted:
+
+| | lines | copies |
+|---|---:|---|
+| `LayoutEditorViewModel` (+ 10 partials), `LayoutCanvas`, `LayoutSnapQuery`, `LayoutHitTest`, renderer, commands, undo | ~9,500 | **one**, used by both editors |
+| `LayoutEditorView` shell — toolbar, keyboard routing, context menu, breadcrumbs | ~1,750 | Layout Editor only |
+| `WBondEditorView` shell — the same jobs, re-transcribed | ~2,690 | wBond only |
+
+The wBond editor's layout half **is** a `LayoutEditorViewModel` inside a `LayoutCanvas` — the same
+objects, not a port of them. Snapping, hit-testing, the drawing tools, the commands and the undo stack
+are already shared, and always have been. What is duplicated is the ~2,700-line *view shell*, and
+**that is precisely where round 4's new geometry bugs live**: the tools were exposed through a
+transcribed toolbar whose keyboard, focus, context-menu and breadcrumb wiring the original shell has
+and the copy does not.
+
+So the remedy is not to re-fix the tools, and not to re-architect the model:
+
+> **WB39a. The wBond editor HOSTS `LayoutEditorView`. It does not transcribe it.**
+> The layout half of the wBond editor is the real control, over a `LayoutDocument` wrapping its own
+> reference layout (`LayoutDocument(title, viewModel, path)` already takes an existing view-model).
+> wBond keeps exactly two things of its own: the **profile view** and the **Array Inductance panel**.
+> Anything a `LayoutEditorView` already does is reached, never re-implemented — including push-in,
+> pop-out and the breadcrumb bar, which the transcribed shell never had at all.
+
+**One rule follows, and it is the one to hold the line on.** *If a change would be needed in both
+editors, it belongs in neither — it belongs in the shared control.* A second `Click=` handler that
+does what a Layout Editor handler already does is the smell; the fix is to host, not to copy.
+
+#### What a wirebond CELL is
+
+**WB40. A wirebond cell is an ordinary cell whose folder holds a `.wBond` beside its `.clay`.** The
+artwork (pads, traces, the die outline) is the layout view, exactly as for any other cell. The wires
+are the `.wBond`. Nothing new is invented: `LayoutEditorViewModel.WireDesign` is already the seam that
+puts a wire overlay over a layout, and `WBondLayoutOverlay` already draws and edits through it — today
+only the wBond document sets them.
+
+**This keeps WB23 exactly as written.** No 3D shape enters `.clay`, the layout canvas stays 2D, no
+volumetric mesher is written, and a wire drag still invalidates only the overlay. The alternative —
+a wire shape type in `.clay` — was rejected then and is rejected again, for the same reasons plus a
+new one: the `.wBond` format already round-trips, already exports to DXF for the assembly house, and
+is already what the standalone application reads.
+
+**Push-in is then the answer to the owner's own question** (*"in layout editor, I can 'jump' into via
+hierarchy which shows the wBond editor (with the layout in the background)?"*): yes, and with WB40 it
+needs no jump to a different editor at all. Pushing into a wirebond cell shows its artwork with its
+wires over it, editable, because the layout editor draws a wire overlay for any cell that has one. The
+profile view and the inductance panel become **dockable tool panels** that follow the active layout,
+the way the DRC and Properties panels already do — so "the wBond Editor" stops being a separate editor
+and becomes *the Layout Editor with two panels open*, which is what WB22 said in the first place.
+
+**The standalone `wBond` application is unaffected and stays** (§11): it is the same overlay and the
+same two panels, hosted without a workspace. That is a build configuration, not a second editor.
+
+> **Built 2026-08-16** (`brief-wbond-wbf-one-editor.md`; detail in `src/Ui/RESOLVED.md`). Four things
+> are worth knowing before touching any of it:
+> - **The seam needed nothing new.** `WBondDocumentViewModel.LayoutDocument` wraps the reference layout
+>   in `OnReferenceLayoutChanged` — the single funnel all three creation points share — and the XAML
+>   binds it. WB27's descent chain, which had no push-in to trigger it until now, is wired there too.
+> - **The wire context menu moved onto the OVERLAY** (`ILayoutCanvasOverlay.BuildContextMenuItems`),
+>   because one shared canvas means one `ContextMenu`. That is also what gives a wirebond CELL its wire
+>   menu in the ordinary Layout Editor with no wBond code in that view.
+> - **Ctrl+Z routes by an edit STAMP, not by focus** — a wire drag happens on the layout canvas, so
+>   focus cannot tell the two histories apart, and "wires first" would undo the wrong thing.
+> - **The profile view and the inductance panel are each ONE control hosted twice** — inline by the
+>   wBond editor, and by a dock tool that follows the active layout. §10.1's table is what that makes
+>   true.
+
 ---
 
 ## 7. Should a design ever have more than one wBond component?
@@ -1403,6 +1478,69 @@ document writes the reference layout *and* the wires together — that is the fi
 layout untouched and creating no new cell — that is how a bond list drawn elsewhere joins a design
 you already have.
 
+### 9.5 Schematic → Layout for a wBond (2026-08-16)
+
+> **Built 2026-08-17** (`WBondCellSeeding`, called from `WorkspaceViewModel.UpdateLayoutFromSchematic`).
+> A wBond is no longer offered to `SchematicToLayoutGenerator` at all — WB23 means there is no instance
+> to place, and leaving it in reported *"no layout view — skipped"*. The sidecar is written ONCE and
+> thereafter kept (a re-run never overwrites layout-driven edits, which is this section's whole point);
+> a diverged array list is reported through `WBondPlacement.DriftBetween`, naming §9.6 as the remedy.
+> Two wBonds in one cell view seed from the first and NAME the rest. §9.6 itself is still unbuilt, so
+> the emitted sidecar carries no back-reference to the placed instance — the file's existence is the
+> idempotency check.
+
+
+The owner's target flow, in their own words: *"place a wBond component into the Schematic, be able to
+change the number of arrays in the Components Parameters editor (and the array names). Then use
+Schematic to Layout command to get to layout, then use a layout driven design approach to edit the
+wires. Then go Layout-to-Schematic to simulate the wires in the Schematic editor."*
+
+**WB41. Schematic → Layout emits a wirebond CELL (WB40), not a PCell.**
+
+The distinction is load-bearing. A PCell is content-addressed and **regenerated** from its parameters
+(`GeneratedCellStore`), which is exactly right for an `MLIN` and exactly wrong here: the whole point of
+the flow above is that the user edits the wires *in the layout*, and a generator would overwrite that
+on the next regeneration. Layout-driven design and PCell generation are opposite arrows, and a wBond
+needs the layout arrow.
+
+So the emitted cell is an ordinary one:
+
+```
+<workspace>/<cell>/
+├── layout/<cell>.clay      artwork — pads, traces, die outline
+├── <cell>.wBond            the wires  (WB40)
+└── schematic/…             unchanged
+```
+
+seeded from the placed component's `Design` payload, and carrying the same `SchematicId` back-reference
+every other schematic→layout instance carries, so a re-run recognises what it already emitted rather
+than duplicating it.
+
+### 9.6 Layout → Schematic — "Update Schematic from wBond Layout"
+
+**WB42. The `Design` payload stays the SIMULATION source of truth; the layout is the EDITING source of
+truth; Layout → Schematic is the one operation that reconciles them.**
+
+Neither half can simply own the wires:
+
+- **The payload has to remain what the engine reads.** §5.0/WB17b is unchanged and its reasons are
+  unchanged — a schematic must be self-contained, with no workspace-relative path to break when it is
+  copied or sent to someone else, and no "Not Found" state to represent.
+- **The layout has to be where wires are drawn**, because that is where the pads are.
+
+So they are synchronised explicitly and in one direction at a time, which is the idiom circuitRF
+already uses for schematic↔layout on every other component. **Layout → Schematic re-encodes the cell's
+`.wBond` into the placed instance's `Design` parameter**, and the array-drift report (§9.2/WB35a)
+already exists for exactly the case that makes this dangerous: if the layout's array list has been
+reordered, every pin keeps its position while its name moves, so the wires now connect to different
+arrays. That is reported, never silently repaired.
+
+**The staleness question is answered by making it visible, not by preventing it.** A placed wBond
+whose payload no longer matches its cell's `.wBond` is a normal, recoverable state — the same state a
+schematic and its layout are in between any two runs of the round trip — and the remedy is one command
+away. What must never happen is simulating a payload the user believes they have edited; the drift
+report is what makes that impossible to do quietly.
+
 ---
 
 ## 10. Entry points and lifecycle
@@ -1419,6 +1557,21 @@ you already have.
 
 All three land on the same `WBondDocument` and the same tear-off/dirty-tracking document shell used by
 the layout, tech and data-display editors.
+
+### 10.1 Where each surface fits, once WB39a and WB40 land (2026-08-16)
+
+WB37's three entry points survive; what changes is that two of them stop needing a *different editor*.
+
+| Surface | What it is | Wires come from |
+|---|---|---|
+| **Layout Editor, pushed into a wirebond cell** | The ordinary layout editor. Its wire overlay draws because the cell has a `.wBond` (WB40); the profile view and inductance panel are dockable tools that follow the active layout. **This is the layout-driven flow** (§9.5). | the cell's `.wBond` |
+| **wBond Editor** (a `.wBond` opened on its own) | The same overlay and the same two panels, over a scratch or embedded reference layout. Still useful: a bond list arrives as a file, with no workspace and no cell. | the opened file |
+| **Standalone `wBond` app** (§11) | The wBond Editor with no circuitRF workspace at all. A build configuration, not a second editor. | the opened file |
+| **Schematic symbol** | Pins and simulation only. Never draws wires. | the `Design` payload |
+
+**The fourth row is why §9.6 exists.** The schematic is the only surface that reads the payload rather
+than a file, and it is the one that simulates — so "Update Schematic from wBond Layout" is not a
+convenience, it is the join between the editing surfaces and the solving one.
 
 ---
 
@@ -1541,7 +1694,12 @@ or fast-but-wall-clock-sensitive):
 | **WB-C — the editor** | Layout Editor + profile view + panel; `LoopProfile` binding; selection/drag/keyboard; **alt-drag height/span scaling**; draw, duplicate-with-pitch, transforms incl. **rotate-about-end-point** and **reverse wire**; units; pH readout; snapping; hierarchy descent; clipboard; envelope rendering | 600-wire drag holds 60 fps (exact path) and the degraded path is measured and its crossover recorded; profile edit propagates to bound wires and detaches on individual drag; all four snap kinds hit wire points; **alt-drag invariants asserted numerically — feet do not move under height scaling (including unequal foot z), normalised shape is bit-preserved, and array span scales by factor not to a common value**; rotate-about-end-point leaves the pinned end exactly fixed; reverse-wire negates exactly that wire's off-diagonal row and column |
 | **WB-D — assembly DRC** | The assembly rule document, resolver, 3D predicates, loop-height-vs-span envelope, results panel | Every listed rule fires on a constructed violation and is clean on a constructed pass; a machine-vs-process violation reports its section |
 | **WB-E — standalone app** ✅ **COMPLETE 2026-08-07** | Third entry point, build config, packaging, Touchstone export | Standalone binary opens a `.wBond`, edits, exports `.snp`; all three configurations build; `InternalsVisibleTo` intact (WB40) |
-| **WB-F — kernel W integration** | Fidelity selector routes to kernel W1/W2 | Quasi-static and W1 agree on the shared oracle set. **Downstream of `mom-wirebond-kernel.md` LW1; nothing above depends on it** |
+| **WB-F — one editor** ✅ **COMPLETE 2026-08-16** | The wBond editor HOSTS `LayoutEditorView` (WB39a); the transcribed toolbar row deleted; wirebond CELLS (WB40); the profile view and Array Inductance panel as dock tools following the active layout (§10.1) | Every tool on the hosted toolbar works with no handler in `src/Ui/Views/WBond/`; push-in/pop-out/breadcrumbs reachable in the wBond editor; the diff REMOVES more than it adds |
+| **WB-G — kernel W integration** | Fidelity selector routes to kernel W1/W2 | Quasi-static and W1 agree on the shared oracle set. **Downstream of `mom-wirebond-kernel.md` LW1; nothing above depends on it** |
+
+> **Naming note (2026-08-16).** The kernel-W phase was originally *WB-F*; `brief-wbond-wbf-one-editor.md`
+> took that letter for a phase this roadmap did not anticipate, so the kernel one is **WB-G** from here
+> on. Nothing else moved.
 
 **WB-A → WB-B is a shippable increment** (a wBond that simulates, authored by CSV import), and
 **WB-A → WB-C is the product**.

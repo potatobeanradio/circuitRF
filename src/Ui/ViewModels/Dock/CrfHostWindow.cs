@@ -38,6 +38,12 @@ public class CrfHostWindow : HostWindow
     public CrfHostWindow()
     {
         this[!BackgroundProperty] = new DynamicResourceExtension("SystemChromeLowColor");
+
+        // P / A must keep working while a floating panel has focus, which it does the moment one is
+        // presented — otherwise the toggle dies after two presses and only a click on the shell revives it
+        // (owner, 2026-08-17). This is a second TopLevel, so it needs its own registration; the shortcut
+        // itself, and why it is not solved by keeping focus in the shell, is in Views.WirePanelKeys.
+        Views.WirePanelKeys.Attach(this, Views.WirePanelKeys.ResolveWorkspace);
     }
 
     protected override void OnClosing(WindowClosingEventArgs e)

@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:wbv="using:CircuitRF.Ui.Views.WBond"
+             x:Class="CircuitRF.Ui.Views.WBond.WBondProfileToolView"
+             x:DataType="vm:WBondProfileTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- wbond.md §10.1 (WB39a/M3) — the profile view, following the active layout.
+         The control, not a copy: the wBond editor stacks the same one above its layout view. -->
+    <Panel>
+        <Panel IsVisible="{Binding HasWires}">
+            <wbv:WBondProfileView x:Name="ProfileView" DataContext="{Binding Editor}"/>
+        </Panel>
+
+        <!-- Empty is a NORMAL state — most layouts have no wirebonds — so it says so rather than
+             sitting blank and reading as broken. -->
+        <TextBlock Text="No wirebonds in the active layout."
+                   IsVisible="{Binding !HasWires}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="12"/>
+    </Panel>
+</UserControl>

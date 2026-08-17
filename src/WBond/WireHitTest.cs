@@ -218,8 +218,14 @@ public static class WireHitTest
     /// anywhere but dead centre misses it.</para>
     ///
     /// <para>Below 1 on purpose — see <c>WBondRenderer.VertexToWireDiameterRatio</c>, which is this.</para>
+    ///
+    /// <para>0.66 = the shipped 0.6 plus 10 % (owner, 2026-08-16: "increase the size wire vertex by
+    /// 10 % of its current size"). Still below 1, so a true-diameter segment's rounded joins are not
+    /// covered by the dot sitting on them — which is the constraint that fixes the upper bound here.
+    /// Because this is the single definition, the drawn dot AND its hitbox both grew by the same
+    /// 10 %; that is the whole reason there is only one of it.</para>
     /// </summary>
-    public const double VertexToWireDiameterRatio = 0.6;
+    public const double VertexToWireDiameterRatio = 0.66;
 
     /// <summary>
     /// The world-space radius a vertex dot is drawn at, in nanometres.

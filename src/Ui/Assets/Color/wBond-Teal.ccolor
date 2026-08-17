@@ -1,0 +1,80 @@
+{
+  "format_version": 1,
+  "name": "wBond-Teal",
+  "light": {
+    "wBond.Envelope": {
+      "r": 64,
+      "g": 162,
+      "b": 165,
+      "a": 52
+    },
+    "wBond.FreeWire": {
+      "r": 182,
+      "g": 108,
+      "b": 43,
+      "a": 255
+    },
+    "wBond.Selected": {
+      "r": 36,
+      "g": 45,
+      "b": 46,
+      "a": 255
+    },
+    "wBond.Wire": {
+      "r": 64,
+      "g": 162,
+      "b": 165,
+      "a": 255
+    },
+    "wBond.WireStart": {
+      "r": 28,
+      "g": 82,
+      "b": 84,
+      "a": 255
+    },
+    "wBond.WireVertex": {
+      "r": 56,
+      "g": 27,
+      "b": 243,
+      "a": 255
+    }
+  },
+  "dark": {
+    "wBond.Envelope": {
+      "r": 122,
+      "g": 211,
+      "b": 214,
+      "a": 60
+    },
+    "wBond.FreeWire": {
+      "r": 222,
+      "g": 165,
+      "b": 115,
+      "a": 255
+    },
+    "wBond.Selected": {
+      "r": 241,
+      "g": 243,
+      "b": 244,
+      "a": 255
+    },
+    "wBond.Wire": {
+      "r": 122,
+      "g": 211,
+      "b": 214,
+      "a": 255
+    },
+    "wBond.WireStart": {
+      "r": 41,
+      "g": 139,
+      "b": 142,
+      "a": 255
+    },
+    "wBond.WireVertex": {
+      "r": 140,
+      "g": 122,
+      "b": 255,
+      "a": 255
+    }
+  }
+}

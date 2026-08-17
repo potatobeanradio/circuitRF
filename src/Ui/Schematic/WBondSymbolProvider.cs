@@ -3,6 +3,25 @@ using CircuitRF.WBond;
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
+/// How far apart a wBond symbol's port rows sit — <b>SnP's own two values, meaning the same two
+/// things</b> (owner, 2026-08-16: "it should support tight or loose geometry just like the SnP
+/// component already does").
+///
+/// <para>A separate enum from <see cref="SnpPitch"/> rather than a shared one because the two are
+/// carried by different instance parameters on different components and are free to diverge; the
+/// SPACINGS behind them are deliberately identical, and that is stated where they are used
+/// (<c>WBondSymbolGenerator.RowPitch</c>).</para>
+/// </summary>
+public enum WBondSymbolPitch
+{
+    /// <summary>One connection grid between rows — an eight-array wBond in a four-array footprint.</summary>
+    Tight,
+
+    /// <summary>Two connection grids. The default, and the geometry every wBond shipped with.</summary>
+    Loose,
+}
+
+/// <summary>
 /// The symbol of a placed <c>wBond</c>, generated from the design the component CARRIES
 /// (wbond.md §5.1, brief-wbond-wbb2 R-wbb2-1).
 ///
@@ -45,14 +64,31 @@ public static class WBondSymbolProvider
     // ── The reference form ────────────────────────────────────────────────────
 
     /// <summary>
-    /// The symbol reference for a wBond component carrying <paramref name="designPayload"/>.
+    /// The symbol reference for a wBond component carrying <paramref name="designPayload"/>, drawn at
+    /// <paramref name="pitch"/>.
     ///
     /// <para>Never null for a wBond — a payload that declares no arrays yields a reference that
     /// resolves to <see cref="CellSymbolState.PrimaryMissing"/>, which reports rather than silently
     /// falling back to a two-pin built-in glyph.</para>
+    ///
+    /// <para><b>The pitch is the FIRST field, positionally</b>, so no array name can ever be mistaken
+    /// for it — an array may be called anything, including "Tight". There is no compatibility concern
+    /// in changing the reference's shape: it is DERIVED from the component's own parameters on every
+    /// access (<c>EditableComponent.ExternalSymbolRef</c>) and never written to a file.</para>
     /// </summary>
-    public static string RefFor(string? designPayload)
-        => Scheme + string.Join(ArraySeparator, WBondEmbedding.ArrayNamesOf(designPayload));
+    public static string RefFor(string? designPayload, WBondSymbolPitch pitch = WBondSymbolPitch.Loose,
+                                bool referencePin = false)
+        => Scheme + pitch + ArraySeparator + (referencePin ? "ref" : "noref") + ArraySeparator
+                  + string.Join(ArraySeparator, WBondEmbedding.ArrayNamesOf(designPayload));
+
+    /// <summary>
+    /// The pitch an instance's <c>Pitch</c> parameter asks for, or <see cref="WBondSymbolPitch.Loose"/>
+    /// for anything unset or unrecognised — an artwork option can never be a reason not to draw.
+    /// </summary>
+    public static WBondSymbolPitch ParsePitch(string? text)
+        => Enum.TryParse<WBondSymbolPitch>(text, ignoreCase: true, out var pitch)
+            ? pitch
+            : WBondSymbolPitch.Loose;
 
     /// <summary>True when this reference names a wBond's array list.</summary>
     public static bool IsWBondRef(string? symbolRef)
@@ -98,10 +134,19 @@ public static class WBondSymbolProvider
 
         if (!IsWBondRef(symbolRef)) return CellSymbolResolution.NotFoundResult;
 
-        string names = symbolRef[Scheme.Length..];
+        // Two positional fields — the pitch, then the reference pin — and everything after them is
+        // the array list. A reference missing either is carrying no arrays either, whatever its
+        // leading fields say.
+        var fields = symbolRef[Scheme.Length..].Split(ArraySeparator, 3);
+        if (fields.Length < 3) return CellSymbolResolution.PrimaryMissingResult;
+
+        var pitch = ParsePitch(fields[0]);
+        bool referencePin = fields[1].Equals("ref", StringComparison.OrdinalIgnoreCase);
+
+        string names = fields[2];
         if (names.Length == 0) return CellSymbolResolution.PrimaryMissingResult;
 
-        var symbol = SymbolFor(names);
+        var symbol = SymbolFor(names, pitch, referencePin);
         return symbol is not null
             ? new CellSymbolResolution { State = CellSymbolState.Resolved, Symbol = symbol }
             : CellSymbolResolution.PrimaryMissingResult;
@@ -112,14 +157,14 @@ public static class WBondSymbolProvider
     private static readonly Dictionary<string, Symbol?> _cache = new(StringComparer.Ordinal);
     private static readonly Lock _gate = new();
 
-    private static Symbol? SymbolFor(string arrayNames)
+    private static Symbol? SymbolFor(string arrayNames, WBondSymbolPitch pitch, bool referencePin)
     {
-        string key = WBondSymbolGenerator.ContentVersion + ":" + arrayNames;
+        string key = WBondSymbolGenerator.ContentVersion + ":" + pitch + ":" + referencePin + ":" + arrayNames;
 
         lock (_gate)
             if (_cache.TryGetValue(key, out var hit)) return hit;
 
-        var built = WBondSymbolGenerator.Build(arrayNames.Split(ArraySeparator));
+        var built = WBondSymbolGenerator.Build(arrayNames.Split(ArraySeparator), pitch, referencePin);
 
         lock (_gate) _cache[key] = built;
         return built;

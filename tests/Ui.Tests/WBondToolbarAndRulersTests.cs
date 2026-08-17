@@ -62,6 +62,14 @@ public class WBondToolbarAndRulersTests
 
     private static string EditorXaml() => StripXmlComments(Read("src/Ui/Views/WBond/WBondEditorView.axaml"));
 
+    /// <summary>
+    /// The Array Inductance panel's own markup. WB39a/M3 moved it out of the editor view into a
+    /// control of its own, because §10.1 also offers it as a dock tool that follows the active layout
+    /// — one control, two hosts, so a change to it cannot be needed in two places.
+    /// </summary>
+    private static string PanelXaml() =>
+        StripXmlComments(Read("src/Ui/Views/WBond/WBondInductancePanelView.axaml"));
+
     /// <summary>Asserts every needle appears, in this order, in <paramref name="haystack"/>.</summary>
     private static void AssertOrder(string haystack, params string[] needles)
     {
@@ -340,20 +348,33 @@ public class WBondToolbarAndRulersTests
     }
 
     /// <summary>
-    /// Both canvases carry the Layout Editor's OWN ruler control — reused, not reimplemented — and
-    /// each is hosted in the same corner-box + strip shape <c>LayoutEditorView</c> uses.
+    /// Both canvases carry the Layout Editor's OWN ruler control — reused, not reimplemented.
+    ///
+    /// <para><b>WB39a moved the layout half's pair.</b> The profile view's strips stay this editor's
+    /// own, because there is no shared control for a span/z axis; the layout view's are the hosted
+    /// <c>LayoutEditorView</c>'s, because that IS the Layout Editor now. What must not come back is a
+    /// second pair of layout strips here, mirroring a viewport this view no longer owns.</para>
     /// </summary>
     [Fact]
     public void BothCanvases_HostTheLayoutEditorsRulerControl()
     {
         var xaml = EditorXaml();
 
-        foreach (var name in new[] { "ProfileHRuler", "ProfileVRuler", "LayoutHRuler", "LayoutVRuler" })
-            Assert.Contains($"ctrl:LayoutRulerControl x:Name=\"{name}\"", xaml, StringComparison.Ordinal);
+        var profile = StripXmlComments(Read("src/Ui/Views/WBond/WBondProfileView.axaml"));
+        foreach (var name in new[] { "ProfileHRuler", "ProfileVRuler" })
+            Assert.Contains($"ctrl:LayoutRulerControl x:Name=\"{name}\"", profile, StringComparison.Ordinal);
 
-        // The horizontal strips come before their canvas, the vertical ones down the left.
-        AssertOrder(xaml, "ProfileHRuler", "ProfileVRuler", "ProfileCanvas",
-                          "LayoutHRuler", "LayoutVRuler", "LayoutCanvasCtrl");
+        // The horizontal strip comes before its canvas, the vertical one down the left…
+        AssertOrder(profile, "ProfileHRuler", "ProfileVRuler", "ProfileCanvas");
+
+        // …and the editor hosts BOTH halves as controls, with no ruler hosting of its own left.
+        Assert.Contains("wbv:WBondProfileView", xaml, StringComparison.Ordinal);
+        Assert.Contains("lv:LayoutEditorView", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("LayoutRulerControl", xaml, StringComparison.Ordinal);
+
+        var hosted = Read("src/Ui/Views/Layout/LayoutEditorView.axaml");
+        foreach (var name in new[] { "HRuler", "VRuler" })
+            Assert.Contains($"ctrl:LayoutRulerControl x:Name=\"{name}\"", hosted, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -380,7 +401,7 @@ public class WBondToolbarAndRulersTests
     [Fact]
     public void TheProfileRulers_AreDrivenInNanometres()
     {
-        var source = Read("src/Ui/Views/WBond/WBondEditorView.axaml.cs");
+        var source = Read("src/Ui/Views/WBond/WBondProfileView.axaml.cs");
 
         Assert.Contains("NanometreDbuPerMicron = 1000", source, StringComparison.Ordinal);
         Assert.Contains("ProfileHRuler.SetUnits(NanometreDbuPerMicron", source, StringComparison.Ordinal);
@@ -408,21 +429,34 @@ public class WBondToolbarAndRulersTests
     }
 
     /// <summary>
-    /// The profile-plane combo is docked RIGHT (owner). A <c>WrapPanel</c> cannot right-align one of
-    /// its children, which is why the toolbar gained a <c>DockPanel</c> around it — asserted here
-    /// because deleting that wrapper would put the combo silently back in the flow.
+    /// The profile-plane combo is OVERLAID on the profile canvas, top right — not in the wBond editor's
+    /// toolbar (owner, 2026-08-17).
+    ///
+    /// <para>In the toolbar it did not exist at all in the dockable Wire Profile panel, where the setting
+    /// matters just as much. It belongs to the profile view, so it travels with it: one control, every
+    /// host. Top RIGHT because this canvas is read from the left — span increases rightwards and the
+    /// wires start at the left edge — so that corner is the one a control can sit in without covering
+    /// the geometry.</para>
     /// </summary>
     [Fact]
-    public void TheProfilePlaneCombo_IsDockedRight()
+    public void TheProfilePlaneCombo_IsOverlaidOnTheProfileCanvas()
     {
-        var xaml = EditorXaml();
+        Assert.DoesNotContain("ProfileAxisCombo", EditorXaml(), StringComparison.Ordinal);
 
-        int combo = xaml.IndexOf("x:Name=\"ProfileAxisCombo\"", StringComparison.Ordinal);
-        Assert.True(combo >= 0, "The profile-plane combo is gone.");
+        var profile = StripXmlComments(Read("src/Ui/Views/WBond/WBondProfileView.axaml"));
 
-        int dockRight = xaml.IndexOf("DockPanel.Dock=\"Right\"", combo, StringComparison.Ordinal);
-        Assert.True(dockRight >= 0 && dockRight - combo < 200,
-                    "The profile-plane combo is no longer docked to the right of the toolbar.");
+        int canvas = profile.IndexOf("x:Name=\"ProfileCanvas\"", StringComparison.Ordinal);
+        int combo  = profile.IndexOf("x:Name=\"ProfileAxisCombo\"", StringComparison.Ordinal);
+
+        Assert.True(canvas >= 0 && combo > canvas,
+                    "the plane control must be declared AFTER the canvas, so it paints over it");
+
+        // Its own Border is anchored top-right of the canvas.
+        int border = profile.LastIndexOf("<Border", combo, StringComparison.Ordinal);
+        Assert.True(border > canvas);
+        string element = profile[border..combo];
+        Assert.Contains("HorizontalAlignment=\"Right\"", element, StringComparison.Ordinal);
+        Assert.Contains("VerticalAlignment=\"Top\"", element, StringComparison.Ordinal);
     }
 
     /// <summary>Save and Save As are both in the toolbar, in that order.</summary>
@@ -646,7 +680,7 @@ public class WBondToolbarAndRulersTests
         var source = Read("src/Ui/WBond/WBondPanelViewModel.cs");
         Assert.DoesNotContain("HasMutuals ", source, StringComparison.Ordinal);
 
-        var xaml = EditorXaml();
+        var xaml = PanelXaml();
         Assert.DoesNotContain("{Binding Mutuals}", xaml, StringComparison.Ordinal);
         Assert.Contains("{Binding MutualPairs}", xaml, StringComparison.Ordinal);
     }
@@ -661,7 +695,7 @@ public class WBondToolbarAndRulersTests
     [Fact]
     public void TheExpandedCard_ListsItsRowsInOrder()
     {
-        var xaml = EditorXaml();
+        var xaml = PanelXaml();
 
         AssertOrder(xaml,
             "Text=\"Wires\"", "Text=\"Loop height\"", "Text=\"Span\"",
@@ -811,21 +845,30 @@ public class WBondToolbarAndRulersTests
     [Fact]
     public void AllFourGeometryRows_AreDoubleClickableIntoTheGroupPrompts()
     {
-        var xaml = EditorXaml();
+        var xaml = PanelXaml();
         foreach (var handler in new[] { "OnArrayLoopHeightDoubleTapped", "OnArraySpanDoubleTapped",
                                         "OnArrayDiameterDoubleTapped", "OnArrayMaterialDoubleTapped" })
             Assert.Contains($"DoubleTapped=\"{handler}\"", xaml, StringComparison.Ordinal);
 
-        var code = Read("src/Ui/Views/WBond/WBondEditorView.axaml.cs");
-        foreach (var prompt in new[] { "SetGroupLoopHeightAsync", "SetGroupSpanAsync",
-                                       "SetGroupDiameterAsync", "SetGroupMaterialAsync" })
-            Assert.Contains(prompt, code, StringComparison.Ordinal);
+        // Both routes land on the SAME shared prompts (WB39a/M3 moved them to WBondGroupEdits, since
+        // there are now three ways in — this panel inline, this panel as a dock tool, and the profile
+        // view's own context menu).
+        var code = Read("src/Ui/Views/WBond/WBondInductancePanelView.axaml.cs");
+        var menu = Read("src/Ui/Views/WBond/WBondProfileView.ContextMenu.cs");
+        foreach (var prompt in new[] { "SetLoopHeightAsync", "SetSpanAsync",
+                                       "SetDiameterAsync", "SetMaterialAsync" })
+        {
+            Assert.Contains("WBondGroupEdits." + prompt, code, StringComparison.Ordinal);
+            Assert.Contains("WBondGroupEdits." + prompt, menu, StringComparison.Ordinal);
+        }
 
         // The prompts take the array they act on — reading the CONTEXT MENU's captured array from the
         // panel's double-click would edit whichever group was last right-clicked.
-        var menu = Read("src/Ui/Views/WBond/WBondEditorView.ProfileMenu.cs");
-        Assert.Contains("SetGroupLoopHeightAsync(int arrayIndex)", menu, StringComparison.Ordinal);
-        Assert.Contains("SetGroupMaterialAsync(int arrayIndex)", menu, StringComparison.Ordinal);
+        var shared = Read("src/Ui/Views/WBond/WBondGroupEdits.cs");
+        Assert.Contains("SetLoopHeightAsync(Window? owner, WBondViewModel editor, int arrayIndex)",
+                        shared, StringComparison.Ordinal);
+        Assert.Contains("SetMaterialAsync(Window? owner, WBondViewModel editor, int arrayIndex)",
+                        shared, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -835,7 +878,7 @@ public class WBondToolbarAndRulersTests
     [Fact]
     public void TheSettableValues_AreNotSelectableTextBlocks()
     {
-        var xaml = EditorXaml();
+        var xaml = PanelXaml();
 
         foreach (var binding in new[] { "{Binding LoopHeight}", "{Binding Span}",
                                         "{Binding Diameter}", "{Binding Material}" })
@@ -855,13 +898,13 @@ public class WBondToolbarAndRulersTests
     [Fact]
     public void ThePromptSeed_IsTheMedianThePanelShows()
     {
-        var menu = Read("src/Ui/Views/WBond/WBondEditorView.ProfileMenu.cs");
+        var shared = Read("src/Ui/Views/WBond/WBondGroupEdits.cs");
 
-        Assert.Contains("SeedNm(arrayIndex, r => r.LoopHeightMm.Value)", menu, StringComparison.Ordinal);
-        Assert.Contains("SeedNm(arrayIndex, r => r.SpanMm.Value)", menu, StringComparison.Ordinal);
-        Assert.Contains("SeedNm(arrayIndex, r => r.DiameterMm.Value)", menu, StringComparison.Ordinal);
+        Assert.Contains("SeedNm(editor, arrayIndex, r => r.LoopHeightMm.Value)", shared, StringComparison.Ordinal);
+        Assert.Contains("SeedNm(editor, arrayIndex, r => r.SpanMm.Value)", shared, StringComparison.Ordinal);
+        Assert.Contains("SeedNm(editor, arrayIndex, r => r.DiameterMm.Value)", shared, StringComparison.Ordinal);
 
-        Assert.DoesNotContain("FirstWireOfGroup", menu, StringComparison.Ordinal);
+        Assert.DoesNotContain("FirstWireOfGroup", shared, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -871,7 +914,7 @@ public class WBondToolbarAndRulersTests
     [Fact]
     public void TheMutualRows_AreTheSameSizeAsASelfInductance()
     {
-        var xaml = EditorXaml();
+        var xaml = PanelXaml();
 
         int box = xaml.IndexOf("{Binding MutualPairs}", StringComparison.Ordinal);
         Assert.True(box >= 0, "The mutual box is gone.");

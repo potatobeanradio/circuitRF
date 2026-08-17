@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using Avalonia;
 using Avalonia.Input;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
@@ -89,4 +91,56 @@ public interface ILayoutCanvasOverlay
     /// <para>Defaulted, so an overlay that latches nothing needs no code.</para>
     /// </summary>
     void OnFocusLost() { }
+
+    /// <summary>
+    /// The overlay's own right-click items, prepended to the canvas's (WB39a).
+    ///
+    /// <para><b>This exists because the canvas is now SHARED and its context menu is built once.</b>
+    /// The wBond editor hosts <c>LayoutEditorView</c> rather than transcribing it, so there is exactly
+    /// one <c>ContextMenu</c> over the layout canvas and exactly one <c>Opening</c> handler — and the
+    /// wire commands (Select All Wires, Group Wires As…, Delete Vertex/Segment/Wire) have to reach it
+    /// from here rather than from a second menu the host declares. It is also what gives a wirebond
+    /// CELL (WB40) its wire menu in the ordinary Layout Editor, with no wBond-specific code in that
+    /// view at all.</para>
+    ///
+    /// <para><paramref name="host"/> is the canvas itself, offered only so an item that opens a dialog
+    /// can resolve the owning window (<c>TopLevel.GetTopLevel</c>). <paramref name="tolDbu"/> is the
+    /// canvas's own hit tolerance at the current zoom, handed down rather than re-derived so the menu
+    /// cannot offer to delete a vertex the click did not land on.</para>
+    ///
+    /// <para>Defaulted to nothing, so an overlay with no menu of its own needs no code.</para>
+    /// </summary>
+    IReadOnlyList<object> BuildContextMenuItems(
+        double worldX, double worldY, long tolDbu, LayoutEditorViewModel? layout, Visual host) => [];
+
+    /// <summary>
+    /// The overlay's OWN snap answer for the gesture it is currently running, or null when it is
+    /// running none or nothing is in range.
+    ///
+    /// <para><b>This exists because a consumed gesture stops the layout editor's snap marker dead.</b>
+    /// <see cref="LayoutCanvas"/> offers the overlay every press and move first, and anything it
+    /// consumes never reaches <c>LayoutEditorViewModel.OnPointerMoved</c> — so the marker the layout
+    /// editor computed on the last HOVER is neither updated nor cleared. Two owner-visible bugs come
+    /// straight out of that: the glyph freezes at the vertex a wire was grabbed by while the wire moves
+    /// away from it, and no glyph appears at all mid-way through drawing a wire, even though the wire's
+    /// own feet are being snapped the whole time.</para>
+    ///
+    /// <para>The canvas pushes this into the layout editor as a DISPLAY-ONLY marker, so one glyph
+    /// mechanism serves both gestures and the answer on screen is always the answer the geometry
+    /// actually used.</para>
+    /// </summary>
+    SnapCandidate? SnapMarker => null;
+
+    /// <summary>
+    /// Whether the press the overlay just consumed landed on nothing of its own.
+    ///
+    /// <para>The canvas clears the LAYOUT's selection for it. A click on empty space means "deselect"
+    /// whichever selection the user was holding, and in the wBond editor that press is the wire
+    /// marquee's — so without this, clicking empty space cleared the wire selection and left the layout
+    /// selection standing, with nothing on screen explaining why (owner, 2026-08-17).</para>
+    ///
+    /// <para>Only ever true for a press the overlay CONSUMED: one it declined already reaches the
+    /// layout editor, which clears its own selection exactly as it always did.</para>
+    /// </summary>
+    bool ConsumedPressWasEmptySpace => false;
 }

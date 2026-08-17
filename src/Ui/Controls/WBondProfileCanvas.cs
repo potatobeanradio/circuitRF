@@ -53,6 +53,11 @@ public sealed class WBondProfileCanvas : Control
         {
             if (_viewModel is not null) _viewModel.ReadoutChanged -= OnReadoutChanged;
 
+            // Unsubscribed FIRST. The view model is re-pointed on every document activation now that
+            // this canvas is also a dock tool (wbond.md §10.1), and a handler left on a previous editor
+            // repaints this canvas for a design it no longer shows — and keeps that design alive.
+            if (_viewModel is not null) _viewModel.ReadoutChanged -= OnReadoutChanged;
+
             SetAndRaise(ViewModelProperty, ref _viewModel, value);
             _controller = value is null ? null : new WBondPointerController(value);
 
@@ -113,8 +118,38 @@ public sealed class WBondProfileCanvas : Control
     /// <summary>
     /// The grid pitch in nanometres, or 0 for no grid — the same snap distance the layout view's own
     /// grid is drawn from, pushed in by the view so one Snap box governs both canvases.
+    ///
+    /// <para><b>It is what points LAND on here, not only what is drawn.</b> This canvas drew the grid and
+    /// then ignored it: a vertex dragged in the profile view went wherever the pixel said, and a wire
+    /// drawn here placed both feet off-grid (owner, 2026-08-17: "the Wire Profile view is not respecting
+    /// the snap resolution"). That is precisely the failure the layout overlay's own note warns about —
+    /// "the metadata bar would show a Snap distance, both canvases would draw a grid at that pitch, and
+    /// the wires would ignore both" — guarded there when it was written, and never guarded here.</para>
+    ///
+    /// <para><b>Grid only, deliberately.</b> The layout overlay snaps to GEOMETRY first and the grid
+    /// second, because a pad corner is a thing to land on. This canvas's axes are span and z: there is no
+    /// artwork in that plane to snap to, so the grid is the whole rule.</para>
     /// </summary>
     public long GridPitchNm { get; set; }
+
+    /// <summary>
+    /// Rounds a span or z coordinate onto <see cref="GridPitchNm"/>. Both axes take the same pitch — it
+    /// is one Snap distance, and a profile view whose horizontal and vertical steps differed would be
+    /// drawing a grid it did not use either.
+    ///
+    /// <para>Suppressed while Alt is held, which is the app-wide rule (R-snp-11: Alt suppresses snap,
+    /// never enables it), and a no-op at pitch 0.</para>
+    /// </summary>
+    private double SnapNm(double valueNm, KeyModifiers modifiers = KeyModifiers.None) =>
+        SnapToPitch(valueNm, GridPitchNm, modifiers);
+
+    /// <inheritdoc cref="SnapNm"/>
+    /// <remarks>Static and internal so the rule itself is testable without a canvas or an Avalonia app.</remarks>
+    internal static double SnapToPitch(double valueNm, long pitchNm, KeyModifiers modifiers)
+    {
+        if (pitchNm <= 0 || (modifiers & KeyModifiers.Alt) != 0) return valueNm;
+        return Math.Round(valueNm / pitchNm) * pitchNm;
+    }
 
     // ── The Wire tool, in THIS view (owner, 2026-08-16) ───────────────────────
     //
@@ -161,7 +196,9 @@ public sealed class WBondProfileCanvas : Control
     {
         if (_viewModel is null) return false;
 
-        if (ProfileProjection.Unproject(span, z, SpanMode, Azimuth) is not { } world)
+        // The SAME snapped point the ghost was drawn from. Snapping only one of the two would place a
+        // wire that does not match the ghost the user was looking at when they clicked.
+        if (ProfileProjection.Unproject(SnapNm(span), SnapNm(z), SpanMode, Azimuth) is not { } world)
         {
             _viewModel.ReportRefusal(
                 "The Wire tool needs a fixed profile plane — pick XZ, YZ or an angle in the toolbar. " +
@@ -190,7 +227,7 @@ public sealed class WBondProfileCanvas : Control
     private void UpdateWireDrawGhost(double span, double z)
     {
         if (_viewModel is null || _drawStart is not { } start) return;
-        if (ProfileProjection.Unproject(span, z, SpanMode, Azimuth) is not { } world) return;
+        if (ProfileProjection.Unproject(SnapNm(span), SnapNm(z), SpanMode, Azimuth) is not { } world) return;
 
         _ghost = _viewModel.Design.Profiles.FirstOrDefault()
                           ?.CreateWire(start, world, WBondDefaults.DiameterNm, WBondDefaults.Material);
@@ -501,8 +538,12 @@ public sealed class WBondProfileCanvas : Control
         _pressScreenY = pos.Y;
         _dragStartSpan = span;
         _dragStartZ = z;
-        _lastZNm = z;
-        _lastSpanNm = span;
+
+        // The baseline is the SNAPPED press point. Measured from the raw one, the first frame's delta
+        // carries whatever sub-step offset the hand happened to press at, and the whole drag is off-grid
+        // by that amount — the same trap the layout overlay records at its own press.
+        _lastZNm = SnapNm(z, e.KeyModifiers);
+        _lastSpanNm = SnapNm(span, e.KeyModifiers);
 
         // Is the thing under the pointer ALREADY selected? If so the press means "pick this selection
         // up", not "start a new one" — see PressKeepingSelection.
@@ -638,7 +679,15 @@ public sealed class WBondProfileCanvas : Control
         double span = ScreenToSpan(pos.X);
         double z = ScreenToZ(pos.Y);
 
+        // Alt-drag SCALES rather than translates, so there is no point to place — and Alt is the snap
+        // suppressor everywhere else in the app, which is the same answer reached from the other side.
         if (_altDrag) { AltDragFrame(span, z); return; }
+
+        // The SNAPPED cursor, with the delta measured from the last snapped position — the same shape the
+        // layout overlay uses, so a drag steps grid point to grid point instead of drifting a fraction of
+        // a step per frame.
+        span = SnapNm(span, e.KeyModifiers);
+        z    = SnapNm(z,    e.KeyModifiers);
 
         long dz = (long)Math.Round(z - _lastZNm);
         long dSpan = (long)Math.Round(span - _lastSpanNm);
