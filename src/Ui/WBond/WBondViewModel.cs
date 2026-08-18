@@ -341,7 +341,15 @@ public sealed partial class WBondViewModel : ObservableObject
                         dyOrDz == 0 ? SelectionMotion.HorizontalRigidTranslation : SelectionMotion.General);
     }
 
-    /// <summary>Alt + vertical drag on a profile curve — scales the whole bound array (WB24a/c).</summary>
+    /// <summary>
+    /// Scales the whole bound array's height by a factor (WB24a/c) — <b>a profile-CURVE gesture, and
+    /// no gesture reaches it today</b>.
+    ///
+    /// <para>Kept because §6.2's profile-curve drag is still specified; <b>alt-drag on a WIRE is not
+    /// it</b> and deliberately no longer fans out (owner, 2026-08-17 — see
+    /// <see cref="ScaleSelection"/>). Anything wiring this to a gesture again needs to be sure the
+    /// user is dragging the ARRAY's curve and not one wire.</para>
+    /// </summary>
     public int ScaleProfileHeight(string profileName, double factor)
     {
         var profile = _design.ProfileByName(profileName);
@@ -353,7 +361,8 @@ public sealed partial class WBondViewModel : ObservableObject
         return moved;
     }
 
-    /// <summary>Alt + horizontal drag on a profile curve — scales span by FACTOR across the array (WB24b/c).</summary>
+    /// <summary>Scales span by FACTOR across the bound array (WB24b/c). The span counterpart of
+    /// <see cref="ScaleProfileHeight"/>, and reached by no gesture today for the same reason.</summary>
     public int ScaleProfileSpan(string profileName, double factor, bool moveOutputFoot = true)
     {
         var profile = _design.ProfileByName(profileName);
@@ -375,54 +384,67 @@ public sealed partial class WBondViewModel : ObservableObject
     /// leaves that quantity exactly alone, so a purely vertical or purely horizontal drag still does
     /// only what it looks like.</para>
     ///
-    /// <para><b>A bound wire scales its whole array by FACTOR</b> (WB24c / D4) — never to a common
-    /// value, which would destroy a deliberate fan-out. A wire that follows no profile scales on its
-    /// own, which is what makes alt-drag work at all on a detached wire; it previously did nothing
-    /// and said nothing.</para>
+    /// <para><b>The unit is the ARRAY, or the selection, and the caller says which</b> — see
+    /// <paramref name="wholeArray"/>. Never the <see cref="LoopProfile"/>, which is where this went
+    /// wrong and is worth stating plainly: a profile is an editor-internal SHARING mechanism a user
+    /// never sees (O-10), an array is the bond group they are looking at, and the two are not the same
+    /// set. <c>WireEdits.ScaleBoundWires</c> rescaled every wire following the profile — which, in a
+    /// design built from <c>WBondEmbedding.DefaultDesign</c>, is every wire in the design, because that
+    /// creates ONE profile and every array references it. So alt-dragging a wire in G1 moved G2's
+    /// wires too (owner, 2026-08-17).</para>
+    ///
+    /// <para><b>Nothing writes the profile any more either</b>, which was the second half of the same
+    /// defect (the old path wrote the scaled height back onto the shared <see cref="LoopProfile"/>).
+    /// That is the same correction <c>ControllingParameters</c> took hours earlier — the owner's
+    /// <i>"its setting should never affect the geometry that the user authors"</i>. It is safe because
+    /// a loop height is a property of the WIRE (<c>Wire.LoopHeightNm</c> is its own max z minus min z)
+    /// and the profile view's envelope band is computed from the bound WIRES rather than from the
+    /// profile's nominal shape, so a rescaled wire needs no detach to stay consistent.</para>
+    ///
+    /// <para>Scaling by FACTOR rather than to a common value is unchanged and still matters: an array
+    /// whose wires deliberately have different spans — a fan-out from a common pad — keeps their
+    /// ratios however many of them move.</para>
     /// </summary>
     /// <param name="moveOutputFoot">
     /// Which foot the span scale moves. The caller decides it from WHICH END the user grabbed — the
     /// pinned foot is the far one — matching the rotate tool's own rule (WB26a).
     /// </param>
+    /// <param name="wholeArray">
+    /// True to promote the selection to <b>every wire in each array it touches</b> — what the PROFILE
+    /// view's alt-drag means (owner, 2026-08-17: <i>"it needs to change ALL the wires in the group at
+    /// once"</i>), and what WB24c/D4 meant by "the whole bound array" before a profile was used as a
+    /// proxy for one. That view draws a group as one superimposed shape under a single envelope band,
+    /// and a bond group is one loop program on one bonder: reshaping one wire of it and leaving its
+    /// siblings behind is not a thing the machine can do.
+    ///
+    /// <para>False for the LAYOUT view, where each wire is drawn at its own place among the pads and an
+    /// alt-drag stretches THAT wire's span onto THAT pad — the wires of an array are not
+    /// interchangeable there, because each one lands somewhere different.</para>
+    /// </param>
     /// <returns>How many wires were rescaled.</returns>
-    public int ScaleSelection(double spanFactor, double heightFactor, bool moveOutputFoot)
+    public int ScaleSelection(double spanFactor, double heightFactor, bool moveOutputFoot,
+                              bool wholeArray = false)
     {
         var touched = TouchedWireList();
         if (touched.Count == 0) return 0;
         if (spanFactor == 1.0 && heightFactor == 1.0) return 0;
 
+        if (wholeArray) touched = ExpandToArrays(touched);
+
         var wires = _design.AllWires().ToList();
         bool pushed = PushUndo();
 
-        var moved = new HashSet<int>();
+        int moved = WireEdits.ScaleWires(
+            touched.Select(i => wires[i]), heightFactor, spanFactor, moveOutputFoot);
 
-        foreach (string profileName in touched
-                     .Select(i => wires[i].ProfileBinding)
-                     .Where(n => n is not null)
-                     .Select(n => n!)
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (_design.ProfileByName(profileName) is not { } profile) continue;
-
-            WireEdits.ScaleBoundWires(_design, profile, heightFactor, spanFactor, moveOutputFoot);
-            foreach (int i in BoundWireIndices(profileName)) moved.Add(i);
-        }
-
-        var free = touched.Where(i => wires[i].ProfileBinding is null).ToList();
-        if (free.Count > 0)
-        {
-            WireEdits.ScaleWires(free.Select(i => wires[i]), heightFactor, spanFactor, moveOutputFoot);
-            foreach (int i in free) moved.Add(i);
-        }
-
-        if (moved.Count == 0)
+        if (moved == 0)
         {
             if (pushed) DropUndoEntry();   // nothing happened; do not leave a no-op on the undo stack
             return 0;
         }
 
-        CommitPointMove([.. moved]);
-        return moved.Count;
+        CommitPointMove([.. touched]);
+        return moved;
     }
 
     /// <summary>
@@ -475,6 +497,53 @@ public sealed partial class WBondViewModel : ObservableObject
 
         CommitPointMove(touched);
         return touched.Count;
+    }
+
+    /// <summary>
+    /// Maps every point of the named wires through <paramref name="mapXy"/>, leaving z alone —
+    /// <b>and pushes NO undo entry of its own</b>.
+    ///
+    /// <para>The primitive behind the Layout Editor's own rotate and mirror over a wirebond cell
+    /// (owner, 2026-08-17: <i>"map the rotate button command from the hosted layout … want this to
+    /// work just like the layout primitives work"</i>). Those transforms are one rigid body over
+    /// shapes, instances AND wires, and they have to be ONE undo entry — so the caller wraps this in
+    /// its own <c>IUiCommand</c> on the LAYOUT's stack and this must not add a second entry to the
+    /// wire stack. Every other edit here pushes its own, which is why this one says so twice.</para>
+    ///
+    /// <para>x and y only: an in-plane rotation or mirror of the layout says nothing about how high a
+    /// wire loops, and carrying z through the map would flatten a loop into the plane the moment a
+    /// user rotated a pad.</para>
+    /// </summary>
+    /// <returns>How many wires were transformed.</returns>
+    public int MapWirePointsXy(IReadOnlyCollection<int> wireIndices, Func<long, long, (long X, long Y)> mapXy)
+    {
+        ArgumentNullException.ThrowIfNull(wireIndices);
+        ArgumentNullException.ThrowIfNull(mapXy);
+        if (wireIndices.Count == 0) return 0;
+
+        var wires = _design.AllWires().ToList();
+        var moved = new List<int>(wireIndices.Count);
+
+        foreach (int index in wireIndices)
+        {
+            if (index < 0 || index >= wires.Count) continue;
+
+            var wire = wires[index];
+            for (int i = 0; i < wire.Points.Count; i++)
+            {
+                var p = wire.Points[i];
+                var (x, y) = mapXy(p.X, p.Y);
+                wire.Points[i] = new Point3(x, y, p.Z);
+            }
+            moved.Add(index);
+        }
+
+        if (moved.Count == 0) return 0;
+
+        // A rigid map moves whole points and adds none, so this is the DRAG path — a rebuild here
+        // would cost two orders of magnitude for an answer that is identical.
+        CommitPointMove(moved);
+        return moved.Count;
     }
 
     /// <summary>
@@ -800,6 +869,30 @@ public sealed partial class WBondViewModel : ObservableObject
     {
         int count = _design.AllWires().Count();
         return [.. Selection.TouchedWires().Where(i => i >= 0 && i < count)];
+    }
+
+    /// <summary>
+    /// Promotes a set of wire indices to <b>every wire in each ARRAY any of them belongs to</b> — the
+    /// profile view's "the whole group at once" (see <see cref="ScaleSelection"/>'s <c>wholeArray</c>).
+    ///
+    /// <para>Through <c>WireMesh.ArrayOfWire</c>, which is the same flat-index-to-array mapping
+    /// <see cref="SelectArray"/> uses, so "the group" means one thing in this class. Deliberately NOT
+    /// the wires sharing a <see cref="LoopProfile"/>: that is an editor-internal sharing mechanism and
+    /// routinely spans every array in the design, which is the bug this replaced.</para>
+    /// </summary>
+    private List<int> ExpandToArrays(IReadOnlyCollection<int> seed)
+    {
+        var arrays = new HashSet<int>();
+        foreach (int wire in seed)
+            if (wire >= 0 && wire < _mesh.WireCount) arrays.Add(_mesh.ArrayOfWire[wire]);
+
+        if (arrays.Count == 0) return [.. seed];
+
+        var expanded = new List<int>();
+        for (int wire = 0; wire < _mesh.WireCount; wire++)
+            if (arrays.Contains(_mesh.ArrayOfWire[wire])) expanded.Add(wire);
+
+        return expanded;
     }
 
     /// <summary>Reverses every selected wire's current direction (WB26b / D7).</summary>

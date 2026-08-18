@@ -305,7 +305,7 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         model.Components.Add(comp);
 
         // Two arrays, two pins each. WBondPlacement.TryBuild seeds the SHIPPED defaults, and the
-        // floating reference pin is off among them (owner, 2026-08-16).
+        // external reference pin is off among them (owner, 2026-08-16).
         Assert.Equal(4, model.BuildRenderModel().Model.Components.Single().Ports.Count);
 
         File.Delete(abs);
@@ -419,7 +419,7 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.Equal(SymbolKind.WBond, comp.Symbol);
 
         // Two arrays, two pins each: an imported component gets the shipped defaults, and the
-        // floating reference pin is off among them (owner, 2026-08-16).
+        // external reference pin is off among them (owner, 2026-08-16).
         Assert.Equal(4, model.BuildRenderModel().Model.Components.Single().Ports.Count);
     }
 

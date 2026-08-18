@@ -3,6 +3,7 @@ using System.IO;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.Layout;
 
@@ -45,6 +46,131 @@ public sealed partial class LayoutEditorViewModel
     /// </summary>
     private bool _wireDirty;
 
+    // ── The wire tool, in the ordinary Layout Editor (owner, 2026-08-17) ──────────────────────────
+    //
+    // The overlay has had WireDrawArmed since WB-C; only the wBond editor ever set it, through its own
+    // WBondTool enum. This is the Layout Editor's setter, and it is a property on the SESSION rather
+    // than on the view because two things have to agree with it: the toolbar's own toggle state, and
+    // Escape — and Escape is handled in the view model, where every other cancel already lives.
+
+    /// <summary>
+    /// Whether the draw-a-wire tool is armed (§6.4): click a start foot, click an end foot, with a
+    /// live ghost of the generated loop in between.
+    ///
+    /// <para><b>Mutually exclusive with the LAYOUT tools, in both directions.</b> One canvas has two
+    /// tool sets over it, and the overlay gives an armed layout tool first refusal on every press
+    /// (<c>LayoutToolArmed</c>) — so arming this while Rectangle was armed would produce a tool that
+    /// looks armed and silently never sees a click. Arming it selects the Select tool; arming a layout
+    /// tool disarms it (<see cref="LayoutEditorViewModel.OnActiveToolChanged"/>).</para>
+    ///
+    /// <para>Refused, rather than merely inert, on a layout with no wire design: there is nowhere to
+    /// put a wire, and a toggle that stays down having done nothing is worse than one that will not go
+    /// down. The toolbar button is hidden in that case anyway (it is gated exactly like the two panel
+    /// buttons), so this is the belt to that braces.</para>
+    /// </summary>
+    [ObservableProperty] private bool _wireDrawArmed;
+
+    partial void OnWireDrawArmedChanged(bool value)
+    {
+        if (value && WireOverlay is null) { WireDrawArmed = false; return; }
+
+        if (value)
+        {
+            ActiveTool = Tool.Select;
+            WireRotateArmed = false;   // one armed thing at a time, across BOTH tool sets
+        }
+
+        if (WireOverlay is { } overlay)
+        {
+            overlay.WireDrawArmed = value;
+            overlay.NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Drops the WIRE selection, if this session has wires. The layout's own shapes and instances are
+    /// <see cref="LayoutEditorViewModel"/>'s to clear; this is the half it cannot reach.
+    /// </summary>
+    private void ClearWireSelection()
+    {
+        if (WireEditor is not { } editor || editor.Selection.IsEmpty) return;
+
+        editor.ClearSelection();
+        WireOverlay?.NotifyChanged();
+    }
+
+    /// <summary>
+    /// True while the wire layer has something Escape should cancel — either wire tool armed, or a
+    /// wire half-placed (one foot down, waiting for the second click).
+    /// </summary>
+    private bool WireOperationInProgress =>
+        WireDrawArmed || WireRotateArmed || WireOverlay?.IsPlacingWire == true;
+
+    /// <summary>
+    /// The wires the layout's own Rotate and Mirror should carry — flat indices, in
+    /// <c>WBondDesign.AllWires</c> order, and empty for every layout that has none.
+    /// </summary>
+    internal IReadOnlyList<int> SelectedWireIndices =>
+        WireEditor is { } editor ? [.. editor.Selection.TouchedWires()] : [];
+
+    /// <summary>
+    /// The extent of those wires in the layout's own DBU, or <see cref="Bbox.Empty"/> for none — so a
+    /// rigid transform can pivot about the WHOLE selection rather than about the artwork half of it.
+    /// </summary>
+    private Bbox SelectedWireBbox(IReadOnlyList<int> wireIndices)
+    {
+        if (wireIndices.Count == 0 || WireEditor is not { } editor) return Bbox.Empty;
+
+        var wires = editor.Design.AllWires().ToList();
+        var bbox = Bbox.Empty;
+
+        foreach (int index in wireIndices)
+        {
+            if (index < 0 || index >= wires.Count) continue;
+
+            foreach (var p in wires[index].Points)
+            {
+                long x = WBondSnap.ToDbu(p.X, Model.DbuPerMicron);
+                long y = WBondSnap.ToDbu(p.Y, Model.DbuPerMicron);
+                bbox = bbox.Union(new Bbox(x, y, x, y));
+            }
+        }
+
+        return bbox;
+    }
+
+    /// <summary>
+    /// Whether the ANGLE-WIRE tool is armed: grab a wire near one end and swing it, with the opposite
+    /// end anchored (WB26a).
+    ///
+    /// <para><b>The implementation was already here and had no way in</b> (owner, 2026-08-17: "there
+    /// is probably already code for this that has been implemented, but we just have no UI entry
+    /// point") — <c>WBondLayoutOverlay.WireRotateArmed</c> and its whole swing, pivot and 45°-snap
+    /// path, reachable until now only from the wBond editor's own tool enum.</para>
+    ///
+    /// <para>Distinct from the layout's R, which turns the selection 90° as a rigid body exactly as it
+    /// turns a rectangle. This is the one that makes an ANGLED wire: the pivot is the end further from
+    /// the grab, so the gesture needs no mode switch beyond being armed.</para>
+    /// </summary>
+    [ObservableProperty] private bool _wireRotateArmed;
+
+    partial void OnWireRotateArmedChanged(bool value)
+    {
+        if (value && WireOverlay is null) { WireRotateArmed = false; return; }
+
+        if (value)
+        {
+            ActiveTool = Tool.Select;   // …and the layout's own tools stand down
+            WireDrawArmed = false;      // …as does the other wire tool: one armed thing at a time
+        }
+
+        if (WireOverlay is { } overlay)
+        {
+            overlay.WireRotateArmed = value;
+            overlay.NotifyChanged();
+        }
+    }
+
     /// <summary>
     /// Attaches <paramref name="design"/> read from <paramref name="wBondPath"/> as this session's
     /// wire layer.
@@ -66,6 +192,13 @@ public sealed partial class LayoutEditorViewModel
             ReferenceTechnology = Technology,
             ReferenceBaseDir = InstanceBaseDir,
             GridPitchNm = GridPitchNm(),
+
+            // Settings ▸ Wirebonds ▸ Wire z-height. The layout view has no z axis for the user to
+            // have meant anything by, so a drawn wire's feet take the setting — the same z a new
+            // wBond's own wires are created at, which is the whole point of it being one setting
+            // (owner, 2026-08-17). Read at attach: a preference change applies to the next document
+            // opened, like every other creation default.
+            FootZNm = WBondDefaults.FootZNm,
 
             // An armed drawing tool takes the canvas — the overlay is offered every press first, so
             // without this arming Rectangle over a wirebond cell would start a wire marquee.
@@ -98,7 +231,8 @@ public sealed partial class LayoutEditorViewModel
 
         PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(SnapDbu) or nameof(DisplayUnit))
+            if (e.PropertyName is nameof(SnapDbu) or nameof(DisplayUnit)
+                               or nameof(GeometrySnapEnabled) or nameof(IncludeIntersectionsEnabled))
                 PushLayoutSnapAndUnitToWires();
         };
 
@@ -137,6 +271,56 @@ public sealed partial class LayoutEditorViewModel
     /// fill — a wire count change invalidates both — and raises <c>DirtyChanged</c>, which is what marks
     /// the layout dirty so the merged design is actually written on the next save.</para>
     /// </summary>
+    /// <summary>
+    /// Gives this session a wire layer if it has none, and returns the editor either way.
+    ///
+    /// <para><b>Pasting wires into a layout that has never held any is the case this exists for</b>
+    /// (owner, 2026-08-17: <i>"I copied wires and pcells from a hosted layout and pasted them into a
+    /// fresh .clay, but the wires did not get pasted in"</i>). The paste path required a wire editor to
+    /// already be there and silently dropped the wire half when it was not — which is every ordinary
+    /// layout, since a cell only has one once something has put wires in it.</para>
+    ///
+    /// <para><b>An EMPTY design, not the shipped default one.</b> The caller is about to add the wires
+    /// it is carrying; seeding a default wire first would leave a spare one nobody asked for, in a
+    /// group nobody named.</para>
+    ///
+    /// <para>This turns an ordinary layout into a WIREBOND CELL (WB40) — on the next save it gains a
+    /// <c>.wBond</c> beside its <c>.clay</c>, and with it the wire toolbar buttons and the two panels.
+    /// That is the honest consequence of putting wires in a layout, and it is REPORTED rather than
+    /// left to be discovered.</para>
+    /// </summary>
+    /// <param name="note">What to tell the user when a layer is actually created; null to say nothing.</param>
+    internal WBondViewModel? EnsureWireLayer(string? note = null)
+    {
+        if (WireEditor is { } existing) return existing;
+
+        // Empty when the layout has never been saved — RetargetWiresForSaveAs fills it in at the first
+        // save, exactly as it does for a palette drop onto a scratch document.
+        string path = CurrentLayoutPath is { Length: > 0 } clay
+            ? Path.ChangeExtension(clay, ".wBond")
+            : "";
+
+        AttachWireDesign(new WBondDesign(), path);
+        MarkWiresDirty();
+
+        if (note is { Length: > 0 }) _messageSink?.Info(note);
+
+        WireLayerAdded?.Invoke();
+        return WireEditor;
+    }
+
+    /// <summary>
+    /// Marks the wire layer as holding unsaved edits. Needed by a caller that ATTACHED a design it
+    /// just built rather than one it read from disk (the palette drop, WB40b): attaching alone leaves
+    /// the session clean, so the wires would be on screen and absent from the file after a save.
+    /// </summary>
+    internal void MarkWiresDirty()
+    {
+        if (WireDesign is null) return;
+        _wireDirty = true;
+        IsDirty = true;
+    }
+
     public void NotifyWireDesignChangedExternally()
     {
         if (WireEditor is not { } editor) return;
@@ -149,12 +333,30 @@ public sealed partial class LayoutEditorViewModel
     private long GridPitchNm() => SnapDbu > 0 ? WBondSnap.ToNm(SnapDbu, Model.DbuPerMicron) : 0;
 
     /// <summary>
-    /// Gives the wires this layout's snap pitch and display unit — the grid both the overlay and the
-    /// profile view draw, and the unit every wire readout is formatted in.
+    /// Gives the wires this layout's snap settings and display unit — the grid both the overlay and the
+    /// profile view draw, the two geometry-snap toggles, and the unit every wire readout is formatted
+    /// in.
+    ///
+    /// <para><b>The two toggles were missing entirely</b> (owner, 2026-08-17: <i>"geometry snap toggle
+    /// is not respected in the wBond layout host"</i>). The overlay's own defaults are ON and
+    /// intersections-off, and nothing here ever wrote them, so <c>S</c>/<c>F3</c> and the Include
+    /// Intersections toggle governed every shape in the view except the wires. There is one snap
+    /// control set in this editor and it governs the wires too — the same rule the Snap box and the
+    /// Unit box already follow.</para>
     /// </summary>
     private void PushLayoutSnapAndUnitToWires()
     {
-        if (WireOverlay is { } overlay) overlay.GridPitchNm = GridPitchNm();
+        if (WireOverlay is { } overlay)
+        {
+            overlay.GridPitchNm = GridPitchNm();
+            overlay.GeometrySnapEnabled = GeometrySnapEnabled;
+            overlay.IncludeIntersections = IncludeIntersectionsEnabled;
+
+            // The layout recomputes its marker on the toggle rather than waiting for the next pointer
+            // move (RecomputeSnapStateImmediate, R-snp-7) — so the wire layer has to repaint on it too,
+            // or a stale snap glyph sits on screen saying the toggle did nothing.
+            overlay.NotifyChanged();
+        }
 
         if (WireEditor is { } editor
             && WBondDocumentViewModel.ToWBondUnit(DisplayUnit) is { } unit
@@ -281,7 +483,14 @@ public sealed partial class LayoutEditorViewModel
     }
 
     /// <summary>
-    /// Writes the wire layer back beside the <c>.clay</c>, if it has one and it changed.
+    /// Raised when a save DELETED the <c>.wBond</c> sidecar because the layout no longer has any
+    /// wires — carries the path that is now gone, so the project tree can drop the node.
+    /// </summary>
+    public event Action<string>? WireSidecarRemoved;
+
+    /// <summary>
+    /// Writes the wire layer back beside the <c>.clay</c>, if it has one and it changed — or
+    /// <b>deletes it when the layout has no wires left</b>.
     ///
     /// <para>Called from <see cref="MarkSaved"/>, which every save path in the application funnels
     /// through — the workspace writes sub-cell sessions with a bare
@@ -289,22 +498,60 @@ public sealed partial class LayoutEditorViewModel
     /// writer would miss half of them. A failure is reported through the same
     /// <see cref="SaveError"/> seam a failed <c>.clay</c> write uses and does NOT clear the flag, so
     /// the next save tries again rather than the edits being quietly lost.</para>
+    ///
+    /// <h3>Why the empty design deletes the file rather than writing an empty one</h3>
+    /// <para>Owner, 2026-08-17: <i>"I recommend that the .wBond file gets removed. This helps keep the
+    /// workspace clean and it also helps the .clay not have the wBond-specific buttons in the toolbar
+    /// on its next document open."</i> A file stating "no wires" is exactly a file that should not
+    /// exist: <see cref="WBond.WBondCell"/> resolves a layout's wires by the file's PRESENCE, so an
+    /// empty one leaves the cell a wirebond cell for ever — three toolbar buttons, two panels
+    /// following it, and a DRC assembly section, all about wires there are none of.</para>
+    ///
+    /// <h3>Undo still works, and that is why this is on the SAVE and not on the delete</h3>
+    /// <para>The owner's own concern (<i>"my only concern with that is that user must be able to
+    /// perform undo/redo"</i>). Deleting the last wire does not detach anything: the session keeps its
+    /// <see cref="WireEditor"/>, its overlay and — the part that matters — its wire undo history, so
+    /// Ctrl+Z brings the wires back in memory, raises <c>DirtyChanged</c>, and the next save writes the
+    /// file again. The file mirrors the SAVED state of the layout, which is the only state it has ever
+    /// claimed to mirror; nothing is lost that was not already saved as absent.</para>
     /// </summary>
     private void SaveWireDesignIfDirty()
     {
         if (!_wireDirty) return;
         if (WireDesign is not { } design || WireDesignPath is not { Length: > 0 } path) return;
 
+        bool removed = false;
+
         try
         {
-            WBondIo.WriteFile(path, design);
+            if (design.WireCount > 0)
+            {
+                WBondIo.WriteFile(path, design);
+            }
+            else if (File.Exists(path))
+            {
+                File.Delete(path);
+                removed = true;
+            }
         }
         catch (Exception ex)
         {
-            SaveError?.Invoke($"Couldn't save wirebonds to '{path}': {ex.Message}");
+            SaveError?.Invoke(design.WireCount > 0
+                ? $"Couldn't save wirebonds to '{path}': {ex.Message}"
+                : $"Couldn't remove the now-empty '{path}': {ex.Message}");
             return;
         }
 
         _wireDirty = false;
+
+        if (!removed) return;
+
+        // Said, not silent: a file disappearing from the user's cell folder is a thing they should be
+        // able to read about afterwards, and the sentence also names what changes at the next open.
+        _messageSink?.Info(
+            $"Removed '{Path.GetFileName(path)}' — this layout has no wirebond wires left. " +
+            "Its wire tools and panels will be absent the next time it is opened.");
+
+        WireSidecarRemoved?.Invoke(path);
     }
 }

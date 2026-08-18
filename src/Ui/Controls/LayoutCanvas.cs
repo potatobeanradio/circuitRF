@@ -702,6 +702,17 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
+        // A wBond produces WIRES, not artwork (WB40b) — there is no generator to resolve and no ghost
+        // to show, so it is answered before the generator test below, which would (correctly) refuse
+        // it. See LayoutEditorViewModel.CommitWBondDrop.
+        if (payload.Kind == SymbolKind.WBond)
+        {
+            e.DragEffects = CanDropWBondHere(vm) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+            vm.CancelPaletteDragGhost();
+            return;
+        }
+
         // R-L5-8: only a component with a registered PCell generator is droppable — the cursor says
         // no before release for anything else (a Term, a Var, ...).
         if (!vm.CanDropPaletteComponent(payload.Kind, payload.PortCount))
@@ -738,11 +749,33 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
+        if (payload.Kind == SymbolKind.WBond)
+        {
+            if (!CanDropWBondHere(vm)) return;
+            vm.CommitWBondDrop(sx, sy);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
         if (!vm.CanDropPaletteComponent(payload.Kind, payload.PortCount)) return;
         vm.CommitPaletteDrop(payload.Kind, payload.PortCount, sx, sy);
         e.Handled = true;
         InvalidateVisual();
     }
+
+    /// <summary>
+    /// Whether a wBond tile may be dropped on THIS canvas.
+    ///
+    /// <para>The view model's own answer, plus one question only the canvas can ask: <b>are the wires
+    /// on screen this session's, or a HOST's?</b> The wBond editor hosts this canvas and puts its own
+    /// document's wires over it (<c>LayoutEditorView.CanvasOverlay</c> outranks the frame's), so a
+    /// drop there would attach a SECOND, invisible wire design to the reference layout — saved to disk
+    /// and never drawn, because the host's overlay is the one that renders.</para>
+    /// </summary>
+    private bool CanDropWBondHere(LayoutEditorViewModel vm) =>
+        vm.CanDropWBond()
+        && (_canvasOverlay is null || ReferenceEquals(_canvasOverlay, vm.WireOverlay));
 
     private void OnPaletteDragLeave(object? sender, DragEventArgs e)
     {

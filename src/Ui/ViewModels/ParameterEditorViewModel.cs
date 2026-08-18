@@ -433,10 +433,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
 
                 // A wBond's own panel owns the parameters that are not text — see
-                // IsWBondPanelParameter for the list and the reason each is on it. `Temp`,
-                // `GroundPlane`, and the unsuffixed `LoopHeight`/`Diameter` are ordinary expression
-                // values and stay as generic rows, which is what makes a VAR reference typable in
-                // them (WB44 property 4).
+                // IsWBondPanelParameter for the list and the reason each is on it. `Temp` and the
+                // unsuffixed `LoopHeight`/`Diameter` are ordinary expression values and stay as
+                // generic rows, which is what makes a VAR reference typable in them (WB44 property
+                // 4). `GroundPlane` left them on 2026-08-17: it is read as a BOOLEAN, so a picker
+                // states the three values that work instead of a box that accepts anything.
                 if (comp.Symbol == SymbolKind.WBond && IsWBondPanelParameter(param.Name)) continue;
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;

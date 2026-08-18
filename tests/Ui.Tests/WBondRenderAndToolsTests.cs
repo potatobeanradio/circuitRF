@@ -426,6 +426,17 @@ public class WBondRenderAndToolsTests
     /// <summary>
     /// <c>wBond.WireVertex</c> is a real role in both variants, and it is an ACCENT — not the wire's
     /// own colour, which is what made the dots invisible on the wire.
+    ///
+    /// <para><b>EUCLIDEAN distance &gt; 60, which is deliberately the same metric and the same bound
+    /// <c>WBondRound4Tests.TheWBondVertex_StaysAdjacentToItsWire</c> holds the palette to.</b> It used
+    /// to be a Manhattan sum &gt; 150 — a second definition of "distinct enough", and the two
+    /// disagreed: when the owner's chosen palette was folded into the default on 2026-08-17 its dark
+    /// pair (wire 214,122,182 / vertex 142,122,255) measured 102 Euclidean and 145 Manhattan, so it
+    /// passed one test and failed the other while plainly being a blue-violet dot on a pink wire. One
+    /// metric, in one place, is what stops a palette decision turning into a threshold argument.</para>
+    ///
+    /// <para>The bound still does its job: a vertex "one shade off" the wire — the state this role was
+    /// introduced to fix — measures well under 30.</para>
     /// </summary>
     [Theory]
     [InlineData(ColorVariant.Light)]
@@ -439,11 +450,12 @@ public class WBondRenderAndToolsTests
 
         // "Distinct" as a number, not as an inequality: a vertex one shade off the wire would satisfy
         // NotEqual and be exactly as invisible as before.
-        int distance = Math.Abs(theme.Wire.Red - theme.Vertex.Red)
-                     + Math.Abs(theme.Wire.Green - theme.Vertex.Green)
-                     + Math.Abs(theme.Wire.Blue - theme.Vertex.Blue);
+        double dr = theme.Wire.Red - theme.Vertex.Red;
+        double dg = theme.Wire.Green - theme.Vertex.Green;
+        double db = theme.Wire.Blue - theme.Vertex.Blue;
+        double distance = Math.Sqrt(dr * dr + dg * dg + db * db);
 
-        Assert.True(distance > 150, $"The vertex accent is only {distance} away from the wire colour.");
+        Assert.True(distance > 60, $"The vertex accent is only {distance:F0} away from the wire colour.");
     }
 
     /// <summary>The role is in the shared vocabulary, so the theme editor and every `.ccolor` see it.</summary>

@@ -30,6 +30,29 @@ its `Items`, never the instance (`NativeMenu.SetMenu` a second time on the same 
 crash on a later dispatcher-queued reset even when the throw itself is swallowed). See
 `src/Ui/RESOLVED.md`'s harmonicaRF R3A entry.
 
+**A ComboBox selection pushed from a view-model notification must be assigned AFTER its items, in the
+same code path.** A XAML `ItemsSource` binding is attached when the DataContext reaches the ComboBox —
+*after* a code-behind handler subscribed in `OnDataContextChanged` — so a handler that sets
+`SelectedItem` first resolves it against the OLD item list, and Avalonia silently clears a selection its
+items do not contain. The combo then renders blank with no error anywhere. Own both halves in code
+(`WBondWirePropertiesView.SyncGroupSelection` is the worked example), and keep the item list a STABLE
+reference so re-assigning it does not re-raise the selection.
+
+**Exactly ONE colour theme ships, it is `Default`, and its `wBond.*` roles ARE the palette the owner
+chose** (2026-08-17). The six `wBond-…` themes existed to be judged side by side; the winner's six roles
+were folded into `Default` and all six files deleted. **`Assets/Color/Default.ccolor` and the in-code
+`ColorTheme.BuiltIn` are two copies of one palette and must agree** — the file is what the Settings editor
+shows, the in-code one is the per-role fallback for anything a theme leaves unsaid; a test holds them
+together. `null` in `preferences.json`/`.cws` means `ThemeResolver.DefaultThemeName`; compare against that
+constant rather than a literal.
+
+**A theme change is TWO different events and a view that paints its own colours needs both.**
+`ActualThemeVariantChanged` is light-vs-dark; `ThemeService.ThemeChanged` (static, so subscribe on attach
+and drop on detach) is a different theme being selected. `LayoutCanvas` handles the second for the layout
+itself, but it redraws an `ILayoutCanvasOverlay` from whatever palette object the host handed it — so the
+host has to re-resolve and repaint, or the wires stay in the old colours while the layout under them
+changes (owner-reported twice now, in different views).
+
 **A dock panel's SIDE is decided by what SEPARATES it from the documents** (`DockLayoutCapture.SideOf`).
 Two owner-reported bugs have come out of this one method, both the same shape: `Alignment` records the
 edge a dockable was *dropped against*, not the column it landed in; and a container that holds BOTH the

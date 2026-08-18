@@ -206,7 +206,11 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
             PushDisplayUnitToReferenceLayout();
         };
 
-        Overlay = new WBondLayoutOverlay(Editor);
+        // Settings ▸ Wirebonds ▸ Wire z-height — the same z a new wBond's own wires are created at,
+        // so a wire DRAWN in the layout half of this editor lands level with the ones already there
+        // (owner, 2026-08-17). The profile canvas deliberately does not read it: there the user
+        // clicks a z, which is the whole point of drawing in that view.
+        Overlay = new WBondLayoutOverlay(Editor) { FootZNm = WBondDefaults.FootZNm };
 
         SetActiveToolCommand = new RelayCommand<string>(name =>
         {

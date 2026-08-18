@@ -423,20 +423,36 @@ public class WBondRound4Tests
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
-    //  5. The five wBond colour themes
+    //  5. The wBond colours
+    //
+    //  Six wBond-… themes shipped here originally, to be judged side by side. The judging is over
+    //  (owner, 2026-08-17): the winner's six wBond.* roles were folded into Default itself — both the
+    //  shipped Default.ccolor and the in-code ColorTheme.BuiltIn — and all six files were deleted.
+    //  So these tests hold the ROLES, wherever they live, rather than a theme that can be selected.
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Every bundled theme is offered in the App settings picker.</summary>
+    /// <summary>
+    /// <b>ONE theme ships, it is called Default, and no <c>wBond-…</c> theme is offered any more</b>
+    /// (owner, 2026-08-17).
+    ///
+    /// <para>A name still in the picker with no asset behind it resolves silently to
+    /// <c>ColorTheme.BuiltIn</c> — a theme that appears to do nothing — so the list and the folder
+    /// have to agree, in both directions.</para>
+    /// </summary>
     [Fact]
-    public void TheWBondThemes_AreDiscoverable()
+    public void OnlyTheDefaultThemeShips()
     {
         var names = ThemeResolver.DiscoverThemeNames();
 
         foreach (string builtIn in ThemeResolver.BuiltInThemeNames)
             Assert.Contains(builtIn, names, StringComparer.OrdinalIgnoreCase);
 
-        Assert.Equal(6, ThemeResolver.BuiltInThemeNames.Count(n =>
-            n.StartsWith("wBond-", StringComparison.Ordinal)));
+        Assert.Equal(["Default"], ThemeResolver.BuiltInThemeNames);
+        Assert.Equal("Default", ThemeResolver.DefaultThemeName);
+
+        string dir = Path.Combine(RepoRoot(), "src", "Ui", "Assets", "Color");
+        Assert.Equal(["Default.ccolor"],
+                     Directory.GetFiles(dir, "*.ccolor").Select(Path.GetFileName).Order());
     }
 
     /// <summary>
@@ -461,24 +477,20 @@ public class WBondRound4Tests
     }
 
     /// <summary>
-    /// Each shipped <c>.ccolor</c> parses, states all six <c>wBond.*</c> roles in BOTH variants, and
-    /// states nothing else — so selecting one recolours the wirebond editor and leaves the schematic,
-    /// the layout and harmonicaRF exactly as they were.
+    /// <b>The shipped <c>Default.ccolor</c> and the in-code <c>ColorTheme.BuiltIn</c> state the same
+    /// six <c>wBond.*</c> colours, in both variants.</b>
+    ///
+    /// <para>They are two copies of one palette — the file is what the Settings editor shows and what
+    /// a user can copy; the in-code one is the fallback for every role a theme leaves unsaid. The
+    /// orchid colours were folded into both on 2026-08-17, and a divergence would mean the wires drew
+    /// one colour and the theme editor listed another.</para>
     /// </summary>
-    [Theory]
-    [InlineData("wBond-Copper")]
-    [InlineData("wBond-Gold")]
-    [InlineData("wBond-Olive")]
-    [InlineData("wBond-Orchid")]
-    [InlineData("wBond-Steel")]
-    [InlineData("wBond-Teal")]
-    public void EachWBondTheme_StatesEveryWBondRoleAndNothingElse(string name)
+    [Fact]
+    public void TheDefaultThemeFileAndTheInCodeDefault_AgreeOnEveryWBondRole()
     {
-        string path = Path.Combine(RepoRoot(), "src", "Ui", "Assets", "Color", name + ".ccolor");
-        Assert.True(File.Exists(path), $"{path} is not there.");
-
-        var theme = ColorThemeIo.LoadFile(path);
-        Assert.Equal(name, theme.Name);
+        var file = ColorThemeIo.LoadFile(
+            Path.Combine(RepoRoot(), "src", "Ui", "Assets", "Color", "Default.ccolor"));
+        Assert.Equal("Default", file.Name);
 
         string[] roles =
         [
@@ -486,12 +498,18 @@ public class WBondRound4Tests
             ColorRole.WBondSelected, ColorRole.WBondEnvelope, ColorRole.WBondFreeWire,
         ];
 
-        var (light, dark) = theme.GetRoleMaps();
-        foreach (var map in new[] { light, dark })
-        {
-            Assert.Equal(roles.Length, map.Count);
-            foreach (string role in roles) Assert.True(map.ContainsKey(role), $"{name} is missing {role}.");
-        }
+        var (light, dark) = file.GetRoleMaps();
+        foreach (var (map, variant) in new[] { (light, ColorVariant.Light), (dark, ColorVariant.Dark) })
+            foreach (string role in roles)
+            {
+                Assert.True(map.ContainsKey(role), $"Default.ccolor is missing {role} ({variant}).");
+                Assert.Equal(ColorTheme.BuiltIn.Resolve(role, variant), file.Resolve(role, variant));
+            }
+
+        // The orchid the owner picked, spot-checked by value so a silent revert to the old gold is a
+        // failure rather than a colour nobody notices.
+        Assert.Equal(new Rgba(165, 64, 130), file.Resolve(ColorRole.WBondWire, ColorVariant.Light));
+        Assert.Equal(new Rgba(214, 122, 182), file.Resolve(ColorRole.WBondWire, ColorVariant.Dark));
     }
 
     /// <summary>
@@ -511,15 +529,10 @@ public class WBondRound4Tests
     /// <para><c>wBond.Selected</c> is deliberately NOT held to the hue bound: it is a state, not an
     /// accent, and it has to be unmistakable against both the wire and the canvas.</para>
     /// </summary>
-    [Theory]
-    [InlineData("wBond-Copper")]
-    [InlineData("wBond-Gold")]
-    [InlineData("wBond-Olive")]
-    [InlineData("wBond-Orchid")]
-    [InlineData("wBond-Steel")]
-    [InlineData("wBond-Teal")]
-    public void EachWBondTheme_KeepsItsVertexAdjacentToItsWire(string name)
+    [Fact]
+    public void TheWBondVertex_StaysAdjacentToItsWire()
     {
+        const string name = "Default";
         var theme = ColorThemeIo.LoadFile(
             Path.Combine(RepoRoot(), "src", "Ui", "Assets", "Color", name + ".ccolor"));
 
@@ -568,12 +581,12 @@ public class WBondRound4Tests
         }
     }
 
-    /// <summary>The renderer projects a wBond theme's six roles, so selecting one actually draws.</summary>
+    /// <summary>The renderer projects the six wBond roles, so the theme's colours actually draw.</summary>
     [Fact]
-    public void AWBondTheme_ReachesTheRenderer()
+    public void TheWBondRoles_ReachTheRenderer()
     {
         var theme = ColorThemeIo.LoadFile(
-            Path.Combine(RepoRoot(), "src", "Ui", "Assets", "Color", "wBond-Orchid.ccolor"));
+            Path.Combine(RepoRoot(), "src", "Ui", "Assets", "Color", "Default.ccolor"));
 
         var projected = WBondRenderTheme.FromTheme(theme, ColorVariant.Dark);
         var expected = theme.Resolve(ColorRole.WBondWireVertex, ColorVariant.Dark);

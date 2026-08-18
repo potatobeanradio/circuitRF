@@ -71,10 +71,11 @@ public partial class App : Application
             catch { return null; }
         });
 
-        // Apply saved theme preference before the first window is shown.
+        // Apply the theme before the first window is shown — the saved preference, or the SHIPPED
+        // DEFAULT when there is none. See ThemeResolver.DefaultThemeName for why that default is a
+        // wBond palette and why it changes nothing outside the wirebond editor.
         var prefs = AppPreferencesIo.Load();
-        if (prefs.ActiveThemeName is { } savedTheme)
-            ThemeService.Active = ThemeResolver.Resolve(savedTheme);
+        ThemeService.Active = ThemeResolver.Resolve(prefs.ActiveThemeName ?? ThemeResolver.DefaultThemeName);
 
         CircuitRF.Ui.Messages.MessageDisplay.Mode =
             prefs.MessageTimestamp ?? CircuitRF.Ui.Messages.MessageTimestampMode.Time;

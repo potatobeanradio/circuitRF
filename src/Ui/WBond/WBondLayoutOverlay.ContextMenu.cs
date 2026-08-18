@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -46,6 +47,13 @@ public sealed partial class WBondLayoutOverlay
         // editor, and offering wire commands that cannot fire would be worse than offering none.
         if (IsAtDepth) return [];
 
+        // A right-click means no drag is running. Any that is still open was STRANDED — its release
+        // went somewhere else — and a stranded drag can leave a wire collapsed to its two feet, which
+        // is exactly what made "Straighten Wire" report that there was nothing between them (owner,
+        // 2026-08-17). Unwinding here is what makes the FIRST opening of the menu describe the wire
+        // the user is looking at rather than the one the abandoned gesture left behind.
+        AbandonGesture();
+
         int wireCount = _vm.Design.WireCount;
         int selectedWires = _vm.Selection.TouchedWires().Count;
         bool hasLayout = layout is not null;
@@ -85,8 +93,20 @@ public sealed partial class WBondLayoutOverlay
         };
 
         items.Add(BuildGroupItem(host));
+
+        // Add Vertex sits between the group commands and the deletes, with a separator of its own
+        // above it (owner, 2026-08-17): it is the one command here that ADDS something, and grouping
+        // it with the three deletes below would read as a fourth delete.
+        items.Add(new Separator());
+        items.Add(BuildAddVertexItem(worldX, worldY, tolDbu));
+
         items.Add(new Separator());
         items.AddRange(BuildDeleteItems(worldX, worldY, tolDbu));
+
+        // Straighten Wire LAST, so it lands above the canvas's own Rotate 90° items (owner) — the
+        // wire commands stay one block and the layout's own follow after the canvas's separator.
+        items.Add(new Separator());
+        items.Add(BuildStraightenItem(worldX, worldY, tolDbu));
 
         return items;
     }
@@ -124,6 +144,103 @@ public sealed partial class WBondLayoutOverlay
     {
         int moved = await WBondGroupCommand.RunAsync(TopLevel.GetTopLevel(host) as Window, _vm);
         if (moved > 0) OverlayChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// <b>Add Vertex</b> — a new point on the wire nearest the right-click, collinear with its two
+    /// neighbours and at their interpolated z (owner, 2026-08-17), so the insert changes the wire's
+    /// shape not at all and only gives the user a handle where there was none.
+    ///
+    /// <para>Click-target-scoped like the deletes below it. A click that landed on a VERTEX rather
+    /// than a segment still works — it inserts into the segment starting there (or the one before it
+    /// at the far foot), because "add a vertex here" has an obvious meaning at a vertex too and
+    /// refusing it would read as the command being broken.</para>
+    /// </summary>
+    private MenuItem BuildAddVertexItem(double worldX, double worldY, long tolDbu)
+    {
+        var hit = HitWireAt(worldX, worldY, tolDbu);
+
+        var item = new MenuItem { Header = "Add Vertex", IsEnabled = hit.Found };
+        if (!hit.Found)
+        {
+            ToolTip.SetTip(item, "Right-click a wire.");
+            return item;
+        }
+
+        item.Click += (_, _) =>
+        {
+            if (ResolveInsertion(hit, worldX, worldY) is not { } insert) return;
+            _vm.AddWirePoint(insert.Wire, insert.Segment, insert.T);
+            OverlayChanged?.Invoke();
+        };
+
+        return item;
+    }
+
+    /// <summary>
+    /// Which segment a click means, and where along it — resolved in the LAYOUT's own XY plane.
+    ///
+    /// <para>A hit on a segment names it outright. A hit on a vertex names the segment that STARTS
+    /// there, except at the last point where there is none and the segment before it is meant. The
+    /// parameter is the click's projection onto that segment, so the vertex lands under the pointer
+    /// rather than at a fixed fraction the user did not choose.</para>
+    /// </summary>
+    private (int Wire, int Segment, double T)? ResolveInsertion(WireHitTest.Hit hit, double worldX, double worldY)
+    {
+        var wire = _vm.Design.AllWires().ElementAtOrDefault(hit.Wire);
+        if (wire is null || wire.Points.Count < 2) return null;
+
+        int segment = hit.IsSegment ? hit.Point : Math.Min(hit.Point, wire.Points.Count - 2);
+        if (segment < 0 || segment >= wire.Points.Count - 1) return null;
+
+        long xNm = WBondSnap.ToNm((long)worldX, DbuPerMicron);
+        long yNm = WBondSnap.ToNm((long)worldY, DbuPerMicron);
+
+        var a = wire.Points[segment];
+        var b = wire.Points[segment + 1];
+
+        return (hit.Wire, segment, WireEdits.SegmentParameter(a.X, a.Y, b.X, b.Y, xNm, yNm));
+    }
+
+    /// <summary>
+    /// <b>Straighten Wire / Straighten Wires</b> — every interior point onto the straight line between
+    /// its own two feet, in XY only, loop height untouched (owner, 2026-08-17).
+    ///
+    /// <para><b>The SELECTION when there is a multi-selection, the clicked wire otherwise</b> (owner:
+    /// <i>"I want both to work; if the user has multiple wires selected, then all those wires are
+    /// straightened"</i>). It is the only item here that reads the selection at all — and only when
+    /// there is genuinely more than one wire in it, so a single selection can never make a right-click
+    /// on a DIFFERENT wire act somewhere the user is not pointing. Each wire straightens about its own
+    /// anchors; see <c>WBondViewModel.StraightenWires</c> for why a shared chord would be wrong.</para>
+    ///
+    /// <para>Layout-only: this is a statement about the wire's PATH ACROSS THE BOARD, and the profile
+    /// view has no XY plane to make it in — its horizontal axis is position along that path.</para>
+    /// </summary>
+    private MenuItem BuildStraightenItem(double worldX, double worldY, long tolDbu)
+    {
+        var selected = _vm.Selection.TouchedWires();
+
+        // A multi-selection is the subject; otherwise it is whatever the click landed on — which may
+        // be nothing, and then the item says so rather than acting on the one selected wire the user
+        // was not pointing at.
+        var hit = HitWireAt(worldX, worldY, tolDbu);
+        IReadOnlyCollection<int> targets =
+            selected.Count > 1 ? [.. selected]
+            : hit.Found        ? [hit.Wire]
+            : [];
+
+        string? why = _vm.WhyCannotStraighten(targets);
+
+        var item = new MenuItem
+        {
+            Header = targets.Count > 1 ? "Straighten Wires" : "Straighten Wire",
+            IsEnabled = why is null,
+        };
+
+        if (why is { } reason) ToolTip.SetTip(item, reason);
+        else item.Click += (_, _) => { _vm.StraightenWires(targets); OverlayChanged?.Invoke(); };
+
+        return item;
     }
 
     /// <summary>

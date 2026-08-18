@@ -1342,11 +1342,19 @@ public class WBondRound5Tests
 
         string body = code[at..(at + 700)];
         Assert.Contains("HasWireDesign == true", body, StringComparison.Ordinal);
-        Assert.Contains("ResolveWorkspace() is not null", body, StringComparison.Ordinal);
+        Assert.Contains("workspace is not null", body, StringComparison.Ordinal);
 
         // All three chrome elements come and go together — a separator left behind is a stray line.
         foreach (var name in new[] { "WirePanelSeparator", "WireProfileBtn", "WireInductanceBtn" })
             Assert.Contains($"{name}.IsVisible = show;", body, StringComparison.Ordinal);
+
+        // …and the two buttons say whether their panel is on screen (owner, 2026-08-17), read from the
+        // dock tree rather than tracked here — a panel is also closed by its own tab X.
+        Assert.Contains("UpdateWirePanelCheckedStates();", body, StringComparison.Ordinal);
+        Assert.Contains("WireProfileBtn.IsChecked = workspace?.IsToolPanelShowing(DockPanelIds.WBondProfile) == true;",
+                        code, StringComparison.Ordinal);
+        Assert.Contains("WireInductanceBtn.IsChecked = workspace?.IsToolPanelShowing(DockPanelIds.WBondInductance) == true;",
+                        code, StringComparison.Ordinal);
     }
 
     /// <summary>They TOGGLE, and their tooltips name the keys (owner asked for "(P)" and "(A)").</summary>
@@ -1419,12 +1427,16 @@ public class WBondRound5Tests
         int at = code.IndexOf("if (seeded.Outcome == WBondCellSeeding.Outcome.Created)", StringComparison.Ordinal);
         Assert.True(at >= 0, "the reveal must be gated on the CREATED outcome, not on every run");
 
-        string body = code[at..(at + 400)];
-        Assert.Contains("DockPanelIds.WBondProfile", body, StringComparison.Ordinal);
-        Assert.Contains("DockPanelIds.WBondInductance", body, StringComparison.Ordinal);
+        // The two panel ids moved into ShowWBondPanels on 2026-08-17, which ARRANGES them the first
+        // time this installation ever needs them rather than floating two windows over the layout.
+        string body = code[at..(at + 200)];
+        Assert.Contains("ShowWBondPanels()", body, StringComparison.Ordinal);
 
         // ShowToolPanel, never ToggleToolPanel: a reveal must not CLOSE a panel that happens to be open.
-        Assert.DoesNotContain("ToggleToolPanel", body, StringComparison.Ordinal);
+        var panels = Read("src", "Ui", "ViewModels", "WorkspaceViewModel.WBondPanels.cs");
+        Assert.Contains("DockPanelIds.WBondProfile", panels, StringComparison.Ordinal);
+        Assert.Contains("DockPanelIds.WBondInductance", panels, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToggleToolPanel", panels, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -174,7 +174,8 @@ public class FileMenuRestructureTests
         Assert.Equal(ExpectedNewSubmenuNative, newItem.Children.Select(c => c.Header).ToArray());
     }
 
-    // ── Gate 4 — Open submenu: exactly 4 items; Open Workspace…/Open Recent NOT in it; no separator
+    // ── Gate 4 — Open submenu: exactly its document types (five since Open wBond… was withdrawn for
+    //    v1 — see the entry-point test below); Open Workspace…/Open Recent NOT in it; no separator
     //    among the three top-level items ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -182,7 +183,7 @@ public class FileMenuRestructureTests
     {
         var openItem = FindTopLevel(InWindowFileChildren(), "_Open");
         Assert.Equal(
-            ["Open Sc_hematic…", "Open _Technology…", "Open S_ymbol…", "Open _Layout…", "Open Data _Display…", "Open _wBond…"],
+            ["Open Sc_hematic…", "Open _Technology…", "Open S_ymbol…", "Open _Layout…", "Open Data _Display…"],
             openItem.Children.Select(c => c.Header).ToArray());
         Assert.All(openItem.Children, c => Assert.False(c.IsSeparator));
     }
@@ -192,8 +193,43 @@ public class FileMenuRestructureTests
     {
         var openItem = FindTopLevel(NativeFileChildren(), "Open");
         Assert.Equal(
-            ["Open Schematic…", "Open Technology…", "Open Symbol…", "Open Layout…", "Open Data Display…", "Open wBond…"],
+            ["Open Schematic…", "Open Technology…", "Open Symbol…", "Open Layout…", "Open Data Display…"],
             openItem.Children.Select(c => c.Header).ToArray());
+    }
+
+    /// <summary>
+    /// <b>Nothing in this window opens the standalone wirebond WINDOW</b> — it is a v2 feature (owner,
+    /// 2026-08-17). Both of its entry points are commented out: Tools ▸ wBond, and File ▸ Open ▸
+    /// Open wBond….
+    ///
+    /// <para><b>Asserted on the COMMAND, not on the header</b>, because the header is not the property
+    /// being kept. The exact-order tests above would still pass if the item came back under a different
+    /// spelling or in another submenu, and a header scan would misfire on File ▸ Import ▸ Wirebond
+    /// Wires… the day someone respells it — that one and Wirebond as Cell… are the COMPONENT path and
+    /// must keep working. A binding to one of these two commands is what "a way into that window
+    /// exists" actually means.</para>
+    ///
+    /// <para><c>XDocument</c> parses a comment as <c>XComment</c>, never as an element or an attribute,
+    /// so a commented-out item is genuinely invisible here — this test cannot be satisfied by
+    /// commenting the binding out halfway. The commands and the whole <c>.wBond</c> document type stay
+    /// in place; only the way in is deferred.</para>
+    /// </summary>
+    [Fact]
+    public void NeitherEntryPointToTheStandaloneWBondWindow_IsWiredUp_WhileItIsDeferredToV2()
+    {
+        var bound = LoadWorkspaceWindowXaml()
+            .DescendantsAndSelf()
+            .SelectMany(e => e.Attributes())
+            .Select(a => a.Value)
+            .ToList();
+
+        Assert.DoesNotContain(bound, v => v.Contains("NewWBondCommand", StringComparison.Ordinal));
+        Assert.DoesNotContain(bound, v => v.Contains("OpenWBondFileCommand", StringComparison.Ordinal));
+
+        // …and the component path is untouched, so this is a withdrawal of one window and not of
+        // wirebonds. Both are File ▸ Import children.
+        Assert.Contains(bound, v => v.Contains("ImportWirebondWiresCommand", StringComparison.Ordinal));
+        Assert.Contains(bound, v => v.Contains("ImportWirebondAsCellCommand", StringComparison.Ordinal));
     }
 
     [Fact]

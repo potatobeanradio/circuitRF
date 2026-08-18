@@ -190,6 +190,17 @@ public partial class WBondProfileView : UserControl
     public Func<Task>? CopyRequested { get; set; }
 
     public void ZoomToFit() => ProfileCanvas.ZoomToFit();
+
+    /// <summary>
+    /// The overlaid Zoom to Fit button (owner, 2026-08-17). Straight onto <see cref="ZoomToFit"/>, so
+    /// the button, the F key and a host's own toolbar button are one behaviour rather than three —
+    /// and the canvas keeps focus afterwards, exactly as pressing F does.
+    /// </summary>
+    private void OnProfileZoomToFit(object? sender, RoutedEventArgs e)
+    {
+        ZoomToFit();
+        ProfileCanvas.Focus();
+    }
     public void ZoomIn()    => ProfileCanvas.ZoomIn();
     public void ZoomOut()   => ProfileCanvas.ZoomOut();
     public void Zoom1To1(WBondUnit unit) => ProfileCanvas.Zoom1To1(unit);

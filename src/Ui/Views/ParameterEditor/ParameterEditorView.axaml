@@ -72,7 +72,7 @@
             <!-- A vertical StackPanel, NOT a Panel, and the difference is a shipped bug.
                  A Panel gives every child the whole area, which was harmless while SnP was the only
                  custom panel — it REPLACES the generic rows (`IsVisible="{Binding !IsSnp}"`). The wBond
-                 panel shows BESIDE them (Temp and GroundPlane stay ordinary rows), so on a Panel it
+                 panel shows BESIDE them (Temp stays an ordinary row), so on a Panel it
                  painted straight over them: the owner's "the Add button and some other text render
                  overtop of the parameters fields". Hidden children take no space in a StackPanel, so
                  SnP's replace-the-rows arrangement is unchanged. -->
@@ -85,7 +85,8 @@
                      as HIDDEN in wbond.md §5.0), `Arrays` is drift-detection bookkeeping (also
                      hidden), and the other two want the controls SnP's equivalents already have.
                      They are filtered out of the generic rows above; this is where they live.
-                     `Temp` and `GroundPlane` are ordinary engine values and stay generic rows. -->
+                     `GroundPlane` joined them on 2026-08-17 — a boolean, so a picker. `Temp` is an
+                     ordinary engine value and stays a generic row. -->
                 <StackPanel IsVisible="{Binding IsWBond}"
                             Margin="6,4"
                             Spacing="8">
@@ -94,21 +95,33 @@
                          body carries. This is what replaces the unreadable `Design` row: the payload
                          is machine-written and there is nothing in it to type, but "how much wire is
                          in here" is exactly what the row was failing to answer. -->
-                    <Grid ColumnDefinitions="80,*,Auto">
-                        <TextBlock Grid.Column="0" Text="Design"
+                    <!-- Two ROWS, not two columns (owner, 2026-08-17: the summary and the button
+                         "render overtop of each other if the text string gets too long").
+
+                         The summary is generated text whose length is not bounded by anything — it
+                         grows with the array count and gains "· with overrides" — so any share of one
+                         row is a share it will eventually outgrow. Giving it the whole row and putting
+                         the button on the next one removes the competition rather than tuning it. The
+                         button keeps its right edge, so it still lines up with the arrays' own Add
+                         button below. -->
+                    <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Design"
                                    FontSize="11" VerticalAlignment="Center"/>
-                        <SelectableTextBlock Grid.Column="1"
+                        <SelectableTextBlock Grid.Row="0" Grid.Column="1"
                                              Text="{Binding WBondSummary}"
                                              FontSize="11" VerticalAlignment="Center"
+                                             TextWrapping="Wrap"
                                              Foreground="{DynamicResource SystemBaseMediumColor}"/>
-                        <!-- Update Layout — deliberately on the DESIGN row, directly above the arrays'
+                        <!-- Update Layout — directly under the design summary and above the arrays'
                              own Add button (owner, 2026-08-17): "here is what this component is" and
-                             "put it in the layout" are one thought, and the two buttons then line up in
-                             the same column. Narrower than Design ▸ Update Layout from Schematic: it
+                             "put it in the layout" are one thought, and the two buttons line up in the
+                             same column. Narrower than Design ▸ Update Layout from Schematic: it
                              writes THIS wBond and nothing else, so no other instance moves under the
                              user while they are editing wires. Absent with no workspace to write into,
                              rather than present and only able to refuse. -->
-                        <Button Grid.Column="2" Content="Update Layout"
+                        <Button Grid.Row="1" Grid.Column="1" Content="Update Layout"
+                                Margin="0,4,0,0"
+                                HorizontalAlignment="Right"
                                 FontSize="11" Padding="8,3"
                                 IsVisible="{Binding CanUpdateWBondLayout}"
                                 Command="{Binding UpdateWBondLayoutCommand}"
@@ -121,31 +134,6 @@
                                IsVisible="{Binding WBondPayloadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                FontSize="11" TextWrapping="Wrap"
                                Foreground="{DynamicResource CrfWarningBrush}"/>
-
-                    <!-- ── WB45: where the wires come from ─────────────────────────────────
-                         Carried (today's behaviour, and still the portable one — the wires travel
-                         inside the schematic, no path to break) or Linked (the netlist names the
-                         cell's .wBond, so there is ONE copy of the wires and staleness becomes
-                         unrepresentable rather than reported).
-
-                         The CONSEQUENCE is stated on the note line directly under the box, the same
-                         shape as the MKlopf entry-mode toggle: the two differ in exactly one thing —
-                         what the next Run simulates after a layout edit — and nothing else on screen
-                         would say which is in force. -->
-                    <Grid ColumnDefinitions="80,*">
-                        <TextBlock Grid.Column="0" Text="Source"
-                                   FontSize="11" VerticalAlignment="Center"
-                                   ToolTip.Tip="Whether this component's wires travel inside the schematic (Carried) or are read from the cell's wirebond file (Linked)"/>
-                        <ComboBox Grid.Column="1"
-                                  ItemsSource="{Binding WBondSourceOptions}"
-                                  SelectedIndex="{Binding WBondSourceIndex}"
-                                  FontSize="11"
-                                  Padding="4,3"/>
-                    </Grid>
-                    <TextBlock Text="{Binding WBondSourceNote}"
-                               Margin="80,0,0,0"
-                               FontSize="10" TextWrapping="Wrap"
-                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
                     <!-- ── The arrays ───────────────────────────────────────────────────────
                          An array IS a port: its name is the pin-pair name, and its position is the
@@ -288,7 +276,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Symbol Pitch + floating reference pin — the two artwork controls.
+                    <!-- Symbol Pitch + external reference pin — the two artwork controls.
                          "Symbol Pitch", not "Pitch" (owner): on a wirebond component "pitch" reads as
                          the WIRE pitch, the centre-to-centre spacing of the bonds themselves, which
                          this has nothing to do with. It is how far apart the symbol's port ROWS sit. -->
@@ -303,15 +291,69 @@
                                   Padding="4,3"/>
                     </Grid>
 
+                    <!-- Ground plane — a BOOLEAN the engine reads through IsTrue, so a picker rather
+                         than the text box it used to be (owner, 2026-08-17). Three values: "As
+                         designed" is the blank that means the design's own setting, and the other two
+                         are the override. See WBondGroundPlaneOptions for what the picker costs. -->
+                    <Grid ColumnDefinitions="80,*">
+                        <TextBlock Grid.Column="0" Text="Ground plane"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="Overrides whether this component's wires see a ground plane — 'As designed' leaves the wirebond design's own setting alone"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding WBondGroundPlaneChoices}"
+                                  SelectedIndex="{Binding WBondGroundPlaneIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                    </Grid>
+
                     <CheckBox IsChecked="{Binding WBondRefPin}"
-                              Content="Floating reference pin"
+                              Content="External reference pin"
                               FontSize="11"
-                              ToolTip.Tip="Adds a REF terminal for saying which net is the reference plane. It carries no current — the return path is the ground plane (see the GroundPlane parameter), and a design with the plane disabled is refused whether or not this pin is shown."/>
+                              ToolTip.Tip="Adds a REF terminal for saying which net is the reference plane. It carries no current — the return path is the ground plane set above, and a design with the plane disabled is refused whether or not this pin is shown."/>
+
+                    <!-- ── WB45: where the wires come from — LAST, as the panel's advanced tail
+                         (owner, 2026-08-17: "an advanced feature that only wBond experts would use").
+                         Carried (still the portable one — the wires travel inside the schematic, no
+                         path to break) or Linked (the netlist names the cell's .wBond, so there is ONE
+                         copy of the wires and staleness becomes unrepresentable rather than reported).
+
+                         It sat third, right under the design summary, which put the panel's most
+                         consequential and least-used control in front of the ones every user touches —
+                         the arrays, the per-array overrides, the artwork. Nobody needs to SET it in the
+                         ordinary flow: a placed wBond is Carried by construction and Update Layout from
+                         Schematic is what flips it to Linked and says so (WB45a, WBondCellSeeding). The
+                         box exists to go BACK to Carried — for a schematic that has to travel on its
+                         own — and to repair a link, which are both expert moves.
+
+                         Moved WITHIN this panel rather than below the generic rows underneath it: those
+                         are LAST by the owner's own earlier decision (see their comment below), and a
+                         wBond's only generic row is `Temp`.
+
+                         The CONSEQUENCE stays stated on the note line directly under the box, the same
+                         shape as the MKlopf entry-mode toggle: the two differ in exactly one thing —
+                         what the next Run simulates after a layout edit — and nothing else on screen
+                         would say which is in force. That is load-bearing wherever it sits, and more so
+                         down here where it is read less often. -->
+                    <Grid ColumnDefinitions="80,*">
+                        <TextBlock Grid.Column="0" Text="Source"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="Whether this component's wires travel inside the schematic (Carried) or are read from the cell's wirebond file (Linked)"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding WBondSourceOptions}"
+                                  SelectedIndex="{Binding WBondSourceIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                    </Grid>
+                    <TextBlock Text="{Binding WBondSourceNote}"
+                               Margin="80,0,0,0"
+                               FontSize="10" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
                 </StackPanel>
 
                 <!-- Generic parameter rows, LAST — after every custom panel.
-                     Hidden entirely for SnP, which replaces them. For a wBond they are `Temp` and
-                     `GroundPlane`, and the owner wants them at the BOTTOM (2026-08-17): the panel above
+                     Hidden entirely for SnP, which replaces them. For a wBond the only one left is
+                     `Temp` (`GroundPlane` moved into the panel above on 2026-08-17, being a boolean),
+                     and the owner wants it at the BOTTOM (2026-08-17): the panel above
                      is what the component IS — its wires, its arrays, its artwork — and these two are
                      ordinary engine values that belong under it rather than in front of it. Nothing
                      changes for any type with no custom panel of its own, which is all the rest. -->
@@ -495,7 +537,7 @@
                     </Grid>
                     <!-- RefNode toggle -->
                     <CheckBox IsChecked="{Binding SnpRefNode}"
-                              Content="Floating reference pin"
+                              Content="External reference pin"
                               FontSize="11"/>
                     <!-- PinConfig + Pitch -->
                     <Grid ColumnDefinitions="60,*,Auto,*">

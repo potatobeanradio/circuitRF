@@ -99,7 +99,7 @@
                              someone else must not change what the next wire you draw looks like. -->
                         <TextBlock Text="Wirebonds" FontSize="11" FontWeight="SemiBold"
                                    Opacity="0.55" Margin="0,0,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto,6,Auto,Auto">
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto,6,Auto,6,Auto,Auto">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Points per wire:"
                                        VerticalAlignment="Center" FontSize="12"/>
                             <NumericUpDown Grid.Row="0" Grid.Column="1" Name="WBondPointsUpDown"
@@ -123,9 +123,24 @@
                                       Width="150" HorizontalAlignment="Left" FontSize="12"
                                       SelectionChanged="OnWBondMaterialChanged"/>
 
-                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Paste pitch:"
+                            <!-- Wire z-height (owner, 2026-08-17). Minimum is deliberately NEGATIVE and
+                                 zero is a real value: a foot at z=0 lands on the reference plane and a
+                                 negative one sits in a cavity below it. Both are geometry someone bonds,
+                                 which is why this preference alone treats "absent" and "zero" as
+                                 different things. -->
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Wire z-height:"
                                        VerticalAlignment="Center" FontSize="12"/>
                             <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <NumericUpDown Name="WBondFootZUpDown" Minimum="-100" Maximum="1000"
+                                               Increment="1" FormatString="0.###"
+                                               Width="110" FontSize="12"
+                                               ValueChanged="OnWBondFootZChanged"/>
+                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="8" Grid.Column="0" Text="Paste pitch:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal" Spacing="6">
                                 <NumericUpDown Name="WBondPastePitchUpDown" Minimum="0.1" Maximum="1000"
                                                Increment="1" FormatString="0.###"
                                                Width="110" FontSize="12"
@@ -133,9 +148,9 @@
                                 <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
                             </StackPanel>
 
-                            <TextBlock Grid.Row="7" Grid.Column="1" FontSize="11" Opacity="0.6"
+                            <TextBlock Grid.Row="9" Grid.Column="1" FontSize="11" Opacity="0.6"
                                        TextWrapping="Wrap" Margin="0,6,0,0"
-                                       Text="Applies to newly drawn wires. Existing wires keep whatever they were drawn with. Nudge steps stay 1 mil / 5 mil — those are bonder-process quantities, not display settings.&#10;Paste pitch places a pasted wire clear of what is already there, stepping in +y until it lands free. It never re-spaces the wires on the clipboard."/>
+                                       Text="Applies to newly drawn wires. Existing wires keep whatever they were drawn with. Nudge steps stay 1 mil / 5 mil — those are bonder-process quantities, not display settings.&#10;Wire z-height is where BOTH feet of a new wire land — a wire drawn in the layout view, and the wire a new wBond component is created with. The profile view is unaffected: there you click the height you want.&#10;Paste pitch places a pasted wire clear of what is already there, stepping in +y until it lands free. It never re-spaces the wires on the clipboard."/>
                         </Grid>
 
                     </StackPanel>

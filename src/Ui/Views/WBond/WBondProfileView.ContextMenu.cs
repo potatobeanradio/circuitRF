@@ -22,11 +22,18 @@ public partial class WBondProfileView
     /// <summary>The group the current menu acts on, captured when the menu opens.</summary>
     private int _menuArray = -1;
 
+    /// <summary>
+    /// Where an <b>Add Vertex</b> would go — the one command on this menu that is CLICK-scoped rather
+    /// than group-scoped, because a vertex is added at a place and not to a group.
+    /// </summary>
+    private (int Wire, int Segment, double T)? _menuInsertion;
+
     private async void OnProfileContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (sender is not ContextMenu menu || Editor is not { } editor) { e.Cancel = true; return; }
 
         _menuArray = ProfileCanvas.ConsumeContextMenuTargetArray();
+        _menuInsertion = ProfileCanvas.ConsumeContextMenuInsertion();
 
         // Right-clicking empty space offers nothing rather than a menu of disabled items — there is
         // no group to act on, and an all-grey menu reads as the feature being broken.
@@ -76,11 +83,42 @@ public partial class WBondProfileView
         pasteItem.Click += async (_, _) => await PasteProfileCoordinatesAsync(editor);
         items.Add(pasteItem);
 
+        // Add Vertex — the same command the layout view's wire menu offers, on the same wire, with
+        // its own separator above it (owner, 2026-08-17). Straighten Wire deliberately does NOT
+        // appear here: it is a statement about the wire's path across the BOARD, and this view's
+        // horizontal axis is position along that path — there is no XY plane here to straighten in.
+        //
+        // The new point is collinear with its neighbours and at their interpolated z, so it changes
+        // nothing about the shape and only gives this view a handle to drag.
+        items.Add(new Separator());
+        items.Add(AddVertexItem(editor));
+
         items.Add(new Separator());
         items.Add(Item($"Delete Group \"{groupName}\"",
                        () => { Apply(editor.DeleteGroup(_menuArray)); return Task.CompletedTask; }));
 
         return items;
+    }
+
+    /// <summary>
+    /// Add Vertex, on whatever wire the right-click landed on — disabled with its reason when it
+    /// landed on none, never silently absent.
+    /// </summary>
+    private MenuItem AddVertexItem(WBondViewModel editor)
+    {
+        if (_menuInsertion is not { } insert)
+        {
+            var disabled = new MenuItem { Header = "Add Vertex", IsEnabled = false };
+            ToolTip.SetTip(disabled, "Right-click a wire.");
+            return disabled;
+        }
+
+        var item = new MenuItem { Header = "Add Vertex" };
+        item.Click += (_, _) =>
+        {
+            if (editor.AddWirePoint(insert.Wire, insert.Segment, insert.T)) Repaint();
+        };
+        return item;
     }
 
     /// <summary>A fresh <see cref="MenuItem"/> per opening — never a reused instance with a re-subscribed

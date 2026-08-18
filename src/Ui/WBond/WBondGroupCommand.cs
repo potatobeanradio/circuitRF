@@ -42,9 +42,12 @@ internal static class WBondGroupCommand
     }
 
     /// <summary>
-    /// The command's label for a given selection size — shown on the context-menu item and on the
-    /// Properties panel's button, so the count the user is about to act on is visible before the
-    /// dialog opens as well as inside it.
+    /// The command's label for a given selection size — shown on the CONTEXT-MENU item, so the count
+    /// the user is about to act on is visible before the dialog opens as well as inside it.
+    ///
+    /// <para>The Properties panel's button no longer uses it (owner, 2026-08-17): that panel states
+    /// the wire and group counts on its own message line directly above the button, and carrying the
+    /// wire count in both places said it twice. A context-menu item has no such line.</para>
     /// </summary>
     internal static string Label(int wireCount) => wireCount switch
     {

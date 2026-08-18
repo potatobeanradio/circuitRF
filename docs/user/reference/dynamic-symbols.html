@@ -80,9 +80,9 @@
   block into less space; looser pitch leaves room to wire each port. Pins always remain on the connection
   grid.</p>
 
-  <h3>Floating reference pin (<code>RefNode</code>)</h3>
+  <h3>External reference pin (<code>RefNode</code>)</h3>
   <p>By default each port is referenced to ground, so an N-port shows <strong>N nets</strong>. Set
-  <code>RefNode = true</code> to expose a <strong>common floating reference pin</strong> instead — now the
+  <code>RefNode = true</code> to expose a <strong>common external reference pin</strong> instead — now the
   block has <strong>N + 1 nets</strong>, and all ports are measured against that shared reference rather than
   ground. Use this when the data block's reference is not circuit ground (a floating measurement).</p>
   <div class="callout note">

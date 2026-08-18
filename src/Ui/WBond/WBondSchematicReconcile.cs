@@ -76,16 +76,29 @@ public static class WBondSchematicReconcile
         if (fromLayout is null) return Result.None;
 
         var wBonds = schematic.Components.Where(c => c.Symbol == SymbolKind.WBond).ToList();
-        if (wBonds.Count == 0)
-        {
-            // Wires in the layout with no component to put them on. Reported rather than silently
-            // dropped: the user drew them, and "nothing happened" is the least useful answer.
-            return new Result(null,
-                [$"The layout holds {fromLayout.WireCount} bond wire(s) in {fromLayout.Arrays.Count} " +
-                 "array(s), but this schematic has no wBond component to bring them into. Place one " +
-                 "from the Library palette first."],
-                false);
-        }
+
+        // EVERY WIRE DELETED: the component goes with them (owner, 2026-08-17 — "if all wires are
+        // deleted from a layout and the user performs an Update Schematic from Layout, a wBond symbol
+        // remains in the schematic; there should be no wBond component").
+        //
+        // This is the same rule as the two branches below, applied to the empty case rather than
+        // stopping short of it: this command makes the schematic describe the layout, and a layout
+        // with no wires is described by no component. Leaving one behind is worse than untidy — a
+        // wBond carrying an empty payload still draws its pins and still declares its terminals, so
+        // the netlist would go on modelling a bond group the layout no longer has.
+        //
+        // A NULL design is different and says nothing: that is a layout with no wire layer at all,
+        // which is every ordinary cell this command runs on. Only an ATTACHED, EMPTY design means
+        // "the user deleted the wires" — the guard for that is the null check above.
+        if (fromLayout.WireCount == 0) return RemoveFrom(schematic, wBonds);
+
+        // Wires in the layout and no component to put them on: CREATE one (owner, 2026-08-17 —
+        // "if the user does an Update Schematic from Layout, then the schematic should get a wBond
+        // symbol with the appropriate parameters/settings that matches the layout"). This is now
+        // reachable by an ordinary route: a wBond dropped straight into a layout out of the palette
+        // (WB40b) has no schematic component behind it by construction, and telling that user to go
+        // and place one by hand is asking them to do what this command is for.
+        if (wBonds.Count == 0) return CreateFrom(schematic, fromLayout);
 
         // §7/WB28 again: merging one layout's wires into two components would break each one's
         // array-to-pin mapping, and there is no way to tell which wire belongs to which. One is
@@ -156,6 +169,70 @@ public static class WBondSchematicReconcile
             new SetParametersCommand(schematic, comp, reconciled),
             messages,
             drift is not null);
+    }
+
+    /// <summary>
+    /// Removes the wBond component(s) from a schematic whose layout has no wires left.
+    ///
+    /// <para><b>One command for all of them</b>, so the whole removal is one undo entry — and it is
+    /// <c>DeleteCommand</c>, the schematic's own, which restores each component at its original list
+    /// index. Undo therefore puts the symbol back exactly where it was, wired to whatever it was wired
+    /// to; nothing here needs its own inverse.</para>
+    ///
+    /// <para><b>The wires that CONNECTED to it are left alone</b>, exactly as deleting a component by
+    /// hand leaves them. They are the user's drawing, and guessing which of them existed only to reach
+    /// this component is not something this command can know.</para>
+    /// </summary>
+    private static Result RemoveFrom(SchematicEditModel schematic, IReadOnlyList<EditableComponent> wBonds)
+    {
+        // Nothing there and nothing to remove: the ordinary state of a cell whose wires were deleted
+        // and whose schematic was already updated once. Silent, like every other no-op here.
+        if (wBonds.Count == 0) return Result.None;
+
+        string names = string.Join(", ", wBonds.Select(c => $"'{c.InstanceName}'"));
+
+        return new Result(
+            new DeleteCommand(schematic, [.. wBonds.Select(c => c.Id)]),
+            [$"The layout has no bond wires left, so {names} " +
+             $"{(wBonds.Count == 1 ? "was" : "were")} removed from this schematic. Any nets that were " +
+             "wired to it are still drawn — check them before running."],
+            false);
+    }
+
+    /// <summary>
+    /// Places a new wBond component carrying <paramref name="fromLayout"/>.
+    ///
+    /// <para><b>Built through <see cref="WBondPlacement.BuildCarrying"/>, the same call the palette
+    /// drop and the wirebond IMPORT both go through</b> — so a component that arrived this way and one
+    /// dropped by hand are the same component, with the same defaults, and "wBond" cannot come to mean
+    /// two slightly different things depending on which end of the flow it entered from. The
+    /// parameters are put in canonical order for the same reason the update path does it: order is
+    /// what the symbol renders its labels in.</para>
+    ///
+    /// <para>It is placed clear of everything already on the sheet and <b>not wired to anything</b>.
+    /// It cannot be: an array's two terminals are a pin PAIR whose nets only the user knows. The
+    /// message says so, because a component that appears unconnected with no explanation reads as a
+    /// half-finished command.</para>
+    /// </summary>
+    private static Result CreateFrom(SchematicEditModel schematic, WBondDesign fromLayout)
+    {
+        var comp = WBondPlacement.BuildCarrying(
+            fromLayout, SchematicEditModel.NextAvailableName(schematic.Components, SymbolKind.WBond));
+
+        var (x, y) = WBondPlacement.SuggestPlacementPoint(schematic);
+        comp.X = x;
+        comp.Y = y;
+
+        var ordered = WBondPlacement.InCanonicalOrder(comp.Parameters);
+        comp.Parameters.Clear();
+        foreach (var p in ordered) comp.Parameters.Add(p);
+
+        return new Result(
+            new PlaceComponentCommand(schematic, comp),
+            [$"wBond '{comp.InstanceName}' was created from the layout: {fromLayout.Arrays.Count} " +
+             $"array(s), {fromLayout.WireCount} wire(s). Its pins are not connected to anything yet — " +
+             "each array is one pin pair, and only you know which nets they belong to."],
+            false);
     }
 
     /// <summary>

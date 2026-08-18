@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.Ui.Commands;
+using CircuitRF.Ui.WBond;
 
 namespace CircuitRF.Ui.Layout;
 
@@ -44,9 +45,14 @@ public partial class LayoutEditorViewModel
     public LayoutCommandAvailability MirrorAvailability => RotateAvailability;
 
     /// <inheritdoc cref="MirrorAvailability"/>
+    ///
+    /// <para>A WIRE selection is enough on its own (owner, 2026-08-17). On a wirebond cell the wires
+    /// are content of the same view and rotate with it, so a toolbar button greyed out with wires
+    /// selected would be refusing the commonest thing on that cell.</para>
     public LayoutCommandAvailability RotateAvailability =>
         GeometricSelectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0
-            ? new LayoutCommandAvailability(false, "Select geometry or an instance to rotate.")
+        && SelectedWireIndices.Count == 0
+            ? new LayoutCommandAvailability(false, "Select geometry, an instance or a wire to rotate.")
             : new LayoutCommandAvailability(true, null);
 
     /// <summary>Rotates the selection 90°: counter-clockwise by default, clockwise with
@@ -117,12 +123,24 @@ public partial class LayoutEditorViewModel
     {
         var shapeIndices    = GeometricSelectedIndices;
         var instanceIndices = _selectedInstanceIndices.ToList();
-        if (shapeIndices.Count == 0 && instanceIndices.Count == 0) return;
+
+        // WB40f: the WIRES of a wirebond cell are content of this same view and are carried by the
+        // same gesture. They also count on their own — a wires-only selection is a normal thing to
+        // rotate on that cell.
+        var wireIndices = SelectedWireIndices;
+
+        if (shapeIndices.Count == 0 && instanceIndices.Count == 0 && wireIndices.Count == 0) return;
 
         var bbox = Bbox.Empty;
         foreach (var i in shapeIndices) bbox = bbox.Union(LayoutGeometry.BboxOf(Model.Shapes[i]));
         foreach (var i in instanceIndices)
             bbox = bbox.Union(CellHierarchy.InstanceBbox(Model.Instances[i], InstanceBaseDir));
+
+        // …and the wires join the SAME bbox, so the pivot is the whole selection's centre. Anything
+        // else would swing a wire off the pad it lands on when the two are rotated together, which is
+        // the one outcome §6.3's "both selections at once" contract exists to make possible.
+        bbox = bbox.Union(SelectedWireBbox(wireIndices));
+
         if (bbox.MaxX < bbox.MinX || bbox.MaxY < bbox.MinY) return;
 
         // Doubled centres keep the arithmetic integral until the single rounding step below.
@@ -187,6 +205,25 @@ public partial class LayoutEditorViewModel
             : null;
         foreach (var c in instanceCommands)
             command = command is null ? c : new CompositeCommand(command, c);
+
+        // The wire half rides in the SAME entry — see TransformWiresCommand for why one entry rather
+        // than two. Its map is the layout's own, in the wires' units: nm and DBU are the same number
+        // only at the 1,000 DBU/µm default, so the bridge is crossed explicitly here.
+        if (wireIndices.Count > 0 && WireEditor is { } wireEditor)
+        {
+            int dbuPerMicron = Model.DbuPerMicron;
+            (long X, long Y) WireMap(long xNm, long yNm)
+            {
+                var (dx2, dy2) = transform.Point(WBondSnap.ToDbu(xNm, dbuPerMicron),
+                                                 WBondSnap.ToDbu(yNm, dbuPerMicron));
+                return (WBondSnap.ToNm(dx2, dbuPerMicron), WBondSnap.ToNm(dy2, dbuPerMicron));
+            }
+
+            var wireCommand = new Commands.Layout.TransformWiresCommand(
+                wireEditor, wireIndices, WireMap, description);
+
+            command = command is null ? wireCommand : new CompositeCommand(command, wireCommand);
+        }
 
         if (command is not null) Execute(command);
     }

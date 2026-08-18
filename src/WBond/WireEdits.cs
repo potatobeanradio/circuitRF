@@ -443,6 +443,98 @@ public static class WireEdits
         return length <= 0.0 ? (0.0, 0.0) : (dx / length, dy / length);
     }
 
+    // ---------------------------------------------------------------- vertices (owner, 2026-08-17)
+
+    /// <summary>
+    /// Inserts a vertex into <paramref name="segmentIndex"/> at parameter <paramref name="t"/> along
+    /// it, <b>on the straight line between that segment's own endpoints</b>.
+    ///
+    /// <para>Owner, 2026-08-17: <i>"add the vertex such that it makes straight lines with the adjacent
+    /// vertices; make its z-height an interpolated value from the adjacent vertices."</i> Both fall
+    /// out of one <see cref="Lerp"/>: a point ON the segment is collinear with its neighbours by
+    /// construction, and lerping all three coordinates interpolates z with them. So the insert changes
+    /// the wire's SHAPE not at all — it only gives the user a handle where there was none, which is
+    /// the whole point of the command.</para>
+    ///
+    /// <para><paramref name="t"/> is clamped to [0,1]: the caller projects a click onto the segment,
+    /// and a click past either end would otherwise place the vertex outside the segment it names —
+    /// a kink, from a command whose contract is that it makes none.</para>
+    /// </summary>
+    /// <returns>The index of the inserted point, or −1 when the segment does not exist.</returns>
+    public static int InsertPointOnSegment(Wire wire, int segmentIndex, double t)
+    {
+        ArgumentNullException.ThrowIfNull(wire);
+        if (segmentIndex < 0 || segmentIndex >= wire.Points.Count - 1) return -1;
+
+        double clamped = double.IsFinite(t) ? Math.Clamp(t, 0.0, 1.0) : 0.5;
+
+        var inserted = Lerp(wire.Points[segmentIndex], wire.Points[segmentIndex + 1], clamped);
+        wire.Points.Insert(segmentIndex + 1, inserted);
+        return segmentIndex + 1;
+    }
+
+    /// <summary>
+    /// Straightens a wire <b>in the XY plane, with both feet anchored</b> — every interior point moves
+    /// onto the straight line between them, keeping its own position along that line and <b>its own
+    /// z</b> (owner, 2026-08-17).
+    ///
+    /// <para>The loop is therefore untouched: this removes lateral bow, not height. Each point keeps
+    /// the chord parameter it already had (<see cref="ChordParameter"/>), so a wire whose points were
+    /// bunched near one foot stays bunched — the command straightens, it does not re-space.</para>
+    ///
+    /// <para><b>A wire bound to a profile is already straight in XY</b>, because
+    /// <see cref="LoopProfile.ApplyTo"/> writes X and Y by linear interpolation between the feet. So
+    /// this is a no-op there and needs no detach — unlike removing a point, which changes the point
+    /// set a profile defines.</para>
+    /// </summary>
+    /// <returns>How many points moved.</returns>
+    public static int StraightenXy(Wire wire)
+    {
+        ArgumentNullException.ThrowIfNull(wire);
+        if (wire.Points.Count < 3) return 0;   // two feet and nothing between them: already straight
+
+        var start = wire.Points[0];
+        var end = wire.Points[^1];
+
+        // Captured BEFORE anything moves: each parameter is measured against the ORIGINAL geometry,
+        // and reading them as we go would measure later points against already-straightened ones.
+        int n = wire.Points.Count;
+        var spans = new double[n];
+        for (int i = 0; i < n; i++) spans[i] = ChordParameter(start, end, wire.Points[i]);
+
+        int moved = 0;
+        for (int i = 1; i < n - 1; i++)
+        {
+            var p = wire.Points[i];
+            long x = start.X + (long)Math.Round((end.X - start.X) * spans[i]);
+            long y = start.Y + (long)Math.Round((end.Y - start.Y) * spans[i]);
+
+            if (x == p.X && y == p.Y) continue;
+
+            wire.Points[i] = new Point3(x, y, p.Z);
+            moved++;
+        }
+
+        return moved;
+    }
+
+    /// <summary>
+    /// Where a point falls along a 2D segment, as a fraction, clamped to the segment itself.
+    ///
+    /// <para>The caller's own plane: the layout view projects a click in XY, the profile view in
+    /// (span, z). One helper for both, because "where along this segment did they click" is the same
+    /// question in either and a second copy would drift.</para>
+    /// </summary>
+    public static double SegmentParameter(double ax, double ay, double bx, double by,
+                                          double px, double py)
+    {
+        double ex = bx - ax, ey = by - ay;
+        double lengthSquared = ex * ex + ey * ey;
+        if (lengthSquared <= 0.0) return 0.0;   // a degenerate segment: either end is the same answer
+
+        return Math.Clamp(((px - ax) * ex + (py - ay) * ey) / lengthSquared, 0.0, 1.0);
+    }
+
     /// <summary>The shipped nudge steps (WB25). Both are settings; these are the defaults.</summary>
     public static long DefaultNudgeNm => WBondUnits.ToNm(1.0, WBondUnit.Mil);
 

@@ -32,8 +32,13 @@ namespace CircuitRF.Ui.Controls;
 /// grounds that span is a derived coordinate; the owner's answer is that a point you can see move
 /// sideways under the pointer has to actually move, and the chord direction is the single answer the
 /// argument said did not exist.</para>
-/// <para>Alt-drag is unchanged and still means something different: it SCALES the whole bound array
-/// by a factor (WB24b) rather than translating the selection.</para>
+/// <para>Alt-drag is unchanged and still means something different: it SCALES by a factor (WB24b)
+/// rather than translating. <b>It scales every wire in the GROUP the selection touches</b> (owner,
+/// 2026-08-17) — a group is drawn here as one superimposed shape under one envelope band, and it is
+/// one loop program on one bonder. Not every wire in the DESIGN, which is what it used to do: it
+/// rescaled the wires sharing a <c>LoopProfile</c>, and the shipped default gives every array the
+/// same one. See <c>WBondViewModel.ScaleSelection</c>, which the layout view calls with
+/// <c>wholeArray: false</c> for the opposite reason — there each wire lands on its own pad.</para>
 /// </summary>
 public sealed class WBondProfileCanvas : Control
 {
@@ -278,7 +283,13 @@ public sealed class WBondProfileCanvas : Control
     /// </summary>
     private void OnContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        _contextMenuTargetArray = e.TryGetPosition(this, out var p) ? HitTestArray(p) : -1;
+        var hit = e.TryGetPosition(this, out var p) ? HitTestWire(p) : WireHitTest.Hit.None;
+
+        _contextMenuTargetArray = hit.Found && _viewModel is not null
+            ? _viewModel.Mesh.ArrayOfWire[hit.Wire]
+            : -1;
+
+        _contextMenuInsertion = hit.Found ? ResolveInsertion(hit, p) : null;
     }
 
     /// <summary>
@@ -291,6 +302,55 @@ public sealed class WBondProfileCanvas : Control
     /// already fixed twice — the menu is declared once in XAML and rebuilt on <c>Opening</c>.</para>
     /// </summary>
     private int _contextMenuTargetArray = -1;
+
+    /// <summary>
+    /// Where an Add Vertex from the current right-click would go — the wire, the segment, and how far
+    /// along it — or null when the click landed on no wire.
+    ///
+    /// <para>Resolved HERE rather than by the view that owns the menu, because the parameter is
+    /// measured in this canvas's own (span, z) plane and only this control knows the projection: the
+    /// span mode and the azimuth are its state. The layout overlay resolves the identical question in
+    /// XY, by the identical rule — see <c>WBondLayoutOverlay.ResolveInsertion</c>.</para>
+    /// </summary>
+    private (int Wire, int Segment, double T)? _contextMenuInsertion;
+
+    /// <summary>Reads and CLEARS the recorded insertion point, alongside the array.</summary>
+    public (int Wire, int Segment, double T)? ConsumeContextMenuInsertion()
+    {
+        var t = _contextMenuInsertion;
+        _contextMenuInsertion = null;
+        return t;
+    }
+
+    /// <summary>
+    /// Which segment a click means and where along it, in the profile plane.
+    ///
+    /// <para>A hit on a segment names it outright; a hit on a VERTEX names the segment starting there,
+    /// except at the last point where the one before it is meant. The parameter is the click's
+    /// projection onto that segment, so the new vertex lands under the pointer.</para>
+    /// </summary>
+    private (int Wire, int Segment, double T)? ResolveInsertion(WireHitTest.Hit hit, Point screenPoint)
+    {
+        if (_viewModel is null) return null;
+
+        var mesh = _viewModel.Mesh;
+        if (hit.Wire < 0 || hit.Wire >= mesh.WireCount) return null;
+
+        var wire = mesh.Wires[hit.Wire];
+        if (wire.Points.Count < 2) return null;
+
+        int segment = hit.IsSegment ? hit.Point : Math.Min(hit.Point, wire.Points.Count - 2);
+        if (segment < 0 || segment >= wire.Points.Count - 1) return null;
+
+        var a = ProfileProjection.Project(wire, segment, SpanMode, Azimuth);
+        var b = ProfileProjection.Project(wire, segment + 1, SpanMode, Azimuth);
+
+        double span = ScreenToSpan(screenPoint.X);
+        double z = ScreenToZ(screenPoint.Y);
+
+        return (hit.Wire, segment,
+                WireEdits.SegmentParameter(a.Span, a.Z, b.Span, b.Z, span, z));
+    }
 
     /// <summary>Reads and CLEARS the recorded right-click target, so a stale one can never leak.</summary>
     public int ConsumeContextMenuTargetArray()
@@ -313,10 +373,21 @@ public sealed class WBondProfileCanvas : Control
     /// </summary>
     public int HitTestArray(Point screenPoint)
     {
-        if (_viewModel is null) return -1;
+        var hit = HitTestWire(screenPoint);
+        return hit.Found && _viewModel is not null ? _viewModel.Mesh.ArrayOfWire[hit.Wire] : -1;
+    }
+
+    /// <summary>
+    /// The WIRE, POINT or SEGMENT under a screen point — <see cref="HitTestArray"/>'s own answer one
+    /// level finer, so a caller that needs the segment (Add Vertex) and one that needs the group (the
+    /// context menu's own commands) cannot disagree about what was clicked.
+    /// </summary>
+    public WireHitTest.Hit HitTestWire(Point screenPoint)
+    {
+        if (_viewModel is null) return WireHitTest.Hit.None;
 
         var mesh = _viewModel.Mesh;
-        if (mesh.WireCount == 0) return -1;
+        if (mesh.WireCount == 0) return WireHitTest.Hit.None;
 
         double span = ScreenToSpan(screenPoint.X);
         double z = ScreenToZ(screenPoint.Y);
@@ -325,11 +396,8 @@ public sealed class WBondProfileCanvas : Control
         // rule every other hit test in this codebase follows.
         double tolNm = HitTolerancePixels / _zoom;
 
-        var hit = WireHitTest.HitTestProfile(mesh, span, (long)Math.Round(z), tolNm, SpanMode,
-                                             azimuthRadians: Azimuth);
-        if (!hit.Found) return -1;
-
-        return mesh.ArrayOfWire[hit.Wire];
+        return WireHitTest.HitTestProfile(mesh, span, (long)Math.Round(z), tolNm, SpanMode,
+                                          azimuthRadians: Azimuth);
     }
 
     /// <summary>
@@ -726,12 +794,20 @@ public sealed class WBondProfileCanvas : Control
         double dSpan = span - _dragStartSpan;
         if (!_altMoveOutputFoot) dSpan = -dSpan;
 
-        double spanFactor = FrameFactor(_altReferenceSpan, dSpan, ref _altSpanApplied);
-        double heightFactor = FrameFactor(_altReferenceHeight, z - _dragStartZ, ref _altHeightApplied);
+        // Both axes land on the SNAP PITCH — the span and the loop height are the quantities that have
+        // to come out round (owner, 2026-08-17), not the cursor position and not the scale factor.
+        double spanFactor = FrameFactor(_altReferenceSpan, dSpan, GridPitchNm, ref _altSpanApplied);
+        double heightFactor = FrameFactor(_altReferenceHeight, z - _dragStartZ, GridPitchNm,
+                                          ref _altHeightApplied);
 
         if (spanFactor == 1.0 && heightFactor == 1.0) return;
 
-        _controller.DragFrame(_ => _viewModel.ScaleSelection(spanFactor, heightFactor, _altMoveOutputFoot));
+        // wholeArray: the GROUP, not the one wire under the hand (owner, 2026-08-17: "it needs to
+        // change ALL the wires in the group at once"). This view draws a group as one superimposed
+        // shape under a single envelope band, and a bond group is one loop program on one bonder. The
+        // layout view passes false — there each wire lands on its own pad. See ScaleSelection.
+        _controller.DragFrame(_ => _viewModel.ScaleSelection(
+            spanFactor, heightFactor, _altMoveOutputFoot, wholeArray: true));
         InvalidateVisual();
     }
 
@@ -739,14 +815,36 @@ public sealed class WBondProfileCanvas : Control
     /// The factor to apply THIS frame for one axis: the target factor since the drag began, divided by
     /// what has already been applied. Returns exactly 1.0 when the axis has no usable reference (a
     /// flat wire has no height to scale) or has not moved, so the caller can skip it.
+    ///
+    /// <para><b>The TARGET VALUE is what snaps, not the factor and not the cursor</b> (owner,
+    /// 2026-08-17). Snapping a ratio means nothing, and a snapped cursor still leaves an arbitrary
+    /// span or height whenever the wire started off-grid — quantising the quantity itself is what makes
+    /// an alt-drag land on 30 mil rather than on 29.87. A frame whose target has not crossed into the
+    /// next multiple returns 1.0, so the gesture steps pitch to pitch instead of drifting.</para>
+    ///
+    /// <para><b>Alt does not suppress this snap</b>, though it suppresses every other one in the
+    /// application (see <see cref="SnapToPitch"/>'s own modifier check). Alt is what SELECTS this
+    /// gesture, so letting it also mean "ignore the grid" would leave no way to ask for a snapped
+    /// scale at all.</para>
     /// </summary>
-    private static double FrameFactor(double reference, double delta, ref double applied)
+    /// <param name="pitchNm">The snap pitch, or 0 for none.</param>
+    private static double FrameFactor(double reference, double delta, long pitchNm, ref double applied)
     {
         if (reference <= 0) return 1.0;
 
+        double targetValue = reference + delta;
+
+        if (pitchNm > 0)
+        {
+            // Never below one pitch: rounding a big shrinking drag reaches zero, and a zero span has
+            // no chord while a zero height is a flat wire the scale can never lift again — one pitch
+            // is the smallest thing the grid can express.
+            targetValue = Math.Max(Math.Round(targetValue / pitchNm) * pitchNm, pitchNm);
+        }
+
         // A non-positive factor would fold the array through itself; clamp rather than refuse, so the
         // drag stays live and the user simply cannot push it past flat.
-        double target = Math.Max((reference + delta) / reference, 1e-3);
+        double target = Math.Max(targetValue / reference, 1e-3);
 
         double frame = target / applied;
         if (Math.Abs(frame - 1.0) < 1e-9) return 1.0;

@@ -156,23 +156,39 @@ public static class WBondEmbedding
         /// <summary>Wire diameter, in mils.</summary>
         public const double DiameterMils = 1.0;
 
-        /// <summary>Height of the INPUT foot (the die pad), in mils.</summary>
-        public const double InputFootZMils = 4.0;
-
-        /// <summary>Height of the OUTPUT foot (the package lead), in mils.</summary>
-        public const double OutputFootZMils = 1.0;
+        /// <summary>
+        /// The z BOTH feet land at, in mils — the shipped value of the <b>Wire z-height</b> setting
+        /// (Settings ▸ Wirebonds; <c>WBondDefaults.FootZNm</c> is what reads it, and every creation
+        /// path in the UI passes that rather than this).
+        ///
+        /// <para><b>One number, and the feet are level</b> (owner, 2026-08-17). It was an asymmetric
+        /// 4 mil → 1 mil descent, die pad to package lead. That is a real case but the wrong STARTING
+        /// point: a level wire is the shape a user reads as neutral, its loop is symmetric about
+        /// mid-span, and a drop is something they add by moving a foot rather than something they
+        /// have to notice and undo. Nothing in the geometry cares either way — a profile scales its
+        /// loop about the CHORD, so feet at different z were never a special case, and moving one foot
+        /// still produces exactly the descent that was shipped before.</para>
+        /// </summary>
+        public const double FootZMils = 4.0;
 
         /// <summary>The group the shipped wire lands in.</summary>
         public const string GroupName = "G1";
 
-        /// <summary>The input foot's position.</summary>
-        public static Point3 Start => Point3.Mils(0, 0, InputFootZMils);
+        /// <summary>The input foot's position, at the shipped z.</summary>
+        public static Point3 Start => StartAt(WBondUnits.ToNm(FootZMils, WBondUnit.Mil));
 
         /// <summary>
         /// The output foot's position — <b>north of the input foot</b>, which is what makes the
         /// shipped wire north/south. Change the axis here and nothing else needs to move.
         /// </summary>
-        public static Point3 End => Point3.Mils(0, SpanMils, OutputFootZMils);
+        public static Point3 End => EndAt(WBondUnits.ToNm(FootZMils, WBondUnit.Mil));
+
+        /// <summary>The input foot at a given z — what a caller holding the user's own setting uses.</summary>
+        public static Point3 StartAt(long footZNm) => new(0, 0, footZNm);
+
+        /// <summary>The output foot at a given z, one span north of <see cref="StartAt"/>.</summary>
+        public static Point3 EndAt(long footZNm) =>
+            new(0, WBondUnits.ToNm(SpanMils, WBondUnit.Mil), footZNm);
     }
 
     /// <summary>
@@ -182,8 +198,18 @@ public static class WBondEmbedding
     /// schematic component both start here, so "what a new wBond is" cannot come to mean two
     /// different things. Every number it uses is a named constant on <see cref="DefaultWire"/>.</para>
     /// </summary>
-    public static WBondDesign DefaultDesign()
+    /// <param name="footZNm">
+    /// The z both feet land at, or null for the shipped <see cref="DefaultWire.FootZMils"/>.
+    ///
+    /// <para><b>A parameter rather than a preference read, because this project cannot read one</b> —
+    /// <c>src/WBond</c> is framework-free and the settings live in the UI. Every UI creation path
+    /// passes <c>WBondDefaults.FootZNm</c>, which is the user's Settings ▸ Wirebonds value; the
+    /// no-argument form is what a test, a headless caller and <see cref="DefaultPayload"/> use.</para>
+    /// </param>
+    public static WBondDesign DefaultDesign(long? footZNm = null)
     {
+        long footZ = footZNm ?? WBondUnits.ToNm(DefaultWire.FootZMils, WBondUnit.Mil);
+
         var profile = LoopProfile.BallBond(WBondUnits.ToNm(DefaultWire.LoopHeightMils, WBondUnit.Mil));
         var design = new WBondDesign();
         design.Profiles.Add(profile);
@@ -193,7 +219,7 @@ public static class WBondEmbedding
             Profile = profile.Name,
             Wires =
             {
-                profile.CreateWire(DefaultWire.Start, DefaultWire.End,
+                profile.CreateWire(DefaultWire.StartAt(footZ), DefaultWire.EndAt(footZ),
                                    WBondUnits.ToNm(DefaultWire.DiameterMils, WBondUnit.Mil),
                                    WireMaterials.Default.Name),
             },

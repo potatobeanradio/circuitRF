@@ -221,22 +221,11 @@
                             <mi:MaterialIcon Kind="PinOutline" Width="16" Height="16"/>
                         </ToggleButton>
 
-                        <!-- EM mesh overlay toggle (brief-L6-L7-em-ui.md R-em-15) — same
-                             session-only view-preference contract as the pin toggle above; draws
-                             nothing until a .cem's Mesh button has produced one. -->
-                        <ToggleButton IsChecked="{Binding ActiveViewModel.ShowEmMesh}"
-                                      ToolTip.Tip="Show EM cross-section mesh" Padding="6,3">
-                            <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
-                        </ToggleButton>
-
-                        <!-- The PLAN-VIEW surface mesh (L8b D5) had no toggle of its own, so a
-                             full-wave mesh could only be turned off by closing the document. Same
-                             session-only contract; independent of the cross-section toggle, because
-                             which overlay a document shows follows from which mesh was computed. -->
-                        <ToggleButton IsChecked="{Binding ActiveViewModel.ShowPlanarMesh}"
-                                      ToolTip.Tip="Show full-wave surface mesh" Padding="6,3">
-                            <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
-                        </ToggleButton>
+                        <!-- The two EM MESH toggles used to sit here, between the PCell pin toggle and
+                             the snap toggles. They now sit beside the EM Setup button further along
+                             this toolbar (owner, 2026-08-17): all three are the same subject, and the
+                             two that show what a solve produced belong next to the one that sets it
+                             up rather than among the drawing-tool toggles. -->
 
                         <!-- Geometry snap toggles (docs/sonnet-briefs/brief-snap-distance-and-geometry-
                              snap.md R-snp-6/7) — exactly two, per the brief's own guardrail against a
@@ -298,18 +287,62 @@
                         <Border x:Name="WirePanelSeparator" Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                        <Button x:Name="WireProfileBtn"
-                                Click="OnToggleWireProfilePanel"
-                                ToolTip.Tip="Wire Profile panel  (P)"
-                                Padding="6,3">
+                        <!-- ToggleButtons, not Buttons (owner, 2026-08-17: "the toolbar buttons do not
+                             indicate whether those panels are currently in view"). They already TOGGLE,
+                             so the checked chrome is simply saying what the next press will do. The
+                             checked state is pushed from code-behind, never two-way bound: the truth is
+                             the dock tree, which a panel closed by its own tab X also changes. -->
+                        <ToggleButton x:Name="WireProfileBtn"
+                                      Click="OnToggleWireProfilePanel"
+                                      ToolTip.Tip="Wire Profile panel  (P)"
+                                      Padding="6,3">
                             <mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"/>
-                        </Button>
+                        </ToggleButton>
 
-                        <Button x:Name="WireInductanceBtn"
-                                Click="OnToggleWireInductancePanel"
-                                ToolTip.Tip="Array Inductance panel  (A)"
-                                Padding="6,3">
+                        <ToggleButton x:Name="WireInductanceBtn"
+                                      Click="OnToggleWireInductancePanel"
+                                      ToolTip.Tip="Array Inductance panel  (A)"
+                                      Padding="6,3">
                             <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
+                        </ToggleButton>
+
+                        <!-- Draw Wire (owner, 2026-08-17) — the third button gated on this cell having
+                             wires at all, and it sits with the other two because all three only exist
+                             on a wirebond cell.
+
+                             Bound rather than pushed from code-behind, unlike its two neighbours: this
+                             one IS view-model state (the session owns it, so Escape and the W key can
+                             reach it), where their state is the dock tree's. A binding also re-points
+                             itself on a push-in, which the code-behind path has to be told to do. -->
+                        <ToggleButton x:Name="WireDrawBtn"
+                                      IsChecked="{Binding ActiveViewModel.WireDrawArmed}"
+                                      ToolTip.Tip="Draw Wire  (W) — click the start foot, then the end foot; Escape disarms"
+                                      Padding="6,3">
+                            <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
+                        </ToggleButton>
+
+                        <!-- Angle Wire (owner, 2026-08-17). NOT the toolbar's Rotate button, which
+                             turns the whole selection 90° as a rigid body exactly as it turns a
+                             rectangle — and which now carries the wires too. This is the gesture that
+                             makes an ANGLED wire: grab one near the end you want to move and swing it,
+                             with the far end anchored. The whole swing was already implemented on the
+                             overlay (WB26a) and had no way in from this editor. -->
+                        <ToggleButton x:Name="WireRotateBtn"
+                                      IsChecked="{Binding ActiveViewModel.WireRotateArmed}"
+                                      ToolTip.Tip="Angle Wire  (Alt+R) — swing a wire about its far end; Shift snaps to 45°, Escape disarms"
+                                      Padding="6,3">
+                            <mi:MaterialIcon Kind="AngleAcute" Width="16" Height="16"/>
+                        </ToggleButton>
+
+                        <!-- Transform… — the wBond editor's own dialog (rotate/scale/translate the
+                             wire selection by typed numbers), which this editor had no entry point for
+                             (owner, 2026-08-17). Gated on a wire SELECTION as well as on the cell
+                             having wires: the dialog's whole subject is what is selected. -->
+                        <Button x:Name="WireTransformBtn"
+                                Click="OnWireTransform"
+                                ToolTip.Tip="Transform Wires…  (T) — rotate, scale or move the selected wires by typed values"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="AxisArrow" Width="16" Height="16"/>
                         </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
@@ -334,6 +367,27 @@
                                 Padding="6,3">
                             <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
                         </Button>
+
+                        <!-- The two mesh overlays, immediately RIGHT of EM Setup (owner, 2026-08-17)
+                             — "these are all related items so they should be close together".
+
+                             EM mesh overlay toggle (brief-L6-L7-em-ui.md R-em-15): a session-only view
+                             preference, never model state, drawing nothing until a .cem's Mesh button
+                             has produced one. Native ToggleButton :checked chrome (Fluent) is the
+                             active-state cue — the local Button.ToolActive style selects Button only. -->
+                        <ToggleButton IsChecked="{Binding ActiveViewModel.ShowEmMesh}"
+                                      ToolTip.Tip="Show EM cross-section mesh" Padding="6,3">
+                            <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
+                        </ToggleButton>
+
+                        <!-- The PLAN-VIEW surface mesh (L8b D5) had no toggle of its own, so a
+                             full-wave mesh could only be turned off by closing the document. Same
+                             session-only contract; independent of the cross-section toggle, because
+                             which overlay a document shows follows from which mesh was computed. -->
+                        <ToggleButton IsChecked="{Binding ActiveViewModel.ShowPlanarMesh}"
+                                      ToolTip.Tip="Show full-wave surface mesh" Padding="6,3">
+                            <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
+                        </ToggleButton>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>

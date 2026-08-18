@@ -15,12 +15,15 @@
     <Grid RowDefinitions="*">
         <!-- The empty state is where a MULTI-wire selection lands, and it is exactly where "Group
              Wires As…" belongs: regrouping is normally done to a marquee-full of wires at once, so
-             this was the one panel state that had nothing to offer the commonest bulk edit. The
-             button carries the count as its own sanity check (owner). -->
+             this was the one panel state that had nothing to offer the commonest bulk edit.
+
+             The COUNT is on the message line above it, not on the button (owner, 2026-08-17): the
+             message already states both counts that matter — how many wires, and how many groups
+             they come from — and repeating one of them on the button said it twice. -->
         <StackPanel IsVisible="{Binding IsEmptyState}" Margin="8" Spacing="8">
             <TextBlock Text="{Binding EmptyMessage}"
                        FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
-            <Button Content="{Binding GroupWiresLabel}" IsVisible="{Binding CanGroupWires}"
+            <Button Content="Group Wires As…" IsVisible="{Binding CanGroupWires}"
                     Click="OnGroupWiresClick"
                     FontSize="11" HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"/>
@@ -35,24 +38,25 @@
                      copy is one you retype by hand into a report. -->
                 <!-- Group: pick an existing one, or the trailing "New Group Name…" entry, which the
                      code-behind resolves to a real name by prompting. -->
+                <!-- ItemsSource is NOT bound here, deliberately — the code-behind assigns the list
+                     and then the selection, in that order. A binding is applied when the DataContext
+                     reaches this control, which is AFTER the code-behind's own property-changed
+                     handler runs, so a selection set first was resolved against the OLD item list
+                     and silently dropped: the blank Group combo the owner saw (2026-08-17). See
+                     SyncGroupSelection. -->
                 <Grid ColumnDefinitions="62,*">
                     <TextBlock Grid.Column="0" Text="Group" VerticalAlignment="Center" FontSize="11"
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     <ComboBox Grid.Column="1" x:Name="GroupCombo"
-                              ItemsSource="{Binding AvailableGroups}"
                               SelectionChanged="OnGroupChanged"
                               HorizontalAlignment="Stretch" FontSize="11"/>
                 </Grid>
 
-                <!-- The same dialog the layout view's context menu opens. Offered here as well as
-                     the combo above because it is the route that also works on a MULTI-wire
-                     selection, and because it states the count before it acts. -->
-                <Grid ColumnDefinitions="62,*">
-                    <Button Grid.Column="1" Content="{Binding GroupWiresLabel}"
-                            Click="OnGroupWiresClick"
-                            FontSize="11" Padding="6,2" HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"/>
-                </Grid>
+                <!-- No "Group Wires As…" button here (owner, 2026-08-17). This half of the panel is
+                     only ever shown for a SINGLE wire, and the combo directly above already moves
+                     that wire into any group, including a new one — a second control for the same
+                     edit, one of them behind a modal, is one too many. The button lives in the
+                     multi-wire state above, where the combo does not apply. -->
 
                 <Grid ColumnDefinitions="62,*">
                     <TextBlock Grid.Column="0" Text="Profile" VerticalAlignment="Center" FontSize="11"

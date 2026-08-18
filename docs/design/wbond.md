@@ -886,6 +886,19 @@ owner's requirement that a drag in the profile view change the whole group at on
 factor preserves an array whose wires deliberately have different spans (a fan-out from a common pad);
 setting a common absolute span would silently destroy it.
 
+> **Clarified 2026-08-17 — "the entire array" means the ARRAY, and it was implemented as the
+> `LoopProfile`.** Those are not the same set: a profile is an editor-internal sharing mechanism a
+> schematic user never sees (O-10) and it routinely spans every array in the design — a design built
+> from `WBondEmbedding.DefaultDesign` has ONE profile that every array references — so alt-dragging a
+> wire in G1 rescaled G2's wires as well, and wrote the new height onto the shared profile on the way
+> out. The unit is now the array (`WireMesh.ArrayOfWire`), and nothing writes a profile.
+>
+> **The LAYOUT view deliberately does NOT promote to the array** (`ScaleSelection(wholeArray: false)`).
+> The profile view draws a group as one superimposed shape under one envelope band, and a bond group is
+> one loop program on one bonder — reshaping one member and leaving its siblings is not a thing the
+> machine can do. In the layout each wire is drawn at its own place among the pads and an alt-drag
+> stretches *that* wire's span onto *that* pad, so its members are not interchangeable.
+
 All three operations are single undo steps, and all three go through the incremental fill of §4.3 —
 they move many wires at once, so they take the WB15 quality ladder like any other large edit.
 
@@ -1262,6 +1275,150 @@ and becomes *the Layout Editor with two panels open*, which is what WB22 said in
 
 **The standalone `wBond` application is unaffected and stays** (§11): it is the same overlay and the
 same two panels, hosted without a workspace. That is a build configuration, not a second editor.
+
+**WB40b. A layout becomes a wirebond cell by DROPPING a wBond into it, as well as by having a
+schematic component written out.** (Owner, 2026-08-17: *"Cannot drag and drop a wBond component from
+the Library Palette into a layout. User should be able to do that and then start editing wires in
+layout."*)
+
+Until then the only way to get wires onto artwork was §9.5's schematic-first flow — place the
+component, then Update Layout from Schematic — which inverts §9.5's own claim that **the layout is the
+editing source of truth**. Dropping one is the layout-first entry to the same place:
+
+- It is **not** a PCell placement and must not be made one. A wBond has no generator and never will
+  (WB23: no wire enters a `.clay`), so the generator-based drop path correctly refuses it; what a drop
+  produces is the session's *wire layer*, seeded from `WBondEmbedding.DefaultDesign` — the same
+  one-array, one-wire definition a freshly-placed schematic component starts from — moved so its input
+  foot lands where the drop did.
+- **A second drop adds another array**, not another wire layer. One `.wBond` per `.clay` is the model
+  (WB40), so "another group of wires" is the only reading of the gesture that the file format can hold,
+  and it never refuses a drop the cursor has already accepted.
+- **The file is written by the ordinary save**, not at drop time. That is also what makes the drop work
+  on a scratch layout, whose `.wBond` path is not knowable until its first save (`RetargetWiresForSaveAs`).
+- **The drop is refused where the wires on screen belong to a HOST** — the wBond editor hosts the same
+  canvas and its own overlay outranks the frame's, so a drop there would attach a second wire design
+  that is saved to disk and never drawn.
+
+**WB40h. Pasting wires into a layout MAKES it a wirebond cell.** (Owner, 2026-08-17: wires copied from
+one and pasted into a fresh `.clay` did not arrive.) The paste path required a wire layer to already be
+there, which no ordinary layout has, so the wire half of a mixed clipboard was silently dropped while
+the geometry arrived. A layout being pasted wires into is a layout that has wires: the layer is created
+on demand — **empty**, since the paste is about to fill it — the session is marked dirty so the
+`.wBond` is written on the next save, and the change of status is reported rather than left to be
+discovered. The one refusal is a layout whose wires belong to a HOST (the wBond editor's reference
+layout), where a new layer would be a second design that is saved and never drawn — the same guard
+WB40b's palette drop carries.
+
+**WB40c. Deleting the last wire un-makes a wirebond cell — the component goes, and so does the file.**
+(Owner, 2026-08-17: *"if all wires are deleted from a layout and the user performs an Update Schematic
+from Layout, a wBond symbol remains in the schematic; there should be no wBond component. I also
+recommend that the .wBond file gets removed … my only concern is that the user must be able to perform
+undo/redo."*)
+
+- **The component** is removed by §9.6's reconcile, through the schematic's own `DeleteCommand`, which
+  restores it at its original list index — so undo needs no inverse of its own. A wBond carrying an
+  empty payload still draws its pins and still declares its terminals, so leaving one behind is not
+  untidiness: the netlist would go on modelling a bond group the layout no longer has. The nets that
+  were WIRED to it are left drawn, exactly as deleting a component by hand leaves them.
+- **The file** is deleted by the SAVE, not by the delete and not by Update Schematic:
+  `SaveWireDesignIfDirty` writes the sidecar when the design has wires and removes it when it has none.
+  That is what answers the undo concern. Nothing is detached when the last wire goes — the session keeps
+  its wire editor, its overlay and its undo history — so Ctrl+Z brings the wires back in memory, marks
+  the layout dirty, and the next save writes the file again. **The file mirrors the SAVED state, which
+  is the only state it has ever claimed to mirror.**
+- **Why an empty `.wBond` cannot simply be written instead:** WB40 resolves a layout's wires by the
+  file's PRESENCE, so an empty one leaves the cell a wirebond cell for ever — three toolbar buttons, two
+  panels following it, and a DRC assembly section, all about wires there are none of.
+
+**WB40g. Delete removes what was PICKED, and two shaping commands join the wire menu.** (Owner,
+2026-08-17.)
+
+- **The Del key dispatches on the selection** rather than always deleting whole wires: wholly-selected
+  wires go whole, and segments or vertices on wires that are not wholly selected remove just those
+  points (a segment through its far endpoint, as §6.2's Delete Segment already defines it). The context
+  menu could always do this; the key could not, however carefully a segment had been picked. One undo
+  entry for the whole batch, and a wire is never taken below its two feet — that is refused by name.
+- **Add Vertex** puts a point on the wire nearest the right-click, **collinear with its two neighbours
+  and at their interpolated z**, so the insert changes the shape not at all and only gives the user a
+  handle where there was none. It detaches the wire from its profile for the reason removing a point
+  already does: a `LoopProfile` defines the point set.
+- **Straighten Wire / Straighten Wires** moves every interior point onto the straight line between the
+  feet, **in XY only and with the feet anchored** — lateral bow removed, loop height untouched, each
+  point keeping its own position along the chord. A bound wire is already straight there
+  (`LoopProfile.ApplyTo` interpolates X and Y between the feet), so it needs no detach. **With several
+  wires selected it straightens all of them, each about its OWN two feet** — never a shared chord,
+  which would swing a fan-out from a common pad onto one line and destroy exactly the geometry the
+  flexible model exists to allow (the same reasoning WB24c gives for scaling by factor rather than to a
+  common value).
+
+Add Vertex is **click-target-scoped**, like the three deletes it sits with. Straighten is the one
+command here that reads the SELECTION — and only when there is genuinely more than one wire in it, so a
+single selected wire can never make a right-click on a DIFFERENT wire act somewhere the user is not
+pointing. **Add Vertex is on the profile view's menu too; Straighten is not** — straightening is a
+statement about the wire's path across the board, and that view's horizontal axis IS position along
+that path.
+
+**WB40f. The Layout Editor's own Rotate and Mirror carry the WIRES, and the angle-wire tool gets a
+button.** (Owner, 2026-08-17: *"map the rotate button command from the hosted layout … want this to
+work just like the layout primitives work"*, and *"a special Rotate button/armed tool that allows the
+user to rotate only wires where the opposite end point remains anchored"*.)
+
+Two different gestures, and keeping them apart is the point:
+
+- **`R` / `Shift+R` and the toolbar Rotate/Mirror buttons** turn the selection 90° (or flip it) as ONE
+  RIGID BODY about the selection's own centre — now including any selected wires in both the pivot and
+  the transform. That shared pivot is what keeps a wire on the pad it lands on when the two are turned
+  together, which is the whole basis of §6.3's "both selections at once". It is **one undo entry**: the
+  wire half rides in the same `CompositeCommand` as the shapes and instances (`TransformWiresCommand`),
+  because two entries would let a single Ctrl+Z put the pads back and leave the wires turned.
+- **`Alt+R` and the Angle Wire button** arm WB26a's swing — grab a wire near the end you want to move,
+  the far end anchored. This is the one that makes an angled wire. **The whole implementation already
+  existed on the overlay** and was reachable only from the wBond editor's own tool enum; this is a UI
+  entry point, not new geometry.
+
+  **Shift snaps the wire's ABSOLUTE bearing to 15° steps** (owner, 2026-08-17) — 0, 15, 30, 45… measured
+  in XY, *not* 15° from wherever the wire happened to start. Relative increments leave a wire that began
+  at 7° on 22°, 37°, 52°: every one as crooked as it started, with 0/90/180/270 — the arrangement almost
+  every bond array wants — unreachable by the gesture meant to reach it. 15° gives up nothing a coarser
+  step could do (15 divides 45, 90 and 180) and adds the fan-out angles a 45° grid cannot express.
+
+**`T` and the Transform button** open the wBond editor's own transform dialog on the wire selection —
+again the same call, not a second implementation. Both are gated exactly like the other wire buttons:
+present only on a cell that has wires, and `T` is claimed only when wires are actually selected, so it
+stays free everywhere else.
+
+**WB40e. Wire z-height is a SETTING (Settings ▸ Wirebonds), and every new wire takes it.** (Owner,
+2026-08-17: *"being consistent is more important than being right, and we can't guess what height the
+user wants the wire landings."*) It governs both feet of every wire the application creates: the one a
+new wBond component carries, the one a palette drop attaches, an array added from the parameter dialog,
+and a wire DRAWN in the layout view — which previously landed at z = 0 while a new component's wires sat
+at 4 mil. Shipped default 4 mil (`WBondEmbedding.DefaultWire.FootZMils`), resolved through
+`WBondDefaults.FootZNm`.
+
+Two things about it are deliberate and easy to get wrong:
+
+- **Zero is a value, not "unset".** A foot at z = 0 lands on the reference plane and a negative one sits
+  in a cavity below it; both are geometry someone bonds. So this preference alone is honoured whenever
+  the key is present, where the diameter and point count beside it treat a non-positive stored value as
+  absent.
+- **The PROFILE view does not read it.** There the user clicks a z, which is the whole point of drawing
+  in that view; forcing the setting would make the gesture inert in the one place it means something.
+
+**WB40d. The wire TOOL is on the Layout Editor's toolbar** (owner, 2026-08-17), to the right of the two
+panel buttons and gated exactly like them. `W` arms it; `Escape` disarms to Select; a second `Escape`
+deselects everything in the view — shapes, instances **and** wires. The armed state lives on the layout
+SESSION rather than the view, because the toolbar toggle and Escape both have to agree with it, and it
+is mutually exclusive with the layout drawing tools in both directions: the overlay gives an armed
+layout tool first refusal on every press, so a wire tool armed alongside Rectangle would look armed and
+never see a click.
+
+**The schematic half of a palette drop comes from §9.6's reconcile, which now CREATES the component**
+when the schematic has none: a wBond that entered through the layout has no component behind it by construction,
+and telling that user to go and place one by hand is asking them to do what Update Schematic from
+Layout is for. It is built through the same `WBondPlacement.BuildCarrying` the palette drop and the
+wirebond import both use, so a component that arrived this way and one placed by hand are the same
+component. It is **not wired to anything**, and the report says so — an array's two terminals are a pin
+pair whose nets only the user knows.
 
 > **Built 2026-08-16** (`brief-wbond-wbf-one-editor.md`; detail in `src/Ui/RESOLVED.md`). Four things
 > are worth knowing before touching any of it:
@@ -1657,6 +1814,11 @@ wBond is `Carried` by construction — there is no cell and no file to link to y
 existence when **Update Layout from Schematic** runs (§9.5), and *that command* is where the instance
 flips to `Linked` and says so. It must never flip as a silent side effect of a later scan noticing that a
 file now exists: that would change which wires simulate without anything happening on screen.
+
+**WB45b. The control is the parameter panel's LAST row** *(owner, 2026-08-17)*, below the arrays, the
+per-array overrides and the artwork controls — an expert's control, and one the ordinary flow never
+touches, since WB45a's flip is what sets it. It is there to go back to `Carried`, or to repair a link.
+The consequence note of WB45 stays directly under the box wherever the box sits.
 
 **Why §5.0/WB17b is not thereby overturned.** Its argument — self-containment, no path to break, no
 "Not Found" state — is strongest for a schematic that travels on its own and weakest for one that lives

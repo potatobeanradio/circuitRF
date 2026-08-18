@@ -97,6 +97,30 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     private double _rotateStartAngle;
     private double _rotateApplied;
 
+    /// <summary>
+    /// The wire the swing was STARTED on — the one under the hand, whose far foot is the anchor.
+    ///
+    /// <para><b>Not the first wire of the selection</b>, which is what the angle used to be measured
+    /// about (owner, 2026-08-17: the tool "rotates about the center of the wire when clicking on the
+    /// start", and "sometimes doesn't rotate"). Both are the same defect: <c>TouchedWires</c> is a
+    /// HASH SET, so "the first one" is an arbitrary member — with several wires selected the angle was
+    /// measured about some other wire's foot, and the wire under the cursor turned by an angle that
+    /// had nothing to do with the hand. Measured: a quarter turn asked for on the grabbed wire came
+    /// out as about a third of one.</para>
+    /// </summary>
+    private int _rotateWire = -1;
+
+    /// <summary>
+    /// The grabbed wire's own bearing when the swing began — pivot foot toward moving foot, in
+    /// absolute XY radians.
+    ///
+    /// <para>Held so Shift can snap the wire to the <b>absolute</b> 45° grid rather than to 45° from
+    /// wherever it started (owner, 2026-08-17). The two differ for every wire that is not already on
+    /// the grid, and it is the absolute one that gets a wire back onto 0/90/180/270 — the arrangement
+    /// almost every bond array wants.</para>
+    /// </summary>
+    private double _rotateStartBearing;
+
     /// <param name="frameBudgetMs">
     /// Passed straight to the drag's <see cref="QualityLadder"/> — 60 fps for every real caller. See
     /// <see cref="WBondPointerController"/>'s own constructor for why a test needs to be able to put
@@ -124,8 +148,35 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     /// <summary>Per-view (WB22a) — the profile view is usually at a different zoom.</summary>
     public WireThicknessMode Thickness { get; set; } = WireThicknessMode.Thin;
 
-    /// <summary>Snap wire points to the layout's own geometry (§6.6). On by default, as in the layout editor.</summary>
+    /// <summary>
+    /// The MASTER switch: off means a wire point lands exactly where the pointer is — no geometry, no
+    /// grid. The standalone editor's own Snap toggle is this one.
+    /// </summary>
     public bool SnapEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Snap wire points to the layout's own geometry (§6.6) — pads, edges, and the other wires. On by
+    /// default, as in the layout editor.
+    ///
+    /// <para><b>Separate from <see cref="SnapEnabled"/> because the Layout Editor separates them</b>
+    /// (owner, 2026-08-17: <i>"geometry snap toggle is not respected in the wBond layout host"</i>).
+    /// There, <c>S</c>/<c>F3</c> turns geometry snap off and the GRID goes on working — a rectangle
+    /// still lands on the pitch in the Snap box. A wire has to behave the same way or the same key
+    /// means two things in one view. Conflating the two under `SnapEnabled` is what made `S` look
+    /// ignored: nothing in the layout host was pushing it at all, and there was no property that could
+    /// have expressed "geometry off, grid on" if something had.</para>
+    /// </summary>
+    public bool GeometrySnapEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Whether geometry snap also offers the INTERSECTIONS of the layout's edges — the layout editor's
+    /// own Include Intersections toggle, which this used to hard-code to false.
+    ///
+    /// <para>Off by default, matching <c>LayoutEditorViewModel.IncludeIntersectionsEnabled</c> and for
+    /// its reason: intersections are relational and unindexed, so they cost something to find and are
+    /// dense enough to be noisy when nobody asked for them.</para>
+    /// </summary>
+    public bool IncludeIntersections { get; set; }
 
     /// <summary>Snap tolerance in nanometres; the host refreshes it from the current zoom per event.</summary>
     public long SnapToleranceNm { get; set; } = WBondUnits.ToNm(1.0, WBondUnit.Mil);
@@ -185,6 +236,15 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
             OverlayChanged?.Invoke();
         }
     }
+
+    /// <summary>
+    /// True between the two clicks of a wire — one foot is down and the ghost is following the cursor.
+    ///
+    /// <para>A state Escape has to be able to cancel WITHOUT also disarming the tool, so whoever owns
+    /// the Escape key needs to be able to ask. The overlay answers it for the Layout Editor, whose
+    /// Escape handling lives in its view model rather than here.</para>
+    /// </summary>
+    public bool IsPlacingWire => _drawStart is not null;
 
     /// <summary>
     /// The rotate-about-end-point tool (WB26a): grab a wire near the end you want to move and swing
@@ -260,7 +320,19 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     /// is deliberately excluded: it swings a wire about a pinned end and consults no snap at all, so a
     /// marker during one could only be a leftover from the gesture before it.</para>
     /// </summary>
-    public SnapCandidate? SnapMarker => _drawStart is not null || _dragging ? _snapMarker : null;
+    /// <summary>
+    /// The glyph the canvas should draw for THIS overlay's own gesture, or null.
+    ///
+    /// <para><b>Never during an alt-drag</b> (owner, 2026-08-17: "the wire vertex snap glyph is still
+    /// rendered when the user performs an alt drag to change span"). An alt-drag SCALES: there is no
+    /// point being placed, so nothing to mark — and because <c>AltDragFrame</c> returns before
+    /// <c>SnapPoint</c> is ever called, the marker left over from the last HOVER would otherwise sit
+    /// frozen on screen for the whole gesture, marking a vertex the wire has since moved away from.
+    /// That is the same freeze <see cref="ILayoutCanvasOverlay.SnapMarker"/> exists to prevent, one
+    /// gesture further along.</para>
+    /// </summary>
+    public SnapCandidate? SnapMarker =>
+        !_altDrag && (_drawStart is not null || _dragging) ? _snapMarker : null;
 
     private SnapCandidate? _snapMarker;
 
@@ -478,6 +550,13 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         _pressed = true;
 
         _altDrag = (modifiers & KeyModifiers.Alt) != 0;
+
+        // Dropped rather than left standing: an alt-drag never recomputes it, so a marker from the
+        // last hover would survive the whole gesture. SnapMarker also refuses to publish one while
+        // _altDrag is set — belt and braces, because the two answer different questions ("is there
+        // one" and "should it be shown").
+        if (_altDrag) _snapMarker = null;
+
         _altApplied = 1.0;
         _altReferenceSpan = ChordLengthNm(hit.Wire);
         _altMoveOutputFoot = GrabMovesOutputFoot(hit);
@@ -671,7 +750,16 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         // when the hand says grow.
         if (!_altMoveOutputFoot) along = -along;
 
-        double target = Math.Max((_altReferenceSpan + along) / _altReferenceSpan, 1e-3);
+        // The resulting SPAN lands on the snap pitch (owner, 2026-08-17: "alt drag for span and loop
+        // height does not respect the snap distance setting"). The quantity that has to come out round
+        // is the span itself, not the cursor position or the scale factor — a factor snapped to
+        // anything is meaningless, and a snapped cursor still leaves an arbitrary span whenever the
+        // wire started off-grid.
+        //
+        // Alt does NOT suppress the snap here, which is the app-wide rule everywhere else (R-snp-11):
+        // Alt is what selects this gesture, so it cannot also mean "and ignore the grid" — there would
+        // be no way left to ask for a snapped scale at all.
+        double target = Math.Max(SnapSpan(_altReferenceSpan + along) / _altReferenceSpan, 1e-3);
         double frame = target / _altApplied;
         if (Math.Abs(frame - 1.0) < 1e-9) return true;
         _altApplied = target;
@@ -818,8 +906,12 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         _rotatePivotIsInputFoot = toInput > toOutput;
 
         var pivot = _rotatePivotIsInputFoot ? wire.Points[0] : wire.Points[^1];
+        var moving = _rotatePivotIsInputFoot ? wire.Points[^1] : wire.Points[0];
+
         _rotateStartAngle = Math.Atan2(yNm - pivot.Y, xNm - pivot.X);
+        _rotateStartBearing = Math.Atan2(moving.Y - pivot.Y, moving.X - pivot.X);
         _rotateApplied = 0.0;
+        _rotateWire = wireIndex;
         _rotating = true;
 
         _vm.BeginGesture();     // one undo entry for the whole swing
@@ -830,19 +922,32 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     private void RotateFrame(long xNm, long yNm, KeyModifiers modifiers)
     {
         var wires = _vm.Design.AllWires().ToList();
-        int first = _vm.Selection.TouchedWires().FirstOrDefault(-1);
-        if (first < 0 || first >= wires.Count) return;
 
-        var wire = wires[first];
+        // The GRABBED wire — see _rotateWire. The angle has to be measured about the anchor the user
+        // is actually swinging around, or the wire under the hand does not follow it.
+        if (_rotateWire < 0 || _rotateWire >= wires.Count) return;
+
+        var wire = wires[_rotateWire];
         var pivot = _rotatePivotIsInputFoot ? wire.Points[0] : wire.Points[^1];
 
         double angle = Math.Atan2(yNm - pivot.Y, xNm - pivot.X) - _rotateStartAngle;
 
-        // Shift constrains to the 45-degree increments used everywhere else in this editor.
+        // Shift snaps the wire onto the ABSOLUTE 15° grid — 0, 15, 30, 45… measured in XY, not 15°
+        // from wherever this wire happened to start (owner, 2026-08-17).
+        //
+        // ABSOLUTE is the whole value of the modifier. A wire sitting at 7° snapped to RELATIVE
+        // increments lands on 22°, 37°, 52° — every one as crooked as it started, and the arrangement
+        // almost every bond array wants (0/90/180/270) is unreachable by the gesture that exists to
+        // reach it. Snapping the wire's own BEARING is what makes Shift mean "put this straight".
+        //
+        // 15° rather than 45° (owner): 15 divides 45, 90 and 180, so every angle the coarser step
+        // could reach is still reachable, and the ones between them — a 30° fan-out leg, a 60°
+        // corner — stop needing a free-hand drag to hit.
         if ((modifiers & KeyModifiers.Shift) != 0)
         {
-            const double Step = Math.PI / 4.0;
-            angle = Math.Round(angle / Step) * Step;
+            const double Step = Math.PI / 12.0;
+            double bearing = _rotateStartBearing + angle;
+            angle = Math.Round(bearing / Step) * Step - _rotateStartBearing;
         }
 
         double delta = angle - _rotateApplied;
@@ -858,6 +963,7 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     private void EndRotate()
     {
         _rotating = false;
+        _rotateWire = -1;
         _controller.EndDrag();
         _vm.EndGesture();
         OverlayChanged?.Invoke();
@@ -900,13 +1006,21 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     {
         if (!SnapEnabled) { _snapMarker = null; return (xNm, yNm); }
 
+        // Geometry snap off leaves the GRID running, exactly as it does for a rectangle in the Layout
+        // Editor — see GeometrySnapEnabled. No marker either: there is no feature to mark.
+        if (!GeometrySnapEnabled)
+        {
+            _snapMarker = null;
+            return GridPitchNm > 0 ? (Round(xNm, GridPitchNm), Round(yNm, GridPitchNm)) : (xNm, yNm);
+        }
+
         HashSet<int>? moving = _dragging || _rotating
             ? [.. _vm.Selection.TouchedWires()]
             : null;
 
         var snap = WBondSnap.Snap(ReferenceLayout, ReferenceTechnology, ReferenceBaseDir,
                                   xNm, yNm, SnapToleranceNm,
-                                  includeIntersections: false,
+                                  includeIntersections: IncludeIntersections,
                                   wires: _vm.Design,
                                   excludeWire: moving is null ? null : moving.Contains);
 
@@ -924,6 +1038,19 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         if (snap.Snapped) return (snap.XNm, snap.YNm);
 
         return GridPitchNm > 0 ? (Round(xNm, GridPitchNm), Round(yNm, GridPitchNm)) : (xNm, yNm);
+    }
+
+    /// <summary>
+    /// A span quantised to the snap pitch, never below one pitch.
+    ///
+    /// <para>The floor is not padding: rounding a big shrinking drag can reach zero, and a wire whose
+    /// feet coincide has no chord — the scale would fold it through itself and the fill would have a
+    /// zero-length filament to integrate along. One pitch is the shortest span the grid can express.</para>
+    /// </summary>
+    private double SnapSpan(double spanNm)
+    {
+        if (GridPitchNm <= 0) return spanNm;
+        return Math.Max(Math.Round(spanNm / GridPitchNm) * GridPitchNm, GridPitchNm);
     }
 
     /// <summary>Nearest multiple of <paramref name="pitch"/>, correct for negatives.</summary>
@@ -958,9 +1085,24 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
             return true;
         }
 
-        // Arrow keys are claimed ONLY when the overlay has a selection — otherwise they are the
-        // layout editor's own nudge, in the same view.
+        // Arrow keys, and Delete, are claimed ONLY when the overlay has a selection — otherwise they
+        // are the layout editor's own nudge and its own delete, in the same view.
         if (_vm.Selection.IsEmpty) return false;
+
+        // Delete removes the selected WIRES (owner, 2026-08-17: the key did nothing in the Layout
+        // Editor over a wirebond cell). The standalone wBond editor has always had this, on its own
+        // tunnel handler — but that handler is on an ancestor of THIS view and does not exist in the
+        // ordinary Layout Editor, where the wires reach the canvas through the overlay seam instead.
+        // Gated on a wire selection above, so a Delete meant for a selected SHAPE still falls through
+        // to the layout editor untouched.
+        if (key is Key.Delete or Key.Back)
+        {
+            // DeleteSelection, not DeleteSelectedWires: a selection of SEGMENTS removes those
+            // segments, not the wires they belong to (owner, 2026-08-17). The dispatch is the view
+            // model's — see WBondViewModel.DeleteSelection.
+            if (_vm.DeleteSelection() > 0) NotifyChanged();
+            return true;
+        }
 
         bool coarse = (modifiers & KeyModifiers.Shift) != 0;
         var (dx, dy) = key switch
@@ -992,6 +1134,11 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     {
         _gHeld = false;
 
+        // …and a gesture that was still running when focus left is UNWOUND, not left half-open. See
+        // AbandonGesture: a stranded drag leaves the wire COLLAPSED TO ITS CHORD, which is a loop the
+        // user can watch disappear.
+        AbandonGesture();
+
         // A held-key latch is not the only thing a lost release can strand: a companion marquee left
         // set would go on re-resolving the wire selection on every later hover. Its preview is dropped
         // with it — and ONLY with it, because the profile canvas publishes into the same slot and its
@@ -1001,6 +1148,43 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
             _companionMarquee = false;
             _vm.PreviewSelection = null;
         }
+    }
+
+    /// <summary>
+    /// Ends a drag or a swing that is still open although the gesture is plainly over — focus has left
+    /// the canvas, or a right-click has arrived.
+    ///
+    /// <para><b>A stranded gesture is not merely untidy: it can lose the wire's shape.</b> While a
+    /// drag runs, <c>WBondPointerController</c> may COLLAPSE a wire to its two feet (the quality
+    /// ladder's cheapest rung) and restore the interior points at <c>EndDrag</c>. If the release never
+    /// arrives — the pointer left the window, a toolbar button took focus — the wire stays collapsed:
+    /// it draws as a straight line, "Straighten Wire" reports that it has only its two feet, and the
+    /// NEXT <c>BeginDrag</c> clears the record of what was collapsed, at which point the loop is gone
+    /// for good. That is the owner's 2026-08-17 report about the menu item being disabled until the
+    /// menu is closed and reopened: moving the mouse to reopen it delivered the move that unwound the
+    /// gesture.</para>
+    ///
+    /// <para>Safe to call when nothing is running — every branch is guarded, and this must be, since
+    /// both callers fire on ordinary events.</para>
+    /// </summary>
+    private void AbandonGesture()
+    {
+        if (_rotating) { EndRotate(); return; }
+
+        if (!_pressed && !_dragging) return;
+
+        bool wasDragging = _dragging;
+
+        _pressed = false;
+        _dragging = false;
+        _altDrag = false;
+        _deferredPress = null;
+
+        if (!wasDragging) return;
+
+        _controller.EndDrag();   // restores whatever was collapsed, and publishes the final answer
+        _vm.EndGesture();
+        OverlayChanged?.Invoke();
     }
 
     private WBondModifiers Modifiers(KeyModifiers modifiers)

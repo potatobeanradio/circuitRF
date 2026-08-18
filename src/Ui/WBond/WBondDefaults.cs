@@ -31,6 +31,28 @@ public static class WBondDefaults
     /// </summary>
     public static long ShippedPastePitchNm => WireEdits.CoarseNudgeNm;
 
+    /// <summary>4 mil — the z a new wire's feet land at, stated once in <c>WBondEmbedding</c>.</summary>
+    public static long ShippedFootZNm => WBondUnits.ToNm(WBondEmbedding.DefaultWire.FootZMils, WBondUnit.Mil);
+
+    /// <summary>
+    /// <b>Wire z-height</b> (Settings ▸ Wirebonds) — the z BOTH feet of a new wire land at.
+    ///
+    /// <para>One setting for two paths that had drifted apart (owner, 2026-08-17): the wires a new
+    /// wBond component is created with, and the wires DRAWN in the layout view, which used to land at
+    /// z = 0 because that view has no z axis to have meant anything by. <i>"Being consistent is more
+    /// important than being right, and we can't guess what height the user wants the wire
+    /// landings."</i></para>
+    ///
+    /// <para><b>Zero is honoured, unlike the diameter and point count beside it.</b> A foot at z = 0
+    /// is a wire landing on the reference plane and a negative one is a foot in a cavity below it —
+    /// both are geometry someone bonds, so "not set" here can only mean the JSON key being absent,
+    /// never a value that happens to be zero.</para>
+    ///
+    /// <para>The PROFILE view's own wire tool deliberately does not read this: there the user clicks a
+    /// z, which is the whole point of drawing in that view.</para>
+    /// </summary>
+    public static long FootZNm => AppPreferencesIo.Load().WBondWireFootZNm ?? ShippedFootZNm;
+
     /// <summary>
     /// How far the next PASTE is placed from what is already in the design (owner, 2026-08-16).
     /// Placement only — a paste never re-spaces the wires it is carrying.

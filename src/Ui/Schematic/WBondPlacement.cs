@@ -1,5 +1,6 @@
 using System.Globalization;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Schematic;
@@ -174,8 +175,11 @@ public static class WBondPlacement
     }
 
     /// <summary>
-    /// Builds a wBond component carrying <paramref name="design"/>. With no design supplied the
-    /// registry's own default (one array, one wire) is what a dropped component arrives with.
+    /// Builds a wBond component carrying <paramref name="design"/>. With no design supplied it gets
+    /// the shipped one-array, one-wire default — <b>at the user's own Wire z-height</b> (Settings ▸
+    /// Wirebonds), which is why the payload is written here rather than left as the registry's
+    /// cached <c>DefaultPayload</c> string: that one is computed once per process and cannot know a
+    /// preference. At the shipped 4 mil the two are byte-identical.
     /// </summary>
     public static EditableComponent BuildCarrying(WBondDesign? design, string instanceName)
     {
@@ -196,7 +200,7 @@ public static class WBondPlacement
                 ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension,
             });
 
-        if (design is not null) ApplyDesign(comp, design);
+        ApplyDesign(comp, design ?? WBondEmbedding.DefaultDesign(WBondDefaults.FootZNm));
         return comp;
     }
 

@@ -129,6 +129,36 @@ public partial class WorkspaceViewModel
         ApplyDockLayout(DockLayoutDefaults.Collapsed(_preCollapseLayout));
     }
 
+    // ---- Is a panel on screen? (the toolbar's own toggle state) --------------
+
+    /// <summary>
+    /// Raised whenever a tool panel may have appeared or disappeared — a toggle, a show, a panel
+    /// closed by its own tab X, or a whole layout applied.
+    ///
+    /// <para>Deliberately UNTYPED: every listener re-reads whatever it cares about through
+    /// <see cref="IsToolPanelShowing"/>. Carrying the panel id would tempt a listener into tracking
+    /// state of its own, and the one thing that can never be stale is the tree itself.</para>
+    /// </summary>
+    public event Action? ToolPanelVisibilityChanged;
+
+    private void RaiseToolPanelVisibilityChanged() => ToolPanelVisibilityChanged?.Invoke();
+
+    /// <summary>
+    /// Whether <paramref name="panelId"/> is showing anywhere right now — docked in the shell or in a
+    /// floating window, front tab or behind another.
+    ///
+    /// <para>This is the same two-state question <see cref="ToggleToolPanelCommand"/> asks (owner,
+    /// 2026-08-17: "I should be able to press A repeatedly and the Array Inductance view toggle on and
+    /// off"), so a button bound to it says exactly what the next press will do. Answered from the
+    /// live tree rather than from a flag kept alongside it: a panel can also be closed by its own tab
+    /// X, dragged into a float, or replaced wholesale by a layout restore.</para>
+    /// </summary>
+    public bool IsToolPanelShowing(string? panelId) =>
+        panelId is not null
+        && _factory.ToolById(panelId) is { } tool
+        && _factory.TryFindTool(tool, out var parent, out _)
+        && parent is not null;
+
     // ---- Reopening a tool panel (View menu) ----------------------------------
 
     /// <summary>Default size for a tool panel opened from the View menu, in logical units.</summary>
@@ -165,6 +195,12 @@ public partial class WorkspaceViewModel
     /// </summary>
     [RelayCommand]
     private void ToggleToolPanel(string? panelId)
+    {
+        try { ToggleToolPanelCore(panelId); }
+        finally { RaiseToolPanelVisibilityChanged(); }
+    }
+
+    private void ToggleToolPanelCore(string? panelId)
     {
         if (panelId is null || _factory.ToolById(panelId) is not { } tool) return;
 
@@ -430,12 +466,23 @@ public partial class WorkspaceViewModel
     /// </summary>
     private void OnToolPanelClosing(IDockable? dockable)
     {
-        if (dockable is ITool { Id: { Length: > 0 } id } tool && DockPanelIds.All.Contains(id))
-            RememberPanelHome(id, tool);
+        if (dockable is not ITool { Id: { Length: > 0 } id } tool || !DockPanelIds.All.Contains(id)) return;
+
+        RememberPanelHome(id, tool);
+
+        // POSTED, not raised here: this fires while the panel is still in the tree, so a listener
+        // asking IsToolPanelShowing right now would be told "yes" about a panel that is going.
+        Avalonia.Threading.Dispatcher.UIThread.Post(RaiseToolPanelVisibilityChanged);
     }
 
     [RelayCommand]
     private void ShowToolPanel(string? panelId)
+    {
+        try { ShowToolPanelCore(panelId); }
+        finally { RaiseToolPanelVisibilityChanged(); }
+    }
+
+    private void ShowToolPanelCore(string? panelId)
     {
         if (_factory.ToolById(panelId) is not { } tool) return;
 
@@ -662,6 +709,10 @@ public partial class WorkspaceViewModel
         _layoutRebuildDepth++;
         try { ApplyDockLayoutCore(state, placer); }
         finally { _layoutRebuildDepth--; }
+
+        // A rebuild replaces the whole tree, so any panel may have appeared or vanished — the one
+        // notification a toolbar toggle cannot work out for itself.
+        RaiseToolPanelVisibilityChanged();
     }
 
     private void ApplyDockLayoutCore(CwsDockLayout state, FloatingWindowPlacer? placer)

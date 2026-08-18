@@ -1280,7 +1280,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             try { ws = WorkspacePersistence.LoadFromFile(path); }
             catch { ws = new CwsFile(); }
 
-            ws.ColorSchemeName = ThemeService.Active.Name is "Default" ? null : ThemeService.Active.Name;
+            // Null means "the shipped default", so the name is recorded only when it is something
+            // else — and what the default IS moved on 2026-08-17 (ThemeResolver.DefaultThemeName).
+            ws.ColorSchemeName = ThemeService.Active.Name == ThemeResolver.DefaultThemeName
+                ? null : ThemeService.Active.Name;
 
             // Dock arrangement — OUR schema, never the docking library's serialized graph (R-dock-3).
             // R-dock-9: while the dockers are collapsed this writes the UNDERLYING arrangement, so a
@@ -2953,6 +2956,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.ApplyTechResolution(resolution);
         vm.SaveError += OnLayoutSaveError;
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
+        vm.WireSidecarRemoved += OnWireSidecarRemoved;
         WireRetargetSeam(vm);
         var doc = new LayoutDocument(title, vm) { Hierarchy = this };  // filePath = null → scratch
         _scratchLayouts.Add(doc);
@@ -6834,6 +6838,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absClayPath));
         vm.SaveError += OnLayoutSaveError;
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
+        vm.WireSidecarRemoved += OnWireSidecarRemoved;
         WireRetargetSeam(vm);
 
         // WB40 — a wirebond cell holds a `.wBond` beside its `.clay`, and its wires ride over the
@@ -6974,6 +6979,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Path.GetDirectoryName(layoutDir) is { } cellDir)
             CellLayoutResolver.Invalidate(cellDir);
     }
+
+    /// <summary>
+    /// A save deleted a layout's <c>.wBond</c> because it has no wires left (WB40c) — the tree is
+    /// showing a file that is gone, so it is re-read. Cheap, and only ever on the save that removed
+    /// one, rather than on every layout save.
+    /// </summary>
+    private void OnWireSidecarRemoved(string removedPath) => _factory.ProjectTreeTool?.Refresh();
 
     /// <summary>
     /// True when there are dirty layout sessions with no open tab (orphaned by a "Don't Save" tab

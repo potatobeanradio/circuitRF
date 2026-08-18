@@ -1374,7 +1374,7 @@ public static class ComponentModelFactory
         ApplyControllingParameters(design, parameters, notes);
         ReportArrayDrift(design, parameters, notes);
 
-        // Artwork AND terminal count: with the floating reference pin off (the default) the component
+        // Artwork AND terminal count: with the external reference pin off (the default) the component
         // has 2M terminals, with it on 2M+1. REF is always the LAST one, so this changes nothing about
         // the signal terminals or the stamp — see WBondModel's own note. Read as text rather than as a
         // number because that is how the schematic writes it and how the elaborator stores it.

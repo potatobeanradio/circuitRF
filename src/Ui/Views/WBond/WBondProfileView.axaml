@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:wb="using:CircuitRF.Ui.WBond"
              xmlns:ctrl="using:CircuitRF.Ui.Controls"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:wbc="using:CircuitRF.WBond"
              x:Class="CircuitRF.Ui.Views.WBond.WBondProfileView"
              x:DataType="wb:WBondViewModel">
@@ -49,6 +50,28 @@
                         <ContextMenu Opening="OnProfileContextMenuOpening"/>
                     </ctrl:WBondProfileCanvas.ContextMenu>
                 </ctrl:WBondProfileCanvas>
+
+                <!-- Zoom to Fit, over the TOP-LEFT corner (owner, 2026-08-17). The same command and
+                     the same icon as the Layout Editor's own toolbar button — it fits this canvas's
+                     content, which is the wires' profile, exactly as F already does from the keyboard.
+
+                     Overlaid rather than put in a toolbar strip, and for the same reason the Plane
+                     control opposite it is: the dockable Wire Profile panel has no toolbar of its own,
+                     so a control that lives in one does not exist there at all. The two corners the
+                     geometry does not occupy are where a floating control can sit.
+
+                     Same chrome as the Plane control so the pair reads as one layer over the drawing
+                     rather than two unrelated widgets. -->
+                <Border HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="6,6,0,0" CornerRadius="4"
+                        Background="{DynamicResource SystemChromeMediumLowColor}"
+                        BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
+                    <Button Click="OnProfileZoomToFit" Padding="6,3"
+                            Background="Transparent" BorderThickness="0"
+                            ToolTip.Tip="Zoom to Fit  (F)">
+                        <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                    </Button>
+                </Border>
 
                 <!-- Which PLANE this view projects onto. Auto puts every wire on its own chord (§6.2's
                      parameterisation, and the only mode in which two wires of different angle are

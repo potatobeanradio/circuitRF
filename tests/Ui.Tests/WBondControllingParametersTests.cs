@@ -1151,16 +1151,40 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     /// <summary>
-    /// Wires in the layout with no component to put them on is reported, not silently dropped — the
-    /// user drew them, and "nothing happened" is the least useful answer available.
+    /// Wires in the layout with no component to put them on <b>CREATE one</b> (owner, 2026-08-17).
+    ///
+    /// <para>This used to report "place one from the Library palette first", which was the honest
+    /// answer while the only way to get wires into a layout was to put a component in the schematic
+    /// first. A wBond dropped straight into the layout (WB40b) has no component behind it by
+    /// construction, so that message had become an instruction to do by hand what this command is
+    /// for.</para>
     /// </summary>
     [Fact]
-    public void UpdateSchematicFromLayout_NamesWiresWithNoComponentToBringThemInto()
+    public void UpdateSchematicFromLayout_CreatesAWBondForWiresWithNoComponent()
     {
-        var result = WBondSchematicReconcile.Run(NewSchematic(), SharedProfileDesign(20.0, "G1"));
+        var model = NewSchematic();
 
-        Assert.Null(result.Command);
-        Assert.Contains("no wBond component", string.Join("\n", result.Messages));
+        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(20.0, "G1"));
+
+        Assert.NotNull(result.Command);
+        result.Command!.Execute();
+
+        var created = Assert.Single(model.Components);
+        Assert.Equal(SymbolKind.WBond, created.Symbol);
+
+        // It CARRIES the layout's wires — the same payload an equivalent hand-placed component would
+        // hold, which is what makes "matches the layout" true rather than merely visible.
+        Assert.Equal(
+            WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), created.InstanceName)
+                          .Parameters.First(p => p.Name == WBondEmbedding.DesignParameter).Expression,
+            created.Parameters.First(p => p.Name == WBondEmbedding.DesignParameter).Expression);
+
+        // …and every other parameter a dropped wBond gets is there, at its own default.
+        Assert.Equal("Carried", created.Parameters.First(p => p.Name == "Source").Expression);
+
+        // The unconnected pins are STATED. A component that appears wired to nothing with no
+        // explanation reads as a half-finished command.
+        Assert.Contains("not connected", string.Join("\n", result.Messages));
     }
 
     /// <summary>

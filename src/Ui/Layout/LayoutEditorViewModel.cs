@@ -542,7 +542,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     public IRelayCommand<string> SetActiveToolCommand { get; private set; } = null!;
 
-    partial void OnActiveToolChanged(Tool value) => CancelDrawOp();
+    partial void OnActiveToolChanged(Tool value)
+    {
+        CancelDrawOp();
+
+        // One canvas, two tool sets, and the overlay gives an armed LAYOUT tool first refusal on every
+        // press — so they cannot both be armed or the wire tool would look armed and never see a click.
+        // The other direction is in OnWireDrawArmedChanged/OnWireRotateArmedChanged.
+        if (value != Tool.Select) { WireDrawArmed = false; WireRotateArmed = false; }
+    }
 
     private static bool IsTwoPointDragTool(Tool t) => t is Tool.Rect or Tool.RoundedRect or Tool.Circle;
     private static bool IsMultiPointTool(Tool t)   => t is Tool.Polygon or Tool.Path;
@@ -2247,14 +2255,35 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // WITHOUT also clearing the selection (a mode toggle isn't a destructive operation).
             if (_scaleDragKind == ScaleDragKind.None && ScaleModeActive) { ScaleModeActive = false; return; }
 
-            bool hasActiveOp = ActiveTool != Tool.Select
+            // The WIRE tool counts as an active operation, and it is listed first because it is the
+            // one the user is most likely to be in when they reach for Escape on a wirebond cell
+            // (owner, 2026-08-17: "Escape disarms and sets to select mode; a second Escape deselects
+            // all objects"). Disarming also abandons a half-placed wire — WireDrawArmed's setter
+            // cancels the draw — so the two-press contract holds whether the first foot is down or not.
+            bool hasActiveOp = WireOperationInProgress
+                             || ActiveTool != Tool.Select
                              || _isDrawingTwoPoint
                              || _drawPoints.Count > 0
                              || _selectDragKind != SelectDragKind.None
                              || _handleDragKind != HandleDragKind.None
                              || _scaleDragKind != ScaleDragKind.None;
-            if (hasActiveOp) { CancelDrawOp(); ActiveTool = Tool.Select; }
-            else { SetSelection([]); _cycleCache.Clear(); }
+
+            if (hasActiveOp)
+            {
+                WireDrawArmed = false;
+                WireRotateArmed = false;
+                CancelDrawOp();
+                ActiveTool = Tool.Select;
+            }
+            else
+            {
+                // EVERYTHING the user can have selected in this view, which on a wirebond cell is
+                // three kinds and not two: shapes and instances (SetSelection clears both) plus the
+                // wires, which live in the overlay's own selection and are reached nowhere else.
+                SetSelection([]);
+                ClearWireSelection();
+                _cycleCache.Clear();
+            }
             return;
         }
 
@@ -2262,6 +2291,22 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             bool ctrlOrMeta = (mods & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
             if (ctrlOrMeta && key == Key.A) { SelectAllCommand.Execute(null); return; }
+
+            // W arms the wire tool — the same key the wBond editor has always used for it, so the
+            // gesture is one thing wherever the wires are being drawn. Gated on this session actually
+            // HAVING wires, so W is free on every ordinary layout; ctrlOrMeta is excluded so no
+            // Ctrl/Cmd+W (close) is ever stolen.
+            if (!ctrlOrMeta && key == Key.W && HasWireDesign) { WireDrawArmed = true; return; }
+
+            // ALT+R arms the ANGLE-WIRE tool — swing a wire about its far end (WB26a). Before plain
+            // R, because Alt+R must not also fall through to the 90° rotate: the two are different
+            // gestures on the same letter, which is the owner's own suggestion and reads well because
+            // one is "turn what is selected" and the other is "let me aim this wire".
+            if (!ctrlOrMeta && key == Key.R && (mods & KeyModifiers.Alt) != 0 && HasWireDesign)
+            {
+                WireRotateArmed = true;
+                return;
+            }
 
             // R / Shift+R rotate the selection, same keys and same sense as the Schematic Editor.
             // Guarded on ctrlOrMeta being false so Ctrl/Cmd+R (Run) is never stolen.

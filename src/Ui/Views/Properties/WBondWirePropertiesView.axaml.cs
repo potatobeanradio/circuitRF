@@ -150,12 +150,32 @@ public partial class WBondWirePropertiesView : UserControl
         SyncGroupSelection();
     }
 
-    /// <summary>Puts the combo back on the wire's ACTUAL group, without re-entering the handler.</summary>
+    /// <summary>
+    /// Puts the combo's ITEMS and then its selection where the view model says, without re-entering
+    /// the handler.
+    ///
+    /// <para><b>Both, in that order, and that is the whole of the blank-combo fix</b> (owner,
+    /// 2026-08-17: <i>"sometimes the Group combobox item is empty when I click on a wire"</i>).
+    /// <c>ItemsSource</c> used to be bound in XAML, and a binding is attached when the DataContext
+    /// reaches the ComboBox — after this view's own <c>PropertyChanged</c> handler, which is
+    /// subscribed in <c>OnDataContextChanged</c>. So on an <c>AvailableGroups</c> change this ran
+    /// FIRST, set a <c>SelectedItem</c> the combo's old item list did not contain — which Avalonia
+    /// resolves to no selection at all — and the binding then rebuilt the items with nothing selected
+    /// and nothing left to put it back.</para>
+    ///
+    /// <para>The list is assigned only when its CONTENTS differ, because assigning it re-raises the
+    /// combo's selection; the view model already hands back a stable reference for exactly that
+    /// reason (see <c>WBondWirePropertiesViewModel.SyncList</c>).</para>
+    /// </summary>
     private void SyncGroupSelection()
     {
         if (Vm is null) return;
 
         _updatingGroup = true;
+
+        if (!ReferenceEquals(GroupCombo.ItemsSource, Vm.AvailableGroups))
+            GroupCombo.ItemsSource = Vm.AvailableGroups;
+
         GroupCombo.SelectedItem = Vm.GroupName;
         _updatingGroup = false;
     }

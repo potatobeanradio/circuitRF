@@ -9,7 +9,7 @@ namespace CircuitRF.Ui.Tests;
 
 /// <summary>
 /// The wBond panel in the Parameter Editor (owner, 2026-08-16): the "gibberish" row, the Symbol Pitch
-/// combo, the floating reference pin, and the array editor that answers "there's no way to add new
+/// combo, the external reference pin, and the array editor that answers "there's no way to add new
 /// arrays".
 /// </summary>
 public class WBondParameterPanelTests
@@ -38,8 +38,9 @@ public class WBondParameterPanelTests
     /// and with nothing in it to type — and <c>Arrays</c> is drift-detection bookkeeping. The other
     /// two have real controls in the panel.</para>
     ///
-    /// <para><c>Temp</c> and <c>GroundPlane</c> ARE ordinary engine values and must stay generic
-    /// rows; asserting that is what keeps this a filter rather than a blanket suppression.</para>
+    /// <para><c>Temp</c> IS an ordinary engine value and must stay a generic row; asserting that is
+    /// what keeps this a filter rather than a blanket suppression. <c>GroundPlane</c> left the generic
+    /// rows on 2026-08-17 — it is read as a BOOLEAN, so the panel gives it a picker.</para>
     /// </summary>
     [Fact]
     public void ThePanelOwnedParameters_AreNotGenericRows()
@@ -48,11 +49,10 @@ public class WBondParameterPanelTests
 
         Assert.True(editor.IsWBond);
 
-        foreach (string hidden in new[] { "Design", "Arrays", "SymbolPitch", "RefPin" })
+        foreach (string hidden in new[] { "Design", "Arrays", "SymbolPitch", "RefPin", "GroundPlane" })
             Assert.DoesNotContain(editor.Rows, r => r.Name == hidden);
 
         Assert.Contains(editor.Rows, r => r.Name == "Temp");
-        Assert.Contains(editor.Rows, r => r.Name == "GroundPlane");
     }
 
     /// <summary>
@@ -116,7 +116,7 @@ public class WBondParameterPanelTests
         Assert.Contains("Tight", comp.ExternalSymbolRef);
     }
 
-    // ── The floating reference pin ────────────────────────────────────────────
+    // ── The external reference pin ────────────────────────────────────────────
 
     /// <summary>
     /// <b>Off by default</b>, as SnP's own <c>RefNode</c> is — so a freshly-placed wBond has 2M pins.
@@ -368,19 +368,21 @@ public class WBondParameterPanelTests
 
     /// <summary>
     /// The panel-owned parameters are not ALSO generic text rows — but <c>LoopHeight</c>,
-    /// <c>Diameter</c>, <c>Temp</c> and <c>GroundPlane</c> deliberately still are. They are ordinary
-    /// expression fields, and that is what makes <c>LoopHeight = loopH</c> typable and therefore
-    /// sweepable (WB44 property 4).
+    /// <c>Diameter</c> and <c>Temp</c> deliberately still are. They are ordinary expression fields,
+    /// and that is what makes <c>LoopHeight = loopH</c> typable and therefore sweepable (WB44
+    /// property 4). <c>GroundPlane</c> is not among them any more: it is a boolean the engine reads
+    /// through <c>IsTrue</c>, so nothing sweepable was lost by giving it a picker.
     /// </summary>
     [Fact]
     public void TheUnsuffixedLengths_StayGenericExpressionRows()
     {
         var (_, _, editor) = Place();
 
-        foreach (string owned in new[] { "Design", "Arrays", "SymbolPitch", "RefPin", "Source", "File", "Material" })
+        foreach (string owned in new[] { "Design", "Arrays", "SymbolPitch", "RefPin", "Source", "File",
+                                         "Material", "GroundPlane" })
             Assert.DoesNotContain(editor.Rows, r => r.Name == owned);
 
-        foreach (string generic in new[] { "LoopHeight", "Diameter", "Temp", "GroundPlane" })
+        foreach (string generic in new[] { "LoopHeight", "Diameter", "Temp" })
             Assert.Contains(editor.Rows, r => r.Name == generic);
     }
 

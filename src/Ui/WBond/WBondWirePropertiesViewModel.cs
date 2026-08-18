@@ -155,27 +155,31 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
     }
 
     /// <summary>
-    /// How many wires the selection touches — the count the "Group Wires As…" button shows, and the
-    /// sanity check the owner asked for. Zero means the button is hidden entirely.
+    /// How many wires the selection touches — what the multi-wire message counts, and what decides
+    /// whether the regroup button is offered at all.
     /// </summary>
     [ObservableProperty] private int _selectedWireCount;
 
-    /// <summary>The regroup button's label, carrying the count (see <c>WBondGroupCommand.Label</c>).</summary>
-    [ObservableProperty] private string _groupWiresLabel = "Group Wires As…";
+    /// <summary>
+    /// How many DIFFERENT groups those wires come from (owner, 2026-08-17). It is the number that
+    /// says whether a regroup would merge anything: "12 wires selected from 1 group" is a rename,
+    /// "12 wires selected from 3 groups" is a merge, and the two are worth telling apart before the
+    /// dialog opens.
+    /// </summary>
+    [ObservableProperty] private int _selectedGroupCount;
 
     /// <summary>
-    /// Whether the regroup button is shown. Deliberately live in the MULTI-wire state too, where the
-    /// rest of this panel is empty: regrouping is normally done to a marquee-full of wires at once,
-    /// so the one place a multi-selection was previously good for nothing is exactly where the
-    /// command belongs.
+    /// Whether the regroup button is shown — <b>only for a selection of TWO OR MORE</b> (owner,
+    /// 2026-08-17).
+    ///
+    /// <para>For a single wire the Group combo directly above it already moves that wire, so the
+    /// button was a second control for the same edit, one of them opening a modal to do it. It stays
+    /// in the MULTI-wire state, where the rest of the panel is empty and the combo does not apply:
+    /// regrouping is normally done to a marquee-full of wires at once.</para>
     /// </summary>
-    public bool CanGroupWires => SelectedWireCount > 0;
+    public bool CanGroupWires => SelectedWireCount > 1;
 
-    partial void OnSelectedWireCountChanged(int value)
-    {
-        GroupWiresLabel = WBondGroupCommand.Label(value);
-        OnPropertyChanged(nameof(CanGroupWires));
-    }
+    partial void OnSelectedWireCountChanged(int value) => OnPropertyChanged(nameof(CanGroupWires));
 
     /// <summary>Re-reads everything from the model. Cheap, and safe to call per drag frame.</summary>
     public void Refresh()
@@ -184,17 +188,22 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
         // it depends on the design, not on the selection, so it is read before the empty-state exits.
         SyncGroupsList();
 
-        if (_vm is null) { SelectedWireCount = 0; SetEmpty("No wBond document."); return; }
+        if (_vm is null) { SelectedWireCount = 0; SelectedGroupCount = 0; SetEmpty("No wBond document."); return; }
 
         var touched = _vm.Selection.TouchedWires();
         SelectedWireCount = touched.Count;
+        SelectedGroupCount = touched.Select(i => GroupOf(i) ?? "").Distinct(StringComparer.Ordinal).Count();
 
         // Nothing selected is the RESTING state of this panel, not a near-miss, so it says what to do
-        // rather than what is missing (owner, 2026-08-16). "Select a single wire" is kept for the two
-        // cases that ARE near-misses — several wires, or one the panel cannot describe — where the
-        // word "single" is the whole of the information.
+        // rather than what is missing (owner, 2026-08-16). "Select a single wire" is kept for the one
+        // case that IS a near-miss — a wire the panel cannot describe — where the word "single" is
+        // the whole of the information.
         if (touched.Count == 0) { SetEmpty(NothingSelectedMessage); return; }
-        if (touched.Count > 1) { SetEmpty($"{touched.Count} wires selected — select a single wire."); return; }
+
+        // A multi-wire selection states BOTH counts (owner, 2026-08-17): the wires are what the next
+        // command acts on, and the group count is what says whether it would merge anything. It no
+        // longer says "select a single wire" — the button underneath is the thing to do here.
+        if (touched.Count > 1) { SetEmpty(MultiSelectionMessage(touched.Count, SelectedGroupCount)); return; }
 
         int index = touched.First();
         var wire = _vm.Design.AllWires().ElementAtOrDefault(index);
@@ -217,10 +226,24 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
         RebuildOrRefreshRows(wire);
     }
 
+    /// <summary>
+    /// What a multi-wire selection says: how many wires, and how many groups they come from.
+    /// Public so the wording is stated once and asserted once.
+    /// </summary>
+    public static string MultiSelectionMessage(int wires, int groups) =>
+        $"{wires} wires selected from {groups} {(groups == 1 ? "group" : "groups")}";
+
     private void SetEmpty(string message)
     {
         IsEmptyState = true;
         EmptyMessage = message;
+
+        // Cleared, not left standing. A stale name is how the group combo came back BLANK on a later
+        // click (owner, 2026-08-17): selecting a wire in the same group as the last one re-set
+        // GroupName to the value it already held, which raises no notification — so the view was
+        // never told to put the combo back after an item-list rebuild had dropped its selection.
+        GroupName = "";
+
         _wireIndex = -1;
         _pointCount = -1;
         VertexRows = null;

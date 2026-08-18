@@ -5,6 +5,7 @@ using System.Linq;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -56,15 +57,23 @@ public partial class ParameterEditorViewModel
     /// choice with a consequence rather than a value to type; <c>Material</c> is an ENUMERATION over the
     /// design's own metals, so it gets a dropdown rather than a text box a typo can reach.</para>
     ///
-    /// <para><b><c>LoopHeight</c>, <c>Diameter</c>, <c>Temp</c> and <c>GroundPlane</c> are deliberately
-    /// NOT here.</b> They are expression fields like any other — which is the point: a generic row is
-    /// what makes <c>LoopHeight = loopH</c> typable, and a <c>VAR</c> reference is what a sweep or an
-    /// optimiser turns (WB44 property 4). The per-ARRAY spellings of all three do live here, because
-    /// their names come from the instance's own array list.</para>
+    /// <para><b><c>LoopHeight</c>, <c>Diameter</c> and <c>Temp</c> are deliberately NOT here.</b> They
+    /// are expression fields like any other — which is the point: a generic row is what makes
+    /// <c>LoopHeight = loopH</c> typable, and a <c>VAR</c> reference is what a sweep or an optimiser
+    /// turns (WB44 property 4). The per-ARRAY spellings of all three do live here, because their names
+    /// come from the instance's own array list.</para>
+    ///
+    /// <para><b><c>GroundPlane</c> joined this list on 2026-08-17</b> (owner: <i>"if GroundPlane is a
+    /// bool … then it needs to be a checkbox or combobox entry"</i>). It is read as a BOOLEAN
+    /// (<c>ComponentModelFactory.IsTrue</c>), so the text box offered three usable values and infinite
+    /// unusable ones, with nothing on screen saying which three. The trade is stated where the control
+    /// is built (<see cref="WBondGroundPlaneOptions"/>): a value that is neither blank nor a boolean —
+    /// a <c>VAR</c> reference typed before this existed — is still shown and still committed, so the
+    /// picker narrows what can be TYPED without invalidating anything already written.</para>
     /// </summary>
     internal static bool IsWBondPanelParameter(string name) =>
         name is WBondEmbedding.DesignParameter or WBondPlacement.ArraysParameter
-             or "SymbolPitch" or "RefPin" or "Source" or "File" or "Material"
+             or "SymbolPitch" or "RefPin" or "Source" or "File" or "Material" or "GroundPlane"
         || name.StartsWith("LoopHeight_", StringComparison.Ordinal)
         || name.StartsWith("Diameter_", StringComparison.Ordinal)
         || name.StartsWith("Material_", StringComparison.Ordinal);
@@ -131,6 +140,79 @@ public partial class ParameterEditorViewModel
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         ApplyWBondParam("RefPin", newValue ? "true" : "false");
+    }
+
+    // ── GroundPlane: a boolean, so a picker rather than a text box ─────────────
+
+    /// <summary>
+    /// What the ground-plane override can be set to. <b>Three values, and the first is what UNSET
+    /// means</b> — the design's own <c>GroundPlane.Enabled</c>, which is what a blank parameter has
+    /// always meant and what <c>NetExtractor</c> drops rather than emitting.
+    ///
+    /// <para><b>Why a picker at all</b> (owner, 2026-08-17). The engine reads this through
+    /// <c>ComponentModelFactory.IsTrue</c>, so a string is true only when it is literally "true" and a
+    /// number only when it is non-zero — three usable values behind a box that accepted anything, with
+    /// nothing saying so. Typing "yes" produced a silently DISABLED ground plane, which changes every
+    /// inductance in the component.</para>
+    ///
+    /// <para><b>What the picker costs, stated rather than discovered:</b> a <c>VAR</c> reference is no
+    /// longer typable here, unlike <c>Temp</c> and the loop heights which stay generic expression rows
+    /// (WB44 property 4). Sweeping a ground plane is not a thing — it is present or it is not — and the
+    /// value is not interpolable, so nothing an optimiser turns is lost. An expression already written
+    /// into an older design is <b>kept</b>: <see cref="WBondGroundPlaneChoices"/> appends whatever is
+    /// there when it is none of these three, so the panel never rewrites a value it did not understand.</para>
+    /// </summary>
+    public static string[] WBondGroundPlaneOptions { get; } = ["As designed", "Yes", "No"];
+
+    /// <summary>The expression each option commits. Index-parallel to <see cref="WBondGroundPlaneOptions"/>.</summary>
+    private static readonly string[] GroundPlaneValues = ["", "true", "false"];
+
+    /// <summary>
+    /// The picker's live item list: the three standing options, plus the component's own value when
+    /// it is none of them. A ComboBox whose selection is absent from its items renders blank, which
+    /// reads as the value having been lost — the same rule <c>ParameterRowViewModel.ChoiceOptions</c>
+    /// already follows for a kit part's declared choices.
+    /// </summary>
+    public ObservableCollection<string> WBondGroundPlaneChoices { get; } = [.. WBondGroundPlaneOptions];
+
+    [ObservableProperty] private int _wBondGroundPlaneIndex;
+
+    partial void OnWBondGroundPlaneIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        // Beyond the three standing options is the carried-over value itself — selecting it is a
+        // no-op, never a rewrite of an expression this panel does not understand.
+        if ((uint)newValue >= (uint)GroundPlaneValues.Length) return;
+
+        ApplyWBondParam("GroundPlane", GroundPlaneValues[newValue]);
+    }
+
+    /// <summary>
+    /// Points the picker at the component's current value, extending the list when that value is
+    /// neither blank nor a boolean.
+    /// </summary>
+    private void RefreshWBondGroundPlane()
+    {
+        string current = WBondParameterValue("GroundPlane").Trim();
+
+        // Back to the three standing options each time, so a carried-over value from the previously
+        // selected component cannot linger in the list of this one.
+        while (WBondGroundPlaneChoices.Count > WBondGroundPlaneOptions.Length)
+            WBondGroundPlaneChoices.RemoveAt(WBondGroundPlaneChoices.Count - 1);
+
+        int index = current.Length == 0 ? 0
+                  : current.Equals("true", StringComparison.OrdinalIgnoreCase) ? 1
+                  : current.Equals("false", StringComparison.OrdinalIgnoreCase) ? 2
+                  : -1;
+
+        if (index < 0)
+        {
+            WBondGroundPlaneChoices.Add(current);
+            index = WBondGroundPlaneChoices.Count - 1;
+        }
+
+        WBondGroundPlaneIndex = index;
     }
 
     // ── WB45: Carried or Linked ───────────────────────────────────────────────
@@ -272,8 +354,9 @@ public partial class ParameterEditorViewModel
         long pitch = WBondUnits.ToNm(WBondEmbedding.DefaultWire.SpanMils, WBondUnit.Mil);
         long offset = pitch * design.Arrays.Count;
 
-        var start = WBondEmbedding.DefaultWire.Start;
-        var end = WBondEmbedding.DefaultWire.End;
+        long footZ = WBondDefaults.FootZNm;
+        var start = WBondEmbedding.DefaultWire.StartAt(footZ);
+        var end = WBondEmbedding.DefaultWire.EndAt(footZ);
 
         design.Arrays.Add(new WireArray
         {
@@ -449,6 +532,7 @@ public partial class ParameterEditorViewModel
         WBondSummary = readable ? SummaryOf(design!) : "";
 
         RebuildWBondArrayRows(design);
+        RefreshWBondGroundPlane();
         RefreshWBondSource();
         RebuildWBondControlRows(design);
         _isRefreshing = false;

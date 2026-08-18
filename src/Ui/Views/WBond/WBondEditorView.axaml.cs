@@ -132,8 +132,9 @@ public partial class WBondEditorView : UserControl
                     e.Handled = true;
                     return;
 
-                // Delete removes the selected WIRES. Structural, and therefore one undo entry that
-                // restores the deleted wire objects themselves — see WBondViewModel.Restore.
+                // Delete removes what is SELECTED — whole wires when whole wires are selected, and
+                // just the segments or vertices when that is what was picked (owner, 2026-08-17). The
+                // dispatch is WBondViewModel.DeleteSelection's; one undo entry for the whole batch.
                 //
                 // Gated on there actually BEING a wire selection, and that gate is load-bearing now
                 // that the layout half is the real Layout Editor (WB39a): this tunnel handler sits on
@@ -143,7 +144,7 @@ public partial class WBondEditorView : UserControl
                 case Key.Delete:
                 case Key.Back:
                     if (_bound.Editor.Selection.IsEmpty) return;
-                    if (_bound.Editor.DeleteSelectedWires() > 0) RepaintBoth();
+                    if (_bound.Editor.DeleteSelection() > 0) RepaintBoth();
                     e.Handled = true;
                     return;
 

@@ -97,6 +97,119 @@ public sealed partial class WBondViewModel
     }
 
     /// <summary>
+    /// <b>Delete, dispatched on WHAT is selected</b> — the Del key's one implementation for both
+    /// canvases (owner, 2026-08-17: <i>"whole wires are deleted when the user selects segments and
+    /// uses the Delete keystroke; only the segments should be deleted"</i>).
+    ///
+    /// <para>It used to call <see cref="DeleteSelectedWires"/> unconditionally, so the finest thing
+    /// the key could remove was a whole wire however carefully the user had picked a segment — while
+    /// the context menu, one right-click away, could remove exactly that segment. The selection
+    /// already distinguishes the three cases; nothing was reading it.</para>
+    ///
+    /// <list type="bullet">
+    ///   <item>Wholly-selected WIRES are deleted whole.</item>
+    ///   <item>SEGMENTS and POINTS on wires that are not wholly selected remove just those points —
+    ///     a segment through its far endpoint, exactly as <see cref="DeleteWireSegment"/> defines
+    ///     it, so the wire stays one wire with the gap closed.</item>
+    /// </list>
+    ///
+    /// <para><b>Points come off in DESCENDING order</b>, because every index past a removed one shifts;
+    /// and a wire is never taken below <see cref="MinimumWirePoints"/> — that request is refused by
+    /// name rather than silently leaving the wire at two points, since "delete the wire instead" is
+    /// the thing the user needs told.</para>
+    ///
+    /// <para>ONE undo entry for the whole batch, and one structural rebuild at the end.</para>
+    /// </summary>
+    /// <returns>How many wires were deleted or edited.</returns>
+    public int DeleteSelection()
+    {
+        var selection = Selection;
+        if (selection.IsEmpty) return 0;
+
+        var wholeWires = new HashSet<int>(selection.Wires);
+
+        // Point indices to remove, per wire — a segment names its FAR endpoint (DeleteWireSegment's
+        // own rule). Wires being deleted whole are skipped: removing points from them first would be
+        // work thrown away, and would count twice in the result.
+        var pointsByWire = new Dictionary<int, SortedSet<int>>();
+
+        void Want(int wire, int point)
+        {
+            if (wholeWires.Contains(wire)) return;
+            if (!pointsByWire.TryGetValue(wire, out var set)) pointsByWire[wire] = set = [];
+            set.Add(point);
+        }
+
+        foreach (var p in selection.Points) Want(p.Wire, p.Point);
+        foreach (var s in selection.Segments) Want(s.Wire, s.Point + 1);
+
+        var wires = _design.AllWires().ToList();
+        int refusedFor = 0;
+        int edited = 0;
+
+        bool pushed = PushUndo();
+
+        foreach (var (wireIndex, points) in pointsByWire)
+        {
+            if (wireIndex < 0 || wireIndex >= wires.Count) continue;
+
+            var wire = wires[wireIndex];
+            if (wire.Points.Count - points.Count < MinimumWirePoints) { refusedFor++; continue; }
+
+            foreach (int point in points.Reverse())
+                if (point >= 0 && point < wire.Points.Count)
+                    wire.Points.RemoveAt(point);
+
+            // The profile IS the point set — see the class remarks. Same rule as DeleteWirePoint.
+            ProfileEnvelope.Detach(wire);
+            edited++;
+        }
+
+        int removedWires = 0;
+        if (wholeWires.Count > 0)
+        {
+            // Walk the flat index space once, keeping what is not selected — the same rebuild-in-place
+            // DeleteSelectedWires does, inlined here so the whole batch is one undo entry rather than
+            // two.
+            int flat = 0;
+            foreach (var array in _design.Arrays)
+            {
+                var keep = new List<Wire>(array.Wires.Count);
+                foreach (var wire in array.Wires)
+                {
+                    if (wholeWires.Contains(flat)) removedWires++;
+                    else keep.Add(wire);
+                    flat++;
+                }
+
+                array.Wires.Clear();
+                array.Wires.AddRange(keep);
+            }
+
+            PruneEmptyGroups();
+        }
+
+        if (edited == 0 && removedWires == 0)
+        {
+            if (pushed) DropUndoEntry();
+            if (refusedFor > 0)
+                ReportRefusal(refusedFor == 1
+                    ? "A wire needs at least two points — delete the wire instead."
+                    : $"{refusedFor} wires would be left with fewer than two points — delete them instead.");
+            return 0;
+        }
+
+        // Every flat index may have shifted, and every point index within an edited wire has.
+        Selection = new WireSelection();
+        CommitStructuralChange();
+
+        if (refusedFor > 0)
+            ReportRefusal($"{refusedFor} wire(s) were left alone — a wire needs at least two points.");
+
+        return edited + removedWires;
+    }
+
+    /// <summary>
     /// Why the whole wire cannot be deleted, or null.
     ///
     /// <para><b>The last wire CAN be deleted</b> (owner, 2026-08-16: "make it support 0 wires"). This

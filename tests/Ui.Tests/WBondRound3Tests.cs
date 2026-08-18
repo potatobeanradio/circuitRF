@@ -99,15 +99,30 @@ public class WBondRound3Tests
     }
 
     /// <summary>
-    /// The feet still land at different heights — die pad to package lead — which is the case §6.2's
-    /// scale-about-the-chord rule exists for. A north/south wire with both feet at one z would make
-    /// that whole class of edit untestable from the shipped document.
+    /// <b>The feet land at the SAME height, 4 mil</b> (owner, 2026-08-17). This test previously
+    /// asserted the opposite — the shipped wire descended from a 4 mil die pad to a 1 mil package
+    /// lead — on the reasoning that a level wire would make §6.2's scale-about-the-chord rule
+    /// untestable from the shipped document.
+    ///
+    /// <para><b>That reasoning was the wrong way round and is retired.</b> A fixture is not the
+    /// shipped default's job: the asymmetric-foot case is exercised where it belongs, by tests that
+    /// build their own wires at 4 mil → 1 mil (<c>WBondEditorRound2Tests.Design</c> and
+    /// <c>WBondRound6Tests.Design</c>, whose alt-drag cases turn on exactly that asymmetry). What the
+    /// shipped wire has to be is the shape a user reads as neutral, and a drop they did not ask for is
+    /// something to notice and undo.</para>
     /// </summary>
     [Fact]
-    public void TheDefaultWire_KeepsItsFeetAtDifferentHeights()
+    public void TheDefaultWire_KeepsItsFeetLevelAtFourMils()
     {
         var wire = WBondEmbedding.DefaultDesign().AllWires().Single();
-        Assert.NotEqual(wire.Points[0].Z, wire.Points[^1].Z);
+
+        Assert.Equal(wire.Points[0].Z, wire.Points[^1].Z);
+        Assert.Equal(4.0, WBondUnits.FromNm(wire.Points[0].Z, WBondUnit.Mil), 6);
+        Assert.Equal(4.0, WBondUnits.FromNm(wire.Points[^1].Z, WBondUnit.Mil), 6);
+
+        // The loop still carries its height ABOVE the feet — a level wire must not be read as a flat
+        // one, which would have no inductance story at all.
+        Assert.True(wire.Points.Max(p => p.Z) > wire.Points[0].Z);
     }
 
     // ────────────────────────────────────────────────────────── the default profile plane

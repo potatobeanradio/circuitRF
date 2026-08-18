@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -55,7 +56,12 @@ public partial class LayoutEditorView : UserControl
         DataContextChanged += OnDataContextChangedForFocus;
 
         // A wirebond cell's overlay resolves its wire palette from the theme, and it is a plain
-        // object with no theme notifications of its own (WB40).
+        // object with no theme notifications of its own (WB40). BOTH signals are needed and they are
+        // different events: this one is light-vs-dark, and ThemeService.ThemeChanged (subscribed on
+        // attach, because it is a static event) is a different THEME being selected. Without the
+        // second, picking a new theme repainted the layout underneath and left the wires in the old
+        // colours — the canvas invalidates itself, but it redraws the overlay from the stale
+        // WBondRenderTheme this view handed it (owner, 2026-08-17).
         ActualThemeVariantChanged += (_, _) => ApplyCanvasOverlay();
 
         // Focus-independent Escape handler — mirrors SchematicView/SymbolEditorView's
@@ -135,17 +141,123 @@ public partial class LayoutEditorView : UserControl
     /// </summary>
     private void UpdateWirePanelButtonStates()
     {
+        var workspace = ResolveWorkspace();
         bool show = (DataContext as LayoutDocument)?.ActiveViewModel.HasWireDesign == true
-                 && ResolveWorkspace() is not null;
+                 && workspace is not null;
 
         WirePanelSeparator.IsVisible = show;
         WireProfileBtn.IsVisible = show;
         WireInductanceBtn.IsVisible = show;
+        WireDrawBtn.IsVisible = show;
+        WireRotateBtn.IsVisible = show;
+        WireTransformBtn.IsVisible = show;
+
+        SubscribeToPanelVisibility(workspace);
+        UpdateWirePanelCheckedStates();
+    }
+
+    /// <summary>
+    /// Pushes the two buttons' CHECKED state from the dock tree (owner, 2026-08-17: the buttons said
+    /// nothing about whether their panel was on screen).
+    ///
+    /// <para>Read from the workspace rather than tracked here, and re-read on every notification: a
+    /// panel is also closed by its own tab X, dragged into a floating window, or replaced wholesale
+    /// by a layout restore — none of which pass through this view.</para>
+    /// </summary>
+    private void UpdateWirePanelCheckedStates()
+    {
+        var workspace = _panelVisibilityWorkspace;
+
+        WireProfileBtn.IsChecked = workspace?.IsToolPanelShowing(DockPanelIds.WBondProfile) == true;
+        WireInductanceBtn.IsChecked = workspace?.IsToolPanelShowing(DockPanelIds.WBondInductance) == true;
+    }
+
+    private WorkspaceViewModel? _panelVisibilityWorkspace;
+
+    /// <summary>
+    /// Drops the panel-visibility subscription when this view leaves the tree. The workspace outlives
+    /// every document view, so a handler left on it holds a dead view — and every torn-off or closed
+    /// document would add another.
+    /// </summary>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        SubscribeToPanelVisibility(null);
+        ThemeService.ThemeChanged -= OnActiveThemeChanged;
+    }
+
+    /// <summary>
+    /// A different THEME was selected (not a light/dark flip) — re-resolve the wire palette and
+    /// repaint. Subscribed on attach and dropped on detach because <c>ThemeService.ThemeChanged</c> is
+    /// a static, process-wide event: a handler left on it holds every document view ever opened.
+    /// </summary>
+    private void OnActiveThemeChanged(object? sender, EventArgs e)
+    {
+        ApplyCanvasOverlay();
+        LayoutCanvasCtrl.InvalidateOverlay();
+    }
+
+    /// <summary>
+    /// Re-establishes it on the way back in. A document view is re-realised by a dock rebuild without
+    /// its DataContext ever changing, and the subscription above was dropped when it left — so
+    /// without this the buttons would stop tracking after the first tear-off or layout reset.
+    /// </summary>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        UpdateWirePanelButtonStates();
+
+        // Unsubscribe first: a re-attach must not stack a second handler on a static event.
+        ThemeService.ThemeChanged -= OnActiveThemeChanged;
+        ThemeService.ThemeChanged += OnActiveThemeChanged;
+        ApplyCanvasOverlay();   // the theme may have moved while this view was out of the tree
+    }
+
+    /// <summary>Re-points the panel-visibility subscription; idempotent, and unsubscribes first.</summary>
+    private void SubscribeToPanelVisibility(WorkspaceViewModel? workspace)
+    {
+        if (ReferenceEquals(_panelVisibilityWorkspace, workspace)) return;
+
+        if (_panelVisibilityWorkspace is not null)
+            _panelVisibilityWorkspace.ToolPanelVisibilityChanged -= UpdateWirePanelCheckedStates;
+
+        _panelVisibilityWorkspace = workspace;
+
+        if (_panelVisibilityWorkspace is not null)
+            _panelVisibilityWorkspace.ToolPanelVisibilityChanged += UpdateWirePanelCheckedStates;
     }
 
     // P and A are handled by the SHELL WINDOW's own tunnel handler, not here — see
     // WorkspaceWindow.TryHandleWirePanelKeys. A key handler on a view, gated on where keyboard focus is,
     // cannot survive an action that MOVES focus, which is exactly what showing or hiding a dockable does.
+
+    /// <summary>
+    /// <b>Transform Wires…</b> — the wBond editor's own dialog, on the same wire editor (owner,
+    /// 2026-08-17: "perhaps we need also add the whole Transform button back in for when there's
+    /// wirebonds").
+    ///
+    /// <para>The same call the wBond editor makes, deliberately: the dialog owns rotate, scale and
+    /// translate by typed values, and a second entry point that reimplemented any of that would be a
+    /// second set of arithmetic to keep in step.</para>
+    ///
+    /// <para>Refused with nothing selected rather than opening on nothing — the dialog's whole
+    /// subject is the selection, and it says so.</para>
+    /// </summary>
+    private async void OnWireTransform(object? sender, RoutedEventArgs e)
+    {
+        if ((DataContext as LayoutDocument)?.ActiveViewModel is not { WireEditor: { } editor } vm) return;
+
+        if (editor.Selection.IsEmpty)
+        {
+            vm.ReportError("Select one or more wires to transform.");
+            return;
+        }
+
+        int touched = await WBondTransformDialog.ShowAsync(
+            TopLevel.GetTopLevel(this) as Window, editor, editor.DisplayUnit);
+
+        if (touched > 0) InvalidateOverlay();
+    }
 
     private void OnToggleWireProfilePanel(object? sender, RoutedEventArgs e) =>
         ToggleWirePanel(DockPanelIds.WBondProfile);
@@ -247,6 +359,17 @@ public partial class LayoutEditorView : UserControl
                 e.Handled = true;
                 return;
             }
+        }
+
+        // T opens the wire Transform dialog — the wBond editor's own key for it. Claimed ONLY when
+        // there is a wire selection to transform, so T stays free on every ordinary layout and on a
+        // wirebond cell with nothing selected (owner, 2026-08-17).
+        if (e.Key == Key.T && e.KeyModifiers == KeyModifiers.None
+            && doc.ActiveViewModel.WireEditor is { } wireEditor && !wireEditor.Selection.IsEmpty)
+        {
+            OnWireTransform(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
         }
 
         if (e.Key != Key.Escape) return;
@@ -460,6 +583,35 @@ public partial class LayoutEditorView : UserControl
         if (_drcZoomVm is not null) _drcZoomVm.ZoomToRegionRequested -= OnDrcZoomToRegion;
         _drcZoomVm = vm;
         if (_drcZoomVm is not null) _drcZoomVm.ZoomToRegionRequested += OnDrcZoomToRegion;
+
+        RebindWBondDropSubscription(vm);
+    }
+
+    private LayoutEditorViewModel? _wBondDropVm;
+
+    /// <summary>
+    /// Follows the active frame's "this layout just gained wires" signal (WB40b). Rebound alongside
+    /// the DRC subscription above and for the same reason: it is a code-behind subscription on the
+    /// ACTIVE frame's own view model, and a push-in swaps that instance.
+    /// </summary>
+    private void RebindWBondDropSubscription(LayoutEditorViewModel? vm)
+    {
+        if (ReferenceEquals(_wBondDropVm, vm)) return;
+        if (_wBondDropVm is not null) _wBondDropVm.WireLayerAdded -= OnWireLayerAdded;
+        _wBondDropVm = vm;
+        if (_wBondDropVm is not null) _wBondDropVm.WireLayerAdded += OnWireLayerAdded;
+    }
+
+    /// <summary>
+    /// A layout that has just gained wires — dropped from the palette, or pasted in — gets the same
+    /// welcome Update Layout from Schematic gives one: the two panels, arranged the first time this
+    /// installation ever needs them. Someone who has just put a wirebond somewhere has no reason to
+    /// know two panels exist.
+    /// </summary>
+    private void OnWireLayerAdded()
+    {
+        UpdateWirePanelButtonStates();
+        ResolveWorkspace()?.ShowWBondPanels();
     }
 
     private void OnDrcZoomToRegion(Bbox region) => LayoutCanvasCtrl.ZoomToRegion(region);
@@ -822,9 +974,23 @@ public partial class LayoutEditorView : UserControl
     // IClipboard traffic (via LayoutClipboard) and the layer-reconciliation dialog loop; the VM never
     // touches IClipboard or shows a dialog itself.
 
+    /// <summary>
+    /// The wire editor of the wirebond cell on screen (WB40), or null — the wires ARE part of this
+    /// document's content, so the clipboard commands have to see them.
+    /// </summary>
+    private WBondViewModel? WireEditorWithSelection =>
+        Vm?.WireEditor is { } editor && !editor.Selection.IsEmpty ? editor : null;
+
     private async Task OnClipboardCopy()
     {
         if (Vm is not { } vm) return;
+
+        // WIRES first, when any are selected (owner, 2026-08-17: copy/paste of wires did nothing in
+        // the Layout Editor). Routed through the wBond editor's OWN writer rather than a second
+        // implementation, so a copy made here and a copy made there put byte-identical payloads —
+        // and the same PDF/SVG/PNG alongside them — on the clipboard.
+        if (await CopyWithWiresAsync()) return;
+
         // brief-L3a-followups.md §2/R-fix-2: BuildCopyPayload already carries BOTH selected shapes AND
         // selected instances (a mixed selection is now normal) — pass the whole payload straight
         // through rather than re-deriving a shapes-only fragment a second way.
@@ -849,9 +1015,53 @@ public partial class LayoutEditorView : UserControl
             vm.Overlay.DrcMarkers.Count > 0 ? vm.Overlay.DrcMarkers : null);
     }
 
+    /// <summary>
+    /// Copies a selection that includes WIRES — wires alone, or wires and geometry together — and
+    /// returns false when there are none, so the caller falls through to the geometry-only path it
+    /// has always taken.
+    ///
+    /// <para>A mixed selection is wrapped in <see cref="WBondMixedClipboard"/>'s envelope and a
+    /// single-kind one is not, which is what keeps this readable by every existing paste path: the
+    /// Layout Editor's own <c>LayoutClipboard.PasteAsync</c> already unwraps the envelope for its
+    /// half, and the wBond editor unwraps it for both.</para>
+    /// </summary>
+    private async Task<bool> CopyWithWiresAsync()
+    {
+        if (Vm is not { } vm || WireEditorWithSelection is not { } wires) return false;
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return false;
+
+        string? wiresJson = wires.CopySelection();
+        if (string.IsNullOrEmpty(wiresJson)) return false;
+
+        var fragment = vm.BuildCopyPayload();
+        string? layoutJson = fragment is null ? null : LayoutFragment.Serialize(fragment);
+
+        if (WBondMixedClipboard.Compose(wiresJson, layoutJson) is not { } text) return false;
+
+        var (variant, _) = ClipboardRenderPolicy.Resolve();
+
+        return await WBondClipboardWriter.CopyAsync(
+            this, clipboard, text,
+            WBondClipboardWriter.SelectionDesign(wires.Design, wires.Selection),
+            WBondClipboardWriter.TransientLayout(fragment),
+            vm.Technology, vm.InstanceBaseDir,
+            ResolveWireTheme(),
+            LayoutRenderTheme.FromTheme(ThemeService.Active, variant),
+            _frameOverlay?.Thickness ?? WireThicknessMode.Thin);
+    }
+
     private async Task OnClipboardCut()
     {
+        // Read the wire selection BEFORE the copy: nothing in the copy clears it, but the order
+        // states the dependency, and the count is what says whether anything was cut.
+        var wires = WireEditorWithSelection;
+
         await OnClipboardCopy();
+
+        // Both kinds go, matching what the copy just wrote — the wires and the geometry were on the
+        // clipboard together, so leaving one of them behind would be a cut that half happened.
+        if (wires is not null && wires.DeleteSelectedWires() > 0) InvalidateOverlay();
+
         Vm?.CutSelectionAfterCopy();
         LayoutCanvasCtrl.InvalidateVisual();
     }
@@ -861,6 +1071,13 @@ public partial class LayoutEditorView : UserControl
         if (Vm is not { } vm) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) return;
+
+        // A clipboard carrying WIRES is pasted whole, here, by the same arithmetic the wBond editor
+        // uses — including the free-pitch offset that stops a second paste landing exactly on the
+        // first (which makes the inductance fill singular; see PasteWiresAtFreePitch). The geometry
+        // half rides on the SAME displacement, so a mixed paste arrives together rather than one half
+        // following the cursor while the other is already down.
+        if (await PasteWithWiresAsync(clipboard)) return;
 
         var payload = await LayoutClipboard.PasteAsync(clipboard);
         if (payload is null) return;   // no marker, or nothing on the clipboard — a clean no-op
@@ -898,6 +1115,79 @@ public partial class LayoutEditorView : UserControl
 
         LayoutCanvasCtrl.InvalidateVisual();
         LayoutCanvasCtrl.Focus();
+    }
+
+    /// <summary>
+    /// Pastes a clipboard that carries WIRES into this document's wire layer, together with the
+    /// geometry half when there is one. Returns false — changing nothing — when the clipboard holds
+    /// no wires or this layout has no wire layer to put them in, so the caller falls through to the
+    /// ordinary layout paste.
+    ///
+    /// <para>Transcribed from <c>WBondEditorView.PasteAsync</c> in ONE respect that matters: the
+    /// displacement. Both halves move by the same offset, and that offset is the wire half's own
+    /// free-pitch answer, so a second paste of the same clipboard does not land on the first.</para>
+    ///
+    /// <para>The geometry half goes in PLACE here rather than through the paste-placement ghost, and
+    /// skips the layer-mapping dialog, exactly as the wBond editor's does — a ghost that follows the
+    /// cursor while the wires are already down is the one outcome a mixed paste must not have.</para>
+    /// </summary>
+    private async Task<bool> PasteWithWiresAsync(IClipboard clipboard)
+    {
+        if (Vm is not { } vm) return false;
+
+        string? text;
+        try { text = await clipboard.TryGetTextAsync(); }
+        catch { return false; }
+
+        var (wiresJson, layoutJson) = WBondMixedClipboard.Unwrap(text);
+
+        var payload = WBondClipboard.TryParse(wiresJson);
+        if (payload is null) return false;   // no wire half — not ours
+
+        // …but never onto a layout whose wires belong to a HOST. The wBond editor hosts this view and
+        // puts its own document's wires over it, so creating a layer here would attach a second,
+        // invisible wire design to the reference layout — saved to disk and never drawn. The same
+        // guard the palette drop carries, asked the way this view can ask it.
+        if (_hostOverlay is not null && vm.WireEditor is null) return false;
+
+        // The target may have no wire layer at all, which is every ORDINARY layout — and this path
+        // used to give up there, so the wires were silently dropped and only the geometry arrived
+        // (owner, 2026-08-17). A layout that is being pasted wires into is a layout that has wires;
+        // EnsureWireLayer makes it one and says so.
+        if (vm.EnsureWireLayer(
+                "This layout had no bond wires; pasting them has made it a wirebond cell. Its wires "
+                + "are saved beside it as a .wBond when you save.") is not { } editor)
+            return false;
+
+        var (dx, dy) = editor.FreePasteOffset(payload, WBondDefaults.PastePitchNm);
+
+        int pasted = editor.PasteWires(wiresJson, dx, dy);
+        pasted += PasteLayoutHalf(layoutJson, dx, dy);
+
+        if (pasted <= 0) return false;
+
+        InvalidateOverlay();
+        LayoutCanvasCtrl.InvalidateVisual();
+        LayoutCanvasCtrl.Focus();
+        return true;
+    }
+
+    /// <summary>The geometry half of a mixed paste, in place and displaced to match the wires.</summary>
+    private int PasteLayoutHalf(string? json, long dxNm, long dyNm)
+    {
+        if (Vm is not { } vm) return 0;
+        if (!LayoutFragment.TryDeserialize(json, out var payload) || payload is null) return 0;
+
+        // nm and DBU coincide at the 1,000 DBU/µm default these documents work at; see WBondSnap for
+        // why that bridge is restated wherever it is crossed.
+        var shapes = LayoutFragment.Translate(payload.Shapes, dxNm, dyNm);
+        var instances = vm.RebaseFragmentInstances(payload);
+        if (instances.Count > 0) instances = LayoutFragment.Translate(instances, dxNm, dyNm);
+
+        if (shapes.Count == 0 && instances.Count == 0) return 0;
+
+        vm.PasteInPlace(shapes, instances);
+        return shapes.Count + instances.Count;
     }
 
     /// <summary>Shows the shared layer-mapping dialog (docs/sonnet-briefs/brief-L1g-technology-retarget.md

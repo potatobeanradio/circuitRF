@@ -54,8 +54,11 @@ public partial class WBondApp : Application
         });
 
         var prefs = AppPreferencesIo.Load();
-        if (prefs.ActiveThemeName is { } savedTheme)
-            ThemeService.Active = ThemeResolver.Resolve(savedTheme);
+
+        // No recorded preference means the SHIPPED DEFAULT, not "leave whatever is loaded" — see
+        // ThemeResolver.DefaultThemeName for why a wBond palette can be that default without
+        // recolouring anything outside the wirebond editor.
+        ThemeService.Active = ThemeResolver.Resolve(prefs.ActiveThemeName ?? ThemeResolver.DefaultThemeName);
 
         UpdateCrfWarningBrush();
         ThemeService.ThemeChanged += (_, _) =>

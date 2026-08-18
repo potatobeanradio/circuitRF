@@ -6,6 +6,282 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## wBond round 6 — the owner's thirteen (2026-08-17)
+
+Owner bug/change list, no brief. `tests/Ui.Tests/WBondRound6Tests.cs` (24 new cases); full `Ui.Tests`
+**7,600** passing, `Core.Tests` 1,361, `Firewall.Tests` 6. Only the findings worth keeping are below —
+the rest of the list was ordinary wiring.
+
+**The blank Group combo was a NOTIFICATION ORDER bug in the view, not a model bug — and it had two
+independent halves, either of which reproduces it.** (1) `SetEmpty` left `GroupName` standing, so
+clicking a wire in the *same group* as the last one re-assigned the value it already held; an
+`[ObservableProperty]` raises nothing on an unchanged write, so the view was never told to put the
+combo back after an item-list rebuild had dropped its selection. (2) `ItemsSource` was bound in XAML
+while the *selection* was pushed from the code-behind's own `PropertyChanged` handler — and that
+handler is subscribed in `OnDataContextChanged`, which runs **before** the DataContext reaches the
+ComboBox and attaches its binding. So on an `AvailableGroups` change the selection was assigned first,
+resolved against the OLD item list, and silently dropped (Avalonia clears a `SelectedItem` its items do
+not contain). **The fix is to own both halves in code and assign items *then* selection.** Anywhere
+else in this codebase that pushes a ComboBox selection from a VM notification has the same latent
+shape.
+
+**Delete and copy/paste of wires were missing in the LAYOUT host only, and for one structural
+reason.** Both work in the standalone wBond editor because `WBondEditorView` has a tunnel key handler
+and its own clipboard methods — an ancestor that *does not exist* in the ordinary Layout Editor, where
+the wires reach the canvas through the `ILayoutCanvasOverlay` seam instead. Delete therefore belongs on
+`WBondLayoutOverlay.OnKeyDown` (gated on a non-empty wire selection, so a Delete meant for a shape
+still falls through), and the clipboard on `LayoutEditorView` reusing `WBondMixedClipboard` +
+`WBondClipboardWriter` rather than a second implementation. `LayoutClipboard.PasteAsync` already
+unwrapped the mixed envelope for its half — only the wire half had nowhere to go.
+
+**A wBond cannot be dropped through the PCell path and never will be**, so the palette drop needed its
+own route (`LayoutEditorViewModel.CommitWBondDrop`): it produces this session's *wire layer*, not a
+shape, and `CanDropPaletteComponent` was right to refuse it. Two traps: the file must NOT be written at
+drop time — attaching plus `MarkWiresDirty` lets the ordinary save write it, which is also what makes
+the drop work on a scratch layout that has no path yet — and the drop must be refused when the canvas
+is showing a **host's** wires (`_canvasOverlay` is not the frame's own `WireOverlay`), or the wBond
+editor's reference layout gains a second wire design that is saved to disk and never drawn.
+
+**The Layout Editor's two geometry-snap toggles never reached the wires, and the overlay had no
+property that could have expressed the answer** (owner, 2026-08-17: *"geometry snap toggle is not
+respected in the wBond layout host"*). Two halves. **(1)** `WBondLayoutOverlay.SnapEnabled` conflated
+geometry snap with grid snap, while the Layout Editor keeps them separate — `S`/`F3` turns geometry
+snap off and a rectangle still lands on the pitch in the Snap box. So `GeometrySnapEnabled` is now its
+own property, gating only the geometry query, and `SnapEnabled` stays the master (off means the pointer
+position, grid included). **(2)** Nothing in the layout host ever WROTE either one. The overlay's
+defaults are permissive — snap on, and `includeIntersections` was a hard-coded `false` — so the toggles
+governed every shape in the view except the wires, and Include Intersections silently did nothing for a
+wire no matter what it said. Both are pushed by `PushLayoutSnapAndUnitToWires` now, on every change and
+not only at attach, with a `NotifyChanged()` because the layout recomputes its own marker on the toggle
+rather than waiting for the next pointer move (R-snp-7) — without it a stale snap glyph sits on screen
+saying the toggle did nothing. **The general shape: a permissive default plus no writer reads exactly
+like an ignored setting**, and it is invisible in review because both halves look fine alone. *Still
+outstanding and NOT part of this fix:* the overlay's `SnapToleranceNm` is a fixed 1 mil, while the
+layout's geometry-snap tolerance is a screen-pixel distance the canvas converts per event, so wire snap
+reach does not change with zoom the way shape snap does.
+
+**The panel arrangement is gated PER WORKSPACE, and its first gate — a per-user preference — was the
+wrong scope** (owner, 2026-08-17: a new workspace, a new cell, a wBond, Update Layout from Schematic,
+and *both panels floating*). It ran once per installation, recorded in `preferences.json` as
+`wbond_panels_arranged`. **A panel's home is per-workspace; the flag was per-user**, so the second
+workspace on a machine found the flag spent, fell through to plain `ShowToolPanel`, and that method's
+only answer for a panel with nowhere remembered is to float it — which is the exact state the
+arrangement exists to prevent. The flag could only ever have been right for the first workspace a
+person opened. **The correct gate was already in the code one level down and per panel:**
+`IsPlacedAnywhere` — this layout already names it, so open it and move nothing. That is self-limiting
+in every workspace independently, needs nothing remembered between runs, and cannot tell a
+someone-else's-workspace apart from a workspace the user arranged themselves *because there is nothing
+to tell apart*: both name the panels, and both should be left alone. The preference is deleted, not
+rescoped; a leftover key in an existing `preferences.json` is ignored on load and dropped on the next
+save. **The general trap: a per-installation flag cannot gate per-document state, and it fails silently
+on the second document rather than the first.**
+
+**The first-use panel arrangement transcribes the owner's `.cws` with ONE number deliberately not
+transcribed.** That file records `Sides: {Left, 0.8, Inboard: true}` for the Array Inductance column;
+0.8 is the proportion of the container holding the column *and* the documents, not the column's own, so
+restoring it opens the panel across four fifths of the window. The panel's own `Proportion` (0.1886) is
+the number that means "this column's share of the document row" for a column holding one tool dock —
+`DockLayoutCapture` says so where it falls back to the tool dock's proportion for exactly this shape.
+
+**The colour-theme half was done twice, and the second answer is the right one.** Making
+`wBond-Orchid` the *default theme* left the winning palette as a selectable thing sitting beside
+`Default` — so the owner's follow-up was to fold its six roles into `Default` itself and delete the
+file. Two copies had to be updated, not one: `Assets/Color/Default.ccolor` (what the Settings editor
+shows) **and** `ColorTheme.BuiltIn` (the per-role fallback for anything a theme leaves unsaid) — and
+Default.ccolor stated **no** `wBond.*` role at all before this, so the colours actually in force came
+from the in-code copy. A test now holds the two together.
+
+That fold also exposed **two tests measuring the same property with different metrics**:
+`TheVertexRole_IsADistinctAccentInBothVariants` used a Manhattan sum > 150 while round 4's palette test
+used Euclidean > 60. The owner's dark pair (wire 214,122,182 / vertex 142,122,255) measures 145 Manhattan
+and 102 Euclidean — it failed one and passed the other while plainly being a blue-violet dot on a pink
+wire. Unified on the Euclidean bound rather than tuning a threshold.
+
+**Changing the theme did not repaint the wires**, because a theme change is TWO events: the view already
+handled `ActualThemeVariantChanged` (light vs dark) and nothing handled `ThemeService.ThemeChanged` (a
+different theme selected). `LayoutCanvas` invalidates itself on the second, but it redraws the overlay
+from the `WBondRenderTheme` the HOST handed it — a plain object with no notifications — so the layout
+repainted underneath wires still in the old colours.
+
+**Alt-drag scaled every wire in the design because a `LoopProfile` was used as a proxy for the
+ARRAY.** `ScaleSelection` resolved the selected wire's `ProfileBinding` and called
+`WireEdits.ScaleBoundWires`, which rescales every wire following that profile *and writes the profile's
+own height*. A profile is an editor-internal sharing mechanism the user never sees (O-10) and it
+routinely spans every array — the shipped default creates ONE and every array references it — so a drag
+in G1 moved G2 as well.
+
+**Two owner reports, one rule, and the second corrected the first.** "It should only be the wires that
+are selected" → selection-only; then "it needs to change ALL the wires in the group at once" → the unit
+is the ARRAY. `ScaleSelection` now takes `wholeArray`, expanded through `WireMesh.ArrayOfWire` (the same
+mapping `SelectArray` uses, so "the group" means one thing in the class). **The two views pass opposite
+values, deliberately:** the PROFILE view promotes to the group — it draws a group as one superimposed
+shape under one envelope band, and a bond group is one loop program on one bonder — while the LAYOUT
+view does not, because there each wire is drawn at its own place among the pads and an alt-drag stretches
+THAT wire onto THAT pad.
+
+Either way **nothing writes the profile any more**, which is the same correction `ControllingParameters`
+had taken hours earlier (*"its setting should never affect the geometry that the user authors"*). Safe
+without a detach because the envelope band is computed from the bound WIRES, not from the profile's
+nominal shape. `ScaleProfileHeight`/`ScaleProfileSpan` still exist for a profile-CURVE gesture and are
+reached by no gesture today; both now say so.
+
+**The wire tool in the Layout host needed a HOME for its armed state, and the session is it.** The
+overlay has had `WireDrawArmed` since WB-C; only the wBond editor ever set it, through its own
+`WBondTool` enum. In the Layout Editor two things have to agree with it — the toolbar's toggle and
+Escape — so it is a property on `LayoutEditorViewModel`. The trap worth knowing: **the two tool sets
+must be mutually exclusive in BOTH directions**, because the overlay gives an armed LAYOUT tool first
+refusal on every press (`LayoutToolArmed`), so a wire tool armed alongside Rectangle would look armed
+and never see a click. Escape is two-stage by what is IN PROGRESS, never a counter: disarm first, then
+clear all three selections (shapes, instances and the wires, which `SetSelection` cannot reach).
+
+**Pasting wires into a layout that had none dropped them silently, because the paste path required a
+wire editor to already exist.** That is EVERY ordinary layout — a cell only gains one once something
+has put wires in it — so a mixed copy pasted into a fresh `.clay` delivered the geometry and lost the
+wires (owner, 2026-08-17). `EnsureWireLayer` now creates the layer on demand, with an EMPTY design (the
+caller is about to add what it carries; a default wire would be a spare nobody asked for), marks the
+session dirty so the sidecar is written, and reports that the layout has become a wirebond cell. Guarded
+against the wBond editor's HOSTED layout for the same reason the palette drop is: a wire layer created
+there would be a second, invisible design on the reference layout.
+
+**Both menu entry points to the standalone wBond window are COMMENTED OUT for v1, not deleted** (owner,
+2026-08-17): Tools ▸ wBond first, then File ▸ Open ▸ Open wBond… — the standalone wirebond window is a
+v2 feature and the second item was the other way in, so leaving it would have made the withdrawal a
+half-measure. `NewWBondCommand`, `OpenWBondFileCommand`, `WBondDocument` and the whole editor stay; only
+the way in is deferred. Both are commented out on BOTH hand-mirrored surfaces (the macOS `NativeMenu`
+and the in-window `Menu`). **The test asserts on the COMMAND BINDING, not on the header**
+(`FileMenuRestructureTests.NeitherEntryPointToTheStandaloneWBondWindow_IsWiredUp…`) — an exact-order
+list would still pass if the item returned under another spelling or in another submenu, and a header
+scan would misfire on File ▸ Import ▸ **Wirebond Wires…** / **Wirebond as Cell…** the day someone
+respells those, which are the COMPONENT path and must keep working. `XDocument` parses a comment as
+`XComment`, never an element or attribute, so a commented-out item is genuinely invisible to that test.
+
+**Carried/Linked is the LAST row of the wBond parameter panel** (owner, 2026-08-17: "an advanced
+feature that only wBond experts would use"). It sat third, under the design summary, which put the
+panel's most consequential and least-used control in front of the arrays, the per-array overrides and
+the artwork rows. **The ordinary flow never sets it:** a placed wBond is Carried by construction, and
+Update Layout from Schematic is what flips it to Linked and announces it (WB45a, `WBondCellSeeding`) —
+the box exists to go BACK to Carried for a schematic that must travel alone, and to repair a link.
+Moved within the `IsWBond` panel, not below the generic rows underneath it, which are last by the
+owner's own earlier decision; a wBond's only generic row is `Temp`. The consequence note stays directly
+beneath its own box. One consequence to know: a **linked file that has gone missing** is named on that
+note, which is now at the bottom of a scrolling panel — it is still refused BY NAME at the next Run
+(`NetExtractor`), so the loud report is unaffected, but the quiet one moved down with the control.
+
+**A third door is deliberately still open: double-clicking a `.wBond` in the Project Tree**
+(`WorkspaceViewModel`'s `NodeKind.WBondFile` → `OpenWBondPath`). Not removed, because it is how a user
+opens a file they can see rather than a menu that advertises a feature — and disabling a double-click
+was not the ask. Worth knowing when judging "is the standalone reachable": it is, from there.
+
+**The standalone has drifted from the in-layout wire tools, and the cause is ONE fact, not many missed
+fixes** (owner, 2026-08-17; deferred to v2 by the same decision). Wires live in two different places.
+Standalone: on `WBondDocumentViewModel.Editor`, reaching the canvas as a HOST overlay through
+`LayoutEditorView.CanvasOverlay`, with the hosted `LayoutEditorViewModel.WireEditor` **null**. WB40:
+on the layout view model itself. Every wire feature added on the WB40 side gates on that null —
+`HasWireDesign` (the `W` key, `Alt+R`, all six toolbar buttons), `WireEditorWithSelection`
+(copy/cut/paste), `vm.WireEditor` (the Delete routing and the layer-on-paste, which explicitly refuses
+the host case) — so they are all off in the standalone by construction. **The marquee is the sharpest
+example and it is not missing code at all:** the companion marquee that picks up wires during a shape
+drag only runs where `WireMarqueeEnabled` is FALSE, which is WB40's setting; the standalone sets it
+TRUE from its own toolbar toggle, making marquee an XOR — wires or shapes, never both. The fix, when v2
+comes, is to attach the document's editor TO the hosted layout view model rather than pushing an
+overlay past it; the cost is in WB27's push-into-sub-cell (which is why the host overlay outranks the
+frame's) and in retiring one of the two `EditSequence` undo reconcilers. What keeps it fixed is a
+capability-parity fixture asserting both surfaces answer the same, plus a single overlay construction
+site — without those it re-drifts.
+
+**Shift on the angle-wire tool snaps the wire's ABSOLUTE bearing, in 15° steps.** Relative increments
+were the bug: a wire at 7° could only reach 22°, 37°, 52° — every one as crooked as it started, and
+0/90/180/270 unreachable by the gesture that exists to reach it. 15° rather than 45° (owner) gives up
+nothing, since 15 divides 45, 90 and 180, and it reaches the fan-out angles (30°, 60°) that a coarser
+grid cannot express at all.
+
+**Two of the three angle-wire reports were ONE defect, and it was in the pivot.** `RotateFrame`
+measured the swing about `Selection.TouchedWires().First()` — and that is a HASH SET, so "first" is an
+arbitrary member: with several wires selected, the wire under the cursor turned by an angle computed
+about some other wire's foot. Measured before the fix, a quarter turn asked for on the grabbed wire came
+out about a third of one, which reads as both "it rotates about the wrong point" and "sometimes it does
+not rotate". The grabbed wire index is now captured at `BeginRotate` and used for the pivot and the
+angle.
+
+**The disabled "Straighten Wire" was a STRANDED GESTURE, and the mechanism is worth knowing because it
+can lose geometry.** While a drag runs, `WBondPointerController` may collapse a wire to its two feet
+(the quality ladder's cheapest rung) and restore the interior points at `EndDrag`. A drag whose release
+went elsewhere — the pointer left the window, a toolbar button took focus — leaves the wire **collapsed**:
+it draws as a straight line, `WhyCannotStraighten` correctly reports that it has only its two feet, and
+the next `BeginDrag` clears the record of what was collapsed, at which point **the loop is gone for
+good**. The owner's "close the menu and reopen it" worked because the mouse movement delivered the move
+that unwound the gesture. Both `OnFocusLost` and `BuildContextMenuItems` now unwind explicitly.
+
+**Alt-drag ignored the snap setting because the thing being snapped has to be the TARGET VALUE, not
+the cursor or the factor.** A snapped cursor still leaves an arbitrary span whenever the wire started
+off-grid, and a snapped ratio means nothing — so both alt-drags now quantise the span (and, in the
+profile view, the loop height) itself, with a floor of one pitch so a big shrinking drag cannot round to
+a zero-length chord. **Alt deliberately does NOT suppress this snap**, though R-snp-11 makes it suppress
+every other one: Alt is what SELECTS the gesture, so letting it also mean "ignore the grid" would leave
+no way to ask for a snapped scale at all. Note "span" is the 3D CHORD everywhere in this app (it is what
+the Properties panel shows and what `ScaleSpan` scales along), so on a descending wire it is longer than
+the XY footprint — a test asserting an x extent needs level feet or it measures the wrong thing.
+
+**The stale snap glyph during an alt-drag was the SnapMarker freeze, one gesture further along.**
+`AltDragFrame` returns before `SnapPoint` is ever called, so the marker from the previous gesture was
+neither refreshed nor cleared while `_dragging` stayed true — exactly the failure
+`ILayoutCanvasOverlay.SnapMarker` was introduced to prevent. An alt-drag scales and places no point, so
+it publishes nothing at all now.
+
+**The Del key could not delete a segment because it never read the selection.** It called
+`DeleteSelectedWires` unconditionally, so the finest thing it could remove was a whole wire — while the
+context menu, one right-click away, removed exactly the segment that was picked. `DeleteSelection` now
+dispatches: whole wires whole, segments and vertices as points (descending order, since every index
+past a removed one shifts), one undo entry, and a refusal by name rather than silently leaving a wire
+at two points. **Add Vertex** and **Straighten Wire** joined the wire menu with it — the first inserts a
+point that changes the shape not at all (one `Lerp` gives both "collinear with its neighbours" and
+"interpolated z"), the second removes lateral bow in XY with the feet anchored — and with several wires selected it
+straightens all of them, each about its OWN feet (a shared chord would collapse a fan-out onto one
+line). Straighten is the only item on that menu that reads the selection, and only when there is more
+than one wire in it: one selected wire must never redirect a right-click aimed at a different one. Add Vertex is on the
+PROFILE menu too and Straighten is not: that view's horizontal axis IS position along the wire's path,
+so there is no XY plane there to straighten in.
+
+**Rotating a wirebond cell needed TWO gestures kept apart, and the interesting part was the undo.**
+`R` turns the selection 90° as one rigid body — wires included, in the same pivot and the same
+`CompositeCommand` as the shapes and instances. The shared pivot keeps a wire on its pad; the single
+command is what stops one Ctrl+Z putting the pad back and leaving the wire turned. That needed a wire
+primitive that pushes NO entry on the wire stack (`MapWirePointsXy`) plus a layout-stack command that
+snapshots the points (`TransformWiresCommand` — the inverse of a mirror composed with a re-centring
+translation drifts a DBU per undo; a snapshot cannot). `Alt+R` arms WB26a's swing-about-the-far-end,
+which was **already fully implemented on the overlay** and reachable only from the wBond editor's tool
+enum — the owner guessed exactly that. `T` opens the wBond editor's own transform dialog on the same
+wire editor.
+
+**Wire z-height became a setting because the two creation paths had quietly disagreed.** A wire drawn
+in the layout view landed at z = 0 (that view has no z axis, so the overlay's `FootZNm` had nothing to
+read) while a new component's wires sat at 4 mil. The owner's call — *"being consistent is more
+important than being right, and we can't guess what height the user wants"* — is now one preference
+feeding five creation paths through `WBondDefaults.FootZNm`. Two traps: **zero is a VALUE here**, not
+"unset" (a foot on the reference plane; negative is a cavity foot), so the `is > 0` guard the other
+wBond defaults use would silently discard it; and `src/WBond` cannot read a preference at all, so
+`DefaultDesign` takes the z as a parameter and every UI caller passes the resolver. `DefaultPayload` —
+the registry's cached default `Design` string — cannot honour a preference either, which is why
+`WBondPlacement.BuildCarrying` now writes the payload itself.
+
+**Deleting the last wire un-makes a wirebond cell, and the undo question has one answer: put the file
+deletion on the SAVE.** Owner: the schematic must lose its wBond component, the `.wBond` should go, and
+undo/redo must still work. The component half is `DeleteCommand` — the schematic's own, which restores
+at the original list index, so undo needs no inverse of its own. The FILE half deliberately does not
+happen at delete time or at Update-Schematic time: `SaveWireDesignIfDirty` writes the sidecar when the
+design has wires and **deletes it when it has none**, so the file goes on mirroring the SAVED state and
+nothing is detached. The session keeps its `WireEditor`, its overlay and its wire undo history — Ctrl+Z
+brings the wires back in memory, marks it dirty, and the next save re-creates the file. An empty
+`.wBond` would otherwise leave the cell a wirebond cell for ever, because `WBondCell` resolves wires by
+the file's PRESENCE.
+
+**`GroundPlane` left the generic expression rows, and that is a real trade, not a tidy-up.** It is read
+as a boolean (`ComponentModelFactory.IsTrue`), so a text box offered three usable values and infinite
+unusable ones with nothing saying which — typing "yes" silently *disabled* the plane. It is a picker
+now, which costs the ability to type a `VAR` in it (WB44 property 4). Acceptable only because a ground
+plane is not a sweepable quantity; `Temp` and the loop heights stay generic rows for that exact reason.
+A value the picker does not offer is appended to its item list rather than rewritten.
+
 ## WB-G — controlling parameters on the schematic symbol, and Carried-or-Linked (2026-08-17)
 
 `brief-wbond-controlling-parameters.md`. Design authority: `wbond.md` §5.5.1 (WB44/WB44a), §9.7
@@ -1283,7 +1559,7 @@ that in the test is what keeps this a filter rather than a blanket suppression.
 **`Pitch` is now `SymbolPitch`** (owner): on a wirebond component "pitch" reads as the WIRE pitch, the
 centre-to-centre bond spacing. SnP has no such collision and keeps the short name.
 
-### The floating reference pin: WB20 said mandatory, and what WB20 protects is elsewhere
+### The external reference pin: WB20 said mandatory, and what WB20 protects is elsewhere
 
 `REF` is now optional and **off by default**, matching SnP's `RefNode`. §5.4/WB20 wrote it as
 mandatory — *"the UI does not permit a port without one"* — but what WB20 actually protects is

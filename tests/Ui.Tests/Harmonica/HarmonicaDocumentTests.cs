@@ -60,11 +60,17 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
         // Kept EXACT and ORDERED, which is the property that actually stops the two hand-mirrored
-        // surfaces drifting — wbond.md §10's Tools entry is the second one to arrive here.
-        Assert.Equal(["harmonicaRF", "wBond"], nativeEntries);
+        // surfaces drifting.
+        //
+        // wBond's own entry is WITHDRAWN FOR v1 (owner, 2026-08-17) — the standalone wirebond window
+        // is a v2 feature, so the menu item is commented out in the XAML while `NewWBondCommand` and
+        // the whole document type stay. Asserted as ABSENT on both surfaces rather than simply dropped
+        // from the list: a commented-out item that someone re-indents back into the tree would
+        // otherwise reappear silently on one surface only.
+        Assert.Equal(["harmonicaRF"], nativeEntries);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
-        Assert.Contains(native[0].Descendants(),
+        Assert.DoesNotContain(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
 
         var inWindow = doc.Descendants()
@@ -77,10 +83,10 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Where(e => e.Name.LocalName == "MenuItem")
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["_harmonicaRF", "_wBond"], inWindowEntries);
+        Assert.Equal(["_harmonicaRF"], inWindowEntries);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
-        Assert.Contains(inWindow[0].Descendants(),
+        Assert.DoesNotContain(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
     }
 

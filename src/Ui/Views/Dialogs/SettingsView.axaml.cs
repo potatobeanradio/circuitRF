@@ -103,6 +103,7 @@ public partial class SettingsView : Window
 
             WBondMaterialCombo.ItemsSource = WireMaterials.All.Select(m => m.Name).ToArray();
             WBondMaterialCombo.SelectedItem = WBondDefaults.Material;
+            WBondFootZUpDown.Value = (decimal)WBondUnits.FromNm(WBondDefaults.FootZNm, WBondUnit.Mil);
             WBondPastePitchUpDown.Value = (decimal)WBondUnits.FromNm(WBondDefaults.PastePitchNm, WBondUnit.Mil);
 
             UpdatePCellTrustStatus(prefs.PCellTrust?.Count ?? 0);
@@ -156,6 +157,18 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral || WBondDiameterUpDown.Value is not { } mils || mils <= 0) return;
         AppPreferencesIo.Update(p => p.WBondWireDiameterNm = WBondUnits.ToNm((double)mils, WBondUnit.Mil));
+    }
+
+    /// <summary>
+    /// Wire z-height. <b>No positive guard</b>, unlike its neighbours: zero is a wire landing on the
+    /// reference plane and a negative value is a foot in a cavity below it, so the only value this
+    /// cannot take is "none" — which is what an empty box means and is why that is the one case
+    /// skipped.
+    /// </summary>
+    private void OnWBondFootZChanged(object? sender, NumericUpDownValueChangedEventArgs e)
+    {
+        if (_updatingGeneral || WBondFootZUpDown.Value is not { } mils) return;
+        AppPreferencesIo.Update(p => p.WBondWireFootZNm = WBondUnits.ToNm((double)mils, WBondUnit.Mil));
     }
 
     private void OnWBondPastePitchChanged(object? sender, NumericUpDownValueChangedEventArgs e)
@@ -563,7 +576,10 @@ public partial class SettingsView : Window
     {
         // Persist the current active theme as the user preference.
         var activeName = ThemeService.Active.Name;
-        AppPreferencesIo.Update(p => p.ActiveThemeName = activeName != "Default" ? activeName : null);
+        // Null means "the shipped default" (ThemeResolver.DefaultThemeName), so choosing it clears
+        // the preference rather than pinning a name that may move again.
+        AppPreferencesIo.Update(p => p.ActiveThemeName =
+            activeName != ThemeResolver.DefaultThemeName ? activeName : null);
         Close();
     }
 

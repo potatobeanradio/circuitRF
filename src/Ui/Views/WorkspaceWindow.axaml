@@ -54,7 +54,18 @@
                                     <NativeMenuItem Header="Open Symbol…"       Command="{Binding OpenSymbolFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Layout…"       Command="{Binding OpenLayoutFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+                                    <!-- Open wBond…: WITHDRAWN FOR v1 (owner, 2026-08-17), for the same
+                                         reason Tools ▸ wBond is — it opens the standalone wirebond
+                                         WINDOW, which is a v2 feature. This was the second entry point
+                                         to it, so leaving it would make the withdrawal a half-measure.
+                                         `OpenWBondFileCommand` and the whole `.wBond` document type stay
+                                         in place; only the way in is deferred. A `.wBond` still reaches
+                                         v1 through the wBond COMPONENT and the wirebond CELL — see
+                                         Schematic ▸ Import Wires from wBond and New ▸ Cell from wBond,
+                                         both unaffected. Mirrored in the in-window File menu below; the
+                                         two surfaces are hand-maintained and must not drift.
                                     <NativeMenuItem Header="Open wBond…"        Command="{Binding OpenWBondFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
+                                    -->
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -180,7 +191,15 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
+                        <!-- wBond: WITHDRAWN FOR v1 (owner, 2026-08-17). The standalone wirebond
+                             WINDOW is a v2 feature; wirebonds reach v1 through the wBond COMPONENT and
+                             the wirebond CELL (WB40) — the layout editor's own wire tools, panels and
+                             menus, which are unaffected by this. Commented out rather than deleted,
+                             with `NewWBondCommand` and the whole document type left in place, because
+                             the entry point is the only part being deferred. Mirrored in the in-window
+                             Tools menu below; the two surfaces are hand-maintained and must not drift.
                         <NativeMenuItem Header="wBond" Command="{Binding NewWBondCommand}"/>
+                        -->
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -337,11 +356,14 @@
                               CommandParameter="{Binding $parent[Window]}">
                         <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <!-- Open wBond…: WITHDRAWN FOR v1 (owner, 2026-08-17) — see the NativeMenu's own
+                         note above for why. Mirrored there; the two surfaces must not drift.
                     <MenuItem Header="Open _wBond…"
                               Command="{Binding OpenWBondFileCommand}"
                               CommandParameter="{Binding $parent[Window]}">
                         <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    -->
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="{Binding SaveMenuHeader}"
@@ -629,11 +651,14 @@
                           ToolTip.Tip="Interactive harmonic-termination explorer. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <!-- wBond: WITHDRAWN FOR v1 (owner, 2026-08-17) — see the NativeMenu's own note.
+                     The standalone window is deferred to v2; every other wirebond surface stays.
                 <MenuItem Header="_wBond"
                           Command="{Binding NewWBondCommand}"
                           ToolTip.Tip="Wirebond array editor. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                -->
             </MenuItem>
 
             <!-- Window: every open circuitRF window, selectable to bring it to the front. Contents

@@ -133,6 +133,33 @@ public sealed class AppPreferences
     public string? WBondWireMaterial { get; set; }
 
     /// <summary>
+    /// The z every new wire's FEET land at (owner, 2026-08-17) — the shipped 4 mil when unset.
+    /// It governs both the wires a new wBond component is created with and the wires drawn in the
+    /// layout view, which is the whole point of it being one setting: <i>"being consistent is more
+    /// important than being right, and we can't guess what height the user wants the wire landings"</i>.
+    ///
+    /// <para><b>Zero is a real value here, unlike every other wBond default beside it.</b> A foot at
+    /// z = 0 is a wire landing on the reference plane, and a NEGATIVE one is a foot in a cavity below
+    /// it — both are geometry someone bonds. So this is honoured whenever it is present, where
+    /// <see cref="WBondWireDiameterNm"/> and friends treat a non-positive stored value as absent.</para>
+    ///
+    /// <para>Per USER like the three above it: it describes how one shop's parts sit, not a property
+    /// of any one design, and a <c>.wBond</c> arriving from someone else must not change what the next
+    /// wire you draw looks like.</para>
+    /// </summary>
+    [JsonPropertyName("wbond_wire_foot_z_nm")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? WBondWireFootZNm { get; set; }
+
+    // `wbond_panels_arranged` lived here and is GONE (2026-08-17). It recorded that this installation
+    // had had the two wirebond panels arranged once, and the scope was wrong: a panel's home is
+    // per-WORKSPACE, so the flag was already spent by the time the user's second workspace asked, and
+    // that workspace — having no home for either panel — got them floating. The correct gate is the
+    // per-panel "does this layout already place it", which WorkspaceViewModel.ArrangeWBondPanels
+    // applies to the live layout and which needs nothing remembered between runs. An existing key in
+    // someone's preferences.json is simply ignored on load and dropped on the next save.
+
+    /// <summary>
     /// How far a PASTED wire is offset from whatever is already there (owner, 2026-08-16). It governs
     /// PLACEMENT only: the pitch WITHIN a copied group is whatever the copied wires had, and pasting
     /// never re-spaces them. Null means the shipped 5 mil.

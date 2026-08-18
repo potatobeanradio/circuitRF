@@ -126,22 +126,22 @@ public sealed class ColorTheme
             [ColorRole.HarmonicaMarkerBand5]      = new(166, 124, 214),   // 5f₀  pastel purple
 
             // ── wBond, LIGHT ────────────────────────────────────────────────────────────────────
-            // Gold, darkened until it holds up against the near-white Layout.Background (246,246,244)
-            // these are drawn over — the old hardcoded (224,192,96) was a dark-theme colour shown in
-            // both variants. WireStart is the SAME hue two steps darker (owner: "the same as the
-            // wire, but a much darker shade of it"). Selected is a deep saturated blue rather than
-            // the old WHITE, which was the owner's "can't be seen over the canvas background".
-            [ColorRole.WBondWire]      = new(150, 110,  20),
-            [ColorRole.WBondWireStart] = new( 70,  50,   8),
-
-            // The gold's COMPLEMENT, dark enough for the near-white canvas: a vertex has to be
-            // findable against the wire it sits on, and any shade of the wire's own hue is not
-            // (owner, 2026-08-16 — "completely blend in with the segments if wires are drawn at their
-            // actual diameter").
-            [ColorRole.WBondWireVertex] = new( 20,  95, 125),
-            [ColorRole.WBondSelected]  = new( 10,  70, 180),
-            [ColorRole.WBondEnvelope]  = new(150, 110,  20,  56),
-            [ColorRole.WBondFreeWire]  = new(180,  70,  30),
+            // **The former `wBond-Orchid` palette, folded in on 2026-08-17** (owner). Six alternatives
+            // shipped as selectable themes to be judged side by side; one won, so it stopped being a
+            // choice and became what the default IS. There is no `wBond-…` theme any more.
+            //
+            // The orchid is `Schematic.Wire` itself, and the vertex is `Schematic.WireJunctionDot` —
+            // the pairing the owner named as working: ~72° apart on the colour wheel with the dot
+            // about twice as saturated, ADJACENT rather than complementary. WireStart is the same hue
+            // two steps darker (owner: "the same as the wire, but a much darker shade of it").
+            // Selected is deliberately outside the hue rule — a near-black on the light ground,
+            // because it is a STATE and has to be unmistakable against wire, vertex and canvas at once.
+            [ColorRole.WBondWire]      = new(165,  64, 130),
+            [ColorRole.WBondWireStart] = new( 84,  28,  65),
+            [ColorRole.WBondWireVertex] = new( 60,  27, 243),
+            [ColorRole.WBondSelected]  = new( 46,  36,  42),
+            [ColorRole.WBondEnvelope]  = new(165,  64, 130,  52),
+            [ColorRole.WBondFreeWire]  = new(182, 126,  43),
         },
         new Dictionary<string, Rgba>
         {
@@ -211,17 +211,15 @@ public sealed class ColorTheme
             [ColorRole.HarmonicaMarkerBand5]      = new(166, 124, 214),
 
             // ── wBond, DARK ─────────────────────────────────────────────────────────────────────
-            // The gold/orange the editor has always drawn with, kept: it was already a dark-ground
-            // palette. WireStart follows the same "much darker shade of the wire" rule as light — it
-            // still reads against the dark canvas, and it now means the same thing in both variants
-            // (it used to be an unrelated blue in one and nothing at all in the other).
-            [ColorRole.WBondWire]      = new(224, 192,  96),
-            [ColorRole.WBondWireStart] = new(140, 112,  40),
-
-            // The same complement, lifted for the dark ground — see the light variant's note.
-            [ColorRole.WBondWireVertex] = new(110, 210, 235),
-            [ColorRole.WBondSelected]  = new(255, 255, 255),
-            [ColorRole.WBondEnvelope]  = new(224, 192,  96,  64),
-            [ColorRole.WBondFreeWire]  = new(224, 128,  96),
+            // The dark half of the same folded-in orchid palette — see the light variant's note. Each
+            // role is its light counterpart lifted for the dark ground, so the two variants mean the
+            // same thing rather than being two unrelated palettes. Selected is a near-WHITE here for
+            // the same reason it is a near-black there: it is a state, not an accent.
+            [ColorRole.WBondWire]      = new(214, 122, 182),
+            [ColorRole.WBondWireStart] = new(142,  41, 107),
+            [ColorRole.WBondWireVertex] = new(142, 122, 255),
+            [ColorRole.WBondSelected]  = new(244, 241, 243),
+            [ColorRole.WBondEnvelope]  = new(214, 122, 182,  60),
+            [ColorRole.WBondFreeWire]  = new(222, 179, 115),
         });
 }

@@ -628,7 +628,11 @@ public class WBondOneEditorTests
         Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
         Assert.False(vm.IsDirty);
 
-        vm.WireEditor!.SelectAllWires();
+        // ONE of the three, deliberately. Deleting them ALL is a different case since 2026-08-17 —
+        // an emptied layout DELETES its sidecar rather than writing a wires-less one (owner) — and it
+        // has its own test in WBondRound6Tests. What this one is about is that an ordinary edit
+        // reaches the file at all.
+        vm.WireEditor!.Selection = new WireSelection { Wires = { 0 } };
         Assert.True(vm.WireEditor.DeleteSelectedWires() > 0);
         Assert.True(vm.IsDirty);
 
@@ -636,7 +640,7 @@ public class WBondOneEditorTests
         Assert.False(vm.IsDirty);
 
         // …and the file on disk really changed.
-        Assert.NotEqual(3, WBondIo.ReadFile(sidecar).WireCount);
+        Assert.Equal(2, WBondIo.ReadFile(sidecar).WireCount);
     }
 
     /// <summary>

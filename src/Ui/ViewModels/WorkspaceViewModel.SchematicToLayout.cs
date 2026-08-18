@@ -204,11 +204,11 @@ public partial class WorkspaceViewModel
         // exist, and the layout toolbar's own P/A buttons are how they are reached from then on. A
         // re-run deliberately leaves the arrangement exactly as the user has since set it: nothing is
         // more irritating than a command that re-opens a panel you closed on purpose.
-        if (seeded.Outcome == WBondCellSeeding.Outcome.Created)
-        {
-            ShowToolPanel(Docking.DockPanelIds.WBondProfile);
-            ShowToolPanel(Docking.DockPanelIds.WBondInductance);
-        }
+        //
+        // ARRANGED, not merely opened, the first time this installation ever needs them (owner,
+        // 2026-08-17) — see ShowWBondPanels, which transcribes the owner's own placement for the two
+        // of them and leaves everything else in the workspace alone.
+        if (seeded.Outcome == WBondCellSeeding.Outcome.Created) ShowWBondPanels();
 
         _factory.ProjectTreeTool?.Refresh();
     }

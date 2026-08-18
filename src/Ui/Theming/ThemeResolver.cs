@@ -15,6 +15,24 @@ public static class ThemeResolver
 {
     private static Func<string, ColorTheme?>? _builtInProvider;
 
+    /// <summary>
+    /// The theme the application opens with when the user has never chosen one.
+    ///
+    /// <para><b>There is exactly one shipped theme and this is it</b> (owner, 2026-08-17). The six
+    /// <c>wBond-…</c> palettes existed to be judged side by side; the winning one's six
+    /// <c>wBond.*</c> roles were folded into <c>Default</c> itself — in
+    /// <c>Assets/Color/Default.ccolor</c> and in <see cref="ColorTheme.BuiltIn"/>, which must agree —
+    /// and all six files were deleted. So the wire colours the owner chose are simply what the
+    /// default IS, rather than something to go and select.</para>
+    ///
+    /// <para>Kept as a named constant rather than the literal because it is asked in two different
+    /// voices: "no preference recorded, what do I open with", and "is this name worth recording at
+    /// all". A <c>.cws</c> or a <c>preferences.json</c> still naming a deleted <c>wBond-…</c> theme
+    /// falls through the resolution chain below and lands on <see cref="ColorTheme.BuiltIn"/> — which
+    /// now carries those very colours.</para>
+    /// </summary>
+    public const string DefaultThemeName = "Default";
+
     public static string UserThemesDir =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -74,26 +92,25 @@ public static class ThemeResolver
     /// falls through the resolution chain to <see cref="ColorTheme.BuiltIn"/>, which is a working
     /// theme rather than a failure.</para>
     ///
-    /// <para>The six <c>wBond-…</c> entries state only the six <c>wBond.*</c> roles (owner,
-    /// 2026-08-16 — alternatives to try for the wire, its start dot and its vertices). Everything
-    /// else they leave unsaid, and <see cref="ColorTheme.Resolve"/>'s per-role fallback to
-    /// <see cref="ColorTheme.BuiltIn"/> supplies it — so selecting one recolours the wirebond editor
-    /// and leaves the schematic, the layout and harmonicaRF exactly as they were. That is the point:
-    /// they are wBond palettes to judge side by side, not six whole application themes.</para>
+    /// <para><b>One entry, since 2026-08-17.</b> Six <c>wBond-…</c> palettes shipped alongside it to
+    /// be judged side by side; the winner's six <c>wBond.*</c> roles were folded into <c>Default</c>
+    /// itself and all six files were deleted, so the wire colours the owner chose are what the default
+    /// IS rather than something to select. A <c>.cws</c> or <c>preferences.json</c> still naming one of
+    /// the deleted themes resolves through the chain above and lands on
+    /// <see cref="ColorTheme.BuiltIn"/> — which carries those very colours, so nothing regresses.</para>
     ///
-    /// <para><b>The wire-to-accent relationship is transcribed from a pairing the owner named as
-    /// working: <c>Schematic.Wire</c> and <c>Schematic.WireJunctionDot</c></b> (2026-08-16). Measured,
-    /// that pair is <b>~72° apart on the colour wheel</b> with the dot roughly TWICE as saturated as
-    /// the wire and a little lighter — adjacent, not complementary, and not the same hue either. The
+    /// <para><b>The wire-to-accent relationship folded in with them is worth keeping written down</b>
+    /// (2026-08-16), because it is the rule any future palette has to satisfy. It is transcribed from a
+    /// pairing the owner named as working — <c>Schematic.Wire</c> and <c>Schematic.WireJunctionDot</c>
+    /// — which measures <b>~72° apart on the colour wheel</b> with the dot roughly TWICE as saturated
+    /// as the wire and a little lighter: ADJACENT, not complementary, and not the same hue either. The
     /// first set shipped paired each wire with its COMPLEMENT (180°) and the verdict was that the
-    /// accent sat "too far different than the wBond.Wire colour". <c>wBond-Orchid</c> is that
-    /// schematic pair itself, to within a rounding step; the other five apply its geometry to
-    /// different wire hues.</para>
+    /// accent sat "too far different than the wBond.Wire colour".</para>
     ///
     /// <para><c>wBond.Selected</c> is deliberately outside that rule — a near-black on the light
     /// ground, a near-white on the dark one. It is a STATE, not an accent: it has to be unmistakable
     /// against the wire, the vertex and the canvas at once, and a third hue would compete with the
-    /// two the theme is actually built from.</para>
+    /// two the palette is actually built from.</para>
     ///
     /// <para><b>No spaces in a built-in's name</b>, and that is a constraint rather than a style
     /// choice: a built-in is fetched as <c>avares://…/Assets/Color/&lt;name&gt;.ccolor</c>, and a
@@ -102,16 +119,7 @@ public static class ThemeResolver
     /// to <see cref="ColorTheme.BuiltIn"/> instead. A user's OWN theme is loaded from a file path and
     /// may be called anything.</para>
     /// </summary>
-    public static IReadOnlyList<string> BuiltInThemeNames { get; } =
-    [
-        "Default",
-        "wBond-Copper",
-        "wBond-Gold",
-        "wBond-Olive",
-        "wBond-Orchid",
-        "wBond-Steel",
-        "wBond-Teal",
-    ];
+    public static IReadOnlyList<string> BuiltInThemeNames { get; } = [DefaultThemeName];
 
     /// <summary>
     /// Returns the union of theme names found in the workspace dir, the user themes dir, and the
