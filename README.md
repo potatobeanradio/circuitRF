@@ -264,7 +264,7 @@ git clone https://github.com/potatobeanradio/circuitRF.git
 cd circuitRF
 
 dotnet build      # restores packages + compiles everything
-dotnet test       # runs the regression suite (engine math, file round-trips, UI logic)
+dotnet test       # optional 5-10 min tests; runs the regression test suite
 ```
 
 A green `dotnet test` means your environment is good. (On Windows use the same commands in PowerShell or
@@ -279,12 +279,7 @@ path — they never fail. Contact the repo owner if you need the files for full 
 
 ### 4. Optional - Packaging from source
 
-### Windows
-
-### Linux
-
-### macOS
-
+See BUILDING.md for instructions on building and packaging the circuitRF app. 
 
 
 ---

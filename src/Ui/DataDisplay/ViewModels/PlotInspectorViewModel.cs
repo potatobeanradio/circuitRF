@@ -339,12 +339,35 @@ public partial class PlotInspectorViewModel : ViewModelBase
     internal static bool HasPlottableData(DataSourceEntryViewModel e, bool allowScalars) =>
         (e.Snp is not null && !e.Snp.IsEmpty) || FirstPlottableCubeName(e, allowScalars) is not null;
 
-    /// <summary>Returns the name of the first plottable cube in the entry's DataSet, applying the
+    /// <summary>Returns the name of the best cube to seed a trace on, applying the
     /// same skip rules as the trace-signal picker (S/Z0, "__"-prefixed, Converged/Residual,
-    /// node-indexed current). Rank-0 (scalar) cubes are included only when allowScalars is true.</summary>
+    /// node-indexed current). Rank-0 (scalar) cubes are included only when allowScalars is true.
+    ///
+    /// <para><b>Best, not merely first</b> (owner, 2026-08-18): an HB run's first cube is <c>V</c>,
+    /// indexed by node AND harmonic, so the trace a run auto-seeded was "the voltage at some node at
+    /// some harmonic" — almost never what a designer who wrote a page of measurement expressions wants
+    /// to look at first, and a poor thing to start customizing from. A MEASUREMENT is preferred
+    /// whenever the run produced one.</para>
+    ///
+    /// <para><b>Which measurement: the first REAL one, in declaration order.</b> Enumeration order is
+    /// the order the designer wrote them in, which is the only opinion the dataset carries about which
+    /// one matters — for the shipped <c>FET_Harmonic_Balance_Sweep</c> template that is
+    /// <c>Pin_avail_dBm</c>, a plain line against the swept drive (the owner's own choice, and for the
+    /// stated reason: it is immediately readable). Real before complex because a complex cube needs a
+    /// transform picked for it before it renders as anything. This is a starting point, not a guess at
+    /// the user's intent — every other cube is one click away in the trace picker.</para>
+    ///
+    /// <para>A run with no measurements at all (DC, a bare HB, an imported Touchstone) seeds exactly
+    /// what it seeded before.</para></summary>
     private static string? FirstPlottableCubeName(DataSourceEntryViewModel e, bool allowScalars = false)
     {
         if (e.Data is not { } ds) return null;
+
+        string? firstAny          = null;   // today's answer, kept as the fallback
+        string? firstMeasurement  = null;   // a complex measurement — better than raw, worse than a real one
+        string? firstProbeCurrent = null;   // an IProbe the designer PLACED — see ProbeNames
+        var     probeNames        = ProbeNames(ds);
+
         foreach (var group in ds.Groups)
             foreach (var (bareName, cube) in ds.CubesIn(group))
             {
@@ -356,9 +379,135 @@ public partial class PlotInspectorViewModel : ViewModelBase
                     bareName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
                 if ((bareName == "I" || bareName == "INl") && cube.Axes.Any(a => a.Name == "node")) continue;
                 if (cube.Rank == 0 && !allowScalars) continue;   // scalars are Table-only
-                return group == DataSet.DefaultGroup ? bareName : $"{group}.{bareName}";
+
+                // Default- AND measurements-group cubes are emitted BARE — they bare-resolve
+                // (DataSet.Resolve tries both), and the same rule is already what the trace picker
+                // (TraceRowViewModel.RebuildSignals) and the expression parser (TraceExpression) use, so
+                // a seeded trace reads `Pin_avail_dBm` exactly like a typed or picked one. Owner,
+                // 2026-08-18: a `measurements.` prefix in the expression box is noise the user never
+                // needs to type. Analysis cubes must stay qualified — bare `V` resolves to the wrong
+                // group.
+                string spec = group is DataSet.DefaultGroup or DataSet.MeasurementsGroup
+                    ? bareName
+                    : $"{group}.{bareName}";
+                firstAny ??= spec;
+
+                if (IsProbeCurrent(cube, probeNames)) firstProbeCurrent ??= spec;
+
+                // The GROUP is the discriminator, not the shape or the name: a run's measurement cubes
+                // are filed under DataSet.MeasurementsGroup by the run service and survive the `.npy`
+                // there (verified against a real exported run, not assumed). Guessing from the axes
+                // would also catch a raw cube that happens to have been reduced to the sweep.
+                if (group != DataSet.MeasurementsGroup) continue;
+
+                if (cube.DataKind == DataKind.Real) return spec;
+                firstMeasurement ??= spec;
             }
-        return null;
+
+        return firstMeasurement ?? firstProbeCurrent ?? firstAny;
+    }
+
+    /// <summary>
+    /// The names of the current probes the designer PLACED in the schematic, as the run recorded them
+    /// (<c>__ProbeBranches</c>, written by both the DC packer and the HB engine); empty when the run has
+    /// none.
+    /// </summary>
+    private static string[] ProbeNames(DataSet ds)
+    {
+        foreach (var group in ds.Groups)
+            foreach (var (bareName, cube) in ds.CubesIn(group))
+                if (bareName == "__ProbeBranches" && cube.Rank == 1 && cube.Axes[0].Labels is { Length: > 0 } labels)
+                    return labels;
+        return [];
+    }
+
+    /// <summary>
+    /// Whether <paramref name="cube"/> is the current through the designer's own probes — a branch axis
+    /// whose labels are exactly the placed <c>IProbe</c>s.
+    ///
+    /// <para><b>Why the labels must MATCH the probe list rather than merely exist</b> (owner, 2026-08-18:
+    /// "there is a probe usually called IDS or IP1"): a DC run's branch axis IS the probe list, so a curve
+    /// tracer's <c>I</c> cube is exactly the quantity the user placed a probe to see — and preferring it
+    /// over <c>V</c> is the same argument as preferring a measurement, since both are things the designer
+    /// explicitly asked to observe. An HB run's branch axis is NOT that list: it enumerates every device
+    /// branch (<c>M1:g</c>, <c>M1:d</c>, …), and seeding one of those over a node voltage would be a
+    /// change with nothing behind it. Comparing against <c>__ProbeBranches</c> tells the two apart
+    /// exactly, with no rule about which analysis produced the cube.</para>
+    /// </summary>
+    private static bool IsProbeCurrent(DataCube cube, string[] probeNames)
+    {
+        if (probeNames.Length == 0) return false;
+
+        var branch = cube.Axes.FirstOrDefault(a => a.Name == "branch");
+        return branch?.Labels is { } labels && labels.SequenceEqual(probeNames);
+    }
+
+    /// <summary>
+    /// Whether an axis indexes a STRUCTURAL element — which node, which branch, which harmonic, which
+    /// port, which matrix row/column — rather than a condition the run swept.
+    ///
+    /// <para>The distinction is what lets a seeded trace tell "the sweep" from "the circuit": a sweep
+    /// axis is something to plot ALONG or iterate a family over, a structural axis is something to pin
+    /// and let the user repick. <c>freq</c> is deliberately absent — it is a swept condition, and the
+    /// preferred X when a cube has one.</para>
+    /// </summary>
+    private static bool IsStructuralAxis(string name) =>
+        name is "node" or "branch" or "harmonic" or "tone" or "port" or "probe" or "mixIndex" or "i" or "j";
+
+    /// <summary>
+    /// The slice a seeded cube trace opens with. <see cref="TraceRowViewModel.BuildDefaultSlice"/>'s
+    /// answer — first non-structural axis → X, everything else pinned at index 0 — except for the one
+    /// case that answer gets backwards: a cube with TWO OR MORE swept axes and no frequency.
+    ///
+    /// <para><b>The case (owner, 2026-08-18): a curve tracer.</b> A DC analysis swept over VDS and then
+    /// VGS produces <c>DC1.I [VGS × VDS × branch]</c> — each <c>parametric_sweep</c> nesting level
+    /// PREPENDS its axis, so the OUTERMOST sweep is axis 0 and the innermost is last. The default slice
+    /// therefore makes VGS the X axis and pins VDS at its first value: drain current against the GATE
+    /// voltage at VDS = 0, which is a flat line. What every one of those runs exists to produce is
+    /// <c>I[~, :, "IDS"]</c> — current against VDS, one curve per gate step.</para>
+    ///
+    /// <para>So when there are two or more swept axes: X is the INNERMOST (last) one, the outermost
+    /// becomes the family, and structural axes stay pinned at index 0 carrying their label — which is
+    /// what puts the probe's own name <c>"IDS"</c> in the expression rather than a bare index.</para>
+    ///
+    /// <para><b>A cube with a <c>freq</c> axis is left alone</b>, deliberately. Frequency is always the
+    /// natural X, so the default slice is already right there and an S-parameter run already opens on a
+    /// readable plot (S(1,1) over frequency, the sweep pinned) — promoting its sweep to a family would be
+    /// a change to a case that was not broken. Same for a cube with one swept axis: every single-sweep
+    /// HB, every DC operating point and every unswept S-parameter run seeds exactly what it seeded
+    /// before.</para>
+    /// </summary>
+    internal static AxisSlice[] BuildSeedSlice(DataCube cube)
+    {
+        if (cube.Axes.Any(a => a.Name == "freq")) return TraceRowViewModel.BuildDefaultSlice(cube);
+
+        var sweeps = new List<int>();
+        for (int d = 0; d < cube.Rank; d++)
+            if (!IsStructuralAxis(cube.Axes[d].Name)) sweeps.Add(d);
+
+        if (sweeps.Count < 2) return TraceRowViewModel.BuildDefaultSlice(cube);
+
+        int xIdx      = sweeps[^1];
+        int familyIdx = sweeps[^2];
+
+        // Too many members to draw: the renderer already clamps a family at Trace.MaxFamilyCurves and
+        // says so, but a SEEDED trace that silently showed the first 101 of a 500-point sweep would be
+        // claiming to be the whole picture. Past the cap the axis is pinned instead — the corrected X
+        // survives, because current against VDS at one gate voltage is still the right pair of axes, and
+        // the family is one click away in the axis-role editor.
+        if (cube.Axes[familyIdx].Length > Trace.MaxFamilyCurves) familyIdx = -1;
+
+        var slice = new AxisSlice[cube.Rank];
+        for (int d = 0; d < cube.Rank; d++)
+        {
+            var ax = cube.Axes[d];
+            slice[d] =
+                d == xIdx      ? new AxisSlice(ax.Name, AxisRole.KeepAsX, 0)
+              : d == familyIdx ? new AxisSlice(ax.Name, AxisRole.FamilyIterate, 0)
+              : new AxisSlice(ax.Name, AxisRole.PinToIndex, 0,
+                              Label: ax.Labels is { Length: > 0 } labels ? labels[0] : "");
+        }
+        return slice;
     }
 
     // ---- Commands -------------------------------------------------------
@@ -612,7 +761,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // first non-label axis; every other axis pinned at index 0. For an S cube [freq, i, j] (+ optional
         // swept prefix) this yields S(1,1) over frequency with the sweep pinned — the user promotes the
         // sweep to Family or repins i/j via the axis-role editor.
-        trace.Slice = TraceRowViewModel.BuildDefaultSlice(cube);
+        trace.Slice = BuildSeedSlice(cube);
 
         // First-add nicety on Rect: only COMPLEX cubes get an auto-transform (so they don't render
         // <invalid>); REAL cubes are shown raw — no annoying "mag". (Shared with the signal-switch path.)

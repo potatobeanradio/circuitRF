@@ -5,6 +5,109 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## A curve tracer auto-opens as a curve tracer: the probe current, as a family (2026-08-18)
+
+Owner: *"User runs DC analysis and sweeps VGS + VDS for a Curve Tracer. There is a probe usually called
+IDS or IP1. Can a new data display automatically populate with the family? Expression is
+`DC1.I[~, :, "IDS"]`."* Same session as the measurement-preference entry below, and the same argument
+one step further: seed the thing the designer asked to observe, plotted the way the run was set up.
+
+**Two independent things were wrong, and the axis order is the key to both.** Verified by running the
+shipped `FET_Curve_Tracer` nesting (DC1 ← sweep VDS ← sweep VGS) through `ParametricSweepEngine` and
+exporting it — not read off the code:
+
+```
+[] V              rank=3  VGS:5 x VDS:6 x node:3(n_g,n_dd,n_d)
+[] I              rank=3  VGS:5 x VDS:6 x branch:1(IDS)
+[] __ProbeBranches rank=1 probe:1(IDS)
+```
+
+**Each `parametric_sweep` nesting level PREPENDS its axis**, so the OUTERMOST sweep is axis 0 and the
+innermost is last. That is the fact the whole slice rule turns on.
+
+1. **The wrong axes.** `BuildDefaultSlice` takes the first non-structural axis as X — VGS — and pins the
+   rest, giving drain current against the GATE voltage at VDS = 0: a flat line. `BuildSeedSlice` now takes
+   the INNERMOST swept axis as X and promotes the outermost to `AxisRole.FamilyIterate`. Structural axes
+   stay pinned at index 0 *carrying their label*, which is what puts `"IDS"` in the expression instead of
+   a bare index.
+2. **The wrong cube.** With no measurements in the run, the seed took the first plottable cube — `V`, i.e.
+   a node voltage (and the first node is the gate supply, so the plot was literally the sweep against
+   itself). A placed `IProbe` is the same kind of signal as a measurement expression: something the
+   designer explicitly put there to be seen. So a probe-current cube now outranks raw outputs, below
+   measurements.
+
+**`__ProbeBranches` is what makes rule 2 exact.** A DC run's `branch` axis IS the probe list, but an HB
+run's is not — it enumerates every DEVICE branch (`M1:g`, `M1:d`, …), so "prefer a labelled branch axis"
+would have re-pointed every bare HB run to an arbitrary device current for no reason. Both engines write
+`__ProbeBranches` with the placed probes, so `IsProbeCurrent` requires the branch labels to MATCH that
+list. DC matches; HB does not.
+
+**Two deliberate limits.**
+
+- **A cube with a `freq` axis is left alone.** Frequency is always the natural X, so the default slice was
+  already right and an S-parameter run already opened on a readable plot. Promoting its sweep to a family
+  broke `SparamRunAddTraceTests.SweptS_Family`, which documents the seeded-then-manually-promoted
+  contract — the test was right and the rule was overreaching.
+- **The family is capped at `Trace.MaxFamilyCurves`** (101), the renderer's own guardrail rather than a
+  second number. The renderer clamps a long family and says so; a SEEDED trace showing the first 101 of a
+  500-point sweep would be claiming to be the whole picture, so past the cap the axis is PINNED instead —
+  keeping the corrected X, since current against VDS at one gate voltage is still the right pair of axes.
+
+Result, from the real run: `I[~, :, "IDS"]` — five curves (one per gate step), six points each (the VDS
+sweep), family axis VGS. *Note for anyone testing this:* a family trace's data lives in
+`Trace.FamilyCurves`, and `Trace.Points` stays EMPTY — asserting on `Points` reads as "the seed renders
+nothing" when it is working.
+
+## The auto-seeded trace prefers a MEASUREMENT, and the group is what says so (2026-08-18)
+
+Owner: *"if an HB analysis is performed with many high level measurement expressions in the schematic …
+it is unlikely that the user will want to plot voltage at a specific node. Instead, let's plot a
+measurement expression … I just want to setup the user with something that makes it easy for them to
+customize the data display."*
+
+A run that auto-creates a `.cdd` seeds one trace through `AddTrace` →
+`PlotInspectorViewModel.FirstPlottableCubeName`, which returned the literal first plottable cube. For a
+swept HB that is `V`, of rank 3: **`[Pin × node × harmonic]`**. The default slice pins all but axis 0, so
+the display opened on the voltage at one arbitrary node at one arbitrary harmonic — for a schematic whose
+entire content is measurement expressions.
+
+**Measurement cubes are filed in their own DataSet group, and it survives the `.npy`.**
+`SchematicRunService` writes them to `DataSet.MeasurementsGroup` (`"measurements"`), which is
+bare-resolvable like the default group, and `NpyWriter` records the group list. So the preference needs no
+heuristic at all — no guessing from cube names, no inferring "already reduced to the sweep" from the
+absence of a `node`/`harmonic` axis. **Established by exporting a real run and reading it back**, not from
+the code: `Cli hb` over a `parametric_sweep` of six Pin values wrote
+
+```
+[]             V              rank=3 Complex  Pin:6 x node:6 x harmonic:5
+[]             Converged      rank=1 Real     Pin:6
+[measurements] Pin_avail_dBm  rank=1 Real     Pin:6
+```
+
+and the seeded trace is now `Pin_avail_dBm` with six points running −10 → 0 dBm.
+
+**Emitted BARE, no `measurements.` prefix** (owner, on seeing it): a measurements-group cube
+bare-resolves (`DataSet.Resolve` tries the default group then the measurements group), and both the trace
+picker (`TraceRowViewModel.RebuildSignals`) and the expression parser (`TraceExpression`) already emit
+these bare for exactly that reason — so `FirstPlottableCubeName` qualifying them was the one place out of
+step, and it put a prefix in the expression box that the user never needs to type. Only ANALYSIS-group
+cubes stay qualified, because a bare `V` would resolve to the wrong group.
+
+**Which measurement: the first REAL one in enumeration order.** That order is the order the designer
+declared them in — the only opinion the dataset carries about which one matters — and for the shipped
+`FET_Harmonic_Balance_Sweep` template it is `Pin_avail_dBm`, the owner's own pick, for the reason they
+gave: a plain 1:1 line against the swept drive is immediately readable. Real before complex because a
+complex cube needs a transform chosen before it renders as anything.
+
+Everything else is unchanged: the loadpull path still takes its two contour plots ahead of this, and a run
+with **no** measurements (DC, a bare HB, an imported Touchstone) seeds exactly the cube it always did. The
+change is one extra preference inside one method, so the manual **Add Trace** button gets the better
+default for free.
+
+*Test trap worth knowing:* a seed that names the right cube but resolves to nothing renders an empty plot,
+which is worse than the old behaviour and invisible to a name-only assertion. `AutoSeedTracePrefersMeasurementTests`
+asserts the resolved point count and the X range as well as the cube name.
+
 ## A cube marker's frequency lives in its POSITION (2026-08-13)
 
 Switching a trace from S(1,1) to a stability circle sent its marker to 0 Hz, where every lookup read

@@ -2380,6 +2380,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         RestoreInstalledPdks();
         SubscribeToFilterState();
         SubscribeToTreeSelection();
+
+        // The tree was REPLACED, so any panel may have appeared, vanished or changed which tab is in
+        // front — the one thing a toolbar toggle cannot work out for itself. `ApplyDockLayout` raises this
+        // for the same reason; this path (Window Layout preset, Reset Layout) does not go through it, and
+        // that is precisely how the Library button came up unlit at launch with a visible Library panel:
+        // the shell is BUILT tabbed (Library behind Project Tree, so genuinely not in view), then rebuilt
+        // into the ProjectTreeAndLibrary preset a moment later — and nothing told the button.
+        RaiseToolPanelVisibilityChanged();
     }
 
     // Dispatches to whichever document is currently focused (per-window, see
@@ -2400,17 +2408,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // HideShowDockers lives in WorkspaceViewModel.Docking.cs — it is a real full-canvas toggle now.
     [RelayCommand] private void FitWindowsToFrame() => PerformLayoutReset("Windows fit to frame.");
 
-    [RelayCommand]
-    private void ToggleMessagesRegion()
-    {
-        // Expand/show the Messages region (StatusMessages toolbar button).
-        // Dock provides float/show; for now we just ensure Messages is active.
-        if (_factory.MessagesTool is { } mt)
-        {
-            _factory.SetActiveDockable(mt);
-            // SetFocusedDockable requires the parent IDock container; skip for 6b.
-        }
-    }
+    // The Messages toolbar button used to run a ToggleMessagesRegion command of its own, which only ever
+    // made the panel the active tab — it could not close one, and said nothing about whether the panel was
+    // on screen. It is one of the three panel toggles now (ToggleToolPanelCommand, "Messages"), so there is
+    // nothing left here: a second, weaker way to show the same panel is exactly what made the button read
+    // as broken when pressed twice.
 
     // ---- Simulate commands ---------------------------------------------------
 

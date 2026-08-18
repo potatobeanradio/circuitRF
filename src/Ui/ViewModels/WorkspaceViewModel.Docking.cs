@@ -141,23 +141,69 @@ public partial class WorkspaceViewModel
     /// </summary>
     public event Action? ToolPanelVisibilityChanged;
 
-    private void RaiseToolPanelVisibilityChanged() => ToolPanelVisibilityChanged?.Invoke();
+    private void RaiseToolPanelVisibilityChanged()
+    {
+        // The workspace toolbar's own toggles read their checked state through the three properties
+        // below, so every route that can change what is on screen renotifies them here — the same
+        // single notification the event already exists for, rather than a second mechanism that could
+        // fall out of step with it.
+        OnPropertyChanged(nameof(IsLibraryPanelShowing));
+        OnPropertyChanged(nameof(IsPropertiesPanelShowing));
+        OnPropertyChanged(nameof(IsMessagesPanelShowing));
+
+        ToolPanelVisibilityChanged?.Invoke();
+    }
+
+    // ---- The workspace toolbar's three panel toggles ------------------------
+    //
+    // Bound ONE WAY, and computed from the dock tree on every read (never a stored flag): a panel is
+    // also closed by its own tab X, dragged into a float, or replaced wholesale by a layout restore,
+    // and none of those pass through the button. A ToggleButton flips its own IsChecked on click, so
+    // the binding's job is to CORRECT that flip whenever the tree disagrees — which is why the
+    // notification above is unconditional rather than raised only on a change.
+
+    /// <summary>Whether the Library (component palette) panel is on screen — the toolbar toggle's state.</summary>
+    public bool IsLibraryPanelShowing => IsToolPanelShowing(DockPanelIds.Palette);
+
+    /// <summary>Whether the Properties inspector is on screen — the toolbar toggle's state.</summary>
+    public bool IsPropertiesPanelShowing => IsToolPanelShowing(DockPanelIds.Properties);
+
+    /// <summary>Whether the Messages panel is on screen — the toolbar toggle's state.</summary>
+    public bool IsMessagesPanelShowing => IsToolPanelShowing(DockPanelIds.Messages);
 
     /// <summary>
-    /// Whether <paramref name="panelId"/> is showing anywhere right now — docked in the shell or in a
-    /// floating window, front tab or behind another.
+    /// Whether <paramref name="panelId"/> is <b>in view</b> right now — in the tree, docked in the shell
+    /// or in a floating window, AND the front tab of whatever holds it.
     ///
-    /// <para>This is the same two-state question <see cref="ToggleToolPanelCommand"/> asks (owner,
-    /// 2026-08-17: "I should be able to press A repeatedly and the Array Inductance view toggle on and
-    /// off"), so a button bound to it says exactly what the next press will do. Answered from the
-    /// live tree rather than from a flag kept alongside it: a panel can also be closed by its own tab
-    /// X, dragged into a float, or replaced wholesale by a layout restore.</para>
+    /// <para><b>In view, not merely present</b> (owner, 2026-08-18: a panel tabbed behind another comes to
+    /// the front). A panel behind another tab is one the user cannot see, so a button that reported it as
+    /// showing would be claiming something the screen contradicts — and, worse, would mean pressing a
+    /// checked button made the panel APPEAR. With this reading the button stays a clean two-state control
+    /// over <see cref="ToggleToolPanelCommand"/>'s three: unchecked always means the next press puts the
+    /// panel in view, checked always means the next press takes it away.</para>
+    ///
+    /// <para>Answered from the live tree rather than from a flag kept alongside it: a panel can also be
+    /// closed by its own tab X, dragged into a float, tabbed behind a sibling, or replaced wholesale by a
+    /// layout restore — and none of those pass through the button.</para>
     /// </summary>
     public bool IsToolPanelShowing(string? panelId) =>
         panelId is not null
         && _factory.ToolById(panelId) is { } tool
         && _factory.TryFindTool(tool, out var parent, out _)
-        && parent is not null;
+        && parent is not null
+        && IsFrontTab(tool, parent);
+
+    /// <summary>
+    /// Whether <paramref name="tool"/> is the tab in front of <paramref name="parent"/>.
+    ///
+    /// <para>A dock holding ONE dockable counts as showing it whatever <c>ActiveDockable</c> says: nothing
+    /// can be in front of it, and a dock built or restored without that pointer set would otherwise report
+    /// a plainly visible panel as hidden — costing one dead press of the button to "bring forward" a panel
+    /// that is already the only thing there.</para>
+    /// </summary>
+    private static bool IsFrontTab(IDockable tool, IDock parent) =>
+        ReferenceEquals(parent.ActiveDockable, tool)
+        || parent.VisibleDockables is not { Count: > 1 };
 
     // ---- Reopening a tool panel (View menu) ----------------------------------
 
@@ -178,13 +224,24 @@ public partial class WorkspaceViewModel
     /// Messages log — rather than a blank replacement.</para>
     /// </summary>
     /// <summary>
-    /// <b>Toggle</b> a tool panel — strictly two states: showing anywhere, or not showing.
+    /// <b>Toggle</b> a tool panel: bring it to the front if it is behind another tab, hide it if it is
+    /// already the front tab, and put it back where it was if it is not in the tree at all.
     ///
-    /// <para><b>Two states, not three</b> (owner, 2026-08-17: "I should be able to press A repeatedly and
-    /// the Array Inductance view toggle on and off"). An earlier version had a middle state — showing but
-    /// behind another tab meant "bring it forward" — and it made the key non-deterministic: a panel tabbed
-    /// with another needed THREE presses for one cycle, and which press did what depended on a tab order
-    /// the user was not thinking about. A key that means "show/hide this" has to mean that every time.</para>
+    /// <para><b>Three states — reversing the two-state rule of 2026-08-17</b> (owner, 2026-08-18: "if the
+    /// Properties is tabbed behind Analyses, I want Properties to come to the front. This should be true
+    /// to [any] window tool that is behind another pane"). The earlier ruling — showing ANYWHERE means the
+    /// next press hides it — was made against a real complaint: a panel tabbed with another took THREE
+    /// presses for one cycle, and which press did what depended on a tab order the user was not thinking
+    /// about.</para>
+    ///
+    /// <para><b>What makes the middle state safe this time is not here, it is in
+    /// <see cref="IsToolPanelShowing"/></b>, which now reports a panel behind another tab as NOT showing.
+    /// The old middle state was invisible to the user: the panel was reported as showing, so a press that
+    /// merely raised it looked like a press that did nothing, and the cycle read as three. With "showing"
+    /// meaning "in view", every press moves between exactly the two states the user can see — press once
+    /// to look at it, press again to put it away — and the toggle's third branch is how the first of those
+    /// gets done when the panel is behind a sibling rather than closed. Any control bound to
+    /// <see cref="IsToolPanelShowing"/> therefore still reads as a plain two-state toggle.</para>
     ///
     /// <para>Separate from <see cref="ShowToolPanel"/> rather than replacing it: a MENU item named after a
     /// panel means "show me that panel", and a menu that closed what you asked for would be a trap. A KEY
@@ -212,7 +269,15 @@ public partial class WorkspaceViewModel
             return;
         }
 
-        // Showing — anywhere, front tab or not — so this press hides it.
+        // In the tree but BEHIND a sibling tab: this press brings it into view. Nothing is remembered and
+        // nothing is hidden — the panel has not moved, it was merely not the one on top.
+        if (!IsFrontTab(tool, parent))
+        {
+            BringToFront(tool, parent, window);
+            return;
+        }
+
+        // In view, so this press hides it.
         RememberPanelHome(panelId, tool);
 
         // A FLOATING panel is hidden by closing its window, not by Dock's hide.
@@ -242,6 +307,31 @@ public partial class WorkspaceViewModel
         {
             Messages.Warning($"Could not hide the {tool.Title} panel: {ex.Message}");
             try { _factory.ForceCloseDockable(tool); } catch { /* reported above */ }
+        }
+    }
+
+    /// <summary>
+    /// Raises a panel that is in the tree but behind a sibling tab, and — when it lives in a floating
+    /// window that the shell is covering — brings that window forward too, since "behind another pane" is
+    /// just as true of a window as of a tab.
+    ///
+    /// <para><b>The tab in front, but NOT keyboard focus</b> — deliberately, and for the same reason the
+    /// restore paths say so: <c>WirePanelKeys</c> gates the bare P and A keys on not being in a text field,
+    /// and these panels are mostly fields. Pushing focus into the panel this raises would turn the next
+    /// press of that key into a typed letter.</para>
+    /// </summary>
+    private void BringToFront(ITool tool, IDock parent, IDockWindow? window)
+    {
+        try
+        {
+            parent.ActiveDockable = tool;
+            _factory.SetActiveDockable(tool);
+
+            if (window?.Host is Window host) host.Activate();
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not bring the {tool.Title} panel forward: {ex.Message}");
         }
     }
 
@@ -369,7 +459,11 @@ public partial class WorkspaceViewModel
             }
         }
 
-        if (!_panelHomes.TryGetValue(panelId, out var home)) return false;
+        // A missing record leaves `home` default, and every path below is written against its parts —
+        // so "nothing remembered" falls through to the layout's own placement at the end rather than
+        // returning here. Returning was right while the only callers were the two wBond panels, which
+        // no layout knows about; it is wrong for a panel the default layout DOES place.
+        _panelHomes.TryGetValue(panelId, out var home);
 
         // ── It was FLOATING: re-open its own window, at its own rectangle ─────
         // Before the two paths below, and not merely because they would miss: a panel the user floated
@@ -430,7 +524,13 @@ public partial class WorkspaceViewModel
         // path a placement read back from a `.cws` can take.
         if (CaptureDockLayout() is not { } live) return false;
 
-        if (home.Docked is { } d)
+        // Nothing remembered, but the arrangement still names a place: Capture writes a closed entry for
+        // every panel of the default layout it did not find in the tree, and a workspace restored from a
+        // `.cws` carries the user's own last placement there (see CaptureDockLayoutForPersistence).
+        // Docking it there beats ShowToolPanel's float, which drops a window over the canvas.
+        var placement = home.Docked ?? live.Panels.FirstOrDefault(p => p.Id == panelId && !p.Open);
+
+        if (placement is { } d)
         {
             // Only ONE panel in a group can be the tab in front, and the group it is going back into
             // already has one — whatever was left showing when this panel was hidden.
@@ -444,11 +544,20 @@ public partial class WorkspaceViewModel
                 if (sibling.Side == d.Side && sibling.Group == d.Group && sibling.Inboard == d.Inboard)
                     sibling.Active = false;
 
-            live.Panels.Add(new CwsDockPanel
+            // REOPENED in place when the place came from this layout's own closed entry — adding a
+            // second entry for the same id would leave the panel named twice, and R-dock-1 makes the id
+            // the identity. Only a remembered record, which is not in this list, has to be added.
+            if (live.Panels.Contains(d))
             {
-                Id = panelId, Open = true, Side = d.Side, Group = d.Group, Order = d.Order,
-                Active = true, Proportion = d.Proportion, Inboard = d.Inboard,
-            });
+                d.Open   = true;
+                d.Active = true;
+            }
+            else
+                live.Panels.Add(new CwsDockPanel
+                {
+                    Id = panelId, Open = true, Side = d.Side, Group = d.Group, Order = d.Order,
+                    Active = true, Proportion = d.Proportion, Inboard = d.Inboard,
+                });
         }
         else if (home.Float is { } f)
             live.FloatingWindows.Add(f);
@@ -564,8 +673,9 @@ public partial class WorkspaceViewModel
     }
 
     /// <summary>
-    /// The arrangement to WRITE: the live one, plus a <c>Open = false</c> entry for each closed panel whose
-    /// place is remembered.
+    /// The arrangement to WRITE: the live one, plus the remembered place of every closed panel — added as
+    /// an <c>Open = false</c> entry, or written OVER the default-placement entry <c>Capture</c> leaves for
+    /// a closed panel that belongs to the default layout.
     ///
     /// <para>That is what lets "put it back where it was" survive a restart rather than only a session.
     /// <see cref="DockLayoutCapture.Capture"/> walks the live tree and a closed panel is not in it, so the
@@ -583,17 +693,50 @@ public partial class WorkspaceViewModel
         foreach (var (id, home) in _panelHomes)
         {
             if (home.Docked is not { } d) continue;
-            if (layout.Panels.Any(p => p.Id == id)) continue;
             if (layout.FloatingWindows.Any(w => w.Panels.Contains(id))) continue;
 
-            layout.Panels.Add(new CwsDockPanel
-            {
-                Id = id, Open = false, Side = d.Side, Group = d.Group, Order = d.Order,
-                Active = false, Proportion = d.Proportion, Inboard = d.Inboard,
-            });
+            RecordClosedPanelPlacement(layout, id, d);
         }
 
         return layout;
+    }
+
+    /// <summary>
+    /// Writes "<paramref name="panelId"/> is closed, and this is where it belongs" into
+    /// <paramref name="layout"/> — as a new <c>Open = false</c> entry, or OVER the one already there.
+    ///
+    /// <para><b>Over, not skipped, and that distinction is the whole method.</b>
+    /// <see cref="DockLayoutCapture.Capture"/> writes an <c>Open = false</c> entry for every panel of the
+    /// DEFAULT layout it did not find in the live tree, at the DEFAULT placement. For the two wBond
+    /// panels that never happens — they are in no default layout — which is why simply adding was enough
+    /// while they were the only panels anything toggled. It is not enough for Library, Properties or
+    /// Messages: the default-placement entry is already there, so leaving it alone would file the shipped
+    /// position over the one the user actually had, and the first press of the toolbar button after
+    /// reopening the workspace would move the panel to the default instead of back where they left it.</para>
+    ///
+    /// <para>An entry that is OPEN is left alone: the live tree is then the truth about that panel, and
+    /// the remembered record is stale (it was restored after being remembered).</para>
+    /// </summary>
+    internal static void RecordClosedPanelPlacement(CwsDockLayout layout, string panelId, CwsDockPanel place)
+    {
+        if (layout.Panels.FirstOrDefault(p => p.Id == panelId) is { } existing)
+        {
+            if (existing.Open) return;
+
+            existing.Side       = place.Side;
+            existing.Group      = place.Group;
+            existing.Order      = place.Order;
+            existing.Inboard    = place.Inboard;
+            existing.Proportion = place.Proportion;
+            existing.Active     = false;
+            return;
+        }
+
+        layout.Panels.Add(new CwsDockPanel
+        {
+            Id = panelId, Open = false, Side = place.Side, Group = place.Group, Order = place.Order,
+            Active = false, Proportion = place.Proportion, Inboard = place.Inboard,
+        });
     }
 
     /// <summary>
@@ -661,14 +804,24 @@ public partial class WorkspaceViewModel
     /// Subscribes to the Dock events that mean "the arrangement changed", so a moved, docked, floated or
     /// closed panel is recorded like any other session state. Called once, at construction.
     ///
-    /// <para><b>Deliberately not <c>DockableAdded</c>/<c>DockableRemoved</c> or the activation events.</b>
-    /// Those fire in bulk while a layout is being BUILT, and on every tab switch — which is not an
-    /// arrangement change and would arm a disk write on every click.</para>
+    /// <para><b>Deliberately not <c>DockableAdded</c>/<c>DockableRemoved</c> or the activation events</b>
+    /// — for PERSISTENCE. Those fire in bulk while a layout is being BUILT, and on every tab switch, which
+    /// is not an arrangement change and would arm a disk write on every click. Activation IS subscribed
+    /// below, but only to renotify the toolbar; it never reaches
+    /// <see cref="OnDockArrangementChanged"/>.</para>
     /// </summary>
     private void WireDockArrangementPersistence()
     {
         // BEFORE it goes, while it still has a place to record — see OnToolPanelClosing.
         _factory.DockableClosing   += (_, e) => OnToolPanelClosing(e.Dockable);
+
+        // WHICH TAB IS IN FRONT is part of "is this panel in view" (see IsToolPanelShowing), so a tab
+        // switch changes the answer for TWO panels — the one that came forward and the one it covered —
+        // without any panel being added, removed or moved. Nothing else in this list fires for that.
+        //
+        // Cheap on purpose: this only re-reads the tree for whatever is bound, and it is deliberately NOT
+        // routed through OnDockArrangementChanged, which would arm a `.cws` write on every click.
+        _factory.ActiveDockableChanged += (_, _) => RaiseToolPanelVisibilityChanged();
 
         _factory.DockableDocked    += (_, _) => OnDockArrangementChanged();
         _factory.DockableUndocked  += (_, _) => OnDockArrangementChanged();

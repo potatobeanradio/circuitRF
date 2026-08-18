@@ -69,6 +69,13 @@ public partial class ProjectTreeTool : Tool
         public string RevealLabel { get; init; } = "";
 
         public IRelayCommand<string>? RevealCommand { get; init; }
+
+        /// <summary>
+        /// Opens this workspace — the same command the row's own click runs, carried here for the same
+        /// reason <see cref="RevealCommand"/> is: the context menu is a separate popup tree and cannot
+        /// walk out to the tool view model.
+        /// </summary>
+        public IRelayCommand<string>? OpenCommand { get; init; }
     }
 
     public ObservableCollection<RecentEntry> RecentWorkspaces { get; } = new();
@@ -83,6 +90,7 @@ public partial class ProjectTreeTool : Tool
                 {
                     RevealLabel   = RevealLabel,
                     RevealCommand = RevealRecentCommand,
+                    OpenCommand   = OpenRecentCommand,
                 });
         OnPropertyChanged(nameof(HasRecentWorkspaces));
     }

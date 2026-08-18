@@ -783,12 +783,36 @@
 
                 <Border Width="1" Margin="3,2" Background="{DynamicResource SystemBaseMediumLowColor}"/>
 
-                <!-- Status Messages (expand/pop Messages region) -->
-                <Button Command="{Binding ToggleMessagesRegionCommand}"
-                        ToolTip.Tip="Status Messages"
-                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                <!-- ── Tool panels: Library, Properties, Messages ──────────────────────────
+                     Three TOGGLES, not three "open it" buttons (owner, 2026-08-18): press to show the
+                     panel where the user last had it in THIS workspace, press again to close it, and
+                     round again. That is ToggleToolPanelCommand — the same command, and therefore the
+                     same two states and the same restore path, that the wBond panels' P and A keys and
+                     the layout editor's own two buttons already use. View ▸ Panels keeps the plain
+                     "show me that panel" command: a MENU item named after a panel must not close it.
+
+                     ToggleButtons whose IsChecked is bound ONE WAY, so the button says whether its
+                     panel is on screen. The truth is the dock tree, which a panel closed by its own tab
+                     X — or a whole layout restore — also changes, so the state is re-read from the view
+                     model on every notification rather than left wherever the click put it. -->
+                <ToggleButton Classes="PanelToggle"
+                              Command="{Binding ToggleToolPanelCommand}" CommandParameter="Palette"
+                              IsChecked="{Binding IsLibraryPanelShowing, Mode=OneWay}"
+                              ToolTip.Tip="Library">
+                    <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="18" Height="18"/>
+                </ToggleButton>
+                <ToggleButton Classes="PanelToggle"
+                              Command="{Binding ToggleToolPanelCommand}" CommandParameter="Properties"
+                              IsChecked="{Binding IsPropertiesPanelShowing, Mode=OneWay}"
+                              ToolTip.Tip="Properties Inspector">
+                    <mi:MaterialIcon Kind="FormatListBulleted" Width="18" Height="18"/>
+                </ToggleButton>
+                <ToggleButton Classes="PanelToggle"
+                              Command="{Binding ToggleToolPanelCommand}" CommandParameter="Messages"
+                              IsChecked="{Binding IsMessagesPanelShowing, Mode=OneWay}"
+                              ToolTip.Tip="Messages">
                     <mi:MaterialIcon Kind="MessageTextOutline" Width="18" Height="18"/>
-                </Button>
+                </ToggleButton>
 
             </StackPanel>
         </Border>

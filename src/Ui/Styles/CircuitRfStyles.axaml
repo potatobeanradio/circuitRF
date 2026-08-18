@@ -171,6 +171,28 @@
             <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
         </Style>
 
+        <!-- Panel toggles in a toolbar (the workspace toolbar's Library / Properties / Messages
+             buttons): FLAT while unchecked, so they sit with the plain toolbar buttons beside them,
+             and the theme's own checked chrome — an accent fill — when their panel is on screen.
+
+             Two deliberate choices:
+               • the flat background is set from a STYLE, not as a local value on each button like the
+                 plain toolbar buttons use. A local value outranks a style setter (LocalValue beats
+                 Style), so a local Background="Transparent" would also win against the theme's
+                 :checked and :pointerover fills and the button would never look checked at all.
+               • the checked FILL is left to the theme rather than overridden, so it follows the active
+                 accent; only the icon is re-coloured, because the toolbar icon rule above paints every
+                 icon 60% grey and that is unreadable on an accent fill. This rule comes AFTER that one
+                 for exactly that reason: with both active, the later style wins. -->
+        <Style Selector="ToggleButton.PanelToggle">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,2"/>
+        </Style>
+        <Style Selector="ToggleButton.PanelToggle:checked mi|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource ToggleButtonForegroundChecked}"/>
+        </Style>
+
         <!-- Global font defaults -->
         <Style Selector="TextBlock">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>

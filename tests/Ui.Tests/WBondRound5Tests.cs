@@ -1581,16 +1581,24 @@ public class WBondRound5Tests
         int at = code.IndexOf("private void WireDockArrangementPersistence", StringComparison.Ordinal);
         Assert.True(at >= 0);
 
-        string body = code[at..(at + 900)];
+        string body = code[at..code.IndexOf("private void OnDockArrangementChanged", StringComparison.Ordinal)];
         foreach (var ev in new[] { "DockableDocked", "DockableUndocked", "DockableClosed",
                                    "DockableMoved", "DockableSwapped", "WindowMoveDragEnd",
                                    "WindowOpened", "WindowClosed" })
             Assert.Contains($"_factory.{ev}", body, StringComparison.Ordinal);
 
-        // NOT the bulk/activation events: those fire while a layout is being built and on every tab
-        // switch, which is not an arrangement change and would arm a write on every click.
+        // NOT the bulk events: those fire while a layout is being built, which is not an arrangement
+        // change and would arm a write on every rebuild.
         Assert.DoesNotContain("_factory.DockableAdded", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("_factory.ActiveDockableChanged", body, StringComparison.Ordinal);
+
+        // Activation IS subscribed here since 2026-08-18 — a tab switch changes whether a panel is in
+        // VIEW, which the toolbar toggles read — but it must never reach the save. It fires on every
+        // click and in bulk during a build; arming a `.cws` write from it is the bug this whole method
+        // exists to fix, pointed the other way.
+        Assert.Contains("_factory.ActiveDockableChanged += (_, _) => RaiseToolPanelVisibilityChanged();",
+                        body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ActiveDockableChanged += (_, _) => OnDockArrangementChanged()",
+                              body, StringComparison.Ordinal);
 
         Assert.Contains("WireDockArrangementPersistence();",
                         Read("src", "Ui", "ViewModels", "WorkspaceViewModel.cs"), StringComparison.Ordinal);
@@ -1930,35 +1938,68 @@ public class WBondRound5Tests
     }
 
     /// <summary>
-    /// <b>TWO states, not three</b> (owner, 2026-08-17: "I should be able to press A repeatedly and the
-    /// Array Inductance view toggle on and off").
+    /// <b>Three states — and the two-state rule this replaces (owner, 2026-08-17 → 2026-08-18).</b>
     ///
-    /// <para>An earlier version had a middle state — showing but behind another tab meant "bring it
-    /// forward" — which made the key non-deterministic: a panel tabbed with another needed THREE presses
-    /// for one cycle, and which press did what depended on a tab order the user was not thinking about.
-    /// Showing ANYWHERE now means the next press hides it.</para>
+    /// <para>It was two: showing ANYWHERE meant the next press hides it, because an earlier bring-forward
+    /// middle state made the key read as non-deterministic — a panel tabbed with another took THREE presses
+    /// for one cycle. The owner reversed it on 2026-08-18: <i>"if the Properties is tabbed behind Analyses,
+    /// I want Properties to come to the front. This should be true to [any] window tool that is behind
+    /// another pane."</i></para>
+    ///
+    /// <para><b>What stops the old complaint coming back is not in this method</b> — it is that
+    /// <c>IsToolPanelShowing</c> now reports a panel behind another tab as NOT showing. The old middle
+    /// state was invisible: the panel counted as showing, so the press that merely raised it looked like a
+    /// press that did nothing. With "showing" meaning "in view", every press moves between the two states
+    /// the user can see, so the pair of tests below have to hold together or the reversal is a regression.</para>
     /// </summary>
     [Fact]
-    public void TheToggleHasExactlyTwoStates()
+    public void TheToggleBringsAPanelForwardBeforeItWouldEverHideOne()
     {
         var code = Read("src", "Ui", "ViewModels", "WorkspaceViewModel.Docking.cs");
 
         int at = code.IndexOf("private void ToggleToolPanel(", StringComparison.Ordinal);
-        int end = code.IndexOf("private void HideFloatingPanel", StringComparison.Ordinal);
+        int end = code.IndexOf("private void BringToFront", StringComparison.Ordinal);
         Assert.True(at >= 0 && end > at);
 
         string body = code[at..end];
 
-        // The middle branch is gone: no "is it the front tab" question, and no bring-forward.
-        Assert.DoesNotContain("parent.ActiveDockable", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("SetActiveDockable", body, StringComparison.Ordinal);
+        // The middle branch: behind a sibling tab, raise it — and RETURN, so no press can both raise and
+        // hide, and nothing is remembered for a panel that has not moved.
+        int front  = body.IndexOf("if (!IsFrontTab(tool, parent))", StringComparison.Ordinal);
+        int raise  = body.IndexOf("BringToFront(tool, parent, window);", StringComparison.Ordinal);
+        int remember = body.IndexOf("RememberPanelHome(panelId, tool);", StringComparison.Ordinal);
+        Assert.True(front >= 0 && raise > front && remember > raise);
 
         // ONE restore, and one hide per kind of home — docked or floating. The floating branch is an
-        // alternative way to reach the hidden state, not a third state: it returns rather than falling on
+        // alternative way to reach the hidden state, not a fourth state: it returns rather than falling on
         // through, so no press can leave the panel half-hidden.
         Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(body, @"RestorePanelToItsHome\(panelId, tool\)").Count);
         Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(body, @"HideFloatingPanel\(panelId, tool, window\)").Count);
         Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(body, @"DockPanelHiding\.Hide\(").Count);
+    }
+
+    /// <summary>
+    /// The other half: a panel BEHIND another tab reports as not showing, so every control bound to
+    /// <c>IsToolPanelShowing</c> still reads as a plain two-state toggle. Drop this and the three-state
+    /// toggle becomes the very thing the owner rejected on 2026-08-17.
+    /// </summary>
+    [Fact]
+    public void APanelBehindAnotherTab_DoesNotCountAsShowing()
+    {
+        var code = Read("src", "Ui", "ViewModels", "WorkspaceViewModel.Docking.cs");
+
+        int at  = code.IndexOf("public bool IsToolPanelShowing(", StringComparison.Ordinal);
+        int end = code.IndexOf("private static bool IsFrontTab(", StringComparison.Ordinal);
+        Assert.True(at >= 0 && end > at);
+
+        Assert.Contains("&& IsFrontTab(tool, parent);", code[at..end], StringComparison.Ordinal);
+
+        // A dock holding one dockable shows it whatever ActiveDockable says — otherwise the first press of
+        // the button is spent "raising" a panel that is already the only thing in its dock.
+        int front = code.IndexOf("private static bool IsFrontTab(", StringComparison.Ordinal);
+        string body = code[front..(front + 400)];
+        Assert.Contains("ReferenceEquals(parent.ActiveDockable, tool)", body, StringComparison.Ordinal);
+        Assert.Contains("parent.VisibleDockables is not { Count: > 1 }", body, StringComparison.Ordinal);
     }
 
     /// <summary>

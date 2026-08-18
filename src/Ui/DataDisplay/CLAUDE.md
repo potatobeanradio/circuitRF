@@ -490,6 +490,19 @@ the bare cube name (no `[]`).
 for rank-0 is `Array.Empty<AxisSlice>()`. `PlotInspectorViewModel.FirstPlottableCubeName` accepts
 an `allowScalars` param that is true only when the plot is a Table.
 
+**Seed rule (2026-08-18):** `FirstPlottableCubeName` returns the best cube, not the first one — a cube in
+`DataSet.MeasurementsGroup` wins over a raw simulator output, and a real one wins over a complex one.
+The GROUP is the discriminator (the run service files measurements there and the `.npy` keeps it), so
+never re-derive "is this a measurement" from cube names or axis shapes. Measurement cubes are named BARE,
+like default-group ones — the same rule the picker and `TraceExpression` follow, since both groups
+bare-resolve. A cube with a labelled `branch` axis matching `__ProbeBranches` is a PLACED probe and
+outranks raw outputs too (DC only — an HB branch axis lists device branches, not probes).
+
+**Seed slice (2026-08-18):** `BuildSeedSlice`, not `BuildDefaultSlice`, for an auto-seeded trace. A
+`parametric_sweep` PREPENDS its axis per nesting level, so with two or more swept axes and no `freq` the
+INNERMOST (last) is X and the outermost becomes the family — a 2-D DC sweep opens as a curve tracer.
+Cubes with a `freq` axis and single-sweep cubes are untouched. See `RESOLVED.md`.
+
 **Table rendering:** `TableColumn.IsScalar` (on XAxis columns) is set for scalar anchor columns.
 `TableRenderer.FormatColumnCell` returns `""` for scalar XAxis cells, keeping the anchor invisible.
 Rank-1 cubes are unchanged (decision (b) — no new display work needed).

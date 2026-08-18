@@ -6,6 +6,70 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## The workspace toolbar's three panel toggles — Library, Properties, Messages (2026-08-18)
+
+Owner: *"To the left of the messages button in the workspace toolbar, add buttons for Library Palette and
+Properties Inspector… pressing the button again closes them… give the Messages button this same
+functionality."*
+
+**Nothing new was built for the toggle itself, on purpose.** `ToggleToolPanelCommand` already toggles
+(press shows, press again hides, round again), already restores a panel to the place it was
+last in *in this workspace*, and already gets the tricky cases right — a floating panel is hidden by closing
+its window rather than by Dock's hide, a docked one is hidden rather than closed so its `ToolDock` cannot
+collapse and force a rebuild, and the restored tab is made the front one so the next press reads as "hide"
+instead of "bring forward". Every one of those was a separate owner report during the P/A work above. The
+three buttons are that command with a different panel id.
+
+What the work actually was:
+
+- **The toolbar's own `ToggleMessagesRegion` command is deleted.** It only ever called
+  `SetActiveDockable` — it could not close the panel, so a second press did nothing, and the button said
+  nothing about whether Messages was on screen. Leaving it beside the toggle would have been a second,
+  weaker way to show one panel.
+- **The checked state is bound ONE WAY** to `IsLibraryPanelShowing` / `IsPropertiesPanelShowing` /
+  `IsMessagesPanelShowing`, which are computed from the dock tree on every read and renotified from
+  `RaiseToolPanelVisibilityChanged` — the notification every route that can change what is on screen already
+  raises. A `ToggleButton` flips its own `IsChecked` on click; the binding's job is to *correct* that flip
+  whenever the tree disagrees, which is why the notification is unconditional rather than change-gated. The
+  layout editor's two wBond buttons push the same truth from code-behind instead, only because their
+  `DataContext` is a `LayoutDocument` and not the workspace.
+- **No local `Background` on the buttons** (`Classes="PanelToggle"`, chrome in `CircuitRfStyles.axaml`). A
+  local value outranks a style setter, so `Background="Transparent"` written on the button — the way every
+  plain button in that toolbar is written — would also beat the theme's `:checked` and `:pointerover` fills
+  and the toggle would never look checked. The flat look is set from the style; the checked fill is left to
+  the theme so it follows the active accent, and only the icon is re-coloured, because the
+  `StackPanel.Toolbar mi|MaterialIcon` rule paints every toolbar icon 60% grey and that is unreadable on an
+  accent fill. That rule and this one both match, so the checked one must come *after* it in the file.
+- **A panel behind another tab now comes to the front** (owner, same day, on seeing it: *"if the
+  Properties is tabbed behind Analyses, I want Properties to come to the front. This should be true to
+  [any] window tool that is behind another pane"*). This reverses the two-state ruling of 2026-08-17 —
+  and reverses it in the shared command, so the wBond P and A keys and the layout editor's two buttons
+  follow it too. It is safe this time because `IsToolPanelShowing` changed with it: a panel behind
+  another tab reports as NOT showing, so the raise is a visible state change rather than the press that
+  "did nothing" which made the original middle state read as a three-press cycle. Every control bound to
+  it still behaves as a two-state toggle. `BringToFront` sets the active dockable and, for a floating
+  panel, activates its window — but never keyboard focus, or the next bare P or A would be typed into
+  the panel's own field.
+- **A visible Library with an unlit button, at launch** (owner, same day). Not a rendering problem — a
+  missed notification, and the reversal above is what created it. The shell is BUILT from
+  `DockLayoutDefaults.Default()`, where the Library is tabbed BEHIND the Project Tree and so genuinely is
+  not in view; a moment later `ApplyWindowLayout` rebuilds it into the `ProjectTreeAndLibrary` preset,
+  where the Library is alone in its own column and plainly is. Properties and Messages are the front tab
+  of their group in *both*, which is exactly why only the Library was wrong. Two gaps, both fixed:
+  `RebuildLayoutFrom` did not renotify (`ApplyDockLayout` always did, and the Window Layout preset and
+  Reset Layout do not go through it), and **nothing at all renotified on a tab switch** — which since
+  "showing" means "in view" changes the answer for two panels without any panel being added, removed or
+  moved. `ActiveDockableChanged` is now subscribed for that, and deliberately NOT routed through
+  `OnDockArrangementChanged`, which would arm a `.cws` write on every click. Both are pinned by tests
+  that drive the real factory rather than reading the source.
+- **Two restore gaps that only a default-layout panel could expose**: the `CaptureDockLayoutForPersistence`
+  overwrite described under *"And the place survives a restart"* below, and `RestorePanelToItsHome`
+  returning `false` the moment `_panelHomes` had no record. Returning was right while only the wBond panels
+  could reach it — no layout names those — but for a panel the arrangement *does* place, the arrangement's
+  own closed entry is a better answer than `ShowToolPanel`'s float, which drops a window over the canvas.
+  It now falls back to that entry, and reopens it in place rather than adding a second entry naming the same
+  panel (R-dock-1: the id is the identity).
+
 ## Schematic context menu ▸ Edit Parameters opened the inline editor (2026-08-17)
 
 Owner: it "opens an inline text editor. It is supposed to open the Component Parameters dialog box."
@@ -941,6 +1005,15 @@ depended on a tab order the user was not thinking about. **A key that means "sho
 that every time.** Showing ANYWHERE now means the next press hides it. (The View ▸ Panels menu is
 unaffected — it still means "show me that panel", which is why it stays a separate command.)
 
+> **Superseded 2026-08-18 — the middle state is back, and the diagnosis above was half right.** Owner:
+> *"if the Properties is tabbed behind Analyses, I want Properties to come to the front. This should be
+> true to [any] window tool that is behind another pane."* What actually made the old middle state
+> non-deterministic was not the state, it was that **`IsToolPanelShowing` counted a panel behind another
+> tab as showing** — so the press that merely raised it looked like a press that did nothing, and one
+> cycle read as three. "Showing" now means *in view*, the raise is a visible state change, and every
+> press moves between the two states the user can see. Anything bound to `IsToolPanelShowing` still reads
+> as a plain two-state toggle; see the 2026-08-18 toolbar section at the top of this file.
+
 **And the panel really was coming back behind the other one.** `BuildSide` resolves a group's front tab as
 `ordered.FirstOrDefault(p => p.Active)` over panels sorted by `Order`, and the live capture the restore
 builds on already had the OTHER panel marked active — so the lower `Order` won. Only one panel in a group
@@ -1023,10 +1096,20 @@ the same trail back.
 
 A closed panel is not in the live tree, so `Capture` cannot see it — the place would be forgotten the moment
 the workspace was saved with the panel hidden, and next session's first press would float it again.
-`CaptureDockLayoutForPersistence` adds an `Open = false` entry for each remembered place; every reader
+`CaptureDockLayoutForPersistence` writes an `Open = false` entry for each remembered place; every reader
 already ignores it (`BuildSide` filters on `Open`), and `SeedPanelHomesFrom` reads them back **before** the
 layout is applied, since the apply drops them. Deliberately not folded into `DockLayoutCapture.Capture`,
 which is a pure walker of a live tree and has no business knowing what a view model remembers.
+
+**Writes, meaning OVERWRITES — and that only started mattering when a panel of the DEFAULT layout got a
+toggle of its own (2026-08-18).** `Capture` itself already emits an `Open = false` entry for every panel of
+the default layout it cannot find in the tree, *at the default placement*. The two wBond panels are in no
+default layout, so for them the remembered place was simply added and nothing collided. Library, Properties
+and Messages are in it — so an add-if-absent pass would leave the shipped placement standing and quietly
+discard the user's own, and the first press of their toolbar button after reopening the workspace would move
+the panel to the default instead of back where they left it. `RecordClosedPanelPlacement` therefore
+overwrites a CLOSED entry and only adds when there is none; an OPEN entry is left alone, because the live
+tree is then the truth and the remembered record is the stale one.
 
 ### The same two symptoms again, for a panel in a FLOATING window (2026-08-17)
 
