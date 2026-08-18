@@ -21,11 +21,11 @@ public class WBondWirePropertiesTests
 
         for (int i = 0; i < wires; i++)
         {
-            array.Wires.Add(LoopProfile.BallBond(20 * Mil).CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 new Point3(0, i * 6 * Mil, 0),
                 new Point3(60 * Mil, i * 6 * Mil, 8 * Mil),
                 diameterNm: Mil,
-                material: "Gold"));
+                material: "Gold", loopHeightNm: 20 * Mil));
         }
 
         design.Arrays.Add(array);
@@ -44,8 +44,8 @@ public class WBondWirePropertiesTests
     {
         var design = new WBondDesign();
         var array = new WireArray { Name = groupName };
-        array.Wires.Add(LoopProfile.WedgeBond(15 * Mil).CreateWire(
-            new Point3(0, 30 * Mil, 0), new Point3(50 * Mil, 30 * Mil, 0), Mil, "Gold"));
+        array.Wires.Add(LoopShape.CreateSeedWire(
+            new Point3(0, 30 * Mil, 0), new Point3(50 * Mil, 30 * Mil, 0), Mil, "Gold", loopHeightNm: 15 * Mil));
         design.Arrays.Add(array);
         return design;
     }
@@ -158,8 +158,8 @@ public class WBondWirePropertiesTests
     {
         var design = new WBondDesign();
         var array = new WireArray { Name = "Long" };
-        array.Wires.Add(LoopProfile.BallBond(20 * Mil, points: 101).CreateWire(
-            new Point3(0, 0, 0), new Point3(100 * Mil, 0, 0), Mil, "Gold"));
+        array.Wires.Add(LoopShape.CreateSeedWire(
+            new Point3(0, 0, 0), new Point3(100 * Mil, 0, 0), Mil, "Gold", loopHeightNm: 20 * Mil, points: 101));
         design.Arrays.Add(array);
 
         var vm = new WBondViewModel(design);
@@ -387,19 +387,32 @@ public class WBondWirePropertiesTests
     /// A bound wire is DETACHED by a single-wire height edit — it cannot both follow a shared shape
     /// and stand at its own height — and the panel shows the binding is gone.
     /// </summary>
+    /// <summary>
+    /// Setting one wire's loop height touches THAT wire and no other.
+    ///
+    /// <para>This used to be "…and detaches it from its loop profile, and says so in the panel's
+    /// Profile row". Loop profiles are gone (2026-08-18) and so is the row: a loop height has always
+    /// been a property of the wire (<c>Wire.LoopHeightNm</c> is its own max z minus min z), and the
+    /// thing worth stating is that a sibling in the same group does not move.</para>
+    /// </summary>
     [Fact]
-    public void CommitLoopHeight_DetachesABoundWire_AndSaysSo()
+    public void CommitLoopHeight_ChangesThatWireOnly()
     {
         var vm = MakeEditor();
         var panel = Bind(vm);
         vm.Selection = new WireSelection { Wires = [0] };
 
-        Assert.NotEqual("(free)", panel.ProfileBinding);
+        long siblingBefore = vm.Design.AllWires().Last().LoopHeightNm;
+        var siblingPoints = vm.Design.AllWires().Last().Points.ToArray();
 
         panel.CommitLoopHeight("30 mil");
 
-        Assert.Equal("(free)", panel.ProfileBinding);
-        Assert.NotNull(vm.Design.AllWires().Last().ProfileBinding);   // its sibling is untouched
+        Assert.InRange(vm.Design.AllWires().First().LoopHeightNm,
+                       WBondUnits.ToNm(30.0, WBondUnit.Mil) - 2,
+                       WBondUnits.ToNm(30.0, WBondUnit.Mil) + 2);
+
+        Assert.Equal(siblingBefore, vm.Design.AllWires().Last().LoopHeightNm);
+        Assert.Equal(siblingPoints, vm.Design.AllWires().Last().Points.ToArray());
     }
 
     /// <summary>A height below the wire's own foot drop is refused by name, not silently clamped.</summary>
@@ -438,15 +451,21 @@ public class WBondWirePropertiesTests
 
     /// <summary>Span does NOT detach a bound wire — a profile applies between whatever feet it has.</summary>
     [Fact]
-    public void CommitSpan_LeavesABoundWireBound()
+    public void CommitSpan_MovesTheOutputFootOnly()
     {
         var vm = MakeEditor();
         var panel = Bind(vm);
         vm.Selection = new WireSelection { Wires = [0] };
 
+        var wire = vm.Design.AllWires().First();
+        var inputFoot = wire.Points[0];
+
         panel.CommitSpan("100 mil");
 
-        Assert.NotEqual("(free)", panel.ProfileBinding);
+        Assert.Equal(inputFoot, wire.Points[0]);
+        Assert.InRange(wire.ChordLengthMetres() * WBondUnits.NmPerMetre,
+                       WBondUnits.ToNm(100.0, WBondUnit.Mil) - 50,
+                       WBondUnits.ToNm(100.0, WBondUnit.Mil) + 50);
     }
 
     [Fact]

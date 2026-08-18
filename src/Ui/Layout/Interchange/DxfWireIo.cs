@@ -240,9 +240,10 @@ public static class DxfWireIo
     /// Builds a <see cref="WBondDesign"/> from the wire polylines a reader recovered, grouping them
     /// into arrays by layer name.
     ///
-    /// <para>Wires arrive FREE — bound to no profile — because a polyline carries a shape, not the
-    /// intent behind it. Inventing a profile binding on import would make a later "set the loop
-    /// height" silently reshape wires the user never asked to be related.</para>
+    /// <para>An imported wire is an ordinary wire: its polyline IS its shape, exactly as for one
+    /// drawn here. That used to need saying — wires arrived "free", bound to no loop profile — but
+    /// with the profile object removed (2026-08-18) there is no other kind of wire to distinguish it
+    /// from.</para>
     /// </summary>
     /// <param name="nmPerDrawingUnit">
     /// Nanometres in one drawing unit — a direct property of the file's own <c>$INSUNITS</c>

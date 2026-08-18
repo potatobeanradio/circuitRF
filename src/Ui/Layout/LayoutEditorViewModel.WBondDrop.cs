@@ -109,20 +109,18 @@ public sealed partial class LayoutEditorViewModel
         var start = WBondEmbedding.DefaultWire.StartAt(footZ);
         var end = WBondEmbedding.DefaultWire.EndAt(footZ);
 
-        // A profile name no existing array uses, so AddWire creates a NEW array rather than joining
-        // the first array that shares a profile — which is the whole difference between "another
-        // group of wires" and "one more wire in the group you already had".
-        var profile = LoopProfile.BallBond(
-            WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil));
-        profile.Name = FreeProfileName(editor.Design, profile.Name);
-        editor.Design.Profiles.Add(profile);
-
+        // An array name no existing array uses, which is what makes this "another group of wires"
+        // rather than "one more wire in the group you already had". This used to be expressed by
+        // inventing a uniquely-named throwaway LOOP PROFILE, because profile identity was what
+        // decided which array a new wire joined; asking for the array by name is what it always meant.
         int index = editor.AddWire(
             new Point3(start.X + xNm, start.Y + yNm, start.Z),
             new Point3(end.X + xNm, end.Y + yNm, end.Z),
             WBondUnits.ToNm(WBondEmbedding.DefaultWire.DiameterMils, WBondUnit.Mil),
             WireMaterials.Default.Name,
-            profile.Name);
+            arrayName: editor.NextArrayName(),
+            points: WBondDefaults.Points,
+            loopHeightNm: WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil));
 
         if (index < 0) return false;
 
@@ -131,20 +129,6 @@ public sealed partial class LayoutEditorViewModel
 
         WireLayerAdded?.Invoke();
         return true;
-    }
-
-    /// <summary>A profile name this design does not already use.</summary>
-    private static string FreeProfileName(WBondDesign design, string wanted)
-    {
-        if (design.Profiles.All(p => !string.Equals(p.Name, wanted, StringComparison.OrdinalIgnoreCase)))
-            return wanted;
-
-        for (int n = 2; ; n++)
-        {
-            string candidate = $"{wanted}-{n}";
-            if (design.Profiles.All(p => !string.Equals(p.Name, candidate, StringComparison.OrdinalIgnoreCase)))
-                return candidate;
-        }
     }
 
     /// <summary>Moves every wire in <paramref name="design"/> by (dx, dy), leaving z alone.</summary>

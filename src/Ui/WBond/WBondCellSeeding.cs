@@ -420,19 +420,6 @@ public static class WBondCellSeeding
         bool reordered = !merged.Select(a => a.Name).SequenceEqual(
             target.Arrays.Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
 
-        // A new array's wires arrive bound to a profile by NAME. Copy any profile the target does not
-        // already have; where it has one of that name, the target's own wins — it is the one the
-        // profile view edits, and a second copy under a made-up name would be an editing surface
-        // nobody asked for.
-        foreach (var array in added)
-        {
-            foreach (string profileName in ProfileNamesOf(array))
-            {
-                if (target.ProfileByName(profileName) is not null) continue;
-                if (wanted.ProfileByName(profileName) is { } source) target.Profiles.Add(source);
-            }
-        }
-
         target.Arrays.Clear();
         target.Arrays.AddRange(merged);
 
@@ -519,20 +506,6 @@ public static class WBondCellSeeding
                 changed++;
         }
         return changed;
-    }
-
-    /// <summary>
-    /// Every loop profile a new array's wires need — its own binding and each wire's, since a wire
-    /// dragged loose from the array's profile keeps whichever one it was last generated from.
-    /// </summary>
-    private static IEnumerable<string> ProfileNamesOf(WireArray array)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (array.Profile is not null && seen.Add(array.Profile)) yield return array.Profile;
-
-        foreach (var wire in array.Wires)
-            if (wire.ProfileBinding is not null && seen.Add(wire.ProfileBinding))
-                yield return wire.ProfileBinding;
     }
 
     /// <summary>

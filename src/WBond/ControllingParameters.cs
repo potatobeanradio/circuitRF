@@ -67,28 +67,28 @@ public sealed class WBondOverrides
 /// would silently regenerate every existing design's wires on its next run, so <see cref="WBondOverrides"/>
 /// carries only what was actually set and <see cref="ApplyTo"/> on an empty one is a no-op.</para>
 ///
-/// <h3>Scope is the ARRAY</h3>
-/// <para>O-10: array names <i>are</i> the pin names on the symbol, and a <see cref="LoopProfile"/> is an
-/// editor-internal sharing mechanism a schematic user never sees — so <c>LoopHeight_G1</c> means array
-/// G1. <c>LoopHeight_&lt;profile&gt;</c> keeps resolving for hand-authored <c>.cnl</c> files that predate
-/// that decision; a name that is <b>both</b> resolves as the ARRAY and the collision is reported.</para>
-///
 /// <h3>A loop height rescales the wire; it does not regenerate it (owner, 2026-08-17)</h3>
 /// <para><i>"I don't like this ball/wedge profile thing. It doesn't offer the user anything. Its setting
 /// should never affect the geometry that the user authors."</i></para>
 ///
-/// <para>This layer used to apply a loop height by writing the bound <see cref="LoopProfile"/>'s height
-/// and re-generating every wire from it. <see cref="LoopProfile.ApplyTo"/> writes X and Y by linear
-/// interpolation between the feet, so that <b>straightened any path the user had routed by hand</b>.
-/// It now goes through <see cref="WireEdits.SetLoopHeightPreservingPath"/>, which changes the one
-/// quantity that was asked for and leaves every X and Y exactly as authored.</para>
+/// <para>This is the whole story of how a controlling parameter reaches geometry.
+/// <see cref="WireEdits.SetLoopHeightPreservingPath"/> changes the one quantity that was asked for and
+/// leaves every X and Y exactly as authored. This layer used to instead write a shared loop profile's
+/// height and re-generate every wire bound to it, which <b>straightened any path the user had routed
+/// by hand</b> — profiles wrote X and Y by linear interpolation between the feet.</para>
 ///
-/// <para><b>Three things fell out of that, and all three are simplifications.</b> There is no longer a
-/// shared-profile clone-on-write (nothing writes a profile, so one array's override cannot drag
-/// another's wires); no bound-versus-detached asymmetry (a loop height is a property of the WIRE —
-/// <see cref="Wire.LoopHeightNm"/> is defined as its own max z minus min z — so a wire dragged loose
-/// from its profile is reached like any other, and the §2.0 report about skipped wires is retired); and
-/// no span-ordering constraint, since nothing needs the points ordered along the chord.</para>
+/// <para><b>Three things fell out of that, and all three are simplifications.</b> There is no
+/// clone-on-write for a shared shape (one array's override cannot drag another's wires); no
+/// bound-versus-detached asymmetry (a loop height is a property of the WIRE —
+/// <see cref="Wire.LoopHeightNm"/> is defined as its own max z minus min z — so every wire is reached
+/// the same way, and the §2.0 report about skipped wires is retired); and no span-ordering
+/// constraint, since nothing needs the points ordered along the chord.</para>
+///
+/// <h3>Scope is the ARRAY, and it is the only scope</h3>
+/// <para>O-10: array names <i>are</i> the pin names on the symbol, so <c>LoopHeight_G1</c> means array
+/// G1. The legacy <c>LoopHeight_&lt;profile&gt;</c> spelling was retired with the loop-profile object
+/// itself (2026-08-18) — with nothing named a profile, there is no second namespace to resolve
+/// against and no array-name-collides-with-profile-name report to make.</para>
 ///
 /// <h3>Why this is not in <c>ComponentModelFactory</c>, where it started</h3>
 /// <para>It was, until the owner reported (2026-08-17) that three arrays set to 30/20/15 mil on the
@@ -122,44 +122,10 @@ public static class ControllingParameters
         double? allDiameter = overrides.LengthFor("Diameter", null);
         string? allMaterial = overrides.NameFor("Material", null);
 
-        var arrayNames = new HashSet<string>(
-            design.Arrays.Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
-
-        // ── The legacy profile spelling, for names that are not also arrays ───
-        //
-        // `LoopHeight_<profile>` still resolves, for hand-authored `.cnl` files that predate O-10's
-        // array scope. It reaches whichever arrays are bound to that profile and does the same
-        // path-preserving thing to their wires; the PROFILE's own stated height is left alone, because
-        // it no longer decides anything about geometry (see ApplyLoopHeight).
-        var byProfile = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var profile in design.Profiles)
-        {
-            if (overrides.LengthFor("LoopHeight", profile.Name) is not { } h) continue;
-
-            if (arrayNames.Contains(profile.Name))
-            {
-                notes.Add(
-                    $"'LoopHeight_{profile.Name}' names both a wire array and a loop profile. It was " +
-                    $"applied to the ARRAY '{profile.Name}' — array names are the symbol's pin names, " +
-                    "so they win. Rename the profile if the profile was meant.");
-                continue;
-            }
-
-            byProfile[profile.Name] = h;
-        }
-
         foreach (var array in design.Arrays)
         {
             // ── Loop height ───────────────────────────────────────────────────
-            double? height = overrides.LengthFor("LoopHeight", array.Name) ?? allHeight;
-
-            if (height is null && byProfile.Count > 0)
-                foreach (var wire in array.Wires)
-                    if (wire.ProfileBinding is { } binding && byProfile.TryGetValue(binding, out double h))
-                    { height = h; break; }
-
-            if (height is { } metres)
+            if ((overrides.LengthFor("LoopHeight", array.Name) ?? allHeight) is { } metres)
             {
                 long nm = HeightNm(metres, $"array '{array.Name}'");
                 foreach (var wire in array.Wires) WireEdits.SetLoopHeightPreservingPath(wire, nm);

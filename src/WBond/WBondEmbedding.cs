@@ -192,7 +192,7 @@ public static class WBondEmbedding
     }
 
     /// <summary>
-    /// A minimal valid design: one array, one wire on a ball-bond profile.
+    /// A minimal valid design: one array, one wire arched on the seed shape.
     ///
     /// <para><b>This is the one definition</b> — the blank wBond editor and a freshly-dropped
     /// schematic component both start here, so "what a new wBond is" cannot come to mean two
@@ -210,18 +210,17 @@ public static class WBondEmbedding
     {
         long footZ = footZNm ?? WBondUnits.ToNm(DefaultWire.FootZMils, WBondUnit.Mil);
 
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(DefaultWire.LoopHeightMils, WBondUnit.Mil));
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
         design.Arrays.Add(new WireArray
         {
             Name = DefaultWire.GroupName,
-            Profile = profile.Name,
             Wires =
             {
-                profile.CreateWire(DefaultWire.StartAt(footZ), DefaultWire.EndAt(footZ),
-                                   WBondUnits.ToNm(DefaultWire.DiameterMils, WBondUnit.Mil),
-                                   WireMaterials.Default.Name),
+                LoopShape.CreateSeedWire(
+                    DefaultWire.StartAt(footZ), DefaultWire.EndAt(footZ),
+                    WBondUnits.ToNm(DefaultWire.DiameterMils, WBondUnit.Mil),
+                    WireMaterials.Default.Name,
+                    WBondUnits.ToNm(DefaultWire.LoopHeightMils, WBondUnit.Mil)),
             },
         });
         return design;

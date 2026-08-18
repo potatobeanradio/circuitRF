@@ -13,19 +13,18 @@ public class WBondViewModelTests
 {
     private static WBondDesign Design(int wires = 4, int arrays = 1)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         for (int a = 0; a < arrays; a++)
         {
-            var array = new WireArray { Name = $"G{a + 1}", Profile = profile.Name };
+            var array = new WireArray { Name = $"G{a + 1}" };
             for (int w = 0; w < wires; w++)
             {
                 double y = a * 200 + w * 6;
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(0, y, 4), Point3.Mils(100, y, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
             }
             design.Arrays.Add(array);
         }
@@ -81,7 +80,8 @@ public class WBondViewModelTests
         var vm = new WBondViewModel(Design(wires: 4));
         double before = vm.Readout.Rows[0].SelfPicoHenries;
 
-        int moved = vm.ScaleProfileHeight("ball", 1.6);
+        vm.SelectAllWires();
+        int moved = vm.ScaleSelection(spanFactor: 1.0, heightFactor: 1.6, moveOutputFoot: true);
 
         Assert.Equal(4, moved);
         Assert.True(vm.Readout.Rows[0].SelfPicoHenries > before,
@@ -132,7 +132,8 @@ public class WBondViewModelTests
         double before = vm.Readout.Rows[0].SelfPicoHenries;
         var pointsBefore = vm.Design.AllWires().First().Points.ToArray();
 
-        vm.ScaleProfileHeight("ball", 2.0);
+        vm.SelectAllWires();
+        vm.ScaleSelection(spanFactor: 1.0, heightFactor: 2.0, moveOutputFoot: true);
         Assert.NotEqual(before, vm.Readout.Rows[0].SelfPicoHenries);
 
         Assert.True(vm.CanUndo);
@@ -161,7 +162,8 @@ public class WBondViewModelTests
     public void Redo_ReappliesTheEdit()
     {
         var vm = new WBondViewModel(Design(wires: 3));
-        vm.ScaleProfileHeight("ball", 1.8);
+        vm.SelectAllWires();
+        vm.ScaleSelection(spanFactor: 1.0, heightFactor: 1.8, moveOutputFoot: true);
         double raised = vm.Readout.Rows[0].SelfPicoHenries;
 
         vm.Undo();
@@ -171,22 +173,29 @@ public class WBondViewModelTests
         Assert.Equal(raised, vm.Readout.Rows[0].SelfPicoHenries, raised * 1e-9);
     }
 
-    /// <summary>A no-op detach must not leave an empty step on the undo stack.</summary>
+    /// <summary>
+    /// A no-op edit must not leave an empty step on the undo stack.
+    ///
+    /// <para>This used to be stated of Detach, which had exactly that shape — the second call found
+    /// the wire already detached and had to leave the stack alone. With the loop-profile object
+    /// removed (2026-08-18) the same obligation sits on the scale gesture, which is where a user
+    /// actually meets it: an alt-drag that resolves to a factor of 1 is one frame of a live drag.</para>
+    /// </summary>
     [Fact]
-    public void DetachingNothing_LeavesNoUndoStep()
+    public void AnEditThatChangesNothing_LeavesNoUndoStep()
     {
         var vm = new WBondViewModel(Design(wires: 2));
         vm.Selection = new WireSelection { Wires = { 0 } };
 
-        Assert.Equal(1, vm.DetachSelection());   // the first one really detaches
+        Assert.Equal(1, vm.ScaleSelection(spanFactor: 1.0, heightFactor: 1.4, moveOutputFoot: true));
         vm.Undo();
 
         int depthProbe = vm.CanUndo ? 1 : 0;
         Assert.Equal(0, depthProbe);
 
-        vm.DetachSelection();
-        vm.Selection = new WireSelection { Wires = { 0 } };
-        Assert.Equal(0, vm.DetachSelection());   // already detached — nothing happens
+        // Both factors 1.0: nothing to do, and nothing left behind.
+        Assert.Equal(0, vm.ScaleSelection(spanFactor: 1.0, heightFactor: 1.0, moveOutputFoot: true));
+        Assert.False(vm.CanUndo);
     }
 
     // ---------------------------------------------------------------- the panel
@@ -289,7 +298,9 @@ public class WBondViewModelTests
         try
         {
             var document = new WBondDocument(new WBondViewModel(Design(wires: 3)));
-            document.ViewModel.Editor.ScaleProfileHeight("ball", 1.5);
+            document.ViewModel.Editor.SelectAllWires();
+            document.ViewModel.Editor.ScaleSelection(
+                spanFactor: 1.0, heightFactor: 1.5, moveOutputFoot: true);
             Assert.True(document.IsDirty);
 
             document.Save(path);

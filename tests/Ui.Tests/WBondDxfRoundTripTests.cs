@@ -28,20 +28,20 @@ public class WBondDxfRoundTripTests
         var gnd = new WireArray { Name = "GND" };
         for (int i = 0; i < 3; i++)
         {
-            gnd.Wires.Add(LoopProfile.BallBond(20 * Mil).CreateWire(
+            gnd.Wires.Add(LoopShape.CreateSeedWire(
                 new Point3(0, i * 6 * Mil, 0),
                 new Point3(60 * Mil, i * 6 * Mil, 8 * Mil),
                 diameterNm: Mil,
-                material: "Gold"));
+                material: "Gold", loopHeightNm: 20 * Mil));
         }
         design.Arrays.Add(gnd);
 
         var vdd = new WireArray { Name = "Vdd" };
-        vdd.Wires.Add(LoopProfile.WedgeBond(14 * Mil).CreateWire(
+        vdd.Wires.Add(LoopShape.CreateSeedWire(
             new Point3(0, 40 * Mil, 0),
             new Point3(50 * Mil, 40 * Mil, 0),
             diameterNm: 2 * Mil,
-            material: "Aluminium"));
+            material: "Aluminium", loopHeightNm: 14 * Mil));
         design.Arrays.Add(vdd);
 
         return design;
@@ -309,14 +309,23 @@ public class WBondDxfRoundTripTests
         Assert.Equal(WireMaterials.Default.Name, design.AllWires().First().Material);
     }
 
-    /// <summary>Imported wires arrive FREE — a polyline carries a shape, not the intent behind it.</summary>
+    /// <summary>
+    /// An imported wire is an ordinary wire: its polyline IS its shape, exactly as for one drawn here.
+    ///
+    /// <para>This used to assert the wire arrived bound to no loop profile. With the profile object
+    /// removed (2026-08-18) there is no other kind of wire to distinguish it from, so what is left to
+    /// state is that the polyline came back intact.</para>
+    /// </summary>
     [Fact]
-    public void Import_WiresArriveUnboundToAnyProfile()
+    public void Import_WiresArriveAsOrdinaryPolylines()
     {
-        var reader = DxfReader.Read(new StringReader(WriteToString(MakeDesign())));
+        var original = MakeDesign();
+        var reader = DxfReader.Read(new StringReader(WriteToString(original)));
         var rebuilt = DxfWireIo.BuildDesign(reader.WirePolylines, NmPerDrawingUnit(reader));
 
-        Assert.All(rebuilt.AllWires(), w => Assert.Null(w.ProfileBinding));
+        Assert.Equal(original.WireCount, rebuilt.WireCount);
+        Assert.All(rebuilt.AllWires(), w => Assert.True(w.Points.Count >= 2));
+        Assert.All(rebuilt.AllWires(), w => Assert.True(w.LoopHeightNm > 0));
     }
 
     private static int CountOccurrences(string haystack, string needle)

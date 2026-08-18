@@ -141,7 +141,6 @@ public sealed class ColorTheme
             [ColorRole.WBondWireVertex] = new( 60,  27, 243),
             [ColorRole.WBondSelected]  = new( 46,  36,  42),
             [ColorRole.WBondEnvelope]  = new(165,  64, 130,  52),
-            [ColorRole.WBondFreeWire]  = new(182, 126,  43),
         },
         new Dictionary<string, Rgba>
         {
@@ -220,6 +219,5 @@ public sealed class ColorTheme
             [ColorRole.WBondWireVertex] = new(142, 122, 255),
             [ColorRole.WBondSelected]  = new(244, 241, 243),
             [ColorRole.WBondEnvelope]  = new(214, 122, 182,  60),
-            [ColorRole.WBondFreeWire]  = new(222, 179, 115),
         });
 }

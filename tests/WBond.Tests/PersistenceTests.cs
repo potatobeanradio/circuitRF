@@ -9,23 +9,21 @@ public class PersistenceTests
 {
     private static WBondDesign SampleDesign()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(22.0, WBondUnit.Mil), points: 7);
-
+        long loopNm = WBondUnits.ToNm(22.0, WBondUnit.Mil);
         var design = new WBondDesign { OperatingTempC = 105.0 };
-        design.Profiles.Add(profile);
 
-        var g1 = new WireArray { Name = "G1", Profile = "ball" };
+        var g1 = new WireArray { Name = "G1" };
         for (int i = 0; i < 4; i++)
         {
-            g1.Wires.Add(profile.CreateWire(
+            g1.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, i * 6, 4), Point3.Mils(100, i * 6, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm));
         }
 
         var d1 = new WireArray { Name = "D1" };
-        d1.Wires.Add(profile.CreateWire(
+        d1.Wires.Add(LoopShape.CreateSeedWire(
             Point3.Mils(0, 200, 4), Point3.Mils(90, 210, 2),
-            WBondUnits.ToNm(1.25, WBondUnit.Mil), "Aluminium"));
+            WBondUnits.ToNm(1.25, WBondUnit.Mil), "Aluminium", loopNm));
         d1.Wires[0].Locked = true;
 
         design.Arrays.Add(g1);
@@ -54,7 +52,6 @@ public class PersistenceTests
         for (int a = 0; a < original.Arrays.Count; a++)
         {
             Assert.Equal(original.Arrays[a].Name, restored.Arrays[a].Name);
-            Assert.Equal(original.Arrays[a].Profile, restored.Arrays[a].Profile);
 
             for (int w = 0; w < original.Arrays[a].Wires.Count; w++)
             {
@@ -63,15 +60,95 @@ public class PersistenceTests
 
                 Assert.Equal(before.DiameterNm, after.DiameterNm);
                 Assert.Equal(before.Material, after.Material);
-                Assert.Equal(before.ProfileBinding, after.ProfileBinding);
                 Assert.Equal(before.Locked, after.Locked);
                 Assert.Equal(before.Points, after.Points);   // integer DBU — exact
             }
         }
+    }
 
-        Assert.Equal(original.Profiles[0].Name, restored.Profiles[0].Name);
-        Assert.Equal(original.Profiles[0].LoopHeightNm, restored.Profiles[0].LoopHeightNm);
-        Assert.Equal(original.Profiles[0].Shape, restored.Profiles[0].Shape);
+    /// <summary>
+    /// <b>A <c>.wBond</c> written by the build that still had loop profiles reads with every point
+    /// intact, to the nanometre</b> (round 7 gate 1, 2026-08-18).
+    ///
+    /// <para>This is the one thing a user could have lost and could not have got back. It is a STRING
+    /// fixture, not a round trip: the old fields have to be physically present in the JSON for the
+    /// test to say anything, and no current code path can write them any more. <c>Profiles</c>,
+    /// <c>arrays[].profile</c> and <c>wires[].profileBinding</c> are simply members the DTOs no longer
+    /// declare, and <see cref="JsonSerializer"/> ignores those — which is why no shim and no version
+    /// bump were needed.</para>
+    /// </summary>
+    [Fact]
+    public void AnOldFileCarryingProfiles_ReadsWithEveryPointIntact()
+    {
+        const string legacy = """
+        {
+          "FormatVersion": 1,
+          "GroundPlaneEnabled": true,
+          "OperatingTempC": 105,
+          "Profiles": [
+            {
+              "Name": "ball",
+              "LoopHeightNm": 558800,
+              "Shape": [[0,0],[0.1666,0.766],[0.3333,0.965],[0.5,0.891],[0.6666,0.669],[0.8333,0.37],[1,0]]
+            }
+          ],
+          "Arrays": [
+            {
+              "Name": "G1",
+              "Profile": "ball",
+              "Wires": [
+                {
+                  "DiameterNm": 25400,
+                  "Material": "Gold",
+                  "ProfileBinding": "ball",
+                  "Points": [[0,0,101600],[423333,0,545321],[846666,0,600812],[1270000,0,537654],
+                             [1693333,0,392318],[2116666,0,214009],[2540000,0,25400]]
+                },
+                {
+                  "DiameterNm": 31750,
+                  "Material": "Aluminium",
+                  "Locked": true,
+                  "Points": [[0,152400,101600],[1270000,152400,660400],[2286000,177800,50800]]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var design = WBondIo.Read(legacy);
+
+        Assert.Single(design.Arrays);
+        Assert.Equal("G1", design.Arrays[0].Name);
+        Assert.Equal(2, design.Arrays[0].Wires.Count);
+
+        var generated = design.Arrays[0].Wires[0];
+        Assert.Equal(25400, generated.DiameterNm);
+        Assert.Equal("Gold", generated.Material);
+        Assert.False(generated.Locked);
+        Assert.Equal(
+            [new Point3(0, 0, 101600), new Point3(423333, 0, 545321), new Point3(846666, 0, 600812),
+             new Point3(1270000, 0, 537654), new Point3(1693333, 0, 392318),
+             new Point3(2116666, 0, 214009), new Point3(2540000, 0, 25400)],
+            generated.Points);
+
+        var handRouted = design.Arrays[0].Wires[1];
+        Assert.Equal(31750, handRouted.DiameterNm);
+        Assert.Equal("Aluminium", handRouted.Material);
+        Assert.True(handRouted.Locked);
+        Assert.Equal(
+            [new Point3(0, 152400, 101600), new Point3(1270000, 152400, 660400),
+             new Point3(2286000, 177800, 50800)],
+            handRouted.Points);
+
+        // And it survives the trip back out — the file simply stops carrying what named nothing.
+        var again = WBondIo.Read(WBondIo.Write(design));
+        Assert.Equal(generated.Points, again.Arrays[0].Wires[0].Points);
+        Assert.Equal(handRouted.Points, again.Arrays[0].Wires[1].Points);
+
+        string written = WBondIo.Write(design);
+        Assert.DoesNotContain("ProfileBinding", written, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Profiles\"", written, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -195,9 +272,9 @@ public class PersistenceTests
         D1,0,200,4,90,210,2,wedge,1.25,Aluminium
         """;
 
-    /// <summary>R-wb-12 — the table parses into arrays, wires, profiles and metals.</summary>
+    /// <summary>R-wb-12 — the table parses into arrays, wires and metals.</summary>
     [Fact]
-    public void WireTableCsv_ReadsArraysWiresAndProfiles()
+    public void WireTableCsv_ReadsArraysWiresAndMetals()
     {
         var design = WireTableCsv.Read(SampleCsv);
 
@@ -208,17 +285,18 @@ public class PersistenceTests
         Assert.Single(design.Arrays[1].Wires);
 
         var wire = design.Arrays[0].Wires[0];
-        Assert.Equal(7, wire.Points.Count);                                  // the default profile
+        Assert.Equal(7, wire.Points.Count);                                  // the seed arch
         Assert.Equal(WBondUnits.ToNm(1.0, WBondUnit.Mil), wire.DiameterNm);
         Assert.Equal("Gold", wire.Material);
-        Assert.Equal("ball", wire.ProfileBinding);
 
         // The feet are EXACT — a generated wire must land on the pad the table named, to the DBU.
         Assert.Equal(Point3.Mils(0, 0, 4), wire.Points[0]);
         Assert.Equal(Point3.Mils(100, 0, 1), wire.Points[^1]);
 
+        // The `profile` column is READ AND IGNORED (2026-08-18) — a header this tool used to write
+        // must not start refusing files. Every wire comes off the same seed arch whatever it says.
         var wedge = design.Arrays[1].Wires[0];
-        Assert.Equal("wedge", wedge.ProfileBinding);
+        Assert.Equal(7, wedge.Points.Count);
         Assert.Equal(WBondUnits.ToNm(1.25, WBondUnit.Mil), wedge.DiameterNm);
         Assert.Equal("Aluminium", wedge.Material);
 
@@ -230,7 +308,7 @@ public class PersistenceTests
 
     /// <summary>
     /// The loop rises above the chord between the feet — the imported wire is a loop, not a straight
-    /// line. Guards against a profile that silently generated a chord.
+    /// line. Guards against a seed that silently generated a chord.
     /// </summary>
     [Fact]
     public void WireTableCsv_GeneratedWires_ActuallyLoop()
@@ -324,49 +402,72 @@ public class PersistenceTests
             Assert.Equal(before.Points, after.Points);
     }
 
-    // ---------------------------------------------------------------- loop profile
+    // ---------------------------------------------------------------- the loop shape
 
     /// <summary>
-    /// WB24a's invariant, at the level the profile itself guarantees: scaling the loop height leaves
-    /// both feet exactly where they were, because their normalised height is zero.
+    /// WB24a's invariant, at the level <see cref="LoopShape"/> itself guarantees: writing a taller
+    /// loop height leaves both feet exactly where they were, because their normalised height is zero.
     /// </summary>
     [Fact]
-    public void LoopProfile_ScalingHeight_LeavesBothFeetExactlyInPlace()
+    public void LoopShape_ScalingHeight_LeavesBothFeetExactlyInPlace()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil));
+        var shape = LoopShape.Seed();
 
         // Deliberately unequal foot heights — die surface to package lead, the case that breaks a
-        // profile scaled about a flat baseline.
+        // shape scaled about a flat baseline.
         var start = Point3.Mils(0, 0, 8);
         var end = Point3.Mils(120, 30, 1);
 
-        var wire = profile.CreateWire(start, end, WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold");
+        long height = WBondUnits.ToNm(20.0, WBondUnit.Mil);
+        var wire = LoopShape.CreateSeedWire(start, end, WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", height);
         long peakBefore = wire.Points.Max(p => p.Z);
 
-        profile.ScaleHeight(1.5);
-        profile.ApplyTo(wire, start, end);
+        LoopShape.Write(wire, start, end, shape, (long)Math.Round(height * 1.5));
 
         Assert.Equal(start, wire.Points[0]);
         Assert.Equal(end, wire.Points[^1]);
 
         long peakAfter = wire.Points.Max(p => p.Z);
-        double chordAtPeak = 8.0;   // mils, near the apex; the rise above the chord is what scales
         Assert.True(peakAfter > peakBefore,
             $"Scaling the height by 1.5 must raise the apex: {peakBefore} -> {peakAfter} nm.");
-        GC.KeepAlive(chordAtPeak);
     }
 
-    /// <summary>A profile whose feet are not at zero height is refused — that invariant is load-bearing.</summary>
+    /// <summary>A shape whose feet are not at zero height is refused — that invariant is load-bearing.</summary>
     [Fact]
-    public void LoopProfile_NonZeroFootHeight_IsRefused()
+    public void LoopShape_NonZeroFootHeight_IsRefused()
     {
-        var bad = new LoopProfile
-        {
-            Name = "bad",
-            Shape = [new ProfilePoint(0.0, 0.2), new ProfilePoint(0.5, 1.0), new ProfilePoint(1.0, 0.0)],
-        };
+        List<ShapePoint> bad = [new(0.0, 0.2), new(0.5, 1.0), new(1.0, 0.0)];
 
-        var ex = Assert.Throws<InvalidOperationException>(() => bad.Validate());
+        var ex = Assert.Throws<InvalidOperationException>(() => LoopShape.Validate(bad));
         Assert.Contains("zero height at both feet", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The seed shape is 0.30-peaked and 7 points, and it must stay that way</b> — that is what
+    /// keeps every shipped default geometry and every golden test where it was when the loop-profile
+    /// object was removed (round 7 guardrail, 2026-08-18).
+    /// </summary>
+    [Fact]
+    public void TheSeedShape_IsUnchangedFromTheBallBondItReplaced()
+    {
+        Assert.Equal(0.30, LoopShape.SeedPeakSpan);
+
+        var shape = LoopShape.Seed();
+        Assert.Equal(7, shape.Count);
+        Assert.Equal(0.0, shape[0].Height);
+        Assert.Equal(0.0, shape[^1].Height);
+
+        // The two quarter-sine arcs the old ball bond was built from, reproduced independently here
+        // rather than read back off the implementation.
+        for (int i = 0; i < 7; i++)
+        {
+            double span = i / 6.0;
+            double expected = i is 0 or 6 ? 0.0
+                : span <= 0.30 ? Math.Sin(0.5 * Math.PI * span / 0.30)
+                : Math.Sin(0.5 * Math.PI * (1.0 - span) / 0.70);
+
+            Assert.Equal(span, shape[i].Span, 12);
+            Assert.Equal(expected, shape[i].Height, 12);
+        }
     }
 }

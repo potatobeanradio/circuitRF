@@ -113,8 +113,8 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public MessageTimestampMode? MessageTimestamp { get; set; }
 
-    // wbond.md §6.4: the defaults a newly drawn wire gets — 7 points, 1 mil diameter, gold, and the
-    // default loop profile. Per USER rather than per design: they are how one shop's bonder is set up,
+    // wbond.md §6.4: the defaults a newly drawn wire gets — 7 points on the seed arch, 1 mil
+    // diameter, gold. Per USER rather than per design: they are how one shop's bonder is set up,
     // not a property of any one package, and a `.wBond` arriving from someone else must not silently
     // change what the next wire you draw looks like. Null means the shipped default.
     //

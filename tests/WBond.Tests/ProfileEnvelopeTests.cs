@@ -3,7 +3,12 @@ using System.Diagnostics;
 namespace CircuitRF.WBond.Tests;
 
 /// <summary>
-/// Tiers 8, 9 and 10 of brief-wbond-wbc §3 — the profile envelope, binding, and the WB-C1 costs.
+/// Tiers 8 and 10 of brief-wbond-wbc §3 — the profile envelope and the WB-C1 costs.
+///
+/// <para>Tier 9 (binding: detach, re-bind, "N wires following") is <b>retired</b>, 2026-08-18: the
+/// <c>LoopProfile</c> object and the binding it existed for were removed, so there is nothing to
+/// detach from and no shared shape to count followers of. The band is now keyed on drawability
+/// alone.</para>
 /// </summary>
 public class ProfileEnvelopeTests
 {
@@ -11,44 +16,43 @@ public class ProfileEnvelopeTests
 
     public ProfileEnvelopeTests(Xunit.Abstractions.ITestOutputHelper output) => _out = output;
 
-    private static (WBondDesign Design, LoopProfile Profile) BoundArray(
-        int wires = 6, double loopMil = 20.0, string arrayName = "G1")
+    /// <summary>An array of identically-arched wires on a common pitch.</summary>
+    private static WBondDesign SeededArray(int wires = 6, double loopMil = 20.0, string arrayName = "G1")
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(loopMil, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(loopMil, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = arrayName, Profile = profile.Name };
+        var array = new WireArray { Name = arrayName };
         for (int i = 0; i < wires; i++)
         {
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, i * 6, 4), Point3.Mils(100, i * 6, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm));
         }
         design.Arrays.Add(array);
-        return (design, profile);
+        return design;
     }
 
     // ---------------------------------------------------------------- tier 8
 
     /// <summary>
-    /// TIER 8 — every bound member lies inside the band, at every sampled span.
+    /// TIER 8 — every member lies inside the band, at every sampled span.
     /// </summary>
     [Fact]
-    public void Tier8_TheBandBracketsEveryBoundMember()
+    public void Tier8_TheBandBracketsEveryMember()
     {
-        var (design, _) = BoundArray(wires: 8);
+        var design = SeededArray(wires: 8);
         var profile = ProfileEnvelope.Build(design.Arrays[0]);
 
-        Assert.Equal(8, profile.BoundWires.Count);
-        Assert.Empty(profile.FreeWires);
+        Assert.Equal(8, profile.Members.Count);
+        Assert.Empty(profile.NonMonotone);
         Assert.NotEmpty(profile.Bands);
 
         foreach (var band in profile.Bands)
         {
             Assert.True(band.MinHeightNm <= band.MaxHeightNm);
 
-            foreach (int index in profile.BoundWires)
+            foreach (int index in profile.Members)
             {
                 double h = ProfileEnvelope.HeightAt(design.Arrays[0].Wires[index], band.Span);
                 Assert.True(h >= band.MinHeightNm - 1.0 && h <= band.MaxHeightNm + 1.0,
@@ -59,23 +63,60 @@ public class ProfileEnvelopeTests
     }
 
     /// <summary>
-    /// TIER 8 — a wire that no longer follows the profile is reported as FREE and drawn individually,
-    /// which is §6.2's answer to the odd-ball problem: an explicit binding state, not a heuristic.
+    /// <b>The band spans EVERY member of the array, whatever its shape</b> (owner, 2026-08-18:
+    /// <i>"I want the envelope rendering to always be the entire envelope for that group."</i>).
+    ///
+    /// <para>Nothing a user can do to a wire takes it out of its own group's envelope. The band was
+    /// narrowed twice and both narrowings were the same mistake: first to the members bound to a
+    /// <c>LoopProfile</c>, then to the members that are <see cref="ProfileEnvelope.IsProfileEditable"/>
+    /// — so dragging one point past its neighbour made that wire's XY path backtrack and it silently
+    /// left the band. A backtracking member is REPORTED now, not excluded.</para>
     /// </summary>
     [Fact]
-    public void Tier8_ADetachedWire_IsReportedAsFree()
+    public void TheBandSpansEveryMember_IncludingABacktrackingOne()
     {
-        var (design, _) = BoundArray(wires: 5);
-        ProfileEnvelope.Detach(design.Arrays[0].Wires[2]);
+        var design = SeededArray(wires: 3);
+        var array = design.Arrays[0];
 
-        var profile = ProfileEnvelope.Build(design.Arrays[0]);
+        // Three visibly different shapes: as seeded, half as tall, and twice as tall.
+        WireEdits.ScaleHeightAboutChord(array.Wires[1], 0.5);
+        WireEdits.ScaleHeightAboutChord(array.Wires[2], 2.0);
 
-        Assert.Equal(4, profile.BoundWires.Count);
-        Assert.Equal([2], profile.FreeWires);
+        // A fourth member that doubles back on itself in XY — legal geometry, undrawable here.
+        var doglegs = new Wire { DiameterNm = WBondUnits.ToNm(1.0, WBondUnit.Mil), Material = "Gold" };
+        doglegs.Points.AddRange([
+            Point3.Mils(0, 30, 4),
+            Point3.Mils(80, 30, 24),
+            Point3.Mils(30, 30, 24),
+            Point3.Mils(100, 30, 1),
+        ]);
+        array.Wires.Add(doglegs);
+
+        var profile = ProfileEnvelope.Build(array);
+
+        // All four are members; the backtracking one is reported as such and is a SUBSET of them.
+        Assert.Equal([0, 1, 2, 3], profile.Members);
+        Assert.Equal([3], profile.NonMonotone);
+        Assert.All(profile.NonMonotone, i => Assert.Contains(i, profile.Members));
+
+        // The band's spread at the crest is the real spread between the tallest and shortest member,
+        // not a zero-width sliver over one wire.
+        double widest = profile.Bands.Max(b => b.MaxHeightNm - b.MinHeightNm);
+        double tallest = profile.Bands.Max(b => b.MaxHeightNm);
+        Assert.True(widest > 0.5 * tallest,
+            $"The band should show the whole spread; widest {widest:F1} nm against a peak of {tallest:F1} nm.");
+
+        // And EVERY member really is inside it, the backtracking one included.
+        foreach (var band in profile.Bands)
+            foreach (int index in profile.Members)
+            {
+                double h = ProfileEnvelope.HeightAt(array.Wires[index], band.Span);
+                Assert.InRange(h, band.MinHeightNm - 1.0, band.MaxHeightNm + 1.0);
+            }
     }
 
     /// <summary>
-    /// TIER 8 — a wire whose XY path BACKTRACKS is not profile-editable, so it is drawn free.
+    /// TIER 8 — a wire whose XY path BACKTRACKS is not profile-editable, so it is drawn on its own.
     ///
     /// <para>This is §6.2's stated residual limit: such geometry is legal and solves correctly, it
     /// simply has a non-monotone span and cannot be drawn against it without self-overlap. The limit
@@ -103,11 +144,116 @@ public class ProfileEnvelopeTests
         Assert.False(ProfileEnvelope.IsProfileEditable(doglegs));
     }
 
+    /// <summary>
+    /// <b>The band never runs outside its own members</b> (owner, 2026-08-18: <i>"envelope rendering
+    /// appears a little strange if wires within the same group have a different number of
+    /// vertices."</i>).
+    ///
+    /// <para>Members are piecewise linear and every member's vertices are already sampled, so between
+    /// two consecutive samples each member is a straight line — but the ENVELOPE of a set of lines has
+    /// a corner wherever two of them cross, and the band drew a straight line from sample to sample.
+    /// Near a crossing the drawn maximum therefore ran above every member and the drawn minimum below
+    /// every member: <b>a bulge reporting spread the group does not have</b>.</para>
+    ///
+    /// <para>It was invisible while an array's members shared a vertex lattice — they cross only at
+    /// their shared vertices, which are already sampled. Mixed vertex counts interleave two lattices,
+    /// so they cross repeatedly in mid-interval and every crossing grew a bulge. Measured before the
+    /// fix on this fixture: 2,591 nm.</para>
+    ///
+    /// <para>The oracle probes BETWEEN the band's own samples, because that is the only place the
+    /// error can live — at a sample the band is min/max by construction and any test that only looked
+    /// there would pass against the broken version.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(7, 9)]
+    [InlineData(5, 11)]
+    [InlineData(4, 7)]
+    public void TheBand_NeverRunsOutsideItsMembers_AtAnySpan(int firstPoints, int secondPoints)
+    {
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
+        var array = new WireArray { Name = "G1" };
+
+        foreach (int n in new[] { firstPoints, secondPoints })
+            array.Wires.Add(LoopShape.CreateSeedWire(
+                Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm, n));
+
+        var envelope = ProfileEnvelope.Build(array);
+
+        double worst = 0.0, worstSpan = 0.0;
+
+        for (int i = 1; i < envelope.Bands.Count; i++)
+        {
+            var a = envelope.Bands[i - 1];
+            var b = envelope.Bands[i];
+
+            for (int k = 1; k < 8; k++)
+            {
+                double t = k / 8.0;
+                double span = a.Span + (b.Span - a.Span) * t;
+
+                // What the band CLAIMS here — the straight line the renderer draws between its samples.
+                double drawnMax = a.MaxHeightNm + (b.MaxHeightNm - a.MaxHeightNm) * t;
+                double drawnMin = a.MinHeightNm + (b.MinHeightNm - a.MinHeightNm) * t;
+
+                // What the members actually do.
+                double trueMax = double.MinValue, trueMin = double.MaxValue;
+                foreach (int index in envelope.Members)
+                {
+                    double h = ProfileEnvelope.HeightAt(array.Wires[index], span);
+                    trueMax = Math.Max(trueMax, h);
+                    trueMin = Math.Min(trueMin, h);
+                }
+
+                double over = Math.Max(drawnMax - trueMax, trueMin - drawnMin);
+                if (over > worst) { worst = over; worstSpan = span; }
+            }
+        }
+
+        // One nanometre of slack for the rounding in the crossing solve; the defect measured 2,591.
+        Assert.True(worst <= 1.0,
+            $"The band runs {worst:F0} nm outside every member at span {worstSpan:F4} — it is showing " +
+            "spread no wire in the group has.");
+    }
+
+    /// <summary>
+    /// <b>The band reaches BOTH feet.</b>
+    ///
+    /// <para>Sample positions are deduplicated with a tolerance, keeping the first of a cluster — so a
+    /// member vertex sitting a hair short of 1.0 swallowed the ladder's own final sample and the band
+    /// stopped short of the output foot. The two endpoints are the one pair of samples that are not
+    /// negotiable.</para>
+    /// </summary>
+    [Fact]
+    public void TheBand_ReachesBothFeet_EvenWithAVertexJustShortOfTheEnd()
+    {
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
+        var array = new WireArray { Name = "G1" };
+        array.Wires.Add(LoopShape.CreateSeedWire(
+            Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
+            WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm));
+
+        // A wire whose last interior vertex is a whisker from the output foot — 0.9998 of the span.
+        var crowded = new Wire { DiameterNm = WBondUnits.ToNm(1.0, WBondUnit.Mil), Material = "Gold" };
+        crowded.Points.AddRange([
+            Point3.Mils(0, 0, 4),
+            Point3.Mils(30, 0, 20),
+            new Point3(WBondUnits.ToNm(99.98, WBondUnit.Mil), 0, WBondUnits.ToNm(2.0, WBondUnit.Mil)),
+            Point3.Mils(100, 0, 1),
+        ]);
+        array.Wires.Add(crowded);
+
+        var envelope = ProfileEnvelope.Build(array);
+
+        Assert.Equal(0.0, envelope.Bands[0].Span);
+        Assert.Equal(1.0, envelope.Bands[^1].Span);
+    }
+
     /// <summary>The band widens when a member is scaled away from the rest.</summary>
     [Fact]
     public void Tier8_ScalingOneMember_WidensTheBand()
     {
-        var (design, _) = BoundArray(wires: 4);
+        var design = SeededArray(wires: 4);
 
         double Width(WBondDesign d) =>
             ProfileEnvelope.Build(d.Arrays[0]).Bands.Max(b => b.MaxHeightNm - b.MinHeightNm);
@@ -118,63 +264,6 @@ public class ProfileEnvelopeTests
 
         Assert.True(after > before + 1.0,
             $"Raising one member must widen the band: {before:F1} nm -> {after:F1} nm.");
-    }
-
-    // ---------------------------------------------------------------- tier 9
-
-    /// <summary>
-    /// TIER 9 — <b>detaching leaves the points exactly untouched</b> (D5).
-    ///
-    /// <para>A binding is a generator, not a constraint. Breaking it must not move the wire, or a user
-    /// who nudges one vertex would see the whole wire jump.</para>
-    /// </summary>
-    [Fact]
-    public void Tier9_Detaching_LeavesThePointsUntouched()
-    {
-        var (design, _) = BoundArray(wires: 3);
-        var wire = design.Arrays[0].Wires[1];
-        var before = wire.Points.ToArray();
-
-        ProfileEnvelope.Detach(wire);
-
-        Assert.Null(wire.ProfileBinding);
-        Assert.Equal(before, wire.Points.ToArray());
-    }
-
-    /// <summary>TIER 9 — re-binding resamples onto the profile, and the feet survive exactly.</summary>
-    [Fact]
-    public void Tier9_Rebinding_ResamplesOntoTheProfileAndKeepsTheFeet()
-    {
-        var (design, profile) = BoundArray(wires: 3);
-        var wire = design.Arrays[0].Wires[1];
-
-        var start = wire.Points[0];
-        var end = wire.Points[^1];
-        var original = wire.Points.ToArray();
-
-        ProfileEnvelope.Detach(wire);
-        WireEdits.ScaleHeightAboutChord(wire, 2.2);
-        Assert.NotEqual(original[3], wire.Points[3]);
-
-        ProfileEnvelope.Bind(wire, profile);
-
-        Assert.Equal(profile.Name, wire.ProfileBinding);
-        Assert.Equal(start, wire.Points[0]);
-        Assert.Equal(end, wire.Points[^1]);
-        Assert.Equal(original, wire.Points.ToArray());
-    }
-
-    /// <summary>TIER 9 — the count a "N wires detached" toast would report.</summary>
-    [Fact]
-    public void Tier9_WiresFollowing_CountsExactlyTheBoundOnes()
-    {
-        var (design, profile) = BoundArray(wires: 5);
-        Assert.Equal(5, ProfileEnvelope.WiresFollowing(design, profile.Name).Count);
-
-        ProfileEnvelope.Detach(design.Arrays[0].Wires[0]);
-        ProfileEnvelope.Detach(design.Arrays[0].Wires[4]);
-
-        Assert.Equal(3, ProfileEnvelope.WiresFollowing(design, profile.Name).Count);
     }
 
     // ---------------------------------------------------------------- the panel record
@@ -229,7 +318,7 @@ public class ProfileEnvelopeTests
 
     /// <summary>
     /// TIER 10 — WB-C1's costs: a 200-wire duplicate-with-pitch, and an alt-drag frame on a large
-    /// bound array at 600 wires.
+    /// array at 600 wires.
     /// </summary>
     [Trait("Category", "Benchmark")]
     [Fact]
@@ -253,13 +342,13 @@ public class ProfileEnvelopeTests
         sw.Stop();
         double fillMs = sw.Elapsed.TotalMilliseconds;
 
-        // Alt-drag on a large bound array at the stated worst case.
-        var (big, profile) = BoundArray(wires: 200, arrayName: "G1");
+        // Alt-drag on a large array at the stated worst case.
+        var big = SeededArray(wires: 200, arrayName: "G1");
         var bigMesh = WireMesh.Build(big);
         var bigFill = IncrementalFill.Create(bigMesh, parallel: true);
 
         sw.Restart();
-        WireEdits.ScaleBoundWires(big, profile, heightFactor: 1.05, spanFactor: 1.0);
+        WireEdits.ScaleWires(big.AllWires(), heightFactor: 1.05, spanFactor: 1.0);
         sw.Stop();
         double geometryMs = sw.Elapsed.TotalMilliseconds;
 
@@ -275,7 +364,7 @@ public class ProfileEnvelopeTests
 
         _out.WriteLine($"duplicate-with-pitch x199:            {duplicateMs,8:F2} ms  <- ONE operation");
         _out.WriteLine($"one fill of the resulting 200 wires:  {fillMs,8:F1} ms  <- ONE fill, not 200");
-        _out.WriteLine($"alt-drag geometry, 200 bound wires:   {geometryMs,8:F2} ms");
+        _out.WriteLine($"alt-drag geometry, 200 wires:         {geometryMs,8:F2} ms");
         _out.WriteLine($"refill + reduce after that drag:      {refillMs,8:F1} ms  (frame budget 16.67)");
     }
 }

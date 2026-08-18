@@ -16,19 +16,18 @@ public class WBondCanvasTests
 {
     private static WBondDesign Design(int wires = 4, int arrays = 1)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         for (int a = 0; a < arrays; a++)
         {
-            var array = new WireArray { Name = $"G{a + 1}", Profile = profile.Name };
+            var array = new WireArray { Name = $"G{a + 1}" };
             for (int w = 0; w < wires; w++)
             {
                 double y = a * 200 + w * 6;
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(0, y, 4), Point3.Mils(100, y, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
             }
             design.Arrays.Add(array);
         }
@@ -148,7 +147,7 @@ public class WBondCanvasTests
     /// all. That is the owner's "the profile view sometimes disappears while dragging".</para>
     /// </summary>
     [Fact]
-    public void TheProfileView_DrawsOneCurvePerArrayPlusTheBand_NotEveryBoundMember()
+    public void TheProfileView_DrawsOneCurvePerArrayPlusTheBand_NotEveryMember()
     {
         var (surface, canvas) = Target();
         using (surface)
@@ -159,12 +158,13 @@ public class WBondCanvasTests
                 canvas, design, WBondRenderTheme.Fallback,
                 span => (float)(span / 1000.0), z => (float)(600 - z / 1000.0));
 
-            // All 20 are bound: one representative curve, not 20 and not 0.
+            // All 20 share one shape and project onto one curve: one representative, not 20 and not 0.
             Assert.Equal(1, result.WiresDrawn);
 
-            // Detach two and they appear alongside the representative.
-            ProfileEnvelope.Detach(design.Arrays[0].Wires[3]);
-            ProfileEnvelope.Detach(design.Arrays[0].Wires[7]);
+            // Reshape two and they appear alongside the representative — presence is a function of
+            // GEOMETRY, which since 2026-08-18 is the only thing it can be a function of.
+            WireEdits.ScaleHeightAboutChord(design.Arrays[0].Wires[3], 1.8);
+            WireEdits.ScaleHeightAboutChord(design.Arrays[0].Wires[7], 0.4);
 
             var after = WBondRenderer.DrawProfile(
                 canvas, design, WBondRenderTheme.Fallback,

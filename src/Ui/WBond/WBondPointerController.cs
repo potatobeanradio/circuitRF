@@ -84,17 +84,47 @@ public sealed class WBondPointerController
 
     /// <summary>
     /// A click, with its promotion decided by the modifiers or the click count.
+    ///
+    /// <para><b>Hit-tests in the LAYOUT plane only.</b> The profile view must use
+    /// <see cref="Press(WireHitTest.Hit, long, long, WBondModifiers, int)"/> and pass the hit it
+    /// already resolved — see that overload for why.</para>
     /// </summary>
     /// <param name="clickCount">1 = element, 2 = whole wire, 3 = whole array (§6.3).</param>
     public void Press(long worldX, long worldY, double toleranceNm, WBondModifiers modifiers,
                       int clickCount = 1, EditorView view = EditorView.Layout)
     {
-        _pressX = worldX;
-        _pressY = worldY;
-
         var hit = view == EditorView.Layout
             ? WireHitTest.HitTestLayout(_vm.Mesh, worldX, worldY, toleranceNm)
             : WireHitTest.HitTestProfile(_vm.Mesh, worldX, worldY, toleranceNm);
+
+        Press(hit, worldX, worldY, modifiers, clickCount);
+    }
+
+    /// <summary>
+    /// The same click, on a hit the CALLER already resolved.
+    ///
+    /// <h3>Why the profile view has to use this one (owner, 2026-08-18)</h3>
+    /// <para><i>"In Wire Profile view, I cannot click and drag wire points or segments. I must first
+    /// drag-select with marquee tool, then it allows me to drag."</i></para>
+    ///
+    /// <para><b>A profile hit depends on which PLANE the view is projecting onto, and this class does
+    /// not know it.</b> The overload above called <c>HitTestProfile</c> with its own defaults — span
+    /// mode Absolute and <c>azimuthRadians: null</c>, which means AUTO, each wire projected onto its
+    /// own chord. The canvas draws in whatever plane its toolbar says, and the shipped default has
+    /// been YZ since 2026-08-16. So the canvas found a wire under the pointer and this found nothing,
+    /// cleared the selection, and the canvas then declined to arm a drag on an empty selection.</para>
+    ///
+    /// <para>Passing the hit rather than a second set of projection parameters is deliberate: the
+    /// canvas has already resolved it one line earlier, and <b>two hit tests that must agree are two
+    /// that can disagree</b>. With a selection present the bug hid completely, because a press on an
+    /// already-selected element skips this call entirely — which is exactly why marquee-selecting
+    /// first made dragging work.</para>
+    /// </summary>
+    public void Press(WireHitTest.Hit hit, long worldX, long worldY, WBondModifiers modifiers,
+                      int clickCount = 1)
+    {
+        _pressX = worldX;
+        _pressY = worldY;
 
         if (!hit.Found)
         {
@@ -131,12 +161,28 @@ public sealed class WBondPointerController
     /// Begins a drag. Collapses the moving wires to their chords if the ladder is already degraded,
     /// and resets the ladder so every drag starts optimistic.
     /// </summary>
-    public void BeginDrag()
+    /// <param name="subject">
+    /// What this drag actually moves, when that is not simply the selection — the PROFILE view's plain
+    /// drag and nudge move the whole group while leaving the selection alone
+    /// (<c>WBondViewModel.ProfileGroupSubject</c>). It has to be known HERE and not only inside the
+    /// per-frame lambda, because the quality ladder collapses these wires, the incremental fill is
+    /// told about these wires, and <see cref="EndDrag"/> recomputes the exact answer for these wires —
+    /// a subject wider than the selection would otherwise move on screen and leave the inductance
+    /// stale for every sibling.
+    /// </param>
+    public void BeginDrag(WireSelection? subject = null)
     {
         _dragging = true;
+        _dragSubject = subject;
         _ladder.BeginDrag();
         _collapsed.Clear();
     }
+
+    /// <summary>What the open drag moves; null means "the selection", which is the ordinary case.</summary>
+    private WireSelection? _dragSubject;
+
+    /// <summary>The wires the open drag moves — its subject if it declared one, else the selection.</summary>
+    private List<int> MovingWires() => [.. (_dragSubject ?? _vm.Selection).TouchedWires()];
 
     /// <summary>
     /// One drag frame: applies the move, times it, and feeds the ladder.
@@ -151,7 +197,7 @@ public sealed class WBondPointerController
         ArgumentNullException.ThrowIfNull(apply);
         if (!_dragging) throw new InvalidOperationException("DragFrame called outside a drag; call BeginDrag first.");
 
-        var moving = _vm.Selection.TouchedWires().ToList();
+        var moving = MovingWires();
         if (moving.Count == 0) return _ladder.Current;
 
         ApplyQualityToGeometry(moving);
@@ -181,9 +227,10 @@ public sealed class WBondPointerController
 
         RestoreCollapsed();
 
-        var moving = _vm.Selection.TouchedWires().ToList();
+        var moving = MovingWires();
         if (moving.Count > 0) _vm.CommitPointMove(moving);
 
+        _dragSubject = null;
         _ladder.BeginDrag();
     }
 

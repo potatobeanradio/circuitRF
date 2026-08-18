@@ -12,19 +12,18 @@ public class WBondTransformTests
 {
     private static WBondDesign Design(int wires = 2)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         // The feet sit ABOVE the ground plane deliberately. A wire lying IN the plane has zero loop
         // inductance — its image cancels it exactly — which is a real state the editor has to refuse
         // gracefully (see RefusesAnEditThatMakesTheInductanceSingular) but a nonsense fixture for
         // testing ordinary transforms against.
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < wires; w++)
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, w * 10, 4), Point3.Mils(100, w * 10, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
 
         design.Arrays.Add(array);
         return design;
@@ -168,26 +167,31 @@ public class WBondTransformTests
         Assert.Equal(-keepInput.Y, kept.Points[0].Y);    // but it moved across the plane
     }
 
-    // ---------------------------------------------------------------- straighten / re-apply
+    // ---------------------------------------------------------------- straighten
 
     /// <summary>
-    /// Straighten keeps the point count, which is what makes it reversible: re-applying the bound
-    /// profile puts the wire back. A straighten that dropped points would be destructive and would
-    /// cost a mesh rebuild as well.
+    /// Straighten keeps the point count and touches x-y only.
+    ///
+    /// <para>The point count is the user's own choice and undo is what recovers a mistaken
+    /// straighten (2026-08-18) — this used to be justified by "re-applying the bound profile puts the
+    /// wire back", and there is no longer anything to re-apply from. A straighten that dropped points
+    /// would be destructive and would cost a mesh rebuild as well, which is still true.</para>
     /// </summary>
     [Fact]
-    public void StraightenThenReapplyProfile_RestoresTheRoute()
+    public void Straighten_TidiesTheRouteAndLeavesTheLoopAlone()
     {
         var vm = Vm(1);
         var original = vm.Design.AllWires().First().Points.ToArray();
         int rebuilds = vm.RebuildCount;
 
-        // Push an interior point sideways, so the straighten has a route to tidy.
+        // Push an interior point sideways, so the straighten has a route to tidy. Done straight on
+        // the model rather than through the view-model, so the undo below unwinds the STRAIGHTEN.
         var wandered = vm.Design.AllWires().First();
         wandered.Points[3] = wandered.Points[3] with
         {
             Y = wandered.Points[3].Y + WBondUnits.ToNm(15, WBondUnit.Mil),
         };
+        var bowed = wandered.Points.ToArray();
 
         vm.StraightenSelection();
         var flat = vm.Design.AllWires().First();
@@ -197,22 +201,12 @@ public class WBondTransformTests
         Assert.Equal(original[3].Y, flat.Points[3].Y);
         Assert.Equal(original.Select(p => p.Z), flat.Points.Select(p => p.Z));
 
-        vm.ReapplyProfileToSelection();
-        Assert.Equal(original, vm.Design.AllWires().First().Points);
+        // Undo is what recovers a mistaken straighten, and it recovers it exactly.
+        vm.Undo();
+        Assert.Equal(bowed, vm.Design.AllWires().First().Points.ToArray());
 
-        // Neither is structural — the flat filament layout never changed.
+        // Not structural — the flat filament layout never changed.
         Assert.Equal(rebuilds, vm.RebuildCount);
-    }
-
-    /// <summary>A detached wire has no profile to restore from, so re-apply skips it rather than guessing.</summary>
-    [Fact]
-    public void ReapplyProfile_SkipsADetachedWire()
-    {
-        var vm = Vm(1);
-        vm.DetachSelection();
-        vm.StraightenSelection();
-
-        Assert.Equal(0, vm.ReapplyProfileToSelection());
     }
 
     // ---------------------------------------------------------------- duplicate with pitch (WB26)
@@ -370,23 +364,32 @@ public class WBondTransformTests
         Assert.Contains(target.Design.Arrays, a => a.Name == "Vdd");
     }
 
-    /// <summary>The profile travels with the wires, so a cross-design paste keeps the loop shape.</summary>
+    /// <summary>
+    /// <b>The POINTS travel, and they are the whole of the shape</b> — a cross-design paste keeps the
+    /// loop because there is nothing else to keep (2026-08-18).
+    ///
+    /// <para>This used to assert that the source's loop profile was carried into the destination and
+    /// installed there. That machinery is gone; what it was protecting — the pasted wire looking like
+    /// the wire that was copied — is asserted directly.</para>
+    /// </summary>
     [Fact]
-    public void PasteCarriesTheProfile()
+    public void PasteCarriesTheShape()
     {
         var source = Vm(1);
+        var copied = source.Design.AllWires().First().Points.ToArray();
         string? text = source.CopySelection();
-        string profileName = source.Design.Profiles[0].Name;
 
-        // A destination whose own profile is named differently — the paste must bring its own.
+        // A destination whose own wires have been reshaped — the paste must not adopt its shape.
         var target = Vm(1);
-        target.Design.Profiles[0].Name = "SomethingElse";
-        foreach (var w in target.Design.AllWires()) w.ProfileBinding = "SomethingElse";
-        target.Design.Arrays[0].Profile = "SomethingElse";
+        WireEdits.ScaleHeightAboutChord(target.Design.AllWires().First(), 0.25);
 
-        target.PasteWires(text, 0, WBondUnits.ToNm(30, WBondUnit.Mil));
+        long dy = WBondUnits.ToNm(30, WBondUnit.Mil);
+        target.PasteWires(text, 0, dy);
 
-        Assert.Contains(target.Design.Profiles, p => p.Name == profileName);
+        var pasted = target.Design.AllWires().Last();
+        Assert.Equal(copied.Length, pasted.Points.Count);
+        for (int i = 0; i < copied.Length; i++)
+            Assert.Equal(copied[i] with { Y = copied[i].Y + dy }, pasted.Points[i]);
     }
 
     /// <summary>A foreign clipboard is a no-op — never a half-applied paste.</summary>
@@ -443,7 +446,6 @@ public class WBondTransformTests
         Assert.Equal(0, vm.BendSelection(1000, 0, 0));
         Assert.Equal(0, vm.StraightenSelection());
         Assert.Equal(0, vm.ExtendSelection(1.2));
-        Assert.Equal(0, vm.ReapplyProfileToSelection());
 
         Assert.Equal(couldUndo, vm.CanUndo);   // and none of them left an entry behind
     }

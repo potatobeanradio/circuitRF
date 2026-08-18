@@ -28,15 +28,14 @@ public class WBondOneEditorTests
 {
     private static WBondDesign Design(int wires = 2)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < wires; w++)
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, w * 6.0, 4), Point3.Mils(100, w * 6.0, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         design.Arrays.Add(array);
 
         return design;
@@ -847,9 +846,10 @@ public class WBondOneEditorTests
 
         // A structural wire edit — the same commit path an array add/rename/delete takes.
         vm.WireEditor!.Design.Arrays[0].Wires.Add(
-            vm.WireEditor.Design.Profiles[0].CreateWire(
+            LoopShape.CreateSeedWire(
                 Point3.Mils(0, 40, 4), Point3.Mils(100, 40, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold",
+                WBondUnits.ToNm(20.0, WBondUnit.Mil)));
         vm.WireEditor.CommitStructuralChange();
 
         Assert.True(vm.IsDirty);                          // …the document, not the .clay's content

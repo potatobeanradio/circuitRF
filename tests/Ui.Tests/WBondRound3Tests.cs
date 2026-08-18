@@ -28,17 +28,16 @@ public class WBondRound3Tests
     /// </summary>
     private static WBondDesign Design(int wires = 3, double pitchMils = 6.0)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < wires; w++)
         {
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, w * pitchMils, 4),
                 Point3.Mils(100, w * pitchMils, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         }
         design.Arrays.Add(array);
 
@@ -151,7 +150,7 @@ public class WBondRound3Tests
         string[] roles =
         [
             ColorRole.WBondWire, ColorRole.WBondWireStart, ColorRole.WBondSelected,
-            ColorRole.WBondEnvelope, ColorRole.WBondFreeWire,
+            ColorRole.WBondEnvelope,
         ];
 
         var (light, dark) = ColorTheme.BuiltIn.GetRoleMaps();
@@ -179,7 +178,6 @@ public class WBondRound3Tests
         Assert.Equal("wBond.WireStart", ColorRole.WBondWireStart);
         Assert.Equal("wBond.Selected", ColorRole.WBondSelected);
         Assert.Equal("wBond.Envelope", ColorRole.WBondEnvelope);
-        Assert.Equal("wBond.FreeWire", ColorRole.WBondFreeWire);
 
         Assert.DoesNotContain(ColorRole.All, r => r.StartsWith("WBond.", StringComparison.Ordinal));
     }
@@ -409,20 +407,18 @@ public class WBondRound3Tests
         Assert.Equal(original.Points[0].Y, pasted.Points[0].Y);      // …and not along
     }
 
-    /// <summary>One wire from the origin along the given chord, on a ball-bond profile.</summary>
+    /// <summary>One wire from the origin along the given chord, on the seed arch.</summary>
     private static WBondDesign OneWire(double chordXMils, double chordYMils)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
         design.Arrays.Add(new WireArray
         {
             Name = "G1",
-            Profile = profile.Name,
             Wires =
             {
-                profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(chordXMils, chordYMils, 1),
-                                   WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"),
+                LoopShape.CreateSeedWire(Point3.Mils(0, 0, 4), Point3.Mils(chordXMils, chordYMils, 1),
+                                   WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm),
             },
         });
         return design;
@@ -443,23 +439,25 @@ public class WBondRound3Tests
     // ────────────────────────────────────────────────────────── the three deletes
 
     /// <summary>
-    /// <b>Delete Vertex removes one point and detaches the wire from its profile.</b> A profile IS the
-    /// point set, so a wire that has had one removed no longer follows it — leaving the binding would
-    /// mean the next Re-apply Profile silently put the point back.
+    /// <b>Delete Vertex removes one point and does nothing else.</b>
+    ///
+    /// <para>It used to also detach the wire from its loop profile, because the profile defined the
+    /// point set and a re-apply would have put the point back. With profiles removed (2026-08-18) the
+    /// remaining obligation is that the wire's OTHER points do not move — a delete that also reshaped
+    /// the loop would be two edits under one menu item.</para>
     /// </summary>
     [Fact]
-    public void DeleteVertex_RemovesThePointAndDetachesTheWire()
+    public void DeleteVertex_RemovesThePointAndLeavesTheRestWhereTheyWere()
     {
         var vm = new WBondViewModel(Design(wires: 1));
         var wire = vm.Design.AllWires().Single();
 
-        int before = wire.Points.Count;
-        Assert.NotNull(wire.ProfileBinding);
-
+        var before = wire.Points.ToArray();
         Assert.True(vm.DeleteWirePoint(0, 3));
 
-        Assert.Equal(before - 1, vm.Design.AllWires().Single().Points.Count);
-        Assert.Null(vm.Design.AllWires().Single().ProfileBinding);
+        var after = vm.Design.AllWires().Single().Points.ToArray();
+        Assert.Equal(before.Length - 1, after.Length);
+        Assert.Equal(before.Where((_, i) => i != 3), after);
     }
 
     /// <summary>

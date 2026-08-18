@@ -15,16 +15,14 @@ public class LoopHeightDefinitionTests
 {
     private const long Mil = 25_400;
 
-    /// <summary>A ball-bond profile between feet at two DIFFERENT heights — the case that discriminates.</summary>
-    private static Wire AsymmetricWire(long loopHeightNm, long startZ, long endZ)
-    {
-        var profile = LoopProfile.BallBond(loopHeightNm);
-        return profile.CreateWire(
+    /// <summary>A seeded arch between feet at two DIFFERENT heights — the case that discriminates.</summary>
+    private static Wire AsymmetricWire(long loopHeightNm, long startZ, long endZ) =>
+        LoopShape.CreateSeedWire(
             new Point3(0, 0, startZ),
             new Point3(100 * Mil, 0, endZ),
             diameterNm: Mil,
-            material: WireMaterials.Default.Name);
-    }
+            material: WireMaterials.Default.Name,
+            loopHeightNm: loopHeightNm);
 
     // ---------------------------------------------------------------- the definition
 
@@ -66,7 +64,7 @@ public class LoopHeightDefinitionTests
         Assert.Equal(0, new Wire { Points = [new Point3(0, 0, 5)] }.LoopHeightNm);
     }
 
-    // ---------------------------------------------------------------- ApplyTo honours it
+    // ---------------------------------------------------------------- LoopShape.Write honours it
 
     /// <summary>
     /// <b>The headline.</b> A profile asked for 20 mil of loop height produces a wire that measures
@@ -77,7 +75,7 @@ public class LoopHeightDefinitionTests
     [InlineData(0L, 8L * 25_400)]        // rising to a substrate lead
     [InlineData(8L * 25_400, 0L)]        // and the reverse, so no sign is assumed
     [InlineData(3L * 25_400, 5L * 25_400)]
-    public void ApplyTo_ProducesAWireWhoseMeasuredLoopHeightIsTheRequestedOne(long startZ, long endZ)
+    public void Write_ProducesAWireWhoseMeasuredLoopHeightIsTheRequestedOne(long startZ, long endZ)
     {
         long requested = 20 * Mil;
 
@@ -117,12 +115,12 @@ public class LoopHeightDefinitionTests
 
     /// <summary>The feet land exactly on their pads regardless — the invariant the solve must not disturb.</summary>
     [Fact]
-    public void ApplyTo_LeavesBothFeetExactlyOnTheirPads()
+    public void Write_LeavesBothFeetExactlyOnTheirPads()
     {
         var start = new Point3(123, 456, 7_000);
         var end = new Point3(99_000, -400, 210_000);
 
-        var wire = LoopProfile.BallBond(20 * Mil).CreateWire(start, end, Mil, WireMaterials.Default.Name);
+        var wire = LoopShape.CreateSeedWire(start, end, Mil, WireMaterials.Default.Name, 20 * Mil);
 
         Assert.Equal(start, wire.Points[0]);
         Assert.Equal(end, wire.Points[^1]);
@@ -134,12 +132,12 @@ public class LoopHeightDefinitionTests
     /// or arched upward to fake the number.
     /// </summary>
     [Fact]
-    public void ApplyTo_RequestBelowTheFootDrop_ClampsToTheFloor_RatherThanRefusing()
+    public void Write_RequestBelowTheFootDrop_ClampsToTheFloor_RatherThanRefusing()
     {
         long footDrop = 30 * Mil;
         var wire = AsymmetricWire(loopHeightNm: 5 * Mil, startZ: 0, endZ: footDrop);
 
-        Assert.Equal(0.0, LoopProfile.BallBond(5 * Mil).SolveAmplitudeNm(0, footDrop));
+        Assert.Equal(0.0, LoopShape.SolveAmplitudeNm(LoopShape.Seed(), 5 * Mil, 0, footDrop));
         Assert.Equal(footDrop, wire.LoopHeightNm);
         Assert.Equal(footDrop, wire.FootDropNm);
     }
@@ -153,31 +151,47 @@ public class LoopHeightDefinitionTests
     [Fact]
     public void SolveAmplitude_RoundTrips_ForAWireItItselfProduced()
     {
-        var profile = LoopProfile.BallBond(20 * Mil);
         var start = new Point3(0, 0, 0);
         var end = new Point3(100 * Mil, 0, 8 * Mil);
 
-        var wire = profile.CreateWire(start, end, Mil, WireMaterials.Default.Name);
+        var wire = LoopShape.CreateSeedWire(start, end, Mil, WireMaterials.Default.Name, 20 * Mil);
         long first = wire.LoopHeightNm;
 
-        profile.ApplyTo(wire, start, end);
+        LoopShape.Write(wire, start, end, LoopShape.Seed(), 20 * Mil);
 
         Assert.Equal(first, wire.LoopHeightNm);
     }
 
+    /// <summary>
+    /// <b><see cref="LoopShape.Read"/> is the exact inverse of <see cref="LoopShape.Write"/></b> —
+    /// reading a wire's own geometry back and writing it again at its own loop height reproduces the
+    /// wire to the nanometre, on unequal feet. Copy Coordinates and the group flip both rest on it.
+    /// </summary>
+    [Fact]
+    public void Read_ThenWrite_ReproducesTheWireExactly()
+    {
+        var start = new Point3(0, 0, 3 * Mil);
+        var end = new Point3(140 * Mil, 20 * Mil, 11 * Mil);
+
+        var wire = LoopShape.CreateSeedWire(start, end, Mil, WireMaterials.Default.Name, 25 * Mil);
+        var before = wire.Points.ToArray();
+
+        LoopShape.Write(wire, start, end, LoopShape.Read(wire), wire.LoopHeightNm);
+
+        Assert.Equal(before, wire.Points.ToArray());
+    }
+
     /// <summary>Doubling the requested loop height doubles the measured one (level feet, no floor in play).</summary>
     [Fact]
-    public void ScaleHeight_ScalesTheMeasuredLoopHeight()
+    public void DoublingTheRequestedHeight_DoublesTheMeasuredLoopHeight()
     {
-        var profile = LoopProfile.BallBond(10 * Mil);
         var start = new Point3(0, 0, 0);
         var end = new Point3(100 * Mil, 0, 0);
 
-        var wire = profile.CreateWire(start, end, Mil, WireMaterials.Default.Name);
+        var wire = LoopShape.CreateSeedWire(start, end, Mil, WireMaterials.Default.Name, 10 * Mil);
         Assert.InRange(wire.LoopHeightNm, 10 * Mil - 2, 10 * Mil + 2);
 
-        profile.ScaleHeight(2.0);
-        profile.ApplyTo(wire, start, end);
+        LoopShape.Write(wire, start, end, LoopShape.Seed(), 20 * Mil);
 
         Assert.InRange(wire.LoopHeightNm, 20 * Mil - 2, 20 * Mil + 2);
     }

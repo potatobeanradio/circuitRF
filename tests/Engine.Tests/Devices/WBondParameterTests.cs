@@ -24,21 +24,19 @@ public class WBondParameterTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>A design of profile-BOUND wires, so a loop-height override has something to regenerate.</summary>
-    private string WriteProfiledDesign(double loopHeightMil = 20.0, int wires = 4, double yOffsetMil = 0.0)
+    /// <summary>A design of arched wires, so a loop-height override has a rise to rescale.</summary>
+    private string WriteArchedDesign(double loopHeightMil = 20.0, int wires = 4, double yOffsetMil = 0.0)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(loopHeightMil, WBondUnit.Mil), points: 7);
-
+        long loopNm = WBondUnits.ToNm(loopHeightMil, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int i = 0; i < wires; i++)
         {
             double y = yOffsetMil + i * 6.0;
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, y, 4), Point3.Mils(100, y, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm));
         }
         design.Arrays.Add(array);
 
@@ -69,7 +67,7 @@ public class WBondParameterTests : IDisposable
     [Fact]
     public void Tier8_RaisingTheLoopHeight_RaisesTheArrayInductanceMonotonically()
     {
-        string wbond = WriteProfiledDesign(loopHeightMil: 20.0);
+        string wbond = WriteArchedDesign(loopHeightMil: 20.0);
         double previous = 0.0;
 
         foreach (double heightMil in new[] { 10.0, 20.0, 30.0, 45.0 })
@@ -97,7 +95,7 @@ wBond:WB1 p1 p2 0   File=""{wbond}"" LoopHeight=loopH
     [Fact]
     public void Tier8_LoopHeightIsAnOrdinaryExpression_SoASweepOverAGlobalWorks()
     {
-        string wbond = WriteProfiledDesign();
+        string wbond = WriteArchedDesign();
 
         static string Cnl(string wb, double mils) => $@"
 base = {mils.ToString("R", CultureInfo.InvariantCulture)} mil
@@ -117,7 +115,7 @@ wBond:WB1 p1 p2 0   File=""{wb}"" LoopHeight=base*scale
     [Fact]
     public void TemperatureOverride_RaisesTheArrayResistance()
     {
-        string wbond = WriteProfiledDesign();
+        string wbond = WriteArchedDesign();
 
         static string Cnl(string wb, double tempC) => $@"
 Term:T1   p1 0   Num=1 Z=50
@@ -135,7 +133,7 @@ wBond:WB1 p1 p2 0   File=""{wb}"" Temp={tempC.ToString("R", CultureInfo.Invarian
     [Fact]
     public void NonPositiveLoopHeight_IsRefused()
     {
-        string wbond = WriteProfiledDesign();
+        string wbond = WriteArchedDesign();
         string cnl = $@"
 Term:T1   p1 0   Num=1 Z=50
 Term:T2   p2 0   Num=2 Z=50
@@ -155,8 +153,8 @@ wBond:WB1 p1 p2 0   File=""{wbond}"" LoopHeight=0
     [Fact]
     public void Tier9_TwoAdjacentWBondsInOneNetlist_AreReportedByTheAudit()
     {
-        string a = WriteProfiledDesign(yOffsetMil: 0.0);
-        string b = WriteProfiledDesign(yOffsetMil: 30.0);
+        string a = WriteArchedDesign(yOffsetMil: 0.0);
+        string b = WriteArchedDesign(yOffsetMil: 30.0);
 
         string cnl = $@"
 Term:T1   p1 0   Num=1 Z=50
@@ -182,8 +180,8 @@ wBond:WBB mid p2 0   File=""{b}""
     [Fact]
     public void Tier9_TwoDistantWBonds_ProduceNoFinding()
     {
-        string a = WriteProfiledDesign(yOffsetMil: 0.0);
-        string b = WriteProfiledDesign(yOffsetMil: 20_000.0);
+        string a = WriteArchedDesign(yOffsetMil: 0.0);
+        string b = WriteArchedDesign(yOffsetMil: 20_000.0);
 
         string cnl = $@"
 Term:T1   p1 0   Num=1 Z=50
@@ -198,7 +196,7 @@ wBond:WBB mid p2 0   File=""{b}""
     [Fact]
     public void Tier9_ASingleWBond_ProducesNoFinding()
     {
-        string wbond = WriteProfiledDesign();
+        string wbond = WriteArchedDesign();
         string cnl = $@"
 Term:T1   p1 0   Num=1 Z=50
 Term:T2   p2 0   Num=2 Z=50

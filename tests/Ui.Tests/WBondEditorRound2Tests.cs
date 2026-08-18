@@ -25,23 +25,22 @@ public class WBondEditorRound2Tests
 {
     private static WBondDesign Design(int wires = 3, int arrays = 1, double azimuthDegrees = 0.0)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         double radians = azimuthDegrees * Math.PI / 180.0;
         double cos = Math.Cos(radians), sin = Math.Sin(radians);
 
         for (int a = 0; a < arrays; a++)
         {
-            var array = new WireArray { Name = $"G{a + 1}", Profile = profile.Name };
+            var array = new WireArray { Name = $"G{a + 1}" };
             for (int w = 0; w < wires; w++)
             {
                 double ox = -sin * (a * 200 + w * 6), oy = cos * (a * 200 + w * 6);
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(ox, oy, 4),
                     Point3.Mils(ox + 100 * cos, oy + 100 * sin, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
             }
             design.Arrays.Add(array);
         }
@@ -266,14 +265,13 @@ public class WBondEditorRound2Tests
 
     /// <summary>The anchor is carried all the way through the array-wide scale, not just the primitive.</summary>
     [Fact]
-    public void AltDragSpan_CarriesTheAnchorIntoTheWholeBoundArray()
+    public void AltDragSpan_CarriesTheAnchorIntoTheWholeArray()
     {
         var design = Design(wires: 3);
         var outputs = design.AllWires().Select(w => w.Points[^1]).ToList();
-        var profile = design.Profiles[0];
 
-        WireEdits.ScaleBoundWires(design, profile, heightFactor: 1.0, spanFactor: 1.4,
-                                  moveOutputFoot: false);
+        WireEdits.ScaleWires(design.AllWires(), heightFactor: 1.0, spanFactor: 1.4,
+                             moveOutputFoot: false);
 
         // Every wire's OUTPUT foot is pinned; every input foot moved.
         Assert.Equal(outputs, design.AllWires().Select(w => w.Points[^1]));
@@ -324,16 +322,17 @@ public class WBondEditorRound2Tests
     }
 
     /// <summary>
-    /// <b>Alt-drag works on a DETACHED wire.</b> It used to look up the selection's bound profile and
-    /// give up when there was none, so the gesture silently did nothing on a free wire and said
-    /// nothing about why.
+    /// <b>Alt-drag scales THE SELECTION, one wire at a time.</b> It used to look up the selection's
+    /// bound loop profile and give up when there was none, so the gesture silently did nothing on a
+    /// hand-edited wire and said nothing about why. There is no binding to look up any more, and the
+    /// property that mattered — one selected wire moves, its untouched sibling does not — is what is
+    /// asserted here.
     /// </summary>
     [Fact]
-    public void AltDrag_AlsoScalesAWireThatFollowsNoProfile()
+    public void AltDrag_ScalesOnlyTheSelectedWire()
     {
         var vm = new WBondViewModel(Design(wires: 2));
         vm.Selection = new WireSelection { Wires = { 0 } };
-        vm.DetachSelection();
 
         var wire = vm.Design.AllWires().First();
         var other = vm.Design.AllWires().ElementAt(1);
@@ -343,7 +342,7 @@ public class WBondEditorRound2Tests
         Assert.Equal(1, vm.ScaleSelection(spanFactor: 1.5, heightFactor: 1.0, moveOutputFoot: true));
 
         Assert.Equal(spanBefore * 1.5, wire.ChordLengthMetres(), 9);
-        Assert.Equal(otherBefore, other.ChordLengthMetres(), 12);   // the bound one is untouched
+        Assert.Equal(otherBefore, other.ChordLengthMetres(), 12);   // its sibling is untouched
     }
 
     /// <summary>

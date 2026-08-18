@@ -36,8 +36,8 @@ namespace CircuitRF.Ui.Controls;
 /// rather than translating. <b>It scales every wire in the GROUP the selection touches</b> (owner,
 /// 2026-08-17) — a group is drawn here as one superimposed shape under one envelope band, and it is
 /// one loop program on one bonder. Not every wire in the DESIGN, which is what it used to do: it
-/// rescaled the wires sharing a <c>LoopProfile</c>, and the shipped default gives every array the
-/// same one. See <c>WBondViewModel.ScaleSelection</c>, which the layout view calls with
+/// rescaled the wires sharing a loop profile, and the shipped default gave every array the same one.
+/// See <c>WBondViewModel.ScaleSelection</c>, which the layout view calls with
 /// <c>wholeArray: false</c> for the opposite reason — there each wire lands on its own pad.</para>
 /// </summary>
 public sealed class WBondProfileCanvas : Control
@@ -221,7 +221,7 @@ public sealed class WBondProfileCanvas : Control
 
         _viewModel.AddWire(_drawStart.Value, world,
                            WBondDefaults.DiameterNm, WBondDefaults.Material,
-                           pointsIfProfileCreated: WBondDefaults.Points);
+                           points: WBondDefaults.Points);
 
         CancelWireDraw();
         InvalidateVisual();
@@ -234,8 +234,8 @@ public sealed class WBondProfileCanvas : Control
         if (_viewModel is null || _drawStart is not { } start) return;
         if (ProfileProjection.Unproject(SnapNm(span), SnapNm(z), SpanMode, Azimuth) is not { } world) return;
 
-        _ghost = _viewModel.Design.Profiles.FirstOrDefault()
-                          ?.CreateWire(start, world, WBondDefaults.DiameterNm, WBondDefaults.Material);
+        _ghost = LoopShape.CreateSeedWire(start, world, WBondDefaults.DiameterNm, WBondDefaults.Material,
+                                          WBondViewModel.DefaultNewWireLoopHeightNm, WBondDefaults.Points);
         InvalidateVisual();
     }
 
@@ -550,6 +550,13 @@ public sealed class WBondProfileCanvas : Control
 
     private bool _pressed;              // a left press is down and may yet become a drag
     private bool _dragging;             // ...and has passed the threshold
+
+    /// <summary>
+    /// What the open drag moves — the whole GROUP, not the selection (owner, 2026-08-18). Resolved
+    /// once when the threshold is crossed, so every frame and the final exact recompute name the same
+    /// wires; null when no drag is open.
+    /// </summary>
+    private WireSelection? _dragSubject;
     private double _lastZNm;
     private double _lastSpanNm;
     private double _pressScreenX, _pressScreenY;
@@ -626,9 +633,10 @@ public sealed class WBondProfileCanvas : Control
             ? ((long)Math.Round(span), (long)Math.Round(z), modifiers, e.ClickCount)
             : null;
 
+        // The hit resolved ABOVE, in this view's own plane — never re-tested by the controller, which
+        // does not know the plane and would answer for a different one (owner, 2026-08-18).
         if (!keepSelection)
-            _controller.Press((long)Math.Round(span), (long)Math.Round(z), HitToleranceNm,
-                              modifiers, e.ClickCount, EditorView.Profile);
+            _controller.Press(hit, (long)Math.Round(span), (long)Math.Round(z), modifiers, e.ClickCount);
 
         if (!hit.Found)
         {
@@ -739,9 +747,14 @@ public sealed class WBondProfileCanvas : Control
             if (moved < DragThresholdPixels) return;
 
             // The threshold is crossed: NOW open the gesture, so a click leaves no undo entry.
+            //
+            // The subject is the whole GROUP, not the selection (owner, 2026-08-18) — see
+            // WBondViewModel.ProfileGroupSubject. Resolved once, here, so every frame of the drag and
+            // the final exact recompute all name the same wires.
             _dragging = true;
+            _dragSubject = _viewModel.ProfileGroupSubject(_viewModel.Selection);
             _viewModel.BeginGesture();
-            _controller.BeginDrag();
+            _controller.BeginDrag(_dragSubject);
         }
 
         double span = ScreenToSpan(pos.X);
@@ -767,7 +780,7 @@ public sealed class WBondProfileCanvas : Control
         // ONE Translate call, so the horizontal and vertical components of a diagonal drag land in the
         // same frame — two calls would make the quality ladder time half a gesture as a whole one.
         _controller.DragFrame(
-            _ => WireEdits.Translate(_viewModel.Design, _viewModel.Selection, dSpan, dz,
+            _ => WireEdits.Translate(_viewModel.Design, _dragSubject ?? _viewModel.Selection, dSpan, dz,
                                      EditorView.Profile, Azimuth));
 
         InvalidateVisual();
@@ -911,6 +924,7 @@ public sealed class WBondProfileCanvas : Control
 
         _pressed = false;
         _dragging = false;
+        _dragSubject = null;
 
         // A press that never crossed the threshold opened nothing, so there is nothing to close —
         // calling EndDrag on the controller would publish a spurious final answer for a plain click.
@@ -919,11 +933,14 @@ public sealed class WBondProfileCanvas : Control
             _controller?.EndDrag();
             _viewModel?.EndGesture();
         }
-        else if (_deferredPress is { } press && _controller is not null)
+        else if (_deferredPress is { } press && _controller is not null && _viewModel is not null)
         {
-            // It was a click on an already-selected thing after all: resolve it now.
-            _controller.Press(press.Span, press.Z, HitToleranceNm, press.Modifiers, press.ClickCount,
-                              EditorView.Profile);
+            // It was a click on an already-selected thing after all: resolve it now — in THIS view's
+            // plane, the same way the press itself did.
+            var hit = WireHitTest.HitTestProfile(_viewModel.Mesh, press.Span, press.Z,
+                                                 HitToleranceNm, SpanMode, azimuthRadians: Azimuth);
+
+            _controller.Press(hit, press.Span, press.Z, press.Modifiers, press.ClickCount);
         }
 
         _deferredPress = null;
@@ -988,32 +1005,17 @@ public sealed class WBondProfileCanvas : Control
         return result;
     }
 
-    private string? SelectedProfileName()
-    {
-        if (_viewModel is null) return null;
-        var wires = _viewModel.Design.AllWires().ToList();
-
-        foreach (int index in _viewModel.Selection.TouchedWires())
-            if (index >= 0 && index < wires.Count && wires[index].ProfileBinding is { } binding)
-                return binding;
-
-        return null;
-    }
-
     /// <summary>
-    /// The quantity a height scale is measured against — the bound profile's loop height, or, for a
-    /// wire that follows no profile, the wire's own max-minus-min z.
+    /// The quantity a height scale is measured against — <b>the selected wire's own max-minus-min z</b>,
+    /// which is the definition of its loop height and is now the only path.
     ///
-    /// <para>The fallback is what makes alt-drag work on a detached wire at all: reading the profile
-    /// alone returned zero there, and a zero reference silently disables the whole gesture.</para>
+    /// <para>This used to prefer a bound loop profile's stated height and fall back to the wire. The
+    /// fallback was the half that always worked: reading the profile returned zero on a detached wire,
+    /// and a zero reference silently disabled the whole gesture.</para>
     /// </summary>
     private double ReferenceHeightNm()
     {
         if (_viewModel is null) return 0;
-
-        if (SelectedProfileName() is { } name &&
-            _viewModel.Design.ProfileByName(name)?.LoopHeightNm is { } bound && bound > 0)
-            return bound;
 
         var wires = _viewModel.Design.AllWires().ToList();
         foreach (int index in _viewModel.Selection.TouchedWires())

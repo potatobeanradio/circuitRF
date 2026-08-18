@@ -11,10 +11,11 @@ namespace CircuitRF.Ui.WBond;
 /// and "set the loop height" means setting it for the group you are looking at. The toolbar's own
 /// transforms stay selection-scoped and are unchanged.</para>
 ///
-/// <para><b>Each operation works whether the group is bound to a profile or free.</b> A bound group
-/// is edited through its <see cref="LoopProfile"/> and re-applied, so every wire stays in step and
-/// keeps its binding; a free group is edited wire-by-wire in place. Refusing to act on free wires
-/// would make the menu unusable on exactly the designs people hand-edit most.</para>
+/// <para><b>Every operation is wire-by-wire, and there is no bound-versus-free case any more</b>
+/// (2026-08-18). Loop profiles are gone: a wire's points are the only truth about its shape, so each
+/// member is read, transformed and written on its own terms. That is what the owner asked for —
+/// <i>"each array is generally its own shape and I want flexibility for user to change each wire
+/// within the array"</i> — and it is also simply fewer paths.</para>
 /// </summary>
 public sealed partial class WBondViewModel
 {
@@ -28,105 +29,61 @@ public sealed partial class WBondViewModel
     // ---------------------------------------------------------------- reads
 
     /// <summary>
-    /// The profile a group's shape can be copied from — its bound <see cref="LoopProfile"/> when it
-    /// has one, otherwise a profile SYNTHESISED from its first wire's own geometry.
+    /// The shape a group can be copied from — read straight off its first wire's own geometry
+    /// (<see cref="LoopShape.Read"/>), with that wire's own loop height.
     ///
-    /// <para>Synthesising rather than refusing is what makes Copy Coordinates work on a hand-drawn
-    /// or imported group, which is the case a user most wants to lift a shape out of.</para>
+    /// <para><b>Reading rather than looking anything up is now the only path</b>, and it is the one
+    /// that always worked: it makes Copy Coordinates work on a hand-drawn or imported group, which is
+    /// the case a user most wants to lift a shape out of.</para>
+    ///
+    /// <para>The loop height reported is the WIRE's own max z minus min z (the definition — see
+    /// <see cref="Wire.LoopHeightNm"/>), NOT its peak above the chord. Those differ whenever the feet
+    /// sit at different z, and writing the shape back with the wrong one would silently flatten an
+    /// asymmetric loop.</para>
     /// </summary>
-    public LoopProfile? ProfileForGroup(int arrayIndex)
+    public (IReadOnlyList<ShapePoint> Shape, long LoopHeightNm)? ShapeForGroup(int arrayIndex)
     {
         if (arrayIndex < 0 || arrayIndex >= _design.Arrays.Count) return null;
 
-        var array = _design.Arrays[arrayIndex];
-        if (array.Profile is { } name && _design.ProfileByName(name) is { } bound) return bound;
+        var wire = _design.Arrays[arrayIndex].Wires.FirstOrDefault();
+        if (wire is null || wire.Points.Count < 2) return null;
 
-        var wire = array.Wires.FirstOrDefault();
-        return wire is null ? null : SynthesiseProfile(wire, array.Name);
-    }
-
-    /// <summary>
-    /// Reads a wire's own geometry back as a normalised shape: span as the fraction along its chord,
-    /// height as the fraction of its own peak rise above that chord.
-    /// </summary>
-    private static LoopProfile SynthesiseProfile(Wire wire, string name)
-    {
-        var start = wire.Points[0];
-        var end = wire.Points[^1];
-
-        var spans = new List<double>(wire.Points.Count);
-        var heights = new List<double>(wire.Points.Count);
-
-        foreach (var p in wire.Points)
-        {
-            spans.Add(Math.Clamp(WireEdits.ChordParameter(start, end, p), 0.0, 1.0));
-
-            // Height above the straight chord between the feet — the same quantity a profile stores,
-            // so a synthesised shape re-applies to give back what was read.
-            double t = WireEdits.ChordParameter(start, end, p);
-            double chordZ = start.Z + t * (end.Z - start.Z);
-            heights.Add(p.Z - chordZ);
-        }
-
-        double peak = heights.Count == 0 ? 0.0 : heights.Max();
-
-        // The profile's stated loop height is the WIRE's own max-z-minus-min-z (the definition —
-        // see Wire.LoopHeightNm), NOT the peak above the chord. Those differ whenever the feet sit at
-        // different z, and re-applying with the wrong one would silently flatten an asymmetric loop.
-        long loopHeightNm = Math.Max(1, wire.LoopHeightNm);
-
-        var shape = new List<ProfilePoint>(spans.Count);
-        for (int i = 0; i < spans.Count; i++)
-            shape.Add(new ProfilePoint(spans[i], peak > 0 ? Math.Clamp(heights[i] / peak, 0.0, 1.0) : 0.0));
-
-        // The feet must read exactly zero — rounding in ChordParameter can otherwise leave a
-        // hair of height there, and Validate rejects a shape whose ends are not on the chord.
-        if (shape.Count >= 2)
-        {
-            shape[0] = new ProfilePoint(0.0, 0.0);
-            shape[^1] = new ProfilePoint(1.0, 0.0);
-        }
-
-        return new LoopProfile { Name = name, LoopHeightNm = loopHeightNm, Shape = shape };
+        return (LoopShape.Read(wire), Math.Max(1, wire.LoopHeightNm));
     }
 
     // ---------------------------------------------------------------- writes
 
-    /// <summary>Sets every wire in the group to <paramref name="heightNm"/> of loop height.</summary>
+    /// <summary>
+    /// Sets every wire in the group to <paramref name="heightNm"/> of loop height,
+    /// <b>preserving each wire's authored X-Y path</b>.
+    ///
+    /// <para><b>This used to straighten a hand-routed wire, and that was a real bug</b> (2026-08-18).
+    /// The old path read each wire's shape, set a height on it and stamped it back — and stamping a
+    /// shape writes X and Y by linear interpolation between the feet, so a wire taken around an
+    /// obstacle came back as a plain planar arc. The same wire's <c>LoopHeight_G1</c> controlling
+    /// parameter has preserved its path since 2026-08-17, so the editor and the netlist disagreed
+    /// about the same wire. Both now go through
+    /// <see cref="WireEdits.SetLoopHeightPreservingPath"/>.</para>
+    ///
+    /// <para>A dead-straight wire is <b>refused</b> rather than arched, because there is no rise to
+    /// scale and nothing honest to do — that is the primitive's own rule and it is not papered over
+    /// here.</para>
+    /// </summary>
     public int SetGroupLoopHeight(int arrayIndex, long heightNm)
     {
         if (heightNm <= 0) return 0;
         if (Group(arrayIndex) is not { } array) return 0;
 
-        PushUndo();
+        bool pushed = PushUndo();
         int changed = 0;
 
-        if (BoundProfile(array) is { } profile)
-        {
-            // One write to the shared shape, then re-apply — so every wire stays bound and in step.
-            profile.LoopHeightNm = heightNm;
-            changed = ReapplyToArray(array, profile);
-        }
-        else
-        {
-            // A free wire is re-shaped through a profile synthesised from its OWN geometry, so the
-            // loop height lands via LoopProfile's one exact amplitude solve rather than a second
-            // (and, with unequal foot heights, wrong) scale-the-rise calculation here. The binding
-            // is cleared afterwards so a free wire stays free.
-            foreach (var wire in array.Wires)
-            {
-                if (wire.Points.Count < 2) continue;
-
-                var shape = SynthesiseProfile(wire, "height");
-                shape.LoopHeightNm = heightNm;
-                shape.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
-                wire.ProfileBinding = null;
-                changed++;
-            }
-        }
+        foreach (var wire in array.Wires)
+            if (WireEdits.SetLoopHeightPreservingPath(wire, heightNm)) changed++;
 
         // Height changes move points without adding them, so this is the cheap drag path.
         if (changed > 0) CommitPointMove([.. FlatIndices(arrayIndex)]);
+        else if (pushed) DropUndoEntry();
+
         return changed;
     }
 
@@ -230,7 +187,7 @@ public sealed partial class WBondViewModel
     /// <summary>
     /// Mirrors the group's loop shape end-for-end — a crest at 30% of the span moves to 70%.
     ///
-    /// <para><b>Not the same as reversing.</b> See <see cref="LoopProfile.Flip"/>: reversing changes
+    /// <para><b>Not the same as reversing.</b> See <see cref="LoopShape.Flip"/>: reversing changes
     /// which foot is the input and therefore every mutual sign; flipping changes only where the crest
     /// sits. They are adjacent menu items precisely because they look alike and are not.</para>
     /// </summary>
@@ -238,68 +195,48 @@ public sealed partial class WBondViewModel
     {
         if (Group(arrayIndex) is not { } array || array.Wires.Count == 0) return 0;
 
-        PushUndo();
-        int changed;
+        bool pushed = PushUndo();
+        int changed = 0;
 
-        if (BoundProfile(array) is { } profile)
+        foreach (var wire in array.Wires)
         {
-            profile.Flip();
-            changed = ReapplyToArray(array, profile);
-        }
-        else
-        {
-            changed = 0;
-            foreach (var wire in array.Wires)
-            {
-                var flipped = SynthesiseProfile(wire, "flip");
-                flipped.Flip();
-                var start = wire.Points[0];
-                var end = wire.Points[^1];
+            if (wire.Points.Count < 2) continue;
 
-                // ApplyTo would stamp a binding onto a free wire; write the points and clear it back
-                // so a free wire stays free.
-                flipped.ApplyTo(wire, start, end);
-                wire.ProfileBinding = null;
-                changed++;
-            }
+            // A flip IS an X-Y operation — the crest moves along the span — so writing the mirrored
+            // shape back between the same two feet is exactly right here, unlike a loop-height change.
+            var flipped = LoopShape.Flip(LoopShape.Read(wire));
+            LoopShape.Write(wire, wire.Points[0], wire.Points[^1], flipped, wire.LoopHeightNm);
+            changed++;
         }
 
         if (changed > 0) CommitPointMove([.. FlatIndices(arrayIndex)]);
+        else if (pushed) DropUndoEntry();
+
         return changed;
     }
 
     /// <summary>
     /// Gives every wire in the group the supplied shape — the Paste half of §6.4a.
     ///
-    /// <para>The pasted shape is installed as the group's own named profile and every wire is bound
-    /// to it, so the group afterwards behaves exactly like one authored with that profile: a later
-    /// height or span edit moves all of them together.</para>
+    /// <para><b>A one-shot stamp, and nothing is installed on the design</b> (2026-08-18). The shape
+    /// used to be stored as the group's own named profile with every wire bound to it; that persistent
+    /// link is exactly what the owner rejected. Each wire keeps its own feet and gets the pasted
+    /// shape's z-versus-span; nothing afterwards remembers where the shape came from.</para>
     /// </summary>
-    public int ApplyProfileToGroup(int arrayIndex, LoopProfile shape)
+    public int ApplyShapeToGroup(int arrayIndex, IReadOnlyList<ShapePoint> shape, long loopHeightNm)
     {
         ArgumentNullException.ThrowIfNull(shape);
         if (Group(arrayIndex) is not { } array || array.Wires.Count == 0) return 0;
 
         PushUndo();
 
-        // Name the profile after the group so two groups can never fight over one shared shape.
-        string name = array.Name;
-        var installed = _design.ProfileByName(name);
-
-        if (installed is null)
+        int changed = 0;
+        foreach (var wire in array.Wires)
         {
-            installed = new LoopProfile { Name = name, LoopHeightNm = shape.LoopHeightNm, Shape = [.. shape.Shape] };
-            _design.Profiles.Add(installed);
+            if (wire.Points.Count < 2) continue;
+            LoopShape.Write(wire, wire.Points[0], wire.Points[^1], shape, loopHeightNm);
+            changed++;
         }
-        else
-        {
-            installed.LoopHeightNm = shape.LoopHeightNm;
-            installed.Shape.Clear();
-            installed.Shape.AddRange(shape.Shape);
-        }
-
-        array.Profile = name;
-        int changed = ReapplyToArray(array, installed);
 
         // The pasted shape may carry a different point count, which changes the filament layout —
         // so this is structural, not a point move.
@@ -416,30 +353,27 @@ public sealed partial class WBondViewModel
     }
 
     /// <summary>
-    /// Sets ONE wire's loop height — max z minus min z, per the definition (§3.0).
+    /// Sets ONE wire's loop height — max z minus min z, per the definition (§3.0) — keeping every
+    /// X and Y exactly as authored.
     ///
-    /// <para><b>A wire bound to a shared profile is DETACHED by this.</b> A profile is one shape at
-    /// one height that several wires follow; a single wire cannot both follow it and stand at its own
-    /// height. Detaching is the honest outcome — the alternative, silently editing the shared profile,
-    /// would move every other wire in the group from a panel that says "this wire". The panel's own
-    /// Profile row flips to "(free)" the moment it happens, so it is visible rather than surprising.
-    /// To change the whole group instead, the profile view's Set Loop Height… is the right gesture.</para>
+    /// <para>The same primitive the whole-group command and the <c>LoopHeight_G1</c> controlling
+    /// parameter use, so a wire cannot end up with a different shape depending on which of the three
+    /// asked for the height.</para>
     /// </summary>
     public bool SetWireLoopHeight(int wireIndex, long heightNm)
     {
         if (heightNm <= 0) return false;
         if (_design.AllWires().ElementAtOrDefault(wireIndex) is not { } wire) return false;
         if (wire.Points.Count < 2) return false;
-        if (wire.LoopHeightNm == heightNm) return false;   // no-op: no undo entry, and no detach
+        if (wire.LoopHeightNm == heightNm) return false;   // no-op: no undo entry
 
-        PushUndo();
+        bool pushed = PushUndo();
 
-        // Through the profile's own exact amplitude solve, so a single wire and a whole group land
-        // their loop height by the same arithmetic.
-        var shape = SynthesiseProfile(wire, "height");
-        shape.LoopHeightNm = heightNm;
-        shape.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
-        wire.ProfileBinding = null;
+        if (!WireEdits.SetLoopHeightPreservingPath(wire, heightNm))
+        {
+            if (pushed) DropUndoEntry();   // dead straight: no rise to scale, nothing honest to do
+            return false;
+        }
 
         CommitPointMove([wireIndex]);
         return true;
@@ -448,9 +382,6 @@ public sealed partial class WBondViewModel
     /// <summary>
     /// Sets ONE wire's foot-to-foot span. The output foot moves; the input foot stays put.
     ///
-    /// <para>Unlike loop height this does NOT detach a bound wire: a profile applies between whatever
-    /// feet a wire has, so moving one foot leaves the binding perfectly valid and the shape
-    /// re-derives.</para>
     /// </summary>
     public bool SetWireSpan(int wireIndex, long spanNm)
     {
@@ -678,9 +609,6 @@ public sealed partial class WBondViewModel
     private WireArray? Group(int arrayIndex) =>
         arrayIndex >= 0 && arrayIndex < _design.Arrays.Count ? _design.Arrays[arrayIndex] : null;
 
-    private LoopProfile? BoundProfile(WireArray array) =>
-        array.Profile is { } name ? _design.ProfileByName(name) : null;
-
     /// <summary>Flat <see cref="WBondDesign.AllWires"/> indices belonging to one array.</summary>
     public IEnumerable<int> FlatIndices(int arrayIndex)
     {
@@ -693,19 +621,6 @@ public sealed partial class WBondViewModel
                 flat++;
             }
         }
-    }
-
-    /// <summary>Re-applies a profile to every wire in an array, keeping each wire's own feet.</summary>
-    private static int ReapplyToArray(WireArray array, LoopProfile profile)
-    {
-        int changed = 0;
-        foreach (var wire in array.Wires)
-        {
-            if (wire.Points.Count < 2) continue;
-            profile.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
-            changed++;
-        }
-        return changed;
     }
 
 }

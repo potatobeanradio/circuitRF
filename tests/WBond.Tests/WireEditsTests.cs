@@ -20,10 +20,10 @@ public class WireEditsTests
     private static Wire Loop(double startZMil = 8.0, double endZMil = 1.0,
                              double spanMil = 120.0, double loopMil = 20.0, int points = 7)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(loopMil, WBondUnit.Mil), points);
-        return profile.CreateWire(
+        return LoopShape.CreateSeedWire(
             Point3.Mils(0, 0, startZMil), Point3.Mils(spanMil, 30, endZMil),
-            WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold");
+            WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold",
+            WBondUnits.ToNm(loopMil, WBondUnit.Mil), points);
     }
 
     private static double[] NormalisedHeights(Wire wire)
@@ -139,25 +139,24 @@ public class WireEditsTests
     /// the flexible model exists to allow, and every "all the wires got longer" test would pass.</para>
     /// </summary>
     [Fact]
-    public void Tier2_ScalingABoundArraysSpan_PreservesTheRatiosBetweenMembers()
+    public void Tier2_ScalingAnArraysSpan_PreservesTheRatiosBetweenMembers()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil));
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         var array = new WireArray { Name = "G1" };
         double[] spans = [60.0, 100.0, 140.0];
         foreach (double span in spans)
         {
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, 0, 4), Point3.Mils(span, 0, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm));
         }
         design.Arrays.Add(array);
 
         var before = array.Wires.Select(w => w.ChordLengthMetres()).ToArray();
 
-        int moved = WireEdits.ScaleBoundWires(design, profile, heightFactor: 1.0, spanFactor: 1.4);
+        int moved = WireEdits.ScaleWires(array.Wires, heightFactor: 1.0, spanFactor: 1.4);
         Assert.Equal(3, moved);
 
         var after = array.Wires.Select(w => w.ChordLengthMetres()).ToArray();
@@ -366,13 +365,13 @@ public class WireEditsTests
     /// exercising it.</para>
     /// </summary>
     [Fact]
-    public void Tier5_StraightenThenReapplyProfile_ReturnsTheOriginalPoints()
+    public void Tier5_StraightenThenRewriteTheSeedShape_ReturnsTheOriginalPoints()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var start = Point3.Mils(0, 0, 8);
         var end = Point3.Mils(120, 30, 1);
 
-        var wire = profile.CreateWire(start, end, WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold");
+        var wire = LoopShape.CreateSeedWire(start, end, WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm);
 
         // Push one interior point sideways, so there is a route to straighten.
         var wandered = wire.Points[3];
@@ -384,11 +383,11 @@ public class WireEditsTests
         Assert.Equal(original.Length, wire.Points.Count);
         Assert.NotEqual(original[3].Y, wire.Points[3].Y);   // the route really was straightened
 
-        profile.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
+        LoopShape.Write(wire, wire.Points[0], wire.Points[^1], LoopShape.Seed(), loopNm);
 
-        // The profile owns z and the route owns x-y, so re-applying restores the ORIGINAL loop —
-        // which is the pre-wander wire, not the wandered one this test started from.
-        var pristine = profile.CreateWire(start, end, WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold");
+        // A stamped shape owns z AND writes x-y between the feet, so re-stamping restores the
+        // ORIGINAL loop — the pre-wander wire, not the wandered one this test started from.
+        var pristine = LoopShape.CreateSeedWire(start, end, WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopNm);
         for (int i = 0; i < pristine.Points.Count; i++)
             Assert.Equal(pristine.Points[i], wire.Points[i]);
     }
@@ -403,9 +402,9 @@ public class WireEditsTests
     [Fact]
     public void Tier5_Straighten_LeavesZUntouched()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
-        var wire = profile.CreateWire(Point3.Mils(0, 0, 8), Point3.Mils(120, 30, 1),
-                                      WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold");
+        var wire = LoopShape.CreateSeedWire(Point3.Mils(0, 0, 8), Point3.Mils(120, 30, 1),
+                                            WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold",
+                                            WBondUnits.ToNm(20.0, WBondUnit.Mil));
 
         var wandered = wire.Points[2];
         wire.Points[2] = wandered with { Y = wandered.Y + WBondUnits.ToNm(20, WBondUnit.Mil) };
@@ -519,9 +518,9 @@ public class WireEditsTests
     public void Nudge_ASelectedSegment_CarriesBothItsEndpoints()
     {
         var design = TestDesigns.ParallelArray(n: 1, pitchMil: 6.0, lengthMil: 100.0, heightMil: 20.0);
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil));
         var wire = design.Arrays[0].Wires[0];
-        profile.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
+        LoopShape.Write(wire, wire.Points[0], wire.Points[^1], LoopShape.Seed(),
+                        WBondUnits.ToNm(20.0, WBondUnit.Mil));
 
         var before = wire.Points.ToArray();
         var selection = new WireSelection { Segments = { new SegmentRef(0, 2) } };

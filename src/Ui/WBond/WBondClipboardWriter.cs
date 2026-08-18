@@ -139,7 +139,6 @@ internal static class WBondClipboardWriter
         if (touched is null || touched.Count == 0) return design;
 
         var copy = new WBondDesign();
-        foreach (var profile in design.Profiles) copy.Profiles.Add(profile);
 
         int flat = -1;
         foreach (var array in design.Arrays)
@@ -150,7 +149,7 @@ internal static class WBondClipboardWriter
                 flat++;
                 if (!touched.Contains(flat)) continue;
 
-                mirror ??= new WireArray { Name = array.Name, Profile = array.Profile };
+                mirror ??= new WireArray { Name = array.Name };
                 mirror.Wires.Add(wire);
             }
             if (mirror is not null) copy.Arrays.Add(mirror);

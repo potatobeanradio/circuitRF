@@ -19,15 +19,23 @@ namespace CircuitRF.Ui.WBond;
 internal static class WBondGroupCommand
 {
     /// <summary>
-    /// Opens the picker on <paramref name="vm"/>'s current wire selection and applies what comes
-    /// back. A cancelled dialog, an empty selection or a missing owner window are all a clean no-op.
+    /// Opens the picker on <paramref name="targets"/> — or on <paramref name="vm"/>'s current wire
+    /// selection when none are given — and applies what comes back. A cancelled dialog, an empty
+    /// subject or a missing owner window are all a clean no-op.
     /// </summary>
+    /// <param name="targets">
+    /// The wires to regroup, by flat <c>AllWires</c> index. <b>Null means "the current selection"</b>,
+    /// which is what the Properties panel's button wants — it is shown for a selection and states its
+    /// counts on the line above. The layout view's context menu passes an explicit set instead, because
+    /// a right-click on a wire has a subject of its own (owner, 2026-08-18).
+    /// </param>
     /// <returns>How many wires changed group.</returns>
-    internal static async Task<int> RunAsync(Window? owner, WBondViewModel? vm)
+    internal static async Task<int> RunAsync(Window? owner, WBondViewModel? vm,
+                                             IReadOnlyCollection<int>? targets = null)
     {
         if (owner is null || vm is null) return 0;
 
-        var touched = vm.Selection.TouchedWires().ToList();
+        var touched = (targets ?? vm.Selection.TouchedWires()).ToList();
         if (touched.Count == 0) return 0;
 
         // Pre-select the group they are already in, when they share one — the common case is "these

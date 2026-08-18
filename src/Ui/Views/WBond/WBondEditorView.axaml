@@ -263,30 +263,16 @@
                             Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/>
                     </Button>
-                    <!-- The two profile-binding buttons say what they DO to the wire, not what they
-                         are called (owner, 2026-08-16: "it's not clear to me at all, and I have been
-                         designing wirebonds as a professional for 10 years"). A binding is a
-                         GENERATOR — the named loop shape a wire's points were stamped out from — so
-                         one button re-stamps and the other stops following, and neither is about the
-                         envelope, which is only a picture of the spread. -->
-                    <Button x:Name="ReapplyProfileBtn" Classes="SelectionBtn"
-                            ToolTip.Tip="Reset to loop profile — re-stamps the selected wires from the loop shape they are bound to, discarding any vertices you have moved by hand. The two feet do not move."
-                            IsEnabled="{Binding ViewModel.HasSelection}" Click="OnReapplyProfile"
-                            Background="Transparent" BorderThickness="0">
-                        <mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/>
-                    </Button>
+                    <!-- No "Reset to loop profile" / "Detach from loop profile" buttons (owner,
+                         2026-08-18: "I don't like how wires get this designation… I also don't like
+                         how the wire colors change when a wire converts to 'free'"). The loop-profile
+                         object is gone: a wire's points are the only truth about its shape, so there
+                         is nothing to re-stamp from and nothing to detach from. -->
                     <Button x:Name="TransformBtn" Classes="SelectionBtn" ToolTip.Tip="Transform Selection (T)…"
                             IsEnabled="{Binding ViewModel.HasSelection}"
                             Click="OnTransform" Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="AxisArrow" Width="16" Height="16"/>
                     </Button>
-                    <Button x:Name="DetachBtn" Classes="SelectionBtn"
-                            ToolTip.Tip="Detach from loop profile — the selected wires stop following their loop shape and keep exactly the geometry they have now. They also leave their array's envelope band, since that band only spans the wires still following the shape."
-                            IsEnabled="{Binding ViewModel.HasSelection}" Click="OnDetach"
-                            Background="Transparent" BorderThickness="0">
-                        <mi:MaterialIcon Kind="LinkOff" Width="16" Height="16"/>
-                    </Button>
-
                     <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
 
                     <!-- §6.7 "to other applications": PDF + SVG + bitmap at once, through the same

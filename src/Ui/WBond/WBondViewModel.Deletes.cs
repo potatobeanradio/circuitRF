@@ -11,13 +11,11 @@ namespace CircuitRF.Ui.WBond;
 /// anything was Del on a selection, which deletes whole wires and nothing finer. These three are what
 /// a right-click on a point, on a segment, and on a wire respectively should offer.</para>
 ///
-/// <h3>Removing a point DETACHES the wire from its profile, and that is deliberate</h3>
-/// <para>A <see cref="LoopProfile"/> IS the point set: it says how many points a bound wire has and
-/// where each sits along the chord. A wire that has had one removed no longer follows it, so leaving
-/// the binding in place would mean the next Re-apply Profile silently put the point back — and the
-/// next group height edit would too. Detaching states the outcome instead. It is the same rule
-/// <see cref="SetWireLoopHeight"/> already applies for the same reason, and the panel's Profile row
-/// flips to "(free)" the moment it happens.</para>
+/// <para><b>Removing a point has no side effect beyond removing it</b> (2026-08-18). It used to also
+/// detach the wire from its loop profile, because a profile defined the point set and the next
+/// re-apply would have put the point back. Loop profiles are gone — a wire's points are the only
+/// truth about its shape — so a delete is now just a delete, and it no longer recolours the wire in
+/// the layout view as a side effect.</para>
 /// </summary>
 public sealed partial class WBondViewModel
 {
@@ -68,7 +66,6 @@ public sealed partial class WBondViewModel
 
         PushUndo();
         wire.Points.RemoveAt(pointIndex);
-        ProfileEnvelope.Detach(wire);   // see the class remarks — the profile defines the point set
 
         // The selection indexes points within this wire, so anything it holds past the removed one
         // now names the wrong point. Dropping it is the same rule DeleteSelectedWires applies.
@@ -160,8 +157,6 @@ public sealed partial class WBondViewModel
                 if (point >= 0 && point < wire.Points.Count)
                     wire.Points.RemoveAt(point);
 
-            // The profile IS the point set — see the class remarks. Same rule as DeleteWirePoint.
-            ProfileEnvelope.Detach(wire);
             edited++;
         }
 

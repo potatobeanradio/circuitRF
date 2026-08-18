@@ -19,10 +19,11 @@ public readonly record struct Point3(long X, long Y, long Z)
 /// <summary>
 /// One bond wire: a polyline of at least two points, with a diameter and a metal.
 ///
-/// <para><b><see cref="Points"/> is the truth (D1 / WB2).</b> A wire is always a 3D polyline —
-/// that is what the solver consumes and what <c>.wBond</c> stores. A loop-profile binding is a
-/// <i>generator</i> that writes these points, exactly as a PCell writes shapes; breaking the
-/// binding leaves the points untouched.</para>
+/// <para><b><see cref="Points"/> is the truth, and now the ONLY truth (D1 / WB2).</b> A wire is
+/// always a 3D polyline — that is what the solver consumes and what <c>.wBond</c> stores. Nothing
+/// records which shape a wire was generated from: loop profiles, the ball/wedge designation and the
+/// binding between them were removed on 2026-08-18 (see <see cref="LoopShape"/>), because a shared
+/// bindable shape is not something anyone wanted and per-wire freedom is.</para>
 ///
 /// <para><b>Direction is data, not a rendering convention (D2 / WB3).</b> <c>Points[0]</c> is the
 /// input — current enters there — and <c>Points[^1]</c> is the output. The sign of every mutual
@@ -40,9 +41,6 @@ public sealed class Wire
 
     /// <summary>The metal, by <see cref="WireMaterial.Name"/>. Defaults to gold (D7).</summary>
     public string Material { get; set; } = WireMaterials.Default.Name;
-
-    /// <summary>Name of the <c>LoopProfile</c> this wire is bound to, or null if it is free.</summary>
-    public string? ProfileBinding { get; set; }
 
     public bool Locked { get; set; }
 
@@ -65,7 +63,7 @@ public sealed class Wire
     /// <para><b>Consequence worth knowing: a wire's loop height can never be below its own foot
     /// drop.</b> With the feet |z₁ − z₂| apart, even a perfectly straight wire measures that much, so
     /// that is the floor any requested loop height is clamped to — see
-    /// <see cref="LoopProfile.ApplyTo"/>.</para>
+    /// <see cref="LoopShape.Write"/>.</para>
     /// </summary>
     public long LoopHeightNm
     {
@@ -128,9 +126,6 @@ public sealed class WireArray
     public required string Name { get; set; }
 
     public List<Wire> Wires { get; init; } = [];
-
-    /// <summary>The loop profile this array's profile-view curve edits, if any.</summary>
-    public string? Profile { get; set; }
 }
 
 /// <summary>
@@ -158,9 +153,6 @@ public sealed class WBondDesign
 
     /// <summary>Metals available to this design. Defaults to the shipped table.</summary>
     public List<WireMaterial> Materials { get; init; } = [.. WireMaterials.All];
-
-    /// <summary>Named loop shapes wires may bind to (<see cref="LoopProfile"/>).</summary>
-    public List<LoopProfile> Profiles { get; init; } = [];
 
     public List<WireArray> Arrays { get; init; } = [];
 
@@ -192,10 +184,6 @@ public sealed class WBondDesign
     /// that never set one round-trips byte-identically.</para>
     /// </summary>
     public string? AssemblyRef { get; set; }
-
-    /// <summary>Looks a loop profile up by name, case-insensitively.</summary>
-    public LoopProfile? ProfileByName(string name) =>
-        Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Every wire in the design, in array order then member order.</summary>
     public IEnumerable<Wire> AllWires() => Arrays.SelectMany(a => a.Wires);

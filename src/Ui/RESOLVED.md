@@ -6,6 +6,143 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## wBond round 7 — the loop-profile object is removed (2026-08-18)
+
+Owner: *"User does not care if the profile is any of these 'profiles'…"* And the answer that
+settled it: *"User would never share one loop shape for multiple arrays and want to edit it in one
+place."* `LoopProfile`, `Wire.ProfileBinding`, `WireArray.Profile`, `WBondDesign.Profiles` and the
+ball/wedge designation are gone; `LoopShape` holds the same arithmetic as stateless functions.
+
+**The designation was never load-bearing and the codebase said so.** `BallBond` and `WedgeBond` were
+one function, `Peaked`, at 0.30 and 0.50 peak span. **Nothing in the repo ever branched on ball
+versus wedge** — the only place either word was read back was `WireTableCsv`, choosing which factory a
+CSV column called. It was a seed shape and nothing else, which is exactly the owner's reading.
+
+**A group loop-height change was straightening hand-routed wires, and the editor and the netlist
+disagreed about the same wire.** `WBondViewModel.Groups.SetGroupLoopHeight` read a wire's shape, put a
+new height on it and stamped it back — and stamping writes X and Y by linear interpolation between the
+feet, so a wire routed around an obstacle came back as a plain planar arc. The same wire's
+`LoopHeight_G1` controlling parameter had gone through `WireEdits.SetLoopHeightPreservingPath` since
+2026-08-17. Both now do. `SetWireLoopHeight` had the same defect. **`SetGroupSpan` and the group flip
+deliberately still go Read → transform → Write**, because both of those genuinely ARE X-Y operations
+and interpolating between the feet is correct there.
+
+**One `ColorRole` was serving two unrelated meanings, and BOTH of them had to go.** `wBond.FreeWire`
+meant "no binding" in the layout view (`WBondRenderer:228`) and "a non-representative member drawn
+behind the band" in the profile view (`:400`). The first pass deleted the layout half and renamed the
+second to `wBond.Member`, keeping it because distinguishing the one editable curve from the members
+behind it is real information about that picture. **The owner rejected that within the hour**:
+*"profile wire still renders in 'bad' color depending on shape… I don't want the wires ever changing
+colors based on geometry."* The role is now deleted outright — `wBond.Wire` is the only wire colour,
+with `wBond.WireStart` and `wBond.WireVertex` as per-POINT accents every wire carries alike. **A role
+deletion has to touch `src/Ui/Assets/Color/Default.ccolor` as well**, which two tests read directly.
+
+*Worth keeping about the pixel oracle that gates this*, because both traps cost real time: the
+envelope band is the wire's own RGB at alpha ~60, so **band and wire are the same HUE and only
+brightness separates them** — a ratio-based colour probe counts a six-figure band pixel count as
+"wire" unless it also applies a brightness floor. Worse, `wBond.WireStart` is a DARKER version of the
+same hue, so the band matched the input-end accent by ratio too; with an accent-fringe dilation in
+play that marked the whole canvas as accent and the probe silently passed against a deliberately
+broken renderer. Verify a pixel oracle by breaking the thing it watches — the first version of this
+one passed three separate injected regressions before the histogram showed why.
+
+**No `.wBond` format-version bump and no compatibility shim — and none is needed.** `System.Text.Json`
+ignores members the target type does not declare, so a file carrying `Profiles`, `arrays[].profile`
+and `wires[].profileBinding` reads cleanly and stops carrying them on its next save. **No geometry is
+lost in either direction**, because `Points` was always stored explicitly. Gated by a STRING fixture
+in `WBond.Tests/PersistenceTests` — a round trip cannot test this, since no current code path can
+write the old fields.
+
+**"Which array does a new wire join" was answered by profile identity, which is why the layout drop
+path had a `FreeProfileName` helper.** It invented a uniquely-named throwaway profile purely to force
+`AddWire` to create a NEW array. `AddWire` now takes `arrayName`, and the drop path passes
+`editor.NextArrayName()`. **`arrayName: null` deliberately means "the first array", not "a new one"** —
+an array IS a pin pair on the generated symbol, so making one per drawn wire would grow the symbol
+every time a user draws a wire in the editor. The two interactive draw tools pass null; only the drop
+path asks for a new group.
+
+**Kept: Copy / Paste Profile Coordinates** (`ProfileCoordinateText`). It is a one-shot transfer the
+user asks for by name, not a persistent link — the link is what was rejected. Its signature changed
+from `LoopProfile` to a `ShapePoint` list plus a loop height; `ProfileForGroup` became
+`ShapeForGroup` and reads the shape off the array's first wire.
+
+**Two hit tests that must agree are two that can disagree — the profile view could not click-drag.**
+Owner: *"In Wire Profile view, I cannot click and drag wire points or segments. I must first
+drag-select with marquee tool, then it allows me to drag."* `WBondProfileCanvas` resolved its hit with
+its own `SpanMode` and `Azimuth`, then handed the raw coordinates to `WBondPointerController.Press`,
+which hit-tested them AGAIN with `HitTestProfile`'s defaults — `azimuthRadians: null`, meaning AUTO,
+each wire on its own chord. **The shipped profile plane has been YZ since 2026-08-16**, so the two
+answered for different pictures: the canvas found a wire, the controller found nothing, cleared the
+selection, and the canvas then declined to arm a drag on an empty selection. **It hid completely
+whenever anything was selected**, because a press on an already-selected element takes the
+`keepSelection` branch and never calls the controller — which is exactly why marquee-selecting first
+made dragging work. Fixed by passing the resolved `WireHitTest.Hit` rather than a second set of
+projection parameters; the plane-blind overload stays for the layout view, which has no plane.
+
+**"Group Wires As…" was disabled on a right-clicked wire.** Owner: *"For a single wire right-click,
+this menu should be available and it should say 'Group Wire As…'."* The item was selection-scoped by
+deliberate design (*"a group change that quietly applied to one wire when the user meant forty is
+expensive to notice"*), while `BuildStraightenItem` immediately below it already used
+selection-if-multi-else-clicked-wire. Group now uses the same rule, which answers the original risk
+better than the refusal did — a multi-selection always wins, so a right-click can never shrink a
+forty-wire subject to one. `WBondGroupCommand.Label` already had the singular string; nothing had ever
+reached it, because the only way to get a count of one was a single selection and a single selection
+loses to the click.
+
+**A profile-view drag moved one wire; it now moves the group.** Owner: *"I want all the wires within
+that group to move."* Alt-drag was moved onto the array on 2026-08-17 (WB24c) and the plain drag was
+not moved with it, so the two gestures in the same view disagreed about their subject. All three
+paths — drag, alt-drag, arrow-key nudge — now resolve through `WBondViewModel.ProfileGroupSubject`.
+**The `Selection` is deliberately NOT promoted**, matching what alt-drag already did: it is the
+subject of one edit, not a re-selection. That has a consequence worth knowing —
+`WBondPointerController.BeginDrag` had to learn the subject, because the quality ladder collapses
+those wires, the incremental fill is told about those wires, and `EndDrag` recomputes the exact answer
+for those wires; a subject wider than the selection would otherwise move on screen and leave the
+inductance stale for every sibling.
+
+**The envelope has now been narrowed twice and both narrowings were the same mistake.** Owner: *"the
+envelope for a wire doesn't get drawn/included in the envelope if I drag a point/segment too far
+away."* The band first spanned only the members bound to a `LoopProfile` (so detaching removed a
+wire), and then only the members that are `IsProfileEditable` (so dragging one point past its
+neighbour made the XY path backtrack and removed a wire). In both cases **a wire fell out of the thing
+that claims to describe its own group, as a side effect of an edit about something else.** It now
+spans every member unconditionally; `ArrayProfile.NonMonotone` reports the backtracking ones as a
+SUBSET of `Members` rather than as an exclusion. The general shape is worth carrying: a summary view
+that quietly drops its outliers is worse than one that shows an awkward spread.
+
+**The envelope band was drawing spread that no wire in the group had.** Owner: *"envelope rendering
+appears a little strange if wires within the same group have a different number of vertices."*
+Sampling every member's own vertices — the 2026-08-16 fix — makes each member a straight LINE between
+consecutive samples, but **the envelope of a set of lines has a corner wherever two of them cross**,
+and the band joined its samples with a straight line. Near a crossing the drawn max ran above every
+member and the drawn min below every member. It is invisible while an array's members share a vertex
+lattice, because then they cross only AT shared vertices, which are already sampled; **mixed vertex
+counts interleave two lattices** and the members cross repeatedly in mid-interval. Measured on a
+7-point and a 9-point wire: 2,591 nm of overshoot, at a span that is a vertex of neither. Fixed by
+inserting a sample wherever the argmin or argmax changes, solved in closed form from the two samples
+that bracket it — at most one extra sample per interval per edge, so the drawn curve count is
+unchanged. **The oracle has to probe BETWEEN the band's samples**: at a sample the band is min/max by
+construction, so a test that only looked there passes against the broken version.
+
+Two things found alongside it and worth keeping:
+
+- **The dedupe could eat the band's own final sample.** Sample positions are collapsed with a 1e-3
+  tolerance keeping the FIRST of a cluster, so a member vertex a hair short of 1.0 swallowed the
+  ladder's 1.0 and the band stopped short of the output foot. The two endpoints are the one pair of
+  samples that are not negotiable.
+- **Most of the visible band thickness was real and stays.** Two wires at the same loop height but
+  different point counts are genuinely different arches: `LoopShape.Seed` spaces points uniformly in
+  span, so unless `(points − 1) × peakSpan` is a whole number no vertex lands on the crest, and
+  normalising the coarser polyline to measure the requested max-z-minus-min-z leaves the rest of its
+  curve lower. A 7-point and a 9-point wire, both measuring exactly 20.0000 mil, differ by 1.84 mil
+  above the chord at span 0.30 (11 points lands a vertex exactly on 0.30 and agrees with 9 to 0.003
+  mil, which is the tell). Putting a vertex on `SeedPeakSpan` would collapse it — and would move
+  shipped default geometry, so it was reported rather than done.
+
+**Not in scope, and the name collision is most of why this concept confused the owner:**
+`ProfileAxisSetting` / `ProfileProjection` are the profile **view** and its Auto/XZ/YZ plane, nothing
+to do with the profile **object**. Untouched.
+
 ## The workspace toolbar's three panel toggles — Library, Properties, Messages (2026-08-18)
 
 Owner: *"To the left of the messages button in the workspace toolbar, add buttons for Library Palette and

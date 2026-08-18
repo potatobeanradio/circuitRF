@@ -73,7 +73,6 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
     public bool HasDiameterError => DiameterError is not null;
 
     [ObservableProperty] private string _material = "";
-    [ObservableProperty] private string _profileBinding = "";
 
     private string[] _materialsCache = [];
     private string[] _groupsCache = [];
@@ -214,7 +213,6 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
 
         GroupName = GroupOf(index) ?? "";
         Material = wire.Material;
-        ProfileBinding = wire.ProfileBinding ?? "(free)";
 
         WireSummary = $"{wire.Points.Count} points";
 

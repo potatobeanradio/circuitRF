@@ -41,17 +41,16 @@ public class WBondRound6Tests
     /// <summary>A design of <paramref name="arrays"/> arrays, each holding <paramref name="perArray"/> wires.</summary>
     private static WBondDesign Design(int arrays = 2, int perArray = 2)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         for (int a = 0; a < arrays; a++)
         {
-            var array = new WireArray { Name = "G" + (a + 1), Profile = profile.Name };
+            var array = new WireArray { Name = "G" + (a + 1) };
             for (int w = 0; w < perArray; w++)
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(a * 50, w * 6.0, 4), Point3.Mils(a * 50 + 30, w * 6.0, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
             design.Arrays.Add(array);
         }
 
@@ -215,8 +214,6 @@ public class WBondRound6Tests
         var vm = new WBondViewModel(Design(arrays: 2, perArray: 2));
 
         var wires = vm.Design.AllWires().ToList();
-        Assert.All(wires, w => Assert.Equal(wires[0].ProfileBinding, w.ProfileBinding));  // one shared profile
-
         var spansBefore = wires.Select(w => w.ChordLengthMetres()).ToList();
 
         // ONE wire of G1 selected; both of G1 move, neither of G2 does.
@@ -282,18 +279,22 @@ public class WBondRound6Tests
     }
 
     /// <summary>
-    /// Whichever unit is in force, <b>the shared profile is never written</b> — the second half of the
-    /// original defect, and the one that outlived the drag: the old path wrote the scaled height back
-    /// onto the <see cref="LoopProfile"/> every array follows.
+    /// Whichever unit is in force, <b>an alt-drag reaches the dragged group and stops there</b> — the
+    /// second half of the original defect, and the one that outlived the drag: the old path wrote the
+    /// scaled height back onto the loop profile every array followed, so G2's wires moved when G1 was
+    /// dragged.
+    ///
+    /// <para>There is no shared object left to write (2026-08-18), which is why this now reads as a
+    /// plain statement about geometry rather than as a statement about a profile's stored height.</para>
     /// </summary>
     [Fact]
-    public void AltDrag_NeverWritesTheSharedProfile()
+    public void AltDrag_LeavesTheOtherGroupExactlyAlone()
     {
         var vm = new WBondViewModel(Design(arrays: 2, perArray: 2));
 
         var wires = vm.Design.AllWires().ToList();
         var heightsBefore = wires.Select(w => ProfileEnvelope.HeightAt(w, 0.5)).ToList();
-        long profileHeightBefore = vm.Design.Profiles[0].LoopHeightNm;
+        var otherGroupPoints = wires.Skip(2).Select(w => w.Points.ToArray()).ToList();
 
         vm.Selection = Wires(0);
         Assert.Equal(2, vm.ScaleSelection(spanFactor: 1.0, heightFactor: 2.0,
@@ -301,9 +302,10 @@ public class WBondRound6Tests
 
         Assert.Equal(heightsBefore[0] * 2.0, ProfileEnvelope.HeightAt(wires[0], 0.5), 0);
         Assert.Equal(heightsBefore[1] * 2.0, ProfileEnvelope.HeightAt(wires[1], 0.5), 0);
-        Assert.Equal(heightsBefore[2], ProfileEnvelope.HeightAt(wires[2], 0.5), 0);   // the other group
 
-        Assert.Equal(profileHeightBefore, vm.Design.Profiles[0].LoopHeightNm);
+        // The other group, to the nanometre — not merely "about the same height".
+        for (int i = 0; i < otherGroupPoints.Count; i++)
+            Assert.Equal(otherGroupPoints[i], wires[2 + i].Points.ToArray());
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -1423,10 +1425,6 @@ public class WBondRound6Tests
         // The neighbours are untouched, so the segment it sat on is now two collinear segments.
         Assert.Equal(a, wire.Points[segment]);
         Assert.Equal(b, wire.Points[segment + 2]);
-
-        // The profile no longer describes this wire's point set, so the binding is dropped — the same
-        // rule deleting a point already follows.
-        Assert.Null(wire.ProfileBinding);
     }
 
     /// <summary>
@@ -1473,24 +1471,22 @@ public class WBondRound6Tests
     [Fact]
     public void StraightenWires_StraightensEachAboutItsOwnFeet()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         // A fan-out: three wires from one pad, each landing somewhere different.
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < 3; w++)
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, 0, 4), Point3.Mils(40, (w - 1) * 20.0, 4),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         design.Arrays.Add(array);
 
         var vm = new WBondViewModel(design);
 
-        // Bow every wire off its own chord, and detach so nothing re-derives them.
+        // Bow every wire off its own chord.
         foreach (var wire in vm.Design.AllWires())
         {
-            ProfileEnvelope.Detach(wire);
             for (int i = 1; i < wire.Points.Count - 1; i++)
             {
                 var p = wire.Points[i];
@@ -1575,7 +1571,7 @@ public class WBondRound6Tests
     {
         var layout = Read("src", "Ui", "WBond", "WBondLayoutOverlay.ContextMenu.cs");
 
-        int group = layout.IndexOf("BuildGroupItem(host)", StringComparison.Ordinal);
+        int group = layout.IndexOf("BuildGroupItem(host,", StringComparison.Ordinal);
         int add = layout.IndexOf("BuildAddVertexItem(worldX", StringComparison.Ordinal);
         int deletes = layout.IndexOf("BuildDeleteItems(worldX", StringComparison.Ordinal);
         int straighten = layout.IndexOf("BuildStraightenItem(worldX", StringComparison.Ordinal);
@@ -1610,17 +1606,15 @@ public class WBondRound6Tests
     /// </summary>
     private static WBondDesign LevelWire()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
         design.Arrays.Add(new WireArray
         {
             Name = "G1",
-            Profile = profile.Name,
             Wires =
             {
-                profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(30, 0, 4),
-                                   WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"),
+                LoopShape.CreateSeedWire(Point3.Mils(0, 0, 4), Point3.Mils(30, 0, 4),
+                                   WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm),
             },
         });
         return design;
@@ -1857,15 +1851,14 @@ public class WBondRound6Tests
     /// the wrong one's foot cannot accidentally come out right.</summary>
     private static WBondDesign TwoOpposedWires()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
-        array.Wires.Add(profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(30, 0, 4),
-                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
-        array.Wires.Add(profile.CreateWire(Point3.Mils(200, 100, 4), Point3.Mils(170, 100, 4),
-                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+        var array = new WireArray { Name = "G1" };
+        array.Wires.Add(LoopShape.CreateSeedWire(Point3.Mils(0, 0, 4), Point3.Mils(30, 0, 4),
+                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
+        array.Wires.Add(LoopShape.CreateSeedWire(Point3.Mils(200, 100, 4), Point3.Mils(170, 100, 4),
+                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         design.Arrays.Add(array);
 
         return design;
@@ -1944,19 +1937,17 @@ public class WBondRound6Tests
     {
         double radians = degrees * Math.PI / 180.0;
 
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
         design.Arrays.Add(new WireArray
         {
             Name = "G1",
-            Profile = profile.Name,
             Wires =
             {
-                profile.CreateWire(
+                LoopShape.CreateSeedWire(
                     Point3.Mils(0, 0, 4),
                     Point3.Mils(lengthMils * Math.Cos(radians), lengthMils * Math.Sin(radians), 4),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"),
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm),
             },
         });
         return design;

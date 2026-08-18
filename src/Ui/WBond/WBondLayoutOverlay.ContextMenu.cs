@@ -92,7 +92,7 @@ public sealed partial class WBondLayoutOverlay
             new Separator(),
         };
 
-        items.Add(BuildGroupItem(host));
+        items.Add(BuildGroupItem(host, worldX, worldY, tolDbu));
 
         // Add Vertex sits between the group commands and the deletes, with a separator of its own
         // above it (owner, 2026-08-17): it is the one command here that ADDS something, and grouping
@@ -112,25 +112,42 @@ public sealed partial class WBondLayoutOverlay
     }
 
     /// <summary>
-    /// "Group Wires As…" — moves the whole wire selection into one group (owner, 2026-08-16).
+    /// "Group Wires As…" / "Group Wire As…" — moves wires into one group (owner, 2026-08-16).
     ///
-    /// <para>Selection-scoped, not click-scoped, and that is the point: regrouping is normally done to
-    /// a marquee-full of wires at once. Disabled with its reason when nothing is selected rather than
-    /// acting on whatever the pointer happens to be over — a group change that quietly applied to one
-    /// wire when the user meant forty is expensive to notice.</para>
+    /// <para><b>The SELECTION when there is a multi-selection, the clicked wire otherwise</b> (owner,
+    /// 2026-08-18: <i>"If I click on wire in layout host, the context menu 'Group Wires As…' is
+    /// disabled. For a single wire right-click, this menu should be available."</i>). This is the same
+    /// rule <see cref="BuildStraightenItem"/> already follows, and the two are now consistent — they
+    /// were not, which is what made a right-click on a wire offer one of them and not the other.</para>
+    ///
+    /// <para>It used to be selection-scoped only, defended as <i>"a group change that quietly applied
+    /// to one wire when the user meant forty is expensive to notice"</i>. That risk is answered by the
+    /// rule rather than by the refusal: a MULTI-selection always wins, so a right-click can never
+    /// shrink a forty-wire subject down to one. What it could not do before was act on the wire the
+    /// user was actually pointing at, and the label says which it is — <c>Group Wire As…</c> for one,
+    /// <c>Group N Wires As…</c> for many.</para>
     /// </summary>
-    private MenuItem BuildGroupItem(Visual host)
+    private MenuItem BuildGroupItem(Visual host, double worldX, double worldY, long tolDbu)
     {
-        var touched = _vm.Selection.TouchedWires();
+        var selected = _vm.Selection.TouchedWires();
+        var hit = HitWireAt(worldX, worldY, tolDbu);
+
+        // A single selection does NOT win over the click, for the same reason it does not in
+        // Straighten: a right-click on a DIFFERENT wire must never act on the one selected wire the
+        // user was not pointing at.
+        IReadOnlyCollection<int> targets =
+            selected.Count > 1 ? [.. selected]
+            : hit.Found        ? [hit.Wire]
+            : [];
 
         var item = new MenuItem
         {
-            Header = WBondGroupCommand.Label(touched.Count),
-            IsEnabled = touched.Count > 0,
+            Header = WBondGroupCommand.Label(targets.Count),
+            IsEnabled = targets.Count > 0,
         };
 
-        if (touched.Count == 0) ToolTip.SetTip(item, "Select the wires to regroup first.");
-        else item.Click += async (_, _) => await GroupSelectedWiresAsync(host);
+        if (targets.Count == 0) ToolTip.SetTip(item, "Right-click a wire, or select the wires to regroup.");
+        else item.Click += async (_, _) => await GroupSelectedWiresAsync(host, targets);
 
         return item;
     }
@@ -140,9 +157,9 @@ public sealed partial class WBondLayoutOverlay
     /// shared command the wBond Properties panel's own Regroup button runs, so two routes to
     /// "regroup these wires" cannot get the batch-undo or the re-pointed selection differently right.
     /// </summary>
-    private async Task GroupSelectedWiresAsync(Visual host)
+    private async Task GroupSelectedWiresAsync(Visual host, IReadOnlyCollection<int> targets)
     {
-        int moved = await WBondGroupCommand.RunAsync(TopLevel.GetTopLevel(host) as Window, _vm);
+        int moved = await WBondGroupCommand.RunAsync(TopLevel.GetTopLevel(host) as Window, _vm, targets);
         if (moved > 0) OverlayChanged?.Invoke();
     }
 

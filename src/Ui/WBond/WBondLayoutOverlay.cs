@@ -442,7 +442,7 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
 
             _vm.AddWire(_drawStart.Value, new Point3(sx, sy, FootZNm),
                         WBondDefaults.DiameterNm, WBondDefaults.Material,
-                        pointsIfProfileCreated: WBondDefaults.Points);
+                        points: WBondDefaults.Points);
 
             CancelWireDraw();
             OverlayChanged?.Invoke();
@@ -643,8 +643,10 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
                                      WBondSnap.ToNm(worldY, DbuPerMicron),
                                      modifiers);
             var (ex, ey) = SnapPoint(cx, cy);
-            _drawGhost = GhostProfile()?.CreateWire(start, new Point3(ex, ey, FootZNm),
-                                                    WBondDefaults.DiameterNm, WBondDefaults.Material);
+            _drawGhost = LoopShape.CreateSeedWire(start, new Point3(ex, ey, FootZNm),
+                                                  WBondDefaults.DiameterNm, WBondDefaults.Material,
+                                                  WBondViewModel.DefaultNewWireLoopHeightNm,
+                                                  WBondDefaults.Points);
             OverlayChanged?.Invoke();
             return true;
         }
@@ -974,8 +976,6 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         double dx = p.X - xNm, dy = p.Y - yNm;
         return Math.Sqrt(dx * dx + dy * dy);
     }
-
-    private LoopProfile? GhostProfile() => _vm.Design.Profiles.FirstOrDefault();
 
     /// <summary>
     /// Shift constrains the placement to ortho (§6.4).

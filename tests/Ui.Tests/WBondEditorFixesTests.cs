@@ -23,22 +23,21 @@ public class WBondEditorFixesTests
 {
     private static WBondDesign Design(int wires = 3, double azimuthDegrees = 0.0)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         double radians = azimuthDegrees * Math.PI / 180.0;
         double cos = Math.Cos(radians), sin = Math.Sin(radians);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < wires; w++)
         {
             // Wires laid end-to-end along the requested azimuth, offset perpendicular to it.
             double ox = -sin * w * 6, oy = cos * w * 6;
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(ox, oy, 4),
                 Point3.Mils(ox + 100 * cos, oy + 100 * sin, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         }
 
         design.Arrays.Add(array);

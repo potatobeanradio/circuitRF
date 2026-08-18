@@ -347,10 +347,6 @@ public partial class ParameterEditorViewModel
     {
         if (!TryReadWBondDesign(out var design) || design is null) return;
 
-        var profile = design.Profiles.FirstOrDefault()
-                   ?? LoopProfile.BallBond(WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil));
-        if (design.Profiles.Count == 0) design.Profiles.Add(profile);
-
         long pitch = WBondUnits.ToNm(WBondEmbedding.DefaultWire.SpanMils, WBondUnit.Mil);
         long offset = pitch * design.Arrays.Count;
 
@@ -361,14 +357,14 @@ public partial class ParameterEditorViewModel
         design.Arrays.Add(new WireArray
         {
             Name = NextFreeArrayName(design),
-            Profile = profile.Name,
             Wires =
             {
-                profile.CreateWire(
+                LoopShape.CreateSeedWire(
                     new Point3(start.X + offset, start.Y, start.Z),
                     new Point3(end.X + offset, end.Y, end.Z),
                     WBondUnits.ToNm(WBondEmbedding.DefaultWire.DiameterMils, WBondUnit.Mil),
-                    WireMaterials.Default.Name),
+                    WireMaterials.Default.Name,
+                    WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil)),
             },
         });
 

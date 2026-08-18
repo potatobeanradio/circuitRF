@@ -47,18 +47,17 @@ public sealed class WBondSchematicPlacementTests : IDisposable
     /// </summary>
     private static WBondDesign MakeDesign(double loopHeightMil, params string[] arrayNames)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(loopHeightMil, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(loopHeightMil, WBondUnit.Mil);
         var design  = new WBondDesign();
-        design.Profiles.Add(profile);
 
         double y = 0;
         foreach (string name in arrayNames)
         {
-            var array = new WireArray { Name = name, Profile = profile.Name };
+            var array = new WireArray { Name = name };
             for (int i = 0; i < 2; i++, y += 6.0)
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(0, y, 4), Point3.Mils(100, y, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
             design.Arrays.Add(array);
             y += 20.0;   // clear gap between arrays
         }

@@ -29,17 +29,16 @@ public class WBondRound4Tests
     /// <summary>An array of <paramref name="wires"/> ball-bonded wires running east, pitched in y.</summary>
     private static WBondDesign Design(int wires = 3, double pitchMils = 6.0)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < wires; w++)
         {
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, w * pitchMils, 4),
                 Point3.Mils(100, w * pitchMils, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         }
         design.Arrays.Add(array);
 
@@ -495,7 +494,7 @@ public class WBondRound4Tests
         string[] roles =
         [
             ColorRole.WBondWire, ColorRole.WBondWireStart, ColorRole.WBondWireVertex,
-            ColorRole.WBondSelected, ColorRole.WBondEnvelope, ColorRole.WBondFreeWire,
+            ColorRole.WBondSelected, ColorRole.WBondEnvelope,
         ];
 
         var (light, dark) = file.GetRoleMaps();

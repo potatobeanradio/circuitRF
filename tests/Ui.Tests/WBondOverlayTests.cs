@@ -19,15 +19,14 @@ public class WBondOverlayTests
 {
     private static WBondDesign Design(int wires = 3)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < wires; w++)
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, w * 6, 4), Point3.Mils(100, w * 6, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
 
         design.Arrays.Add(array);
         return design;
@@ -522,7 +521,7 @@ public class WBondOverlayTests
     /// silently.
     /// </summary>
     [Fact]
-    public void ACreatedWire_JoinsAnArrayBoundToItsProfile()
+    public void ACreatedWire_JoinsTheGroupAlreadyOnScreen()
     {
         var vm = new WBondViewModel(Design(1));
 
@@ -530,9 +529,31 @@ public class WBondOverlayTests
                                WBondDefaults.ShippedDiameterNm, WBondDefaults.ShippedMaterial);
 
         Assert.True(index >= 0);
-        var array = vm.Design.Arrays.Single(a => a.Wires.Any(w => w.Points[0].Y == Point3.Mils(0, 40, 0).Y));
-        Assert.Equal(vm.Design.Profiles[0].Name, array.Profile);
+
+        // A DRAWN wire joins the group already there rather than making a new one — an array IS a pin
+        // pair on the generated symbol, so a new array per stroke would grow the symbol as the user
+        // draws. The layout DROP path is the one that asks for a new array, and it asks by name.
+        var array = Assert.Single(vm.Design.Arrays);
+        Assert.Contains(array.Wires, w => w.Points[0].Y == Point3.Mils(0, 40, 0).Y);
         Assert.Contains(vm.Readout.Rows, r => r.Name == array.Name);
+    }
+
+    /// <summary>Naming an array the design does not have creates it — how the layout drop path asks
+    /// for "another group of wires" rather than "one more wire in the group you already had".</summary>
+    [Fact]
+    public void CreatingIntoAnUnknownArrayName_MakesThatArray()
+    {
+        var vm = new WBondViewModel(Design(1));
+        string wanted = vm.NextArrayName();
+
+        int index = vm.AddWire(Point3.Mils(0, 40, 0), Point3.Mils(100, 40, 0),
+                               WBondDefaults.ShippedDiameterNm, WBondDefaults.ShippedMaterial,
+                               arrayName: wanted);
+
+        Assert.True(index >= 0);
+        Assert.Equal(2, vm.Design.Arrays.Count);
+        Assert.Equal(wanted, vm.Design.Arrays[^1].Name);
+        Assert.Single(vm.Design.Arrays[^1].Wires);
     }
 
     /// <summary>Creation is structural — one rebuild, and undo removes the wire again.</summary>
@@ -560,23 +581,26 @@ public class WBondOverlayTests
     /// singular.)
     /// </summary>
     [Fact]
-    public void CreatingIntoAProfilelessDesign_MakesAProfile()
+    public void ACreatedWire_IsArchedOnTheSeedShapeAtTheRequestedPointCount()
     {
         var design = new WBondDesign();
-        var free = new Wire { DiameterNm = WBondDefaults.ShippedDiameterNm, Material = "Gold" };
-        free.Points.AddRange([Point3.Mils(0, 0, 0), Point3.Mils(50, 0, 5), Point3.Mils(100, 0, 0)]);
-        design.Arrays.Add(new WireArray { Name = "G1", Wires = { free } });
+        var hand = new Wire { DiameterNm = WBondDefaults.ShippedDiameterNm, Material = "Gold" };
+        hand.Points.AddRange([Point3.Mils(0, 0, 0), Point3.Mils(50, 0, 5), Point3.Mils(100, 0, 0)]);
+        design.Arrays.Add(new WireArray { Name = "G1", Wires = { hand } });
 
         var vm = new WBondViewModel(design);
-        Assert.Empty(vm.Design.Profiles);
 
         int index = vm.AddWire(Point3.Mils(0, 40, 0), Point3.Mils(100, 40, 0),
                                WBondDefaults.ShippedDiameterNm, WBondDefaults.ShippedMaterial,
-                               pointsIfProfileCreated: 7);
+                               points: 7);
 
         Assert.True(index >= 0);
-        Assert.Single(vm.Design.Profiles);
-        Assert.Equal(7, vm.Design.AllWires().Last().Points.Count);
+
+        var made = vm.Design.AllWires().Last();
+        Assert.Equal(7, made.Points.Count);
+        Assert.InRange(made.LoopHeightNm,
+                       WBondViewModel.DefaultNewWireLoopHeightNm - 2,
+                       WBondViewModel.DefaultNewWireLoopHeightNm + 2);
     }
 
     /// <summary>An out-of-range stored point count is clamped, not trusted — two points is no loop at all.</summary>

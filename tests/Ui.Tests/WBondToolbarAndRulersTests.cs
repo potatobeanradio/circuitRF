@@ -89,17 +89,16 @@ public class WBondToolbarAndRulersTests
 
     private static WBondDesign Design(int wires = 3, int arrays = 1)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         for (int a = 0; a < arrays; a++)
         {
-            var array = new WireArray { Name = $"G{a + 1}", Profile = profile.Name };
+            var array = new WireArray { Name = $"G{a + 1}" };
             for (int w = 0; w < wires; w++)
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(a * 300, w * 6, 4), Point3.Mils(a * 300 + 100, w * 6, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
 
             design.Arrays.Add(array);
         }
@@ -797,16 +796,15 @@ public class WBondToolbarAndRulersTests
     [Fact]
     public void EquallySpannedWiresAtDifferentAngles_AreNotMarkedNonUniform()
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         // Two 100 mil spans, one along +x and one along +y: identical spans, different arithmetic.
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
-        array.Wires.Add(profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 4),
-                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
-        array.Wires.Add(profile.CreateWire(Point3.Mils(0, 50, 4), Point3.Mils(0, 150, 4),
-                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+        var array = new WireArray { Name = "G1" };
+        array.Wires.Add(LoopShape.CreateSeedWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 4),
+                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
+        array.Wires.Add(LoopShape.CreateSeedWire(Point3.Mils(0, 50, 4), Point3.Mils(0, 150, 4),
+                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         design.Arrays.Add(array);
 
         var row = Assert.Single(new WBondDocumentViewModel(new WBondViewModel(design)).Panel.Rows);

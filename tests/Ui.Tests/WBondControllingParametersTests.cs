@@ -53,25 +53,24 @@ public sealed class WBondControllingParametersTests : IDisposable
     private const double MilM = 2.54e-5;
 
     /// <summary>
-    /// Arrays whose wires are BOUND to <b>one shared</b> loop profile — which is the configuration
-    /// §2.1's clone-on-write exists for, and the one a naive per-array override silently gets wrong.
-    /// The wires rise above the plane, because a wire lying flat in it has zero loop inductance and the
-    /// array reduction is then singular.
+    /// Arrays of identically-arched wires — the configuration §2.1's clone-on-write used to exist for,
+    /// back when they shared one loop profile object, and the one a naive per-array override silently
+    /// got wrong. The wires rise above the plane, because a wire lying flat in it has zero loop
+    /// inductance and the array reduction is then singular.
     /// </summary>
-    private static WBondDesign SharedProfileDesign(double loopHeightMil, params string[] arrayNames)
+    private static WBondDesign ArchedDesign(double loopHeightMil, params string[] arrayNames)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(loopHeightMil, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(loopHeightMil, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         double y = 0;
         foreach (string name in arrayNames)
         {
-            var array = new WireArray { Name = name, Profile = profile.Name };
+            var array = new WireArray { Name = name };
             for (int i = 0; i < 2; i++, y += 6.0)
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(0, y, 4), Point3.Mils(100, y, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
             design.Arrays.Add(array);
             y += 20.0;
         }
@@ -212,11 +211,11 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void Gate1_AnExistingDesign_AnswersBitIdentically_WithTheParametersDeclaredButUnset()
     {
-        var withDeclarations = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+        var withDeclarations = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
 
         // The same schematic as it would have been written BEFORE this phase: every controlling
         // parameter removed from the instance rather than merely left blank.
-        var asBefore = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+        var asBefore = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var legacy = asBefore.Components.First(c => c.Symbol == SymbolKind.WBond);
         foreach (string name in new[] { "LoopHeight", "Diameter", "Material", "Source", "File" })
             legacy.Parameters.Remove(legacy.Parameters.First(p => p.Name == name));
@@ -238,10 +237,10 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void Gate1_WithNoControllingParameterSet_TheDecodedDesignIsUntouched()
     {
-        var original = SharedProfileDesign(20.0, "G1", "G2");
-        var after = Elaborate(SharedProfileDesign(20.0, "G1", "G2"));
+        var original = ArchedDesign(20.0, "G1", "G2");
+        var after = Elaborate(ArchedDesign(20.0, "G1", "G2"));
 
-        Assert.Equal(original.Profiles.Count, after.Profiles.Count);
+        Assert.Equal(original.Arrays.Count, after.Arrays.Count);
 
         foreach (var array in original.Arrays)
             for (int w = 0; w < array.Wires.Count; w++)
@@ -277,7 +276,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     {
         double At(double mils)
         {
-            var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+            var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
             var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
             comp.Parameters.First(p => p.Name == "LoopHeight").Expression =
                 mils.ToString("G17", CultureInfo.InvariantCulture);
@@ -311,8 +310,8 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void Gate3_APerArrayLoopHeight_ReachesThatArrayOnly()
     {
-        var untouched = SharedProfileDesign(20.0, "G1", "G2");
-        var after = Elaborate(SharedProfileDesign(20.0, "G1", "G2"),
+        var untouched = ArchedDesign(20.0, "G1", "G2");
+        var after = Elaborate(ArchedDesign(20.0, "G1", "G2"),
             ("LoopHeight_G1", 40.0 * MilM));
 
         // G1 moved to 40 mil…
@@ -338,55 +337,57 @@ public sealed class WBondControllingParametersTests : IDisposable
     /// be dragged away from. The clone is gone, and its absence is the assertion.</para>
     /// </summary>
     [Fact]
-    public void APerArrayLoopHeight_WritesNoProfileAtAll()
+    public void APerArrayLoopHeight_LeavesTheOtherArrayBitExact()
     {
-        var untouched = SharedProfileDesign(20.0, "G1", "G2");
-        var after = Elaborate(SharedProfileDesign(20.0, "G1", "G2"),
+        var untouched = ArchedDesign(20.0, "G1", "G2");
+        var after = Elaborate(ArchedDesign(20.0, "G1", "G2"),
             ("LoopHeight_G1", 40.0 * MilM));
 
-        // One profile, still named and still stating what it always stated.
-        Assert.Single(after.Profiles);
-        Assert.Equal(untouched.Profiles[0].Name, after.Profiles[0].Name);
-        Assert.Equal(untouched.Profiles[0].LoopHeightNm, after.Profiles[0].LoopHeightNm);
+        Assert.Equal(WBondUnits.ToNm(40.0, WBondUnit.Mil), HeightOf(after, "G1", 0));
 
-        // Both arrays keep their binding — nothing was re-pointed at a copy.
-        foreach (var array in after.Arrays)
-            foreach (var wire in array.Wires)
-                Assert.Equal(untouched.Profiles[0].Name, wire.ProfileBinding);
+        // G2 is untouched to the nanometre. This used to be stated as "no clone was made of the shared
+        // profile and nothing was re-pointed at a copy"; there is no shared object left to clone
+        // (2026-08-18), so the property is asserted on the geometry directly.
+        var before = untouched.Arrays.First(a => a.Name == "G2");
+        var now = after.Arrays.First(a => a.Name == "G2");
+
+        for (int w = 0; w < before.Wires.Count; w++)
+            Assert.Equal(before.Wires[w].Points, now.Wires[w].Points);
     }
 
-    /// <summary>
-    /// A GLOBAL <c>LoopHeight</c> needs no clone — every array is being set to the same value, so there
-    /// is nothing for a shared profile to be dragged away from. Cloning anyway would work and would
-    /// leave a design carrying one profile per array for no reason.
-    /// </summary>
+    /// <summary>An unsuffixed <c>LoopHeight</c> reaches every array.</summary>
     [Fact]
-    public void AGlobalLoopHeight_ReachesEveryArray_WithoutCloning()
+    public void AGlobalLoopHeight_ReachesEveryArray()
     {
-        var after = Elaborate(SharedProfileDesign(20.0, "G1", "G2"), ("LoopHeight", 40.0 * MilM));
+        var after = Elaborate(ArchedDesign(20.0, "G1", "G2"), ("LoopHeight", 40.0 * MilM));
 
-        Assert.Single(after.Profiles);
         Assert.Equal(WBondUnits.ToNm(40.0, WBondUnit.Mil), HeightOf(after, "G1", 0));
         Assert.Equal(WBondUnits.ToNm(40.0, WBondUnit.Mil), HeightOf(after, "G2", 0));
     }
 
     /// <summary>
-    /// §2.1 — <c>LoopHeight_&lt;profile&gt;</c> keeps working for a hand-authored <c>.cnl</c>, and a
-    /// name that is BOTH an array and a profile resolves as the ARRAY, with the collision reported.
-    /// The schematic user's namespace is the one on the symbol: array names ARE the pin names, and a
-    /// <c>LoopProfile</c> is an editor-internal sharing mechanism they never see.
+    /// <b>The ARRAY is the only scope, and a suffix naming nothing is silently inert</b> (2026-08-18).
+    ///
+    /// <para>§2.1's legacy <c>LoopHeight_&lt;profile&gt;</c> spelling was retired with the loop-profile
+    /// object itself: with nothing named a profile there is no second namespace to resolve against, and
+    /// no array-name-collides-with-profile-name report to make. Array names ARE the pin names on the
+    /// symbol (O-10), which is the namespace a schematic user can actually see.</para>
+    ///
+    /// <para>Inert rather than an error, because the same rule already governs every other suffix a
+    /// hand-authored <c>.cnl</c> can carry: an override for an array this design does not have is "as
+    /// drawn", not a refusal.</para>
     /// </summary>
     [Fact]
-    public void TheProfileSpelling_StillResolves_AndAnArrayOfTheSameNameWins()
+    public void ASuffixNamingNoArray_IsInert_AndTheArrayScopeStillApplies()
     {
-        // The profile is named "ball"; no array is. The legacy spelling must still reach it.
-        var byProfile = Elaborate(SharedProfileDesign(20.0, "G1"), ("LoopHeight_ball", 40.0 * MilM));
-        Assert.Equal(WBondUnits.ToNm(40.0, WBondUnit.Mil), HeightOf(byProfile, "G1", 0));
+        var untouched = ArchedDesign(20.0, "G1");
+        var byNothing = Elaborate(ArchedDesign(20.0, "G1"), ("LoopHeight_ball", 40.0 * MilM));
 
-        // Now make the collision real: one array named exactly what the profile is named.
-        var collided = SharedProfileDesign(20.0, "ball");
-        var after = Elaborate(collided, ("LoopHeight_ball", 40.0 * MilM));
-        Assert.Equal(WBondUnits.ToNm(40.0, WBondUnit.Mil), HeightOf(after, "ball", 0));
+        Assert.Equal(untouched.Arrays[0].Wires[0].Points, byNothing.Arrays[0].Wires[0].Points);
+
+        // The same spelling, once an ARRAY actually carries that name, reaches it.
+        var byArray = Elaborate(ArchedDesign(20.0, "ball"), ("LoopHeight_ball", 40.0 * MilM));
+        Assert.Equal(WBondUnits.ToNm(40.0, WBondUnit.Mil), HeightOf(byArray, "ball", 0));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -403,15 +404,18 @@ public sealed class WBondControllingParametersTests : IDisposable
     /// parameter cannot reach</b>: loop height is a property of the wire —
     /// <c>Wire.LoopHeightNm</c> is defined as its own max z minus min z — not of its generator.</para>
     ///
-    /// <para>So both wires land on the requested height, the §2.0 report is retired, and the confusing
-    /// "two wires in the same array respond differently to the same parameter" case is gone rather than
-    /// merely explained.</para>
+    /// <para>The fixture is a HAND-RESHAPED member, which is what "detached" used to mean and what it
+    /// physically is now that there are no bindings (2026-08-18): a wire in the array whose geometry is
+    /// its own. It lands on the requested height like every other, the §2.0 report is retired, and the
+    /// confusing "two wires in the same array respond differently to the same parameter" case is gone
+    /// rather than merely explained.</para>
     /// </summary>
     [Fact]
-    public void ADetachedWire_IsReachedToo_AndNothingIsReported()
+    public void AHandReshapedWire_IsReachedToo_AndNothingIsReported()
     {
-        var design = SharedProfileDesign(20.0, "G1");
-        design.Arrays[0].Wires[1].ProfileBinding = null;
+        var design = ArchedDesign(20.0, "G1");
+        WireEdits.ScaleHeightAboutChord(design.Arrays[0].Wires[1], 1.7);
+        Assert.NotEqual(design.Arrays[0].Wires[0].LoopHeightNm, design.Arrays[0].Wires[1].LoopHeightNm);
 
         var p = Params(("LoopHeight_G1", 40.0 * MilM));
         p["Design"] = new Value(WBondEmbedding.Encode(design));
@@ -421,7 +425,6 @@ public sealed class WBondControllingParametersTests : IDisposable
         foreach (var wire in model.Design.Arrays[0].Wires)
             Assert.Equal(WBondUnits.ToNm(40.0, WBondUnit.Mil), wire.LoopHeightNm);
 
-        Assert.Null(model.Design.Arrays[0].Wires[1].ProfileBinding);   // still detached, still reached
         Assert.Empty(DrainOf(model));
     }
 
@@ -438,7 +441,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void ALoopHeightOverride_KeepsEveryXAndY_AndBothFeet()
     {
-        var design = SharedProfileDesign(20.0, "G1");
+        var design = ArchedDesign(20.0, "G1");
         var wire = design.Arrays[0].Wires[0];
 
         // Route it by hand, off the chord in XY.
@@ -465,7 +468,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void AMovedFoot_SurvivesALoopHeightOverride()
     {
-        var design = SharedProfileDesign(20.0, "G1");
+        var design = ArchedDesign(20.0, "G1");
         var moved = Point3.Mils(140, 3, 7);
         design.Arrays[0].Wires[0].Points[^1] = moved;
 
@@ -518,7 +521,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     {
         double At(double diameterMils)
         {
-            var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+            var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
             var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
             var d = comp.Parameters.First(p => p.Name == "Diameter");
             d.Expression = diameterMils.ToString("G17", CultureInfo.InvariantCulture);
@@ -550,7 +553,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     {
         double At(string material)
         {
-            var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+            var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
             var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
             comp.Parameters.First(p => p.Name == "Material").Expression = material;
 
@@ -594,7 +597,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void AnUnknownMaterial_IsRefusedByName()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            Elaborate(SharedProfileDesign(20.0, "G1"), ("Material", "Unobtainium")));
+            Elaborate(ArchedDesign(20.0, "G1"), ("Material", "Unobtainium")));
 
         Assert.Contains("Unobtainium", ex.Message);
         Assert.Contains("Gold", ex.Message);   // names what IS available
@@ -613,23 +616,21 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void ZeroIsRefused_AndTheMessageSaysBlankMeansAsDrawn(string parameter)
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            Elaborate(SharedProfileDesign(20.0, "G1"), (parameter, 0.0)));
+            Elaborate(ArchedDesign(20.0, "G1"), (parameter, 0.0)));
 
         Assert.Contains("positive", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("blank", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// Diameter and material reach a DETACHED wire, unlike loop height — and that asymmetry is
-    /// deliberate rather than an oversight. Detachment (WB2/WB24) is about the loop SHAPE: a wire
-    /// dragged loose from its profile still has a diameter and a metal, and there is nothing to
-    /// regenerate to apply them.
+    /// Diameter and material reach every wire of the array, hand-reshaped ones included — they are
+    /// properties of the wire and have nothing to do with its shape.
     /// </summary>
     [Fact]
-    public void DiameterAndMaterial_ReachADetachedWire()
+    public void DiameterAndMaterial_ReachAHandReshapedWire()
     {
-        var design = SharedProfileDesign(20.0, "G1");
-        design.Arrays[0].Wires[1].ProfileBinding = null;
+        var design = ArchedDesign(20.0, "G1");
+        WireEdits.ScaleHeightAboutChord(design.Arrays[0].Wires[1], 1.7);
 
         var after = Elaborate(design, ("Diameter_G1", 2.0 * MilM), ("Material_G1", "Aluminium"));
 
@@ -657,7 +658,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         var sweep = new ParametricSweepAnalysis("SW1", "loopH",
             new SweepSpec(10, 45, 5, SweepAxisMode.PointCount, SweepKind.Linear, "mil"), "SP1");
 
-        var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz(), sweep);
+        var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz(), sweep);
 
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
         comp.Parameters.First(p => p.Name == "LoopHeight").Expression = "loopH";
@@ -705,7 +706,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void Gate6_UpdateLayoutFromSchematic_FlipsTheInstanceToLinked_AndSaysSo()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         Assert.Equal(WBondPlacement.WireSource.Carried, WBondPlacement.SourceOf(comp));
@@ -783,7 +784,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateLayout_BakesTheFile_AndLeavesTheCarriedPayloadUntouched()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         comp.Parameters.First(p => p.Name == "LoopHeight").Expression = "45";
@@ -813,7 +814,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void ApplyingAControllingParameterTwice_IsTheIdentity()
     {
-        var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+        var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
         var lh = comp.Parameters.First(p => p.Name == "LoopHeight");
@@ -843,7 +844,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateLayout_NamesAnExpressionItCannotBake_AndWritesThoseWiresAsDrawn()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         comp.Parameters.First(p => p.Name == "LoopHeight").Expression = "loopH";
@@ -868,7 +869,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateLayout_WritesThreeHeightsWithoutInventingThreeProfiles()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1", "G2", "G3"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1", "G2", "G3"), "W1");
         model.Components.Add(comp);
 
         foreach (var (array, mils) in new[] { ("G1", "30"), ("G2", "20"), ("G3", "15") })
@@ -878,10 +879,8 @@ public sealed class WBondControllingParametersTests : IDisposable
         var seeded = WBondCellSeeding.Seed(model, Path.Combine(_root, "Amp"), "Amp");
         var onDisk = WBondIo.ReadFile(seeded.Path!);
 
-        // ONE profile still, untouched — three arrays at three heights no longer need three copies of
-        // a shape, because the height lives on each wire rather than on its generator.
-        Assert.Single(onDisk.Profiles);
-
+        // Three arrays at three heights, with nothing shared to have been cloned — the height lives on
+        // each wire, which is why the loop-profile object had nothing left to do (2026-08-18).
         double[] expected = [30.0, 20.0, 15.0];
         for (int i = 0; i < 3; i++)
             foreach (var wire in onDisk.Arrays[i].Wires)
@@ -905,11 +904,11 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateSchematicFromLayout_BringsALoopHeightEditBackIntoTheComponent()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         // What the layout editor holds after the user drags the loop taller.
-        var edited = SharedProfileDesign(45.0, "G1");
+        var edited = ArchedDesign(45.0, "G1");
 
         var result = WBondSchematicReconcile.Run(model, edited);
         Assert.NotNull(result.Command);
@@ -936,14 +935,14 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateSchematicFromLayout_RespectsAnArrayDeleted_AndSaysThePinsMoved()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1", "G2"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1", "G2"), "W1");
         model.Components.Add(comp);
 
         Assert.Equal("G1|G2", comp.Parameters.First(p => p.Name == "Arrays").Expression);
         Assert.Equal(4, WBondSymbolProvider.Resolve(comp.ExternalSymbolRef!, null).Symbol!.Pins.Count);
 
         // The user deleted G2 in the layout.
-        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(20.0, "G1"));
+        var result = WBondSchematicReconcile.Run(model, ArchedDesign(20.0, "G1"));
         Assert.NotNull(result.Command);
         result.Command!.Execute();
 
@@ -970,7 +969,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateSchematicFromLayout_RefreshesTheLiveRenderModel()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1", "G2"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1", "G2"), "W1");
         comp.Parameters.Add(new EditableParameter
             { Name = "LoopHeight_G2", Expression = "30", Unit = "mil" });
         model.Components.Add(comp);
@@ -981,7 +980,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         Assert.Contains(vm.RenderModel.Components.Single().Labels, l => l.StartsWith("LoopHeight_G2"));
 
         // The user deleted G2 in the layout.
-        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(20.0, "G1"));
+        var result = WBondSchematicReconcile.Run(model, ArchedDesign(20.0, "G1"));
         vm.Execute(result.Command!);
 
         // The symbol lost its pin pair…
@@ -1008,13 +1007,13 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateSchematicFromLayout_WritesTheLayoutsLoopHeightBackIntoTheOverride()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         comp.Parameters.Add(new EditableParameter
             { Name = "LoopHeight_G1", Expression = "10", Unit = "mil" });
         model.Components.Add(comp);
 
         // The layout, after the inductance panel's double-click set 15 mil.
-        var edited = SharedProfileDesign(15.0, "G1");
+        var edited = ArchedDesign(15.0, "G1");
 
         var result = WBondSchematicReconcile.Run(model, edited);
         Assert.NotNull(result.Command);
@@ -1040,13 +1039,13 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void TheWriteBack_ReachesDiameterAndMaterial_AndLeavesUnsetRowsUnset()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         comp.Parameters.Add(new EditableParameter
             { Name = "Diameter_G1", Expression = "1", Unit = "mil" });
         comp.Parameters.Add(new EditableParameter { Name = "Material_G1", Expression = "Gold" });
         model.Components.Add(comp);
 
-        var edited = SharedProfileDesign(20.0, "G1");
+        var edited = ArchedDesign(20.0, "G1");
         foreach (var wire in edited.Arrays[0].Wires)
         {
             wire.DiameterNm = WBondUnits.ToNm(2.0, WBondUnit.Mil);
@@ -1072,12 +1071,12 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void TheWriteBack_ReportsAnExpressionRatherThanReplacingIt()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         comp.Parameters.Add(new EditableParameter
             { Name = "LoopHeight_G1", Expression = "loopH", Unit = "mil" });
         model.Components.Add(comp);
 
-        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(15.0, "G1"));
+        var result = WBondSchematicReconcile.Run(model, ArchedDesign(15.0, "G1"));
         result.Command?.Execute();
 
         Assert.Equal("loopH", comp.Parameters.First(p => p.Name == "LoopHeight_G1").Expression);
@@ -1096,12 +1095,12 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void TheWriteBack_ReportsWiresThatNoLongerAgree()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         comp.Parameters.Add(new EditableParameter
             { Name = "LoopHeight_G1", Expression = "10", Unit = "mil" });
         model.Components.Add(comp);
 
-        var edited = SharedProfileDesign(15.0, "G1");
+        var edited = ArchedDesign(15.0, "G1");
         WireEdits.SetLoopHeightPreservingPath(edited.Arrays[0].Wires[1], WBondUnits.ToNm(25.0, WBondUnit.Mil));
 
         var result = WBondSchematicReconcile.Run(model, edited);
@@ -1121,13 +1120,13 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void TheUnchangedCheck_LooksAtTheOverridesToo_NotJustThePayload()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         comp.Parameters.Add(new EditableParameter
             { Name = "LoopHeight_G1", Expression = "10", Unit = "mil" });
         model.Components.Add(comp);
 
         // The payload and the layout agree on geometry; only the override is stale.
-        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(20.0, "G1"));
+        var result = WBondSchematicReconcile.Run(model, ArchedDesign(20.0, "G1"));
 
         Assert.NotNull(result.Command);
         result.Command!.Execute();
@@ -1142,9 +1141,9 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateSchematicFromLayout_IsSilentWhenTheWiresAlreadyAgree()
     {
         var model = NewSchematic();
-        model.Components.Add(WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1"));
+        model.Components.Add(WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1"));
 
-        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(20.0, "G1"));
+        var result = WBondSchematicReconcile.Run(model, ArchedDesign(20.0, "G1"));
 
         Assert.Null(result.Command);
         Assert.Empty(result.Messages);
@@ -1164,7 +1163,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     {
         var model = NewSchematic();
 
-        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(20.0, "G1"));
+        var result = WBondSchematicReconcile.Run(model, ArchedDesign(20.0, "G1"));
 
         Assert.NotNull(result.Command);
         result.Command!.Execute();
@@ -1175,7 +1174,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         // It CARRIES the layout's wires — the same payload an equivalent hand-placed component would
         // hold, which is what makes "matches the layout" true rather than merely visible.
         Assert.Equal(
-            WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), created.InstanceName)
+            WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), created.InstanceName)
                           .Parameters.First(p => p.Name == WBondEmbedding.DesignParameter).Expression,
             created.Parameters.First(p => p.Name == WBondEmbedding.DesignParameter).Expression);
 
@@ -1209,16 +1208,16 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateSchematicFromLayout_LeavesTheWireSourceAlone()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
-        WBondIo.WriteFile(wbondPath, SharedProfileDesign(45.0, "G1"));
+        WBondIo.WriteFile(wbondPath, ArchedDesign(45.0, "G1"));
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
 
-        var result = WBondSchematicReconcile.Run(model, SharedProfileDesign(45.0, "G1"));
+        var result = WBondSchematicReconcile.Run(model, ArchedDesign(45.0, "G1"));
         result.Command!.Execute();
 
         Assert.Equal(WBondPlacement.WireSource.Linked, WBondPlacement.SourceOf(comp));
@@ -1240,7 +1239,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateLayout_AddsAnArrayCreatedInTheSchematic_WithoutDisturbingTheOnesAlreadyDrawn()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         string cellDir = Path.Combine(_root, "Amp");
@@ -1256,7 +1255,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         var moved = drawn.Arrays[0].Wires.Select(w => w.Points.ToList()).ToList();
 
         // …and adds a second array in the Component Parameters dialog.
-        WBondPlacement.ApplyDesign(comp, SharedProfileDesign(20.0, "G1", "G2"));
+        WBondPlacement.ApplyDesign(comp, ArchedDesign(20.0, "G1", "G2"));
 
         var second = WBondCellSeeding.Seed(model, cellDir, "Amp");
         var onDisk = WBondIo.ReadFile(second.Path!);
@@ -1305,11 +1304,14 @@ public sealed class WBondControllingParametersTests : IDisposable
             Assert.Equal($"G{round}", onDisk.Arrays[^1].Name);
             Assert.NotEmpty(onDisk.Arrays[^1].Wires);
 
-            // The symbol grew with it, and every array still has a profile it can resolve.
+            // The symbol grew with it, and every array's wires are real loops rather than chords.
             Assert.Equal(round * 2, vm.RenderModel.Components.Single().Ports.Count);
             foreach (var array in onDisk.Arrays)
                 foreach (var wire in array.Wires)
-                    Assert.NotNull(onDisk.ProfileByName(wire.ProfileBinding!));
+                {
+                    Assert.True(wire.Points.Count >= 3);
+                    Assert.True(wire.LoopHeightNm > 0);
+                }
         }
 
         // A merge never re-decides the wire source.
@@ -1335,7 +1337,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateLayout_WithTheLayoutOpen_MergesIntoTheLiveDesign_NotBehindIt()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         string cellDir = Path.Combine(_root, "Amp");
@@ -1347,7 +1349,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         var live = WBondIo.ReadFile(first.Path!);
         Assert.Single(live.Arrays);
 
-        WBondPlacement.ApplyDesign(comp, SharedProfileDesign(20.0, "G1", "G2"));
+        WBondPlacement.ApplyDesign(comp, ArchedDesign(20.0, "G1", "G2"));
 
         var second = WBondCellSeeding.Seed(model, cellDir, "Amp", only: null, liveDesign: live);
 
@@ -1358,7 +1360,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         // The array reached the object the canvas draws…
         Assert.Equal(["G1", "G2"], live.Arrays.Select(a => a.Name));
         Assert.NotEmpty(live.Arrays[1].Wires);
-        Assert.NotNull(live.ProfileByName(live.Arrays[1].Wires[0].ProfileBinding!));
+        Assert.True(live.Arrays[1].Wires[0].LoopHeightNm > 0);
 
         // …and the FILE was deliberately left alone: the open editor owns writing it, and a second
         // writer behind its back is what produced the report. The layout is dirty until saved, exactly
@@ -1385,7 +1387,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateLayout_AppliesALoopHeightChangeToAnArrayAlreadyDrawn()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         string cellDir = Path.Combine(_root, "Amp");
@@ -1430,7 +1432,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void UpdateLayout_WithNothingLeftToApply_IsSilentAndLeavesTheLayoutClean()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         comp.Parameters.Add(new EditableParameter
             { Name = "LoopHeight_G1", Expression = "10", Unit = "mil" });
         model.Components.Add(comp);
@@ -1455,13 +1457,13 @@ public sealed class WBondControllingParametersTests : IDisposable
     public void ACarriedInstance_WhoseCellAlreadyHasAWBondFile_IsNotAutoConverted()
     {
         var model = NewSchematic();
-        var comp = WBondPlacement.BuildCarrying(SharedProfileDesign(20.0, "G1"), "W1");
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
         string cellDir = Path.Combine(_root, "Amp");
         string layoutDir = Path.Combine(cellDir, "layout");
         Directory.CreateDirectory(layoutDir);
-        WBondIo.WriteFile(Path.Combine(layoutDir, "Amp.wBond"), SharedProfileDesign(20.0, "G1"));
+        WBondIo.WriteFile(Path.Combine(layoutDir, "Amp.wBond"), ArchedDesign(20.0, "G1"));
 
         var seeded = WBondCellSeeding.Seed(model, cellDir, "Amp");
 
@@ -1483,7 +1485,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void Gate6_ALinkedInstance_RunsFromTheFile_AndSurvivesAMoveOfTheSchematic()
     {
-        var model = Testbench(SharedProfileDesign(10.0, "G1"), SpAt5GHz());
+        var model = Testbench(ArchedDesign(10.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
         // The file holds a much TALLER loop than the payload does, so "which one ran" is measurable.
@@ -1491,7 +1493,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         string layoutDir = Path.Combine(cellDir, "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
-        WBondIo.WriteFile(wbondPath, SharedProfileDesign(45.0, "G1"));
+        WBondIo.WriteFile(wbondPath, ArchedDesign(45.0, "G1"));
 
         double carried = SeriesL(S21Of(RunPlaced(model)), 5e9);
 
@@ -1521,13 +1523,13 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void Gate6_ALinkedInstance_RefusesLegiblyWhenTheFileIsGone()
     {
-        var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+        var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
-        WBondIo.WriteFile(wbondPath, SharedProfileDesign(20.0, "G1"));
+        WBondIo.WriteFile(wbondPath, ArchedDesign(20.0, "G1"));
 
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
         File.Delete(wbondPath);
@@ -1558,7 +1560,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     {
         var p = Params(
             ("Arrays", "G1|G2"),
-            ("Design", WBondEmbedding.Encode(SharedProfileDesign(20.0, "G2", "G1"))));
+            ("Design", WBondEmbedding.Encode(ArchedDesign(20.0, "G2", "G1"))));
 
         var model = (WBondModel)ComponentModelFactory.TryCreate("wBond", p)!;
 
@@ -1582,7 +1584,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void Gate7_TheReorderReachesTheRunAsAWarning()
     {
-        var model = Testbench(SharedProfileDesign(20.0, "G1", "G2"), SpAt5GHz());
+        var model = Testbench(ArchedDesign(20.0, "G1", "G2"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
         Assert.Equal("G1|G2", comp.Parameters.First(p => p.Name == "Arrays").Expression);
@@ -1592,7 +1594,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
-        WBondIo.WriteFile(wbondPath, SharedProfileDesign(20.0, "G2", "G1"));
+        WBondIo.WriteFile(wbondPath, ArchedDesign(20.0, "G2", "G1"));
 
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
 
@@ -1610,7 +1612,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     {
         var p = Params(
             ("Arrays", "G1|G2"),
-            ("Design", WBondEmbedding.Encode(SharedProfileDesign(20.0, "G1", "G2"))));
+            ("Design", WBondEmbedding.Encode(ArchedDesign(20.0, "G1", "G2"))));
 
         var model = (WBondModel)ComponentModelFactory.TryCreate("wBond", p)!;
         Assert.Empty(DrainOf(model));
@@ -1624,7 +1626,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void TheNetlistNamesExactlyOneSource()
     {
-        var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+        var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
         var carried = NetExtractor.Extract(model, "tb").TestBench.Instances
@@ -1636,7 +1638,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
-        WBondIo.WriteFile(wbondPath, SharedProfileDesign(20.0, "G1"));
+        WBondIo.WriteFile(wbondPath, ArchedDesign(20.0, "G1"));
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
 
         var linked = NetExtractor.Extract(model, "tb").TestBench.Instances
@@ -1660,13 +1662,13 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void AControllingParameter_ReachesALinkedInstanceToo()
     {
-        var model = Testbench(SharedProfileDesign(20.0, "G1"), SpAt5GHz());
+        var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
-        WBondIo.WriteFile(wbondPath, SharedProfileDesign(10.0, "G1"));
+        WBondIo.WriteFile(wbondPath, ArchedDesign(10.0, "G1"));
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
 
         double asDrawn = SeriesL(S21Of(RunPlaced(model)), 5e9);

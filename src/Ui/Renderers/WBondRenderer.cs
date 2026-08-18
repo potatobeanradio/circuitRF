@@ -60,11 +60,8 @@ public sealed class WBondRenderTheme
 
     public SKColor Selected { get; init; }
 
-    /// <summary>The translucent min/max band over an array's bound members (§6.2 idea 3).</summary>
+    /// <summary>The translucent min/max band over an array's members (§6.2 idea 3).</summary>
     public SKColor Envelope { get; init; }
-
-    /// <summary>A wire detached from its profile, drawn individually.</summary>
-    public SKColor FreeWire { get; init; }
 
     /// <summary>
     /// The FLOOR on a wire's drawn width, in pixels — the whole-package case, where a 1 mil wire is
@@ -116,7 +113,6 @@ public sealed class WBondRenderTheme
             Vertex   = SK(ColorRole.WBondWireVertex),
             Selected = SK(ColorRole.WBondSelected),
             Envelope = SK(ColorRole.WBondEnvelope),
-            FreeWire = SK(ColorRole.WBondFreeWire),
         };
     }
 
@@ -225,9 +221,13 @@ public static class WBondRenderer
             if (wire.Points.Count < 2) continue;
 
             bool wholeSelected = selection?.Wires.Contains(index) == true;
-            bool free = wire.ProfileBinding is null;
 
-            linePaint.Color = Fade(wholeSelected ? theme.Selected : free ? theme.FreeWire : theme.Wire, opacity);
+            // ONE wire colour, plus the selection accent. There is no second wire colour ANYWHERE in
+            // wBond and there must not be (owner, 2026-08-18): the old "free wire" tint made inserting
+            // a point, or a group loop-height change, recolour a wire as an involuntary side effect of
+            // an unrelated edit — and the profile view's own second colour, since removed, tinted a
+            // member for being SHAPED differently, which is the same complaint one view along.
+            linePaint.Color = Fade(wholeSelected ? theme.Selected : theme.Wire, opacity);
             linePaint.StrokeWidth = StrokeWidth(wire, viewport, theme, thickness, dbuPerMicron);
 
             var baseColor = linePaint.Color;
@@ -330,9 +330,10 @@ public static class WBondRenderer
 
         // The envelope's own OUTLINE (owner, 2026-08-16). Same colour, less transparency: the band is
         // faint enough that its edge is hard to place, which is what made "some wires are drawn
-        // outside the envelope" hard to read as the true statement it is — the band spans only the
-        // array's PROFILE-BOUND members, and a detached wire is legitimately outside it. A visible
-        // edge makes that a fact the user can see rather than one they have to be told.
+        // outside the envelope" hard to read as the true statement it is — the band spans every
+        // DRAWABLE member, and a wire whose XY path backtracks has no monotone span and is
+        // legitimately outside it. A visible edge makes that a fact the user can see rather than one
+        // they have to be told.
         using var bandEdgePaint = new SKPaint
         {
             IsAntialias = true,
@@ -359,7 +360,7 @@ public static class WBondRenderer
             // That is the ordinary case, not an edge case: a one-wire array, and any array mid-drag
             // once the quality ladder has collapsed its members onto their chords (WB15), both hit it,
             // which is why the profile view "sometimes disappears" while dragging in the layout view.
-            int representative = visible && envelope.BoundWires.Count > 0 ? envelope.BoundWires[0] : -1;
+            int representative = visible && envelope.Members.Count > 0 ? envelope.Members[0] : -1;
 
             for (int w = 0; w < array.Wires.Count; w++)
             {
@@ -396,14 +397,19 @@ public static class WBondRenderer
                 // places, and there is no honest picture in which they are one curve.
                 bool touched = wholeSelected || Touches(selection, flatIndex);
                 if (w != representative
-                    && envelope.BoundWires.Contains(w)
+                    && envelope.Members.Contains(w)
                     && representative >= 0
                     && !touched
                     && ProjectsOnto(wire, array.Wires[representative], mode, azimuthRadians)) continue;
 
-                linePaint.Color = wholeSelected ? theme.Selected
-                                : w == representative ? theme.Wire
-                                : theme.FreeWire;
+                // ONE wire colour here too (owner, 2026-08-18, second report): "I don't want the
+                // wires ever changing colors based on geometry." A non-representative member used to
+                // be tinted, which meant a wire was recoloured for being SHAPED differently — the
+                // same complaint as the layout view's old free-wire tint, one view further along.
+                // Whether a curve is drawn at all is still a function of geometry (it is drawn unless
+                // it lands on pixels the representative already covers); its COLOUR is a function of
+                // selection and nothing else.
+                linePaint.Color = wholeSelected ? theme.Selected : theme.Wire;
 
                 // Per WIRE, like the layout view's own: a design may mix diameters, and at true
                 // diameter that difference is the thing the mode exists to show.
@@ -797,7 +803,7 @@ public static class WBondRenderer
     {
         // The band is expressed as height ABOVE THE CHORD, so it has to be lifted back onto the
         // chord to be drawn — otherwise a wire whose feet are at different z draws its band flat.
-        var reference = array.Wires[envelope.BoundWires[0]];
+        var reference = array.Wires[envelope.Members[0]];
         var start = reference.Points[0];
         var end = reference.Points[^1];
 

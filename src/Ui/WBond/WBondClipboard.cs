@@ -32,11 +32,6 @@ public static class WBondClipboard
     {
         public string ArrayName { get; set; } = "";
 
-        /// <summary>The source array's own profile, so a re-created array binds the same one.</summary>
-        public string? ArrayProfile { get; set; }
-
-        public string? ProfileBinding { get; set; }
-
         public long DiameterNm { get; set; }
 
         public string Material { get; set; } = "";
@@ -48,9 +43,6 @@ public static class WBondClipboard
     public sealed class Payload
     {
         [JsonPropertyName("marker")] public string? Marker { get; set; }
-
-        /// <summary>Profiles the copied wires are bound to, so a paste into another design can rebind.</summary>
-        public List<LoopProfile> Profiles { get; set; } = [];
 
         public List<WireEntry> Wires { get; set; } = [];
     }
@@ -81,8 +73,6 @@ public static class WBondClipboard
                 payload.Wires.Add(new WireEntry
                 {
                     ArrayName = array.Name,
-                    ArrayProfile = array.Profile,
-                    ProfileBinding = wire.ProfileBinding,
                     DiameterNm = wire.DiameterNm,
                     Material = wire.Material,
                     Points = [.. wire.Points.SelectMany(p => new[] { p.X, p.Y, p.Z })],
@@ -91,17 +81,6 @@ public static class WBondClipboard
         }
 
         if (payload.Wires.Count == 0) return null;
-
-        // Only the profiles actually referenced travel — a paste should not drag a design's entire
-        // profile library along with two wires.
-        var needed = payload.Wires
-            .Select(w => w.ProfileBinding)
-            .Concat(payload.Wires.Select(w => w.ArrayProfile))
-            .Where(n => n is not null)
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var name in needed)
-            if (design.ProfileByName(name!) is { } profile) payload.Profiles.Add(profile);
 
         return JsonSerializer.Serialize(payload, JsonOpts);
     }
@@ -126,10 +105,9 @@ public static class WBondClipboard
     /// <summary>
     /// Adds the payload's wires to <paramref name="design"/>, offset by the given displacement.
     ///
-    /// <para>Each wire rejoins an array of its original NAME — found, or created carrying the same
-    /// profile. A missing profile is added from the payload, so a paste between two designs keeps the
-    /// loop shape rather than silently rebinding to whatever the destination happened to call its
-    /// first profile.</para>
+    /// <para>Each wire rejoins an array of its original NAME, found or created. <b>The points travel
+    /// and they are the whole of the shape</b> — nothing else has to, which is what made the
+    /// profile-carrying half of this redundant even before loop profiles were removed.</para>
     /// </summary>
     /// <returns>
     /// <b>The flat <see cref="WBondDesign.AllWires"/> indices of the wires that were added</b>, in
@@ -150,10 +128,6 @@ public static class WBondClipboard
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(payload);
 
-        foreach (var profile in payload.Profiles)
-            if (design.ProfileByName(profile.Name) is null)
-                design.Profiles.Add(profile);
-
         // Held by REFERENCE while the arrays are being filled, because a wire's flat index is not
         // knowable until every insertion is done — inserting into an earlier array moves the ones
         // already placed.
@@ -168,7 +142,7 @@ public static class WBondClipboard
 
             if (array is null)
             {
-                array = new WireArray { Name = entry.ArrayName, Profile = entry.ArrayProfile };
+                array = new WireArray { Name = entry.ArrayName };
                 design.Arrays.Add(array);
             }
 
@@ -176,7 +150,6 @@ public static class WBondClipboard
             {
                 DiameterNm = entry.DiameterNm > 0 ? entry.DiameterNm : WBondDefaults.ShippedDiameterNm,
                 Material = string.IsNullOrWhiteSpace(entry.Material) ? WBondDefaults.ShippedMaterial : entry.Material,
-                ProfileBinding = entry.ProfileBinding,
             };
 
             for (int i = 0; i + 2 < entry.Points.Length; i += 3)

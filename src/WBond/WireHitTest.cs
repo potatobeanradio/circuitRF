@@ -43,7 +43,8 @@ public static class ProfileProjection
     /// different pictures: auto answers "do these wires have the same loop shape", a fixed plane
     /// answers "what does this array look like from the south". Under a fixed azimuth a wire running
     /// perpendicular to the view is foreshortened to nothing, which is what looking down a wire
-    /// actually looks like and is why auto is still the default.</para>
+    /// actually looks like. <b>The shipped default is YZ, not auto</b>
+    /// (<c>WBondViewState.DefaultProfileAxisDegrees</c> = 90°, owner, 2026-08-16).</para>
     /// </param>
     public static Projected Project(Wire wire, int pointIndex, SpanMode mode = SpanMode.Absolute,
                                     double? azimuthRadians = null)

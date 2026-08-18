@@ -554,44 +554,49 @@ public class WBondRenderAndToolsTests
     }
 
     /// <summary>
-    /// <b>A wire outside the band is not a glitch</b> (owner: "some wires in the profile view are
-    /// rendered outside the envelope rendering").
+    /// <b>Nothing takes a wire out of its own group's envelope</b> (owner, 2026-08-18: <i>"I want the
+    /// envelope rendering to always be the entire envelope for that group."</i>).
     ///
-    /// <para>The band spans an array's PROFILE-BOUND members only. A wire detached from the profile
-    /// is drawn individually and is legitimately outside it — which is what the new outline makes
-    /// visible. This pins the rule so nobody later "fixes" the band by including free wires in it and
-    /// silently changes what it claims.</para>
+    /// <para>The original report — <i>"some wires in the profile view are rendered outside the
+    /// envelope rendering"</i> — was answered twice by explaining which members the band spanned: the
+    /// profile-BOUND ones, and then the drawable ones. Both were the same mistake. A member whose XY
+    /// path backtracks is now REPORTED as non-monotone and is still in the band.</para>
     /// </summary>
     [Fact]
-    public void TheEnvelope_CoversTheProfileBoundMembersOnly()
+    public void TheEnvelope_CoversEveryMemberOfTheGroup()
     {
         var design = BandDesign();
         var array = design.Arrays[0];
 
         var before = ProfileEnvelope.Build(array);
-        Assert.Equal(array.Wires.Count, before.BoundWires.Count);
-        Assert.Empty(before.FreeWires);
+        Assert.Equal(array.Wires.Count, before.Members.Count);
+        Assert.Empty(before.NonMonotone);
 
-        // Detaching one wire moves it OUT of the envelope's own membership — it is still drawn, just
-        // no longer described by the band.
-        array.Wires[0].ProfileBinding = null;
+        // A wire that doubles back on itself in XY — the one shape that cannot be DRAWN against
+        // normalised span, and the one that used to fall out of the band because of it.
+        var doglegs = new Wire { DiameterNm = WBondUnits.ToNm(1.0, WBondUnit.Mil), Material = "Gold" };
+        doglegs.Points.AddRange([
+            Point3.Mils(0, 60, 4), Point3.Mils(80, 60, 24),
+            Point3.Mils(30, 60, 24), Point3.Mils(100, 60, 1),
+        ]);
+        array.Wires.Insert(0, doglegs);
 
         var after = ProfileEnvelope.Build(array);
-        Assert.Equal(array.Wires.Count - 1, after.BoundWires.Count);
-        Assert.Equal([0], after.FreeWires);
+        Assert.Equal(array.Wires.Count, after.Members.Count);
+        Assert.Equal([0], after.NonMonotone);
+        Assert.Contains(0, after.Members);
     }
 
     private static WBondDesign BandDesign()
     {
         var design = new WBondDesign();
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
-        design.Profiles.Add(profile);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < 5; w++)
         {
-            var wire = profile.CreateWire(Point3.Mils(0, w * 6, 4), Point3.Mils(100, w * 6, 1),
-                                          WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold");
+            var wire = LoopShape.CreateSeedWire(Point3.Mils(0, w * 6, 4), Point3.Mils(100, w * 6, 1),
+                                          WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm);
 
             // Vary the height so the band is not degenerate — a zero-thickness band has no edge.
             for (int i = 1; i < wire.Points.Count - 1; i++)
@@ -716,14 +721,23 @@ public class WBondRenderAndToolsTests
         Assert.True(document.HasSelection);
     }
 
-    /// <summary>All five selection commands are gated, and dim their icon while disabled.</summary>
+    /// <summary>
+    /// Every selection command is gated, and dims its icon while disabled.
+    ///
+    /// <para>There were five; <c>ReapplyProfileBtn</c> ("Reset to loop profile") and
+    /// <c>DetachBtn</c> ("Detach from loop profile") were removed on 2026-08-18 with the loop-profile
+    /// object itself — a wire's points are the only truth about its shape, so there is nothing to
+    /// re-stamp from and nothing to detach from.</para>
+    /// </summary>
     [Fact]
-    public void AllFiveSelectionCommands_AreGatedAndDimmed()
+    public void EverySelectionCommand_IsGatedAndDimmed()
     {
         var xaml = Read("src/Ui/Views/WBond/WBondEditorView.axaml");
 
-        foreach (var name in new[] { "ReverseBtn", "StraightenBtn", "ReapplyProfileBtn",
-                                     "TransformBtn", "DetachBtn" })
+        Assert.DoesNotContain("ReapplyProfileBtn", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("DetachBtn", xaml, StringComparison.Ordinal);
+
+        foreach (var name in new[] { "ReverseBtn", "StraightenBtn", "TransformBtn" })
         {
             int at = xaml.IndexOf($"x:Name=\"{name}\"", StringComparison.Ordinal);
             Assert.True(at >= 0, $"{name} is gone from the toolbar.");
@@ -750,12 +764,11 @@ public class WBondRenderAndToolsTests
     private static WBondDesign SelectableDesign()
     {
         var design = new WBondDesign();
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
-        design.Profiles.Add(profile);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
-        array.Wires.Add(profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
-                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+        var array = new WireArray { Name = "G1" };
+        array.Wires.Add(LoopShape.CreateSeedWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
+                                           WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         design.Arrays.Add(array);
         return design;
     }
@@ -866,12 +879,11 @@ public class WBondRenderAndToolsTests
     private static WBondDesign FatWireDesign(long diameterNm)
     {
         var design = new WBondDesign();
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
-        design.Profiles.Add(profile);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
-        array.Wires.Add(profile.CreateWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
-                                           diameterNm, "Gold"));
+        var array = new WireArray { Name = "G1" };
+        array.Wires.Add(LoopShape.CreateSeedWire(Point3.Mils(0, 0, 4), Point3.Mils(100, 0, 1),
+                                           diameterNm, "Gold", loopHeightNm: loopNm));
         design.Arrays.Add(array);
         return design;
     }
@@ -987,13 +999,12 @@ public class WBondRenderAndToolsTests
     private static WBondDesign UniformBandDesign()
     {
         var design = new WBondDesign();
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
-        design.Profiles.Add(profile);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < 5; w++)
-            array.Wires.Add(profile.CreateWire(Point3.Mils(0, w * 6, 4), Point3.Mils(100, w * 6, 1),
-                                               WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+            array.Wires.Add(LoopShape.CreateSeedWire(Point3.Mils(0, w * 6, 4), Point3.Mils(100, w * 6, 1),
+                                               WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
 
         design.Arrays.Add(array);
         return design;
@@ -1204,16 +1215,15 @@ public class WBondRenderAndToolsTests
     private static WBondDesign MultiGroupDesign(int groups, int perGroup)
     {
         var design = new WBondDesign();
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
-        design.Profiles.Add(profile);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
 
         for (int g = 0; g < groups; g++)
         {
-            var array = new WireArray { Name = $"G{g + 1}", Profile = profile.Name };
+            var array = new WireArray { Name = $"G{g + 1}" };
             for (int w = 0; w < perGroup; w++)
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(g * 400, w * 6, 4), Point3.Mils(g * 400 + 100, w * 6, 1),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
 
             design.Arrays.Add(array);
         }

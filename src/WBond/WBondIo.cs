@@ -10,6 +10,15 @@ namespace CircuitRF.WBond;
 /// <c>FormatVersion</c>, and an absent field takes its built-in default rather than failing. That is
 /// what lets a field be added without a version bump.</para>
 ///
+/// <h3>Loop profiles were removed without a version bump (2026-08-18)</h3>
+/// <para><c>Profiles</c>, <c>ArrayDto.Profile</c> and <c>WireDto.ProfileBinding</c> are gone.
+/// <b>No compatibility shim is needed and none exists</b>: <see cref="JsonSerializer"/> ignores
+/// members the target type does not declare, so a <c>.wBond</c> written by an older build reads
+/// cleanly and simply stops carrying the fields on its next save. <b>No geometry is lost, in either
+/// direction</b> — <c>Points</c> has always been stored explicitly, and it is now the only truth
+/// about a wire's shape (see <see cref="LoopShape"/>). The file merely stops recording which shape a
+/// wire was generated from, which after that change names nothing.</para>
+///
 /// <para><b>Setup only — results are never stored (D9).</b> A cold fill at 600 wires is ~0.15 s
 /// parallel, so re-deriving on open costs nothing and eliminates the entire stale-data class of
 /// bug.</para>
@@ -70,21 +79,13 @@ public static class WBondIo
             Alpha20 = m.Alpha20,
             DensityKgM3 = m.DensityKgM3,
         })],
-        Profiles = [.. design.Profiles.Select(p => new ProfileDto
-        {
-            Name = p.Name,
-            LoopHeightNm = p.LoopHeightNm,
-            Shape = [.. p.Shape.Select(s => new[] { s.Span, s.Height })],
-        })],
         Arrays = [.. design.Arrays.Select(a => new ArrayDto
         {
             Name = a.Name,
-            Profile = a.Profile,
             Wires = [.. a.Wires.Select(w => new WireDto
             {
                 DiameterNm = w.DiameterNm,
                 Material = w.Material,
-                ProfileBinding = w.ProfileBinding,
                 Locked = w.Locked ? true : null,
                 Points = [.. w.Points.Select(p => new[] { p.X, p.Y, p.Z })],
             })],
@@ -112,26 +113,15 @@ public static class WBondIo
                 design.Materials.Add(new WireMaterial(m.Name, m.Sigma20, m.Alpha20, m.DensityKgM3));
         }
 
-        foreach (var p in doc.Profiles ?? [])
-        {
-            design.Profiles.Add(new LoopProfile
-            {
-                Name = p.Name,
-                LoopHeightNm = p.LoopHeightNm,
-                Shape = [.. p.Shape.Select(s => new ProfilePoint(s[0], s[1]))],
-            });
-        }
-
         foreach (var a in doc.Arrays ?? [])
         {
-            var array = new WireArray { Name = a.Name, Profile = a.Profile };
+            var array = new WireArray { Name = a.Name };
             foreach (var w in a.Wires ?? [])
             {
                 var wire = new Wire
                 {
                     DiameterNm = w.DiameterNm,
                     Material = w.Material ?? WireMaterials.Default.Name,
-                    ProfileBinding = w.ProfileBinding,
                     Locked = w.Locked ?? false,
                 };
                 foreach (var p in w.Points ?? [])
@@ -156,7 +146,6 @@ public static class WBondIo
         public bool? GroundPlaneEnabled { get; set; }
         public double? OperatingTempC { get; set; }
         public List<MaterialDto>? Materials { get; set; }
-        public List<ProfileDto>? Profiles { get; set; }
         public List<ArrayDto>? Arrays { get; set; }
 
         [JsonConverter(typeof(RawJsonConverter))]
@@ -174,19 +163,9 @@ public static class WBondIo
         public double DensityKgM3 { get; set; }
     }
 
-    private sealed class ProfileDto
-    {
-        public string Name { get; set; } = "";
-        public long LoopHeightNm { get; set; }
-
-        /// <summary>Span/height pairs, kept as arrays so the file stays compact for a long profile.</summary>
-        public List<double[]> Shape { get; set; } = [];
-    }
-
     private sealed class ArrayDto
     {
         public string Name { get; set; } = "";
-        public string? Profile { get; set; }
         public List<WireDto>? Wires { get; set; }
     }
 
@@ -194,7 +173,6 @@ public static class WBondIo
     {
         public long DiameterNm { get; set; }
         public string? Material { get; set; }
-        public string? ProfileBinding { get; set; }
         public bool? Locked { get; set; }
 
         /// <summary>x/y/z triples in DBU. Integer, so a round trip is exact by construction.</summary>

@@ -13,13 +13,23 @@ namespace CircuitRF.WBond;
 /// <h3>Format</h3>
 /// <code>
 /// # units: mil
-/// array,x1,y1,z1,x2,y2,z2,profile,diameter,material
-/// G1,0,0,4,100,0,1,ball,1.0,Gold
-/// G1,0,6,4,100,6,1,ball,1.0,Gold
+/// array,x1,y1,z1,x2,y2,z2,diameter,material
+/// G1,0,0,4,100,0,1,1.0,Gold
+/// G1,0,6,4,100,6,1,1.0,Gold
 /// </code>
-/// <para>Column order is taken from the header, not assumed. <c>profile</c>, <c>diameter</c> and
-/// <c>material</c> are optional and fall back to the import defaults. A <c>#</c> line is a comment;
+/// <para>Column order is taken from the header, not assumed. <c>diameter</c> and <c>material</c> are
+/// optional and fall back to the import defaults. A <c>#</c> line is a comment;
 /// <c># units: &lt;unit&gt;</c> sets the unit for every coordinate and diameter that follows.</para>
+///
+/// <h3>Every wire is generated from the seed arch (2026-08-18)</h3>
+/// <para>Loop profiles — and the ball/wedge designation with them — no longer exist: a wire's points
+/// are the only truth about its shape (<see cref="LoopShape"/>). Every imported wire is therefore
+/// arched with <see cref="LoopShape.Seed"/> at the table's <c>loopheight</c>, and the user reshapes
+/// whichever ones they want to.</para>
+///
+/// <para><b>A <c>profile</c> column is READ AND IGNORED, not refused.</b> This importer used to write
+/// that header itself, so a table carrying it is a file this tool produced — starting to reject it
+/// would break exactly the users who followed the documented format.</para>
 ///
 /// <h3>Errors</h3>
 /// <para><b>A malformed row reports its line number and what was expected — it is never skipped
@@ -43,16 +53,13 @@ public static class WireTableCsv
         /// <summary>Unit for coordinates and diameters, unless the file declares its own.</summary>
         public WBondUnit Units { get; init; } = WBondUnit.Mil;
 
-        /// <summary>Profile name used when the table has no <c>profile</c> column.</summary>
-        public string DefaultProfile { get; init; } = "ball";
-
         /// <summary>Wire diameter, in <see cref="Units"/>.</summary>
         public double DefaultDiameter { get; init; } = 1.0;
 
         /// <summary>Metal name; gold by default (D7).</summary>
         public string DefaultMaterial { get; init; } = WireMaterials.Default.Name;
 
-        /// <summary>Loop height, in <see cref="Units"/>, for generated profiles.</summary>
+        /// <summary>Loop height, in <see cref="Units"/>, every generated wire is arched to.</summary>
         public double DefaultLoopHeight { get; init; } = 20.0;
 
         /// <summary>Points in a generated wire; 7 is the shipped default.</summary>
@@ -71,7 +78,6 @@ public static class WireTableCsv
         var units = settings.Units;
         var design = new WBondDesign();
         var arraysByName = new Dictionary<string, WireArray>(StringComparer.OrdinalIgnoreCase);
-        var profilesByName = new Dictionary<string, LoopProfile>(StringComparer.OrdinalIgnoreCase);
 
         Dictionary<string, int>? columns = null;
         var lines = csv.Split('\n');
@@ -95,7 +101,7 @@ public static class WireTableCsv
                 continue;
             }
 
-            ReadRow(fields, columns, lineNumber, units, settings, design, arraysByName, profilesByName);
+            ReadRow(fields, columns, lineNumber, units, settings, design, arraysByName);
         }
 
         if (columns is null)
@@ -147,7 +153,7 @@ public static class WireTableCsv
     private static void ReadRow(
         string[] fields, Dictionary<string, int> columns, int lineNumber, WBondUnit units,
         ImportSettings settings, WBondDesign design,
-        Dictionary<string, WireArray> arraysByName, Dictionary<string, LoopProfile> profilesByName)
+        Dictionary<string, WireArray> arraysByName)
     {
         string arrayName = Field(fields, columns, "array", lineNumber)
             ?? throw new InvalidDataException($"Line {lineNumber}: the 'array' column is empty. Every wire belongs to exactly one array.");
@@ -166,7 +172,6 @@ public static class WireTableCsv
             throw new InvalidDataException(
                 $"Line {lineNumber}: the wire's two feet are at the same point. A wire needs a span.");
 
-        string profileName = Field(fields, columns, "profile", lineNumber) ?? settings.DefaultProfile;
         string material = Field(fields, columns, "material", lineNumber)
                           ?? settings.DefaultMaterial;
 
@@ -177,20 +182,6 @@ public static class WireTableCsv
         if (diameter <= 0)
             throw new InvalidDataException($"Line {lineNumber}: wire diameter must be positive, got {diameter} nm.");
 
-        if (!profilesByName.TryGetValue(profileName, out var profile))
-        {
-            long loopHeight = WBondUnits.ToNm(settings.DefaultLoopHeight, units);
-            int points = settings.PointsPerWire;
-
-            profile = profileName.Equals("wedge", StringComparison.OrdinalIgnoreCase)
-                ? LoopProfile.WedgeBond(loopHeight, points)
-                : LoopProfile.BallBond(loopHeight, points);
-            profile.Name = profileName;
-
-            profilesByName[profileName] = profile;
-            design.Profiles.Add(profile);
-        }
-
         if (!arraysByName.TryGetValue(arrayName, out var array))
         {
             array = new WireArray { Name = arrayName };
@@ -198,7 +189,9 @@ public static class WireTableCsv
             design.Arrays.Add(array);
         }
 
-        array.Wires.Add(profile.CreateWire(start, end, diameter, material));
+        array.Wires.Add(LoopShape.CreateSeedWire(
+            start, end, diameter, material,
+            WBondUnits.ToNm(settings.DefaultLoopHeight, units), settings.PointsPerWire));
     }
 
     private static string? Field(string[] fields, Dictionary<string, int> columns, string name, int lineNumber)

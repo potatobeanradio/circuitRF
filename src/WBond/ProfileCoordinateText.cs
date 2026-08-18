@@ -4,16 +4,21 @@ using System.Text;
 namespace CircuitRF.WBond;
 
 /// <summary>
-/// The tab-delimited spreadsheet exchange for a loop profile's own shape — the one codec behind the
-/// profile view's <b>Copy Coordinates</b> and <b>Paste</b> (wbond.md §6.4a).
+/// The tab-delimited spreadsheet exchange for a loop shape — the one codec behind the profile view's
+/// <b>Copy Coordinates</b> and <b>Paste</b> (wbond.md §6.4a).
+///
+/// <para><b>A one-shot TRANSFER, which is why it survived the removal of loop profiles</b>
+/// (2026-08-18). What the owner rejected was a persistent shared object several arrays follow; this
+/// is a copy the user asks for by name, reads out of one array and stamps onto another, and links
+/// nothing to anything afterwards.</para>
 ///
 /// <para><b>The columns are (span fraction, height in a real unit), and that asymmetry is the whole
-/// point.</b> A <see cref="LoopProfile"/> is a SHAPE several wires share, stored as normalised
-/// <see cref="ProfilePoint"/>s plus one <see cref="LoopProfile.LoopHeightNm"/>. Writing an ABSOLUTE
-/// span would bake one wire's own chord length into a shape meant to be reusable — paste it onto a
-/// group whose wires are a different length and the numbers would mean something else. Span
-/// therefore travels as the fraction it actually is; height travels as a real length because that is
-/// the number an engineer is reasoning about, and it is what carries the loop height back.</para>
+/// point.</b> What travels is a normalised <see cref="ShapePoint"/> list plus one loop height, read
+/// off a wire with <see cref="LoopShape.Read"/>. Writing an ABSOLUTE span would bake one wire's own
+/// chord length into a shape meant to be transferable — paste it onto a group whose wires are a
+/// different length and the numbers would mean something else. Span therefore travels as the fraction
+/// it actually is; height travels as a real length because that is the number an engineer is
+/// reasoning about, and it is what carries the loop height back.</para>
 ///
 /// <para><b>Height is written in the caller's own display unit, stated in the header.</b> A user
 /// pasting into Excel reads numbers in the unit they were already looking at, and the header carries
@@ -30,19 +35,19 @@ public static class ProfileCoordinateText
     private const string HeaderPrefix = "# wBond profile";
 
     /// <summary>
-    /// The profile's shape as tab-delimited text with a header, ready to paste into a spreadsheet.
+    /// A shape as tab-delimited text with a header, ready to paste into a spreadsheet.
     /// </summary>
-    public static string Write(LoopProfile profile, WBondUnit unit)
+    public static string Write(IReadOnlyList<ShapePoint> shape, long loopHeightNm, WBondUnit unit)
     {
-        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(shape);
 
         var sb = new StringBuilder();
         sb.Append(HeaderPrefix).Append(" — height in ").Append(WBondUnits.Suffix(unit)).Append('\n');
         sb.Append("span\theight (").Append(WBondUnits.Suffix(unit)).Append(")\n");
 
-        foreach (var p in profile.Shape)
+        foreach (var p in shape)
         {
-            double heightNm = p.Height * profile.LoopHeightNm;
+            double heightNm = p.Height * loopHeightNm;
             sb.Append(Num(p.Span)).Append('\t')
               .Append(Num(WBondUnits.FromNm((long)Math.Round(heightNm), unit))).Append('\n');
         }
@@ -51,17 +56,19 @@ public static class ProfileCoordinateText
     }
 
     /// <summary>
-    /// Reads a shape back into a profile named <paramref name="name"/>.
+    /// Reads a shape back.
     /// <paramref name="fallbackUnit"/> applies only when the text carries no unit header of its own.
     ///
     /// <para>The loop height is recovered as the TALLEST row, and every height is renormalised
     /// against it — which is what makes a copy-then-paste onto a different group carry the shape AND
     /// its height rather than only one of them.</para>
     /// </summary>
-    /// <returns>False when the text is not a profile at all; this is what greys out Paste.</returns>
-    public static bool TryRead(string? text, WBondUnit fallbackUnit, string name, out LoopProfile profile)
+    /// <returns>False when the text is not a shape at all; this is what greys out Paste.</returns>
+    public static bool TryRead(string? text, WBondUnit fallbackUnit,
+                               out IReadOnlyList<ShapePoint> shape, out long loopHeightNm)
     {
-        profile = null!;
+        shape = [];
+        loopHeightNm = 0;
         if (string.IsNullOrWhiteSpace(text)) return false;
 
         var unit = fallbackUnit;
@@ -105,8 +112,8 @@ public static class ProfileCoordinateText
         // A shape needs at least a start and an end.
         if (spans.Count < 2) return false;
 
-        double loopHeightNm = heightsNm.Max();
-        if (!(loopHeightNm > 0)) return false;   // a flat "profile" is not a loop
+        double peakNm = heightsNm.Max();
+        if (!(peakNm > 0)) return false;   // a flat "shape" is not a loop
 
         double spanMax = spans.Max();
         if (!(spanMax > 0)) return false;
@@ -115,27 +122,22 @@ public static class ProfileCoordinateText
         // means a user who typed millimetres into the span column still gets the shape they drew.
         double spanScale = spanMax > 1.0 ? 1.0 / spanMax : 1.0;
 
-        var shape = new List<ProfilePoint>(spans.Count);
+        var points = new List<ShapePoint>(spans.Count);
         for (int i = 0; i < spans.Count; i++)
         {
-            shape.Add(new ProfilePoint(
+            points.Add(new ShapePoint(
                 Math.Clamp(spans[i] * spanScale, 0.0, 1.0),
-                Math.Clamp(heightsNm[i] / loopHeightNm, 0.0, 1.0)));
+                Math.Clamp(heightsNm[i] / peakNm, 0.0, 1.0)));
         }
 
-        profile = new LoopProfile
-        {
-            Name = name,
-            LoopHeightNm = (long)Math.Round(loopHeightNm),
-            Shape = shape,
-        };
-
+        shape = points;
+        loopHeightNm = (long)Math.Round(peakNm);
         return true;
     }
 
     /// <summary>True when the clipboard holds something this can read — drives Paste's enabled state.</summary>
     public static bool CanRead(string? text, WBondUnit fallbackUnit) =>
-        TryRead(text, fallbackUnit, "probe", out _);
+        TryRead(text, fallbackUnit, out _, out _);
 
     private static void TryReadUnitHeader(string line, ref WBondUnit unit)
     {

@@ -149,10 +149,11 @@ public partial class WBondProfileView
 
     private async Task CopyProfileCoordinatesAsync(WBondViewModel editor)
     {
-        if (editor.ProfileForGroup(_menuArray) is not { } profile) return;
+        if (editor.ShapeForGroup(_menuArray) is not { } read) return;
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
 
-        await clipboard.SetTextAsync(ProfileCoordinateText.Write(profile, editor.DisplayUnit));
+        await clipboard.SetTextAsync(
+            ProfileCoordinateText.Write(read.Shape, read.LoopHeightNm, editor.DisplayUnit));
     }
 
     private async Task PasteProfileCoordinatesAsync(WBondViewModel editor)
@@ -160,11 +161,11 @@ public partial class WBondProfileView
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
 
         string? text = await clipboard.TryGetTextAsync();
-        string name = editor.ArrayNameAt(_menuArray) ?? "Pasted";
 
-        if (!ProfileCoordinateText.TryRead(text, editor.DisplayUnit, name, out var shape)) return;
+        if (!ProfileCoordinateText.TryRead(text, editor.DisplayUnit, out var shape, out long heightNm))
+            return;
 
-        Apply(editor.ApplyProfileToGroup(_menuArray, shape));
+        Apply(editor.ApplyShapeToGroup(_menuArray, shape, heightNm));
     }
 
     /// <summary>

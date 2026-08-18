@@ -45,19 +45,18 @@ public class WBondTouchstoneExportTests : IDisposable
     /// </summary>
     private static WBondDesign Design(int arrays = 1, int wires = 3)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(15.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(15.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
         for (int a = 0; a < arrays; a++)
         {
-            var array = new WireArray { Name = $"G{a + 1}", Profile = profile.Name };
+            var array = new WireArray { Name = $"G{a + 1}" };
             for (int w = 0; w < wires; w++)
             {
                 double y = a * 30 + w * 6;   // mils — arrays 30 mil apart, wires 6 mil apart
-                array.Wires.Add(profile.CreateWire(
+                array.Wires.Add(LoopShape.CreateSeedWire(
                     Point3.Mils(0, y, 4), Point3.Mils(60, y, 2),
-                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                    WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
             }
             design.Arrays.Add(array);
         }
@@ -347,19 +346,18 @@ public class WBondTouchstoneExportTests : IDisposable
         // Nothing carried over: a fresh document, opened from the path.
         var reopened = WBondDocument.Open(path).ViewModel.Editor.Design;
 
-        // Structure — wire count, array membership, and every profile binding.
+        // Structure — wire count, array membership, and every wire's points to the nanometre.
         Assert.Equal(authored.WireCount, reopened.WireCount);
         Assert.Equal(authored.Arrays.Count, reopened.Arrays.Count);
 
         for (int a = 0; a < authored.Arrays.Count; a++)
         {
             Assert.Equal(authored.Arrays[a].Name, reopened.Arrays[a].Name);
-            Assert.Equal(authored.Arrays[a].Profile, reopened.Arrays[a].Profile);
             Assert.Equal(authored.Arrays[a].Wires.Count, reopened.Arrays[a].Wires.Count);
 
             for (int w = 0; w < authored.Arrays[a].Wires.Count; w++)
-                Assert.Equal(authored.Arrays[a].Wires[w].ProfileBinding,
-                             reopened.Arrays[a].Wires[w].ProfileBinding);
+                Assert.Equal(authored.Arrays[a].Wires[w].Points,
+                             reopened.Arrays[a].Wires[w].Points);
         }
 
         // The panel's own readout — the number a user actually reads off the editor.

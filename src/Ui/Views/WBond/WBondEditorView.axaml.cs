@@ -926,10 +926,6 @@ public partial class WBondEditorView : UserControl
 
     private void OnStraighten(object? sender, RoutedEventArgs e) => Apply(() => _bound!.Editor.StraightenSelection());
 
-    private void OnReapplyProfile(object? sender, RoutedEventArgs e) => Apply(() => _bound!.Editor.ReapplyProfileToSelection());
-
-    private void OnDetach(object? sender, RoutedEventArgs e) => Apply(() => _bound!.Editor.DetachSelection());
-
     private async void OnTransform(object? sender, RoutedEventArgs e)
     {
         if (_bound is null) return;

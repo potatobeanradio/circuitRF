@@ -49,18 +49,23 @@ WBondDesign                 the root; one per wBond component instance
  ├─ OperatingTemp           default 85 °C — load-bearing for R, so it is a field, not a constant
  ├─ Material[]              name, σ(20 °C ref), α₂₀, density — Au (default) / Al / Cu / Ag,
  │                          user-extensible; σ is *reported* at OperatingTemp (§2.3)
- ├─ LoopProfile[]           named, shared z-vs-span shape a wire may bind to (§6.2)
- └─ WireArray[]             name (G1, G2, …), colour, the profile it edits, member wires
-     └─ Wire[]              Point3[] (≥ 2), Diameter, MaterialRef, ProfileBinding, Locked
+ └─ WireArray[]             name (G1, G2, …), colour, member wires
+     └─ Wire[]              Point3[] (≥ 2), Diameter, MaterialRef, Locked
 ```
 
+> **Revised 2026-08-18 (round 7).** `LoopProfile[]`, `WireArray.profile` and `Wire.ProfileBinding`
+> were **removed**. A wire's points are the only truth about its shape — see §6.2's dated note for the
+> owner's reason, and `LoopShape` for the arithmetic that survived.
+
 **WB2. `Wire.Points` is the truth; everything else is derived.** A wire is *always* a 3D polyline —
-that is what the solver consumes and what `.wBond` stores. A `LoopProfile` binding is a *generator*
-that writes those points, exactly as a PCell writes shapes (`pcell-contract.md`). Breaking the binding
-leaves the points untouched. This is the single most important structural decision in the document: it
-is what makes "any geometry the user can imagine" (owner's requirement) compatible with "change the
-whole array's profile by dragging one curve" (also the owner's requirement), and it is why §6.2's
-answer works.
+that is what the solver consumes and what `.wBond` stores. This is the single most important
+structural decision in the document: it is what makes "any geometry the user can imagine" (owner's
+requirement) reachable at all, and it is why §6.2's answer works.
+
+> **2026-08-18:** this statement is now the *whole* of WB2. It used to continue "…a `LoopProfile`
+> binding is a *generator* that writes those points, exactly as a PCell writes shapes; breaking the
+> binding leaves the points untouched", which is what made the truth-vs-generator distinction worth
+> stating. There is no generator any more: nothing records which shape a wire came from.
 
 **WB3. Wire direction is data, not a rendering convention.** `Points[0]` is the **input** (current
 enters); `Points[^1]` is the **output** (current exits). The sign of every mutual inductance depends
@@ -124,8 +129,8 @@ Sommerfeld integral. That is what makes it fast enough to run inside a drag (§4
 
 **A wire's loop height is its maximum z coordinate minus its minimum z coordinate.** Nothing else.
 `Wire.LoopHeightNm` is the one place this lives; every other loop-height quantity in the codebase —
-the profile's own `LoopHeightNm`, the panel readout, the profile view's vertical axis, the "Set Loop
-Height…" prompt — is measured or set through it.
+the panel readout, the profile view's vertical axis, the "Set Loop Height…" prompt, the
+`LoopHeight_G1` controlling parameter — is measured or set through it.
 
 **It is deliberately NOT the rise above the chord, and the difference is not academic.** In
 chip-and-wire the two feet are usually at different z: a die pad up to a substrate lead. The straight
@@ -134,15 +139,26 @@ its height above the lower foot. A wire-bonder is set up against the second numb
 what an operator measures from the lower pad to the top of the loop — so reporting the first under
 that name reads low on exactly the asymmetric loops where it matters most.
 
+**A consequence of the definition, worth stating because it surfaces in the profile view's envelope
+band:** *two wires at the same loop height but different POINT COUNTS are genuinely different arches.*
+`LoopShape.Seed` spaces its points uniformly in span, so unless `(points − 1) × peakSpan` happens to
+be a whole number no vertex lands on the crest — the coarser polyline's highest vertex sits off the
+peak, and normalising it to measure the requested max-z-minus-min-z leaves the rest of the curve
+lower. A 7-point and a 9-point wire, both measuring exactly 20.0000 mil, differ by **1.84 mil** in
+height above the chord at span 0.30. That is real geometry, not a rendering artifact, and the band is
+right to show it. Placing a vertex ON `SeedPeakSpan` would collapse it — and would move shipped
+default geometry, so it is not done here.
+
 **Two consequences worth stating, because both are load-bearing:**
 
 - **A wire's loop height can never be below its own foot drop.** With the feet |z₁ − z₂| apart, even
   a dead-straight wire measures that much. A requested loop height below that floor is clamped to it
   rather than refused (the wire is perfectly drawable) and rather than arched upward to fake the
   number (which would be worse).
-- **A `LoopProfile` stores a normalised shape plus a loop height, so applying it must SOLVE for the
-  amplitude it adds above the chord** rather than using the loop height as that amplitude directly.
-  `LoopProfile.SolveAmplitudeNm` does it in closed form: every point's z is `chord(s) + A·height(s)`,
+- **A loop shape is normalised (span, height), so stamping one out at a given loop height must SOLVE
+  for the amplitude it adds above the chord** rather than using the loop height as that amplitude
+  directly. `LoopShape.SolveAmplitudeNm` does it in closed form (it was `LoopProfile.SolveAmplitudeNm`
+  until 2026-08-18; the arithmetic moved verbatim): every point's z is `chord(s) + A·height(s)`,
   so the wire's maximum is the maximum of a family of lines in `A` — non-decreasing and piecewise
   linear. Requiring that maximum to equal `min z + LoopHeightNm` bounds `A` by
   `(target − chordᵢ) / heightᵢ` at every point that rises at all, and the tightest of those bounds is
@@ -680,11 +696,13 @@ a bondwire model is wrong, and the UI states the active return in the panel head
 
 The Parameters dialog exposes: ground-plane enable and z, global diameter and material overrides,
 temperature, the fidelity mode (`Quasi-static` / `MoM W1` / `MoM W2` / `Measured .snp`), the R-model
-tier (§3.5), and **every bound `LoopProfile`'s parameters** — loop height, kink height, span, segment
-count.
+tier (§3.5), and **every array's own loop height, span and segment count**. *(Until 2026-08-18 this
+last read "every bound `LoopProfile`'s parameters"; the profile object is gone and the array is the
+only scope — see §6.2's dated note.)*
 
 **WB21. These are ordinary circuitRF expressions, so loop height is sweepable.** `parametric_sweep`
-over `X1.G1.LoopHeight` re-runs the profile generator, re-fills **L**, and re-solves — and per §4.1 a
+over `X1.G1.LoopHeight` rescales each wire's rise above its own chord, re-fills **L**, and
+re-solves — and per §4.1 a
 cold fill is 0.54 s while an incremental one is milliseconds, so a 21-point loop-height sweep is
 seconds, not minutes. This is the feature a PA designer will actually use the tool for, and it exists
 because WB2 made the polyline generated rather than hand-placed.
@@ -710,9 +728,15 @@ ground-plane switch. Four properties make this work, and none may be traded away
    regenerate every existing design's wires to 20 mil on its next run.
 3. **Scope is the ARRAY, suffixed** — `LoopHeight_G1`, `Diameter_G1`, `Material_G2`; unsuffixed applies
    to every array. Array names **are** the pin names on the symbol, so the array is the only sub-scope a
-   schematic user can see. (A `LoopProfile` may be shared by two arrays; overriding one array must
-   therefore give that array its own copy of the profile rather than dragging the other array with it —
-   free, because the override is per-elaboration and never persisted.)
+   schematic user can see, and since 2026-08-18 it is the only sub-scope there is.
+
+   > **The clone-on-write paragraph that stood here is withdrawn (2026-08-18).** It read: *"a
+   > `LoopProfile` may be shared by two arrays; overriding one array must therefore give that array its
+   > own copy of the profile rather than dragging the other array with it."* With the profile object
+   > removed there is no shared thing to clone: a loop height rescales each wire's own rise
+   > (`WireEdits.SetLoopHeightPreservingPath`), so one array's override cannot reach another's wires by
+   > construction. The legacy `LoopHeight_<profile>` spelling and its array-name-collision report went
+   > with it.
 4. **Loop height is a length, diameter is a length, material is a name.** So the first two sweep and the
    third parameterises. *This only became possible on 2026-08-07*: a length-dimensioned global could not
    previously be swept and failed **silently** — the unit table had no symbol for the metre, `"m"` being
@@ -720,7 +744,7 @@ ground-plane switch. Four properties make this work, and none may be traded away
    perfectly plausible flat curve. WB21 was blocked on that and is no longer.
 
 **WB44a. Span is NOT among them, and the reason is structural rather than schedule.** Span is not a
-profile property at all — it is the distance between the two feet, i.e. *where the pads are*. Two
+loop property at all — it is the distance between the two feet, i.e. *where the pads are*. Two
 consequences follow from §6.2.1, which already settled both for the layout gesture: an array's span
 scales **by factor, not to a common value** (WB24c), because an absolute span would silently flatten a
 fan-out whose wires deliberately differ; and changing span **moves a bonded foot and may take it off its
@@ -793,6 +817,56 @@ only the overlay (WB17).
 
 ### 6.2 The profile view, and the odd-ball wire problem — recommendation
 
+> ## Revised 2026-08-18 — idea (2) is withdrawn
+>
+> **The `LoopProfile` object, the ball/wedge designation, the binding and the free-versus-bound
+> rendering were removed.** A wire's points are the only truth about its shape, in the model and in
+> the UI. Ideas (1) and (3) below are untouched and are still why this view works.
+>
+> The owner, on why: *"User does not care if the profile is any of these 'profiles'. I don't like how
+> wires get this designation… The only thing it could help with is to provide a starting profile shape
+> for the wire that the user then modifies to their liking… I also don't like how the wire colors
+> change when a wire converts to 'free' — that's the most annoying part."*
+>
+> And the decisive answer to the one question that could have saved the concept — *would you ever share
+> one shape across arrays and edit it in one place?*
+>
+> > *"User would never share one loop shape for multiple arrays and want to edit it in one place. Each
+> > array is generally its own shape and I want flexibility for user to change each wire within the
+> > array."*
+>
+> **Shared-shape propagation was the only thing binding uniquely bought.** Every other operation the
+> user reaches for — set an array's loop height, set its span, flip its crest, copy a shape onto
+> another array — already had a binding-free path that synthesises the shape from the wire's own
+> points. So the object had no remaining purpose, and the designation ball-versus-wedge never had one:
+> nothing in the codebase ever branched on it, and it was a **seed shape and nothing else**.
+>
+> **This note exists so that idea (2) is not helpfully re-proposed.** It is a coherent design; it is
+> not the one this user wants. What replaced it is `LoopShape` — the same arithmetic (the closed-form
+> amplitude solve, the feet-are-exact rule, the flip) as stateless functions, plus a `Seed` arch at the
+> old ball bond's 0.30 peak span so no shipped geometry moved.
+>
+> Two things followed, and both are improvements the removal had to make on the way past:
+>
+> - **A group loop-height change no longer straightens a hand-routed wire.** It used to read the
+>   wire's shape, put a new height on it and stamp it back — and stamping writes X and Y by linear
+>   interpolation between the feet. The same wire's `LoopHeight_G1` controlling parameter had preserved
+>   its path since 2026-08-17, so the editor and the netlist disagreed about the same wire. Both now go
+>   through `WireEdits.SetLoopHeightPreservingPath`.
+> - **NEITHER view colours a wire by its geometry.** `ColorRole.WBondFreeWire` served two unrelated
+>   meanings — a wire with no binding in the layout view, and a non-representative member in the
+>   profile view. The first pass deleted the layout half and renamed the second to `wBond.Member`, on
+>   the reasoning that distinguishing the one editable curve from the members behind it is real
+>   information about that picture. **The owner rejected that too, the same day**: *"profile wire still
+>   renders in 'bad' color depending on shape… I don't want the wires ever changing colors based on
+>   geometry."* The role is deleted. `wBond.Wire` is the only wire colour there is; `wBond.WireStart`
+>   (the input-end dot, WB3) and `wBond.WireVertex` are per-POINT accents every wire carries alike.
+>
+>   **Presence in the profile view is still a function of geometry and that is not the same claim** —
+>   a member is collapsed onto the array's one curve only when drawing it would put a second polyline
+>   on pixels already covered (§6.2 idea 3, and the 2026-08-16 note under it). What changed is that
+>   being drawn separately no longer costs a different colour.
+
 The owner's framing: wires in an array may have different profiles, different angles, even different
 point counts, and the tool must not force uniformity — but dragging one profile curve must change the
 whole group. Two "outs" were offered (one designated representative with best-effort propagation; or
@@ -819,21 +893,43 @@ counts and XY backtracking. The x-axis has a toggle: **absolute span** (true geo
 different length terminate at different x) and **normalised span** (shapes overlay). Default absolute
 when an array's spans agree to within a tolerance, normalised when they do not.
 
-**(2) `LoopProfile` as a first-class named, shared object** (WB2). A wire is either **bound** to a
-profile — its points are generated, it moves when the profile is edited, it is drawn as part of the
-group's curve — or **free**, having been individually dragged, in which case it detaches and is drawn
-as its own curve. This is the owner's out (2), but arrived at as a *consequence of an explicit
-binding* rather than as a heuristic classification of "odd-ball". The user always knows why a wire is
-separate, and can re-bind it (resampling it onto the profile) with one command. It also gives the
-parametric ball-bond and wedge-bond profiles of `mom-wirebond-kernel.md` §9.1 a home, and it is what
-makes WB21's loop-height sweep possible.
+**(2) ~~`LoopProfile` as a first-class named, shared object~~ — WITHDRAWN 2026-08-18.** *Recorded
+rather than deleted, so the reasoning stays legible; see the note at the head of this section for
+why.* It read: a wire is either **bound** to a profile — its points are generated, it moves when the
+profile is edited, it is drawn as part of the group's curve — or **free**, having been individually
+dragged, in which case it detaches and is drawn as its own curve. This was the owner's out (2),
+arrived at as a *consequence of an explicit binding* rather than as a heuristic classification of
+"odd-ball"; the user always knew why a wire was separate and could re-bind it with one command.
+
+What it claimed to buy, and what actually happened to each: it gave `mom-wirebond-kernel.md` §9.1's
+parametric ball-bond and wedge-bond a home — they are now `LoopShape.Seed`, a starting shape with no
+identity; and it was said to be what makes WB21's loop-height sweep possible — it is not, and never
+was, since a loop height is a property of the wire (`Wire.LoopHeightNm` is its own max z minus min z)
+and the sweep rescales each wire's rise directly.
 
 **(3) Envelope rendering for clutter.** The owner asked to limit how many wires the profile view
 draws. Draw, per array: **one editable profile curve** plus a translucent **min/max envelope band**
-over its bound members. The user sees the spread without 200 overlaid polylines, and any free wire
-outside the band is drawn individually. Cost is O(members) to compute the band and O(1) curves to
+over its members. The user sees the spread without 200 overlaid polylines, and any member the band
+cannot describe is drawn individually. *(Re-keyed 2026-08-18: the band used to span the array's
+profile-BOUND members, so an ordinary edit could push a wire out of it. It now spans every DRAWABLE
+member — `ProfileEnvelope.IsProfileEditable` — which is precisely the owner's "each array is generally
+its own shape".)* Cost is O(members) to compute the band and O(1) curves to
 draw. Additionally, **the profile view draws only the arrays touched by the current selection plus
 pinned arrays** — the default clutter level is then near zero and the user opts in to more.
+
+> **The band and the separately-drawn curves are ONE colour** (owner, 2026-08-18). A member drawn on
+> its own is not marked as different in any way except by being where it is. See §6.2's head note.
+>
+> **The band is the EXACT min/max envelope of the members' polylines** (owner, 2026-08-18: *"envelope
+> rendering appears a little strange if wires within the same group have a different number of
+> vertices."*). Sampling every member's own vertices is not enough: between two samples each member is
+> a straight line, but the envelope of a set of lines has a corner wherever two of them **cross**, and
+> a band drawn straight from sample to sample bulged past every member there — reporting spread the
+> group does not have. Invisible while an array's members share a vertex lattice (they cross only at
+> shared vertices, already sampled); **mixed vertex counts interleave two lattices**, so they cross
+> repeatedly in mid-interval. `ProfileEnvelope` now inserts a sample at each crossing, solved in closed
+> form from the two samples that bracket it. The two endpoints are also protected from the dedupe, so
+> the band always closes on both feet.
 
 > **The "one editable profile curve" half of that is load-bearing, not decorative (2026-08-16).** The
 > band is a *min/max envelope over the members*, so whenever the members share a shape min equals max
@@ -842,9 +938,11 @@ pinned arrays** — the default clutter level is then near zero and the user opt
 > only the band therefore renders such an array as **nothing at all** — which is how it shipped, and
 > what the owner saw as the profile view "disappearing" during a layout drag.
 
-**WB24. Dragging the profile curve edits the `LoopProfile`, which regenerates every bound wire.
-Dragging an individual wire's curve detaches that wire from the profile, with an undoable "N wires
-detached" toast.** No best-effort propagation heuristic exists, because there is nothing to guess.
+**~~WB24.~~ WITHDRAWN 2026-08-18.** It read: *"Dragging the profile curve edits the `LoopProfile`,
+which regenerates every bound wire. Dragging an individual wire's curve detaches that wire from the
+profile, with an undoable 'N wires detached' toast."* **Dragging a curve in the profile view edits
+that wire, and there is nothing to detach from.** WB24a and WB24c below survive as array-scoped
+alt-drag, which is what they already are in code.
 
 #### 6.2.1 Alt-drag — proportional reshaping
 
@@ -887,25 +985,44 @@ factor preserves an array whose wires deliberately have different spans (a fan-o
 setting a common absolute span would silently destroy it.
 
 > **Clarified 2026-08-17 — "the entire array" means the ARRAY, and it was implemented as the
-> `LoopProfile`.** Those are not the same set: a profile is an editor-internal sharing mechanism a
-> schematic user never sees (O-10) and it routinely spans every array in the design — a design built
-> from `WBondEmbedding.DefaultDesign` has ONE profile that every array references — so alt-dragging a
+> `LoopProfile`.** Those were not the same set: a profile was an editor-internal sharing mechanism a
+> schematic user never saw (O-10) and it routinely spanned every array in the design — a design built
+> from `WBondEmbedding.DefaultDesign` had ONE profile that every array referenced — so alt-dragging a
 > wire in G1 rescaled G2's wires as well, and wrote the new height onto the shared profile on the way
-> out. The unit is now the array (`WireMesh.ArrayOfWire`), and nothing writes a profile.
+> out. The unit is the array (`WireMesh.ArrayOfWire`), and since 2026-08-18 there is no other
+> candidate.
 >
 > **The LAYOUT view deliberately does NOT promote to the array** (`ScaleSelection(wholeArray: false)`).
 > The profile view draws a group as one superimposed shape under one envelope band, and a bond group is
 > one loop program on one bonder — reshaping one member and leaving its siblings is not a thing the
 > machine can do. In the layout each wire is drawn at its own place among the pads and an alt-drag
 > stretches *that* wire's span onto *that* pad, so its members are not interchangeable.
+>
+> **Extended to the PLAIN drag and the arrow-key nudge, 2026-08-18** — owner: *"when I click drag a
+> point/segment in Wire Profile view only 1 wire within the group moves. I want all the wires within
+> that group to move."* Alt-drag had been moved onto the array a day earlier and the plain drag had not
+> been moved with it, so two gestures in one view disagreed about what they were pointing at. All three
+> now resolve their subject through `WBondViewModel.ProfileGroupSubject`, which promotes the same POINT
+> or SEGMENT index across every member; a member with too few points to have that element is skipped
+> rather than approximated. **The selection itself is not promoted** — this is the subject of one edit,
+> not a re-selection, so the panel still reports the wire the user clicked.
 
 All three operations are single undo steps, and all three go through the incremental fill of §4.3 —
 they move many wires at once, so they take the WB15 quality ladder like any other large edit.
 
 **A residual honest limit:** a wire whose XY path backtracks on itself has a non-monotone span and
-cannot be drawn in the profile view without self-overlap. Such wires are drawn free, flagged in the
-panel, and excluded from envelopes. They are legal geometry and they solve correctly; they are just
-not profile-editable. That is a real edge and it is stated rather than prevented.
+cannot be drawn in the profile view without self-overlap. Such wires are drawn individually and
+flagged in the panel. They are legal geometry and they solve correctly; they are just not
+profile-editable. That is a real edge and it is stated rather than prevented.
+
+> **They are NOT excluded from the envelope** (owner, 2026-08-18: *"I want the envelope rendering to
+> always be the entire envelope for that group."*). **The band spans every member of the array,
+> unconditionally.** It had been narrowed twice, and both narrowings were the same mistake — a wire
+> dropped out of the thing that claims to describe its own group as a side effect of an edit that was
+> about something else. First it spanned only the profile-BOUND members, so detaching removed a wire.
+> Then it spanned only the drawable ones, so dragging one point past its neighbour removed a wire.
+> `ProfileEnvelope.ArrayProfile.NonMonotone` now REPORTS the backtracking members as a subset of
+> `Members`, and the band covers them.
 
 **Profile view projection.** YZ, XZ, or an arbitrary azimuth, with **Z always up**, per the owner.
 The azimuth is a control on the view; the recommended default is **the mean chord azimuth of the
@@ -992,11 +1109,11 @@ right-to-left, and nothing else.
 
 **Creating wires:** menu, toolbar button, and keyboard shortcut, plus **draw-in-layout-view**: click
 the start point, click the end point, with a **real-time ghost** of the full generated loop (not just
-a rubber-band line) between them. **Shift constrains to ortho.** The new wire gets the default
-`LoopProfile`.
+a rubber-band line) between them. **Shift constrains to ortho.** The new wire is arched on
+`LoopShape.Seed`.
 
-**Defaults, all in the circuitRF Settings dialog:** 7 points, 1 mil diameter, **gold**, and the default
-loop profile. Gold is both the RF packaging norm and the metal of the LW1 validation set in
+**Defaults, all in the circuitRF Settings dialog:** 7 points on the seed arch, 1 mil diameter,
+**gold**. Gold is both the RF packaging norm and the metal of the LW1 validation set in
 `mom-wirebond-kernel.md`, so the shipped default and the validated path agree.
 
 **Transforms**, all operating on any selection (point, segment, wire, array, mixed):
@@ -1007,7 +1124,7 @@ loop profile. Gold is both the RF packaging norm and the metal of the LW1 valida
 | **Rotate about end point** | **grab a wire and swing it with its opposite end pinned** — see below |
 | **Mirror** | about an axis; **reverses traversal direction unless suppressed**, since a mirrored wire's input should normally stay on the input side — surfaced as a checkbox, because getting it wrong flips mutual signs (WB3) |
 | **Bend** | displace interior points laterally in any direction, endpoints pinned |
-| **Straighten** | collapse interior points onto the chord; retains point count so a profile can be re-applied |
+| **Straighten** | collapse interior points onto the chord; **retains the point count**, because the count is the user's own choice and undo is what recovers a straighten done by mistake *(2026-08-18: the reason used to be "so a profile can be re-applied"; there is nothing to re-apply from. The behaviour is unchanged.)* |
 | **Extend / shorten** | along the wire's projected axis, from either end |
 | **Reverse wire** | swap input and output ends — see below |
 | **Duplicate with pitch** | **offset in x or y, with a multiplicity count** — the array-authoring workhorse; new wires join the source wire's array by default, and the dialog shows the resulting pitch against the DRC minimum live |
@@ -1148,9 +1265,10 @@ separator, then `Group Wires As…`, then `Delete Vertex` / `Delete Segment` / `
 against what the right-click actually landed on, and shown disabled with a reason rather than absent.
 Two rules worth keeping:
 
-- **Removing a point DETACHES the wire from its profile.** A `LoopProfile` *is* the point set, so a
-  wire that has had one removed no longer follows it; leaving the binding would mean the next Re-apply
-  Profile silently put the point back.
+- ~~**Removing a point DETACHES the wire from its profile.**~~ **Retired 2026-08-18** — it read: *"a
+  `LoopProfile` is the point set, so a wire that has had one removed no longer follows it; leaving the
+  binding would mean the next Re-apply Profile silently put the point back."* There is no binding and
+  no re-apply: removing a point removes a point.
 - **Delete Segment removes the segment's far endpoint**, so the wire comes back as ONE wire with
   exactly one fewer segment. Splitting is not offered: the reduction sums current along one continuous
   path (§3.4), and two disconnected halves are not something the physics can evaluate.
@@ -1340,12 +1458,12 @@ undo/redo."*)
   entry for the whole batch, and a wire is never taken below its two feet — that is refused by name.
 - **Add Vertex** puts a point on the wire nearest the right-click, **collinear with its two neighbours
   and at their interpolated z**, so the insert changes the shape not at all and only gives the user a
-  handle where there was none. It detaches the wire from its profile for the reason removing a point
-  already does: a `LoopProfile` defines the point set.
+  handle where there was none. *(It used to detach the wire from its profile as well, for the reason
+  removing a point did; retired 2026-08-18 with the profile object.)*
 - **Straighten Wire / Straighten Wires** moves every interior point onto the straight line between the
   feet, **in XY only and with the feet anchored** — lateral bow removed, loop height untouched, each
-  point keeping its own position along the chord. A bound wire is already straight there
-  (`LoopProfile.ApplyTo` interpolates X and Y between the feet), so it needs no detach. **With several
+  point keeping its own position along the chord. A wire just stamped out from a `LoopShape` is
+  already straight there (`LoopShape.Write` interpolates X and Y between the feet). **With several
   wires selected it straightens all of them, each about its OWN two feet** — never a shared chord,
   which would swing a fan-out from a common pad onto one line and destroy exactly the geometry the
   flexible model exists to allow (the same reasoning WB24c gives for scaling by factor rather than to a
@@ -1589,8 +1707,7 @@ JSON, versioned, following the `DataDisplayConfig` / `.charm` pattern (`FormatVe
 compatible reads), matching `project-file-formats.md`'s conventions including the **id-not-persisted**
 rule.
 
-**Stored:** wires (points, diameter, material ref), arrays and membership, loop profiles and bindings,
-materials, ground plane, operating temperature, coupling domain *(v2)*, the assembly-rule-file
+**Stored:** wires (points, diameter, material ref), arrays and membership, materials, ground plane, operating temperature, coupling domain *(v2)*, the assembly-rule-file
 reference, view state (projection
 azimuth, units, dot/line sizes), and the wBond's own parameter values.
 
@@ -1653,7 +1770,9 @@ harmless.
 ### 9.3 Import
 
 **WB36. A CSV wirebond-table importer is in scope**, per `mom-wirebond-kernel.md` RW16: from-pad /
-to-pad / profile / diameter / material / array, one row per wire. Hand-placing 600 wires is not a
+to-pad / diameter / material / array, one row per wire. *(A `profile` column is READ AND IGNORED since
+2026-08-18 — this tool used to write that header itself, so a table carrying it must not start being
+refused. Every imported wire is arched on `LoopShape.Seed` at the table's `loopheight`.)* Hand-placing 600 wires is not a
 workflow; every packaging flow already has this table, and it is also the natural export back to the
 bonder.
 
@@ -1691,8 +1810,9 @@ therefore draws correctly everywhere. A reader that ignores hatches still sees t
 becomes a wire, never a `PathShape`; anything else on a wire layer (the foot circles) is **dropped**,
 because it is decoration regenerated on every export. Letting either back in as layout geometry would
 add shapes to the design on every round trip, growing without bound while looking plausible each
-time. Imported wires arrive **free** — bound to no profile — because a polyline carries a shape, not
-the intent behind it.
+time. **An imported wire is an ordinary wire**: its polyline IS its shape, exactly as for one drawn
+here. *(That used to need saying — wires arrived "free", bound to no loop profile — but since
+2026-08-18 there is no other kind of wire to distinguish it from.)*
 
 **Units.** Coordinates are written in the file's own `$INSUNITS` and read back the same way.
 Nanometres-per-drawing-unit is a direct property of that setting, and the host layout's DBU
@@ -1991,7 +2111,7 @@ or fast-but-wall-clock-sensitive):
 | **WB-A — model and physics, headless** | `src/WBond`: data model, both Grover kernels, images, GMD self, Bessel q-table, array reduction, incremental fill + Cholesky cache, `.wBond` I/O, CSV import | Every §12 closed-form anchor green; cold fill < 1 s and single-wire incremental update < 10 ms at 600 wires, both measured; `Firewall.Tests` green |
 | **WB-B — the component** | Dynamic symbol generation, M-coupled-branch stamp of **Z**_arr(ω) (WB19a), `REF` pin and return-path refusal, parameters and expression binding, loop-height sweep | A 2-array wBond stamps and S-params match the headless reduction; **Z_arr(ω)/jω → L_arr as R → 0** (WB19b, the free cross-oracle between the editor's fast path and the simulator's exact one); a sweep over loop height runs end-to-end via `Cli`; a wBond with no declared return refuses with a specific message; **the coupling audit (WB30) fires on a constructed two-wBond adjacency and names the manual remedy** — load-bearing in v1, so it gates here, not later |
 | **WB-B2 — placing it** | `SymbolKind.WBond` + registry entry + palette tile; the symbol resolved from the referenced `.wBond` through `CellSymbolResolver`'s own seam (never a `.csym` on disk); §9.2 routes 2 and 3 | A placed wBond shows 2M+1 pins named in array order; a design with no arrays is refused by name; editing the design's array list updates the placed symbol live and a REORDER is reported rather than silently re-pointing the wiring; `NetBindings` arrive in `WBondModel`'s own terminal order (oracle: four distinct nets, not a terminal count); a loop-height sweep runs from a PLACED component; the coupling audit fires from the run |
-| **WB-C — the editor** | Layout Editor + profile view + panel; `LoopProfile` binding; selection/drag/keyboard; **alt-drag height/span scaling**; draw, duplicate-with-pitch, transforms incl. **rotate-about-end-point** and **reverse wire**; units; pH readout; snapping; hierarchy descent; clipboard; envelope rendering | 600-wire drag holds 60 fps (exact path) and the degraded path is measured and its crossover recorded; profile edit propagates to bound wires and detaches on individual drag; all four snap kinds hit wire points; **alt-drag invariants asserted numerically — feet do not move under height scaling (including unequal foot z), normalised shape is bit-preserved, and array span scales by factor not to a common value**; rotate-about-end-point leaves the pinned end exactly fixed; reverse-wire negates exactly that wire's off-diagonal row and column |
+| **WB-C — the editor** *(the `LoopProfile`-binding half of this row is **RETIRED 2026-08-18**, not rewritten — it shipped, and was then removed by owner decision; see §6.2)* | Layout Editor + profile view + panel; ~~`LoopProfile` binding~~; selection/drag/keyboard; **alt-drag height/span scaling**; draw, duplicate-with-pitch, transforms incl. **rotate-about-end-point** and **reverse wire**; units; pH readout; snapping; hierarchy descent; clipboard; envelope rendering | 600-wire drag holds 60 fps (exact path) and the degraded path is measured and its crossover recorded; ~~profile edit propagates to bound wires and detaches on individual drag~~ *(retired)*; all four snap kinds hit wire points; **alt-drag invariants asserted numerically — feet do not move under height scaling (including unequal foot z), normalised shape is bit-preserved, and array span scales by factor not to a common value**; rotate-about-end-point leaves the pinned end exactly fixed; reverse-wire negates exactly that wire's off-diagonal row and column |
 | **WB-D — assembly DRC** | The assembly rule document, resolver, 3D predicates, loop-height-vs-span envelope, results panel | Every listed rule fires on a constructed violation and is clean on a constructed pass; a machine-vs-process violation reports its section |
 | **WB-E — standalone app** ✅ **COMPLETE 2026-08-07** | Third entry point, build config, packaging, Touchstone export | Standalone binary opens a `.wBond`, edits, exports `.snp`; all three configurations build; `InternalsVisibleTo` intact (WB40) |
 | **WB-F — one editor** ✅ **COMPLETE 2026-08-16** | The wBond editor HOSTS `LayoutEditorView` (WB39a); the transcribed toolbar row deleted; wirebond CELLS (WB40); the profile view and Array Inductance panel as dock tools following the active layout (§10.1) | Every tool on the hosted toolbar works with no handler in `src/Ui/Views/WBond/`; push-in/pop-out/breadcrumbs reachable in the wBond editor; the diff REMOVES more than it adds |
@@ -2018,6 +2138,7 @@ or fast-but-wall-clock-sensitive):
 | D4 | Fast accurate R(f)? | **Z_int/R_dc is a function of q = a/δ alone** ⇒ a 1-D table, exact and ~10 ns (WB10). Proximity staged R1→R2→R3, with R3 reusing the same filament kernel (WB11) |
 | D5 | Can 600 wires drag at 60 fps? | **Yes for single-wire and small selections** — measured ~5 ms/frame. **The fill dominates, not the solve** (WB13). Large selections need the adaptive ladder (WB15) |
 | D6 | Profile view / odd-ball wires? | **Normalised-span parameterisation + `LoopProfile` as a shared bindable object + envelope rendering.** Bound wires follow the group curve; individually-dragged wires detach explicitly. No propagation heuristic (§6.2, WB24) |
+| D6 · rev 2026-08-18 | *(same question, revisited)* | **The shared bindable object is WITHDRAWN.** Normalised-span parameterisation and envelope rendering stand and are why the view works; the band is re-keyed on drawability. Owner: *"User would never share one loop shape for multiple arrays and want to edit it in one place. Each array is generally its own shape and I want flexibility for user to change each wire within the array."* WB24 goes with it (§6.2's dated note) |
 | D7 | Is the editor a new editor? | **No — the Layout Editor plus a profile view and a panel** (WB22). Wires are an overlay, not a `.clay` shape type (WB23) |
 | D8 | More than one wBond per design? | **Allowed, because hierarchy makes a singleton impossible.** One per cell view by convention; a **coupling audit that reports unmodelled adjacency** in v1; `CouplingDomain` in v2. The audit is the load-bearing part and gates v1 (WB28–WB30a) |
 | D9 | Where do wirebond rules live? | **Their own resolvable document, `.wasm`, not `.ctech`** — the relation is many-to-many and the lifecycles differ. `.ctech` owns what the pad *is*; the assembly file owns what the bonder can *do* (WB31), in three sections: machine / process / material (WB32) |
@@ -2035,6 +2156,7 @@ or fast-but-wall-clock-sensitive):
 | O-6 | Offer `Reverse Wire`, or infer direction? | **Offer the command.** Direction may be guessed once at creation, but is then data and only this command changes it — a silently-flipped wire negates a row and column of mutuals, which is a plausible-looking wrong answer | §6.4, WB26b |
 | — | Default conductivities | **85 °C values, not 20 °C** — a current-carrying wire is never at room temperature. A 22–25 % rise in R_dc (only ~10 % at RF, WB4b), with the 20 °C reference retained as the internal model so T = 20 °C recovers it exactly | §2.3, WB4a–WB4d |
 | — | Profile-view alt-drag | **Added:** alt+vertical scales loop height about the chord (feet pinned, shape preserved); alt+horizontal scales span; on a bound curve both rescale the whole array **by factor, not to a common value** | §6.2.1, WB24a–WB24c |
+| — · rev 2026-08-18 | *(same, restated)* | Unchanged in behaviour. "On a bound curve" now reads **on an ARRAY's curve** — there is no binding, and the array was already the implemented unit (owner, 2026-08-17) | §6.2.1, WB24a/WB24c |
 | — | Rotate about end point | **Added** as a transform: grabbed end follows the cursor, opposite end pinned; azimuth in the layout view, in-plane tilt in the profile view; per-wire pivots for a multi-selection, with a modifier for a shared pivot | §6.4, WB26a |
 | — | Inductance readout units | **pH, fixed, never auto-ranged** — the panel exists for comparison during a drag, and a unit that switches mid-drag fakes a 1000× jump. Coupling coefficient *k* offered alongside the mutuals | §6.8, WB27a |
 
@@ -2049,7 +2171,7 @@ or fast-but-wall-clock-sensitive):
 | O-8 | Should the cell's `.wBond` move to a `wires/` view sub-folder? | **No — into `layout/`, stem-paired with its `.clay`.** It is an **attachment**, not a view: views are alternatives with one primary, and WB28 makes two `.wBond` in a cell *both real*, so primacy would encode the opposite. Stem pairing also answers the question cell-root placement could only guess at — *which* `.clay` are these wires drawn over | WB40 (revised), `workspace-and-project-tree.md` §1.2.1 |
 | O-9 | A view sub-folder for "assembly" / "application"? | **Neither.** An **assembly** contains instances of other cells, so it is an ordinary cell with a hierarchical layout — already expressible, mixed technologies included; what it still needs is **z** on a layout instance, a model change rather than a directory. An **application** board *instantiates* this cell, so it is a sibling cell reached by an association reference, not a view of it | `workspace-and-project-tree.md` §1.2.1 |
 | O-10 | Loop height, diameter and material on the schematic symbol? | **Yes — as controlling parameters**, array-scoped and suffixed, applied as an override at elaboration that never writes back, unset by default meaning "as drawn". This is what makes them sweepable and optimisable without a sweep mutating the design once | §5.5.1, WB44 |
-| O-11 | Span too? | **Deferred.** Span is not a profile property but the pad positions; it scales by *factor* not to a value (WB24c), and it moves a bonded foot off its pad (WB24b) — safe under the layout editor's live snapping, blind from the schematic. The only one of the six needing new geometry rules rather than exposure of existing ones | §5.5.1, WB44a |
+| O-11 | Span too? | **Deferred.** Span is not a loop property but the pad positions; it scales by *factor* not to a value (WB24c), and it moves a bonded foot off its pad (WB24b) — safe under the layout editor's live snapping, blind from the schematic. The only one of the six needing new geometry rules rather than exposure of existing ones | §5.5.1, WB44a |
 | O-12 | Should the netlist reference the `.wBond` rather than carry a copy? | **Per-instance choice, `Linked` by default** when the instance resolves to a workspace cell that owns one; `Carried` otherwise and for imported/foreign designs. **Named `Carried`, not `Embedded`** — §9.1 already spends *embedded/referenced* on a different axis (what is inside the `.wBond`), and reusing them made the two indistinguishable. Linking makes §9.6's reconcile unnecessary rather than merely convenient — but the array-drift check must then run at elaboration, or linked drift arrives more quietly than carried drift | §9.7, WB45 |
 
 ### Open — for the owner

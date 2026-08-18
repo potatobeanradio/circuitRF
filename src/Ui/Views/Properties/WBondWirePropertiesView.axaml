@@ -59,13 +59,6 @@
                      multi-wire state above, where the combo does not apply. -->
 
                 <Grid ColumnDefinitions="62,*">
-                    <TextBlock Grid.Column="0" Text="Profile" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                    <SelectableTextBlock Grid.Column="1" Text="{Binding ProfileBinding}"
-                                         VerticalAlignment="Center" FontSize="11"/>
-                </Grid>
-
-                <Grid ColumnDefinitions="62,*">
                     <TextBlock Grid.Column="0" Text="Diameter" VerticalAlignment="Center" FontSize="11"
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     <TextBox Grid.Column="1" Text="{Binding DiameterText}" Tag="Diameter"

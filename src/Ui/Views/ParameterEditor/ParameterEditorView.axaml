@@ -224,12 +224,11 @@
                     </Grid>
 
                     <!-- Per-ARRAY overrides. The scope is the array because array names ARE the pin
-                         names on the symbol (O-10) — a LoopProfile is an editor-internal sharing
-                         mechanism a schematic user never sees. The rows are generated from THIS
-                         instance's array list, so they name G1/G2 instead of asking anyone to spell a
-                         suffix.
+                         names on the symbol (O-10), and it is the only scope there is. The rows are
+                         generated from THIS instance's array list, so they name G1/G2 instead of
+                         asking anyone to spell a suffix.
 
-                         Span is deliberately absent (WB44a/O-11): it is not a profile property but the
+                         Span is deliberately absent (WB44a/O-11): it is not a loop property but the
                          pad positions, it scales by factor rather than to a value, and it moves a
                          bonded foot off its pad — which the layout editor makes safe with live
                          snapping and the schematic, being blind to the artwork, cannot. -->

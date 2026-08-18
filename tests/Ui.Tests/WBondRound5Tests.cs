@@ -36,15 +36,14 @@ public class WBondRound5Tests
     /// <summary>An array of ball-bonded wires running east from the origin, pitched in y.</summary>
     private static WBondDesign Design(int wires = 2)
     {
-        var profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), points: 7);
+        long loopNm = WBondUnits.ToNm(20.0, WBondUnit.Mil);
         var design = new WBondDesign();
-        design.Profiles.Add(profile);
 
-        var array = new WireArray { Name = "G1", Profile = profile.Name };
+        var array = new WireArray { Name = "G1" };
         for (int w = 0; w < wires; w++)
-            array.Wires.Add(profile.CreateWire(
+            array.Wires.Add(LoopShape.CreateSeedWire(
                 Point3.Mils(0, w * 6.0, 4), Point3.Mils(100, w * 6.0, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", loopHeightNm: loopNm));
         design.Arrays.Add(array);
 
         return design;
@@ -407,10 +406,10 @@ public class WBondRound5Tests
 
         // The user edits the wires in the layout — a second wire in the same array.
         var edited = WBondIo.ReadFile(sidecar);
-        var profile = edited.Profiles[0];
-        edited.Arrays[0].Wires.Add(profile.CreateWire(
+        edited.Arrays[0].Wires.Add(LoopShape.CreateSeedWire(
             Point3.Mils(50, 50, 4), Point3.Mils(150, 50, 1),
-            WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold"));
+            WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold",
+            WBondViewModel.DefaultNewWireLoopHeightNm));
         WBondIo.WriteFile(sidecar, edited);
 
         var again = WBondCellSeeding.Seed(model, cell.CellDir, "amp");
@@ -453,10 +452,10 @@ public class WBondRound5Tests
         grown.Arrays.Add(new WireArray
         {
             Name = "G2",
-            Profile = grown.Profiles[0].Name,
-            Wires = { grown.Profiles[0].CreateWire(
+            Wires = { LoopShape.CreateSeedWire(
                 Point3.Mils(0, 20, 4), Point3.Mils(30, 20, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold") },
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold",
+                WBondViewModel.DefaultNewWireLoopHeightNm) },
         });
         WBondPlacement.ApplyDesign(comp, grown);
 
@@ -495,10 +494,10 @@ public class WBondRound5Tests
         edited.Arrays.Add(new WireArray
         {
             Name = "D1",
-            Profile = edited.Profiles[0].Name,
-            Wires = { edited.Profiles[0].CreateWire(
+            Wires = { LoopShape.CreateSeedWire(
                 Point3.Mils(0, 40, 4), Point3.Mils(30, 40, 1),
-                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold") },
+                WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold",
+                WBondViewModel.DefaultNewWireLoopHeightNm) },
         });
         WBondIo.WriteFile(sidecar, edited);
 
@@ -2614,13 +2613,12 @@ public class WBondRound5Tests
     private static WBondDesign TwoArrayDesign()
     {
         var design = WBondEmbedding.DefaultDesign();
-        var profile = design.Profiles[0];
         design.Arrays.Add(new WireArray
         {
             Name = "G2",
-            Profile = profile.Name,
-            Wires = { profile.CreateWire(Point3.Mils(0, 20, 4), Point3.Mils(30, 20, 1),
-                                         WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold") },
+            Wires = { LoopShape.CreateSeedWire(Point3.Mils(0, 20, 4), Point3.Mils(30, 20, 1),
+                                               WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold",
+                                               WBondViewModel.DefaultNewWireLoopHeightNm) },
         });
         return design;
     }

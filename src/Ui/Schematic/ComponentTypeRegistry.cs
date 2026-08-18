@@ -699,8 +699,8 @@ public static class ComponentTypeRegistry
             // reaches the engine at all (WB44 property 2).
             //
             // Array-scoped spellings — `LoopHeight_G1`, `Diameter_G1`, `Material_G2` (O-10: array names
-            // ARE the pin names, and a LoopProfile is an editor-internal sharing mechanism a schematic
-            // user never sees) — are not here because the array names are not knowable until the design
+            // ARE the pin names, and the array is the only scope there is) — are not here because the
+            // array names are not knowable until the design
             // is decoded. The wBond parameter panel generates them from the instance's own array list.
             //
             // `Source` and `File` are WB45's carried-or-linked axis. `Carried` by construction: a

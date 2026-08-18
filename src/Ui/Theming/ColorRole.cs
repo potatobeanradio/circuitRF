@@ -193,12 +193,15 @@ public static class ColorRole
     /// </summary>
     public const string WBondSelected = "wBond.Selected";
 
-    /// <summary>The translucent min/max band over an array's bound members (§6.2 idea 3). Carries
+    /// <summary>The translucent min/max band over an array's members (§6.2 idea 3). Carries
     /// its own alpha.</summary>
     public const string WBondEnvelope = "wBond.Envelope";
 
-    /// <summary>A wire detached from its profile, drawn as its own curve.</summary>
-    public const string WBondFreeWire = "wBond.FreeWire";
+    // No second wire colour, in either wBond view (owner, 2026-08-18): "I don't want the wires ever
+    // changing colors based on geometry." `wBond.FreeWire` served two unrelated meanings — a wire with
+    // no loop-profile binding in the layout view, and a non-representative member in the profile view.
+    // The first recoloured a wire as a side effect of an unrelated edit; the second recoloured it for
+    // being shaped differently. Both are gone, and `wBond.Wire` is the only wire colour there is.
 
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
@@ -225,6 +228,6 @@ public static class ColorRole
         HarmonicaMessages, HarmonicaProgressBar,
         HarmonicaMarkerBand1, HarmonicaMarkerBand2, HarmonicaMarkerBand3,
         HarmonicaMarkerBand4, HarmonicaMarkerBand5,
-        WBondWire, WBondWireStart, WBondWireVertex, WBondSelected, WBondEnvelope, WBondFreeWire,
+        WBondWire, WBondWireStart, WBondWireVertex, WBondSelected, WBondEnvelope,
     ];
 }

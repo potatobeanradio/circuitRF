@@ -40,10 +40,7 @@ public sealed partial class WBondViewModel
     /// interpolated z (<see cref="WireEdits.InsertPointOnSegment"/>).
     ///
     /// <para><b>Structural</b>, like every point-count change: the point count IS the filament count,
-    /// so the mesh is rebuilt rather than patched. And it DETACHES the wire from its profile for the
-    /// reason the deletes already document — a <see cref="LoopProfile"/> defines the point set, so a
-    /// wire with an extra point no longer follows it and the next Re-apply would silently take the
-    /// vertex away again.</para>
+    /// so the mesh is rebuilt rather than patched.</para>
     /// </summary>
     /// <param name="t">
     /// Where along the segment, 0..1 — the caller's own projection of the click, in whichever plane
@@ -63,8 +60,6 @@ public sealed partial class WBondViewModel
             DropUndoEntry();
             return false;
         }
-
-        ProfileEnvelope.Detach(wire);
 
         // Point indices past the insertion have shifted, so anything the selection holds within this
         // wire now names a different point — the same rule DeleteWirePoint applies.

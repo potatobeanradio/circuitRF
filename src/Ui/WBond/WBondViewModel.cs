@@ -332,47 +332,87 @@ public sealed partial class WBondViewModel : ObservableObject
     {
         if (Selection.IsEmpty) return;
 
+        // In the PROFILE view the subject is the whole group — the same rule the drag and the alt-drag
+        // follow there. See ProfileGroupSubject.
+        var subject = view == EditorView.Profile ? ProfileGroupSubject(Selection) : Selection;
+
         PushUndo();
         long step = coarse ? WireEdits.CoarseNudgeNm : WireEdits.DefaultNudgeNm;
-        WireEdits.Nudge(_design, Selection, dx, dyOrDz, step, view);
+        WireEdits.Nudge(_design, subject, dx, dyOrDz, step, view);
 
         // A nudge moves whole points, never adds them — so it is the drag path.
-        CommitPointMove([.. Selection.TouchedWires()],
+        CommitPointMove([.. subject.TouchedWires()],
                         dyOrDz == 0 ? SelectionMotion.HorizontalRigidTranslation : SelectionMotion.General);
     }
 
     /// <summary>
-    /// Scales the whole bound array's height by a factor (WB24a/c) — <b>a profile-CURVE gesture, and
-    /// no gesture reaches it today</b>.
+    /// What a PROFILE-view edit actually moves: <b>the same point or segment on every wire of every
+    /// array the selection touches</b> (owner, 2026-08-18: <i>"when I click drag a point/segment in
+    /// Wire Profile view only 1 wire within the group moves. I want all the wires within that group to
+    /// move."</i>).
     ///
-    /// <para>Kept because §6.2's profile-curve drag is still specified; <b>alt-drag on a WIRE is not
-    /// it</b> and deliberately no longer fans out (owner, 2026-08-17 — see
-    /// <see cref="ScaleSelection"/>). Anything wiring this to a gesture again needs to be sure the
-    /// user is dragging the ARRAY's curve and not one wire.</para>
+    /// <h3>Why the group, and why only in this view</h3>
+    /// <para>The profile view draws a group as ONE superimposed shape under one envelope band, and a
+    /// bond group is one loop program on one bonder — reshaping one member and leaving its siblings
+    /// behind is not a thing the machine can do. That is the same reasoning that already put alt-drag
+    /// on the array here (WB24c, owner 2026-08-17: <i>"it needs to change ALL the wires in the group at
+    /// once"</i>); a plain drag simply had not been moved with it, so the two gestures disagreed about
+    /// what they were pointing at.
+    ///
+    /// <para>The LAYOUT view is deliberately unchanged: there each wire is drawn at its own place among
+    /// the pads and a drag moves THAT wire onto THAT pad. Its members are not interchangeable.</para>
+    ///
+    /// <h3>What it does NOT promote</h3>
+    /// <para><b>The <see cref="Selection"/> itself is left alone</b>, exactly as alt-drag leaves it —
+    /// this is the subject of one edit, not a re-selection. The panel still reports the wire the user
+    /// clicked, and the highlight still marks it.</para>
+    ///
+    /// <para>A sibling with too few points to have the named element is skipped rather than
+    /// approximated. An array's members may legitimately differ in point count (§6.2), and guessing
+    /// which of its points "corresponds" would move a wire somewhere nobody asked for.</para>
     /// </summary>
-    public int ScaleProfileHeight(string profileName, double factor)
+    public WireSelection ProfileGroupSubject(WireSelection selection)
     {
-        var profile = _design.ProfileByName(profileName);
-        if (profile is null) return 0;
+        ArgumentNullException.ThrowIfNull(selection);
+        if (selection.IsEmpty) return selection;
 
-        PushUndo();
-        int moved = WireEdits.ScaleBoundWires(_design, profile, heightFactor: factor, spanFactor: 1.0);
-        if (moved > 0) CommitPointMove([.. BoundWireIndices(profileName)]);
-        return moved;
-    }
+        var wires = _design.AllWires().ToList();
+        var subject = new WireSelection();
 
-    /// <summary>Scales span by FACTOR across the bound array (WB24b/c). The span counterpart of
-    /// <see cref="ScaleProfileHeight"/>, and reached by no gesture today for the same reason.</summary>
-    public int ScaleProfileSpan(string profileName, double factor, bool moveOutputFoot = true)
-    {
-        var profile = _design.ProfileByName(profileName);
-        if (profile is null) return 0;
+        // The arrays the selection touches, through the SAME flat-index-to-array mapping SelectArray
+        // and ExpandToArrays use, so "the group" means one thing in this class.
+        var siblings = new Dictionary<int, List<int>>();
 
-        PushUndo();
-        int moved = WireEdits.ScaleBoundWires(_design, profile, heightFactor: 1.0, spanFactor: factor,
-                                              moveOutputFoot: moveOutputFoot);
-        if (moved > 0) CommitPointMove([.. BoundWireIndices(profileName)]);
-        return moved;
+        List<int> SiblingsOf(int wire)
+        {
+            if (wire < 0 || wire >= _mesh.WireCount) return [];
+            int array = _mesh.ArrayOfWire[wire];
+
+            if (siblings.TryGetValue(array, out var found)) return found;
+
+            var list = new List<int>();
+            for (int w = 0; w < _mesh.WireCount; w++)
+                if (_mesh.ArrayOfWire[w] == array) list.Add(w);
+
+            siblings[array] = list;
+            return list;
+        }
+
+        foreach (int wire in selection.Wires)
+            foreach (int sibling in SiblingsOf(wire))
+                subject.Wires.Add(sibling);
+
+        foreach (var point in selection.Points)
+            foreach (int sibling in SiblingsOf(point.Wire))
+                if (point.Point < wires[sibling].Points.Count)
+                    subject.Points.Add(new PointRef(sibling, point.Point));
+
+        foreach (var segment in selection.Segments)
+            foreach (int sibling in SiblingsOf(segment.Wire))
+                if (segment.Point < wires[sibling].Points.Count - 1)
+                    subject.Segments.Add(new SegmentRef(sibling, segment.Point));
+
+        return subject;
     }
 
     /// <summary>
@@ -385,21 +425,11 @@ public sealed partial class WBondViewModel : ObservableObject
     /// only what it looks like.</para>
     ///
     /// <para><b>The unit is the ARRAY, or the selection, and the caller says which</b> — see
-    /// <paramref name="wholeArray"/>. Never the <see cref="LoopProfile"/>, which is where this went
-    /// wrong and is worth stating plainly: a profile is an editor-internal SHARING mechanism a user
-    /// never sees (O-10), an array is the bond group they are looking at, and the two are not the same
-    /// set. <c>WireEdits.ScaleBoundWires</c> rescaled every wire following the profile — which, in a
-    /// design built from <c>WBondEmbedding.DefaultDesign</c>, is every wire in the design, because that
-    /// creates ONE profile and every array references it. So alt-dragging a wire in G1 moved G2's
-    /// wires too (owner, 2026-08-17).</para>
-    ///
-    /// <para><b>Nothing writes the profile any more either</b>, which was the second half of the same
-    /// defect (the old path wrote the scaled height back onto the shared <see cref="LoopProfile"/>).
-    /// That is the same correction <c>ControllingParameters</c> took hours earlier — the owner's
-    /// <i>"its setting should never affect the geometry that the user authors"</i>. It is safe because
-    /// a loop height is a property of the WIRE (<c>Wire.LoopHeightNm</c> is its own max z minus min z)
-    /// and the profile view's envelope band is computed from the bound WIRES rather than from the
-    /// profile's nominal shape, so a rescaled wire needs no detach to stay consistent.</para>
+    /// <paramref name="wholeArray"/>. It used to be the set of wires sharing a loop profile, which is
+    /// where this went wrong: a design built from <c>WBondEmbedding.DefaultDesign</c> gave every array
+    /// the same profile, so alt-dragging a wire in G1 moved G2's wires too (owner, 2026-08-17). Loop
+    /// profiles no longer exist at all (2026-08-18); an array is the bond group the user is looking
+    /// at, and that is the only grouping this gesture has ever meant.</para>
     ///
     /// <para>Scaling by FACTOR rather than to a common value is unchanged and still matters: an array
     /// whose wires deliberately have different spans — a fan-out from a common pad — keeps their
@@ -445,30 +475,6 @@ public sealed partial class WBondViewModel : ObservableObject
 
         CommitPointMove([.. touched]);
         return moved;
-    }
-
-    /// <summary>
-    /// Detaches every wire in the selection from its profile (D5), returning how many were detached —
-    /// the number the "N wires detached" toast reports.
-    /// </summary>
-    public int DetachSelection()
-    {
-        var wires = _design.AllWires().ToList();
-        int detached = 0;
-
-        bool pushed = PushUndo();
-        foreach (int index in Selection.TouchedWires())
-        {
-            if (index < 0 || index >= wires.Count) continue;
-            if (wires[index].ProfileBinding is null) continue;
-            ProfileEnvelope.Detach(wires[index]);
-            detached++;
-        }
-
-        if (detached > 0) { DirtyChanged?.Invoke(); ReadoutChanged?.Invoke(); }
-        else if (pushed) DropUndoEntry();   // nothing happened; do not leave a no-op on the undo stack
-
-        return detached;
     }
 
     // ---------------------------------------------------------------- transforms (§6.4)
@@ -614,8 +620,9 @@ public sealed partial class WBondViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Collapses interior points onto the chord, <b>keeping the point count</b> so a profile can be
-    /// re-applied and return the wire exactly where it was.
+    /// Collapses interior points onto the chord, <b>keeping the point count</b> (2026-08-18: the
+    /// reason used to be "so a profile can be re-applied"; with nothing to re-apply from, it is that
+    /// a user who straightens by mistake can undo, and that the point count is their own choice).
     ///
     /// <para>That is what makes this the drag path rather than a structural change: the flat filament
     /// layout is untouched, so it costs an incremental update rather than a full rebuild.</para>
@@ -645,38 +652,6 @@ public sealed partial class WBondViewModel : ObservableObject
 
         CommitPointMove(touched);
         return touched.Count;
-    }
-
-    /// <summary>
-    /// Re-applies each selected wire's bound profile, restoring the loop a straighten collapsed.
-    /// A free (detached) wire is skipped — it has no profile to restore from.
-    /// </summary>
-    public int ReapplyProfileToSelection()
-    {
-        var touched = TouchedWireList();
-        if (touched.Count == 0) return 0;
-
-        var wires = _design.AllWires().ToList();
-        var applied = new List<int>();
-
-        // Pushed-or-not is tracked rather than assumed: inside an open gesture PushUndo deliberately
-        // does nothing, and popping then would discard somebody else's entry.
-        bool pushed = PushUndo();
-
-        foreach (int index in touched)
-        {
-            var wire = wires[index];
-            if (wire.ProfileBinding is null) continue;
-            if (_design.ProfileByName(wire.ProfileBinding) is not { } profile) continue;
-
-            profile.ApplyTo(wire, wire.Points[0], wire.Points[^1]);
-            applied.Add(index);
-        }
-
-        if (applied.Count > 0) CommitPointMove(applied);
-        else if (pushed) DropUndoEntry();
-
-        return applied.Count;
     }
 
     // ---------------------------------------------------------------- clipboard (§6.7)
@@ -876,9 +851,7 @@ public sealed partial class WBondViewModel : ObservableObject
     /// profile view's "the whole group at once" (see <see cref="ScaleSelection"/>'s <c>wholeArray</c>).
     ///
     /// <para>Through <c>WireMesh.ArrayOfWire</c>, which is the same flat-index-to-array mapping
-    /// <see cref="SelectArray"/> uses, so "the group" means one thing in this class. Deliberately NOT
-    /// the wires sharing a <see cref="LoopProfile"/>: that is an editor-internal sharing mechanism and
-    /// routinely spans every array in the design, which is the bug this replaced.</para>
+    /// <see cref="SelectArray"/> uses, so "the group" means one thing in this class.</para>
     /// </summary>
     private List<int> ExpandToArrays(IReadOnlyCollection<int> seed)
     {
@@ -912,48 +885,63 @@ public sealed partial class WBondViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Adds a wire between two points, using a loop profile to generate the whole loop (§6.4).
-    ///
-    /// <para>Returns the new wire's flat index, or −1 when the design has no profile and none could be
-    /// made. <b>Structural</b> — a new wire changes the flat filament layout, so it costs a rebuild;
-    /// that is why creation is a click-click gesture rather than something that fires per pointer
-    /// move.</para>
-    ///
-    /// <para>The wire joins the first array bound to that profile, and one is created when there is
-    /// none. Array membership is what the reduction sums over (§3.4), so a wire in no array would be
-    /// drawn, measured, and absent from every published inductance — silently.</para>
+    /// The loop height a newly-created wire is arched to when the caller does not say — the shipped
+    /// default (<c>WBondEmbedding.DefaultWire.LoopHeightMils</c>), which is what the design's default
+    /// loop profile used to supply.
     /// </summary>
+    public static long DefaultNewWireLoopHeightNm { get; } =
+        WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil);
+
+    /// <summary>
+    /// Adds a wire between two points, arched on the seed shape (§6.4).
+    ///
+    /// <para>Returns the new wire's flat index. <b>Structural</b> — a new wire changes the flat
+    /// filament layout, so it costs a rebuild; that is why creation is a click-click gesture rather
+    /// than something that fires per pointer move.</para>
+    ///
+    /// <para><b>Which array a new wire joins is now stated, not inferred</b> (2026-08-18). It used to
+    /// be answered by loop-profile identity — the first array referencing the design's first profile —
+    /// which is why the layout drop path had to invent a uniquely-named throwaway profile purely to
+    /// force a NEW array. <paramref name="arrayName"/> says it outright.</para>
+    ///
+    /// <para>Array membership is what the reduction sums over (§3.4), so a wire in no array would be
+    /// drawn, measured, and absent from every published inductance — silently. There is therefore
+    /// always an array.</para>
+    /// </summary>
+    /// <param name="arrayName">
+    /// The array to join, created when the design has no array of that name — which is how a caller
+    /// asks for a NEW group: pass <see cref="NextArrayName"/>.
+    ///
+    /// <para>Null means "the group already on screen": the FIRST array, or a new one when the design
+    /// has none. That is what the two interactive draw tools want — an array IS a pin pair on the
+    /// generated symbol, so making one per drawn wire would grow the symbol every time a user draws.</para>
+    /// </param>
     public int AddWire(Point3 start, Point3 end, long diameterNm, string material,
-                       string? profileName = null, int pointsIfProfileCreated = 7)
+                       string? arrayName = null, int points = 7, long? loopHeightNm = null)
     {
-        var profile = profileName is null
-            ? _design.Profiles.FirstOrDefault()
-            : _design.ProfileByName(profileName);
-
-        if (profile is null)
-        {
-            profile = LoopProfile.BallBond(WBondUnits.ToNm(20.0, WBondUnit.Mil), pointsIfProfileCreated);
-            _design.Profiles.Add(profile);
-        }
-
         PushUndo();
 
-        var array = _design.Arrays.FirstOrDefault(
-            a => string.Equals(a.Profile, profile.Name, StringComparison.OrdinalIgnoreCase));
+        var array = arrayName is null
+            ? _design.Arrays.FirstOrDefault()
+            : _design.Arrays.FirstOrDefault(
+                a => string.Equals(a.Name, arrayName, StringComparison.OrdinalIgnoreCase));
 
         if (array is null)
         {
-            array = new WireArray { Name = NextArrayName(), Profile = profile.Name };
+            array = new WireArray { Name = arrayName ?? NextArrayName() };
             _design.Arrays.Add(array);
         }
 
-        array.Wires.Add(profile.CreateWire(start, end, diameterNm, material));
+        array.Wires.Add(LoopShape.CreateSeedWire(
+            start, end, diameterNm, material,
+            loopHeightNm ?? DefaultNewWireLoopHeightNm, Math.Max(3, points)));
 
         CommitStructuralChange();
         return _design.AllWires().Count() - 1;
     }
 
-    private string NextArrayName()
+    /// <summary>The first free <c>G&lt;n&gt;</c> — what a caller asks for a brand-new group with.</summary>
+    public string NextArrayName()
     {
         for (int n = 1; ; n++)
         {
@@ -991,25 +979,16 @@ public sealed partial class WBondViewModel : ObservableObject
         return made.Count;
     }
 
-    private IEnumerable<int> BoundWireIndices(string profileName)
-    {
-        var wires = _design.AllWires().ToList();
-        for (int i = 0; i < wires.Count; i++)
-            if (string.Equals(wires[i].ProfileBinding, profileName, StringComparison.OrdinalIgnoreCase))
-                yield return i;
-    }
-
     // ---------------------------------------------------------------- undo
 
     /// <summary>
-    /// A snapshot of every wire's points and binding — enough to undo any edit in this class.
+    /// A snapshot of every wire's points — enough to undo any edit in this class.
     ///
     /// <para>Points only, not the whole design: it is what every edit here touches, and cloning the
     /// point lists is O(N·points) and allocation-light, where a `.wBond` round trip would be
     /// milliseconds of JSON per undo push.</para>
     /// </summary>
-    private sealed record DesignSnapshot(
-        ArraySnapshot[] Arrays, Point3[][] Points, string?[] Bindings, long[] ProfileHeights);
+    private sealed record DesignSnapshot(ArraySnapshot[] Arrays, Point3[][] Points);
 
     /// <summary>
     /// One array's identity and MEMBERSHIP, by wire reference.
@@ -1019,16 +998,14 @@ public sealed partial class WBondViewModel : ObservableObject
     /// rather than a reconstruction of it. A wire ADDED after the snapshot is simply absent from it
     /// and therefore disappears on undo, with no bookkeeping either way.</para>
     /// </summary>
-    private sealed record ArraySnapshot(string Name, string? Profile, Wire[] Wires);
+    private sealed record ArraySnapshot(string Name, Wire[] Wires);
 
     private DesignSnapshot Capture()
     {
         var wires = _design.AllWires().ToList();
         return new DesignSnapshot(
-            [.. _design.Arrays.Select(a => new ArraySnapshot(a.Name, a.Profile, [.. a.Wires]))],
-            [.. wires.Select(w => w.Points.ToArray())],
-            [.. wires.Select(w => w.ProfileBinding)],
-            [.. _design.Profiles.Select(p => p.LoopHeightNm)]);
+            [.. _design.Arrays.Select(a => new ArraySnapshot(a.Name, [.. a.Wires]))],
+            [.. wires.Select(w => w.Points.ToArray())]);
     }
 
     private bool _inGesture;
@@ -1115,7 +1092,7 @@ public sealed partial class WBondViewModel : ObservableObject
         {
             _design.Arrays.Clear();
             foreach (var a in snapshot.Arrays)
-                _design.Arrays.Add(new WireArray { Name = a.Name, Profile = a.Profile, Wires = [.. a.Wires] });
+                _design.Arrays.Add(new WireArray { Name = a.Name, Wires = [.. a.Wires] });
         }
 
         var wires = _design.AllWires().ToList();
@@ -1126,11 +1103,7 @@ public sealed partial class WBondViewModel : ObservableObject
             if (wires[i].Points.Count != snapshot.Points[i].Length) structural = true;
             wires[i].Points.Clear();
             wires[i].Points.AddRange(snapshot.Points[i]);
-            wires[i].ProfileBinding = snapshot.Bindings[i];
         }
-
-        for (int i = 0; i < Math.Min(_design.Profiles.Count, snapshot.ProfileHeights.Length); i++)
-            _design.Profiles[i].LoopHeightNm = snapshot.ProfileHeights[i];
 
         // A structural restore invalidates every flat index an outstanding selection holds.
         if (structural) Selection = new WireSelection();
@@ -1150,7 +1123,6 @@ public sealed partial class WBondViewModel : ObservableObject
             var snap = snapshot.Arrays[a];
 
             if (!string.Equals(live.Name, snap.Name, StringComparison.Ordinal)) return true;
-            if (!string.Equals(live.Profile, snap.Profile, StringComparison.Ordinal)) return true;
             if (live.Wires.Count != snap.Wires.Length) return true;
 
             // By REFERENCE: two different wires with identical geometry are still a structural change.

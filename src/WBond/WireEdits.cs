@@ -110,11 +110,12 @@ public static class WireEdits
     }
 
     /// <summary>
-    /// Scales every wire bound to <paramref name="profile"/> <b>by the same factor</b> (WB24c / D4).
+    /// Scales an explicit set of wires — the alt-drag primitive, applied to whatever the caller
+    /// decided the gesture means (its selection, or every wire of the arrays it touches).
     ///
-    /// <para>By factor, never to a common value: an array whose wires deliberately have different
-    /// spans — a fan-out from a common pad — keeps their ratios. Setting a common absolute span would
-    /// silently destroy exactly the geometry the flexible model exists to allow.</para>
+    /// <para><b>By factor, never to a common value</b>: an array whose wires deliberately have
+    /// different spans — a fan-out from a common pad — keeps their ratios. Setting a common absolute
+    /// span would silently destroy exactly the geometry the flexible model exists to allow.</para>
     /// </summary>
     /// <param name="moveOutputFoot">
     /// Which foot the span scale moves. <b>The pinned foot is the one the user is NOT dragging</b> —
@@ -123,35 +124,6 @@ public static class WireEdits
     /// <c>Points[0]</c> made an alt-drag on the left end of a wire pull the RIGHT end towards the
     /// cursor, which is the opposite of what the hand asked for.
     /// </param>
-    /// <returns>How many wires were rescaled.</returns>
-    public static int ScaleBoundWires(WBondDesign design, LoopProfile profile, double heightFactor,
-                                      double spanFactor, bool moveOutputFoot = true)
-    {
-        ArgumentNullException.ThrowIfNull(design);
-        ArgumentNullException.ThrowIfNull(profile);
-
-        int moved = 0;
-        foreach (var wire in design.AllWires())
-        {
-            if (!string.Equals(wire.ProfileBinding, profile.Name, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            if (spanFactor != 1.0) ScaleSpan(wire, spanFactor, moveOutputFoot);
-            if (heightFactor != 1.0) ScaleHeightAboutChord(wire, heightFactor);
-            moved++;
-        }
-
-        if (heightFactor != 1.0) profile.ScaleHeight(heightFactor);
-        return moved;
-    }
-
-    /// <summary>
-    /// Scales an explicit set of wires — the <b>detached</b> counterpart of
-    /// <see cref="ScaleBoundWires"/>, used when the alt-drag's selection follows no shared profile.
-    ///
-    /// <para>Without it an alt-drag on a free wire did nothing at all and said nothing about why,
-    /// which reads as the gesture being broken rather than as the wire having no profile.</para>
-    /// </summary>
     /// <returns>How many wires were rescaled.</returns>
     public static int ScaleWires(IEnumerable<Wire> wires, double heightFactor, double spanFactor,
                                  bool moveOutputFoot = true)
@@ -326,7 +298,6 @@ public static class WireEdits
             {
                 DiameterNm = source.DiameterNm,
                 Material = source.Material,
-                ProfileBinding = source.ProfileBinding,
                 Locked = source.Locked,
             };
 
@@ -482,10 +453,9 @@ public static class WireEdits
     /// the chord parameter it already had (<see cref="ChordParameter"/>), so a wire whose points were
     /// bunched near one foot stays bunched — the command straightens, it does not re-space.</para>
     ///
-    /// <para><b>A wire bound to a profile is already straight in XY</b>, because
-    /// <see cref="LoopProfile.ApplyTo"/> writes X and Y by linear interpolation between the feet. So
-    /// this is a no-op there and needs no detach — unlike removing a point, which changes the point
-    /// set a profile defines.</para>
+    /// <para>A wire just stamped out from a <see cref="LoopShape"/> is already straight in XY, because
+    /// <see cref="LoopShape.Write"/> writes X and Y by linear interpolation between the feet — so this
+    /// is a no-op there.</para>
     /// </summary>
     /// <returns>How many points moved.</returns>
     public static int StraightenXy(Wire wire)
@@ -589,18 +559,18 @@ public static class WireEdits
     /// Sets a wire's loop height <b>by rescaling its own rise above the chord</b> — keeping every
     /// point's X and Y exactly, and both feet bit-exactly.
     ///
-    /// <h3>Why this exists rather than re-applying a <see cref="LoopProfile"/></h3>
+    /// <h3>Why this exists rather than re-stamping a <see cref="LoopShape"/></h3>
     /// <para>Owner, 2026-08-17: <i>"I don't like this ball/wedge profile thing. It doesn't offer the
     /// user anything. Its setting should never affect the geometry that the user authors."</i></para>
     ///
-    /// <para><see cref="LoopProfile.ApplyTo"/> writes a wire's X and Y by linear interpolation between
-    /// the feet, so applying a loop height through a profile <b>straightens any path the user routed by
+    /// <para><see cref="LoopShape.Write"/> writes a wire's X and Y by linear interpolation between the
+    /// feet, so applying a loop height by re-stamping a shape <b>straightens any path the user routed by
     /// hand</b> — a wire taken around an obstacle comes back as a plain planar arc. That is fine when a
-    /// profile is genuinely generating the wire and destructive the moment someone has shaped it. This
+    /// shape is genuinely generating a new wire and destructive the moment someone has routed one. This
     /// changes the one quantity that was asked for and nothing else.</para>
     ///
     /// <para><b>No span ordering is required</b>, which is the second reason not to route this through a
-    /// profile: <see cref="LoopProfile.Validate"/> demands strictly increasing spans, and a hand-routed
+    /// shape: <see cref="LoopShape.Validate"/> demands strictly increasing spans, and a hand-routed
     /// wire that doubles back in XY does not have them. Nothing here needs the points ordered along the
     /// chord at all.</para>
     ///
@@ -611,7 +581,7 @@ public static class WireEdits
     /// and is found by bisection. A closed form over the positive rises alone would be exact only while
     /// no point dips BELOW the chord, which a hand-routed wire may well do.</para>
     ///
-    /// <para><b>Clamped at the foot drop</b>, exactly as <see cref="LoopProfile.SolveAmplitudeNm"/> is
+    /// <para><b>Clamped at the foot drop</b>, exactly as <see cref="LoopShape.SolveAmplitudeNm"/> is
     /// and for the same reason: with the feet <c>|z₁ − z₂|</c> apart even a dead-straight wire measures
     /// that much, so a smaller request is not achievable by any shape (see
     /// <see cref="Wire.LoopHeightNm"/>).</para>
