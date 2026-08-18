@@ -229,6 +229,42 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     public event Action<TextEditRequest>? TextEditRequested;
 
+    // ── Pin port-number edit request (owner, 2026-08-17) ──────────────────────
+
+    /// <summary>
+    /// Payload raised on double-click of a placed pin; the view opens a small dialog on it. The same
+    /// shape as <see cref="TextEditRequest"/> and for the same reason — the VM decides that an edit was
+    /// asked for and on what, the view owns the widget, so nothing Avalonia crosses the firewall.
+    /// </summary>
+    /// <param name="PinIndex">Index into <c>EditableSymbol.Pins</c>.</param>
+    /// <param name="PortNumber">The pin's CURRENT port number, 1-based — what the user sees on the
+    /// canvas and in the inspector, not the 0-based <see cref="SymbolPin.PortIndex"/> underneath.</param>
+    /// <param name="PortCount">The owning cell's declared port count, or null for an orphan symbol
+    /// with no <c>.ccell</c> to declare one. The dialog shows it so a number outside the cell's own
+    /// range is a visible choice rather than a silent one.</param>
+    public readonly record struct PinPortEditRequest(int PinIndex, int PortNumber, int? PortCount);
+
+    public event Action<PinPortEditRequest>? PinPortEditRequested;
+
+    /// <summary>
+    /// Applies the dialog's answer. <paramref name="portNumber"/> is 1-BASED, as shown; anything below
+    /// 1 is rejected rather than clamped, since a clamp would silently write a number the user did not
+    /// choose. One undoable command, the same one the inspector's own port field fires.
+    /// </summary>
+    public void SetPinPortNumber(int pinIndex, int portNumber)
+    {
+        if (IsLocked) return;
+        if (pinIndex < 0 || pinIndex >= EditableSymbol.Pins.Count) return;
+        if (portNumber < 1) return;
+        var pin = EditableSymbol.Pins[pinIndex];
+        if (pin.PortIndex == portNumber - 1) return;
+        _applyingRemap = true;
+        Execute(new RemapSymbolPinCommand(EditableSymbol, pin, portNumber - 1));
+        _applyingRemap = false;
+        SyncSelectedPinPortIndex();
+        RebuildOverlay();
+    }
+
     // ── Canvas zoom (set by SymbolEditorCanvas; used to convert screen-px tolerances) ──
 
     /// <summary>
@@ -928,6 +964,29 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     private void SelectToolPress(double lx, double ly, KeyModifiers mods, int clickCount = 1)
     {
+        // Double-click a PIN → request the port-number dialog (owner, 2026-08-17). Tested before the
+        // text primitive below for the same reason the single-click path hit-tests pins before
+        // primitives: a pin sits on top of whatever artwork it is attached to, and the artwork would
+        // otherwise win every double-click aimed at the pin.
+        if (clickCount >= 2 && !IsLocked)
+        {
+            int ph = HitTestPin(lx, ly);
+            if (ph >= 0)
+            {
+                // Select it as well, so the inspector and the dialog agree about which pin is being
+                // edited — and so the canvas shows which one, since the dialog names no coordinates.
+                _selection.Clear();
+                _selectedPins.Clear();
+                _selectedPins.Add(ph);
+                _isPinDragging = false;   // a double-click must not leave a drag armed behind the dialog
+                SyncSelectedPinPortIndex();
+                RebuildOverlay();
+                PinPortEditRequested?.Invoke(new PinPortEditRequest(
+                    ph, EditableSymbol.Pins[ph].PortIndex + 1, ExternalPortCount));
+                return;
+            }
+        }
+
         // Double-click a text primitive → request inline content edit (handled by the view).
         if (clickCount >= 2 && !IsLocked)
         {

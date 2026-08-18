@@ -213,4 +213,191 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
         Assert.Equal(wMeters, origin.Parameters.Real("W"), 9);
         Assert.Equal(lMeters, origin.Parameters.Real("L"), 9);
     }
+
+    // ── Ordinary hierarchical instances (owner, 2026-08-17) ──────────────────────────────────────
+    //
+    // "I performed an Update Schematic from Layout, but my cell instance was not placed in the
+    // schematic (even though it has a symbol)." Every test below is on the ORDINARY path — a cell the
+    // user drew and placed, with no PCellOrigin — which the generator used to skip with a bare
+    // `continue` that reported nothing either.
+
+    /// <summary>A real cell folder with a layout (so a layout instance resolves), a symbol (so the
+    /// schematic can draw it), and a published parameter interface (so the created component can be
+    /// checked for seeding). Deliberately NOT a PCell — that is the whole point.</summary>
+    private string MakePlainCell(string cellName, bool withSymbol = true, params (string Name, string Default)[] parameters)
+    {
+        string cellDir = CellFolder.CreateCellFolder(_root, cellName);
+
+        string layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        LayoutPersistence.SaveToFile(Path.Combine(layoutDir, cellName + ".clay"), new LayoutView());
+
+        if (withSymbol)
+        {
+            string symDir = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
+            SymbolPersistence.SaveToFile(Path.Combine(symDir, cellName + ".csym"),
+                new EditableSymbol { UserEditable = true }.ToSymbol());
+        }
+
+        if (parameters.Length > 0)
+        {
+            string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+            var ccell = CellPersistence.LoadFromFile(ccellPath);
+            foreach (var (name, def) in parameters)
+                ccell.Parameters.Add(new CcellParameter { Name = name, DefaultExpression = def });
+            CellPersistence.SaveToFile(ccellPath, ccell);
+        }
+
+        return cellDir;
+    }
+
+    private (LayoutView Source, SchematicEditModel Schematic, string LayoutDir) MakeTop(string topName)
+    {
+        string topCellDir = CellFolder.CreateCellFolder(_root, topName);
+        return (new LayoutView(),
+                new SchematicEditModel { SchematicDirectory = CellFolder.SubFolderPath(topCellDir, ViewType.Schematic) },
+                CellFolder.SubFolderPath(topCellDir, ViewType.Layout));
+    }
+
+    [Fact]
+    public void PlainCellInstance_IsPlacedInTheSchematic_AndReferencesTheCell()
+    {
+        string cellDir = MakePlainCell("Filter", withSymbol: true, ("Cap", "1p"));
+        var (source, schematic, layoutDir) = MakeTop("TopA");
+        var inst = new LayoutInstance { CellRef = Path.GetRelativePath(layoutDir, cellDir), Mag = 1.0 };
+        source.Instances.Add(inst);
+
+        var result = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
+
+        Assert.NotNull(result.Command);   // the bug: this was null, and the run reported nothing at all
+        result.Command!.Execute();
+
+        var placed = Assert.Single(schematic.Components);
+        Assert.Equal(1, result.CreatedCount);
+
+        // It refers to the CELL — that reference is what resolves the symbol the owner already had.
+        Assert.Equal(Path.GetRelativePath(schematic.SchematicDirectory!, cellDir), placed.CellRef);
+        Assert.Equal(CellSymbolState.Resolved,
+            CellSymbolResolver.Resolve(placed.CellRef!, schematic.SchematicDirectory).State);
+
+        // Seeded from the cell's own published interface, exactly as a palette drop seeds it.
+        Assert.Equal("1p", Assert.Single(placed.Parameters, p => p.Name == "Cap").Expression);
+
+        // Linked, so a second run is idempotent rather than placing a duplicate.
+        Assert.Equal(placed.InstanceName, inst.SchematicId);
+        var again = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
+        Assert.True(again.NothingChanged);
+        Assert.Single(schematic.Components);
+        Assert.Equal(1, again.UnchangedCount);
+    }
+
+    [Fact]
+    public void TwoPlainCellInstances_GetDistinctNames_AndBothSurviveTheRun()
+    {
+        string cellDir = MakePlainCell("Res", withSymbol: true);
+        var (source, schematic, layoutDir) = MakeTop("TopB");
+        string cellRef = Path.GetRelativePath(layoutDir, cellDir);
+        var a = new LayoutInstance { CellRef = cellRef, X = 0, Mag = 1.0 };
+        var b = new LayoutInstance { CellRef = cellRef, X = 1000, Mag = 1.0 };
+        source.Instances.Add(a);
+        source.Instances.Add(b);
+
+        var result = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
+        result.Command!.Execute();
+
+        // Nothing in Run() executes a command, so NextAvailableName scanning schematic.Components
+        // alone handed both of these the same name — the second create then overwrote the first's
+        // identity and both SchematicIds pointed at one component.
+        Assert.Equal(2, schematic.Components.Count);
+        Assert.Equal(2, result.CreatedCount);
+        Assert.NotEqual(schematic.Components[0].InstanceName, schematic.Components[1].InstanceName);
+        Assert.NotEqual(a.SchematicId, b.SchematicId);
+        Assert.NotEqual(schematic.Components[0].X, schematic.Components[1].X); // not stacked on one point
+    }
+
+    /// <summary>Owner, 2026-08-17: a placed instance "does not render the pins" — because the cell it
+    /// names has no symbol at all. Placed anyway (refusing would be the old silence in a narrower form),
+    /// but the cell is REPORTED for symbol generation rather than merely warned about, which is what the
+    /// Library palette already does when the very same cell is dropped onto a schematic.</summary>
+    [Fact]
+    public void PlainCellInstance_WithNoSymbolAtAll_IsPlaced_AndTheCellIsOfferedForSymbolGeneration()
+    {
+        string cellDir = MakePlainCell("NoSym", withSymbol: false);
+        var (source, schematic, layoutDir) = MakeTop("TopC");
+        source.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(layoutDir, cellDir), Mag = 1.0 });
+
+        var result = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
+        result.Command!.Execute();
+
+        Assert.Single(schematic.Components);
+        Assert.Equal(cellDir, Assert.Single(result.CellsWithoutSymbols));
+    }
+
+    /// <summary>The OTHER kind of "no primary symbol", which is a different question and must not be
+    /// answered by generating a further symbol: several exist and the user has not said which is
+    /// primary. Warned, never auto-resolved.</summary>
+    [Fact]
+    public void PlainCellInstance_WithSymbolsButNoPrimary_IsWarnedAbout_NotOfferedGeneration()
+    {
+        string cellDir = MakePlainCell("Ambiguous", withSymbol: true);
+        string symDir  = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
+        SymbolPersistence.SaveToFile(Path.Combine(symDir, "Alternate.csym"),
+            new EditableSymbol { UserEditable = true }.ToSymbol());   // now two, and .ccell names neither
+
+        var (source, schematic, layoutDir) = MakeTop("TopC2");
+        source.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(layoutDir, cellDir), Mag = 1.0 });
+
+        var result = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
+        result.Command!.Execute();
+
+        Assert.Single(schematic.Components);
+        Assert.Empty(result.CellsWithoutSymbols);
+        Assert.Contains(result.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+                                        && l.Text.Contains("no primary chosen"));
+    }
+
+    [Fact]
+    public void PlainCellInstance_WithASymbol_IsNotOfferedGeneration()
+    {
+        string cellDir = MakePlainCell("HasSym", withSymbol: true);
+        var (source, schematic, layoutDir) = MakeTop("TopC3");
+        source.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(layoutDir, cellDir), Mag = 1.0 });
+
+        var result = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
+
+        Assert.Empty(result.CellsWithoutSymbols);
+    }
+
+    [Fact]
+    public void PlainCellInstance_OnAnUnsavedSchematic_IsReportedRatherThanSkippedInSilence()
+    {
+        string cellDir = MakePlainCell("Lonely", withSymbol: true);
+        var (source, _, layoutDir) = MakeTop("TopD");
+        source.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(layoutDir, cellDir), Mag = 1.0 });
+
+        // No SchematicDirectory — a cell reference is a relative path and has nothing to be relative to.
+        var result = LayoutToSchematicGenerator.Run(source, new SchematicEditModel(), layoutDir);
+
+        Assert.Equal(0, result.CreatedCount);
+        Assert.Contains(result.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+                                        && l.Text.Contains("save the schematic first"));
+    }
+
+    [Fact]
+    public void PlainCellInstance_AlongsideAPCell_BothArePlaced()
+    {
+        string plainDir = MakePlainCell("Pad", withSymbol: true);
+        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        string pcellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
+
+        var (source, schematic, layoutDir) = MakeTop("TopE");
+        source.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(layoutDir, pcellDir), Mag = 1.0 });
+        source.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(layoutDir, plainDir), Mag = 1.0 });
+
+        var result = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
+        result.Command!.Execute();
+
+        Assert.Equal(2, result.CreatedCount);
+        Assert.Contains(schematic.Components, c => c.Symbol == SymbolKind.Mlin);
+        Assert.Contains(schematic.Components, c => c.CellRef is { Length: > 0 } r && r.EndsWith("Pad"));
+    }
 }

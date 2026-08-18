@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SymbolPinPortDialog"
+        Title="Pin Port Number"
+        Width="320"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" FontSize="12"
+                   Text="Port number for this pin:"/>
+
+        <TextBox Grid.Row="1"
+                 x:Name="PortBox"
+                 Margin="0,8,0,0"
+                 FontSize="12"
+                 KeyDown="OnPortBoxKeyDown"
+                 TextChanged="OnPortTextChanged"/>
+
+        <!-- Validation message. Occupies no space when empty, so the dialog does not jump as the
+             user types; the OK button is what actually blocks a bad value. -->
+        <TextBlock Grid.Row="2"
+                   x:Name="ErrorText"
+                   FontSize="11"
+                   Foreground="{DynamicResource CrfWarningBrush}"
+                   Margin="0,6,0,0"
+                   TextWrapping="Wrap"
+                   IsVisible="False"/>
+
+        <!-- The cell's own declared count, when there is a cell. Shown rather than enforced: a symbol
+             is routinely edited before its .ccell says how many ports the cell has, so refusing a
+             number outside the range would block ordinary authoring. The unmapped-port overlay on the
+             canvas is what keeps the mismatch visible afterwards. -->
+        <TextBlock Grid.Row="3"
+                   x:Name="PortCountNote"
+                   FontSize="11"
+                   Opacity="0.7"
+                   Margin="0,6,0,0"
+                   TextWrapping="Wrap"
+                   IsVisible="False"/>
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" IsCancel="True"
+                    HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="OK" Width="80" IsDefault="True" FontSize="12" x:Name="OkButton"
+                    HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

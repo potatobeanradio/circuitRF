@@ -6,6 +6,187 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Schematic context menu ▸ Edit Parameters opened the inline editor (2026-08-17)
+
+Owner: it "opens an inline text editor. It is supposed to open the Component Parameters dialog box."
+`SchematicView.axaml.cs`; `tests/Ui.Tests/SchematicEditParametersMenuTests.cs` (3); `Ui.Tests` 7,730
+passing, `Firewall.Tests` 6.
+
+**A placeholder left from before the dialog existed** — its own comment said so ("Full ParameterDialog
+deferred to a later phase"). It called `BeginInlineEdit` on the component's **first** parameter, which
+is neither the dialog nor a choice the user made: a component with several parameters silently offered
+exactly one of them, and one with `Parameters.Count == 0` returned early and did nothing at all. It
+also had no version of the double-click path's VAR/MEAS branch, so Edit Parameters on a VAR opened a
+one-line box over a multi-line equation block.
+
+**Fixed by making the two entry points ONE implementation**, not by copying the dialog code into the
+menu handler: `OnComponentDoubleTapped` and `OnCtxEditParameters` both call `OpenParameterEditorFor`.
+Two copies is exactly how the menu came to answer differently from the double-click, and a second copy
+would let it happen again.
+
+**The test is a SOURCE scan, and it strips comments first.** View code-behind has no headless test host
+in this project, so the technique is the one the Harmonica view tests already use. Stripping matters
+here more than usual: this file's own comments now name the bug, the old method and the new one, so a
+scan over raw text would pass on the prose alone. **Verified to fail against the old implementation**
+rather than assumed — restoring the `BeginInlineEdit` body turns it red.
+
+## The pin dialog needed Cancel pressed twice, and its labels were the odd size out (2026-08-17)
+
+Two follow-ups on the pin port-number dialog. `SymbolEditorCanvas`, `SymbolEditorView`,
+`AutoSymbolGenerator`; 12 new tests across `SymbolPinPortEditTests` and `AutoSymbolLabelStyleTests`;
+`Ui.Tests` 7,727 passing, `Firewall.Tests` 6.
+
+**Cancel needed two presses because the CANVAS still held the pointer capture.**
+`SymbolEditorCanvas.OnPointerPressed` calls into the view model FIRST and captures the pointer AFTER —
+and the view model's double-click handler is what asks the view to open the dialog. `ShowDialog` puts
+the modal up synchronously before the first `await`, so by the time `e.Pointer.Capture(this)` runs the
+dialog is already on screen; the release that would have freed that capture is delivered to the modal
+instead, and the canvas keeps the pointer for the dialog's entire life. **The dialog's first click is
+then spent breaking the capture rather than pressing the button under it.** Fixed on both ends: the
+view POSTS the dialog at `DispatcherPriority.Background` so the whole press/release cycle drains first,
+and `SymbolEditorCanvas.ReleasePointerCapture` covers what posting cannot — a user still holding the
+button down when the post runs. The canvas now tracks the captured `IPointer` rather than trusting the
+matching release to arrive.
+
+**Ruled out first, and worth recording because it would have made the above pointless:** the other
+explanation for "press it twice" is two identical modals stacked, which a capture fix does nothing
+about. `ARealDoubleClick_RaisesTheRequestExactlyOnce` drives the real two-press sequence (ClickCount 1
+then 2) and pins it at one raise. **`IsCancel="True"` is not the culprit** — in Avalonia it only listens
+for Escape on the root; it does not close the window on click.
+
+**Any canvas here that captures the pointer AFTER calling its view model has this shape**, because a VM
+handler is free to raise something the view answers with a modal.
+
+**The auto-generated symbol's port labels were the one dynamic symbol still on the old font size.**
+`AutoSymbolGenerator` carried a private `FontSize = 12.0` while SnP, SDD and ZPort had all been raised
+to `BuiltInSymbols.SddPortLabelFontSize` (18) — nothing held the two together, so the generator simply
+kept the value the others moved away from. It now REFERENCES that constant. Two things had to change
+with it: the labels were on `TextPrimitive`'s default `VAlign.Baseline`, which anchors the glyph's
+baseline on the lead and so hangs the whole number ABOVE the stub it names (a small offset at 12, an
+obvious one at 18) — SnP uses `Middle` and now so does this; and the inset moved from 5-inside-the-INNER
+rect to 20-inside-the-OUTER, matching what `BuildSnpSymbol` insets its own labels from its body edge and
+leaving real clearance rather than a glyph flush against the line. The clearance test asserts the
+GEOMETRY, not the constants, so a later change to either inset is caught by the thing that matters.
+
+## A placed cell instance with no symbol renders no pins (2026-08-17)
+
+Owner, immediately after the ordinary-cell fix below: *"my schematic does not render the pins of the
+&lt;cell&gt; instance after I performed an Update Schematic from Layout."* `CellPortCount`,
+`LayoutToSchematicGenerator`, `WorkspaceViewModel.SchematicToLayout`, `SchematicViewModel`;
+`tests/Ui.Tests/CellPortCountTests.cs` (8) plus 3 more in `LayoutToSchematicGeneratorTests`;
+`Ui.Tests` 7,715 passing, `Firewall.Tests` 6.
+
+**The instance was placed correctly — the cell it names simply has no `.csym`, so it draws as a bare
+placeholder with no pins.** Two separate defects made that the outcome:
+
+**1. "No primary symbol" is TWO different questions and the create path answered only one of them.**
+The fix below warned and placed a placeholder, described at the time as matching the Library palette.
+It does not: placeholder-and-warn is the palette's *other* branch (several symbols exist, none marked
+primary). When a cell has NO symbol view at all, `SchematicViewModel.CommitCellPlacementAsync` **offers
+to auto-generate one** — the same cell dropped from the palette gets a symbol and the same cell arriving
+through Update Schematic from Layout got a blank box. The generator now separates the two states and
+returns `CellsWithoutSymbols`; the command offers generation **once for the whole run** (it places many
+instances; a prompt per cell would be a queue of dialogs where the palette has one click), and reports
+the placeholder when declined or headless. Deliberately *not* offered for "symbols exist, none primary"
+— which of several is primary is a question only the user can answer, and generating a further one
+answers it by adding to the pile.
+
+**2. `.ccell NumPorts` is a declaration nothing in circuitRF ever DERIVES — so it is routinely zero, and
+the fallback was a hardcoded 2.** It is written by the Cell Parameter editor and the PDK installer and
+by nothing else, so a cell whose schematic the user drew with N `Pin` components, and whose cell editor
+they never opened, declares zero ports. Auto-generation then produced a **two-pin symbol for a
+four-port cell** — which is the same bug the user would have hit next, and which **the palette path had
+all along**. `CellPortCount.Resolve` reads the declaration when it says anything and otherwise counts
+the cell's own primary schematic's `Pin` components; both call sites use it, so there is one rule.
+The count is the **highest port number declared, not the number of pins** — pins numbered 1, 2, 4 mean
+four ports with the third open, and answering three renumbers the user's port 4 into a port 3 that
+connects somewhere else. Unnumbered pins are still ports, so the answer is never below the pin count.
+
+**The generated symbol must go through `OnCellSymbolAutoGenerated`, not just `SymbolPersistence.Save`.**
+The placed component was already rendered against the absence of that file, so without the resolver-cache
+drop and the open-schematic rebuild it keeps drawing the placeholder — indistinguishable from the symbol
+never having been created.
+
+## Symbol editor: a detached inspector, and pin port-number editing (2026-08-17)
+
+Owner: *"sometimes the Property Inspector does not update when I click on a Pin in the Symbol editor"*,
+plus a request for a double-click-a-pin port-number dialog and *"make sure the text is properly
+validated."* `tests/Ui.Tests/SymbolCanvasActivationTests.cs` (3) and `SymbolPinPortEditTests.cs` (31);
+`Ui.Tests` 7,705 passing, `Firewall.Tests` 6.
+
+**The "sometimes" is whether the Project Tree has been touched since, and this exact bug was already
+found and fixed for the LAYOUT editor.** Every `PropertiesTool` context setter clears every *other*
+context on its way past, so a project-tree file click routes the panel to a file inspector and calls
+`SymbolInspectorVm.SetContext(null)` — detaching the inspector from the VM. The symbol document never
+left `DocumentDock.ActiveDockable` (the tree is a different dock region), so
+`OnDocumentDockPropertyChanged` never re-fires, and **clicking back into the canvas restores nothing**:
+the VM registers every pin click perfectly well and the panel simply never hears about any of them. The
+fix is `SymbolEditorDocument.CanvasInteracted`, raised by the view on **canvas** `GotFocus` — a
+transcription of `LayoutDocument.CanvasInteracted` and `OnLayoutCanvasInteracted`, which carry the same
+reasoning in their own comments. **Any dock document whose panel context can be hijacked by a different
+dock region needs this;** the schematic editor is the remaining one that does not have it, and was left
+alone rather than changed without a report against it.
+
+**Found while writing the reproduction: `SymbolPrimitiveInspectorViewModel.SetEmpty` did not release the
+pin latch.** `IsPinSelected`/`_lastPinIndex` survived it, and those two are exactly what `SetPinView`'s
+`switching` test reads — so re-selecting the same pin after the panel had been emptied in between
+computed "already showing" and skipped `HideAllGroups`. Invisible today only because the view hides the
+whole field area behind `IsNotEmptyState`. Cleared now.
+
+**The port dialog hit-tests pins BEFORE primitives, unlike the double-click branch it sits next to.** A
+pin sits on top of the artwork it is attached to, so the pre-existing text-primitive double-click order
+would let the artwork win every double-click aimed at a pin — the single-click path already hit-tests
+pins first for this reason. **Select tool only:** under the Pin tool a click on empty canvas *places* a
+pin, so a double-click there would place one and then open a dialog on it, and the two cannot be told
+apart from the second press alone.
+
+**Validation is a plain `TextBox` plus a framework-free `SymbolPinPortInput.Validate`, deliberately not
+a `NumericUpDown`.** A spinner answers bad text by silently reverting it or going null — which reads as
+the dialog ignoring what was typed — and a null reaching OK would have pushed a "changed to nothing"
+through the undo stack. Digits only: parsing leniently and range-checking afterwards accepts `+2` and
+`2.0` and quietly rounds `2.7`, and a port number is an ordinal. Overflow is reported as *too large*
+rather than as *not a number* — same text, two different corrections. A number past the cell's declared
+port count is a **note, not a refusal**: a symbol is routinely authored before its `.ccell` agrees, and
+the canvas's unmapped-port overlay is what keeps that visible. `SetPinPortNumber` re-checks the lower
+bound anyway, because the dialog is not the only caller and a validator that is also the only guard is
+one refactor from being neither.
+
+## Update Schematic from Layout skipped ordinary cell instances (2026-08-17)
+
+Owner: *"I performed an Update Schematic from Layout, but my cell instance was not placed in the
+schematic (even though it has a symbol)."* `LayoutToSchematicGenerator`,
+`tests/Ui.Tests/LayoutToSchematicGeneratorTests.cs` (5 new cases); `Ui.Tests` 7,671 passing,
+`Firewall.Tests` 6.
+
+**The command only ever handled PCell-backed instances, and skipped everything else in SILENCE** —
+one `continue` on `PCellOrigin is not { } origin` that neither created a component nor added a report
+line, so the run posted its ordinary "0 added, 0 updated, 0 unchanged" success having ignored the only
+instance in the layout. Nothing was broken; the ordinary hierarchical case was never written.
+
+**Its stated reason was wrong, which is why this stayed unwritten so long.** The scope note argued
+such an instance had "no existing symbol this command could safely fabricate". Nothing needs
+fabricating: a schematic component names a cell in `EditableComponent.CellRef` and resolves that
+cell's own primary `.csym` at render time — which is exactly what dropping the cell from the Library
+palette already produces. The create path is therefore the *same* seeding
+`SchematicViewModel.CommitCellPlacementAsync` performs (placeholder `SymbolKind.Generic`, the cell
+reference, an `X` name, parameters from the cell's published `.ccell` interface), and the kit-part
+helper already in this file **was** that code — it only had to stop being named after kits. A
+component created from a layout and one dropped from the palette have to be the same component.
+
+**A cell with no primary symbol is placed anyway, with a warning**, mirroring the palette drop's own
+placeholder-and-warn. Refusing would have reinstated the original bug in a narrower form, and the
+component is the thing that makes the missing symbol visible at all.
+
+**Second, independent defect found on the way, latent since L5 on the PCell/kit path:
+`SchematicEditModel.NextAvailableName` scans `schematic.Components`, and nothing in `Run` executes a
+command** — the caller executes the whole chain once, as one undoable action (R-L5-12/22). So
+`Components` still holds only what was there *before* the run, and every instance created in one pass
+was handed the same name. Two new instances both became `X1`, the second `PlaceComponentCommand`
+overwrote the first's identity, and both layout `SchematicId`s then pointed at one component. It needs
+a run-scoped claim list feeding `NextAvailableName` alongside the existing components — shared by both
+create paths, not local to the new one. **Any generator that queues `PlaceComponentCommand`s instead
+of executing them has this shape**; a single-instance test cannot see it.
+
 ## wBond round 6 — the owner's thirteen (2026-08-17)
 
 Owner bug/change list, no brief. `tests/Ui.Tests/WBondRound6Tests.cs` (24 new cases); full `Ui.Tests`

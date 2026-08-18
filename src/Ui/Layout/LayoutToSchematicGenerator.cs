@@ -13,12 +13,22 @@ namespace CircuitRF.Ui.Layout;
 /// and computes the schematic component creates/edits needed to match, plus the same shape of change
 /// report R-L5-22 asks for ("on the same terms as §2.2").
 ///
-/// <b>Scope, stated plainly (R-L5-19's own "place or update component instances. No wiring"):</b> only
-/// PCell-backed instances (<see cref="PCellOrigin"/> non-null) participate in the create half — an
-/// instance resolving to a hand-drawn, non-generated cell has no PARAMETER to push back and no
-/// existing symbol this command could safely fabricate, so it is left for a future increment rather
-/// than guessed at here. A LINKED (SchematicId already set) instance whose cell is NOT PCell-backed
-/// is likewise left alone — there is nothing to push into its already-existing schematic component.
+/// <b>Scope, stated plainly (R-L5-19's own "place or update component instances. No wiring"):</b>
+/// PCell-backed instances (<see cref="PCellOrigin"/> non-null) push their PARAMETERS back as well as
+/// creating a component; an ORDINARY hierarchical instance — a hand-drawn cell placed in this layout —
+/// is created as a plain cell-reference component and nothing more, because it has no parameter the
+/// layout could have moved.
+///
+/// <para><b>The ordinary-cell half was missing entirely until 2026-08-17</b> (owner: "I performed an
+/// Update Schematic from Layout, but my cell instance was not placed in the schematic — even though it
+/// has a symbol"). The original scope note here reasoned that such an instance had "no existing symbol
+/// this command could safely fabricate", and that premise is simply wrong: a schematic component
+/// references a cell by <see cref="EditableComponent.CellRef"/> and resolves that cell's own primary
+/// <c>.csym</c> at render time — exactly what dropping the cell from the Library palette produces
+/// (<c>SchematicViewModel.CommitCellPlacementAsync</c>). Nothing is fabricated, so nothing had to be
+/// guessed. The instance was skipped by a <c>continue</c> that also said NOTHING, so the command
+/// reported success having quietly ignored the one instance in the layout.</para>
+///
 /// Framework-free except for the <see cref="IUiCommand"/>s it returns (never executes them itself —
 /// same contract as <see cref="SchematicToLayoutGenerator.Run"/>).
 /// </summary>
@@ -30,8 +40,17 @@ public static class LayoutToSchematicGenerator
         int CreatedCount,
         int UpdatedCount,
         int UnchangedCount,
-        int OverwrittenParameterCount)
+        int OverwrittenParameterCount,
+        IReadOnlyList<string>? CellsWithoutSymbols = null)
     {
+        /// <summary>Absolute cell directories that were placed but have NO symbol view at all
+        /// (<see cref="PrimaryState.NoView"/>) — so the component renders as a bare placeholder with no
+        /// pins. Reported rather than resolved here because generating a symbol writes a file into
+        /// ANOTHER cell's folder, which is the caller's decision to ask about, not this framework-free
+        /// generator's to take. A cell that HAS symbols but no primary chosen is not in this list — that
+        /// one is a warning, since picking which of several is primary is not something to guess.</summary>
+        public IReadOnlyList<string> CellsWithoutSymbols { get; init; } = CellsWithoutSymbols ?? [];
+
         public bool NothingChanged => Command is null;
     }
 
@@ -73,6 +92,7 @@ public static class LayoutToSchematicGenerator
     public static GenerationResult Run(LayoutView source, SchematicEditModel schematic, string layoutBaseDir, Technology? technology = null)
     {
         var lines = new List<SchematicToLayoutGenerator.ReportLine>();
+        var noSymbol = new List<string>();
         IUiCommand? chain = null;
         int created = 0, updated = 0, unchanged = 0, overwritten = 0;
 
@@ -84,12 +104,57 @@ public static class LayoutToSchematicGenerator
         var scope = BuildVariableScope(schematic);
         var evaluator = new Evaluator();
 
+        // Names CLAIMED by this run's queued creates. Load-bearing, not tidy: nothing here executes a
+        // command (the caller does, once, as one undoable action), so `schematic.Components` still holds
+        // only what was there before the run — and `NextAvailableName` scanning it alone hands the SAME
+        // name to every instance created in the same pass. Two new instances both became "X1", the second
+        // PlaceComponentCommand overwrote the first's identity, and the layout's two SchematicIds then
+        // pointed at one component. Found while fixing the ordinary-cell path below; it was always latent
+        // on the PCell/kit path, which is why the claim list is shared rather than local to either.
+        var claimed = new List<string>();
+        string ClaimName(string prefix)
+        {
+            string name = SchematicEditModel.NextAvailableName(
+                schematic.Components.Select(c => c.InstanceName).Concat(claimed), prefix);
+            claimed.Add(name);
+            return name;
+        }
+
         int newSlot = 0;
         foreach (var inst in source.Instances)
         {
             var res = CellLayoutResolver.Resolve(inst.CellRef, layoutBaseDir);
-            if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
-                continue; // broken instance, or not PCell-backed — nothing this command can push (see scope note above)
+            if (res.State != CellLayoutState.Resolved)
+                continue; // broken instance — the layout editor already marks it; nothing to write
+
+            if (res.View!.PCellOrigin is null)
+            {
+                // An ordinary hierarchical instance. It carries no PCell parameters, so the only thing
+                // to do is the create half — and the only thing to check is whether it is already
+                // linked to a component.
+                if (inst.SchematicId is { Length: > 0 } psid && bySchematicId.ContainsKey(psid))
+                {
+                    unchanged++;
+                    continue;
+                }
+
+                if (CreatePlainCellComponent(inst, res, schematic, lines, noSymbol, ClaimName) is not { } placed)
+                    continue;
+
+                placed.X = (newSlot % GridCols) * GridPitchSchematic;
+                placed.Y = (newSlot / GridCols) * GridPitchSchematic;
+                newSlot++;
+
+                chain = Chain(chain, new Commands.Schematic.PlaceComponentCommand(schematic, placed));
+                inst.SchematicId = placed.InstanceName;
+                bySchematicId[placed.InstanceName] = placed;
+                created++;
+                lines.Add(new SchematicToLayoutGenerator.ReportLine(placed.InstanceName,
+                    $"{placed.InstanceName} — created from layout", SchematicToLayoutGenerator.ReportSeverity.Info));
+                continue;
+            }
+
+            var origin = res.View!.PCellOrigin!;
 
             // Which component this generated cell IS, on the schematic side. A built-in answers with
             // its SymbolKind; a KIT's cell answers with the part reference the palette settled it
@@ -121,11 +186,11 @@ public static class LayoutToSchematicGenerator
 
                 // R-L5-20: create half — writes SchematicId as it goes.
                 comp = kitRef is not null
-                    ? NewKitComponent(kitRef, schematic)
+                    ? NewCellComponent(kitRef, schematic, ClaimName("X"))
                     : new EditableComponent
                       {
                           Symbol       = kind,
-                          InstanceName = SchematicEditModel.NextAvailableName(schematic.Components, kind),
+                          InstanceName = ClaimName(ComponentTypeRegistry.InstancePrefix(kind)),
                       };
                 comp.X = (newSlot % GridCols) * GridPitchSchematic;
                 comp.Y = (newSlot / GridCols) * GridPitchSchematic;
@@ -208,31 +273,84 @@ public static class LayoutToSchematicGenerator
             }
         }
 
-        return new GenerationResult(chain, lines, created, updated, unchanged, overwritten);
+        return new GenerationResult(chain, lines, created, updated, unchanged, overwritten, noSymbol);
     }
 
     /// <summary>
-    /// A brand-new schematic component for a kit part, seeded exactly as PLACING that part seeds one
-    /// (<c>SchematicViewModel.CommitCellPlacementAsync</c>): the placeholder kind every kit part
-    /// shares, the virtual reference that resolves its symbol, an "X" instance name, and the part's
-    /// own published parameter interface read through the one accessor.
+    /// The component for an ordinary hierarchical instance — a cell the user drew and placed in this
+    /// layout, which is the case that used to be skipped in silence.
+    ///
+    /// <para>Returns null only when the reference cannot be EXPRESSED: an unsaved schematic has no
+    /// directory to make a cell path relative to. That is reported rather than skipped, because
+    /// "nothing happened and nothing was said" is precisely the failure this method exists to end.</para>
+    ///
+    /// <para>A cell with no primary symbol is still created — refusing would reintroduce the silence in
+    /// a narrower form, and the component is the thing that makes the missing symbol visible at all.
+    /// <b>Which KIND of "no primary" it is decides what happens next, and the two are not the same
+    /// question</b> (owner, 2026-08-17: an instance placed by this command "does not render the pins").
+    /// A cell with NO symbol view is collected into <paramref name="noSymbol"/> for the caller to offer
+    /// to generate one — the same offer <c>SchematicViewModel.CommitCellPlacementAsync</c> makes when
+    /// the very same cell is dropped from the Library palette, and the reason the two paths disagreed
+    /// was that this one treated every "no primary" as the palette's OTHER branch. A cell that has
+    /// symbols but no primary chosen stays a plain warning: which of several is primary is a question
+    /// only the user can answer, and generating a further one would answer it by adding to the pile.</para>
+    /// </summary>
+    private static EditableComponent? CreatePlainCellComponent(
+        LayoutInstance inst, CellLayoutResolution res, SchematicEditModel schematic,
+        List<SchematicToLayoutGenerator.ReportLine> lines, List<string> noSymbol,
+        Func<string, string> claimName)
+    {
+        if (schematic.SchematicDirectory is not { Length: > 0 } schematicDir)
+        {
+            lines.Add(new SchematicToLayoutGenerator.ReportLine(inst.CellRef,
+                $"\"{Path.GetFileName(res.ResolvedCellDir)}\" was left alone — save the schematic first, " +
+                "so a cell reference has somewhere to be relative to.",
+                SchematicToLayoutGenerator.ReportSeverity.Warning));
+            return null;
+        }
+
+        string cellRef = Path.GetRelativePath(schematicDir, res.ResolvedCellDir!);
+
+        var symbol = CellSymbolResolver.Resolve(cellRef, schematicDir);
+        if (symbol.State == CellSymbolState.PrimaryMissing)
+        {
+            string cellName = Path.GetFileName(res.ResolvedCellDir)!;
+            if (CellFolder.ResolvePrimary(res.ResolvedCellDir!, ViewType.Symbol).State == PrimaryState.NoView)
+                noSymbol.Add(res.ResolvedCellDir!);
+            else
+                lines.Add(new SchematicToLayoutGenerator.ReportLine(inst.CellRef,
+                    $"\"{cellName}\" has several symbols and no primary chosen — placed with a placeholder " +
+                    "until one is made primary.",
+                    SchematicToLayoutGenerator.ReportSeverity.Warning));
+        }
+
+        return NewCellComponent(cellRef, schematic, claimName("X"));
+    }
+
+    /// <summary>
+    /// A brand-new schematic component for a cell reference — a kit part or an ordinary cell folder —
+    /// seeded exactly as PLACING it seeds one (<c>SchematicViewModel.CommitCellPlacementAsync</c>): the
+    /// placeholder kind every cell reference shares, the reference that resolves its symbol, an "X"
+    /// instance name, and the cell's own published parameter interface read through the one accessor.
     ///
     /// <para>Not a second seeding rule — a component created from a layout and one dropped from the
     /// palette have to be the same component, or the same part means two different things depending
-    /// on which end of the flow it entered from.</para>
+    /// on which end of the flow it entered from. The two callers differ only in how the reference is
+    /// spelled (a kit's is virtual and needs no base directory; a cell's is a relative path), which is
+    /// resolved before this point.</para>
     /// </summary>
-    private static EditableComponent NewKitComponent(string kitRef, SchematicEditModel schematic)
+    private static EditableComponent NewCellComponent(string cellRef, SchematicEditModel schematic, string instanceName)
     {
         var comp = new EditableComponent
         {
-            InstanceName     = SchematicEditModel.NextAvailableName(schematic.Components, "X"),
+            InstanceName     = instanceName,
             Symbol           = SymbolKind.Generic,   // placeholder; rendering uses CellRef when set
-            CellRef          = kitRef,
+            CellRef          = cellRef,
             ShowTypeLabel    = true,
             ShowInstanceName = true,
         };
 
-        if (CellSymbolResolver.ResolveCcell(kitRef, schematic.SchematicDirectory ?? "") is { } ccell)
+        if (CellSymbolResolver.ResolveCcell(cellRef, schematic.SchematicDirectory ?? "") is { } ccell)
             foreach (var cp in ccell.Parameters)
                 comp.Parameters.Add(new EditableParameter
                 {

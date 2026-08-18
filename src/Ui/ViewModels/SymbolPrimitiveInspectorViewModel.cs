@@ -513,6 +513,15 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         _isRefreshing = true;
         IsEmptyState  = true;
         EmptyMessage  = msg;
+
+        // The pin view is a LATCH, and "empty" has to release it. The view hides the whole field area
+        // behind IsNotEmptyState, so leaving it set shows nothing today — but IsPinSelected and
+        // _lastPinIndex are exactly what SetPinView's `switching` test reads, so a stale pair makes a
+        // later re-selection of the same pin skip HideAllGroups on the grounds that it was "already
+        // showing" when the panel had in fact been emptied in between.
+        IsPinSelected = false;
+        _lastPinIndex = -1;
+
         _isRefreshing = false;
     }
 

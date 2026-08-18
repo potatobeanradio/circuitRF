@@ -14,8 +14,23 @@ internal static class AutoSymbolGenerator
     private const double PinX        = HalfW + LeadLength;   // 200 — on P grid
     private const double InnerInset  = 10;
     private const double PortSpacing = 200;
-    private const double TextMargin  = 5;
-    private const double FontSize    = 12.0;
+
+    /// <summary>
+    /// Port labels are the SAME size as every other dynamic symbol's — SnP's "1".."N", SDD/ZPort's
+    /// "1+"/"2−" — by REFERENCING that constant rather than restating it (owner, 2026-08-17: the
+    /// auto-generated symbol's pins "are smaller than the font size for SNP components"). This file
+    /// carried a private 12.0 and so quietly kept the value <see cref="BuiltInSymbols"/> was raised
+    /// away from; sharing the constant is what stops the two drifting apart a second time.
+    /// </summary>
+    private const double FontSize = BuiltInSymbols.SddPortLabelFontSize;
+
+    /// <summary>
+    /// Label inset from the OUTER rect's edge, matching what <c>BuildSnpSymbol</c> insets its own
+    /// labels from its body edge — so a label sits the same distance inside its box in both. That
+    /// leaves <see cref="InnerInset"/>-worth of clear space between the text and the inner rect it
+    /// sits within, which the previous 5-from-the-INNER-rect did not once the glyph grew.
+    /// </summary>
+    private const double TextInset = 20;
 
     /// <summary>
     /// Generates a default symbol for <paramref name="cellName"/>.
@@ -64,10 +79,10 @@ internal static class AutoSymbolGenerator
             // Pin at tip (portIndex is 0-based)
             pins.Add(new SymbolPin(pinTipX, portY, portNum - 1, portNum.ToString()));
 
-            // Port-number text inside inner rect, near the stub
-            double textX  = isLeft
-                ? -(HalfW - InnerInset - TextMargin)   // Left-aligned → flows toward center
-                :  (HalfW - InnerInset - TextMargin);  // Right-aligned → flows toward center
+            // Port-number text inside the inner rect, near the stub.
+            double textX = isLeft
+                ? -(HalfW - TextInset)   // Left-aligned → flows toward center
+                :  (HalfW - TextInset);  // Right-aligned → flows toward center
             primitives.Add(new TextPrimitive
             {
                 Content  = portNum.ToString(),
@@ -75,6 +90,11 @@ internal static class AutoSymbolGenerator
                 AnchorY  = portY,
                 FontSize = FontSize,
                 Align    = isLeft ? SymbolTextAlign.Left : SymbolTextAlign.Right,
+                // MIDDLE, as SnP's labels are. TextPrimitive defaults to Baseline, which anchors the
+                // glyph's baseline on portY and so hangs the whole label ABOVE its own lead — a small
+                // offset at the old 12 and an obvious one at 18. This is what centres the number on
+                // the stub it names rather than merely making it bigger.
+                VAlign   = SymbolTextVAlign.Middle,
             });
         }
 

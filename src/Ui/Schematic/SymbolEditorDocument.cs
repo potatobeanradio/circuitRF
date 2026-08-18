@@ -23,6 +23,17 @@ public sealed class SymbolEditorDocument : Document, IUndoableDocument, IActivat
     public event Action? ZoomToFitRequested;
     public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
 
+    // ── Canvas interaction — see LayoutDocument.CanvasInteracted, which this mirrors exactly ────────
+    // Clicking the project tree can change what the Properties panel shows WITHOUT this document ever
+    // leaving the DocumentDock's ActiveDockable slot (the tree is a different dock region), and
+    // PropertiesTool.SetActiveFileInfo unconditionally clears the symbol context on its way past. So a
+    // click back onto THIS canvas re-fires nothing, the symbol inspector stays detached from its VM,
+    // and selecting a pin or a primitive appears to do nothing at all (owner, 2026-08-17: "sometimes
+    // the Property Inspector does not update when I click on a Pin"). Raised by the view on canvas
+    // GotFocus — a click into the canvas always re-focuses it, because the tree click moved focus away.
+    public event Action? CanvasInteracted;
+    public void NotifyCanvasInteracted() => CanvasInteracted?.Invoke();
+
     private string _baseTitle;
 
     public SymbolEditorViewModel ViewModel { get; }

@@ -116,6 +116,12 @@ public sealed class SymbolEditorCanvas : Control
     // ── Pan state ─────────────────────────────────────────────────────────────
 
     private bool   _isPanning;
+
+    // The pointer this canvas currently holds capture on, or null. Tracked — rather than relying on
+    // the matching PointerReleased to arrive — because a VM pointer handler can open a MODAL window
+    // while the press is still being processed, and the release that would have freed the capture then
+    // goes to the modal instead. See ReleasePointerCapture.
+    private IPointer? _capturedPointer;
     private Point  _panDragStartScreen;
     private double _panDragStartPanX;
     private double _panDragStartPanY;
@@ -299,6 +305,7 @@ public sealed class SymbolEditorCanvas : Control
             _viewModel.OnPointerPressed(
                 ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y), e.KeyModifiers, e.ClickCount);
             e.Pointer.Capture(this);
+            _capturedPointer = e.Pointer;
             InvalidateVisual();
         }
     }
@@ -321,12 +328,35 @@ public sealed class SymbolEditorCanvas : Control
         InvalidateVisual();
     }
 
+    /// <summary>
+    /// Drops any pointer capture this canvas is holding, without waiting for the matching
+    /// PointerReleased.
+    ///
+    /// <para><b>Why this is needed at all</b> (owner, 2026-08-17: "pressing Cancel in the Pin dialog
+    /// doesn't close it; I am forced to press cancel twice"). <see cref="OnPointerPressed"/> calls into
+    /// the view model FIRST and captures the pointer AFTER — and a VM handler can raise a request that
+    /// the view answers by opening a modal window (the pin port-number dialog). By the time capture is
+    /// taken the modal is already up, so the release that would have freed it is delivered to the modal
+    /// instead and this canvas keeps the pointer for as long as the dialog lives. The dialog's first
+    /// click is then spent breaking that capture rather than pressing the button under it — which reads
+    /// exactly as a button that needs pressing twice.</para>
+    ///
+    /// <para>Called by the view immediately before it shows such a dialog. Harmless when there is
+    /// nothing captured.</para>
+    /// </summary>
+    public void ReleasePointerCapture()
+    {
+        _capturedPointer?.Capture(null);
+        _capturedPointer = null;
+    }
+
     private void OnPointerReleased(object? _, PointerReleasedEventArgs e)
     {
         if (_isPanning)
         {
             _isPanning = false;
             e.Pointer.Capture(null);
+            _capturedPointer = null;
             UpdateCursor();  // restore tool cursor (crosshair or default)
             return;
         }
@@ -336,6 +366,7 @@ public sealed class SymbolEditorCanvas : Control
             var pos = e.GetPosition(this);
             _viewModel.OnPointerReleased(ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y));
             e.Pointer.Capture(null);
+            _capturedPointer = null;
             InvalidateVisual();
         }
     }

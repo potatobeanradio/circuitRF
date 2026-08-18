@@ -114,9 +114,14 @@ public partial class WorkspaceWindow : Window
             _vm.SaveScopeChanged        -= UpdateNativeSaveHeader;
             _vm.DockersCollapsedChanged -= UpdateNativeDockersHeader;
         }
+        if (_vm is not null) _vm.AutoGenSymbolPrompt = null;
         _vm = DataContext as WorkspaceViewModel;
         if (_vm is not null)
         {
+            // Update Schematic from Layout can place a cell that has no symbol; asking whether to
+            // generate one needs a Window, which the view model has none of. Same prompt the schematic
+            // canvas already shows for a palette drop of the same symbol-less cell.
+            _vm.AutoGenSymbolPrompt = ShowAutoGenSymbolPromptAsync;
             _vm.RecentWorkspacesChanged += RebuildNativeRecentMenu;
             // Declared for exactly this and previously left unsubscribed, which is why the macOS
             // Window menu never updated after the one build in OnOpened.
@@ -125,6 +130,21 @@ public partial class WorkspaceWindow : Window
             _vm.DockersCollapsedChanged += UpdateNativeDockersHeader;
             RebuildNativeRecentMenu();
         }
+    }
+
+    /// <summary>The "generate a symbol?" prompt, worded by the caller so one dialog can cover one cell
+    /// or several. Transcribes <c>SchematicView.ShowAutoGenPromptAsync</c> — same dialog, same Yes/No
+    /// shape — because a user must not be asked the same question two different ways depending on which
+    /// route brought the symbol-less cell onto the schematic.</summary>
+    private async Task<bool> ShowAutoGenSymbolPromptAsync(string message)
+    {
+        var dialog = new Dialogs.SaveChangesDialog(
+            message,
+            saveLabel:     "Yes",
+            dontSaveLabel: null,
+            cancelLabel:   "No",
+            title:         "Generate Symbol");
+        return await dialog.ShowDialog<Dialogs.SaveChangesResult>(this) == Dialogs.SaveChangesResult.Save;
     }
 
     protected override void OnOpened(EventArgs e)

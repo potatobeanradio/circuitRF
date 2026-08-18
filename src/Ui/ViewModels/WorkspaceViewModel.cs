@@ -7347,6 +7347,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (e.PropertyName is nameof(SymbolEditorViewModel.IsDirty))
                 RefreshCellDirtyForSymbol(doc);
         };
+        doc.CanvasInteracted += () => OnSymbolCanvasInteracted(doc);
+    }
+
+    /// <summary>The user just clicked/focused back into this symbol editor's own canvas — the exact
+    /// counterpart of <see cref="OnLayoutCanvasInteracted"/>, for the same reason and against the same
+    /// failure. A project-tree click routes the Properties panel to a file inspector
+    /// (<see cref="PropertiesTool.SetActiveFileInfo"/>, which clears the symbol context on its way
+    /// past) without this document ever leaving the DocumentDock's active slot, so
+    /// <c>OnDocumentDockPropertyChanged</c> never re-fires and the symbol inspector stays detached from
+    /// its VM — clicking a pin or a primitive then changes nothing on screen.</summary>
+    private void OnSymbolCanvasInteracted(SymbolEditorDocument doc)
+    {
+        _factory.SetActiveDockable(doc);
+        _factory.PropertiesTool?.SetActiveSymbolEditor(doc.ViewModel);
+        SetActiveUndoTarget(doc);
+        ActiveSaveScope = SaveScope.SingleDoc;
     }
 
     /// <summary>

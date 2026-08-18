@@ -215,8 +215,16 @@ public partial class WorkspaceViewModel
 
     // ── Update Schematic from Layout (§3A) ───────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Set by the shell's code-behind to the same "generate a symbol?" prompt the schematic canvas
+    /// already shows (<c>SchematicView.ShowAutoGenPromptAsync</c>) — a dialog needs a Window, which this
+    /// view model deliberately does not have. Null headless, where nothing is generated and the empty
+    /// placeholder is reported instead of being left to speak for itself.
+    /// </summary>
+    public Func<string, Task<bool>>? AutoGenSymbolPrompt { get; set; }
+
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
-    private void UpdateSchematicFromLayout()
+    private async Task UpdateSchematicFromLayout()
     {
         if (ResolveActiveDocumentForCommands() is not LayoutDocument doc) return;
 
@@ -257,6 +265,8 @@ public partial class WorkspaceViewModel
             result.CreatedCount, result.UpdatedCount, result.UnchangedCount, 0,
             result.OverwrittenParameterCount, "Update Schematic from Layout", overwrittenNoun: "schematic edits");
 
+        await OfferSymbolsForPlacedCells(result.CellsWithoutSymbols);
+
         // §9.6/WB42 — the WIRE layer, which this command had no knowledge of at all (owner,
         // 2026-08-17: "if I change loop height in layout editor, the component in the schematic is not
         // updated. Even if I use Update Schematic from Layout"). Separate from the instance walk above
@@ -285,6 +295,71 @@ public partial class WorkspaceViewModel
             else
             {
                 Messages.Warning($"'{primaryBeforeName}' remains this cell's primary schematic — '{Path.GetFileName(targetPath)}' was written but not made primary.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Owner, 2026-08-17: an instance this command placed "does not render the pins" — because the cell
+    /// it names has no symbol, so it draws as a bare placeholder.
+    ///
+    /// <para><b>This is the offer the Library palette already makes, arriving at the same cell by a
+    /// different route.</b> Dropping a symbol-less cell from the palette asks "a symbol for X has not
+    /// been created. Do you want one to be auto-generated?"; the same cell reaching the schematic
+    /// through Update Schematic from Layout used to place silently and leave the user with a blank box.
+    /// Asked ONCE for the whole run rather than per cell — this command places many instances at a time,
+    /// and a prompt per cell would be a queue of dialogs where the palette has a single click.</para>
+    ///
+    /// <para><b>The pin count comes from <see cref="CellPortCount"/>, not from <c>.ccell NumPorts</c>
+    /// alone.</b> Nothing derives that field, so a cell whose schematic the user drew with N pins — and
+    /// whose cell editor they never opened — declares zero, and the fixed fallback of 2 would generate a
+    /// two-pin symbol for it. Reading the cell's own schematic is what makes the generated symbol match
+    /// the cell it stands for.</para>
+    /// </summary>
+    internal async Task OfferSymbolsForPlacedCells(IReadOnlyList<string> cellDirs)
+    {
+        if (cellDirs.Count == 0) return;
+
+        var names = cellDirs.Select(d => Path.GetFileName(d)).ToList();
+        string subject = names.Count == 1
+            ? $"A symbol for \"{names[0]}\" has not been created"
+            : $"{names.Count} cells placed from this layout have no symbol ({string.Join(", ", names)})";
+
+        // Declined, or no host window to ask through (headless). Either way the instances ARE on the
+        // schematic and the user has to be told why they look empty — the whole defect being fixed here
+        // is that this case said nothing at all.
+        bool generate = AutoGenSymbolPrompt is { } prompt
+                     && await prompt($"{subject}. Do you want one to be auto-generated? Without a symbol " +
+                                     "the instance draws as an empty box with no pins.");
+        if (!generate)
+        {
+            Messages.Warning(names.Count == 1
+                ? $"\"{names[0]}\" was placed without a symbol — it draws as an empty box with no pins until one exists."
+                : $"{names.Count} instances were placed without symbols — they draw as empty boxes with no pins until symbols exist.");
+            return;
+        }
+
+        foreach (string cellDir in cellDirs)
+        {
+            try
+            {
+                string cellName = Path.GetFileName(cellDir);
+                var sym = AutoSymbolGenerator.Generate(cellName, CellPortCount.Resolve(cellDir));
+                string symDir = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
+                Directory.CreateDirectory(symDir);
+                string path = Path.Combine(symDir, cellName + CellFolder.ViewExtension(ViewType.Symbol));
+                SymbolPersistence.SaveToFile(path, sym);
+
+                // Through the SAME handler the palette's own auto-generation calls, not a second copy
+                // of it: the placed component was already drawn against the absence of this file, so it
+                // keeps rendering the placeholder until the resolver cache is dropped and every open
+                // schematic rebuilds. Getting that wrong looks exactly like the symbol not being there.
+                OnCellSymbolAutoGenerated(cellDir);
+                Messages.Success($"Generated a {sym.Pins.Count}-pin symbol for \"{cellName}\".", path);
+            }
+            catch (Exception ex)
+            {
+                Messages.Error($"Could not generate a symbol for \"{Path.GetFileName(cellDir)}\": {ex.Message}");
             }
         }
     }

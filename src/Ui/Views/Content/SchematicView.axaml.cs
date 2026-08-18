@@ -499,18 +499,24 @@ public partial class SchematicView : UserControl
                                : Material.Icons.MaterialIconKind.EyeOff,
                 Width = 14, Height = 14 };
 
+    /// <summary>
+    /// Context menu ▸ Edit Parameters — the SAME dialog double-clicking the component body opens
+    /// (owner, 2026-08-17: it "opens an inline text editor. It is supposed to open the Component
+    /// Parameters dialog box").
+    ///
+    /// <para>This was a placeholder left from before that dialog existed: it opened the inline label
+    /// editor on the component's FIRST parameter, which is neither the dialog nor a choice the user
+    /// made — a component with several parameters silently offered exactly one of them, and a component
+    /// with none did nothing at all. It now routes through <see cref="OpenParameterEditorFor"/>, so the
+    /// two ways of asking for a component's parameters cannot answer differently.</para>
+    /// </summary>
     private void OnCtxEditParameters(object? sender, RoutedEventArgs e)
     {
-        if (Vm is null) return;
         var id   = SchematicCanvasCtrl.ContextMenuTargetId;
-        var comp = id is not null ? Vm.EditModel.FindComponent(id) : null;
-        if (comp is null || comp.Parameters.Count == 0) return;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (comp is null) return;
 
-        // Position the inline edit box over the first param label.
-        // Full ParameterDialog deferred to a later phase.
-        var param = comp.Parameters[0];
-        Vm.BeginInlineEdit(comp, param, 80, 80);
-        ShowInlineEditBox(80, 80, Vm.InlineEditValue);
+        OpenParameterEditorFor(comp);
     }
 
     private void OnCtxPushIn(object? sender, RoutedEventArgs e)
@@ -773,10 +779,18 @@ public partial class SchematicView : UserControl
     // ── Component body double-tap → param edit ────────────────────────────────
 
     private void OnComponentDoubleTapped(object? sender, EditableComponent comp)
+        => OpenParameterEditorFor(comp);
+
+    /// <summary>
+    /// Opens the parameter editor for one component — the single implementation behind BOTH the
+    /// component-body double-click and the context menu's Edit Parameters. VAR/MEAS get their own
+    /// multi-line editor; Ground gets nothing, which the context menu also enforces by hiding the item.
+    /// </summary>
+    private void OpenParameterEditorFor(EditableComponent comp)
     {
         if (Vm is null) return;
 
-        // Guard: Ground double-click → do not open (single check, per spec).
+        // Guard: Ground → do not open (single check, per spec).
         if (comp.Symbol == SymbolKind.Ground) return;
 
         var owner = TopLevel.GetTopLevel(this) as Window;

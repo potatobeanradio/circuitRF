@@ -95,6 +95,12 @@ public partial class SymbolEditorView : UserControl
         // Inline text edit — subscribe to VM events and viewport changes.
         DataContextChanged += OnDataContextChanged;
         SymbolEditorCanvasCtrl.ViewportChanged += (_, _) => RepositionInlineEditBox();
+
+        // Focus returning to the CANVAS specifically (not merely into this view) tells the workspace to
+        // re-assert this document's Properties/undo/save routing — a project-tree click hijacks the
+        // Properties panel without deactivating this tab, so nothing else would ever restore it. Same
+        // wiring as LayoutEditorView's own, and it fires only when focus was not already here.
+        SymbolEditorCanvasCtrl.GotFocus += (_, _) => _subscribedDoc?.NotifyCanvasInteracted();
     }
 
     private void OnZoomToFit(object? sender, RoutedEventArgs e)
@@ -175,9 +181,17 @@ public partial class SymbolEditorView : UserControl
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (_subscribedVm is not null) _subscribedVm.TextEditRequested -= OnTextEditRequested;
+        if (_subscribedVm is not null)
+        {
+            _subscribedVm.TextEditRequested    -= OnTextEditRequested;
+            _subscribedVm.PinPortEditRequested -= OnPinPortEditRequested;
+        }
         _subscribedVm = (DataContext as SymbolEditorDocument)?.ViewModel;
-        if (_subscribedVm is not null) _subscribedVm.TextEditRequested += OnTextEditRequested;
+        if (_subscribedVm is not null)
+        {
+            _subscribedVm.TextEditRequested    += OnTextEditRequested;
+            _subscribedVm.PinPortEditRequested += OnPinPortEditRequested;
+        }
 
         // Tab activated → grab keyboard focus so Select All etc. work without a click.
         if (_subscribedDoc is not null)
@@ -218,6 +232,39 @@ public partial class SymbolEditorView : UserControl
         Dispatcher.UIThread.Post(
             () => { InlineEditBox.Focus(); InlineEditBox.SelectAll(); },
             DispatcherPriority.Input);
+    }
+
+    // ── Pin port-number dialog (owner, 2026-08-17) ────────────────────────────
+    // The VM decides that a double-click landed on a pin and what its current number is; the widget
+    // lives here, on the same firewall split as the inline text editor above.
+    private void OnPinPortEditRequested(SymbolEditorViewModel.PinPortEditRequest req)
+    {
+        // POSTED, never shown inline. This runs from inside the canvas's PointerPressed handler, which
+        // has not finished yet — it still has to capture the pointer on the way out. Showing a modal
+        // window here means that capture is taken while the dialog is already up, the release that
+        // would free it goes to the dialog instead of the canvas, and the canvas then holds the pointer
+        // for the dialog's whole life. The dialog's first click is spent breaking the capture rather
+        // than pressing the button under it, so Cancel appears to need two presses (owner, 2026-08-17).
+        //
+        // Background priority lets the whole press/release cycle drain first; ReleasePointerCapture
+        // covers the case it cannot — a user still holding the button down when the post runs.
+        Dispatcher.UIThread.Post(() => ShowPinPortDialogAsync(req), DispatcherPriority.Background);
+    }
+
+    private async void ShowPinPortDialogAsync(SymbolEditorViewModel.PinPortEditRequest req)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        var vm = (DataContext as SymbolEditorDocument)?.ViewModel;
+        if (vm is null) return;
+
+        SymbolEditorCanvasCtrl.ReleasePointerCapture();
+
+        var dialog = new Views.Dialogs.SymbolPinPortDialog(req.PortNumber, req.PortCount);
+        int? chosen = await dialog.ShowDialog<int?>(owner);
+        if (chosen is not { } port) return;   // cancelled, or the entry never validated
+
+        vm.SetPinPortNumber(req.PinIndex, port);
+        SymbolEditorCanvasCtrl.Focus();
     }
 
     private void RepositionInlineEditBox()

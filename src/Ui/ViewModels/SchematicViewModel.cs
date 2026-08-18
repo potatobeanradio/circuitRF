@@ -2970,18 +2970,12 @@ public sealed partial class SchematicViewModel : ObservableObject
                 bool doGen = await AutoGenSymbolCallback(cellName);
                 if (!doGen) return;   // user declined — cancel placement
 
-                // Read numPorts from .ccell (default 2 if missing/zero).
-                int numPorts = 2;
-                string ccellEarly = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
-                if (File.Exists(ccellEarly))
-                {
-                    try
-                    {
-                        var declaring = CellPersistence.LoadFromFile(ccellEarly);
-                        if (declaring.NumPorts > 0) numPorts = declaring.NumPorts;
-                    }
-                    catch { /* corrupt .ccell — use default */ }
-                }
+                // How many ports the CELL has — its own declaration when it makes one, and otherwise
+                // its schematic's Pin components, which is what the user actually drew. This used to
+                // read .ccell NumPorts alone and fall back to a fixed 2; nothing in circuitRF ever
+                // DERIVES that field, so a cell whose cell-parameter editor was never opened declares
+                // zero and got a two-pin symbol however many pins its schematic had.
+                int numPorts = CellPortCount.Resolve(cellAbsDir);
 
                 // Generate, save, and notify subscribers to refresh the cache and tree.
                 var sym    = AutoSymbolGenerator.Generate(cellName, numPorts);
