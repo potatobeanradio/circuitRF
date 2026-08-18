@@ -35,6 +35,9 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 
+    <!-- PLACEHOLDER: bundleFor*MacOS.sh stamps these two keys from the repo-root VERSION file, the
+         one place circuitRF's version is written. Editing them here changes nothing about a built
+         bundle. -->
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
 

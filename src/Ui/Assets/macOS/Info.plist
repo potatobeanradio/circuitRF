@@ -27,6 +27,9 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 
+    <!-- PLACEHOLDER: bundleFor*MacOS.sh stamps these two keys from the repo-root VERSION file, the
+         one place circuitRF's version is written. Editing them here changes nothing about a built
+         bundle. -->
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
 
@@ -67,6 +70,10 @@
                 <key>public.filename-extension</key>
                 <array>
                     <string>crfw</string>
+                    <!-- Both spellings, because App.OpenFiles opens both: a workspace saved into a
+                         folder is that folder's `.cws`, and `.crfw` is the standalone spelling.
+                         Claiming only one left half the workspaces on the machine with no owner. -->
+                    <string>cws</string>
                 </array>
             </dict>
         </dict>
@@ -128,6 +135,7 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>crfw</string>
+                <string>cws</string>
             </array>
         </dict>
         <dict>

@@ -9,4 +9,45 @@
   <PropertyGroup>
     <RunSettingsFilePath>$(MSBuildThisFileDirectory)circuitrf.runsettings</RunSettingsFilePath>
   </PropertyGroup>
+
+  <!--
+    ═══ THE VERSION NUMBER, ONCE ═══════════════════════════════════════════════════════════════
+
+    The repo-root `VERSION` file is the ONLY place circuitRF's version is written: one line, e.g.
+    `0.9.0-beta.1`, `1.0` or `1.0.1`. Everything else READS it — nothing generates or rewrites a
+    file, so there is no "run the version script" step to forget:
+
+      * this file            → Version / InformationalVersion / FileVersion on every assembly,
+                               which is what the in-app About box displays (src/Ui/AppVersion.cs)
+      * packaging/version.sh → the macOS bundle scripts (stamped into the .app's Info.plist) and
+                               the .dmg / .deb file names
+      * packaging/version.ps1 → the .msi's ProductVersion and file name
+
+    Bump `VERSION`, rebuild, and the app, the three installers and their file names all move
+    together. The version strings in Assets/macOS/*.plist are placeholders; the bundle scripts
+    overwrite them at bundle time.
+
+    Two forms are derived here because the numeric ones are not optional: AssemblyVersion and
+    FileVersion are Win32 VERSIONINFO fields and must be purely numeric, so a prerelease suffix is
+    stripped for them and kept for the human-facing InformationalVersion.
+  -->
+  <PropertyGroup>
+    <_CrfVersionFile>$(MSBuildThisFileDirectory)VERSION</_CrfVersionFile>
+    <_CrfVersionRaw>$([System.IO.File]::ReadAllText('$(_CrfVersionFile)'))</_CrfVersionRaw>
+    <CircuitRfVersion>$(_CrfVersionRaw.Trim())</CircuitRfVersion>
+
+    <!-- The numeric head: everything before the first '-' (0.9.0-beta.1 → 0.9.0). -->
+    <_CrfDash>$(CircuitRfVersion.IndexOf('-'))</_CrfDash>
+    <CircuitRfVersionCore Condition="'$(_CrfDash)' == '-1'">$(CircuitRfVersion)</CircuitRfVersionCore>
+    <CircuitRfVersionCore Condition="'$(_CrfDash)' != '-1'">$(CircuitRfVersion.Substring(0, $(_CrfDash)))</CircuitRfVersionCore>
+
+    <Version>$(CircuitRfVersion)</Version>
+    <InformationalVersion>$(CircuitRfVersion)</InformationalVersion>
+    <AssemblyVersion>$(CircuitRfVersionCore).0</AssemblyVersion>
+    <FileVersion>$(CircuitRfVersionCore).0</FileVersion>
+
+    <!-- Without this the SDK appends "+<commit sha>" to InformationalVersion, which is what the
+         About box would then read out to the user. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
 </Project>

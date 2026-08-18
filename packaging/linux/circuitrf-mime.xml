@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The file types circuitRF actually opens when the desktop hands it a path (App.axaml.cs OpenFiles).
+  Nothing else is registered: an association the application ignores looks to the user exactly like a
+  broken file.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+
+    <mime-type type="application/x-circuitrf-workspace">
+        <comment>circuitRF Workspace</comment>
+        <glob pattern="*.crfw"/>
+        <glob pattern="*.cws"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-harmonica">
+        <comment>harmonicaRF Document</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.charm"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-wbond">
+        <comment>wBond Design</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.wBond"/>
+        <glob pattern="*.wbond"/>
+    </mime-type>
+
+</mime-info>

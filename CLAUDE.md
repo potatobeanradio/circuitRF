@@ -49,6 +49,24 @@ unrelated locations, not for straightforward lookups.
   It evaluates the TestBench's `measure` lines exactly as the GUI does, so a `.cnl` that works
   headless works when opened. `--set var=expr` overrides a global before elaboration;
   `-o out.{mat,npy,txt}` exports.
+- Package: one script per platform, all writing to `dist/` — `packaging/windows/build-msi.ps1`
+  (.msi, x64/arm64/x86), `packaging/macos/build-dmg.sh` (.dmg, Apple Silicon; wraps the existing
+  `src/Ui/bundleFor*MacOS.sh`), `packaging/linux/build-deb.sh` (.deb, x64/arm64, needs `fpm`).
+  **Each must run ON its own platform** (WiX is Windows-only, `codesign`/`hdiutil` macOS-only, and
+  the Windows PE icon is only embedded when the publish happens on Windows). Step-by-step
+  instructions live in `BUILDING.md`, which `README.md` links to; keep the two in step.
+  App icons (`.icns`/`.ico`/`.png`) are **build products** rasterised from the committed brand SVGs
+  by `dotnet run --project tools/IconGen`, which every packaging script runs first — no icon binary
+  is ever committed.
+- **The version number is written in exactly one place: the repo-root `VERSION` file** (one line,
+  e.g. `0.9.0-beta.1`). `Directory.Build.props` reads it into every assembly's
+  `Version`/`InformationalVersion` — which is what the About box renders via `src/Ui/AppVersion.cs`
+  — and `packaging/version.{sh,ps1}` derive from it the installer file names, the MSI
+  ProductVersion, the stamped `CFBundleShortVersionString`/`CFBundleVersion`, and dpkg's `~`
+  spelling. Nothing is generated or rewritten; the version strings in `Assets/macOS/*.plist` are
+  placeholders the bundle scripts overwrite. **Never hard-code a version anywhere else** — three
+  copies had already drifted (About said 0.9.0, the plists 0.1.0, the assembly the 1.0.0 default),
+  which is what `tests/Ui.Tests/VersionSingleSourceTests.cs` now holds shut.
 
 ### `dotnet test` is fast by default (brief-test-default-fast.md, 2026-07-28)
 
@@ -190,6 +208,10 @@ itself proves nothing:
   a launcher stub, because a Windows model imports its host callbacks from a *named module*).
 - `tools/fake-model-lib` — a test-only library mimicking that model ABI, so the worker can be driven
   end to end on a machine with no vendor kit on it. Not built by `dotnet build`.
+- `tools/IconGen` — rasterises `src/Ui/Assets/artwork/*-app-icon.svg` into the `.icns`/`.ico`/`.png`
+  containers the three operating systems read. Writes both containers itself (no `iconutil`, no
+  ImageMagick), which is what makes packaging work identically on all three. Not in `circuitRF.slnx`,
+  so a plain `dotnet build` neither builds it nor restores its `Svg.Skia` dependency.
 
 **UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Cli` must reference **no UI framework**
 (no Avalonia) — all UI-framework code lives in `src/Ui`, so circuitRF can be re-skinned by replacing

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <!--
+    WiX v4 definition of the circuitRF .msi. One file for all three architectures: build-msi.ps1
+    passes the architecture, the version and the publish directory in, so nothing here is per-arch.
+
+    Do not run wix by hand — packaging\windows\build-msi.ps1 publishes, harvests the file list into
+    Files.wxs and invokes wix with the right arguments. See BUILDING.md.
+  -->
+
+  <Package Name="circuitRF"
+           Manufacturer="potatobeanradio"
+           Version="$(var.Version)"
+           UpgradeCode="70CB9791-A58B-444F-8153-63DB32CE7235"
+           Scope="perMachine">
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- License page, install-location page, and a feature tree with the optional desktop shortcut. -->
+    <ui:WixUI Id="WixUI_FeatureTree" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of circuitRF is already installed." />
+
+    <!-- The icon Add/Remove Programs shows. Built from the SVG by tools/IconGen. -->
+    <!-- The Id extension must match the source file type, or the icon silently does not appear. -->
+    <Icon Id="circuitRFIcon.ico" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="circuitRFIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/potatobeanradio/circuitRF" />
+
+    <!-- ═══ DIRECTORIES ═══════════════════════════════════════════════════════ -->
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="circuitRF" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppStartMenuFolder" Name="circuitRF">
+        <Component Id="StartMenuShortcutComp">
+          <Shortcut Id="StartMenuShortcut"
+                    Name="circuitRF"
+                    Description="RF circuit simulator — DC, S-parameters, harmonic balance, loadpull"
+                    Target="[INSTALLFOLDER]CircuitRF.Ui.exe"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="RemoveAppStartMenuFolder" Directory="AppStartMenuFolder" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
+                         Name="StartMenuInstalled" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcutComp">
+        <Shortcut Id="DesktopShortcut"
+                  Name="circuitRF"
+                  Description="RF circuit simulator — DC, S-parameters, harmonic balance, loadpull"
+                  Target="[INSTALLFOLDER]CircuitRF.Ui.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
+                       Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- ═══ THE EXECUTABLE AND ITS FILE TYPES ═════════════════════════════════ -->
+    <!--
+      Every other published file is harvested into Files.wxs by build-msi.ps1 — the app ships its
+      user documentation and (on some builds) native DLLs beside the .exe, and a hand-written list
+      goes stale the first time that set changes. Only the .exe is named here, because the shortcuts
+      and the file associations have to point at it.
+
+      The registered types are exactly the ones App.axaml.cs opens when Windows hands it a path.
+      Registering one the app ignores would look to the user like a broken file.
+    -->
+    <ComponentGroup Id="MainExecutable" Directory="INSTALLFOLDER">
+      <Component Id="CircuitRfExeComp">
+        <File Id="CircuitRfExe" Source="$(var.PublishDir)\CircuitRF.Ui.exe" KeyPath="yes" />
+
+        <ProgId Id="circuitRF.Workspace" Description="circuitRF Workspace" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="crfw" ContentType="application/x-circuitrf-workspace">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.Harmonica" Description="harmonicaRF Document" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="charm" ContentType="application/x-circuitrf-harmonica">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.WBond" Description="wBond Design" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="wBond" ContentType="application/x-circuitrf-wbond">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+      </Component>
+    </ComponentGroup>
+
+    <!-- ═══ FEATURES ══════════════════════════════════════════════════════════ -->
+
+    <Feature Id="MainFeature" Title="circuitRF" Description="The circuitRF application." Level="1">
+      <ComponentGroupRef Id="MainExecutable" />
+      <ComponentGroupRef Id="PublishedFiles" />
+      <ComponentRef Id="StartMenuShortcutComp" />
+
+      <Feature Id="DesktopShortcutFeature"
+               Title="Desktop Shortcut"
+               Description="Add a circuitRF shortcut to the Desktop."
+               Level="1">
+        <ComponentRef Id="DesktopShortcutComp" />
+      </Feature>
+    </Feature>
+
+  </Package>
+</Wix>

@@ -16,8 +16,9 @@
                    FontWeight="Bold"
                    HorizontalAlignment="Center"/>
 
-        <!-- Version -->
-        <TextBlock Text="Version 0.9.0 (Beta)"
+        <!-- Version — set from AppVersion (the repo-root VERSION file) in the code-behind. -->
+        <TextBlock x:Name="VersionText"
+                   Text="Version"
                    FontSize="12"
                    HorizontalAlignment="Center"
                    Opacity="0.6"

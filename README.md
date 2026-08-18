@@ -66,6 +66,8 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 ## Binaries
 Add links to the released Windows/Linux/macOS binaries here.
 
+Building them yourself: [BUILDING.md](BUILDING.md).
+
 ---
 
 ## Contributors are welcome — *especially RF domain experts*
@@ -277,9 +279,11 @@ the terminal; on macOS/Linux use any shell.)
 path — they never fail. Contact the repo owner if you need the files for full coverage.
 
 
-### 4. Optional - Packaging from source
+### 4. Optional — package it as an app
 
-See BUILDING.md for instructions on building and packaging the circuitRF app. 
+[**BUILDING.md**](BUILDING.md) has step-by-step instructions for producing the installers users
+download: `.msi` (Windows x64/arm64/x86), `.dmg` (macOS Apple Silicon) and `.deb` (Linux x64/arm64).
+One script per platform, run from the repository root.
 
 
 ---

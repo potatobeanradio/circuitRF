@@ -37,10 +37,19 @@ tools/netlist-worker/.wineprefix/
 __pycache__/
 *.py[cod]
 
-# Application icons — BUILD PRODUCTS, rasterised from the committed SVG in Assets/artwork/ (.icns by
-# each bundleFor*MacOS.sh; .ico for the Windows PE resource, not yet produced by any script — see
-# src/Ui/CLAUDE.md). The repository holds circuitRF's brand artwork as SVG and never as a binary,
-# which is why nothing under Assets/ has ever been tracked; this states it rather than leaving it to
-# the first person who runs a bundle script and sees an untracked binary.
+# Application icons — BUILD PRODUCTS, rasterised from the committed SVG in Assets/artwork/ by
+# `dotnet run --project tools/IconGen` (.icns for the macOS bundle, .ico for the Windows PE resource
+# and MSI, .png for the Linux hicolor theme). Every packaging script runs it first, so no icon binary
+# ever needs to be tracked. The repository holds circuitRF's brand artwork as SVG and never as a
+# binary, which is why nothing under Assets/ has ever been tracked; this states it rather than
+# leaving it to the first person who runs a packaging script and sees an untracked binary.
 src/Ui/Assets/*.icns
 src/Ui/Assets/*.ico
+packaging/linux/icons/
+
+# Packaging outputs — the publish trees the packaging scripts stage from, the installers they
+# produce, and the file list build-msi.ps1 harvests out of a publish directory. All rebuildable
+# from BUILDING.md, none of it belongs in the history.
+/publish/
+/dist/
+packaging/windows/Files.wxs

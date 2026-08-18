@@ -598,7 +598,7 @@ public class WBondStandaloneTests : IDisposable
         // Extensions the plist claims, lower-cased the way the dispatcher compares them.
         var claimed = DictsUnder(Plist("Info.plist"), "CFBundleDocumentTypes")
             .SelectMany(d => d.Descendants("string").Select(s => s.Value))
-            .Where(v => v is "crfw" or "charm" or "wBond" or "wbond")
+            .Where(v => v is "crfw" or "cws" or "charm" or "wBond" or "wbond")
             .Select(v => v.ToLowerInvariant())
             .Distinct();
 

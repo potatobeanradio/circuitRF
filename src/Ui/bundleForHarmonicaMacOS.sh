@@ -17,7 +17,11 @@
 
 APP_NAME="harmonicaRF"
 EXECUTABLE_NAME="CircuitRF.Ui"        # shared assembly name — see Harmonica-Info.plist for why
-VERSION="0.1.0"
+# The version comes from the repo-root VERSION file — the one place it is written. It is
+# STAMPED into the bundled Info.plist below, so the .app can never report a version the
+# release does not carry (the plist's own value is only a placeholder).
+source "$(dirname "${BASH_SOURCE[0]}")/../../packaging/version.sh"
+VERSION="$CRF_VERSION"
 BUNDLE_ID="com.circuitRF.harmonicaRF"
 TARGET_FRAMEWORK="net10.0"
 RID="osx-arm64"                        # change to osx-x64 for Intel Macs
@@ -79,6 +83,9 @@ chmod +x "${MAC_OS_DIR}/${EXECUTABLE_NAME}"
 
 echo "📄 Copying Info.plist..."
 cp "$CUSTOM_PLIST" "${CONTENTS_DIR}/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${CRF_VERSION}" "${CONTENTS_DIR}/Info.plist"
+# CFBundleVersion must be purely numeric, so it gets the version's numeric head.
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${CRF_VERSION_CORE}" "${CONTENTS_DIR}/Info.plist"
 
 # The icon is BUILT from the committed SVG rather than committed as a binary — the repository holds
 # circuitRF's brand artwork as SVG for the same reason. Warn-and-continue, exactly like circuitRF's

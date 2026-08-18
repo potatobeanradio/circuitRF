@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Icon generator — rasterises the committed brand SVGs into the per-platform icon containers the
+    packaging scripts need. Not part of the application; deliberately references no other project in
+    this repo (see tools/ in the root CLAUDE.md) and is NOT in circuitRF.slnx, so a plain
+    `dotnet build` at the root neither builds it nor restores Svg.Skia.
+
+    Run it from the repo root; the exact command is in BUILDING.md ("App icons") and in every
+    packaging script, which run it for you.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SkiaSharp-based SVG renderer: same rendering stack the application itself uses, and the only
+         reason this tool is cross-platform (no rsvg-convert / ImageMagick / iconutil required). -->
+    <PackageReference Include="Svg.Skia" Version="5.2.1" />
+  </ItemGroup>
+
+</Project>

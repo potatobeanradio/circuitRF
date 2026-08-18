@@ -8,6 +8,9 @@ public partial class AboutWindow : Window
     public AboutWindow()
     {
         InitializeComponent();
+
+        // One source for the version, and it is the build's own: see CircuitRF.Ui.AppVersion.
+        VersionText.Text = $"Version {AppVersion.Display}";
     }
 
     private async void OnAcknowledgmentsClicked(object? sender, RoutedEventArgs e)

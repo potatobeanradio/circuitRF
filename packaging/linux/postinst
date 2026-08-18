@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+
+# A launcher on PATH, so `circuitrf` works from any terminal. Removed again by postrm.
+ln -sf /opt/circuitrf/CircuitRF.Ui /usr/bin/circuitrf
+
+chmod +x /opt/circuitrf/CircuitRF.Ui || true
+
+update-desktop-database -q 2>/dev/null || true
+update-mime-database /usr/share/mime 2>/dev/null || true
+gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true

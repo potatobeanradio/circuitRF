@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=circuitRF
+GenericName=RF Circuit Simulator
+Comment=RF circuit simulation — DC, S-parameters, harmonic balance, loadpull, layout and 2.5D EM
+Exec=/opt/circuitrf/CircuitRF.Ui %F
+Icon=circuitrf
+Terminal=false
+MimeType=application/x-circuitrf-workspace;application/x-circuitrf-harmonica;application/x-circuitrf-wbond;
+Categories=Science;Engineering;Electronics;
+Keywords=RF;microwave;simulation;S-parameters;harmonic balance;loadpull;
+StartupNotify=true
