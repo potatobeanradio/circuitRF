@@ -17,11 +17,12 @@
     <key>CFBundleIdentifier</key>
     <string>com.circuitRF.wBond</string>
 
-    <!-- The binary inside Contents/MacOS/. The ASSEMBLY NAME is shared with circuitRF on purpose
+    <!-- The binary inside Contents/MacOS/. The ASSEMBLY is still shared with circuitRF on purpose
          (WB40: RfCore's InternalsVisibleTo names that assembly, and the standalone binary IS src/Ui
-         with a different Main), so this is CircuitRF.Ui in all three bundles. The .app differs. -->
+         with a different Main) - but the published HOST is renamed per app by CircuitRF.Ui.csproj's
+         CrfRenameApphost target, so this must match EXECUTABLE_NAME in bundleForWBondMacOS.sh. -->
     <key>CFBundleExecutable</key>
-    <string>CircuitRF.Ui</string>
+    <string>wBond</string>
 
     <key>CFBundleName</key>
     <string>wBond</string>

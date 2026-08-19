@@ -5,7 +5,7 @@
 #   chmod +x bundleForMacOS.sh && ./bundleForMacOS.sh
 
 APP_NAME="circuitRF"
-EXECUTABLE_NAME="CircuitRF.Ui"        # binary produced by dotnet publish
+EXECUTABLE_NAME="circuitRF"           # the renamed host - see CircuitRF.Ui.csproj, CrfRenameApphost
 # The version comes from the repo-root VERSION file — the one place it is written. It is
 # STAMPED into the bundled Info.plist below, so the .app can never report a version the
 # release does not carry (the plist's own value is only a placeholder).

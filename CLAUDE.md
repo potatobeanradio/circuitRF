@@ -58,6 +58,24 @@ unrelated locations, not for straightforward lookups.
   App icons (`.icns`/`.ico`/`.png`) are **build products** rasterised from the committed brand SVGs
   by `dotnet run --project tools/IconGen`, which every packaging script runs first — no icon binary
   is ever committed.
+
+  **Two packaging rules exist because breaking either fails silently** (both held by
+  `tests/Ui.Tests/PackagingScriptTests.cs`, both learned from a real Windows build, 2026-08-18):
+  - **Every `.ps1` under `packaging/` must be pure ASCII.** Windows PowerShell 5.1 reads a BOM-less
+    `.ps1` as cp1252, so a UTF-8 emoji or box-drawing char decodes to bytes 0x93/0x94 — the curly
+    quotes `“ ”`, which PowerShell honours as string delimiters. Nothing errors: the parser swallows
+    everything to the next quote-class byte, PRINTS it instead of running it, and continues. One `📦`
+    turned the whole `dotnet publish` block into a string literal (verified against the AST, lines
+    48-54), and the first visible symptom was a `Get-ChildItem` "cannot find path …\publish\win-x64"
+    from a *later* step. A BOM also fixes it and is the wrong fix — invisible, and it does not
+    survive an editor round-trip anyone would notice.
+  - **What ships is named after the APPLICATION, not the assembly**: `circuitRF(.exe)`,
+    `harmonicaRF(.exe)`, `wBond(.exe)`. The assembly stays `CircuitRF.Ui` (RfCore's
+    `InternalsVisibleTo` — WB40), and .NET names the published host after the assembly with no
+    property to separate them, so `src/Ui/CircuitRF.Ui.csproj`'s `CrfRenameApphost` target renames it
+    **after publish only** — a plain `dotnet build`/`dotnet run` is untouched. Five packaging files
+    repeat that name as a literal and must be changed together (the `.wxs` + `build-msi.ps1`, the
+    Debian `postinst` + `.desktop`, the three `bundleFor*MacOS.sh` + their `Info.plist`s).
 - **The version number is written in exactly one place: the repo-root `VERSION` file** (one line,
   e.g. `0.9.0-beta.1`). `Directory.Build.props` reads it into every assembly's
   `Version`/`InformationalVersion` — which is what the About box renders via `src/Ui/AppVersion.cs`

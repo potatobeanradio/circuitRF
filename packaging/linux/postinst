@@ -2,9 +2,9 @@
 set -e
 
 # A launcher on PATH, so `circuitrf` works from any terminal. Removed again by postrm.
-ln -sf /opt/circuitrf/CircuitRF.Ui /usr/bin/circuitrf
+ln -sf /opt/circuitrf/circuitRF /usr/bin/circuitrf
 
-chmod +x /opt/circuitrf/CircuitRF.Ui || true
+chmod +x /opt/circuitrf/circuitRF || true
 
 update-desktop-database -q 2>/dev/null || true
 update-mime-database /usr/share/mime 2>/dev/null || true

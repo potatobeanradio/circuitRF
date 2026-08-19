@@ -13,7 +13,7 @@
     <string>com.circuitRF.circuitRF</string>
 
     <key>CFBundleExecutable</key>
-    <string>CircuitRF.Ui</string>
+    <string>circuitRF</string>
 
     <key>CFBundleName</key>
     <string>circuitRF</string>

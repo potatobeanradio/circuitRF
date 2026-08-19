@@ -563,14 +563,44 @@ public class WBondStandaloneTests : IDisposable
     }
 
     /// <summary>
-    /// The executable name inside every bundle is the shared assembly name (WB40). A bundle naming
-    /// something else does not launch at all.
+    /// <b>The executable inside every bundle is named after the APPLICATION, and its plist and its
+    /// bundle script must say the same name.</b> A bundle whose <c>CFBundleExecutable</c> is not a
+    /// file in <c>Contents/MacOS/</c> does not launch at all, and says so only in the system log.
+    ///
+    /// <para>This used to assert the shared ASSEMBLY name (WB40) in all three, because that is what
+    /// <c>dotnet publish</c> named the native host. The assembly is still shared and still called
+    /// <c>CircuitRF.Ui</c> — WB40 is unchanged — but shipping a <c>CircuitRF.Ui</c> binary put a
+    /// build-system detail in front of users on every platform, so <c>CircuitRF.Ui.csproj</c>'s
+    /// <c>CrfRenameApphost</c> target renames the host after publish. The invariant is no longer
+    /// "all three agree with the assembly" but "each agrees with its own script".</para>
+    /// </summary>
+    [Theory]
+    [InlineData("Info.plist", "bundleForMacOS.sh", "circuitRF")]
+    [InlineData("Harmonica-Info.plist", "bundleForHarmonicaMacOS.sh", "harmonicaRF")]
+    [InlineData("WBond-Info.plist", "bundleForWBondMacOS.sh", "wBond")]
+    public void EveryBundle_NamesItsOwnRenamedHostAsItsExecutable(string plist, string script, string expected)
+    {
+        Assert.Equal(expected, StringFor(Plist(plist), "CFBundleExecutable"));
+        Assert.Contains($"EXECUTABLE_NAME=\"{expected}\"", ReadRepoFile("src", "Ui", script));
+    }
+
+    /// <summary>
+    /// The three published host names are distinct, and none of them is the assembly name — two
+    /// applications sharing an executable name inside <c>/Applications</c> is how one ends up
+    /// launching under the other's identity.
     /// </summary>
     [Fact]
-    public void EveryBundle_NamesTheSharedAssemblyAsItsExecutable()
+    public void TheThreeRenamedHosts_AreDistinct_AndNoneIsTheAssemblyName()
     {
-        foreach (string plist in new[] { "Info.plist", "Harmonica-Info.plist", "WBond-Info.plist" })
-            Assert.Equal("CircuitRF.Ui", StringFor(Plist(plist), "CFBundleExecutable"));
+        string[] names =
+        [
+            StringFor(Plist("Info.plist"), "CFBundleExecutable")!,
+            StringFor(Plist("Harmonica-Info.plist"), "CFBundleExecutable")!,
+            StringFor(Plist("WBond-Info.plist"), "CFBundleExecutable")!,
+        ];
+
+        Assert.Equal(3, new HashSet<string>(names).Count);
+        Assert.DoesNotContain("CircuitRF.Ui", names);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -609,17 +639,18 @@ public class WBondStandaloneTests : IDisposable
     }
 
     /// <summary>
-    /// <b>Windows reads the application's identity out of the BINARY, and all three binaries have the
-    /// same file name.</b>
+    /// <b>Windows reads the application's identity out of the BINARY, not out of its file name.</b>
     ///
     /// <para><c>Description</c> becomes the executable's File Description — the name Windows shows in
-    /// Task Manager and in the file's Properties — and <c>Product</c> its product name. Since WB40
-    /// forbids changing the assembly name, these are the only things telling three identically-named
-    /// <c>CircuitRF.Ui.exe</c> files apart there. macOS had this right from H8 via per-app
-    /// CFBundleName; this is the same decision on the platform that reads it from the binary.</para>
+    /// Task Manager and in the file's Properties — and <c>Product</c> its product name. When this was
+    /// written, WB40 forbade changing the assembly name and these were the ONLY things telling three
+    /// identically-named <c>CircuitRF.Ui.exe</c> files apart. The published host is now renamed per
+    /// app (<c>CrfRenameApphost</c>), so the file names differ too — but the metadata still has to be
+    /// per-app, because the File Description is what Task Manager shows and it is read from inside the
+    /// binary regardless of what the file is called.</para>
     /// </summary>
     [Fact]
-    public void EveryAppHasItsOwnWindowsIdentityMetadata_SinceTheyShareOneExecutableName()
+    public void EveryAppHasItsOwnWindowsIdentityMetadata()
     {
         string csproj = ReadRepoFile("src", "Ui", "CircuitRF.Ui.csproj");
 

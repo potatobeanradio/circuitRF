@@ -20,7 +20,7 @@
 # piece of work with its own signing story, and nothing in this phase needs one.
 
 APP_NAME="wBond"
-EXECUTABLE_NAME="CircuitRF.Ui"        # shared assembly name — see WBond-Info.plist for why (WB40)
+EXECUTABLE_NAME="wBond"               # the renamed host - see CircuitRF.Ui.csproj, CrfRenameApphost
 # The version comes from the repo-root VERSION file — the one place it is written. It is
 # STAMPED into the bundled Info.plist below, so the .app can never report a version the
 # release does not carry (the plist's own value is only a placeholder).

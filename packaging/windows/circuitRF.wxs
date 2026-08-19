@@ -42,7 +42,7 @@
           <Shortcut Id="StartMenuShortcut"
                     Name="circuitRF"
                     Description="RF circuit simulator — DC, S-parameters, harmonic balance, loadpull"
-                    Target="[INSTALLFOLDER]CircuitRF.Ui.exe"
+                    Target="[INSTALLFOLDER]circuitRF.exe"
                     WorkingDirectory="INSTALLFOLDER" />
           <RemoveFolder Id="RemoveAppStartMenuFolder" Directory="AppStartMenuFolder" On="uninstall" />
           <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
@@ -56,7 +56,7 @@
         <Shortcut Id="DesktopShortcut"
                   Name="circuitRF"
                   Description="RF circuit simulator — DC, S-parameters, harmonic balance, loadpull"
-                  Target="[INSTALLFOLDER]CircuitRF.Ui.exe"
+                  Target="[INSTALLFOLDER]circuitRF.exe"
                   WorkingDirectory="INSTALLFOLDER" />
         <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
                        Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
@@ -75,7 +75,7 @@
     -->
     <ComponentGroup Id="MainExecutable" Directory="INSTALLFOLDER">
       <Component Id="CircuitRfExeComp">
-        <File Id="CircuitRfExe" Source="$(var.PublishDir)\CircuitRF.Ui.exe" KeyPath="yes" />
+        <File Id="CircuitRfExe" Source="$(var.PublishDir)\circuitRF.exe" KeyPath="yes" />
 
         <ProgId Id="circuitRF.Workspace" Description="circuitRF Workspace" Icon="CircuitRfExe" Advertise="no">
           <Extension Id="crfw" ContentType="application/x-circuitrf-workspace">

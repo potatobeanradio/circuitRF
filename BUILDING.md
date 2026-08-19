@@ -61,8 +61,18 @@ only need this command directly after changing the artwork.
 
 ```powershell
 dotnet tool install --global wix
-wix extension add --global WixToolset.UI.wixext
 ```
+
+That is the whole setup. **Do not add the `WixToolset.UI.wixext` extension by hand** — the build
+script installs it, pinned to the `wix` actually on your PATH. The WiX extension cache is keyed by
+wix version, so an extension added once and a `dotnet tool update --global wix` later stop seeing
+each other, and the symptom is
+
+```
+wix.exe : error WIX0144: The extension 'WixToolset.UI.wixext' could not be found.
+```
+
+which reads like a missing install and is really a version mismatch.
 
 **Build** (run each line for the architecture you want):
 
@@ -74,7 +84,11 @@ wix extension add --global WixToolset.UI.wixext
 
 The installer offers a license page, a changeable install directory, a Start Menu entry and an
 optional desktop shortcut, and registers `.crfw` / `.cws`, `.charm` and `.wBond` so double-clicking
-one opens circuitRF.
+one opens circuitRF. The installed program is **`circuitRF.exe`** — see *The executable name* below.
+
+> **PowerShell:** either `powershell.exe` (5.1, the Windows default) or `pwsh` (7.x) works, from the
+> repository root. If you edit a script under `packaging/`, keep it **pure ASCII** — the reason is in
+> the header of `build-msi.ps1`, and `tests/Ui.Tests/PackagingScriptTests.cs` enforces it.
 
 The MSI is unsigned, so SmartScreen warns on first run. To sign it you need a code-signing
 certificate:
@@ -153,7 +167,28 @@ For Windows or Linux they publish as plain self-contained binaries — no instal
 
 ```bash
 dotnet publish src/Ui/CircuitRF.Ui.csproj -c Release -r win-x64 --self-contained -p:CrfApp=wbond
+#   -> wBond.exe   (harmonica -> harmonicaRF.exe, circuitrf -> circuitRF.exe)
 ```
+
+---
+
+## The executable name
+
+**What ships is named after the application, never after the assembly:** `circuitRF.exe`,
+`harmonicaRF.exe`, `wBond.exe` on Windows, and the same names without the extension elsewhere —
+`/opt/circuitrf/circuitRF` on Linux, `circuitRF.app/Contents/MacOS/circuitRF` on macOS.
+
+The *assembly* is still `CircuitRF.Ui`, and cannot be renamed: RfCore grants it
+`InternalsVisibleTo`, and all three applications are one assembly with different `Main`s. .NET names
+the published native host after the assembly and offers no property to separate the two, so
+`src/Ui/CircuitRF.Ui.csproj`'s **`CrfRenameApphost`** target renames the host after publish. It is a
+publish-time step only — a plain `dotnet build` / `dotnet run` still produces `CircuitRF.Ui`, so
+nothing that launches the build output had to change.
+
+Five files carry the shipped name as a literal string and must agree with that target — the WiX
+source and its build script, the Debian `postinst` and `.desktop`, the three macOS bundle scripts and
+their `Info.plist`s. `tests/Ui.Tests/PackagingScriptTests.cs` checks all of them, because a drift
+there builds cleanly and ships a shortcut to a file that does not exist.
 
 ---
 

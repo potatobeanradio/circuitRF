@@ -18,11 +18,12 @@
     <key>CFBundleIdentifier</key>
     <string>com.circuitRF.harmonicaRF</string>
 
-    <!-- The binary inside Contents/MacOS/. The ASSEMBLY NAME is shared with circuitRF on purpose
+    <!-- The binary inside Contents/MacOS/. The ASSEMBLY is still shared with circuitRF on purpose
          (§3.1: the standalone binary is src/Ui with a different Main, and RfCore's InternalsVisibleTo
-         names that assembly), so this is CircuitRF.Ui in both bundles. The .app is what differs. -->
+         names that assembly) - but the published HOST is renamed per app by CircuitRF.Ui.csproj's
+         CrfRenameApphost target, so this must match EXECUTABLE_NAME in bundleForHarmonicaMacOS.sh. -->
     <key>CFBundleExecutable</key>
-    <string>CircuitRF.Ui</string>
+    <string>harmonicaRF</string>
 
     <key>CFBundleName</key>
     <string>harmonicaRF</string>

@@ -95,6 +95,47 @@
     <ApplicationIcon Condition="'$(CrfApp)' == 'wbond'     and Exists('Assets\wBondIcon.ico')">Assets\wBondIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!--
+    THE SHIPPED EXECUTABLE IS NAMED AFTER THE APPLICATION, NOT AFTER THE ASSEMBLY.
+
+    `dotnet publish` names the native host after $(AssemblyName), which would ship a
+    CircuitRF.Ui.exe / CircuitRF.Ui on all three platforms - a build-system detail on a user's Start
+    Menu, in Task Manager, in /opt and in an .app's Contents/MacOS. The assembly name itself cannot
+    change (see WB40 above: RfCore grants InternalsVisibleTo("CircuitRF.Ui")), and .NET has no
+    property that renames the host independently of it, so the host is renamed after publish.
+
+    Renaming a single-file host is safe: it locates its bundle by reading its OWN path at run time
+    and never by its own name, and nothing inside the app looks up the process file name.
+
+    PUBLISH ONLY, on purpose - a plain `dotnet build` / `dotnet run` still produces CircuitRF.Ui, so
+    every test, script and tool that launches the build output is untouched.
+
+    Four consumers depend on the names below; change one and change all four:
+      packaging/windows/circuitRF.wxs + build-msi.ps1  ($exeName)
+      packaging/linux/postinst + circuitrf.desktop
+      src/Ui/bundleFor*MacOS.sh                        (EXECUTABLE_NAME)
+      src/Ui/Assets/macOS/*.plist                      (CFBundleExecutable)
+  -->
+  <PropertyGroup>
+    <CrfExeName Condition="'$(CrfApp)' == 'circuitrf'">circuitRF</CrfExeName>
+    <CrfExeName Condition="'$(CrfApp)' == 'harmonica'">harmonicaRF</CrfExeName>
+    <CrfExeName Condition="'$(CrfApp)' == 'wbond'">wBond</CrfExeName>
+  </PropertyGroup>
+
+  <Target Name="CrfRenameApphost" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' != ''">
+    <PropertyGroup>
+      <_CrfExeExt Condition="$(RuntimeIdentifier.StartsWith('win'))">.exe</_CrfExeExt>
+      <_CrfPublishedHost>$(PublishDir)$(AssemblyName)$(_CrfExeExt)</_CrfPublishedHost>
+      <_CrfRenamedHost>$(PublishDir)$(CrfExeName)$(_CrfExeExt)</_CrfRenamedHost>
+    </PropertyGroup>
+    <Move SourceFiles="$(_CrfPublishedHost)"
+          DestinationFiles="$(_CrfRenamedHost)"
+          Condition="Exists('$(_CrfPublishedHost)') and '$(_CrfPublishedHost)' != '$(_CrfRenamedHost)'" />
+    <Exec Command="chmod +x &quot;$(_CrfRenamedHost)&quot;"
+          Condition="!$([MSBuild]::IsOSPlatform('Windows')) and Exists('$(_CrfRenamedHost)')" />
+    <Message Importance="high" Text="Published executable: $(CrfExeName)$(_CrfExeExt)" />
+  </Target>
+
   <PropertyGroup>
     <PackAsTool>false</PackAsTool>
     <PublishSingleFile>true</PublishSingleFile>
