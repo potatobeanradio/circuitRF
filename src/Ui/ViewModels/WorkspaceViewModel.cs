@@ -5425,7 +5425,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <para>The document opens on a real, converging device rather than an empty canvas: §1's whole
     /// claim is liveness, and an instrument that opens showing nothing has to be configured before it
     /// can demonstrate anything. The first solve is LAZY and coarse — the view triggers it on attach
-    /// — so opening the tab is not a blocking wait.</para>
+    /// — so opening the window is not a blocking wait.</para>
+    ///
+    /// <para><b>It opens in its own window, not as a docked tab</b> (owner, 2026-08-19). harmonicaRF
+    /// is an instrument, not a document of the workspace — it needs no workspace at all (§1.2) and
+    /// ships as a standalone binary of its own — so a tab that displaces whatever schematic the user
+    /// is tuning against is the wrong default. The window is sized like the shell and offset down-right
+    /// by one title bar, so the workspace stays identifiable behind it.</para>
+    ///
+    /// <para><b>It is still an ordinary dockable</b>: <see cref="OpenDocumentInOwnWindow"/> is the same
+    /// tear-off a user's own tab drag performs, so the window can be re-docked, is captured by the
+    /// layout, and survives a layout rebuild exactly as a hand-torn-off one does. A float that cannot
+    /// be built leaves the document docked rather than not opening it.</para>
     /// </summary>
     [RelayCommand]
     private void NewHarmonica()
@@ -5436,6 +5447,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var doc   = new HarmonicaDocument(title, vm);
         _scratchHarmonicas.Add(doc);
         _factory.OpenDocument(doc);
+        OpenDocumentInOwnWindow(doc);
     }
 
     /// <summary>
@@ -10554,13 +10566,30 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             await SaveLooseNoWorkspace(doc, window);
     }
 
+    /// <summary>
+    /// Suggested name for a schematic save picker. <c>doc.Id</c> is the tab identity and carries the
+    /// file name WITH its ".csch" extension for any document opened from disk; the picker appends
+    /// <c>DefaultExtension</c> itself, so handing it the full name is what put ".csch" in the
+    /// suggested name TWICE ("SParamTest.csch.csch"). Scratch documents, whose Id is a plain title,
+    /// are unaffected either way.
+    /// </summary>
+    internal static string SchematicPickerName(SchematicDocument doc) =>
+        doc.Id.EndsWith(".csch", StringComparison.OrdinalIgnoreCase)
+            ? doc.Id[..^".csch".Length]
+            : doc.Id;
+
+    /// <summary>Appends ".csch" when the picked path carries no extension at all (a picker that does
+    /// not apply DefaultExtension must not produce an extension-less schematic file).</summary>
+    internal static string EnsureCschExtension(string path) =>
+        Path.HasExtension(path) ? path : path + ".csch";
+
     // Tier 2: save to a user-picked location + register as Known File in the open workspace.
     private async Task SaveLooseToWorkspace(SchematicDocument doc, Window owner)
     {
         var result = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title             = "Save Schematic",
-            SuggestedFileName = doc.Id,
+            SuggestedFileName = SchematicPickerName(doc),
             DefaultExtension  = "csch",
             FileTypeChoices   =
             [
@@ -10569,7 +10598,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         });
         if (result is null) return;
 
-        var filePath = result.Path.LocalPath;
+        var filePath = EnsureCschExtension(result.Path.LocalPath);
         try
         {
             SchematicPersistence.SaveToFile(filePath, doc.ViewModel.EditModel, doc.Id);
@@ -10653,7 +10682,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var result = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title             = "Save Schematic",
-            SuggestedFileName = doc.Id,
+            SuggestedFileName = SchematicPickerName(doc),
             DefaultExtension  = "csch",
             FileTypeChoices   =
             [
@@ -10662,7 +10691,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         });
         if (result is null) return;
 
-        var filePath = result.Path.LocalPath;
+        var filePath = EnsureCschExtension(result.Path.LocalPath);
         try
         {
             SchematicPersistence.SaveToFile(filePath, doc.ViewModel.EditModel, doc.Id);

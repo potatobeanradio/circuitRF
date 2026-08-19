@@ -343,6 +343,13 @@ public sealed partial class SchematicViewModel : ObservableObject
     public double CanvasZoom { get; set; } = 1.0;
 
     /// <summary>
+    /// Returns the world rectangle the canvas is currently showing, or null when there is no live
+    /// canvas (headless, or not yet laid out). Set by SchematicCanvas; read by Paste so a pasted
+    /// fragment lands where the user is looking (see <see cref="SchematicPasteGeometry"/>).
+    /// </summary>
+    public Func<SchematicPasteGeometry.ViewRect?>? ViewportProvider { get; set; }
+
+    /// <summary>
     /// True when the user is performing an action that Escape should cancel:
     /// any non-Select tool is active, or a drag / rubber-band / segment-drag /
     /// inline text edit is in progress inside Select mode.
@@ -618,8 +625,18 @@ public sealed partial class SchematicViewModel : ObservableObject
         var stack = SchematicHitTest.TestStack(EditModel, RenderModel, SpatialIndex, wx, wy, includeLabels: false);
         var hit   = PickClickThrough(stack, shift);
 
+        // A press on a wire that is ALREADY part of a multi-object selection moves the whole
+        // selection — it must not collapse it to one segment. Collapsing was the bug behind
+        // "the pasted objects are stuck and only move horizontally": the press landed on a pasted
+        // wire, the selection died, and what remained was a per-segment drag, which by construction
+        // moves only perpendicular to its own segment. Segment editing (B1) still owns the click
+        // when that wire is the only thing selected, or when the click starts a fresh selection.
+        bool pressOnMultiSelection =
+            !shift && hit.Kind != SchematicHitTest.HitKind.None &&
+            Selection.Count > 1 && Selection.IsSelected(hit.Id);
+
         // B1: Per-segment click — selects just that segment (not the whole wire).
-        if (hit.Kind == SchematicHitTest.HitKind.WireSegment)
+        if (hit.Kind == SchematicHitTest.HitKind.WireSegment && !pressOnMultiSelection)
         {
             if (shift)
                 Selection.ToggleSegment(hit.Id, hit.SubIndex);
@@ -3954,11 +3971,33 @@ public sealed partial class SchematicViewModel : ObservableObject
         var result = await SchematicClipboard.PasteAsync(clipboard);
         if (result is null) return;
         var (comps, wires, cobjs, srcGrid) = result.Value;
+        PasteFragment(comps, wires, cobjs, srcGrid);
+    }
+
+    /// <summary>
+    /// Places an already-deserialized clipboard fragment: positions it relative to the current view
+    /// (<see cref="SchematicPasteGeometry"/>), then executes the undoable paste with the pasted
+    /// objects selected. The single entry point for both paste paths (canvas Ctrl+V and Edit menu),
+    /// so they cannot drift apart.
+    /// </summary>
+    public void PasteFragment(
+        List<EditableComponent> comps,
+        List<EditableWire> wires,
+        List<EditableCanvasObject> cobjs,
+        double sourceGridSize)
+    {
         if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return;
+
+        var (dx, dy) = SchematicPasteGeometry.Offset(
+            comps, wires, cobjs, ViewportProvider?.Invoke(), EditModel.GridSize,
+            occupied: (x, y) => EditModel.Components.Any(
+                c => Math.Abs(c.X - x) < 1e-6 && Math.Abs(c.Y - y) < 1e-6));
+        SchematicPasteGeometry.Translate(comps, wires, cobjs, dx, dy);
+
         Execute(new SchematicPasteCommand(
             EditModel, comps, wires, cobjs,
             ids => Selection.SetAll(ids),
-            sourceGridSize: srcGrid,
+            sourceGridSize: sourceGridSize,
             messageSink: _messageSink));
     }
 }

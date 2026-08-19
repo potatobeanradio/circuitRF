@@ -641,6 +641,137 @@ public partial class WorkspaceViewModel
             ReopenedPanelHeight);
     }
 
+    // ---- Opening a document in its own window --------------------------------
+
+    /// <summary>
+    /// How far down and right a document opened in its own window sits from the shell's own corner,
+    /// in logical units.
+    ///
+    /// <para><b>It is the title-bar height, not a taste.</b> The requirement is that the workspace
+    /// window's title bar stays visible behind the new one (owner, 2026-08-19), and the top of the
+    /// new window's frame lands exactly at the bottom of the shell's title bar at this offset.
+    /// A smaller number would cover part of the very thing the offset exists to leave showing.</para>
+    /// </summary>
+    private const double OwnWindowOffset = ScreenPlacement.TitleBarHeight;
+
+    /// <summary>Fallback size for a document window opened when there is no shell to measure — a
+    /// headless test, or a launch action that runs before the window exists.</summary>
+    private const double OwnWindowFallbackWidth  = 1100;
+    private const double OwnWindowFallbackHeight = 760;
+
+    /// <summary>
+    /// Moves a just-opened document out of the shell's tab strip and into its own window, sized like
+    /// the shell and offset down-right from it.
+    ///
+    /// <para><b>The document must already be open.</b> <c>SplitToWindow</c> floats a dockable that is
+    /// owned by a dock, so the caller opens it normally first and this takes it straight back out —
+    /// within the same dispatcher turn, so no docked tab is ever laid out or seen.</para>
+    ///
+    /// <para><b>Reuses the drag tear-off path deliberately</b>, exactly as
+    /// <see cref="RestoreFloatingDocumentWindows"/> does: remove from owner → <c>CreateWindowFrom</c>
+    /// → <c>AddWindow</c> → geometry → present → focus. Hand-assembling a window model instead is what
+    /// produced the "cannot be re-docked" bug recorded on <c>CircuitRfDockFactory.FloatTool</c>.</para>
+    ///
+    /// <para>Never throws. A float that cannot be built leaves the document as an ordinary docked tab,
+    /// which is a strictly usable outcome and is what this did before.</para>
+    /// </summary>
+    /// <returns>True when the document ended up in its own window.</returns>
+    internal bool OpenDocumentInOwnWindow(IDockable document)
+    {
+        if (document is null) return false;
+        if (_factory.DocumentDock is not { } shellDock) return false;
+
+        // Not docked where we expect (a headless factory, an already-floated document) — leave it be
+        // rather than asking Dock to move something out of a dock that does not own it.
+        if (!ReferenceEquals(document.Owner, shellDock)) return false;
+
+        try
+        {
+            // The placer is the R-dock-6 safety net, not the placement: ShellOffsetRect has already
+            // trimmed the window to the shell's screen, so a reachable rectangle comes back
+            // byte-identical and the offset survives. It only bites when the shell itself is somewhere
+            // this pass cannot measure.
+            var placer = new FloatingWindowPlacer(CurrentScreens(), sameConfiguration: false);
+            var rect   = placer.Place(ShellOffsetRect());
+
+            _factory.SplitToWindow(shellDock, document, rect.X, rect.Y, rect.Width, rect.Height, null);
+            _factory.SetActiveDockable(document);
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning(
+                $"'{document.Title}' could not be opened in its own window, so it stays docked. ({ex.Message})");
+            return false;
+        }
+
+        // Per-window wiring — the active-document override, per-window undo key bindings and the macOS
+        // menu attach — normally rides on OnDocumentDockPropertyChanged, which a PROGRAMMATIC float
+        // does not go through. Without this nudge the new window shows "Close Workspace" instead of
+        // "Close Window" and, on macOS, no menu bar at all. Same two posts
+        // RestoreFloatingDocumentWindows makes, for the same reason.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            TryWireHostWindowsUndo, Avalonia.Threading.DispatcherPriority.Background);
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            TryWireWindowFocusTracking, Avalonia.Threading.DispatcherPriority.Background);
+
+        return true;
+    }
+
+    /// <summary>
+    /// The shell's own rectangle, offset down and right by <see cref="OwnWindowOffset"/> — and TRIMMED
+    /// at the screen edge rather than slid back to it.
+    ///
+    /// <para><b>Trimming is the whole subtlety.</b> A maximized shell already fills the working area,
+    /// so an offset copy of it overhangs the bottom-right by exactly the offset.
+    /// <see cref="ScreenPlacement.Place"/> repairs an overhang by clamping the POSITION, which would
+    /// slide the new window straight back onto the shell's corner and lose the one thing the offset was
+    /// for. Giving up the offset's worth of width and height instead keeps the shell's title bar
+    /// showing and still satisfies "roughly the same size".</para>
+    /// </summary>
+    private ScreenRect ShellOffsetRect()
+    {
+        var shell = ShellWindow();
+        if (shell is null)
+            return new ScreenRect(OwnWindowOffset, OwnWindowOffset,
+                                  OwnWindowFallbackWidth, OwnWindowFallbackHeight);
+
+        // Position is DEVICE pixels; ClientSize is already logical. Mixing them is the bug
+        // AvaloniaScreenSource exists to prevent, and it is invisible on an unscaled display.
+        var scaling = shell.Screens is { } screens
+            ? AvaloniaScreenSource.ScalingAtDevicePoint(shell.Position.X, shell.Position.Y, screens)
+            : 1.0;
+
+        double x = ScreenPlacement.DeviceToLogical(shell.Position.X, scaling) + OwnWindowOffset;
+        double y = ScreenPlacement.DeviceToLogical(shell.Position.Y, scaling) + OwnWindowOffset;
+
+        double width  = shell.ClientSize.Width  > 1.0 ? shell.ClientSize.Width  : OwnWindowFallbackWidth;
+        double height = shell.ClientSize.Height > 1.0 ? shell.ClientSize.Height : OwnWindowFallbackHeight;
+
+        return TrimToScreen(new ScreenRect(x, y, width, height), CurrentScreens());
+    }
+
+    /// <summary>
+    /// Shrinks <paramref name="wanted"/> so it fits inside whichever screen its top-left corner is on,
+    /// leaving that corner exactly where it is. Returns it unchanged when no screen contains the corner
+    /// — there is nothing to trim against, and <see cref="ScreenPlacement.Place"/> is the backstop.
+    /// </summary>
+    internal static ScreenRect TrimToScreen(ScreenRect wanted, IReadOnlyList<ScreenRect> screens)
+    {
+        foreach (var screen in screens)
+        {
+            if (wanted.X < screen.X || wanted.X >= screen.Right) continue;
+            if (wanted.Y < screen.Y || wanted.Y >= screen.Bottom) continue;
+
+            return new ScreenRect(
+                wanted.X,
+                wanted.Y,
+                Math.Max(ScreenPlacement.MinWindowSize, Math.Min(wanted.Width,  screen.Right  - wanted.X)),
+                Math.Max(ScreenPlacement.MinWindowSize, Math.Min(wanted.Height, screen.Bottom - wanted.Y)));
+        }
+
+        return wanted;
+    }
+
     // ---- Capture / apply -----------------------------------------------------
 
     /// <summary>Current screens' working areas in logical units; empty when no display is available.</summary>

@@ -6,6 +6,71 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## harmonicaRF opens in its own window, and its New/Close finally work (2026-08-19)
+
+Owner: *"today when user selects Tools ▸ harmonicaRF, a docked harmonicaRF document is created.
+Instead of docking it, create the document undocked. Size it roughly the same as the current
+Workspace window, but a few pixels down and to the right so the user can still see the Workspace
+window's title bar."* And: *"fix the harmonicaRF New menu command — it is supposed to create a new
+harmonicaRF document but I don't think it currently does."*
+
+### The float reuses the drag tear-off path, and must
+
+`WorkspaceViewModel.OpenDocumentInOwnWindow` opens the document normally and then takes it straight
+back out through `IFactory.SplitToWindow` — the same path a user's own tab drag takes, and the same
+one `RestoreFloatingDocumentWindows` already uses. Hand-assembling a window model instead is what
+produced the "a floating panel cannot be re-docked at all" bug recorded on
+`CircuitRfDockFactory.FloatTool`. Consequences worth knowing: the window can be re-docked, it is
+captured by the saved layout, it survives a layout rebuild, and — per R-fgn-2 — it now **survives a
+workspace switch** instead of closing with the tabs. For an instrument that needs no workspace at all
+that is the right side of that rule, but it is a behaviour change.
+
+The two deferred posts after the float are not optional. A **programmatic** float does not go through
+`OnDocumentDockPropertyChanged`, so without `TryWireHostWindowsUndo` and `TryWireWindowFocusTracking`
+the new window shows "Close Workspace" instead of "Close Window" and, on macOS, no menu bar at all.
+
+### Trimming, not sliding — the maximized-shell case decides the design
+
+The obvious implementation asks for the shell's rectangle offset down-right and hands it to
+`ScreenPlacement.Place`. **That silently undoes the whole request when the shell is maximized.** The
+offset copy overhangs the working area by exactly the offset, and `Place` repairs an overhang by
+clamping the POSITION — sliding the window straight back onto the shell's corner with its title bar
+hidden behind it, which is the one thing the offset existed to prevent.
+
+`TrimToScreen` gives up the offset's worth of width and height instead, leaving the corner where it
+was put. `Place` then returns it byte-identical (its own gate 11: an already-reachable window is never
+nudged), so the safety net is a safety net rather than the placement. Both halves are pinned by tests,
+including the negative one that shows the untrimmed rectangle *does* get slid back.
+
+The offset is `ScreenPlacement.TitleBarHeight`, not a taste: at that value the new window's frame top
+lands exactly at the bottom of the shell's title bar, which is the stated requirement.
+
+`Window.Position` is DEVICE pixels and `ClientSize` is already logical — mixing them is the bug
+`AvaloniaScreenSource` exists to prevent, and it is invisible on an unscaled display.
+
+### Why New was dead, and it was not where it looked
+
+`HarmonicaView.NewDocument` was `Workspace?.NewHarmonicaCommand` **and nothing else**, so it needed a
+`WorkspaceViewModel` to do anything. Two hosts have none:
+
+- **The standalone `harmonicaRF` binary.** `HarmonicaShellWindow` is one plain window with no Dock and
+  no workspace, so File ▸ New was a silent no-op — the item enabled, the click handled, nothing
+  happening. It now opens another `HarmonicaShellWindow`, which is that shell's own stated model
+  ("several documents means several windows") and the same answer `WBondShellWindow` already gives.
+- **A FLOATING document window.** Dock sets a `CrfHostWindow`'s DataContext to the `IDockWindow`, not
+  to the workspace, so `(TopLevel as Window)?.DataContext as WorkspaceViewModel` was null for a
+  torn-off instrument. That was reachable by dragging the tab out before this change and is **the
+  default path now**, so the fallback resolver (walk the app's windows for `WorkspaceWindow`, the same
+  one `WirePanelKeys` and `LayoutEditorView` use) was mandatory, not a nicety.
+
+`CloseDocument` had the identical hole in the adjacent method — no factory to ask, so it did nothing.
+Standalone now closes the hosting window, which *is* the document there.
+
+**Not verified here:** the macOS menu-bar handover. A docked harmonicaRF injects its own top-level
+items into circuitRF's app menu (`HarmonicaAppMenuInjector`); a windowed one owns its window's menu
+outright (`RecomputeAttachment`'s tear-off branch). This change makes the second path the default. It
+is the path a torn-off document already took, but it cannot be exercised headlessly.
+
 ## wBond in the background, with the EM run's own progress rows (2026-08-19)
 
 Owner request: *"When exporting Touchstone or computing anything with the MoM wire engine, we need to
@@ -4260,3 +4325,70 @@ is verified against the parser rather than the unit table. The Ui-side consequen
 `SweepAxisRowViewModel.GetVarUnit` reads the row's unit COLUMN, so it now applies the same lift. Both
 have to agree or the editor would show a blank inherited unit and a preview reading "3 pts: 2 … 3"
 for a sweep the engine runs at 2 … 3 GHz.
+
+## Paste landed on top of the originals, and a wire click then froze the copy (2026-08-19)
+
+**Reported as:** *"I selected all the objects in the schematic, copied them, pasted them… the paste
+placed the components where I could not move them. Even though they were selected, I tried to
+click-drag to move them, but they appear stuck and could only move in the horizontal direction."*
+Plus a wish: *"it would be nice to paste objects relative to the user's current view."*
+
+**Two independent defects, and the second is the one that actually froze the selection.** Reproduced
+headlessly from the owner's own `.csch` (5 parts, 4 wires): copy-all + paste, then a press on the
+pasted content.
+
+### The press on a wire silently threw the selection away
+
+`HandleSelectPress`'s per-segment branch (B1) called `Selection.SelectOneSegment` **unconditionally**,
+while the branch right below it has always guarded the equivalent case for every other object kind
+(`else if (!Selection.IsSelected(hit.Id)) Selection.SelectOne(hit.Id)` — i.e. *keep* a selection the
+press landed inside). So pressing on a wire that was part of a 9-object pasted selection dropped all
+nine and left a **single wire segment** selected, and a segment drag moves only perpendicular to its
+own segment by construction. The owner pressed on a vertical run: horizontal-only motion, components
+untouched. "Stuck, and only moves horizontally" is a literal description of a segment drag, not of a
+constrained multi-drag — which is why looking at the drag clamps (`ApplyWireSlideClamp`,
+`IsWireEndpointConnectedToUnselected`) first was a dead end: those *were* firing on the overlapped
+paste, but they exclude pinned wires, and the components were free to move the whole time. The
+headless repro is what separated the two — it showed the components moving 500 units while the wires
+stayed put, which no "everything is stuck" theory survives.
+
+A press on a wire that is part of a **multi-object** selection now moves the whole selection.
+Segment editing still owns the click in every other case (nothing selected, or that wire alone
+selected, or Shift held) — those three are pinned by tests, because the naive fix takes B1 out
+entirely.
+
+### Paste was paste-IN-PLACE, which is unusable inside one schematic
+
+Nothing offset a pasted fragment: it kept its source coordinates, so copy-all + paste in the same
+schematic buried every pasted object exactly under its original. That state is worse than untidy —
+every pasted wire endpoint then coincides with an *unselected* original port, so the pasted wires are
+**pinned** (they re-route instead of translating) and each moved pin sprouts an auto-wire stub the
+moment the copy is dragged. Even with the click bug fixed, dragging the copy out of that pile left
+eight stub wires behind.
+
+`SchematicPasteGeometry` now places the fragment: outside the view → its bbox centre goes to the
+viewport centre; fully inside the view → one connection-grid step off the original, so the copy is
+visibly its own object without jumping somewhere the user is not looking. The delta is always a whole
+multiple of P, which is what keeps every pasted pin on the connection grid (R7). A final pass nudges
+diagonally if a pasted component would still land exactly on an existing one — that is the only thing
+protecting the **headless / not-yet-laid-out** path, where there is no viewport and paste stays
+in-place.
+
+The viewport reaches the VM as `ViewportProvider`, a callback the canvas installs alongside
+`ZoomToRectCallback` — pan lives in `SchematicCanvas` and only ever existed there. Both paste paths
+(canvas Ctrl+V and the Edit menu) were separately constructing `SchematicPasteCommand`; they now share
+`SchematicViewModel.PasteFragment`, because a placement rule applied by only one of them is a bug
+waiting to be reported as "paste works differently from the menu".
+
+### "Save Schematic As…" suggested `.csch` twice — the third sighting of one trap
+
+`SaveFilePickerAsync` appends `DefaultExtension` itself, so a `SuggestedFileName` that already carries
+the extension comes back doubled. This is the same defect already fixed twice in Harmonica
+(`ExportTestbenchAsync`, then `ExportDataAsync`'s `.npy.npy`), and both fixes left a comment saying so
+— but nothing audited the *schematic* save pickers, whose `SuggestedFileName` is `doc.Id`, and `doc.Id`
+is the tab identity, which for anything opened from disk is the file name **with** its extension.
+Scratch documents (`Id` = a plain title) never showed it, which is why it survived. Both tiers of
+Save-As now pass the stem. The picked path also gets `.csch` appended when it comes back with no
+extension at all, so the fix cannot turn into an extension-less file on a picker that does not apply
+`DefaultExtension` (`DataExporterDialog`'s loadpull export records seeing exactly that with the
+non-standard `.lpcwave`).

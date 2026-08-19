@@ -574,22 +574,69 @@ public partial class HarmonicaView : UserControl
 
     private HarmonicaViewModel? Vm => _doc?.ViewModel.Harmonica;
 
-    /// <summary>The workspace this view is hosted in, or null when harmonicaRF is standalone (§3.1).
-    /// Resolved per call from the hosting window rather than held — a torn-off document window has a
-    /// different one, which is R-menu-4's own per-window rule.</summary>
+    /// <summary>
+    /// The workspace this view is hosted in, or null when harmonicaRF is standalone (§3.1). Resolved
+    /// per call rather than held — R-menu-4's own per-window rule.
+    ///
+    /// <para><b>The local DataContext is not enough, and assuming it was is a real bug.</b> This view
+    /// hosts a dockable, and a dockable in a FLOATING window sits in a <c>CrfHostWindow</c> whose
+    /// DataContext Dock sets to the <c>IDockWindow</c> — not to the workspace. Reading only the top
+    /// level therefore returned null for a torn-off instrument, which silently disabled New, Close and
+    /// the saved-file notification for it. That was reachable by dragging the tab out before
+    /// harmonicaRF started opening in its own window by default (2026-08-19), and is the default path
+    /// now. Falls back to walking the application's windows, the same resolver
+    /// <c>WirePanelKeys</c> and <c>LayoutEditorView</c> already use for the same reason.</para>
+    /// </summary>
     private ViewModels.WorkspaceViewModel? Workspace
-        => (TopLevel.GetTopLevel(this) as Window)?.DataContext as ViewModels.WorkspaceViewModel;
+        => (TopLevel.GetTopLevel(this) as Window)?.DataContext as ViewModels.WorkspaceViewModel
+           ?? (Avalonia.Application.Current?.ApplicationLifetime
+                   is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+               ? desktop.Windows.OfType<Views.WorkspaceWindow>().FirstOrDefault()?.DataContext
+                     as ViewModels.WorkspaceViewModel
+               : null);
 
+    /// <summary>
+    /// File ▸ New — a new harmonicaRF document, from EITHER host.
+    ///
+    /// <para><b>The no-workspace branch is the bug this fixes</b> (owner, 2026-08-19: <i>"fix the
+    /// harmonicaRF New menu command — it is supposed to create a new harmonicaRF document but I don't
+    /// think it currently does"</i>). This used to be the workspace command and nothing else, so in the
+    /// standalone <c>harmonicaRF</c> binary — which has no <c>WorkspaceViewModel</c> anywhere — New was
+    /// a silent no-op: the menu item was enabled, the click was handled, and nothing happened.</para>
+    ///
+    /// <para>Standalone opens a new <see cref="HarmonicaShellWindow"/>, which is
+    /// <b>that shell's own stated model</b>: "several documents means several windows", the OS window
+    /// list being the document list. It is the same answer <c>WBondShellWindow</c> already gives for
+    /// its own File ▸ New.</para>
+    /// </summary>
     private void NewDocument()
     {
-        if (Workspace?.NewHarmonicaCommand is { } cmd && cmd.CanExecute(null)) cmd.Execute(null);
+        if (Workspace?.NewHarmonicaCommand is { } cmd && cmd.CanExecute(null))
+        {
+            cmd.Execute(null);
+            return;
+        }
+
+        // No workspace: this is the standalone binary. A window per document.
+        new HarmonicaShellWindow().Show();
     }
 
+    /// <summary>
+    /// File ▸ Close — the same split, and it had the same hole: with no workspace there was no
+    /// factory to ask, so Close did nothing at all. Standalone closes the window that hosts this view,
+    /// which IS the document there.
+    /// </summary>
     private void CloseDocument()
     {
-        if (_doc is null) return;
-        // Dock owns document lifetime; asking the factory to close it is what the tab's own × does.
-        Workspace?.DockFactory.CloseDockable(_doc);
+        if (Workspace is { } workspace)
+        {
+            if (_doc is null) return;
+            // Dock owns document lifetime; asking the factory to close it is what the tab's own × does.
+            workspace.DockFactory.CloseDockable(_doc);
+            return;
+        }
+
+        (TopLevel.GetTopLevel(this) as Window)?.Close();
     }
 
     private async System.Threading.Tasks.Task OpenCharmAsync()

@@ -87,6 +87,7 @@ public sealed class SchematicCanvas : Control
             {
                 _editContext.PropertyChanged -= OnVmPropertyChanged;
                 _editContext.ZoomToRectCallback = null;
+                _editContext.ViewportProvider   = null;
             }
 
             SetAndRaise(EditContextProperty, ref _editContext, value);
@@ -95,6 +96,7 @@ public sealed class SchematicCanvas : Control
             {
                 _editContext.PropertyChanged += OnVmPropertyChanged;
                 _editContext.ZoomToRectCallback = ZoomToRect;
+                _editContext.ViewportProvider   = () => WorldViewport;
                 _editContext.CanvasZoom = _zoom;
                 SyncFromVm();
                 UpdateCursor();
@@ -343,6 +345,16 @@ public sealed class SchematicCanvas : Control
     }
 
     // ── World ↔ screen ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The world rectangle currently on screen, or null before the control has been laid out.
+    /// Read by Paste (via SchematicViewModel.ViewportProvider) to land a pasted fragment in view.
+    /// </summary>
+    public SchematicPasteGeometry.ViewRect? WorldViewport =>
+        Bounds.Width > 1 && Bounds.Height > 1 && _zoom > 0
+            ? new SchematicPasteGeometry.ViewRect(
+                _panX, _panY, _panX + Bounds.Width / _zoom, _panY + Bounds.Height / _zoom)
+            : null;
 
     private double ScreenToWorldX(double sx) => sx / _zoom + _panX;
     private double ScreenToWorldY(double sy) => sy / _zoom + _panY;
