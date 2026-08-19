@@ -201,6 +201,19 @@
                         <mi:MaterialIcon Kind="Ruler" Width="16" Height="16"/>
                     </ToggleButton>
 
+                    <!-- brief-wbond-capacitance §3.4. This is the EDITOR'S readout setting, not a
+                         placed component's parameter — a design open here is not yet a component, and
+                         one document can be placed several times with different settings. What it
+                         writes is WBondDesign.IncludeCapacitance, which is what a newly-placed
+                         component INHERITS as its parameter default (WBondPlacement.ApplyDesign), the
+                         same relationship GroundPlane already has. -->
+                    <ToggleButton x:Name="CapacitanceToggle"
+                                  IsChecked="{Binding ViewModel.Editor.IncludeCapacitance, Mode=TwoWay}"
+                                  ToolTip.Tip="Include capacitance to the reference plane in the reported inductance"
+                                  Padding="6,3">
+                        <mi:MaterialIcon Kind="CircleMultipleOutline" Width="16" Height="16"/>
+                    </ToggleButton>
+
                     <Border Width="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="2,2"/>
 
                     <!-- ── The three tools, mutually exclusive by construction (ActiveTool). Select
@@ -291,11 +304,17 @@
                         <mi:MaterialIcon Kind="FileImportOutline" Width="16" Height="16"/>
                     </Button>
 
-                    <!-- §11 — a wBond publishes its own network: one port per wire array, the
-                         off-diagonals carrying the coupling. Reachable here as well as from the
-                         standalone binary's File ▸ Export, through the same one method. -->
+                    <!-- §11 — a wBond publishes its own network. THE entry point, and deliberately a
+                         toolbar button here rather than an entry in the workspace's global
+                         File ▸ Export (owner, 2026-08-18): that submenu's siblings are workspace-wide
+                         (GDSII, DXF, Gerber) and this applies to one document type, so it belongs with
+                         the buttons that are on screen exactly when a wBond is. The standalone
+                         binary's File ▸ Export reaches the same one method.
+
+                         The tooltip names what comes OUT rather than just the format — the owner went
+                         looking for this and did not find it behind "Export Touchstone…" alone. -->
                     <Button x:Name="ExportTouchstoneBtn" Click="OnExportTouchstone"
-                            ToolTip.Tip="Export Touchstone…"
+                            ToolTip.Tip="Export Touchstone (.sNp)… — publish this wirebond's network. Choose the reference impedance, the frequency sweep and the port basis in the dialog."
                             Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
                     </Button>

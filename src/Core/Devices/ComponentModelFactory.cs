@@ -1380,7 +1380,15 @@ public static class ComponentModelFactory
         // number because that is how the schematic writes it and how the elaborator stores it.
         bool refPin = parameters.TryGetValue("RefPin", out var pin) && IsTrue(pin);
 
-        return new WBondModel(design, path, refPin, notes);
+        // Capacitance to the reference plane (wbond.md §3.7). An instance parameter WINS over the
+        // design's own flag, the same way GroundPlane and Temp do; absent, the design decides — which
+        // is what makes the wBond editor's toolbar toggle the default a newly-placed component
+        // inherits rather than a setting the schematic silently ignores.
+        bool? includeCapacitance = parameters.TryGetValue("IncludeCapacitance", out var cap)
+            ? IsTrue(cap)
+            : null;
+
+        return new WBondModel(design, path, refPin, notes, includeCapacitance);
     }
 
     /// <summary>

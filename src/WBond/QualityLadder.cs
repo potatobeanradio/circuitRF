@@ -3,18 +3,15 @@ namespace CircuitRF.WBond;
 /// <summary>How much fidelity a drag frame gets (wbond.md WB15).</summary>
 public enum DragQuality
 {
-    /// <summary>Full geometry, exact incremental fill. The readout is final.</summary>
+    /// <summary>Full geometry, exact incremental fill. The readout is live and final.</summary>
     Exact,
 
     /// <summary>
-    /// Each moving wire represented by its CHORD — one filament instead of six or seven. The readout
-    /// is provisional and the panel says so.
-    /// </summary>
-    Chord,
-
-    /// <summary>
-    /// No refill at all: the last value is held while the canvas keeps up, and the exact answer is
-    /// computed on mouse-up.
+    /// No refill at all: the geometry moves and the canvas redraws, the panel holds its last numbers,
+    /// and the exact answer is computed on mouse-up.
+    ///
+    /// <para><b>This rung is unconditionally cheap</b>, which is what makes "the drag always stays
+    /// smooth" a guarantee rather than a hope.</para>
     /// </summary>
     FreezeAndSnap,
 }
@@ -40,11 +37,30 @@ public enum DragQuality
 /// of the machine, survives a faster or slower one, and is the same mechanism harmonicaRF's frame
 /// scheduler already uses.</para>
 ///
-/// <h3>Degrade the GEOMETRY, not the algebra</h3>
-/// <para>Representing a moving wire by its chord is a <b>36×</b> reduction in filament pairs (6
-/// filaments become 1, and pairs go as the square), and it keeps every wire in the matrix so the
-/// array reduction stays meaningful. Dropping wires instead would change which mutuals exist and make
-/// the readout jump as the ladder engaged — the one thing a live readout must not do.</para>
+/// <h3>The middle rung is gone, and its own argument is why (2026-08-18)</h3>
+/// <para>There used to be a <c>Chord</c> rung between the two: each moving wire represented by its
+/// chord, a <b>36×</b> reduction in filament pairs, keeping every wire in the matrix so the array
+/// reduction "stayed meaningful". <b>It did not stay meaningful.</b> A 20 mil loop flattened to its
+/// chord loses most of its loop area and reports its array inductance <b>~70 % low</b> — measured
+/// 597 pH exact against 180 pH collapsed. The paragraph that stood here warned that dropping wires
+/// "would make the readout jump as the ladder engaged — the one thing a live readout must not do",
+/// and then did exactly that by another route: with the ladder stepping down on one slow frame and
+/// back up after three comfortable ones, the panel alternated between those two numbers for the whole
+/// drag (owner, 2026-08-18).</para>
+///
+/// <para>It was also the most expensive rung, not the middle one. Collapsing changes each wire's
+/// POINT COUNT, so the flat filament layout no longer matches and the mesh has to be rebuilt — and
+/// the drag path rebuilt it <b>every frame</b> while collapsed, at full cold-fill cost, rather than
+/// once at the step-down. And it mutated geometry the canvas was drawing, so the wires visibly
+/// straightened mid-drag.</para>
+///
+/// <para>So the ladder is now <b>Exact or frozen</b>. A rung that produces a number nobody should
+/// look at is not a rung.</para>
+///
+/// <h3>Frame rate takes priority over the readout — always (owner, 2026-08-18)</h3>
+/// <para><i>"Dragging 500 wires must always be fast, it should always take priority. We can give up
+/// frame rate on the inductance calculation if necessary."</i> Two rules follow, and they are what
+/// <see cref="BeginDrag(int,int)"/> and <see cref="CanAffordExactFill"/> implement.</para>
 /// </summary>
 public sealed class QualityLadder
 {
@@ -96,27 +112,23 @@ public sealed class QualityLadder
         if (frameMs > _budgetMs)
         {
             _consecutiveComfortable = 0;
-            Current = Current switch
-            {
-                DragQuality.Exact => DragQuality.Chord,
-                DragQuality.Chord => DragQuality.FreezeAndSnap,
-                _ => DragQuality.FreezeAndSnap,
-            };
+
+            // A rung that overran BADLY is not tried again for the rest of this drag. Feedback alone
+            // would retry it every four frames, and at 500 wires one exact frame is seconds — so the
+            // drag would hitch periodically forever. This is memory of a measurement, not a model.
+            if (frameMs > _budgetMs * LockoutOverrunFactor) _lockedDown = true;
+
+            Current = DragQuality.FreezeAndSnap;
             return Current;
         }
 
         if (frameMs <= _budgetMs * StepUpFraction)
         {
             _consecutiveComfortable++;
-            if (_consecutiveComfortable >= StepUpAfterComfortableFrames)
+            if (_consecutiveComfortable >= StepUpAfterComfortableFrames && !_lockedDown)
             {
                 _consecutiveComfortable = 0;
-                Current = Current switch
-                {
-                    DragQuality.FreezeAndSnap => DragQuality.Chord,
-                    DragQuality.Chord => DragQuality.Exact,
-                    _ => DragQuality.Exact,
-                };
+                Current = DragQuality.Exact;
             }
             return Current;
         }
@@ -130,24 +142,132 @@ public sealed class QualityLadder
     public const int StepUpAfterComfortableFrames = 3;
 
     /// <summary>
-    /// Resets to the top rung. Called when a drag begins: every drag starts optimistic and finds its
-    /// own level within a frame or two, rather than inheriting the last drag's verdict about a
-    /// possibly quite different selection.
+    /// Resets for a new drag, with no idea what it will cost. Starts at the top rung.
+    ///
+    /// <para><b>Prefer <see cref="BeginDrag(int,int)"/>.</b> This overload starts optimistic, which
+    /// means the first frame of a 500-wire drag is an exact fill costing seconds. It survives for
+    /// callers that genuinely have no selection size to offer.</para>
     /// </summary>
     public void BeginDrag()
     {
         Current = DragQuality.Exact;
         _consecutiveComfortable = 0;
+        _lockedDown = false;
         LastFrameMs = 0.0;
     }
+
+    /// <summary>
+    /// Resets for a new drag whose size is known, and <b>refuses to attempt a fill that obviously
+    /// cannot fit</b>.
+    ///
+    /// <para><b>This is a BOUND, not the cost model WB15 rejected</b>, and the difference is the whole
+    /// justification. WB15 rejected fitting a predictor to <i>choose among rungs</i>, because the two
+    /// available measurements disagree by 2× on cost per wire-pair block (3.9 µs/block for one wire of
+    /// 600, 7.9 µs/block for 200 of 200) and a predictor fitted to either is wrong at the other by
+    /// 2–3×. That objection is fatal to a 2× decision and irrelevant to a <b>100×</b> one: dragging
+    /// 500 wires of 500 is 250,000 blocks, i.e. ~2 s against a 16.7 ms budget, and no factor-of-two
+    /// uncertainty changes that verdict. So this asks only the question a 2×-accurate bound can
+    /// answer — <i>is this obviously hopeless?</i> — and hands everything else back to feedback.</para>
+    ///
+    /// <para>Without it, feedback has to <i>pay</i> one catastrophic frame to learn what the block
+    /// count already says.</para>
+    /// </summary>
+    /// <param name="movingWires">How many wires this drag moves.</param>
+    /// <param name="totalWires">How many wires there are in total.</param>
+    public void BeginDrag(int movingWires, int totalWires)
+    {
+        BeginDrag();
+
+        double estimate = EstimatedFillMs(movingWires, totalWires);
+        if (estimate <= _budgetMs) return;
+
+        // Over budget: start frozen rather than paying to find out.
+        Current = DragQuality.FreezeAndSnap;
+
+        // ...and only LOCK when it is hopeless by a wide margin. The bound is deliberately 2×
+        // pessimistic (see MicrosecondsPerBlockUpperBound), so a drag that merely looks marginal must
+        // still be allowed to prove itself — three comfortable frozen frames and the ladder tries it,
+        // which costs ~50 ms of frozen readout and nothing else. A drag 60× over the budget gets no
+        // such courtesy.
+        if (estimate > _budgetMs * LockoutOverrunFactor) _lockedDown = true;
+    }
+
+    /// <summary>
+    /// The wire-pair blocks an incremental fill recomputes when <paramref name="movingWires"/> of
+    /// <paramref name="totalWires"/> move: <c>k·N − k(k−1)/2</c>.
+    ///
+    /// <para>One row per moved wire, less the intra-selection pairs already covered when the outer
+    /// loop reached the other member — which is exactly what <c>IncrementalFill.MoveWires</c> skips.
+    /// It reduces to N for one wire, matching the measured 600 blocks at N = 600.</para>
+    /// </summary>
+    public static long FillBlocks(int movingWires, int totalWires)
+    {
+        long k = Math.Clamp(movingWires, 0, Math.Max(totalWires, 0));
+        long n = Math.Max(totalWires, 0);
+        return k * n - k * (k - 1) / 2;
+    }
+
+    /// <summary>
+    /// The <b>upper</b> bound on a wire-pair block, in microseconds.
+    ///
+    /// <para>Measured 3.9 µs/block (one wire of 600) and 7.9 µs/block (200 of 200) — see
+    /// <see cref="BeginDrag(int,int)"/>. 8 is the pessimistic end, chosen deliberately: this constant
+    /// only ever decides whether to ATTEMPT the exact fill, so overestimating costs a frozen readout
+    /// on a drag that might have kept up, while underestimating costs a multi-second stall.</para>
+    /// </summary>
+    public const double MicrosecondsPerBlockUpperBound = 8.0;
+
+    /// <summary>An upper bound on what an exact drag frame would cost, milliseconds.</summary>
+    public static double EstimatedFillMs(int movingWires, int totalWires) =>
+        FillBlocks(movingWires, totalWires) * MicrosecondsPerBlockUpperBound / 1000.0;
+
+    /// <summary>Whether the exact fill is worth attempting at all for a drag of this size.</summary>
+    public bool CanAffordExactFill(int movingWires, int totalWires) =>
+        FitsInOneFrame(movingWires, totalWires, _budgetMs);
+
+    /// <summary>
+    /// Whether a fill of this size fits in one frame — the same bound
+    /// <see cref="CanAffordExactFill"/> asks, reachable without a ladder.
+    ///
+    /// <para>The drag path is not the only thing that must not stall on a fill: <b>an undo has to put
+    /// the wires back instantly too</b> (owner, 2026-08-18), and it has no ladder because it is not a
+    /// gesture. Both ask the same question, so both ask it here.</para>
+    /// </summary>
+    public static bool FitsInOneFrame(int movingWires, int totalWires, double budgetMs = FrameBudgetMs) =>
+        EstimatedFillMs(movingWires, totalWires) <= budgetMs;
+
+    /// <summary>
+    /// How far past the budget a frame has to land before its rung is abandoned for the rest of the
+    /// drag. Four times: a frame that merely misses is worth retrying, one that misses by 4× is not.
+    /// </summary>
+    public const double LockoutOverrunFactor = 4.0;
+
+    /// <summary>The frame budget this ladder measures against, milliseconds.</summary>
+    public double BudgetMs => _budgetMs;
+
+    /// <summary>
+    /// True when the last frame left at least half the budget unused — the test the drag path uses
+    /// before spending anything OPTIONAL, such as refreshing the capacitance.
+    /// </summary>
+    public bool HasHeadroom => LastFrameMs > 0.0 && LastFrameMs <= _budgetMs * StepUpFraction;
+
+    /// <summary>True once a rung has overrun badly enough not to be retried in this drag.</summary>
+    public bool IsLockedDown => _lockedDown;
+
+    private bool _lockedDown;
 
     // ---------------------------------------------------------------- the degraded representation
 
     /// <summary>
-    /// Replaces a wire's polyline with its chord, for the degraded rung.
+    /// Replaces a wire's polyline with its chord.
     ///
-    /// <para>Returns the original points so the caller can restore exact geometry on mouse-up — the
-    /// degraded representation is a rendering-and-solving shortcut, never a destructive edit.</para>
+    /// <para><b>No longer used by the drag path (2026-08-18)</b> — see the class note on why the Chord
+    /// rung was removed. Kept, with <see cref="RestoreFromChord"/>, because the pair encodes a
+    /// hard-won rule about carrying interior points onto moved feet that any future
+    /// simplify-then-restore feature would otherwise rediscover the hard way.</para>
+    ///
+    /// <para>Returns the original points so the caller can restore exact geometry — this is a
+    /// reversible shortcut, never a destructive edit.</para>
     /// </summary>
     public static Point3[] CollapseToChord(Wire wire)
     {

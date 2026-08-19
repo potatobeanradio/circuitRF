@@ -317,8 +317,11 @@ public sealed class ContourTraceCardTests
         Assert.False(result.DisplayMxe);
         Assert.False(result.DisplayGridPoints);
         Assert.Equal(RbfKernel.Multiquadric, result.InterpKernel);
-        Assert.Equal(1e-3, result.Smoothing);
-        Assert.Null(result.Epsilon);
+        // The shipped defaults, from ContourDefaults — 0.1 / 0.5 since 2026-08-18 (owner). A missing
+        // field must land on whatever the current default IS, not on the value it had when this test
+        // was written, so both sides read the one constant.
+        Assert.Equal(ContourDefaults.Smoothing, result.Smoothing);
+        Assert.Equal(ContourDefaults.Epsilon, result.Epsilon);
     }
 
     // T15 — SelectedContourFill getter/setter matches ShowFill + SelectedFillKind
@@ -387,8 +390,8 @@ public sealed class ContourTraceCardTests
         // §6 (round 6): LabelForeground now defaults to Black (dark text on white background)
         Assert.Equal(SKColors.Black, cd.LabelForeground);
         Assert.Equal(RbfKernel.Multiquadric, cd.InterpKernel);
-        Assert.Equal(1e-3, cd.Smoothing);
-        Assert.Null(cd.Epsilon);
+        Assert.Equal(ContourDefaults.Smoothing, cd.Smoothing);
+        Assert.Equal(ContourDefaults.Epsilon, cd.Epsilon);
         // §5: new size/opacity fields
         Assert.Equal(3.0, cd.GridPointSize);
         Assert.Equal(9.0, cd.LevelFontSize);

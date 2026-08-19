@@ -192,6 +192,10 @@ public class HitTestAndLadderTests
     /// <summary>
     /// <b>An overrunning frame steps the ladder down immediately.</b> A user feels one slow frame, so
     /// there is nothing to be gained by waiting for a second.
+    ///
+    /// <para>There are only TWO rungs since 2026-08-18 — the middle Chord rung published an
+    /// inductance ~70 % low and rebuilt the mesh every frame, so it cost more than the top rung to
+    /// produce a number nobody should look at. See <see cref="QualityLadder"/>'s own note.</para>
     /// </summary>
     [Fact]
     public void AnOverrunningFrame_StepsDownImmediately()
@@ -199,7 +203,6 @@ public class HitTestAndLadderTests
         var ladder = new QualityLadder();
         Assert.Equal(DragQuality.Exact, ladder.Current);
 
-        Assert.Equal(DragQuality.Chord, ladder.Observe(30.0));
         Assert.Equal(DragQuality.FreezeAndSnap, ladder.Observe(30.0));
 
         // And it bottoms out rather than pretending to keep up.
@@ -214,14 +217,104 @@ public class HitTestAndLadderTests
     public void SteppingBackUp_RequiresSeveralComfortableFrames()
     {
         var ladder = new QualityLadder();
-        ladder.Observe(30.0);
-        Assert.Equal(DragQuality.Chord, ladder.Current);
+
+        // Just over budget — down, but not far enough over to be locked out of retrying.
+        ladder.Observe(QualityLadder.FrameBudgetMs * 1.5);
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
+        Assert.False(ladder.IsLockedDown);
 
         // One comfortable frame is not enough.
         ladder.Observe(2.0);
-        Assert.Equal(DragQuality.Chord, ladder.Current);
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
 
         for (int i = 1; i < QualityLadder.StepUpAfterComfortableFrames; i++) ladder.Observe(2.0);
+        Assert.Equal(DragQuality.Exact, ladder.Current);
+    }
+
+    /// <summary>
+    /// <b>A frame that overruns BADLY is not retried for the rest of the drag.</b>
+    ///
+    /// <para>Feedback alone retries the top rung every four frames. At 500 wires one exact frame is
+    /// seconds, so that retry is a periodic multi-second hitch for as long as the drag lasts — which
+    /// is the owner's "the frame rate is slow when I drag 500 wires". Remembering that the rung was
+    /// measured hopeless is not a cost model; it is the measurement.</para>
+    /// </summary>
+    [Fact]
+    public void AFrameThatOverrunsBadly_IsNotRetriedInThisDrag()
+    {
+        var ladder = new QualityLadder();
+
+        ladder.Observe(QualityLadder.FrameBudgetMs * QualityLadder.LockoutOverrunFactor * 2.0);
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
+        Assert.True(ladder.IsLockedDown);
+
+        for (int i = 0; i < 50; i++) ladder.Observe(0.1);
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
+
+        // ...but the NEXT drag starts clean, because it may be a quite different selection.
+        ladder.BeginDrag();
+        Assert.Equal(DragQuality.Exact, ladder.Current);
+        Assert.False(ladder.IsLockedDown);
+    }
+
+    /// <summary>
+    /// <b>A drag whose fill obviously cannot fit never attempts one.</b>
+    ///
+    /// <para>Feedback has to PAY a catastrophic frame to learn what the block count says for free:
+    /// 500 wires of 500 is 250,000 wire-pair blocks, ~2 s against a 16.7 ms budget. The bound is only
+    /// asked whether that is hopeless, which no factor-of-two uncertainty in µs/block can change.</para>
+    /// </summary>
+    [Fact]
+    public void ADragTooBigToFill_StartsFrozenAndStaysThere()
+    {
+        var ladder = new QualityLadder();
+
+        ladder.BeginDrag(movingWires: 500, totalWires: 500);
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
+        Assert.True(ladder.IsLockedDown);
+
+        for (int i = 0; i < 50; i++) ladder.Observe(0.05);
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
+
+        // A one-wire drag on the same design is affordable and starts at the top.
+        ladder.BeginDrag(movingWires: 1, totalWires: 500);
+        Assert.Equal(DragQuality.Exact, ladder.Current);
+        Assert.False(ladder.IsLockedDown);
+    }
+
+    /// <summary>
+    /// The block count is <c>k·N − k(k−1)/2</c> — one row per moved wire, less the intra-selection
+    /// pairs the fill already covered — and it reduces to N for one wire, which is the 600 blocks
+    /// WB13 measured at N = 600.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 600, 600L, true)]
+    [InlineData(3, 600, 1797L, true)]
+    [InlineData(50, 600, 28775L, false)]
+    [InlineData(500, 500, 125250L, false)]
+    public void TheAffordabilityBoundFollowsTheBlockCount(int moving, int total, long blocks, bool affordable)
+    {
+        var ladder = new QualityLadder();
+
+        Assert.Equal(blocks, QualityLadder.FillBlocks(moving, total));
+        Assert.Equal(affordable, ladder.CanAffordExactFill(moving, total));
+    }
+
+    /// <summary>
+    /// A drag that is merely MARGINAL over the bound starts frozen but is allowed to prove itself —
+    /// the bound is 2× pessimistic on purpose, so locking on it would freeze drags that would have
+    /// kept up. Only a hopeless one is locked.
+    /// </summary>
+    [Fact]
+    public void AMarginalDrag_StartsFrozenButIsNotLockedOut()
+    {
+        var ladder = new QualityLadder();
+
+        ladder.BeginDrag(movingWires: 4, totalWires: 600);   // ~19 ms bound against a 16.7 ms budget
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
+        Assert.False(ladder.IsLockedDown);
+
+        for (int i = 0; i < QualityLadder.StepUpAfterComfortableFrames; i++) ladder.Observe(2.0);
         Assert.Equal(DragQuality.Exact, ladder.Current);
     }
 
@@ -233,11 +326,29 @@ public class HitTestAndLadderTests
     public void AFrameInsideBudgetButNotComfortably_HoldsTheRung()
     {
         var ladder = new QualityLadder();
-        ladder.Observe(30.0);
-        Assert.Equal(DragQuality.Chord, ladder.Current);
+        ladder.Observe(QualityLadder.FrameBudgetMs * 1.5);
+        Assert.Equal(DragQuality.FreezeAndSnap, ladder.Current);
 
         for (int i = 0; i < 10; i++)
-            Assert.Equal(DragQuality.Chord, ladder.Observe(QualityLadder.FrameBudgetMs * 0.8));
+            Assert.Equal(DragQuality.FreezeAndSnap, ladder.Observe(QualityLadder.FrameBudgetMs * 0.8));
+    }
+
+    /// <summary>
+    /// <b>Headroom is measured, not assumed.</b> The drag path spends leftover budget on the
+    /// capacitance and on nothing else, so this is what stops that spend from ever being the reason a
+    /// frame is slow.
+    /// </summary>
+    [Fact]
+    public void HeadroomIsOnlyReportedAfterAComfortableFrame()
+    {
+        var ladder = new QualityLadder();
+        Assert.False(ladder.HasHeadroom);   // nothing measured yet
+
+        ladder.Observe(QualityLadder.FrameBudgetMs * 0.9);
+        Assert.False(ladder.HasHeadroom);   // it fit, but only just
+
+        ladder.Observe(QualityLadder.FrameBudgetMs * 0.2);
+        Assert.True(ladder.HasHeadroom);
     }
 
     /// <summary>A comfortable frame at the top rung stays at the top.</summary>

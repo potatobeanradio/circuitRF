@@ -18,6 +18,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using RfCore.Loadpull;
 using Xunit;
@@ -290,4 +291,218 @@ public class Rbf2DTests
     //         System.IO.Path.Combine(AppContext.BaseDirectory, "testdata", "rbf2d_golden.csv"));
     //     // ... parse and compare
     // }
+
+    // ================================================================
+    //  Thin-plate's polynomial tail, and the smoothing sign (2026-08-18)
+    //
+    //  Owner: thin-plate produced +4 dB contour islands on a real loadpull surface, and no smoothing
+    //  value fixed it. It was not user error — see Rbf2D.RequiresPolynomialTail and
+    //  Rbf2D.SmoothingSign for the measurements these gates hold.
+    // ================================================================
+
+    /// <summary>A polar loadpull grid — rings of constant |Γ|, which is what a tuner sweeps.</summary>
+    private static (double[] Re, double[] Im) PolarGrid(int rings = 5, int perRing = 12, double rMax = 0.8)
+    {
+        var re = new List<double> { 0.0 };
+        var im = new List<double> { 0.0 };
+        for (int k = 1; k <= rings; k++)
+        {
+            double r = rMax * k / rings;
+            for (int p = 0; p < perRing; p++)
+            {
+                double a = 2.0 * Math.PI * p / perRing + 0.3 * k;
+                re.Add(r * Math.Cos(a));
+                im.Add(r * Math.Sin(a));
+            }
+        }
+        return (re.ToArray(), im.ToArray());
+    }
+
+    /// <summary>Pout(Γ) in dBm — a smooth bowl peaking off-centre, the shape loadpull actually has.</summary>
+    private static double LoadpullBowl(double re, double im)
+    {
+        double dr = re - 0.35, di = im + 0.20;
+        double d2 = dr * dr + di * di;
+        return 40.0 - 9.0 * d2 - 3.0 * d2 * d2 + 0.8 * dr * di;
+    }
+
+    /// <summary>Worst |fit − truth| and worst excursion outside the data range, over the sampled disc.</summary>
+    private static (double WorstError, double Overshoot, double Undershoot) SurveyDisc(
+        Rbf2D fit, double dataMin, double dataMax)
+    {
+        double worst = 0, over = 0, under = 0;
+        for (int a = 0; a < 90; a++)
+            for (int b = 0; b < 90; b++)
+            {
+                double x = -0.8 + 1.6 * a / 89.0, y = -0.8 + 1.6 * b / 89.0;
+                if (x * x + y * y > 0.64) continue;
+
+                double got = fit.Evaluate(x, y);
+                worst = Math.Max(worst, Math.Abs(got - LoadpullBowl(x, y)));
+                over = Math.Max(over, got - dataMax);
+                under = Math.Min(under, got - dataMin);
+            }
+        return (worst, over, under);
+    }
+
+    /// <summary>
+    /// <b>Thin-plate carries a linear polynomial tail, so raising smoothing SMOOTHS.</b>
+    ///
+    /// <para>The defect this pins: without the tail, overshoot above the data maximum went +0.18 dB at
+    /// smooth = 0.01, <b>+7.2 dB at 0.1</b> and +212 dB at 0.5 — the owner's contour islands, and
+    /// non-monotonic, so no amount of turning the knob could find a good value.</para>
+    /// </summary>
+    [Fact]
+    public void ThinPlate_SmoothingDoesNotBlowUpTheSurface()
+    {
+        var (re, im) = PolarGrid();
+        var values = new double[re.Length];
+        for (int i = 0; i < re.Length; i++) values[i] = LoadpullBowl(re[i], im[i]);
+
+        double dataMin = values.Min(), dataMax = values.Max();
+
+        foreach (double smooth in new[] { 0.0, 1e-3, 1e-2, 0.1, 0.5, 1.0 })
+        {
+            var fit = new Rbf2D(re, im, values, RbfKernel.ThinPlate, smooth);
+            var (worst, over, under) = SurveyDisc(fit, dataMin, dataMax);
+
+            Assert.True(over < 0.5,
+                $"smooth={smooth}: thin-plate overshot the data maximum by {over:F3} dB. Without its " +
+                "polynomial tail this reached +7.2 dB at smooth=0.1 and +212 dB at 0.5.");
+            Assert.True(under > -0.5,
+                $"smooth={smooth}: thin-plate undershot the data minimum by {under:F3} dB.");
+            Assert.True(worst < 3.0,
+                $"smooth={smooth}: worst error {worst:F3} dB against the true surface.");
+        }
+    }
+
+    /// <summary>
+    /// <b>With no smoothing, thin-plate is a true interpolant</b> — the polynomial tail is what makes
+    /// its own nodes come back exactly rather than approximately.
+    /// </summary>
+    [Fact]
+    public void ThinPlate_WithNoSmoothing_ReproducesItsNodesExactly()
+    {
+        var (re, im) = PolarGrid();
+        var values = new double[re.Length];
+        for (int i = 0; i < re.Length; i++) values[i] = LoadpullBowl(re[i], im[i]);
+
+        var fit = new Rbf2D(re, im, values, RbfKernel.ThinPlate, smooth: 0.0);
+
+        for (int i = 0; i < re.Length; i++)
+            Near(values[i], fit.Evaluate(re[i], im[i]), 1e-8, $"ThinPlate node[{i}]");
+    }
+
+    /// <summary>
+    /// The tail reproduces a PLANE exactly, at any smoothing — that is what the polynomial is for, and
+    /// it is the cheapest statement that it is actually being solved for rather than merely present.
+    /// </summary>
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.1)]
+    [InlineData(10.0)]
+    public void ThinPlate_ReproducesAPlaneAtAnySmoothing(double smooth)
+    {
+        var (re, im) = PolarGrid();
+        var values = new double[re.Length];
+        for (int i = 0; i < re.Length; i++) values[i] = 3.0 + 2.0 * re[i] - 1.5 * im[i];
+
+        var fit = new Rbf2D(re, im, values, RbfKernel.ThinPlate, smooth);
+
+        foreach (var (x, y) in new[] { (0.0, 0.0), (0.4, -0.2), (-0.55, 0.3), (0.7, 0.1) })
+            Near(3.0 + 2.0 * x - 1.5 * y, fit.Evaluate(x, y), 1e-6, $"plane at ({x},{y}) smooth={smooth}");
+    }
+
+    /// <summary>
+    /// <b>The Gaussian's default epsilon does not leave it ringing between its own nodes.</b>
+    ///
+    /// <para>scipy's default works out at roughly the node spacing, and a Gaussian that narrow
+    /// interpolates every node perfectly while oscillating ±3 dB in between — a failure a node-based
+    /// self-consistency test cannot see, which is why this one surveys the whole disc.</para>
+    /// </summary>
+    [Fact]
+    public void Gaussian_DefaultEpsilon_DoesNotRingBetweenNodes()
+    {
+        var (re, im) = PolarGrid();
+        var values = new double[re.Length];
+        for (int i = 0; i < re.Length; i++) values[i] = LoadpullBowl(re[i], im[i]);
+
+        double dataMin = values.Min(), dataMax = values.Max();
+        var fit = new Rbf2D(re, im, values, RbfKernel.Gaussian, smooth: 1e-3);
+        var (worst, over, under) = SurveyDisc(fit, dataMin, dataMax);
+
+        Assert.True(worst < 1.0,
+            $"Gaussian worst error {worst:F3} dB. At scipy's own default epsilon this was 8.5 dB, with " +
+            "the node error still reading 0.03 — it interpolated its nodes and lied everywhere else.");
+        Assert.True(over < 0.5 && under > -0.5,
+            $"Gaussian excursions: +{over:F3} / {under:F3} dB outside the data range.");
+    }
+
+    /// <summary>The Gaussian's default epsilon is scipy's, scaled — and a stated epsilon still wins.</summary>
+    [Fact]
+    public void Gaussian_EpsilonDefaultIsScaled_ButAStatedOneWins()
+    {
+        var (re, im) = PolarGrid();
+        var values = new double[re.Length];
+        for (int i = 0; i < re.Length; i++) values[i] = LoadpullBowl(re[i], im[i]);
+
+        double scipy = Rbf2D.ComputeEpsilon(re, im, re.Length);
+
+        Assert.Equal(scipy * Rbf2D.GaussianEpsilonScale,
+                     new Rbf2D(re, im, values, RbfKernel.Gaussian).Epsilon, 12);
+        Assert.Equal(scipy, new Rbf2D(re, im, values, RbfKernel.Multiquadric).Epsilon, 12);
+        Assert.Equal(0.5, new Rbf2D(re, im, values, RbfKernel.Gaussian, 1e-3, 0.5).Epsilon, 12);
+    }
+
+    /// <summary>
+    /// <b>Multiquadric is untouched by any of it</b> — same epsilon default, same scipy smoothing sign,
+    /// no polynomial tail. It is the shipped default and the kernel the loadpull display uses, so the
+    /// numbers anyone has already looked at must not move.
+    /// </summary>
+    [Fact]
+    public void Multiquadric_IsUnchangedByTheThinPlateAndGaussianFixes()
+    {
+        Assert.False(Rbf2D.RequiresPolynomialTail(RbfKernel.Multiquadric));
+        Assert.Equal(-1.0, Rbf2D.SmoothingSign(RbfKernel.Multiquadric));
+        Assert.True(Rbf2D.RequiresPolynomialTail(RbfKernel.ThinPlate));
+        Assert.Equal(+1.0, Rbf2D.SmoothingSign(RbfKernel.Gaussian));
+
+        // The 4-node hand-verified example of test 6 still lands where it always did.
+        double[] re = [0, 1, 0, 1], im = [0, 0, 1, 1], val = [1, 2, 3, 4];
+        var fit = new Rbf2D(re, im, val, RbfKernel.Multiquadric, smooth: 0.0);
+        for (int i = 0; i < 4; i++) Near(val[i], fit.Evaluate(re[i], im[i]), 1e-9, $"MQ node[{i}]");
+    }
+
+    /// <summary>
+    /// A re-solve through <see cref="Rbf2D.Factorize"/> matches a fresh fit for EVERY kernel — the
+    /// thin-plate path stores an augmented system rather than a factorization, so this is where a
+    /// divergence between the two entry points would show.
+    /// </summary>
+    [Theory]
+    [InlineData(RbfKernel.Multiquadric)]
+    [InlineData(RbfKernel.ThinPlate)]
+    [InlineData(RbfKernel.Gaussian)]
+    public void Factorize_AgreesWithAFreshFit_ForEveryKernel(RbfKernel kernel)
+    {
+        var (re, im) = PolarGrid(rings: 3, perRing: 8);
+        var a = new double[re.Length];
+        var b = new double[re.Length];
+        for (int i = 0; i < re.Length; i++)
+        {
+            a[i] = LoadpullBowl(re[i], im[i]);
+            b[i] = 2.0 * LoadpullBowl(re[i], im[i]) - 5.0;
+        }
+
+        var factored = Rbf2D.Factorize(re, im, a, kernel, smooth: 1e-2);
+
+        foreach (var values in new[] { a, b })
+        {
+            var reused = factored.Solve(values);
+            var fresh = new Rbf2D(re, im, values, kernel, smooth: 1e-2);
+
+            foreach (var (x, y) in new[] { (0.0, 0.0), (0.3, -0.15), (-0.4, 0.25) })
+                Near(fresh.Evaluate(x, y), reused.Evaluate(x, y), 1e-9,
+                     $"{kernel} re-solve at ({x},{y})");
+        }
+    }
 }

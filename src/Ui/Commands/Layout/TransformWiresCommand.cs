@@ -82,6 +82,9 @@ internal sealed class TransformWiresCommand : IUiCommand
             restored.Add(index);
         }
 
-        if (restored.Count > 0) _editor.CommitPointMove(restored);
+        // AfterFrame, not CommitPointMove: an undo of a 500-wire move must put the wires back on this
+        // frame and pay for the matrix on the next (owner, 2026-08-18). Below the frame bound it is a
+        // plain synchronous commit, so a small undo is unchanged.
+        if (restored.Count > 0) _editor.CommitPointMoveAfterFrame(restored);
     }
 }

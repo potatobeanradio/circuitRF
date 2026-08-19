@@ -148,6 +148,84 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     /// <summary>Unmodelled coupling to other wBond components, or empty (WB30).</summary>
     [ObservableProperty] private string _couplingWarning = "";
 
+    /// <summary>
+    /// The frequency the self-inductance numbers are quoted at, formatted — <c>"10 GHz"</c>.
+    ///
+    /// <para><b>The panel needs this row only because capacitance exists</b> (wbond.md §6.8). Before
+    /// it, the reported quantity was the frequency-independent partial inductance and there was
+    /// nothing to state. With shunt capacitance the terminal inductance genuinely moves with
+    /// frequency, so the panel has to say which one it is showing.</para>
+    ///
+    /// <para>GHz always, never auto-ranged — the same rule, for the same reason, as the fixed
+    /// picohenries.</para>
+    /// </summary>
+    [ObservableProperty] private string _frequency = "";
+
+    /// <summary>
+    /// The above-self-resonance sentence, or empty. Shown in the warning brush, in place of the
+    /// numbers rather than beside them.
+    ///
+    /// <para>Above resonance the effective inductance runs to ±∞ and comes back negative. That is not
+    /// a wrong number a reader can discount — it is a number that looks like an answer, so the cards'
+    /// self values are blanked while this is set (gate C9).</para>
+    /// </summary>
+    [ObservableProperty] private string _resonanceWarning = "";
+
+    /// <summary>True while <see cref="ResonanceWarning"/> is worth a row.</summary>
+    [ObservableProperty] private bool _aboveResonance;
+
+    /// <summary>
+    /// The capacitance toggle, <b>on the panel rather than only on the editor's toolbar</b>.
+    ///
+    /// <para><b>Because the panel has TWO hosts and only one of them has that toolbar</b> (owner,
+    /// 2026-08-18). The wBond editor docks this control inline beside its own toolbar; the workspace
+    /// offers the same control as a dock tool over the active layout, where there is no wBond editor
+    /// on screen at all. The frequency row beside this one was settable in both hosts from the start,
+    /// so a capacitance switch reachable in only one of them was the odd one out — and it is the
+    /// setting that decides what the number above it even means.</para>
+    ///
+    /// <para>It writes through to <see cref="Editor"/>, which is the same
+    /// <c>WBondDesign.IncludeCapacitance</c> the toolbar toggle writes, so the two cannot
+    /// disagree.</para>
+    /// </summary>
+    [ObservableProperty] private bool _includeCapacitance = true;
+
+    /// <summary>
+    /// Whether the toggle is offered at all. False when there is no editor behind the panel — a dock
+    /// tool bound before any wirebond has been opened is a pure readout, and a switch that silently
+    /// does nothing is worse than an absent one.
+    /// </summary>
+    [ObservableProperty] private bool _canToggleCapacitance;
+
+    /// <summary>
+    /// Whether the frequency row is worth showing. <b>False when capacitance is not in the numbers</b>,
+    /// because the effective inductance is then <c>L_arr</c> at every frequency and the row provably
+    /// changes nothing — the same rule <see cref="ShowReturnPath"/> already follows for a line that
+    /// would always say the expected thing.
+    /// </summary>
+    [ObservableProperty] private bool _showFrequency;
+
+    /// <summary>
+    /// Set when the design asks for capacitance and cannot have it, with the reason. Empty otherwise.
+    ///
+    /// <para>The one case is a disabled ground plane: the plane at z = 0 IS the reference conductor,
+    /// so with it off there is nothing for the charge to return to. Saying so matters because the
+    /// missing capacitance moves the reported inductance in the <b>optimistic</b> direction, which is
+    /// the failure mode the return-path refusal above already exists to stop.</para>
+    /// </summary>
+    [ObservableProperty] private string _capacitanceUnavailable = "";
+
+    /// <summary>Guards the write-back while <see cref="Update"/> is pushing state in.</summary>
+    private bool _updating;
+
+    partial void OnIncludeCapacitanceChanged(bool value)
+    {
+        if (_updating || Editor is not { } editor) return;
+        editor.IncludeCapacitance = value;
+    }
+
+    partial void OnEditorChanged(WBondViewModel? value) => CanToggleCapacitance = value is not null;
+
     public ObservableCollection<WBondArrayRowViewModel> Rows { get; } = [];
 
     /// <summary>
@@ -181,12 +259,27 @@ public sealed partial class WBondPanelViewModel : ObservableObject
         ReturnPath = readout.ReturnPath;
         ReturnPathUndeclared = readout.ReturnPath.Contains("UNDECLARED", StringComparison.Ordinal);
         ShowReturnPath = !readout.ReturnPathIsDefault;
+        Frequency = FormatFrequency(readout.ReadoutFrequencyGHz);
+        AboveResonance = readout.AboveSelfResonance;
+        ResonanceWarning = readout.ResonanceWarning;
+        ShowFrequency = readout.CapacitanceIncluded;
+
+        // The toggle shows what was ASKED for; the note below it explains a design that asked and
+        // could not have it.
+        _updating = true;
+        IncludeCapacitance = readout.CapacitanceRequested;
+        _updating = false;
+
+        CapacitanceUnavailable = readout.CapacitanceRequested && !readout.CapacitanceIncluded
+            ? "Capacitance is off because the ground plane is disabled — the plane at z = 0 is what " +
+              "the charge would return to."
+            : "";
 
         while (Rows.Count > readout.Rows.Count) Rows.RemoveAt(Rows.Count - 1);
         while (Rows.Count < readout.Rows.Count) Rows.Add(new WBondArrayRowViewModel());
 
         for (int i = 0; i < readout.Rows.Count; i++)
-            Apply(Rows[i], readout.Rows[i], i, Unit);
+            Apply(Rows[i], readout.Rows[i], i, Unit, readout.AboveSelfResonance);
 
         UpdateMutualPairs(readout);
     }
@@ -241,11 +334,12 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     }
 
     private static void Apply(WBondArrayRowViewModel row, PanelReadout.ArrayRow source, int selfIndex,
-                              WBondUnit unit)
+                              WBondUnit unit, bool aboveResonance)
     {
         row.ArrayIndex = selfIndex;
         row.Name = source.Name;
-        row.Self = FormatPicoHenries(source.SelfPicoHenries);
+        // Above resonance there is no number to print — see ResonanceWarning.
+        row.Self = aboveResonance ? "" : FormatPicoHenries(source.SelfPicoHenries);
         row.Wires = source.WireCount.ToString(CultureInfo.InvariantCulture);
         row.TotalLength = FormatLength(source.TotalLengthMm, unit);
 
@@ -305,6 +399,23 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     /// </summary>
     public static string FormatPicoHenries(double picoHenries) =>
         picoHenries.ToString("F1", CultureInfo.InvariantCulture) + " pH";
+
+    /// <summary>Formats the readout frequency. GHz always — see <see cref="Frequency"/>.</summary>
+    public static string FormatFrequency(double gigahertz) =>
+        gigahertz.ToString("0.####", CultureInfo.InvariantCulture) + " GHz";
+
+    /// <summary>
+    /// The tooltip on the frequency row.
+    ///
+    /// <para>It used to end "this is a readout setting — it never reaches the simulation", which the
+    /// owner had removed (2026-08-18). The statement is true and still lives in
+    /// <see cref="WBondDesign.ReadoutFrequencyGHz"/> with a test holding it, but it describes an
+    /// internal boundary rather than the thing the user is setting: <b>the frequency the inductance
+    /// is extracted at</b>. Saying what a control does beats disclaiming what it does not.</para>
+    /// </summary>
+    public static string FrequencyRowTip =>
+        "The inductance extraction frequency — the frequency the self inductances above are quoted at." +
+        "\nDouble-click to change it.";
 
     /// <summary>
     /// How many decimals a length gets in THIS panel, per unit.

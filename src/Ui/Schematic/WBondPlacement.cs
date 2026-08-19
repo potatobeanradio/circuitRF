@@ -218,6 +218,13 @@ public static class WBondPlacement
 
         SetParameter(comp, DesignParameter, WBondEmbedding.Encode(design));
         SetParameter(comp, ArraysParameter, WBondSymbolProvider.ArraysKeyOf(design));
+
+        // The design's own capacitance flag becomes this instance's parameter — the relationship the
+        // wBond editor's toolbar toggle depends on. The toggle belongs to the EDITOR's readout and the
+        // parameter to a PLACED component; they are two different things, and this one moment of
+        // inheritance is the whole connection between them. A document placed twice can then be given
+        // two different settings without either changing the other.
+        SetParameter(comp, "IncludeCapacitance", design.IncludeCapacitance ? "true" : "false");
     }
 
     private static void SetParameter(EditableComponent comp, string name, string value)

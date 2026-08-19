@@ -116,7 +116,222 @@ public sealed partial class WBondViewModel : ObservableObject
         _design = design ?? EmptyDesign();
         _mesh = WireMesh.Build(_design);
         _fill = IncrementalFill.Create(_mesh);
-        Readout = PanelReadout.Build(_design, _mesh, _fill.Reduce());
+        RefreshCapacitance();
+        Readout = PanelReadout.Build(_design, _mesh, _fill.Reduce(), _capacitance);
+    }
+
+    // ---------------------------------------------------------------- the two design-level settings
+
+    /// <summary>
+    /// Whether the readout includes capacitance to the reference plane — the toolbar's own toggle
+    /// (wbond.md §3.7, §6.8).
+    ///
+    /// <para><b>This is the EDITOR'S setting, and it is not the placed component's parameter.</b> A
+    /// wBond design open in the editor is not yet a component, and one document can be placed as
+    /// several components with different settings. What this writes is
+    /// <see cref="WBondDesign.IncludeCapacitance"/> — which is what a newly-placed component
+    /// <i>inherits</i> as its <c>IncludeCapacitance</c> parameter default
+    /// (<c>WBondPlacement.ApplyDesign</c>), exactly the relationship <c>GroundPlane</c> already
+    /// has.</para>
+    /// </summary>
+    public bool IncludeCapacitance
+    {
+        get => _design.IncludeCapacitance;
+        set
+        {
+            if (_design.IncludeCapacitance == value) return;
+            _design.IncludeCapacitance = value;
+            OnPropertyChanged();
+            Republish();
+        }
+    }
+
+    /// <summary>
+    /// The frequency, in GHz, the panel quotes its effective inductance at.
+    ///
+    /// <para><b>A readout setting, never a simulation input</b> — see
+    /// <see cref="WBondDesign.ReadoutFrequencyGHz"/>. Changing it costs one panel rebuild and
+    /// <b>no</b> refill: the capacitance and the inductance are both frequency-independent, and only
+    /// the small M × M network they feed is re-evaluated.</para>
+    /// </summary>
+    public double ReadoutFrequencyGHz
+    {
+        get => _design.ReadoutFrequencyGHz;
+        set
+        {
+            if (!(value > 0.0) || _design.ReadoutFrequencyGHz == value) return;
+            _design.ReadoutFrequencyGHz = value;
+            OnPropertyChanged();
+            PublishReadout();
+        }
+    }
+
+    /// <summary>How many times the capacitance has been rebuilt.</summary>
+    public int CapacitanceComputeCount { get; private set; }
+
+    /// <summary>
+    /// Whether a drag frame is allowed to skip the fill and the readout entirely.
+    ///
+    /// <para><b>This is the frame-rate guarantee</b> (owner, 2026-08-18: <i>"dragging 500 wires must
+    /// always be fast, it should always take priority; we can give up frame rate on the inductance
+    /// calculation if necessary"</i>). Set by the drag path from the quality ladder, it makes
+    /// <see cref="CommitPointMove"/> a no-op: the geometry still moves and the canvas still redraws,
+    /// but nothing is filled, factorised, reduced or published. The exact answer is computed once, on
+    /// release.</para>
+    ///
+    /// <para><b>It has to live here rather than in the drag path, because not every drag frame's edit
+    /// goes through the drag path's own commit.</b> A plain translate calls <c>WireEdits.Translate</c>
+    /// and commits nowhere; an alt-drag calls <see cref="ScaleSelection"/> and a rotate calls
+    /// <see cref="RotateSelectionAboutOwnEnd"/>, and BOTH of those commit internally. Gating only the
+    /// drag path's own call would therefore have left alt-drag and rotate filling every frame however
+    /// degraded the rung said it was — the rung would have protected the one gesture that did not need
+    /// it.</para>
+    /// </summary>
+    public bool DeferFills { get; set; }
+
+    /// <summary>
+    /// Whether a drag frame may pay for a capacitance refresh.
+    ///
+    /// <para><b>Spent only out of MEASURED leftover budget</b>, which is what stops it ever being the
+    /// reason a drag is slow: the drag path sets this only when the ladder is at its Exact rung AND
+    /// the previous frame used less than half the budget. On a 500-wire drag the ladder never reaches
+    /// Exact, so this is never true and the capacitance is touched exactly once, on release. Nothing
+    /// predicts anything — the gate is a measurement of the frame that just happened.</para>
+    ///
+    /// <para><b>Why this is not the "capacitance in the drag loop" the brief forbade.</b> That rule
+    /// rested on the premise that C is far less geometry-sensitive than L, so a stale C would be a
+    /// second-order effect. <b>Measured 2026-08-18, that premise is false:</b> scaling a 20-wire
+    /// array's loops by ×1.1 moves L by +8.0 % and C by −3.9 % — |dC/dL| ≈ 0.4, not ≈ 0 — and the two
+    /// errors <b>compound rather than cancel</b>, because L_eff = L/(1 − ω²LC) rises with both. The
+    /// visible result was the readout stepping 2 % to 15 % at the moment the button was released,
+    /// with the size of the step set by how far the drag went. The brief's own escape clause names
+    /// exactly this case and prescribes a rank update for <b>P</b>; this is the cheaper half of that,
+    /// and it removes the step outright on every design whose frames fit the budget.</para>
+    /// </summary>
+    public bool RefreshCapacitanceDuringGesture { get; set; }
+
+    private CapacitanceReduction? _capacitance;
+    private bool _capacitanceStale;
+
+    // ---------------------------------------------------------------- the deferred fill
+
+    /// <summary>
+    /// How a queued recompute gets back onto the UI thread.
+    ///
+    /// <para>A property so a <b>test</b> can capture the callback and run it on demand instead of
+    /// pumping a dispatcher — the thing being asserted is that the geometry lands before the
+    /// arithmetic, and a test that had to race a message loop could not state that.</para>
+    /// </summary>
+    public Action<Action> RecomputeScheduler { get; set; } =
+        action => Avalonia.Threading.Dispatcher.UIThread.Post(
+            action, Avalonia.Threading.DispatcherPriority.Background);
+
+    private readonly HashSet<int> _pendingWires = [];
+    private bool _recomputeQueued;
+
+    /// <summary>True while a fill has been deferred and the panel's numbers are one edit behind.</summary>
+    public bool HasPendingRecompute => _pendingWires.Count > 0;
+
+    /// <summary>How many deferred fills have actually run. A drag must not increase this.</summary>
+    public int DeferredRecomputeCount { get; private set; }
+
+    /// <summary>
+    /// Applies a point move whose fill may be too big for one frame: <b>the geometry is already in
+    /// the design, so the canvas is told immediately and the matrix follows on the next idle.</b>
+    ///
+    /// <para><b>This is the undo path</b> (owner, 2026-08-18: <i>"Undo/Redo is still slow. The wires
+    /// should move instantly when user performs an Undo after moving wires. The wires moving takes
+    /// priority over the inductance calculation."</i>) — the same rule as the drag, applied to an
+    /// edit that has no gesture to end. A drag can defer to mouse-up because there IS a mouse-up; an
+    /// undo is a single instant, so the deferral has to be to the next frame instead.</para>
+    ///
+    /// <para><b>Small edits are not deferred</b>, and that matters: a deferral costs a frame of stale
+    /// numbers, which is worth paying only when the alternative is a stalled canvas. The bound is
+    /// <see cref="QualityLadder.FitsInOneFrame"/> — the same one the drag path uses, so there is one
+    /// answer in the codebase to "is this fill too big".</para>
+    /// </summary>
+    public void CommitPointMoveAfterFrame(IReadOnlyList<int> movedWires)
+    {
+        ArgumentNullException.ThrowIfNull(movedWires);
+        if (movedWires.Count == 0) return;
+
+        if (QualityLadder.FitsInOneFrame(movedWires.Count, _mesh.WireCount))
+        {
+            CommitPointMove(movedWires);
+            return;
+        }
+
+        foreach (int w in movedWires) _pendingWires.Add(w);
+
+        // The canvas draws from the DESIGN, whose points have already moved — so this alone puts the
+        // wires where the user expects them, with the panel still showing the previous numbers.
+        PublishGeometryOnly();
+
+        if (_recomputeQueued) return;
+        _recomputeQueued = true;
+        RecomputeScheduler(FlushPendingRecompute);
+    }
+
+    /// <summary>
+    /// Runs a deferred fill now. Called by the scheduler, and available to anything that needs the
+    /// matrix to be current before it reads it.
+    /// </summary>
+    public void FlushPendingRecompute()
+    {
+        _recomputeQueued = false;
+        if (_pendingWires.Count == 0) return;
+
+        // A drag opened in the meantime owns the fill; its own EndDrag will commit everything. Coming
+        // back later is what stops the pending work being silently dropped on the floor here.
+        if (DeferFills)
+        {
+            _recomputeQueued = true;
+            RecomputeScheduler(FlushPendingRecompute);
+            return;
+        }
+
+        var wires = _pendingWires.ToArray();
+        _pendingWires.Clear();
+        DeferredRecomputeCount++;
+
+        CommitPointMove(wires);
+    }
+
+    /// <summary>
+    /// Notifies without recomputing: the geometry moved, the numbers did not. Used by the deferred
+    /// path so the canvas repaints on this frame and the matrix catches up on the next.
+    /// </summary>
+    private void PublishGeometryOnly()
+    {
+        OnPropertyChanged(nameof(Readout));
+        ReadoutChanged?.Invoke();
+        DirtyChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Recomputes <b>P</b> and the array-basis capacitance — the whole ~0.06–0.08 × fill.
+    ///
+    /// <para><b>In the drag loop only while the frame budget allows it</b> — see
+    /// <see cref="RefreshCapacitanceDuringGesture"/>, which the drag path sets from the quality
+    /// ladder's own rung. There is no rank-update machinery for <b>P</b>: a full rebuild is ~36 ms at
+    /// the 600-wire worst case and sub-millisecond on the designs anyone actually drags, so the
+    /// ladder — which measures real frames rather than predicting them — is a better gate than a cost
+    /// model would be.</para>
+    ///
+    /// <para><b>The original design held C frozen for the whole gesture, and that was wrong.</b> Its
+    /// premise was that C is far less geometry-sensitive than L; measured, |dC/dL| ≈ 0.4 and the two
+    /// errors compound, so the readout stepped 2–15 % at the moment the button was released.
+    /// <see cref="RefreshCapacitanceDuringGesture"/> carries the numbers. When a frame genuinely
+    /// cannot afford this the ladder degrades and <see cref="HoldReadout"/> freezes the panel — so a
+    /// stale value is never shown rather than shown and later corrected.</para>
+    /// </summary>
+    private void RefreshCapacitance()
+    {
+        _capacitance = _design.IncludeCapacitance
+            ? CapacitanceReduction.Create(_mesh, parallel: true)
+            : null;
+        _capacitanceStale = false;
+        CapacitanceComputeCount++;
     }
 
     public WBondDesign Design => _design;
@@ -163,6 +378,10 @@ public sealed partial class WBondViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(movedWires);
         if (movedWires.Count == 0) return;
+
+        // The frame-rate guarantee: the geometry has already moved and the canvas will redraw it, but
+        // the fill, the reduction and the panel are all skipped. See DeferFills.
+        if (DeferFills) return;
 
         try
         {
@@ -254,7 +473,23 @@ public sealed partial class WBondViewModel : ObservableObject
 
     private void Republish()
     {
-        Readout = PanelReadout.Build(_design, _mesh, _fill.Reduce());
+        // Inside a gesture the capacitance is refreshed only when the frame budget allows it; when it
+        // does not it is marked stale, and EndGesture pays for it once. See
+        // RefreshCapacitanceDuringGesture.
+        if (_inGesture && !RefreshCapacitanceDuringGesture) _capacitanceStale = true;
+        else RefreshCapacitance();
+
+        PublishReadout();
+    }
+
+    /// <summary>
+    /// Rebuilds the panel from what is already computed — the M triangular solves and the small
+    /// M × M network, with no fill and no factorisation of <b>P</b>.
+    /// </summary>
+    private void PublishReadout()
+    {
+        Readout = PanelReadout.Build(_design, _mesh, _fill.Reduce(), _capacitance);
+
         OnPropertyChanged(nameof(Readout));
         ReadoutChanged?.Invoke();
         DirtyChanged?.Invoke();
@@ -548,7 +783,12 @@ public sealed partial class WBondViewModel : ObservableObject
 
         // A rigid map moves whole points and adds none, so this is the DRAG path — a rebuild here
         // would cost two orders of magnitude for an answer that is identical.
-        CommitPointMove(moved);
+        //
+        // ...and it is also the REDO path (TransformWiresCommand.Execute), where the wires must appear
+        // instantly for the same reason they must during a drag. AfterFrame defers only when the fill
+        // genuinely will not fit in a frame, so a drag frame — which is already gated by the ladder —
+        // is unaffected.
+        CommitPointMoveAfterFrame(moved);
         return moved.Count;
     }
 
@@ -1025,8 +1265,18 @@ public sealed partial class WBondViewModel : ObservableObject
         _inGesture = true;
     }
 
-    /// <summary>Closes a gesture. Safe to call when none is open.</summary>
-    public void EndGesture() => _inGesture = false;
+    /// <summary>
+    /// Closes a gesture. Safe to call when none is open.
+    ///
+    /// <para><b>This is where the capacitance is paid for</b> (wbond.md §4.4): a drag leaves it stale
+    /// on purpose, and the commit is the one moment it is rebuilt. A gesture that changed no geometry
+    /// rebuilds nothing.</para>
+    /// </summary>
+    public void EndGesture()
+    {
+        _inGesture = false;
+        if (_capacitanceStale) Republish();
+    }
 
     /// <summary>
     /// Removes the entry <see cref="PushUndo"/> just added, for an edit that turned out to change
@@ -1098,18 +1348,37 @@ public sealed partial class WBondViewModel : ObservableObject
         var wires = _design.AllWires().ToList();
         int limit = Math.Min(wires.Count, snapshot.Points.Length);
 
+        // Only the wires whose points actually CHANGED are refilled. Undoing a one-wire move used to
+        // recompute all N rows of the matrix, because the restore handed every index to the fill
+        // whether it had moved or not — at 500 wires that is the whole matrix for one wire's worth of
+        // edit, and it is most of why an undo felt slower than the drag that preceded it.
+        var changed = new List<int>();
+
         for (int i = 0; i < limit; i++)
         {
             if (wires[i].Points.Count != snapshot.Points[i].Length) structural = true;
+
+            if (!structural && !PointsDiffer(wires[i].Points, snapshot.Points[i])) continue;
+
             wires[i].Points.Clear();
             wires[i].Points.AddRange(snapshot.Points[i]);
+            changed.Add(i);
         }
 
         // A structural restore invalidates every flat index an outstanding selection holds.
         if (structural) Selection = new WireSelection();
 
         if (structural) CommitStructuralChange();
-        else CommitPointMove([.. Enumerable.Range(0, wires.Count)]);
+        else CommitPointMoveAfterFrame(changed);
+    }
+
+    /// <summary>Whether a wire's live points differ from the snapshot's, so it needs restoring at all.</summary>
+    private static bool PointsDiffer(List<Point3> live, Point3[] snapshot)
+    {
+        if (live.Count != snapshot.Length) return true;
+        for (int i = 0; i < snapshot.Length; i++)
+            if (live[i] != snapshot[i]) return true;
+        return false;
     }
 
     /// <summary>True when the arrays, their names, or their membership differ from the snapshot.</summary>

@@ -13,6 +13,10 @@
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Ctrl+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
         <KeyBinding Gesture="Meta+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
+        <!-- Escape drops every selection — markers, plots, whatever is selected (owner, 2026-08-18).
+             Bound here beside Ctrl+A so the pair is visibly a pair. The tab-header rename box handles
+             its own Escape and marks it handled, so renaming still cancels rather than deselecting. -->
+        <KeyBinding Gesture="Escape"        Command="{Binding ViewModel.Window.DeselectAllCommand}"/>
         <KeyBinding Gesture="Ctrl+A"        Command="{Binding ViewModel.Window.SelectAllCommand}"/>
         <KeyBinding Gesture="Meta+A"        Command="{Binding ViewModel.Window.SelectAllCommand}"/>
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>

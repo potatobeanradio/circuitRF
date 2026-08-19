@@ -27,7 +27,7 @@ public partial class WBondValuePromptDialog : Window
     private WBondUnit _unit = WBondUnit.Mil;
     private Mode _mode = Mode.Length;
 
-    private enum Mode { Length, Angle, Choice }
+    private enum Mode { Length, Angle, Choice, FrequencyGHz }
 
     // Parameterless ctor satisfies the Avalonia XAML resource loader.
     public WBondValuePromptDialog() => InitializeComponent();
@@ -91,6 +91,40 @@ public partial class WBondValuePromptDialog : Window
             : null;
     }
 
+    // ---------------------------------------------------------------- frequency
+
+    /// <summary>
+    /// Prompts for a frequency in GHz. Returns GHz, or null on cancel.
+    ///
+    /// <para><b>GHz always, with no auto-ranging</b>, for the same reason the panel fixes picohenries
+    /// (<c>PanelReadout</c>'s own note): the row exists to be compared against itself a moment ago,
+    /// and a unit that switched under the reader would destroy that. A bond wire's useful range —
+    /// hundreds of MHz to tens of GHz — fits in one unit at one decimal.</para>
+    /// </summary>
+    public static async Task<double?> PromptFrequencyGHzAsync(Window owner, string title, string prompt,
+                                                             double currentGHz)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+
+        var dlg = new WBondValuePromptDialog { Title = title, _mode = Mode.FrequencyGHz };
+
+        dlg.PromptText.Text = prompt;
+        dlg.SubText.Text = "In GHz. The frequency the array inductances are extracted at.";
+        dlg.ValueBox.Text = Format(currentGHz);
+        dlg.ValueBox.PlaceholderText = "e.g. 10, 2.4, 40";
+
+        dlg.Opened += (_, _) => { dlg.ValueBox.Focus(); dlg.ValueBox.SelectAll(); };
+        dlg.Validate();
+
+        string? text = await dlg.ShowDialog<string?>(owner);
+        if (text is null) return null;
+
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double ghz)
+               && double.IsFinite(ghz) && ghz > 0.0
+            ? ghz
+            : null;
+    }
+
     // ---------------------------------------------------------------- choice
 
     /// <summary>
@@ -144,6 +178,12 @@ public partial class WBondValuePromptDialog : Window
             reason = string.IsNullOrWhiteSpace(text)
                 ? "Enter a value."
                 : "Not a positive length. Try a number, optionally with nm, um, mm, mil or in.";
+        }
+        else if (_mode == Mode.FrequencyGHz)
+        {
+            ok = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double f)
+                 && double.IsFinite(f) && f > 0.0;
+            reason = string.IsNullOrWhiteSpace(text) ? "Enter a frequency." : "Not a positive number of GHz.";
         }
         else
         {

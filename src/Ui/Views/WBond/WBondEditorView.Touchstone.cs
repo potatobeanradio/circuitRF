@@ -51,6 +51,11 @@ public partial class WBondEditorView
         var options = await WBondTouchstoneExportDialog.ShowAsync(owner, design);
         if (options is null) return;
 
+        // The PORT COUNT follows the chosen basis, not the array count — a terminal-basis export gives
+        // every terminal its own port, so three arrays is a 6-port. Asking the one method that decides
+        // the port map keeps the picker's filter from disagreeing with the file that gets written.
+        int ports = WBondTouchstoneExport.PortNames(design, options.PortBasis).Count;
+
         // The suffix is the exporter's to choose from the port count, so the picker asks for a base
         // name and never for an extension it might disagree with.
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -59,9 +64,9 @@ public partial class WBondEditorView
             SuggestedFileName = "wirebonds",
             FileTypeChoices =
             [
-                new FilePickerFileType($"Touchstone ({design.Arrays.Count}-port)")
+                new FilePickerFileType($"Touchstone ({ports}-port)")
                 {
-                    Patterns = [$"*.s{design.Arrays.Count}p"],
+                    Patterns = [$"*.s{ports}p"],
                 },
             ],
         });
@@ -78,8 +83,9 @@ public partial class WBondEditorView
             var result = WBondTouchstoneExport.Export(design, options, baseNoSuffix);
 
             ShowStatus(result.WrittenPaths.Count > 0
-                ? $"Exported {Path.GetFileName(result.WrittenPaths[0])} — " +
-                  $"{design.Arrays.Count} port(s), {options.Points} frequency point(s)."
+                ? $"Exported {Path.GetFileName(result.WrittenPaths[0])} — {ports} port(s), " +
+                  $"{options.Points} frequency point(s) from " +
+                  $"{options.StartHz * 1e-9:0.####} to {options.StopHz * 1e-9:0.####} GHz."
                 : "Nothing was written.", isWarning: result.WrittenPaths.Count == 0);
         }
         catch (Exception ex)

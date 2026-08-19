@@ -458,6 +458,31 @@ namespace CircuitRF.Ui.DataDisplay
                 DrawOptimumMarker(canvas, mxe, 'E', MxeAccent(cd.ColorMap), tf, canvasSize);
         }
 
+        /// <summary>
+        /// The disc radius of an MXP/MXE glyph, in canvas pixels.
+        ///
+        /// <para><b>Shared with the contour MARKER glyph</b> (owner, 2026-08-18: <i>"reduce the marker
+        /// render glyph size (and text) to match the same as the MXP and MXE glyphs and font size at
+        /// any zoom level"</i>). The two used to be computed from different formulas that happened to
+        /// land within 14 % of each other at one canvas size — and the marker's carried a
+        /// <c>max(6f, …)</c> floor, so below roughly a 300 px plot it stopped shrinking while MXP/MXE
+        /// kept going. That floor is precisely what made the RELATIVE size move with the zoom: at a
+        /// 600 px plot the marker was 1.14 × the MXP disc, at 200 px it was 1.71 ×.</para>
+        ///
+        /// <para>Proportional to <see cref="AxesRenderer.LineWidth"/> and to nothing else — the canvas
+        /// size already encodes the zoom, so never multiply by a zoom level here.</para>
+        /// </summary>
+        public static float OptimumMarkerRadius((double W, double H) canvasSize)
+            => 3.5f * AxesRenderer.LineWidth(canvasSize);
+
+        /// <summary>The letter size inside an MXP/MXE glyph. Shared with the contour marker's name.</summary>
+        public static float OptimumMarkerFontSize((double W, double H) canvasSize)
+            => 4.5f * AxesRenderer.LineWidth(canvasSize);
+
+        /// <summary>The ring stroke around an MXP/MXE glyph. Shared with the contour marker's ring.</summary>
+        public static float OptimumMarkerRingWidth((double W, double H) canvasSize)
+            => 0.75f * AxesRenderer.LineWidth(canvasSize);
+
         private static void DrawOptimumMarker(
             SKCanvas canvas, Complex coord, char letter, SKColor accent, TransformSet tf,
             (double W, double H) canvasSize)
@@ -465,10 +490,9 @@ namespace CircuitRF.Ui.DataDisplay
             var pt = tf.ToCanvas(coord.Real, coord.Imaginary, useSecondary: false);
             // lw-proportional sizes: at BaseLw=2 (nominal 400px canvas) these match
             // the original constants 7/1.5/9, and scale with zoom like grid lines.
-            float lw = AxesRenderer.LineWidth(canvasSize);
-            float r  = 3.5f * lw;
-            float sw = 0.75f * lw;
-            float fs = 4.5f * lw;
+            float r  = OptimumMarkerRadius(canvasSize);
+            float sw = OptimumMarkerRingWidth(canvasSize);
+            float fs = OptimumMarkerFontSize(canvasSize);
 
             // Filled circle
             using var fill = new SKPaint { Color = accent, IsAntialias = true, Style = SKPaintStyle.Fill };

@@ -49,7 +49,6 @@ public sealed class WBondPointerController
     private readonly QualityLadder _ladder;
     private readonly Stopwatch _frameTimer = new();
 
-    private readonly Dictionary<int, Point3[]> _collapsed = [];
     private bool _dragging;
     private long _pressX, _pressY;
 
@@ -158,14 +157,18 @@ public sealed class WBondPointerController
     }
 
     /// <summary>
-    /// Begins a drag. Collapses the moving wires to their chords if the ladder is already degraded,
-    /// and resets the ladder so every drag starts optimistic.
+    /// Begins a drag, and decides up front whether its fill is even worth attempting.
+    ///
+    /// <para><b>The size of the job is handed to the ladder here</b> (owner, 2026-08-18). Feedback
+    /// alone has to PAY one catastrophic frame to discover that 500 moving wires cost seconds; the
+    /// block count says so for free. See <see cref="QualityLadder.BeginDrag(int,int)"/> for why that
+    /// is a bound rather than the cost model WB15 rejected.</para>
     /// </summary>
     /// <param name="subject">
     /// What this drag actually moves, when that is not simply the selection — the PROFILE view's plain
     /// drag and nudge move the whole group while leaving the selection alone
     /// (<c>WBondViewModel.ProfileGroupSubject</c>). It has to be known HERE and not only inside the
-    /// per-frame lambda, because the quality ladder collapses these wires, the incremental fill is
+    /// per-frame lambda, because the ladder sizes the job from these wires, the incremental fill is
     /// told about these wires, and <see cref="EndDrag"/> recomputes the exact answer for these wires —
     /// a subject wider than the selection would otherwise move on screen and leave the inductance
     /// stale for every sibling.
@@ -174,8 +177,8 @@ public sealed class WBondPointerController
     {
         _dragging = true;
         _dragSubject = subject;
-        _ladder.BeginDrag();
-        _collapsed.Clear();
+        _ladder.BeginDrag(MovingWires().Count, _vm.Mesh.WireCount);
+        _vm.DeferFills = _ladder.Current != DragQuality.Exact;
     }
 
     /// <summary>What the open drag moves; null means "the selection", which is the ordinary case.</summary>
@@ -200,16 +203,27 @@ public sealed class WBondPointerController
         var moving = MovingWires();
         if (moving.Count == 0) return _ladder.Current;
 
-        ApplyQualityToGeometry(moving);
+        // THE PRIORITY, in two lines (owner, 2026-08-18: "dragging 500 wires must always be fast, it
+        // should always take priority"). The geometry always moves and the canvas always redraws; the
+        // FILL is the only thing that can be skipped, and at the frozen rung it is.
+        bool fill = _ladder.Current == DragQuality.Exact;
+
+        // Capacitance is strictly OPTIONAL work and is spent only out of measured leftover budget —
+        // the last frame having used less than half of it. So it can never be what makes a drag slow:
+        // on a 500-wire drag the ladder never reaches Exact and this is never true. See
+        // WBondViewModel.RefreshCapacitanceDuringGesture for why it is not simply switched off.
+        _vm.RefreshCapacitanceDuringGesture = fill && _ladder.HasHeadroom;
+        _vm.DeferFills = !fill;
 
         _frameTimer.Restart();
         apply(moving);
 
-        if (_ladder.Current != DragQuality.FreezeAndSnap)
-            _vm.CommitPointMove(moving, motion);
+        if (fill) _vm.CommitPointMove(moving, motion);
 
         _frameTimer.Stop();
 
+        // Everything optional happened INSIDE the timed region, so its cost is part of what the ladder
+        // just observed and the next frame's verdict already accounts for it.
         return _ladder.Observe(_frameTimer.Elapsed.TotalMilliseconds);
     }
 
@@ -225,80 +239,16 @@ public sealed class WBondPointerController
         if (!_dragging) return;
         _dragging = false;
 
-        RestoreCollapsed();
+        // The final answer is exact and is allowed to cost whatever it costs — this is the one frame
+        // nobody is waiting on, and on a big drag it is the only fill the whole gesture pays for.
+        _vm.DeferFills = false;
+        _vm.RefreshCapacitanceDuringGesture = true;
 
         var moving = MovingWires();
         if (moving.Count > 0) _vm.CommitPointMove(moving);
 
         _dragSubject = null;
         _ladder.BeginDrag();
-    }
-
-    /// <summary>
-    /// Whether a wire can be represented by its CHORD for this drag without changing what the drag
-    /// does — true when every point the selection moves is a FOOT.
-    ///
-    /// <para><b>A wire collapsed to two points has no interior points to move</b>, so a drag on an
-    /// interior vertex simply stopped: <see cref="WireSelection.MovingPoints"/> still named point 3,
-    /// the wire now had two, and the frame moved nothing (or indexed past the end). The geometry froze
-    /// under a still-moving cursor — the other half of the owner's "the cursor slips off the vertex I
-    /// grabbed" (2026-08-16), and the reason it shows up while dragging fast: the ladder only steps
-    /// down when frames overrun.</para>
-    ///
-    /// <para>The shortcut is kept exactly where it pays. The case it was built for — many whole wires
-    /// dragged at once — moves both feet of each wire and is still collapsed; a single interior vertex
-    /// moves one wire, which is the cheap case that never needed the shortcut.</para>
-    /// </summary>
-    private bool ChordIsFaithful(int index, Wire wire)
-    {
-        var selection = _vm.Selection;
-        if (selection.Wires.Contains(index)) return true;   // rigid: both feet move together
-
-        int last = wire.Points.Count - 1;
-        foreach (int i in selection.MovingPoints(index, wire.Points.Count))
-            if (i != 0 && i != last) return false;
-
-        return true;
-    }
-
-    private void ApplyQualityToGeometry(IReadOnlyList<int> moving)
-    {
-        if (_ladder.Current == DragQuality.Chord)
-        {
-            var wires = _vm.Design.AllWires().ToList();
-            foreach (int index in moving)
-            {
-                if (_collapsed.ContainsKey(index)) continue;
-                if (index < 0 || index >= wires.Count) continue;
-                if (!ChordIsFaithful(index, wires[index])) continue;
-
-                _collapsed[index] = QualityLadder.CollapseToChord(wires[index]);
-            }
-
-            // A chord has a different POINT COUNT, so the flat filament layout no longer matches —
-            // this is the one place the degraded rung has to pay for a rebuild. It pays once, at the
-            // moment the ladder steps down, not per frame.
-            if (_collapsed.Count > 0) _vm.CommitStructuralChange();
-        }
-        else if (_ladder.Current == DragQuality.Exact && _collapsed.Count > 0)
-        {
-            RestoreCollapsed();
-        }
-    }
-
-    private void RestoreCollapsed()
-    {
-        if (_collapsed.Count == 0) return;
-
-        var wires = _vm.Design.AllWires().ToList();
-        foreach (var (index, original) in _collapsed)
-        {
-            if (index < 0 || index >= wires.Count) continue;
-            QualityLadder.RestoreFromChord(wires[index], original);
-        }
-
-        _collapsed.Clear();
-        _vm.CommitStructuralChange();
     }
 
     /// <summary>

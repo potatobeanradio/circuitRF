@@ -73,7 +73,8 @@ public partial class ParameterEditorViewModel
     /// </summary>
     internal static bool IsWBondPanelParameter(string name) =>
         name is WBondEmbedding.DesignParameter or WBondPlacement.ArraysParameter
-             or "SymbolPitch" or "RefPin" or "Source" or "File" or "Material" or "GroundPlane"
+             or "SymbolPitch" or "RefPin" or "IncludeCapacitance"
+             or "Source" or "File" or "Material" or "GroundPlane"
         || name.StartsWith("LoopHeight_", StringComparison.Ordinal)
         || name.StartsWith("Diameter_", StringComparison.Ordinal)
         || name.StartsWith("Material_", StringComparison.Ordinal);
@@ -120,6 +121,17 @@ public partial class ParameterEditorViewModel
 
     [ObservableProperty] private int _wBondSymbolPitchIndex = 1;   // Loose
     [ObservableProperty] private bool _wBondRefPin;
+
+    /// <summary>
+    /// Whether this component stamps capacitance to the reference plane (wbond.md §3.7).
+    ///
+    /// <para><b>A plain checkbox, not a three-value picker like <c>GroundPlane</c></b>, and that is a
+    /// deliberate difference: capacitance is the one wBond parameter whose default CHANGES the answer
+    /// for a design that already exists, so a reader has to be able to see its state without opening
+    /// the payload. "As designed" would leave the most consequential setting on the panel showing
+    /// nothing.</para>
+    /// </summary>
+    [ObservableProperty] private bool _wBondIncludeCapacitance = true;
     [ObservableProperty] private string _wBondSummary = "";
 
     /// <summary>Why the design cannot be read, or empty when it can. Shown instead of the summary.</summary>
@@ -140,6 +152,12 @@ public partial class ParameterEditorViewModel
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         ApplyWBondParam("RefPin", newValue ? "true" : "false");
+    }
+
+    partial void OnWBondIncludeCapacitanceChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        ApplyWBondParam("IncludeCapacitance", newValue ? "true" : "false");
     }
 
     // ── GroundPlane: a boolean, so a picker rather than a text box ─────────────
@@ -511,6 +529,13 @@ public partial class ParameterEditorViewModel
         bool refPin = (_target.Parameters.FirstOrDefault(p => p.Name == "RefPin")?.Expression ?? "false")
             .Equals("true", StringComparison.OrdinalIgnoreCase);
 
+        // Absent means the design's own flag decides, and that defaults to true — so an unset
+        // parameter shows CHECKED, which is what the component will actually do.
+        string capacitance = _target.Parameters
+            .FirstOrDefault(p => p.Name == "IncludeCapacitance")?.Expression ?? "";
+        bool includeCapacitance = string.IsNullOrWhiteSpace(capacitance)
+            || capacitance.Equals("true", StringComparison.OrdinalIgnoreCase);
+
         bool readable = TryReadWBondDesign(out var design) && design is not null;
 
         OnPropertyChanged(nameof(CanUpdateWBondLayout));
@@ -518,6 +543,7 @@ public partial class ParameterEditorViewModel
         _isRefreshing = true;
         WBondSymbolPitchIndex = pitchIndex;
         WBondRefPin = refPin;
+        WBondIncludeCapacitance = includeCapacitance;
 
         // An unreadable payload is a reported, repairable state — the same stance TryDecode itself
         // takes — not an empty panel that reads as "this component has nothing in it".

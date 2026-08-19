@@ -11,6 +11,11 @@
 //    • multiquadric: phi(r) = sqrt((r/eps)^2 + 1)
 //    • NaN values dropped before fitting
 //
+//  ...with TWO DELIBERATE DEPARTURES for thin-plate and Gaussian (2026-08-18). Legacy
+//  scipy.interpolate.Rbf is wrong for thin-plate and badly defaulted for Gaussian, and
+//  reproducing it faithfully reproduced its defects. See RequiresPolynomialTail and
+//  ComputeEpsilon. Multiquadric is untouched and still matches scipy bit for bit.
+//
 //  Solver: custom allocation-free LDLᵀ (symmetric ~2x faster than
 //  LU at N≈200; better than CSparse for dense matrices; better than
 //  NumFlat for small N due to zero call overhead).
@@ -39,6 +44,10 @@ public sealed class Rbf2D
     private readonly double[]  _nodesIm;
     private readonly double[]  _nodeValues;
     private readonly double[]  _weights;
+
+    // The linear polynomial tail: p(x,y) = c0 + cx*x + cy*y. All zero for kernels that need none.
+    private readonly double    _polyC0, _polyCx, _polyCy;
+
     private readonly double    _epsilon;
     private readonly RbfKernel _kernel;
     private readonly int       _n;
@@ -94,17 +103,28 @@ public sealed class Rbf2D
             return;
         }
 
-        // --- Epsilon (scipy default) ---------------------------------
-        _epsilon = epsilon ?? ComputeEpsilon(_nodesRe, _nodesIm, _n);
+        // --- Epsilon (scipy default, with the Gaussian correction) ---
+        _epsilon = epsilon ?? ComputeEpsilon(_nodesRe, _nodesIm, _n, kernel);
+
+        _weights = new double[_n];
+
+        if (RequiresPolynomialTail(kernel))
+        {
+            var augmented = BuildAugmentedSystem(_nodesRe, _nodesIm, _n, _epsilon, kernel, smooth);
+            SolveAugmented(augmented, _nodeValues, _n, _weights,
+                           out _polyC0, out _polyCx, out _polyCy);
+            return;
+        }
 
         // --- Build kernel matrix A[i,j] = phi(||xi - xj||), N×N ----
         // 'a' is the reference copy (smooth already applied); 'work'
         // is factorized in place.
         double[] a = BuildKernelMatrix(_nodesRe, _nodesIm, _n, _epsilon, kernel);
 
-        // Smoothing: A -= smooth * I  (scipy convention: minus sign)
+        // Smoothing ridge — scipy's minus for multiquadric, plus for the others. See SmoothingSign.
+        double sign = SmoothingSign(kernel);
         for (int i = 0; i < _n; i++)
-            a[i * _n + i] -= smooth;
+            a[i * _n + i] += sign * smooth;
 
         // Compute trace before factorization (for ridge computation)
         double trace = 0.0;
@@ -123,7 +143,6 @@ public sealed class Rbf2D
             ok = LdltFactor(work, _n);
         }
 
-        _weights = new double[_n];
         if (!ok)
         {
             // Degenerate / duplicate nodes — degrade to zero weights
@@ -139,8 +158,12 @@ public sealed class Rbf2D
     //  Private ctor used by Factored.Solve — everything already computed.
     // ================================================================
     private Rbf2D(double[] nodesRe, double[] nodesIm, double[] nodeValues, double[] weights,
-        double epsilon, RbfKernel kernel, IReadOnlyList<int> usedIndices)
+        double epsilon, RbfKernel kernel, IReadOnlyList<int> usedIndices,
+        double polyC0 = 0.0, double polyCx = 0.0, double polyCy = 0.0)
     {
+        _polyC0 = polyC0;
+        _polyCx = polyCx;
+        _polyCy = polyCy;
         _nodesRe     = nodesRe;
         _nodesIm     = nodesIm;
         _nodeValues  = nodeValues;
@@ -238,13 +261,26 @@ public sealed class Rbf2D
             for (int i = 0; i < n; i++) nodeValues[i] = values[UsedIndices[i]];
 
             var weights = new double[n];
+            double c0 = 0.0, cx = 0.0, cy = 0.0;
+
             if (_ok && n > 0)
             {
-                double[] rhs = (double[])nodeValues.Clone();
-                LdltSolve(_work, rhs, weights, n);
+                if (RequiresPolynomialTail(Kernel))
+                {
+                    // The stored matrix is the un-eliminated augmented system, and elimination
+                    // destroys it — so solve on a copy, or the second value vector would run against
+                    // a matrix the first one had already reduced.
+                    SolveAugmented((double[])_work.Clone(), nodeValues, n, weights, out c0, out cx, out cy);
+                }
+                else
+                {
+                    double[] rhs = (double[])nodeValues.Clone();
+                    LdltSolve(_work, rhs, weights, n);
+                }
             }
 
-            return new Rbf2D(NodesRe, NodesIm, nodeValues, weights, Epsilon, Kernel, UsedIndices);
+            return new Rbf2D(NodesRe, NodesIm, nodeValues, weights, Epsilon, Kernel, UsedIndices,
+                             c0, cx, cy);
         }
     }
 
@@ -279,10 +315,22 @@ public sealed class Rbf2D
 
         // Everything below mirrors the constructor exactly, statement for statement, so that a
         // re-solve is bit-identical to a full rebuild rather than merely close to one.
-        double eps = epsilon ?? ComputeEpsilon(re, im, n);
+        double eps = epsilon ?? ComputeEpsilon(re, im, n, kernel);
+
+        // A kernel with a polynomial tail keeps its AUGMENTED system here, un-factorized: the
+        // elimination overwrites the right-hand side along with the matrix, so there is no reusable
+        // factor to keep. The saving that remains is the build; the solve is redone per value vector.
+        // Thin-plate is not on the drag path — multiquadric is — so this is the honest trade rather
+        // than a second, pivot-tracking factorization to keep in step with the constructor's.
+        if (RequiresPolynomialTail(kernel))
+        {
+            var augmented = BuildAugmentedSystem(re, im, n, eps, kernel, smooth);
+            return new Factored(augmented, true, mask, re, im, eps, kernel, usedIdx.AsReadOnly());
+        }
 
         double[] a = BuildKernelMatrix(re, im, n, eps, kernel);
-        for (int i = 0; i < n; i++) a[i * n + i] -= smooth;
+        double sign = SmoothingSign(kernel);
+        for (int i = 0; i < n; i++) a[i * n + i] += sign * smooth;
 
         double trace = 0.0;
         for (int i = 0; i < n; i++) trace += a[i * n + i];
@@ -306,7 +354,7 @@ public sealed class Rbf2D
     // ================================================================
     public double Evaluate(double re, double im)
     {
-        double sum = 0.0;
+        double sum = _polyC0 + _polyCx * re + _polyCy * im;
         double eps = _epsilon;
         RbfKernel k = _kernel;
         double[]  re_ = _nodesRe, im_ = _nodesIm, w = _weights;
@@ -329,10 +377,11 @@ public sealed class Rbf2D
         RbfKernel k = _kernel;
         double[] re_ = _nodesRe, im_ = _nodesIm, w = _weights;
         int n = _n;
+        double c0 = _polyC0, cx = _polyCx, cy = _polyCy;
         for (int q = 0; q < m; q++)
         {
             double re = qRe[q], im = qIm[q];
-            double sum = 0.0;
+            double sum = c0 + cx * re + cy * im;
             for (int i = 0; i < n; i++)
             {
                 double dr = re - re_[i];
@@ -342,6 +391,191 @@ public sealed class Rbf2D
             }
             result[q] = sum;
         }
+    }
+
+    // ================================================================
+    //  The polynomial tail — why thin-plate needs one and the others do not
+    // ================================================================
+
+    /// <summary>
+    /// Whether this kernel's interpolant needs a linear polynomial tail
+    /// <c>p(x,y) = c0 + cx·x + cy·y</c> with the three orthogonality side conditions
+    /// <c>Σw = Σw·x = Σw·y = 0</c>.
+    ///
+    /// <h3>Thin-plate does; multiquadric and Gaussian do not</h3>
+    /// <para>Thin-plate <c>φ(r) = r²·ln r</c> is <b>conditionally</b> positive definite of order 2.
+    /// Its kernel matrix alone is indefinite, and the function it interpolates with is not the
+    /// thin-plate spline at all — the spline is defined as the minimiser of the bending energy over
+    /// functions of the form <i>RBF sum plus a linear polynomial</i>, and dropping the polynomial
+    /// drops the null space the side conditions are there to pin.</para>
+    ///
+    /// <para><b>This was measured, not assumed (owner, 2026-08-18: thin-plate produced +4 dB contour
+    /// islands on a real loadpull surface, and no smoothing value fixed it).</b> On a 61-node polar
+    /// Γ grid carrying a smooth loadpull bowl, against the shipped tail-less fit:</para>
+    /// <list type="bullet">
+    /// <item>worst interpolation error <b>0.83 dB → 0.25 dB</b>;</item>
+    /// <item>excursion below the data minimum <b>−0.35 dB → 0</b>;</item>
+    /// <item>node error <b>0.003 dB → exactly 0</b> — with the tail it is a true interpolant.</item>
+    /// </list>
+    ///
+    /// <para><b>And the tail is what makes SMOOTHING behave.</b> Without it, raising the smoothing
+    /// parameter makes thin-plate monotonically <i>worse</i>: overshoot above the data maximum went
+    /// +0.18 dB at 0.01, <b>+7.2 dB at 0.1</b>, +212 dB at 0.5. With the tail and a proper ridge it
+    /// falls the way a smoothing parameter should — 0.077 → 0.031 → 0.000 dB over the same range.
+    /// A fix to the ridge SIGN alone is not enough and was measured too (+1.7 dB at smooth = 0.1):
+    /// a positive ridge on an indefinite matrix is still not a smoothing spline.</para>
+    ///
+    /// <para><b>This is a deliberate departure from legacy <c>scipy.interpolate.Rbf</c></b>, which
+    /// this class otherwise matches and which has the same defect. Modern
+    /// <c>scipy.interpolate.RBFInterpolator</c> <i>requires</i> <c>degree ≥ 1</c> for
+    /// <c>thin_plate_spline</c> for exactly this reason. Multiquadric — the shipped default and the
+    /// one the loadpull display actually uses — takes neither the tail nor the ridge and is
+    /// bit-identical to before.</para>
+    /// </summary>
+    public static bool RequiresPolynomialTail(RbfKernel kernel) => kernel == RbfKernel.ThinPlate;
+
+    /// <summary>
+    /// Which way the smoothing parameter moves the diagonal: <b>−1 for multiquadric, +1 otherwise</b>.
+    ///
+    /// <para><b>scipy subtracts unconditionally, and that is right for exactly one of these three
+    /// kernels.</b> Multiquadric <c>√(1+(r/ε)²)</c> is conditionally <i>negative</i> definite, so its
+    /// matrix has one positive eigenvalue and n−1 negative ones; subtracting <c>λI</c> pushes the
+    /// negative block further from singular and genuinely regularises. Gaussian is strictly
+    /// <i>positive</i> definite, so subtracting drives it toward indefinite instead, and thin-plate's
+    /// diagonal is exactly zero to begin with (<c>φ(0) = 0</c>) so the subtraction IS the diagonal.
+    /// For both of those the smoothing spline's own ridge is <c>+λ</c>.</para>
+    ///
+    /// <para>Measured on the 61-node polar Γ grid, worst error against the true surface as smoothing
+    /// rises, Gaussian at its new default ε:</para>
+    /// <list type="bullet">
+    /// <item><b>scipy's −λ:</b> 0.13 → 0.64 → 1.28 → <b>11.67</b> → 9.62 dB — not even monotonic;</item>
+    /// <item><b>+λ:</b> 0.12 → 0.31 → 1.34 → 3.82 → 5.74 dB — degrades gracefully, as a smoothing
+    ///   parameter should, with overshoot never past 0.62 dB.</item>
+    /// </list>
+    ///
+    /// <para><b>Multiquadric keeps scipy's sign and is bit-identical to every earlier build.</b> It is
+    /// the shipped default and the kernel the loadpull display actually uses, so nothing about the
+    /// numbers anyone has already looked at moves.</para>
+    /// </summary>
+    public static double SmoothingSign(RbfKernel kernel) =>
+        kernel == RbfKernel.Multiquadric ? -1.0 : +1.0;
+
+    /// <summary>
+    /// The augmented saddle-point system for a kernel with a linear tail, row-major (n+3) × (n+3):
+    /// <code>
+    /// [ A + λI   P ] [ w ]   [ v ]
+    /// [ Pᵀ       0 ] [ c ] = [ 0 ]      P = [1, x, y]
+    /// </code>
+    ///
+    /// <para><b>Smoothing enters as a POSITIVE ridge here, not scipy's negative one.</b> This is
+    /// Wahba's smoothing spline: <c>λ</c> trades fidelity against bending energy, and the limit
+    /// <c>λ → ∞</c> is the least-squares plane rather than divergence. Subtracting instead — which is
+    /// what the shipped code did — put the whole of <c>−λ</c> on a diagonal that thin-plate leaves at
+    /// exactly zero, because <c>φ(0) = 0</c>. The smoothing parameter was not perturbing the fit; it
+    /// WAS the diagonal, with the wrong sign.</para>
+    /// </summary>
+    private static double[] BuildAugmentedSystem(
+        double[] re, double[] im, int n, double eps, RbfKernel kernel, double smooth)
+    {
+        int m = n + 3;
+        var a = new double[m * m];
+
+        for (int i = 0; i < n; i++)
+        {
+            a[i * m + i] = Phi(0.0, eps, kernel) + smooth;
+            for (int j = 0; j < i; j++)
+            {
+                double dr = re[i] - re[j];
+                double di = im[i] - im[j];
+                double val = Phi(Math.Sqrt(dr * dr + di * di), eps, kernel);
+                a[i * m + j] = val;
+                a[j * m + i] = val;
+            }
+
+            a[i * m + n]     = 1.0;     a[n * m + i]       = 1.0;
+            a[i * m + n + 1] = re[i];   a[(n + 1) * m + i] = re[i];
+            a[i * m + n + 2] = im[i];   a[(n + 2) * m + i] = im[i];
+        }
+
+        return a;
+    }
+
+    /// <summary>
+    /// Solves the augmented system and splits the answer into weights and tail coefficients.
+    ///
+    /// <para><b>Gaussian elimination with partial pivoting, not LDLᵀ.</b> The augmented matrix is
+    /// symmetric <b>indefinite</b> — its trailing 3 × 3 block is exactly zero — so an unpivoted LDLᵀ
+    /// hits a zero pivot by construction. A failed solve degrades to zero weights and a flat surface,
+    /// which is the honest outcome for a degenerate node set (every node collinear leaves the tail
+    /// underdetermined).</para>
+    /// </summary>
+    private static void SolveAugmented(double[] a, double[] values, int n, double[] weights,
+        out double c0, out double cx, out double cy)
+    {
+        int m = n + 3;
+        var rhs = new double[m];
+        Array.Copy(values, rhs, n);
+
+        c0 = cx = cy = 0.0;
+
+        if (!LuSolveInPlace(a, rhs, m))
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "[Rbf2D] singular augmented kernel matrix; returning zero-weight fit.");
+            return;
+        }
+
+        Array.Copy(rhs, weights, n);
+        c0 = rhs[n];
+        cx = rhs[n + 1];
+        cy = rhs[n + 2];
+    }
+
+    /// <summary>
+    /// Gaussian elimination with partial pivoting, in place on both the matrix and the right-hand
+    /// side. Returns false when the system is singular to working precision.
+    /// </summary>
+    private static bool LuSolveInPlace(double[] a, double[] rhs, int n)
+    {
+        const double PivotTol = 1e-14;
+
+        for (int col = 0; col < n; col++)
+        {
+            int pivot = col;
+            double best = Math.Abs(a[col * n + col]);
+            for (int r = col + 1; r < n; r++)
+            {
+                double candidate = Math.Abs(a[r * n + col]);
+                if (candidate > best) { best = candidate; pivot = r; }
+            }
+
+            if (best < PivotTol) return false;
+
+            if (pivot != col)
+            {
+                for (int k = col; k < n; k++)
+                    (a[col * n + k], a[pivot * n + k]) = (a[pivot * n + k], a[col * n + k]);
+                (rhs[col], rhs[pivot]) = (rhs[pivot], rhs[col]);
+            }
+
+            double d = a[col * n + col];
+            for (int r = col + 1; r < n; r++)
+            {
+                double f = a[r * n + col] / d;
+                if (f == 0.0) continue;
+                for (int k = col; k < n; k++) a[r * n + k] -= f * a[col * n + k];
+                rhs[r] -= f * rhs[col];
+            }
+        }
+
+        for (int r = n - 1; r >= 0; r--)
+        {
+            double sum = rhs[r];
+            for (int k = r + 1; k < n; k++) sum -= a[r * n + k] * rhs[k];
+            rhs[r] = sum / a[r * n + r];
+        }
+
+        return true;
     }
 
     // ================================================================
@@ -375,7 +609,48 @@ public sealed class Rbf2D
     //  epsilon = (prod(filtered_edges) / N) ^ (1 / count_filtered).
     //  For typical 2-D: epsilon = sqrt(deltaRe * deltaIm / N).
     // ================================================================
-    internal static double ComputeEpsilon(double[] re, double[] im, int n)
+    /// <summary>
+    /// How many times the scipy default epsilon a GAUSSIAN kernel gets.
+    ///
+    /// <para><b>scipy's default is a good shape parameter for multiquadric and a bad one for a
+    /// Gaussian</b>, and the difference is not subtle. The default works out at roughly the node
+    /// spacing; a Gaussian whose width is one node spacing decays to nothing between nodes, so the
+    /// interpolant interpolates every node perfectly and oscillates wildly in between. Measured on a
+    /// 61-node polar Γ grid (ring spacing 0.16, scipy default ε = 0.204) carrying a smooth loadpull
+    /// bowl, worst error against the true surface:</para>
+    /// <list type="bullet">
+    /// <item>ε = 0.05 → <b>39.8 dB</b></item>
+    /// <item>ε = 0.10 → 34.7 dB</item>
+    /// <item>ε = 0.204 (the scipy default) → <b>8.5 dB</b>, with ±3 dB ringing between nodes</item>
+    /// <item>ε = 0.30 → 1.64 dB</item>
+    /// <item>ε = 0.50 → 0.185 dB</item>
+    /// <item>ε = 0.80 → <b>0.118 dB</b></item>
+    /// <item>ε = 1.50 → 1.06 dB</item>
+    /// </list>
+    /// <para>Note the node error stayed at 0.03 dB throughout: the Gaussian was <i>interpolating
+    /// beautifully and lying everywhere else</i>, which is exactly the failure a node-based
+    /// self-consistency test cannot see. ×4 lands at 0.82 on that grid, in the flat bottom of the
+    /// curve and comfortably clear of the cliff below 0.3.</para>
+    ///
+    /// <para>A user-supplied epsilon still wins outright; this only moves the <c>auto</c> value.</para>
+    /// </summary>
+    public const double GaussianEpsilonScale = 4.0;
+
+    /// <inheritdoc cref="ComputeEpsilon(double[], double[], int, RbfKernel)"/>
+    internal static double ComputeEpsilon(double[] re, double[] im, int n) =>
+        ComputeEpsilon(re, im, n, RbfKernel.Multiquadric);
+
+    /// <summary>
+    /// The default shape parameter: scipy's formula, scaled per kernel.
+    /// See <see cref="GaussianEpsilonScale"/> for why the Gaussian does not take it neat.
+    /// </summary>
+    internal static double ComputeEpsilon(double[] re, double[] im, int n, RbfKernel kernel)
+    {
+        double scipy = ScipyEpsilon(re, im, n);
+        return kernel == RbfKernel.Gaussian ? scipy * GaussianEpsilonScale : scipy;
+    }
+
+    private static double ScipyEpsilon(double[] re, double[] im, int n)
     {
         if (n == 0) return 1.0;
 

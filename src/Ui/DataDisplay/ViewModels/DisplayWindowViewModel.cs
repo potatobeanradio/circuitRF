@@ -465,6 +465,9 @@ public partial class DisplayWindowViewModel : ViewModelBase
     /// <summary>Ctrl/Cmd+A in the data display — select everything (plots + markers) in the active tab.</summary>
     [RelayCommand] private void SelectAll() => DataDisplay?.SelectAll();
 
+    /// <summary>Escape — drops every selection in the active display. See <c>DataDisplayViewModel.DeselectAll</c>.</summary>
+    [RelayCommand] private void DeselectAll() => DataDisplay?.DeselectAll();
+
     [RelayCommand(CanExecute = nameof(CanRemovePlot))]
     private void RemovePlot() => DataDisplay?.RemoveSelected();
     private bool CanRemovePlot() => DataDisplay?.HasAnySelection ?? false;

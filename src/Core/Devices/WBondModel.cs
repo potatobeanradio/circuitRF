@@ -23,13 +23,27 @@ namespace CircuitRF.Core.Devices;
 /// 2026-08-07, <b>not</b> R and L reduced independently. Both cost one factorisation per frequency,
 /// but reducing them separately does so on inconsistent current distributions.</para>
 ///
-/// <h3>The REF pin declares; it does not stamp</h3>
-/// <para><c>L_arr</c> is a <i>loop</i> inductance whose return is the image plane at z = 0, so the
-/// circuit element is a plain series branch and the return is implicit in the schematic's own ground.
-/// A reader will expect a 2M+1-terminal stamp and there is not one. <c>REF</c> exists so that
-/// assumption is <b>stated</b>, and so the model can refuse the configuration in which it is false —
-/// see <see cref="Stamp"/>'s refusal. That is RW13's "a port carries an explicit reference conductor"
-/// applied to the array basis.</para>
+/// <h3>What the REF pin does depends on IncludeCapacitance — and it changed on 2026-08-18</h3>
+/// <para><b>With capacitance OFF, <c>REF</c> declares and does not stamp.</b> <c>L_arr</c> is a
+/// <i>loop</i> inductance whose return is the image plane at z = 0, so the circuit element is a plain
+/// series branch and the return is implicit in the schematic's own ground. A reader will expect a
+/// 2M+1-terminal stamp and there is not one. <c>REF</c> exists so that assumption is <b>stated</b>,
+/// and so the model can refuse the configuration in which it is false — see <see cref="Stamp"/>'s
+/// refusal. That is RW13's "a port carries an explicit reference conductor" applied to the array
+/// basis.</para>
+///
+/// <para><b>With capacitance ON — the default — the component is electrically a 2M+1 terminal device
+/// and the sentence above is false.</b> A shunt capacitor has to connect to something: the image
+/// plane at z = 0 <i>is</i> the reference conductor, so if the user has told us which net that plane
+/// is, the shunts go there. Owner decision, 2026-08-18: <b>the shunt capacitance stamps to
+/// <c>REF</c> when <see cref="HasReferencePin"/> is true, and to node 0 otherwise.</b> Node 0 is the
+/// only defensible choice when the pin is off, and it is exactly what the plane-enabled configuration
+/// already assumes. The pin's meaning and position are unchanged — still last, still renumbers
+/// nothing.</para>
+///
+/// <para><see cref="RefuseIfReturnPathUndeclared"/> is unchanged and still fires first: with the
+/// ground plane disabled there is no plane to be capacitive TO, and the refusal already covers
+/// it.</para>
 /// </summary>
 public sealed class WBondModel : ComponentModel, IReportsWarnings
 {
@@ -56,17 +70,27 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
     /// what this is modelled on, and off there too. §5.4/WB20 wrote the pin as mandatory; what WB20 is
     /// actually protecting is the REFUSAL in <see cref="RefuseIfReturnPathUndeclared"/>, and that
     /// keys off <c>GroundPlane.Enabled</c>, not off the pin. So an undeclared return path is still
-    /// refused by name whether or not the pin is there, and nothing about the physics changes with
-    /// this flag: <c>REF</c> never stamped. It is a place to SAY which net is the reference plane,
-    /// for the designs where that is not simply ground.</para>
+    /// refused by name whether or not the pin is there.</para>
+    ///
+    /// <para><b>It stopped being purely declarative on 2026-08-18.</b> It used to change nothing at
+    /// all about the physics — <c>REF</c> never stamped. With <see cref="IncludesCapacitance"/> on it
+    /// decides <i>where the shunt capacitance returns to</i>: to this net when the pin is exposed, and
+    /// to node 0 when it is not. It remains a place to SAY which net is the reference plane, for the
+    /// designs where that is not simply ground — it is now also where the charge goes.</para>
     /// </param>
     /// <param name="notes">
     /// Non-fatal things the controlling-parameter layer found while reshaping the decoded design
     /// (<c>ComponentModelFactory.ApplyControllingParameters</c>). Empty for every design that sets
     /// none of them, which is why an existing schematic's run is unchanged by their existence.
     /// </param>
+    /// <param name="includeCapacitance">
+    /// Whether the component stamps capacitance to the reference plane, or null to take the design's
+    /// own <see cref="WBondDesign.IncludeCapacitance"/>. The instance parameter wins when it is set,
+    /// which is the same relationship <c>GroundPlane</c> already has with the design's own flag.
+    /// </param>
     public WBondModel(WBondDesign design, string sourceDescription = "<inline>",
-                      bool referencePin = false, IReadOnlyList<string>? notes = null)
+                      bool referencePin = false, IReadOnlyList<string>? notes = null,
+                      bool? includeCapacitance = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         design.Validate();
@@ -85,6 +109,7 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
         _design = design;
         _sourceDescription = sourceDescription;
         HasReferencePin = referencePin;
+        IncludesCapacitance = includeCapacitance ?? design.IncludeCapacitance;
 
         ArrayBranchIndices = new int[design.Arrays.Count];
         for (int k = 0; k < ArrayBranchIndices.Length; k++) ArrayBranchIndices[k] = -1;
@@ -100,11 +125,20 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
     public int ArrayCount => _design.Arrays.Count;
 
     /// <summary>
-    /// Whether the floating <c>REF</c> terminal is exposed. See the constructor's own parameter note —
-    /// it is a declaration, never a stamped connection, and the return-path refusal does not depend
-    /// on it.
+    /// Whether the <c>REF</c> terminal is exposed. See the constructor's own parameter note: it is a
+    /// declaration with capacitance off, and the node the shunt capacitance returns to with it on.
+    /// The return-path refusal does not depend on it either way.
     /// </summary>
     public bool HasReferencePin { get; }
+
+    /// <summary>
+    /// Whether this component stamps capacitance to the reference plane (wbond.md §3.7).
+    ///
+    /// <para><b>False reproduces the pre-capacitance answer exactly, bit for bit</b> — the reduction
+    /// never fills <b>P</b>, and <see cref="Stamp"/> takes a branch that emits only the M coupled
+    /// series branches it always emitted (gate C1).</para>
+    /// </summary>
+    public bool IncludesCapacitance { get; }
 
     /// <summary>2M signal pins, plus one <c>REF</c> when <see cref="HasReferencePin"/>.</summary>
     public override int PortCount => 2 * ArrayCount + (HasReferencePin ? 1 : 0);
@@ -140,7 +174,8 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
     /// sweep (R-wbb-3). Refilling per point would cost ~0.16 s × the sweep length — measured at 32.9 s
     /// for a 201-point sweep at 600 wires, against 11.2 s for the whole sweep done properly.
     /// </summary>
-    private ImpedanceReduction Reduction => _reduction ??= ImpedanceReduction.Create(_design);
+    private ImpedanceReduction Reduction =>
+        _reduction ??= ImpedanceReduction.Create(_design, IncludesCapacitance, parallel: true);
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
@@ -175,6 +210,49 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
 
             for (int j = 0; j < m; j++)
                 mna.AddBranchConstraint(branches[k], branches[j], -zArr[k * m + j]);
+        }
+
+        StampCapacitance(mna, c, omega);
+    }
+
+    /// <summary>
+    /// The shunt and inter-array capacitors (wbond.md §3.7, §5.2). Nothing at all when
+    /// <see cref="IncludesCapacitance"/> is false — not zeros.
+    ///
+    /// <para>Per array: <c>C1 + C12</c> from its input node to the reference, <c>C2 + C12</c> from its
+    /// output node, and <c>−C12</c> across it. The three together are the nodal form of the array's
+    /// own two-port Maxwell matrix, so the negative bridge is required rather than tolerated — see
+    /// <see cref="CapacitanceReduction.EndBridge"/>.</para>
+    ///
+    /// <para>Per array PAIR: the inter-array capacitor <c>−C_arr[k,j]</c>, split half between the two
+    /// input nodes and half between the two output nodes.</para>
+    ///
+    /// <para><b>The reference is <c>REF</c> when the pin is exposed and node 0 otherwise</b> (owner,
+    /// 2026-08-18). Node 0's rows and columns are dropped by the engine, so with the pin off these are
+    /// plain shunts to ground; with it on they are a real 2M+1-terminal stamp.</para>
+    /// </summary>
+    private void StampCapacitance(IMnaContext mna, ElaboratedComponent c, double omega)
+    {
+        if (Reduction.Capacitance is not { } cap) return;
+
+        int m = ArrayCount;
+        int reference = HasReferencePin ? c.Nodes[2 * m] : 0;
+
+        for (int k = 0; k < m; k++)
+        {
+            int inNode = c.Nodes[2 * k];
+            int outNode = c.Nodes[2 * k + 1];
+
+            mna.AddAdmittance(inNode, reference, new Complex(0.0, omega * cap.InputShunt(k)));
+            mna.AddAdmittance(outNode, reference, new Complex(0.0, omega * cap.OutputShunt(k)));
+            mna.AddAdmittance(inNode, outNode, new Complex(0.0, omega * cap.EndBridge(k)));
+
+            for (int j = k + 1; j < m; j++)
+            {
+                var half = new Complex(0.0, omega * 0.5 * cap.Mutual(k, j));
+                mna.AddAdmittance(inNode, c.Nodes[2 * j], half);
+                mna.AddAdmittance(outNode, c.Nodes[2 * j + 1], half);
+            }
         }
     }
 
@@ -240,4 +318,13 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
 
     /// <summary>The frequency-independent array-basis inductance — the editor's readout (WB19b).</summary>
     public ArrayReduction InductanceOnly() => Reduction.InductanceOnlyReduction();
+
+    /// <summary>
+    /// The array-basis capacitance this component stamps, or null when it stamps none.
+    ///
+    /// <para>Exposed for the same reason <see cref="ArrayImpedance"/> is: so a caller that needs the
+    /// component's own network — a Touchstone export — builds it from the numbers the stamp uses
+    /// rather than from a second derivation that can drift.</para>
+    /// </summary>
+    public CapacitanceReduction? Capacitance => Reduction.Capacitance;
 }

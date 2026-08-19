@@ -2076,9 +2076,10 @@ public class WBondRound6Tests
     /// mouse movement needed to reopen the menu was what unwound it, which is why the second attempt
     /// worked.</para>
     ///
-    /// <para>Simulated here by collapsing through the controller directly, because reproducing it
-    /// through the ladder would mean making a frame genuinely overrun — a wall-clock race, and the
-    /// thing being asserted is the unwind, not the ladder.</para>
+    /// <para><b>Rewritten 2026-08-18.</b> The bug was that a stranded drag left the wire collapsed to
+    /// its two feet, so the menu described a two-point wire. The collapse no longer exists at all
+    /// (see <c>QualityLadder</c>), so these two now assert the invariant that replaced it: a drag
+    /// never reshapes the wires it moves, stranded or not.</para>
     /// </summary>
     [Fact]
     public void AStrandedDrag_IsUnwoundBeforeTheContextMenuIsBuilt()
@@ -2100,9 +2101,12 @@ public class WBondRound6Tests
         overlay.OnPointerMoved(5 * mil, 5 * mil, mil, leftButtonDown: true, KeyModifiers.None);
         overlay.OnPointerMoved(9 * mil, 9 * mil, mil, leftButtonDown: true, KeyModifiers.None);
 
-        // The wire really IS collapsed at this point — asserted, or the check below would pass with
-        // nothing to unwind and prove nothing.
-        Assert.Equal(2, wire.Points.Count);
+        // The wire is NOT collapsed, and since 2026-08-18 it never can be: the ladder's Chord rung —
+        // the only thing that ever replaced a polyline with its chord mid-drag — was removed, because
+        // the readout it produced was ~70 % low and it rebuilt the mesh every frame. So the hazard
+        // this test was written for is now structurally unreachable rather than merely handled, and
+        // that is the stronger thing to assert.
+        Assert.Equal(7, wire.Points.Count);
 
         // Whatever the ladder did, a right-click must describe the wire the user is looking at.
         var items = overlay.BuildContextMenuItems(5 * mil, 5 * mil, mil, null, new Avalonia.Controls.Canvas());
@@ -2129,7 +2133,7 @@ public class WBondRound6Tests
         overlay.OnPointerMoved(5 * mil, 5 * mil, mil, leftButtonDown: true, KeyModifiers.None);
         overlay.OnPointerMoved(9 * mil, 9 * mil, mil, leftButtonDown: true, KeyModifiers.None);
 
-        Assert.Equal(2, wire.Points.Count);   // …stranded and collapsed, as above
+        Assert.Equal(7, wire.Points.Count);   // …stranded, and no longer collapsible — as above
 
         overlay.OnFocusLost();
 

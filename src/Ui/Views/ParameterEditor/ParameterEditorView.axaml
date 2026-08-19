@@ -308,7 +308,17 @@
                     <CheckBox IsChecked="{Binding WBondRefPin}"
                               Content="External reference pin"
                               FontSize="11"
-                              ToolTip.Tip="Adds a REF terminal for saying which net is the reference plane. It carries no current — the return path is the ground plane set above, and a design with the plane disabled is refused whether or not this pin is shown."/>
+                              ToolTip.Tip="Adds a REF terminal for saying which net is the reference plane. With capacitance included the shunt capacitors return to it; with capacitance off it carries no current at all. Either way the return path is the ground plane set above, and a design with the plane disabled is refused whether or not this pin is shown."/>
+
+                    <!-- brief-wbond-capacitance. The ONE wBond parameter whose default changes the
+                         answer for designs that already exist — so it is a checkbox with a definite
+                         state rather than a three-value "As designed" picker like Ground plane: a
+                         reader has to be able to see, without opening the payload, whether this
+                         component is stamping capacitance. -->
+                    <CheckBox IsChecked="{Binding WBondIncludeCapacitance}"
+                              Content="Include capacitance"
+                              FontSize="11"
+                              ToolTip.Tip="Stamps the wires' capacitance to the reference plane, and between arrays, alongside the inductance. On by default — turning it off reproduces exactly the answer this component gave before capacitance was modelled."/>
 
                     <!-- ── WB45: where the wires come from — LAST, as the panel's advanced tail
                          (owner, 2026-08-17: "an advanced feature that only wBond experts would use").

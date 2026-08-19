@@ -101,12 +101,19 @@ public sealed class MarkerGlyphContourTests
             "expected a >2-char name to be drawn above the glyph");
     }
 
-    // §1: the glyph radius matches harmonicaRF's rule — r = max(6, min(W,H)*0.020) — and is
-    // canvas-proportional (independent of any zoom factor, per round-7 §2).
+    // The glyph radius is the MXP/MXE glyph's own — 3.5 x AxesRenderer.LineWidth — and is
+    // canvas-proportional with NO floor, so the marker keeps the same relative size at every zoom.
+    //
+    // REVISED 2026-08-18 (owner: "the marker render size changes relative size to MXP/MXE glyphs
+    // depending on data display zoom level"). It used to be harmonicaRF's r = max(6, min(W,H)*0.020),
+    // transcribed for visual parity with that tool: 14% larger than the MXP disc at a big plot, and
+    // the max(6, ...) floor meant it stopped shrinking below roughly 300x300 while MXP/MXE kept going,
+    // reaching 1.71x at 100x100 — which is the ratio drift being reported. See
+    // ContourRenderer.OptimumMarkerRadius; DataDisplayRound12Tests holds the equality itself.
     [Theory]
-    [InlineData(1000.0, 1000.0, 20.0)]
-    [InlineData(100.0, 100.0, 6.0)]   // floor kicks in below 300x300
-    public void ContourMode1Marker_HitRadius_MatchesHarmonicaRfRule(double w, double h, double expectedR)
+    [InlineData(1000.0, 1000.0, 17.5)]   // 3.5 * (1000/200)
+    [InlineData(100.0, 100.0, 1.75)]     // proportional all the way down — no floor
+    public void ContourMode1Marker_HitRadius_MatchesTheOptimumGlyphRule(double w, double h, double expectedR)
     {
         var snp   = new SNP(new[] { 1e9 }, 1);
         var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);

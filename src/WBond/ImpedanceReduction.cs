@@ -36,15 +36,22 @@ public sealed class ImpedanceReduction
     private readonly double[] _pathLength;   // metres, per wire
     private readonly double[] _radius;       // metres, per wire
     private readonly double[] _sigma;        // S/m at the operating temperature, per wire
+    private readonly bool _includeCapacitance;
+    private readonly bool _parallel;
+    private CapacitanceReduction? _capacitance;
+    private bool _capacitanceBuilt;
 
     private ImpedanceReduction(WireMesh mesh, InductanceMatrix l,
-                               double[] pathLength, double[] radius, double[] sigma)
+                               double[] pathLength, double[] radius, double[] sigma,
+                               bool includeCapacitance, bool parallel)
     {
         _mesh = mesh;
         _l = l;
         _pathLength = pathLength;
         _radius = radius;
         _sigma = sigma;
+        _includeCapacitance = includeCapacitance;
+        _parallel = parallel;
     }
 
     public int WireCount => _l.Order;
@@ -55,10 +62,44 @@ public sealed class ImpedanceReduction
     public InductanceMatrix Inductance => _l;
 
     /// <summary>
+    /// The array-basis capacitance (wbond.md §3.7), or <c>null</c> when there is none to have.
+    ///
+    /// <para><b>Null means NOT COMPUTED — <b>P</b> is never filled and never factorised.</b> That is
+    /// what <c>IncludeCapacitance = false</c> has to mean for the flag-off answer to be bit-identical
+    /// to the build before capacitance existed (gate C1); computing it and stamping zeros would leave
+    /// the last bits of every reduction at the mercy of a different code path. It is also null when
+    /// the ground plane is disabled, because then there is no reference conductor to be capacitive
+    /// to — see <see cref="CapacitanceReduction.Create(WBondDesign, bool)"/>.</para>
+    ///
+    /// <para>Built <b>lazily</b>: a caller that only wants <see cref="ArrayImpedance"/> — the series
+    /// arm, which capacitance does not enter — must not pay the ~25 % fill for it.</para>
+    /// </summary>
+    public CapacitanceReduction? Capacitance
+    {
+        get
+        {
+            if (_capacitanceBuilt) return _capacitance;
+            _capacitanceBuilt = true;
+            _capacitance = _includeCapacitance ? CapacitanceReduction.Create(_mesh, _parallel) : null;
+            return _capacitance;
+        }
+    }
+
+    /// <summary>
     /// Builds the reduction for a design: fills <b>L</b> once and caches each wire's per-metre
     /// properties at the design's operating temperature.
     /// </summary>
     public static ImpedanceReduction Create(WBondDesign design, bool parallel = true)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+        return Create(design, design.IncludeCapacitance, parallel);
+    }
+
+    /// <summary>
+    /// The same, with the capacitance flag given explicitly — the route a placed component takes,
+    /// because its <c>IncludeCapacitance</c> instance parameter overrides what the design itself says.
+    /// </summary>
+    public static ImpedanceReduction Create(WBondDesign design, bool includeCapacitance, bool parallel)
     {
         ArgumentNullException.ThrowIfNull(design);
 
@@ -78,7 +119,7 @@ public sealed class ImpedanceReduction
             sigma[w] = design.MaterialFor(wire).SigmaAt(design.OperatingTempC);
         }
 
-        return new ImpedanceReduction(mesh, l, pathLength, radius, sigma);
+        return new ImpedanceReduction(mesh, l, pathLength, radius, sigma, includeCapacitance, parallel);
     }
 
     /// <summary>

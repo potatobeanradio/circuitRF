@@ -144,9 +144,9 @@ public partial class TraceRowViewModel : ViewModelBase
     [ObservableProperty] private SKColor   _contourGridPointColor   = SKColors.Black;
     [ObservableProperty] private SKColor   _contourLabelBackground  = SKColors.White;
     [ObservableProperty] private SKColor   _contourLabelForeground  = SKColors.Black;
-    [ObservableProperty] private RbfKernel _contourInterpKernel     = RbfKernel.Multiquadric;
-    [ObservableProperty] private double    _contourSmoothing        = 1e-3;
-    [ObservableProperty] private double?   _contourEpsilon;
+    [ObservableProperty] private RbfKernel _contourInterpKernel     = ContourDefaults.Kernel;
+    [ObservableProperty] private double    _contourSmoothing        = ContourDefaults.Smoothing;
+    [ObservableProperty] private double?   _contourEpsilon          = ContourDefaults.Epsilon;
 
     // ---- New fields (7.4h-3) -----------------------------------------------
     [ObservableProperty] private double  _contourGridPointSize = 3.0;
@@ -1505,9 +1505,45 @@ public partial class TraceRowViewModel : ViewModelBase
         RefreshDescription();   // raises ShowMatrixTypeCombo, ShowZ0Row/Control, ShowYAxisCombo, TraceTransformItems, Spec*, etc.
     }
 
+    /// <summary>
+    /// Refreshes the source-derived Z0 fields when the LIBRARY changed under a trace that is still
+    /// pointed at the same signal — and <b>leaves the user's override alone</b>.
+    ///
+    /// <para><b>This is the workspace-reopen bug</b> (owner, 2026-08-18: <i>"the Z0 override is not
+    /// respected when closing and reopening a workspace. I suspect the .cdd file is not persisting
+    /// the override or its value."</i>). <b>The <c>.cdd</c> persists both correctly and always
+    /// did.</b> What destroyed them was the restore ORDER: the config is applied first, then the data
+    /// sources finish loading, then <see cref="RebuildSignals"/> runs — and it called
+    /// <see cref="ApplySourceZ0"/>, which unconditionally clears the Override checkbox and reseeds the
+    /// Z0 box from the source. The correct value was loaded and thrown away a moment later, which is
+    /// exactly what makes it look like a persistence fault.</para>
+    ///
+    /// <para><b>Resetting is right on a SOURCE change and wrong on a library refresh</b>, and that is
+    /// the whole distinction. Picking a different signal is the user saying "plot this other thing",
+    /// and the new thing's own reference impedance is the honest starting point. A library refresh is
+    /// the same signal re-read from disk; the user's override outlives it, the same way their axis
+    /// limits and trace colour do. So the per-port fields and the Z0Kind are refreshed either way, and
+    /// only the reseed is conditional.</para>
+    /// </summary>
+    private void RefreshSourceZ0PreservingOverride(DataSourceEntryViewModel entry)
+    {
+        StampSourceZ0OnTrace(_trace, entry);
+        _sourceZ0Kind = entry.Z0Kind;
+
+        // With an override in force the box shows the USER's number; reseeding would overwrite it
+        // with the source's, which is the bug this method exists to not have.
+        if (Z0OverrideEnabled) return;
+
+        SeedZ0FromSource();
+    }
+
     /// <summary>Populates SourceZ0PerPort / SourceZ0IsUnusual on the trace from the source entry,
     /// stashes the Z0Kind for per-kind UI gating, resets the Override checkbox, and seeds the
-    /// displayed Z0 value from the source port-1 reference.</summary>
+    /// displayed Z0 value from the source port-1 reference.
+    ///
+    /// <para><b>For an explicit SOURCE change only.</b> A library refresh that leaves the trace on the
+    /// same signal must go through <see cref="RefreshSourceZ0PreservingOverride"/> instead — see its
+    /// note for why.</para></summary>
     internal void ApplySourceZ0(DataSourceEntryViewModel entry)
     {
         StampSourceZ0OnTrace(_trace, entry);
@@ -2786,9 +2822,10 @@ public partial class TraceRowViewModel : ViewModelBase
         SelectedSignal = match ?? AvailableSignals.FirstOrDefault();
         _suppressDataCallback = false;
 
-        // Keep per-port Z0 fields fresh when the library changes in place (e.g. auto-refresh).
+        // Keep per-port Z0 fields fresh when the library changes in place (e.g. auto-refresh) —
+        // WITHOUT clearing an override the user set. See RefreshSourceZ0PreservingOverride.
         if (match is not null && !match.IsCubeBound)
-            ApplySourceZ0(match.Entry);
+            RefreshSourceZ0PreservingOverride(match.Entry);
         else if (match is null || match.IsCubeBound)
         {
             _trace.SourceZ0PerPort   = null;

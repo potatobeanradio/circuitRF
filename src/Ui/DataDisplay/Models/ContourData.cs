@@ -121,9 +121,9 @@ namespace CircuitRF.Ui.DataDisplay
         public bool FadeLineOpacity { get; set; }
 
         // ---- Interp engine params -----------------------------------------
-        public RbfKernel InterpKernel { get; set; } = RbfKernel.Multiquadric;
-        public double    Smoothing    { get; set; } = 1e-3;
-        public double?   Epsilon      { get; set; } = null;
+        public RbfKernel InterpKernel { get; set; } = ContourDefaults.Kernel;
+        public double    Smoothing    { get; set; } = ContourDefaults.Smoothing;
+        public double?   Epsilon      { get; set; } = ContourDefaults.Epsilon;
 
         // ---- Cached optima coords (set by VM in RebuildContour; renderer reads) ----
 
@@ -281,6 +281,36 @@ namespace CircuitRF.Ui.DataDisplay
     // DEFERRED (AppSettings): these values will be user-overridable from SettingsView in a future pass.
     public static class ContourDefaults
     {
+        /// <summary>
+        /// The RBF fit's shipped parameters, in ONE place (owner, 2026-08-18).
+        ///
+        /// <para>They had three independent copies — the persisted config, the runtime contour, and
+        /// the trace card's own view-model — which is three chances for a default to be changed in two
+        /// of them.</para>
+        ///
+        /// <para><b>Smoothing 0.1 with epsilon 0.5 is the owner's own measured working point</b> for
+        /// multiquadric on real loadpull response surfaces, replacing scipy's 1e-3 / auto. On the
+        /// reference bowl it is the only combination in the sweep with <b>zero</b> overshoot above the
+        /// data maximum: a near-interpolating fit (smooth 1e-3) rings +0.07 dB past the data, which is
+        /// what puts spurious closed contours just inside the peak. The cost is a deliberately
+        /// approximating fit — nodes come back ~1.2 dB off — and for a contour display that is the
+        /// right trade, because the surface between the nodes is what is being drawn.</para>
+        /// </summary>
+        public const RbfKernel Kernel = RbfKernel.Multiquadric;
+
+        /// <inheritdoc cref="Kernel"/>
+        public const double Smoothing = 0.1;
+
+        /// <summary>
+        /// The shipped shape parameter, <b>stated rather than left on scipy's auto formula</b>.
+        ///
+        /// <para>Auto is a function of the node bounding box and the node count, so it moves when the
+        /// tuner grid changes — two sweeps of the same device at different densities got different
+        /// surfaces. 0.5 is roughly 2.5 × the auto value on a typical Γ grid and sits in the flat part
+        /// of the accuracy curve for both multiquadric and Gaussian.</para>
+        /// </summary>
+        public const double Epsilon = 0.5;
+
         /// <summary>Returns the recommended (start, step, stop) level-set for a known metric name.
         /// Returns a generic 0:1:10 range for unrecognised metrics.</summary>
         public static (double Start, double Step, double Stop) LevelRange(string metric) => metric switch

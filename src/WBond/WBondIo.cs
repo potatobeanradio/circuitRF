@@ -71,6 +71,8 @@ public static class WBondIo
         FormatVersion = CurrentFormatVersion,
         AssemblyRef = design.AssemblyRef,
         GroundPlaneEnabled = design.GroundPlane.Enabled,
+        IncludeCapacitance = design.IncludeCapacitance,
+        ReadoutFrequencyGHz = design.ReadoutFrequencyGHz,
         OperatingTempC = design.OperatingTempC,
         Materials = [.. design.Materials.Select(m => new MaterialDto
         {
@@ -99,6 +101,11 @@ public static class WBondIo
         var design = new WBondDesign
         {
             OperatingTempC = doc.OperatingTempC ?? WireMaterials.DefaultOperatingTempC,
+            // Absent takes the built-in default, which is what lets a field be added without a
+            // version bump — and what makes a .wBond written before capacitance existed load with
+            // capacitance ON and the panel quoting 10 GHz, rather than throwing (gate C10).
+            IncludeCapacitance = doc.IncludeCapacitance ?? true,
+            ReadoutFrequencyGHz = doc.ReadoutFrequencyGHz ?? 10.0,
             AssemblyRef = doc.AssemblyRef,
             EmbeddedGeometryJson = doc.EmbeddedGeometry,
             ViewStateJson = doc.ViewState,
@@ -144,6 +151,13 @@ public static class WBondIo
         public string? AssemblyRef { get; set; }
 
         public bool? GroundPlaneEnabled { get; set; }
+
+        /// <summary>See <see cref="WBondDesign.IncludeCapacitance"/>. Additive — no version bump.</summary>
+        public bool? IncludeCapacitance { get; set; }
+
+        /// <summary>See <see cref="WBondDesign.ReadoutFrequencyGHz"/>. Additive — no version bump.</summary>
+        public double? ReadoutFrequencyGHz { get; set; }
+
         public double? OperatingTempC { get; set; }
         public List<MaterialDto>? Materials { get; set; }
         public List<ArrayDto>? Arrays { get; set; }

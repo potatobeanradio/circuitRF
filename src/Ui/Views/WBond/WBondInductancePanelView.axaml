@@ -11,6 +11,24 @@
          wirebond cell pushed into in the ordinary Layout Editor reads the same numbers. That is
          §0.2's rule applied to a panel rather than to a toolbar: if a change would be needed in both
          places, it belongs in neither. -->
+    <!-- The detail row styles live HERE rather than inside a card, because the Frequency row above
+         the cards uses the same two (brief-wbond-capacitance §3.3): a label and a value at FontSize 10,
+         one definition, so the two places cannot drift apart. -->
+    <UserControl.Styles>
+        <Style Selector="TextBlock.detailLabel">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Opacity" Value="0.6"/>
+        </Style>
+        <Style Selector="TextBlock.detailValue">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        <!-- The settable rows read as editable and say so. -->
+        <Style Selector="TextBlock.settable">
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </UserControl.Styles>
+
     <Border Background="{DynamicResource SystemChromeMediumLowColor}"
                 BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,1,0">
         <DockPanel>
@@ -34,6 +52,43 @@
                     <SelectableTextBlock Text="{Binding CouplingWarning}" FontSize="11" TextWrapping="Wrap"
                                          Foreground="{DynamicResource CrfWarningBrush}"
                                          IsVisible="{Binding CouplingWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                    <!-- The capacitance switch lives HERE as well as on the wBond editor's toolbar,
+                         because this control has TWO hosts and only one of them has that toolbar
+                         (owner, 2026-08-18): the workspace docks the same panel over the active
+                         layout with no wBond editor on screen at all. The frequency row below was
+                         settable in both hosts from the start, so a capacitance switch reachable in
+                         only one of them was the odd one out — and it decides what the number on
+                         every card below even means. Absent when there is no editor behind the panel;
+                         a switch that silently does nothing is worse than no switch. -->
+                    <CheckBox IsChecked="{Binding IncludeCapacitance}"
+                              IsVisible="{Binding CanToggleCapacitance}"
+                              Content="Include capacitance" FontSize="11"
+                              MinHeight="0" Padding="6,0,0,0" Margin="0,2,0,0"
+                              ToolTip.Tip="Include the wires' capacitance to the reference plane, and between arrays, in the inductance reported below. Off reports the frequency-independent partial inductance instead."/>
+
+                    <SelectableTextBlock Text="{Binding CapacitanceUnavailable}" FontSize="11" TextWrapping="Wrap"
+                                         Foreground="{DynamicResource CrfWarningBrush}"
+                                         IsVisible="{Binding CapacitanceUnavailable, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                    <!-- brief-wbond-capacitance §3.3. The cards below quote an EFFECTIVE inductance,
+                         which once shunt capacitance exists is a function of frequency — so the panel
+                         has to say which one. Double-click to set, like the four settable card rows.
+                         Same two styles as those rows, defined once at control level above.
+                         Hidden when capacitance is not in the numbers: the effective inductance is
+                         then L_arr at every frequency, so the row would provably change nothing. -->
+                    <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0" IsVisible="{Binding ShowFrequency}">
+                        <TextBlock Grid.Column="0" Classes="detailLabel" Text="Frequency"/>
+                        <TextBlock Grid.Column="1" Classes="detailValue settable" Text="{Binding Frequency}"
+                                   DoubleTapped="OnFrequencyDoubleTapped"
+                                   ToolTip.Tip="{x:Static wb:WBondPanelViewModel.FrequencyRowTip}"/>
+                    </Grid>
+
+                    <!-- Above self-resonance the effective inductance runs to +/-inf and comes back
+                         negative, so the cards print no number at all and this says why. -->
+                    <SelectableTextBlock Text="{Binding ResonanceWarning}" FontSize="11" TextWrapping="Wrap"
+                                         Foreground="{DynamicResource CrfWarningBrush}"
+                                         IsVisible="{Binding AboveResonance}"/>
                 </StackPanel>
 
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
@@ -83,21 +138,6 @@
                                              double-click on selectable text means "select the word",
                                              and the two gestures cannot share the control. -->
                                         <StackPanel IsVisible="{Binding IsExpanded}" Spacing="2">
-                                            <StackPanel.Styles>
-                                                <Style Selector="TextBlock.detailLabel">
-                                                    <Setter Property="FontSize" Value="10"/>
-                                                    <Setter Property="Opacity" Value="0.6"/>
-                                                </Style>
-                                                <Style Selector="TextBlock.detailValue">
-                                                    <Setter Property="FontSize" Value="10"/>
-                                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                </Style>
-                                                <!-- The four settable ones read as editable and say so. -->
-                                                <Style Selector="TextBlock.settable">
-                                                    <Setter Property="Cursor" Value="Hand"/>
-                                                </Style>
-                                            </StackPanel.Styles>
-
                                             <Grid ColumnDefinitions="Auto,*"
                                                   RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,3,0,0">
                                                 <TextBlock Grid.Row="0" Grid.Column="0" Classes="detailLabel" Text="Wires"/>

@@ -31,7 +31,23 @@ public sealed class PanelReadout
 
     /// <summary>One array's row in the panel.</summary>
     /// <param name="Name">The array name, which is also its symbol pin name.</param>
-    /// <param name="SelfPicoHenries">L_arr diagonal, pH.</param>
+    /// <param name="SelfPicoHenries">
+    /// <b>What the panel prints — the EFFECTIVE inductance at <see cref="ReadoutFrequencyGHz"/>, pH.</b>
+    ///
+    /// <para>This used to be the frequency-independent partial inductance <c>L_arr</c>, and it was
+    /// right to be: before capacitance existed there was nothing frequency-dependent to report. With
+    /// shunt capacitance the wire has a self-resonance and the inductance seen at the terminals rises
+    /// toward it, so the panel quotes <c>L_eff(f) = Im(Z_in)/ω</c> with the far end shorted to the
+    /// reference plane (see <see cref="CapacitanceReduction.EffectiveInductance"/>).</para>
+    ///
+    /// <para><b>With capacitance off this is <c>L_arr</c> at every frequency, exactly</b> — see
+    /// <see cref="PartialPicoHenries"/>, which is always <c>L_arr</c> whatever the flag says.</para>
+    /// </param>
+    /// <param name="PartialPicoHenries">
+    /// The frequency-independent external partial inductance <c>L_arr</c>, pH — pure geometry, and
+    /// unchanged by capacitance. Kept alongside <see cref="SelfPicoHenries"/> so the two quantities
+    /// never have to be told apart by which build produced them.
+    /// </param>
     /// <param name="MutualPicoHenries">Mutual to every array including itself, pH.</param>
     /// <param name="CouplingCoefficients">
     /// k = M/sqrt(Lii*Ljj). Offered alongside the pH mutuals because it is scale-free, and it is the
@@ -61,6 +77,7 @@ public sealed class PanelReadout
     public readonly record struct ArrayRow(
         string Name,
         double SelfPicoHenries,
+        double PartialPicoHenries,
         IReadOnlyList<double> MutualPicoHenries,
         IReadOnlyList<double> CouplingCoefficients,
         int WireCount,
@@ -91,8 +108,58 @@ public sealed class PanelReadout
     /// </summary>
     public required bool ReturnPathIsDefault { get; init; }
 
+    /// <summary>
+    /// The frequency <see cref="ArrayRow.SelfPicoHenries"/> is quoted at, in GHz — the panel's own
+    /// settable row (<see cref="WBondDesign.ReadoutFrequencyGHz"/>).
+    ///
+    /// <para><b>A readout setting, never a simulation input.</b> The schematic's own analysis sweep is
+    /// what the engine stamps against; this decides only which frequency the panel's number is quoted
+    /// at.</para>
+    /// </summary>
+    public required double ReadoutFrequencyGHz { get; init; }
+
+    /// <summary>
+    /// Whether capacitance is actually in the reported numbers. False either because the design turns
+    /// it off, or because the ground plane is disabled and there is no reference conductor to be
+    /// capacitive to — the panel reports the same partial inductance in both cases.
+    /// </summary>
+    public required bool CapacitanceIncluded { get; init; }
+
+    /// <summary>
+    /// Whether the design ASKS for capacitance — <see cref="WBondDesign.IncludeCapacitance"/>.
+    ///
+    /// <para><b>Not the same as <see cref="CapacitanceIncluded"/>, and the gap is the point.</b> A
+    /// design can ask for capacitance and not get it, because the ground plane is disabled and there
+    /// is then no reference conductor to be capacitive to. The panel's toggle has to show what was
+    /// ASKED, or it would appear to turn itself off; the panel's own note is what explains the
+    /// difference when the two disagree.</para>
+    /// </summary>
+    public required bool CapacitanceRequested { get; init; }
+
+    /// <summary>The lowest self-resonance of the shorted-far-end network in GHz, or 0 when there is none.</summary>
+    public required double SelfResonanceGHz { get; init; }
+
+    /// <summary>
+    /// True at and above 0.95 × the self-resonance, where the effective inductance runs to ±∞ and
+    /// then negative.
+    ///
+    /// <para><b>The panel must print the state, not the number.</b> A readout that swings through
+    /// infinity and comes back negative is not a wrong number a reader can discount — it is a number
+    /// that looks like an answer. <see cref="ResonanceWarning"/> is what is shown instead.</para>
+    /// </summary>
+    public required bool AboveSelfResonance { get; init; }
+
+    /// <summary>The sentence shown in place of the numbers above resonance, or empty below it.</summary>
+    public required string ResonanceWarning { get; init; }
+
     /// <summary>Builds the readout from a reduction and its design.</summary>
-    public static PanelReadout Build(WBondDesign design, WireMesh mesh, ArrayReduction reduction)
+    /// <param name="capacitance">
+    /// The array-basis capacitance, or null for none. <b>During a drag this is deliberately the LAST
+    /// COMMITTED one</b> — capacitance is not in the incremental path (wbond.md §4.4), so it is
+    /// recomputed on drag end rather than per frame. See <c>WBondViewModel</c>'s own note.
+    /// </param>
+    public static PanelReadout Build(WBondDesign design, WireMesh mesh, ArrayReduction reduction,
+                                     CapacitanceReduction? capacitance = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(mesh);
@@ -100,6 +167,45 @@ public sealed class PanelReadout
 
         int m = reduction.ArrayCount;
         var rows = new List<ArrayRow>(m);
+
+        // A capacitance whose array count has drifted from the reduction's is a stale one from before
+        // a structural edit; dropping it is right, because the alternative is indexing past its end.
+        bool includeCapacitance = design.IncludeCapacitance
+                               && capacitance is not null
+                               && capacitance.ArrayCount == m;
+
+        double[] shunt = includeCapacitance ? capacitance!.TerminalShuntMatrix() : new double[m * m];
+        double srfHz = includeCapacitance
+            ? CapacitanceReduction.SelfResonanceHz(reduction, shunt)
+            : double.PositiveInfinity;
+
+        double frequencyHz = design.ReadoutFrequencyGHz * 1e9;
+        bool aboveResonance = includeCapacitance && double.IsFinite(srfHz) && frequencyHz >= 0.95 * srfHz;
+
+        // Below resonance the effective inductance is the number; at or above it the expression runs
+        // to +/-inf and then negative, so it is not evaluated at all.
+        //
+        // WITH THE FLAG OFF IT IS NOT EVALUATED EITHER, and that is not an optimisation. The zero-shunt
+        // expression is L_arr in exact arithmetic but not in the last bit of double arithmetic — it
+        // inverts a matrix to get there — and "off reproduces today's answer exactly" is a bit-identity
+        // claim, not a tolerance (gate C1). So the flag-off path reads the reduction directly, exactly
+        // as it did before capacitance existed.
+        double[]? effective = null;
+        if (!aboveResonance && includeCapacitance)
+        {
+            try
+            {
+                effective = CapacitanceReduction.EffectiveInductance(reduction, shunt, frequencyHz);
+            }
+            catch (InvalidOperationException)
+            {
+                // Landing exactly on a singular terminal network is the above-resonance state by
+                // another route. The 0.95 guard band keys off the LOWEST resonance, found by power
+                // iteration; if that iteration ever under-estimates it, the panel must report the
+                // state rather than take a UI thread down with it.
+                aboveResonance = true;
+            }
+        }
 
         for (int a = 0; a < m; a++)
         {
@@ -122,7 +228,8 @@ public sealed class PanelReadout
             var wires = design.Arrays[a].Wires;
             rows.Add(new ArrayRow(
                 Name: design.Arrays[a].Name,
-                SelfPicoHenries: reduction.PicoHenries(a, a),
+                SelfPicoHenries: effective is null ? reduction.PicoHenries(a, a) : effective[a] * 1e12,
+                PartialPicoHenries: reduction.PicoHenries(a, a),
                 MutualPicoHenries: mutuals,
                 CouplingCoefficients: coupling,
                 WireCount: wires.Count,
@@ -142,6 +249,15 @@ public sealed class PanelReadout
                 ? "image plane at z = 0"
                 : "UNDECLARED — the ground plane is disabled and no array is nominated as the return",
             ReturnPathIsDefault = design.GroundPlane.Enabled,
+            ReadoutFrequencyGHz = design.ReadoutFrequencyGHz,
+            CapacitanceIncluded = includeCapacitance,
+            CapacitanceRequested = design.IncludeCapacitance,
+            SelfResonanceGHz = double.IsFinite(srfHz) ? srfHz * 1e-9 : 0.0,
+            AboveSelfResonance = aboveResonance,
+            ResonanceWarning = aboveResonance
+                ? $"Above self-resonance (SRF {srfHz * 1e-9:F1} GHz) — the effective inductance is " +
+                  "not meaningful here."
+                : "",
         };
     }
 

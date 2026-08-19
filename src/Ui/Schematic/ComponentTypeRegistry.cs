@@ -715,6 +715,13 @@ public static class ComponentTypeRegistry
                     new("File",        "", "", false, UnitDimension.None),
                     new("SymbolPitch", nameof(WBondSymbolPitch.Loose), "", false, UnitDimension.None),
                     new("RefPin",      "false", "", false, UnitDimension.None),
+                    // `IncludeCapacitance` is the ONE wBond parameter whose default changes the
+                    // answer for designs that already exist (wbond.md §5.5): every other default
+                    // reproduces prior behaviour, and this one turns capacitance ON. Declared "true"
+                    // rather than blank so the parameter panel's checkbox has a definite state to
+                    // show; WBondPlacement.ApplyDesign overwrites it from an imported design's own
+                    // flag, so the wBond editor's toggle is still what a placed component inherits.
+                    new("IncludeCapacitance", "true", "", false, UnitDimension.None),
                     new("Temp",        "", "", false, UnitDimension.None),
                     new("GroundPlane", "", "", false, UnitDimension.None),
                     new("LoopHeight",  "", "mil", false, UnitDimension.Length),

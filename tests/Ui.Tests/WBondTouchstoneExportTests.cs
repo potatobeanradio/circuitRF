@@ -73,7 +73,12 @@ public class WBondTouchstoneExportTests : IDisposable
     private static WBondTouchstoneExport.Options Options(
         double startHz = 1e9, double stopHz = 1e10, int points = 5, double z0 = 50.0) =>
         new(Z0Ohms: z0, StartHz: startHz, StopHz: stopHz, Points: points,
-            Logarithmic: false, Digits: 17, DigitFormat: 'g', MatrixFormat: MatrixFormat.RI);
+            Logarithmic: false, Digits: 17, DigitFormat: 'g', MatrixFormat: MatrixFormat.RI,
+            // These gates are ABOUT the array-pair basis — that its M-port Z is exactly
+            // ArrayImpedance. The shipped DEFAULT is the terminal basis (2M ports, ground-referenced),
+            // which is the only one that can carry the capacitance; its own gates live in
+            // WBondTouchstoneTerminalBasisTests.
+            PortBasis: WBondPortBasis.ArrayPairs);
 
     private string Export(WBondDesign design, WBondTouchstoneExport.Options options, out SNP readBack)
     {

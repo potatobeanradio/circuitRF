@@ -87,6 +87,33 @@ public partial class WBondInductancePanelView : UserControl
     private void OnArrayMaterialDoubleTapped(object? sender, TappedEventArgs e) =>
         Prompt(sender, e, (owner, editor, index) => WBondGroupEdits.SetMaterialAsync(owner, editor, index));
 
+    /// <summary>
+    /// Double-clicking the Frequency row sets the frequency the cards' inductances are quoted at
+    /// (brief-wbond-capacitance §3.3).
+    ///
+    /// <para>Not an array-scoped gesture like the four below it, so it does not go through
+    /// <see cref="Prompt"/>: it is one document-wide readout setting, and it is stored on the design
+    /// (<c>WBondDesign.ReadoutFrequencyGHz</c>) rather than applied to wires.</para>
+    /// </summary>
+    private void OnFrequencyDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (Editor is not { } editor) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        e.Handled = true;
+        _ = SetFrequencyAsync(owner, editor);
+    }
+
+    private static async Task SetFrequencyAsync(Window owner, WBondViewModel editor)
+    {
+        double? ghz = await WBondValuePromptDialog.PromptFrequencyGHzAsync(
+            owner, "Inductance Extraction Frequency",
+            "The frequency the array self inductances are quoted at.",
+            editor.ReadoutFrequencyGHz);
+
+        if (ghz is { } value) editor.ReadoutFrequencyGHz = value;
+    }
+
     private void Prompt(object? sender, TappedEventArgs e, Func<Window?, WBondViewModel, int, Task> prompt)
     {
         if (Editor is not { } editor || sender is not Control { DataContext: WBondArrayRowViewModel row }) return;

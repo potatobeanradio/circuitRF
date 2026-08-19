@@ -328,9 +328,9 @@ public sealed class ContourTraceConfig
 
     // ---- Interp engine params -----------------------------------------
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public RbfKernel InterpKernel { get; set; } = RbfKernel.Multiquadric;
-    public double    Smoothing    { get; set; } = 1e-3;
-    public double?   Epsilon      { get; set; } = null;
+    public RbfKernel InterpKernel { get; set; } = ContourDefaults.Kernel;
+    public double    Smoothing    { get; set; } = ContourDefaults.Smoothing;
+    public double?   Epsilon      { get; set; } = ContourDefaults.Epsilon;
 }
 
 public sealed class TracePropertiesConfig

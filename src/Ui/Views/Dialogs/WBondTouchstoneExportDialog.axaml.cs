@@ -30,15 +30,14 @@ public partial class WBondTouchstoneExportDialog : Window
         InitializeComponent();
         _design = design;
 
-        if (design is not null)
-        {
-            var names = WBondTouchstoneExport.PortNames(design);
-            PortList.ItemsSource = names.Select((n, i) => $"Port {i + 1}  →  {n}").ToArray();
-        }
+        TerminalBasisRadio.IsCheckedChanged += (_, _) => RefreshPorts();
+        ArrayBasisRadio.IsCheckedChanged    += (_, _) => RefreshPorts();
 
         StartBox.ValueChanged  += (_, _) => RefreshCost();
         StopBox.ValueChanged   += (_, _) => RefreshCost();
         PointsBox.ValueChanged += (_, _) => RefreshCost();
+
+        RefreshPorts();
         RefreshCost();
     }
 
@@ -49,6 +48,37 @@ public partial class WBondTouchstoneExportDialog : Window
         new WBondTouchstoneExportDialog(design)
             .ShowDialog<WBondTouchstoneExport.Options?>(owner);
 
+    /// <summary>The basis the radio buttons currently select.</summary>
+    private WBondPortBasis SelectedBasis =>
+        ArrayBasisRadio.IsChecked == true ? WBondPortBasis.ArrayPairs : WBondPortBasis.Terminals;
+
+    /// <summary>
+    /// Rebuilds the port map, and says what the chosen basis will LEAVE OUT when that is not nothing.
+    ///
+    /// <para>Shown before the file is written rather than left to be recovered from its comments — an
+    /// exported file outlives the session, so a user must be able to see that an array-pair export of
+    /// a design WITH capacitance is not the network their schematic simulates.</para>
+    /// </summary>
+    private void RefreshPorts()
+    {
+        if (_design is null) { BasisNote.Text = ""; return; }
+
+        var names = WBondTouchstoneExport.PortNames(_design, SelectedBasis);
+        PortList.ItemsSource = names.Select((n, i) => $"Port {i + 1}  →  {n}").ToArray();
+
+        bool capacitance = _design.IncludeCapacitance && _design.GroundPlane.Enabled;
+        bool loses = capacitance && SelectedBasis == WBondPortBasis.ArrayPairs;
+
+        BasisNote.Text = loses
+            ? "This design includes capacitance. A differential pair has no terminal for a shunt to "
+              + "the ground plane to leave by, so this basis will export the series arm only — the "
+              + "file will not be the network the schematic simulates."
+            : "";
+        BasisNote.IsVisible = loses;
+
+        RefreshCost();
+    }
+
     /// <summary>
     /// R-wbe-5's own instruction: state the cost rather than let a 600-wire export look like a hang.
     /// One complex M×M factorisation per frequency, measured at 55.8 ms for N = 600 wires in WB-B.
@@ -58,9 +88,11 @@ public partial class WBondTouchstoneExportDialog : Window
         if (_design is null || PointsBox.Value is not { } points) { CostNote.Text = ""; return; }
 
         int n = (int)points;
+        int ports = WBondTouchstoneExport.PortNames(_design, SelectedBasis).Count;
+
         CostNote.Text =
-            $"{n} point(s) × one {_design.Arrays.Count}×{_design.Arrays.Count} complex factorisation " +
-            $"over {_design.WireCount} wire(s). A large design can take several seconds.";
+            $"{n} point(s) × one complex factorisation over {_design.WireCount} wire(s), written as a " +
+            $"{ports}-port. A large design can take several seconds.";
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close(null);
@@ -88,7 +120,8 @@ public partial class WBondTouchstoneExportDialog : Window
             Logarithmic:  LogRadio.IsChecked == true,
             Digits:       9,
             DigitFormat:  'g',
-            MatrixFormat: SelectedFormat()));
+            MatrixFormat: SelectedFormat(),
+            PortBasis:    SelectedBasis));
     }
 
     private MatrixFormat SelectedFormat() =>

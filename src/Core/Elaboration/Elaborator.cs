@@ -948,12 +948,15 @@ public sealed class Elaborator
                 result[ov.Name] = new Value(ResolveSnpFilePath(raw));
             }
             else if (ov.Name.Equals("RefPin", StringComparison.OrdinalIgnoreCase)
+                  || ov.Name.Equals("IncludeCapacitance", StringComparison.OrdinalIgnoreCase)
                   || IsWBondNameValued(ov.Name))
             {
                 // Verbatim, like Design: the schematic writes the WORD "true"/"false", and running
                 // that through the evaluator would depend on whether a bare `true` happens to parse
                 // as a literal — a dependency with nothing to gain. The factory reads either
-                // spelling. It is not sweepable and there is nothing to sweep it over.
+                // spelling. It is not sweepable and there is nothing to sweep it over. The same holds
+                // for `IncludeCapacitance` — a model is present or it is not, and nothing between the
+                // two is interpolable.
                 //
                 // The same rule covers the NAME-valued controlling parameters of §5.5.1/WB44:
                 // `Material`/`Material_<array>` is a metal's name, `Arrays` is the recorded array list

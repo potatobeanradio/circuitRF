@@ -24,8 +24,25 @@
     <Border Background="{DynamicResource SystemChromeLowColor}"
             BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
             CornerRadius="6" Padding="10,8">
-      <StackPanel Spacing="4">
+      <StackPanel Spacing="6">
         <TextBlock Text="Ports" FontSize="10" Opacity="0.6"/>
+
+        <!-- The port BASIS, not decoration either: it decides what the file can carry. A terminal
+             port has the ground plane as its reference, so the shunt capacitance goes into the file;
+             an array-pair port is a floating pair with nowhere for that current to leave by, so it
+             carries the series arm only. See WBondPortBasis. -->
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <RadioButton x:Name="TerminalBasisRadio" GroupName="PortBasis" IsChecked="True" FontSize="11"
+                       Content="Per terminal (2 per array)"
+                       ToolTip.Tip="Every terminal gets its own port, referenced to the ground plane — which is the file's own common reference node. Carries the capacitance."/>
+          <RadioButton x:Name="ArrayBasisRadio" GroupName="PortBasis" FontSize="11"
+                       Content="Per array (differential pair)"
+                       ToolTip.Tip="One port per array, its two terminals as the port's + and −. Compact, and matches the schematic symbol's port pairs — but a floating pair cannot carry a shunt to the plane, so capacitance is left out."/>
+        </StackPanel>
+
+        <TextBlock x:Name="BasisNote" TextWrapping="Wrap" FontSize="10"
+                   Foreground="{DynamicResource CrfWarningBrush}"/>
+
         <ItemsControl x:Name="PortList">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="x:String">

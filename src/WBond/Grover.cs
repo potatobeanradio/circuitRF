@@ -164,12 +164,77 @@ public static class Grover
         double s = cosEps >= 0.0 ? axial : axial - m;
         double sign = cosEps >= 0.0 ? 1.0 : -1.0;
 
-        double value = F(s + m, d) - F(s, d) - F(s + m - l, d) + F(s - l, d);
+        double value = FourTerm(s, l, m, d);
         return sign * Mu0Over4Pi * value;
     }
 
-    /// <summary>f(z) = z·asinh(z/d) − √(z²+d²). Even in z, and finite at z = 0 where f(0) = −d.</summary>
-    private static double F(double z, double d) => z * Math.Asinh(z / d) - Math.Sqrt(z * z + d * d);
+    /// <summary>
+    /// The <b>scalar</b> double integral <c>∫∫ ds ds′ / R</c> between two parallel filaments, in
+    /// metres — the electrostatic kernel of <see cref="PotentialCoefficients"/> (wbond.md §3.7).
+    ///
+    /// <para><b>It is the same integral <see cref="Parallel"/> already evaluates, and that is why it
+    /// lives here rather than as a second copy.</b> The Neumann integral is
+    /// <c>M = (μ₀/4π)∮∮(dl₁·dl₂)/R</c> with <c>dl₁·dl₂ = cos ε·dt·ds</c>, so for parallel filaments
+    /// Grover's four end-pair terms ARE this integral, times <c>cos ε</c> and <c>μ₀/4π</c>. Strip
+    /// those two factors and what is left is exactly the coefficient-of-potential kernel.</para>
+    ///
+    /// <para><b>The sign does NOT come off with them.</b> <see cref="Parallel"/> negates for
+    /// antiparallel filaments because a current has a direction; a <i>charge</i> has none, so this
+    /// returns the strictly positive integral whichever way the two filaments are traversed. Passing
+    /// a ground-plane <see cref="Filament.Image"/> — which reverses traversal by construction —
+    /// therefore returns the same value it would for the un-reversed mirror segment, which is what
+    /// the image term needs. The image's own minus sign belongs to the CHARGE and is applied by
+    /// <see cref="PotentialCoefficients"/>, not here.</para>
+    ///
+    /// <para>Exact for the self case (<c>p == q</c>), where the <see cref="MinimumSeparation"/> GMD
+    /// floor supplies the lateral separation.</para>
+    /// </summary>
+    public static double ParallelScalarKernel(in Filament p, in Filament q)
+    {
+        double cosEps = p.Ux * q.Ux + p.Uy * q.Uy + p.Uz * q.Uz;
+
+        // Work in p's frame, exactly as Parallel does.
+        double wx = q.Ax - p.Ax, wy = q.Ay - p.Ay, wz = q.Az - p.Az;
+        double axial = wx * p.Ux + wy * p.Uy + wz * p.Uz;
+
+        double px = wx - axial * p.Ux;
+        double py = wy - axial * p.Uy;
+        double pz = wz - axial * p.Uz;
+        double d = Math.Sqrt(px * px + py * py + pz * pz);
+
+        double dMin = MinimumSeparation(p, q);
+        if (d < dMin) d = dMin;
+
+        double l = p.Length;
+        double m = q.Length;
+
+        // q occupies [axial, axial+m] when it traverses +p and [axial−m, axial] when it traverses −p.
+        // The interval is what matters; the traversal is not.
+        double s = cosEps >= 0.0 ? axial : axial - m;
+
+        return FourTerm(s, l, m, d);
+    }
+
+    /// <summary>
+    /// Grover's four end-pair terms, shared by <see cref="Parallel"/> and
+    /// <see cref="ParallelScalarKernel"/> so the combination exists once.
+    ///
+    /// <para><b>This exact sign pattern is the one that has been verified</b> — a plausible-looking
+    /// different one passes a self-consistency check while failing both oracles. See
+    /// <see cref="Parallel"/>.</para>
+    /// </summary>
+    private static double FourTerm(double s, double l, double m, double d) =>
+        F(s + m, d) - F(s, d) - F(s + m - l, d) + F(s - l, d);
+
+    /// <summary>
+    /// f(z) = z·asinh(z/d) − √(z²+d²). Even in z, and finite at z = 0 where f(0) = −d.
+    ///
+    /// <para><b>Public because the electrostatic kernel is the same integral</b> (§3.7): with
+    /// <c>cos ε</c> and <c>μ₀/4π</c> stripped, Grover's parallel form IS
+    /// <c>∫∫ ds ds′/R</c>. Exposed rather than re-derived so there is one antiderivative in the
+    /// codebase, not two that can drift.</para>
+    /// </summary>
+    public static double F(double z, double d) => z * Math.Asinh(z / d) - Math.Sqrt(z * z + d * d);
 
     /// <summary>
     /// Grover Ch. 19 (after Campbell) — filaments in any relative position.

@@ -864,6 +864,24 @@ public partial class DataDisplayViewModel : ViewModelBase
         RefreshSelection();
     }
 
+    /// <summary>
+    /// Deselects everything selectable in this display — <b>Escape</b> (owner, 2026-08-18:
+    /// <i>"Pressing &lt;esc&gt; key with a Data Display in focus should cause anything selected to be
+    /// unselected. This includes markers, bitmaps, plots, etc."</i>).
+    ///
+    /// <para><b>The exact inverse of <see cref="SelectAll"/>, and deliberately written as its mirror
+    /// rather than as <c>SelectOnly(null)</c></b> — the two must stay in step, and a reader comparing
+    /// them should be able to see that they cover the same collections. Everything a Data Display can
+    /// select lives in one of those two: a plot container, or a marker info box (which is how a
+    /// selected MARKER is represented — the glyph and its box are one selectable thing).</para>
+    /// </summary>
+    public void DeselectAll()
+    {
+        foreach (var p in _plots)           p.IsSelected = false;
+        foreach (var m in _markerInfoBoxes) m.IsSelected = false;
+        RefreshSelection();
+    }
+
     /// <summary>Selects everything selectable in this display (Ctrl/Cmd+A): every plot AND every marker
     /// info box.</summary>
     public void SelectAll()

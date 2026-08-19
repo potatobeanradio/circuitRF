@@ -154,6 +154,44 @@ public sealed class WBondDesign
     /// <summary>Metals available to this design. Defaults to the shipped table.</summary>
     public List<WireMaterial> Materials { get; init; } = [.. WireMaterials.All];
 
+    /// <summary>
+    /// Whether the model includes <b>capacitance to the reference plane</b> (wbond.md §3.7).
+    ///
+    /// <para><b>The one wBond setting whose default changes the answer for designs that already
+    /// exist.</b> Every other default reproduces prior behaviour; this one is <c>true</c>, so a
+    /// <c>.wBond</c> written before capacitance existed loads with it ON and its component stamps
+    /// shunt capacitors it did not stamp before. That is deliberate — a bond wire has capacitance —
+    /// and turning it off reproduces the old answer exactly, bit for bit (gate C1).</para>
+    ///
+    /// <para><b>Off means NOT COMPUTED, not "computed and stamped as zero".</b>
+    /// <see cref="ImpedanceReduction"/> never fills <b>P</b>, never factorises it, and the stamp emits
+    /// exactly what it emitted before. Cross-wire capacitance is not a second switch: dropping the
+    /// cross terms would bias every multi-wire array's own capacitance HIGH by tens of percent, in
+    /// the optimistic direction — see <see cref="CapacitanceReduction.WireGroundCapacitance"/>.</para>
+    ///
+    /// <para>With the ground plane disabled there is nothing to be capacitive TO, and the reduction
+    /// returns null whatever this says (<see cref="CapacitanceReduction.Create(WBondDesign, bool)"/>).</para>
+    /// </summary>
+    public bool IncludeCapacitance { get; set; } = true;
+
+    /// <summary>
+    /// The frequency, in GHz, the Array Inductance panel quotes its effective inductance at
+    /// (wbond.md §6.8). Default 10.
+    ///
+    /// <para><b>It is a READOUT setting and must never reach <c>Stamp</c>.</b> A reader will assume
+    /// otherwise, so it is said here: the schematic's own analysis sweep is what the engine stamps
+    /// against, and this number decides only which frequency the panel's own number is quoted at. A
+    /// test asserts it (gate: <c>ReadoutFrequency_NeverReachesTheStamp</c>).</para>
+    ///
+    /// <para>Once shunt capacitance exists the inductance seen at the terminals is genuinely a
+    /// function of frequency, which is why the panel needs to say which one it is quoting; before
+    /// capacitance it reported the frequency-independent partial inductance and needed no such row.
+    /// 10 GHz because a representative 1 mm gold wire at 250 µm height is ≈ 1 nH and ≈ 15 fF, so its
+    /// SRF is ≈ 40 GHz: high enough that the default never lands in the above-resonance state, low
+    /// enough that the ≈ +6 % bump is visible.</para>
+    /// </summary>
+    public double ReadoutFrequencyGHz { get; set; } = 10.0;
+
     public List<WireArray> Arrays { get; init; } = [];
 
     /// <summary>

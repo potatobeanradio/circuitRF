@@ -439,6 +439,142 @@ The two assumptions are good, and they are assumptions.
   first-order error (30–50 % on L for a plane split — `mom-wirebond-kernel.md` §7.4). The editor
   refuses to silently assume: see §5.4.
 
+**Which of these are unconditional, and which describe one configuration** *(added 2026-08-18)*. The
+four bullets above are unconditional — they hold whatever `IncludeCapacitance` says. The list gets
+**one whole extra term** when that flag is off: the wires then have no capacitance to the reference
+plane and none between arrays, so the component is a pure series impedance and its self-resonance is
+at infinity. That is the pre-2026-08-18 model exactly, and it is the *only* configuration in which
+this section's list is the complete list. §3.7's own approximations are below.
+
+### 3.7 Capacitance — the electrostatic dual of the same fill *(added 2026-08-18)*
+
+Everything above computes **L**. A bond wire also has capacitance — to the plane it flies over, and to
+its neighbours — and above a few GHz that is what turns its terminal inductance into a function of
+frequency. The physical model is Nazarian *et al.*, *IEEE Trans. MTT* **60**(12), Dec 2012, §II-H.
+
+**The electrostatic problem is the dual of the fill we already run.** Where §3.1 sums Grover's mutual
+over filament pairs, the electrostatic problem sums the plain Coulomb kernel over the *same* filament
+pairs and the *same* images. Put one charge basis function per **wire** — uniform charge per unit
+length λ_j = Q_j/ℓ_j, the standard single-basis-function-per-conductor model and the same
+approximation that yields the textbook wire-over-plane result — and take wire *i*'s potential as its
+own length average. Then
+
+```
+V_i = Σ_j P_ij Q_j ,     P_ij = 1/(4πε ℓ_i ℓ_j) · Σ_p Σ_q [ K(p,q) − K(p, image(q)) ]
+
+K(p,q) = ∫∫ ds ds′ / |r(s) − r(s′)|
+```
+
+**The image sign FLIPS, and this is the SECOND sign rule.** §3.2 is titled "the sign rule that is easy
+to get wrong"; there are now two of them and **they resolve in opposite directions**. §3.2's image term
+is *added* in code, because `Filament.Image()` bakes the current reversal into the returned direction
+vector and the minus is carried by the geometry. A charge has **no direction to carry**. Its image in a
+PEC is negative, full stop, so here the minus has to be written — the block **subtracts**. An error
+here produces a finite, plausible, badly wrong answer rather than a NaN, so it has a test that flips
+the sign deliberately and confirms the closed form breaks (gate C2). The independent tell needs no
+closed form: **raising a wire must lower its capacitance**, and a sign error inverts that.
+
+Verified against the same closed form §3.2 uses, from the other side: a wire of length ℓ, radius *a*,
+at height *h* gives C = 2πεℓ/acosh(h/a). That is the *infinite* line's result, so the check is a
+convergence rather than a number — measured 8.8 % at ℓ/h = 5, 3.0 % at 15, **0.90 % at 50**, 0.30 % at
+150, which is the 1/(ℓ/h) falloff finite-wire end effects have.
+
+**The reduction is a plain congruence transform — and this is exactly where it differs from §3.4.**
+Wires in one array share both nodes, so they share a *voltage*, and therefore their **charges add**:
+
+```
+Q_arr = Aᵀ Q = Aᵀ C_wire A u        ⇒       C_arr = Aᵀ P⁻¹ A
+```
+
+with **no** final inverse. Compare §3.4, where sharing a voltage forces the currents to *divide* and
+the reduction comes out as (**AᵀL⁻¹A**)⁻¹. One sentence separates them: **sharing a voltage makes
+charges add and currents divide.** The consequence is that the capacitance reduction is strictly
+*cheaper* than the inductance one — M triangular solves and a scatter-add, with no M × M inversion at
+the end. **P** is symmetric positive definite, so `CholeskyFactor` applies directly, unlike the
+complex-symmetric **Z** of §5.3.
+
+**P⁻¹ is never formed.** `Aᵀ P⁻¹ A` needs M solves; the full inverse needs N, which at N = 600 is
+~0.4 s of pure waste for a quantity nothing downstream reads. One *extra* solve, against a right-hand
+side of ones, yields every wire's row sum of **C_wire** — the only per-wire quantity the end split
+needs.
+
+**The near/far kernel split.** Two filaments far apart do not need the double integral: the
+centre-to-centre approximation ℓ_p·ℓ_q/|r̄_p − r̄_q| is one reciprocal square root. Near pairs take a
+4×4 tensor-product Gauss–Legendre rule, and *parallel* near pairs — which is most of a bond-wire array
+and every self pair — take a closed form that is already in the codebase: Grover's parallel mutual is
+this same double integral times cos ε and μ₀/4π, so stripping those two factors leaves the
+electrostatic kernel exactly. There is one antiderivative in the source, not two that can drift. The
+degenerate self and shared-endpoint cases take the **same GMD floor √(a_p·a_q)** as §3.1, for the same
+reason: two consecutive filaments of one wire have intersecting axes and d = 0, and the physically
+correct separation is the cross-section's GMD, not zero.
+
+**The far threshold is measured, not chosen.** Swept against an all-near reference on a 60-wire,
+6-array ball-bond design, the worst array-basis C_arr error is 3.07 % at 1, 0.712 % at 2, 0.172 % at
+3, 0.103 % at 3.25, **0.0706 % at 3.5**, 0.0095 % at 4, below 1e-5 % from 5. **3.5 longer-filament
+lengths is the smallest value inside the 0.1 % target and is what ships** — the 3 that was proposed
+misses it. On a two-wire array every threshold in that range is bit-exact, because 4 mil-pitch wires
+100 mil long are never far from each other; the constant has to be measured on a design with widely
+separated arrays in it or the measurement measures nothing.
+
+**The end split — Nazarian's (18), weighted by self-inductance, not 50/50 and not by length.** The
+inductive voltage drop makes the potential along a wire the interpolation V(w) = V₁(1−w) + V₂w, with
+*w* the running self-inductance to that segment's midpoint divided by the wire's own total. Lumping
+each segment's charge onto the two ends with the same weights is a Galerkin projection, and it
+produces a two-port capacitance **matrix**:
+
+```
+C1 = Σ C_i (1−w_i)²      C2 = Σ C_i w_i²      C12 = Σ C_i w_i(1−w_i)
+```
+
+which conserves charge exactly, since (1−w)² + w² + 2w(1−w) = 1. **Read those three as a matrix, not
+as three circuit elements** — that is the distinction the conservation identity itself forces. Their
+nodal form is C1+C12 from the input node to the reference, C2+C12 from the output node, and
+**−C12** across the array. The negative bridge is required rather than tolerated: [[C1, C12],[C12,
+C2]] is a Gram matrix of √C·(1−w) and √C·w, hence positive semi-definite, hence passive, and
+realising a PSD matrix whose off-diagonal is positive *needs* a negative bridge. Dropping it would
+violate charge conservation by exactly 2·C12.
+
+Checked in the limit that matters: with the far end shorted the bridge lands in parallel with the
+input shunt and the two C12 terms cancel, leaving **C1 alone** — which for a uniform line is C/3,
+exactly the first term of the shorted-stub expansion Z_in = jZ₀tan(βℓ) ⇒ L(1 + (βℓ)²/3). A 50/50
+split would give C/2 and be 50 % wrong there.
+
+> **One claim of the source brief is not reproducible and is recorded rather than quietly dropped.**
+> It states that this reconstruction also reproduces Nazarian's reported C12 "two orders of magnitude
+> below C1/C2". It cannot, and no geometry will make it: for a uniform distribution ∫w(1−w) = 1/6
+> against ∫(1−w)² = 1/3, so this C12 is structurally *half* of C1. The reconstruction was chosen to
+> satisfy the conservation identity, and the identity and the two-orders-of-magnitude claim are not
+> simultaneously satisfiable by any weighting of this form. What is verified is the distributed limit
+> above; if the printed equation is ever read, it should be checked against that.
+
+The per-segment C_i come from the local analytic form 2πε·ℓ/acosh(h/a), integrated along each tilted
+segment. **They set only the SHAPE of the distribution** — the magnitudes are rescaled so each wire's
+total matches its row sum of C_wire. So the multi-conductor solve sets the size, with all of the
+shielding in it, and the local form sets only where along the wire it sits.
+
+**Cross-wire capacitance is not optional, and dropping it is not a performance option — it is a trap.**
+Using only **P**'s diagonal means summing *isolated* wire capacitances. Real adjacent wires shield each
+other, so that sum overestimates. For two wires at pitch *p*, height *h*, radius *a*: P_ii ∝ ln(2h/a)
+and P_ij ∝ ln(√(4h²+p²)/p). At h = 250 µm, a = 12.7 µm, p = 100 µm those are 3.674 and **1.629**, so
+the array's total capacitance is 2/(P_ii + P_ij) against 2/P_ii without the cross term — an
+overestimate of **×1.386**. Measured on the real fill: **×1.405**, the analytic prediction plus finite-wire
+end effects. An overestimated shunt pulls the self-resonance *down* and inflates the reported
+inductance — wrong in the **optimistic** direction, which is precisely the failure mode §5.4's refusal
+exists to stop. So there is one switch, `IncludeCapacitance`, and the cross terms are always in it.
+
+*(Note the distinction, because it is easy to state backwards: what vanishes **within** an array is the
+lumped mutual capacitor between two of its wires, since they share both nodes and ΔV = 0. The
+**shielding** does not vanish — it is already inside each wire's shunt-to-ground term, because
+C_wire[i][j] < 0 for i ≠ j.)*
+
+**What §3.7 assumes, stated as plainly as §3.6.** One uniform-charge basis function per wire, so a
+wire's charge distribution cannot redistribute along its own length. Quasi-static — no retardation,
+the same limitation the inductive coupling has. And **proximity effect is still absent from R(f)**:
+neither the inductance nor the capacitance path models it, so a dense array's high-frequency
+resistance remains an isolated-round-wire assumption. With the ground plane disabled there is no
+reference conductor to be capacitive *to*, and the capacitance is not computed at all whatever the
+flag says.
+
 ---
 
 ## 4. Measured performance, and the architecture that follows from it
@@ -462,6 +598,24 @@ below is **measured on this machine**, .NET 10 Release, single-threaded, not est
 | **AᵀL⁻¹A** block sum from an explicit inverse (M = 12) | 1.05 ms | |
 | Naive full 600×600 inverse (Gauss–Jordan) | 262 ms | for contrast only — never do this per frame |
 | Cholesky + solves at N = 1,200 | 181 ms | headroom beyond the stated worst case |
+
+**Capacitance, measured 2026-08-18** (Release, Apple Silicon, the same 600-wire / 12-array reference,
+parallel fill):
+
+| operation | measured | vs. the inductance path |
+|---|---|---|
+| **P** fill (near/far split, images) | **8–11 ms** | **0.06–0.08 ×** the L fill |
+| L fill, same machine and run | 140–158 ms | 1.00 |
+| `C_arr = AᵀP⁻¹A` — Cholesky at N, M solves, one extra solve | **26 ms** | ~1.0 × the L reduction's 25 ms |
+| **cold build, L only** | 170 ms | |
+| **cold build, L + C** | **206 ms** | **+21 %** |
+
+**The capacitance fill is far cheaper than predicted, and the reason is the near/far split.** The
+brief that specified this work estimated 0.25 × from kernel micro-benchmarks; the measured 0.06–0.08 ×
+is better because *most pairs in a real design are far apart* — the 600-wire reference has 12 arrays
+400 mil apart — and the far kernel is one reciprocal square root against Grover's four `Atanh` and
+four `Atan2`. The electrostatic loop has no cos ε factor at all.
+
 
 ### 4.2 The finding that shapes the design
 
@@ -547,6 +701,96 @@ mitigations, in order of value:
 implementation and exposed as a setting, not fixed now.** The measurements above put it somewhere
 around 5–10 simultaneously-moving wires on this machine.
 
+**WB16a. The drag frame rate takes priority over the readout, always.** *(Owner, 2026-08-18: "the
+frame rate is slow when I drag 500 wires in a layout view … dragging 500 wires must always be fast, it
+should always take priority. We can give up frame rate on the inductance calculation if necessary."
+Same for the Wire Profile view.)*
+
+Three changes implement that, and the first one is the whole cause of the reported slowness.
+
+**1. The Chord rung is gone.** It was the middle rung: each moving wire replaced by its chord, a 36×
+reduction in filament pairs. Three things were wrong with it, and any one is disqualifying.
+
+- **Its readout was wrong by ~70 %.** A 20 mil loop flattened to its chord loses most of its loop
+  area — measured 597 pH exact against 180 pH collapsed. WB15's own note warned that dropping wires
+  "would make the readout jump as the ladder engaged — the one thing a live readout must not do", and
+  then did exactly that by another route. With the ladder stepping down on one slow frame and back up
+  after three comfortable ones, the panel alternated between the two numbers for the entire drag.
+  *(Owner: "dragging wires causes the array inductance number to flash between two different
+  inductance numbers.")*
+- **It was the most expensive rung, not the middle one.** Collapsing changes each wire's POINT COUNT,
+  so the flat filament layout no longer matches and the mesh must be rebuilt — and the drag path
+  rebuilt it **every frame** it was engaged for, at full cold-fill cost, rather than once at the
+  step-down. That is the 500-wire slowness, and it had nothing to do with capacitance.
+- **It mutated the geometry the canvas was drawing**, so the wires visibly straightened mid-drag and
+  sprang back on release.
+
+A rung that costs more than the top rung to produce a number nobody should look at is not a rung. The
+ladder is now **Exact or frozen**.
+
+**2. The ladder is told the size of the job, and refuses a fill it can see is hopeless.** Feedback
+alone has to *pay* one catastrophic frame to learn what the block count already says: 500 wires of 500
+is `k·N − k(k−1)/2` = 125,250 wire-pair blocks, i.e. ~1 s against a 16.7 ms budget.
+
+> **This is a BOUND, not the cost model WB13/WB15 rejected**, and the distinction is load-bearing.
+> WB15 rejected fitting a predictor to *choose among rungs*, because the two measurements available
+> disagree by 2× on cost per block (3.9 µs for one wire of 600, 7.9 µs for 200 of 200) and a predictor
+> fitted to either is wrong at the other by 2–3×. That objection is fatal to a 2× decision and
+> irrelevant to a **60×** one. So `QualityLadder.CanAffordExactFill` asks only the question a
+> 2×-accurate bound can answer — *is this obviously hopeless?* — using the pessimistic 8 µs/block, and
+> hands every finer decision back to feedback. A drag that is merely marginal starts frozen but is
+> **not** locked out: three comfortable frames and the ladder tries it, costing ~50 ms of frozen
+> readout and nothing else. Only a drag past 4× the budget is locked for the rest of the gesture, so
+> feedback cannot retry a multi-second frame every four frames — which it otherwise does, forever.
+
+**3. The skip lives on the view-model, not on the drag path.** `WBondViewModel.DeferFills` makes
+`CommitPointMove` a no-op: the geometry still moves and the canvas still redraws, but nothing is
+filled, factorised, reduced or published. **It has to live there because not every drag frame's edit
+goes through the drag path's own commit** — a plain translate calls `WireEdits.Translate` and commits
+nowhere, but an alt-drag calls `ScaleSelection` and a rotate calls `RotateSelectionAboutOwnEnd`, and
+both of those commit *internally*. Gating only the drag path's own call would have left alt-drag and
+rotate filling every frame however degraded the rung said it was — protecting the one gesture that did
+not need it.
+
+**Measured after the change** (Release, all wires moving, real 60 fps budget): 500 wires **0.96 ms per
+frame** mean, 6.6 ms worst; 200 wires 0.15 ms; 50 wires 10.9 ms (affordable, so it keeps the live
+readout); 1 wire 0.04 ms. The one-off exact recompute on release is 0.7 s at 500 wires and 0.1 s at
+200 — that is the "snap" half of freeze-and-snap and is inherent to the size of the problem.
+
+**WB16c. An UNDO puts the wires back on its own frame, and pays for the matrix on the next.**
+*(Owner, 2026-08-18: "the wires should move instantly when user performs an Undo after moving wires.
+The wires moving takes priority over the inductance calculation.")* Two separate costs were in the
+way, and the first one is the larger:
+
+1. **The restore refilled every wire, moved or not.** `Restore` handed `Range(0, wireCount)` to the
+   fill regardless of what the snapshot actually changed — so undoing a ONE-wire move on a 500-wire
+   design recomputed all 500 rows. It now compares each wire's points against the snapshot and commits
+   only the ones that differ, which makes a small undo small again whatever the design size.
+2. **A genuinely big undo has no gesture to defer to.** A drag can wait for mouse-up because there IS
+   a mouse-up; an undo is a single instant. So `CommitPointMoveAfterFrame` applies the geometry,
+   raises the redraw, and posts the fill to the next dispatcher turn —
+   **`QualityLadder.FitsInOneFrame`** decides which of the two happens, the same bound WB16a uses, so
+   there is one answer in the codebase to "is this fill too big". Below it, nothing is deferred: a
+   deferral costs a frame of stale numbers and is worth paying only against a stalled canvas.
+
+The queue coalesces, and a flush that lands mid-drag **re-queues rather than dropping** — otherwise the
+matrix would stay stale until the next unrelated edit. `RecomputeScheduler` is a settable property so a
+test can run the deferred work on demand instead of racing a message loop.
+
+**WB16b. Capacitance is spent only out of measured leftover budget.** *(Owner, 2026-08-18: "so is
+capacitance in the drag loop? can it be removed?")* It is in the loop, and it can never be the reason
+a drag is slow: `RefreshCapacitanceDuringGesture` is set only when the ladder is at its Exact rung
+**and** the previous frame used less than half the budget, and the refresh happens inside the timed
+region so its cost is part of what the ladder observes next. On a 500-wire drag the ladder never
+reaches Exact, so the capacitance is touched exactly once, on release.
+
+> **The rule this replaces, and why it was wrong.** It read: *capacitance is NOT in the drag loop; C is
+> recomputed on drag END; this is sound because C is far less geometry-sensitive than L.* **That
+> premise is false, and measurably so.** Scaling a 20-wire array's loops by ×1.1 moves L by **+8.0 %**
+> and C by **−3.9 %** — |dC/dL| ≈ 0.4, not ≈ 0 — and the two errors **compound rather than cancel**,
+> because L_eff = L/(1 − ω²LC) rises with both. The visible result was the readout stepping **2 % to
+> 15 %** at the instant the button was released, the size of the step set by how far the drag went.
+
 ### 4.5 Rendering
 
 3,600 line segments and 4,200 dots is trivial for Skia in a batched path — the wire overlay is not the
@@ -628,6 +872,27 @@ with **Z**_arr assembled per §5.3. It is `MutualInductanceModel` generalised fr
 to M, and `ModelKind.Linear`. In HB it contributes at every harmonic like any linear element; nothing
 in the linear/nonlinear partition changes.
 
+**WB19c. And, since 2026-08-18, the capacitors** (§3.7). These are *additional* stamps alongside the M
+branches, never a term folded into **Z**_arr — which is why §5.3's number is bit-identical whether
+capacitance is on or off. Per array *k*, with the reference node of §5.4:
+
+- **C1_k + C12_k** from array *k*'s input node to the reference,
+- **C2_k + C12_k** from its output node to the reference,
+- **−C12_k** across the array, input node to output node.
+
+Those three are the nodal form of the array's own two-port capacitance matrix, so the **negative**
+bridge is required and not a sign error — see §3.7, and note that the three together conserve charge
+exactly while any two of them would not.
+
+Per array **pair** *k ≠ j*, the inter-array capacitor −C_arr[k,j] is split **half between the two
+input nodes and half between the two output nodes**. A lumped mutual capacitor between two wires of the
+*same* array does not appear at all: they share both nodes, so ΔV = 0 — but their mutual shielding is
+still in the answer, inside each wire's shunt term (§3.7).
+
+**With `IncludeCapacitance` off, none of this is stamped and none of it is computed** — not zeros.
+That is what makes the flag-off answer bit-identical to the pre-2026-08-18 model rather than merely
+close.
+
 ### 5.3 What the stamp reduces — the exact complex reduction
 
 **WB19a. The simulation stamp uses the exact complex reduction**
@@ -692,6 +957,30 @@ configurations:
 Reporting "the inductance of this bond wire" without a stated return path is the single most common way
 a bondwire model is wrong, and the UI states the active return in the panel header at all times.
 
+**WB20a. What `REF` DOES now depends on `IncludeCapacitance`, and the paragraph this section used to
+carry became false on 2026-08-18.** It read, in effect, that `REF` declares and never stamps —
+**L**_arr being a loop inductance whose return is implicit in the schematic's own ground, so the
+circuit element is a plain series branch and a reader expecting a 2M+1-terminal stamp would not find
+one. That is still exactly right **with capacitance off**. It is wrong with capacitance on, because a
+shunt capacitor has to connect to *something*. So, stated as the two configurations they are:
+
+| | terminals | what `REF` does |
+|---|---|---|
+| `IncludeCapacitance = false` | 2M signal (+ `REF` if exposed) | **declares only.** Never stamped. |
+| `IncludeCapacitance = true` *(default)* | electrically **2M+1** | **carries the shunt charge.** |
+
+**Owner decision, 2026-08-18: the shunt capacitance stamps to `REF` when the pin is exposed, and to
+node 0 otherwise.** Three reasons, in order. The image plane at z = 0 *is* the reference conductor — if
+the user has told us which net that plane is, using any other node models a different circuit. `RefPin`
+is off by default and node 0 is then the only defensible choice, and it is exactly what the
+plane-enabled configuration already assumes. And it makes `REF` finally *do* something in the one
+configuration where a reader would expect it to, without changing the pin's meaning or its position:
+still last, still renumbers nothing, so the signal terminals are untouched either way.
+
+**The refusal above is unchanged and still fires first** — a reader will ask, so: with the ground plane
+disabled there is no plane to be capacitive *to*, the capacitance is not computed at all, and the
+undeclared-return-path refusal is what the user sees.
+
 ### 5.5 Parameters — and why they must be expression-bound
 
 The Parameters dialog exposes: ground-plane enable and z, global diameter and material overrides,
@@ -699,6 +988,22 @@ temperature, the fidelity mode (`Quasi-static` / `MoM W1` / `MoM W2` / `Measured
 tier (§3.5), and **every array's own loop height, span and segment count**. *(Until 2026-08-18 this
 last read "every bound `LoopProfile`'s parameters"; the profile object is gone and the array is the
 only scope — see §6.2's dated note.)*
+
+**WB22a. `IncludeCapacitance` joins them, default TRUE — and it is the one wBond parameter whose
+default changes the answer for designs that already exist** *(added 2026-08-18)*. Every other
+parameter here is either blank-means-as-drawn (WB44 property 2) or reproduces prior behaviour when
+left alone. This one does not: a `.wBond` written before capacitance existed loads with it **on**, and
+its component stamps shunt capacitors it did not stamp before. That is deliberate — a bond wire has
+capacitance, and a model that silently omitted it was optimistic in the direction §5.4 exists to guard
+— but it must be *stated*, not discovered. Setting it false reproduces the old answer exactly, bit for
+bit, because nothing is computed rather than computed and stamped as zero (§5.2).
+
+It is a **boolean**, read through the same `IsTrue` as `GroundPlane`, so it is a checkbox in the
+parameter panel rather than a text box. Unlike `GroundPlane` it is *not* offered as a three-value "As
+designed" picker: it is the setting most likely to change an answer, so a reader has to be able to see
+its state without opening the payload. An instance parameter wins over the design's own flag; absent,
+the design decides — which is what makes the wBond editor's toolbar toggle (§6.8) the default a
+newly-placed component inherits.
 
 **WB21. These are ordinary circuitRF expressions, so loop height is sweepable.** `parametric_sweep`
 over `X1.G1.LoopHeight` rescales each wire's rise above its own chord, re-fills **L**, and
@@ -1211,6 +1516,91 @@ readout must not create. Wirebond inductances live in the tens-to-thousands of p
 Mutual terms are additionally offered as the dimensionless **coupling coefficient**
 k = M_ij/√(L_ii·L_jj), because it is scale-free and is the number that tells a user whether two arrays
 are meaningfully coupled — a bare pH mutual does not, without mentally dividing by the selfs.
+
+#### 6.8.1 What the panel reports once capacitance exists *(2026-08-18)*
+
+**Until 2026-08-18 the panel's self-inductance number was L_arr — the external, frequency-independent
+partial inductance.** It contained neither R(f) nor L_int(f), which is precisely why the panel had
+never quoted a frequency and had never needed to.
+
+That number is still pure geometry and still right; what changed is that it is no longer the number a
+user wants. With shunt capacitance the wire has a self-resonance, and the inductance **seen at the
+terminals** rises toward it. So the panel reports an **effective inductance at a stated frequency**:
+
+```
+L_eff,k(f) = Im( Z_in,k(f) ) / ω ,    Z_in,k = array k's input impedance with its far end
+                                               shorted to the reference plane
+```
+
+built from the external L_arr and the capacitance **only** — no R, no L_int, so the panel keeps its
+frequency-independent-fill property and stays inside the drag budget. For one array this is the
+familiar shorted-stub result L/(1 − ω²LC). In general it is one small M × M inversion: with
+**B** = ω**C**′ − **Γ**_arr/ω (real, symmetric, reusing the inverse inductance **Γ**_arr the reduction
+already carries), L_eff,k = −(**B**⁻¹)[k,k]/ω. **B** is *indefinite* by construction — that is what
+makes it describe a resonance — so it takes an LU, not a Cholesky.
+
+**Why not the obvious alternative, named so nobody re-derives it.** The other candidate is the
+two-port series arm, Im(−1/Y₂₁)/ω. For a π network that is **identically L_arr at every frequency**,
+because the shunt capacitors do not appear in Y₂₁ at all. It would produce a frequency box whose value
+never changes anything, which is worse than having none.
+
+**The invariant this buys, and it is the one that is tested.** With `IncludeCapacitance` off, L_eff(f)
+= L_arr at **every** frequency, so the panel's number is identical to the pre-2026-08-18 one regardless
+of what the frequency box says — and identical *bit for bit*, because the flag-off path reads the
+reduction directly rather than evaluating a zero-shunt expression that would agree only to the last
+few bits.
+
+**The frequency readout.** One line above the array cards, in the same `detailLabel`/`detailValue`
+style the Loop height and Span rows use (one definition, promoted to control level so the two places
+cannot drift). Double-click to set, matching the four settable card rows. **GHz always, never
+auto-ranged** — the same rule as WB27a's fixed picohenries and for the same reason. The value lives in
+`WBondDesign.ReadoutFrequencyGHz`, persisted in the `.wBond` and in the embedded payload, **default
+10 GHz**: a representative 1 mm gold wire at 250 µm height is ≈ 1 nH and ≈ 15 fF, so its SRF is
+≈ 40 GHz — high enough that the default never lands in the warning state, low enough that the ≈ +6 %
+bump is visible.
+
+**It is a READOUT setting and never reaches `Stamp`.** A reader of the CODE will assume otherwise, so
+it is said here, in the property's own doc comment, and asserted by a test: the schematic's analysis
+sweep is what the engine stamps against, and this number decides only which frequency the panel's own
+number is quoted at.
+
+**The UI does not say that, deliberately** *(owner, 2026-08-18)*. The tooltip used to end "this is a
+readout setting — it never reaches the simulation", which describes an internal boundary rather than
+the thing the user is setting. It now says what the control IS: **the inductance extraction
+frequency**. Saying what a control does beats disclaiming what it does not.
+
+**Above resonance the panel reports the state, not a number.** The expression runs to ±∞ and comes back
+negative, which is not a wrong number a reader can discount — it is a number that looks like an answer.
+At f ≥ 0.95·f_SRF the cards' self values are blanked and the panel prints, in the same warning brush
+the undeclared-return-path line uses:
+
+> Above self-resonance (SRF 38.4 GHz) — the effective inductance is not meaningful here.
+
+**And the toggle — in TWO places, because the panel has two hosts.** A `ToggleButton` in the wBond
+editor toolbar beside the panel and ruler toggles, **and a checkbox in the panel itself**, above the
+frequency row. *(Owner, 2026-08-18: "why is there no capacitance toggle in the Array Inductance
+panel?")* The reason it needs both is §6.1 vs §10.1: the editor docks this control inline beside its
+own toolbar, while the workspace offers the same control as a dock tool over the active layout, **with
+no wBond editor on screen at all**. The frequency row beside it was settable in both hosts from the
+start, so a capacitance switch reachable in only one of them was the odd one out — and it is the
+setting that decides what the number on every card below even means. Both write the same
+`WBondDesign.IncludeCapacitance`, so they cannot disagree; the panel's is absent when there is no
+editor behind it, because a switch that silently does nothing is worse than no switch.
+
+Two consequences the panel now states rather than leaves to be discovered. **The frequency row is
+hidden when capacitance is not in the numbers** — the effective inductance is then `L_arr` at every
+frequency, so the row would provably change nothing, the same rule the return-path line already
+follows. And **a design that ASKS for capacitance and cannot have it says so**: with the ground plane
+disabled there is no reference conductor for the charge to return to, and the missing capacitance
+moves the reported inductance in the *optimistic* direction — which is the failure mode §5.4's refusal
+exists to stop. The toggle shows what was asked for; the note explains why it did not happen.
+
+**The toggle and the component's `IncludeCapacitance` parameter are two different things** and are
+deliberately not wired together: a design open in the editor is not yet a component, and one document
+can be placed as several components with different settings. The toggle sets
+`WBondDesign.IncludeCapacitance`, which is what a newly-placed component *inherits* as its parameter
+default — the same relationship `GroundPlane` already has between the design and its override
+parameter.
 
 ### 6.10 Owner round 3 (2026-08-16)
 
@@ -2040,17 +2430,49 @@ from a circuitRF project tree, editing layout geometry, running MoM 3D when kern
 harmonicaRF, opens one document per window (no single-instance pipe — that is a workspace-application
 behaviour and wrong here).
 
-> **WB42. What a wBond PUBLISHES: an M-port, one port per wire ARRAY, port *k* being that array's own
-> two terminals (`Gk.i`, `Gk.o`).** Settled in WB-E. Its impedance matrix is then *exactly*
-> `WBondModel.ArrayImpedance(f)` — by definition, since the array reduction IS `v = Z_arr·i` in the
-> branch basis — so this adds no physics and no assumption, and the port count matches the schematic
-> symbol's own array pairs. A **2M-port** with every terminal ground-referenced would need a shunt
-> model the reduction does not provide (and the ground plane is the *reference*, not a terminal); a
-> **2-port per array exported separately** would throw away every off-diagonal, which is the entire
-> content of a coupled bond array. Port identity is written into the file as `! Port[k] = <array
-> name>`, the form `TouchstonePortLabels` already reads on the way in — a Touchstone whose port order
-> is undocumented is a file somebody wires backwards. The frequency grid is the USER's: a bond array
-> is broadband and has no natural band.
+> **WB42. What a wBond PUBLISHES — revised 2026-08-18. The default is a 2M-port, one port per
+> TERMINAL, all referenced to the ground plane; the M-port array-pair form remains as an option.**
+>
+> WB-E settled this as an M-port, one port per wire ARRAY, port *k* being that array's own two
+> terminals (`Gk.i`, `Gk.o`). Its impedance matrix is then *exactly* `WBondModel.ArrayImpedance(f)` —
+> by definition, since the array reduction IS `v = Z_arr·i` in the branch basis — so it adds no
+> physics and no assumption, and the port count matches the schematic symbol's own array pairs. All
+> of that is still true, and it is still offered.
+>
+> **What was wrong was the reason given for rejecting the alternative.** WB42 read: *"a 2M-port with
+> every terminal ground-referenced would need a shunt model the reduction does not provide (and the
+> ground plane is the reference, not a terminal)."* Once §3.7 exists the reduction provides exactly
+> that shunt model, and the parenthesis is not an obstacle — **it is the mechanism**. A Touchstone
+> N-port already has an implicit common reference node, and here that node *is* the ground plane at
+> z = 0. So the shunt capacitors connect from each port to it precisely as they do in the stamp, the
+> inter-array capacitors appear as ordinary port-to-port coupling, and three arrays export as a
+> 6-port with nothing left out. *(Owner, 2026-08-18: "the shunt capacitance always connects from the
+> port to the reference net. So simple. What am I missing?" — nothing.)*
+>
+> **The array-pair basis genuinely cannot carry it, and that is a property of THAT basis rather than
+> of the physics.** Its port is a floating pair, so the network it describes has no global node and a
+> shunt to the plane has no terminal to leave by; such a file is the series arm only. Both bases ship
+> because they answer different questions — the terminal basis is **complete**, the array-pair basis
+> is **compact** and matches the symbol — and the file states which it is. An array-pair file written
+> from a design that HAS capacitance carries a `WARNING` line saying what it left out, and the export
+> dialog says so before the file is written.
+>
+> **The gate is a round trip against a real solve, not a self-consistency check.** The written file is
+> read back with the ordinary reader and compared against `SParameterEngine`'s own S-parameters for
+> the same component driven at the same 2M terminals — agreeing to < 1e-9 at one, two and three
+> arrays, with capacitance and without. A self-consistency check cannot catch a sign, a factor of two
+> or a transposed terminal in the shunt block; this does.
+>
+> A **2-port per array exported separately** is still rejected: it throws away every off-diagonal,
+> which is the entire content of a coupled bond array. Port identity is written into the file as
+> `! Port[k] = <name>`, the form `TouchstonePortLabels` already reads on the way in — a Touchstone
+> whose port order is undocumented is a file somebody wires backwards. The frequency grid is the
+> USER's: a bond array is broadband and has no natural band.
+>
+> **A WIRE-basis export — two ports per wire, 2N ports — is the same construction on the wire-basis
+> matrices** and is not built. It is a different feature rather than a different setting: at 500 wires
+> it is a 1,000-port file, i.e. a million entries per frequency point, so it needs its own view about
+> size before it is worth having.
 >
 > **WB43. §11's "drag-and-drop from a circuitRF project tree" is satisfied by embedded geometry plus a
 > folder picker, NOT by a second project tree.** A project tree implies a workspace, which is the
@@ -2173,6 +2595,21 @@ or fast-but-wall-clock-sensitive):
 | O-10 | Loop height, diameter and material on the schematic symbol? | **Yes — as controlling parameters**, array-scoped and suffixed, applied as an override at elaboration that never writes back, unset by default meaning "as drawn". This is what makes them sweepable and optimisable without a sweep mutating the design once | §5.5.1, WB44 |
 | O-11 | Span too? | **Deferred.** Span is not a loop property but the pad positions; it scales by *factor* not to a value (WB24c), and it moves a bonded foot off its pad (WB24b) — safe under the layout editor's live snapping, blind from the schematic. The only one of the six needing new geometry rules rather than exposure of existing ones | §5.5.1, WB44a |
 | O-12 | Should the netlist reference the `.wBond` rather than carry a copy? | **Per-instance choice, `Linked` by default** when the instance resolves to a workspace cell that owns one; `Carried` otherwise and for imported/foreign designs. **Named `Carried`, not `Embedded`** — §9.1 already spends *embedded/referenced* on a different axis (what is inside the `.wBond`), and reusing them made the two indistinguishable. Linking makes §9.6's reconcile unnecessary rather than merely convenient — but the array-drift check must then run at elaboration, or linked drift arrives more quietly than carried drift | §9.7, WB45 |
+
+### Resolved by the owner, 2026-08-18
+
+| # | question | decision | where it landed |
+|---|---|---|---|
+| O-13 | Add capacitance to the model? | **Yes, behind one flag, `IncludeCapacitance`, defaulting to TRUE.** Off reproduces the prior answer bit for bit — nothing is computed rather than computed and stamped as zero. It is the only wBond parameter whose default changes the answer for a design that already exists, and it is stated rather than left to be discovered | §3.7, §5.2, §5.5 (WB19c, WB22a) |
+| O-14 | Is cross-wire capacitance a second parameter? | **No, and it is not optional.** The cost objection is about the obvious implementation, not this one: in the WIRE basis **P** is the same 600 × 600 as **L**, filled by a loop measurably *cheaper per pair*, and the whole cold build grows 21 %. The decisive half is physics, not cost — dropping the cross terms would bias every multi-wire array's own capacitance HIGH by ~40 % (measured ×1.405 against ×2.0 on a 2-wire array at 100 µm pitch), in the **optimistic** direction, which is exactly the failure mode §5.4's refusal exists to stop. A switch whose "off" position silently does that is a trap, not an option | §3.7 |
+| O-15 | Where does the shunt capacitance return to? | **`REF` when the pin is exposed, node 0 otherwise.** The image plane at z = 0 *is* the reference conductor, so if the user has said which net that is, using another models a different circuit. Consequence: with capacitance on the component is electrically 2M+1 terminal and §5.4's "REF declares and never stamps" is false — corrected there rather than left to be discovered | §5.4, WB20a |
+| O-17 | The array inductance flashes between two numbers while dragging, and 500 wires drag slowly | **One root cause for both, and it predates the capacitance work: WB15's Chord rung.** It published a readout from chord-collapsed geometry (~70 % low, hence the flash — and present with capacitance off too), rebuilt the mesh on **every** frame it was engaged for (hence the slowness), and mutated the geometry the canvas was drawing. **The rung is removed**; the ladder is Exact or frozen, is told the size of the job up front so it never attempts a hopeless fill, and the skip lives on the view-model so alt-drag and rotate are covered too. Measured: 500 wires 0.96 ms/frame | §4.4, WB16a |
+| O-22 | Undo/Redo of a big wire move is slow | **Two costs, the bigger one a plain defect:** the restore handed EVERY wire index to the fill whether the snapshot changed it or not, so undoing one wire's move on a 500-wire design recomputed all 500 rows. It now commits only the wires that differ. For an undo that is genuinely big, the geometry lands on its own frame and the fill is posted to the next — gated by the same `FitsInOneFrame` bound the drag path uses, so a small undo stays synchronous | §4.4, WB16c |
+| O-18 | Is capacitance in the drag loop? Can it be removed? | **In it, but only ever out of MEASURED leftover budget** — the Exact rung plus a previous frame under half the budget — so it can never be why a drag is slow; on a 500-wire drag it is touched once, on release. Not removed outright, because freezing it for a whole gesture stepped the readout 2–15 % on release: |dC/dL| ≈ 0.4 rather than ≈ 0, and the errors compound | §4.4, WB16b |
+| O-21 | Where is the Touchstone export reached from, and can the frequency be set? | **A toolbar button in the wBond editor, beside Export DXF and Import Wires** — deliberately NOT an entry in the workspace's global File ▸ Export, whose siblings (GDSII, DXF, Gerber) are workspace-wide while this applies to one document type; it belongs with the buttons that are on screen exactly when a wBond is. The standalone binary's File ▸ Export reaches the same one method. **The frequency sweep was already in the dialog** — start, stop, points, linear/log — alongside the reference impedance and, now, the port basis; what was missing was a tooltip that said what the button produces | §11 |
+| O-20 | Why can't the Touchstone export carry the capacitance? | **It can, and the claim that it could not was wrong.** It was a property of the array-pair port basis — a floating pair has no terminal for a shunt to leave by — presented as a property of the physics. Touchstone's implicit common reference node IS the ground plane, so a port-per-TERMINAL export (3 arrays → 6 ports) carries the shunt capacitors exactly as the stamp places them. That basis is now the default; the compact array-pair form stays as an option and says in the file what it omits | §11, WB42 |
+| O-19 | The Frequency tooltip should not say "it never reaches the simulation" | **Replaced with what the control is** — the *inductance extraction frequency*. The fact remains true, keeps its code comment and keeps its test; it just is not what a user needs read to them | §6.8.1 |
+| O-16 | Does the panel need a frequency? | **Yes.** It never did before, because it reported a purely geometric quantity; with capacitance the terminal inductance genuinely moves with frequency, so the panel must say which one it is quoting. Default 10 GHz, GHz always, persisted in the `.wBond` — and it is a readout setting that must never reach `Stamp` | §6.8.1 |
 
 ### Open — for the owner
 

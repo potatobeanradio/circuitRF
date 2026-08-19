@@ -290,8 +290,11 @@ namespace CircuitRF.Ui.DataDisplay
             // (ContourSnapped) and every non-contour marker keep the original triangle glyph/sizing.
             bool isContourMode1 = marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped;
 
+            // The contour marker's NAME is the MXP/MXE letter size, for the same reason its disc is
+            // their radius — see ContourMarkerRadius. It was radius × 1.15, which tracked the floored
+            // radius and so drifted with it.
             float ts = isContourMode1
-                ? ContourMarkerRadius(canvasSize) * 1.15f
+                ? ContourRenderer.OptimumMarkerFontSize(canvasSize)
                 : SymbolTextSize(marker, canvasSize);
 
             using var glyphPath = new SKPath();
@@ -313,7 +316,7 @@ namespace CircuitRF.Ui.DataDisplay
                 using var ringPaint = new SKPaint
                 {
                     Color       = SKColors.Black,
-                    StrokeWidth = Math.Max(1f, ts * 0.08f),
+                    StrokeWidth = ContourRenderer.OptimumMarkerRingWidth(canvasSize),
                     Style       = SKPaintStyle.Stroke,
                     IsAntialias = true,
                 };
@@ -399,14 +402,32 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         /// <summary>
-        /// Canvas-proportional radius for a Mode-1 contour marker disc — mirrors harmonicaRF's
-        /// termination-marker geometry (<c>HarmonicaPanelRenderer.DrawMarkers</c>,
-        /// <c>r = max(6f, min(W,H) * 0.020)</c>) so the two read as the same on-screen size on an
-        /// equally-sized plot. Canvas-proportional only, per round-7 §2 — the canvas already
-        /// encodes zoom, so never multiply by zoomLevel here.
+        /// Canvas-proportional radius for a Mode-1 contour marker disc — <b>the MXP/MXE glyph's own
+        /// radius</b> (<see cref="ContourRenderer.OptimumMarkerRadius"/>), so the three read as one
+        /// family at every zoom level rather than only at one.
+        ///
+        /// <para><b>Revised 2026-08-18</b> (owner: <i>"reduce the marker render glyph size (and text)
+        /// to match the same as the MXP and MXE glyphs and font size at any zoom level. Currently, the
+        /// marker render size changes relative size to MXP/MXE glyphs depending on data display zoom
+        /// level"</i>). It was <c>max(6f, min(W,H) × 0.020)</c>, transcribed from harmonicaRF's
+        /// termination marker — 14 % larger than the MXP disc at a large plot, and the
+        /// <c>max(6f, …)</c> floor meant that below about a 300 px plot it stopped shrinking while
+        /// MXP/MXE kept going, reaching 1.71 × at 200 px. A floor is exactly what breaks
+        /// proportionality, so there is none now.</para>
+        ///
+        /// <para>Canvas-proportional only — the canvas already encodes zoom, so never multiply by a
+        /// zoom level here.</para>
         /// </summary>
         private static float ContourMarkerRadius((double W, double H) canvasSize)
-            => Math.Max(6f, (float)(Math.Min(canvasSize.W, canvasSize.H) * 0.020));
+            => ContourRenderer.OptimumMarkerRadius(canvasSize);
+
+        /// <summary>
+        /// <see cref="ContourMarkerRadius"/>, reachable from a test. The claim being gated is that the
+        /// marker glyph and the MXP/MXE glyph are the same size at EVERY canvas size, and that cannot
+        /// be asserted against a private method or inferred from a rendered pixel.
+        /// </summary>
+        internal static float ContourMarkerRadiusForTests((double W, double H) canvasSize)
+            => ContourMarkerRadius(canvasSize);
 
         /// <summary>
         /// Fill color for a Mode-1 contour marker disc: a Bone-colormap sample lightened toward
