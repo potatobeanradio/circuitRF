@@ -93,7 +93,45 @@ add an outer parametric sweep, a hand-edited bracket can address the wrong axis 
 not). So: prefer the **accessor** for durable hand-authored measurements; reach for the **bracket** when
 copy-pasting from a trace you already have on screen.
 
-### S-parameters: `i`/`j` are 1-based port numbers
+### 3. Pinning an axis by NAME: `at(x, "axis", index)`
+
+The accessor keeps every sweep axis by name, but **fixing** one is positional in both notations above —
+so a reference value ("the first drive point") is the one thing that still breaks when a sweep is added.
+`at` closes that gap: it pins ONE axis of any cube-valued expression **by name** and keeps the rest.
+
+```
+trans_phase = phase( HB1.V("Vout", 1) )
+AMPM        = trans_phase - at(trans_phase, "Pin", 0)
+```
+
+That pair is **one text at any sweep depth**:
+
+| Run | `trans_phase` | `at(trans_phase, "Pin", 0)` | `AMPM` |
+|---|---|---|---|
+| Pin swept | `[Pin]` | a single number | `[Pin]`, first point 0 |
+| RFfreq × Pin swept | `[RFfreq, Pin]` | `[RFfreq]` — **one reference per frequency** | `[RFfreq, Pin]`, each row starts at 0 |
+
+The second row is the point: `at` **keeps** RFfreq, and cube arithmetic broadcasts by axis name, so the
+subtraction lines each curve up with its own first point instead of one global number. Written
+positionally the same reference is `HB1.V("Vout", 1, 0)` with one sweep and `HB1.V("Vout", 1, All, 0)`
+with two — and the bracket form is `HB1.V[0, "Vout", 1]` / `HB1.V[0, 0, "Vout", 1]`.
+
+- **Negative index counts from the end**: `at(x, "Pin", -1)` is the last drive point, `-2` the one
+  before it. "Referenced to the top of the sweep" should not require knowing the sweep length.
+- Works on **any** cube-valued expression, not just an accessor — a bracket slice, an earlier
+  measurement by name, an arithmetic result.
+- **Deliberately strict.** A value with no such axis is an error naming the axes that *do* exist; a
+  scalar argument is an error too. Silently returning the value unchanged would make a mistyped axis
+  name — or a sweep that is switched off — read as "AM-PM is identically zero", which is the exact
+  failure mode this function exists to remove.
+
+> **Related trap, worth knowing.** Extra *accessor* arguments are silently ignored (the sweep loop is
+> bounded by the cube's actual sweep count). So `HB1.V("Vout", 1, All, 0)` — correct with an outer
+> RFfreq sweep — quietly means "**all** Pin points" when that sweep is absent, and the measurement
+> comes out identically 0 with no error anywhere. The bracket form errors instead ("expected 4 axis
+> tokens, got 3"), which is the safer failure. `at` has neither problem.
+
+### S-parameters: `i`/`j` are 1-based port numbers (both notations)
 
 An S-parameter cube has axes `[freq, i, j]` (plus a leading sweep axis when swept), where `i` is the
 response port and `j` the drive port. On **these two axes the index is the port number, 1-based** — the
@@ -137,7 +175,8 @@ What remains:
 - **Authoring (planned):** there is no way to create a measurement in the schematic UI yet —
   `tb.Measurements` is populated only via the `.cnl` `measure` lines today. The plan is a **MEAS
   Library component** (below); the vestigial `SchematicEditModel.Measurements` list is superseded by it.
-- **CLI evaluation:** the CLI run path does not evaluate measurements (UI-run only).
+- ~~CLI evaluation~~ — **done**: `Cli hb` evaluates the `measure` lines exactly as the GUI does and
+  prints each result cube (root `CLAUDE.md` §Build/test/run). Verified 2026-08-19.
 - **Lazy node back-solve:** see v1 limitations.
 
 ## Evaluation pipeline
@@ -220,7 +259,7 @@ path and can be retired or left inert.
 - **No lazy node back-solve.** The run wiring passes no back-solvers, so `V(node)` for un-probed
   linear-interior nodes is unavailable; qualified access against stored result cubes works. Wiring the
   HB/linear back-solvers through is a follow-on.
-- **UI-run only.** The CLI does not evaluate measurements yet.
+- ~~UI-run only~~ — superseded: `Cli hb` evaluates measurements too.
 - **Markers on measurement traces** follow the cube-bound trace rules (no network markers).
 
 ## Key files
@@ -229,6 +268,8 @@ path and can be retired or left inert.
   types (`Variable.cs` is the structural twin).
 - `src/Engine/MeasurementEvaluator.cs` — evaluation, scope chain, result-cube emission (`EvaluateInto`).
 - `src/Core/Expressions/MeasurementContext.cs` — analysis-result resolution + optional back-solvers.
+- `src/Core/Expressions/Evaluator.cs` — `EvalAt` (the `at` axis pin); `src/RfCore/Data/DataCube.cs` —
+  `At(axisName, index)` and the name-based broadcast (`ElementWise`/`UnionAxes`) it relies on.
 - `src/Core/Netlist/CnlWriter.cs` / `CnlReader.cs` — `measure` line round-trip.
 - `src/Ui/Schematic/SchematicRunService.cs` — run wiring: grouped-DataSet assembly + `measurements` group.
 - `src/Ui/Schematic/NetExtractor.cs` — (planned) MEAS-component row collection into `tb.Measurements`,

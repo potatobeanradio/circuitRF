@@ -256,6 +256,9 @@ public sealed class Evaluator
             // immittance (`complex(G, w*C)`), and the form FreqDeferral renders a resolved Complex
             // back into — so a deferred expression can be re-parsed by the model that evaluates it.
             "complex"   => EvalComplex(cl, scope),
+            // Cube-only: pin one axis BY NAME (measurements.md §3.2). Not a scalar function — it is
+            // the shape-independent counterpart of a positional slice.
+            "at"        => EvalAt(cl, scope),
             "dB"        => EvalDB20(cl, scope),     // 20·log10|z|
             "dB20"      => EvalDB20(cl, scope),     // alias: 20·log10|z|
             "dB10"      => EvalDB10(cl, scope),     // 10·log10|z|
@@ -620,6 +623,52 @@ public sealed class Evaluator
         var v = EvalExpr(cl.Args[0], scope);
         if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Imag());
         return v.Kind == ValueKind.Real ? new Value(0.0) : new Value(v.AsComplex().Imaginary);
+    }
+
+    /// <summary>
+    /// <c>at(x, "axis", index)</c> — pins one axis of a cube-valued expression BY NAME, keeping every
+    /// other axis. The reason it exists: a positional pin (<c>HB1.V("Vout", 1, 0)</c> or
+    /// <c>HB1.V[0, "Vout", 1]</c>) addresses a POSITION, so adding an outer parametric sweep silently
+    /// moves it to a different axis — or, in the bracket form, breaks the expression outright. With
+    /// <c>at</c>, an AM-PM referenced to the first drive point is ONE expression at any sweep depth:
+    /// <code>
+    ///   trans_phase = phase(HB1.V("Vout", 1))
+    ///   AMPM        = trans_phase - at(trans_phase, "Pin", 0)
+    /// </code>
+    /// <c>[RFfreq, Pin] − [RFfreq]</c> broadcasts by axis name, so the reference stays PER-FREQUENCY
+    /// rather than collapsing to one number for the whole run.
+    /// <para>A negative index counts from the end (−1 = last point).</para>
+    /// <para><b>Deliberately strict.</b> A value with no such axis is an error naming the axes there
+    /// are, never a silent no-op: returning the value unchanged would make a mistyped axis name — or a
+    /// sweep that is switched off — read as "AM-PM is identically zero", which is precisely the
+    /// failure mode this function was added to remove.</para>
+    /// </summary>
+    private Value EvalAt(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 3) throw new ArityException("at", 3, cl.Args.Length);
+
+        var v       = EvalExpr(cl.Args[0], scope);
+        var axisVal = EvalExpr(cl.Args[1], scope);
+        string axis = axisVal.Kind == ValueKind.String ? axisVal.AsString() : axisVal.ToString()!;
+
+        var idxVal = EvalExpr(cl.Args[2], scope);
+        if (idxVal.Kind != ValueKind.Real)
+            throw new ExpressionException($"at(): the index must be a number, e.g. at(x, \"{axis}\", 0).");
+        int index = (int)Math.Round(idxVal.AsReal());
+
+        if (v.Kind != ValueKind.Cube)
+            throw new ExpressionException(
+                $"at(): this value is a single number, so it has no '{axis}' axis to pin " +
+                "(the sweep may be switched off).");
+
+        try
+        {
+            return new Value(v.AsCube().At(axis, index));
+        }
+        catch (ArgumentException ex)          // unknown axis name, or index out of range
+        {
+            throw new ExpressionException($"at(): {ex.Message}");
+        }
     }
 
     private Value EvalMag(CallExpr cl, Scope scope)

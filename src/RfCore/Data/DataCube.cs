@@ -539,14 +539,35 @@ namespace RfCore.Data
             return Reduce(axisName, (a, b) => Math.Abs(a) > Math.Abs(b), isMin: false);
         }
 
+        /// <summary>
+        /// Pins one axis BY NAME to a single index and keeps every other axis — the shape-independent
+        /// counterpart to a positional slice. <c>c.At("Pin", 0)</c> on <c>[RFfreq, Pin]</c> yields
+        /// <c>[RFfreq]</c>, which then broadcasts back against the original by axis name (that is what
+        /// makes a per-frequency reference value expressible at all).
+        /// <para><paramref name="index"/> may be NEGATIVE, counting from the end: −1 is the last
+        /// point, −2 the one before it. "Referenced to the top of the sweep" is the same idiom as
+        /// "referenced to the start", and a caller should not have to know the length to say it.</para>
+        /// <para>Pinning the only axis leaves a RANK-0 cube, not a bare element — this used to
+        /// dereference a null <c>SliceResult.Cube</c> and throw a NullReferenceException, which is
+        /// exactly the no-sweep case a shape-independent expression hits first.</para>
+        /// </summary>
         public DataCube At(string axisName, int index)
         {
             int dim = AxisIndex(axisName);
+            int len = Axes[dim].Length;
+            int i   = index < 0 ? len + index : index;
+            if (i < 0 || i >= len)
+                throw new ArgumentOutOfRangeException(nameof(index),
+                    $"Index {index} is outside axis '{axisName}' (length {len}): " +
+                    $"use 0..{len - 1}, or -1..-{len} from the end.");
+
             var args = new object[Rank];
             for (int d = 0; d < Rank; d++)
-                args[d] = d == dim ? (object)index : (object)(..);
+                args[d] = d == dim ? (object)i : (object)(..);
             var result = Slice(args);
-            return result.Cube!;
+            if (result.IsCube) return result.Cube!;
+            return result.IsComplex ? Scalar(result.ComplexValue!.Value)
+                                    : Scalar(result.RealValue!.Value);
         }
 
         // ---- Stacking -------------------------------------------
@@ -614,7 +635,10 @@ namespace RfCore.Data
         {
             for (int d = 0; d < Rank; d++)
                 if (Axes[d].Name == name) return d;
-            throw new ArgumentException($"No axis named '{name}'.");
+            string available = Rank == 0
+                ? "this value has no axes (it is a single point)"
+                : $"available axes: {string.Join(", ", Axes.Select(a => a.Name))}";
+            throw new ArgumentException($"No axis named '{name}' — {available}.");
         }
 
         private void RequireComplex(string op)

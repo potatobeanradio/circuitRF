@@ -5,6 +5,57 @@ Going forward, a completed brief's detail lands here instead — one `##` sectio
 only for findings that are still true, still surprising, and would cost someone real time to
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+
+## `at(x, "axis", index)` — a reference value that survives adding a sweep (2026-08-19)
+
+Owner's question, and it is the right shape of question: *"AMPM = trans_phase − phase(HB1.V[0, "Vout", 1])
+works when only Pin is swept. Add an RFfreq sweep and it's invalid. Is there a single expression that
+works either way?"* The answer was **no**, and the reason is a real gap rather than a missing convenience.
+
+**The accessor is shape-independent for KEEPING axes and positional for FIXING one.** `HB1.V("Vout", 1)`
+locates node and harmonic by name and keeps every sweep, so it survives any sweep depth. But the
+reference term has to fix the Pin axis, and both notations fix by POSITION: `HB1.V("Vout", 1, 0)` /
+`HB1.V[0, "Vout", 1]` with one sweep become `HB1.V("Vout", 1, All, 0)` / `HB1.V[0, 0, "Vout", 1]` with
+two. There is no third spelling.
+
+**The two failure modes are asymmetric, and the quiet one is the dangerous one.** The bracket form
+ERRORS when the axis count changes ("expected 4 axis token(s), got 3") — that is what the owner saw. The
+accessor form does not: `EvalQualifiedAccessor`'s sweep loop is bounded by the cube's OWN sweep count,
+so surplus arguments are silently dropped. `HB1.V("Vout", 1, All, 0)` — correct with an outer RFfreq
+sweep — quietly means "all Pin points" without one, and AM-PM comes out identically 0.00 with nothing
+reported anywhere.
+
+**The capability already existed one layer down and was simply unreachable.** `DataCube.At(axisName,
+index)` pins by name and keeps the rest, and `ElementWise`/`UnionAxes` already broadcast by axis NAME —
+so `[RFfreq, Pin] − [RFfreq]` lines each curve up with its own reference. Both verified numerically
+before proposing the feature, not assumed. Exposing `at` as one evaluator function is therefore the
+whole fix:
+
+```
+trans_phase = phase(HB1.V("Vout", 1))
+AMPM        = trans_phase - at(trans_phase, "Pin", 0)
+```
+
+End-to-end on the owner's own netlist through `Cli hb`: `[RFfreq:3 × Pin:4]` with **every row starting
+at exactly 0** (a per-frequency reference, not one global number), and the single-sweep run reproducing
+the 2 GHz row value-for-value from the identical expression text.
+
+**Two things the wiring had to fix, both in the no-sweep direction.** `DataCube.At` did `result.Cube!`
+on a `SliceResult` — but pinning the ONLY axis leaves a bare element with a null `Cube`, so it threw a
+`NullReferenceException` on exactly the case a shape-independent expression hits first (one sweep, no
+RFfreq). It now returns a rank-0 cube. And `AxisIndex`'s "No axis named 'x'." said nothing about what
+was there; it now names the axes, because its callers are user expressions.
+
+**Strict by choice.** A missing axis, a scalar argument, and an out-of-range index are all errors — the
+last naming both usable ranges (`0..2, or -1..-3`). Returning the value unchanged would have made a
+mistyped axis name read as "AM-PM is identically zero", which is the very failure mode the function was
+added to remove. Negative indices count from the end (`-1` = last), because "referenced to the top of
+the sweep" should not require knowing the sweep length.
+
+Tests: `tests/Core.Tests/Expressions/AtAxisPinTests.cs` (10) — the same expression text against a
+`[Pin, …]` and a `[RFfreq, Pin, …]` fixture, the per-frequency reference, negative indexing, the rank-0
+result, and each refusal.
+
 ## Starting a worker is announced, once, before it starts (2026-08-19)
 
 Owner report: the first time a worker is launched to evaluate an external model there is no feedback

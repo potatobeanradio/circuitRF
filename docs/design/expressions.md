@@ -296,7 +296,9 @@ User-selectable per SDD model, for equations where the user prefers it or AD mis
 
 ## 13. Measurement extension (cube operands)
 
-Measurements use this same engine, with operands extended from scalars to **cube quantities** and a set of **accessor functions** whose arguments are hierarchical paths or indices: `V(path)`, `I(path)`, `S(i,j)`, plus spectral/FOM functions (`harm`, `tone`, `Pout`, `PAE`, `IMn`, `dB`, `dBm`, reductions like `max`). Paths (`X1.drain`) resolve against the elaborated node map. The full accessor/function library, result typing (`Real`/`Complex`), the `@ analysis` binding, and IMn extraction are specified in `measurements.md`; this note owns only the core grammar those extensions build on.
+Measurements use this same engine, with operands extended from scalars to **cube quantities** and a set of **accessor functions** whose arguments are hierarchical paths or indices: `V(path)`, `I(path)`, `S(i,j)`, plus spectral/FOM functions (`harm`, `tone`, `Pout`, `PAE`, `IMn`, `dB`, `dBm`, reductions like `max`), and **`at(x, "axis", index)`** — which pins one axis of a cube BY NAME (negative index counts from the end), the shape-independent counterpart of a positional slice. Like `dB`/`dBm`, `at` is a *measurement* function rather than a general built-in: it is meaningless on a scalar, and it is an error there rather than a no-op. Paths (`X1.drain`) resolve against the elaborated node map. The full accessor/function library, result typing (`Real`/`Complex`), the `@ analysis` binding, and IMn extraction are specified in `measurements.md`; this note owns only the core grammar those extensions build on.
+
+**Not part of this grammar: the Data Display trace spec's `vs` separator** (`Gain vs Pout`, plot-versus.md). It is split off *above* the expression engine — before any parsing — and each side is then handed to this engine unchanged. `vs` is therefore not an operator, has no precedence within an expression, and is invisible to every other consumer; a variable or cube may still be named `vs` (it must be written bracketed in a trace spec to be read as data).
 
 ---
 
