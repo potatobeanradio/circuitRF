@@ -689,13 +689,9 @@ public sealed class Elaborator
 
         foreach (var ov in inst.Overrides)
         {
-            // The selectors are ALWAYS verbatim, never tried as an expression first. Provider and
-            // Type name things; File is a path and Model is a name inside it. Falling back to
-            // verbatim only when evaluation throws is not enough for these: a path that happens to
-            // parse as arithmetic would be silently turned into a number.
             if (selectors.Contains(ov.Name))
             {
-                result[ov.Name] = new Value(ov.Expression.Trim().Trim('"'));
+                result[ov.Name] = ResolveExtDeviceSelector(ov.Expression, parentScope);
                 continue;
             }
 
@@ -710,6 +706,63 @@ public sealed class Elaborator
             }
         }
         return result;
+    }
+
+    /// <summary>A name and nothing else — the only form a reference can take here.</summary>
+    private static readonly Regex RxBareName = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// One selector's value: <c>Provider</c>, <c>Type</c>, <c>File</c> or <c>Model</c>.
+    ///
+    /// <para><b>These are NOT expression-evaluated, and that is deliberate</b> — Provider and Type
+    /// name things, File is a path and Model is a name inside it. A leading <c>/</c> alone stops the
+    /// expression parser at position 0, and falling back to verbatim only when evaluation throws is
+    /// not enough: a path that happens to parse as arithmetic would be silently turned into a
+    /// number.</para>
+    ///
+    /// <para><b>But verbatim must not swallow a REFERENCE, which is what it used to do.</b> A kit's
+    /// device cell declares its data file as a cell parameter and forwards it into the device by name
+    /// — <c>File=File</c> — which is the ordinary way a netlist passes a value down, and the only way
+    /// one part can be instantiated at several file-backed sizes. Taken verbatim the device is handed
+    /// the literal four characters <c>File</c>; owner-reported, as every operating point failing with
+    /// the worker's own log reading <c>File=File (NOT READABLE HERE)</c>.</para>
+    ///
+    /// <para><b>What separates the two is the QUOTING, which the netlist already states.</b> A
+    /// literal is quoted and is never looked up — not even when something in scope is spelled the
+    /// same. A bare name is resolved only when the scope actually binds it. Everything else — an
+    /// unquoted path, an enum value, a name nothing binds — is left exactly as it was, so nothing
+    /// that worked before behaves differently.</para>
+    /// </summary>
+    private Value ResolveExtDeviceSelector(string expression, Scope scope)
+    {
+        string text = expression.Trim();
+
+        if (text.Length >= 2 && text[0] == '"' && text[^1] == '"')
+            return new Value(text[1..^1]);
+
+        if (RxBareName.IsMatch(text) && scope.Lookup(text) is not null)
+        {
+            try
+            {
+                var value = _evaluator.Eval(text, scope, null);
+                // Handed on as TEXT whatever kind it resolved to: a selector names something, and
+                // ComponentModelFactory requires Provider and Type to be strings.
+                return value.Kind switch
+                {
+                    ValueKind.String => value,
+                    ValueKind.Real   => new Value(value.AsReal().ToString(
+                                            "R", System.Globalization.CultureInfo.InvariantCulture)),
+                    _                => new Value(value.ToString()),
+                };
+            }
+            catch
+            {
+                // A binding this layer cannot evaluate is not a reference it can use — fall through
+                // to verbatim, which is exactly what happened before.
+            }
+        }
+
+        return new Value(text.Trim('"'));
     }
 
     // ── Z_Port parameter resolution ───────────────────────────────────────────

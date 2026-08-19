@@ -225,12 +225,34 @@ public static class SchematicRenderer
 
             var (cpx, cpy) = ToPixel(cx, cy, panX, panY, zoom);
 
+            // LOD substitutes a filled rectangle for a symbol too small to read. Both the DECISION and
+            // the rectangle come from this component's OWN glyph box, never from the nominal built-in
+            // size the zoom thresholds are expressed in.
+            //
+            // **An imported kit's symbol is routinely ten times a built-in's size** — one measured
+            // real part is 3,275 x 3,375 world units against a built-in's ~300 x 400 — so a rectangle
+            // sized from the nominal width replaced a part that was still 65 pixels across with a
+            // 4-pixel speck, and the part read as having stopped rendering at exactly the zoom where
+            // everything around it was still perfectly legible. Owner-reported.
             if (isLod)
             {
-                float hw = (float)(compPixW * 0.35f);
-                float hh = (float)(zoom * 100 * 0.35f);
-                canvas.DrawRect(SKRect.Create(cpx - hw, cpy - hh, hw * 2, hh * 2), lodPaint);
-                continue;
+                double gwPx = Math.Max(0.0, c.GlyphBbMaxX - c.GlyphBbMinX) * zoom;
+                double ghPx = Math.Max(0.0, c.GlyphBbMaxY - c.GlyphBbMinY) * zoom;
+
+                // Only genuinely unreadable artwork is stood in for. A symbol still large on screen
+                // is drawn — the cost of a handful of those is nothing next to a part disappearing.
+                if (Math.Max(gwPx, ghPx) < LodThreshold)
+                {
+                    // Centred on the glyph, not on the component origin: a kit symbol's artwork is
+                    // often nowhere near its origin, so the two are not interchangeable.
+                    double dx = cx - c.X, dy = cy - c.Y;
+                    var (gx0, gy0) = ToPixel(c.GlyphBbMinX + dx, c.GlyphBbMinY + dy, panX, panY, zoom);
+                    float hw = (float)Math.Max(1.0, gwPx * 0.35);
+                    float hh = (float)Math.Max(1.0, ghPx * 0.35);
+                    float mx = (float)(gx0 + gwPx * 0.5), my = (float)(gy0 + ghPx * 0.5);
+                    canvas.DrawRect(SKRect.Create(mx - hw, my - hh, hw * 2, hh * 2), lodPaint);
+                    continue;
+                }
             }
 
             // Body: dispatch on CellRefState for cell-reference components; built-in path unchanged.

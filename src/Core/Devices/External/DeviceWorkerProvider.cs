@@ -60,7 +60,7 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
         string               name,
         string               executablePath,
         IEnumerable<string>? arguments = null)
-        => new(name, ProcessDeviceWorkerTransport.Start(executablePath, arguments));
+        => new(name, ProcessDeviceWorkerTransport.Start(executablePath, arguments, forProvider: name));
 
     public string Name { get; }
 

@@ -5,6 +5,95 @@ Going forward, a completed brief's detail lands here instead — one `##` sectio
 only for findings that are still true, still surprising, and would cost someone real time to
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Starting a worker is announced, once, before it starts (2026-08-19)
+
+Owner report: the first time a worker is launched to evaluate an external model there is no feedback
+at all.
+
+**It is the one step in evaluating an external model that a user waits on and cannot see.** The
+worker process starts, loads the vendor's model library and describes its device types — and on macOS
+all of that happens inside the Linux VM circuitRF ships, which has to boot first. Until it finishes, a
+run proceeding perfectly normally is indistinguishable from one that has hung, and the next thing
+printed is whatever the run says NEXT, which is a result or a failure and never mentions the worker.
+
+**`ProcessDeviceWorkerTransport.Starting`**, a static event carrying a `DeviceWorkerStart(Provider,
+Command)`. Three things about the placement are load-bearing:
+
+- **Raised immediately BEFORE `Process.Start`, not after.** The wait is the whole reason for
+  announcing it; a message that waited for a successful start would arrive after the thing it
+  explains, and would be missing entirely from the case a user most needs it in — a start that never
+  completes.
+- **At the process, not at the provider lookup.** `ExternalDeviceRegistry.Find` keeps what it
+  resolved, so a design placing forty devices from one kit starts one worker and gets one line. That
+  is what makes "once" true without anything having to remember whether it has spoken. A worker
+  genuinely started a second time — a different kit, or the same kit after the workspace changed — is
+  a second thing happening and is reported as one.
+- **Structured, not a formed sentence.** How it is worded belongs to whoever shows it; a headless
+  host may want it in a different shape entirely. `src/Ui`'s `WorkspaceViewModel` subscribes once, in
+  its constructor, beside the other process-lifetime static it already listens to, and posts through
+  the dispatcher because this arrives on whatever thread the run is on.
+
+A subscriber that throws is swallowed: a host's own reporting must never be the reason a worker fails
+to start, because the failure would then be attributed to the kit, and the kit would be fine.
+
+**Gate:** `tests/Core.Tests/Devices/External/DeviceWorkerStartNotificationTests.cs`, 5 tests —
+announced before the process exists (checked by starting a path that is deliberately not an
+executable, so the announcement has to precede the failure), one event per started process, a caller
+with no provider name still announces, a throwing subscriber does not stop the worker, and a second
+lookup of the same provider starts nothing and says nothing. The UI half is a source-level check in
+`tests/Ui.Tests/KitLayoutGeneratorRefreshTests.cs`, since the event means nothing until something
+subscribes and the subscription is one line in a constructor.
+
+## An ExtDevice selector taken verbatim swallowed a REFERENCE, not just a literal (2026-08-19)
+
+Owner report: a kit transistor that used to simulate failed every operating point, and the worker's
+own per-create log read:
+
+```
+create <TYPE>: File=File (NOT READABLE HERE)
+create <TYPE>: TSNK=-1 (supplied)
+create <TYPE>: RTH=1e-06 (supplied)
+create <TYPE>: probe eval at zero bias FAILED
+```
+
+**The `File` parameter arrived as the literal four characters `File`.** The numeric parameters beside
+it — and they varied correctly per device, so the design was plainly reaching the model — did not,
+which is what makes this read as a model or a bias problem rather than a plumbing one.
+
+**Root cause.** `Elaborator.ResolveExtDeviceParameters` treats `Provider`, `Type`, `File` and `Model`
+as SELECTORS and stored them **verbatim, never evaluated**. That rule exists for good reasons and
+they are still good: a path is not an expression (a leading `/` alone stops the parser at position 0
+— the same trap `SnP`'s `File=` hit), and falling back to verbatim only when evaluation throws is not
+enough, because a path that happens to parse as arithmetic would be silently turned into a number.
+
+What the rule did not allow for is that `File=File` is not a literal at all. It is the ordinary way a
+netlist passes a value down: the kit's device cell declares its data file as a cell parameter and
+forwards it into the device by name, which is the only way one part can be instantiated at several
+file-backed sizes. Verbatim turned the reference into its own name.
+
+**Fix: the QUOTING decides, and the netlist already states it.**
+
+- Quoted → a literal, always. Never looked up, not even when something in scope is spelled the same.
+- A bare name the scope BINDS → resolved through the ordinary evaluator, in the scope the device sits
+  in, so both an instance override and a cell's declared default work, at any nesting depth. Handed
+  on as text whatever kind it resolved to, because `ComponentModelFactory` requires `Provider` and
+  `Type` to be strings.
+- Anything else — an unquoted path, an enum value, a name nothing binds — is left exactly as it was.
+
+So nothing that worked before changes, and this is a reading of the netlist rather than a heuristic
+about it.
+
+**Verified against the reported design end to end**, by elaborating its real `.cnl` against a stub
+provider: five devices, each now handed its own correct `.mdl` path, with the thermal parameters
+differing per device as the design says. Before the fix all five got `File`.
+
+**Gate:** `tests/Core.Tests/Devices/External/ExtDeviceSelectorForwardingTests.cs`, 8 tests — four for
+the forwarding (one instance, two instances at different files, the cell's declared default, and the
+non-selector parameters that were already right and must stay so) and four for what must NOT change
+(a quoted literal is never looked up even when a scope binding shares its spelling; an unquoted path
+stays verbatim; a bare name nothing binds stays verbatim; `Provider`/`Type` follow the same rule).
+The first four were confirmed to fail before the change and the last four to pass throughout.
+
 ## The SDD evaluator: what `dut.Evaluate` actually costs, and what closing the gap bought (brief-harmonicarf-r3b §1, 2026-08-13)
 
 **The measurement that started this:** on the shipped default harmonicaRF document (Hero 2's GaN

@@ -395,7 +395,42 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // _techCache), so this subscribes exactly once, ever; never re-subscribed per workspace reset.
         CellLayoutResolver.LiveViewChanged += OnCellLayoutLiveViewChanged;
 
+        // Same shape and the same reason: a process-lifetime static, subscribed once.
+        ProcessDeviceWorkerTransport.Starting += OnDeviceWorkerStarting;
+
         Messages.Info("circuitRF ready.");
+    }
+
+    /// <summary>
+    /// Says that a worker is being started, once per worker.
+    ///
+    /// <para><b>The gap this closes.</b> Starting a worker is the one step in evaluating an external
+    /// model that a user waits on and cannot see — the model library is loaded and its device types
+    /// read, and on a Mac that happens inside a virtual machine which has to boot first. Until it
+    /// finishes, a run that is proceeding normally looks exactly like one that has hung, and the
+    /// first thing printed after it is whatever the run says NEXT, which is usually a result or a
+    /// failure and never mentions the worker.</para>
+    ///
+    /// <para><b>Once, and only once.</b> The event is raised where the process is actually created,
+    /// and the registry keeps what it resolved — so every device after the first uses the worker
+    /// already running and nothing further is said. A worker genuinely started a second time (a
+    /// different kit, or the same one after the workspace changed) is a second thing happening and
+    /// is reported as one.</para>
+    ///
+    /// <para>Posted through the dispatcher: this arrives on whichever thread the run is on.</para>
+    /// </summary>
+    private void OnDeviceWorkerStarting(DeviceWorkerStart start)
+    {
+        string forWhat = string.IsNullOrWhiteSpace(start.Provider)
+            ? "an external device model"
+            : $"'{start.Provider}'";
+
+        string text = $"Starting the worker that evaluates {forWhat} " +
+                      $"({Path.GetFileName(start.Command)}). The first device waits for it to load " +
+                      "its models; the rest of the run does not.";
+
+        if (Dispatcher.UIThread.CheckAccess()) Messages.Info(text);
+        else Dispatcher.UIThread.Post(() => Messages.Info(text));
     }
 
     // ---- Technology resolution (L0c) ------------------------------------------
@@ -437,6 +472,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try { previous?.Dispose(); } catch { /* teardown must not fail a workspace switch */ }
 
         _pcellTrust = null;
+        KitLayoutGenerators.SetRefresher(null);
         if (string.IsNullOrWhiteSpace(workspaceRootDir)) { ReloadPCellGeneratorsCommand.NotifyCanExecuteChanged(); return; }
 
         try
@@ -466,6 +502,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 .Where(k => trust.Decide(k.Directory) == CircuitRF.Ui.Layout.PCells.Wire.PCellTrustDecision.Unknown)
                 .ToList();
             if (pending.Count > 0) RequestPCellConsent(pending);
+
+            // Asked when a part is resolved against a map the background reading has not filled yet.
+            // See KitLayoutGenerators.SetRefresher for why a lookup is allowed to trigger a reading.
+            KitLayoutGenerators.SetRefresher(RefreshPCellGeneratorsNow);
 
             RefreshPCellPaletteItems();
         }
@@ -534,6 +574,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
 
             RefreshAllOpenLayoutTech();
+            // The kits could not be listed while they were untrusted, so the palette and the
+            // part-to-cell map were both built from nothing. Read them again now they may run.
+            RefreshPCellPaletteItems();
             Messages.Success($"Generated artwork from {Plural(pending.Count, "kit")} is allowed to run on this machine.");
         }, DispatcherPriority.Background);
     }
@@ -602,6 +645,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         RefreshAllOpenLayoutTech();
+
+        // What the resolver offers has just been re-decided, so which layout cell each kit part
+        // places has to be re-decided with it. Without this a kit whose cell library was declared
+        // during THIS session — the ordinary shape of importing a kit into an open workspace —
+        // keeps an empty generator map for the rest of it, and every part placed from it is reported
+        // as having no artwork.
+        RefreshPCellPaletteItems();
 
         Messages.Success(repointed > 0
             ? $"Generated artwork reloaded — {Plural(repointed, "placed cell")} moved to newly generated artwork."
@@ -3706,69 +3756,147 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     ///
     /// <para>Listing may START a kit's interpreter (a script's own <c>describe</c> is the only source
     /// of its generator list), so it runs off the UI thread and publishes back on it.</para>
+    ///
+    /// <para><b>Every path that can change what the resolver would answer calls this</b> — the
+    /// workspace opening, a kit declaring its cell library for the first time, a reload, and consent
+    /// being granted. It used to be reachable only from the workspace-path change, so a kit imported
+    /// into an already-open workspace never got its layout cells into
+    /// <see cref="KitLayoutGenerators"/>: its parts placed on a schematic, and every one of them was
+    /// then reported as having no artwork until the workspace was closed and reopened.</para>
     /// </summary>
     private void RefreshPCellPaletteItems()
     {
         var resolver = _pcellResolver;
         if (resolver is null) return;
 
+        // Which refresh this is. A slower earlier pass must not land on top of a later one and
+        // republish what the resolver said before a rescan — the symptom would be a palette and a
+        // generator map describing a kit that has since been reloaded.
+        int generation = ++_pcellRefreshGeneration;
+
         _ = Task.Run(() =>
         {
-            IReadOnlyDictionary<string, string> byKit;
-            try { byKit = resolver.KitNameByGeneratorId; }
-            catch (Exception ex)
+            if (CollectPCellGeneratorInfo(resolver, out var byKit, out var models, out var declared,
+                                          out string? problem) is false)
             {
-                Dispatcher.UIThread.Post(() =>
-                    Messages.Warning($"A kit's parametric cells could not be listed for the palette: {ex.Message}"));
+                if (problem is not null)
+                    Dispatcher.UIThread.Post(() => Messages.Warning(problem));
                 return;
-            }
-
-            var builtIn = new HashSet<string>(
-                CircuitRF.Ui.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
-
-            // Read on this thread, where a generator may still be asked to describe itself. A model
-            // name a generator does not declare is simply absent — most do not, and the match step
-            // that reads this is defined to do nothing without one.
-            var models = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            // What each cell ACCEPTS — read from the SAME declaration, so it costs nothing beyond the
-            // describe already being paid for. KitPaletteMerge's fourth step needs it; see there.
-            var declaredParams = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var gid in byKit.Keys)
-            {
-                if (builtIn.Contains(gid)) continue;
-                try
-                {
-                    if (resolver.DeclaredDefaults(gid) is not { } d) continue;
-
-                    declaredParams[gid] = [.. d.Keys];
-
-                    if (d.FirstOrDefault(kv => string.Equals(kv.Key, "model", StringComparison.OrdinalIgnoreCase))
-                           is { Key: not null } hit
-                        && hit.Value.ToString() is { Length: > 0 } raw)
-                    {
-                        // A declared default is a kinded value; the model name is its text.
-                        int colon = raw.IndexOf(':');
-                        models[gid] = (colon >= 0 ? raw[(colon + 1)..] : raw).Trim();
-                    }
-                }
-                catch { /* one generator that will not describe itself must not cost the others */ }
             }
 
             Dispatcher.UIThread.Post(() =>
             {
-                _pcellGeneratorKits.Clear();
-                _pcellGeneratorModels.Clear();
-                foreach (var kv in byKit)
-                    if (!builtIn.Contains(kv.Key))
-                        _pcellGeneratorKits[kv.Key] = kv.Value;
-                foreach (var kv in models)
-                    _pcellGeneratorModels[kv.Key] = kv.Value;
-                _pcellGeneratorParameters.Clear();
-                foreach (var kv in declaredParams)
-                    _pcellGeneratorParameters[kv.Key] = kv.Value;
-                PublishKitPaletteItems();
+                if (generation != _pcellRefreshGeneration) return;
+                ApplyPCellGeneratorInfo(byKit, models, declared);
             });
         });
+    }
+
+    /// <summary>Counts the refreshes started, so a superseded one can be discarded when it lands.</summary>
+    private int _pcellRefreshGeneration;
+
+    /// <summary>
+    /// Asks <paramref name="resolver"/> what its kits offer. Does no UI work of its own, so the same
+    /// reading serves the background refresh and the synchronous fallback below.
+    /// </summary>
+    private static bool CollectPCellGeneratorInfo(
+        CircuitRF.Ui.Layout.PCells.Wire.PCellWorkerResolver resolver,
+        out IReadOnlyDictionary<string, string> byKit,
+        out Dictionary<string, string> models,
+        out Dictionary<string, IReadOnlyList<string>> declaredParams,
+        out string? problem)
+    {
+        models         = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        declaredParams = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        problem        = null;
+
+        try { byKit = resolver.KitNameByGeneratorId; }
+        catch (Exception ex)
+        {
+            byKit   = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            problem = $"A kit's parametric cells could not be listed for the palette: {ex.Message}";
+            return false;
+        }
+
+        var builtIn = new HashSet<string>(
+            CircuitRF.Ui.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
+
+        // A model name a generator does not declare is simply absent — most do not, and the match
+        // step that reads this is defined to do nothing without one.
+        foreach (var gid in byKit.Keys)
+        {
+            if (builtIn.Contains(gid)) continue;
+            try
+            {
+                if (resolver.DeclaredDefaults(gid) is not { } d) continue;
+
+                // What each cell ACCEPTS — read from the SAME declaration, so it costs nothing
+                // beyond the describe already being paid for. KitPaletteMerge's fourth step needs
+                // it; see there.
+                declaredParams[gid] = [.. d.Keys];
+
+                if (d.FirstOrDefault(kv => string.Equals(kv.Key, "model", StringComparison.OrdinalIgnoreCase))
+                       is { Key: not null } hit
+                    && hit.Value.ToString() is { Length: > 0 } raw)
+                {
+                    // A declared default is a kinded value; the model name is its text.
+                    int colon = raw.IndexOf(':');
+                    models[gid] = (colon >= 0 ? raw[(colon + 1)..] : raw).Trim();
+                }
+            }
+            catch { /* one generator that will not describe itself must not cost the others */ }
+        }
+
+        return true;
+    }
+
+    /// <summary>Records what a reading found and republishes. UI thread.</summary>
+    private void ApplyPCellGeneratorInfo(
+        IReadOnlyDictionary<string, string> byKit,
+        IReadOnlyDictionary<string, string> models,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> declaredParams)
+    {
+        var builtIn = new HashSet<string>(
+            CircuitRF.Ui.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
+
+        _pcellGeneratorKits.Clear();
+        _pcellGeneratorModels.Clear();
+        _pcellGeneratorParameters.Clear();
+        foreach (var kv in byKit)
+            if (!builtIn.Contains(kv.Key))
+                _pcellGeneratorKits[kv.Key] = kv.Value;
+        foreach (var kv in models)
+            _pcellGeneratorModels[kv.Key] = kv.Value;
+        foreach (var kv in declaredParams)
+            _pcellGeneratorParameters[kv.Key] = kv.Value;
+
+        PublishKitPaletteItems();
+    }
+
+    /// <summary>
+    /// The last-resort reading, taken on the thread that asked. Installed as
+    /// <see cref="KitLayoutGenerators.SetRefresher"/>'s hook, so a part being resolved against a map
+    /// that is still empty gets an answer instead of "this kit says nothing about its layout cells".
+    ///
+    /// <para><b>Costs nothing once the background pass has landed</b> — it returns immediately when
+    /// the generator map is already populated, which is the ordinary case. It is only reached in the
+    /// window between a kit being declared and its interpreter having answered, and starting one here
+    /// is no more than the <c>PCellRegistry.TryGet</c> immediately after it would do anyway.</para>
+    /// </summary>
+    private bool RefreshPCellGeneratorsNow()
+    {
+        if (_pcellGeneratorKits.Count > 0) return false;
+        if (_pcellResolver is not { } resolver) return false;
+
+        if (!CollectPCellGeneratorInfo(resolver, out var byKit, out var models, out var declared, out _))
+            return false;
+        if (byKit.Count == 0) return false;
+
+        // Counts as a refresh, so a background pass started BEFORE this one is discarded when it
+        // lands rather than replacing a newer reading with an older one.
+        _pcellRefreshGeneration++;
+        ApplyPCellGeneratorInfo(byKit, models, declared);
+        return true;
     }
 
     /// <summary>Publishes the kit section of the palette — one tile per part, carrying every view

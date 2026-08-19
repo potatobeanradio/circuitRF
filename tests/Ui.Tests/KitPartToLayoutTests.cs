@@ -77,14 +77,18 @@ public sealed class KitPartToLayoutTests : IDisposable
         Assert.Contains("X1", warning);
         Assert.Contains(Kit,  warning);
         Assert.Contains(Part, warning);
-        // Not merely that there is none: a kit routinely SHIPS layout cells and simply does not say
-        // which one this part is (see KitPaletteMerge). So the message names the recovery — the cells
-        // are on the palette — rather than reading as "this part has no artwork anywhere".
-        Assert.Contains("does not say which of its layout cells", warning);
-        Assert.Contains("Library palette", warning);
+        Assert.Contains("no layout cell", warning);
 
         // The old message sent the user looking for a folder that was never supposed to exist.
         Assert.DoesNotContain("referenced cell not found", warning);
+
+        // SHORT, and that is the point of this half. This line used to carry three clauses telling
+        // the user to go and drop the cell from the palette themselves — written when the pairing
+        // rules were routinely failing to match a kit's parts to its cells at all. Once the pairing
+        // works, a part that reaches here is a MODEL-ONLY part (a parasitic capacitance, a technology
+        // include) with no artwork to place, and a paragraph of recovery advice per placed part is
+        // noise. If a kit's cells stop being paired, that is KitPaletteMerge's business.
+        Assert.True(warning.Length < 120, $"the skip line is {warning.Length} characters: {warning}");
     }
 
     /// <summary>

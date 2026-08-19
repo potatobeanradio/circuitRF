@@ -1,3 +1,5 @@
+using System;
+
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
@@ -45,13 +47,55 @@ public static class KitLayoutGenerators
     }
 
     /// <summary>
+    /// How to take the reading again, for the one caller that cannot wait for it.
+    ///
+    /// <para><b>Why a lookup is allowed to trigger work at all.</b> The map is filled from a reading
+    /// that has to START a kit's interpreter, so it is taken off the UI thread and lands whenever it
+    /// lands. Every lookup before then would otherwise answer "this kit names no layout cell for that
+    /// part" — which is indistinguishable from the kit genuinely having none, and is what a user sees
+    /// as their artwork silently not appearing. Asking once, here, turns a timing question into an
+    /// answer.</para>
+    ///
+    /// <para>The hook is expected to be cheap when the map is already populated, and to return false
+    /// when it published nothing — <see cref="For"/> asks at most once per lookup either way.</para>
+    /// </summary>
+    public static void SetRefresher(Func<bool>? refresh)
+    {
+        lock (_gate) _refresh = refresh;
+    }
+
+    private static Func<bool>? _refresh;
+
+    /// <summary>Guards the hook against re-entering itself: it publishes, and publishing must not
+    /// be able to ask for a refresh in the middle of one.</summary>
+    [ThreadStatic] private static bool _refreshing;
+
+    /// <summary>
     /// The generator this part places, or null when the kit supplies no layout cell for it — which is
     /// an ordinary state, not a fault, and is what the caller reports.
     /// </summary>
     public static string? For(string kitName, string partId)
     {
+        string reference = PdkKitRegistry.RefFor(kitName, partId);
+
+        Func<bool>? refresh;
         lock (_gate)
-            return _byRef.GetValueOrDefault(PdkKitRegistry.RefFor(kitName, partId));
+        {
+            if (_byRef.TryGetValue(reference, out string? known)) return known;
+            refresh = _refreshing ? null : _refresh;
+        }
+
+        // A miss may mean the kit has no layout cell for this part — an ordinary state — or that
+        // nothing has been read yet. Only the second is worth doing anything about, and the hook
+        // itself is what tells the two apart.
+        if (refresh is null) return null;
+
+        _refreshing = true;
+        try { if (!refresh()) return null; }
+        catch { return null; }   // a reading that fails is a miss, never the caller's problem
+        finally { _refreshing = false; }
+
+        lock (_gate) return _byRef.GetValueOrDefault(reference);
     }
 
     /// <summary>

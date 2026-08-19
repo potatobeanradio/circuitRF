@@ -258,9 +258,8 @@ public static class PdkPartInstaller
     }
 
     /// <summary>
-    /// The compiled Verilog-A artefacts this kit's devices can be evaluated by — the kit's own tree
-    /// first, widening outward only if that finds nothing, and finally the folders the workspace has
-    /// been TOLD hold model libraries.
+    /// The compiled Verilog-A artefacts this kit's devices can be evaluated by — the kit's own tree,
+    /// and then the folders the workspace has been TOLD hold model libraries.
     ///
     /// <para><b>Nothing here resolves an artefact by a kit-relative path, and that is the load-bearing
     /// rule.</b> A kit of this shape ships Verilog-A SOURCES and expects them compiled; where the
@@ -270,18 +269,25 @@ public static class PdkPartInstaller
     /// a fact to depend on. Being told is what covers the rest, which is the same bargain
     /// <see cref="DeviceLibraryDiscovery"/> already strikes for the other worker's libraries.</para>
     ///
-    /// <para><b>Widening only when the narrower search found nothing</b> is that class's rule too, and
-    /// for its reason: the further out the walk goes the less that territory has to do with this kit,
-    /// and eventually it matches by accident.</para>
+    /// <para><b>THE SEARCH DOES NOT WALK UP, and that is the whole point of this rule.</b> It used to
+    /// widen to two ancestor levels — the same bargain the proprietary library search strikes — and
+    /// that is wrong for an artefact of this shape. A `.osdi` file is one compiled model, not a kit's
+    /// library, so it carries nothing that ties it to the kit it was found near; a folder holding
+    /// several unpacked kits therefore serves every one of them the FIRST kit's models. Measured on a
+    /// real pair of kits sitting side by side: importing a compiled-model-library kit found seven
+    /// artefacts belonging to an unrelated open-process kit two levels up, took the compiled-Verilog-A
+    /// branch below on the strength of them, and the kit's own devices then failed at Run with the
+    /// provider naming a device type from the other kit. An ancestor is a coincidence; the kit's own
+    /// tree and the folders the workspace was TOLD about are statements.</para>
     /// </summary>
     private static IReadOnlyList<OsdiModel> FindCompiledModels(
         string kitRoot, IReadOnlyList<string>? libraryRoots,
-        List<string> notes, List<string> diags, int ancestorLevels = 2)
+        List<string> notes, List<string> diags)
     {
         string? worker = ShippedOsdiWorker();
         if (worker is null) return [];   // this build ships no OSDI worker: nothing to ask.
 
-        foreach (string root in SearchRoots(kitRoot, ancestorLevels).Concat(libraryRoots ?? []))
+        foreach (string root in SearchRoots(kitRoot, levels: 0).Concat(libraryRoots ?? []))
         {
             var problems = new List<string>();
             var found    = OsdiModelDiscovery.Find([root], worker, problems);
@@ -804,7 +810,12 @@ public static class PdkPartInstaller
     /// dropped there is the one used. A manifest written by 3 names whichever map was found under
     /// the old order and would keep naming it — runnable, and pointing at the wrong file.</para>
     /// </summary>
-    private const int GeneratedFormat = 4;
+    // 5: settings derived under the rule that let the compiled-model search walk up two ancestor
+    //    levels. Those can name an unrelated kit's artefact (see FindCompiledModels), and a workspace
+    //    carrying one is not repaired by fixing the search alone — the recorded answer wins on every
+    //    open. Bumping is what makes circuitRF's OWN earlier working-out be redone; a kit's settings
+    //    and a user's edits are untouched either way. See KeepIfStillCurrent.
+    private const int GeneratedFormat = 5;
 
     // ── Symbol installation ───────────────────────────────────────────────────
 

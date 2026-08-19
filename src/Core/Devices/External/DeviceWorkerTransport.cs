@@ -46,6 +46,15 @@ public interface IDeviceWorkerTransport : IDisposable
 }
 
 /// <summary>
+/// A worker process about to be started: which provider it will serve (empty when the caller has no
+/// name for it) and the executable being run. See <see cref="ProcessDeviceWorkerTransport.Starting"/>.
+///
+/// <para>Structured rather than a formed sentence: how this is worded belongs to whoever shows it,
+/// and a headless host may want to log it in a different shape entirely.</para>
+/// </summary>
+public readonly record struct DeviceWorkerStart(string Provider, string Command);
+
+/// <summary>
 /// A worker running as a local child process, spoken to over its standard input and output.
 ///
 /// <para><b>Why stderr is drained on a thread.</b> A worker logs to its error stream. Nobody
@@ -80,15 +89,37 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     }
 
     /// <summary>
+    /// Raised immediately BEFORE a worker process is created, once per process.
+    ///
+    /// <para><b>Why a host wants this.</b> Starting a worker is the one step in evaluating an
+    /// external model that a user waits on and cannot see: the library is loaded, its device types
+    /// are described, and on a Mac the whole thing happens inside a virtual machine that has to boot
+    /// first. Until it finishes, a run that is working normally is indistinguishable from one that
+    /// has hung. Announcing it costs one line and is only ever emitted once per provider, because the
+    /// registry keeps what it resolved (<see cref="ExternalDeviceRegistry.Find"/>) — every device
+    /// after the first uses the worker already running.</para>
+    ///
+    /// <para>Raised BEFORE the process is created rather than after, because the wait is the whole
+    /// point of raising it. A subscriber that throws is ignored: a host's own reporting must never be
+    /// the reason a worker fails to start.</para>
+    /// </summary>
+    public static event Action<DeviceWorkerStart>? Starting;
+
+    /// <summary>
     /// Start a worker executable and connect to it.
     /// </summary>
     /// <param name="executablePath">Path to the worker binary. Supplied at runtime, never baked in.</param>
     /// <param name="arguments">Arguments the worker needs — typically which model library to load.</param>
     /// <param name="workingDirectory">Working directory, or null to inherit.</param>
+    /// <param name="forProvider">
+    /// Which provider this worker will serve, for <see cref="Starting"/>. Empty when the caller has
+    /// no name to give — a message can still be written, it just says less.
+    /// </param>
     public static ProcessDeviceWorkerTransport Start(
         string               executablePath,
         IEnumerable<string>? arguments        = null,
-        string?              workingDirectory = null)
+        string?              workingDirectory = null,
+        string?              forProvider      = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
 
@@ -104,6 +135,9 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
 
         foreach (string a in arguments ?? []) info.ArgumentList.Add(a);
         if (!string.IsNullOrEmpty(workingDirectory)) info.WorkingDirectory = workingDirectory;
+
+        try { Starting?.Invoke(new DeviceWorkerStart(forProvider ?? "", executablePath)); }
+        catch { /* a host's own reporting must never stop a worker from starting */ }
 
         Process process;
         try

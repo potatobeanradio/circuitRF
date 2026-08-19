@@ -13,6 +13,9 @@ namespace CircuitRF.Ui.Tests;
 /// reproduce in miniature: a wrapper package whose cells live in a subpackage, and a kit that names
 /// its schematic part and its layout cell differently while both name the same model.</para>
 /// </summary>
+// KitLayoutGenerators is process-wide and this class publishes into it; serialized with everything
+// else that reads it, for the reason PdkToolsDirectoryCollection already records.
+[Collection(PdkToolsDirectoryCollection.Name)]
 public sealed class KitLayoutArtworkTests
 {
     private static string TempDir()

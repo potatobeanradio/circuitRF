@@ -21,6 +21,7 @@ namespace CircuitRF.Core.Tests.Devices.External;
 /// selector: it is dropped from what reaches the model, the model falls back to its own default, and
 /// a p-channel device silently becomes an n-channel one that converges perfectly.</para>
 /// </summary>
+[Collection(ExternalProviderRegistryCollection.Name)]
 public sealed class ReservedSelectorNameTests : IDisposable
 {
     public void Dispose() => ExternalDeviceRegistry.Clear();

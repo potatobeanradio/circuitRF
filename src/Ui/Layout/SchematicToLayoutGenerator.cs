@@ -367,11 +367,13 @@ public static class SchematicToLayoutGenerator
 
             if (!PCellRegistry.TryGet(kitGenerator, out _))
             {
-                resolveWarning = $"the kit \"{kitName}\" supplies a schematic symbol for \"{partId}\" " +
-                                 "but does not say which of its layout cells that part is, so the " +
-                                 "artwork cannot be chosen for you — drop the one you want from the " +
-                                 "Library palette, where the kit's layout cells are listed under its " +
-                                 "own heading";
+                // Short, because by the time this is reached it is an ordinary fact about the kit
+                // rather than something to fix: a model-only part (a parasitic capacitance, a
+                // technology include) has no artwork to place, and the earlier long explanation was
+                // written for a period when the pairing itself was routinely failing. If a kit's
+                // cells are not being paired at all, that is KitPaletteMerge's business, not a
+                // sentence to put in front of a user once per placed part.
+                resolveWarning = $"the kit \"{kitName}\" has no layout cell for \"{partId}\"";
                 return null;
             }
 

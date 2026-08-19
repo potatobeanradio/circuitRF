@@ -62,7 +62,8 @@ public sealed class VerilogAFileResolver : IExternalProviderResolver
                 "tools/osdi-worker and needs a C compiler; a build without one still produces a " +
                 "working application, but not this.");
 
-        return new DeviceWorkerProvider(name, ProcessDeviceWorkerTransport.Start(worker, [modelFile]));
+        return new DeviceWorkerProvider(
+            name, ProcessDeviceWorkerTransport.Start(worker, [modelFile], forProvider: name));
     }
 
     /// <summary>
