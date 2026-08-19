@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
+using CircuitRF.WBond.Mom;
 using RfCore;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -33,6 +34,9 @@ public partial class WBondTouchstoneExportDialog : Window
         TerminalBasisRadio.IsCheckedChanged += (_, _) => RefreshPorts();
         ArrayBasisRadio.IsCheckedChanged    += (_, _) => RefreshPorts();
 
+        ModelBox.SelectionChanged += (_, _) => RefreshPorts();
+        SegmentsBox.ValueChanged  += (_, _) => RefreshCost();
+
         StartBox.ValueChanged  += (_, _) => RefreshCost();
         StopBox.ValueChanged   += (_, _) => RefreshCost();
         PointsBox.ValueChanged += (_, _) => RefreshCost();
@@ -51,6 +55,10 @@ public partial class WBondTouchstoneExportDialog : Window
     /// <summary>The basis the radio buttons currently select.</summary>
     private WBondPortBasis SelectedBasis =>
         ArrayBasisRadio.IsChecked == true ? WBondPortBasis.ArrayPairs : WBondPortBasis.Terminals;
+
+    /// <summary>The model the combo currently selects.</summary>
+    private WBondNetworkModel SelectedModel =>
+        ModelBox.SelectedIndex == 1 ? WBondNetworkModel.Distributed : WBondNetworkModel.Lumped;
 
     /// <summary>
     /// Rebuilds the port map, and says what the chosen basis will LEAVE OUT when that is not nothing.
@@ -76,6 +84,22 @@ public partial class WBondTouchstoneExportDialog : Window
             : "";
         BasisNote.IsVisible = loses;
 
+        // Distributed + array-pairs is refused, not silently corrected. The user chose two things that
+        // cannot both be honoured, and which one they meant is theirs to say.
+        bool distributed = SelectedModel == WBondNetworkModel.Distributed;
+        bool refused = distributed && SelectedBasis == WBondPortBasis.ArrayPairs;
+
+        SegmentsBox.IsEnabled = distributed;
+        SegmentsLabel.IsEnabled = distributed;
+
+        ModelNote.Text = refused
+            ? "The distributed (MoM) model publishes on the terminal basis only — an array-pair port is "
+              + "a floating pair, and this model's shunt capacitance has no terminal to return through. "
+              + "Use the terminal basis, or the lumped model if you want an array-pair file."
+            : "";
+        ModelNote.IsVisible = refused;
+        ExportButton.IsEnabled = !refused;
+
         RefreshCost();
     }
 
@@ -89,6 +113,39 @@ public partial class WBondTouchstoneExportDialog : Window
 
         int n = (int)points;
         int ports = WBondTouchstoneExport.PortNames(_design, SelectedBasis).Count;
+
+        if (SelectedModel == WBondNetworkModel.Distributed)
+        {
+            int segments = SegmentsBox.Value is { } s ? (int)s : 24;
+            var settings = WireMomSettings.Default with { TargetSegmentsPerWire = segments };
+
+            try
+            {
+                // THE PREDICTION, NOT AN ADJECTIVE. This note used to say a distributed export "takes
+                // seconds, not milliseconds", which is true of a 40-wire array and off by two orders for
+                // a 200-wire one. WireMomCost's constants are measured, so the number can be quoted —
+                // and the slow-run warning names a cheaper segmentation when the answer is minutes.
+                var report = WireMomMesh.Predict(_design, settings);
+                string text =
+                    $"{n} point(s) × one dense complex factorisation over " +
+                    $"{report.Segments.ToString("N0", CultureInfo.InvariantCulture)} current unknowns " +
+                    $"({_design.WireCount} wire(s) × {segments} segments), written as a {ports}-port. " +
+                    report.CostSummary(n);
+
+                if (WireMomMesh.SlowRunWarning(_design, n, settings) is { } slow) text += "\n⚠ " + slow;
+
+                CostNote.Text = text;
+            }
+            catch (Exception)
+            {
+                // A refusal (no ground plane, above the segment ceiling) is already shown by ModelNote,
+                // which is where it belongs — this line stays silent rather than repeating it.
+                CostNote.Text =
+                    $"{n} point(s) × one dense complex factorisation per point, written as a {ports}-port.";
+            }
+
+            return;
+        }
 
         CostNote.Text =
             $"{n} point(s) × one complex factorisation over {_design.WireCount} wire(s), written as a " +
@@ -121,7 +178,9 @@ public partial class WBondTouchstoneExportDialog : Window
             Digits:       9,
             DigitFormat:  'g',
             MatrixFormat: SelectedFormat(),
-            PortBasis:    SelectedBasis));
+            PortBasis:    SelectedBasis,
+            Model:        SelectedModel,
+            SegmentsPerWire: SegmentsBox.Value is { } segments ? (int)segments : 24));
     }
 
     private MatrixFormat SelectedFormat() =>

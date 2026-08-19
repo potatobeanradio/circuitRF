@@ -6,6 +6,174 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## wBond in the background, with the EM run's own progress rows (2026-08-19)
+
+Owner request: *"When exporting Touchstone or computing anything with the MoM wire engine, we need to
+do it in the background and update the Message panel with a progress bar. This infrastructure has
+already been built for the Planar EM kernel so we should reuse it."*
+
+Reused unchanged: `IMessageSink.BeginProgress`, `IProgressMessage`, `LiveProgressMessage`, and
+`WorkspaceViewModel.ReportEmProgress`'s two-row split (sweep row = how far through, stage row = what
+it is doing now). The new piece is `WBondBackgroundRun` — the adapter and the `Task.Run` wrapper —
+plus one progress type the kernel can actually see.
+
+### The one thing that could NOT be reused: `RunControl` itself
+
+`CircuitRF.Engine.RunControl` is unreachable from `src/WBond`, and not by oversight.
+**`src/Core` references `src/WBond`** (that is how the wBond `ComponentModel` reaches the physics
+without a cycle) and **`src/Engine` references `src/Core`**, so `WBond → Engine` closes
+`WBond → Engine → Core → WBond` and does not compile. `src/WBond/CircuitRF.WBond.csproj` says "NO
+PROJECT REFERENCES, DELIBERATELY" and means it.
+
+So `WBondRunControl`/`WBondProgress` are a deliberate near-copy, field for field, **so the UI reporter
+reads identically for both** — `ReportEmProgress` and `WBondBackgroundRun.Report` are the same six
+lines against the same five fields. Hoisting `RunControl` into a new shared leaf project was
+considered and rejected: one 100-line type is not worth a project every consumer has to know about.
+If `RunControl` gains a concept the wirebond kernel needs, **add it to both** rather than trying to
+share the type again.
+
+One real difference from `RunControl`, and it is not cosmetic: the report throttle is an
+`Interlocked.CompareExchange` on a timestamp, not a `Stopwatch.Restart()`. The two setup fills tick
+once per matrix ROW from every worker of a `Parallel.For` — hundreds of thousands of ticks — and a
+stopwatch restart lets every thread through in the same interval. The CAS admits exactly one.
+
+### The setup is the half that needed the bar, and the point counter cannot show it
+
+A distributed run is `Create` (mesh, `L` fill, `P` fill, two Choleskys + inverses, `K̃`/`W`/`H`) then
+`Solve` (one factorisation per point). **Setup is 34.5 s at N_s = 4,800 against 14 s a point** — and
+during all of it the frequency counter is honestly stuck at 0 of N. That is exactly the "bar sitting
+still is indistinguishable from a hang" case the EM two-row split was built for, so every setup step
+is its own named stage with its own denominator (rows, Cholesky columns). Cancellation reaches inside
+them too, for the same reason: a Stop that only landed between frequency points would leave the user
+waiting half a minute after pressing it.
+
+**The fills tick per ROW, not per entry, and the pace is therefore not uniform** — row *p* fills the
+upper triangle from *p* to N, so early rows are the expensive ones and the bar accelerates. Rows are
+still the right unit: they are checkable against the unknown count the mesh report already showed,
+and counting entries buys a linear bar at the price of a counter reading `1,204,517 / 2,345,678`.
+
+### The Compare dialog is MODAL, so a Messages-panel bar alone would be invisible
+
+`WBondMomCompareDialog` is shown with `ShowDialog`, so the panel is behind it and unreadable for the
+entire run — which is minutes on a large design. It gets its own `ProgressBar` and stage line inside
+the dialog, fed from the **same** observations via `WBondBackgroundRun`'s `mirror` hook, and Run
+becomes Cancel while a run is in flight (the EM panel's Simulate/Cancel arrangement). The panel rows
+are still posted; they are the record afterwards.
+
+### Two traps found while wiring it
+
+**Handing one control to both models double-counts the sweep.** `WBondMomCompareViewModel.Compare`
+runs the lumped model and then the distributed one, and both loop over the same frequency grid ticking
+once per point — passing `run` to both would have counted 2N against a denominator of N and parked
+the bar at 200%. The lumped half gets a stage label and no control; it is milliseconds anyway. A test
+asserts no stage or sweep counter ever reports past its own denominator.
+
+**A process-wide "one run at a time" latch belongs at the UI boundary, not in the view model.** It was
+first put inside `RunAsync`, which makes two xUnit test classes that each run a comparison fail each
+other under parallel class execution. It lives in `WBondMomCompareDialog.OnRun` and
+`WBondPublishCommands.ExportTouchstoneAsync` now. The latch is real and is about memory:
+`WireMomCost.SolveThreadCount` sizes the thread count against a quarter of available memory *on the
+assumption that it is the only such run*, and the export button stays live while a run is in flight.
+
+### The standalone binary has no Messages panel, and now says so out loud
+
+`WBondShellWindow` is one window around one editor — no Dock, no workspace, no Messages region. Rather
+than run silently for minutes there, `WBondEditorView.ResolveMessages` falls back to
+`WBondStatusMessageSink`, an `IMessageSink` over the view's own status line. **No rule is needed to
+pick which of the two live rows the single line shows**: `Report` writes the sweep row then the stage
+row inside one synchronous callback, so the stage text is simply what is there when the frame is
+drawn — and it is the more useful half for a host with no panel.
+
+### A test-only ordering hazard worth knowing about
+
+`Progress<T>` captures whatever `SynchronizationContext` is current when it is constructed. In the app
+that is the Avalonia dispatcher, so the last observation and the `await`'s own continuation go through
+one ordered queue and `Finish` always runs last. **In a test there is no context**, so it falls back to
+the thread pool and a late observation can overwrite a settled row — assertions on a finished row then
+pass or fail on timing. `WBondBackgroundRunTests` installs an inline `SynchronizationContext` so the
+test is as ordered as production is, rather than hoping the pool happens to be.
+
+## wBond MoM WM-2 — a Model option on the export, and a Compare dialog (2026-08-18)
+
+brief-wbond-mom-w2 §7. The physics and every measurement are in `src/WBond/Mom/RESOLVED.md`; this is
+the UI half and the two things about it that would cost someone time.
+
+**§7.4's premise is wrong: the wBond menu item does NOT reach circuitRF.** The brief says
+`ProgramWBond.cs` is a second entry point into the same assembly and that "the menu item and the
+dialog therefore come along for free". The dialog does; the menu item does not. **`WBondMenuView`
+lives only in `WBondShellWindow`** — the standalone shell — and in circuitRF the wBond editor is a
+document tab under `WorkspaceWindow`'s own menu bar, which has **no wBond Design submenu at all**
+(`WorkspaceWindow.axaml`'s Design menu is the *layout* DRC). So a menu item alone would have shipped
+the feature to one binary of the two, silently and with a passing test.
+
+**The entry point that genuinely reaches both is a toolbar button on `WBondEditorView`** — the view
+`App.axaml` data-templates for `WBondDocument` *and* the view `WBondShellWindow` hosts. The standalone
+menu item binds to that same view method (`CompareDistributedModelAsync`), which is the pattern the
+shell already uses for undo/redo/copy/paste and the reason a menu item and its gesture cannot
+diverge. `WBondOneEditorTests.EverySurvivingClickHandler_IsWBondsOwn`'s allowlist gained
+`OnCompareDistributedModel`, which is the test that would otherwise have caught it as a *violation*
+rather than as a fix.
+
+**A source scan of both menu trees is not enough on its own.** Avalonia resolves a missing `Command`
+binding to nothing: the menu item renders, is enabled, and does nothing, with no error anywhere. So
+the XAML scan asserts the exact command name in both trees *and* a reflection assertion confirms
+`WBondMenuViewModel.CompareDistributedModelCommand` exists and invokes its hook. Either half alone
+passes on a typo.
+
+**`Predict` does not refuse, so the panel had to ask separately.** `WireMomMesh.Predict` is
+deliberately allocation-free and non-refusing (WM-1: the report exists so a number can be shown before
+anyone waits). A dialog that shows the report and only discovers "this design has no ground plane"
+after Run is exactly the failure the report exists to prevent, so `WireMomMesh.RefusalFor` was added
+and the compare panel shows the refusal *instead of* the report. `Build` is still the only thing that
+throws.
+
+**The lumped export path was not touched, reorganised or shared.** `TerminalAdmittances(design, freqs)`
+is byte-for-byte the method it was; the distributed branch is a separate method and `BuildNetwork`
+chooses between them. Round-trip tests against a real `SParameterEngine` solve hold the lumped bits,
+and a refactor that keeps those passing while moving the last bits is the kind of change nobody catches
+for a year.
+
+**`Distributed` + `ArrayPairs` is refused, not silently corrected** — the dialog disables Export and
+shows the reason rather than switching the port basis for the user. An array-pair port is a floating
+pair; the distributed model's whole content is a shunt to the reference plane, and a floating pair has
+no terminal for that current to return through.
+
+**A wirebond design is reachable from TWO editors, and I assumed one.** The owner reported this twice
+before it was right (2026-08-18: *"the export UI can't be accessed from circuitRF — only from wBond"*,
+then *"I still don't see any of the new buttons in the wBond hosted layout. They are supposed to appear
+to the right of the Transform button"*). The second sentence is the whole diagnosis and I had missed it
+in the first:
+
+- **`WBondEditorView`** — a `.wBond` opened as a document of its own, and the entirety of the standalone
+  `wBond` binary. Its own toolbar row carries Export Touchstone (since WB-E) and now Compare.
+- **`LayoutEditorView`** — a `.clay` with a `.wBond` beside it (WB40), which is **how a wirebond is
+  normally worked on inside circuitRF**. There is **no `WBondEditorView` anywhere in that document**.
+  The wire tools live in the layout editor's own toolbar, in the group
+  `UpdateWirePanelButtonStates` shows on a wirebond cell — Wire Profile, Array Inductance, Draw Wire,
+  Angle Wire, Transform Wires — and **that group ended at Transform**. So Export Touchstone was never
+  reachable from that editor either; it is not a regression from this brief, it is a gap WB-E left and
+  nobody hit until now.
+
+The fix is two buttons at the end of that group and one shared implementation,
+**`WBondPublishCommands`** — the picker flow, the extension handling and the refusal reporting are
+subtle enough that a handler per view would have drifted, and the repo's own rule is to route every
+entry point through the same accessor. `WBondEditorView.Touchstone.cs` was rewritten to call it too, so
+there is one copy rather than two.
+
+**A button added to that group without being added to its gate is visible on every ordinary layout in
+the application** — the gate is one `IsVisible = show;` assignment per control in code-behind, so a new
+member is one forgotten line from being permanently on screen with nothing failing.
+`TheNewWireButtons_AreGatedWithTheRestOfTheWireGroup` reads the method body and requires each name in it.
+
+*What my first fix did, and why it was not enough.* The Compare button was moved out of the
+view/panel-toggle group into `WBondEditorView`'s publish group beside Export Touchstone, and restyled to
+match its neighbours (`Background="Transparent" BorderThickness="0"` — it had default button chrome).
+That was worth doing and is kept, but it only ever touched the editor the owner was not looking at.
+
+**No DataGrid.** This repo carries no DataGrid package (`Avalonia could not generate code-behind
+property … Unable to resolve type DataGrid`), so the comparison table is a header `Grid` plus one
+`Grid` per row sharing one column string, inside a `ScrollViewer`. Ten columns did not need more.
+
 ## wBond round 7 — the loop-profile object is removed (2026-08-18)
 
 Owner: *"User does not care if the profile is any of these 'profiles'…"* And the answer that

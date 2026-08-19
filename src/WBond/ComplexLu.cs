@@ -37,13 +37,28 @@ public sealed class ComplexLu
     public static ComplexLu Factor(Complex[] matrix, int n)
     {
         ArgumentNullException.ThrowIfNull(matrix);
-        if (matrix.Length < n * n)
+        if (matrix.Length < (long)n * n)
             throw new ArgumentException(
-                $"Matrix is {matrix.Length} long, expected at least {n * n}.", nameof(matrix));
+                $"Matrix is {matrix.Length} long, expected at least {(long)n * n}.", nameof(matrix));
 
-        var lu = new Complex[n * n];
-        Array.Copy(matrix, lu, n * n);
+        var copy = new Complex[(long)n * n];
+        Array.Copy(matrix, copy, copy.Length);
+        return FactorInPlace(copy, n);
+    }
 
+    /// <summary>
+    /// The same, <b>overwriting</b> <paramref name="matrix"/> with the factor — the fallback path of a
+    /// frequency-parallel sweep, where <c>M̃</c> is already a per-thread scratch buffer and a copy of it
+    /// is 369 MB per thread at N_s = 4,800.
+    /// </summary>
+    public static ComplexLu FactorInPlace(Complex[] matrix, int n)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        if (matrix.Length < (long)n * n)
+            throw new ArgumentException(
+                $"Matrix is {matrix.Length} long, expected at least {(long)n * n}.", nameof(matrix));
+
+        var lu = matrix;
         var pivot = new int[n];
         for (int i = 0; i < n; i++) pivot[i] = i;
 

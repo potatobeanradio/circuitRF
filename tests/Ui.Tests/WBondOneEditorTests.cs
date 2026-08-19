@@ -333,6 +333,11 @@ public class WBondOneEditorTests
             "OnSave", "OnSaveAs", "OnCycleViewMode",
             "OnReverse", "OnStraighten", "OnReapplyProfile", "OnTransform", "OnDetach",
             "OnExportDxf", "OnImportWires", "OnExportTouchstone", "OnCopyGraphic",
+
+            // brief-wbond-mom-w2 §7.3. Genuinely wBond's own — a LayoutEditorView has no distributed
+            // wirebond model to compare against, and the standalone shell's menu item binds to the very
+            // method this handler calls rather than to a second implementation.
+            "OnCompareDistributedModel",
         ];
 
         Assert.All(handlers, h => Assert.Contains(h, allowed));

@@ -319,6 +319,24 @@
                         <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
                     </Button>
 
+                    <!-- brief-wbond-mom-w2 §7.3/§7.4, MOVED HERE 2026-08-18 (owner: "the export UI
+                         can't be accessed from circuitRF — only from wBond. add toolbar buttons next
+                         to Transform button").
+
+                         THE MENU ITEM REACHES ONE BINARY OF THE TWO. `WBondMenuView` exists only in
+                         the standalone shell's window; in circuitRF this editor is a document tab
+                         under WorkspaceWindow's menu bar, which has no wBond Design submenu at all.
+                         This view is the one both binaries share, so a button here is the only entry
+                         point that is genuinely in both — and it belongs beside Export Touchstone,
+                         which is the button a user is already looking at when they wonder how the two
+                         models differ. Its first home was up in the view/panel-toggle group, which is
+                         both the wrong neighbourhood and the wrong styling; that is the bug. -->
+                    <Button x:Name="CompareModelBtn" Click="OnCompareDistributedModel"
+                            ToolTip.Tip="Compare Distributed Model… — run the distributed (MoM) model next to the lumped one on a frequency grid, and show the two side by side. Same design, same ports, no export needed."
+                            Background="Transparent" BorderThickness="0">
+                        <mi:MaterialIcon Kind="ScaleBalance" Width="16" Height="16"/>
+                    </Button>
+
                     <Button x:Name="CopyGraphicBtn" Click="OnCopyGraphic"
                             ToolTip.Tip="Copy as a graphic (⇧⌘C / Ctrl+Shift+C)"
                             Background="Transparent" BorderThickness="0">

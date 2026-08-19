@@ -39,6 +39,7 @@ public sealed partial class WBondMenuViewModel : ObservableObject
 
     public Action? SelectAllWiresHook  { get; set; }
     public Action? CheckDesignRulesHook{ get; set; }
+    public Action? CompareDistributedModelHook { get; set; }
     public Action? HelpHook            { get; set; }
 
     [RelayCommand] private void NewDocument()    => NewDocumentHook?.Invoke();
@@ -61,5 +62,6 @@ public sealed partial class WBondMenuViewModel : ObservableObject
 
     [RelayCommand] private void SelectAllWires()   => SelectAllWiresHook?.Invoke();
     [RelayCommand] private void CheckDesignRules() => CheckDesignRulesHook?.Invoke();
+    [RelayCommand] private void CompareDistributedModel() => CompareDistributedModelHook?.Invoke();
     [RelayCommand] private void Help()             => HelpHook?.Invoke();
 }

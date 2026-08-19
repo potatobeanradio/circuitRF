@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 using CircuitRF.Core.Devices;
 using CircuitRF.WBond;
+using CircuitRF.WBond.Mom;
 using NumFlat;
 using RfCore;
 using RfCore.Data;
@@ -75,6 +77,28 @@ public enum WBondPortBasis
     ArrayPairs,
 }
 
+/// <summary>Which of the two wirebond network models an export is written from.</summary>
+public enum WBondNetworkModel
+{
+    /// <summary>
+    /// The <b>lumped</b> array-basis model — one current and one charge basis function per wire.
+    /// Frequency-independent matrices, effectively instant. The default, and the model the schematic
+    /// component stamps.
+    /// </summary>
+    Lumped,
+
+    /// <summary>
+    /// The <b>distributed</b> MoM model (<see cref="WireMomSolver"/>) — one current unknown per
+    /// segment. Sees the wire as a transmission line rather than as a lumped L with an end
+    /// capacitance, at the cost of one dense complex factorisation per frequency point.
+    ///
+    /// <para><b>It publishes on the terminal basis only.</b> An array-pair port is a floating pair, and
+    /// this model's whole content is a shunt that has no terminal to return through there — see
+    /// <see cref="WBondTouchstoneExport.RefuseIfModelAndBasisDisagree"/>.</para>
+    /// </summary>
+    Distributed,
+}
+
 public static class WBondTouchstoneExport
 {
     /// <summary>
@@ -91,7 +115,9 @@ public static class WBondTouchstoneExport
         int          Digits       = 9,
         char         DigitFormat  = 'g',
         MatrixFormat MatrixFormat = MatrixFormat.RI,
-        WBondPortBasis PortBasis  = WBondPortBasis.Terminals);
+        WBondPortBasis PortBasis  = WBondPortBasis.Terminals,
+        WBondNetworkModel Model   = WBondNetworkModel.Lumped,
+        int SegmentsPerWire       = 24);
 
     /// <summary>The frequency grid, exactly as asked for. Linear or logarithmic; one point is legal.</summary>
     public static double[] BuildFrequencies(double startHz, double stopHz, int points, bool logarithmic)
@@ -167,11 +193,33 @@ public static class WBondTouchstoneExport
         for (int k = 0; k < names.Count; k++)
             lines.Add($"Port[{k + 1}] = {names[k]}");
 
-        bool capacitance = design.IncludeCapacitance && design.GroundPlane.Enabled;
+        // WHICH ENGINE WROTE THIS FILE. A .snp outlives the session that made it, and two files of the
+        // same design from two models that do not say which is which is a support ticket waiting to
+        // happen.
+        if (options.Model == WBondNetworkModel.Distributed)
+        {
+            var report = WireMomMesh.Predict(design, MomSettings(options));
+            lines.Add($"Model: distributed (MoM), {options.SegmentsPerWire} segments per wire, " +
+                      $"{report.Segments} current unknowns.");
+        }
+        else
+        {
+            lines.Add("Model: lumped (analytic) — one current and one charge basis function per wire.");
+        }
+
+        bool capacitance = options.Model == WBondNetworkModel.Distributed
+            || (design.IncludeCapacitance && design.GroundPlane.Enabled);
 
         lines.Add(capacitance
             ? "Includes the wires' capacitance to the reference plane and between arrays."
             : "Series arm only — this design models no capacitance.");
+
+        // The distributed model IS the coupled L-C ladder; there is no version of it with the shunt
+        // removed. Saying so in the file is the difference between a reader trusting the design's own
+        // flag and trusting the file.
+        if (options.Model == WBondNetworkModel.Distributed && !design.IncludeCapacitance)
+            lines.Add("Capacitance is intrinsic to the distributed model and is included. The design's "
+                      + "'Include capacitance' setting applies to the lumped model only.");
 
         // The file outlives the session, so the one thing an array-pair file cannot contain is stated
         // IN it. See the class note: a floating pair has no terminal for a shunt to the plane.
@@ -190,7 +238,8 @@ public static class WBondTouchstoneExport
     /// wires in WB-B, so a 201-point export is roughly 11 s at that scale. The caller is expected to
     /// have said so; a 600-wire export must not look like a hang.</para>
     /// </summary>
-    public static Mat<Complex>[] ArrayImpedances(WBondDesign design, IReadOnlyList<double> freqHz)
+    public static Mat<Complex>[] ArrayImpedances(WBondDesign design, IReadOnlyList<double> freqHz,
+                                                 WBondRunControl? run = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(freqHz);
@@ -198,6 +247,8 @@ public static class WBondTouchstoneExport
 
         var model = new WBondModel(design, "<export>");
         int m = model.ArrayCount;
+
+        run?.BeginStage("computing the array network");
 
         var mats = new Mat<Complex>[freqHz.Count];
         for (int fi = 0; fi < freqHz.Count; fi++)
@@ -208,6 +259,7 @@ public static class WBondTouchstoneExport
                 for (int j = 0; j < m; j++)
                     mat[i, j] = z[i * m + j];   // row-major, matching the model's own stamp
             mats[fi] = mat;
+            run?.Tick();
         }
         return mats;
     }
@@ -237,7 +289,8 @@ public static class WBondTouchstoneExport
     /// and never inverts Y, and <c>I + Ŷ</c> is invertible for any passive Y, so S is well defined.
     /// The common mode simply reflects.</para>
     /// </summary>
-    public static Mat<Complex>[] TerminalAdmittances(WBondDesign design, IReadOnlyList<double> freqHz)
+    public static Mat<Complex>[] TerminalAdmittances(WBondDesign design, IReadOnlyList<double> freqHz,
+                                                     WBondRunControl? run = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(freqHz);
@@ -248,6 +301,8 @@ public static class WBondTouchstoneExport
         int n = 2 * m;
 
         var capacitance = model.Capacitance;
+
+        run?.BeginStage("computing the terminal network");
 
         var mats = new Mat<Complex>[freqHz.Count];
         for (int fi = 0; fi < freqHz.Count; fi++)
@@ -297,6 +352,114 @@ public static class WBondTouchstoneExport
             }
 
             mats[fi] = y;
+            run?.Tick();
+        }
+
+        return mats;
+    }
+
+    /// <summary>
+    /// The <b>distributed</b> model's terminal-basis admittance — the same 2M × 2M basis, the same
+    /// reference (the ground plane at z = 0) and the same terminal order as
+    /// <see cref="TerminalAdmittances(WBondDesign, IReadOnlyList{double})"/>, by construction.
+    ///
+    /// <para>That is what makes the two models comparable by subtraction, with no renormalisation and
+    /// no port re-mapping: WM-1's terminal shorting produces exactly the basis this file already
+    /// publishes on. <see cref="WireMomMesh.TerminalNamesFor"/> and
+    /// <see cref="PortNames"/> are asserted equal element for element in <c>Ui.Tests</c>.</para>
+    /// </summary>
+    public static Mat<Complex>[] DistributedTerminalAdmittances(
+        WBondDesign design, IReadOnlyList<double> freqHz, Options options,
+        CancellationToken cancel = default, WBondRunControl? run = null)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+        ArgumentNullException.ThrowIfNull(freqHz);
+        ArgumentNullException.ThrowIfNull(options);
+        RefuseIfReturnPathUndeclared(design);
+
+        var result = SolveDistributed(design, freqHz, options, null, cancel, run);
+        return ToMatrices(result);
+    }
+
+    /// <summary>
+    /// The distributed run itself, notes and mesh report included — the surface the Compare dialog
+    /// wants, because it needs the report and the warnings as well as the numbers.
+    /// </summary>
+    public static WireMomResult SolveDistributed(
+        WBondDesign design, IReadOnlyList<double> freqHz, Options options,
+        CancellationToken cancel = default)
+        => SolveDistributed(design, freqHz, options, null, cancel);
+
+    /// <summary>
+    /// The same, over a <b>solver the caller already built</b> — everything frequency-independent
+    /// (mesh, <b>L</b>, <b>P</b>, <b>G</b>, <b>K̃</b>, <b>W</b>, <b>H</b>) is reused, and only the points
+    /// are paid for again.
+    ///
+    /// <para><b>The caller holds it and the caller decides when it is stale.</b> Setup is 34.5 s at
+    /// N_s = 4,800 against 14 s a point, so re-exporting the same design on a second grid — or running a
+    /// convergence check at two grids — pays it twice for nothing. <see cref="WireMomSolver.Matches"/>
+    /// answers whether a held solver is the right one for a design and settings pair; it does
+    /// <b>not</b> answer whether the design has been edited since, and there is deliberately no cache
+    /// here that pretends otherwise.</para>
+    /// </summary>
+    public static WireMomResult SolveDistributed(
+        WBondDesign design, IReadOnlyList<double> freqHz, Options options,
+        WireMomSolver? solver, CancellationToken cancel = default, WBondRunControl? run = null)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+        ArgumentNullException.ThrowIfNull(freqHz);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var settings = MomSettings(options);
+        if (solver is null || !solver.Matches(design, settings))
+            solver = run is null
+                ? WireMomSolver.Create(design, settings, cancel)
+                : WireMomSolver.Create(design, settings, run);
+
+        return solver.Solve(freqHz, cancel, run);
+    }
+
+    /// <summary>The MoM settings an export's own options imply. One place, so the report and the solve agree.</summary>
+    public static WireMomSettings MomSettings(Options options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return WireMomSettings.Default with { TargetSegmentsPerWire = Math.Max(1, options.SegmentsPerWire) };
+    }
+
+    /// <summary>
+    /// The distributed model publishes on the terminal basis only, and the refusal says why rather than
+    /// silently switching the basis for the user.
+    ///
+    /// <para>An array-pair port is a <b>floating pair</b>. The distributed model's entire content is a
+    /// shunt to the reference plane, and a floating pair has no terminal for that current to return
+    /// through — so an array-pair distributed file would be a file whose whole point had been dropped
+    /// on the way out.</para>
+    /// </summary>
+    public static void RefuseIfModelAndBasisDisagree(Options options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.Model != WBondNetworkModel.Distributed) return;
+        if (options.PortBasis != WBondPortBasis.ArrayPairs) return;
+
+        throw new InvalidOperationException(
+            "The distributed (MoM) model publishes on the terminal basis only — an array-pair port is " +
+            "a floating pair, and this model's shunt capacitance has no terminal to return through. " +
+            "Use the terminal basis, or the lumped model if you want an array-pair file.");
+    }
+
+    private static Mat<Complex>[] ToMatrices(WireMomResult result)
+    {
+        int n = result.TerminalCount;
+        var mats = new Mat<Complex>[result.Frequencies.Count];
+
+        for (int fi = 0; fi < mats.Length; fi++)
+        {
+            var flat = result.PortAdmittance(fi);
+            var mat = new Mat<Complex>(n, n);
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++)
+                    mat[i, j] = flat[i * n + j];
+            mats[fi] = mat;
         }
 
         return mats;
@@ -316,22 +479,32 @@ public static class WBondTouchstoneExport
     /// terminal-basis admittance or the array-basis impedance, as the chosen
     /// <see cref="WBondPortBasis"/> says.
     /// </summary>
-    public static SNP BuildNetwork(WBondDesign design, IReadOnlyList<double> freqHz, Options options)
+    public static SNP BuildNetwork(WBondDesign design, IReadOnlyList<double> freqHz, Options options,
+                                   WBondRunControl? run = null)
     {
         ArgumentNullException.ThrowIfNull(options);
+
+        RefuseIfModelAndBasisDisagree(options);
 
         var z0 = new Complex(options.Z0Ohms, 0.0);
         Mat<Complex>[] s;
 
         if (options.PortBasis == WBondPortBasis.ArrayPairs)
         {
-            var z = ArrayImpedances(design, freqHz);
+            var z = ArrayImpedances(design, freqHz, run);
             s = new Mat<Complex>[z.Length];
             for (int i = 0; i < z.Length; i++) s[i] = RFNetwork.ZToS(z[i], z0);
         }
         else
         {
-            var y = TerminalAdmittances(design, freqHz);
+            // THE LUMPED CALL IS THE ORIGINAL ONE, UNCHANGED. Its code path is not shared with the
+            // distributed one and is not to be: round-trip tests against a real solve hold its last
+            // bits, and a refactor that keeps them passing while moving those bits is the kind of
+            // change nobody catches for a year.
+            var y = options.Model == WBondNetworkModel.Distributed
+                ? DistributedTerminalAdmittances(design, freqHz, options, run?.Token ?? default, run)
+                : TerminalAdmittances(design, freqHz, run);
+
             s = new Mat<Complex>[y.Length];
             for (int i = 0; i < y.Length; i++) s[i] = RFNetwork.YToS(y[i], z0);
         }
@@ -345,14 +518,17 @@ public static class WBondTouchstoneExport
     /// <para>The suffix is chosen by <see cref="TouchstoneExporter"/> from the port count, so an
     /// M-array design lands as <c>.sMp</c> with nothing here deciding it.</para>
     /// </summary>
-    public static TouchstoneExportResult Export(WBondDesign design, Options options, string baseFilePathNoSuffix)
+    public static TouchstoneExportResult Export(WBondDesign design, Options options,
+                                                string baseFilePathNoSuffix, WBondRunControl? run = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(baseFilePathNoSuffix);
 
         var freqs = BuildFrequencies(options.StartHz, options.StopHz, options.Points, options.Logarithmic);
-        var dataSet = DataSetBuilder.FromSnp(BuildNetwork(design, freqs, options));
+        var dataSet = DataSetBuilder.FromSnp(BuildNetwork(design, freqs, options, run));
+
+        run?.BeginStage("writing the Touchstone file");
 
         var exportOptions = new TouchstoneExportOptions(
             options.Z0Ohms, options.Digits, options.DigitFormat, options.MatrixFormat,

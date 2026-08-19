@@ -17,7 +17,9 @@ using CircuitRF.Ui.Docking;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Drc;
 using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Renderers;
+using CircuitRF.WBond;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.WBond;
 using CircuitRF.Ui.ViewModels;
@@ -151,6 +153,8 @@ public partial class LayoutEditorView : UserControl
         WireDrawBtn.IsVisible = show;
         WireRotateBtn.IsVisible = show;
         WireTransformBtn.IsVisible = show;
+        WireExportTouchstoneBtn.IsVisible = show;
+        WireCompareModelBtn.IsVisible = show;
 
         SubscribeToPanelVisibility(workspace);
         UpdateWirePanelCheckedStates();
@@ -257,6 +261,46 @@ public partial class LayoutEditorView : UserControl
             TopLevel.GetTopLevel(this) as Window, editor, editor.DisplayUnit);
 
         if (touched > 0) InvalidateOverlay();
+    }
+
+    /// <summary>
+    /// Export Touchstone, from the layout editor — because a <c>.clay</c> with a <c>.wBond</c> beside it
+    /// has no <c>WBondEditorView</c> in it, so this editor's wire group was the only place the action
+    /// could be reached from and it was not there (owner, 2026-08-18).
+    ///
+    /// <para>Runs <see cref="WBondPublishCommands"/>, the same implementation <c>WBondEditorView</c>
+    /// calls.</para>
+    /// </summary>
+    private async void OnWireExportTouchstone(object? sender, RoutedEventArgs e) =>
+        await RunWirePublishAsync(WBondPublishCommands.ExportTouchstoneAsync);
+
+    private async void OnWireCompareDistributedModel(object? sender, RoutedEventArgs e) =>
+        await RunWirePublishAsync(WBondPublishCommands.CompareDistributedModelAsync);
+
+    /// <summary>
+    /// This layout's message sink, for the live progress rows a wirebond computation posts.
+    ///
+    /// <para>Resolved through the workspace rather than through the layout's own injected sink: a
+    /// <c>LayoutEditorViewModel</c> built without one (a torn-off window, a test) would otherwise run
+    /// silently, and the panel is where the EM run already reports.</para>
+    /// </summary>
+    private static IMessageSink? ResolveMessages() => ResolveWorkspace()?.Messages;
+
+    /// <summary>
+    /// The shared half: find this layout's wirebond design and a window to parent a dialog on, run the
+    /// action, and report through the layout's own message sink.
+    /// </summary>
+    private async Task RunWirePublishAsync(
+        Func<Window, WBondDesign, IMessageSink?, Task<WBondPublishCommands.Outcome>> action)
+    {
+        if ((DataContext as LayoutDocument)?.ActiveViewModel is not { WireDesign: { } design } vm) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        var outcome = await action(owner, design, ResolveMessages());
+        if (outcome.IsSilent) return;
+
+        if (outcome.IsWarning) vm.ReportWarning(outcome.Message);
+        else vm.ReportMessage(outcome.Message);
     }
 
     private void OnToggleWireProfilePanel(object? sender, RoutedEventArgs e) =>

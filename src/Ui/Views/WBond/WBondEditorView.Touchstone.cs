@@ -1,9 +1,10 @@
 using System;
-using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Platform.Storage;
-using CircuitRF.Ui.Views.Dialogs;
+using Avalonia.Controls.ApplicationLifetimes;
+using CircuitRF.Ui.Messages;
+using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.WBond;
 
 namespace CircuitRF.Ui.Views.WBond;
@@ -32,67 +33,60 @@ public partial class WBondEditorView
     /// Writes the design's array network as a Touchstone file (§11's own requirement — a wBond has
     /// never been able to publish its own network).
     ///
-    /// <para>The dialog states the port map before anything is written; the write itself goes through
-    /// <see cref="WBondTouchstoneExport"/>, which is <c>RFNetwork</c>'s Z→S and <c>TouchstoneExporter</c>
-    /// and nothing of its own.</para>
+    /// <para><b>The work is in <see cref="WBondPublishCommands"/>, not here.</b> The same action is
+    /// reachable from <c>LayoutEditorView</c>'s wire toolbar — a <c>.clay</c> with a <c>.wBond</c>
+    /// beside it has no <c>WBondEditorView</c> in it anywhere — so a handler per view would have been
+    /// two copies of a file-picker flow that must not drift.</para>
     /// </summary>
     internal async Task ExportTouchstoneAsync()
     {
         if (_bound is null) return;
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
 
-        var design = _bound.Editor.Design;
-        if (design.Arrays.Count == 0)
-        {
-            ShowStatus("This design has no wire arrays, so it has no ports to publish.", isWarning: true);
-            return;
-        }
+        var outcome = await WBondPublishCommands.ExportTouchstoneAsync(
+            owner, _bound.Editor.Design, ResolveMessages());
+        if (!outcome.IsSilent) ShowStatus(outcome.Message, outcome.IsWarning);
+    }
 
-        var options = await WBondTouchstoneExportDialog.ShowAsync(owner, design);
-        if (options is null) return;
+    private async void OnCompareDistributedModel(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await CompareDistributedModelAsync();
 
-        // The PORT COUNT follows the chosen basis, not the array count — a terminal-basis export gives
-        // every terminal its own port, so three arrays is a 6-port. Asking the one method that decides
-        // the port map keeps the picker's filter from disagreeing with the file that gets written.
-        int ports = WBondTouchstoneExport.PortNames(design, options.PortBasis).Count;
+    /// <summary>
+    /// <c>Compare Distributed Model…</c> (brief-wbond-mom-w2 §7.3) — the distributed (MoM) model run
+    /// next to the lumped one, on a frequency grid the user states.
+    ///
+    /// <para><b>This view is not the only place it is reachable from</b>, and assuming it was is the bug
+    /// the owner reported twice. See <see cref="WBondPublishCommands"/>.</para>
+    /// </summary>
+    internal async Task CompareDistributedModelAsync()
+    {
+        if (_bound is null) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
 
-        // The suffix is the exporter's to choose from the port count, so the picker asks for a base
-        // name and never for an extension it might disagree with.
-        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Export Touchstone",
-            SuggestedFileName = "wirebonds",
-            FileTypeChoices =
-            [
-                new FilePickerFileType($"Touchstone ({ports}-port)")
-                {
-                    Patterns = [$"*.s{ports}p"],
-                },
-            ],
-        });
+        var outcome = await WBondPublishCommands.CompareDistributedModelAsync(
+            owner, _bound.Editor.Design, ResolveMessages());
+        if (!outcome.IsSilent) ShowStatus(outcome.Message, outcome.IsWarning);
+    }
 
-        if (file?.TryGetLocalPath() is not { } chosen) return;
+    /// <summary>
+    /// Where a long wirebond computation reports its live progress from THIS view.
+    ///
+    /// <para><b>Two hosts, two answers, and the difference is not cosmetic.</b> Inside circuitRF this
+    /// view is a document tab and the workspace's Messages panel is on screen beside it, so the run
+    /// reports there — the same two live rows an EM run posts, in the same place, which is the whole
+    /// point of reusing that mechanism. The standalone <c>wBond</c> binary has no workspace and no
+    /// Messages region at all, so it falls back to this view's own status line
+    /// (<see cref="WBondStatusMessageSink"/>) rather than running silently for minutes.</para>
+    /// </summary>
+    private IMessageSink ResolveMessages()
+    {
+        var workspace = Avalonia.Application.Current?.ApplicationLifetime
+                is IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.Windows.OfType<Views.WorkspaceWindow>()
+                              .Select(w => w.DataContext as WorkspaceViewModel)
+                              .FirstOrDefault(v => v is not null)
+            : null;
 
-        // Strip whatever extension the picker attached: the exporter appends its own .sNp, and a
-        // doubled suffix is the one way this write can produce a file nobody can find.
-        string baseNoSuffix = Path.Combine(
-            Path.GetDirectoryName(chosen) ?? "", Path.GetFileNameWithoutExtension(chosen));
-
-        try
-        {
-            var result = WBondTouchstoneExport.Export(design, options, baseNoSuffix);
-
-            ShowStatus(result.WrittenPaths.Count > 0
-                ? $"Exported {Path.GetFileName(result.WrittenPaths[0])} — {ports} port(s), " +
-                  $"{options.Points} frequency point(s) from " +
-                  $"{options.StartHz * 1e-9:0.####} to {options.StopHz * 1e-9:0.####} GHz."
-                : "Nothing was written.", isWarning: result.WrittenPaths.Count == 0);
-        }
-        catch (Exception ex)
-        {
-            // A refusal (no declared return path) is the message that matters most here — it names a
-            // design fault the file would otherwise have carried silently.
-            ShowStatus(ex.Message, isWarning: true);
-        }
+        return workspace?.Messages ?? new WBondStatusMessageSink(ShowStatus);
     }
 }

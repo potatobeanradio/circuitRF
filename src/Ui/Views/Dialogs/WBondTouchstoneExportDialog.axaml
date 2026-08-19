@@ -43,6 +43,30 @@
         <TextBlock x:Name="BasisNote" TextWrapping="Wrap" FontSize="10"
                    Foreground="{DynamicResource CrfWarningBrush}"/>
 
+        <!-- brief-wbond-mom-w2 §7.1. The MODEL is a separate axis from the port basis and it decides
+             the physics, not the packaging: lumped is one current and one charge basis function per
+             wire; distributed is one current unknown per SEGMENT and one dense complex factorisation
+             per frequency point. Distributed publishes on the terminal basis only — an array-pair port
+             is a floating pair with nowhere for its shunt to return through — and the Export button is
+             disabled rather than the basis being silently switched for the user. -->
+        <Grid ColumnDefinitions="70,*,Auto,90" ColumnSpacing="6" VerticalAlignment="Center" Margin="0,4,0,0">
+          <TextBlock Grid.Column="0" Text="Model" VerticalAlignment="Center" FontSize="11"/>
+          <ComboBox Grid.Column="1" x:Name="ModelBox" FontSize="11" SelectedIndex="0"
+                    HorizontalAlignment="Stretch"
+                    ToolTip.Tip="Distributed solves a dense matrix at every frequency point — a 201-point export of a 40-wire array takes seconds, not milliseconds.">
+            <ComboBoxItem Content="Lumped (analytic)"/>
+            <ComboBoxItem Content="Distributed (MoM)"/>
+          </ComboBox>
+          <TextBlock Grid.Column="2" x:Name="SegmentsLabel" Text="Segments per wire"
+                     VerticalAlignment="Center" FontSize="11" Margin="8,0,0,0"/>
+          <NumericUpDown Grid.Column="3" x:Name="SegmentsBox" Minimum="2" Maximum="200"
+                         Increment="4" FormatString="0" Value="24"
+                         ToolTip.Tip="Fast 8 · Balanced 24 · Accurate 48."/>
+        </Grid>
+
+        <TextBlock x:Name="ModelNote" TextWrapping="Wrap" FontSize="10"
+                   Foreground="{DynamicResource CrfWarningBrush}"/>
+
         <ItemsControl x:Name="PortList">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="x:String">

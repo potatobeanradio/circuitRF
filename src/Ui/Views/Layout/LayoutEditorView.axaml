@@ -345,6 +345,36 @@
                             <mi:MaterialIcon Kind="AxisArrow" Width="16" Height="16"/>
                         </Button>
 
+                        <!-- Publish (owner, 2026-08-18: "the export UI can't be accessed from circuitRF
+                             — only from wBond", then "I still don't see any of the new buttons in the
+                             wBond hosted layout. They are supposed to appear to the right of the
+                             Transform button").
+
+                             THE WIRE GROUP USED TO END AT TRANSFORM, and that was the whole bug. A
+                             `.clay` with a `.wBond` beside it (WB40) is how a wirebond is normally worked
+                             on inside circuitRF, and THERE IS NO WBondEditorView ANYWHERE IN THAT
+                             DOCUMENT — its own toolbar row, which carries Export Touchstone and Compare,
+                             is only on screen when a `.wBond` is opened as a document of its own or in
+                             the standalone binary. So both of those actions were unreachable from the
+                             editor most of this work is done in.
+
+                             Both go through WBondPublishCommands, the same one WBondEditorView calls —
+                             never a second implementation of the picker flow. They are gated by
+                             UpdateWirePanelButtonStates alongside the rest of the group. -->
+                        <Button x:Name="WireExportTouchstoneBtn"
+                                Click="OnWireExportTouchstone"
+                                ToolTip.Tip="Export wBond to Touchstone (.sNp)… Choose the model, reference impedance, frequency sweep and port basis in the dialog."
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                        </Button>
+
+                        <Button x:Name="WireCompareModelBtn"
+                                Click="OnWireCompareDistributedModel"
+                                ToolTip.Tip="wBond Comparison… — run the distributed (MoM) model next to the lumped one on a frequency grid."
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="ScaleBalance" Width="16" Height="16"/>
+                        </Button>
+
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 

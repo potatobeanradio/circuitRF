@@ -1,0 +1,155 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.WBond"
+        x:Class="CircuitRF.Ui.Views.Dialogs.WBondMomCompareDialog"
+        x:DataType="vm:WBondMomCompareViewModel"
+        Title="Compare wBond Models"
+        Width="960" Height="640"
+        MinWidth="760" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    brief-wbond-mom-w2 §7.3. THREE PARTS, IN THIS ORDER, and the order is the content:
+
+      (a) the mesh report, BEFORE anything is solved — this is why the dialog exists rather than the
+          work happening silently behind a progress bar. A user about to wait fourteen minutes finds
+          out here, not afterwards.
+      (b) the frequency grid, using the export dialog's own Start / Stop / Points / Log controls.
+      (c) the comparison table, one row per frequency, with a Copy button.
+
+    NO PLOT. The question this answers is "do the two models agree, and where do they stop agreeing?"
+    — a handful of numbers, not a curve. Anyone who wants the curve exports both models from
+    File > Export > Touchstone and plots them where plotting already lives.
+  -->
+
+  <DockPanel Margin="16" LastChildFill="True">
+
+    <StackPanel DockPanel.Dock="Top" Spacing="10">
+
+      <TextBlock Text="Lumped vs Distributed (MoM)" FontWeight="SemiBold" FontSize="14"/>
+      <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="11"
+                 Text="The lumped model carries one current and one charge basis function per wire; the distributed (MoM) model carries one current unknown per segment. They must agree on the series inductance at low frequency — that is an identity, not a coincidence — and they must NOT agree on the capacitance, because charge concentrates at a wire's ends and the lumped model spreads it uniformly."/>
+
+      <!-- (a) The mesh report. -->
+      <Border Background="{DynamicResource SystemChromeLowColor}"
+              BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+              CornerRadius="6" Padding="10,8">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Mesh" FontSize="10" Opacity="0.6"/>
+          <SelectableTextBlock Text="{Binding MeshReport}" FontSize="11" TextWrapping="Wrap"
+                               FontFamily="{DynamicResource IBMPlexMono}"/>
+          <ItemsControl ItemsSource="{Binding Warnings}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="10"
+                           Foreground="{DynamicResource CrfWarningBrush}"/>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <!-- (b) The frequency grid — the export dialog's controls, same shape, same validation. -->
+      <Border Background="{DynamicResource SystemChromeLowColor}"
+              BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+              CornerRadius="6" Padding="10,8">
+        <Grid ColumnDefinitions="Auto,110,Auto,110,Auto,110,Auto,Auto,Auto,110"
+              ColumnSpacing="6" VerticalAlignment="Center">
+          <TextBlock Grid.Column="0" Text="Start (GHz)" VerticalAlignment="Center" FontSize="11" Margin="0,0,4,0"/>
+          <NumericUpDown Grid.Column="1" x:Name="StartBox" Minimum="0.0001" Maximum="10000"
+                         Increment="0.01" FormatString="0.######" Value="{Binding StartGhz}"/>
+
+          <TextBlock Grid.Column="2" Text="Stop (GHz)" VerticalAlignment="Center" FontSize="11" Margin="10,0,4,0"/>
+          <NumericUpDown Grid.Column="3" x:Name="StopBox" Minimum="0.0001" Maximum="10000"
+                         Increment="1" FormatString="0.######" Value="{Binding StopGhz}"/>
+
+          <TextBlock Grid.Column="4" Text="Points" VerticalAlignment="Center" FontSize="11" Margin="10,0,4,0"/>
+          <NumericUpDown Grid.Column="5" x:Name="PointsBox" Minimum="1" Maximum="1001"
+                         Increment="1" FormatString="0" Value="{Binding Points}"/>
+
+          <RadioButton Grid.Column="6" x:Name="LinRadio" GroupName="Spacing" Content="Linear"
+                       FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"/>
+          <RadioButton Grid.Column="7" x:Name="LogRadio" GroupName="Spacing" Content="Log"
+                       FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"
+                       IsChecked="{Binding Logarithmic}"/>
+
+          <TextBlock Grid.Column="8" Text="Segments/wire" VerticalAlignment="Center" FontSize="11" Margin="14,0,4,0"/>
+          <NumericUpDown Grid.Column="9" x:Name="SegmentsBox" Minimum="2" Maximum="200"
+                         Increment="4" FormatString="0" Value="{Binding SegmentsPerWire}"
+                         ToolTip.Tip="Fast 8 · Balanced 24 · Accurate 48. The mesh report above updates as you change it."/>
+        </Grid>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <Button x:Name="RunButton" Content="Run" Width="96" IsDefault="True"
+                HorizontalContentAlignment="Center" Click="OnRun"/>
+        <Button x:Name="CopyButton" Content="Copy table" Width="110"
+                HorizontalContentAlignment="Center" Click="OnCopy"/>
+        <ComboBox x:Name="ArrayPicker" MinWidth="120" FontSize="11"
+                  ItemsSource="{Binding ArrayNames}" SelectedIndex="{Binding SelectedArray, Mode=TwoWay}"
+                  IsVisible="{Binding HasArraySelector}"
+                  ToolTip.Tip="L, C and |S21| are per array. max |ΔY|/|Y| is over the whole matrix and does not change with this."/>
+        <!-- THE DIALOG'S OWN PROGRESS, because this dialog is MODAL: the Messages panel carries the
+             same two rows but sits behind it, unreadable, for the whole run. -->
+        <ProgressBar x:Name="RunProgress" Width="150" Height="6" VerticalAlignment="Center"
+                     Minimum="0" Maximum="100"
+                     Value="{Binding ProgressPercent}"
+                     IsIndeterminate="{Binding ProgressIndeterminate}"
+                     IsVisible="{Binding IsBusy}"/>
+        <TextBlock x:Name="BusyText" Text="{Binding ProgressText}" FontSize="11" VerticalAlignment="Center"
+                   Opacity="0.7" IsVisible="{Binding IsBusy}"/>
+        <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" FontSize="11"
+                   VerticalAlignment="Center" Foreground="{DynamicResource CrfWarningBrush}"/>
+      </StackPanel>
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,10,0,0">
+      <Button Content="Close" Width="96" IsCancel="True" HorizontalContentAlignment="Center" Click="OnClose"/>
+    </StackPanel>
+
+    <!-- (c) The table. A header Grid plus one Grid per row, sharing one column string — a table
+         this narrow does not need a DataGrid package, and this repo does not carry one. -->
+    <Border Margin="0,10,0,0" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+            CornerRadius="6" Padding="10,8">
+      <DockPanel LastChildFill="True">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="70,86,86,70,92,86,64,86,104,96" Margin="0,0,0,4">
+          <TextBlock Grid.Column="0" Text="f (GHz)" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="1" Text="L lumped (pH)" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="2" Text="L MoM (pH)" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="3" Text="Δ %" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="4" Text="C lumped (fF)" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="5" Text="C MoM (fF)" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="6" Text="Δ %" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="7" Text="max ΔY/Y %" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="8" Text="|S21| lumped (dB)" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+          <TextBlock Grid.Column="9" Text="|S21| MoM (dB)" FontSize="10" Opacity="0.65" TextWrapping="Wrap"/>
+        </Grid>
+        <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource CrfTileBorderBrush}" Margin="0,0,0,4"/>
+
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="ResultRows" ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:WBondMomCompareRow">
+                <Grid ColumnDefinitions="70,86,86,70,92,86,64,86,104,96" Margin="0,1">
+              <TextBlock Grid.Column="0" Text="{Binding FrequencyGhz, StringFormat={}{0:0.####}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="1" Text="{Binding LumpedInductancePh, StringFormat={}{0:0.##}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="2" Text="{Binding MomInductancePh, StringFormat={}{0:0.##}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="3" Text="{Binding InductanceDeltaPercent, StringFormat={}{0:0.###}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="4" Text="{Binding LumpedCapacitanceFf, StringFormat={}{0:0.###}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="5" Text="{Binding MomCapacitanceFf, StringFormat={}{0:0.###}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="6" Text="{Binding CapacitanceDeltaPercent, StringFormat={}{0:0.##}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="7" Text="{Binding MaxAdmittanceDeltaPercent, StringFormat={}{0:0.###}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="8" Text="{Binding LumpedS21Db, StringFormat={}{0:0.####}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+              <TextBlock Grid.Column="9" Text="{Binding MomS21Db, StringFormat={}{0:0.####}}" FontSize="11" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+  </DockPanel>
+</Window>
