@@ -280,6 +280,14 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
             .ToList();
     }
 
+    /// <summary>
+    /// The swept VAR's declared unit, or "" when it declares none.
+    ///
+    /// <para>Reads the row's unit COLUMN, and falls back to a unit written inline in the expression
+    /// ("RFfreq = 2 GHz") — the same lift <see cref="NetExtractor"/> applies when it builds the
+    /// actual <c>Variable</c>. Both have to agree or the editor would show a blank inherited unit
+    /// while the run inherited GHz.</para>
+    /// </summary>
     private static string GetVarUnit(SchematicEditModel model, string varName)
     {
         if (string.IsNullOrEmpty(varName)) return "";
@@ -287,7 +295,9 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
             .Where(c => c.Symbol == SymbolKind.Var)
             .SelectMany(c => c.Parameters)
             .Where(p => p.Name.Equals(varName, StringComparison.OrdinalIgnoreCase))
-            .Select(p => p.Unit)
+            .Select(p => !string.IsNullOrEmpty(p.Unit)
+                ? p.Unit
+                : NetExtractor.LiftInlineUnit(p.Expression).Unit ?? "")
             .FirstOrDefault(u => !string.IsNullOrEmpty(u)) ?? "";
     }
 }

@@ -1701,13 +1701,10 @@ public sealed class CnlReader
     {
         // Strip inline comment: first ';' not inside a quoted string.
         var stripped = StripInlineComment(rhs);
-        var tokens = stripped.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-        if (tokens.Length == 0) return ("", null);
-        if (tokens.Length == 1) return (tokens[0], null);
-        var last = tokens[^1];
-        if (Units.IsKnown(last))
-            return (string.Join(" ", tokens[..^1]), last);
-        return (stripped.Trim(), null);
+        if (stripped.Trim().Length == 0) return ("", null);
+        // The trailing-unit rule itself lives in Units so the schematic VAR path applies exactly
+        // the same one — "RFfreq = 2 GHz" must mean one thing, not two.
+        return Units.SplitTrailingUnit(stripped);
     }
 
     /// <summary>

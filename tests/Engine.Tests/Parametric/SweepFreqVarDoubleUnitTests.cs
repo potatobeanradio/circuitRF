@@ -133,6 +133,55 @@ analysis SW1  type=parametric_sweep  Var=Rval  Values=25,50  Inner=SP1
         }
     }
 
+    /// <summary>
+    /// The reported bug, in the shape it was reported in: the VAR declares the unit
+    /// (<c>RFfreq = 2 GHz</c>), the sweep range is typed as the bare coefficients 2 … 3, and the
+    /// sweep carries no <c>Unit=</c> of its own.
+    ///
+    /// <para>The engine used to attach the VAR's base unit ("Hz") to the injected override without
+    /// ever scaling the values by that unit — so the mark said "already base SI" about numbers that
+    /// were still GHz coefficients, var-unit-wins suppressed the ToneUnit, and a loadpull pursuit
+    /// meant for 2 GHz ran at 2 Hz. Scale and mark now come from the same unit.</para>
+    /// </summary>
+    [Fact]
+    public void Sweep_NoSpecUnit_InheritsTheVarsOwnUnit()
+    {
+        const string cnl = @"
+RFfreq = 2 GHz
+
+P1Tone:P1  n_rf  0  Num=1  Pavl=0  Freq=RFfreq
+
+R:Rload  n_rf  0  R=50 Ohm
+
+analysis HB1  type=hb  Tone=""RFfreq""  ToneUnit=GHz  MaxHarm=2  Tol=1e-4
+analysis SW1  type=parametric_sweep  Var=RFfreq  Start=2  Stop=3  Step=0.5  Inner=HB1
+";
+        var (lib, tb) = new CnlReader().Read(cnl);
+        var sw1 = tb.Analyses.OfType<ParametricSweepAnalysis>().Single();
+        var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().Single();
+
+        Assert.Equal("GHz", tb.GlobalVariables.Single(v => v.Name == "RFfreq").Unit);
+        Assert.Equal("",    sw1.Spec!.Unit);
+
+        // Reproduce the engine's own injection for each point and read the tone back out.
+        double inherited = Units.Scale("GHz")!.Value;
+        int varIdx = tb.GlobalVariables.FindIndex(v => v.Name == "RFfreq");
+        double[] expected = [2e9, 2.5e9, 3e9];
+
+        Assert.Equal(expected.Length, sw1.SweepValues.Length);
+        for (int si = 0; si < sw1.SweepValues.Length; si++)
+        {
+            tb.GlobalVariables[varIdx] = new Variable("RFfreq",
+                (sw1.SweepValues[si] * inherited).ToString("G17", CultureInfo.InvariantCulture),
+                Units.BaseUnit("GHz"));
+            var netlist = new Elaborator(lib).Elaborate(tb);
+            var p = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+
+            output.WriteLine($"[si={si}] coeff={sw1.SweepValues[si]}  toneHz={p.ToneHz:G6}");
+            Assert.Equal(expected[si], p.ToneHz, 1e-6 * expected[si]);
+        }
+    }
+
     // T6 — Sweep_Equals_NoSweep_AtSamePoint
     // The full ParametricSweepEngine run (which does Part A internally) at the 2 GHz point
     // must produce the same ToneHz as the direct no-sweep elaboration at RFfreq=2 GHz.

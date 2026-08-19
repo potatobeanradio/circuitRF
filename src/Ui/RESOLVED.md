@@ -4083,3 +4083,12 @@ pre-existing gap, since `RewriteCellReferences` only ever rewrote `CellRef`, nev
 edits other cells' `.csch` files on disk through `JsonNode`, while `RenameCellAsync` force-closes only
 the documents under the renamed cell. A schematic in another cell that links this wBond and happens to
 be open is rewritten underneath its session.
+
+## A VAR row may write its unit inline, and used to lose the variable entirely (2026-08-18)
+
+`RFfreq = 2 GHz` typed into a VAR's expression column silently produced **no variable at all** — see
+`src/Core/RESOLVED.md` for the mechanism (parse error, swallowed by `Elaborator`) and for why the lift
+is verified against the parser rather than the unit table. The Ui-side consequence:
+`SweepAxisRowViewModel.GetVarUnit` reads the row's unit COLUMN, so it now applies the same lift. Both
+have to agree or the editor would show a blank inherited unit and a preview reading "3 pts: 2 … 3"
+for a sweep the engine runs at 2 … 3 GHz.

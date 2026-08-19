@@ -101,3 +101,27 @@ of the brief's own "step 3 optional if the sweep lands near 2–3 ms" bar, but a
 evaluator alone. Whether an L1-drag frame hits >60 fps depends on the REST of the frame (render,
 readout-strip rebuild, pool/dispatcher overhead) — see the harmonicaRF-side write-up for that
 breakdown; it is a separate cost this brief's §1.4 measures independently.
+
+## `RFfreq = 2 GHz` in a schematic VAR produced no variable at all (2026-08-18)
+
+> Reported together with the parametric-sweep unit bug, which lives in the engine — see
+> `src/Engine/RESOLVED.md` §"A parametric sweep's unit". One schematic reached both.
+
+The other half of that report. A `.cnl` has no unit column, so `CnlReader.SplitExprUnit` has always
+lifted a trailing unit into `Variable.Unit`. A schematic VAR row *does* have a unit column, and
+`NetExtractor` passed the expression through verbatim — so the identical text meant two different
+things, and the schematic one meant **nothing at all**: `Parser.Parse("2 GHz")` is a parse error (the
+grammar has no unit-suffix production), and `Elaborator` skips a global it cannot resolve inside a bare
+`catch {}`. Nothing anywhere reported it. Downstream, `LoadpullPursuitEngine.Resolve` catches the
+resulting `UnresolvedNameException` and substitutes **1 GHz**, and the sweep row had no unit to inherit.
+
+**The rule now lives once, in `Units.SplitTrailingUnit`.** The schematic caller
+(`NetExtractor.LiftInlineUnit`) **verifies the split against the parser** instead of trusting the unit
+table: every bare SI prefix is a unit name, so a token-only rule tears `"2 * f"` into `"2 *"` + femto
+and `"R * m"` into `"R *"` + milli. Split only when the unsplit text does not parse and the split text
+does — which makes it reachable by exactly the rows it is for and by no row that already worked. A
+netlist keeps the greedy rule; it has no alternative spelling to fall back on.
+
+Related, and already recorded in `src/Core/CLAUDE.md`'s trap list: a cell-parameter declaration, a
+top-level variable assignment and an instance-line param are three separate parse sites for the same
+unit token, and fixing one has repeatedly left the others wrong. The schematic VAR row was the fourth.

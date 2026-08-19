@@ -304,7 +304,17 @@ public static class NetExtractor
                     continue;
                 }
                 string? unit = UnitNormalizer.ToEngineUnit(p.Unit) is { Length: > 0 } u ? u : null;
-                frameVars.Add(new Variable(varName, p.Expression, unit));
+                string  expr = p.Expression;
+                // A VAR row whose unit column is empty may still carry the unit INLINE — "2 GHz" —
+                // because that is the spelling a .cnl uses and the one the schematic renders the
+                // row back as ("RFfreq = 2 GHz"). The expression parser has no unit-suffix
+                // production, so leaving it there makes the whole variable VANISH: Elaborator skips
+                // a global it cannot resolve and does it silently, after which every reader of that
+                // variable falls back or fails somewhere else entirely. Lift it into the unit
+                // column's meaning instead. The row's own unit column still wins when it is set.
+                if (unit is null)
+                    (expr, unit) = LiftInlineUnit(expr);
+                frameVars.Add(new Variable(varName, expr, unit));
             }
         }
 
@@ -330,6 +340,42 @@ public static class NetExtractor
         }
 
         return (instances, cellPorts, frameVars, frameMeas);
+    }
+
+    /// <summary>
+    /// Lifts a unit written inline in a VAR row's EXPRESSION ("2 GHz") into the unit the row would
+    /// have carried had it been typed in the unit column. Returns the expression unchanged with a
+    /// null unit whenever there is nothing to lift.
+    ///
+    /// <para>VAR rows only. A MEAS row with the same mistake is not silent — <c>MeasurementEvaluator</c>
+    /// collects the failure and names the measurement and the text — so there is nothing hidden there
+    /// to fix, and a measurement expression is far likelier to end in a letter token legitimately.</para>
+    ///
+    /// <para><b>The split is verified against the parser, not just the unit table.</b> Every bare SI
+    /// prefix is a unit name, so a purely token-based rule would tear "2 * f" into "2 *" + femto and
+    /// "R * m" into "R *" + milli — expressions that are perfectly legal today. So: leave anything
+    /// that already parses completely alone, and accept a split only when it turns text the parser
+    /// rejects into text it accepts. That makes this reachable by exactly the rows it is for and
+    /// unreachable by every row that was already working.</para>
+    /// </summary>
+    internal static (string Expression, string? Unit) LiftInlineUnit(string expression)
+    {
+        try
+        {
+            Parser.Parse(expression);
+            return (expression, null);      // already a valid expression — nothing to lift
+        }
+        catch (ExpressionException)
+        {
+            // Identity units (V, A, W, dBm, …) are included here, unlike in the .cnl reader: they
+            // carry no multiplier, but lifting one is still what keeps the variable ALIVE, and the
+            // parse check above is what makes the wider table safe to use.
+            var (expr, unit) = Units.SplitTrailingUnit(expression, includeIdentityUnits: true);
+            if (unit is null) return (expression, null);
+            try { Parser.Parse(expr); }
+            catch (ExpressionException) { return (expression, null); }   // split didn't help
+            return (expr, unit);                 // already the engine spelling
+        }
     }
 
     // ── Cell instance emission ───────────────────────────────────────────────

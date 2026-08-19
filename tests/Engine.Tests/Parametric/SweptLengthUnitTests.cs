@@ -129,21 +129,67 @@ public class SweptLengthUnitTests(ITestOutputHelper output)
 
     /// <summary>
     /// The sweep also reads a length unit off the VAR's OWN declaration when the sweep spec carries
-    /// none — the <c>EffectiveUnit</c> fallback (<c>sweep.Spec?.Unit</c> else <c>origVar?.Unit</c>).
-    /// A unit-less spec over a <c>mil</c>-declared global must not be treated as dimensionless.
+    /// none — the <c>EffectiveUnit</c> fallback (<c>sweep.Spec?.Unit</c> else <c>origVar?.Unit</c>) —
+    /// and applies it to the VALUES, not only to the base-symbol re-attach.
+    ///
+    /// <para><b>Revised, and it is a behaviour change.</b> This test used to assert 10 and 45 METRES,
+    /// on the reasoning that "the point of the property is that the re-attach adds nothing." That
+    /// reasoning describes the re-attach correctly and the sweep wrongly: the re-attach also MARKS
+    /// the injected override as unit-bearing, and a marked override is read as already-base-SI by
+    /// var-unit-wins at every use site. So the two halves contradicted each other — the values were
+    /// coefficients and the mark said they were not. For length it read as a 4,000× magnitude error;
+    /// for frequency it was the reported bug, where <c>RFfreq = 2 GHz</c> swept 2 … 3 ran the
+    /// analysis at 2 … 3 Hz with the result axis itself labelled "Hz". Scale and mark now come from
+    /// the same unit, which is also the rule the sweep editor has applied at build time since
+    /// brief-sweep-range-units ("the unit defaults to the swept VAR's declared unit").</para>
     /// </summary>
     [Fact]
-    public void AUnitlessSpecOverAUnitBearingGlobal_StillLandsInMetres()
+    public void AUnitlessSpecOverAUnitBearingGlobal_InheritsTheVarsOwnUnit()
     {
         var read = SweepAndReadBack("mil",
             new SweepSpec(10, 45, 2, SweepAxisMode.PointCount, SweepKind.Linear, ""), output);
 
-        // The spec has no unit, so the coefficients are NOT scaled at expansion time — but the VAR's
-        // own "mil" still supplies the base symbol for the re-attach, which is scale-1. The injected
-        // values are therefore the raw coefficients, unchanged: the point of the property is that
-        // the re-attach adds nothing, not that a unit-less spec magically acquires one.
-        Assert.Equal(10.0, read[0], 12);
-        Assert.Equal(45.0, read[1], 12);
+        // 10 mil and 45 mil in metres — the same values a spec that spelled out unit:"mil" produces,
+        // which is the property that matters: where the unit is written must not change the physics.
+        Assert.Equal(10 * 2.54e-5, read[0], 15);
+        Assert.Equal(45 * 2.54e-5, read[1], 15);
+    }
+
+    /// <summary>
+    /// The frequency face of the same rule, in the shape the bug was reported in: a VAR declared
+    /// <c>2 GHz</c>, a sweep range typed as the bare coefficients 2 … 3, and no unit on the spec.
+    /// </summary>
+    [Fact]
+    public void AUnitlessSpecOverAGigahertzGlobal_SweepsInGigahertz()
+    {
+        var read = SweepAndReadBack("GHz",
+            new SweepSpec(2, 3, 3, SweepAxisMode.PointCount, SweepKind.Linear, ""), output);
+
+        Assert.Equal(3, read.Length);
+        Assert.Equal(2.0e9, read[0], 3);
+        Assert.Equal(2.5e9, read[1], 3);
+        Assert.Equal(3.0e9, read[2], 3);
+    }
+
+    /// <summary>
+    /// The control for the pair above: a unit-less VAR with a unit-less spec is still dimensionless.
+    /// There is no unit anywhere to inherit, so the coefficients are the values — this is what keeps
+    /// every existing sweep over a plain bias or drive variable byte-identical.
+    /// </summary>
+    [Fact]
+    public void AUnitlessSpecOverAUnitlessGlobal_IsUnchanged()
+    {
+        var (lib, tb) = new CnlReader().Read(ReadoutCnl.Replace(" {UNIT}", ""));
+        Assert.Null(tb.GlobalVariables.Single().Unit);
+
+        var dc = tb.Analyses.OfType<DcAnalysis>().Single();
+        var sweep = new ParametricSweepAnalysis("SW1", "Lvar",
+            new SweepSpec(2, 3, 2, SweepAxisMode.PointCount, SweepKind.Linear, ""), dc.Name);
+
+        var ds = ParametricSweepEngine.Run(sweep, lib, tb);
+        Assert.Equal("", ds["V"].Axes[0].Unit);
+        Assert.Equal(2.0, ds["V"].RealValues[0], 12);
+        Assert.Equal(3.0, ds["V"].RealValues[1], 12);
     }
 
     // ── The frequency control ────────────────────────────────────────────────

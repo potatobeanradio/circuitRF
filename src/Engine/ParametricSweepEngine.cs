@@ -71,13 +71,42 @@ public static class ParametricSweepEngine
         int varIdx   = tb.GlobalVariables.FindIndex(v => v.Name == sweep.SweepVarName);
         var origVar  = varIdx >= 0 ? tb.GlobalVariables[varIdx] : null;
 
-        // Effective unit = the unit Brief 2 scaled by: the sweep's Spec.Unit, else the VAR's
-        // declared unit. BaseUnit reduces it to scale-1 (e.g. "GHz"→"Hz") so injecting it leaves
-        // the value unchanged while marking the variable as unit-bearing (var-unit-wins, Part A).
-        string effUnit  = sweep.Spec?.Unit is { Length: > 0 } su ? su : (origVar?.Unit ?? "");
-        string baseUnit = Units.BaseUnit(effUnit);
+        // Effective unit = the sweep's own Spec.Unit, else the swept VAR's declared unit.
+        // BaseUnit reduces it to scale-1 (e.g. "GHz"→"Hz") so injecting it leaves the value
+        // unchanged while marking the variable as unit-bearing (var-unit-wins, Part A).
+        bool   specHasUnit = !string.IsNullOrEmpty(sweep.Spec?.Unit);
+        string effUnit     = specHasUnit ? sweep.Spec!.Unit : (origVar?.Unit ?? "");
+        string baseUnit    = Units.BaseUnit(effUnit);
 
-        var datasets = new List<DataSet>(sweep.SweepValues.Length);
+        // A SPEC that carries no unit of its own INHERITS the swept VAR's declared unit, and the
+        // inherited unit has to reach the VALUES — not only the re-attach below. This is the same
+        // EffectiveUnit rule the sweep editor applies at build time (brief-sweep-range-units, owner
+        // decision 3: "the unit defaults to the swept VAR's declared unit"), so a UI-authored sweep
+        // arrives here with Spec.Unit already filled in and its SweepValues already scaled — the
+        // multiplier below is 1 and nothing changes. A sweep authored in .cnl without `Unit=`, or by
+        // any editor build that predates that brief, does NOT: its SweepValues are still raw
+        // coefficients.
+        //
+        // Scaling them here is not optional tidying. The re-attach MARKS the override as
+        // unit-bearing, which makes var-unit-wins suppress the use site's own unit — so an unscaled
+        // coefficient is then read as if it were already base SI. `RFfreq = 2 GHz` swept 2 … 3 ran
+        // the analysis at 2 … 3 Hz, with the result axis itself labelled "Hz" (the reported bug).
+        // Scale and mark must come from the same unit or they contradict each other.
+        //
+        // An explicit-list sweep (`Values=`, Spec is null) is EXCLUDED on purpose: those values are
+        // base-unit numbers by definition (brief-sweep-range-units Part B/C), so they are already
+        // what the base-unit re-attach says they are.
+        double inherited = sweep.Spec is not null && !specHasUnit && !string.IsNullOrEmpty(effUnit)
+            ? Units.Scale(effUnit) ?? 1.0
+            : 1.0;
+        // Scaling the materialized points is exactly equivalent to Part A's scaling of Start/Stop
+        // (and Step) before expansion, for Linear and Log alike: both are affine/geometric in the
+        // endpoints, so multiplying every point by m gives the same array with the same length.
+        double[] sweepValues = inherited == 1.0
+            ? sweep.SweepValues
+            : [.. sweep.SweepValues.Select(v => v * inherited)];
+
+        var datasets = new List<DataSet>(sweepValues.Length);
 
         // Continuation (§11): warm-start each HB point from the previous point's converged spectrum.
         // The seed chains only along THIS (innermost) axis; for a nested-sweep inner the per-point
@@ -92,12 +121,13 @@ public static class ParametricSweepEngine
         var innerControl = inner is ParametricSweepAnalysis ? control : control?.Child();
         bool countsLeaves = inner is not ParametricSweepAnalysis;
 
-        for (int si = 0; si < sweep.SweepValues.Length; si++)
+        for (int si = 0; si < sweepValues.Length; si++)
         {
             control?.ThrowIfCancellationRequested();
 
-            double val = sweep.SweepValues[si];
-            // SweepValues are already in base SI (scaled by ParametricSweepAnalysis spec ctor).
+            double val = sweepValues[si];
+            // sweepValues are in base SI (scaled by ParametricSweepAnalysis's spec ctor from
+            // Spec.Unit, or above from the VAR's inherited unit — never neither, never both).
             // Attach the base unit (scale-1) so the Elaborator calls MarkGlobalHasUnit, which
             // puts the variable into GlobalsWithExplicitUnit → FreqUnit.ResolveHz fires
             // var-unit-wins → ToneUnit/site-unit is not re-applied (fixes swept-freq double-unit).
@@ -167,7 +197,7 @@ public static class ParametricSweepEngine
             return DataSet.StackSweepAxis(freqAxis, datasets);
         }
         // Tag with base SI unit so marker readouts show "freq=2 GHz". SweepValues are already base SI.
-        return DataSet.StackSweepAxis(new Axis(sweep.SweepVarName, sweep.SweepValues, baseUnit), datasets);
+        return DataSet.StackSweepAxis(new Axis(sweep.SweepVarName, sweepValues, baseUnit), datasets);
     }
 
     /// <summary>

@@ -146,4 +146,42 @@ public static class Units
         if (unit is "kHz" or "MHz" or "GHz" or "THz") return "Hz";
         return _baseUnitMap.TryGetValue(unit, out var b) ? b : unit;
     }
+
+    /// <summary>
+    /// Splits an assignment right-hand side written with an INLINE unit — "2 GHz" → ("2", "GHz") —
+    /// into the expression and the unit. Returns (<paramref name="rhs"/> trimmed, null) when the
+    /// last whitespace-separated token is not a unit, so "a + b" and "50" are returned untouched.
+    ///
+    /// <para><paramref name="includeIdentityUnits"/> widens the last-token test from the
+    /// linear-scale table to <see cref="IsRecognizedUnit"/>, so "48 V" also splits. The .cnl reader
+    /// leaves it false — that is the rule netlists have always had — and callers that verify the
+    /// split against the parser (see <c>NetExtractor</c>) set it true.</para>
+    ///
+    /// <para>The unit comes back in its ENGINE spelling: an editor glyph is normalized through
+    /// <see cref="UnitNormalizer"/> first, so "50 Ω" splits and yields "Ohm". Only the candidate
+    /// token is normalized, never the expression — 'Ω' and 'µ' are letters as far as the tokenizer
+    /// is concerned, so a variable may legitimately be named with one.</para>
+    ///
+    /// <para>This is the single home for that rule. A unit properly belongs in the row's own unit
+    /// FIELD and the parser has no unit-suffix production — <c>Parser.Parse("2 GHz")</c> is a parse
+    /// error at the 'GHz'. A netlist has no separate field to put it in, so the .cnl reader has
+    /// always accepted the inline spelling and lifted it into <c>Variable.Unit</c>; the schematic
+    /// VAR editor has a real unit column and did not, which made the identical text mean two
+    /// different things in the two entry points — and the schematic one meant "silently no
+    /// variable at all", since <c>Elaborator</c> skips a global it cannot resolve.</para>
+    ///
+    /// <para><b>The last-token test alone is not safe on its own.</b> Every bare SI prefix is a
+    /// unit here, so "2 * f" ends in the femto- prefix and "R * m" in milli-. A netlist accepts
+    /// that risk (it has no alternative spelling); a caller that does have one should split only
+    /// when the unsplit text does not parse and the split text does.</para>
+    /// </summary>
+    public static (string Expression, string? Unit) SplitTrailingUnit(
+        string rhs, bool includeIdentityUnits = false)
+    {
+        var tokens = rhs.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length < 2) return (rhs.Trim(), null);
+        var last = UnitNormalizer.ToEngineUnit(tokens[^1]);
+        bool isUnit = includeIdentityUnits ? IsRecognizedUnit(last) : IsKnown(last);
+        return isUnit ? (string.Join(" ", tokens[..^1]), last) : (rhs.Trim(), null);
+    }
 }
