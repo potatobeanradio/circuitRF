@@ -254,6 +254,37 @@ public class P1ToneTests(ITestOutputHelper output)
         output.WriteLine($"P1Tone@1.5GHz on f0=1GHz K=3: '{exBad.Message}'  ✓");
     }
 
+    // ── T7b: the swept-tone diagnosis ─────────────────────────────────────────
+    //
+    //  The way this check actually fires in practice: a frequency sweep moves the SOURCE
+    //  (Freq=RFfreq GHz) while the analysis's own Tone is left as a fixed number, so the tone grid
+    //  stays where it started and every sweep point past the first is off-grid. The generic message
+    //  names the source — the half that is right — and sends the reader to the wrong place, so the
+    //  message must also name the variable and the fix.
+
+    [Fact]
+    public void T7b_OffGridSourceFollowingASweptVariable_NamesTheVariableAndTheFix()
+    {
+        var cnl = "RFfreq = 3\n" +
+                  "P1Tone:P1  rf 0  Pavl=0  Z=50  Freq=RFfreq GHz  Phase=0\n" +
+                  "R:R1  rf 0  R=50\n" +
+                  "analysis HB1  type=hb  Tone=2  ToneUnit=GHz  MaxHarm=3  Tol=1e-6\n";
+        var (lib, tb) = new CnlReader().Read(cnl, sourceDirectory: null);
+        var netlist   = new Elaborator(lib).Elaborate(tb);
+        var hba       = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
+        var p         = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+
+        InvalidOperationException? ex = null;
+        try { new HbEngine(netlist, tb).Run(p); }
+        catch (InvalidOperationException e) { ex = e; }
+
+        Assert.NotNull(ex);
+        Assert.Contains("Commensurability", ex!.Message);
+        Assert.Contains("'RFfreq'", ex.Message);
+        Assert.Contains("Tone", ex.Message);
+        output.WriteLine(ex.Message);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ElaboratedComponent MakeEc(P1ToneModel model, int[] nodes)

@@ -545,14 +545,14 @@
         },
         {
           "Name": "trans_phase",
-          "Expression": "phase(HB1.V[:, \u0022Vout\u0022, 1])",
+          "Expression": "phase(HB1.V(\u0022Vout\u0022, 1))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "AMPM",
-          "Expression": "trans_phase - phase(HB1.V[0, \u0022Vout\u0022, 1])",
+          "Expression": "trans_phase - at(trans_phase, \u0022Pin\u0022, 0)",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -811,7 +811,7 @@
       "Type": "hb",
       "Name": "HB1",
       "Enabled": true,
-      "ToneExpr": "2",
+      "ToneExpr": "RFfreq",
       "ToneUnit": "GHz",
       "NumFreqsExpr": "1",
       "MaxMixOrderExpr": "5",

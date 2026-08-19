@@ -1448,9 +1448,36 @@ public sealed class HbEngine
                         $"Commensurability check failed: source '{ec.InstancePath}' " +
                         $"Freq={freqHz:G6} Hz is not on the HB tone grid " +
                         $"{{f0={f0:G6} Hz, MaxHarm={K}}}" +
-                        UnitMismatchHint(f0, freqHz));
+                        UnitMismatchHint(f0, freqHz) +
+                        SweptToneHint(freqHz));
             }
         }
+    }
+
+    /// <summary>
+    /// The specific way this check fires under a frequency sweep: the SOURCE's Freq follows a swept
+    /// global (<c>Freq=RFfreq GHz</c>) while the analysis's own Tone is a fixed number, so the tone
+    /// grid stays where it started and every point past the first is off-grid. The generic message
+    /// names the source — which is the half that is right — so without this the reader goes looking
+    /// at the source. Names the global whose CURRENT value the source is sitting on, and the fix.
+    /// </summary>
+    private string SweptToneHint(double freqHz)
+    {
+        const double Rel = 1e-9;
+        foreach (var (name, val) in _netlist.ResolvedGlobals)
+        {
+            if (val.Kind != ValueKind.Real) continue;
+            double v = val.AsReal();
+            if (v == 0) continue;
+            // The global may be Hz-valued already, or unit-less with the unit applied at the use site
+            // (Freq=RFfreq GHz) — accept either spelling.
+            foreach (double scale in new[] { 1.0, 1e3, 1e6, 1e9 })
+                if (Math.Abs(v * scale - freqHz) <= Math.Abs(freqHz) * Rel)
+                    return $" — the source's frequency follows the variable '{name}' (now {freqHz:G6} Hz) "
+                         + "while this analysis's Tone is fixed; set the analysis Tone to "
+                         + $"'{name}' so the tone grid follows the sweep.";
+        }
+        return "";
     }
 
     private static string UnitMismatchHint(double f0, double freqHz)

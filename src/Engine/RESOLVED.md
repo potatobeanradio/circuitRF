@@ -4,6 +4,33 @@ Mirrors `src/Engine/Loadpull/RESOLVED.md`'s pattern: a completed brief's detail 
 section per brief, sparingly — only for findings that are still true, still surprising, and would cost
 someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## The commensurability error named the source; the fix is on the ANALYSIS (2026-08-19)
+
+**Reported as:** a frequency sweep would not run — `Commensurability check failed: source 'P1'
+Freq=3E+09 Hz is not on the HB tone grid {f0=2E+09 Hz, MaxHarm=3}` at a sweep point, blocking work in
+the Data Display.
+
+**Not an engine defect.** The owner's netlist had
+
+```
+analysis HB1 type=hb Tone="2" ToneUnit=GHz ...
+P1Tone:P1 ... Freq=RFfreq GHz
+analysis HB1_sweep_RFfreq type=parametric_sweep Var=RFfreq Start=2 Stop=4 Step=1
+```
+
+The **source** follows the swept variable and the **analysis's own Tone is a literal**, so the HB grid
+stays where it started and every point past the first is legitimately off-grid. `Tone` has always
+accepted an expression (`HbEngine.Resolve` → `FreqUnit.ResolveHz`, which also gets var-unit-wins right),
+so `Tone="RFfreq"` is the entire fix — verified end to end through `Cli hb` on the owner's netlist.
+
+**What WAS wrong is the message.** It named the source, which is the half that is right, and therefore
+sent the reader to the one place with nothing to fix. `HbEngine.SweptToneHint` now searches
+`_netlist.ResolvedGlobals` for a variable whose current value equals the off-grid tone — accepting the
+unit-less spelling too (`Freq=RFfreq GHz` applies the unit at the use SITE, so the global holds 3, not
+3e9) — and appends the variable's name and the fix. Test:
+`P1ToneTests.T7b_OffGridSourceFollowingASweptVariable_NamesTheVariableAndTheFix`. Fuller write-up in
+`src/Ui/DataDisplay/RESOLVED.md` (it surfaced during the plot-versus work).
+
 ## A parametric sweep's unit: SCALE and MARK must come from the same place (2026-08-18)
 
 **Reported as:** a Loadpull Pursuit with a frequency parametric sweep over `RFfreq` ran at the wrong
