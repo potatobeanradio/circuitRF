@@ -422,7 +422,7 @@ public sealed class WasmAssemblyDrcTests
     }
 
     [Fact]
-    public void AWireDesignWithNoWasm_ReportsNoAssemblyRules_AndStillChecksTheLayout()
+    public void AWireDesignWithNoWasm_NamesTheBuiltInRuleSet_AndStillChecksTheLayout()
     {
         var result = DrcEngine.Run(
             NarrowTrace(), TechWithMinWidth(200), null, null, Context(TwoWires(6 * Mil), null));
@@ -430,8 +430,17 @@ public sealed class WasmAssemblyDrcTests
         // The artwork check is untouched…
         Assert.Contains(result.Violations, v => v.Layer is not null);
 
-        // …and the absence of assembly rules is stated once, as an absence rather than a failure.
-        Assert.Contains(result.Diagnostics, d => d.Contains("No assembly rules"));
+        // …and the missing `.wasm` is stated as what it is: not "nothing ran", but "the BUILT-IN set
+        // ran, and here is how little it covers". A user reading "no assembly rules" beside a clean
+        // result cannot tell whether the result means anything.
+        Assert.Contains(result.Diagnostics, d => d.Contains("No .wasm assembly rule file"));
+        Assert.Contains(result.Diagnostics, d => d.Contains(WBondBuiltInRules.SetName));
+        Assert.Contains(result.Diagnostics, d => d.Contains(WBondBuiltInRules.WireClearanceRuleName));
+
+        // It is a rule that RAN, so it is counted as one. Zero here is what made the old panel read
+        // as "checked against nothing".
+        Assert.Equal(1, result.RulesEvaluated - RulesFrom(TechWithMinWidth(200)));
+
         Assert.DoesNotContain(result.Violations, v => v.Section is not null);
     }
 
@@ -443,10 +452,77 @@ public sealed class WasmAssemblyDrcTests
         var result = DrcEngine.Run([], null, null, null, Context(TwoWires(Mil / 2), null));
 
         var v = Assert.Single(result.Violations);
-        Assert.Equal("Wires intersect", v.RuleName);
+        Assert.Equal(WBondBuiltInRules.WireClearanceRuleName, v.RuleName);
+        Assert.Equal(DrcSeverity.Error, v.Severity);
         Assert.Null(v.Section);
-        Assert.Contains(result.Diagnostics, d => d.Contains("geometry error"));
+        Assert.Contains(result.Diagnostics, d => d.Contains("touch or overlap outright"));
     }
+
+    /// <summary>
+    /// EXACT contact — the case a <c>clearance &lt; 0</c> test cannot see, and not an exotic one: an
+    /// array on a pitch equal to its own wire diameter is drawn that way deliberately.
+    /// </summary>
+    [Fact]
+    public void WiresThatTouchExactly_AreReported()
+    {
+        // Centres one diameter apart: surfaces meet at exactly zero clearance.
+        var result = DrcEngine.Run([], null, null, ClearanceOf(0), Context(TwoWires(Mil), null));
+
+        var v = Assert.Single(result.Violations);
+        Assert.Equal(WBondBuiltInRules.WireClearanceRuleName, v.RuleName);
+    }
+
+    [Fact]
+    public void TheBuiltInClearance_DefaultsToHalfAMil_AndIsWhatDecidesAViolation()
+    {
+        Assert.Equal(0.5, WBondBuiltInRules.DefaultClearanceNm / Mil, 9);
+
+        // Centres 1.4 mil apart, 1 mil wires: 0.4 mil of metal-to-metal gap. Below the default,
+        // above a 0.25 mil setting — so the SETTING is what decides, not the geometry alone.
+        var design = TwoWires((long)(1.4 * Mil));
+
+        Assert.Single(DrcEngine.Run([], null, null, null, Context(design, null)).Violations);
+        Assert.Empty(DrcEngine.Run([], null, null, ClearanceOf(0.25 * Mil),
+                                   Context(design, null)).Violations);
+    }
+
+    /// <summary>
+    /// The rule is not a stand-in for a missing `.wasm` — it is geometry, so a house's rule file does
+    /// not repeal it. A file that states a LOOSER spacing rule must not license touching metal.
+    /// </summary>
+    [Fact]
+    public void TheBuiltInClearance_StillRuns_WhenAWasmIsResolved()
+    {
+        var wasm = new WasmFile
+        {
+            Name    = "Acme",
+            Machine = { new WasmRule { Name = "MinWireClearance", Expression = "wire_spacing(G1) >= 0.1mil" } },
+        };
+
+        var result = DrcEngine.Run([], null, null, null, Context(TwoWires(Mil / 2), wasm));
+
+        Assert.Contains(result.Violations, v => v.RuleName == WBondBuiltInRules.WireClearanceRuleName);
+    }
+
+    [Fact]
+    public void TheBuiltInClearance_ReportsWhatItMeasuredAndWhatItRequired()
+    {
+        var result = DrcEngine.Run([], null, null, null, Context(TwoWires((long)(1.2 * Mil)), null));
+
+        var v = Assert.Single(result.Violations);
+
+        // 1.2 mil centres less one whole diameter = 0.2 mil of gap, against the 0.5 mil default.
+        Assert.Contains("0.2 mil", v.MeasuredText);
+        Assert.Contains("0.5 mil", v.MeasuredText);
+    }
+
+    private static DrcRunSettings ClearanceOf(double nm) =>
+        DrcRunSettings.Default with { WireClearanceNm = nm };
+
+    /// <summary>How many die-side rules a technology contributes, so a wire-rule count can be read
+    /// out of a combined run without hard-coding the fixture's own rule count.</summary>
+    private static int RulesFrom(Technology tech) =>
+        DrcEngine.Run(NarrowTrace(), tech, null, null, null).RulesEvaluated;
 
     [Fact]
     public void AWireViolation_Waives_AndUnWaivesWhenTheWireMoves()

@@ -50,7 +50,19 @@ internal static class WBondPublishCommands
     private static int _running;
 
     /// <summary>What happened, for a host to report through whatever status channel it has.</summary>
-    internal readonly record struct Outcome(string Message, bool IsWarning)
+    /// <param name="Posted">
+    /// True when this outcome has ALREADY been put in the Messages panel, so a host with a panel must
+    /// not post it a second time and a host with a status line still should.
+    ///
+    /// <para><b>Why the flag rather than letting each host post.</b> The write's final line has to
+    /// carry the file path — the Messages panel renders a path as a reveal-in-file-manager link, and
+    /// that link is the point of the line. The path is known here, so the line is posted here. But
+    /// the layout-hosted entry point then posted the outcome AGAIN through
+    /// <c>LayoutEditorViewModel.ReportMessage</c>, which goes to the same panel and carries no path —
+    /// so the last thing in the panel after an export was a linkless duplicate, and the line with the
+    /// link sat above it looking like part of the progress trace (owner, 2026-08-19).</para>
+    /// </param>
+    internal readonly record struct Outcome(string Message, bool IsWarning, bool Posted = false)
     {
         /// <summary>Nothing to say — the user cancelled a picker or a dialog.</summary>
         public static Outcome Silent => new("", false);
@@ -130,12 +142,18 @@ internal static class WBondPublishCommands
             if (result is null || result.WrittenPaths.Count == 0)
                 return new Outcome("Nothing was written.", true);
 
-            messages?.Success("Wrote s-parameters", result.WrittenPaths[0]);
-
-            return new Outcome(
+            // THE FILE IS THE LAST LINE, and it carries the path. Both progress rows were posted
+            // before the run, so they sit above whatever follows; this is the one line that answers
+            // "where is it", and in the Messages panel its path renders as a link that reveals the
+            // file. Same ordering argument as the error path in WBondBackgroundRun.
+            string written =
                 $"Exported {Path.GetFileName(result.WrittenPaths[0])} — {ports} port(s), " +
                 $"{options.Points} frequency point(s) from " +
-                $"{options.StartHz * 1e-9:0.####} to {options.StopHz * 1e-9:0.####} GHz.", false);
+                $"{options.StartHz * 1e-9:0.####} to {options.StopHz * 1e-9:0.####} GHz.";
+
+            messages?.Success(written, result.WrittenPaths[0]);
+
+            return new Outcome(written, false, Posted: messages is not null);
         }
         finally
         {

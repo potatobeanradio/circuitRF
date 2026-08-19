@@ -26,7 +26,7 @@
 //
 // A real design has no intersecting wires: two pieces of metal cannot occupy the same space, so a
 // clearance at or below zero means the design itself is wrong, not that it is close to a limit.
-// <see cref="FindIntersections"/> is that check, and it is available whether or not a house states a
+// <see cref="FindTouching"/> is that check, and it is available whether or not a house states a
 // clearance rule — an assembly house's rule file is not what makes overlapping metal invalid.
 
 namespace CircuitRF.WBond;
@@ -238,10 +238,18 @@ public sealed class WirePairSweep
     /// Every pair of wires whose metal touches or interpenetrates — a geometry error rather than a
     /// clearance shortfall, and true regardless of what any assembly house states.
     ///
-    /// <para>Built for a sweep constructed with <c>gapNm = 0</c>; a larger gap works and only widens
-    /// the broad phase.</para>
+    /// <para><b>Contact is <c>clearance &#x2264; 0</c>, so the query limit has to be strictly
+    /// positive.</b> <see cref="FindCloserThan"/> reports <c>clearance &lt; limit</c>, so passing 0
+    /// finds interpenetration but silently skips two wires that touch EXACTLY — which is not an
+    /// exotic case: an array laid out on a pitch equal to its own wire diameter is drawn that way on
+    /// purpose. <paramref name="toleranceNm"/> is the width of that boundary, and the caller
+    /// (<c>WBondBuiltInRules.TouchToleranceNm</c>) is where the choice of a picometre is argued.</para>
+    ///
+    /// <para>Build the sweep with <c>gapNm</c> at least <paramref name="toleranceNm"/> so the broad
+    /// phase cannot prune a pair the narrow phase would have reported.</para>
     /// </summary>
-    public IReadOnlyList<WirePair> FindIntersections() => FindCloserThan(0.0);
+    public IReadOnlyList<WirePair> FindTouching(double toleranceNm) =>
+        FindCloserThan(Math.Max(double.Epsilon, toleranceNm));
 
     private IEnumerable<(int, int)> CellsOf(Bbox3 box)
     {

@@ -7,6 +7,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using CircuitRF.Ui.Layout.Drc;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.WBond;
@@ -106,6 +107,11 @@ public partial class SettingsView : Window
             WBondFootZUpDown.Value = (decimal)WBondUnits.FromNm(WBondDefaults.FootZNm, WBondUnit.Mil);
             WBondPastePitchUpDown.Value = (decimal)WBondUnits.FromNm(WBondDefaults.PastePitchNm, WBondUnit.Mil);
 
+            // Read back through the sanitiser, not from the raw preference: a hand-edited or absent
+            // value has to show the number the CHECK will actually use, or the dialog reports a rule
+            // that is not the one running.
+            WireClearanceUpDown.Value = (decimal)WBondWireClearance.Mil;
+
             UpdatePCellTrustStatus(prefs.PCellTrust?.Count ?? 0);
         }
         finally { _updatingGeneral = false; }
@@ -145,6 +151,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.CheckDrcOnExport = CheckDrcOnExportCheck.IsChecked);
+    }
+
+    private void OnWireClearanceChanged(object? sender, NumericUpDownValueChangedEventArgs e)
+    {
+        if (_updatingGeneral || WireClearanceUpDown.Value is not { } mil) return;
+        WBondWireClearance.Mil = (double)mil;
     }
 
     private void OnWBondPointsChanged(object? sender, NumericUpDownValueChangedEventArgs e)

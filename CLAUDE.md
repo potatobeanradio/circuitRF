@@ -12,6 +12,10 @@ symbol, class, or XAML control faster and far cheaper than delegating a "find X"
 agent. Reach for an agent only when the search genuinely needs multi-step reasoning across many
 unrelated locations, not for straightforward lookups.
 
+## Resolving Issues
+If significant findings were found during bug fixes or changes, write to the relevant RESOLVED.md 
+files never CLAUDE.md. This helps keep the CLAUDE.md files small.
+
 ## Stack
 - .NET 10 (LTS), C# 14
 - Avalonia 12 (UI), SkiaSharp (canvas rendering), CommunityToolkit.MVVM (MVVM)

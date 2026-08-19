@@ -3,6 +3,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.Drc;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.ViewModels.Dock;
 
@@ -21,20 +23,32 @@ public partial class DrcToolView : UserControl
     {
         if (DataContext is not DrcTool { EditorVm: { } vm }) return;
 
-        vm.RunDrc();
+        var workspace = ResolveWorkspace();
+
+        // Reported, not merely run. The panel's own button used to post nothing at all — the check
+        // ran, the list filled, and the Messages panel said not a word — which mattered the moment
+        // the run had something to say beyond a violation count: which rule set it used, and what a
+        // clean result therefore means. The other two entry points already reported through
+        // DrcRunReport; this is the third.
+        Report(vm, workspace, vm.RunDrc());
 
         // A design with bond wires and no assembly rules is the ONE moment a `.wasm` is worth asking
         // about — the user has just asked a question the workspace cannot answer. A new workspace
         // deliberately ships no rule file, so this is where one comes from; declining is remembered
         // for the session. See WorkspaceViewModel.PromptForAssemblyRulesAsync.
         if (vm.WireDesign is null || vm.AssemblyRules?.Rules is not null) return;
-
-        var workspace = ResolveWorkspace();
         if (workspace is null) return;
 
         if (await workspace.PromptForAssemblyRulesAsync(vm, TopLevel.GetTopLevel(this) as Window))
-            vm.RunDrc();
+            Report(vm, workspace, vm.RunDrc());
     }
+
+    /// <summary>
+    /// Posts a run's verdict, through the workspace's Messages panel when there is one and through
+    /// the layout's own sink otherwise (a torn-off window has no shell in reach).
+    /// </summary>
+    private static void Report(LayoutEditorViewModel vm, WorkspaceViewModel? workspace, DrcRunResult result) =>
+        DrcRunReport.Post(workspace?.Messages ?? vm.MessageSink, result);
 
     /// <summary>
     /// This view's DataContext is a <see cref="DrcTool"/>, not the workspace, so the workspace is

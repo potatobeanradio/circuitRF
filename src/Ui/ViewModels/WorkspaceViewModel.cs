@@ -5275,28 +5275,37 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// reported into a panel nobody can see, and posts a one-line summary to Messages. R16b holds:
     /// nothing is blocked, nothing is modified, and the user stays where they were.</para>
     /// </summary>
-    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    [RelayCommand(CanExecute = nameof(IsCheckableDocumentActive))]
     private void CheckDesignRules()
     {
-        if (ResolveActiveDocumentForCommands() is not LayoutDocument doc) return;
+        if (ResolveDrcTargetLayout() is not { } vm) return;
 
-        var result = doc.ActiveViewModel.RunDrc();
+        var result = vm.RunDrc();
 
-        _factory.DrcTool?.SetActiveLayout(doc.ActiveViewModel);
+        _factory.DrcTool?.SetActiveLayout(vm);
         ShowToolPanel(Docking.DockPanelIds.Drc);
 
-        foreach (var d in result.Diagnostics) Messages.Warning($"DRC — {d}");
-
-        string tech = result.TechnologyName is { Length: > 0 } n ? $" against \"{n}\"" : "";
-        if (result.IsClean)
-            Messages.Success($"DRC{tech}: no violations — {result.RulesEvaluated} rule(s) over " +
-                             $"{result.ShapesChecked:N0} shape(s)" +
-                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived." : "."));
-        else
-            Messages.Warning($"DRC{tech}: {result.ErrorCount} error(s), {result.WarningCount} warning(s)" +
-                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived" : "") +
-                             $" — see the DRC panel.");
+        CircuitRF.Ui.Layout.Drc.DrcRunReport.Post(Messages, result);
     }
+
+    /// <summary>
+    /// The layout a check runs over: a layout document's own, or a <b>wBond document's REFERENCE
+    /// layout</b> — which is where its wires live, since <c>WBondDocumentViewModel</c> installs the
+    /// design there and the assembly half of the run is evaluated by the layout's own DRC.
+    ///
+    /// <para><b>Without this, a wirebond design could not be checked from the editor it is drawn
+    /// in</b> (owner, 2026-08-19). The command was gated on a <c>LayoutDocument</c> being active and
+    /// the DRC panel was explicitly emptied for a wBond document, so the one editor whose entire
+    /// subject is wires was the one place with no way to check them.</para>
+    /// </summary>
+    private LayoutEditorViewModel? ResolveDrcTargetLayout() => ResolveActiveDocumentForCommands() switch
+    {
+        LayoutDocument doc  => doc.ActiveViewModel,
+        WBondDocument  wdoc => wdoc.ViewModel.ReferenceLayout,
+        _                   => null,
+    };
+
+    private bool IsCheckableDocumentActive() => ResolveDrcTargetLayout() is not null;
 
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private void ExportGdsii() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGdsii();
@@ -5468,10 +5477,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // §6.6/§10: a blank editor's layout view is where the user drags cells in from the project
         // tree as references. It needs a real (if empty) layout to drop into, or the existing
-        // drag-drop path silently does nothing.
-        doc.ViewModel.EnsureReferenceLayout(
-            Path.Combine(_recovery.SessionDir, "wbond-reference", Guid.NewGuid().ToString("N")[..8]));
-
+        // drag-drop path silently does nothing — TrackNewWBond creates it, for every entry point
+        // rather than only for this one.
         TrackNewWBond(doc);
 
         _scratchWBonds.Add(doc);
@@ -5509,6 +5516,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void TrackNewWBond(WBondDocument doc)
     {
+        // FIRST, because everything below applies itself to a reference layout that already exists:
+        // ResolveWBondAssemblyRules pushes the rule set into it, and ConfigureReferenceLayout hands
+        // it the workspace's technology seam.
+        //
+        // A `.wBond` opened from disk with no embedded geometry had none at all, which cost it two
+        // things silently: a cell dragged in from the project tree had nowhere to land, and — since
+        // the DRC panel follows this layout — its wires could not be checked.
+        doc.ViewModel.EnsureReferenceLayout(
+            Path.Combine(_recovery.SessionDir, "wbond-reference", Guid.NewGuid().ToString("N")[..8]));
+
         ResolveWBondAssemblyRules(doc);
         doc.SaveRequested += saveAs => _ = SaveWBondDoc(doc, null, saveAs);
 
@@ -5561,8 +5578,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (resolved is null) return false;
 
         var answer = await new SaveChangesDialog(
-            "This design has bond wires, but the workspace has no assembly rules to check them " +
-            "against.\n\n" +
+            "This design has bond wires, and the workspace has no assembly rules for them. It was " +
+            "checked against circuitRF's own built-in rule set instead, which is one rule: wires " +
+            "must not come closer to each other than the clearance in Settings.\n\n" +
             "Assembly rules (a .wasm file) come from your assembly house and state what the bonder " +
             "can do — wire pitch, loop height, clearances, allowed wire. circuitRF does not create " +
             "one until you need it.",
@@ -7436,7 +7454,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         WatchWBondProperties(doc);
         RefreshWBondPropertiesContext();
-        _factory.DrcTool?.SetActiveLayout(null);
+
+        // The DRC panel follows this document's REFERENCE LAYOUT, which is where its wires are
+        // installed (WBondDocumentViewModel.OnReferenceLayoutChanged) and therefore the only place an
+        // assembly check can run from.
+        //
+        // <b>It used to be emptied here</b>, and the consequence was not small: the one editor whose
+        // entire subject is bond wires was the one place with no way to check them, so the wire rules
+        // could only ever be run from a `.clay` that happened to have a wirebond cell in it (owner,
+        // 2026-08-19). Nothing about the check is wBond-specific — it is the same run, the same
+        // panel and the same waiver store — so this is a routing fix, not a second checker.
+        _factory.DrcTool?.SetActiveLayout(doc.ViewModel.ReferenceLayout);
 
         // §10.1's second surface: here the wires ARE the document, so the two panels follow the
         // document's own editor rather than a cell's. The wBond editor already shows both inline —
@@ -7515,7 +7543,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                                 or nameof(WBondDocumentViewModel.ReferenceLayout)
                                 or nameof(LayoutEditorViewModel.Overlay))) return;
 
-        if (_wbondPropertiesDoc is { } doc) WatchWBondProperties(doc);
+        if (_wbondPropertiesDoc is { } doc)
+        {
+            WatchWBondProperties(doc);
+
+            // The reference layout is created on demand and replaced when a bundle is unpacked, so
+            // the DRC panel has to be re-pointed at the new one exactly as the Properties panel is —
+            // otherwise a wBond that gained its artwork mid-session keeps a check pointed at the
+            // layout it no longer has.
+            if (e.PropertyName == nameof(WBondDocumentViewModel.ReferenceLayout))
+                _factory.DrcTool?.SetActiveLayout(doc.ViewModel.ReferenceLayout);
+        }
+
         RefreshWBondPropertiesContext();
     }
 
@@ -9186,7 +9225,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         (activeDockable as IActivatableDocument)?.RequestActivationFocus();
 
         // L5b: the violations panel follows the active LAYOUT and nothing else. Cleared FIRST and set
-        // again only by the LayoutDocument branch, so no document type can leave a previous layout's
+        // again only by the two branches that HAVE a layout — a LayoutDocument's own, and a
+        // WBondDocument's reference layout — so no document type can leave a previous layout's
         // violations on screen beside unrelated artwork by simply not knowing about this panel.
         _factory.DrcTool?.SetActiveLayout(null);
 
@@ -9281,7 +9321,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         RunAnalysisCommand.NotifyCanExecuteChanged();
         StopAnalysisCommand.NotifyCanExecuteChanged();
 
-        // Design ▸ Check Design Rules is enabled only when a layout document is active.
+        // Design ▸ Check Design Rules is enabled when a layout document is active, and when a wBond
+        // document is — a wirebond design is checked through its reference layout.
         CheckDesignRulesCommand.NotifyCanExecuteChanged();
 
         // Export GDSII/DXF (item 8) are enabled only when a layout document is active.

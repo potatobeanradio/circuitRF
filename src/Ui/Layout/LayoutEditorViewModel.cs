@@ -480,6 +480,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// manager" link (<see cref="MessageEntry.FilePath"/>) — e.g. the file/folder an export just wrote to.</summary>
     public void ReportMessage(string text, string? filePath = null) => _messageSink?.Success(text, filePath);
 
+    /// <summary>
+    /// Where this editor's messages go, or null when it was built without a sink (a torn-off window,
+    /// a test). Exposed so <see cref="Drc.DrcRunReport"/> can post a run's verdict through the same
+    /// channel <see cref="ReportMessage"/> uses rather than through a second one.
+    /// </summary>
+    internal Messages.IMessageSink? MessageSink => _messageSink;
+
     /// <summary>Posts a Messages error — used when a user-chosen <c>.ctech</c> (Change Technology's
     /// "each .ctech in tech/" or "Browse…" options) fails to load.</summary>
     public void ReportError(string text) => _messageSink?.Error(text);

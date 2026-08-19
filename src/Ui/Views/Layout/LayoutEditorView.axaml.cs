@@ -299,6 +299,11 @@ public partial class LayoutEditorView : UserControl
         var outcome = await action(owner, design, ResolveMessages());
         if (outcome.IsSilent) return;
 
+        // This editor's only report surface IS the Messages panel, so an outcome the command has
+        // already posted there must not be posted again — see WBondPublishCommands.Outcome.Posted for
+        // what that duplicate cost (the linkless copy landed last, below the line with the link).
+        if (outcome.Posted) return;
+
         if (outcome.IsWarning) vm.ReportWarning(outcome.Message);
         else vm.ReportMessage(outcome.Message);
     }
@@ -737,17 +742,7 @@ public partial class LayoutEditorView : UserControl
         var vm     = doc.ActiveViewModel;
         var result = vm.RunDrc();
 
-        foreach (var d in result.Diagnostics) vm.ReportWarning($"DRC — {d}");
-
-        string tech = result.TechnologyName is { Length: > 0 } n ? $" against \"{n}\"" : "";
-        if (result.IsClean)
-            vm.ReportMessage($"DRC{tech}: no violations — {result.RulesEvaluated} rule(s) over " +
-                             $"{result.ShapesChecked:N0} shape(s)" +
-                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived." : "."));
-        else
-            vm.ReportWarning($"DRC{tech}: {result.ErrorCount} error(s), {result.WarningCount} warning(s)" +
-                             (result.WaivedCount > 0 ? $", {result.WaivedCount} waived" : "") +
-                             " — see the DRC panel.");
+        Ui.Layout.Drc.DrcRunReport.Post(vm.MessageSink, result);
     }
 
     /// <summary>

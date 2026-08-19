@@ -43,11 +43,20 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>The resolved `.wasm` assembly rules, or null. Null is not an error (§M1).</summary>
     [ObservableProperty] private WasmResolution? _assemblyRules;
 
-    /// <summary>Which assembly rule set the last check ran against, named rather than assumed — the
-    /// same argument as <see cref="DrcTechnologyText"/>, applied to the second rule file.</summary>
+    /// <summary>
+    /// Which assembly rule set the last check ran against, named rather than assumed — the same
+    /// argument as <see cref="DrcTechnologyText"/>, applied to the second rule file.
+    ///
+    /// <para><b>"No assembly rules" is no longer one of the answers</b>, because it is not true: a
+    /// design with no `.wasm` is checked against <see cref="WBondBuiltInRules"/>, and a panel that
+    /// said nothing ran would be describing a check that did. What it says instead is which of the
+    /// two sets ran and, for the built-in one, how little it covers.</para>
+    /// </summary>
     public string DrcAssemblyText => WireDesign is null
         ? ""
-        : AssemblyRules?.Describe() ?? "No assembly rules.";
+        : AssemblyRules?.Rules is not null
+            ? AssemblyRules.Describe()
+            : WBondBuiltInRules.Describe(WBondWireClearance.Nm);
 
     partial void OnWireDesignChanged(WBondDesign? value)
     {
@@ -157,7 +166,14 @@ public sealed partial class LayoutEditorViewModel
                 LayoutExtent: ExtentOf(flat.Shapes))
             : null;
 
-        var result = DrcEngine.Run(flat.Shapes, Technology, Model.DrcWaivers, settings: null, wires);
+        // The built-in rule set's clearance is a USER preference (WBondWireClearance), so it is read
+        // here rather than defaulted inside the engine — the engine's own default is circuitRF's
+        // half a mil, which is the right answer for a caller that has no user to ask.
+        var settings = wires is null
+            ? null
+            : DrcRunSettings.Default with { WireClearanceNm = WBondWireClearance.Nm };
+
+        var result = DrcEngine.Run(flat.Shapes, Technology, Model.DrcWaivers, settings, wires);
 
         DrcResult = result with { Diagnostics = [.. diagnostics, .. result.Diagnostics] };
         return DrcResult;

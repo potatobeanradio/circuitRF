@@ -6,12 +6,24 @@
 //
 // ── Two things are checked whether or not a house states a rule ─────────────────────────────────
 //
-// 1. INTERSECTING WIRES. Two pieces of metal cannot occupy the same space, so a wire pair whose
-//    surfaces touch or interpenetrate is a geometry error in the design, not a design that is close
-//    to somebody's limit. It is reported with no `.wasm` present at all, because an assembly house's
-//    rule file is not what makes overlapping metal invalid.
+// 1. WIRE-TO-WIRE CLEARANCE — `WBondBuiltInRules.WireClearance`, the rule circuitRF supplies
+//    itself, held to half a mil surface-to-surface by default. Two pieces of metal cannot occupy the
+//    same space and a bonder cannot hold two wires to zero gap, so a wire pair below it is a
+//    geometry error in the design, not a design that is close to somebody's limit. It runs with no
+//    `.wasm` present at all, because an assembly house's rule file is not what makes overlapping
+//    metal invalid — and it runs alongside one, for the same reason: a file that omits the rule does
+//    not repeal it.
 // 2. A wire whose diameter or metal is not one the material section lists — a set-membership test,
 //    which is why it is checked structurally rather than through the expression language.
+//
+// ── The BUILT-IN set, and why "no rules resolved" is no longer the answer ───────────────────────
+//
+// A design with no `.wasm` used to be told only that it had none. That is a check that runs and
+// reports nothing, which is the shape of a tool people stop pressing. The built-in set (see
+// `WBondBuiltInRules` for what may and may not go in it) is what such a design is checked against
+// instead, and BOTH the count of rules evaluated and the diagnostics say which set ran — because
+// "clean against one geometry rule" and "clean against your house's forty" are answers a user must
+// never have to guess between.
 //
 // ── Cost (R-wbd-4) ──────────────────────────────────────────────────────────────────────────────
 //
@@ -93,11 +105,23 @@ public static class DrcWireCheck
 
         var heights = WBondLayerHeights.Resolve(ctx.Tech);
 
-        // ── Structural: intersecting wires ──────────────────────────────────────────────────────
-        var intersectionSweep = new WirePairSweep(wires.Select(w => w.Wire).ToList(), 0.0);
-        var intersections = intersectionSweep.FindIntersections();
+        // ── Built-in: wire-to-wire clearance ────────────────────────────────────────────────────
+        //
+        // COST. This is the one rule that runs on every check of every wirebond design, so it pays
+        // for the broad phase rather than an all-pairs loop: 600 wires is 179,700 unordered pairs
+        // before anything looks at a segment, and `WirePairSweep`'s uniform grid answers the same
+        // question in ~2 ms against ~417 ms. Nothing here is quadratic in the wire count.
+        //
+        // The sweep is built with the SAME limit it is queried at, so the broad phase cannot prune a
+        // pair the narrow phase would have reported.
+        double clearanceNm = Math.Max(WBondBuiltInRules.MinimumClearanceNm, settings.WireClearanceNm);
+        int builtInEvaluated = 0;
 
-        foreach (var hit in intersections)
+        var clearanceSweep = new WirePairSweep(wires.Select(w => w.Wire).ToList(), clearanceNm);
+        var tooClose = clearanceSweep.FindTouching(clearanceNm);
+        builtInEvaluated++;
+
+        foreach (var hit in tooClose)
         {
             var (ga, wa) = wires[hit.A];
             var (gb, wb) = wires[hit.B];
@@ -106,25 +130,38 @@ public static class DrcWireCheck
             var marker = PointMarker(pa, pb, ctx.DbuPerMicron);
 
             violations.Add(MakeWireViolation(
-                ruleName: "Wires intersect",
-                severity: DrcSeverity.Error,
+                ruleName: WBondBuiltInRules.WireClearanceRuleName,
+                severity: WBondBuiltInRules.WireClearance.Severity,
                 section: null,
                 groups: ga == gb ? [ga] : [ga, gb],
                 marker: marker,
                 measured: FormatMil(hit.ClearanceNm),
-                limitText: "0 mil"));
+                limitText: $"at least {FormatMil(clearanceNm)}"));
         }
 
-        if (intersections.Count > 0)
-            diagnostics.Add($"{intersections.Count:N0} wire pair(s) touch or overlap. That is a geometry " +
-                            "error rather than a clearance shortfall — a real design cannot contain them, " +
-                            "so they are reported whether or not an assembly house states a spacing rule.");
+        if (tooClose.Count > 0)
+        {
+            // Touching and merely close are the same rule but not the same conversation — one is a
+            // design that cannot be built, the other one that can be built badly — so the count of
+            // each is stated rather than left to be read off the list.
+            int contact = tooClose.Count(h => h.ClearanceNm <= WBondBuiltInRules.MinimumClearanceNm);
+
+            diagnostics.Add(
+                $"{tooClose.Count:N0} wire pair(s) are closer than the built-in minimum clearance of " +
+                $"{FormatMil(clearanceNm)}" +
+                (contact > 0 ? $", of which {contact:N0} touch or overlap outright" : "") +
+                ". Clearance is measured surface to surface, between the wires' outer edges.");
+        }
 
         if (ctx.Assembly is null)
         {
-            diagnostics.Add("No assembly rules resolved for this design, so only the wire geometry " +
-                            "itself was checked. Reference a .wasm file to check bonder and process rules.");
-            return new WBondCheckResult(violations, 0, diagnostics);
+            // Named rather than merely absent: a user reading "no rules resolved" cannot tell whether
+            // the clean result they are looking at means anything at all.
+            diagnostics.Add($"No .wasm assembly rule file is referenced by this design, so it was " +
+                            $"checked against the {WBondBuiltInRules.SetName} — " +
+                            $"{DescribeBuiltIn(clearanceNm)}. Reference a .wasm file to check your " +
+                            "assembly house's own bonder, process and material rules.");
+            return new WBondCheckResult(violations, builtInEvaluated, diagnostics);
         }
 
         diagnostics.AddRange(heights.Diagnostics);
@@ -179,8 +216,13 @@ public static class DrcWireCheck
             else violations.RemoveRange(before, violations.Count - before);
         }
 
-        return new WBondCheckResult(violations, evaluated, diagnostics);
+        return new WBondCheckResult(violations, evaluated + builtInEvaluated, diagnostics);
     }
+
+    /// <summary>The built-in rules, listed by name and by the limit each ran at — so a diagnostic
+    /// says what was actually checked rather than asking the reader to trust a count.</summary>
+    private static string DescribeBuiltIn(double clearanceNm) =>
+        $"\"{WBondBuiltInRules.WireClearanceRuleName}\" at {FormatMil(clearanceNm)}";
 
     // ── Wire-domain rules ───────────────────────────────────────────────────────────────────────
 

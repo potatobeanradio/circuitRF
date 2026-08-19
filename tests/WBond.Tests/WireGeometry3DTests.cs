@@ -264,7 +264,7 @@ public sealed class WireGeometry3DTests(ITestOutputHelper output)
         var clean = TestDesigns.PowerAmplifier(wireCount: 60, arrayCount: 6);
         var cleanWires = clean.AllWires().ToList();
 
-        Assert.Empty(new WirePairSweep(cleanWires, 0).FindIntersections());
+        Assert.Empty(new WirePairSweep(cleanWires, 1e-3).FindTouching(1e-3));
 
         // Now push one wire through another. A real design cannot contain this — two pieces of metal
         // cannot occupy the same space — so it is a geometry error rather than a tight clearance.
@@ -276,10 +276,62 @@ public sealed class WireGeometry3DTests(ITestOutputHelper output)
             a.Points[0].X, a.Points[0].Y + 200_000, a.Points[0].Z,
             diameter));
 
-        var hits = new WirePairSweep(crossed, 0).FindIntersections();
+        var hits = new WirePairSweep(crossed, 1e-3).FindTouching(1e-3);
 
         Assert.NotEmpty(hits);
         Assert.All(hits, h => Assert.True(h.ClearanceNm <= 0));
+    }
+
+    /// <summary>
+    /// EXACT contact — the case <c>FindCloserThan(0)</c> cannot see, because it reports
+    /// <c>clearance &lt; limit</c>. It is not an exotic geometry: an array laid out on a pitch equal
+    /// to its own wire diameter is drawn that way deliberately, and it is the one case a bonder
+    /// cannot run.
+    /// </summary>
+    [Fact]
+    public void WiresThatTouchExactly_AreFound_ByFindTouchingAndNotByAZeroLimit()
+    {
+        long diameter = WBondUnits.ToNm(1.0, WBondUnit.Mil);
+
+        // Centres one whole diameter apart: the surfaces meet at exactly zero clearance.
+        var wires = new List<Wire>
+        {
+            Straight(0, 0,        0, 1_000_000, 0,        0, diameter),
+            Straight(0, diameter, 0, 1_000_000, diameter, 0, diameter),
+        };
+
+        Assert.Equal(0.0, WireGeometry3D.Clearance(wires[0], wires[1]), 6);
+
+        Assert.Empty(new WirePairSweep(wires, 0).FindCloserThan(0.0));       // the old blind spot
+        Assert.Single(new WirePairSweep(wires, 1e-3).FindTouching(1e-3));    // and what closed it
+    }
+
+    /// <summary>
+    /// The built-in clearance rule runs on EVERY check of every wirebond design, so its broad phase
+    /// is what keeps a check affordable — 600 wires is 179,700 unordered pairs before anything looks
+    /// at a segment.
+    ///
+    /// <para>Asserted on the sweep's own COUNTERS rather than on wall-clock: this is the tier that
+    /// runs in the routine gate, where a timing assertion under full-suite parallel load measures the
+    /// machine. An accidental all-pairs scan shows up here immediately and costs nothing to check.</para>
+    /// </summary>
+    [Fact]
+    public void TheBuiltInClearanceSweep_PrunesRatherThanScanningEveryPair()
+    {
+        var design = TestDesigns.PowerAmplifier(wireCount: 600, arrayCount: 12);
+        var wires  = design.AllWires().ToList();
+
+        double clearance = WBondUnits.ToNm(0.5, WBondUnit.Mil);
+
+        var sweep = new WirePairSweep(wires, clearance);
+        var hits  = sweep.FindTouching(clearance);
+
+        // The fixture is a clean design on a 6 mil pitch — half a mil finds nothing in it.
+        Assert.Empty(hits);
+
+        Assert.True(sweep.Counters.TestedPairs * 50 < sweep.Counters.AllPairs,
+            $"broad phase measured {sweep.Counters.TestedPairs} of {sweep.Counters.AllPairs} pairs — " +
+            "that is close enough to an all-pairs scan to suggest the grid stopped pruning");
     }
 
     // ── Per-wire measurements ───────────────────────────────────────────────────────────────────

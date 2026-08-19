@@ -99,6 +99,14 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CheckDrcOnExport { get; set; }
 
+    // The built-in wire-to-wire clearance, in MIL — the one number circuitRF's own assembly rule set
+    // states, applied when a wirebond design references no `.wasm`. Null means the default (0.5 mil).
+    // Per USER for CheckDrcOnExport's own reason, and stored in mil because mil is the unit it is
+    // stated, shown and edited in. See WBondWireClearance for the full argument.
+    [JsonPropertyName("wire_clearance_mil")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? WireClearanceMil { get; set; }
+
     // R-h8-4: folders holding device kits, for harmonicaRF's Set DUT. A PREFERENCE and not a
     // workspace: DeviceWorkerProviderResolver's folder-list constructor needs nothing else (src/Cli's
     // --kits already ships that form), and standing up a WorkspaceViewModel to reach it would drag in

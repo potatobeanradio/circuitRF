@@ -134,6 +134,16 @@ public sealed record DrcRunSettings(
     int MaxShapes = DrcEngine.DefaultMaxShapes,
     int MaxWires  = DrcEngine.DefaultMaxWires)
 {
+    /// <summary>
+    /// The built-in rule set's wire-to-wire clearance, in nanometres, surface to surface.
+    ///
+    /// <para>An init-only member rather than a positional parameter so that every existing
+    /// construction of this record — <c>new DrcRunSettings(MaxWires: 4)</c> and the rest — keeps
+    /// compiling and keeps meaning what it meant. Defaults to circuitRF's own half a mil; the run
+    /// that reaches a user's preference (<c>WBondWireClearance</c>) sets it explicitly.</para>
+    /// </summary>
+    public double WireClearanceNm { get; init; } = Assembly.WBondBuiltInRules.DefaultClearanceNm;
+
     public static readonly DrcRunSettings Default = new();
 }
 

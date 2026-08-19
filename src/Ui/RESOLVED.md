@@ -6,6 +6,96 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## The built-in assembly rule set, and the two routing faults that hid it (2026-08-19)
+
+Owner: *"Do we have a DRC rule for touching wires? ... If no `.wasm` has been referenced by the user
+yet, have circuitRF use a built-in rule set."* Then, on the same rule: *"have a 'clearance' value.
+Default is 0.5 mil from the outer edges of the wires."*
+
+### The rule existed. Two things about it were wrong, and both were silent.
+
+**1. `FindIntersections()` could not see wires that touch EXACTLY.** It was `FindCloserThan(0.0)`, and
+that method reports `clearance < limit`. So interpenetration was caught and exact contact was not —
+and exact contact is not an exotic geometry to draw: **an array laid out on a pitch equal to its own
+wire diameter produces a clearance of exactly 0.0**, which is both the case a bonder cannot run and
+the case the check stayed quiet about. The limit therefore has to be strictly positive; it is
+`WBondBuiltInRules.MinimumClearanceNm`, one picometre — a hundredth of an atom, so no real clearance
+is swallowed by treating it as contact.
+
+**2. Zero was the wrong threshold anyway.** Zero is the point at which the design is impossible, not
+the point at which it is buildable: two wires a nanometre apart pass a zero test and short on the
+first sweep of encapsulant. The rule now enforces a real guard band — **0.5 mil surface-to-surface**,
+between the wires' outer edges, which is what `WireGeometry3D.Clearance` already returns.
+
+### The set is named, and it is named everywhere a check reports
+
+`WBondBuiltInRules` (in `src/Ui/Layout/Assembly/`, beside `WasmDefaults` rather than in `Drc/`, for
+that folder's own reason). The panel line, the diagnostics and `RulesEvaluated` all say which of the
+two rule sets answered. The old wording — *"No assembly rules resolved for this design, so only the
+wire geometry itself was checked"* — described a check that had, in fact, run one rule; a user reading
+it beside a clean result could not tell whether the result meant anything.
+
+**What may go in this set is deliberately narrow**, and the 0.5 mil is the interesting case. A `.wasm`
+rule is a STATEMENT BY A HOUSE, and a number circuitRF invented reported as though a house had stated
+it would pass a design the house rejects — the failure `WasmDefaults`' "PLACEHOLDER" wording exists to
+prevent. The clearance is legitimate here for exactly two reasons, and would not be otherwise: it is
+reported under this set's own name, never a house's, and **the user can change it**. Any further
+built-in rule wanting a number of its own has to clear the same bar.
+
+The value lives in `AppPreferences.WireClearanceMil` via `WBondWireClearance` (the `EmSolveCores`
+accessor-with-test-override shape), edited in Settings ▸ Wirebonds. Per USER, following
+`CheckDrcOnExport`'s own argument: a workspace arriving from someone else must not silently loosen a
+check you rely on. It cannot live in the `.wasm` — storing it in the document whose absence it exists
+to cover is circular.
+
+**It keeps running when a `.wasm` IS resolved**, and that is not an oversight: a house's rule file is
+not what makes overlapping metal invalid, so a file stating a looser spacing rule does not repeal it.
+
+### The rule was unreachable from the one editor whose subject is wires
+
+Two independent routing faults, either of which alone would have hidden it:
+
+- **`ActivateWBondDocumentForProperties` called `_factory.DrcTool?.SetActiveLayout(null)`.** A wBond
+  document's wires live on its REFERENCE LAYOUT — `WBondDocumentViewModel.OnReferenceLayoutChanged`
+  installs the design there, and the layout's own DRC is where the assembly half is evaluated — so
+  emptying the panel for that document type meant the wire rules could only ever be run from a `.clay`
+  that happened to contain a wirebond cell. `CheckDesignRules`' `CanExecute` had the same shape
+  (`IsLayoutDocumentActive`), so the menu item, the shortcut and the toolbar button were dead there
+  too. Both now resolve through `ResolveDrcTargetLayout`.
+- **A `.wBond` opened from disk with no embedded geometry had no reference layout at all**, so the fix
+  above would have worked for a NEW document and silently not for an opened one. `EnsureReferenceLayout`
+  moved from `NewWBond` into `TrackNewWBond`, which every entry point already goes through. (It also
+  fixes a second, older silence: a cell dragged in from the project tree had nowhere to land.)
+
+### The DRC panel's own Check button posted nothing to Messages
+
+Three entry points, and only two of them reported: the Design menu and the torn-off-window fallback
+each grew the same six lines, and the panel's button grew none — it ran the check, filled the list, and
+left Messages silent. That mattered the moment the run had something to say beyond a violation count.
+One `DrcRunReport.Post`, three callers. Diagnostics first, verdict last, for the ordering reason
+`WBondBackgroundRun` already argues: an answer above its own footnotes reads as belonging to the run
+before it.
+
+### Touchstone export: the link was there, and then something else landed on top of it
+
+`WBondPublishCommands` did post `Success("Wrote s-parameters", path)` — the Messages panel renders a
+path as a reveal-in-file-manager link. But the LAYOUT-hosted entry point then posted the outcome
+**again** through `LayoutEditorViewModel.ReportMessage`, which goes to the same panel and carries no
+path. So the last line after an export was a linkless duplicate and the line with the link sat above
+it, looking like part of the progress trace. `Outcome` now carries `Posted`; the terse
+"Wrote s-parameters" is replaced by the full "Exported wirebonds.s3p — 3 port(s), …" line, posted once,
+last, with the path. `WBondEditorView` still calls `ShowStatus` — that is its own status line, a
+different surface.
+
+### Cost
+
+Nothing here is quadratic. The rule runs on every check of every wirebond design, so it goes through
+`WirePairSweep`'s uniform-grid broad phase (600 wires = 179,700 unordered pairs; ~2 ms against ~417 ms
+naive), built with the same limit it is queried at so the broad phase cannot prune a pair the narrow
+phase would report. The routine-tier guard asserts on the sweep's own COUNTERS rather than on
+wall-clock — a timing assertion in the default gate measures the machine under parallel load; a
+`TestedPairs` vs `AllPairs` ratio catches an accidental all-pairs scan immediately and costs nothing.
+
 ## Dragging a wire over another: the refusal that undid the gesture, and the crash behind it (2026-08-19)
 
 Two owner reports, one mechanism:
