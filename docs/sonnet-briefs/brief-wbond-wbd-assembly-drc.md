@@ -78,7 +78,9 @@ merge.** If its identity rules do not fit a `.wasm` section, widen it — do not
 ### 1.3 The wBond side (`src/WBond/`, `src/Ui/WBond/`)
 
 `WBondDesign` / `WireArray` / `Wire` / `Point3` (integer **nanometres**), `Wire.LoopHeightNm` (the
-definition — max z − min z, §3.0), `Wire.FootDropNm`, `Wire.ChordLengthMetres()`,
+definition — max z − min z, §3.0), `Wire.FootDropNm`, `Wire.SpanMetres()` (the span
+definition — the XY distance between the feet, §3.0a; it was `ChordLengthMetres()` and 3-D until
+2026-08-19),
 `WBondDesign.AllWires()` (defines flat wire order), `WireMesh` (filaments + `ArrayOfWire`),
 `WBondUnits.TryParseLength` (the one number-with-unit parser). The editor is `WBondViewModel`;
 `WBondDocumentViewModel.ReferenceLayout` carries the layout the wires ride over.

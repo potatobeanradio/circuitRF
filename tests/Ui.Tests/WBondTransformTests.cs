@@ -269,10 +269,10 @@ public class WBondTransformTests
     public void Extend_LengthensAlongTheChord_AndRefusesANonPositiveFactor()
     {
         var vm = Vm(1);
-        double before = vm.Design.AllWires().First().ChordLengthMetres();
+        double before = vm.Design.AllWires().First().SpanMetres();
 
         Assert.Equal(1, vm.ExtendSelection(1.5));
-        Assert.True(vm.Design.AllWires().First().ChordLengthMetres() > before);
+        Assert.True(vm.Design.AllWires().First().SpanMetres() > before);
 
         Assert.Equal(0, vm.ExtendSelection(0));
         Assert.Equal(0, vm.ExtendSelection(-1));

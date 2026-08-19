@@ -540,7 +540,7 @@ public static class DrcWireCheck
             return fn switch
             {
                 WasmWireFunction.LoopHeight  => wire.LoopHeightNm,
-                WasmWireFunction.Span        => wire.ChordLengthMetres() * WBondUnits.NmPerMetre,
+                WasmWireFunction.Span        => wire.SpanMetres() * WBondUnits.NmPerMetre,
                 WasmWireFunction.AngleChange => WireGeometry3D.MaxAngleChangeDegrees(wire),
                 WasmWireFunction.DistToEdge  => DistToEdge(wire),
                 WasmWireFunction.WireToLayer => region is null ? double.PositiveInfinity : ToLayer(wire, region),

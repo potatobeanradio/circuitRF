@@ -558,7 +558,7 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         if (_altDrag) _snapMarker = null;
 
         _altApplied = 1.0;
-        _altReferenceSpan = ChordLengthNm(hit.Wire);
+        _altReferenceSpan = SpanNm(hit.Wire);
         _altMoveOutputFoot = GrabMovesOutputFoot(hit);
         (_altAxisX, _altAxisY) = ChordDirection(hit.Wire);
 
@@ -617,12 +617,14 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         return last > 0 && hit.Point > last / 2.0;
     }
 
-    private double ChordLengthNm(int wireIndex)
+    /// <summary>One wire's span in nanometres — an XY distance, like every other span in this
+    /// application (<see cref="Wire.SpanMetres"/>).</summary>
+    private double SpanNm(int wireIndex)
     {
         var wires = _vm.Design.AllWires().ToList();
         if (wireIndex < 0 || wireIndex >= wires.Count) return 0;
 
-        return wires[wireIndex].ChordLengthMetres() * WBondUnits.NmPerMetre;
+        return wires[wireIndex].SpanMetres() * WBondUnits.NmPerMetre;
     }
 
     private (double X, double Y) ChordDirection(int wireIndex)
@@ -1068,6 +1070,26 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         if (key == Key.G) { _gHeld = true; return false; }   // a held promotion key, not a command
 
         if (IsAtDepth) return false;
+
+        // ── Ctrl/Cmd+A selects the WIRES as well as the geometry ─────────────────────────────────
+        //
+        // Owner, 2026-08-19: "Control/CMD+A does not select all. (Everything should be selected —
+        // wires, primitives, cells, etc.)" It selected every shape and every instance and no wire at
+        // all, which on a wirebond cell — where the wires ARE most of what is on screen — reads as
+        // the key doing nothing.
+        //
+        // Returning FALSE on purpose, which is the whole trick: false means "not consumed", so the
+        // key goes on to reach LayoutEditorViewModel.OnKeyDown and its own SelectAllCommand runs
+        // immediately after this. The two selections are separate by design (§6.3 — neither clears
+        // the other) and so are the two commands; this is the same pairing the context menu's own
+        // "Select All" already makes, and for the same reason it goes through the layout editor's
+        // command rather than reimplementing what belongs in a select-all.
+        if ((modifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0 && key == Key.A)
+        {
+            _vm.SelectAllWires();
+            OverlayChanged?.Invoke();
+            return false;
+        }
 
         // Escape abandons a half-placed wire before it clears a selection — cancelling the gesture
         // you are visibly in the middle of is what Escape means everywhere else in this application.

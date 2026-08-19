@@ -4392,3 +4392,117 @@ Save-As now pass the stem. The picked path also gets `.csch` appended when it co
 extension at all, so the fix cannot turn into an extension-less file on a picker that does not apply
 `DefaultExtension` (`DataExporterDialog`'s loadpull export records seeing exactly that with the
 non-standard `.lpcwave`).
+
+## wBond round 8 — the layout host: select-all, the snap glyph, the wire point, span, profile order (2026-08-19)
+
+Six owner reports against the wBond layout host. Four had a cause that was not the obvious one.
+
+### Ctrl/Cmd+A selected the geometry and no wires — the fix RETURNS FALSE on purpose
+
+`LayoutEditorViewModel.SelectAllCommand` was doing its whole job (shapes *and* instances, a lesson it
+learned once already); the wires live in the overlay's own selection and nothing reached them, so on a
+wirebond cell — where the wires are most of what is on screen — the key read as doing nothing.
+
+`WBondLayoutOverlay.OnKeyDown` now claims Ctrl/Cmd+A, selects every wire, and **returns false**.
+`LayoutCanvas` treats false as "not consumed", so the same keystroke goes on to
+`LayoutEditorViewModel.OnKeyDown` and its own Select All runs immediately after. Returning true would
+have fixed the wires and broken the half that already worked — which is why the test asserts the
+return value, not just the selection. Same pairing the context menu's own "Select All" already makes.
+
+### The snap glyph was UNDER the wires, and a bigger glyph cannot fix that
+
+Reported as "the geometry snap glyphs do not render if the zoom level is too high… perhaps they need
+to be slightly larger?" They were rendering — inside `LayoutRenderer.Draw`, which is followed
+immediately by `ILayoutCanvasOverlay.Draw` on the same Skia lease. The overlay paints **on** the
+layout by design (WB23), so the glyph is under every wire.
+
+Size is not a remedy and the arithmetic says so: the glyph is a fixed ~8.47 device pixels while a
+wire's stroke and its vertex dots are proportional to zoom **with no clamp**, so any fixed glyph is
+covered at some zoom. A bump moves the zoom at which it disappears; it does not remove it. The size
+constants are untouched. What changed is order: `LayoutRenderOptions.DeferSnapMarker` suppresses the
+in-pipeline draw, and `LayoutRenderer.DrawSnapMarkerOnTop` — which rebuilds the same path-space
+transform from the same viewport rather than being handed one — runs after the overlay.
+`LayoutCanvas` sets the flag **only when it has an overlay**; every export, thumbnail and one-shot
+test render paints nothing afterwards and is byte-identical. A test asserts both halves (nothing
+painted when deferred, and the same pixels as the in-pipeline draw once drawn on top).
+
+### The vertex hitbox already matched the circle — the SEGMENTS were stealing the press
+
+"It feels smaller than the circle, so I get a lot of misses." The tolerance was right:
+`WireHitTest.VertexRadiusNm` is a floor under the caller's screen tolerance and equals the drawn
+radius exactly. The misses were real anyway, because **both segments meeting at an interior vertex
+pass through it**, so their distance there is ~0 while the vertex's own is however far off centre the
+user clicked. With `pointBias = 2`, everything past half the radius went to the segment: the visible
+circle was clickable only in the two lobes perpendicular to the wire — a hitbox that genuinely is
+smaller than the circle, in the direction the hand moves along it.
+
+`pointBias` cannot fix it. It is a ratio, so it only moves where along the wire the handover happens,
+and raising it far enough to cover the dot starts stealing presses meant for the segment well outside
+it. The rule is categorical instead: a press inside the drawn dot outranks any segment, full stop.
+Just outside the dot the segment takes the press back — both directions are pinned, because a hitbox
+*bigger* than the circle is the same complaint from the other side.
+
+`VertexToWireDiameterRatio` also went 0.66 → 0.726 (the requested ×1.1). One constant still, read by
+the renderer and the hit test alike.
+
+### The span gesture moved a foot's z — and it exposed that "span" meant two different things
+
+`ScaleSpan` lerped the moved foot along the chord in **all three** coordinates, so on the ordinary
+wire (die at one height, substrate at another) changing the span raised or lowered the foot by
+`Δz × (factor − 1)`. Invisible on a flat wire, which is why it survived.
+
+The first fix held z and compensated the plan factor so the **3-D** foot-to-foot distance still scaled
+by exactly `factor`, on the grounds that that was the number the panel printed. The owner then settled
+the underlying question instead: *"the span of a wire should be defined as the XY distance of the wire
+geometry. There should be no Z anywhere in the span calculation."* With that, the gesture is a plain
+plan-view scale and the compensation is gone. **See the next section — this bug was a symptom.**
+
+`WireEditsTests.Tier2_ScalingAnArraysSpan_PreservesTheRatiosBetweenMembers` is the test that caught
+the first, uncompensated attempt: it measured the 3-D chord, and 1.4 came back 1.3991. It now measures
+`SpanMetres` and is exact.
+
+### Span is XY — and half the application already knew that
+
+`Wire.ChordLengthMetres()` (3-D, feet to feet) is gone; `Wire.SpanMetres()` (XY) replaced it, and
+nothing wanted the 3-D form. Every consumer was a *span*: the Array Inductance panel's Span row and
+its landing-span diagnostic, the properties inspector's Span field, the DRC `span()` predicate, both
+alt-drags' reference span, `ProfileProjection.PreferredMode`'s absolute-vs-normalised choice, and
+`ScaleSpan`'s factor.
+
+**The profile view was already right, and had been since WB-C1 (2026-08-07).** `WireEdits.ChordParameter`
+— the span parameterisation the profile axis, the height scaling and the nudge all share — is XY only,
+and wbond.md §6.2 records *why* in detail: a 3-D parameter makes a point's loop height feed back into
+its own span position, so "scale the height" stops being well defined (a nominal 1.5× height scale
+measured 1.498×). So the codebase held two spans that agree on every level-footed wire and diverge by
+the foot drop on every chip-and-wire one — the axis said one thing, the readout beside it said another,
+and the setter set the second. That is the shape of the z-drift bug above, one level down.
+
+Level feet hide all of it, which is why nothing failed for this long — and, more pointedly, why
+changing the definition broke **no existing test at all**: 7,949 `Ui.Tests` and every pre-existing
+`WBond.Tests` case passed against both definitions, because the fixtures that exercise span have level
+feet. A change no test can see is exactly the one to gate deliberately, so the new gate is in
+`LoopHeightDefinitionTests`, beside §3.0's own definition tests and for the same stated reason: a suite
+built on level feet cannot tell two definitions apart, and this is the second definition that needed
+exactly that fixture. All three new cases were checked against the old 3-D form and fail there.
+
+Untouched, deliberately: `Wire.PathLengthMetres` and `Grover`'s per-filament segment lengths are true
+developed 3-D lengths and are what the physics integrates along. `Wire.FootDropNm` remains the feet's
+z separation, and §3.0's floor — a loop height can never be below the foot drop — still holds.
+Definition documented at `docs/design/wbond.md` §3.0a.
+
+### The profile view drew the selected wire under its neighbours
+
+Colour cannot express order. The wires of one array run within microns of each other in span-z, so a
+neighbour drawn afterwards covers the accent completely. `DrawProfile` now collects every wire the
+selection *touches* (a single picked vertex counts) and draws them last, in their existing relative
+order — everything else keeps its exact place in the stack. The oracle is the accent's own pixel
+count with and without a coincident neighbour: 292 vs **0** before the change.
+
+### The Frequency row now holds its place instead of vanishing
+
+It was hidden when capacitance was off, on the honest ground that the effective inductance is `L_arr`
+at every frequency and the row would say nothing. But it sits directly under the switch, above the
+cards the switch exists to be compared with, so hiding it moved every self-inductance up a row on each
+flip — mid-comparison. `ShowFrequency` has stopped being a visibility flag and become "is there
+anything to say": the row is unconditional in XAML, dimmed and hit-test-transparent, printing
+`WBondPanelViewModel.FrequencyDisplay` — the frequency, or an em dash.

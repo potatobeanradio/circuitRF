@@ -192,15 +192,19 @@ public class WBondRound4Tests
     /// The vertex dot is 10 % bigger — and because the DOT and its HITBOX are the same constant, both
     /// grew together. Two constants here would be the "the hitbox does not match the vertex size"
     /// report all over again.
+    ///
+    /// <para>Raised a second time on 2026-08-19 ("increase the diameter of the wire point rendering by
+    /// a factor of 1.1"), which is why the number is 0.6 x 1.1 x 1.1 rather than 0.6 x 1.1. Written as
+    /// the product so the next raise is one more factor rather than a re-derivation.</para>
     /// </summary>
     [Fact]
     public void TheVertexDot_IsTenPercentBiggerAndItsHitboxWithIt()
     {
-        Assert.Equal(0.66, WireHitTest.VertexToWireDiameterRatio, 12);
+        Assert.Equal(0.6 * 1.1 * 1.1, WireHitTest.VertexToWireDiameterRatio, 12);
         Assert.Equal(WireHitTest.VertexToWireDiameterRatio, WBondRenderer.VertexToWireDiameterRatio);
 
         long diameter = WBondUnits.ToNm(1.0, WBondUnit.Mil);
-        Assert.Equal(diameter * 0.5 * 0.66, WireHitTest.VertexRadiusNm(diameter), 6);
+        Assert.Equal(diameter * 0.5 * 0.726, WireHitTest.VertexRadiusNm(diameter), 6);
     }
 
     /// <summary>

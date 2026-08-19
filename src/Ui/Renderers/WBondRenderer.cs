@@ -343,6 +343,25 @@ public static class WBondRenderer
             Color = Opaquer(theme.Envelope, EnvelopeEdgeAlphaFactor),
         };
 
+        // ── A selected wire is drawn LAST, over every other wire ─────────────────────────────────
+        //
+        // Owner, 2026-08-19: "when user clicks on a wire in the layout view, it gets selected in the
+        // Wire Profile view. However, sometimes other wires (even wires within its own Group) are
+        // rendered overtop of the selected wire, so user can't see that the wire was selected."
+        //
+        // Selection order is the one thing this view cannot express with COLOUR alone: the wires of
+        // one array run within a few microns of each other in span-z, so a neighbour drawn afterwards
+        // covers the accent completely at any zoom that shows the whole loop. Drawing order is the
+        // only lever, and it is the right one — the wire the user just picked is the wire they are
+        // looking at.
+        //
+        // Collected rather than sorted, so the ORDINARY order of everything else is untouched: an
+        // unselected wire keeps its exact place in the stack, and the selected ones — however many —
+        // keep theirs relative to each other. A "touched" wire counts, not just a wholly selected one:
+        // picking a single vertex or one segment is still a pick, and its accent has to be visible for
+        // the same reason.
+        var deferred = new List<(Wire Wire, int FlatIndex, bool WholeSelected)>();
+
         for (int a = 0; a < design.Arrays.Count; a++)
         {
             var array = design.Arrays[a];
@@ -402,57 +421,68 @@ public static class WBondRenderer
                     && !touched
                     && ProjectsOnto(wire, array.Wires[representative], mode, azimuthRadians)) continue;
 
-                // ONE wire colour here too (owner, 2026-08-18, second report): "I don't want the
-                // wires ever changing colors based on geometry." A non-representative member used to
-                // be tinted, which meant a wire was recoloured for being SHAPED differently — the
-                // same complaint as the layout view's old free-wire tint, one view further along.
-                // Whether a curve is drawn at all is still a function of geometry (it is drawn unless
-                // it lands on pixels the representative already covers); its COLOUR is a function of
-                // selection and nothing else.
-                linePaint.Color = wholeSelected ? theme.Selected : theme.Wire;
-
-                // Per WIRE, like the layout view's own: a design may mix diameters, and at true
-                // diameter that difference is the thing the mode exists to show.
-                linePaint.StrokeWidth = StrokeWidthPx(wire.DiameterNm, pixelsPerNm, theme, thickness);
-
-                for (int i = 1; i < wire.Points.Count; i++)
-                {
-                    var p0 = ProfileProjection.Project(wire, i - 1, mode, azimuthRadians);
-                    var p1 = ProfileProjection.Project(wire, i, mode, azimuthRadians);
-
-                    var previous = linePaint.Color;
-                    if (SegmentSelected(selection, flatIndex, i - 1, wholeSelected))
-                        linePaint.Color = theme.Selected;
-
-                    canvas.DrawLine(spanToScreen(p0.Span), zToScreen(p0.Z),
-                                    spanToScreen(p1.Span), zToScreen(p1.Z), linePaint);
-                    linePaint.Color = previous;
-                    segments++;
-                }
-
-                for (int i = 0; i < wire.Points.Count; i++)
-                {
-                    var p = ProfileProjection.Project(wire, i, mode, azimuthRadians);
-
-                    // Per-POINT accent, which this view did not have at all: only whole wires were
-                    // ever highlighted, so an enclose marquee — whose whole job is catching some of a
-                    // wire's vertices — appeared to select nothing.
-                    bool pointSelected = wholeSelected || PointSelected(selection, flatIndex, i);
-
-                    dotPaint.Color = pointSelected ? theme.Selected
-                                   : i == 0 ? theme.InputEnd
-                                   : theme.Vertex;
-
-                    canvas.DrawCircle(spanToScreen(p.Span), zToScreen(p.Z),
-                                      VertexRadiusPx(linePaint.StrokeWidth, thickness), dotPaint);
-                    dots++;
-                }
-
-                wires++;
+                if (touched) deferred.Add((wire, flatIndex, wholeSelected));
+                else DrawProfileWire(wire, flatIndex, wholeSelected);
             }
         }
 
+        foreach (var item in deferred)
+            DrawProfileWire(item.Wire, item.FlatIndex, item.WholeSelected);
+
         return new Result(wires, segments, dots);
+
+        // One wire, wherever in the order it ended up — the two passes above must draw a wire
+        // identically or "selected" would mean "drawn differently" for a second reason.
+        void DrawProfileWire(Wire subject, int index, bool selectedWhole)
+        {
+            // ONE wire colour here too (owner, 2026-08-18, second report): "I don't want the
+            // wires ever changing colors based on geometry." A non-representative member used to
+            // be tinted, which meant a wire was recoloured for being SHAPED differently — the
+            // same complaint as the layout view's old free-wire tint, one view further along.
+            // Whether a curve is drawn at all is still a function of geometry (it is drawn unless
+            // it lands on pixels the representative already covers); its COLOUR is a function of
+            // selection and nothing else.
+            linePaint.Color = selectedWhole ? theme.Selected : theme.Wire;
+
+            // Per WIRE, like the layout view's own: a design may mix diameters, and at true
+            // diameter that difference is the thing the mode exists to show.
+            linePaint.StrokeWidth = StrokeWidthPx(subject.DiameterNm, pixelsPerNm, theme, thickness);
+
+            for (int i = 1; i < subject.Points.Count; i++)
+            {
+                var p0 = ProfileProjection.Project(subject, i - 1, mode, azimuthRadians);
+                var p1 = ProfileProjection.Project(subject, i, mode, azimuthRadians);
+
+                var previous = linePaint.Color;
+                if (SegmentSelected(selection, index, i - 1, selectedWhole))
+                    linePaint.Color = theme.Selected;
+
+                canvas.DrawLine(spanToScreen(p0.Span), zToScreen(p0.Z),
+                                spanToScreen(p1.Span), zToScreen(p1.Z), linePaint);
+                linePaint.Color = previous;
+                segments++;
+            }
+
+            for (int i = 0; i < subject.Points.Count; i++)
+            {
+                var p = ProfileProjection.Project(subject, i, mode, azimuthRadians);
+
+                // Per-POINT accent, which this view did not have at all: only whole wires were
+                // ever highlighted, so an enclose marquee — whose whole job is catching some of a
+                // wire's vertices — appeared to select nothing.
+                bool pointSelected = selectedWhole || PointSelected(selection, index, i);
+
+                dotPaint.Color = pointSelected ? theme.Selected
+                               : i == 0 ? theme.InputEnd
+                               : theme.Vertex;
+
+                canvas.DrawCircle(spanToScreen(p.Span), zToScreen(p.Z),
+                                  VertexRadiusPx(linePaint.StrokeWidth, thickness), dotPaint);
+                dots++;
+            }
+
+            wires++;
+        }
     }
 
     /// <summary>

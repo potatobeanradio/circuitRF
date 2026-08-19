@@ -4,7 +4,9 @@
 // SINGLE top-priority candidate is ever drawn (LayoutOverlay.SnapMarker carries just one) — R-snp-9's
 // cycling through coincident features is a click-time concern, not a rendering one.
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using CircuitRF.Ui.Layout;
 using SkiaSharp;
 
@@ -26,6 +28,48 @@ public static partial class LayoutRenderer
     /// <summary>How far to tint the marker color toward black/white for contrast against the canvas
     /// background (owner follow-up) — "slightly", not a full recolor.</summary>
     private const double SnapMarkerContrastTintAmount = 0.3;
+
+    /// <summary>
+    /// Draws the geometry-snap glyph ON TOP of a canvas that is otherwise finished — the second half
+    /// of <see cref="LayoutRenderOptions.DeferSnapMarker"/>, which see for why this exists at all.
+    ///
+    /// <para>It rebuilds the same path-space transform <see cref="LayoutRenderer.Draw"/> used, from
+    /// the same viewport and the same view, rather than being handed one: the glyph is a single
+    /// stroked shape, so recomputing an origin and a matrix for it costs nothing measurable, and a
+    /// transform passed across the seam is a second copy of the rule that decides where anything on
+    /// this canvas lands. Nothing is drawn when there is no marker, no view, or no overlay — the
+    /// ordinary case on every frame where the cursor is not near a snappable feature.</para>
+    /// </summary>
+    public static void DrawSnapMarkerOnTop(SKCanvas canvas, LayoutView? view, Technology? tech,
+                                           LayoutViewport vp, LayoutRenderOptions opts)
+    {
+        if (canvas is null || view is null) return;
+        if (opts.Overlay?.SnapMarker is not { } candidate) return;
+
+        double centerX = vp.PanX + vp.Width  / (2.0 * vp.Zoom);
+        double centerY = vp.PanY + vp.Height / (2.0 * vp.Zoom);
+        var (originX, originY) = ComputeOrigin(centerX, centerY, vp.Width / vp.Zoom, vp.Height / vp.Zoom);
+
+        double dbuToUm = 1.0 / Math.Max(1, view.DbuPerMicron);
+        double scaleUm = vp.Zoom / dbuToUm;
+
+        canvas.Save();
+        try
+        {
+            canvas.ClipRect(SKRect.Create(0, 0, (float)vp.Width, (float)vp.Height));
+            canvas.Concat(SKMatrix.CreateScaleTranslation(
+                (float)scaleUm, (float)scaleUm,
+                (float)((originX - vp.PanX) * vp.Zoom),
+                (float)(vp.Height - (originY - vp.PanY) * vp.Zoom)));
+
+            DrawSnapMarker(canvas, candidate, tech?.Layers.ToDictionary(l => l.Key),
+                           new PathSpace(originX, originY, dbuToUm), scaleUm, opts.Theme);
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+    }
 
     /// <summary>Resolves <paramref name="candidate"/>'s own source layer color (R-snp-4: cross-layer
     /// snapping is legible only because the marker tells the user WHICH layer it's about to snap to)

@@ -92,7 +92,10 @@ public enum WasmWireFunction
     /// <summary>Maximum z minus minimum z — <c>Wire.LoopHeightNm</c>, the one definition (§3.0).</summary>
     LoopHeight,
 
-    /// <summary>Straight-line 3D distance from the input foot to the output foot.</summary>
+    /// <summary>The wire's span — the <b>XY</b> distance from the input foot to the output foot,
+    /// <c>Wire.SpanMetres</c>, the one definition (owner, 2026-08-19: there is no z in a span). It
+    /// used to be the 3-D distance, so a rule written against the number the panel showed was checking
+    /// something else on any wire that dropped.</summary>
     Span,
 
     /// <summary>Largest turn angle, in degrees, between consecutive segments of the polyline.</summary>

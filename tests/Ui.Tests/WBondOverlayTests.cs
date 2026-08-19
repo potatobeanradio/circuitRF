@@ -338,6 +338,41 @@ public class WBondOverlayTests
                     $"the drag must run through the incremental path; {vm.IncrementalUpdateCount} updates");
     }
 
+    /// <summary>
+    /// <b>Ctrl/Cmd+A selects every wire — and does NOT consume the key</b> (owner, 2026-08-19:
+    /// "Control/CMD+A does not select all. Everything should be selected — wires, primitives, cells").
+    ///
+    /// <para>The false return is the assertion that matters as much as the selection: false is what
+    /// lets the same keystroke go on to reach the layout editor's own SelectAllCommand, which is what
+    /// picks up the shapes and the instances. Returning true would fix the wires and break the half
+    /// that already worked.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(KeyModifiers.Control)]
+    [InlineData(KeyModifiers.Meta)]
+    public void CtrlA_SelectsEveryWire_AndStillFallsThroughToTheLayoutEditor(KeyModifiers modifier)
+    {
+        var vm = new WBondViewModel(Design(wires: 3));
+        var overlay = new WBondLayoutOverlay(vm);
+
+        Assert.True(vm.Selection.IsEmpty);
+        Assert.False(overlay.OnKeyDown(Key.A, modifier),
+                     "consuming the key would leave the layout editor's own Select All unrun");
+
+        Assert.Equal(3, vm.Selection.TouchedWires().Count);
+    }
+
+    /// <summary>Plain A is not a select-all — it stays free for whatever the layout editor does with it.</summary>
+    [Fact]
+    public void A_WithoutAModifier_SelectsNothing()
+    {
+        var vm = new WBondViewModel(Design());
+        var overlay = new WBondLayoutOverlay(vm);
+
+        Assert.False(overlay.OnKeyDown(Key.A, KeyModifiers.None));
+        Assert.True(vm.Selection.IsEmpty);
+    }
+
     /// <summary>Arrow keys are the overlay's only when it has a selection — otherwise they nudge the layout.</summary>
     [Fact]
     public void ArrowKeys_AreClaimedOnlyWhenAWireIsSelected()

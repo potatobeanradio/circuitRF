@@ -27,6 +27,11 @@
         <Style Selector="TextBlock.settable">
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
+        <!-- A row that is holding its place rather than reporting anything. Dimmed rather than
+             removed so the rows below it never move — see the Frequency row's own comment. -->
+        <Style Selector="Grid.quiet">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
     </UserControl.Styles>
 
     <Border Background="{DynamicResource SystemChromeMediumLowColor}"
@@ -75,11 +80,17 @@
                          which once shunt capacitance exists is a function of frequency — so the panel
                          has to say which one. Double-click to set, like the four settable card rows.
                          Same two styles as those rows, defined once at control level above.
-                         Hidden when capacitance is not in the numbers: the effective inductance is
-                         then L_arr at every frequency, so the row would provably change nothing. -->
-                    <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0" IsVisible="{Binding ShowFrequency}">
+
+                         ALWAYS PRESENT, dimmed and saying nothing when capacitance is out of the
+                         numbers (owner, 2026-08-19). It used to be hidden outright, which moved every
+                         self-inductance card below it by one row each time the switch directly above
+                         was flipped — and comparing those two numbers by flipping is what the switch
+                         is for. See WBondPanelViewModel.FrequencyDisplay. -->
+                    <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0"
+                          Classes.quiet="{Binding !ShowFrequency}"
+                          IsHitTestVisible="{Binding ShowFrequency}">
                         <TextBlock Grid.Column="0" Classes="detailLabel" Text="Frequency"/>
-                        <TextBlock Grid.Column="1" Classes="detailValue settable" Text="{Binding Frequency}"
+                        <TextBlock Grid.Column="1" Classes="detailValue settable" Text="{Binding FrequencyDisplay}"
                                    DoubleTapped="OnFrequencyDoubleTapped"
                                    ToolTip.Tip="{x:Static wb:WBondPanelViewModel.FrequencyRowTip}"/>
                     </Grid>

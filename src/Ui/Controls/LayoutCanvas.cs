@@ -1369,11 +1369,21 @@ public sealed class LayoutCanvas : Control
             var leaseFeature = context.TryGetFeature<ISkiaSharpApiLeaseFeature>();
             if (leaseFeature is null) return;
             using var lease = leaseFeature.Lease();
-            var result = LayoutRenderer.Draw(lease.SkCanvas, _view, _tech, _vp, _opts);
+            var opts = _overlay is null ? _opts : _opts with { DeferSnapMarker = true };
+            var result = LayoutRenderer.Draw(lease.SkCanvas, _view, _tech, _vp, opts);
 
             // After the layout, inside the same lease — the overlay draws ON the layout (WB23), and
             // its own pass never reaches LayoutRenderer's caches.
             _overlay?.Draw(lease.SkCanvas, _vp, _opts.Theme);
+
+            // …and the geometry-snap glyph goes on last of all, above that overlay, which is the only
+            // place it can be seen at high zoom: an overlay's wires and vertex dots scale with zoom
+            // without limit while the glyph is a fixed ~8 device pixels, so drawn in its old place it
+            // ends up UNDER metal wide enough to hide it entirely (owner, 2026-08-19). Only when there
+            // IS an overlay — otherwise LayoutRenderer has already drawn it in the ordinary place and
+            // nothing is painted over it. See LayoutRenderOptions.DeferSnapMarker.
+            if (_overlay is not null)
+                LayoutRenderer.DrawSnapMarkerOnTop(lease.SkCanvas, _view, _tech, _vp, _opts);
 
             _onResult(result);
         }

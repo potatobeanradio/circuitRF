@@ -219,7 +219,7 @@ public class WBondEditorRound2Tests
 
         var wire = vm.Design.AllWires().First();
         var foot = wire.Points[0];
-        double spanBefore = wire.ChordLengthMetres();
+        double spanBefore = wire.SpanMetres();
 
         overlay.OnPointerPressed(foot.X, foot.Y, Tol, KeyModifiers.None, 1);
 
@@ -228,7 +228,7 @@ public class WBondEditorRound2Tests
         overlay.OnPointerReleased(foot.X + 300, foot.Y - 200);
 
         Assert.Equal(foot, wire.Points[0]);
-        Assert.Equal(spanBefore, wire.ChordLengthMetres(), 15);
+        Assert.Equal(spanBefore, wire.SpanMetres(), 15);
         Assert.False(vm.CanUndo);
     }
 
@@ -290,7 +290,7 @@ public class WBondEditorRound2Tests
         vm.Selection = new WireSelection { Wires = { 0 } };
 
         var wire = vm.Design.AllWires().First();
-        double spanBefore = wire.ChordLengthMetres();
+        double spanBefore = wire.SpanMetres();
 
         // Height ABOVE THE CHORD is the quantity WB24a scales — and it has to be, because the two feet
         // sit at different z here (die surface to package lead), so max-minus-min z is not a multiple
@@ -299,7 +299,7 @@ public class WBondEditorRound2Tests
 
         Assert.True(vm.ScaleSelection(spanFactor: 1.5, heightFactor: 2.0, moveOutputFoot: true) > 0);
 
-        Assert.Equal(spanBefore * 1.5, wire.ChordLengthMetres(), 9);
+        Assert.Equal(spanBefore * 1.5, wire.SpanMetres(), 9);
         Assert.Equal(heightBefore * 2.0, ProfileEnvelope.HeightAt(wire, 0.5), 0);
     }
 
@@ -314,11 +314,11 @@ public class WBondEditorRound2Tests
         vm.Selection = new WireSelection { Wires = { 0 } };
 
         var wire = vm.Design.AllWires().First();
-        double spanBefore = wire.ChordLengthMetres();
+        double spanBefore = wire.SpanMetres();
 
         vm.ScaleSelection(spanFactor: 1.0, heightFactor: 1.5, moveOutputFoot: true);
 
-        Assert.Equal(spanBefore, wire.ChordLengthMetres(), 12);
+        Assert.Equal(spanBefore, wire.SpanMetres(), 12);
     }
 
     /// <summary>
@@ -336,13 +336,13 @@ public class WBondEditorRound2Tests
 
         var wire = vm.Design.AllWires().First();
         var other = vm.Design.AllWires().ElementAt(1);
-        double spanBefore = wire.ChordLengthMetres();
-        double otherBefore = other.ChordLengthMetres();
+        double spanBefore = wire.SpanMetres();
+        double otherBefore = other.SpanMetres();
 
         Assert.Equal(1, vm.ScaleSelection(spanFactor: 1.5, heightFactor: 1.0, moveOutputFoot: true));
 
-        Assert.Equal(spanBefore * 1.5, wire.ChordLengthMetres(), 9);
-        Assert.Equal(otherBefore, other.ChordLengthMetres(), 12);   // its sibling is untouched
+        Assert.Equal(spanBefore * 1.5, wire.SpanMetres(), 9);
+        Assert.Equal(otherBefore, other.SpanMetres(), 12);   // its sibling is untouched
     }
 
     /// <summary>
@@ -357,7 +357,7 @@ public class WBondEditorRound2Tests
 
         var wire = vm.Design.AllWires().First();
         var output = wire.Points[^1];
-        double spanBefore = wire.ChordLengthMetres();
+        double spanBefore = wire.SpanMetres();
 
         // Grab near the OUTPUT foot, so the input foot is pinned, and pull along +x (the chord).
         long pull = WBondUnits.ToNm(50.0, WBondUnit.Mil);
@@ -365,8 +365,8 @@ public class WBondEditorRound2Tests
         overlay.OnPointerMoved(output.X + pull, output.Y, 0, leftButtonDown: true, KeyModifiers.Alt);
         overlay.OnPointerReleased(output.X + pull, output.Y);
 
-        Assert.True(wire.ChordLengthMetres() > spanBefore * 1.3,
-                    $"span {spanBefore} -> {wire.ChordLengthMetres()}");
+        Assert.True(wire.SpanMetres() > spanBefore * 1.3,
+                    $"span {spanBefore} -> {wire.SpanMetres()}");
         Assert.Equal(0L, wire.Points[0].X);   // the pinned foot did not move
     }
 

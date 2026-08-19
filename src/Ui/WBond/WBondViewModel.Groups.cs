@@ -98,7 +98,7 @@ public sealed partial class WBondViewModel
 
         foreach (var wire in array.Wires)
         {
-            double currentNm = wire.ChordLengthMetres() * WBondUnits.NmPerMetre;
+            double currentNm = wire.SpanMetres() * WBondUnits.NmPerMetre;
             if (currentNm <= 0) continue;
 
             WireEdits.ScaleSpan(wire, spanNm / currentNm, moveOutputFoot: true);
@@ -388,7 +388,7 @@ public sealed partial class WBondViewModel
         if (spanNm <= 0) return false;
         if (_design.AllWires().ElementAtOrDefault(wireIndex) is not { } wire) return false;
 
-        double currentNm = wire.ChordLengthMetres() * WBondUnits.NmPerMetre;
+        double currentNm = wire.SpanMetres() * WBondUnits.NmPerMetre;
         if (currentNm <= 0) return false;
 
         PushUndo();

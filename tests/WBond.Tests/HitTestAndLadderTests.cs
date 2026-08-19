@@ -159,6 +159,62 @@ public class HitTestAndLadderTests
         Assert.Equal(1, hit.Point);
     }
 
+    /// <summary>
+    /// <b>A press INSIDE the drawn dot is a press on the vertex, even when it sits exactly on the
+    /// segment through it</b> (owner, 2026-08-19: "the hitbox of the wire point needs to match the
+    /// render size of the circle on the user's screen. Currently it feels smaller than the circle, so
+    /// I get a lot of misses when I try to touch a wire point.").
+    ///
+    /// <para>This is the case the plain point-over-segment bias could not carry. Both segments meeting
+    /// at an interior vertex PASS THROUGH it, so a press offset ALONG the wire is at distance ~0 from
+    /// a segment while being however far from centre the user actually clicked — at bias 2 the segment
+    /// took everything past half the dot's radius. The visible circle was therefore only half
+    /// clickable, and only in the two lobes perpendicular to the line, which is exactly a hitbox that
+    /// feels smaller than what is drawn.</para>
+    ///
+    /// <para>Probed at 90 % of the drawn radius so it is unambiguously INSIDE the circle, on a
+    /// straight-in-plan wire where the segment distance is exactly zero — the hardest form of the
+    /// case, not a near miss of it.</para>
+    /// </summary>
+    [Fact]
+    public void APressInsideTheDrawnDot_FindsThePoint_EvenSittingOnTheSegment()
+    {
+        var mesh = Mesh();
+        long diameter = mesh.Wires[0].DiameterNm;
+        var apex = mesh.Wires[0].Points[1];
+
+        double radius = WireHitTest.VertexRadiusNm(diameter);
+        long along = (long)(radius * 0.9);
+        Assert.True(along > 0);
+
+        // Straight in plan (angleDeg 0), so this offset is ON the segment: its distance is zero.
+        var hit = WireHitTest.HitTestLayout(mesh, apex.X + along, apex.Y,
+                                            WBondUnits.ToNm(3.0, WBondUnit.Mil));
+
+        Assert.True(hit.Found);
+        Assert.False(hit.IsSegment, "a press inside the circle the user can see is a press on it");
+        Assert.Equal(1, hit.Point);
+    }
+
+    /// <summary>
+    /// The other half of the same rule: just OUTSIDE the dot the segment takes the press back. The
+    /// vertex does not acquire an invisible catchment — the rule is "matches what is drawn", and a
+    /// hitbox bigger than the circle would be the same complaint from the other side.
+    /// </summary>
+    [Fact]
+    public void APressOutsideTheDrawnDot_StillFindsTheSegment()
+    {
+        var mesh = Mesh();
+        double radius = WireHitTest.VertexRadiusNm(mesh.Wires[0].DiameterNm);
+        var apex = mesh.Wires[0].Points[1];
+
+        var hit = WireHitTest.HitTestLayout(mesh, apex.X + (long)(radius * 1.6), apex.Y,
+                                            WBondUnits.ToNm(3.0, WBondUnit.Mil));
+
+        Assert.True(hit.Found);
+        Assert.True(hit.IsSegment);
+    }
+
     /// <summary>Outside the tolerance nothing is hit, and it says so rather than returning wire 0.</summary>
     [Fact]
     public void AClickInEmptySpace_FindsNothing()

@@ -123,6 +123,30 @@ public readonly struct LayoutRenderOptions
     /// <summary>The markers to draw when <see cref="ShowDrcMarkers"/> is set. Null draws nothing.</summary>
     public IReadOnlyList<DrcMarker>? DrcMarkers { get; init; }
 
+    /// <summary>
+    /// Skip the geometry-snap glyph here, because the CALLER will draw it itself once everything else
+    /// is on the canvas — via <see cref="LayoutRenderer.DrawSnapMarkerOnTop"/>.
+    ///
+    /// <para><b>Set by the interactive canvas and by nothing else.</b> A host that paints an OVERLAY
+    /// after this call (<c>LayoutCanvas</c> hands the Skia lease to <c>ILayoutCanvasOverlay.Draw</c>
+    /// straight afterwards — that is how wBond's wires reach a layout view) draws that overlay on top
+    /// of everything <see cref="LayoutRenderer.Draw"/> produced, the snap glyph included. The glyph is
+    /// a fixed ~8 device pixels while a wire and its vertex dots scale with zoom without limit, so
+    /// past a certain zoom the glyph is drawn UNDER a wire wide enough to cover it completely —
+    /// owner, 2026-08-19: "the geometry snap glyphs do not render if the zoom level is too high. I
+    /// believe the glyphs are there but are hidden behind the wire point and segment renderings."</para>
+    ///
+    /// <para><b>Why not simply make the glyph bigger</b> (the owner's own suggestion in the same
+    /// sentence): the thing hiding it has no size limit. A dot that keeps growing with zoom will cover
+    /// any FIXED screen-space glyph at some zoom, so a size bump moves the zoom at which the glyph
+    /// disappears without removing the zoom at which it does. Order is the property that has to hold,
+    /// and it is one the size cannot buy. The size constants are untouched.</para>
+    ///
+    /// <para>Defaults to false, so every export, thumbnail and one-shot test render is unchanged: they
+    /// draw nothing after the call, so there is nothing for the glyph to be under.</para>
+    /// </summary>
+    public bool DeferSnapMarker { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true, ShowPCellPins = true };
 }
 
@@ -486,7 +510,9 @@ public static partial class LayoutRenderer
                 if (opts.Overlay?.Marquee is { } marquee)
                     DrawMarquee(canvas, marquee, theme, ps);
 
-                if (opts.Overlay?.SnapMarker is { } snapMarker)
+                // Unless the host has taken it on itself to draw the glyph LAST, above whatever it
+                // paints after this call — see LayoutRenderOptions.DeferSnapMarker.
+                if (!opts.DeferSnapMarker && opts.Overlay?.SnapMarker is { } snapMarker)
                     DrawSnapMarker(canvas, snapMarker, layerMap, ps, scaleUm, theme);
 
                 // pcell-parameter-handles.md §4.2 — above the instance's own artwork and its selection

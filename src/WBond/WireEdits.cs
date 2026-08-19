@@ -83,11 +83,38 @@ public static class WireEdits
             heights[i] = wire.Points[i].Z - chordZ;
         }
 
+        // ── The moved foot travels in PLAN ONLY — its z is its own and does not move ─────────────
+        //
+        // Owner, 2026-08-19: "using the span command (or alt-dragging to adjust span) is altering the
+        // z-coordinate. This should never happen. The z-heights of the start and end of wire should
+        // remain fixed during a span operation."
+        //
+        // A foot's z is where the wire LANDS — a die pad, a substrate pad, a lead frame — and no
+        // change of span moves a pad up or down. Lerping the foot in all three coordinates slid it
+        // along the chord in z as well, so on any wire whose feet sat at different heights (which is
+        // the ordinary case: die to substrate) lengthening the span also raised or lowered the moved
+        // foot. Same reason, and the same `with { Z = ... }`, as Straighten's own plan-only rule.
+        //
+        // <b>The factor is a multiple of the SPAN, and span is an XY distance</b>
+        // (<see cref="Wire.SpanMetres"/>, owner 2026-08-19) — the same quantity ChordParameter above
+        // measures against and the profile view plots along. So a plain plan-view scale IS the whole
+        // operation: the moved foot lands at exactly `factor` times the XY distance from the pinned
+        // one, and every caller that divides a wanted span by the current one (SetWireSpan,
+        // SetGroupSpan, both alt-drags) gets exactly the span it asked for.
+        //
+        // The interior points are unaffected beyond the obvious: the chord's endpoints keep their
+        // original z, so the chord they are measured against is the one they were captured against,
+        // and their absolute heights above it survive exactly as documented above.
+        //
+        // Nothing to scale along when the feet are stacked in XY: the span is zero, so no factor
+        // means anything. Left exactly as it was rather than collapsed.
+        if (start.X == end.X && start.Y == end.Y) return;
+
         Point3 newStart = start, newEnd = end;
         if (moveOutputFoot)
-            newEnd = Lerp(start, end, factor);
+            newEnd = Lerp(start, end, factor) with { Z = end.Z };
         else
-            newStart = Lerp(end, start, factor);
+            newStart = Lerp(end, start, factor) with { Z = start.Z };
 
         for (int i = 1; i < n - 1; i++)
         {

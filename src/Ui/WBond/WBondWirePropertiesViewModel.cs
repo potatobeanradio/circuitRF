@@ -218,7 +218,7 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
 
         if (_focusedField != "LoopHeight") LoopHeightText = Format(wire.LoopHeightNm);
         if (_focusedField != "Span")
-            SpanText = Format((long)Math.Round(wire.ChordLengthMetres() * WBondUnits.NmPerMetre));
+            SpanText = Format((long)Math.Round(wire.SpanMetres() * WBondUnits.NmPerMetre));
         if (_focusedField != "Diameter") DiameterText = Format(wire.DiameterNm);
 
         RebuildOrRefreshRows(wire);

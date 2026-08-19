@@ -102,6 +102,95 @@ public class LayoutSnapRenderingTests
         }
     }
 
+    /// <summary>
+    /// <b>The glyph survives an overlay painted over the whole canvas</b> — the wBond wire case, where
+    /// a wire and its vertex dots scale with zoom without limit while the glyph is a fixed ~8 device
+    /// pixels, so past some zoom the wire is simply wider than the glyph and covers it (owner,
+    /// 2026-08-19: "the geometry snap glyphs do not render if the zoom level is too high. I believe
+    /// the glyphs are there but are hidden behind the wire point and segment renderings.").
+    ///
+    /// <para>The overlay here is a plain opaque fill over everything, which is the extreme form of the
+    /// same thing and needs no wires to state it: with the glyph drawn inside
+    /// <see cref="LayoutRenderer.Draw"/> nothing of it can survive, and with the draw deferred to
+    /// after the overlay all of it does. Both halves are asserted, so this fails if either the option
+    /// stops suppressing or the top-most call stops drawing.</para>
+    /// </summary>
+    [Fact]
+    public void SnapMarker_DeferredToTheHost_PaintsOverAnOverlay()
+    {
+        var view = MakeView();
+        var tech = MakeTech(MarkerLayer, MarkerColor);
+        var vp = new LayoutViewport(-50_000, -50_000, 0.002, 400, 400);
+        var candidate = new SnapCandidate(SnapFeatureKind.CornerEndpoint, 10_000, 10_000, MarkerLayer, false, 0);
+        var expected = ExpectedMarkerColorOnLightTheme(MarkerColor);
+
+        int sx = (int)vp.WorldToScreenX(10_000);
+        int sy = (int)vp.WorldToScreenY(10_000);
+
+        var opts = new LayoutRenderOptions
+        {
+            Theme = LayoutRenderTheme.Light,
+            ShowGrid = false,
+            Overlay = new LayoutOverlay { SnapMarker = candidate },
+            DeferSnapMarker = true,
+        };
+
+        using var surface = SKSurface.Create(new SKImageInfo((int)vp.Width, (int)vp.Height));
+        LayoutRenderer.Draw(surface.Canvas, view, tech, vp, opts);
+
+        // Whatever the host paints after the layout — here, everything.
+        using (var cover = new SKPaint { Color = new SKColor(20, 20, 20), Style = SKPaintStyle.Fill })
+            surface.Canvas.DrawRect(SKRect.Create(0, 0, (float)vp.Width, (float)vp.Height), cover);
+
+        Assert.False(ColorNear(surface, sx, sy, expected),
+                     "deferred means LayoutRenderer.Draw must not have drawn it — it would be under the overlay");
+
+        LayoutRenderer.DrawSnapMarkerOnTop(surface.Canvas, view, tech, vp, opts);
+
+        Assert.True(ColorNear(surface, sx, sy, expected),
+                    "the glyph is drawn last, above the overlay, which is the only place it can be seen");
+    }
+
+    /// <summary>
+    /// The top-most draw lands in the SAME place the in-pipeline one does — it rebuilds the path-space
+    /// transform rather than being handed it, so an oracle that only checked "something was painted"
+    /// would not catch an origin or a Y-flip going astray.
+    /// </summary>
+    [Fact]
+    public void SnapMarker_DrawnOnTop_LandsWhereTheInPipelineDrawDoes()
+    {
+        var view = MakeView();
+        var tech = MakeTech(MarkerLayer, MarkerColor);
+        var vp = new LayoutViewport(-50_000, -20_000, 0.002, 400, 300);
+        var candidate = new SnapCandidate(SnapFeatureKind.Midpoint, 30_000, -5_000, MarkerLayer, false, 0);
+        var overlay = new LayoutOverlay { SnapMarker = candidate };
+        var expected = ExpectedMarkerColorOnLightTheme(MarkerColor);
+
+        var inPipeline = Render(view, vp, overlay);
+
+        var opts = new LayoutRenderOptions
+        {
+            Theme = LayoutRenderTheme.Light, ShowGrid = false, Overlay = overlay, DeferSnapMarker = true,
+        };
+        using var onTop = SKSurface.Create(new SKImageInfo((int)vp.Width, (int)vp.Height));
+        LayoutRenderer.Draw(onTop.Canvas, view, tech, vp, opts);
+        LayoutRenderer.DrawSnapMarkerOnTop(onTop.Canvas, view, tech, vp, opts);
+
+        using var a = SKBitmap.FromImage(inPipeline.Snapshot());
+        using var b = SKBitmap.FromImage(onTop.Snapshot());
+
+        int matched = 0;
+        for (int x = 0; x < a.Width; x++)
+            for (int y = 0; y < a.Height; y++)
+            {
+                Assert.Equal(a.GetPixel(x, y), b.GetPixel(x, y));
+                if (NearColor(a.GetPixel(x, y), expected)) matched++;
+            }
+
+        Assert.True(matched > 0, "sanity check: the glyph has to be on the canvas for the comparison to mean anything");
+        inPipeline.Dispose();
+    }
+
     [Fact]
     public void SnapMarker_Null_PaintsNothingExtra()
     {

@@ -166,6 +166,39 @@ default geometry, so it is not done here.
   loop height itself and the two definitions coincide — which is why a test suite built only on level
   feet cannot tell them apart, and why the asymmetric case is the one that must be gated.
 
+### 3.0a Span — the definition *(pinned 2026-08-19)*
+
+**A wire's span is the XY distance between its two feet. There is no z in it anywhere.**
+`Wire.SpanMetres` is the one place this lives; every other span quantity in the codebase — the Array
+Inductance panel's Span row, the properties inspector's Span field, the DRC `span()` predicate, the
+alt-drag's reference span, `WireEdits.ScaleSpan`'s factor, and the array-level landing span — is
+measured or set through it.
+
+**This is not a new idea; it is the parameterisation §6.2 idea 1 established in WB-C1 on 2026-08-07,
+finally applied to the readouts as well.** The profile view has always plotted against position along
+the wire's own *XY* path, and that was shown to be the only self-consistent choice: a 3-D parameter
+makes a point's loop height feed back into its own span position, so "scale the height" stops being
+well-defined (measured with a 3-D projection, a nominal 1.5× height scale came out 1.498×). But
+`Wire.ChordLengthMetres()` — the 3-D foot-to-foot distance — was what everything *else* called span,
+so the number the panel printed and the axis the profile view drew were two different quantities
+whenever a wire dropped. Owner, 2026-08-19: *"the span of a wire should be defined as the XY distance
+of the wire geometry. There should be no Z anywhere in the span calculation."* The 3-D form is gone
+rather than kept alongside; nothing needed it.
+
+**Level feet hide the whole distinction**, exactly as they hide §3.0's — the two lengths coincide
+there. The discriminating fixture is the ordinary chip-and-wire one, feet at two heights, where they
+differ by the foot drop.
+
+**What is emphatically NOT affected:** the physics integrates along `Wire.PathLengthMetres` and its
+per-filament 3-D segment lengths (`Grover`), which are true developed lengths and have nothing to do
+with span. `Wire.FootDropNm` remains how far apart in z the feet are, and §3.0's floor — a loop
+height can never be below the foot drop — is unchanged.
+
+**A consequence, and it is the one that made this visible:** a span *change* moves the moved foot in
+plan only, so both feet keep their own z (owner, same day: *"the z-heights of the start and end of
+wire should remain fixed during a span operation"*). `WireEdits.ScaleSpan` lerped the foot in all
+three coordinates and slid it in z by `Δz × (factor − 1)`.
+
 ### 3.1 Grover's two filament equations, and why there must be two
 
 Every wire is a polyline; every polyline is a chain of straight filaments; the mutual inductance
@@ -1271,8 +1304,14 @@ are usually at different z** (die surface to package lead), and scaling about a 
 would drag one foot off its pad. Scaling about the chord cannot.
 
 **WB24b. Alt + horizontal drag scales span. The foot on the side being dragged follows the cursor
-along the chord direction; the opposite foot is pinned; interior points keep their normalised span
-positions and their absolute heights above the chord.**
+along the chord direction **in plan, keeping its own z**; the opposite foot is pinned; interior points
+keep their normalised span positions and their absolute heights above the chord.**
+
+*"In plan, keeping its own z" is load-bearing and was wrong until 2026-08-19* — the moved foot was
+being interpolated in all three coordinates, so on the ordinary two-level wire a span change slid the
+foot up or down by `Δz × (factor − 1)`. A foot's z is where the wire lands; no change of span moves a
+pad. With span defined as an XY distance (§3.0a) the gesture is a plain plan-view scale, and the
+number the panel prints is the number the drag sets.
 
 So the loop keeps its *shape* and its *height* while the wire gets longer or shorter — which is the
 physically honest default, because a bonder running the same loop program over a longer span does not
@@ -2066,6 +2105,12 @@ things widen and nothing is replaced:
 |---|---|---|
 | **operands** | layer regions | layer regions **+ wire sets** — an array (`G1`), a wire, a segment, or a selector over them |
 | **functions** | `width`, `spacing`, `enclosure`, `area`, boolean layer ops | **+ `wire_spacing`, `loop_height`, `span`, `dist_to_edge`, `wire_to_layer`, `angle_change`** |
+
+`loop_height` and `span` are the two definitions, not two more measurements: `loop_height` is §3.0's
+max z − min z, and `span` is §3.0a's **XY** distance between the feet. Both go through the one method
+the panel and the profile view use, so a rule written against a number the user can see on screen is
+checking that same number. (`span` returned the 3-D distance until 2026-08-19, which on a wire landing
+on two levels is not what any of those places showed.)
 | **geometry engine** | 2D polygon predicates | **+ a 3D predicate class** |
 
 Only the third is genuinely new code: wire-to-wire minimum distance is a **segment-to-segment distance

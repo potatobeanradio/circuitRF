@@ -85,16 +85,33 @@ public sealed class Wire
     public long FootDropNm =>
         Points.Count < 2 ? 0 : Math.Abs(Points[^1].Z - Points[0].Z);
 
-    /// <summary>Straight-line 3D distance from the input foot to the output foot.</summary>
-    public double ChordLengthMetres()
+    /// <summary>
+    /// <b>The wire's SPAN: the distance from the input foot to the output foot IN XY.</b> There is no
+    /// z in it (owner, 2026-08-19: <i>"the span of a wire should be defined as the XY distance of the
+    /// wire geometry. There should be no Z anywhere in the span calculation."</i>).
+    ///
+    /// <para><b>This is the same definition the profile view has used since WB-C1</b>
+    /// (docs/design/wbond.md §6.2 idea 1, 2026-08-07): span is position along the wire's own XY path,
+    /// and that was already established as the only self-consistent choice, because a 3-D parameter
+    /// makes a point's loop height feed back into its own span position — measured that way, a nominal
+    /// 1.5x height scale came out 1.498x. What this method used to return was the 3-D chord, so the
+    /// panel, the properties inspector, the DRC <c>span()</c> predicate and both alt-drags were all
+    /// reporting and setting a DIFFERENT quantity from the axis the profile view plots against. Now
+    /// there is one span.</para>
+    ///
+    /// <para>The z the feet are at is not lost, and is not this: <see cref="FootDropNm"/> is how far
+    /// apart in z the feet are, and <see cref="PathLengthMetres"/> is the wire's true developed length
+    /// — which is what the physics integrates along, and which is deliberately untouched by any of
+    /// this.</para>
+    /// </summary>
+    public double SpanMetres()
     {
         if (Points.Count < 2) return 0.0;
         var a = Points[0];
         var b = Points[^1];
         double dx = WBondUnits.ToMetres(b.X - a.X);
         double dy = WBondUnits.ToMetres(b.Y - a.Y);
-        double dz = WBondUnits.ToMetres(b.Z - a.Z);
-        return Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        return Math.Sqrt(dx * dx + dy * dy);
     }
 
     /// <summary>Total developed length along the polyline.</summary>

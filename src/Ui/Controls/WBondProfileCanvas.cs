@@ -978,6 +978,17 @@ public sealed class WBondProfileCanvas : Control
 
         if (e.Key == Key.F) { ZoomToFit(); e.Handled = true; return; }
 
+        // Ctrl/Cmd+A selects every wire — the same key that does it on the layout canvas beside this
+        // one (owner, 2026-08-19). There is no layout geometry in this view, so here the gesture is
+        // consumed rather than passed on: the wires are everything there is to select.
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0 && e.Key == Key.A)
+        {
+            _viewModel.SelectAllWires();
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         if (_viewModel.Selection.IsEmpty) return;
 
         bool coarse = (e.KeyModifiers & KeyModifiers.Shift) != 0;

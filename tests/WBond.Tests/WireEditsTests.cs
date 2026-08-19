@@ -154,12 +154,12 @@ public class WireEditsTests
         }
         design.Arrays.Add(array);
 
-        var before = array.Wires.Select(w => w.ChordLengthMetres()).ToArray();
+        var before = array.Wires.Select(w => w.SpanMetres()).ToArray();
 
         int moved = WireEdits.ScaleWires(array.Wires, heightFactor: 1.0, spanFactor: 1.4);
         Assert.Equal(3, moved);
 
-        var after = array.Wires.Select(w => w.ChordLengthMetres()).ToArray();
+        var after = array.Wires.Select(w => w.SpanMetres()).ToArray();
 
         for (int i = 0; i < spans.Length; i++)
             Assert.Equal(1.4, after[i] / before[i], 1e-4);
@@ -220,6 +220,93 @@ public class WireEditsTests
             Assert.NotEqual(start, wire.Points[0]);
             Assert.Equal(end, wire.Points[^1]);
         }
+    }
+
+    /// <summary>
+    /// <b>A span change never moves a foot's z</b> (owner, 2026-08-19: "using the span command (or
+    /// alt-dragging to adjust span) is altering the z-coordinate. This should never happen.").
+    ///
+    /// <para>Measured on a wire whose feet are at DIFFERENT heights, which is the only case that can
+    /// show it — the moved foot used to be lerped along the chord in all three coordinates, so it slid
+    /// in z by (endZ - startZ) x (factor - 1). On a flat wire that product is zero and the bug is
+    /// invisible, which is why the default fixture here (8 mil to 1 mil) is the one used.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(true, 1.6)]
+    [InlineData(false, 1.6)]
+    [InlineData(true, 0.5)]
+    [InlineData(false, 0.5)]
+    public void Tier2_SpanScaling_LeavesBothFeetAtTheirOwnHeight(bool moveOutput, double factor)
+    {
+        var wire = Loop();
+        long startZ = wire.Points[0].Z;
+        long endZ = wire.Points[^1].Z;
+        Assert.NotEqual(startZ, endZ);   // the fixture must be able to show the bug at all
+
+        WireEdits.ScaleSpan(wire, factor, moveOutput);
+
+        Assert.Equal(startZ, wire.Points[0].Z);
+        Assert.Equal(endZ, wire.Points[^1].Z);
+    }
+
+    /// <summary>
+    /// <b>The factor is a multiple of the SPAN, and span is an XY distance</b> (owner, 2026-08-19) —
+    /// which is what every caller divides by to get one (<c>SetWireSpan</c>/<c>SetGroupSpan</c> divide
+    /// the requested span by <see cref="Wire.SpanMetres"/>; both alt-drags snap a target span and
+    /// divide the same way), so "set span to 100 mil" lands on 100 mil exactly.
+    ///
+    /// <para>Measured on a DROPPING wire, because that is the only wire on which "the span" and "the
+    /// 3-D foot-to-foot distance" are different numbers at all — the whole reason the definition had
+    /// to be pinned.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(1.4)]
+    [InlineData(0.6)]
+    public void Tier2_SpanScaling_LandsOnTheRequestedSpanExactly(double factor)
+    {
+        var wire = Loop();
+        Assert.NotEqual(wire.Points[0].Z, wire.Points[^1].Z);
+
+        double before = wire.SpanMetres();
+        WireEdits.ScaleSpan(wire, factor);
+
+        Assert.Equal(factor, wire.SpanMetres() / before, 1e-9);
+    }
+
+    /// <summary>
+    /// A wire whose feet are stacked in XY has no span, so no factor means anything on it: it is left
+    /// exactly as it was rather than collapsed onto a point.
+    /// </summary>
+    [Fact]
+    public void Tier2_SpanScaling_LeavesAWireWithNoXySpanAlone()
+    {
+        var wire = LoopShape.CreateSeedWire(
+            Point3.Mils(0, 0, 0), Point3.Mils(0, 0, 30),
+            WBondUnits.ToNm(1.0, WBondUnit.Mil), "Gold", WBondUnits.ToNm(20.0, WBondUnit.Mil));
+
+        Assert.Equal(0.0, wire.SpanMetres());
+
+        var before = wire.Points.ToArray();
+        WireEdits.ScaleSpan(wire, 2.0);
+
+        Assert.Equal(before, wire.Points);
+    }
+
+    /// <summary>The same rule through the two doors that reach ScaleSpan by another name.</summary>
+    [Fact]
+    public void Tier2_ExtendAndSimilarity_AlsoLeaveTheFeetAtTheirOwnHeight()
+    {
+        var extended = Loop();
+        long startZ = extended.Points[0].Z, endZ = extended.Points[^1].Z;
+
+        WireEdits.ExtendAlongAxis(extended, 1.4);
+        Assert.Equal(startZ, extended.Points[0].Z);
+        Assert.Equal(endZ, extended.Points[^1].Z);
+
+        var similar = Loop();
+        WireEdits.ScaleSimilarity(similar, 1.4);
+        Assert.Equal(startZ, similar.Points[0].Z);
+        Assert.Equal(endZ, similar.Points[^1].Z);
     }
 
     // ---------------------------------------------------------------- tier 3

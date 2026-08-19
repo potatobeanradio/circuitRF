@@ -66,7 +66,7 @@ public sealed class PanelReadout
     /// real physics the reduction captures for free.
     /// </param>
     /// <param name="LoopHeightMm">Median loop height (max z − min z, §3.1a) across the array's wires.</param>
-    /// <param name="SpanMm">Median foot-to-foot chord length across the array's wires.</param>
+    /// <param name="SpanMm">Median foot-to-foot span (XY) across the array's wires.</param>
     /// <param name="DiameterMm">Median wire diameter across the array's wires.</param>
     /// <param name="Material">
     /// The array's material. A <b>median</b> like the three lengths — the middle of the wires'
@@ -261,9 +261,10 @@ public sealed class PanelReadout
         };
     }
 
-    /// <summary>One wire's foot-to-foot span, in whole nanometres — the unit everything else is stored in.</summary>
+    /// <summary>One wire's foot-to-foot span IN XY, in whole nanometres — the unit everything else is
+    /// stored in. See <see cref="Wire.SpanMetres"/> for why there is no z in it.</summary>
     private static long SpanNm(Wire wire) =>
-        (long)Math.Round(wire.ChordLengthMetres() * WBondUnits.NmPerMetre);
+        (long)Math.Round(wire.SpanMetres() * WBondUnits.NmPerMetre);
 
     /// <summary>
     /// The median of a per-wire length, in millimetres, plus whether the wires agreed.
@@ -309,8 +310,13 @@ public sealed class PanelReadout
     }
 
     /// <summary>
-    /// The largest distance between any two landing points of an array (WB9a's diagnostic).
+    /// The largest distance IN XY between any two landing points of an array (WB9a's diagnostic).
     /// Both feet of every wire count — an array can span a long lead frame finger at either end.
+    ///
+    /// <para><b>XY, like every other span in this application</b> (owner, 2026-08-19). It used to
+    /// include the feet's z difference, which on an array landing on two levels reported the pads as
+    /// further apart than any distance along either pad — and the equipotential question this exists
+    /// to flag is about extent ACROSS the conductor, which is a plan-view quantity.</para>
     ///
     /// <para>No longer shown in the panel — the row's Span is now the median of the wires' OWN spans,
     /// which is the quantity a user can set. This stays because it is a different and still-real
@@ -334,8 +340,7 @@ public sealed class PanelReadout
             {
                 double dx = WBondUnits.ToMetres(feet[j].X - feet[i].X);
                 double dy = WBondUnits.ToMetres(feet[j].Y - feet[i].Y);
-                double dz = WBondUnits.ToMetres(feet[j].Z - feet[i].Z);
-                worst = Math.Max(worst, Math.Sqrt(dx * dx + dy * dy + dz * dz));
+                worst = Math.Max(worst, Math.Sqrt(dx * dx + dy * dy));
             }
         }
 

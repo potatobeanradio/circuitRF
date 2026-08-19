@@ -26,6 +26,75 @@ public class LoopHeightDefinitionTests
 
     // ---------------------------------------------------------------- the definition
 
+    /// <summary>
+    /// <b>The SPAN definition (owner, 2026-08-19): the XY distance between the feet, with no z in it
+    /// anywhere.</b>
+    ///
+    /// <para>Same shape of distinction as the loop-height one above, and the same fixtures separate
+    /// it: on level feet the XY distance and the 3-D foot-to-foot distance are the same number, which
+    /// is why <see cref="Wire.SpanMetres"/> could return the 3-D one for as long as it did. The
+    /// discriminating case is the ordinary chip-and-wire one — feet at two heights — where the two
+    /// differ by exactly the drop, and where a span that quietly included z made the panel, the
+    /// properties inspector, the DRC <c>span()</c> predicate and both alt-drags report a different
+    /// quantity from the axis the profile view plots along.</para>
+    ///
+    /// <para>The loop's own crest is 20 mil above both feet here and cannot move the answer: the span
+    /// is a property of the FEET, not of the path between them.</para>
+    /// </summary>
+    [Fact]
+    public void Span_IsTheXyDistanceBetweenTheFeet_WithNoZInIt()
+    {
+        var level     = AsymmetricWire(20 * Mil, startZ: 0,        endZ: 0);
+        var dropping  = AsymmetricWire(20 * Mil, startZ: 0,        endZ: 40 * Mil);
+        var rising    = AsymmetricWire(20 * Mil, startZ: 40 * Mil, endZ: 0);
+
+        double expected = WBondUnits.ToMetres(100 * Mil);
+
+        Assert.Equal(expected, level.SpanMetres(),    12);
+        Assert.Equal(expected, dropping.SpanMetres(), 12);
+        Assert.Equal(expected, rising.SpanMetres(),   12);
+
+        // The oracle that makes the assertions above mean something: the 3-D distance these wires used
+        // to report differs by 8 % on the dropping one, so a span that still carried z could not pass.
+        double threeD = System.Math.Sqrt(expected * expected
+                                       + WBondUnits.ToMetres(40 * Mil) * WBondUnits.ToMetres(40 * Mil));
+        Assert.True(threeD > expected * 1.07, "sanity check: the fixture must be able to tell the two apart");
+    }
+
+    /// <summary>
+    /// The definition reaches the number the USER reads: the Array Inductance panel's Span row and
+    /// its landing-span diagnostic are both XY.
+    ///
+    /// <para>The panel is the reason the mismatch mattered — a user sets a span there, and the
+    /// alt-drag and <c>span()</c> DRC predicate had to be measuring the same thing they were shown.
+    /// The fixture drops 40 mil over 100, so a span still carrying z would read 107.7 mil.</para>
+    /// </summary>
+    [Fact]
+    public void ThePanelsSpanRow_IsTheXyDistance_NotTheThreeDOne()
+    {
+        var design = new WBondDesign();
+        var array = new WireArray { Name = "G1" };
+        array.Wires.Add(AsymmetricWire(60 * Mil, startZ: 0, endZ: 40 * Mil));
+        design.Arrays.Add(array);
+
+        var mesh = WireMesh.Build(design);
+        var readout = PanelReadout.Build(design, mesh, ArrayReduction.Reduce(InductanceMatrix.Fill(mesh), mesh), null);
+
+        double expectedMm = WBondUnits.ToMetres(100 * Mil) * 1e3;
+
+        Assert.Equal(expectedMm, readout.Rows[0].SpanMm.Value, 6);
+        Assert.Equal(expectedMm, readout.Rows[0].MaxLandingSpanMm, 6);
+    }
+
+    /// <summary>Span is a plan-view quantity, so a wire that only drops has none at all.</summary>
+    [Fact]
+    public void Span_IsZeroForAWireWhoseFeetAreStackedInXy()
+    {
+        var wire = new Wire { Points = { new Point3(0, 0, 0), new Point3(0, 0, 40 * Mil) } };
+        Assert.Equal(0.0, wire.SpanMetres());
+    }
+
+
     [Fact]
     public void LoopHeight_IsMaxZMinusMinZ_NotRiseAboveTheChord()
     {

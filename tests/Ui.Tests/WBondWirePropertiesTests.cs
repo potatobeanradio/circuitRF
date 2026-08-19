@@ -445,7 +445,7 @@ public class WBondWirePropertiesTests
         var wire = vm.Design.AllWires().First();
         Assert.Equal(inputFootBefore, wire.Points[0]);
 
-        double spanNm = wire.ChordLengthMetres() * WBondUnits.NmPerMetre;
+        double spanNm = wire.SpanMetres() * WBondUnits.NmPerMetre;
         Assert.InRange(spanNm, 100 * Mil - 50, 100 * Mil + 50);
     }
 
@@ -463,7 +463,7 @@ public class WBondWirePropertiesTests
         panel.CommitSpan("100 mil");
 
         Assert.Equal(inputFoot, wire.Points[0]);
-        Assert.InRange(wire.ChordLengthMetres() * WBondUnits.NmPerMetre,
+        Assert.InRange(wire.SpanMetres() * WBondUnits.NmPerMetre,
                        WBondUnits.ToNm(100.0, WBondUnit.Mil) - 50,
                        WBondUnits.ToNm(100.0, WBondUnit.Mil) + 50);
     }

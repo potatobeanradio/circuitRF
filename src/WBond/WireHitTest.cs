@@ -189,10 +189,10 @@ public static class ProfileProjection
         double min = double.MaxValue, max = 0.0;
         foreach (var wire in wires)
         {
-            double chord = wire.ChordLengthMetres();
-            if (chord <= 0.0) continue;
-            min = Math.Min(min, chord);
-            max = Math.Max(max, chord);
+            double span = wire.SpanMetres();
+            if (span <= 0.0) continue;
+            min = Math.Min(min, span);
+            max = Math.Max(max, span);
         }
 
         if (min == double.MaxValue || max == 0.0) return SpanMode.Absolute;
@@ -220,13 +220,15 @@ public static class WireHitTest
     ///
     /// <para>Below 1 on purpose — see <c>WBondRenderer.VertexToWireDiameterRatio</c>, which is this.</para>
     ///
-    /// <para>0.66 = the shipped 0.6 plus 10 % (owner, 2026-08-16: "increase the size wire vertex by
-    /// 10 % of its current size"). Still below 1, so a true-diameter segment's rounded joins are not
-    /// covered by the dot sitting on them — which is the constraint that fixes the upper bound here.
-    /// Because this is the single definition, the drawn dot AND its hitbox both grew by the same
-    /// 10 %; that is the whole reason there is only one of it.</para>
+    /// <para>0.726 = 0.6 plus 10 % (owner, 2026-08-16: "increase the size wire vertex by 10 % of its
+    /// current size"), plus a further 10 % (owner, 2026-08-19: "increase the diameter of the wire
+    /// point rendering by a factor of 1.1 so that they appear more obvious in the view"). Still below
+    /// 1, so a true-diameter segment's rounded joins are not covered by the dot sitting on them —
+    /// which is the constraint that fixes the upper bound here. Because this is the single definition,
+    /// the drawn dot AND its hitbox grew together both times; that is the whole reason there is only
+    /// one of it.</para>
     /// </summary>
-    public const double VertexToWireDiameterRatio = 0.66;
+    public const double VertexToWireDiameterRatio = 0.726;
 
     /// <summary>
     /// The world-space radius a vertex dot is drawn at, in nanometres.
@@ -298,6 +300,11 @@ public static class WireHitTest
     {
         var best = Hit.None;
 
+        // Whether <see cref="best"/> is a vertex the cursor landed INSIDE the drawn dot of. Once that
+        // is true no segment may displace it — see the loop below for why the plain bias is not
+        // enough on its own.
+        bool bestIsInsideDot = false;
+
         for (int w = 0; w < mesh.WireCount; w++)
         {
             var points = mesh.Wires[w].Points;
@@ -306,18 +313,55 @@ public static class WireHitTest
             // caller's screen-derived tolerance — see VertexRadiusNm. The segment tolerance below is
             // untouched: a segment's target is the line, whose width is a display mode rather than a
             // property of the geometry.
-            double pointTolerance = Math.Max(toleranceNm, VertexRadiusNm(mesh.Wires[w].DiameterNm));
+            double dotRadius = VertexRadiusNm(mesh.Wires[w].DiameterNm);
+            double pointTolerance = Math.Max(toleranceNm, dotRadius);
 
             for (int i = 0; i < points.Count; i++)
             {
                 var (a, b) = project(w, i);
                 double distance = Math.Sqrt((a - cursorA) * (a - cursorA) + (b - cursorB) * (b - cursorB));
+                if (distance > pointTolerance) continue;
+
+                bool insideDot = distance <= dotRadius;
+
+                // Inside a dot OUTRANKS anything that is not, whatever the distances say. A press
+                // inside a circle the user can see is a press on that circle.
+                if (bestIsInsideDot && !insideDot) continue;
+                if (insideDot && !bestIsInsideDot)
+                {
+                    best = new Hit(w, i, false, distance);
+                    bestIsInsideDot = true;
+                    continue;
+                }
 
                 // Vertices are preferred within the same tolerance, so the comparison is made on a
                 // biased distance while the REPORTED distance stays true.
-                if (distance <= pointTolerance && distance / pointBias < Bias(best, pointBias))
+                if (distance / pointBias < Bias(best, pointBias))
+                {
                     best = new Hit(w, i, false, distance);
+                    bestIsInsideDot = insideDot;
+                }
             }
+
+            // ── A press INSIDE the drawn dot is a press on the vertex, full stop ──────────────────
+            //
+            // Owner, 2026-08-19: "the hitbox of the wire point needs to match the render size of the
+            // circle on the user's screen. Currently it feels smaller than the circle, so I get a lot
+            // of misses when I try to touch a wire point."
+            //
+            // The tolerance above already matched the drawn circle exactly — and the misses were real
+            // anyway, because the SEGMENTS through that same vertex were still allowed to outrank it.
+            // Both segments meeting at an interior vertex PASS THROUGH it, so their distance there is
+            // ~0 while the vertex's own is however far from centre the user clicked: any press inside
+            // the dot but offset ALONG the wire lost to a segment, and only the two lobes
+            // perpendicular to the line ever selected the point. That is exactly a hitbox that feels
+            // smaller than the circle — because the part of it that works is.
+            //
+            // pointBias cannot fix this: it is a ratio, so it only moves where along the wire the
+            // handover happens (at bias 2 the point wins out to r/2 off-line), and raising it far
+            // enough to cover the dot would start stealing presses genuinely meant for the segment
+            // well OUTSIDE it. The rule that matches what is on screen is categorical, not a ratio.
+            if (bestIsInsideDot) continue;
 
             for (int i = 0; i + 1 < points.Count; i++)
             {

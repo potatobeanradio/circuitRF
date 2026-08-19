@@ -214,17 +214,17 @@ public class WBondRound6Tests
         var vm = new WBondViewModel(Design(arrays: 2, perArray: 2));
 
         var wires = vm.Design.AllWires().ToList();
-        var spansBefore = wires.Select(w => w.ChordLengthMetres()).ToList();
+        var spansBefore = wires.Select(w => w.SpanMetres()).ToList();
 
         // ONE wire of G1 selected; both of G1 move, neither of G2 does.
         vm.Selection = Wires(0);
         Assert.Equal(2, vm.ScaleSelection(spanFactor: 1.5, heightFactor: 1.0,
                                           moveOutputFoot: true, wholeArray: true));
 
-        Assert.Equal(spansBefore[0] * 1.5, wires[0].ChordLengthMetres(), 9);
-        Assert.Equal(spansBefore[1] * 1.5, wires[1].ChordLengthMetres(), 9);
-        Assert.Equal(spansBefore[2], wires[2].ChordLengthMetres(), 12);
-        Assert.Equal(spansBefore[3], wires[3].ChordLengthMetres(), 12);
+        Assert.Equal(spansBefore[0] * 1.5, wires[0].SpanMetres(), 9);
+        Assert.Equal(spansBefore[1] * 1.5, wires[1].SpanMetres(), 9);
+        Assert.Equal(spansBefore[2], wires[2].SpanMetres(), 12);
+        Assert.Equal(spansBefore[3], wires[3].SpanMetres(), 12);
     }
 
     /// <summary>
@@ -237,17 +237,17 @@ public class WBondRound6Tests
         var vm = new WBondViewModel(Design(arrays: 3, perArray: 2));
 
         var wires = vm.Design.AllWires().ToList();
-        var spansBefore = wires.Select(w => w.ChordLengthMetres()).ToList();
+        var spansBefore = wires.Select(w => w.SpanMetres()).ToList();
 
         vm.Selection = Wires(0, 5);   // one wire of G1, one of G3
         Assert.Equal(4, vm.ScaleSelection(spanFactor: 2.0, heightFactor: 1.0,
                                           moveOutputFoot: true, wholeArray: true));
 
         foreach (int i in new[] { 0, 1, 4, 5 })
-            Assert.Equal(spansBefore[i] * 2.0, wires[i].ChordLengthMetres(), 9);
+            Assert.Equal(spansBefore[i] * 2.0, wires[i].SpanMetres(), 9);
 
         foreach (int i in new[] { 2, 3 })   // G2 is untouched
-            Assert.Equal(spansBefore[i], wires[i].ChordLengthMetres(), 12);
+            Assert.Equal(spansBefore[i], wires[i].SpanMetres(), 12);
     }
 
     /// <summary>
@@ -261,14 +261,14 @@ public class WBondRound6Tests
         var vm = new WBondViewModel(Design(arrays: 1, perArray: 3));
 
         var wires = vm.Design.AllWires().ToList();
-        var spansBefore = wires.Select(w => w.ChordLengthMetres()).ToList();
+        var spansBefore = wires.Select(w => w.SpanMetres()).ToList();
 
         vm.Selection = Wires(1);
         Assert.Equal(1, vm.ScaleSelection(spanFactor: 1.5, heightFactor: 1.0, moveOutputFoot: true));
 
-        Assert.Equal(spansBefore[1] * 1.5, wires[1].ChordLengthMetres(), 9);
-        Assert.Equal(spansBefore[0], wires[0].ChordLengthMetres(), 12);
-        Assert.Equal(spansBefore[2], wires[2].ChordLengthMetres(), 12);
+        Assert.Equal(spansBefore[1] * 1.5, wires[1].SpanMetres(), 9);
+        Assert.Equal(spansBefore[0], wires[0].SpanMetres(), 12);
+        Assert.Equal(spansBefore[2], wires[2].SpanMetres(), 12);
 
         // The two callers, stated where they are: the profile canvas promotes, the layout overlay
         // does not. A test on the arithmetic alone cannot see which view asked.

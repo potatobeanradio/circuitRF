@@ -159,7 +159,23 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     /// <para>GHz always, never auto-ranged — the same rule, for the same reason, as the fixed
     /// picohenries.</para>
     /// </summary>
-    [ObservableProperty] private string _frequency = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FrequencyDisplay))]
+    private string _frequency = "";
+
+    /// <summary>
+    /// What the frequency row actually prints — the frequency, or an em dash when capacitance is out
+    /// of the numbers and there is no frequency for them to be quoted at.
+    ///
+    /// <para><b>The row itself never goes away</b> (owner, 2026-08-19): "when user unchecks the
+    /// Include capacitance button, keep the self inductance group listings fixed in position.
+    /// Currently, when unchecked, the Frequency row disappears which causes all the inductances to
+    /// shift so it is difficult for user to make quick comparisons while toggling the button."
+    /// Comparing the two numbers by flipping between them is the whole reason the switch is on this
+    /// panel at all, and a readout that jumps while it is flipped defeats it — so the row holds its
+    /// space and says nothing instead of vanishing and taking every card with it.</para>
+    /// </summary>
+    public string FrequencyDisplay => ShowFrequency ? Frequency : "—";
 
     /// <summary>
     /// The above-self-resonance sentence, or empty. Shown in the warning brush, in place of the
@@ -198,12 +214,19 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     [ObservableProperty] private bool _canToggleCapacitance;
 
     /// <summary>
-    /// Whether the frequency row is worth showing. <b>False when capacitance is not in the numbers</b>,
-    /// because the effective inductance is then <c>L_arr</c> at every frequency and the row provably
-    /// changes nothing — the same rule <see cref="ShowReturnPath"/> already follows for a line that
-    /// would always say the expected thing.
+    /// Whether the frequency row has anything to SAY. <b>False when capacitance is not in the
+    /// numbers</b>, because the effective inductance is then <c>L_arr</c> at every frequency and the
+    /// stated frequency would provably change nothing.
+    ///
+    /// <para><b>It no longer decides whether the row is on screen.</b> Hiding it was the same rule
+    /// <see cref="ShowReturnPath"/> follows — say nothing where nothing is worth saying — but a row
+    /// that appears and disappears above a column of numbers moves that whole column, and this
+    /// particular row sits above the numbers the switch beside it exists to be compared with. So the
+    /// row stays and goes quiet: see <see cref="FrequencyDisplay"/>.</para>
     /// </summary>
-    [ObservableProperty] private bool _showFrequency;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FrequencyDisplay))]
+    private bool _showFrequency;
 
     /// <summary>
     /// Set when the design asks for capacitance and cannot have it, with the reason. Empty otherwise.
