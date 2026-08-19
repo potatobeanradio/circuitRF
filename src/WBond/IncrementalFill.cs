@@ -92,7 +92,57 @@ public sealed class IncrementalFill
     /// What kind of motion it was. <see cref="SelectionMotion.General"/> is always safe; the other
     /// two are optimisations and are <b>only</b> correct if the selection really did move rigidly.
     /// </param>
-    public void MoveWires(IReadOnlyList<int> movedWires, SelectionMotion motion)
+    public void MoveWires(IReadOnlyList<int> movedWires, SelectionMotion motion) =>
+        MoveWiresCore(movedWires, motion, maintainFactor: true);
+
+    /// <summary>
+    /// The same move, <b>leaving the factor alone</b> — the mesh and the matrix are brought exactly up
+    /// to date and <see cref="FactorIsStale"/> goes true.
+    ///
+    /// <h3>What this is for</h3>
+    /// <para>A drag that passes one wire across another makes <b>L</b> singular for the frames the two
+    /// coincide, and no Cholesky factor exists for those frames — but <b>L itself is perfectly well
+    /// defined throughout</b>. Keeping the matrix exact while the factor is unavailable is what lets
+    /// the readout come back <i>during the same drag</i>, the moment the wires separate: the caller
+    /// asks <see cref="TryRefactor"/> each frame and one succeeds. Without this the matrix went stale
+    /// at the overlap and the panel stayed frozen until the button came up (owner, 2026-08-19:
+    /// <i>"the Array Inductance panel stops updating (even when wires are moved off of the other
+    /// wires during the same drag)"</i>).</para>
+    ///
+    /// <para>Cheap for the same reason the ordinary move is: it is the same row refresh, minus the
+    /// rank-2 update. What it does NOT do is maintain the factor incrementally, so recovery costs one
+    /// fresh factorisation rather than a rank-2 step — <b>O(N³/3), ~23 ms at N = 600</b>, paid once on
+    /// the frame the geometry becomes evaluable again and never while it is not.</para>
+    /// </summary>
+    public void MoveWiresUnfactored(IReadOnlyList<int> movedWires, SelectionMotion motion) =>
+        MoveWiresCore(movedWires, motion, maintainFactor: false);
+
+    /// <summary>
+    /// True when the matrix has moved on and the factor has not — see
+    /// <see cref="MoveWiresUnfactored"/>. Anything that reads the factor must clear it first.
+    /// </summary>
+    public bool FactorIsStale { get; private set; }
+
+    /// <summary>
+    /// Refactorises from the current matrix. Returns false — rather than throwing — when the geometry
+    /// is still degenerate, because the caller asking is a drag frame for which that is an ordinary
+    /// answer and not an error.
+    /// </summary>
+    public bool TryRefactor()
+    {
+        try
+        {
+            _factor = CholeskyFactor.Factor(_l.Values, _l.Order);
+            FactorIsStale = false;
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private void MoveWiresCore(IReadOnlyList<int> movedWires, SelectionMotion motion, bool maintainFactor)
     {
         ArgumentNullException.ThrowIfNull(movedWires);
         if (movedWires.Count == 0) return;
@@ -119,7 +169,8 @@ public sealed class IncrementalFill
         // rank-1 steps cost more than one factorisation. Measured crossover is around k ~ N/12 at
         // N = 600 (2k * O(N^2) against O(N^3/3)); the constant is deliberately conservative because
         // an unnecessary refactorisation is merely slow, while a drifted factor is silently wrong.
-        bool incrementalFactor = movedWires.Count * 12 <= n;
+        bool incrementalFactor = maintainFactor && movedWires.Count * 12 <= n;
+        if (!maintainFactor) FactorIsStale = true;
 
         foreach (int i in movedWires)
         {
@@ -158,8 +209,11 @@ public sealed class IncrementalFill
             }
         }
 
-        if (!incrementalFactor)
+        if (!incrementalFactor && maintainFactor)
+        {
             _factor = CholeskyFactor.Factor(_l.Values, n);
+            FactorIsStale = false;
+        }
     }
 
     /// <summary>
@@ -199,6 +253,16 @@ public sealed class IncrementalFill
     /// N = 600, M = 12) rather than a fresh factorisation (~22.7 ms). Reducing without it turns a
     /// ~5 ms drag frame into a ~25 ms one, which is the whole difference between 60 fps and 40.</para>
     /// </summary>
-    public ArrayReduction Reduce() =>
-        ArrayReduction.Reduce(_l, _factor, _mesh.ArrayOfWire, _mesh.ArrayCount, _mesh.ArrayNames);
+    public ArrayReduction Reduce()
+    {
+        // Reducing against a factor the matrix has moved past would be SILENTLY wrong, which is worse
+        // than the throw a genuinely singular matrix earns. See MoveWiresUnfactored.
+        if (FactorIsStale)
+        {
+            _factor = CholeskyFactor.Factor(_l.Values, _l.Order);
+            FactorIsStale = false;
+        }
+
+        return ArrayReduction.Reduce(_l, _factor, _mesh.ArrayOfWire, _mesh.ArrayCount, _mesh.ArrayNames);
+    }
 }

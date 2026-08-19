@@ -403,4 +403,105 @@ public class HitTestTests
         Assert.Equal(SchematicHitTest.HitKind.ComponentParam, paramHit.Kind);
         Assert.Equal(comp.Id, paramHit.Id);
     }
+
+    // ── Zoom-aware wire pick band ─────────────────────────────────────────────
+    //
+    // The clickable band around a wire is stored in WORLD units but aimed at in SCREEN pixels.
+    // Before the zoom parameter existed, the fixed 8-world band shrank with the view: at zoom 0.1
+    // it was 0.8 px either side of a stroke drawn 1 px wide, so a plainly visible wire could not be
+    // clicked or dragged. These pin the band in pixels instead.
+
+    private static (SchematicEditModel Edit, SchematicModel Render, SchematicSpatialIndex Index)
+        BuildOneWire(double x0, double y0, double x1, double y1)
+    {
+        var edit = new SchematicEditModel();
+        var wire = new EditableWire();
+        wire.Points.Add((x0, y0));
+        wire.Points.Add((x1, y1));
+        edit.Wires.Add(wire);
+        var (render, index) = edit.BuildRenderModel();
+        return (edit, render, index);
+    }
+
+    [Theory]
+    [InlineData(0.50)]
+    [InlineData(0.25)]
+    [InlineData(0.16)]
+    public void WireSegment_ZoomedOut_IsPickableSevenScreenPixelsOff(double zoom)
+    {
+        var (edit, render, idx) = BuildOneWire(-2000, 0, 2000, 0);
+
+        // 6.5 device pixels off the centreline (just inside the 7 px floor), in world units.
+        double offWorld = 6.5 / zoom;
+
+        var hit = SchematicHitTest.Test(edit, render, idx, 0, offWorld, zoom: zoom);
+        Assert.Equal(SchematicHitTest.HitKind.WireSegment, hit.Kind);
+        Assert.Equal(edit.Wires[0].Id, hit.Id);
+
+        // The same click WITHOUT the zoom (the old fixed 8-world band) misses entirely — the bug.
+        Assert.Equal(SchematicHitTest.HitKind.None,
+                     SchematicHitTest.Test(edit, render, idx, 0, offWorld).Kind);
+    }
+
+    [Fact]
+    public void WireBand_FarZoomOut_IsCappedByTheGrid_NotTheStroke()
+    {
+        // Below zoom ~0.156 the 7 px floor would exceed 45 % of the 100-unit connection grid, and
+        // the bands of two wires one pitch apart would overlap — the picker takes the topmost, not
+        // the nearest, so the user would grab a wire they were not pointing at. The band stops
+        // growing there: still 5.6x the old 8-world band at zoom 0.1, but never ambiguous.
+        Assert.Equal(45.0, SchematicHitTest.WireTolFor(0.05, gridSize: 100.0), 6);
+        Assert.Equal(45.0, SchematicHitTest.WireTolFor(0.10, gridSize: 100.0), 6);
+        Assert.Equal(28.0, SchematicHitTest.WireTolFor(0.25, gridSize: 100.0), 6);
+        Assert.Equal( 8.0, SchematicHitTest.WireTolFor(1.00, gridSize: 100.0), 6);
+        Assert.Equal( 8.0, SchematicHitTest.WireTolFor(4.00, gridSize: 100.0), 6);
+
+        // A fine grid never shrinks the band below what already worked at 1:1.
+        Assert.Equal(8.0, SchematicHitTest.WireTolFor(0.05, gridSize: 10.0), 6);
+    }
+
+    [Fact]
+    public void WireSegment_ZoomedOut_StaysPickableThroughTestStack()
+    {
+        // TestStack is what the select tool's press handler actually calls (per-segment drag).
+        var (edit, render, idx) = BuildOneWire(-2000, 0, 2000, 0);
+        const double zoom = 0.1;
+
+        var stack = SchematicHitTest.TestStack(edit, render, idx, 0, 40.0, zoom: zoom);   // 4 px off
+
+        Assert.Single(stack);
+        Assert.Equal(SchematicHitTest.HitKind.WireSegment, stack[0].Kind);
+        Assert.Equal(edit.Wires[0].Id, stack[0].Id);
+    }
+
+    [Fact]
+    public void WirePick_AtUnityZoom_MatchesLegacyBand()
+    {
+        // The pixel floors sit below the world constants at 1:1, so nothing about the 1:1 feel moves.
+        var (edit, render, idx) = BuildOneWire(-2000, 0, 2000, 0);
+
+        // Just inside the 8-world band, and just outside it.
+        Assert.Equal(SchematicHitTest.HitKind.WireSegment,
+                     SchematicHitTest.Test(edit, render, idx, 0, 7.5, zoom: 1.0).Kind);
+        Assert.Equal(SchematicHitTest.HitKind.None,
+                     SchematicHitTest.Test(edit, render, idx, 0, 8.5, zoom: 1.0).Kind);
+    }
+
+    [Fact]
+    public void WireEndpoint_GrabZone_NeverSwallowsItsOwnSegment()
+    {
+        // A grown endpoint zone must leave the middle of a SHORT wire draggable — otherwise the
+        // wider band would trade one un-draggable case for another.
+        var (edit, render, idx) = BuildOneWire(0, 0, 200, 0);
+        const double zoom = 0.05;   // endpoint zone would be 200 world units uncapped
+
+        var mid = SchematicHitTest.Test(edit, render, idx, 100, 0, zoom: zoom);
+        Assert.Equal(SchematicHitTest.HitKind.WireSegment, mid.Kind);
+
+        // The endpoints themselves still pick as endpoints.
+        Assert.Equal(SchematicHitTest.HitKind.WireEndpoint,
+                     SchematicHitTest.Test(edit, render, idx, 0, 0, zoom: zoom).Kind);
+        Assert.Equal(SchematicHitTest.HitKind.WireEndpoint,
+                     SchematicHitTest.Test(edit, render, idx, 200, 0, zoom: zoom).Kind);
+    }
 }

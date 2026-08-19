@@ -391,7 +391,7 @@ public sealed class SchematicCanvas : Control
             ContextMenuTargetId = null;
             if (_editContext is not null && _model is not null && _index is not null)
             {
-                var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy);
+                var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy, zoom: _zoom);
                 if (hit.Kind is SchematicHitTest.HitKind.Component
                     or SchematicHitTest.HitKind.ComponentType
                     or SchematicHitTest.HitKind.ComponentName
@@ -499,7 +499,7 @@ public sealed class SchematicCanvas : Control
             return;
         }
 
-        var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy);
+        var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy, zoom: _zoom);
 
         switch (hit.Kind)
         {

@@ -622,7 +622,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         // Cyclic click-through: build the top→bottom stack (labels excluded — B9) and pick the next
         // object under the cursor when the current single selection is already in the stack; otherwise
         // the topmost. Shift acts on the topmost only (no cycling).
-        var stack = SchematicHitTest.TestStack(EditModel, RenderModel, SpatialIndex, wx, wy, includeLabels: false);
+        var stack = SchematicHitTest.TestStack(EditModel, RenderModel, SpatialIndex, wx, wy,
+                                               includeLabels: false, zoom: CanvasZoom);
         var hit   = PickClickThrough(stack, shift);
 
         // A press on a wire that is ALREADY part of a multi-object selection moves the whole
@@ -2502,7 +2503,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             case MoveLabelPhase.Picking:
             {
                 if (RenderModel is null || SpatialIndex is null) return;
-                var hit = SchematicHitTest.Test(EditModel, RenderModel, SpatialIndex, wx, wy);
+                var hit = SchematicHitTest.Test(EditModel, RenderModel, SpatialIndex, wx, wy, zoom: CanvasZoom);
                 // Accept clicks on the component glyph body or any of its text labels.
                 // Wire, dot, net-label, and empty-canvas clicks are ignored.
                 if (hit.Kind is not (SchematicHitTest.HitKind.Component
@@ -3794,7 +3795,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     public EditableComponent? GetComponentAtPoint(double wx, double wy)
     {
         if (RenderModel is null || SpatialIndex is null) return null;
-        var hit = SchematicHitTest.Test(EditModel, RenderModel, SpatialIndex, wx, wy);
+        var hit = SchematicHitTest.Test(EditModel, RenderModel, SpatialIndex, wx, wy, zoom: CanvasZoom);
         return hit.Kind == SchematicHitTest.HitKind.Component
             ? EditModel.FindComponent(hit.Id)
             : null;

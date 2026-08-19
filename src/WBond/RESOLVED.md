@@ -4,6 +4,85 @@ One `##` section per piece of completed work, sparingly — only findings that a
 surprising, and would cost someone real time to rediscover. Mirrors `src/WBond/Mom/RESOLVED.md` and
 `src/Ui/RESOLVED.md`.
 
+## A wire lying in the ground plane, and the crash it caused mid-drag (2026-08-19)
+
+Owner: *"I was dragging a wire in the wBond host layout, but circuitRF crashed"* —
+`InvalidOperationException: The inductance matrix is not positive definite (pivot 0.000E+000 at wire 6)`
+out of `CapacitanceReduction.Compute`, through `WBondViewModel.Republish` and `OnPointerMoved`.
+Second report, same session: *"when I drag wires overtop of other wires, the dragged wires move back
+to their old position during the drag and my mouse is no longer overtop of the wires that I was
+dragging."* **Both are the singular-matrix refusal**, seen at its two ends — the editor half is in
+`src/Ui/RESOLVED.md`.
+
+### The message named the wrong matrix and neither of the right causes
+
+`CholeskyFactor.Factor` is used by four call sites and hard-coded *"The inductance matrix"* into its
+failure for all of them. The factorisation that actually failed was **P**, the potential-coefficient
+matrix, and the geometry that failed it is not either of the two the message offers. It now takes a
+`matrixName` and a `hint`, and `CapacitanceReduction` supplies both.
+
+### The fingerprint: `0.000E+000` says which degeneracy it was
+
+**A wire lying in the plane is held at zero potential by it** — that is the whole content of the image
+method — so its entire row of **P** is analytically zero and the matrix is singular by a rank. Two
+wires merely *sharing geometry* is also singular, but arrives as a tiny **negative** pivot (measured
+-4.1e-25). So the two causes are distinguishable from the log alone, and the report said `0.000E+000`.
+
+How exactly zero it comes out is a rounding accident worth knowing, because it decides whether a
+diagnosis keyed on the sign fires at all:
+
+| case | measured |
+|---|---|
+| single-filament flat wire, alone | `P₀₀` **bit-exactly** 0 |
+| flat wire at index 6 among 8 looped ones | `P₆₆` 0, pivot **-2.446E-019** |
+| looped wire flattened in place (many filaments) | `P₁₁` **-6.0e-4**, against diagonals of ~1e13 |
+
+Exact wherever direct and image evaluate identically (the far kernel takes both at the same
+centre-to-centre distance; a lone self term is subtracted from itself); off by the last bits where near
+pairs sum the two by quadrature in different orders. Hence `RefuseWiresLyingInThePlane` uses a
+**relative floor** (1e-15 of the largest diagonal) and not `<= 0` — `P_ii` falls only logarithmically
+with height, so nothing physical spans fifteen orders and the test cannot false-positive on a genuinely
+small capacitance.
+
+### The obvious story about L is wrong, and the correction is the actual mechanism
+
+It is tempting to conclude the inductance is untouched, since its image term **adds** where the charge
+image subtracts. **Measured, `L` goes exactly singular on the same wire** (`L₀₀ = 0`): a horizontal
+filament's image is anti-parallel *and* coincident, so it cancels too. The capacitance is not where the
+physics is special —
+
+> **it is where the arithmetic is redone from scratch.**
+
+`IncrementalFill` maintains **L**'s factor by rank-2 updates and revisits only the rows of wires that
+*moved*; `RefreshCapacitance` refills and refactorises **P** over the *whole* mesh on every republish.
+So a degenerate wire that is not the one under the cursor is invisible to every inductance-side guard
+in the editor and fatal to the capacitance — which is exactly the shape of the crash, and why the
+report named a wire (6) the owner was not dragging.
+
+### The matrix outlives its factor, and that is the useful asymmetry
+
+`L` is well defined at every position the wires can occupy; only its Cholesky **factor** ceases to exist
+while two of them coincide. `MoveWiresUnfactored` + `TryRefactor` exist to exploit exactly that — the
+editor keeps the matrix exact across a degenerate stretch of a drag and retries the factorisation each
+frame, so the panel recovers the instant the wires separate. Recovery is one fresh factorisation,
+O(N³/3) and ~23 ms at N = 600, against the O(N²) **fill** a rebuild would repeat — which is the
+expensive half, and the reason "just rebuild the fill each frame" is not an option on a real design.
+
+`Reduce()` therefore refactorises when `FactorIsStale`, rather than reducing against a factor the matrix
+has moved past: that would be silently wrong, which is worse than the throw a genuinely singular matrix
+earns.
+
+### `IncrementalFill.MoveWires` is not transactional, and that is what let a refusal poison the mesh
+
+It re-flattens the moved wires into the mesh and writes their rows into **L** *before* the factor update
+discovers the matrix is singular and throws. So "the edit was refused" never meant "nothing happened":
+the degenerate geometry was already in the mesh, and the mesh is what the capacitance is refilled from
+on every later frame. Pinned by `WireInThePlaneTests.AFailedMoveWires_HasAlreadyMutatedTheMesh` rather
+than fixed here — making the fill transactional means snapshotting a mesh row, an **L** row and the
+whole factor on *every* drag frame, a cost paid always to serve a path taken almost never. The caller
+rebuilding once on the error path (`WBondViewModel.RebuildAfterFailedFill`) is the cheaper half of the
+same guarantee.
+
 ## Plastic overmold: `WBondDesign.OvermoldEr` (2026-08-19)
 
 Owner: *"How do we add plastic over-mold effects to the wire bond MoM kernel? (And also to the lumped

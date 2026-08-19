@@ -144,6 +144,80 @@ public sealed class CapacitanceReduction
         return Compute(mesh, PotentialCoefficients.Fill(mesh, parallel));
     }
 
+    /// <summary>
+    /// Refuses, with the wire named, a wire that lies <b>entirely in the ground plane</b> — before
+    /// the factorisation can report the same thing as an anonymous pivot.
+    ///
+    /// <h3>The whole ROW vanishes, not just the diagonal</h3>
+    /// <para>The ground plane is a zero equipotential — that is the entire content of the image
+    /// method — so a wire lying <i>in</i> it is at zero potential from every charge in the problem.
+    /// Its whole row of <b>P</b> is analytically zero, and the matrix is singular by a rank, not
+    /// merely ill-conditioned. Numerically the row lands at machine epsilon relative to a normal
+    /// diagonal (~1e-17), and it is <b>bit-exactly</b> zero wherever the cancellation happens to be:
+    /// a pair taken by the far kernel evaluates direct and image at the same centre-to-centre
+    /// distance, and a single-filament wire's self term is subtracted from itself. Near pairs, whose
+    /// quadrature sums the two in different orders, leave the last bits behind. So the pivot the
+    /// factorisation reports is <c>0.000E+000</c> or a denormal negative depending only on which
+    /// pairs were near — measured across designs at 0.0, -2.4e-19 and -6.0e-4 against diagonals of
+    /// ~1e13. The owner's log said <c>0.000E+000</c>.</para>
+    ///
+    /// <para><b>Hence a RELATIVE test rather than <c>&lt;= 0</c>.</b> Keying the diagnosis off the
+    /// sign alone would make the good message depend on that rounding accident and fall back to an
+    /// anonymous pivot the rest of the time.</para>
+    ///
+    /// <para><b>The inductance is not immune, and it is worth being exact about why this surfaces
+    /// here.</b> <see cref="InductanceMatrix"/> ADDS its image term, but a HORIZONTAL filament's
+    /// image is anti-parallel and coincident, so <b>L</b>'s row goes exactly zero too — measured
+    /// <c>L[0,0] = 0</c>. What differs is not the physics but the bookkeeping: <b>L</b>'s factor is
+    /// maintained incrementally by <see cref="IncrementalFill"/> and only the moved wires' rows are
+    /// touched, while <b>P</b> is refilled and refactorised from scratch on every republish. So a
+    /// degenerate wire that is not the one being dragged is invisible to <b>L</b> and fatal to
+    /// <b>P</b> — which is exactly the shape of the crash.</para>
+    ///
+    /// <para><b>Reachable from ordinary use</b> (owner, 2026-08-19 — an editor crash while dragging a
+    /// wire in the layout host). A wire drawn in the layout view gets both feet at <c>FootZNm</c>,
+    /// which is <b>zero by default</b> because bond pads sit on the surface and the LOOP is what
+    /// carries the height — so a wire whose loop height is zero lies flat on the reference plane.</para>
+    ///
+    /// <para>Diagnosed from <b>P</b>'s diagonal rather than from the geometry, because that is the
+    /// quantity that actually has to be positive; a geometric test would have to re-derive the
+    /// tolerance the factorisation already applies.</para>
+    /// </summary>
+    private static void RefuseWiresLyingInThePlane(WireMesh mesh, PotentialCoefficients p)
+    {
+        if (!mesh.HasImages) return;
+
+        double largest = 0.0;
+        for (int i = 0; i < mesh.WireCount; i++)
+            largest = Math.Max(largest, p[i, i]);
+
+        // A wire whose self potential coefficient is fifteen orders below the largest is not a wire
+        // with a small capacitance — nothing physical spans that range, since P_ii falls only
+        // logarithmically with height. It is a row that cancelled.
+        double floor = largest * 1e-15;
+
+        for (int i = 0; i < mesh.WireCount; i++)
+        {
+            if (p[i, i] > floor) continue;
+
+            throw new InvalidOperationException(
+                $"{DescribeWire(mesh, i)} lies in the ground plane, so the plane holds it at zero " +
+                "potential and its capacitance is undefined. Give the wire a loop height, raise its " +
+                "feet above z = 0, or turn off the ground plane.");
+        }
+    }
+
+    /// <summary>Names a wire the way the panel does — its array and its position in it.</summary>
+    private static string DescribeWire(WireMesh mesh, int wire)
+    {
+        int array = mesh.ArrayOfWire[wire];
+        int within = 0;
+        for (int i = 0; i < wire; i++)
+            if (mesh.ArrayOfWire[i] == array) within++;
+
+        return $"Wire {within + 1} of array '{mesh.ArrayNames[array]}'";
+    }
+
     /// <summary>Reduces an already-filled <b>P</b>. Split out so gate C3 can sweep the kernel threshold.</summary>
     public static CapacitanceReduction Compute(WireMesh mesh, PotentialCoefficients p)
     {
@@ -157,7 +231,13 @@ public sealed class CapacitanceReduction
         if (n == 0)
             return new CapacitanceReduction(new double[m * m], [], new double[m], new double[m], new double[m], m);
 
-        var factor = CholeskyFactor.Factor(p.Values, n);
+        RefuseWiresLyingInThePlane(mesh, p);
+
+        var factor = CholeskyFactor.Factor(
+            p.Values, n,
+            matrixName: "potential-coefficient matrix (capacitance)",
+            hint: "That normally means two wires share the same geometry, a wire has zero length, or a " +
+                  "wire lies in the ground plane.");
 
         // X = P^-1 A, one triangular solve per array. A's columns are 0/1 indicators, so the
         // right-hand sides are built by marking membership rather than by a matrix product.

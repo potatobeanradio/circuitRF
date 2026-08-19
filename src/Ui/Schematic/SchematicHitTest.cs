@@ -11,6 +11,49 @@ public static class SchematicHitTest
     private const double WireHitTol       = 8.0;
     private const double EndpointHitTol   = 12.0;
 
+    // Wire pick tolerances are stored in WORLD units, but what the user aims at is a band of
+    // SCREEN pixels. Zoomed out, the world-unit band collapses to less than the drawn stroke
+    // (a wire renders at max(1 px, zoom*4) — see SchematicRenderer), so the wire became visible
+    // yet unclickable. These floors keep the band at least this many device pixels wide at any
+    // zoom; at 1:1 they are below the world constants above, so nothing changes there.
+    private const double WireHitPixelFloor     = 7.0;
+    private const double EndpointHitPixelFloor = 10.0;
+
+    // A band that grows without bound would, far enough out, cover several grid pitches at once and
+    // pick a wire the user was nowhere near — the picker takes the topmost candidate, not the
+    // nearest. Capping at 45 % of the connection grid keeps the bands of two parallel wires one
+    // pitch apart disjoint, so the wire under the cursor is still the wire that answers.
+    private const double MaxTolGridFraction = 0.45;
+
+    /// <summary>World-space half-width of a wire's clickable band at the given canvas zoom.</summary>
+    internal static double WireTolFor(double zoom, double gridSize = 100.0)
+        => Clamp(WireHitTol, WireHitPixelFloor / Math.Max(zoom, 1e-6), gridSize);
+
+    /// <summary>World-space radius of a wire endpoint's grab zone at the given canvas zoom.</summary>
+    internal static double EndpointTolFor(double zoom, double gridSize = 100.0)
+        => Clamp(EndpointHitTol, EndpointHitPixelFloor / Math.Max(zoom, 1e-6), gridSize);
+
+    // Grow the fixed world band toward the pixel floor, but never past the grid cap — and never
+    // BELOW the fixed band, so a tiny grid cannot shrink what already worked at 1:1.
+    private static double Clamp(double worldTol, double pixelFloorWorld, double gridSize)
+    {
+        double cap = gridSize > 0 ? gridSize * MaxTolGridFraction : double.MaxValue;
+        return Math.Max(worldTol, Math.Min(pixelFloorWorld, cap));
+    }
+
+    /// <summary>
+    /// An endpoint zone that grew with zoom-out must not swallow the segment it belongs to —
+    /// the whole point of the wider band is that the segment stays draggable. Caps the radius at
+    /// 40 % of the adjacent segment, but never below the fixed <see cref="EndpointHitTol"/> that
+    /// applied before zoom-awareness, so 1:1 behaviour is untouched.
+    /// </summary>
+    private static double CapEndpointTol(double tol, double ax, double ay, double bx, double by)
+    {
+        double len = Math.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+        if (len <= 0) return tol;
+        return Math.Max(EndpointHitTol, Math.Min(tol, 0.4 * len));
+    }
+
     private const double CharWidthWorld = 38.5;   // textSize_world(70) × ~0.55 avg char ratio
 
     // Net label: PlexItalic at 65 world units, drawn at stored lbl.X/lbl.Y (no render-time shift).
@@ -52,9 +95,15 @@ public static class SchematicHitTest
         SchematicSpatialIndex index,
         double worldX, double worldY,
         double hitRadius = DefaultHitRadius,
-        bool includeLabels = true)
+        bool includeLabels = true,
+        double zoom = 1.0)
     {
-        double half = hitRadius;
+        double wireTol = WireTolFor(zoom, editModel.GridSize);
+        double endTol  = EndpointTolFor(zoom, editModel.GridSize);
+        // The candidate window must cover the WIDEST tolerance any stage below uses — a wire's
+        // bounding box is a zero-thickness line along its run, so a window narrower than wireTol
+        // never returns the wire the click was meant for.
+        double half = Math.Max(hitRadius, Math.Max(wireTol, endTol));
         var candComps = new HashSet<int>();
         var candWires = new HashSet<int>();
         index.QueryViewport(worldX - half, worldY - half, worldX + half, worldY + half,
@@ -98,13 +147,18 @@ public static class SchematicHitTest
             var wire = editModel.Wires[i];
             if (wire.Points.Count == 0) continue;
 
+            int last = wire.Points.Count - 1;
+
             if (SchematicGeometry.CoincidentPoints(worldX, worldY,
-                    wire.Points[0].X, wire.Points[0].Y, EndpointHitTol))
+                    wire.Points[0].X, wire.Points[0].Y,
+                    last >= 1 ? CapEndpointTol(endTol, wire.Points[0].X, wire.Points[0].Y,
+                                               wire.Points[1].X, wire.Points[1].Y) : endTol))
                 return new HitResult(HitKind.WireEndpoint, wire.Id, SubIndex: 0);
 
-            int last = wire.Points.Count - 1;
             if (SchematicGeometry.CoincidentPoints(worldX, worldY,
-                    wire.Points[last].X, wire.Points[last].Y, EndpointHitTol))
+                    wire.Points[last].X, wire.Points[last].Y,
+                    last >= 1 ? CapEndpointTol(endTol, wire.Points[last].X, wire.Points[last].Y,
+                                               wire.Points[last - 1].X, wire.Points[last - 1].Y) : endTol))
                 return new HitResult(HitKind.WireEndpoint, wire.Id, SubIndex: last);
         }
 
@@ -119,7 +173,7 @@ public static class SchematicHitTest
                 if (SchematicGeometry.PointOnSegment(
                         worldX, worldY,
                         pts[pi].X, pts[pi].Y, pts[pi + 1].X, pts[pi + 1].Y,
-                        WireHitTol))
+                        wireTol))
                     return new HitResult(HitKind.WireSegment, wire.Id, SubIndex: pi);
             }
         }
@@ -156,9 +210,12 @@ public static class SchematicHitTest
         SchematicSpatialIndex index,
         double worldX, double worldY,
         double hitRadius = DefaultHitRadius,
-        bool   includeLabels = false)
+        bool   includeLabels = false,
+        double zoom = 1.0)
     {
-        double half = hitRadius;
+        double wireTol = WireTolFor(zoom, editModel.GridSize);
+        double endTol  = EndpointTolFor(zoom, editModel.GridSize);
+        double half = Math.Max(hitRadius, Math.Max(wireTol, endTol));
         var candComps = new HashSet<int>();
         var candWires = new HashSet<int>();
         index.QueryViewport(worldX - half, worldY - half, worldX + half, worldY + half,
@@ -203,16 +260,20 @@ public static class SchematicHitTest
             var pts  = wire.Points;
             if (pts.Count == 0) continue;
 
-            if (SchematicGeometry.CoincidentPoints(worldX, worldY, pts[0].X, pts[0].Y, EndpointHitTol))
+            int last = pts.Count - 1;
+
+            if (SchematicGeometry.CoincidentPoints(worldX, worldY, pts[0].X, pts[0].Y,
+                    last >= 1 ? CapEndpointTol(endTol, pts[0].X, pts[0].Y, pts[1].X, pts[1].Y) : endTol))
             { results.Add(new HitResult(HitKind.WireEndpoint, wire.Id, SubIndex: 0)); continue; }
 
-            int last = pts.Count - 1;
-            if (SchematicGeometry.CoincidentPoints(worldX, worldY, pts[last].X, pts[last].Y, EndpointHitTol))
+            if (SchematicGeometry.CoincidentPoints(worldX, worldY, pts[last].X, pts[last].Y,
+                    last >= 1 ? CapEndpointTol(endTol, pts[last].X, pts[last].Y,
+                                               pts[last - 1].X, pts[last - 1].Y) : endTol))
             { results.Add(new HitResult(HitKind.WireEndpoint, wire.Id, SubIndex: last)); continue; }
 
             for (int pi = 0; pi < pts.Count - 1; pi++)
                 if (SchematicGeometry.PointOnSegment(
-                        worldX, worldY, pts[pi].X, pts[pi].Y, pts[pi + 1].X, pts[pi + 1].Y, WireHitTol))
+                        worldX, worldY, pts[pi].X, pts[pi].Y, pts[pi + 1].X, pts[pi + 1].Y, wireTol))
                 { results.Add(new HitResult(HitKind.WireSegment, wire.Id, SubIndex: pi)); break; }
         }
 

@@ -6,6 +6,95 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Dragging a wire over another: the refusal that undid the gesture, and the crash behind it (2026-08-19)
+
+Two owner reports, one mechanism:
+
+1. *"I was dragging a wire in the wBond host layout, but circuitRF crashed"* — `InvalidOperationException`
+   out of `CapacitanceReduction.Compute`, via `Republish` and `OnPointerMoved`.
+2. *"when I drag wires overtop of other wires, the dragged wires move back to their old position during
+   the drag and my mouse is no longer overtop of the wires that I was dragging. This seems like a glitch."*
+3. *"during drag, if wires land on other wire, the Array Inductance panel stops updating (even when wires
+   are moved off of the other wires during the same drag)."* — the first cut of the fix for (2), which
+   held correctly and then never let go.
+
+The physics — why a wire in the ground plane makes **P** singular, and why `L` hides it — is in
+`src/WBond/RESOLVED.md`. This is the editor's half.
+
+### Report 2 is the refusal doing what it was designed to do, in the wrong place
+
+`RefuseEdit` rolls the design back to the most recent undo snapshot, which during a drag is the
+**pre-gesture** state. Passing one wire over another is an ordinary thing to do with a mouse, and for
+the instant the two coincide the matrices are singular — so an ordinary drag was being classified as a
+failed *edit* and undone underneath the cursor. The hand then carried on dragging from a grab point
+with nothing under it.
+
+**A transient degeneracy is not an edit; it is a position the geometry is passing through.** So the
+geometry now keeps moving with the hand and only the NUMBERS stop — the same priority the quality
+ladder already applies when a frame cannot afford its fill (*"the geometry always moves and the canvas
+always redraws; the FILL is the only thing that can be skipped"*). `RefuseFill` splits on `_inGesture`:
+
+- **mid-gesture** → hold. `ReadoutIsHeld` goes true and the panel keeps the numbers from before.
+- **outside one** → `RefuseEdit`, unchanged.
+
+`EndGesture` settles it. If the wires were **dropped** on a degenerate position rather than dragged
+across one, *that* is an edit and undoing it is right — at the moment the button comes up, where nothing
+moves out from under the cursor.
+
+### Report 3: what "held" must keep holding, and what it must not
+
+The first cut held the whole fill, which is what report 3 is: once the wires touched, nothing recovered
+until the release. The separation that fixes it is worth stating plainly, because it is not obvious from
+either report:
+
+> **L is well defined at every position the wires can occupy. It is only its Cholesky *factor* that
+> ceases to exist while two of them coincide.**
+
+So `MoveWiresUnfactored` keeps the mesh and the matrix exactly up to date through the held frames and
+lets only the factor lapse (`IncrementalFill.FactorIsStale`), and each frame retries `TryRefactor()`.
+One of them succeeds the instant the wires separate and the panel is live again mid-drag. Recovery costs
+one fresh factorisation — O(N³/3), ~23 ms at N = 600 — paid on that frame alone; the alternative, a full
+rebuild, is the O(N²) *fill*, which is the expensive half and is what makes "just rebuild each frame"
+unaffordable on a real design.
+
+Two consequences fell out and are held by their own code rather than by memory:
+
+- `RefuseFill` re-runs the move **unfactored** on entry, because `MoveWires` threw part-way down its own
+  loop and the wires after the failure never got their rows. Without that the matrix is not exact and
+  there is nothing for `TryRefactor` to recover *to*.
+- `IncrementalFill.Reduce()` refactorises when the factor is stale rather than reducing against it.
+  A reduction over a factor the matrix has moved past is *silently wrong*, which is worse than the throw
+  a genuinely singular matrix earns.
+
+### Report 1: two guards, and the crash went between them
+
+`CommitPointMove` and `CommitStructuralChange` each wrapped only their own **inductance** work in
+`RefuseEdit`. `Republish` — which refills and refactorises **P**, and reduces the array-basis matrix —
+sat downstream of both with nothing around it. Since `IncrementalFill` revisits only the *moved* wires'
+rows while `RefreshCapacitance` refills the *whole* mesh, a wire left degenerate by an earlier refused
+edit is invisible to every guard upstream and fatal there. Three changes, in order of how much they
+carry:
+
+1. **`RefreshCapacitance` owns its own degeneracy.** A singular **P** is not an unevaluable edit — it is
+   one quantity of the readout going away, exactly as when `IncludeCapacitance` is off. Rolling the
+   drag back over it would be wrong twice: the drag did not cause it, and the inductance it would
+   discard is still perfectly well defined. So the capacitance is dropped, `CapacitanceRefusal` says
+   which wire and why, and it is said **once** rather than once per frame.
+2. **`RefuseEdit` rebuilds afterwards** (`RebuildAfterFailedFill`). `IncrementalFill.MoveWires` is not
+   transactional — it mutates mesh, matrix and factor before throwing — so a "refused" edit had been
+   leaving the degenerate geometry in the mesh and a half-applied rank-1 update in the factor. A factor
+   carrying half of one is *silently wrong* rather than loudly broken, which is the worse failure.
+3. **`Republish` is a guarded region**, as a backstop for the array reduction's own small factorisation.
+   Kept even though (1) covers the known case, because the lesson of the crash is precisely that
+   "the fill would have caught it" is not a property anything enforces.
+
+### A refusal decided in the constructor has no listener yet
+
+The view attaches `EditRefused` after the view-model exists, so a design that arrives already
+unevaluable is diagnosed with nobody listening. `Report` holds the reason and the event's `add`
+accessor replays it to the first subscriber — otherwise the panel comes up silently missing its
+capacitance rows with nothing on screen saying why.
+
 ## harmonicaRF opens in its own window, and its New/Close finally work (2026-08-19)
 
 Owner: *"today when user selects Tools ▸ harmonicaRF, a docked harmonicaRF document is created.

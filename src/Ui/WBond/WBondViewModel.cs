@@ -116,6 +116,7 @@ public sealed partial class WBondViewModel : ObservableObject
         _design = design ?? EmptyDesign();
         _mesh = WireMesh.Build(_design);
         _fill = IncrementalFill.Create(_mesh);
+
         RefreshCapacitance();
         Readout = PanelReadout.Build(_design, _mesh, _fill.Reduce(), _capacitance);
     }
@@ -353,12 +354,46 @@ public sealed partial class WBondViewModel : ObservableObject
     /// </summary>
     private void RefreshCapacitance()
     {
-        _capacitance = _design.IncludeCapacitance
-            ? CapacitanceReduction.Create(_mesh, parallel: true)
-            : null;
+        // A SINGULAR P IS NOT AN UNEVALUABLE EDIT, and that is why this is caught rather than thrown.
+        // P is refilled and refactorised from scratch on every republish, while L's factor is
+        // maintained incrementally and only the MOVED wires' rows are revisited — so a degenerate wire
+        // that is not the one being dragged reaches this fill and nothing else. Rolling the user's
+        // drag back over it would be wrong twice over: the drag did not cause it, and the inductance
+        // it would discard is still perfectly well defined. So the capacitance goes away, exactly as
+        // it does when IncludeCapacitance is off, and the reason is said once instead of per frame.
+        //
+        // Before this the exception left CapacitanceReduction, escaped Republish — which no guard
+        // covered — and came out of OnPointerMoved, taking the application with it mid-drag
+        // (owner, 2026-08-19: "pivot 0.000E+000 at wire 6").
+        try
+        {
+            _capacitance = _design.IncludeCapacitance
+                ? CapacitanceReduction.Create(_mesh, parallel: true)
+                : null;
+            _capacitanceRefusal = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _capacitance = null;
+            if (_capacitanceRefusal != ex.Message)
+            {
+                _capacitanceRefusal = ex.Message;
+                Report(ex.Message);
+            }
+        }
+
         _capacitanceStale = false;
         CapacitanceComputeCount++;
     }
+
+    /// <summary>
+    /// Why the capacitance is missing from the readout, or null when it is not — read by the panel
+    /// so a dropped capacitance is visible where it is missing and not only in a toolbar message that
+    /// has since scrolled away.
+    /// </summary>
+    public string? CapacitanceRefusal => _capacitanceRefusal;
+
+    private string? _capacitanceRefusal;
 
     public WBondDesign Design => _design;
 
@@ -409,15 +444,92 @@ public sealed partial class WBondViewModel : ObservableObject
         // the fill, the reduction and the panel are all skipped. See DeferFills.
         if (DeferFills) return;
 
+        // The rest of a gesture that is passing through a degenerate position. The MATRIX is kept
+        // exactly up to date — it is well defined even where its factor is not — and the factor is
+        // retried each frame, so the panel comes back the moment the wires separate rather than
+        // staying frozen until the button comes up.
+        if (_fillHeld)
+        {
+            _fill.MoveWiresUnfactored(movedWires, motion);
+
+            if (!_fill.TryRefactor())
+            {
+                PublishGeometryOnly();
+                return;
+            }
+
+            _fillHeld = false;
+            OnPropertyChanged(nameof(ReadoutIsHeld));
+            IncrementalUpdateCount++;
+            Republish();
+            return;
+        }
+
         try
         {
             _fill.MoveWires(movedWires, motion);
         }
-        catch (InvalidOperationException ex) { RefuseEdit(ex); return; }
+        catch (InvalidOperationException ex) { RefuseFill(ex, movedWires, motion); return; }
 
         IncrementalUpdateCount++;
         Republish();
     }
+
+    /// <summary>
+    /// A fill that failed: rolled back if it was a discrete edit, <b>held</b> if a gesture is open.
+    ///
+    /// <h3>Why a drag must not roll back</h3>
+    /// <para>Owner, 2026-08-19: <i>"when I drag wires overtop of other wires, the dragged wires move
+    /// back to their old position during the drag and my mouse is no longer overtop of the wires that
+    /// I was dragging."</i> Passing one wire over another is an ordinary thing to do with a mouse, and
+    /// for the instant the two coincide the inductance matrix is singular. Treating that instant as a
+    /// failed EDIT undid the whole gesture underneath the cursor — the wires jumped back, and the drag
+    /// carried on from a grab point that no longer had anything under it.</para>
+    ///
+    /// <para>A transient degeneracy is not an edit at all; it is a position the geometry is passing
+    /// through. So the geometry keeps moving with the hand and only the NUMBERS stop, which is the
+    /// same priority the quality ladder already applies when a frame cannot afford its fill —
+    /// <i>"the geometry always moves and the canvas always redraws; the FILL is the only thing that
+    /// can be skipped"</i>. What is held is only the FACTOR — the matrix is kept exact by
+    /// <c>MoveWiresUnfactored</c>, which is what lets the panel recover mid-drag the moment the wires
+    /// separate. <see cref="EndGesture"/> settles whatever is left, and rolls back only if the wires
+    /// were dropped somewhere unevaluable.</para>
+    /// </summary>
+    private void RefuseFill(InvalidOperationException ex,
+                           IReadOnlyList<int> movedWires, SelectionMotion motion)
+    {
+        if (!_inGesture)
+        {
+            RefuseEdit(ex);
+            return;
+        }
+
+        _heldReason = ex.Message;
+
+        _fillHeld = true;
+        OnPropertyChanged(nameof(ReadoutIsHeld));
+
+        // MoveWires threw part-way down its own loop, so the wires after the one that failed never got
+        // their rows. Redo the whole move without the factor, and the matrix is exact from here on —
+        // which is what the per-frame TryRefactor above needs in order to be able to recover at all.
+        _fill.MoveWiresUnfactored(movedWires, motion);
+
+        PublishGeometryOnly();
+        Report("Readout paused while the wires pass through this position; it will update when you "
+               + $"release. {ex.Message}");
+    }
+
+    /// <summary>
+    /// True while a gesture is moving wires through a position whose matrices are singular: the wires
+    /// follow the cursor, the panel's numbers are the ones from before it happened, and
+    /// <see cref="EndGesture"/> settles it.
+    /// </summary>
+    public bool ReadoutIsHeld => _fillHeld;
+
+    private bool _fillHeld;
+
+    /// <summary>Why the fill was held, kept for the release that turns the hold into a refusal.</summary>
+    private string? _heldReason;
 
     /// <summary>
     /// The <b>structural path</b>: a wire or a point was added or removed, so the flat filament layout
@@ -442,6 +554,7 @@ public sealed partial class WBondViewModel : ObservableObject
 
         _mesh = mesh;
         _fill = fill;
+        _fillHeld = false;   // a rebuild is by definition in step
         RebuildCount++;
         Republish();
     }
@@ -449,8 +562,28 @@ public sealed partial class WBondViewModel : ObservableObject
     /// <summary>
     /// Raised when an edit produced geometry the physics cannot evaluate, with the reason.
     /// The edit is rolled back; the design is never left in a state the panel cannot describe.
+    ///
+    /// <para><b>A refusal decided in the constructor is replayed to the first subscriber</b>, because
+    /// the view attaches its handler after the view-model exists — so a design that arrives already
+    /// unevaluable has no listener at the moment it is diagnosed, and the reason would otherwise be
+    /// dropped on the floor.</para>
     /// </summary>
-    public event Action<string>? EditRefused;
+    public event Action<string>? EditRefused
+    {
+        add
+        {
+            _editRefused += value;
+            if (_deferredRefusal is { } reason)
+            {
+                _deferredRefusal = null;
+                value?.Invoke(reason);
+            }
+        }
+        remove => _editRefused -= value;
+    }
+
+    private Action<string>? _editRefused;
+    private string? _deferredRefusal;
 
     /// <summary>
     /// Reports a refusal that was decided BEFORE any edit was attempted, so there is nothing to roll
@@ -458,7 +591,19 @@ public sealed partial class WBondViewModel : ObservableObject
     /// case (owner, 2026-08-16). It reaches the same toolbar strip <see cref="RefuseEdit"/> uses,
     /// because a gesture that visibly does nothing has to say why wherever the reason comes from.
     /// </summary>
-    public void ReportRefusal(string reason) => EditRefused?.Invoke(reason);
+    public void ReportRefusal(string reason) => Report(reason);
+
+    /// <summary>
+    /// Raises <see cref="EditRefused"/>, or <b>holds the reason for the first subscriber</b> when
+    /// there is none yet. The constructor computes the capacitance before any view has attached its
+    /// handler, so a design that arrives already unevaluable is diagnosed with nobody listening —
+    /// and without this the panel would come up silently missing its capacitance rows.
+    /// </summary>
+    private void Report(string reason)
+    {
+        if (_editRefused is null) _deferredRefusal = reason;
+        else _editRefused(reason);
+    }
 
     /// <summary>
     /// An edit that made the inductance matrix singular is UNDONE and reported, never thrown.
@@ -471,9 +616,17 @@ public sealed partial class WBondViewModel : ObservableObject
     ///
     /// <para>Rollback restores the most recent undo snapshot — which is the pre-edit state for a
     /// discrete edit, and the pre-gesture state for a drag, because a gesture pushes one. With no
-    /// snapshot to restore (an edit made outside both) the geometry is left alone and the previous
-    /// mesh kept, so the readout is stale rather than wrong; the message says what happened either
-    /// way.</para>
+    /// snapshot to restore (an edit made outside both) the geometry is left alone, so the readout is
+    /// stale rather than wrong; the message says what happened either way.</para>
+    ///
+    /// <para><b>The mesh and the factor are rebuilt afterwards, and that is not belt-and-braces.</b>
+    /// <c>IncrementalFill.MoveWires</c> is not transactional: it re-flattens the moved wires into the
+    /// mesh and writes their rows into <b>L</b> BEFORE the rank-2 update discovers the matrix is
+    /// singular and throws. So a "refused" edit had already left the degenerate geometry in the mesh
+    /// and a half-applied rank-1 update in the factor — and the mesh is what
+    /// <see cref="RefreshCapacitance"/> refills <b>P</b> from on every later frame, whether or not
+    /// that wire is the one being dragged. That is how a refusal on one gesture became a hard crash
+    /// on a later one (owner, 2026-08-19).</para>
     /// </summary>
     private bool _refusing;
 
@@ -494,19 +647,100 @@ public sealed partial class WBondViewModel : ObservableObject
             finally { _refusing = false; }
         }
 
-        EditRefused?.Invoke(ex.Message);
+        RebuildAfterFailedFill();
+        Report(ex.Message);
     }
 
+    /// <summary>
+    /// Puts the mesh, the matrix and the factor back in step with the design after a fill threw
+    /// part-way through. See <see cref="RefuseEdit"/> for why they can be out of step at all.
+    ///
+    /// <para>A full rebuild, on an error path that runs once per refusal — the incremental path has no
+    /// way to undo a partial rank-2 update, and a factor carrying half of one is silently wrong
+    /// rather than loudly broken, which is the worse failure.</para>
+    ///
+    /// <para>If the design it rebuilds from is <i>itself</i> unevaluable there is nothing better to
+    /// fall back to, so the previous mesh is kept and the caller's message stands as the explanation.</para>
+    /// </summary>
+    private void RebuildAfterFailedFill()
+    {
+        try
+        {
+            var mesh = WireMesh.Build(_design);
+            var fill = IncrementalFill.Create(mesh);
+            _mesh = mesh;
+            _fill = fill;
+            RebuildCount++;
+        }
+        catch (InvalidOperationException)
+        {
+            // Nothing to swap in. Reported by the caller.
+        }
+    }
+
+    /// <summary>
+    /// Recomputes and republishes — <b>and it is a guarded region, not a bare call.</b>
+    ///
+    /// <h3>Why the guard has to be here and not only around the fill</h3>
+    /// <para><see cref="CommitPointMove"/> and <see cref="CommitStructuralChange"/> each wrapped only
+    /// their own <i>inductance</i> work in <see cref="RefuseEdit"/>, on the premise that a degenerate
+    /// geometry shows up there first. <b>It does not always.</b> Two matrices are factorised on this
+    /// path, and only one of them is rebuilt from scratch each time: <see cref="IncrementalFill"/>
+    /// revisits <b>L</b> only for the wires that MOVED, while <see cref="RefreshCapacitance"/> refills
+    /// <b>P</b> over the whole mesh. A wire left degenerate by an earlier refused edit is therefore
+    /// invisible to every guard upstream and fatal here — and this is downstream of all of them, so
+    /// the Cholesky breakdown escaped through <c>OnPointerMoved</c> and took the whole application
+    /// down mid-drag (owner, 2026-08-19).</para>
+    ///
+    /// <para><see cref="RefreshCapacitance"/> now handles its own degeneracy, so in practice this
+    /// catch is the backstop for the OTHER factorisation on the path — the array reduction's small
+    /// inverse inside <see cref="PublishReadout"/>. It is kept because the lesson of the crash is
+    /// precisely that "the fill would have caught it" is not a property anything enforces.</para>
+    /// </summary>
     private void Republish()
     {
-        // Inside a gesture the capacitance is refreshed only when the frame budget allows it; when it
-        // does not it is marked stale, and EndGesture pays for it once. See
-        // RefreshCapacitanceDuringGesture.
-        if (_inGesture && !RefreshCapacitanceDuringGesture) _capacitanceStale = true;
-        else RefreshCapacitance();
+        try
+        {
+            // Inside a gesture the capacitance is refreshed only when the frame budget allows it; when
+            // it does not it is marked stale, and EndGesture pays for it once. See
+            // RefreshCapacitanceDuringGesture.
+            if (_inGesture && !RefreshCapacitanceDuringGesture) _capacitanceStale = true;
+            else RefreshCapacitance();
 
-        PublishReadout();
+            PublishReadout();
+            _publishRefused = false;
+            _lastPublishRefusal = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            // ROLL BACK ONCE, THEN ONLY REPORT. RefuseEdit pops an undo snapshot, which is right when
+            // the edit just made is what broke the geometry — and actively destructive when it is not.
+            // A design that is ALREADY unevaluable refuses on every frame of an unrelated drag, and a
+            // rollback per frame would unwind the whole undo stack, silently reverting work the user
+            // never asked to lose. The flag says which case this is: it is cleared by the first
+            // republish that succeeds, so it is set exactly while the current state cannot be
+            // evaluated.
+            if (_publishRefused)
+            {
+                // Same reason, same frame after frame — say it once rather than once per frame.
+                if (_lastPublishRefusal != ex.Message)
+                {
+                    _lastPublishRefusal = ex.Message;
+                    _editRefused?.Invoke(ex.Message);
+                }
+                return;
+            }
+
+            _publishRefused = true;
+            _lastPublishRefusal = ex.Message;
+            RefuseEdit(ex);
+        }
     }
+
+    /// <summary>True while the present geometry cannot be evaluated — see <see cref="Republish"/>.</summary>
+    private bool _publishRefused;
+
+    private string? _lastPublishRefusal;
 
     /// <summary>
     /// Rebuilds the panel from what is already computed — the M triangular solves and the small
@@ -1236,7 +1470,7 @@ public sealed partial class WBondViewModel : ObservableObject
             // that refusal is the editor's job — letting it escape would take down the dialog that
             // asked for it.
             if (pushed) DropUndoEntry();
-            EditRefused?.Invoke(ex.Message);
+            _editRefused?.Invoke(ex.Message);
             return 0;
         }
 
@@ -1289,6 +1523,7 @@ public sealed partial class WBondViewModel : ObservableObject
         if (_inGesture) return;
         PushUndo();
         _inGesture = true;
+        _fillHeld = false;   // a new gesture starts from a matrix that is in step
     }
 
     /// <summary>
@@ -1301,7 +1536,42 @@ public sealed partial class WBondViewModel : ObservableObject
     public void EndGesture()
     {
         _inGesture = false;
+
+        if (_fillHeld)
+        {
+            SettleHeldFill();
+            return;
+        }
+
         if (_capacitanceStale) Republish();
+    }
+
+    /// <summary>
+    /// Ends a gesture that spent part of its life in the held state (see <see cref="RefuseFill"/>):
+    /// rebuild once from wherever the wires actually landed, and roll back only if that is still a
+    /// place the physics cannot evaluate.
+    ///
+    /// <para>A full rebuild rather than an incremental one, because the held period deliberately
+    /// stopped maintaining the factor — there is no increment left to apply, and the matrix and its
+    /// factor are both out of step with the mesh.</para>
+    /// </summary>
+    private void SettleHeldFill()
+    {
+        _fillHeld = false;
+        OnPropertyChanged(nameof(ReadoutIsHeld));
+
+        // The held frames kept the matrix exact, so the only thing missing is a factor — no rebuild.
+        if (_fill.TryRefactor())
+        {
+            Republish();
+            return;
+        }
+
+        // The wires were DROPPED on a degenerate position, not merely dragged across one. Now the
+        // gesture IS an edit, and now undoing it is the right answer — at the moment the button came
+        // up, where it does not move anything out from under the cursor.
+        RefuseEdit(new InvalidOperationException(_heldReason ?? "The wires were left on a position " +
+            "whose inductance matrix is singular; the move has been undone."));
     }
 
     /// <summary>

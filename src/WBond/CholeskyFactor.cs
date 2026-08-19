@@ -188,7 +188,19 @@ public sealed class CholeskyFactor
     /// <param name="run">Cancellation and progress, or null.</param>
     /// <param name="stage">The stage name to report under; null reports nothing. See
     /// <see cref="InvertInPlace"/>.</param>
-    public static CholeskyFactor Factor(double[] matrix, int n, WBondRunControl? run = null, string? stage = null)
+    /// <param name="matrixName">
+    /// What to call the matrix in the failure message. <b>Not cosmetic</b>: this routine factorises
+    /// the inductance matrix AND the potential-coefficient matrix, whose degenerate geometries are
+    /// different (see <see cref="CapacitanceReduction"/>), and a message naming the wrong one sends
+    /// the reader hunting for duplicate wires that are not there — which is exactly what happened
+    /// when a wire lying in the ground plane crashed the editor (2026-08-19).
+    /// </param>
+    /// <param name="hint">
+    /// What that particular matrix's degeneracy normally means, appended to the message. Null takes
+    /// the inductance wording.
+    /// </param>
+    public static CholeskyFactor Factor(double[] matrix, int n, WBondRunControl? run = null, string? stage = null,
+                                        string matrixName = "inductance matrix", string? hint = null)
     {
         ArgumentNullException.ThrowIfNull(matrix);
         if (matrix.Length < n * n)
@@ -209,8 +221,8 @@ public sealed class CholeskyFactor
 
             if (diagonal <= 0.0 || double.IsNaN(diagonal))
                 throw new InvalidOperationException(
-                    $"The inductance matrix is not positive definite (pivot {diagonal:E3} at wire {j}). " +
-                    "That normally means two wires share the same geometry, or a wire has zero length.");
+                    $"The {matrixName} is not positive definite (pivot {diagonal:E3} at wire {j}). " +
+                    (hint ?? "That normally means two wires share the same geometry, or a wire has zero length."));
 
             double d = Math.Sqrt(diagonal);
             l[j * n + j] = d;
