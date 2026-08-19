@@ -527,16 +527,46 @@ namespace CircuitRF.Ui.DataDisplay
                 rects.Title = new SKRect(tx, ty - font.Size, tx + tw, ty + font.Size * 0.5f);
             }
 
-            string xLabel = plot.XLabel;
-            if (!string.IsNullOrEmpty(xLabel))
+            // X label(s). One centred label when every trace shares an X quantity (the case that
+            // has always existed); ONE ROW PER TRACE, in the trace's own colour, when they do not —
+            // the mirror of how the Y labels have always been drawn, and what makes a "plot versus"
+            // plot readable when two traces have different X quantities.
+            using (var xFont = new SKFont(SkiaFonts.PlexRegular,
+                       (float)(plot.Axes.FontSizeTicks * 0.9f * lw)))
             {
-                using var xFont = new SKFont(SkiaFonts.PlexRegular,
-                    (float)(plot.Axes.FontSizeTicks * 0.9f * lw));
-                float tw = xFont.MeasureText(xLabel);
-                float tx = vpCenterX - tw / 2f;
-                float ty = vpBottom + (h - vpBottom) / 2f + xFont.Size * 0.35f;
-                canvas.DrawText(xLabel, tx, ty, SKTextAlign.Left, xFont, paint);
-                rects.XLabel = new SKRect(tx, ty - xFont.Size, tx + tw, ty + xFont.Size * 0.5f);
+                float rowH = xFont.Size * 1.25f;
+                if (plot.XLabelsDiffer)
+                {
+                    var xTraces = plot.XLabelTraces;
+                    float top = vpBottom + (h - vpBottom) / 2f
+                              - rowH * (xTraces.Count - 1) / 2f + xFont.Size * 0.35f;
+                    for (int i = 0; i < xTraces.Count; i++)
+                    {
+                        string lbl = plot.XLabelFor(xTraces[i]);
+                        if (string.IsNullOrEmpty(lbl)) continue;
+                        float tw = xFont.MeasureText(lbl);
+                        float tx = vpCenterX - tw / 2f;
+                        float ty = top + rowH * i;
+                        paint.Color = RenderTheme.ToSKColor(xTraces[i].Properties.LineColor);
+                        canvas.DrawText(lbl, tx, ty, SKTextAlign.Left, xFont, paint);
+                        if (i == 0)
+                            rects.XLabel = new SKRect(tx, ty - xFont.Size, tx + tw,
+                                                      ty + rowH * (xTraces.Count - 1) + xFont.Size * 0.5f);
+                    }
+                    paint.Color = theme.TextColor;
+                }
+                else
+                {
+                    string xLabel = plot.XLabel;
+                    if (!string.IsNullOrEmpty(xLabel))
+                    {
+                        float tw = xFont.MeasureText(xLabel);
+                        float tx = vpCenterX - tw / 2f;
+                        float ty = vpBottom + (h - vpBottom) / 2f + xFont.Size * 0.35f;
+                        canvas.DrawText(xLabel, tx, ty, SKTextAlign.Left, xFont, paint);
+                        rects.XLabel = new SKRect(tx, ty - xFont.Size, tx + tw, ty + xFont.Size * 0.5f);
+                    }
+                }
             }
 
             {
@@ -589,8 +619,13 @@ namespace CircuitRF.Ui.DataDisplay
                 string LabelFor(Trace t)
                 {
                     string networkFallback = labelLookup.GetValueOrDefault(t, t.ShortDescription);
+                    // Suppressed when the plot draws a per-trace X label row: the rows already state
+                    // each trace's X quantity, so repeating "dimension mismatch" on every Y label is
+                    // noise on exactly the plots ("Gain vs Pout" beside "Gain vs Pin") where the
+                    // difference is deliberate.
                     bool mismatch = t.IsCubeBound
                                     && refCubeXAxis != null
+                                    && !plot.XLabelsDiffer
                                     && !string.Equals(t.CubeXAxisName, refCubeXAxis, StringComparison.Ordinal);
                     return t.RectYLabel(networkFallback, mismatch);
                 }

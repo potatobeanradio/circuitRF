@@ -420,6 +420,54 @@ namespace CircuitRF.Ui.DataDisplay
             Derived = DerivedParameters.None;   // via the setter, so the circle geometry is dropped too
         }
 
+        /// <summary>
+        /// "Plot versus" — the X side of a <c>Y vs X</c> trace: an ordinary trace spec whose values
+        /// become this trace's X coordinates instead of the Y cube's swept axis (PA work plots gain
+        /// against Pout, not against the swept Pin). Null ⇒ X comes from the cube axis, as always.
+        /// <para>Held as its OWN field rather than folded into <see cref="Expression"/> on purpose:
+        /// the Y side keeps its <see cref="CubeName"/>/<see cref="Slice"/> identity, so the card's
+        /// axis-role editor, the family path, and the pinned-axis labels all keep working exactly as
+        /// they do for a non-versus trace. Versus is an X-source attribute, not a new kind of
+        /// expression.</para>
+        /// </summary>
+        public string? XSpec { get; set; }
+
+        /// <summary>Data source the <see cref="XSpec"/> resolves against. Null ⇒ the same source as
+        /// the Y side (<see cref="SourcePath"/>) — the ordinary case. Set only for a cross-source X
+        /// (measured Pout against simulated Gain, say), where the point-count gate is what keeps the
+        /// pairing honest.</summary>
+        public string? XSourcePath { get; set; }
+
+        /// <summary>True when this trace names its own X data (<see cref="XSpec"/>).</summary>
+        public bool IsVersus => !string.IsNullOrWhiteSpace(XSpec);
+
+        /// <summary>Display-only alias of the X side's source, stamped by the owner when the X data
+        /// comes from a DIFFERENT file than the Y data. It is rendered as an <c>alias::</c> prefix in
+        /// the shorthand (and accepted back on typed input) so a cross-source trace reads as one.
+        /// Never used for resolution — <see cref="XSourcePath"/> is, because an alias is renamable
+        /// and a path is not.</summary>
+        public string? XSourceAlias { get; set; }
+
+        /// <summary>The X spec as it is SHOWN: alias-qualified when the X source differs.</summary>
+        private string XSpecDisplay => string.IsNullOrEmpty(XSourceAlias)
+            ? XSpec ?? ""
+            : $"{XSourceAlias}::{XSpec}";
+
+        /// <summary>
+        /// Re-attaches the X source's alias to an already-authored spec string. The alias is stamped
+        /// by the OWNER when the trace resolves, which is necessarily after the picker wrote the
+        /// expression text — without this, a cross-source trace would author "Gain vs Pout" and then
+        /// never show which file that Pout came from.
+        /// </summary>
+        private string WithXSourceAlias(string spec)
+        {
+            if (!IsVersus || string.IsNullOrEmpty(XSourceAlias)) return spec;
+            if (!VersusSpec.TrySplit(spec, out var ySide, out var xSide, out _)) return spec;
+            return xSide.Contains("::", StringComparison.Ordinal)
+                ? spec
+                : VersusSpec.Join(ySide, XSpecDisplay);
+        }
+
         /// <summary>Set by the owner when TraceExpression evaluation fails; cleared on success.</summary>
         public string?       ExpressionError { get; set; }
 
@@ -468,6 +516,11 @@ namespace CircuitRF.Ui.DataDisplay
             // Raw values (not transformed) — used by TableRenderer for cell formatting.
             public Complex[]? RawComplex { get; init; }
             public double[]?  RawReal    { get; init; }
+
+            /// <summary>Per-curve X values — set only for a "plot versus" family, where each curve's
+            /// X data genuinely differs (Pout at 2.0 GHz is not Pout at 2.4 GHz). Null ⇒ the curve
+            /// shares the trace-level X array, which is every ordinary family.</summary>
+            public double[]?  RawX       { get; init; }
         }
 
         /// <summary>N curves when IsFamily; empty otherwise. Derived (never serialized) — rebuilt on load.</summary>
@@ -632,7 +685,7 @@ namespace CircuitRF.Ui.DataDisplay
             {
                 string baseLabel;
                 if (InvalidSpecText is not null)        baseLabel = $"{InvalidSpecText} <invalid>";
-                else if (Expression is not null)        baseLabel = Expression;
+                else if (Expression is not null)        baseLabel = WithXSourceAlias(Expression);
                 else if (!IsCubeBound || Slice is null) baseLabel = ShortDescription;
                 else                                    baseLabel = BuildPickerExpression();
                 if (ScalarOnNonTableInvalid && !baseLabel.Contains("<invalid")) baseLabel += " <invalid>";
@@ -697,7 +750,22 @@ namespace CircuitRF.Ui.DataDisplay
         /// ignoring Expression.  Used by the owner to sync Expression after picker edits.</summary>
         internal string BuildPickerExpression()
         {
-            if (CubeName is null || Slice is null) return ShortDescription;
+            string body = BuildPickerYExpression();
+            return IsVersus ? VersusSpec.Join(body, XSpecDisplay) : body;
+        }
+
+        /// <summary>The Y side alone — the shorthand as it was before "plot versus" existed.
+        /// <see cref="BuildPickerExpression"/> appends the <c>vs X</c> half on top of this.</summary>
+        private string BuildPickerYExpression()
+        {
+            if (CubeName is null || Slice is null)
+            {
+                // The fallback description can itself be a "Y vs X" string (it reads Expression),
+                // so take only its Y half — otherwise re-appending the X side would compound into
+                // "Gain vs Pout vs Gain" on the next edit.
+                string d = ShortDescription;
+                return VersusSpec.TrySplit(d, out var yHalf, out _, out _) ? yHalf : d;
+            }
             if (Slice.Length == 0)   // scalar (rank-0) cube — no axes to slice
                 return Transform == CubeTransform.None
                     ? CubeName
@@ -818,6 +886,9 @@ namespace CircuitRF.Ui.DataDisplay
             Slice           = src.Slice;   // AxisSlice[] is immutable; sharing is safe.
             Transform       = src.Transform;
             Expression      = src.Expression;
+            XSpec           = src.XSpec;
+            XSourcePath     = src.XSourcePath;
+            XSourceAlias    = src.XSourceAlias;
             ExpressionError = src.ExpressionError;
             _cubeXValues       = src._cubeXValues;
             _cubeComplexValues = src._cubeComplexValues;
@@ -1052,10 +1123,15 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         /// <summary>Injects N pre-sliced family curves (each a rank-1 X/value pair) and builds their Points.
-        /// xValues are shared across curves (same X axis). Each curve carries its own complex/real values.</summary>
+        /// xValues are shared across curves (same X axis). Each curve carries its own complex/real values.
+        /// <para><paramref name="perCurveX"/> is the "plot versus" case and the ONE exception to the
+        /// shared-X rule: when supplied, curve k plots against its own X array (Gain-vs-Pout, one curve
+        /// per RFfreq, where each curve's Pout differs). <paramref name="xValues"/> then serves as the
+        /// trace-level anchor (first curve) for anything that reads a single X array.</para></summary>
         public void SetFamilyData(double[] xValues, string xAxisName, string? xUnit, string familyAxisName,
             IReadOnlyList<(double axisValue, string? axisLabel, Complex[]? cz, double[]? rv)> curves,
-            PlotType plotType, FreqUnit freqUnit, string? familyAxisUnit = null)
+            PlotType plotType, FreqUnit freqUnit, string? familyAxisUnit = null,
+            IReadOnlyList<double[]>? perCurveX = null)
         {
             _cubeIsScalar = false;
             _transformBaked = false;
@@ -1070,9 +1146,14 @@ namespace CircuitRF.Ui.DataDisplay
             FamilyColumnWidths.Clear();
             Points.Clear();
 
-            foreach (var (axisValue, axisLabel, cz, rv) in curves)
+            for (int k = 0; k < curves.Count; k++)
+            {
+                var (axisValue, axisLabel, cz, rv) = curves[k];
                 FamilyCurves.Add(new FamilyCurve { AxisValue = axisValue, AxisLabel = axisLabel,
-                                                     RawComplex = cz, RawReal = rv });
+                                                     RawComplex = cz, RawReal = rv,
+                                                     RawX = perCurveX is not null && k < perCurveX.Count
+                                                            ? perCurveX[k] : null });
+            }
 
             BuildFamilyPath(plotType, freqUnit);
         }
@@ -1095,7 +1176,6 @@ namespace CircuitRF.Ui.DataDisplay
             bool isRect = plotType.IsRect();
             bool isHarmonicFamilyX = string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal) && _f0ByX is not null;
             double xScale = IsFreqUnit(_cubeXUnit) ? freqUnit.Scale() : 1.0;
-            int n = _cubeXValues.Length;
 
             foreach (var fc in FamilyCurves)
             {
@@ -1103,6 +1183,11 @@ namespace CircuitRF.Ui.DataDisplay
                 bool isComplex = fc.RawComplex is not null;
                 if (isRect && isComplex && (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
                 { RectValueInvalid = true; continue; }
+
+                // "Plot versus" families carry their own X per curve; every other family shares one.
+                double[] xs = fc.RawX ?? _cubeXValues;
+                int valueCount = isComplex ? fc.RawComplex!.Length : fc.RawReal!.Length;
+                int n = Math.Min(xs.Length, valueCount);
 
                 for (int i = 0; i < n; i++)
                 {
@@ -1112,8 +1197,8 @@ namespace CircuitRF.Ui.DataDisplay
                         if (y is double yy)
                         {
                             double xCoord = isHarmonicFamilyX
-                                ? _cubeXValues[i] * _f0ByX![Math.Min(i, _f0ByX.Length - 1)] * freqUnit.Scale()
-                                : _cubeXValues[i] * xScale;
+                                ? xs[i] * _f0ByX![Math.Min(i, _f0ByX.Length - 1)] * freqUnit.Scale()
+                                : xs[i] * xScale;
                             fc.Points.Add(new Vector2((float)xCoord, (float)yy));
                         }
                     }
@@ -1948,8 +2033,16 @@ namespace CircuitRF.Ui.DataDisplay
 
             // X-axis row: the swept variable name + value + unit (never "freq" unless the
             // axis really is a frequency).
-            int rawIdx = xIdx < _cubeXValues.Length ? xIdx : _cubeXValues.Length - 1;
-            double xRaw = _cubeXValues[rawIdx];
+            // A "plot versus" family reads its X from the MARKED CURVE — each curve carries its own
+            // X there, so the trace-level array (curve 0's) would report the wrong value on any
+            // other curve.
+            double[] xSource = IsFamily && curve >= 0 && curve < FamilyCurves.Count
+                               && FamilyCurves[curve].RawX is { Length: > 0 } curveX
+                ? curveX
+                : _cubeXValues;
+            int rawIdx = xIdx < xSource.Length ? xIdx : xSource.Length - 1;
+            if (rawIdx < 0) rawIdx = 0;
+            double xRaw = xSource[rawIdx];
             bool xIsHarmonicAxis = string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal);
             if (xIsHarmonicAxis)
             {

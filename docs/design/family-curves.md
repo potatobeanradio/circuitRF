@@ -47,6 +47,14 @@ for the X axis, `~` for the family axis, and an index/label for pins. So clickin
 `I:Ids[:, ~]`, which matches the render and round-trips when re-parsed (no surprise re-pinning). The `~` marker
 is single-cube only; it is rejected in multi-cube element-wise expressions.
 
+**Plot versus — the one exception to the shared X.** A family normally shares ONE X array across its
+curves. A "plot versus" family (`Gain[:, ~] vs Pout`) cannot: each curve's X data genuinely differs
+(Pout at 2.0 GHz is not Pout at 2.4 GHz). `FamilyCurve.RawX` carries the per-curve X and
+`BuildFamilyPath` uses `fc.RawX ?? _cubeXValues`, so every ordinary family is unchanged (`RawX` is
+null there); the trace-level X becomes curve 0's, and the marker readout reads the marked curve's own
+X instead. The X side must iterate the SAME family axis by name — a bare X side inherits that role,
+a bracketed one is checked. See `plot-versus.md` §3.
+
 **Limits and behavior.** A family is capped at **101 curves** (`Trace.MaxFamilyCurves`); a longer family axis
 clamps to the first 101. The family renders as **one trace drawn N times** — every curve uses the trace row's
 single line color and style; there is no per-curve color stepping and no legend (restyling the row restyles the
@@ -122,6 +130,7 @@ re-expands to its N curves.
 
 ## Key files
 
+- `docs/design/plot-versus.md` — the `vs` separator; per-curve X (`FamilyCurve.RawX`) for a versus family.
 - `src/Ui/DataDisplay/Models/Trace.cs` — `AxisRole`, `IsFamily`, `FamilyCurve`/`FamilyCurves`, `SetFamilyData`,
   `BuildPickerExpression`, `PathBoundingRect`, `MaxFamilyCurves`.
 - `src/Ui/DataDisplay/SliceTokenParser.cs` — token grammar incl. the `Family` (`~`) token.

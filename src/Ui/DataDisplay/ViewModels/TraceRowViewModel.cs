@@ -2546,6 +2546,12 @@ public partial class TraceRowViewModel : ViewModelBase
         // user re-picked the signal on the live VM. Populate it up front instead.
         RefreshNetworkMetricCard();
 
+        // The vs-X row has exactly the same problem, and for the same reason: its state is synced by
+        // RefreshDescription, which the constructor does not call. A trace that ALREADY plots versus
+        // — pasted, undone/redone, or restored from a .cdd — therefore came up with the checkbox
+        // clear and an empty picker, while the trace itself went on plotting against its X quantity.
+        SyncVersusFromTrace();
+
         // Keep AvailableSignals fresh when the library collection changes.
         _parent.LibraryEntries.CollectionChanged += OnLibraryEntriesChanged;
 
@@ -3084,6 +3090,10 @@ public partial class TraceRowViewModel : ViewModelBase
         }
 
         _trace.Slice = slice;
+        // A "plot versus" X side mirrors these roles, so it has to be re-derived from the NEW slice
+        // before the expression text is composed — otherwise an explicit X spec keeps the roles it was
+        // written with and the two halves disagree about which axis is the family.
+        RegenerateXSpecForYRoleChange();
         // Sync the expression text field to the picker-authored shorthand.
         _trace.Expression = null;
         _trace.Expression = _trace.BuildPickerExpression();
@@ -3322,6 +3332,7 @@ public partial class TraceRowViewModel : ViewModelBase
         // Keep the Source combo honest about which file this trace actually reads from — a
         // toolbar-driven datasource change re-points a sentinel trace and only refreshes cards.
         SyncSourceSelectionToTrace();
+        SyncVersusFromTrace();
         RefreshNetworkMetricCard();
     }
 
@@ -3361,6 +3372,42 @@ public partial class TraceRowViewModel : ViewModelBase
         _trace.InvalidSpecText = null;
         _trace.ExpressionError = null;
 
+        // ── "Y vs X": split first, because the separator binds looser than anything inside either
+        //    half. Only the Y half is parsed as the trace's own cube identity, which is what keeps
+        //    the axis-role editor alive on a versus trace.
+        string ySpecText = text;
+        if (VersusSpec.TrySplit(text, out var ySide, out var xSide, out var versusErr))
+        {
+            ySpecText = ySide;
+            if (!TryBindXSide(xSide, out var xErr))
+            {
+                // TryBindXSide has already parked the raw X text on the trace so the resolve that
+                // follows reports the same message — do NOT clear it here.
+                _trace.InvalidSpecText = text;
+                _trace.ExpressionError = xErr;
+                _parent.RebuildAndNotify();
+                SyncVersusFromTrace();
+                return;
+            }
+        }
+        else if (!string.IsNullOrEmpty(versusErr))
+        {
+            _trace.XSpec = null;
+            _trace.XSourcePath = null;
+            _trace.XSourceAlias = null;
+            _trace.InvalidSpecText = text;
+            _trace.ExpressionError = versusErr;
+            _parent.RebuildAndNotify();
+            SyncVersusFromTrace();
+            return;
+        }
+        else
+        {
+            _trace.XSpec        = null;
+            _trace.XSourcePath  = null;
+            _trace.XSourceAlias = null;
+        }
+
         // Re-derive the picker state from the typed text so the card's comboboxes (harmonic/node pin,
         // transform, axis-role rows) track the edit. A single-cube spec like `V[:, "Vout2", 1]` or
         // `mag(V[:, "Vout", 1])` parses to (CubeName, Slice, Transform); a multi-cube expression does not,
@@ -3373,7 +3420,7 @@ public partial class TraceRowViewModel : ViewModelBase
                   string.Equals(e.FilePath, normalizedSource, StringComparison.OrdinalIgnoreCase)))
             ?.Data;
         if (ds is not null &&
-            CubeTraceSpecParser.TryParse(text, ds, out var cubeName, out var slice, out var transform, out _))
+            CubeTraceSpecParser.TryParse(ySpecText, ds, out var cubeName, out var slice, out var transform, out _))
         {
             _trace.CubeName  = cubeName;
             _trace.Slice     = slice;
@@ -3393,8 +3440,56 @@ public partial class TraceRowViewModel : ViewModelBase
             RebuildSignals();              // re-syncs group + item combos AND axis-role rows to the new cube
         else
             RebuildAxisRoles();            // best-effort: clear stale rows; combos unchanged
+        SyncVersusFromTrace();             // the vs row tracks the typed text like every other control
         OnPropertyChanged(nameof(IsCubeBoundTrace));
         OnPropertyChanged(nameof(ShowAllToggleVisible));
+    }
+
+    /// <summary>
+    /// Binds the typed X half. An <c>alias::Cube</c> prefix names a DIFFERENT loaded dataset — the
+    /// same alias the label strips and the source combo show. The alias is resolved to a path here
+    /// and never stored, because an alias is renamable and a path is not.
+    /// </summary>
+    private bool TryBindXSide(string xSide, out string error)
+    {
+        error = "";
+        int sep = xSide.IndexOf("::", StringComparison.Ordinal);
+        if (sep < 0)
+        {
+            _trace.XSourcePath  = null;
+            _trace.XSourceAlias = null;
+            _trace.XSpec        = xSide;
+            return true;
+        }
+
+        string alias = xSide[..sep].Trim();
+        string bare  = xSide[(sep + 2)..].Trim();
+        if (bare.Length == 0)
+        {
+            error = $"'{alias}::' names a source but no quantity.";
+            return false;
+        }
+
+        var entry = _parent.LibraryEntries.FirstOrDefault(e =>
+            string.Equals(e.Alias, alias, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(System.IO.Path.GetFileNameWithoutExtension(e.DisplayName), alias,
+                             StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            // Keep the raw "alias::Cube" on the trace: the resolver reports the unmatched alias, so
+            // the message survives the resolve that follows this edit instead of being replaced.
+            _trace.XSourcePath  = null;
+            _trace.XSourceAlias = null;
+            _trace.XSpec        = xSide;
+            error = $"No loaded data source named '{alias}'.";
+            return false;
+        }
+
+        _trace.XSourcePath = string.Equals(entry.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : entry.FilePath;
+        _trace.XSpec = bare;
+        return true;
     }
 
     private static bool IsFreqUnit(string? unit) =>

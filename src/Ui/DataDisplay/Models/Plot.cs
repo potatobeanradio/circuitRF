@@ -208,18 +208,8 @@ namespace CircuitRF.Ui.DataDisplay
                 if (PlotType == PlotType.Rect && Traces.Any(t => t.IsContourTrace))
                     return "Real (Ω)";
 
-                // Cube-bound first trace: label from the cube's X axis (the plot's X axis).
                 if (Traces.Count > 0 && Traces[0].IsCubeBound)
-                {
-                    string axisName = Traces[0].CubeXAxisName;
-                    string? unit    = Traces[0].CubeXUnit;
-                    if (string.IsNullOrEmpty(axisName)) axisName = "x";
-                    bool isFreq = unit is "Hz" or "kHz" or "MHz" or "GHz";
-                    bool isHarmonicAxis = string.Equals(axisName, Trace.HarmonicAxisName, StringComparison.Ordinal);
-                    if (isFreq || isHarmonicAxis)
-                        return $"freq ({FreqUnits.Description()})";
-                    return string.IsNullOrEmpty(unit) ? axisName : $"{axisName} ({unit})";
-                }
+                    return XLabelFor(Traces[0]);
 
                 // Network/SNP behavior (unchanged).
                 string u = FreqUnits.Description();
@@ -228,6 +218,76 @@ namespace CircuitRF.Ui.DataDisplay
                 string min = (FreqUnits.Scale() * Traces[0].MinFreq).ToString($"G{Axes.NumDigitsXAxis}");
                 string max = (FreqUnits.Scale() * Traces[0].MaxFreq).ToString($"G{Axes.NumDigitsXAxis}");
                 return $"freq ({min} to {max} {u})";
+            }
+        }
+
+        /// <summary>
+        /// The X-axis label ONE trace would carry — the cube's X-axis name and unit, or the X spec
+        /// text for a "plot versus" trace (whose X data is a quantity, not an axis, and therefore
+        /// carries no unit: cube VALUES have no unit anywhere in the data model, only axes do).
+        /// <para>Per-trace because a plot may legitimately hold traces with DIFFERENT X quantities
+        /// once "vs" exists (Gain vs Pout beside Gain vs Pin) — see <see cref="XLabelsDiffer"/>.</para>
+        /// </summary>
+        public string XLabelFor(Trace t)
+        {
+            if (!t.IsCubeBound)
+            {
+                string u = FreqUnits.Description();
+                if (!SupportsComplex) return $"freq ({u})";
+                string mn = (FreqUnits.Scale() * t.MinFreq).ToString($"G{Axes.NumDigitsXAxis}");
+                string mx = (FreqUnits.Scale() * t.MaxFreq).ToString($"G{Axes.NumDigitsXAxis}");
+                return $"freq ({mn} to {mx} {u})";
+            }
+
+            string axisName = t.CubeXAxisName;
+            string? unit    = t.CubeXUnit;
+            if (string.IsNullOrEmpty(axisName)) axisName = "x";
+            bool isFreq = unit is "Hz" or "kHz" or "MHz" or "GHz";
+            bool isHarmonicAxis = string.Equals(axisName, Trace.HarmonicAxisName, StringComparison.Ordinal);
+            if (isFreq || isHarmonicAxis)
+                return $"freq ({FreqUnits.Description()})";
+            return string.IsNullOrEmpty(unit) ? axisName : $"{axisName} ({unit})";
+        }
+
+        /// <summary>
+        /// The unit suffix shown beside the X-axis limits — "(GHz)" for a frequency X, the axis's own
+        /// unit for a unit-bearing sweep, and EMPTY when the X quantity has no unit (a versus X, or a
+        /// bare sweep variable). It used to be hardcoded to the frequency unit for every Rect plot, so
+        /// a Pin sweep's limits were already labelled "(GHz)" before "plot versus" existed.
+        /// </summary>
+        public string XAxisUnitLabel
+        {
+            get
+            {
+                if (!PlotType.IsRect()) return "";
+                if (Traces.Count == 0 || !Traces[0].IsCubeBound) return $"({FreqUnits.Description()})";
+                string label = XLabelFor(Traces[0]);
+                int open = label.LastIndexOf('(');
+                return open >= 0 && label.EndsWith(")", StringComparison.Ordinal) ? label[open..] : "";
+            }
+        }
+
+        /// <summary>Non-contour traces, in plot order — the ones that own an X label row.</summary>
+        public IReadOnlyList<Trace> XLabelTraces =>
+            Traces.Where(t => !t.IsContourTrace && !t.IsSummaryColumn).ToList();
+
+        /// <summary>
+        /// True when the traces on this plot do NOT share one X quantity — the case "plot versus"
+        /// makes reachable. The Rect renderer then draws ONE X label row per trace, in the trace's
+        /// own colour, exactly as the Y labels have always been drawn; with a shared X it keeps the
+        /// single centred label.
+        /// </summary>
+        public bool XLabelsDiffer
+        {
+            get
+            {
+                if (CustomXLabelOn) return false;
+                var traces = XLabelTraces;
+                if (traces.Count < 2) return false;
+                string first = XLabelFor(traces[0]);
+                for (int i = 1; i < traces.Count; i++)
+                    if (!string.Equals(XLabelFor(traces[i]), first, StringComparison.Ordinal)) return true;
+                return false;
             }
         }
 

@@ -579,6 +579,13 @@ hold:
 A non-matching trace between two matching groups breaks the adjacency run; traces A and C sharing X
 but separated by a different-X trace B each get their own `XAxis` column.
 
+**Index-paired columns (plot versus):** a trace whose X comes from another quantity
+(`Gain vs Pout`, `plot-versus.md`) sets `TableColumn.PairByIndex` — its X column keeps **sweep order**
+(no sort, no de-duplication) and its cells are read by row index, because a versus X can be
+non-monotonic and can repeat, and value-matching would then reorder or collapse rows. Adjacent-dedup
+additionally requires the same pairing rule. A versus **family** emits an (X, Y) column PAIR per curve,
+since its curves do not share an X column.
+
 **Row count:** each `XAxis` column's `XValues` array sets the row count for its group. The table's
 total row count = max across all groups. A trace shorter than the tallest group shows blank (`""`)
 cells past its last row.
@@ -601,4 +608,12 @@ resize handle auto-fits the column.
 - **Phase 7.2a — COMPLETE.** `Z0{port}` carrier + producer fix: `DataSetBuilder.BuildZ0Cube`, `ClassifyZ0`, `Z0Kind` enum in `RfCore.Data`; `FromSnp` emits a uniform `Z0` cube on every S DataSet; `ToSnp` reads the cube (non-uniform → port-1 value + `RFNetwork.Warn`; absent → 50 Ω); `SParameterEngine.Run` overwrites the placeholder with the true per-port complex values. Build 0W/0E; full suite passes.
 - **Phase 7.2b — COMPLETE.** Data-source library generalised to load `.npy` alongside Touchstone. `SnpEntryViewModel` adds `SourceKind {Touchstone, Npy}`, nullable `SNP? Snp`, `DataSet? Data`, `string? FilePath` (single path authority). `IsBroken => _snp?.IsEmpty ?? false` — null Snp (cube-only .npy) is NOT broken. Command properties use `{ get; private set; } = null!` so `InitCommands` can assign them. `SnpLibraryViewModel` routes `LoadFileAsync` by extension: Touchstone → existing path; `.npy` → `DataSetImporter.Import` → new `.npy` entry ctor; broken-entry restore + `ReloadAsync` branch on `SourceKind`. `AddBrokenEntry` routes by extension. `.npy`-with-S: `DataSetBuilder.ToSnp(data)` exposes an `SNP` for the existing picker (the S-param gate). `.npy`-without-S: `Snp = null` (cube-only, not pickable until 7.2c). File-picker filter in `DataDisplayView.axaml.cs` updated to "Data Files" (Touchstone + .npy). All `e.Snp.FilePath` → `e.FilePath`; all `e.Snp.IsEmpty` guards updated with null checks. `SnpLibraryView.axaml.cs` drop handler uses `e.IsBroken` + `e.FilePath`. In-place refresh invariant: `RefreshNpy` calls `_snp.RefreshFrom(ToSnp(data))` when live (preserves trace bindings); replaces reference only when broken/null. Naming debt flagged in comments; rename to `DataSource*` deferred to 7.2c. Build 0W/0E; 1211 tests pass. S-param gate met (`.npy`-with-S pickable + plottable via existing SNP machinery). **Next:** Phase 7.2c — cube-native trace path for non-S cubes + identity components + minimal labels + class rename.
 - **Phase 7.2c — COMPLETE.** Cube-native trace path for non-S cubes landed: `Trace` is dual-source (SNP-backed Touchstone keeps full S-param machinery; DataSet-cube binding `(source, cube, slice, transform)` for HB V/I spectra, measurements, and S-cubes). Trace identity stored as separate components (`source · analysis/group · cube · slice · transform`), never a pre-joined string. Qualified `Group.Cube` addressing resolves through the picker, `TraceExpression`, and `CubeTraceSpecParser`. Minimal-label policy (§2.7) computes the shortest disambiguating label at plot/legend level. Non-uniform/complex `Z0` indicator + one-time Messages warning wired. Data-source library classes generalised (the `Snp*`→`DataSource*` naming debt from 7.2b resolved). Build 0W/0E.
+- **Plot versus (`Y vs X`) — COMPLETE (2026-08-19).** A trace may name its own X data
+  (`Gain vs Pout`) instead of taking X from the cube's swept axis — the PA case, where the design is
+  read against output power. `vs`/`versus` is a lowest-precedence separator split off above the
+  expression engine; the X side is held in its OWN trace fields (`XSpec`/`XSourcePath`) so the Y side
+  keeps its cube identity and the card's axis-role editor keeps working. Families carry a per-curve X
+  (`FamilyCurve.RawX`); the X side may come from a different loaded `.npy`; Rect draws one X label row
+  per trace when traces disagree on the X quantity; Table columns pair by index. Gates: matching point
+  counts, real-valued X, Rect/Table only. Spec: `plot-versus.md`.
 - **Phase 7.3 — COMPLETE.** Multi-dimensional sweep via axis-role assignment (X / pinned / family); a family is ONE trace object rendering N curves (`family-curves.md`). Slice grammar (`~`/`:`/index + All/`a..b` ranges), `CubeTraceSpecParser`, `SliceTokenParser`, harmonic stem-plot X-axis case all in place; family guardrail = `Trace.MaxFamilyCurves` (101) with clamp + one Message past it.

@@ -5,6 +5,203 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## Plot versus (`Gain vs Pout`): the X side is a FIELD, not expression text (2026-08-19)
+
+Owner's ask: plot one cube slice against another in a Rect plot (and a Table), with families
+(Gain-vs-Pout, one curve per RFfreq), an X label that matches what is plotted, and a marker readout
+that names the X quantity. Syntax approved before any code: `Y vs X`. Spec: `docs/design/plot-versus.md`.
+
+**The design decision everything else follows from: `XSpec` is its own field on `Trace`, not part of
+`Expression`.** The obvious implementation — let `Gain vs Pout` be an ordinary multi-cube expression —
+fails for a structural reason that is easy to miss until the card is in front of you:
+`SetCubeDataFrom` routes an `Expression` with no `CubeName`/`Slice` to `TraceExpression`, and
+`CommitSpec` deliberately NULLS `CubeName`/`Slice` for a multi-cube expression so the axis-role editor
+shows nothing stale. So every versus trace would have lost its axis rows, its family toggles, and its
+pinned-axis labels — i.e. the feature would have been unusable from the card it was asked to be usable
+from. Held as a separate field, the Y side keeps its identity and NOTHING on the card changes.
+
+**Three bugs the tests caught, each from a different direction:**
+
+1. **The compounding `vs`.** `BuildPickerExpression` = Y-half + `" vs " + XSpec`, and the Y half falls
+   back to `ShortDescription` when `Slice` is null — which reads `Expression`, which already ends in
+   `vs Pout`. One more edit and the spec reads `Gain vs Pout vs Gain`. The fallback now takes only the
+   Y half of its own description. A fallback that reads a field the caller is about to rewrite is a
+   loop waiting for a second edit.
+2. **The card's error message never survived its own edit.** Every `CommitSpec` ends in
+   `RebuildAndNotify`, which re-resolves the trace and OVERWRITES `ExpressionError`. So "No loaded data
+   source named 'measured'" and "Only one 'vs' is allowed" were both set correctly and both gone by the
+   time the UI read them. Fixed by moving BOTH messages into the resolve path: the card parks the raw
+   `alias::Cube` text on the trace and `VersusResolver` reports the unmatched alias; `SetCubeDataFrom`
+   re-checks the separator itself. **One error path, evaluated where the display reads it.**
+3. **A Table's X column is sorted and de-duplicated** — correct for a sweep axis, wrong for a versus X,
+   which is the VALUES of another quantity: Pout folds back past compression and can repeat, so sorting
+   reorders the pairing and a repeat collapses two sweep points into one row. `TableColumn.PairByIndex`
+   keeps sweep order and reads cell i from sample i.
+
+**A family's shared X is the one structural assumption that had to change.** `SetFamilyData` took ONE
+X array for all curves; a versus family cannot (Pout at 2.0 GHz is not Pout at 2.4 GHz).
+`FamilyCurve.RawX` is per-curve, `BuildFamilyPath` uses `fc.RawX ?? _cubeXValues`, so every ordinary
+family is untouched. The marker readout reads the MARKED curve's X — the trace-level array is curve 0's
+and would misreport every other curve.
+
+**There is no unit for a versus X, and there cannot be one from the data.** `DataCube` carries units on
+**axes only**; cube VALUES have no unit anywhere in the model. So the X label reads `Pout`, exactly as
+every Y label already reads `Gain`. Found while checking this: `AxesLimitsViewModel.XUnitLabel`
+hardcoded `({FreqUnits})` for every Rect plot, so a Pin sweep's X limits ALREADY said "(GHz)" before
+this feature existed — re-pointed at the new `Plot.XAxisUnitLabel`.
+
+**Per-trace X label rows.** Rect drew ONE X label (from `Traces[0]`) while Y labels have always been one
+per trace, in the trace's colour. `Plot.XLabelsDiffer` now drives one X row per trace when the X
+quantities disagree, the Rect viewport shrinks to make room, and the Y labels' `" dimension mismatch"`
+suffix is suppressed on exactly those plots — the rows say it better, and on a `Gain vs Pout` beside
+`Gain vs Pin` plot the difference is deliberate rather than a mistake.
+
+Tests: `PlotVersusTests.cs` (28 — grammar, resolution, families, cross-source, labels, Table, markers,
+persistence) and `PlotVersusCardTests.cs` (9 — the card flow, typed specs, alias binding). Full
+`tests/Ui.Tests` green (8,083).
+
+### Round 2 — three things the card got wrong, all reported from one real trace (2026-08-19)
+
+Owner's trace: `mag(Gp_dB[~, :]) vs HB1.V[~, :, "Vout", 2]`. Three separate defects fall out of it.
+
+1. **"There doesn't seem to be a family button when the vs X checkbox is on."** The X rows only ever
+   showed *Fix*, on the reasoning that X and family are inherited and therefore not the X side's to
+   choose. That reasoning is right and the UI built from it is still wrong: the family marker was
+   simply ABSENT from the half of the card the user was looking at, which reads as a missing control,
+   not as an inherited one. **Every X-cube axis now gets a row with the same X/Fam/Fix control,
+   DISABLED for the inherited ones**, with a tooltip saying it follows the Y side. Only a foreign
+   axis's Fix value is editable. *An inherited state has to be shown, not omitted.*
+2. **"Selecting a transform in the vs X space changes the y transform."** There was only one transform
+   combo, and it is the Y side's — while the X axis must be REAL and `HB1.V` is complex. So the one
+   control the user could reach moved the wrong half of the trace and the X side stayed unplottable.
+   The vs row now has **its own transform**, written into the X spec as a function call
+   (`mag(HB1.V[…])`) rather than a new field — that is the form `CubeTraceSpecParser` already reads,
+   so a typed spec and a picked one are the same object. Picking a complex X **defaults to Mag**
+   instead of parking the trace on an error, and None/Conj are not offered for a complex X.
+   The X transform is read back from the SPEC first (combo second), or typing a spec without one
+   would silently re-acquire the last picked transform on the next edit.
+3. **"The expression did not result in an invalid y-label rendering."** The complex-X refusal reached
+   `ExpressionError` and the card's spec box — and nowhere else, so the curve vanished with a label
+   that still looked correct. The reason is structural and worth remembering: **the Y label is built
+   from the trace's AUTHORING state** (`TraceLabeler.BuildCubeQuantity`: cube + pins + transform),
+   which is perfectly well-formed when the RESOLVE failed. `RectValueInvalid`/`ScalarOnNonTableInvalid`
+   are the only two failures it ever knew about, and both are *rendering* failures. It now appends
+   `<invalid>` for any unresolved binding (`InvalidSpecText`/`ExpressionError`) — which also covers a
+   cube missing after a re-run and a bad typed spec, neither of which said anything on the plot before.
+
+Tests: `PlotVersusCardTests` grew `ComplexX_GetsItsOwnTransform_AndTheYTransformIsUntouched`,
+`XAxisRows_ShowTheInheritedFamily_AndOnlyForeignAxesAreEditable`, and
+`AFailedVersusBinding_MarksTheTraceInvalidOnThePlot` (the owner's exact expression, before and after
+`mag()` on the X side). **The card tests also had to stop constructing a cube-bound trace with a NULL
+`Slice`** — the picker cannot produce that state, and it was quietly sending the Y side down the
+multi-cube expression path.
+
+### Round 3 — the card's own churn, and a role that only looked shared (2026-08-19)
+
+1. **"Selecting Measurements in the vs-X group combo blanks the source combo."** `RebuildXPicker` ran on
+   every card refresh — i.e. after every edit anywhere on the card — and unconditionally cleared and
+   rebuilt `XSourceEntries` from new item objects. Clearing an ItemsSource a ComboBox is bound to drops
+   that ComboBox's selection, so the source combo went blank until the next refresh re-selected it.
+   This is the `src/Ui/CLAUDE.md` ComboBox note from the other direction: **a stable item list is part of
+   the contract, not an optimisation.** Every collection on the vs row now rebuilds ONLY when its content
+   actually differs, and re-points its selection either way.
+2. **"The X transform is set to mag when I switch X from a complex to a scalar value."** Right — the
+   transform was carried across the signal change and only *upgraded* to Mag for a complex cube, never
+   cleared for a real one. It is now re-derived from the NEW quantity alone (real → None, complex → Mag),
+   which is the convention the Y side's own signal switch already followed.
+3. **"X / Fam / Fix are just text — I can't click them."** They were disabled Borders, on the reasoning
+   that the roles are inherited. But **inherited is not read-only** — the role is ONE state shared by
+   both halves, so the buttons are now live and apply to the Y side's row, reusing its cascade. A
+   FOREIGN axis (one the Y side lacks) genuinely can only be pinned, so it now shows no role buttons at
+   all rather than two dead ones.
+
+**The bug the third fix's test found, which nobody had reported yet:** an explicit X spec kept the roles
+it was composed with. Press Fam on RFfreq and the Y half became `Gain[:, ~]` while the X half still said
+`…[:, 0, …]`, which the resolver correctly refused — so the family silently produced nothing. The Y-side
+flush (`FlushSliceAndRebuild`, which every Y role edit goes through) now regenerates the X spec from the
+new slice before composing the expression text. **Editing one half of a mirrored pair has to rewrite the
+other half, not just re-render it.**
+
+### Round 4 — the shared axes needed a sentence, not a control (2026-08-19)
+
+Three revisions of one row, all from owner reports, and the third made it worse:
+
+1. shared axes omitted → *"there doesn't seem to be a family button when the vs X checkbox is on"*
+2. shown, disabled    → *"they're just text, I can't click on them"*
+3. shown, live        → *"does it make sense to have Pin as X, Fam and Fix as well? I am confused with
+   the vs X area"* — because the vs row was now a literal duplicate of the trace's own axis rows a few
+   centimetres above, editing the same state.
+
+**The requirement was never a control.** What a user needs about a shared axis is to KNOW that the
+family and the swept axis apply to the X half too — one sentence — while the editing stays where it
+already was. Final shape: `Shares the axes above: Pin = X, RFfreq = fixed at 2.40 GHz` (the pinned VALUE,
+not an index, since that is the frequency the X data is read at), and rows ONLY for axes the X quantity
+has and the Y side does not.
+
+**Diagnostic worth keeping: "two controls for one piece of state" is the smell.** Each fix was locally
+reasonable and the set of them oscillated, because the question being answered ("how should this control
+look?") had the wrong subject. When a second control appears for state something else already owns, the
+answer is usually to delete it and say the thing in words.
+
+En route, one genuine gap from the same report: **a shared axis's pinned VALUE was read-only in the vs
+area** while its role was editable — the user set RFfreq to Fix and then could not say which frequency.
+That inconsistency is gone with the rows themselves; the value lives on the axis row above, which has
+always had a picker.
+
+### Round 5 — two blank-card bugs with the same shape, and neither was in the data (2026-08-19)
+
+Both reported as data problems, both actually the CARD failing to reflect a trace that was fine.
+
+**1. "When I check the vs X checkbox, the data source combobox blanks (no options)."** Round 3 added a
+CACHE (`_allXSignals` + `_xSignalEntry`) so the vs collections only rebuild when their content changes —
+which fixed the churn that was dropping the source combo's selection. But the *teardown* path, which
+clears the visible collections when a trace stops being versus, did not know about the cache: it emptied
+`XGroups`/`XSignals` and left `_allXSignals` populated. So the next rebuild compared the stale cache
+against an identical wanted list, concluded "nothing changed", and refilled nothing — untick, re-tick,
+empty combos. **A cache and the thing it describes have to be torn down together**, which is why there is
+now one `ClearXPicker()` instead of a clear at each call site. Reproduced against the owner's own
+`results/Test.npy` before fixing, and the regression test was checked RED against the pre-fix code.
+
+**2. "Copy and paste a plot with a plot-vs-X trace → the pasted trace has its vs X disabled."** The paste
+is fine: `TraceConfig.XSpec` round-trips, the pasted trace keeps its X binding, and it goes on plotting
+against Pout. What is wrong is that the **card's** vs state is synced by `RefreshDescription`, which
+`TraceRowViewModel`'s constructor never calls — the identical hole `TraceCardConstructionInitTests`
+documents for the network-metric row, rediscovered on a new row. A card built over an already-versus
+trace (pasted, undone/redone, or restored from a `.cdd`) therefore came up unticked with an empty picker.
+The constructor now calls `SyncVersusFromTrace()` beside the existing `RefreshNetworkMetricCard()`.
+**Any new card state that RefreshDescription owns needs the same constructor call** — that is now twice.
+
+Also here, from the same report's evidence: the default X quantity used to be "the first cube in the file
+that isn't Y", which on a real run is a raw complex HB voltage — so the feature opened on an X that could
+not be plotted without a transform. It now prefers a REAL sibling in the Y quantity's own group
+(`Gain` → `Pout_dBm`), which is the PA case the feature exists for.
+
+### Adjacent, and NOT part of this feature: a swept HB tone that never moves (2026-08-19)
+
+Testing the family case was blocked by a run-time error that looked like a sweep bug and was not:
+
+```
+analysis HB1 type=hb Tone="2" ToneUnit=GHz ...
+P1Tone:P1 ... Freq=RFfreq GHz
+analysis HB1_sweep_RFfreq type=parametric_sweep Var=RFfreq Start=2 Stop=4 Step=1
+→ Commensurability check failed: source 'P1' Freq=3E+09 Hz is not on the HB tone grid {f0=2E+09 Hz…}
+```
+
+The source's frequency follows the swept variable; the **analysis's own Tone is a literal**, so the HB
+grid stays at 2 GHz and every point past the first is off-grid. **This is not a hand-authoring slip —
+the shipped template `src/Ui/resources/schematic-templates/FET_Harmonic_Balance_Sweep.csch` carried it**:
+its P1Tone is `Freq = RFfreq GHz` and its global is `RFfreq = 2`, but its HB card's `ToneExpr` was the
+literal `"2"`, so the template's own frequency sweep could never run past its first point. Fixed in the
+template (`ToneExpr: "RFfreq"`, `ToneUnit: GHz` — which starts at the same 2 GHz and now follows the
+sweep). `Tone` has always accepted an
+expression (`HbEngine.Resolve` → `FreqUnit.ResolveHz`), so `Tone="RFfreq"` is the whole fix — verified
+end to end through `Cli hb` on the owner's own netlist (3 × 2 points, clean Pout/Gain family).
+The message named the source, which is the half that is RIGHT, and sent the reader to the wrong place.
+`HbEngine.SweptToneHint` now names the variable the source is following and the fix, gated on that
+variable's current value actually matching the off-grid tone (accepting the unit-less spelling too,
+since `Freq=RFfreq GHz` applies the unit at the use site). Test:
+`P1ToneTests.T7b_OffGridSourceFollowingASweptVariable_NamesTheVariableAndTheFix`.
+
 ## A curve tracer auto-opens as a curve tracer: the probe current, as a family (2026-08-18)
 
 Owner: *"User runs DC analysis and sweeps VGS + VDS for a Curve Tracer. There is a probe usually called

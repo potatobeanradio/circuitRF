@@ -152,6 +152,23 @@ namespace CircuitRF.Ui.DataDisplay
                     fracW,
                     fracH);
             }
+            // Rect: the X label lives in the bottom margin, and a "plot versus" plot can need MORE
+            // than one row there (one per trace, when their X quantities differ). Give the extra
+            // rows their room by shrinking the plot box rather than letting them fall off the
+            // canvas — capped, so a 20-trace plot cannot squeeze the box to nothing.
+            if (plot.PlotType == PlotType.Rect && plot.XLabelsDiffer
+                && canvasSize.W > 0 && canvasSize.H > 0)
+            {
+                int rows = plot.XLabelTraces.Count;
+                if (rows > 1)
+                {
+                    double lw   = Math.Min(canvasSize.W, canvasSize.H) / 200.0;
+                    double rowH = plot.Axes.FontSizeTicks * 0.9 * lw * 1.25 / canvasSize.H;
+                    var v = plot.Axes.Viewport;
+                    double shrink = Math.Min((rows - 1) * rowH, v.Height * 0.4);
+                    return new Avalonia.Rect(v.X, v.Y, v.Width, v.Height - shrink);
+                }
+            }
             return plot.Axes.Viewport;
         }
 

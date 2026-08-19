@@ -154,6 +154,15 @@ namespace CircuitRF.Ui.DataDisplay
                 });
             }
 
+            // A binding that FAILED to resolve must say so on the plot, not only under the spec box on
+            // the card. Nothing else in this label can express it: the label is built from the trace's
+            // authoring state (cube + pins + transform), which is still perfectly well-formed when the
+            // resolve failed — a "plot versus" trace with a complex X, a cube missing from a re-run,
+            // a bad typed spec. Without this the trace simply vanishes from the plot with a label that
+            // looks entirely normal.
+            if (t.InvalidSpecText is not null || t.ExpressionError is not null)
+                sb.Append(" <invalid>");
+
             return sb.ToString();
         }
     }

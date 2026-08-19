@@ -1119,6 +1119,138 @@
                                                    Text="{Binding EmptyQuantityMessage}"
                                                    Margin="0,2,0,0"/>
 
+                                        <!-- ── Plot versus: give the trace its own X data ────────
+                                             "vs X" turns Gain-vs-swept-Pin into Gain-vs-Pout. The X
+                                             side's swept axis and family MIRROR the Y side's by axis
+                                             name (that is what XRoleSummary states), so the only
+                                             choice here is WHICH quantity is X — plus a Fix row for
+                                             any axis the Y side does not have. -->
+                                        <StackPanel Spacing="2"
+                                                    IsVisible="{Binding ShowVersusRow}"
+                                                    Margin="0,2,0,0">
+                                            <Grid ColumnDefinitions="Auto,*">
+                                                <CheckBox Grid.Column="0"
+                                                          Content="vs X"
+                                                          IsChecked="{Binding VersusEnabled, Mode=TwoWay}"
+                                                          FontSize="{StaticResource FontSize}"
+                                                          VerticalAlignment="Center"
+                                                          Margin="0,0,4,0"
+                                                          ToolTip.Tip="Plot this trace against another quantity (e.g. Gain vs Pout) instead of the swept axis"/>
+                                                <ComboBox Grid.Column="1"
+                                                          IsVisible="{Binding XSourceSelectorVisible}"
+                                                          ItemsSource="{Binding XSourceEntries}"
+                                                          SelectedItem="{Binding SelectedXSourceItem, Mode=TwoWay}"
+                                                          HorizontalAlignment="Stretch"
+                                                          ToolTip.Tip="Which loaded dataset the X quantity comes from">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding DisplayText}"
+                                                                       FontSize="{StaticResource FontSize}"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </Grid>
+
+                                            <Grid ColumnDefinitions="*,*,Auto"
+                                                  IsVisible="{Binding VersusEnabled}">
+                                                <ComboBox Grid.Column="0"
+                                                          ItemsSource="{Binding XGroups}"
+                                                          SelectedItem="{Binding SelectedXGroup, Mode=TwoWay}"
+                                                          Margin="0,0,3,0"
+                                                          MinWidth="20"
+                                                          HorizontalAlignment="Stretch"
+                                                          HorizontalContentAlignment="Stretch"
+                                                          ToolTip.Tip="Group the X quantity lives in">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding}"
+                                                                       FontSize="{StaticResource FontSize}"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <ComboBox Grid.Column="1"
+                                                          ItemsSource="{Binding XSignals}"
+                                                          SelectedItem="{Binding SelectedXSignal, Mode=TwoWay}"
+                                                          MinWidth="20"
+                                                          Margin="0,0,3,0"
+                                                          HorizontalAlignment="Stretch"
+                                                          HorizontalContentAlignment="Stretch"
+                                                          ToolTip.Tip="Quantity plotted along X">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:TraceDataItem">
+                                                            <TextBlock Text="{Binding Label}"
+                                                                       FontSize="{StaticResource FontSize}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{Binding TooltipText}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+
+                                                <!-- X-side transform: the X axis must be REAL, and an
+                                                     ordinary X quantity (a voltage) is complex. The
+                                                     card's other transform combo transforms Y. -->
+                                                <ComboBox Grid.Column="2"
+                                                          Width="74"
+                                                          ItemsSource="{Binding XTransformItems}"
+                                                          SelectedItem="{Binding SelectedXTransformItem, Mode=TwoWay}"
+                                                          ToolTip.Tip="Applied to the X quantity only — a complex X (e.g. a voltage) needs mag/dB/real to become a real axis">
+                                                    <ComboBox.ItemContainerTheme>
+                                                        <ControlTheme TargetType="ComboBoxItem">
+                                                            <Setter Property="IsEnabled"
+                                                                    Value="{ReflectionBinding Enabled}"/>
+                                                        </ControlTheme>
+                                                    </ComboBox.ItemContainerTheme>
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:CubeTransformItem">
+                                                            <TextBlock Text="{Binding Label}"
+                                                                       FontSize="{StaticResource FontSize}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </Grid>
+
+                                            <TextBlock IsVisible="{Binding HasXRoleSummary}"
+                                                       Text="{Binding XRoleSummary}"
+                                                       FontSize="10"
+                                                       Opacity="0.6"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="18,0,0,0"/>
+
+                                            <!-- Rows for the X quantity's OWN axes only — the ones the
+                                                 Y side does not have. A SHARED axis gets no row: it is
+                                                 already edited by the trace's axis rows above, and a
+                                                 second copy put two controls on one piece of state.
+                                                 What the user needs about it is the statement in
+                                                 XRoleSummary, not another button. -->
+                                            <ItemsControl IsVisible="{Binding VersusEnabled}"
+                                                          ItemsSource="{Binding XAxisPins}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:XAxisPinRowViewModel">
+                                                        <Grid ColumnDefinitions="62,Auto,*" Margin="18,0,0,2">
+                                                            <TextBlock Grid.Column="0"
+                                                                       Text="{Binding AxisLabel}"
+                                                                       Classes="label"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{Binding AxisLabel}"/>
+                                                            <TextBlock Grid.Column="1"
+                                                                       Text="Fix"
+                                                                       FontSize="10"
+                                                                       Opacity="0.6"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,4,0"
+                                                                       ToolTip.Tip="{Binding RoleTooltip}"/>
+                                                            <ComboBox Grid.Column="2"
+                                                                      ItemsSource="{Binding PinOptions}"
+                                                                      SelectedIndex="{Binding PinIndex, Mode=TwoWay}"
+                                                                      HorizontalAlignment="Stretch"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+
                                         <!-- ── Spec editor row: transform combo + cube-bound TextBox ─
                                              Transform combo moves here from identity row (Part D).
                                              Auto col collapses on Smith/Polar so TextBox reclaims width. -->
@@ -1155,7 +1287,7 @@
                                                      GotFocus="OnSpecEditGotFocus"
                                                      LostFocus="OnSpecEditLostFocus"
                                                      KeyDown="OnSpecEditKeyDown"
-                                                     ToolTip.Tip="Type a cube shorthand, e.g. dB20 V[0, 1, :]"/>
+                                                     ToolTip.Tip="Type a cube shorthand, e.g. dB20 V[0, 1, :] — or plot against another quantity with &quot;Y vs X&quot;, e.g. Gain vs Pout"/>
                                         </Grid>
                                         <SelectableTextBlock IsVisible="{Binding HasSpecError}"
                                                              Text="{Binding SpecError}"

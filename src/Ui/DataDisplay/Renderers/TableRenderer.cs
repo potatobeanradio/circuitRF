@@ -43,6 +43,16 @@ namespace CircuitRF.Ui.DataDisplay
         public bool         IsScalar;           // XAxis only: true for scalar (rank-0) anchor column
         public bool         IsNodeAxis;         // XAxis only: true when axis name is "node" → render as integer
         public int          FamilyCurveIndex = -1; // TraceValue only: ≥0 = curve k of a family trace
+
+        /// <summary>
+        /// "Plot versus" columns pair by ROW INDEX, not by X value. An ordinary X column is a sorted,
+        /// de-duplicated sweep axis and each cell is found by matching its X value; a versus X is the
+        /// VALUES of another quantity, which can be non-monotonic (Pout folds back past compression)
+        /// and can repeat — sorting it would reorder the pairing and a repeat would collapse two
+        /// distinct sweep points into one row. So a versus column keeps sweep order and reads cell i
+        /// from sample i.
+        /// </summary>
+        public bool         PairByIndex;
     }
 
     // ============================================================
@@ -461,10 +471,55 @@ namespace CircuitRF.Ui.DataDisplay
             string?  prevUnit       = null;
             double[]? prevRaw       = null;
             double[]? currentXArray = null;
+            bool     prevPairByIndex = false;
 
             for (int ti = 0; ti < plot.Traces.Count; ti++)
             {
                 var trace = plot.Traces[ti];
+
+                // ── "Plot versus" family: each curve carries its OWN X, so the shared-X column
+                //    model does not apply — emit an (X, Y) column PAIR per curve instead.
+                if (trace.IsCubeBound && trace.IsVersus && trace.IsFamily && trace.FamilyCurves.Count > 0)
+                {
+                    string  vBase        = trace.CubeShorthand ?? trace.ShortDescription;
+                    string  vXHeader     = trace.CubeXAxisName is { Length: > 0 } vx ? vx : "X";
+                    string? vFamilyName  = trace.FamilyAxisName;
+                    string? vFamilyUnit  = trace.FamilyAxisUnit;
+                    bool    vFamilyFreq  = IsFreqUnit(vFamilyUnit);
+                    int     vCap         = Math.Min(trace.FamilyCurves.Count, Trace.MaxFamilyCurves);
+
+                    for (int k = 0; k < vCap; k++)
+                    {
+                        var fc = trace.FamilyCurves[k];
+                        double[] xs = fc.RawX ?? Array.Empty<double>();
+                        string familyLabel = fc.AxisLabel
+                            ?? (vFamilyName is not null
+                                ? $"{vFamilyName} = {FormatFamilyAxisValue(fc.AxisValue, vFamilyUnit, vFamilyFreq, plot)}"
+                                : FormatFamilyAxisValue(fc.AxisValue, vFamilyUnit, vFamilyFreq, plot));
+
+                        result.Add(new TableColumn
+                        {
+                            Kind            = TableColKind.XAxis,
+                            FirstTraceIndex = ti,
+                            Header          = $"{vXHeader} @ {familyLabel}",
+                            XValues         = xs,
+                            PairByIndex     = true,
+                        });
+                        result.Add(new TableColumn
+                        {
+                            Kind             = TableColKind.TraceValue,
+                            FirstTraceIndex  = ti,
+                            Header           = $"{vBase} @ {familyLabel}",
+                            XValues          = xs,
+                            FamilyCurveIndex = k,
+                            PairByIndex      = true,
+                        });
+                    }
+
+                    prevAxisName = null; prevUnit = null; prevRaw = null;
+                    currentXArray = null; prevPairByIndex = false;
+                    continue;
+                }
 
                 // Determine X identity for this trace.
                 string   axisName;
@@ -510,17 +565,23 @@ namespace CircuitRF.Ui.DataDisplay
                     raw      = Array.Empty<double>();
                 }
 
-                // Adjacent-dedup: same axis name, same unit, same length, same sorted values.
+                // A versus trace pairs by row index and must keep sweep order (see TableColumn.PairByIndex).
+                bool pairByIndex = trace.IsCubeBound && trace.IsVersus;
+
+                // Adjacent-dedup: same axis name, same unit, same length, same sorted values — and the
+                // same pairing rule, since an index-paired column and a value-matched one are not the
+                // same column even when their numbers happen to coincide.
                 bool dedup = currentXArray != null
                     && prevAxisName == axisName
                     && prevUnit     == unit
+                    && prevPairByIndex == pairByIndex
                     && prevRaw is { } pr
                     && pr.Length    == raw.Length
                     && (raw.Length  == 0 || RawValuesEqual(pr, raw));
 
                 if (!dedup)
                 {
-                    double[] sorted  = SortUnique(raw, plot.TableViewAscendingSortOrder);
+                    double[] sorted  = pairByIndex ? raw : SortUnique(raw, plot.TableViewAscendingSortOrder);
                     bool     isFreq  = IsFreqUnit(unit);
                     bool     isNode  = string.Equals(axisName, "node", StringComparison.OrdinalIgnoreCase);
                     string   xHeader = string.IsNullOrEmpty(unit)
@@ -539,6 +600,7 @@ namespace CircuitRF.Ui.DataDisplay
                         IsFreqUnit      = isFreq,
                         IsNodeAxis      = isNode,
                         IsScalar        = trace.IsCubeBound && trace.CubeIsScalar,
+                        PairByIndex     = pairByIndex,
                     });
                     currentXArray = sorted;
                 }
@@ -546,6 +608,7 @@ namespace CircuitRF.Ui.DataDisplay
                 prevAxisName = axisName;
                 prevUnit     = unit;
                 prevRaw      = raw;
+                prevPairByIndex = pairByIndex;
 
                 if (isFamilyPath)
                 {
@@ -569,6 +632,7 @@ namespace CircuitRF.Ui.DataDisplay
                             Header           = $"{baseShorthand} @ {familyLabel}",
                             XValues          = currentXArray ?? Array.Empty<double>(),
                             FamilyCurveIndex = k,
+                            PairByIndex      = pairByIndex,
                         });
                     }
                 }
@@ -584,6 +648,7 @@ namespace CircuitRF.Ui.DataDisplay
                         FirstTraceIndex = ti,
                         Header          = valHeader,
                         XValues         = currentXArray ?? Array.Empty<double>(),
+                        PairByIndex     = pairByIndex,
                     });
                 }
             }
@@ -658,6 +723,12 @@ namespace CircuitRF.Ui.DataDisplay
             var trace = plot.Traces[col.FirstTraceIndex];
             if (trace.IsSummaryColumn)
                 return FormatSummaryCell(trace.SummaryColumn!, rowIndex);
+
+            // "Plot versus": row i IS sample i — no X-value search (the X values may repeat).
+            if (col.PairByIndex)
+                return col.FamilyCurveIndex >= 0
+                    ? trace.FormatFamilyCell(col.FamilyCurveIndex, rowIndex, trace.FormatString, trace.MaximumFractionDigits)
+                    : trace.FormatCubeCell(rowIndex, trace.FormatString, trace.MaximumFractionDigits);
 
             // Standard TraceValue: look up the sample in this trace whose X value matches.
             if (col.FamilyCurveIndex >= 0)

@@ -884,7 +884,23 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 string.Equals(e.FilePath, t.SourcePath, StringComparison.OrdinalIgnoreCase));
         }
 
-        SetCubeDataFrom(t, entry?.Data, plotType, freqUnit);
+        // "Plot versus" may take its X from a DIFFERENT loaded file (measured Pout against simulated
+        // Gain). Null XSourcePath — the ordinary case — means "same source as Y".
+        DataSourceEntryViewModel? xEntry = entry;
+        if (library is not null && t.XSourcePath is not null)
+        {
+            xEntry = library.Entries.FirstOrDefault(e =>
+                string.Equals(e.FilePath, t.XSourcePath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Display-only: a cross-source X reads as "alias::Pout" in the spec box and table header.
+        t.XSourceAlias = t.IsVersus && xEntry is not null && !ReferenceEquals(xEntry, entry)
+            ? (library?.AliasFor(xEntry.FilePath) is { Length: > 0 } a
+                ? a
+                : System.IO.Path.GetFileNameWithoutExtension(xEntry.DisplayName))
+            : null;
+
+        SetCubeDataFrom(t, entry?.Data, plotType, freqUnit, xEntry?.Data);
     }
 
     /// <summary>
@@ -897,9 +913,38 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// there is one slicing implementation, and the picker over harmonicaRF's cubes is the same code
     /// the <c>.cdd</c> trace card runs.</para>
     /// </summary>
-    internal static void SetCubeDataFrom(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit)
+    internal static void SetCubeDataFrom(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit,
+                                        DataSet? xDs = null)
     {
         if (!t.IsCubeBound) return;
+
+        // "Plot versus": the X side resolves against its own source when one is set, else against
+        // the Y side's. Everything below reads xDataSet, so cross-source is not a second code path.
+        DataSet? xDataSet = xDs ?? ds;
+
+        // A malformed separator ("A vs B vs C", "Gain vs") is reported HERE as well as at the point
+        // of typing, because every edit is followed by a resolve that would otherwise replace the
+        // card's message with a confusing downstream parse error.
+        if (t.Expression is { } exprText
+            && !VersusSpec.TrySplit(exprText, out _, out _, out var splitErr)
+            && splitErr.Length > 0)
+        {
+            t.ExpressionError = splitErr;
+            t.InvalidSpecText = exprText;
+            t.Points.Clear();
+            t.FamilyCurves.Clear();
+            return;
+        }
+
+        // Versus is a rectangular idea: a Γ-plane locus has no X axis to redirect.
+        if (t.IsVersus && plotType.IsComplex())
+        {
+            t.ExpressionError = "'vs' is available on Rect and Table plots only.";
+            t.InvalidSpecText = t.Expression ?? t.CubeName;
+            t.Points.Clear();
+            t.FamilyCurves.Clear();
+            return;
+        }
 
         // Single-cube specs (picker or typed Name[...]) resolve via the slice path (family-aware).
         // Only multi-cube element-wise expressions go through TraceExpression.
@@ -913,18 +958,36 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 t.Points.Clear();
                 return;
             }
-            if (TraceExpression.TryEvaluate(t.Expression, ds, plotType,
+            // Only the Y half goes to the evaluator; the X half is resolved separately below.
+            string yExpr = VersusSpec.TrySplit(t.Expression, out var ySide, out _, out _)
+                ? ySide : t.Expression;
+            if (TraceExpression.TryEvaluate(yExpr, ds, plotType,
                     out var xVals, out var cz, out var rz,
                     out var xName, out var xUnit, out var xLabels, out var exprErr))
             {
+                if (t.IsVersus)
+                {
+                    int yN = cz?.Length ?? rz?.Length ?? 0;
+                    if (!TryVersusX(t, xDataSet, ySlice: null, yExpr, yN, out var vx, out var vErr))
+                    {
+                        t.ExpressionError = vErr;
+                        t.InvalidSpecText = t.Expression;
+                        t.Points.Clear();
+                        return;
+                    }
+                    xVals = vx; xName = t.XSpec!; xUnit = null; xLabels = null;
+                }
                 t.ExpressionError = null;
                 t.InvalidSpecText = null;
                 t.SetSpectrumFundamentals(null);
                 // The multi-cube expression text already encodes any transform — mark the values baked so a
                 // real result renders as-is (the transform combo must not double-apply on top of it).
                 t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels, transformBaked: true);
-                ApplyPinnedSpectral(t, ds);
-                ApplyPinnedAxisDisplay(t, ds);
+                if (!t.IsVersus)
+                {
+                    ApplyPinnedSpectral(t, ds);
+                    ApplyPinnedAxisDisplay(t, ds);
+                }
             }
             else
             {
@@ -971,6 +1034,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // Scalar cube (rank 0): operating-point value — valid only on a Table (Part A).
         if (cube.Rank == 0)
         {
+            if (RejectVersusOnScalar(t)) return;
             var sr = cube[Array.Empty<object>()];
             t.InvalidSpecText = null;
             t.ExpressionError = null;
@@ -984,7 +1048,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // ── Family path (Phase 7.3b) ──────────────────────────────────────────
         if (Array.Exists(slice, s => s.Role == AxisRole.FamilyIterate))
         {
-            ResolveFamily(t, cube, slice, plotType, freqUnit, ds);
+            ResolveFamily(t, cube, slice, plotType, freqUnit, ds, xDataSet);
             return;
         }
 
@@ -1018,6 +1082,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // Renders on a Table; <invalid> on Rect/Smith/Polar (handled by SetScalarCubeData).
         if (xDim < 0)
         {
+            if (RejectVersusOnScalar(t)) return;
             var sr = cube[args];
             t.InvalidSpecText = null;
             t.ExpressionError = null;
@@ -1046,12 +1111,65 @@ public partial class PlotInspectorViewModel : ViewModelBase
         Complex[]? complexValues = sliced.DataKind == DataKind.Complex ? sliced.ComplexValues : null;
         double[]?  realValues    = sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null;
 
+        // ── Plot versus: X comes from the X spec, not from this cube's swept axis ──
+        if (t.IsVersus)
+        {
+            int yN = complexValues?.Length ?? realValues?.Length ?? 0;
+            if (!TryVersusX(t, xDataSet, slice, t.CubeName!, yN, out var vx, out var vErr))
+            {
+                t.ExpressionError = vErr;
+                t.InvalidSpecText = t.Expression ?? t.CubeName;
+                t.Points.Clear();
+                t.FamilyCurves.Clear();
+                return;
+            }
+            t.SetSpectrumFundamentals(null);
+            // No unit: cube VALUES carry none anywhere in the data model (only axes do), so a versus
+            // X axis is labelled by its spec text alone — same as every Y label already is.
+            t.SetCubeData(vx, complexValues, realValues, t.XSpec!, null, plotType, freqUnit);
+            ApplyPinnedAxisDisplay(t, ds);
+            return;
+        }
+
         var toneFreqs1 = GetToneFreqsCube(ds, t.CubeName);
         t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length));
         t.SetCubeData(xAxis.Values, complexValues, realValues,
                       xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels);
         ApplyPinnedSpectral(t, ds);
         ApplyPinnedAxisDisplay(t, ds);
+    }
+
+    /// <summary>
+    /// Resolves the X side of a versus trace and gates it on the point count — the rule that makes a
+    /// cross-source X safe (two files whose sweeps disagree can never be silently paired).
+    /// </summary>
+    private static bool TryVersusX(Trace t, DataSet? xDs, AxisSlice[]? ySlice, string ySpec, int yN,
+                                   out double[] xValues, out string error)
+    {
+        xValues = Array.Empty<double>();
+        if (xDs is null)
+        {
+            error = $"X source for '{t.XSpec}' is not loaded.";
+            return false;
+        }
+        if (!VersusResolver.TryResolveX(t.XSpec!, xDs, ySlice, out xValues, out error))
+        {
+            if (string.IsNullOrEmpty(error)) error = $"Cannot resolve X side '{t.XSpec}'.";
+            return false;
+        }
+        return VersusResolver.CountsAgree(t.XSpec!, ySpec, xValues.Length, yN, out error);
+    }
+
+    /// <summary>A fully-pinned (scalar) Y has no swept axis to plot against. Reports it rather than
+    /// rendering a one-point curve at a meaningless X.</summary>
+    private static bool RejectVersusOnScalar(Trace t)
+    {
+        if (!t.IsVersus) return false;
+        t.ExpressionError = $"'vs {t.XSpec}' needs a swept Y — this selection is a single value.";
+        t.InvalidSpecText = t.Expression ?? t.CubeName;
+        t.Points.Clear();
+        t.FamilyCurves.Clear();
+        return true;
     }
 
     /// <summary>
@@ -1112,7 +1230,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
     }
 
     private static void ResolveFamily(Trace t, DataCube cube, AxisSlice[] slice,
-                                      PlotType plotType, FreqUnit freqUnit, DataSet? ds = null)
+                                      PlotType plotType, FreqUnit freqUnit, DataSet? ds = null,
+                                      DataSet? xDs = null)
     {
         // Find family and X axes by name (slice is name-keyed, order-independent).
         int fDim = -1, xDim = -1;
@@ -1166,10 +1285,49 @@ public partial class PlotInspectorViewModel : ViewModelBase
                         sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null));
         }
         if (xVals is null) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
+
+        // ── Plot versus, family form: each curve gets its OWN X (Pout at 2.0 GHz is not Pout at
+        //    2.4 GHz), so the X side iterates the same family axis and is resolved per curve.
+        List<double[]>? perCurveX = null;
+        if (t.IsVersus)
+        {
+            var xSource = xDs ?? ds;
+            if (xSource is null)
+            {
+                t.ExpressionError = $"X source for '{t.XSpec}' is not loaded.";
+                t.InvalidSpecText = t.Expression ?? t.CubeName;
+                t.Points.Clear(); t.FamilyCurves.Clear();
+                return;
+            }
+            if (!VersusResolver.TryResolveXFamily(t.XSpec!, xSource, slice, fAxis.Name, curves.Count,
+                                                  out perCurveX, out var vErr))
+            {
+                t.ExpressionError = vErr;
+                t.InvalidSpecText = t.Expression ?? t.CubeName;
+                t.Points.Clear(); t.FamilyCurves.Clear();
+                return;
+            }
+            for (int k = 0; k < curves.Count; k++)
+            {
+                int yN = curves[k].Item3?.Length ?? curves[k].Item4?.Length ?? 0;
+                if (!VersusResolver.CountsAgree(t.XSpec!, t.CubeName ?? "", perCurveX[k].Length, yN, out var cErr))
+                {
+                    t.ExpressionError = cErr;
+                    t.InvalidSpecText = t.Expression ?? t.CubeName;
+                    t.Points.Clear(); t.FamilyCurves.Clear();
+                    return;
+                }
+            }
+            xVals = perCurveX[0];       // trace-level anchor; every curve carries its own below
+            xName = t.XSpec!;
+            xUnit = null;
+        }
+
         var toneFreqs2 = GetToneFreqsCube(ds, t.CubeName);
-        t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs2, slice, xVals.Length));
+        t.SetSpectrumFundamentals(t.IsVersus ? null : ResolveFundamentalByX(toneFreqs2, slice, xVals.Length));
         t.SetFamilyData(xVals, xName, xUnit, fAxis.Name, curves, plotType, freqUnit,
-                        familyAxisUnit: string.IsNullOrEmpty(fAxis.Unit) ? null : fAxis.Unit);
+                        familyAxisUnit: string.IsNullOrEmpty(fAxis.Unit) ? null : fAxis.Unit,
+                        perCurveX: perCurveX);
         // A family trace has no pinned SPECTRAL line (each curve carries its own tag), but it can
         // still carry ordinary pinned axes, and those appear in its label like any other trace's.
         ApplyPinnedAxisDisplay(t, ds);

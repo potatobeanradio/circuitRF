@@ -214,6 +214,13 @@ public sealed class TraceConfig
     // Expression-mode field. When non-null, supersedes CubeName/CubeSlice/CubeTransform for value production.
     public string?               Expression    { get; set; }
 
+    // "Plot versus" (Y vs X). Null = X comes from the cube's swept axis, exactly as before this
+    // existed, so every .cdd written earlier loads unchanged.
+    public string?               XSpec         { get; set; }
+
+    /// <summary>Absolute path of the X side's data source; null = the same source as the Y side.</summary>
+    public string?               XSourcePath   { get; set; }
+
     public TracePropertiesConfig   Properties { get; set; } = new();
     public List<MarkerConfig>      Markers    { get; set; } = new();
 

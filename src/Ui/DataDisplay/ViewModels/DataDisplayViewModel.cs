@@ -1395,6 +1395,18 @@ public partial class DataDisplayViewModel : ViewModelBase
 
             trace.SourceRef             = sref;
             trace.SourcePath            = resolvedPath;
+
+            // "Plot versus" (Y vs X). XSourcePath is persisted the same logical way a source alias
+            // is — relative to the results root when it lives there — and names a CONCRETE file
+            // (never the "Selected" sentinel: an X side belongs to one dataset, not to whichever
+            // source happens to be selected).
+            trace.XSpec = traceConfig.XSpec;
+            if (!string.IsNullOrEmpty(traceConfig.XSourcePath))
+            {
+                string? xAbs = Library?.ResolveAbs(traceConfig.XSourcePath);
+                if (xAbs is not null && Library is not null) await Library.LoadFileAsync(xAbs);
+                trace.XSourcePath = xAbs;
+            }
             trace.MatrixFormat          = traceConfig.MatrixFormat;
             trace.ColumnWidth           = traceConfig.ColumnWidth > 0 ? traceConfig.ColumnWidth : 115;
             trace.XColumnWidth          = traceConfig.XColumnWidth;
@@ -1583,6 +1595,10 @@ public partial class DataDisplayViewModel : ViewModelBase
                       Index    = s.Index,
                   }).ToList(),
             Expression    = t.Expression,
+            XSpec         = t.XSpec,
+            XSourcePath   = t.XSourcePath is { Length: > 0 } xp
+                ? ComputeSourceKey(xp, library)
+                : null,
             Properties       = new TracePropertiesConfig
             {
                 LineEnabled      = t.Properties.LineEnabled,

@@ -34,8 +34,9 @@ public partial class AxesLimitsViewModel : ViewModelBase
     public bool   IsRect     => _plot.PlotType.IsRect();
     public bool   IsComplex  => _plot.PlotType.IsComplex();
 
-    /// <summary>Frequency unit suffix shown next to the X Axis header on Rect plots.</summary>
-    public string XUnitLabel => IsRect ? $"({_plot.FreqUnits.Description()})" : "";
+    /// <summary>Unit suffix shown next to the X Axis header on Rect plots — the X quantity's own
+    /// unit, not an assumed frequency (see <see cref="Plot.XAxisUnitLabel"/>).</summary>
+    public string XUnitLabel => _plot.XAxisUnitLabel;
 
     /// <summary>True when the Y2 (secondary right) axis section should be visible.</summary>
     public bool ShowY2 => IsRect && _plot.Axes.ShowSecondary;

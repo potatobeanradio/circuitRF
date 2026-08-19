@@ -61,6 +61,8 @@ A cube-bound trace (`Trace`) is the tuple:
 (SourcePath, CubeName, Slice, Transform)         // single-cube  → slice path
         — or —
 (SourcePath, Expression)                          // multi-cube   → expression path
+
+        + optionally (XSpec, XSourcePath)         // "plot versus" — X from another quantity
 ```
 
 - **`CubeName`** — qualified (`HB1.V`) for analyses, bare (`PDC`) for measurements/default.
@@ -71,6 +73,10 @@ A cube-bound trace (`Trace`) is the tuple:
 - **`Transform`** — `None | dB20 | dB10 | dB | Mag | Phase | Real | Imag | Conj`.
 - **`Expression`** — a free-form element-wise expression over one or more cubes
   (`mag(HB1.V) - mag(HB1.Vref)`); resolves via `TraceExpression`, not the slice path.
+- **`XSpec` / `XSourcePath`** — **plot versus** (`Gain vs Pout`): the trace's X data comes from the
+  named quantity instead of the cube's swept axis, optionally out of a different loaded file. Held as
+  its own field precisely so the Y side keeps its `CubeName`/`Slice` identity and everything on this
+  card goes on working. Full spec: `plot-versus.md`.
 
 ### How a binding resolves (`TrySetCubeData`)
 
@@ -204,6 +210,16 @@ The text box is a two-way view of the binding. Grammar:
 Validity: exactly one X **or** zero X (scalar); at most one `~`; a `~` requires an X. Anything
 else is reported inline under the box.
 
+### The `vs` separator (plot versus)
+
+A spec may end with `vs <x-spec>` — `Gain vs Pout`, `Gain[:, ~] vs Pout`,
+`dB20(HB1.V[:, "Vout", 1]) vs Pout` — which plots the trace against that quantity instead of the
+cube's swept axis. `vs`/`versus` is a **lowest-precedence** separator, split off before any cube-name
+scan and recognised at top level only (never inside `[ ]`, `( )`, or a quoted label), at most one per
+trace. Both sides are ordinary specs, so nothing above changes. On the card it is the **vs X** row,
+where the X side's swept axis and family are inherited from the Y side by axis name — see
+`plot-versus.md`.
+
 ---
 
 ## 6. V/I symmetry
@@ -297,10 +313,14 @@ A condensed cheat-sheet to expand into end-user docs:
 - **Type it directly:** the spec box accepts `[transform] CubeName[tokens]` where a token is
   `:` (X), `~` (family), `"name"`/index (fix), or `a:b` (range). Editing the box updates every
   control on the card; the controls always produce a valid expression.
+- **Plot against another quantity:** tick **vs X** and pick it (Gain against **Pout**), or type
+  `Gain vs Pout`. Families follow the Y side automatically; the X side can come from another loaded
+  file. See `plot-versus.md`.
 - **Operating points (no sweep):** values are scalars — view them on a **Table**.
 
 ---
 
 ## Related design docs
+`docs/design/plot-versus.md` (the `vs` separator and the vs-X row),
 `docs/design/results-dataset-layout.md` (grouped run.npy), `docs/design/measurements.md`
 (`V(...)`/`I(...)`/`S(...)` accessors), `docs/design/data-display.md` (plot types, renderers).
