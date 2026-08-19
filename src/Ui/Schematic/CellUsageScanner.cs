@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using CircuitRF.Ui.WBond;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -197,5 +198,126 @@ public static class CellUsageScanner
         var opts = new JsonSerializerOptions { WriteIndented = true };
         File.WriteAllText(filePath, node.ToJsonString(opts));
         return true;
+    }
+
+    // ── wBond links ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Repoints every schematic that links a <c>.wBond</c> which has just been renamed, and every
+    /// schematic whose link crosses the renamed cell folder.
+    ///
+    /// <para><b>Matched by RESOLUTION, not by name.</b> A stored link is a path relative to the
+    /// schematic that holds it (<see cref="WBondPlacement.ResolveLinkedPath"/>), so two cells can
+    /// legitimately own <c>layout/top.wBond</c> and a name-only match would repoint the wrong one.
+    /// Each candidate is resolved and compared against the file that actually moved. The old cell
+    /// name is substituted first when it appears as a path segment, which is what lets a link FROM
+    /// ANOTHER CELL — <c>../../oldName/layout/oldStem.wBond</c>, already dangling after the folder
+    /// rename — be recognised and repaired in the same pass.</para>
+    /// </summary>
+    /// <param name="layoutDirAbs">The renamed cell's <c>layout/</c> folder — where the file that
+    /// moved both was and is, since only its stem changed.</param>
+    /// <returns>The schematic files that were rewritten.</returns>
+    public static IReadOnlyList<string> RewriteWBondLinks(
+        string workspaceRootDir,
+        string layoutDirAbs,
+        string oldStem, string newStem,
+        string oldCellName, string newCellName,
+        out List<string> failed)
+    {
+        failed = [];
+        var rewritten = new List<string>();
+        // The link still SPELLS the old stem, so what a candidate must resolve to is the file's
+        // pre-rename path — same folder (it moved with the cell), old name.
+        var target = Path.GetFullPath(Path.Combine(layoutDirAbs, oldStem + WBondCell.FileExtension));
+
+        foreach (var cellDir in EnumerateCellFolders(workspaceRootDir))
+        {
+            var subDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
+            if (!Directory.Exists(subDir)) continue;
+
+            foreach (var filePath in Directory.EnumerateFiles(subDir, "*.csch"))
+            {
+                try
+                {
+                    if (RewriteFileWBondLinks(filePath, target, oldStem, newStem, oldCellName, newCellName))
+                        rewritten.Add(filePath);
+                }
+                catch (Exception ex)
+                {
+                    failed.Add($"{filePath}: {ex.Message}");
+                }
+            }
+        }
+
+        return rewritten;
+    }
+
+    // Returns true if the file was modified.
+    private static bool RewriteFileWBondLinks(
+        string filePath, string targetAbs,
+        string oldStem, string newStem, string oldCellName, string newCellName)
+    {
+        var schDir = Path.GetDirectoryName(Path.GetFullPath(filePath));
+        if (schDir is null) return false;
+
+        var node = JsonNode.Parse(File.ReadAllText(filePath));
+        var array = node?["Components"]?.AsArray();
+        if (array is null) return false;
+
+        bool changed = false;
+        foreach (var item in array)
+        {
+            var param = item?["Parameters"]?.AsArray()?
+                .FirstOrDefault(p => p?["Name"]?.GetValue<string?>() == WBondPlacement.FileParameter);
+            if (param is null) continue;
+
+            var stored = param["Expression"]?.GetValue<string?>();
+            if (string.IsNullOrWhiteSpace(stored)) continue;
+            if (Path.IsPathRooted(stored)) continue;   // an absolute link is the author's own business
+
+            // Tolerate a Windows-authored separator, exactly as ResolveLinkedPath does.
+            var normalized = stored.Replace('\\', '/');
+            var segments   = normalized.Split('/');
+            if (!string.Equals(segments[^1], oldStem + WBondCell.FileExtension,
+                               StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Candidate 1: the link is already inside the renamed folder (a same-cell "../layout/x").
+            // Candidate 2: the link names the OLD cell folder and is dangling — substitute and retry.
+            string? rewrittenPath = null;
+            if (Resolves(schDir, segments, targetAbs)) rewrittenPath = normalized;
+            else
+            {
+                var swapped = (string[])segments.Clone();
+                bool any = false;
+                for (int i = 0; i < swapped.Length - 1; i++)
+                    if (string.Equals(swapped[i], oldCellName, StringComparison.OrdinalIgnoreCase))
+                    { swapped[i] = newCellName; any = true; }
+                if (any && Resolves(schDir, swapped, targetAbs))
+                    rewrittenPath = string.Join('/', swapped);
+            }
+            if (rewrittenPath is null) continue;
+
+            var parts = rewrittenPath.Split('/');
+            parts[^1] = newStem + WBondCell.FileExtension;
+            param["Expression"] = JsonValue.Create(string.Join('/', parts));
+            changed = true;
+        }
+
+        if (!changed) return false;
+
+        File.WriteAllText(filePath, node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        return true;
+
+        static bool Resolves(string schDir, string[] segments, string targetAbs)
+        {
+            try
+            {
+                return string.Equals(
+                    Path.GetFullPath(Path.Combine(schDir, string.Join('/', segments))),
+                    targetAbs, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
     }
 }

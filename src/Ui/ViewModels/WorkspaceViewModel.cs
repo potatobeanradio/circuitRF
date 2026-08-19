@@ -8687,10 +8687,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (rewritten.Count > 0)
             Messages.Info($"Updated {rewritten.Count} schematic reference(s) to '{newName}'.");
 
-        // Optionally rename primary schematic + symbol.
+        // Optionally rename the primary file of EVERY view the cell has.
+        //
+        // Layout was missing here and nothing else made up for it: a renamed cell kept a `.clay`
+        // named after the old cell, so the folder said one name and the file inside it said another
+        // — and the .ccell's own PrimaryLayout still pointed at the old file name, which is why the
+        // view kept opening and the drift stayed invisible. ViewExtension/ResolvePrimary/
+        // UpdateCcellPrimary all handled Layout already; only this list did not.
         if (renamePrimaries)
         {
-            foreach (var viewType in new[] { ViewType.Schematic, ViewType.Symbol })
+            foreach (var viewType in new[] { ViewType.Schematic, ViewType.Symbol, ViewType.Layout })
             {
                 var res = CellFolder.ResolvePrimary(newDir, viewType);
                 if (res.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent))
@@ -8720,6 +8726,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         Messages.Warning($"Could not rename {CellFolder.SubFolderName(viewType)} primary: {ex.Message}");
                         continue;
                     }
+
+                    // The wires are attached to the .clay BY STEM (WB40) — layout/x.clay pairs with
+                    // layout/x.wBond and with nothing else. So renaming the .clay without its .wBond
+                    // does not leave a cosmetic mismatch, it DETACHES the wires: the layout reopens
+                    // empty while the bonds sit in a file now paired with nothing. The two renames
+                    // are one operation, and this is the only place that can do them together.
+                    if (viewType == ViewType.Layout)
+                        RenamePairedWBond(workspaceDir, subDir,
+                            Path.GetFileNameWithoutExtension(res.ResolvedName), newName,
+                            oldName, newName);
                 }
 
                 UpdateCcellPrimary(newDir, viewType, targetName);
@@ -8742,10 +8758,55 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 case ViewType.Schematic: ccell.PrimarySchematic = newPrimaryFileName; break;
                 case ViewType.Symbol:    ccell.PrimarySymbol    = newPrimaryFileName; break;
+                case ViewType.Layout:    ccell.PrimaryLayout    = newPrimaryFileName; break;
             }
             CellPersistence.SaveToFile(ccellPath, ccell);
         }
         catch { /* non-fatal: .ccell update is best-effort for alpha */ }
+    }
+
+    /// <summary>
+    /// Renames the <c>.wBond</c> paired with a just-renamed <c>.clay</c>, and repoints every schematic
+    /// that links it.
+    ///
+    /// <para>A <c>.wBond</c> is not a view type and has no <c>.ccell</c> primary of its own, so nothing
+    /// else in the rename covers it — but it is not optional decoration either: <c>WBondCell.Resolve</c>
+    /// attaches wires to artwork by SHARED STEM, so the <c>.clay</c> rename above is what makes this
+    /// necessary. Only the file that was actually paired with the old artwork is touched; a
+    /// differently-named <c>.wBond</c> in the same folder belongs to a different <c>.clay</c> (or to
+    /// nobody, which <c>WBondCell</c> already reports as an orphan) and is left alone.</para>
+    ///
+    /// <para>The rename and the repoint are one operation: a schematic stores its link as a path
+    /// relative to itself, so the folder rename alone left it resolving fine and it is renaming the
+    /// FILE that would break it. A repoint failure is reported and the rename is left standing — the
+    /// file has already moved by then, and saying so beats a half-undone state nothing records.</para>
+    /// </summary>
+    private void RenamePairedWBond(
+        string workspaceDir, string layoutDir,
+        string oldStem, string newStem, string oldCellName, string newCellName)
+    {
+        var (outcome, error) = WBondCell.RenamePairedWires(layoutDir, oldStem, newStem);
+        switch (outcome)
+        {
+            case WBondCell.RenameOutcome.NothingToRename:
+                return;
+            case WBondCell.RenameOutcome.Blocked:
+                Messages.Warning(
+                    $"Skipped renaming wirebonds: '{newStem}{WBondCell.FileExtension}' already exists, " +
+                    $"so '{oldStem}{WBondCell.FileExtension}' is now attached to no layout.");
+                return;
+            case WBondCell.RenameOutcome.Failed:
+                Messages.Warning($"Could not rename wirebond design: {error}");
+                return;
+        }
+
+        var repointed = CellUsageScanner.RewriteWBondLinks(
+            workspaceDir, layoutDir, oldStem, newStem, oldCellName, newCellName, out var failed);
+        foreach (var f in failed)
+            Messages.Warning($"Wirebond link rewrite failed: {f}");
+        if (repointed.Count > 0)
+            Messages.Info(
+                $"Repointed {repointed.Count} schematic(s) at '{newStem}{WBondCell.FileExtension}'.");
     }
 
     // Copies a directory tree recursively (all files and sub-directories).

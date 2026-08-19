@@ -4041,3 +4041,45 @@ retired** — harmonicaRF no longer has a coarse-grid tier-B rung worth naming i
 message that survived that pass). `TierAHealthy` still latches `false` and is still the signal any
 future caller should read — only the string is gone, so `StatusMessage` is simply `null` in this
 case now.
+
+## Rename Cell left the layout — and therefore the wires — behind (2026-08-18)
+
+**Reported as:** "Rename Cell from the Project Tree renamed only the `.csch`; the `.clay` was not
+renamed. Should a `.wBond` also be renamed if it's in the layout directory?"
+
+**The layout half is a one-word omission with no defence.** `RenameCellAsync`'s primaries loop read
+`new[] { ViewType.Schematic, ViewType.Symbol }`. Every other piece already handled Layout —
+`CellFolder.ViewExtension` returns `.clay`, `ResolvePrimary` resolves it, `CellPersistence` has
+`PrimaryLayout`. Only the list did not, and `UpdateCcellPrimary`'s own switch had no Layout arm to
+match, so the `.ccell` kept naming the old file **and that is why the drift stayed invisible**: the
+layout still opened, under a name that no longer matched its cell.
+
+**The wBond answer is yes, and it is not cosmetic — it is the reason the layout fix cannot ship
+alone.** `WBondCell.Resolve` attaches wires to artwork by **shared stem and nothing else** (WB40,
+revised 2026-08-17). So renaming `layout/Amp.clay` to `layout/PowerAmp.clay` without its
+`layout/Amp.wBond` does not leave two names disagreeing — it **detaches the wires**. The layout
+reopens with none, and the bonds sit in a file paired with nothing, which `Resolve` then reports as an
+orphan: the first the user hears of it, after the fact. Adding Layout to that loop without the wBond
+rename would have introduced a wire-loss path that did not previously exist.
+
+`WBondCell.RenamePairedWires` is now the single place that pairing is maintained across a rename;
+any future caller that renames a `.clay` owes it that call. It refuses an occupied target stem rather
+than overwriting (that file belongs to a different `.clay`), and touches only the file actually paired
+with the old artwork — a differently-named `.wBond` in the same folder is an assembly house's bond
+list, not this rename's business.
+
+### The link rewrite matches by RESOLUTION, not by name
+
+A placed wBond stores `File` as a path **relative to its own schematic**
+(`WBondPlacement.ResolveLinkedPath`), so the folder rename alone leaves a same-cell link resolving
+perfectly and it is renaming the FILE that breaks it — the two are one operation.
+`CellUsageScanner.RewriteWBondLinks` resolves each candidate and compares it against the file that
+moved, because two cells may each legitimately own a `layout/top.wBond` and a name-only match would
+repoint the wrong one. It substitutes the old cell-folder segment first, which also **repairs a
+cross-cell link (`../../oldName/layout/x.wBond`) that the folder rename had already broken** — a
+pre-existing gap, since `RewriteCellReferences` only ever rewrote `CellRef`, never a wBond link.
+
+**Known limitation, inherited from `RewriteCellReferences` and not made worse here:** the rewrite
+edits other cells' `.csch` files on disk through `JsonNode`, while `RenameCellAsync` force-closes only
+the documents under the renamed cell. A schematic in another cell that links this wBond and happens to
+be open is rewritten underneath its session.

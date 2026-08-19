@@ -22,7 +22,7 @@
                        IsVisible="False"
                        TextWrapping="Wrap"/>
             <CheckBox  x:Name="RenamePrimariesBox"
-                       Content="Rename primary schematic &amp; symbol to match"
+                       Content="Rename primary schematic, symbol, layout &amp; wirebonds to match"
                        IsChecked="True"
                        FontSize="12"/>
         </StackPanel>

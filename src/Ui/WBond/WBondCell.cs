@@ -46,6 +46,9 @@ namespace CircuitRF.Ui.WBond;
 /// </summary>
 public static class WBondCell
 {
+    /// <summary>The extension of a wirebond design file, cased as it is written.</summary>
+    public const string FileExtension = ".wBond";
+
     /// <summary>The wires belonging to one layout, and anything the user needs told about how they were
     /// (or were not) found.</summary>
     /// <param name="Path">The resolved <c>.wBond</c>, or null when this layout has none.</param>
@@ -72,7 +75,7 @@ public static class WBondCell
         string stem = Path.GetFileNameWithoutExtension(absClayPath);
 
         // 1. The attachment: same folder, same stem.
-        string attached = Path.Combine(layoutDir, stem + ".wBond");
+        string attached = Path.Combine(layoutDir, stem + FileExtension);
         if (File.Exists(attached)) return new Resolution(attached, null);
 
         // 2. Legacy: the pre-2026-08-17 cell-root sidecar. Still read, and the move named.
@@ -87,6 +90,47 @@ public static class WBondCell
         if (OrphanNote(layoutDir, stem) is { } orphan) return new Resolution(null, orphan);
 
         return default;
+    }
+
+    /// <summary>What <see cref="RenamePairedWires"/> did.</summary>
+    public enum RenameOutcome
+    {
+        /// <summary>This layout had no wires — the ordinary case, and nothing to say about it.</summary>
+        NothingToRename,
+        /// <summary>The wires moved with the artwork and are still attached.</summary>
+        Renamed,
+        /// <summary>A file already sits at the new stem, so the old wires are now attached to nothing.</summary>
+        Blocked,
+        /// <summary>The move itself failed; <c>Error</c> carries the reason.</summary>
+        Failed,
+    }
+
+    /// <summary>
+    /// Renames the <c>.wBond</c> paired with a <c>.clay</c> that has just been renamed in the same
+    /// folder, keeping the two attached.
+    ///
+    /// <para><b>This is not cosmetic.</b> <see cref="Resolve"/> pairs wires to artwork by shared
+    /// STEM and by nothing else, so renaming a <c>.clay</c> on its own does not leave a mismatched
+    /// pair of names — it DETACHES the wires. The layout reopens with none, and the bonds sit in a
+    /// file that now pairs with nothing (which <see cref="Resolve"/> then reports as an orphan, the
+    /// first the user hears of it). Every caller that renames a <c>.clay</c> owes this call.</para>
+    /// </summary>
+    public static (RenameOutcome Outcome, string? Error) RenamePairedWires(
+        string layoutDir, string oldStem, string newStem)
+    {
+        if (string.Equals(oldStem, newStem, StringComparison.OrdinalIgnoreCase))
+            return (RenameOutcome.NothingToRename, null);
+
+        string source = Path.Combine(layoutDir, oldStem + FileExtension);
+        string target = Path.Combine(layoutDir, newStem + FileExtension);
+
+        if (!File.Exists(source)) return (RenameOutcome.NothingToRename, null);
+        if (File.Exists(target))  return (RenameOutcome.Blocked, null);
+
+        try { File.Move(source, target); }
+        catch (Exception ex) { return (RenameOutcome.Failed, ex.Message); }
+
+        return (RenameOutcome.Renamed, null);
     }
 
     /// <summary>
@@ -107,7 +151,7 @@ public static class WBondCell
         if (Path.GetDirectoryName(layoutDir) is not { } cellDir) return null;
         if (!Directory.Exists(cellDir)) return null;
 
-        string preferred = Path.Combine(cellDir, Path.GetFileName(cellDir) + ".wBond");
+        string preferred = Path.Combine(cellDir, Path.GetFileName(cellDir) + FileExtension);
         if (File.Exists(preferred)) return preferred;
 
         var found = Directory.GetFiles(cellDir, "*.wBond", SearchOption.TopDirectoryOnly);

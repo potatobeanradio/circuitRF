@@ -95,7 +95,7 @@ instead of assumed, and it costs nothing elsewhere: primacy already resolves per
 extension** (§2), so an attachment in a view sub-folder can never be miscounted as a second view file.
 
 **The cost, stated rather than discovered later.** Renaming or copying a `.clay` in Finder detaches its
-attachment. §4.1 already accepts Finder-edits as at-risk, but every existing failure mode there is
+attachment. (Renaming it through **Rename Cell** does not — that path moves the `.wBond` with it, §4.1.) §4.1 already accepts Finder-edits as at-risk, but every existing failure mode there is
 *loud* (a "Not Found" glyph, a System.Warning row); a silently dropped attachment could instead remove
 wires from a simulation the user believes includes them. That is why the orphan **must** be reported —
 the report is not a nicety, it is the price of the placement.
@@ -252,8 +252,14 @@ This is the load-bearing addition: how a placed schematic component resolves to 
 **Editing the cell/library filesystem directly *is* editing the cell/library definition.** If the user
 renames or moves a cell folder in Finder/Explorer and thereby breaks a referencing schematic, that is **their
 responsibility** — the schematic shows "Not Found" until re-pointed. circuitRF does **not** track a
-rename-surviving cell ID (consistent with the `Id`-never-persisted rule). *(Renaming a cell from within the
-tree may, in a future version, offer to fix references; v1 does not — Finder-edits are at-risk by design.)*
+rename-surviving cell ID (consistent with the `Id`-never-persisted rule).
+
+**Renaming a cell from within the TREE is a different thing and does repair itself** (this superseded the
+"a future version may" note that stood here). It rewrites every `CellRef` in the workspace, renames the
+primary `.csch`/`.csym`/`.clay` to match, updates the `.ccell`'s primaries — **and renames the `.wBond`
+attached to that `.clay`, repointing the schematics linked to it.** The wirebond half is not tidiness:
+attachment is by shared stem (§1.2.1), so renaming the artwork alone detaches the wires. Finder-edits
+remain at-risk by design; the tree operation is the one that is not.
 
 ### 4.2 The three missing-symbol states (keep distinct — do NOT collapse into one path)
 
