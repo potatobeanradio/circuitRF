@@ -16,8 +16,15 @@ namespace CircuitRF.WBond.Mom;
 /// list per node.</para>
 ///
 /// <code>
-/// P[m,n] = 1/(4πε₀ · l_m · l_n) · Σ_{p ∈ cell m} Σ_{q ∈ cell n} [ K(p,q) − K(p, Image(q)) ]
+/// P[m,n] = 1/(4πε · l_m · l_n) · Σ_{p ∈ cell m} Σ_{q ∈ cell n} [ K(p,q) − K(p, Image(q)) ]
 /// </code>
+///
+/// <h3>ε carries the overmold, and it is the ONLY thing ε_r changes in this kernel</h3>
+/// <para><c>ε = ε₀ · </c><see cref="WBondDesign.OvermoldEr"/>, read from the mesh's own design. The
+/// kernel is quasi-static and the encapsulant is non-magnetic, so <b>L</b>, <b>D(ω)</b> and the
+/// internal impedance are untouched and this matrix is divided by ε_r — which is exactly what
+/// <see cref="PotentialCoefficients.Fill"/> does on the wire basis, so the <c>Bᵀ P B</c> identity
+/// gate holds in any medium as long as both sides are filled in the same one.</para>
 ///
 /// <h3>The image term is SUBTRACTED — the second sign rule</h3>
 /// <para><see cref="SegmentInductance"/> <b>adds</b> its image term because
@@ -49,8 +56,13 @@ public static class NodePotential
     /// <see cref="SegmentInductance.Fill"/> for why rows and not entries, and why the pace is not
     /// uniform.
     /// </param>
+    /// <param name="relativePermittivity">
+    /// Override for the design's own <see cref="WBondDesign.OvermoldEr"/>. Null takes the mesh's
+    /// design, which is what every production caller does; the parameter exists so a gate can fill the
+    /// same geometry in two media and compare.
+    /// </param>
     public static double[] Fill(WireMomMesh mesh, bool? parallel = null, double? farThresholdFactor = null,
-                                WBondRunControl? run = null)
+                                WBondRunControl? run = null, double? relativePermittivity = null)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
@@ -70,7 +82,15 @@ public static class NodePotential
         var cellIndex = mesh.NodeCellIndex;
         var cellLength = mesh.NodeCellLength;
 
-        double scale = 1.0 / (4.0 * Math.PI * PotentialCoefficients.Epsilon0);
+        // THE MEDIUM. ε = ε₀·ε_r, so the overmold divides every entry of P and multiplies every
+        // capacitance by ε_r. Folded into the one scale factor that was already here — there is no
+        // second place in this fill where a permittivity could be applied or forgotten.
+        double er = relativePermittivity ?? mesh.Design.OvermoldEr;
+        if (!(er >= 1.0) || !double.IsFinite(er))
+            throw new ArgumentOutOfRangeException(nameof(relativePermittivity),
+                $"The relative permittivity is {er}; it must be at least 1.");
+
+        double scale = 1.0 / (4.0 * Math.PI * PotentialCoefficients.Epsilon0 * er);
 
         void Row(int m)
         {

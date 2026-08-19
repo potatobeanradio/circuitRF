@@ -41,8 +41,14 @@ public partial class WBondTouchstoneExportDialog : Window
         StopBox.ValueChanged   += (_, _) => RefreshCost();
         PointsBox.ValueChanged += (_, _) => RefreshCost();
 
+        // Pre-filled from the design, then overridden PER FILE — see the control's own comment in the
+        // .axaml. Set before the handler is attached so opening the dialog is not itself an edit.
+        if (_design is not null) OvermoldBox.Value = (decimal)_design.OvermoldEr;
+        OvermoldBox.ValueChanged += (_, _) => RefreshOvermoldNote();
+
         RefreshPorts();
         RefreshCost();
+        RefreshOvermoldNote();
     }
 
     /// <summary>
@@ -101,6 +107,7 @@ public partial class WBondTouchstoneExportDialog : Window
         ExportButton.IsEnabled = !refused;
 
         RefreshCost();
+        RefreshOvermoldNote();
     }
 
     /// <summary>
@@ -152,6 +159,36 @@ public partial class WBondTouchstoneExportDialog : Window
             $"{ports}-port. A large design can take several seconds.";
     }
 
+    /// <summary>
+    /// Says what the permittivity in the box MEANS here, and — the part that matters — when it is
+    /// about to differ from the design's own.
+    ///
+    /// <para>An export that quietly used a different medium from the one the schematic simulates is
+    /// exactly the kind of thing recovered later from a file's comments, which is too late. It is said
+    /// before the file is written, in the same shape as the basis note above.</para>
+    /// </summary>
+    private void RefreshOvermoldNote()
+    {
+        if (_design is null || OvermoldBox.Value is not { } value) { OvermoldNote.Text = ""; return; }
+
+        double er = (double)value;
+        bool capacitance = SelectedModel == WBondNetworkModel.Distributed
+                        || (_design.IncludeCapacitance && _design.GroundPlane.Enabled);
+
+        // With no capacitance in the file nothing depends on this, and saying so is better than
+        // leaving a control that appears to matter and does not.
+        if (!capacitance)
+        {
+            OvermoldNote.Text = "No capacitance in this file — nothing here depends on it.";
+            return;
+        }
+
+        OvermoldNote.Text = Math.Abs(er - _design.OvermoldEr) < 1e-12
+            ? er <= 1.0 ? "Air — no encapsulant." : "As the design is set."
+            : $"Overrides the design's {_design.OvermoldEr.ToString("0.###", CultureInfo.InvariantCulture)} "
+              + "for this file only. The design is not changed.";
+    }
+
     private void OnCancel(object? sender, RoutedEventArgs e) => Close(null);
 
     private void OnExport(object? sender, RoutedEventArgs e)
@@ -180,7 +217,8 @@ public partial class WBondTouchstoneExportDialog : Window
             MatrixFormat: SelectedFormat(),
             PortBasis:    SelectedBasis,
             Model:        SelectedModel,
-            SegmentsPerWire: SegmentsBox.Value is { } segments ? (int)segments : 24));
+            SegmentsPerWire: SegmentsBox.Value is { } segments ? (int)segments : 24,
+            OvermoldEr:   OvermoldBox.Value is { } er ? (double)er : null));
     }
 
     private MatrixFormat SelectedFormat() =>

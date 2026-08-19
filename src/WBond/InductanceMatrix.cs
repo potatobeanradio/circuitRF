@@ -13,6 +13,7 @@ namespace CircuitRF.WBond;
 public sealed class WireMesh
 {
     private WireMesh(
+        WBondDesign design,
         Filament[] filaments,
         Filament[] images,
         int[] wireStart,
@@ -22,6 +23,7 @@ public sealed class WireMesh
         string[] arrayNames,
         bool hasImages)
     {
+        Design = design;
         Filaments = filaments;
         Images = images;
         WireStart = wireStart;
@@ -31,6 +33,17 @@ public sealed class WireMesh
         ArrayNames = arrayNames;
         HasImages = hasImages;
     }
+
+    /// <summary>
+    /// The design this mesh was flattened from — <b>held live, not copied</b>.
+    ///
+    /// <para>The geometry in here is a snapshot (see <see cref="RefreshWire"/> for what that costs),
+    /// but the design's scalar SETTINGS are not: <see cref="WBondDesign.OvermoldEr"/> is read at fill
+    /// time by <see cref="PotentialCoefficients.Fill"/>, so changing the permittivity and refilling
+    /// needs no rebuild and cannot go stale. That is the same relationship
+    /// <c>Mom.WireMomMesh.Design</c> already has.</para>
+    /// </summary>
+    public WBondDesign Design { get; }
 
     /// <summary>All filaments, grouped by wire.</summary>
     public Filament[] Filaments { get; }
@@ -164,7 +177,7 @@ public sealed class WireMesh
         }
 
         return new WireMesh(
-            filaments, images, wireStart, wireLength,
+            design, filaments, images, wireStart, wireLength,
             [.. wires], [.. arrayOf], arrayNames, hasImages);
     }
 }

@@ -49,7 +49,10 @@
              per frequency point. Distributed publishes on the terminal basis only — an array-pair port
              is a floating pair with nowhere for its shunt to return through — and the Export button is
              disabled rather than the basis being silently switched for the user. -->
-        <Grid ColumnDefinitions="70,*,Auto,90" ColumnSpacing="6" VerticalAlignment="Center" Margin="0,4,0,0">
+        <!-- The last column is the SPINNER's, and it is sized for its TEXT: a NumericUpDown spends
+             most of its width on the spinner buttons and its own padding, so 90 left about one and a
+             half digits visible for a value that goes to 200 (owner, 2026-08-19). -->
+        <Grid ColumnDefinitions="70,*,Auto,110" ColumnSpacing="6" VerticalAlignment="Center" Margin="0,4,0,0">
           <TextBlock Grid.Column="0" Text="Model" VerticalAlignment="Center" FontSize="11"/>
           <ComboBox Grid.Column="1" x:Name="ModelBox" FontSize="11" SelectedIndex="0"
                     HorizontalAlignment="Stretch"
@@ -67,13 +70,58 @@
         <TextBlock x:Name="ModelNote" TextWrapping="Wrap" FontSize="10"
                    Foreground="{DynamicResource CrfWarningBrush}"/>
 
-        <ItemsControl x:Name="PortList">
-          <ItemsControl.ItemTemplate>
+        <!-- The overmold, PER FILE. It is pre-filled from the design and overrides it for this
+             export only — exporting the same wires bare and molded is a normal thing to want, and it
+             must not mean editing the document twice. The written file states which one it was
+             (WBondTouchstoneExport.HeaderComments), because nothing else in it would distinguish the
+             two networks. A stepper and not a text box: this is one file's number, not an expression
+             a sweep turns — that box is on the schematic component. -->
+        <!-- 120, not 90: the value is three characters wide ("3.4", and 10.2 for a high-k fill) and
+             the spinner's own chrome eats most of the column. Label column stays 70 so this row's
+             label lines up with Model above it. -->
+        <Grid ColumnDefinitions="70,120,*" ColumnSpacing="6" VerticalAlignment="Center" Margin="0,4,0,0">
+          <TextBlock Grid.Column="0" Text="εr" VerticalAlignment="Center" FontSize="11"
+                     ToolTip.Tip="The overmold's relative permittivity."/>
+          <NumericUpDown Grid.Column="1" x:Name="OvermoldBox" Minimum="1" Maximum="100"
+                         Increment="0.1" FormatString="0.###" Value="1"
+                         ToolTip.Tip="Relative permittivity of the plastic the wires are molded in. 1 = air."/>
+          <TextBlock Grid.Column="2" x:Name="OvermoldNote" VerticalAlignment="Center" FontSize="10"
+                     TextWrapping="Wrap" Margin="4,0,0,0" Opacity="0.75"/>
+        </Grid>
+
+        <!-- A ListBox rather than an ItemsControl, and that is the whole point: it VIRTUALIZES.
+             The port count is 2 x the array count on the terminal basis, so a 25-array design is a
+             50-row list, and an ItemsControl inside a plain ScrollViewer would realise every row —
+             the ScrollViewer hands it infinite height, so nothing is ever out of view to skip.
+             Only ListBox's own template puts a VirtualizingStackPanel inside its own ScrollViewer.
+
+             MaxHeight is six rows' worth: enough to read a two-array design whole, and short enough
+             that a large one scrolls instead of pushing the Export button off the dialog.
+
+             The item styles below make it read as the flat list it replaces rather than as a picker.
+             Scoped to this ListBox so nothing else in the app inherits them. -->
+        <ListBox x:Name="PortList" MaxHeight="108" BorderThickness="0" Background="Transparent"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="0,1"/>
+              <Setter Property="MinHeight" Value="0"/>
+              <Setter Property="Background" Value="Transparent"/>
+            </Style>
+            <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+              <Setter Property="Background" Value="Transparent"/>
+            </Style>
+            <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+              <Setter Property="Background" Value="Transparent"/>
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
             <DataTemplate x:DataType="x:String">
               <SelectableTextBlock Text="{Binding}" FontSize="11" FontFamily="{DynamicResource IBMPlexSans}"/>
             </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </StackPanel>
     </Border>
 
@@ -122,9 +170,9 @@
     <Grid ColumnDefinitions="150,*" VerticalAlignment="Center">
       <TextBlock Grid.Column="0" Text="Format:" VerticalAlignment="Center" FontSize="12"/>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-        <RadioButton x:Name="RiRadio" GroupName="Format" Content="RI" IsChecked="True" FontSize="11"
+        <RadioButton x:Name="RiRadio" GroupName="Format" Content="RI" FontSize="11"
                      ToolTip.Tip="Real / imaginary"/>
-        <RadioButton x:Name="MaRadio" GroupName="Format" Content="MA" FontSize="11"
+        <RadioButton x:Name="MaRadio" GroupName="Format" Content="MA" IsChecked="True" FontSize="11"
                      ToolTip.Tip="Magnitude / angle in degrees"/>
         <RadioButton x:Name="DbRadio" GroupName="Format" Content="DB" FontSize="11"
                      ToolTip.Tip="dB / angle in degrees"/>

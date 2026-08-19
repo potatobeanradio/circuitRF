@@ -136,6 +136,15 @@ public sealed class PanelReadout
     /// </summary>
     public required bool CapacitanceRequested { get; init; }
 
+    /// <summary>
+    /// The overmold relative permittivity the capacitance was computed in
+    /// (<see cref="WBondDesign.OvermoldEr"/>). 1.0 means air.
+    ///
+    /// <para>Reported even when capacitance is out of the numbers, because the panel's own row for it
+    /// is settable and a control that shows nothing has nothing to set.</para>
+    /// </summary>
+    public required double OvermoldEr { get; init; }
+
     /// <summary>The lowest self-resonance of the shorted-far-end network in GHz, or 0 when there is none.</summary>
     public required double SelfResonanceGHz { get; init; }
 
@@ -252,6 +261,7 @@ public sealed class PanelReadout
             ReadoutFrequencyGHz = design.ReadoutFrequencyGHz,
             CapacitanceIncluded = includeCapacitance,
             CapacitanceRequested = design.IncludeCapacitance,
+            OvermoldEr = design.OvermoldEr,
             SelfResonanceGHz = double.IsFinite(srfHz) ? srfHz * 1e-9 : 0.0,
             AboveSelfResonance = aboveResonance,
             ResonanceWarning = aboveResonance

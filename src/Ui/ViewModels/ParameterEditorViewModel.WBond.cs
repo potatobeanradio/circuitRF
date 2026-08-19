@@ -73,7 +73,7 @@ public partial class ParameterEditorViewModel
     /// </summary>
     internal static bool IsWBondPanelParameter(string name) =>
         name is WBondEmbedding.DesignParameter or WBondPlacement.ArraysParameter
-             or "SymbolPitch" or "RefPin" or "IncludeCapacitance"
+             or "SymbolPitch" or "RefPin" or "IncludeCapacitance" or "er"
              or "Source" or "File" or "Material" or "GroundPlane"
         || name.StartsWith("LoopHeight_", StringComparison.Ordinal)
         || name.StartsWith("Diameter_", StringComparison.Ordinal)
@@ -132,6 +132,23 @@ public partial class ParameterEditorViewModel
     /// nothing.</para>
     /// </summary>
     [ObservableProperty] private bool _wBondIncludeCapacitance = true;
+
+    /// <summary>
+    /// The overmold relative permittivity, <c>er</c> — the plastic an encapsulated package's wires
+    /// are embedded in (wbond.md §3.7). 1 is air.
+    ///
+    /// <para><b>A text box and not a numeric stepper</b>, deliberately, and this is the difference
+    /// between it and the checkbox directly above. <c>er</c> is an ordinary real expression, so
+    /// <c>er = moldEr</c> is typable and a parametric sweep or an optimiser can turn it — which is
+    /// exactly what someone characterising a package against measured data will want. A stepper
+    /// would take that away for the sake of two arrows.</para>
+    ///
+    /// <para>Committed on every edit, like the other wBond controls; a value that is neither a number
+    /// nor a resolvable variable is refused at Run by <c>WBondDesign.Validate</c>, where the message
+    /// can say what the range means.</para>
+    /// </summary>
+    [ObservableProperty] private string _wBondEr = "1";
+
     [ObservableProperty] private string _wBondSummary = "";
 
     /// <summary>Why the design cannot be read, or empty when it can. Shown instead of the summary.</summary>
@@ -158,6 +175,17 @@ public partial class ParameterEditorViewModel
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         ApplyWBondParam("IncludeCapacitance", newValue ? "true" : "false");
+    }
+
+    partial void OnWBondErChanged(string? oldValue, string newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        // Blank is written as "1" rather than left empty. `er` is declared with a default of 1 and is
+        // always emitted, so an empty expression would reach the evaluator as a parse error at Run
+        // instead of meaning "air" — which is what someone who cleared the box meant.
+        string text = string.IsNullOrWhiteSpace(newValue) ? "1" : newValue.Trim();
+        ApplyWBondParam("er", text);
     }
 
     // ── GroundPlane: a boolean, so a picker rather than a text box ─────────────
@@ -536,6 +564,11 @@ public partial class ParameterEditorViewModel
         bool includeCapacitance = string.IsNullOrWhiteSpace(capacitance)
             || capacitance.Equals("true", StringComparison.OrdinalIgnoreCase);
 
+        // Absent means air, which is both the declared default and the value every design had before
+        // overmold existed.
+        string er = _target.Parameters.FirstOrDefault(p => p.Name == "er")?.Expression ?? "";
+        if (string.IsNullOrWhiteSpace(er)) er = "1";
+
         bool readable = TryReadWBondDesign(out var design) && design is not null;
 
         OnPropertyChanged(nameof(CanUpdateWBondLayout));
@@ -544,6 +577,7 @@ public partial class ParameterEditorViewModel
         WBondSymbolPitchIndex = pitchIndex;
         WBondRefPin = refPin;
         WBondIncludeCapacitance = includeCapacitance;
+        WBondEr = er;
 
         // An unreadable payload is a reported, repairable state — the same stance TryDecode itself
         // takes — not an empty panel that reads as "this component has nothing in it".

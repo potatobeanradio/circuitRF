@@ -104,6 +104,32 @@ public partial class WBondInductancePanelView : UserControl
         _ = SetFrequencyAsync(owner, editor);
     }
 
+    /// <summary>
+    /// Double-clicking the overmold row sets the permittivity the capacitance is computed in.
+    ///
+    /// <para>Document-wide like the frequency row above it, not array-scoped: the plastic a package is
+    /// molded in is a property of the package. Unlike the frequency, this one costs a refill of
+    /// <b>P</b> — see <see cref="WBondViewModel.OvermoldEr"/>.</para>
+    /// </summary>
+    private void OnOvermoldDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (Editor is not { } editor) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        e.Handled = true;
+        _ = SetOvermoldAsync(owner, editor);
+    }
+
+    private static async Task SetOvermoldAsync(Window owner, WBondViewModel editor)
+    {
+        double? er = await WBondValuePromptDialog.PromptPermittivityAsync(
+            owner, "Overmold Permittivity",
+            "The relative permittivity of the plastic the wires are molded in.",
+            editor.OvermoldEr);
+
+        if (er is { } value) editor.OvermoldEr = value;
+    }
+
     private static async Task SetFrequencyAsync(Window owner, WBondViewModel editor)
     {
         double? ghz = await WBondValuePromptDialog.PromptFrequencyGHzAsync(

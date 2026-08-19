@@ -192,6 +192,37 @@ public sealed class WBondDesign
     public bool IncludeCapacitance { get; set; } = true;
 
     /// <summary>
+    /// The relative permittivity of the medium the wires are embedded in — the plastic
+    /// <b>overmold</b> of an encapsulated package. Default <c>1.0</c>, which is air and is the
+    /// answer every design gave before this existed.
+    ///
+    /// <h3>What it does, exactly</h3>
+    /// <para>Both wirebond kernels are <b>quasi-static</b>: the inductance comes from Grover's
+    /// filament integrals and the capacitance from a coefficient-of-potential matrix
+    /// <c>P ∝ 1/(4πε)</c>. A non-magnetic encapsulant (μ_r = 1, which every mold compound is) leaves
+    /// <b>L untouched</b> and scales <b>P by 1/ε_r</b> — so every capacitance rises by exactly ε_r,
+    /// the self-resonance falls as 1/√ε_r, and the effective inductance the panel quotes rises with
+    /// it. That is the whole physics change, and it is applied in the two places <b>P</b> is filled:
+    /// <see cref="PotentialCoefficients.Fill"/> for the lumped model and
+    /// <c>Mom.NodePotential.Fill</c> for the distributed one.</para>
+    ///
+    /// <h3>The approximation this makes, stated rather than discovered</h3>
+    /// <para><b>It fills ALL space above the ground plane</b> — one homogeneous medium, not a mold
+    /// cap of finite thickness with air above it. That is what makes it a single number and what makes
+    /// the image method still exact: a layered ε would need a layered Green's function, which is a
+    /// different kernel (<c>src/Engine/Mom</c> has one, for planar structures). A wire loop that sits
+    /// well inside a mold body is described well by this; one whose apex breaks the mold surface is
+    /// bounded by it, not modelled by it, and the number it gives is the pessimistic (high-C) end.</para>
+    ///
+    /// <para>The quasi-static assumption also gets <i>stricter</i> as ε_r rises, because the wavelength
+    /// in the medium shortens by √ε_r. At ε_r = 4 a 1 mm wire is electrically twice as long as it was
+    /// in air. Nothing here refuses on that account — the distributed model exists for exactly the
+    /// regime where it matters — but a reader comparing the two models at high ε_r should expect them
+    /// to part company sooner than they do in air.</para>
+    /// </summary>
+    public double OvermoldEr { get; set; } = 1.0;
+
+    /// <summary>
     /// The frequency, in GHz, the Array Inductance panel quotes its effective inductance at
     /// (wbond.md §6.8). Default 10.
     ///
@@ -243,6 +274,34 @@ public sealed class WBondDesign
     /// <summary>Every wire in the design, in array order then member order.</summary>
     public IEnumerable<Wire> AllWires() => Arrays.SelectMany(a => a.Wires);
 
+    /// <summary>
+    /// This design seen with a different <see cref="OvermoldEr"/> — a <b>shallow</b> view, sharing
+    /// this design's arrays, wires, materials and ground plane by reference.
+    ///
+    /// <para><b>For read-only analysis, and it exists so an export can override the permittivity
+    /// without editing the user's document.</b> The Touchstone export dialog offers ε_r as a per-file
+    /// choice; writing it back onto the live design would silently change what the schematic
+    /// component simulates, and copying the geometry to avoid that would duplicate every wire in a
+    /// 600-wire design for the sake of one double.</para>
+    ///
+    /// <para>Sharing the wires is safe precisely because nothing downstream of a fill mutates them —
+    /// <see cref="WireMesh"/> is a snapshot taken once and the pair loops never touch the model again.
+    /// <b>Do not hand one of these to an editor.</b></para>
+    /// </summary>
+    public WBondDesign WithOvermoldEr(double overmoldEr) => new()
+    {
+        GroundPlane = GroundPlane,
+        Materials = Materials,
+        Arrays = Arrays,
+        OperatingTempC = OperatingTempC,
+        IncludeCapacitance = IncludeCapacitance,
+        ReadoutFrequencyGHz = ReadoutFrequencyGHz,
+        OvermoldEr = overmoldEr,
+        EmbeddedGeometryJson = EmbeddedGeometryJson,
+        ViewStateJson = ViewStateJson,
+        AssemblyRef = AssemblyRef,
+    };
+
     public int WireCount => Arrays.Sum(a => a.Wires.Count);
 
     /// <summary>
@@ -274,6 +333,16 @@ public sealed class WBondDesign
     /// </summary>
     public void Validate()
     {
+        // A permittivity below 1 is not a mold compound; it is a typo, or a value someone entered as
+        // a percentage or a capacitance. Refused HERE rather than clamped, because clamping would make
+        // a design report a capacitance it did not ask for and say nothing about it. Zero and negative
+        // are worse still — P is divided by this, so they would produce an infinite or a
+        // sign-inverted capacitance and the failure would surface as a Cholesky breakdown far away.
+        if (!(OvermoldEr >= 1.0) || !double.IsFinite(OvermoldEr))
+            throw new InvalidOperationException(
+                $"The overmold relative permittivity is {OvermoldEr}. It must be at least 1 " +
+                "(1 = air, no encapsulant; a typical mold compound is 3-4).");
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var array in Arrays)
         {

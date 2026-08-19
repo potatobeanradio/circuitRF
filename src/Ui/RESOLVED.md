@@ -4506,3 +4506,64 @@ cards the switch exists to be compared with, so hiding it moved every self-induc
 flip — mid-comparison. `ShowFrequency` has stopped being a visibility flag and become "is there
 anything to say": the row is unconditional in XAML, dimmed and hit-test-transparent, printing
 `WBondPanelViewModel.FrequencyDisplay` — the frequency, or an em dash.
+
+## The overmold `er` reaches four surfaces, and each is a separate route (2026-08-19)
+
+The physics is in `src/WBond/RESOLVED.md` — one division, applied where **P** is filled. What is worth
+recording here is the plumbing, because *"a setting written on one surface and silently dropped on
+another"* is the failure this family of commands has produced repeatedly (the loop height that a design
+stated and its wires disagreed with, owner 2026-08-17). The permittivity has that exact shape **and
+moves no wire**, so nothing on screen would show it.
+
+**The parameter is `er`, declared `"1"` rather than blank.** Blank is the convention for `Temp` and
+`GroundPlane` — "the design decides" — but `er` sits beside the Include-capacitance checkbox in the
+parameter panel, and a box showing nothing would not say what medium the capacitance beside it was
+computed in. It inherits from an imported design through `WBondPlacement.ApplyDesign`, exactly as
+`IncludeCapacitance` does; that one moment of inheritance is the whole connection between the wBond
+editor's setting and a placed component's.
+
+**It is the ONE wBond parameter matched case-insensitively** (`ComponentModelFactory.TryGetIgnoringCase`).
+`Er`, `ER` and `er` are the same symbol to a reader, and this is the parameter a hand-authored `.cnl` is
+most likely to spell differently. A silently ignored permittivity is a wrong capacitance with nothing
+anywhere saying so.
+
+**It stays an expression, so it stays sweepable.** It is deliberately *not* in
+`Elaborator.ResolveWBondParameters`' name-valued list, and the panel gives it a **TextBox** rather than
+the stepper the export dialog has: `er = moldEr` is typable, and characterising a package against
+measured data is exactly the thing a sweep or an optimiser is for. Clearing the box commits `"1"`, not
+empty — `er` is always emitted, so an empty expression would reach the evaluator as a parse error at
+Run rather than meaning air.
+
+**The Touchstone option is `double?`, and the nullability is load-bearing.** `Options.OvermoldEr = null`
+means "the design's own". Had it defaulted to `1.0`, every Options built elsewhere — the Compare
+view-model, a test, a future caller — would have silently stripped an encapsulated design back to air.
+The override is applied once, at `BuildNetwork`, through `WBondDesign.WithOvermoldEr`, which returns a
+**shallow** view sharing the wires: an export is a read, and writing ε_r back onto the live design would
+mean the schematic quietly simulating whatever the last export dialog was set to. The written file
+states the medium **unconditionally, air included** — "the medium is not stated" and "the medium is air"
+are different claims to someone reading a `.sNp` a year later, and nothing else in the file distinguishes
+two exports of one design at two permittivities.
+
+**`MergeInto`'s "nothing changed" shortcut had to learn about it.** Update Layout from Schematic decides
+whether to write by comparing wire geometry (`CountChanged`), and ε_r moves no wire — so a changed
+permittivity was applied to the in-memory design and then never written. Counted explicitly
+(`remolded`). The reverse direction needed nothing: Update Schematic from Layout goes through
+`ApplyDesign`, so both halves cannot drift apart.
+
+### The export dialog's own follow-ups (owner, same day)
+
+Three of these are one measurement each and are recorded because the reasoning is not visible from the
+markup. **A `NumericUpDown`'s column width is not its text width** — the spinner buttons and the
+control's own padding take most of it, so the 90 px columns left the segment count showing about a
+character and a half and the permittivity about one. Sized for the value instead: 110 for a count that
+reaches 200, 120 for `3.4`. **The number format now defaults to MA**, not RI. And the label there is
+`εr` alone rather than a word, because it sits in a column of one-word labels and the symbol is what
+the file's own header calls it.
+
+**The port list is a `ListBox`, and it has to be.** Port count is 2 × the array count on the terminal
+basis, so a 25-array design is 50 rows. An `ItemsControl` inside a plain `ScrollViewer` would realise
+every one of them — the ScrollViewer hands it infinite height, so no row is ever out of view to skip.
+Only `ListBox`'s own template puts a `VirtualizingStackPanel` inside its own `ScrollViewer`. Capped at
+six rows: enough to read a two-array design whole, short enough that a large one scrolls instead of
+pushing the Export button off the dialog. The selection and hover visuals are styled out, scoped to
+that one control, so it still reads as the flat list it replaced.

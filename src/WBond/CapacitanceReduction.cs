@@ -320,6 +320,13 @@ public sealed class CapacitanceReduction
     /// integral is taken with the same 4-point Gauss rule the near kernel uses. <b>Used for the SHAPE
     /// of the end split only</b> — the magnitude comes from the multi-conductor solve — so the
     /// height clamp below cannot bias a reported capacitance, only the position of the split.</para>
+    ///
+    /// <para><b>ε₀ here is not a missed overmold.</b> <see cref="WBondDesign.OvermoldEr"/> is a
+    /// uniform factor on every segment's <c>C_i</c>, and <see cref="EndSplit"/> rescales the whole
+    /// per-wire set to that wire's row sum of <c>C_wire</c> — which already carries ε_r, from
+    /// <see cref="PotentialCoefficients.Fill"/>. A uniform factor on a shape that is then normalised
+    /// is exactly nothing, so applying it here would be a second, cancelling copy of the same
+    /// physics.</para>
     /// </summary>
     private static double LocalSegmentCapacitance(in Filament f)
     {

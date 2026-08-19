@@ -1370,6 +1370,18 @@ public static class ComponentModelFactory
         if (parameters.TryGetValue("GroundPlane", out var plane))
             design.GroundPlane.Enabled = IsTrue(plane);
 
+        // The overmold permittivity (wbond.md §3.7). Applied to the DECODED design, exactly as Temp
+        // and GroundPlane are: the payload carries the document's own value and the instance parameter
+        // overrides it, so one .wBond placed twice can be simulated bare and encapsulated without
+        // either copy changing the other.
+        //
+        // Looked up case-insensitively, and it is the only wBond parameter that is. `er` is the one
+        // whose spelling a hand-authored .cnl is likely to get wrong — `Er`, `ER`, `eR` are all the
+        // same symbol to a reader, and the schematic's own declared name is the lower-case one. A
+        // silently ignored permittivity is a wrong capacitance with nothing on screen saying so.
+        if (TryGetIgnoringCase(parameters, "er", out var er) && er.Kind == ValueKind.Real)
+            design.OvermoldEr = er.AsReal();
+
         var notes = new List<string>();
         ApplyControllingParameters(design, parameters, notes);
         ReportArrayDrift(design, parameters, notes);
@@ -1389,6 +1401,26 @@ public static class ComponentModelFactory
             : null;
 
         return new WBondModel(design, path, refPin, notes, includeCapacitance);
+    }
+
+    /// <summary>
+    /// A parameter lookup that tries the exact spelling first and then falls back to a
+    /// case-insensitive scan. Used for <c>er</c> only — see its call site for why that one.
+    /// </summary>
+    private static bool TryGetIgnoringCase(IReadOnlyDictionary<string, Value> parameters,
+                                           string name, out Value value)
+    {
+        if (parameters.TryGetValue(name, out value!)) return true;
+
+        foreach (var (key, v) in parameters)
+        {
+            if (!key.Equals(name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = v;
+            return true;
+        }
+
+        value = default!;
+        return false;
     }
 
     /// <summary>

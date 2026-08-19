@@ -27,7 +27,7 @@ public partial class WBondValuePromptDialog : Window
     private WBondUnit _unit = WBondUnit.Mil;
     private Mode _mode = Mode.Length;
 
-    private enum Mode { Length, Angle, Choice, FrequencyGHz }
+    private enum Mode { Length, Angle, Choice, FrequencyGHz, Permittivity }
 
     // Parameterless ctor satisfies the Avalonia XAML resource loader.
     public WBondValuePromptDialog() => InitializeComponent();
@@ -125,6 +125,38 @@ public partial class WBondValuePromptDialog : Window
             : null;
     }
 
+    /// <summary>
+    /// Prompts for a relative permittivity. Returns ε_r, or null on cancel.
+    ///
+    /// <para><b>Dimensionless and at least 1.</b> Below 1 is not a mold compound — it is a typo, or a
+    /// number entered as something else — and <c>WBondDesign.Validate</c> refuses it, so OK is
+    /// disabled here rather than letting the design throw after the dialog has closed.</para>
+    /// </summary>
+    public static async Task<double?> PromptPermittivityAsync(Window owner, string title, string prompt,
+                                                              double currentEr)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+
+        var dlg = new WBondValuePromptDialog { Title = title, _mode = Mode.Permittivity };
+
+        dlg.PromptText.Text = prompt;
+        dlg.SubText.Text = "Relative permittivity, dimensionless. 1 = air (no encapsulant); " +
+                           "a typical mold compound is 3-4.";
+        dlg.ValueBox.Text = Format(currentEr);
+        dlg.ValueBox.PlaceholderText = "e.g. 1, 3.4, 3.9";
+
+        dlg.Opened += (_, _) => { dlg.ValueBox.Focus(); dlg.ValueBox.SelectAll(); };
+        dlg.Validate();
+
+        string? text = await dlg.ShowDialog<string?>(owner);
+        if (text is null) return null;
+
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double er)
+               && double.IsFinite(er) && er >= 1.0
+            ? er
+            : null;
+    }
+
     // ---------------------------------------------------------------- choice
 
     /// <summary>
@@ -184,6 +216,14 @@ public partial class WBondValuePromptDialog : Window
             ok = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double f)
                  && double.IsFinite(f) && f > 0.0;
             reason = string.IsNullOrWhiteSpace(text) ? "Enter a frequency." : "Not a positive number of GHz.";
+        }
+        else if (_mode == Mode.Permittivity)
+        {
+            ok = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double er)
+                 && double.IsFinite(er) && er >= 1.0;
+            reason = string.IsNullOrWhiteSpace(text)
+                ? "Enter a permittivity."
+                : "Not a number of 1 or more. 1 is air; a mold compound is typically 3-4.";
         }
         else
         {

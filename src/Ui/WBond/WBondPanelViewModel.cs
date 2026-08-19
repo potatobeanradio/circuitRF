@@ -214,6 +214,22 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     [ObservableProperty] private bool _canToggleCapacitance;
 
     /// <summary>
+    /// The overmold permittivity, formatted for the row beside the capacitance switch.
+    ///
+    /// <para><b>"air" rather than "1" at the default</b>, and that is the whole reason this row is
+    /// worth its space: a reader who has never heard of the setting learns from one word that these
+    /// wires are modelled bare, and a reader who set 3.8 sees the number they set. A bare "1" says
+    /// neither.</para>
+    ///
+    /// <para>Settable by double-click, like the frequency row directly below it, and through the same
+    /// design-wide route — ε_r is a property of the package, not of one array.</para>
+    /// </summary>
+    [ObservableProperty] private string _overmoldDisplay = "air";
+
+    /// <summary>The raw value the prompt pre-fills, and what <see cref="OvermoldDisplay"/> formats.</summary>
+    public double OvermoldEr { get; private set; } = 1.0;
+
+    /// <summary>
     /// Whether the frequency row has anything to SAY. <b>False when capacitance is not in the
     /// numbers</b>, because the effective inductance is then <c>L_arr</c> at every frequency and the
     /// stated frequency would provably change nothing.
@@ -292,6 +308,9 @@ public sealed partial class WBondPanelViewModel : ObservableObject
         _updating = true;
         IncludeCapacitance = readout.CapacitanceRequested;
         _updating = false;
+
+        OvermoldEr = readout.OvermoldEr;
+        OvermoldDisplay = FormatOvermold(readout.OvermoldEr);
 
         CapacitanceUnavailable = readout.CapacitanceRequested && !readout.CapacitanceIncluded
             ? "Capacitance is off because the ground plane is disabled — the plane at z = 0 is what " +
@@ -422,6 +441,19 @@ public sealed partial class WBondPanelViewModel : ObservableObject
     /// </summary>
     public static string FormatPicoHenries(double picoHenries) =>
         picoHenries.ToString("F1", CultureInfo.InvariantCulture) + " pH";
+
+    /// <summary>
+    /// The permittivity row's text. <b>1 is written as "air"</b> — see <see cref="OvermoldDisplay"/>
+    /// for why a bare number is the wrong thing to print at the default.
+    /// </summary>
+    public static string FormatOvermold(double er) =>
+        er <= 1.0 ? "air" : er.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>The tooltip on the overmold row.</summary>
+    public static string OvermoldRowTip =>
+        "The plastic the wires are molded in. Double-click to set.\n" +
+        "1 = air (no encapsulant); a typical mold compound is 3-4. It scales every capacitance by " +
+        "this factor and leaves the inductance alone, so the self-resonance falls as 1/sqrt(er).";
 
     /// <summary>Formats the readout frequency. GHz always — see <see cref="Frequency"/>.</summary>
     public static string FormatFrequency(double gigahertz) =>

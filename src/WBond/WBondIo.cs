@@ -72,6 +72,7 @@ public static class WBondIo
         AssemblyRef = design.AssemblyRef,
         GroundPlaneEnabled = design.GroundPlane.Enabled,
         IncludeCapacitance = design.IncludeCapacitance,
+        OvermoldEr = design.OvermoldEr,
         ReadoutFrequencyGHz = design.ReadoutFrequencyGHz,
         OperatingTempC = design.OperatingTempC,
         Materials = [.. design.Materials.Select(m => new MaterialDto
@@ -105,6 +106,10 @@ public static class WBondIo
             // version bump — and what makes a .wBond written before capacitance existed load with
             // capacitance ON and the panel quoting 10 GHz, rather than throwing (gate C10).
             IncludeCapacitance = doc.IncludeCapacitance ?? true,
+            // Absent means 1.0 — air. That is the value every .wBond written before overmold
+            // existed implicitly had, so an old file loads with its capacitance unchanged to the last
+            // bit rather than acquiring a dielectric it never asked for.
+            OvermoldEr = doc.OvermoldEr ?? 1.0,
             ReadoutFrequencyGHz = doc.ReadoutFrequencyGHz ?? 10.0,
             AssemblyRef = doc.AssemblyRef,
             EmbeddedGeometryJson = doc.EmbeddedGeometry,
@@ -154,6 +159,9 @@ public static class WBondIo
 
         /// <summary>See <see cref="WBondDesign.IncludeCapacitance"/>. Additive — no version bump.</summary>
         public bool? IncludeCapacitance { get; set; }
+
+        /// <summary>See <see cref="WBondDesign.OvermoldEr"/>. Additive — no version bump.</summary>
+        public double? OvermoldEr { get; set; }
 
         /// <summary>See <see cref="WBondDesign.ReadoutFrequencyGHz"/>. Additive — no version bump.</summary>
         public double? ReadoutFrequencyGHz { get; set; }

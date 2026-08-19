@@ -320,6 +320,22 @@
                               FontSize="11"
                               ToolTip.Tip="Stamps the wires' capacitance to the reference plane, and between arrays, alongside the inductance. On by default — turning it off reproduces exactly the answer this component gave before capacitance was modelled."/>
 
+                    <!-- The plastic overmold, directly under the switch that decides whether any
+                         capacitance is computed at all — the two only mean anything together. A TEXT
+                         box and not a stepper: `er` is an ordinary real expression, so `er = moldEr`
+                         is typable and a sweep or an optimiser can turn it, which is how a package is
+                         characterised against measured data. See WBondEr. -->
+                    <Grid ColumnDefinitions="80,*">
+                        <TextBlock Grid.Column="0" Text="Overmold εr"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="Relative permittivity of the plastic the wires are molded in. 1 = air (no encapsulant); a typical mold compound is 3–4. Scales every capacitance by this factor and leaves the inductance alone."/>
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding WBondEr}"
+                                 FontSize="11" Padding="4,3"
+                                 PlaceholderText="1"
+                                 ToolTip.Tip="A number, or an expression such as a VAR name — so it can be swept or optimised."/>
+                    </Grid>
+
                     <!-- ── WB45: where the wires come from — LAST, as the panel's advanced tail
                          (owner, 2026-08-17: "an advanced feature that only wBond experts would use").
                          Carried (still the portable one — the wires travel inside the schematic, no

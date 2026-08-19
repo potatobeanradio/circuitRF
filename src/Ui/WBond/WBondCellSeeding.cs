@@ -196,6 +196,7 @@ public static class WBondCellSeeding
         try
         {
             messages.AddRange(ApplyControllingParameters(comp, design));
+            messages.AddRange(ApplyOvermold(comp, design));
         }
         catch (InvalidOperationException ex)
         {
@@ -291,6 +292,51 @@ public static class WBondCellSeeding
                 "at every Run.");
 
         return messages;
+    }
+
+    /// <summary>
+    /// Carries the instance's <c>er</c> parameter — the plastic overmold — onto the design about to
+    /// be written (wbond.md §3.7).
+    ///
+    /// <para><b>The same direction and the same rule as the controlling parameters above</b>: Update
+    /// Layout from Schematic writes what the schematic asks for, so the component's own permittivity
+    /// wins over whatever the layout's <c>.wBond</c> last recorded. Without this, setting ε_r on the
+    /// schematic and then seeding the layout leaves two documents disagreeing about the medium, with
+    /// the panel in the layout editor quoting one and the netlist the other.</para>
+    ///
+    /// <para><b>An EXPRESSION is left alone and named</b>, exactly as a <c>VAR</c>-valued loop height
+    /// is: <c>er = moldEr</c> has no single value to write into a file, and it still applies at every
+    /// Run. A value below 1 is refused rather than clamped, for the reason
+    /// <c>WBondDesign.Validate</c> gives.</para>
+    /// </summary>
+    private static IReadOnlyList<string> ApplyOvermold(EditableComponent comp, WBondDesign design)
+    {
+        string? text = comp.Parameters.FirstOrDefault(p => p.Name == "er")?.Expression?.Trim();
+        if (string.IsNullOrWhiteSpace(text)) return [];
+
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double er)
+            || !double.IsFinite(er))
+            return [
+                $"wBond '{comp.InstanceName}': er is an expression, not a number, so it has no single " +
+                "value to write into the wirebond file. The wires were written with the file's own " +
+                "permittivity; the parameter still applies at every Run."
+            ];
+
+        if (er < 1.0)
+            throw new InvalidOperationException(
+                $"er is {text}. The overmold relative permittivity must be at least 1 " +
+                "(1 = air, no encapsulant).");
+
+        if (design.OvermoldEr == er) return [];
+
+        double was = design.OvermoldEr;
+        design.OvermoldEr = er;
+
+        return [
+            $"wBond '{comp.InstanceName}': the overmold permittivity was set to " +
+            $"{er.ToString("0.###", CultureInfo.InvariantCulture)} from the schematic " +
+            $"(was {was.ToString("0.###", CultureInfo.InvariantCulture)})."
+        ];
     }
 
     /// <summary>
@@ -437,10 +483,12 @@ public static class WBondCellSeeding
         // Applied AFTER the merge, so one pass covers both the arrays that were already there and the
         // ones just added.
         var before = WireGeometry(target);
+        double erBefore = target.OvermoldEr;
 
         try
         {
             messages.AddRange(ApplyControllingParameters(comp, target));
+            messages.AddRange(ApplyOvermold(comp, target));
         }
         catch (InvalidOperationException ex)
         {
@@ -450,7 +498,12 @@ public static class WBondCellSeeding
 
         int reshaped = CountChanged(before, WireGeometry(target));
 
-        if (added.Count == 0 && !reordered && reshaped == 0)
+        // The permittivity moves NO wire, so it is not in `reshaped` and has to be counted here or the
+        // "nothing changed" shortcut below would drop it on the floor — the design would be updated in
+        // memory and never written, which is the silent half of the failure.
+        bool remolded = target.OvermoldEr != erBefore;
+
+        if (added.Count == 0 && !reordered && reshaped == 0 && !remolded)
         {
             // Agreed, kept, and nothing worth saying about it. "The wires are already in the layout"
             // is not news to someone who just ran this on a cell they have been editing (owner,

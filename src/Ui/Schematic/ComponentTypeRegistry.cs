@@ -722,6 +722,19 @@ public static class ComponentTypeRegistry
                     // show; WBondPlacement.ApplyDesign overwrites it from an imported design's own
                     // flag, so the wBond editor's toggle is still what a placed component inherits.
                     new("IncludeCapacitance", "true", "", false, UnitDimension.None),
+                    // `er` — the plastic overmold's relative permittivity (wbond.md §3.7). Declared
+                    // "1" (air) rather than blank for the same reason IncludeCapacitance is declared
+                    // "true": the parameter panel puts it beside that checkbox and a box showing
+                    // nothing would not say what medium the capacitance was computed in.
+                    //
+                    // "1" is also the value every design had before this existed, so declaring it
+                    // changes no existing answer. WBondPlacement.ApplyDesign overwrites it from an
+                    // imported design's own OvermoldEr, exactly as it does IncludeCapacitance, so the
+                    // wBond editor's setting is what a placed component inherits.
+                    //
+                    // NOT in the name-valued list of Elaborator.ResolveWBondParameters: it is an
+                    // ordinary real expression, which is what makes `er` sweepable and optimisable.
+                    new("er",          "1", "", false, UnitDimension.None),
                     new("Temp",        "", "", false, UnitDimension.None),
                     new("GroundPlane", "", "", false, UnitDimension.None),
                     new("LoopHeight",  "", "mil", false, UnitDimension.Length),

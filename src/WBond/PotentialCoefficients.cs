@@ -18,6 +18,14 @@ namespace CircuitRF.WBond;
 /// K(p, q) = ∫∫ ds ds′ / |r(s) − r(s′)|
 /// </code>
 ///
+/// <h3>ε is ε₀·ε_r, and ε_r is the overmold</h3>
+/// <para><c>ε = ε₀ · </c><see cref="WBondDesign.OvermoldEr"/>, taken from the mesh's own design at
+/// <see cref="Fill"/> time. A non-magnetic encapsulant leaves the inductance alone and divides this
+/// whole matrix by ε_r, so every capacitance rises by exactly that factor. It is applied ONCE, in
+/// <see cref="Fill"/>, rather than inside <see cref="Block"/> or <see cref="Kernel"/>: the kernel is
+/// geometry and the permittivity is the medium, and keeping them apart is what lets the near/far
+/// gates and the <c>Bᵀ P B</c> identity gate compare kernels without a material in the way.</para>
+///
 /// <h3>The image sign FLIPS, and this is the second sign rule</h3>
 /// <para><see cref="InductanceMatrix.Block"/> <b>adds</b> its image term, because
 /// <see cref="Filament.Image"/> bakes the current reversal into the returned direction vector. A
@@ -79,6 +87,9 @@ public sealed class PotentialCoefficients
 
     /// <summary>
     /// One wire-pair block of <b>P</b>, direct minus image, normalised by both wire lengths.
+    ///
+    /// <para><b>In vacuum</b> — this is the geometric kernel. The medium's ε_r is divided out by
+    /// <see cref="Fill"/>, which is the only place it is applied.</para>
     /// </summary>
     /// <param name="farThresholdFactor">
     /// Override for <see cref="FarThresholdFactor"/>. Exists for gate C3's sweep and for nothing else;
@@ -138,8 +149,14 @@ public sealed class PotentialCoefficients
     /// Assembles the full matrix. Only the upper triangle is computed; <b>P</b> is symmetric because
     /// the kernel is.
     /// </summary>
+    /// <param name="relativePermittivity">
+    /// Override for the design's own <see cref="WBondDesign.OvermoldEr"/> — the medium the wires sit
+    /// in. Null takes the mesh's design, which is the only thing any production caller should do; the
+    /// parameter exists so a gate can fill the same geometry in two media and compare.
+    /// </param>
     public static PotentialCoefficients Fill(WireMesh mesh, bool parallel = false,
-                                             double farThresholdFactor = FarThresholdFactor)
+                                             double farThresholdFactor = FarThresholdFactor,
+                                             double? relativePermittivity = null)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
@@ -147,13 +164,21 @@ public sealed class PotentialCoefficients
         var lengths = WireLengths(mesh);
         var p = new double[n * n];
 
+        // THE MEDIUM, applied once. P is inversely proportional to ε, so an overmold of ε_r divides
+        // every entry by ε_r and multiplies every capacitance by it. Refused below 1 by
+        // WBondDesign.Validate, which WireMesh.Build has already run — this reads a checked value.
+        double er = relativePermittivity ?? mesh.Design.OvermoldEr;
+        if (!(er >= 1.0) || !double.IsFinite(er))
+            throw new ArgumentOutOfRangeException(nameof(relativePermittivity),
+                $"The relative permittivity is {er}; it must be at least 1.");
+
         if (parallel)
         {
             Parallel.For(0, n, wi =>
             {
                 for (int wj = wi; wj < n; wj++)
                 {
-                    double v = Block(mesh, lengths, wi, wj, farThresholdFactor);
+                    double v = Block(mesh, lengths, wi, wj, farThresholdFactor) / er;
                     p[wi * n + wj] = v;
                     p[wj * n + wi] = v;
                 }
@@ -165,7 +190,7 @@ public sealed class PotentialCoefficients
             {
                 for (int wj = wi; wj < n; wj++)
                 {
-                    double v = Block(mesh, lengths, wi, wj, farThresholdFactor);
+                    double v = Block(mesh, lengths, wi, wj, farThresholdFactor) / er;
                     p[wi * n + wj] = v;
                     p[wj * n + wi] = v;
                 }

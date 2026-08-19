@@ -225,6 +225,13 @@ public static class WBondPlacement
         // inheritance is the whole connection between them. A document placed twice can then be given
         // two different settings without either changing the other.
         SetParameter(comp, "IncludeCapacitance", design.IncludeCapacitance ? "true" : "false");
+
+        // The overmold permittivity inherits by the same route and for the same reason. Written with
+        // the invariant culture: this is an expression the elaborator parses, so a comma decimal
+        // separator from a European locale would arrive as a parse error at Run rather than as a
+        // number here.
+        SetParameter(comp, "er",
+                     design.OvermoldEr.ToString("0.######", CultureInfo.InvariantCulture));
     }
 
     private static void SetParameter(EditableComponent comp, string name, string value)

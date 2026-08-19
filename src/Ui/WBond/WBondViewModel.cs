@@ -147,6 +147,32 @@ public sealed partial class WBondViewModel : ObservableObject
     }
 
     /// <summary>
+    /// The overmold relative permittivity the capacitance is computed in
+    /// (<see cref="WBondDesign.OvermoldEr"/>). 1 is air.
+    ///
+    /// <para><b>This one DOES cost a refill</b>, unlike <see cref="ReadoutFrequencyGHz"/> beside it:
+    /// ε_r scales <b>P</b>, so the capacitance reduction has to be rebuilt. It is the same ~0.06–0.08 ×
+    /// the inductance fill that <see cref="IncludeCapacitance"/> pays, and it is paid on a typed
+    /// setting rather than per drag frame, so no ladder gates it.</para>
+    ///
+    /// <para>Like <see cref="IncludeCapacitance"/> this is the EDITOR'S setting, written onto the
+    /// design — which is what a newly-placed component inherits as its <c>er</c> parameter default.
+    /// Values below 1 are ignored rather than written: the design would then refuse to validate, and
+    /// the panel's own prompt already declines them.</para>
+    /// </summary>
+    public double OvermoldEr
+    {
+        get => _design.OvermoldEr;
+        set
+        {
+            if (!(value >= 1.0) || !double.IsFinite(value) || _design.OvermoldEr == value) return;
+            _design.OvermoldEr = value;
+            OnPropertyChanged();
+            Republish();
+        }
+    }
+
+    /// <summary>
     /// The frequency, in GHz, the panel quotes its effective inductance at.
     ///
     /// <para><b>A readout setting, never a simulation input</b> — see

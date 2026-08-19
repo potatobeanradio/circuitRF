@@ -72,6 +72,23 @@
                               MinHeight="0" Padding="6,0,0,0" Margin="0,2,0,0"
                               ToolTip.Tip="Include the wires' capacitance to the reference plane, and between arrays, in the inductance reported below. Off reports the frequency-independent partial inductance instead."/>
 
+                    <!-- The overmold, directly under the switch that decides whether any capacitance
+                         is computed at all: the two only mean anything together, and this is the one
+                         that says what MEDIUM the number was computed in. Same settable-row shape as
+                         Frequency below, and design-wide for the same reason — a package's plastic is
+                         not a property of one array.
+
+                         Shown whenever the toggle is, rather than only when capacitance is actually in
+                         the numbers: it is settable, and a control that disappears cannot be set. It
+                         prints "air" at the default (WBondPanelViewModel.OvermoldDisplay). -->
+                    <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0"
+                          IsVisible="{Binding CanToggleCapacitance}">
+                        <TextBlock Grid.Column="0" Classes="detailLabel" Text="Overmold εr"/>
+                        <TextBlock Grid.Column="1" Classes="detailValue settable" Text="{Binding OvermoldDisplay}"
+                                   DoubleTapped="OnOvermoldDoubleTapped"
+                                   ToolTip.Tip="{x:Static wb:WBondPanelViewModel.OvermoldRowTip}"/>
+                    </Grid>
+
                     <SelectableTextBlock Text="{Binding CapacitanceUnavailable}" FontSize="11" TextWrapping="Wrap"
                                          Foreground="{DynamicResource CrfWarningBrush}"
                                          IsVisible="{Binding CapacitanceUnavailable, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>

@@ -105,6 +105,14 @@ public static class WBondTouchstoneExport
     /// The user's choices. <b>The frequency grid is the user's</b>, deliberately: a bond array is
     /// broadband and has no natural band, so inventing one from the design would be inventing a
     /// claim the design does not make.
+    ///
+    /// <para><c>OvermoldEr</c> is the one option that overrides something the DESIGN already says, and
+    /// it is <b>nullable for that reason</b>: null means "whatever the design is set to", so an
+    /// Options built anywhere else — the Compare view-model, a test — cannot silently strip an
+    /// encapsulated design back to air by not mentioning it. A value overrides it <i>for this file
+    /// only</i>, through <see cref="WBondDesign.WithOvermoldEr"/>, and never writes back to the
+    /// document. Exporting the same wires bare and molded is a normal thing to want, and doing it
+    /// should not mean editing the design twice.</para>
     /// </summary>
     public sealed record Options(
         double       Z0Ohms       = 50.0,
@@ -117,7 +125,26 @@ public static class WBondTouchstoneExport
         MatrixFormat MatrixFormat = MatrixFormat.RI,
         WBondPortBasis PortBasis  = WBondPortBasis.Terminals,
         WBondNetworkModel Model   = WBondNetworkModel.Lumped,
-        int SegmentsPerWire       = 24);
+        int SegmentsPerWire       = 24,
+        double? OvermoldEr        = null);
+
+    /// <summary>
+    /// The design an export actually runs on: <paramref name="design"/> itself when the options ask
+    /// for no permittivity override, and a shallow ε_r view of it when they do.
+    ///
+    /// <para><b>Never the caller's own object when it differs</b> — see
+    /// <see cref="WBondDesign.WithOvermoldEr"/>. An export is a read, and a read must not change what
+    /// the schematic simulates.</para>
+    /// </summary>
+    public static WBondDesign DesignFor(WBondDesign design, Options options)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+        ArgumentNullException.ThrowIfNull(options);
+
+        return options.OvermoldEr is { } er && er != design.OvermoldEr
+            ? design.WithOvermoldEr(er)
+            : design;
+    }
 
     /// <summary>The frequency grid, exactly as asked for. Linear or logarithmic; one point is legal.</summary>
     public static double[] BuildFrequencies(double startHz, double stopHz, int points, bool logarithmic)
@@ -220,6 +247,22 @@ public static class WBondTouchstoneExport
         if (options.Model == WBondNetworkModel.Distributed && !design.IncludeCapacitance)
             lines.Add("Capacitance is intrinsic to the distributed model and is included. The design's "
                       + "'Include capacitance' setting applies to the lumped model only.");
+
+        // WHICH MEDIUM. Two files of the same wires at two permittivities are two different networks,
+        // and nothing else in the file distinguishes them — the geometry, the port map and the model
+        // line are identical. Written UNCONDITIONALLY, air included: "the medium is not stated" and
+        // "the medium is air" are not the same claim to someone reading this file a year from now.
+        double er = options.OvermoldEr ?? design.OvermoldEr;
+        lines.Add(capacitance
+            ? er > 1.0
+                ? "Medium: plastic overmold, relative permittivity er = " +
+                  er.ToString("0.####", CultureInfo.InvariantCulture) +
+                  ", filling all space above the reference plane. Capacitances scale with it; " +
+                  "inductances do not."
+                : "Medium: air (er = 1) — no overmold."
+            : "Medium: er = " + er.ToString("0.####", CultureInfo.InvariantCulture) +
+              ", which this file does not depend on: with no capacitance in it, nothing here is a " +
+              "function of the permittivity.");
 
         // The file outlives the session, so the one thing an array-pair file cannot contain is stated
         // IN it. See the class note: a floating pair has no terminal for a shunt to the plane.
@@ -486,6 +529,11 @@ public static class WBondTouchstoneExport
 
         RefuseIfModelAndBasisDisagree(options);
 
+        // The permittivity override, applied HERE and nowhere deeper. Everything below reads the medium
+        // off the design it is handed — the lumped path through WireMesh, the distributed one through
+        // WireMomMesh — so overriding it once at the door is the whole mechanism.
+        design = DesignFor(design, options);
+
         var z0 = new Complex(options.Z0Ohms, 0.0);
         Mat<Complex>[] s;
 
@@ -526,7 +574,12 @@ public static class WBondTouchstoneExport
         ArgumentNullException.ThrowIfNull(baseFilePathNoSuffix);
 
         var freqs = BuildFrequencies(options.StartHz, options.StopHz, options.Points, options.Logarithmic);
+
+        // BuildNetwork applies the override itself; this is the same call, so the header below and the
+        // numbers above it describe one medium. (DesignFor is idempotent — the second call is a
+        // reference comparison that finds the value already equal.)
         var dataSet = DataSetBuilder.FromSnp(BuildNetwork(design, freqs, options, run));
+        design = DesignFor(design, options);
 
         run?.BeginStage("writing the Touchstone file");
 
