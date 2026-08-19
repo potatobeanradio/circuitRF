@@ -104,6 +104,22 @@ public partial class MessagesView : UserControl
         CopyToClipboard(text);
     }
 
+    /// <summary>
+    /// Right-click ▸ Cancel on a live row's progress bar — the stop that every long operation has,
+    /// including the ones with no window of their own to put a button on.
+    ///
+    /// <para>The MenuItem's DataContext is the row's <see cref="MessageEntry"/>, exactly as
+    /// <see cref="OnCopyMessageClick"/> relies on. Two rows of one run hold the SAME
+    /// <see cref="RunCancellation"/>, so cancelling from either stops the whole computation — and
+    /// <see cref="RunCancellation.Cancel"/> is idempotent, so cancelling from both does not ask
+    /// twice.</para>
+    /// </summary>
+    private void OnCancelRunClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is MessageEntry { Cancellation: { } cancellation })
+            cancellation.Cancel();
+    }
+
     private void OnCopyAllMessagesClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MessagesTool tool)

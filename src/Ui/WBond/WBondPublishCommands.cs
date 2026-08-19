@@ -119,6 +119,21 @@ internal static class WBondPublishCommands
 
         try
         {
+            // A REAL token source, where this used to pass CancellationToken.None (owner, 2026-08-19:
+            // "some operations cannot be cancelled at all from the UI — MoM 3D wire kernel
+            // calculations during touchstone export for example"). The export has no window of its own
+            // once the options dialog closes, so its ONLY stop is the right-click ▸ Cancel on either
+            // of the two live rows this posts — which is what the handle below binds. The kernel
+            // already checked a token at every work boundary; nothing was ever passing it one that
+            // could be cancelled.
+            using var cts = new CancellationTokenSource();
+            var cancellation = new RunCancellation("the Touchstone export", () =>
+            {
+                messages?.Info("Stopping the Touchstone export. It stops at the next work boundary " +
+                               "and writes no file.");
+                cts.Cancel();
+            });
+
             var outcome = await WBondBackgroundRun.ExecuteAsync(
                 messages,
                 "Exporting Touchstone",
@@ -128,7 +143,8 @@ internal static class WBondPublishCommands
                 result => result.WrittenPaths.Count > 0
                     ? $"wrote {Path.GetFileName(result.WrittenPaths[0])}"
                     : "nothing was written",
-                CancellationToken.None).ConfigureAwait(true);
+                cts.Token,
+                cancellation: cancellation).ConfigureAwait(true);
 
             if (outcome.Cancelled) return Outcome.Silent;
 

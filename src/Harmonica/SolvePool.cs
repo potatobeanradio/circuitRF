@@ -194,6 +194,22 @@ public sealed class SolvePool<TResult> : IDisposable
         return seq;
     }
 
+    /// <summary>
+    /// Cancels the job in flight WITHOUT submitting a replacement — the user asking, through the
+    /// progress bar's right-click ▸ Cancel, for the solve to stop (owner, 2026-08-19).
+    ///
+    /// <para><b>It is deliberately a request, not a guarantee of silence.</b> The job stops at its
+    /// next cancellation point (for a grid build, between Γ points) and raises nothing; but one that
+    /// happens to reach its end first still publishes, because a completed frame is a correct frame
+    /// and throwing it away would be worse than showing it. So the caller must settle its own
+    /// "solving" state here rather than waiting to be told — the same reason the pool raises no event
+    /// for a superseded job.</para>
+    /// </summary>
+    public void CancelCurrent()
+    {
+        lock (_gate) _current?.Cancel();
+    }
+
     private async Task RunAsync(long seq, Func<SolveWorker, CancellationToken, TResult> job,
                                 CancellationToken ct)
     {

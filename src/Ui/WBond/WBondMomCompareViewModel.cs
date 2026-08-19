@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Ui.Messages;
 using CircuitRF.WBond;
 using CircuitRF.WBond.Mom;
@@ -136,14 +137,56 @@ public sealed partial class WBondMomCompareViewModel : ObservableObject
     /// <summary>True while the running stage has no honest denominator.</summary>
     [ObservableProperty] private bool _progressIndeterminate = true;
 
+    /// <summary>
+    /// True from the moment a stop is asked for until the run actually ends. Cancellation lands at a
+    /// work boundary — a matrix row, a Cholesky column, a frequency point — so on a large design this
+    /// state lasts seconds and has to be visible, or the button reads as having ignored the press.
+    /// </summary>
+    [ObservableProperty] private bool _isCancelling;
+
+    partial void OnIsCancellingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(RunButtonText));
+        OnPropertyChanged(nameof(IsRunButtonEnabled));
+        CancelRunCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(RunButtonText));
+        OnPropertyChanged(nameof(IsRunButtonEnabled));
+        CancelRunCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// What the one Run/Cancel button says. The button that started the work is the one that stops it
+    /// (there is nowhere in this dialog for a second control to go), so its label carries all three
+    /// states rather than the code-behind swapping two of them.
+    /// </summary>
+    public string RunButtonText => !IsBusy ? "Run" : IsCancelling ? "Cancelling…" : "Cancel";
+
+    /// <summary>False only while a stop is pending: there is nothing left to ask for, and pressing
+    /// again must not read as a second, stronger cancel.</summary>
+    public bool IsRunButtonEnabled => !IsCancelling;
+
     /// <summary>Live for the run in flight; null when nothing is running. It is what makes the dialog's
     /// Cancel real, and what stops a second Run being started over the first.</summary>
     private CancellationTokenSource? _runCts;
 
-    /// <summary>Stops the run in flight. Cancellation lands at a work boundary — a matrix row, a
-    /// Cholesky column, a frequency point — so a run mid-factorisation does not halt the instant this
-    /// is called.</summary>
-    public void CancelRun() => _runCts?.Cancel();
+    /// <summary>The run's stop, shared by the dialog's own button, the dialog's own progress bar
+    /// (right-click ▸ Cancel) and the two Messages-panel rows. Null when nothing is running.</summary>
+    private RunCancellation? _cancellation;
+
+    /// <summary>
+    /// Stops the run in flight, from whichever surface asked — the Run/Cancel button, this dialog's
+    /// progress bar, or a panel row's bar. All of them go through ONE
+    /// <see cref="RunCancellation"/>, so the second ask is a no-op rather than a second request, and
+    /// every surface sees the pending state at once.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCancelRun))]
+    public void CancelRun() => _cancellation?.Cancel();
+
+    private bool CanCancelRun() => IsBusy && !IsCancelling;
 
     public bool HasArraySelector => ArrayNames.Length > 1;
 
@@ -247,10 +290,24 @@ public sealed partial class WBondMomCompareViewModel : ObservableObject
         ProgressText = "Starting…";
         ProgressIndeterminate = true;
         ProgressPercent = 0;
+        IsCancelling = false;
         IsBusy = true;
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         _runCts = cts;
+
+        // One handle for every surface that can stop this run: the dialog's Run/Cancel button, the
+        // dialog's own progress bar, and the two rows this posts in the Messages panel. Saying what
+        // "cancel" means here is part of the request rather than the button's job — the kernel checks
+        // the token at a matrix row, a Cholesky column or a frequency point, never inside a
+        // factorisation.
+        var cancellation = new RunCancellation("the model comparison", () =>
+        {
+            ProgressText = "Stopping at the next work boundary…";
+            IsCancelling = true;
+            cts.Cancel();
+        });
+        _cancellation = cancellation;
 
         try
         {
@@ -267,14 +324,21 @@ public sealed partial class WBondMomCompareViewModel : ObservableObject
                 run => Compare(_design, frequencies, options, cts.Token, run),
                 _ => $"compared — {options.Points} frequency point(s)",
                 cts.Token,
-                ShowProgress).ConfigureAwait(true);
+                ShowProgress,
+                cancellation).ConfigureAwait(true);
 
             if (outcome.Cancelled)
             {
                 // Deliberately NOT an error: a stop is an outcome. The table keeps whatever the previous
                 // run put in it rather than being blanked, so cancelling a refinement does not throw away
                 // the answer the user already had.
-                ProgressText = "Stopped.";
+                //
+                // The bar is pinned and made determinate as it goes: an indeterminate bar still
+                // animating under the word "Stopped" is the same lie a finished row with a running bar
+                // would be.
+                ProgressIndeterminate = false;
+                ProgressPercent       = 0;
+                ProgressText          = "Stopped.";
                 return;
             }
 
@@ -298,14 +362,23 @@ public sealed partial class WBondMomCompareViewModel : ObservableObject
         }
         finally
         {
-            IsBusy = false;
-            _runCts = null;
+            cancellation.Finish();
+            IsBusy        = false;
+            IsCancelling  = false;
+            _runCts       = null;
+            _cancellation = null;
         }
     }
 
     /// <summary>Mirrors one observation onto the dialog's own status line and bar.</summary>
     private void ShowProgress(WBondProgress p)
     {
+        // A pending stop OWNS the status line until the run actually ends. Observations keep arriving
+        // for as long as the work takes to reach its next boundary, and letting them overwrite
+        // "Stopping…" with the name of the stage still running is how a user concludes the cancel was
+        // ignored. The bar itself keeps moving — the work genuinely is still going.
+        if (IsCancelling) return;
+
         string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
 
         if (p.StageTotal > 0)

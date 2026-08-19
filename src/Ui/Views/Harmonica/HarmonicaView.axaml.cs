@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -151,6 +152,17 @@ public partial class HarmonicaView : UserControl
         SolveProgressBar.Value      = (double)done / total;
         SolveProgressCounter.Text   = $"{done} / {total}";
     }, DispatcherPriority.Background);
+
+    /// <summary>
+    /// Right-click ▸ Cancel on the solving bar. The view model owns what that means — the pool's
+    /// in-flight job is cancelled, the "solving" state is settled here rather than on an event
+    /// (a cancelled job raises none), and the frame already on screen is kept.
+    /// </summary>
+    private void OnCancelSolveClick(object? sender, RoutedEventArgs e)
+    {
+        _doc?.ViewModel.Harmonica.CancelSolve();
+        Refresh();
+    }
 
     /// <summary>The variant follows <c>ActualThemeVariant</c>, exactly as the schematic canvas already
     /// does (§7.9.3's closing sentence).</summary>

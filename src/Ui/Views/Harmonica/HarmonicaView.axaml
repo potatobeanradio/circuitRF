@@ -40,8 +40,19 @@
         <SelectableTextBlock x:Name="MessageText" VerticalAlignment="Center" FontSize="11"/>
         <TextBlock x:Name="SolvingText" Text="Solving…" VerticalAlignment="Center" FontSize="11"
                    IsVisible="False"/>
+        <!-- Right-click ▸ Cancel, the same gesture every progress bar in the application offers
+             (owner, 2026-08-19). A grid frame on a slow DUT is seconds, and until now the only way
+             out of one was to wait. Declared once in XAML and owned by the framework — never built
+             per right-click, which is the menu-stacking bug this codebase has fixed three times. -->
         <ProgressBar x:Name="SolveProgressBar" Width="75" Height="10" Minimum="0" Maximum="1"
-                     VerticalAlignment="Center" IsVisible="False"/>
+                     VerticalAlignment="Center" IsVisible="False">
+          <ProgressBar.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Cancel" Click="OnCancelSolveClick"
+                        ToolTip.Tip="Stop this solve. The contours already on screen stay as they are."/>
+            </ContextMenu>
+          </ProgressBar.ContextMenu>
+        </ProgressBar>
         <TextBlock x:Name="SolveProgressCounter" VerticalAlignment="Center" FontSize="11"
                    IsVisible="False"/>
       </StackPanel>

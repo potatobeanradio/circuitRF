@@ -79,6 +79,13 @@ public sealed class WBondBackgroundRunTests
                 Percent = null;
                 Indeterminate = false;
             }
+
+            /// <summary>What the bar's right-click ▸ Cancel would act on. The real row keeps this on
+            /// its <c>MessageEntry</c>; here it is recorded so a test can assert BOTH rows got the
+            /// SAME one.</summary>
+            public RunCancellation? Cancellation { get; private set; }
+
+            public void BindCancellation(RunCancellation? cancellation) => Cancellation = cancellation;
         }
     }
 
@@ -103,14 +110,16 @@ public sealed class WBondBackgroundRunTests
 
     private static async Task<WBondRunOutcome<T>> Run<T>(
         RecordingSink? sink, long points, Func<WBondRunControl, T> work,
-        Func<T, string> summary, CancellationToken cancel = default)
+        Func<T, string> summary, CancellationToken cancel = default,
+        RunCancellation? cancellation = null)
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new InlineContext());
         try
         {
             return await WBondBackgroundRun.ExecuteAsync(
-                sink, "Exporting Touchstone", "started", points, work, summary, cancel);
+                sink, "Exporting Touchstone", "started", points, work, summary, cancel,
+                cancellation: cancellation);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
@@ -358,5 +367,88 @@ public sealed class WBondBackgroundRunTests
         Assert.True(sweep.Indeterminate);
         Assert.True(stage.Indeterminate);
         Assert.Null(stage.Counter);
+    }
+
+    // ────────────────────────────────────────────────── the stop (owner, 2026-08-19)
+
+    /// <summary>
+    /// BOTH rows get the SAME handle. They are two views of one computation, so a Cancel on either bar
+    /// has to stop all of it — binding a handle per row would give the user two Cancels that each stop
+    /// half of nothing.
+    /// </summary>
+    [Fact]
+    public async Task BothRows_AreBoundToTheSameCancellation()
+    {
+        var sink = new RecordingSink();
+        var cancellation = new RunCancellation("the Touchstone export", () => { });
+
+        await Run(sink, 1, run => { run.Tick(); return 1; }, _ => "done",
+                  cancellation: cancellation);
+
+        Assert.Equal(2, sink.Rows.Count);
+        Assert.Same(cancellation, sink.Rows[0].Cancellation);
+        Assert.Same(cancellation, sink.Rows[1].Cancellation);
+    }
+
+    /// <summary>
+    /// Cancelling from a bar stops the run at its next WORK BOUNDARY, not instantly — the kernel checks
+    /// the token between rows and points, never inside a factorisation, which is what keeps the check
+    /// off the inner numerical loops. What the row must not do is claim a result.
+    /// </summary>
+    [Fact]
+    public async Task CancellingFromABar_StopsTheRunAtItsNextWorkBoundary_AndNothingIsWritten()
+    {
+        var sink = new RecordingSink();
+        using var cts = new CancellationTokenSource();
+        var cancellation = new RunCancellation("the Touchstone export", cts.Cancel);
+
+        int pointsStarted = 0, pointsCounted = 0;
+        var outcome = await Run(sink, 10, run =>
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                pointsStarted++;
+                if (i == 3) cancellation.Cancel();     // the right-click, DURING the fourth point
+                run.Tick();                            // the boundary the token is checked at
+                pointsCounted++;
+            }
+            return 99;
+        }, _ => "wrote something", cts.Token, cancellation);
+
+        Assert.True(outcome.Cancelled);
+        Assert.Null(outcome.Error);
+        Assert.Equal(default, outcome.Value);
+
+        // The point that was in progress when the user right-clicked RAN TO ITS END — the token is
+        // read at the boundary, never inside the point — and the run stopped there rather than at
+        // point 10. Four points were entered; three completed boundaries were counted.
+        Assert.Equal(4, pointsStarted);
+        Assert.Equal(3, pointsCounted);
+
+        Assert.Equal(MessageLevel.Warning, sink.Rows[0].Level);
+        Assert.Contains("stopped — nothing was written", sink.Rows[0].Counter ?? sink.Rows[0].Text);
+    }
+
+    /// <summary>
+    /// A run that ENDS — however it ends — settles its handle, so the bar's Cancel goes grey instead of
+    /// pointing at a computation that is over.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheHandleIsSettledWhenTheRunEnds(bool throws)
+    {
+        var sink = new RecordingSink();
+        var cancellation = new RunCancellation("the Touchstone export", () => { });
+
+        await Run(sink, 1, run =>
+        {
+            if (throws) throw new InvalidOperationException("no ground plane");
+            run.Tick();
+            return 1;
+        }, _ => "done", cancellation: cancellation);
+
+        Assert.True(cancellation.IsFinished);
+        Assert.False(cancellation.CanCancel);
     }
 }

@@ -70,10 +70,9 @@ public partial class WBondMomCompareDialog : Window
     {
         if (Model.IsBusy)
         {
-            // Says what "cancel" means here rather than implying an instant halt: the kernel checks the
-            // token at work boundaries — a matrix row, a Cholesky column, a frequency point — never
-            // inside a factorisation.
-            Model.ProgressText = "Stopping at the next work boundary…";
+            // What "cancel" means here — the kernel checks the token at work boundaries, never inside
+            // a factorisation — is said by the request itself (WBondMomCompareViewModel.RunAsync's
+            // handle), so this surface and the bar's context menu cannot word it differently.
             Model.CancelRun();
             return;
         }
@@ -92,7 +91,9 @@ public partial class WBondMomCompareDialog : Window
             return;
         }
 
-        RunButton.Content = "Cancel";
+        // The button's own label and enablement follow the view model (RunButtonText /
+        // IsRunButtonEnabled), not this handler: the stop can also arrive from this dialog's progress
+        // bar or from a Messages-panel row, and a label maintained here would not see those.
         Cursor = new Cursor(StandardCursorType.Wait);
         try
         {
@@ -101,7 +102,6 @@ public partial class WBondMomCompareDialog : Window
         finally
         {
             Cursor = Cursor.Default;
-            RunButton.Content = "Run";
             WBondPublishCommands.EndRun();
         }
     }

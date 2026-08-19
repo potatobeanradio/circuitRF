@@ -37,6 +37,7 @@ public sealed partial class MessageEntry : ObservableObject
     private string?      _progressText;
     private double?      _progressPercent;
     private bool         _progressIndeterminate;
+    private RunCancellation? _cancellation;
 
     public MessageEntry(MessageLevel level, string text, string? filePath, DateTime timestamp)
     {
@@ -101,6 +102,49 @@ public sealed partial class MessageEntry : ObservableObject
 
     public bool   HasProgress   => _progressPercent is not null;
     public double ProgressValue => _progressPercent ?? 0;
+
+    /// <summary>
+    /// The operation this row's bar is drawing, when it can be stopped — what the bar's right-click
+    /// Cancel acts on. Null on an ordinary message and on a run that offers no cancellation.
+    ///
+    /// <para>Two rows of ONE run (a sweep row and a stage row) hold the SAME handle, so cancelling
+    /// from either stops the whole computation rather than half of it.</para>
+    /// </summary>
+    public RunCancellation? Cancellation
+    {
+        get => _cancellation;
+        internal set
+        {
+            if (ReferenceEquals(_cancellation, value)) return;
+            if (_cancellation is not null) _cancellation.StateChanged -= OnCancellationStateChanged;
+            _cancellation = value;
+            if (_cancellation is not null) _cancellation.StateChanged += OnCancellationStateChanged;
+            OnCancellationStateChanged(this, EventArgs.Empty);
+        }
+    }
+
+    private void OnCancellationStateChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(CanCancelRun));
+        OnPropertyChanged(nameof(CancelTooltip));
+    }
+
+    /// <summary>Whether the bar's Cancel would do anything right now — false for a row with no
+    /// cancellable operation, for one already asked to stop, and for one whose run has settled.</summary>
+    public bool CanCancelRun => _cancellation?.CanCancel == true;
+
+    /// <summary>
+    /// Why the menu item is enabled or not, said in full. A disabled item with no explanation is the
+    /// thing this codebase has already been told twice not to ship — and the enabled case has
+    /// something to say too, since cancellation lands at a work boundary rather than instantly.
+    /// </summary>
+    public string CancelTooltip => _cancellation switch
+    {
+        null                                     => "This operation cannot be stopped once it has started.",
+        { IsFinished: true }                     => "This operation has already finished.",
+        { IsCancellationRequested: true } c      => $"Already stopping {c.What} — it ends at the next work boundary.",
+        { } c                                    => $"Stop {c.What}. It ends at the next work boundary and writes nothing.",
+    };
 
     public string TimeText => MessageDisplay.Mode switch
     {

@@ -132,8 +132,36 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// Simulate overlapping, which would have them both meshing the same problem at once.</summary>
     public bool IsBusy => IsRunning || IsMeshing;
 
-    [RelayCommand(CanExecute = nameof(IsMeshing))]
+    /// <summary>
+    /// True from the moment a stop is asked for until the operation actually ends.
+    ///
+    /// <para><b>It has to be a state rather than an instant</b>: cancellation lands at a work
+    /// boundary — a frequency point, a grid row — so a full-wave run can keep going for tens of
+    /// seconds after Cancel. A button that still reads "Cancel" through all of that reads as a button
+    /// whose press was missed, which is exactly what makes a user press it again. Set by the host
+    /// (the run owns the token, this view model deliberately owns no
+    /// <c>CancellationTokenSource</c>), and cleared with <see cref="IsRunning"/>/<see cref="IsMeshing"/>.</para>
+    ///
+    /// <para>ONE flag for both operations, because <see cref="IsBusy"/> already guarantees a mesh and a
+    /// simulate can never overlap.</para>
+    /// </summary>
+    [ObservableProperty] private bool _isCancelling;
+
+    partial void OnIsCancellingChanged(bool value)
+    {
+        CancelMeshCommand.NotifyCanExecuteChanged();
+        CancelSimulateCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CancelButtonText));
+    }
+
+    /// <summary>What both Cancel buttons say. Bound rather than literal so the pending stop is
+    /// visible on whichever button started the work.</summary>
+    public string CancelButtonText => IsCancelling ? "Cancelling…" : "Cancel";
+
+    [RelayCommand(CanExecute = nameof(CanCancelMesh))]
     public void CancelMesh() => CancelMeshRequested?.Invoke();
+
+    private bool CanCancelMesh() => IsMeshing && !IsCancelling;
 
     /// <summary>True while an EM run is in flight. Drives the toolbar's Simulate/Cancel swap and
     /// gates both commands, so the two can never both be available.</summary>
@@ -1501,8 +1529,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// after the solve it belongs to, so abandoning the solve abandons the write by construction —
     /// there is no half-written <c>.snp</c> to clean up.</para>
     /// </summary>
-    [RelayCommand(CanExecute = nameof(IsRunning))]
+    [RelayCommand(CanExecute = nameof(CanCancelSimulate))]
     public void CancelSimulate() => CancelRequested?.Invoke();
+
+    private bool CanCancelSimulate() => IsRunning && !IsCancelling;
 
     /// <summary>A Simulate run meshes as a side effect, so its report is adopted here rather than
     /// making the user press Mesh again to see the same mesh the answer came from.</summary>

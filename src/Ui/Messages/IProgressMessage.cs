@@ -49,6 +49,16 @@ public interface IProgressMessage
     /// <summary>Settles the line by REPLACING its text and dropping its bar — for an outcome that
     /// makes the progress so far irrelevant rather than context for it.</summary>
     void Complete(MessageLevel level, string text);
+
+    /// <summary>
+    /// Binds the running operation's Cancel to this row, so the user can stop it by right-clicking its
+    /// progress bar. Optional: a sink with no bar (a status line, a test fake) inherits the no-op.
+    ///
+    /// <para><b>Pass the SAME handle to every row of one operation.</b> A run that posts a sweep row
+    /// and a stage row is one computation drawn twice — both bars must stop all of it, which is what
+    /// sharing the handle means. See <see cref="RunCancellation"/>.</para>
+    /// </summary>
+    void BindCancellation(RunCancellation? cancellation) { }
 }
 
 /// <summary>

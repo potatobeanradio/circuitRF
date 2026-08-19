@@ -57,6 +57,14 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
             }
         });
 
+    /// <summary>
+    /// Hands the row the operation it is drawing, so the bar's right-click Cancel has something to
+    /// stop. Marshalled like every other mutation — a caller may bind from whatever thread it
+    /// started the run on.
+    /// </summary>
+    public void BindCancellation(RunCancellation? cancellation)
+        => marshal(() => Entry.Cancellation = cancellation);
+
     public void Complete(MessageLevel level, string text)
         => marshal(() =>
         {

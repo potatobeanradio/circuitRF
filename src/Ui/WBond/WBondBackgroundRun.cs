@@ -78,6 +78,16 @@ internal static class WBondBackgroundRun
     /// while waiting has to be inside the dialog, fed from these same observations rather than from a
     /// second progress path.
     /// </param>
+    /// <param name="cancellation">
+    /// The stop, bound to BOTH progress rows so the user can cancel by right-clicking either bar
+    /// (owner, 2026-08-19).
+    ///
+    /// <para><b>This is the only stop a Touchstone export has.</b> It runs in the background from a
+    /// menu item — there is no dialog left on screen to put a Cancel button on — so before this the
+    /// 3-D wire kernel could not be stopped from the UI at all, and a mis-sized run had to be waited
+    /// out or the application killed. The caller owns the token source; this only binds the rows and
+    /// settles the handle when the run ends.</para>
+    /// </param>
     internal static async Task<WBondRunOutcome<T>> ExecuteAsync<T>(
         IMessageSink? messages,
         string title,
@@ -86,7 +96,8 @@ internal static class WBondBackgroundRun
         Func<WBondRunControl, T> work,
         Func<T, string> summary,
         CancellationToken cancel,
-        Action<WBondProgress>? mirror = null)
+        Action<WBondProgress>? mirror = null,
+        RunCancellation? cancellation = null)
     {
         ArgumentNullException.ThrowIfNull(work);
         ArgumentNullException.ThrowIfNull(summary);
@@ -95,6 +106,15 @@ internal static class WBondBackgroundRun
 
         var sweepLive = messages?.BeginProgress(title);
         var stageLive = messages?.BeginProgress($"{title} — starting");
+
+        // ONE handle on BOTH rows: they are two views of one computation (see the class remarks), so
+        // either bar's Cancel has to stop all of it. RunCancellation refuses a second ask, so
+        // right-clicking both in turn is one request, not two.
+        if (cancellation is not null)
+        {
+            sweepLive?.BindCancellation(cancellation);
+            stageLive?.BindCancellation(cancellation);
+        }
 
         // Progress<T> captures the UI SynchronizationContext at construction, so every observation
         // lands back on the UI thread without the kernel knowing anything about threading. This method
@@ -120,6 +140,8 @@ internal static class WBondBackgroundRun
         }
         catch (OperationCanceledException)
         {
+            cancellation?.Finish();
+
             // Two rows both carry a bar, so both have to be resolved — and they must say DIFFERENT
             // things, or the panel reads as one message duplicated. Same split the EM run uses: the
             // stage row says it stopped, the sweep row keeps its point count and says nothing was
@@ -130,6 +152,8 @@ internal static class WBondBackgroundRun
         }
         catch (Exception ex)
         {
+            cancellation?.Finish();
+
             // THE ERROR IS THE LAST LINE. Both rows were posted before the run, so they sit above
             // whatever follows; finishing the sweep row WITH the error would put it above the notes
             // rather than after them. So the rows settle quietly and the error is posted on its own,
@@ -140,6 +164,7 @@ internal static class WBondBackgroundRun
             return new WBondRunOutcome<T>(default, Cancelled: false, Error: ex.Message);
         }
 
+        cancellation?.Finish();
         stageLive?.Complete(MessageLevel.Info, $"{title} — finished");
         sweepLive?.Finish(MessageLevel.Success, summary(value), keepBar: false);
 

@@ -4746,3 +4746,49 @@ Only `ListBox`'s own template puts a `VirtualizingStackPanel` inside its own `Sc
 six rows: enough to read a two-array design whole, short enough that a large one scrolls instead of
 pushing the Export button off the dialog. The selection and hover visuals are styled out, scoped to
 that one control, so it still reads as the flat list it replaced.
+
+## Cancel from the progress bar (owner, 2026-08-19)
+
+**"Cancel" was three different things, so it now goes through one.** `RunCancellation`
+(`src/Ui/Messages/`) is the handle a long operation hands to every surface that offers to stop it: it
+answers *can this still be cancelled*, *has somebody already asked*, and *what is being stopped*, and
+raises `StateChanged` when any of those change. A `CancellationTokenSource` answers none of them, which
+is why a Cancel button and a bar's context menu could not previously read one truth. `MessageEntry`
+binds it (`CanCancelRun`/`CancelTooltip`); every long run's `finally` calls `Finish()`.
+
+**Two rows of one run share ONE handle.** An EM run and a wirebond run each post a sweep row and a
+stage row; they are two views of one computation, so both bars bind the same instance and either one
+stops all of it. The handle is idempotent, so right-clicking both in turn is one request. Same reason
+the EM panel's Cancel button, the `Simulate ▸ Stop` menu item and the toolbar Stop all route through
+it rather than each calling `cts.Cancel()`.
+
+**The Touchstone export was passing `CancellationToken.None`.** The 3-D wire MoM kernel had been
+checking a token at every work boundary since it was written — nothing was ever handing it one that
+could be cancelled, and the export has no window of its own once the options dialog closes, so it
+could not be stopped from the UI at all. A source-scan test (`ProgressBarCancellationTests`) now holds
+that shut, comments stripped first.
+
+**A `ContextMenu` on the Messages row's progress bar does not work, and the reason is structural**
+(owner report, same day: *"the Copy All Messages context menu interferes with the progress bar cancel
+context menu"*). The bar is an `InlineUIContainer` **inside** the row's `SelectableTextBlock`, which
+already owns the Copy menu — two menus on one right-click, and which opens depends on which control
+the hit test resolved to. The row's text and its bar are one target and get **one** menu, with Cancel
+at the top, `IsVisible`-bound to `HasProgress` so an ordinary message's menu is unchanged. The
+standalone bars (the Compare dialog's, harmonicaRF's) have no such parent and keep their own.
+
+**A pending stop is a STATE, not an instant** — cancellation lands at a work boundary, so a full-wave
+point can run for tens of seconds after the click. Every surface says so and goes inert meanwhile
+(`EmSetupEditorViewModel.IsCancelling`/`CancelButtonText`, `WBondMomCompareViewModel.RunButtonText`,
+`CanStopAnalysis`), and the Compare dialog's `ShowProgress` drops observations while cancelling rather
+than overwriting "Stopping…" with the name of the stage still running.
+
+**harmonicaRF's grid bar settles its own state.** `SolvePool.CancelCurrent` cancels the in-flight job,
+which raises neither `Completed` nor `Failed` — that silence is what keeps latest-wins cheap on a drag
+— so `HarmonicaViewModel.CancelSolve` clears `IsSolving`/`IsSolvingGrid` itself and posts a
+`CancelNotice` the next published frame clears. The frame on screen is kept: the previous answer is
+still the last true one.
+
+**Still uncancellable, deliberately: a Touchstone export from the standalone `wBond` binary.** That
+shell has no Messages panel and no bar — `WBondStatusMessageSink` is one line of text, and its own
+docs give the reason ("inventing a glyph for a percentage would be a second progress widget to keep in
+step with the panel's real one"). Inside circuitRF the same export is cancellable from either row.

@@ -2493,6 +2493,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private CancellationTokenSource? _runCts;
 
+    /// <summary>
+    /// The run's stop as the UI hands it around: the Stop button, the Simulate ▸ Stop menu item and the
+    /// live row's right-click ▸ Cancel all go through THIS, so the request is one request and every
+    /// surface showing it settles together. Null when nothing is running.
+    /// </summary>
+    private RunCancellation? _runCancellation;
+
     private void SetRunning(CancellationTokenSource? cts)
     {
         _runCts = cts;
@@ -2563,6 +2570,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         RunResult result;
         using (var cts = new CancellationTokenSource())
         {
+            // The Stop button, the Simulate ▸ Stop menu item and the live row's own right-click ▸
+            // Cancel are ONE request through ONE object (owner, 2026-08-19). Whichever the user
+            // reaches for, the other two go grey — the handle refuses a second ask, and CanStopAnalysis
+            // reads the same token — so nothing offers to stop a run that is already stopping.
+            var cancellation = new RunCancellation($"the run of '{testBenchName}'", () => RequestStop(cts));
+            _runCancellation = cancellation;
+            live.BindCancellation(cancellation);
+
             var control = new RunControl
             {
                 Token = cts.Token,
@@ -2587,6 +2602,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
             finally
             {
+                cancellation.Finish();
+                _runCancellation = null;
                 SetRunning(null);
             }
         }
@@ -2686,9 +2703,28 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void StopAnalysis()
     {
         if (_runCts is not { } cts) { Messages.Info("Stop: nothing is running."); return; }
+
+        // Through the HANDLE when there is one, so the live row's own Cancel greys out with this
+        // button — the two are one request, and a menu still offering to stop a run that is already
+        // stopping is the same lie a live Stop button would be.
+        if (_runCancellation is { } cancellation) cancellation.Cancel();
+        else                                      RequestStop(cts);
+    }
+
+    /// <summary>
+    /// The one place a run is asked to stop — reached from the Stop button/menu and from the live
+    /// row's right-click ▸ Cancel, so the two cannot say different things or cancel different runs.
+    /// </summary>
+    private void RequestStop(CancellationTokenSource cts)
+    {
         if (cts.IsCancellationRequested) return;
 
         cts.Cancel();
+
+        // The toolbar's Stop and the menu item go grey the moment the request lands: a second press
+        // would do nothing, and a control that stays live while its work is already stopping reads as
+        // the first press having been missed.
+        StopAnalysisCommand.NotifyCanExecuteChanged();
 
         // Says what actually happens rather than implying an instant halt: the engines check the token
         // at point boundaries (a sweep point, a frequency, a loadpull termination), never inside a
@@ -2699,7 +2735,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     private bool CanStopAnalysis() =>
-        _runCts is not null && _factory.DocumentDock?.ActiveDockable is SchematicDocument;
+        _runCts is { IsCancellationRequested: false } &&
+        _factory.DocumentDock?.ActiveDockable is SchematicDocument;
 
     private void WireAnalysesRun()
     {
@@ -4962,18 +4999,28 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     p => ReportEmProgress(sweepLive, stageLive, setup.Name, p, adaptive)),
             };
 
-            // Set INSIDE the try, so no path from here to the finally can leave the panel stuck
-            // showing Cancel for a run that is already over.
-            try
+            // ONE handle, THREE surfaces: the panel's Cancel button, the sweep row's bar and the
+            // stage row's bar (owner, 2026-08-19). The two rows are two views of one computation — a
+            // Cancel that stopped only the half its bar was drawing would be a Cancel that stops
+            // nothing — and the panel button routes through the same object so a press on either
+            // greys out both.
+            var cancellation = new RunCancellation($"the EM run '{setup.Name}'", () =>
             {
                 // Owner request: pressing Cancel says so IMMEDIATELY, and says what "cancel" means
                 // here — cancellation lands at a work boundary, so a run mid-solve does not stop the
                 // instant the button is pressed and silence would read as the button doing nothing.
-                vm.CancelRequested = () =>
-                {
-                    Messages.Info("Stopping the EM analysis. It stops at the next work boundary.");
-                    cts.Cancel();
-                };
+                Messages.Info("Stopping the EM analysis. It stops at the next work boundary.");
+                vm.IsCancelling = true;
+                cts.Cancel();
+            });
+            sweepLive.BindCancellation(cancellation);
+            stageLive.BindCancellation(cancellation);
+
+            // Set INSIDE the try, so no path from here to the finally can leave the panel stuck
+            // showing Cancel for a run that is already over.
+            try
+            {
+                vm.CancelRequested = cancellation.Cancel;
                 vm.IsRunning       = true;
                 result = await Task.Run(() => EmRunService.Run(setup, source, resultsRoot, default, control));
             }
@@ -4985,7 +5032,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
             finally
             {
+                cancellation.Finish();
                 vm.IsRunning       = false;
+                vm.IsCancelling    = false;
                 vm.CancelRequested = null;
             }
         }
@@ -5104,9 +5153,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Progress = new Progress<RunProgress>(p => ReportEmMeshProgress(live, name, p)),
         };
 
+        // Same one-handle rule as the EM run: the panel's Cancel button and the row's right-click ▸
+        // Cancel are one request, and the panel says so while the stop is pending.
+        var cancellation = new RunCancellation($"meshing '{name}'", () =>
+        {
+            Messages.Info("Stopping the mesh. It stops at the next grid row.");
+            vm.IsCancelling = true;
+            cts.Cancel();
+        });
+        live.BindCancellation(cancellation);
+
         try
         {
-            vm.CancelMeshRequested = cts.Cancel;
+            vm.CancelMeshRequested = cancellation.Cancel;
             vm.IsMeshing           = true;
 
             // THREE PHASES, and the boundaries are load-bearing (owner report, 2026-08-09: "I
@@ -5152,7 +5211,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         finally
         {
+            cancellation.Finish();
             vm.IsMeshing           = false;
+            vm.IsCancelling        = false;
             vm.CancelMeshRequested = null;
         }
 

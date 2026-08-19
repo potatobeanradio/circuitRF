@@ -787,6 +787,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var prevPower = Frame.SmithPower;
         var prevEff   = Frame.SmithEfficiency;
 
+        CancelNotice  = null;   // a new request supersedes any stop the user asked for
         IsSolving     = true;
         IsSolvingGrid = !opt.SkipContours;
         var onProgress    = GridProgressReporter(opt);
@@ -1158,6 +1159,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
     /// </summary>
     public void SolveFrame(HarmonicaSolver.Options? options = null)
     {
+        CancelNotice  = null;   // a new request supersedes any stop the user asked for
         IsSolving = true;
         try
         {
@@ -1217,6 +1219,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var prevPower = ApplyGridPointOverride(Frame.SmithPower,      gridPointOverride);
         var prevEff   = ApplyGridPointOverride(Frame.SmithEfficiency, gridPointOverride);
 
+        CancelNotice  = null;   // a new request supersedes any stop the user asked for
         IsSolving     = true;
         IsSolvingGrid = !opt.SkipContours;
         var onProgress    = GridProgressReporter(opt);
@@ -1264,6 +1267,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
 
         Frame         = frame with { PowerSweep = frame.PowerSweep with { XUnit = PowerSweepXUnit } };
         SolveError    = null;
+        CancelNotice  = null;
         IsSolving     = false;
         IsSolvingGrid = false;
 
@@ -1291,10 +1295,45 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         get
         {
             if (SolveError is { Length: > 0 } err) return $"solve failed: {err}";
+            if (CancelNotice is { Length: > 0 } stop) return stop;
             if (InverseMessage is { Length: > 0 } inv) return inv;
             return Scheduler.StatusMessage;
         }
     }
+
+    /// <summary>
+    /// Stops the solve in flight — the progress bar's right-click ▸ Cancel (owner, 2026-08-19). A grid
+    /// frame is the one thing in harmonicaRF a user can be left waiting on: a dense grid on a slow DUT
+    /// is seconds per frame, and until now the only way out was to wait for it.
+    ///
+    /// <para><b>The "solving" state is cleared HERE rather than on an event</b>, because a cancelled
+    /// job raises none — <c>SolvePool</c> counts it superseded and stays quiet, which is exactly what
+    /// keeps latest-wins cheap on a drag. The displayed frame is left alone: the previous answer is
+    /// still the last true one, and blanking the panels would throw away a correct picture to report
+    /// a stop.</para>
+    ///
+    /// <para>A job that reaches its end before the token is checked still publishes, and that is
+    /// fine — <see cref="PublishFrame"/> clears the notice along with the flags, so the line does not
+    /// claim a cancel that the frame on screen contradicts.</para>
+    /// </summary>
+    public void CancelSolve()
+    {
+        if (!IsSolving && !IsSolvingGrid) return;
+
+        Pool.CancelCurrent();
+        IsSolving     = false;
+        IsSolvingGrid = false;
+        CancelNotice  = "solve cancelled";
+    }
+
+    /// <summary>
+    /// Set by <see cref="CancelSolve"/> and cleared by the next published frame. Outranks the
+    /// scheduler's own line in <see cref="StatusMessage"/> but not a solve error, which is the more
+    /// urgent of the two.
+    /// </summary>
+    [ObservableProperty] private string? _cancelNotice;
+
+    partial void OnCancelNoticeChanged(string? value) => OnPropertyChanged(nameof(StatusMessage));
 
     /// <summary>Reports a pool failure without killing the document — same contract as <see cref="SolveFrame"/>.</summary>
     public void PublishFailure(Exception ex)
@@ -1932,6 +1971,7 @@ public sealed partial class HarmonicaViewModel : ObservableObject
         var prevPower = Frame.SmithPower;
         var prevEff   = Frame.SmithEfficiency;
 
+        CancelNotice  = null;   // a new request supersedes any stop the user asked for
         IsSolving     = true;
         IsSolvingGrid = !baseOptions.SkipContours;
         return _pool.Submit((worker, ct) =>

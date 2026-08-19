@@ -213,13 +213,16 @@
                     </StackPanel>
                 </Button>
 
+                <!-- The label and the enablement follow IsCancelling, not just IsMeshing: a stop
+                     lands at the next grid row, so the button has to say the request was taken and
+                     stop offering itself a second time. -->
                 <Button Name="CancelMeshButton" Margin="4,0,0,0"
                         IsVisible="{Binding ViewModel.IsMeshing}"
                         Command="{Binding ViewModel.CancelMeshCommand}"
                         ToolTip.Tip="Stop meshing. It stops at the next grid row.">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="Stop" Width="14" Height="14"/>
-                        <TextBlock Text="Cancel"/>
+                        <TextBlock Text="{Binding ViewModel.CancelButtonText}"/>
                     </StackPanel>
                 </Button>
 
@@ -240,13 +243,16 @@
                     </StackPanel>
                 </Button>
 
+                <!-- Same as the mesh Cancel: once the stop is asked for — here or by right-clicking
+                     either of the run's two progress bars in the Messages panel — this says so and
+                     goes inert until the run actually ends. -->
                 <Button Name="CancelSimulateButton" Margin="4,0,0,0"
                         IsVisible="{Binding ViewModel.IsRunning}"
                         Command="{Binding ViewModel.CancelSimulateCommand}"
                         ToolTip.Tip="Stop the EM run. It stops at the next work boundary and writes nothing.">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="Stop" Width="14" Height="14"/>
-                        <TextBlock Text="Cancel"/>
+                        <TextBlock Text="{Binding ViewModel.CancelButtonText}"/>
                     </StackPanel>
                 </Button>
 

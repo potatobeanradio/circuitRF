@@ -88,6 +88,28 @@
                                  there is no state in which the user cannot copy. -->
                             <SelectableTextBlock.ContextMenu>
                                 <ContextMenu>
+                                    <!-- CANCEL LIVES IN THIS MENU, NOT IN A SECOND ONE ON THE BAR
+                                         (owner report, 2026-08-19: "the Copy All Messages context
+                                         menu interferes with the progress bar cancel context menu").
+                                         The bar is an InlineUIContainer INSIDE this SelectableTextBlock,
+                                         so a ContextMenu of its own puts two menus on one right-click
+                                         and which one wins depends on which control the hit test
+                                         resolved to — the row's text and its bar are one target, and
+                                         they get one menu. Right-clicking the bar opens this, with
+                                         Cancel at the top; right-clicking the row's text opens the
+                                         same thing, which is a superset of what was asked for rather
+                                         than a compromise.
+
+                                         Hidden — not merely disabled — on a row with no bar, so an
+                                         ordinary message's menu is exactly the two Copy items it has
+                                         always been. Disabled WITH THE REASON IN ITS TOOLTIP once the
+                                         stop has been asked for or the run has settled. -->
+                                    <MenuItem Header="Cancel"
+                                              Click="OnCancelRunClick"
+                                              IsVisible="{Binding HasProgress}"
+                                              IsEnabled="{Binding CanCancelRun}"
+                                              ToolTip.Tip="{Binding CancelTooltip}"/>
+                                    <Separator IsVisible="{Binding HasProgress}"/>
                                     <MenuItem Header="Copy" Click="OnCopyMessageClick"/>
                                     <MenuItem Header="Copy All Messages" Click="OnCopyAllMessagesClick"/>
                                 </ContextMenu>

@@ -82,7 +82,13 @@
       </Border>
 
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <Button x:Name="RunButton" Content="Run" Width="96" IsDefault="True"
+        <!-- ONE button for Run and Cancel (there is nowhere here for a second), so its label carries
+             all three states — Run, Cancel, and the pending "Cancelling…" while the kernel walks to
+             its next work boundary. Bound rather than assigned in code-behind: the stop can now also
+             arrive from this dialog's own progress bar or from a Messages-panel row, and a label only
+             the click handler maintained would miss those. -->
+        <Button x:Name="RunButton" Content="{Binding RunButtonText}" Width="96" IsDefault="True"
+                IsEnabled="{Binding IsRunButtonEnabled}"
                 HorizontalContentAlignment="Center" Click="OnRun"/>
         <Button x:Name="CopyButton" Content="Copy table" Width="110"
                 HorizontalContentAlignment="Center" Click="OnCopy"/>
@@ -96,7 +102,18 @@
                      Minimum="0" Maximum="100"
                      Value="{Binding ProgressPercent}"
                      IsIndeterminate="{Binding ProgressIndeterminate}"
-                     IsVisible="{Binding IsBusy}"/>
+                     IsVisible="{Binding IsBusy}">
+            <!-- Right-click ▸ Cancel, the same gesture every other progress bar in the application
+                 now offers (owner, 2026-08-19). It is the SAME request the Run/Cancel button makes —
+                 one RunCancellation behind both — so neither can stop half a run, and asking twice is
+                 asking once. Declared once in XAML, never built per right-click. -->
+            <ProgressBar.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Cancel" Command="{Binding CancelRunCommand}"
+                              ToolTip.Tip="Stop the model comparison. It ends at the next work boundary."/>
+                </ContextMenu>
+            </ProgressBar.ContextMenu>
+        </ProgressBar>
         <TextBlock x:Name="BusyText" Text="{Binding ProgressText}" FontSize="11" VerticalAlignment="Center"
                    Opacity="0.7" IsVisible="{Binding IsBusy}"/>
         <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" FontSize="11"
