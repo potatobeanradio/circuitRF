@@ -32,7 +32,7 @@
       <li><a href="#parametric-sweep">Parametric Sweep</a></li>
       <li><a href="#loadpull">Loadpull / Sourcepull</a></li>
       <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
-      <li><a href="#two-tone">Two-Tone Harmonic Balance</a></li>
+      <li><a href="#two-tone">Multi-Tone Harmonic Balance</a></li>
     </ol>
   </nav>
 
@@ -77,18 +77,18 @@
   <p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
 
   <h2 id="harmonic-balance">Harmonic Balance</h2>
-  <p><strong>Computes:</strong> the steady-state response of a nonlinear circuit driven by one or two tones —
-  the spectrum (DC + harmonics, and mixing products for two tones) at every node. From it come Pout, gain,
+  <p><strong>Computes:</strong> the steady-state response of a nonlinear circuit driven by one or more tones
+  (up to six) — the spectrum (DC + harmonics, and mixing products when there is more than one tone) at every node. From it come Pout, gain,
   efficiency, PAE, compression, and intermodulation.</p>
   <p><strong>Method:</strong> the circuit is split into a <em>linear</em> sub-network (solved in the frequency
   domain) and <em>nonlinear</em> devices (evaluated in the time domain and transformed by FFT). A
   multidimensional Newton solve drives the harmonic-balance residual — frequency-domain KCL — to zero, using a
   conversion-matrix Jacobian. Power/source <strong>continuation</strong> ramps the drive to reach convergence
-  deep into compression. <a href="#two-tone">Two-tone analysis</a> uses a diamond-truncated mixing spectrum.</p>
+  deep into compression. <a href="#two-tone">Multi-tone analysis</a> uses a diamond-truncated mixing spectrum.</p>
   <table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th><th>Typical</th></tr></thead>
     <tbody>
-      <tr><td>Tone</td><td>The fundamental frequency (a value or a variable such as <code>RFfreq</code>). Two tones for intermodulation.</td><td>2 GHz</td></tr>
+      <tr><td>Tone</td><td>The fundamental frequency (a value or a variable such as <code>RFfreq</code>). Two or more tones for intermodulation.</td><td>2 GHz</td></tr>
       <tr><td>ToneUnit</td><td>Unit for the tone value when it doesn't carry its own (a unit on the referenced variable wins).</td><td>GHz</td></tr>
       <tr><td>MaxHarm</td><td>Highest harmonic order retained (5 → DC plus 5 harmonics). Higher captures sharper nonlinearity at more cost.</td><td>5–7</td></tr>
       <tr><td>FFTOverSample</td><td>Oversampling factor for the time grid used by the nonlinear FFT. Raise to reduce aliasing on stiff devices.</td><td>1–2</td></tr>
@@ -98,7 +98,7 @@
       <tr><td>Lambda</td><td>Newton damping factor (1 = full step; lower damps an unstable solve).</td><td>1</td></tr>
       <tr><td>MaxIter</td><td>Maximum Newton iterations per solve point.</td><td>100</td></tr>
     </tbody>
-    <caption>Two-tone analysis adds the second tone and a mixing order (≥ 5 to capture close-in IM products).</caption>
+    <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
 
   <h2 id="parametric-sweep">Parametric Sweep</h2>
@@ -271,31 +271,40 @@ freq=2.2GHz
 
   <p class="small">Full design + algorithm: <code>docs/design/loadpull_pursuit.md</code> (in the repo).</p>
 
-  <h2 id="two-tone">Two-Tone Harmonic Balance</h2>
-  <p><strong>Computes:</strong> the steady-state spectrum of a nonlinear circuit driven by <strong>two
-  carriers at once</strong> — every harmonic <em>and</em> every intermodulation (mixing) product. This is the
-  standard test for <strong>linearity</strong>: third-order intermodulation (IM3), intercept points, spectral
-  regrowth, and the asymmetry between the lower and upper IM products.</p>
-  <p>Two-tone is not a separate analysis — it is <a href="#harmonic-balance">Harmonic Balance</a> with a second
-  tone. Everything from the single-tone chapter (the linear/nonlinear split, the Newton solve, drive
+  <h2 id="two-tone">Multi-Tone Harmonic Balance (2 to 6 tones)</h2>
+  <p><strong>Computes:</strong> the steady-state spectrum of a nonlinear circuit driven by <strong>several
+  carriers at once</strong> — every harmonic <em>and</em> every intermodulation (mixing) product. Two tones is
+  the standard test for <strong>linearity</strong>: third-order intermodulation (IM3), intercept points,
+  spectral regrowth, and the asymmetry between the lower and upper IM products. Three or more tones is the
+  natural setting for <strong>mixers</strong> (RF, LO and their products) and for multi-carrier work.</p>
+  <p>Multi-tone is not a separate analysis — it is <a href="#harmonic-balance">Harmonic Balance</a> with more
+  than one tone. Everything from the single-tone chapter (the linear/nonlinear split, the Newton solve, drive
   continuation, all the convergence knobs) still applies. This chapter covers only what is different.</p>
+  <p>Up to <strong>six</strong> tones are supported. Everything below is written for two because that is the
+  common case, but it holds at any tone count: read "(k₁,&nbsp;k₂)" as the full list
+  "(k₁,&nbsp;…,&nbsp;k<sub>T</sub>)". The one thing that changes with tone count is how far you can push
+  <strong>Max mix order</strong> — see <a href="#multi-tone-size">How many tones, at what order</a>.</p>
 
   <h3 id="two-tone-setup">Setting it up</h3>
   <p>In the Harmonic Balance analysis editor, switch the <strong>Single&nbsp;/&nbsp;Multi-tone</strong> toggle to
   <strong>Multi-tone</strong>. Three things change:</p>
   <ul>
-    <li>The single <strong>Tone&nbsp;(f₀)</strong> field becomes <strong>Tone&nbsp;1</strong> (f₁), and a
-      <strong>Tone&nbsp;2</strong> (f₂) field appears.</li>
+    <li>The single <strong>Tone&nbsp;(f₀)</strong> field is replaced by a <strong>tone list</strong>, starting
+      with <strong>Tone&nbsp;1</strong> and <strong>Tone&nbsp;2</strong>. <strong>+&nbsp;Tone</strong> adds
+      another (up to six); the <strong>×</strong> on a row removes it, down to a minimum of two.</li>
     <li><strong>Max harmonics</strong> is replaced by <strong>Max mix order</strong> — the truncation that
       bounds the two-dimensional mixing spectrum (see below).</li>
-    <li>Both tones accept expressions, so a common pattern is
+    <li>Every tone accepts an expression, so a common pattern is
       <code>Tone&nbsp;1 = RFfreq − Spacing/2</code>, <code>Tone&nbsp;2 = RFfreq + Spacing/2</code> with
       <code>RFfreq</code> and <code>Spacing</code> as variables you can sweep.</li>
+    <li>Beside <strong>Max mix order</strong> the editor shows how many mixing products the current tone
+      count and order retain, and warns when that is over the limit — so you can see the cost of an order
+      before you run it.</li>
   </ul>
   <div class="callout note">
     <span class="label">The analysis owns the tones, not the source</span>
-    <p>The two fundamentals <strong>f₁ and f₂ come from the HB analysis</strong> (<code>Tone&nbsp;1</code> /
-    <code>Tone&nbsp;2</code>, written as <code>NumFreqs=2</code> in the netlist), not from the source. A
+    <p>The fundamentals <strong>come from the HB analysis</strong> (the tone list, written as
+    <code>NumFreqs=N&nbsp;Tone[1]=…&nbsp;Tone[N]=…</code> in the netlist), not from the source. A
     <a href="components.html#pntone">PnTone</a> (or <code>V_nTone</code>) just supplies power at those
     frequencies. Every source tone must land <strong>exactly</strong> on the analysis grid — an off-grid drive
     frequency is rejected at setup with a clear message rather than producing silent garbage.</p>
@@ -317,6 +326,47 @@ freq=2.2GHz
   <em>quadratically</em> with the order (≈&nbsp;2·order² lines), so a two-tone run is much larger than a
   single-tone run at the same order — order 5 yields dozens of mixing products versus a handful of harmonics.</p>
 
+  <p>With <strong>T</strong> tones the same rule reads
+  <code>retain (k₁,&nbsp;…,&nbsp;k<sub>T</sub>) ⟺ |k₁| + … + |k<sub>T</sub>| ≤ MaxMixOrder</code>, and the
+  diamond becomes a T-dimensional one. There is still a single order knob — no per-tone limits.</p>
+
+  <h3 id="multi-tone-size">How many tones, at what order</h3>
+  <p>The retained product count is what actually costs you, and it grows steeply with tone count — much
+  faster than the quadratic growth two tones would suggest. The default <code>MaxMixOrder&nbsp;=&nbsp;5</code>
+  is sized for two tones; <strong>lower it as you add tones</strong>:</p>
+
+  <table class="param-table">
+    <caption>Retained mixing products. Configurations over the 600-product limit are refused, with a message
+      naming the largest order that fits.</caption>
+    <thead><tr><th>Tones</th><th>order 2</th><th>order 3</th><th>order 4</th><th>order 5</th></tr></thead>
+    <tbody>
+      <tr><td>2</td><td>7</td><td>13</td><td>21</td><td>31</td></tr>
+      <tr><td>3</td><td>13</td><td>32</td><td>63</td><td>116</td></tr>
+      <tr><td>4</td><td>21</td><td>65</td><td>161</td><td>341</td></tr>
+      <tr><td>6</td><td>43</td><td>189</td><td>645 <em>(refused)</em></td><td>1827 <em>(refused)</em></td></tr>
+    </tbody>
+  </table>
+
+  <p>Practical starting points: <strong>order 5 at 2–3 tones</strong>, <strong>order 4 at 4 tones</strong>,
+  <strong>order 3 at 5–6 tones</strong>. On a single-FET PA, six tones at order 3 solves in a few seconds.</p>
+
+  <div class="callout note">
+    <span class="label">Too large is refused before the run starts, not after</span>
+    <p>If the tone count and mixing order together ask for more products than the solver will take, circuitRF
+    refuses <strong>immediately</strong> — not after a long solve — and the message tells you the largest
+    <code>MaxMixOrder</code> that <em>would</em> work at that tone count. The editor shows the same number
+    live beside the field, so you normally see it before you press Run.</p>
+  </div>
+
+  <div class="callout note">
+    <span class="label">Equally spaced tones put two products at the same frequency</span>
+    <p>With evenly spaced carriers — the usual multi-carrier stimulus — different mixing products can land on
+    the <em>same</em> physical frequency. At 1.99&nbsp;/&nbsp;2.00&nbsp;/&nbsp;2.01&nbsp;GHz, both
+    (1,&nbsp;−1,&nbsp;0) and (0,&nbsp;1,&nbsp;−1) sit at 10&nbsp;MHz. They stay <strong>separate</strong>
+    products with their own phasors, and the spectrum plot shows both stems at the same position — they are
+    not added together. Use the marker readout, which names the product, to tell them apart.</p>
+  </div>
+
   <table class="param-table">
     <thead><tr><th>(k₁, k₂)</th><th>Order</th><th>Frequency</th><th>What it is</th><th>At f₁=1.99, f₂=2.01 GHz</th></tr></thead>
     <tbody>
@@ -337,15 +387,19 @@ freq=2.2GHz
 
   <div class="callout note">
     <span class="label">Reading the spectrum in the Data Display</span>
-    <p>A two-tone result plotted as a spectrum uses a <strong>mixIndex</strong> axis: each stem is a mixing
-    product, drawn at its physical frequency, labelled with its <strong>(k₁,&nbsp;k₂)</strong> tag. The spectrum
-    is shown <strong>single-sided</strong> — the negative-frequency products (the conjugate halves, e.g. f₁−f₂
+    <p>A multi-tone result plotted as a spectrum uses a <strong>mixIndex</strong> axis: each stem is a mixing
+    product, drawn at its physical frequency, labelled with its <strong>(k₁,&nbsp;k₂)</strong> tag — or
+    <strong>(k₁,&nbsp;…,&nbsp;k<sub>T</sub>)</strong> at more tones. The spectrum is shown
+    <strong>single-sided</strong> — the negative-frequency products (the conjugate halves, e.g. f₁−f₂
     and f₂−f₁) are folded onto their positive frequency, so each product appears once.</p>
+    <p>Arrow keys step a marker in <strong>frequency</strong> order, which is what you want with tightly
+    spaced IM products. Everything here works the same at any tone count.</p>
   </div>
 
   <h3 id="two-tone-meas">Measuring intermodulation (IMD2 / IMD3)</h3>
   <p>A <a href="measurements.html">measurement</a> reads a mixing product out of the result by its
-  <strong>(k₁,&nbsp;k₂) tag</strong>. The classic figures of merit are the intermodulation ratios in
+  <strong>(k₁,&nbsp;k₂) tag</strong> — at three tones the tag simply has three entries, e.g.
+  <code>HB1.V("Vout",&nbsp;"(1,1,-1)")</code> for the triple-beat product f₁+f₂−f₃. The classic figures of merit are the intermodulation ratios in
   <strong>dBc</strong> — an IM product relative to its carrier:</p>
   <pre class="netlist"><code>IMD2 = dB( HB1.V("Vout", "(1,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   dB
 IMD3 = dB( HB1.V("Vout", "(2,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   dB</code></pre>

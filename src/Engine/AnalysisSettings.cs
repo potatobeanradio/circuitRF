@@ -215,4 +215,43 @@ public sealed class AnalysisSettings
     /// branch-dependence near a bifurcation).
     /// </summary>
     public bool HbSweepWarmStart { get; init; } = true;
+
+    // ── Multi-tone (T ≥ 3) HB ceiling and transform (harmonic-balance.md §6.5) ──────────────
+
+    /// <summary>
+    /// Maximum number of independent excitation tones an HB analysis may declare. Default 6.
+    ///
+    /// <para>A cap exists because the T ≥ 3 path solves a DENSE Jacobian, and the retained
+    /// mixing-product count grows steeply with tone count — see <see cref="HbMaxMixProducts"/>,
+    /// which is the constraint that actually binds in practice. This one exists so a typo
+    /// (<c>NumFreqs=60</c>) refuses immediately with a clear message instead of attempting a
+    /// lattice nothing can hold.</para>
+    /// </summary>
+    public int HbMaxTones { get; init; } = 6;
+
+    /// <summary>
+    /// Maximum retained mixing products M for a multi-tone HB analysis. Default 600, i.e. ~2,400
+    /// dense unknowns on a two-node nonlinear interface.
+    ///
+    /// <para>This is the knob that actually binds, and the engine refuses <em>at setup time</em>
+    /// — before any extraction or Newton solve — naming the largest MaxMixOrder that fits, so a
+    /// too-ambitious analysis never becomes a long run that then throws. The default admits the
+    /// configurations that are practical on a dense solve (6 tones at order 3 = 189 products,
+    /// 4 tones at order 4 = 161, 3 tones at order 9 = 580) and excludes the ones that are not
+    /// (6 tones at order 4 = 645 products would cost roughly 40 s <em>per Newton iteration</em>).
+    /// Raise it deliberately, accepting the runtime.</para>
+    /// </summary>
+    public int HbMaxMixProducts { get; init; } = 600;
+
+    /// <summary>
+    /// Ratio of APFT torus samples to real unknowns for the multi-tone transform (default 2.0).
+    ///
+    /// <para>The transform is a least-squares projection onto the retained lattice, so
+    /// oversampling controls how out-of-band content is handled and how well conditioned ΓᵀΓ is.
+    /// Cost is linear in this: it multiplies both the per-iteration device evaluations and the
+    /// Jacobian's triple product. <see cref="HarmonicBalance.HbApft"/> gates on the measured
+    /// conditioning and refuses rather than returning a rank-deficient transform, so lowering
+    /// this trades margin, not silence.</para>
+    /// </summary>
+    public double HbApftOversample { get; init; } = 2.0;
 }

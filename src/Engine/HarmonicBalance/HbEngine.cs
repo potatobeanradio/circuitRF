@@ -244,7 +244,10 @@ public sealed class HbEngine
     /// </summary>
     public HbRunResult Run(HbAnalysisParams p, Complex[,]? warmStart = null)
     {
-        if (p.IsMultiTone) return new HbRunResult(RunTwoTone(p));
+        // Two tones keep the frozen FFT/convolution path verbatim — its goldens and the data
+        // display's two-tone spectrum depend on it. Three or more go to the APFT lattice path.
+        if (p.ToneFreqsHz.Length == 2) return new HbRunResult(RunTwoTone(p));
+        if (p.ToneFreqsHz.Length >= 3) return new HbRunResult(RunMultiTone(p));
 
         int    K      = p.MaxHarmonic;
         double f0     = p.ToneHz;
@@ -662,7 +665,295 @@ public sealed class HbEngine
             _netlist.Nodes.LabeledNames, probeCurrents);
     }
 
-    /// <summary>Effective settings with HbMaxIter overridden from the directive's MaxIter.</summary>
+    // ── T-tone engine entry point (harmonic-balance.md §6.5) ─────────────────
+
+    /// <summary>
+    /// Multi-tone (T ≥ 3) HB run. Structurally the same pass as <see cref="RunTwoTone"/> — extract
+    /// the linear interface and Norton source per retained product at ω = 2π·Σ_t k_t f_t, solve
+    /// Newton over the lattice, back-solve the linear interior, build the cubes — with three
+    /// substitutions: the <see cref="MixingGrid"/> becomes the T-dimensional
+    /// <see cref="MixingLattice"/>, the separable 2-D FFT becomes <see cref="HbApft"/>, and
+    /// <see cref="HbNewton2D"/> becomes <see cref="HbNewtonNd"/>.
+    ///
+    /// <para>The returned DataSet has the SAME shape as the two-tone one — same cube names, same
+    /// <c>mixIndex</c> axis carrying signed product frequencies, labels widened from
+    /// <c>"(k1,k2)"</c> to <c>"(k1,…,kT)"</c> — so the data display renders a T-tone spectrum
+    /// through exactly the path a two-tone one already uses.</para>
+    /// </summary>
+    private DataSet RunMultiTone(HbAnalysisParams p)
+    {
+        double[] f = p.ToneFreqsHz;
+        int T = f.Length;
+
+        CheckMultiToneCeiling(T, p.MaxMixOrder);
+
+        var omegas  = new double[T];
+        for (int t = 0; t < T; t++) omegas[t] = 2.0 * Math.PI * f[t];
+
+        var lattice = new MixingLattice(T, p.MaxMixOrder);
+        var apft    = new HbApft(lattice, _settings.HbApftOversample);
+        int M       = lattice.MixCount;
+
+        var extractor = new HbLinearExtractor(_netlist, _settings);
+        int N         = extractor.InterfaceCount;
+        int[] ifNodes = extractor.InterfaceNodes;
+        var nodeNames = ifNodes.Select(n =>
+            n < _netlist.Nodes.Count ? _netlist.Nodes.NameOf(n) : $"node{n}").ToArray();
+
+        CheckCommensurabilityLattice(lattice, f);
+
+        // ── Configure P1Tone / PnTone / Tuner terminations with tone context ──
+        // f_c is the band ruler for the shared Z[k] terminations; the two-tone path uses
+        // (f₁+f₂)/2, whose general form is the mean of the declared tones.
+        double fc = 0;
+        for (int t = 0; t < T; t++) fc += f[t];
+        fc /= T;
+
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.Model is P1ToneModel p1)
+            {
+                double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
+                    ? fv.AsReal() : f[0];
+                p1.SetToneContext(fc: fc, driveFreqHz: driveHz);
+            }
+            else if (ec.Model is PnToneModel pn)
+            {
+                pn.SetToneContext(fc: fc);
+            }
+            else if (ec.Model is TunerModel tn)
+            {
+                GiveTunerItsBandRuler(tn, fc);
+            }
+        }
+
+        // Extract the linear interface per product. A retained rep may have NEGATIVE frequency
+        // (e.g. (1,−1,0)); for a real network Y(−ω)=conj(Y(ω)). Extract at |ω| and conjugate, so
+        // an explicit complex Z(|f|) stays consistent with the L/C elements. Same rule as two-tone.
+        (Complex[,] y, Complex[] s) ExtractMix(double omega)
+        {
+            if (omega >= 0) return extractor.Extract(omega);
+            var (yp, sp) = extractor.Extract(-omega);
+            return (ConjugateMatrix(yp), ConjugateVector(sp));
+        }
+
+        var yNN  = new Complex[M][,];
+        var iSrc = new Complex[M][];
+        (yNN[0], iSrc[0]) = extractor.ExtractDC();
+        for (int m = 1; m < M; m++)
+            (yNN[m], iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+
+        var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
+        if (!dcResult.Converged)
+            _netlist.AddWarningOnce("hb-dc-nonconverge",
+                "HB: DC operating point did not converge; proceeding with best available.");
+
+        var trace = new HbConvergenceTrace();
+        var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
+        var effectiveSettings = EffectiveSettings(p);
+
+        var V = InitialGuess2D(null, dcResult, N, M, ifNodes);
+
+        // Re-extract source excitation (drive amplitude baked into I_src).
+        for (int m = 1; m < M; m++)
+            (_, iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+
+        var solveResult = HbNewtonNd.Solve(V, yNN, iSrc, apft, f, N,
+            _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+
+        trace.AddStep(new HbConvergenceTrace.StepRecord(
+            0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+
+        if (!solveResult.Converged)
+        {
+            double resNd = solveResult.IterTrace.LastOrDefault()?.ResidualNorm ?? 0.0;
+            _netlist.AddWarning(
+                $"HB ({T}-tone) did not converge (‖F‖={resNd:E3} after {solveResult.Iterations} iters); " +
+                $"stored best-available result.");
+            Console.Error.WriteLine(
+                $"[HBnD] Non-convergence: ‖F‖={resNd:E3} after {solveResult.Iterations} iters.");
+        }
+
+        if (_settings.HbConsoleDiagnostics)
+        {
+            Console.Error.Write($"[HBnD-DC] ({T} tones, M={M}, APFT S={apft.SampleCount}):");
+            for (int n = 0; n < N; n++)
+                Console.Error.Write(
+                    $"  {nodeNames[n]} V={V[n,0].Real:F3}V I_nl={solveResult.INl[n,0].Real*1e3:F2}mA");
+            Console.Error.WriteLine();
+        }
+
+        // Post-convergence per-device port-current extraction over the lattice.
+        var pointPortCurrents = HbNewtonNd.ComputeDevicePortCurrentsNd(
+            V, apft, N, _netlist, ifNodes);
+        foreach (var (key, spec) in pointPortCurrents)
+        {
+            if (!portCurrentsByBranch.TryGetValue(key, out var lst))
+                portCurrentsByBranch[key] = lst = [];
+            lst.Add(spec);
+        }
+
+        if (_settings.HbConsoleDiagnostics) trace.Print();
+
+        // ── Recover the FULL result: linear-interior node voltages + IProbe branch currents ──
+        // Identical to the two-tone back-solve, including the ω<0 conjugate handling, so a
+        // measurement naming a node behind an N-port resolves at T tones exactly as at two.
+        Complex[] SolveMixFull(int m)
+        {
+            var iNlM = new Complex[N];
+            for (int n = 0; n < N; n++) iNlM[n] = solveResult.INl[n, m];
+            double omega = lattice.OmegaOf(m, omegas);
+            if (omega >= 0)
+                return extractor.SolveFullNetwork(omega, iNlM, extractor.BuildSourceRhs(omega));
+
+            for (int n = 0; n < N; n++) iNlM[n] = Complex.Conjugate(iNlM[n]);
+            var bsrc = extractor.BuildSourceRhs(-omega);
+            for (int i = 0; i < bsrc.Length; i++) bsrc[i] = Complex.Conjugate(bsrc[i]);
+            var xn = extractor.SolveFullNetwork(-omega, iNlM, bsrc);
+            for (int i = 0; i < xn.Length; i++) xn[i] = Complex.Conjugate(xn[i]);
+            return xn;
+        }
+
+        var xMix = new Complex[M][];
+        for (int m = 0; m < M; m++) xMix[m] = SolveMixFull(m);
+
+        var fullNodeIds = Enumerable.Range(1, _netlist.Nodes.Count - 1)
+            .Where(c => !_netlist.Nodes.NameOf(c).StartsWith("__", StringComparison.Ordinal))
+            .ToArray();
+        var ifNodeToIdx = new Dictionary<int, int>(N);
+        for (int n = 0; n < N; n++) ifNodeToIdx[ifNodes[n]] = n;
+
+        int Nfull   = fullNodeIds.Length;
+        var Vfull   = new Complex[Nfull, M];
+        var INlfull = new Complex[Nfull, M];
+        var namesFull = new string[Nfull];
+        for (int fi = 0; fi < Nfull; fi++)
+        {
+            int c = fullNodeIds[fi];
+            namesFull[fi] = _netlist.Nodes.NameOf(c);
+            if (ifNodeToIdx.TryGetValue(c, out int ifIdx))
+                for (int m = 0; m < M; m++) { Vfull[fi, m] = V[ifIdx, m]; INlfull[fi, m] = solveResult.INl[ifIdx, m]; }
+            else
+                for (int m = 0; m < M; m++) Vfull[fi, m] = c - 1 < xMix[m].Length ? xMix[m][c - 1] : Complex.Zero;
+        }
+
+        var probeCurrents = new Dictionary<string, Complex[]>(StringComparer.Ordinal);
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.Model is not IProbeModel ip || ip.LastBranchIndex < 0) continue;
+            var spec = new Complex[M];
+            for (int m = 0; m < M; m++)
+                spec[m] = ip.LastBranchIndex < xMix[m].Length ? xMix[m][ip.LastBranchIndex] : Complex.Zero;
+            probeCurrents[ec.InstancePath] = spec;
+        }
+
+        return BuildMultiToneDataSet(
+            Vfull, INlfull, namesFull, lattice, f, trace, portCurrentsByBranch,
+            _netlist.Nodes.LabeledNames, probeCurrents);
+    }
+
+    /// <summary>
+    /// The multi-tone analysis ceiling, enforced BEFORE any extraction or Newton solve.
+    ///
+    /// <para>The T ≥ 3 path solves a dense Jacobian whose size is 2·N·M, and M grows steeply with
+    /// tone count — so an over-ambitious analysis must be refused in milliseconds rather than
+    /// become a long run that then throws. <see cref="MixingLattice.CountFor"/> answers the size
+    /// question in closed form, so this costs nothing.</para>
+    ///
+    /// <para>The message names the knob that actually BINDS and the value that would work: a
+    /// refusal that only says "too big" leaves the user guessing which of tone count and mix
+    /// order to move, and by how much.</para>
+    /// </summary>
+    private void CheckMultiToneCeiling(int tones, int maxMixOrder)
+    {
+        if (tones > _settings.HbMaxTones)
+            throw new InvalidOperationException(
+                $"HB: {tones} tones declared, but this engine supports at most {_settings.HbMaxTones} " +
+                $"(AnalysisSettings.HbMaxTones). Reduce NumFreqs.");
+
+        int products = MixingLattice.CountFor(tones, maxMixOrder);
+        if (products <= _settings.HbMaxMixProducts) return;
+
+        // Largest order that still fits, so the refusal carries a value the user can type.
+        int fits = 0;
+        for (int o = maxMixOrder - 1; o >= 1; o--)
+            if (MixingLattice.CountFor(tones, o) <= _settings.HbMaxMixProducts) { fits = o; break; }
+
+        string remedy = fits >= 1
+            ? $"Lower MaxMixOrder to {fits} ({MixingLattice.CountFor(tones, fits):N0} products), " +
+              $"or reduce the tone count."
+            : $"Even MaxMixOrder=1 exceeds the cap at {tones} tones — reduce the tone count.";
+
+        throw new InvalidOperationException(
+            $"HB: {tones} tones at MaxMixOrder={maxMixOrder} retains {products:N0} mixing products " +
+            $"(cap {_settings.HbMaxMixProducts:N0}, ≈{2 * products:N0} dense unknowns per interface node). " +
+            remedy);
+    }
+
+    /// <summary>
+    /// T-tone commensurability (harmonic-balance.md §3.1): every tone-source frequency must land on
+    /// the {Σ_t k_t f_t} lattice of a retained mixing product. The general form of
+    /// <see cref="CheckCommensurabilityMultiTone"/>; errors naming the off-grid source.
+    /// </summary>
+    private void CheckCommensurabilityLattice(MixingLattice lattice, double[] toneFreqsHz)
+    {
+        const double Tol = 1.0;  // 1 Hz
+
+        bool OnGrid(double fTone)
+        {
+            for (int m = 0; m < lattice.MixCount; m++)
+                if (Math.Abs(lattice.FrequencyOf(m, toneFreqsHz) - fTone) <= Tol) return true;
+            return false;
+        }
+
+        string Grid() =>
+            $"{{tones {string.Join(", ", toneFreqsHz.Select(x => $"{x:G6}"))}, " +
+            $"MaxMixOrder={lattice.MaxMixOrder}}}";
+
+        void Require(string instance, string key, double fTone)
+        {
+            if (Math.Abs(fTone) < Tol || OnGrid(fTone)) return;
+            throw new InvalidOperationException(
+                $"Commensurability check failed: source '{instance}' {key}={fTone:G6} Hz " +
+                $"is not on the {toneFreqsHz.Length}-tone grid {Grid()}" +
+                UnitMismatchHint(toneFreqsHz[0], fTone));
+        }
+
+        foreach (var ec in _netlist.Components)
+        {
+            switch (ec.Model)
+            {
+                case ToneSourceModel:
+                    foreach (var (key, val) in ec.Parameters)
+                    {
+                        if (val.Kind != ValueKind.Real) continue;
+                        if (!key.Equals("Freq", StringComparison.OrdinalIgnoreCase) &&
+                            !key.StartsWith("Freq[", StringComparison.OrdinalIgnoreCase)) continue;
+                        Require(ec.InstancePath, key, val.AsReal());
+                    }
+                    break;
+
+                case P1ToneModel p1:
+                    Require(ec.InstancePath, "Freq", p1.FreqHz);
+                    break;
+
+                case PnToneModel pn:
+                    foreach (double fTone in pn.ToneFreqsHz)
+                        Require(ec.InstancePath, "Freq", fTone);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Effective settings with HbMaxIter overridden from the directive's MaxIter.
+    ///
+    /// <para><b>This is a hand-written copy, so every field must be listed — an omission is
+    /// SILENT.</b> It used to drop <c>HbConsoleDiagnostics</c>, which meant `--diag` went quiet
+    /// for any analysis whose <c>MaxIter=</c> differed from the settings default: the flag
+    /// appeared to work on some netlists and not others, with nothing to indicate why. Anything
+    /// added to <see cref="AnalysisSettings"/> that the HB engine reads belongs here too.</para>
+    /// </summary>
     private AnalysisSettings EffectiveSettings(HbAnalysisParams p)
         => p.MaxIter == _settings.HbMaxIter ? _settings : new AnalysisSettings
         {
@@ -675,6 +966,11 @@ public sealed class HbEngine
             DcBiasStepping            = _settings.DcBiasStepping,
             DriveStepping             = _settings.DriveStepping,
             NonlinearAbsTol           = _settings.NonlinearAbsTol,
+            HbConsoleDiagnostics      = _settings.HbConsoleDiagnostics,
+            HbSweepWarmStart          = _settings.HbSweepWarmStart,
+            HbMaxTones                = _settings.HbMaxTones,
+            HbMaxMixProducts          = _settings.HbMaxMixProducts,
+            HbApftOversample          = _settings.HbApftOversample,
         };
 
     private static Complex[,] ConjugateMatrix(Complex[,] a)
@@ -1267,6 +1563,127 @@ public sealed class HbEngine
 
         // Unified I [branch, mixIndex] cube: IProbe currents first (labeled, back-solved over the
         // mixing lattice), then device-port currents. Mirrors BuildSingleToneDataSet.
+        {
+            var brNames = new List<string>();
+            var brSpecs = new List<Complex[]>();
+
+            string[] probeLabels = Array.Empty<string>();
+            if (probeCurrents is { Count: > 0 })
+            {
+                probeLabels = probeCurrents.Keys.ToArray();
+                foreach (var name in probeLabels) { brNames.Add(name); brSpecs.Add(probeCurrents[name]); }
+            }
+            foreach (var (key, specList) in portCurrentsByBranch)
+            {
+                if (specList.Count == 0) continue;
+                brNames.Add(key);
+                brSpecs.Add(specList[0]);
+            }
+            if (brNames.Count > 0)
+            {
+                int B         = brNames.Count;
+                var bVals     = Enumerable.Range(0, B).Select(i => (double)i).ToArray();
+                var branchAxis = new Axis("branch", bVals, "", brNames.ToArray());
+                var iData     = new Complex[B * M];
+                for (int b = 0; b < B; b++)
+                {
+                    var spec = brSpecs[b];
+                    for (int m = 0; m < M; m++) iData[b * M + m] = m < spec.Length ? spec[m] : Complex.Zero;
+                }
+                ds.Add("I", new DataCube([branchAxis, mixAxis], iData));
+
+                if (probeLabels.Length > 0)
+                {
+                    var pIdx = Enumerable.Range(0, probeLabels.Length).Select(i => (double)i).ToArray();
+                    ds.Add("__ProbeBranches", new DataCube(
+                        [new Axis("probe", pIdx, "", probeLabels)], new double[probeLabels.Length]));
+                }
+            }
+        }
+
+        return ds;
+    }
+
+    /// <summary>
+    /// T-tone result cubes. Deliberately the SAME shape as <see cref="BuildTwoToneDataSet"/> —
+    /// same cube names, same <c>node</c>/<c>mixIndex</c>/<c>branch</c> axis names, and a
+    /// <c>mixIndex</c> axis whose VALUES are the signed product frequencies in Hz and whose
+    /// LABELS are the product tags.
+    ///
+    /// <para>That sameness is the point. The data display keys its spectrum rendering off the
+    /// axis NAME, positions stems from the axis VALUES, and prints the axis LABEL verbatim, so
+    /// widening the tag from <c>"(k1,k2)"</c> to <c>"(k1,…,kT)"</c> is the only difference a
+    /// T-tone result presents — and the two-tone spectrum path, which is frozen, is not touched
+    /// at all.</para>
+    /// </summary>
+    private static DataSet BuildMultiToneDataSet(
+        Complex[,]    V,
+        Complex[,]    iNl,
+        string[]      nodeNames,
+        MixingLattice lattice,
+        double[]      toneFreqsHz,
+        HbConvergenceTrace trace,
+        Dictionary<string, List<Complex[]>> portCurrentsByBranch,
+        HashSet<string>?    labeledNames = null,
+        Dictionary<string, Complex[]>? probeCurrents = null)
+    {
+        int N = V.GetLength(0);
+        int M = lattice.MixCount;
+
+        var nodeVals = new double[N];
+        for (int i = 0; i < N; i++) nodeVals[i] = i;
+        var nodeAxis = new Axis("node", nodeVals, "", nodeNames);
+
+        var mixVals   = new double[M];
+        var mixLabels = new string[M];
+        for (int m = 0; m < M; m++)
+        {
+            mixVals[m]   = lattice.FrequencyOf(m, toneFreqsHz);
+            mixLabels[m] = lattice.Label(m);
+        }
+        var mixAxis = new Axis("mixIndex", mixVals, "Hz", mixLabels);
+
+        var vData   = new Complex[N * M];
+        var inlData = new Complex[N * M];
+        for (int n = 0; n < N; n++)
+        for (int m = 0; m < M; m++)
+        {
+            vData  [n * M + m] = V  [n, m];
+            inlData[n * M + m] = iNl[n, m];
+        }
+
+        var step0   = trace.Steps.Count > 0 ? trace.Steps[0] : null;
+        double conv = step0?.Converged == true ? 1.0 : 0.0;
+        double res  = step0?.IterTrace.Count > 0 ? step0.IterTrace[^1].ResidualNorm : 0.0;
+
+        int T = toneFreqsHz.Length;
+        var toneVals  = new double[T];
+        for (int t = 0; t < T; t++) toneVals[t] = t + 1;
+        var toneAxis  = new Axis("tone", toneVals, "");
+        var orderAxis = new Axis("order", [1.0], "");
+
+        var ds = new DataSet();
+        ds.Add("V",            new DataCube([nodeAxis, mixAxis], vData));
+        ds.Add("INl",          new DataCube([nodeAxis, mixAxis], inlData));
+        ds.Add("Converged",    DataCube.Scalar(conv));
+        ds.Add("Residual",     DataCube.Scalar(res));
+        ds.Add("ToneFreqs",    new DataCube([toneAxis], (double[])toneFreqsHz.Clone()));
+        ds.Add("MetaMixOrder", new DataCube([orderAxis], new double[] { lattice.MaxMixOrder }));
+
+        if (labeledNames is not null)
+        {
+            var labeled = nodeNames.Where(n => labeledNames.Contains(n)).Distinct().ToArray();
+            if (labeled.Length > 0)
+            {
+                var lIdx = Enumerable.Range(0, labeled.Length).Select(i => (double)i).ToArray();
+                ds.Add("__LabeledNodes", new DataCube(
+                    [new Axis("label", lIdx, "", labeled)],
+                    new double[labeled.Length]));
+            }
+        }
+
+        // Unified I [branch, mixIndex] cube: IProbe currents first (labeled, back-solved over the
+        // lattice), then device-port currents. Mirrors BuildTwoToneDataSet / BuildSingleToneDataSet.
         {
             var brNames = new List<string>();
             var brSpecs = new List<Complex[]>();

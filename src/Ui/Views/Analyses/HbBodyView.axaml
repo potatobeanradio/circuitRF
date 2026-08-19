@@ -41,8 +41,9 @@
             <!-- Max harmonics is a small integer — give it a fixed narrow column -->
             <Grid ColumnDefinitions="*,76" ColumnSpacing="10">
 
-                <!-- Tone (f₀ or Tone 1) with unit combo -->
-                <StackPanel Spacing="2">
+                <!-- Single-tone f₀ with unit combo. In multi-tone mode the tone LIST below owns
+                     every tone including the first, so this collapses rather than duplicating it. -->
+                <StackPanel Spacing="2" IsVisible="{Binding IsSingleTone}">
                     <TextBlock Text="{Binding ToneLabel}"
                                FontSize="10" Opacity="0.6"/>
                     <Grid ColumnDefinitions="*,Auto">
@@ -85,28 +86,75 @@
                         Command="{Binding SetMultiToneCommand}"/>
             </StackPanel>
 
-            <!-- ── Multi-tone extra fields (appear when Multi is active) ───── -->
+            <!-- ── Multi-tone: the tone LIST + mix order (appear when Multi is active) ───── -->
             <StackPanel IsVisible="{Binding IsMultiTone}" Spacing="8">
-                <!-- Max mix order is also a small integer — same narrow fixed column -->
-                <Grid ColumnDefinitions="*,76" ColumnSpacing="10">
 
-                    <!-- Tone 2 with unit combo -->
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Tone 2"
-                                   FontSize="10" Opacity="0.6"/>
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBox Text="{Binding Tone2Coeff, Mode=TwoWay}"
-                                     FontSize="11"/>
-                            <ComboBox Grid.Column="1"
-                                      Classes="unit-combo"
-                                      ItemsSource="{x:Static vm:HbBodyViewModel.FreqUnits}"
-                                      SelectedItem="{Binding Tone2Unit, Mode=TwoWay}"/>
-                        </Grid>
-                        <TextBlock Text="{Binding Tone2Preview}"
-                                   FontSize="10" Opacity="0.55"/>
+                <!-- Tone list header: count + Add (disabled at the engine's maximum) -->
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding ToneCountSummary}"
+                               FontSize="10" Opacity="0.6"
+                               VerticalAlignment="Center"/>
+                    <Button Grid.Column="1"
+                            Content="+ Tone"
+                            Command="{Binding AddToneCommand}"
+                            FontSize="11"
+                            Padding="8,3"
+                            HorizontalContentAlignment="Center"/>
+                </Grid>
+
+                <!-- One row per tone. Row 1 lives here too, so every tone is edited the same way. -->
+                <ScrollViewer MaxHeight="220"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Tones}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:HbToneRowViewModel">
+                                <Border Padding="8,6"
+                                        Background="{DynamicResource SystemChromeLowColor}"
+                                        CornerRadius="4"
+                                        Margin="0,0,0,4">
+                                    <Grid ColumnDefinitions="*,24">
+                                        <StackPanel Spacing="2" Margin="0,0,6,0">
+                                            <TextBlock Text="{Binding Caption}"
+                                                       FontSize="10" Opacity="0.6"/>
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBox Text="{Binding Coeff, Mode=TwoWay}"
+                                                         FontSize="11"/>
+                                                <ComboBox Grid.Column="1"
+                                                          Classes="unit-combo"
+                                                          ItemsSource="{x:Static vm:HbToneRowViewModel.FreqUnits}"
+                                                          SelectedItem="{Binding Unit, Mode=TwoWay}"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding Preview}"
+                                                       FontSize="10" Opacity="0.55"/>
+                                        </StackPanel>
+
+                                        <Button Grid.Column="1"
+                                                Command="{Binding RemoveCommand}"
+                                                VerticalAlignment="Center"
+                                                ToolTip.Tip="Remove this tone"
+                                                Padding="3,3"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                FontSize="13"
+                                                Content="×"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Max mix order, with the retained-product count it implies. The engine refuses
+                     an analysis over that limit, so the number belongs beside the knob that sets
+                     it rather than in an error at Run. -->
+                <Grid ColumnDefinitions="*,76" ColumnSpacing="10">
+                    <StackPanel Spacing="2" VerticalAlignment="Bottom">
+                        <TextBlock Text="{Binding MixProductPreview}"
+                                   FontSize="10" Opacity="0.6"
+                                   TextWrapping="Wrap"/>
                     </StackPanel>
 
-                    <!-- Max mix order -->
                     <StackPanel Grid.Column="1" Spacing="2">
                         <TextBlock Text="Max mix order"
                                    FontSize="10" Opacity="0.6"/>
@@ -115,7 +163,6 @@
                         <TextBlock Text="{Binding MaxMixOrderPreview}"
                                    FontSize="10" Opacity="0.55"/>
                     </StackPanel>
-
                 </Grid>
             </StackPanel>
 

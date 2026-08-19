@@ -4792,3 +4792,67 @@ still the last true one.
 shell has no Messages panel and no bar — `WBondStatusMessageSink` is one line of text, and its own
 docs give the reason ("inventing a glyph for a percentage would be a second progress widget to keep in
 step with the panel's real one"). Inside circuitRF the same export is cancellable from either row.
+
+## Multi-tone HB (3–6 tones) in the UI: the Data Display needed nothing (2026-08-19)
+
+**The headline, because it is the part that could have gone badly.** Extending HB to 3–6 tones
+changed **zero files under `src/Ui/DataDisplay/`**. Its `mixIndex` handling is already tag-agnostic:
+it decides "this is a spectrum" from the axis NAME, positions stems from the axis VALUES (signed
+product frequencies in Hz), and prints the axis LABEL verbatim (`Trace.cs` ~2005/2060,
+`PlotInspectorViewModel.ApplyPinnedSpectral`). So the engine's T-tone path emits the identical cube
+shape and only widens the tag from `"(k1,k2)"` to `"(k1,…,kT)"`, and a three-tone spectrum renders,
+slices and reads out through the frozen two-tone path unchanged. Measured, not assumed — the marker
+box for the two cases is the same rows in the same order:
+
+```
+3-tone: m1 | mixIndex=(1,-1,0) | freq=0.01 GHz | V=0.012
+2-tone: m1 | mixIndex=(1,-1)   | freq=0.01 GHz | V=0.012
+```
+
+`SliceTokenParser.SplitTokens` already ignores commas inside a quoted label, so `V["n_drain",
+"(1,1,-1)"]` works for the same reason the two-tuple did. `HbMultiToneSpectrumTests` pins BOTH sides
+— every three-tone assertion has a two-tone twin — so a future change cannot fix one by breaking the
+other.
+
+**A freshly-placed `PnTone` carries only two tone groups, so adopting a 3+ tone analysis has to
+CREATE parameters, not just assign them.** `AdoptHbTonesIntoPnTone` previously looped `i = 1..2` and
+skipped any `Freq[i]` that did not exist. Against a three-tone analysis that is silent and wrong in
+the worst way: the source keeps driving two tones while the analysis declares three, everything
+elaborates, and the only symptom is a commensurability error at Run that names the source rather than
+the mismatch. It now adds the whole `Freq[i]`/`Pavl[i]`/`Phase[i]` group — a tone with a frequency
+and no `Pavl` drives nothing — seeding the new rows' drive from tone 1.
+
+**`ToneCoeff`/`Tone2Coeff` were kept as named accessors onto rows 1 and 2 of the new tone list, and
+that was not cosmetic.** `Tones` is canonical, but the dialog's existing suite, `LpBodyViewModel`,
+`LppBodyViewModel` and the multi-tone `ToneExpr` mirror all address the first two tones by those
+names — several as object-initializer *setters*. Forwarding properties (with change notification in
+both directions, so an edit through `Tones[0]` surfaces on `ToneCoeff` and vice versa) kept all 60
+existing dialog tests green with no edits.
+
+**The tone-list accessors must survive being read while the list is EMPTY, and no ordinary test
+finds that.** Rebuilding the list (`SetTones`) clears the `ObservableCollection` before refilling
+it, and `Clear()` raises `CollectionChanged` → `PropertyChanged` for `ToneCoeff`/`ToneUnit`/
+`TonePreview` — which a bound control answers by READING them, mid-clear, with no row 0 to read.
+Headless tests all passed because nothing in them subscribes. The reachable user path is the
+ordinary one: dialog open (bindings live), user clicks **Multi** with a `PnTone` on the schematic,
+so the list is replaced by the source's tones → `ArgumentOutOfRangeException`. The getters are now
+empty-safe. `HbToneListTests.ReadingToneAccessors_FromInsideAChangeNotification_NeverThrows`
+subscribes BEFORE the click and touches every accessor from the handler — verified to throw against
+the unguarded getters, so it is a real gate and not a vacuous one. **A first attempt at that test
+passed against the buggy code**, because it subscribed only after the rebuild had already happened;
+a notification-ordering test is worthless unless the subscription predates the mutation.
+
+**`FromAnalysis` must seed a tone row by CONSTRUCTION, not by assigning `Unit` then `Coeff`.**
+`HbToneRowViewModel` rescales the coefficient on a unit change so the Hz value is preserved — the
+right behaviour for a user picking a different unit, and exactly wrong for restoring a stored pair,
+where it would silently multiply the coefficient. The old code sidestepped this with a `_prevToneUnit`
+field primed before the assignment; the row VM now takes both in its constructor instead, which
+removes the trap rather than documenting it.
+
+**The dialog shows the retained-product count live beside `Max mix order`.** The engine caps
+multi-tone analyses at 600 retained products and the count grows steeply with tone count — 6 tones at
+the *default* `MaxMixOrder=5` asks for 1,827 and is refused. Putting `"6 tones, order 3 → 189 mixing
+products (limit 600)"` next to the knob that sets it means the refusal is visible while authoring
+instead of arriving at Run. It reports the over-cap case explicitly (`— OVER the 600 limit`) rather
+than just showing a large number, and stays blank when the order is an expression rather than a
+literal, since only the engine can resolve that.

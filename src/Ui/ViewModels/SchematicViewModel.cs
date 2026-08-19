@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Engine;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Clipboard;
@@ -3167,9 +3168,15 @@ public sealed partial class SchematicViewModel : ObservableObject
     private string GenerateInstanceName(SymbolKind symbol)
         => SchematicEditModel.NextAvailableName(EditModel.Components, symbol);
 
-    // When a PnTone is placed and a two-tone HB analysis already exists, copy that analysis's tone
-    // frequencies (expression + unit, preserving vars/expressions) into the PnTone's Freq[1]/Freq[2].
-    // Graceful: no two-tone HB, or a missing Freq[i] param → leaves the seeded defaults untouched.
+    // When a PnTone is placed and a multi-tone HB analysis already exists, copy that analysis's
+    // tone frequencies (expression + unit, preserving vars/expressions) into the PnTone's Freq[i].
+    //
+    // A freshly-placed PnTone is seeded with TWO tones, so a 3+ tone analysis needs the extra
+    // Freq[i]/Pavl[i]/Phase[i] rows CREATED, not just assigned — otherwise the source silently
+    // keeps driving two tones while the analysis declares more, and the mismatch only surfaces as
+    // a commensurability error at Run. New rows inherit tone 1's Pavl/Phase so every tone starts
+    // at the same drive level.
+    // Graceful: no multi-tone HB, or a blank Freq expression → leaves the seeded defaults alone.
     internal static void AdoptHbTonesIntoPnTone(EditableComponent pnTone, SchematicEditModel model)
     {
         var hb = model.Analyses.OfType<HarmonicBalanceAnalysis>()
@@ -3177,15 +3184,48 @@ public sealed partial class SchematicViewModel : ObservableObject
                 && int.TryParse(a.NumFreqsExpr, out int n) && n > 1);
         if (hb is null) return;
 
-        for (int i = 1; i <= 2; i++)
+        int tones = Math.Min(hb.ToneExprs.Length, AnalysisSettings.Default.HbMaxTones);
+
+        string PavlOf(int i) => pnTone.Parameters
+            .FirstOrDefault(p => p.Name == $"Pavl[{i}]")?.Expression ?? "0";
+        string PhaseOf(int i) => pnTone.Parameters
+            .FirstOrDefault(p => p.Name == $"Phase[{i}]")?.Expression ?? "0";
+
+        string seedPavl  = PavlOf(1);
+        string seedPhase = PhaseOf(1);
+
+        for (int i = 1; i <= tones; i++)
         {
-            var fp = pnTone.Parameters.FirstOrDefault(p => p.Name == $"Freq[{i}]");
-            if (fp is null) continue;
             string expr = hb.ToneExprs[i - 1];
             if (string.IsNullOrWhiteSpace(expr)) continue;
-            fp.Expression = expr;
-            fp.Unit = i - 1 < hb.ToneUnits.Length && !string.IsNullOrEmpty(hb.ToneUnits[i - 1])
+            string unit = i - 1 < hb.ToneUnits.Length && !string.IsNullOrEmpty(hb.ToneUnits[i - 1])
                 ? hb.ToneUnits[i - 1] : "Hz";
+
+            var fp = pnTone.Parameters.FirstOrDefault(p => p.Name == $"Freq[{i}]");
+            if (fp is not null)
+            {
+                fp.Expression = expr;
+                fp.Unit       = unit;
+                continue;
+            }
+
+            // Tone i does not exist on the source yet — add its whole group, matching the shape
+            // ComponentTypeRegistry seeds for tones 1 and 2.
+            pnTone.Parameters.Add(new EditableParameter
+            {
+                Name = $"Freq[{i}]",  Expression = expr,       Unit = unit,
+                Dimension = UnitDimension.Frequency, ShowOnSchematic = true,
+            });
+            pnTone.Parameters.Add(new EditableParameter
+            {
+                Name = $"Pavl[{i}]",  Expression = seedPavl,   Unit = "dBm",
+                Dimension = UnitDimension.Power, ShowOnSchematic = true,
+            });
+            pnTone.Parameters.Add(new EditableParameter
+            {
+                Name = $"Phase[{i}]", Expression = seedPhase,  Unit = "deg",
+                Dimension = UnitDimension.Angle, ShowOnSchematic = false,
+            });
         }
     }
 

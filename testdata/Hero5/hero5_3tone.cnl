@@ -1,0 +1,93 @@
+; ============================================================
+; hero5_3tone.cnl — THREE-tone HB on the Hero-5 grounded-source GaN HEMT PA.
+; The same SDD FET, bias network and banded terminations as hero5.cnl; the only differences
+; are the tone count (3 instead of 2) and the diamond bound.
+;
+; Tones are EQUALLY SPACED (1.99 / 2.00 / 2.01 GHz) on purpose. That is the ordinary
+; three-carrier test signal, and it is also the case that makes the lattice frequency-DEGENERATE:
+; (1,-1,0) and (0,1,-1) are distinct mixing products that both sit at -10 MHz. They stay
+; independent unknowns because each tone owns its own phase axis on the torus — that independence
+; is what the multidimensional formulation buys, and this fixture is where it is exercised.
+;
+; Diamond MaxMixOrder=3 → 32 retained products, 128 dense unknowns. Deliberately small: this is a
+; routine-tier regression fixture, not a performance measurement.
+; SELF-GENERATED regression target — NOT independently validated.
+; ============================================================
+
+; ---- FET model parameters (same as Phase 3 / hero5.cnl) ----
+Sv=-0.837
+Sc=0.71
+TV0=4.268
+TC=1.507
+th=0.001
+a=0.176
+g=0.089
+lam=0.0012
+B=1130
+
+; ---- three-tone plan ----
+RFfreq      = 2e9
+ToneSpacing = 10e6
+
+; ---- HB config ----
+MaxMixOrder = 3               ; diamond bound |k1|+|k2|+|k3| <= MaxMixOrder
+MaxHarm     = 4
+OverSamp    = 1
+HBtol       = 1e-7
+DriveStep   = IfNecessary
+Guard       = 0
+
+; ---- terminations, banded by frequency around the carriers (as hero5.cnl) ----
+ZSource_0 = 0.00001 + j*0     ; baseband source
+ZSource_f = 25                ; fundamental source impedance
+ZSource_2 = 1e-6              ; 2f0 and above: near-short
+ZSource_3 = 1e-6
+
+ZLoad_0 = 10 + j*10           ; baseband load — exercises even-order IM
+ZLoad_f = 80 + j*10           ; fundamental load
+ZLoad_2 = 1                   ; 2f0 termination
+ZLoad_3 = 1e-6                ; >=3f0: near-short
+
+; ---- DC bias ----
+Vgg = -3.05
+Vdd = 48
+
+; ---- drive level, equal-amplitude tones ----
+Pavl_dbm = -10
+Pavl_w   = 10^((Pavl_dbm - 30)/10)
+Vs_mag   = sqrt(8 * Pavl_w * real(ZSource_f))   ; per-tone |Vs| at the 25-ohm fundamental Zs
+
+; ============================================================
+; GATE bias-tee (SDD port 1 = n_gate)
+; ============================================================
+V_nTone:Vdrive   n_src 0   NumFreqs=3 \
+    Freq[1]=RFfreq-ToneSpacing  V[1]=Vs_mag  Phase[1]=0 \
+    Freq[2]=RFfreq              V[2]=Vs_mag  Phase[2]=0 \
+    Freq[3]=RFfreq+ToneSpacing  V[3]=Vs_mag  Phase[3]=0
+Z_Port:Zsource   n_src n_zs    Z[1,1]=if(freq < 0.5e9) then ZSource_0 elseif(freq < 2.5e9) then ZSource_f elseif(freq < 4.5e9) then ZSource_2 elseif(freq < 6.5e9) then ZSource_3 else 1e-6 endif
+C:Cblock_g       n_zs n_gate   C=1 uF
+V_1Tone:Vgate    n_gbias 0     Vdc=Vgg
+L:Lchoke_g       n_gbias n_gate  L=1 uH
+
+; ============================================================
+; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain
+; ============================================================
+SDD:M1  n_gate 0  n_drain 0  \
+  I[1,0]=_v1/50  \
+  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
+
+; ============================================================
+; DRAIN bias-tee (SDD port 2 = n_drain)
+; ============================================================
+C:Cblock_d       n_drain n_zl   C=1 uF
+Z_Port:Zload     n_zl 0          Z[1,1]=if(freq < 0.5e9) then ZLoad_0 elseif(freq < 2.5e9) then ZLoad_f elseif(freq < 4.5e9) then ZLoad_2 elseif(freq < 6.5e9) then ZLoad_3 else 1e-6 endif
+L:Lchoke_d       n_drain n_dbias  L=1 uH
+V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
+
+; ============================================================
+; HB analysis: three tones, diamond MaxMixOrder, single drive point
+; ============================================================
+analysis HB3  type=hb  NumFreqs=3 \
+     Tone[1]=RFfreq-ToneSpacing  Tone[2]=RFfreq  Tone[3]=RFfreq+ToneSpacing \
+     MaxMixOrder=MaxMixOrder  MaxHarm=MaxHarm  FFTOverSample=OverSamp  Tol=HBtol \
+     DriveStepping=DriveStep  GuardHarmonic=Guard

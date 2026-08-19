@@ -1,0 +1,95 @@
+; ============================================================
+; hero5_6tone.cnl — SIX-tone HB on the Hero-5 grounded-source GaN HEMT PA.
+; Same SDD FET, bias network and banded terminations as hero5.cnl / hero5_3tone.cnl; only the
+; tone count and the diamond bound differ. Six equally-spaced 10 MHz carriers around 2 GHz — a
+; multi-carrier stimulus, and the engine's supported maximum tone count.
+;
+; MaxMixOrder=2 → 43 retained products, 172 dense unknowns: small ENOUGH to be a routine-tier
+; regression rather than a performance measurement. The retained set grows steeply with tone
+; count (order 3 → 189 products, order 4 → 645, which the 600-product ceiling refuses), so the
+; order here is chosen for test cost, not for intermodulation fidelity. Raise it with
+;   dotnet run --project src/Cli -- hb testdata/Hero5/hero5_6tone.cnl --set MaxMixOrder=3
+; to see the third-order products, at a solve measured in tens of seconds.
+; SELF-GENERATED regression target — NOT independently validated.
+; ============================================================
+; ---- FET model parameters (same as Phase 3 / hero5.cnl) ----
+Sv=-0.837
+Sc=0.71
+TV0=4.268
+TC=1.507
+th=0.001
+a=0.176
+g=0.089
+lam=0.0012
+B=1130
+
+; ---- six-tone plan ----
+RFfreq      = 2e9
+ToneSpacing = 10e6
+
+; ---- HB config ----
+MaxMixOrder = 2               ; diamond bound sum_t |k_t| <= MaxMixOrder
+MaxHarm     = 4
+OverSamp    = 1
+HBtol       = 1e-7
+DriveStep   = IfNecessary
+Guard       = 0
+
+; ---- terminations, banded by frequency around the carriers (as hero5.cnl) ----
+ZSource_0 = 0.00001 + j*0     ; baseband source
+ZSource_f = 25                ; fundamental source impedance
+ZSource_2 = 1e-6              ; 2f0 and above: near-short
+ZSource_3 = 1e-6
+
+ZLoad_0 = 10 + j*10           ; baseband load — exercises even-order IM
+ZLoad_f = 80 + j*10           ; fundamental load
+ZLoad_2 = 1                   ; 2f0 termination
+ZLoad_3 = 1e-6                ; >=3f0: near-short
+
+; ---- DC bias ----
+Vgg = -3.05
+Vdd = 48
+
+; ---- drive level, equal-amplitude tones ----
+Pavl_dbm = -16                ; per tone; six tones share the drive budget
+Pavl_w   = 10^((Pavl_dbm - 30)/10)
+Vs_mag   = sqrt(8 * Pavl_w * real(ZSource_f))   ; per-tone |Vs| at the 25-ohm fundamental Zs
+
+; ============================================================
+; GATE bias-tee (SDD port 1 = n_gate)
+; ============================================================
+V_nTone:Vdrive   n_src 0   NumFreqs=6 \
+    Freq[1]=RFfreq-5*ToneSpacing/2  V[1]=Vs_mag  Phase[1]=0 \
+    Freq[2]=RFfreq-3*ToneSpacing/2  V[2]=Vs_mag  Phase[2]=0 \
+    Freq[3]=RFfreq-ToneSpacing/2    V[3]=Vs_mag  Phase[3]=0 \
+    Freq[4]=RFfreq+ToneSpacing/2    V[4]=Vs_mag  Phase[4]=0 \
+    Freq[5]=RFfreq+3*ToneSpacing/2  V[5]=Vs_mag  Phase[5]=0 \
+    Freq[6]=RFfreq+5*ToneSpacing/2  V[6]=Vs_mag  Phase[6]=0
+Z_Port:Zsource   n_src n_zs    Z[1,1]=if(freq < 0.5e9) then ZSource_0 elseif(freq < 2.5e9) then ZSource_f elseif(freq < 4.5e9) then ZSource_2 elseif(freq < 6.5e9) then ZSource_3 else 1e-6 endif
+C:Cblock_g       n_zs n_gate   C=1 uF
+V_1Tone:Vgate    n_gbias 0     Vdc=Vgg
+L:Lchoke_g       n_gbias n_gate  L=1 uH
+
+; ============================================================
+; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain
+; ============================================================
+SDD:M1  n_gate 0  n_drain 0  \
+  I[1,0]=_v1/50  \
+  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
+
+; ============================================================
+; DRAIN bias-tee (SDD port 2 = n_drain)
+; ============================================================
+C:Cblock_d       n_drain n_zl   C=1 uF
+Z_Port:Zload     n_zl 0          Z[1,1]=if(freq < 0.5e9) then ZLoad_0 elseif(freq < 2.5e9) then ZLoad_f elseif(freq < 4.5e9) then ZLoad_2 elseif(freq < 6.5e9) then ZLoad_3 else 1e-6 endif
+L:Lchoke_d       n_drain n_dbias  L=1 uH
+V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
+
+; ============================================================
+; HB analysis: six tones, diamond MaxMixOrder, single drive point
+; ============================================================
+analysis HB6  type=hb  NumFreqs=6 \
+     Tone[1]=RFfreq-5*ToneSpacing/2  Tone[2]=RFfreq-3*ToneSpacing/2  Tone[3]=RFfreq-ToneSpacing/2 \
+     Tone[4]=RFfreq+ToneSpacing/2    Tone[5]=RFfreq+3*ToneSpacing/2  Tone[6]=RFfreq+5*ToneSpacing/2 \
+     MaxMixOrder=MaxMixOrder  MaxHarm=MaxHarm  FFTOverSample=OverSamp  Tol=HBtol \
+     DriveStepping=DriveStep  GuardHarmonic=Guard

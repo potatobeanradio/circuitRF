@@ -79,9 +79,9 @@ The HB analysis is declared at the top level (the `TestBench`, data-model §2.1/
 | Key | Meaning | Default |
 |---|---|---|
 | `Tone` | single-tone fundamental f0 (Hz). Multi-tone uses `NumFreqs=N Tone[1]=… … Tone[N]=…` instead (the `Tone=` scalar is the `NumFreqs=1` spelling — one model, two spellings, mirroring `V_1Tone`/`V_nTone`, linear-engine §4.4) | (required) |
-| `NumFreqs` | number of analysis tones (multi-tone); with `Tone[1..N]`. Absent / `1` ⇒ single-tone `Tone=` | 1 |
+| `NumFreqs` | number of analysis tones (multi-tone); with `Tone[1..N]`. Absent / `1` ⇒ single-tone `Tone=`. Capped at `AnalysisSettings.HbMaxTones` (6), §6.6 | 1 |
 | `MaxHarm` | harmonic count K (single-tone): solve harmonics 0…K | 7 |
-| `MaxMixOrder` | mixing-order truncation (multi-tone diamond `|k₁|+…+|k_N| ≤ MaxMixOrder`, §6); ignored single-tone | 5 |
+| `MaxMixOrder` | mixing-order truncation (multi-tone diamond `|k₁|+…+|k_N| ≤ MaxMixOrder`, §6); ignored single-tone. Together with `NumFreqs` it sets the retained-product count, which is capped — §6.6 | 5 |
 | `Sweep` | the parametric sweep, `"<var>: <start> .. <stop> step <step>"` (the swept variable is any §8 variable, e.g. `Pavl_dbm`) | none (single point) |
 | `FFTOverSample` | anti-aliasing grid multiplier `1·16·…` (§5.3) | 1 |
 | `Tol` | absolute convergence tolerance `‖F‖` (§12.2) | 1e-6 |
@@ -102,6 +102,13 @@ analysis HB1  type=hb  NumFreqs=2 Tone[1]=RFfreq-ToneSpacing/2 Tone[2]=RFfreq+To
      MaxHarm=MaxHarm MaxMixOrder=MaxMixOrder  Sweep="Pavl_dbm: -20 .. PavlStop_dbm step 1" \
      FFTOverSample=OverSamp Tol=HBtol DriveStepping=DriveStep GuardHarmonic=Guard
 ```
+**Three or more tones use the identical spelling** — only `NumFreqs` and the number of `Tone[i]` entries change. The engine dispatches `T = 2` to the FFT path and `T ≥ 3` to the APFT path (§6.4–§6.6); nothing in the directive says which. Example (`testdata/Hero5/hero5_3tone.cnl`):
+```
+analysis HB3  type=hb  NumFreqs=3 \
+     Tone[1]=RFfreq-ToneSpacing  Tone[2]=RFfreq  Tone[3]=RFfreq+ToneSpacing \
+     MaxMixOrder=MaxMixOrder  MaxHarm=MaxHarm  FFTOverSample=OverSamp  Tol=HBtol
+```
+**Pick `MaxMixOrder` down as the tone count goes up.** The default of 5 is sized for two tones; at 6 tones it asks for 1,827 mixing products and is refused (§6.6). The Analysis Setup dialog shows the count live beside the field.
 
 > **Note — first concrete analysis-directive grammar.** Until now analysis/measurement directives were stored opaquely (`RawDirective`, data-model §10, deferred grammar). The HB directive above is the **first** one given real grammar; it sets the `type=<kind> key=value` pattern the other analyses (`sparam`, `dc`, `loadpull`) will follow when their directives are specified. The `key=value` values resolving through the expression engine (so any knob can be a parameter) is the reusable convention.
 
@@ -158,16 +165,18 @@ One sub-choice is pure convergence tuning and is exposed as a flag rather than f
 
 ---
 
-## 6. Multi-tone — multidimensional FFT, diamond-truncated solution
+## 6. Multi-tone — diamond-truncated solution
 
-A multi-tone excitation lifts to a function on a multidimensional torus that is **exactly periodic in each tone's phase**, and that is what the multidimensional FFT samples — so the transform is exact, with no windowing. Whether the *physical* time waveform `x(t)` is itself exactly periodic depends on the tones: it is exactly periodic precisely when they are **commensurate** (rational frequency ratio, hence a common period at their `gcd`, with every mixing product landing on that `gcd`'s harmonic grid), and only **almost**-periodic — never exactly repeating — when they are incommensurate. The Hero-5 tones are commensurate: `f₁ = 1.995`, `f₂ = 2.005 GHz` have ratio `399/401` and a `gcd` of 5 MHz, so `x(t)` repeats exactly every 200 ns; a deliberate two-tone test is normally set up this way. The method does not rely on commensurability either way, because each tone gets **its own phase axis** — `v(φ₁, φ₂)` is exactly `2π`-periodic per axis by construction (the physical signal is the diagonal cut `φ_t = ω_t·t`), so a rectangular grid samples it exactly regardless. That independence from commensurability is exactly the situation the historical **almost-periodic Fourier transform (APFT)** was built for; the per-phase-axis multidimensional FFT delivers the same generality without the APFT's nonuniform-sampling transform matrix, with no windowing and no commensurate-frequency requirement.
+*Two tones use the multidimensional FFT described in §6.1–§6.3. Three or more use the APFT of §6.4–§6.6, which is where the as-built n-tone engine is specified.*
+
+A multi-tone excitation lifts to a function on a multidimensional torus that is **exactly periodic in each tone's phase**, and that is what the multidimensional FFT samples — so the transform is exact, with no windowing. Whether the *physical* time waveform `x(t)` is itself exactly periodic depends on the tones: it is exactly periodic precisely when they are **commensurate** (rational frequency ratio, hence a common period at their `gcd`, with every mixing product landing on that `gcd`'s harmonic grid), and only **almost**-periodic — never exactly repeating — when they are incommensurate. The Hero-5 tones are commensurate: `f₁ = 1.995`, `f₂ = 2.005 GHz` have ratio `399/401` and a `gcd` of 5 MHz, so `x(t)` repeats exactly every 200 ns; a deliberate two-tone test is normally set up this way. The method does not rely on commensurability either way, because each tone gets **its own phase axis** — `v(φ₁, φ₂)` is exactly `2π`-periodic per axis by construction (the physical signal is the diagonal cut `φ_t = ω_t·t`), so a rectangular grid samples it exactly regardless. That independence from commensurability is exactly the situation the historical **almost-periodic Fourier transform (APFT)** was built for; the per-phase-axis multidimensional FFT delivers the same generality without the APFT's nonuniform-sampling transform matrix, with no windowing and no commensurate-frequency requirement. *At two tones that trade is worth taking, and it is what circuitRF does. Past two it is not — the rectangular grid is exponential in the tone count while the APFT's sample set is not — so `T ≥ 3` uses the APFT after all (§6.4).*
 
 ### 6.1 The transform
 - Sample on a rectangular `N₁ × N₂` grid — one period of tone-1's phase along axis 1, one period of tone-2's phase along axis 2 (`v(t) = v(φ₁, φ₂)`, `φ_t = ω_t · t`).
 - Take a **multidimensional real FFT**. The spectrum comes out indexed by the **tone pair `(k₁, k₂)`** at physical frequency `k₁f₁ + k₂f₂`.
 - The single-tone conjugate symmetry generalizes to a **half-plane**: `(−k₁, −k₂)` is the conjugate of `(k₁, k₂)`, so one half-plane (plus the `(0,0)` DC bin) is stored; the rest is reconstructed. Same "no loss of information" property as single-tone.
 
-`N_t` per dimension is sized exactly as single-tone: `FFTOverSample · nextpow2(4·order_t)`, where `order_t` is that tone's per-axis reach (set so the diamond below fits). Generalizes to ≥3 tones as an `N₁ × … × N_T` grid, though v1's heroes need only two.
+`N_t` per dimension is sized exactly as single-tone: `FFTOverSample · nextpow2(4·order_t)`, where `order_t` is that tone's per-axis reach (set so the diamond below fits). **This section is the TWO-TONE path and stays that way**: an `N₁ × … × N_T` grid is the obvious generalization and it does not reach the tone counts the engine must support — see §6.4 for the arithmetic that rules it out, and for what replaced it.
 
 ### 6.2 Rectangular grid, diamond solution set
 The multidimensional FFT is inherently **rectangular** — that is what a multi-D FFT computes. The **retained solution set** (the Newton unknowns) need **not** be the full rectangle. It is a **diamond**:
@@ -179,7 +188,9 @@ retain (k₁, k₂)  iff  |k₁| + |k₂| ≤ MaxMixingOrder         // the half
 This is exactly what the PRD's "mixing order ≥ 5" wants: it keeps every low-order product that carries energy and discards the high-high corner bins that do not. The corner bins are still *computed* by the rectangular FFT (so they participate in anti-aliasing, like the `>K` bins single-tone); they simply do not become unknowns. This maps onto the analysis fields already in the data model: single-tone uses `MaxHarmonic` (= K, a 1-D line `0…K`); two-tone uses `MaxMixingOrder` (the diamond). The retained set's size — call it `M` — replaces `(K+1)` in every dimension formula below.
 
 ### 6.3 Index map and the `mixIndex` axis
-The retained diamond's half-plane representatives are enumerated in a **fixed, documented order** to a linear index `mixIndex = 0 … M−1`, with `(0,0)` at index 0. That linear index is the `mixIndex` axis of the two-tone `V`/`I` cubes (data-model §7), and it is the same enumeration the measurement library's `tone(x, k₁, k₂)` / `IMn(...)` inverts (measurements §3.4). The Hero-5 products land as:
+The retained diamond's half-plane representatives are enumerated in a **fixed, documented order** to a linear index `mixIndex = 0 … M−1`, with `(0,0)` at index 0. That linear index is the `mixIndex` axis of the two-tone `V`/`I` cubes (data-model §7), and it is the same enumeration the measurement library's `tone(x, k₁, k₂)` / `IMn(...)` inverts (measurements §3.4).
+
+The axis carries the product **frequency** as its VALUE (signed, in Hz) and the product **tag** as its LABEL. At two tones the tag is `"(k₁,k₂)"`; at `T` tones it is `"(k₁,…,k_T)"` (§6.5). Nothing downstream parses the tag — the data display renders it verbatim and the measurement language matches on it as a string — which is why widening it from two entries to `T` needed no change in either. The Hero-5 products land as:
 
 | Product | `(k₁, k₂)` | Frequency (f₁=1.995, f₂=2.005 GHz) |
 |---|---|---|
@@ -190,10 +201,79 @@ The retained diamond's half-plane representatives are enumerated in a **fixed, d
 
 Retaining the baseband `(1,−1)` and the close-in `(3,−2)` is what `MaxMixingOrder ≥ 5` buys, and is directly relevant to the source/load baseband-termination effects the tool targets (PRD §5).
 
-### 6.4 Future development — true n-tone (≥ 3 tones)
-The v1 multi-tone engine is implemented for **two tones** (the `HbFft2D` / `(k₁,k₂)` / `N₁×N₂` path), which covers the dominant intermodulation use case (two-carrier IMD3/IMD5 on a PA). The formulation in this section is written to **generalize to an arbitrary number of tones T** — the torus is `T`-dimensional, the FFT is a separable `N₁×…×N_T` real FFT, the diamond becomes the `T`-dimensional simplex `Σ_t |k_t| ≤ MaxMixOrder`, the conjugate symmetry becomes a half-**space**, and the Jacobian's difference/sum lookups become `T`-vector index arithmetic `(k₁∓i₁, …, k_T∓i_T)`. None of the math changes; only the hardcoded dimensionality of the 2-tone implementation (FFT, index map, Jacobian indexing) would be lifted to general `T`.
+### 6.4 True n-tone (≥ 3 tones) — AS BUILT, and why it is not a bigger FFT
 
-**This is recorded as future development, not v1 scope.** Its primary motivation is **RF mixer design** (and multi-carrier / wideband work), where three or more tones — e.g. an RF tone, an LO tone, and their mixing products — are the natural problem, and where the retained low-order products (IF, image, LO leakage) are exactly what the designer needs. The engineering cost is twofold: (a) a focused **dimensionality refactor** lifting the 2-tone FFT/index-map/Jacobian-indexing to general `T` (moderate, mechanical — the per-axis separability and the FD-Jacobian oracle make it tractable and verifiable), and (b) the **scalability** concern that the retained set grows steeply with tone count, which pairs naturally with the deferred block-structured/iterative HB solve (§8, §16 item 5). Because both halves are "scale the HB engine" work and neither is needed by the v1 hero suite, n-tone is best taken as its **own future phase** rather than bolted onto the two-tone engine. (When undertaken, the n-tone generalization and the iterative solver should land together.)
+This section used to record n-tone as **future development**, and to propose reaching it by lifting the two-tone FFT to a separable `N₁×…×N_T` real FFT. **The first half is done; the second half was measured and rejected.** For `T ≥ 3` circuitRF uses an **almost-periodic Fourier transform (APFT)** instead — the very transform §6's opening paragraph describes the multidimensional FFT as an alternative to. §6.5 specifies it.
+
+**Why the rectangular grid does not reach the required tone count.** The per-axis rule `N_t = FFTOverSample · nextpow2(4·order)` makes the grid `nextpow2(4·order)^T` samples, which is exponential in the tone count:
+
+| tones `T` | order 3 grid | samples | one Newton iteration's arrays |
+|---|---|---|---|
+| 2 | 16 × 16 | 256 | negligible |
+| 4 | 16⁴ | 65,536 | ~7 MB |
+| 5 | 16⁵ | 1,048,576 | ~117 MB |
+| 6 | 16⁶ | **16,777,216** | **~1.9 GB** |
+
+(One iteration holds roughly 14 such arrays: `v`, `i`, `q` per interface node plus `dg`, `dc` per node pair.) The rectangle is also nearly all waste at high `T` — it computes a full box in order to retain a diamond, and the ratio of box to diamond grows with every tone. The APFT's sample count scales with the **retained set** `M` instead: the same 6-tone order-3 case needs **1,512 samples**, not 16.7 million.
+
+**What that costs, measured.** On the Hero-5 GaN PA (`testdata/Hero5/hero5_6tone.cnl`), single drive point: 6 tones at order 2 (43 products) converges in **0.4 s** end-to-end through the CLI; 6 tones at order 3 (189 products, 756 unknowns) in **4.3 s**. Both dense-Jacobian, no iterative solver.
+
+**The iterative solver this was paired with was not needed and was not built.** §16 item 5 and the old §6.4 both assumed n-tone would have to land together with a block-structured/iterative HB solve, because "the retained set grows steeply with tone count". It does — but the product ceiling (§6.5) bounds it at a size the dense solve handles comfortably, so the two pieces of work are independent after all. §16 item 5 stays deferred on its own merits.
+
+### 6.5 The T-tone lattice and the APFT (as built)
+
+Everything in §6.1–§6.3 holds with `(k₁,k₂)` replaced by the vector `k = (k₁ … k_T)`; the transform and the Jacobian's inner form are what change.
+
+**Retained set — the diamond, generalized.** `k` is retained iff `Σ_t |k_t| ≤ MaxMixOrder` and `k` is a half-**space** representative: `k = 0`, or its FIRST NONZERO component is positive. Exactly one of `{k, −k}` satisfies that, so the retained set carries the full information for a real signal, the other being the conjugate. This is a **single knob** — the existing `MaxMixOrder` — with no per-tone order caps: at 5–6 tones the total order is what binds anyway, so per-tone caps would add a column to the dialog, the `.cnl` and the lattice while changing little.
+
+**Enumeration order — LOCKED, never renumber.** Ascending total order `m = Σ_t |k_t|` (so DC is index 0), then **lexicographic descending** within the half-space. Raising `MaxMixOrder` therefore only APPENDS indices, so a cube's `mixIndex` axis is stable across an order change and existing plots and measurements keep referring to the same products.
+
+*At `T = 2` this rule reproduces §16 item 1's locked two-tone order element for element* — "k₁ descending, then k₂ descending within the upper half-plane" IS lexicographic-descending under the half-space rule. `MixingLatticeTests` pins that equivalence, which is what lets one class serve every tone count without renumbering anything that already exists. Production still dispatches `T = 2` to the frozen `MixingGrid`/`HbFft2D`/`HbNewton2D` path; the two-tone goldens and the data display's two-tone spectrum are deliberately untouched.
+
+**Size in closed form.** The number of integer points with `Σ|k| ≤ O` in `Z^T` is `L = Σ_j 2^j·C(T,j)·C(O,j)`, so `M = (L+1)/2`. `MixingLattice.CountFor` evaluates this without enumerating anything, which is what makes the ceiling free to check.
+
+| tones ↓ / order → | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|
+| 2 | 7 | 13 | 21 | 31 |
+| 3 | 13 | 32 | 63 | 116 |
+| 4 | 21 | 65 | 161 | 341 |
+| 6 | 43 | **189** | 645 | 1827 |
+
+**The transform.** With `D = 2M` real DOF (layout `2·mixIdx + isIm`, matching the two-tone path, the DC quadrature DOF kept as a fictitious dummy so Maas §7.3's special cases carry over verbatim) and `S ≈ 2D` sample phases `φ_s ∈ [0,2π)^T`:
+
+- **Synthesis** `Γ` (`S×D`, real): `Γ[s, 2m] = cos(k_m·φ_s)`, `Γ[s, 2m+1] = −sin(k_m·φ_s)`. This is §5.1's amplitude convention written as a matrix, so `v(φ) = V_HB[0] + Σ_{k≠0} Re{V_HB[k]·e^{j k·φ}}` exactly as at one and two tones. A pure `cos φ₁` reads 1; a product `cos φ₁·cos φ₂·cos φ₃` reads **0.25** at `(1,1,1)` — the continuation of the 2-D rule that `cos φ₁·cos φ₂` reads 0.5 at `(1,1)`. **The DC halving is GLOBAL** (once, at `k = 0`), never per axis.
+- **Analysis** `A = Γ⁺ = (ΓᵀΓ)⁻¹Γᵀ`, factored ONCE per lattice and cached. On the retained lattice `A·Γ = I`, so synthesize→analyze is an exact round trip; out-of-band content is least-squares projected rather than sharply aliased.
+- **Sample phases** come from the deterministic `R_T` Kronecker (Weyl) low-discrepancy sequence, `φ_s[t] = 2π·frac(0.5 + (s+1)·g^-(t+1))` with `g` the positive root of `x^(T+1) = x + 1`. No RNG, so a run is bit-reproducible. Equidistribution makes `ΓᵀΓ` near-diagonal, but **correctness does not rest on that choice**: the constructor gates on the measured conditioning of `ΓᵀΓ` and throws rather than returning a silently rank-deficient transform.
+
+**The Jacobian — a triple product, not a convolution.** The residual's nonlinear term is literally `i_nl = A·i(Γ·V)`, so by the chain rule its exact derivative is
+
+```
+J_block(n,m) = A·diag(dg)·Γ  +  R(ω_row)·[ A·diag(dc)·Γ ]
+```
+
+where `R(ω_row)` is the per-row real form of multiplying by `jω` (row `2k` takes `−ω_k ×` row `2k+1`; row `2k+1` takes `+ω_k ×` row `2k`) — the same rotation §7.2/§7.4 applies to the two-tone 2×2 charge block. `Y_NN` on the mix diagonal, the guard-order cutoff and the Maas §7.3 DC row/column special cases then follow unchanged.
+
+This is the exact derivative of what is actually computed, not an approximation of a convolution, and **it needs no spectrum of the derivative waveform at difference and sum indices at all**. That is the second reason the rectangular route is unnecessary: the `4·order` per-axis rule existed precisely to give the Jacobian its `2·MaxMixOrder` reach (§5.2), and there is nothing left for it to reach.
+
+`HbNewtonNd.CompareJacobianNumericalNd` (central differences of `BuildFNd`) is the oracle, exactly as `CompareJacobianNumerical2D` is for two tones.
+
+**Equivalence with the frozen two-tone path.** The APFT/triple-product formulation is exercised at `T = 2` against `HbNewton2D` on an identical problem (`HbNewtonNdVs2DTests`). They agree to solver accuracy on DC and the carriers, and they **converge to each other as the diamond grows** — the IM3 (2,−1) disagreement runs 5.3e-3 → 2.9e-5 → 3.1e-7 at `MaxMixOrder` 3 → 4 → 5. The residual difference is truncation, and it behaves like truncation: the product sitting ON the diamond edge is the one most exposed to what was discarded, and each formulation discards it differently (the FFT aliases by periodic wrap, the APFT least-squares-projects). Asserting that trend is the gate, not a tolerance.
+
+**Degenerate frequencies are fine and are exercised.** With equally spaced tones — the ordinary multi-carrier stimulus — distinct products land on the same physical frequency: at 1.99/2.00/2.01 GHz, both `(1,-1,0)` and `(0,1,-1)` sit at −10 MHz. They stay INDEPENDENT unknowns, because each tone owns its own phase axis and the torus basis functions are orthogonal regardless of what the frequencies do. This is the property the multidimensional formulation buys (§6's opening paragraph) and `hero5_3tone.cnl` is the fixture that exercises it. The spectrum plot shows both stems at the same x; they are not summed, because each is a separate lattice unknown.
+
+### 6.6 The multi-tone ceiling
+
+`T ≥ 3` solves a DENSE Jacobian of size `2·N·M`, and `M` grows steeply with tone count, so the engine enforces two caps and **refuses at SETUP time — before any extraction or Newton solve**:
+
+- `AnalysisSettings.HbMaxTones` (default **6**) — the declared tone count.
+- `AnalysisSettings.HbMaxMixProducts` (default **600**) — retained products `M`, the constraint that actually binds.
+
+600 admits every configuration that is practical on a dense solve (6 tones @ order 3 = 189, 4 @ 4 = 161, 3 @ 9 = 580) and excludes the ones that are not. **The refusal names the knob that binds and a value that works**, because "too large" alone leaves the user guessing which of tone count and mix order to move:
+
+> `HB: 6 tones at MaxMixOrder=5 retains 1,827 mixing products (cap 600, ≈3,654 dense unknowns per interface node). Lower MaxMixOrder to 3 (189 products), or reduce the tone count.`
+
+Refusing at setup time is the point: building the lattice and its APFT transform for 1,827 products would allocate hundreds of MB and factor a 3,654² normal matrix before failing. The Analysis Setup dialog shows the same product count live beside `Max mix order`, so the ceiling is visible while authoring rather than arriving as an error at Run.
+
 
 ---
 
@@ -248,7 +328,7 @@ The Jacobian is assembled by the deck's slide-26 loop, generalized to add the `C
 
 ## 8. Solving the Newton update — dense
 
-`J` is `2·N_nl·(K+1)` square (single-tone). **`N_nl`, the number of nonlinear-facing nodes, is far smaller than the full node count** — a single-FET PA has a handful, Hero 4's two FETs still only a small block. So the HB Newton system is solved **dense** (NumFlat LU), distinct from the sparse CSparse path the *linear* MNA uses for the full netlist. Per iteration: factor `J`, solve `J · ΔV = −F`, update `V ← V + λ·ΔV` (with optional damping `λ ≤ 1`, §11). Block-structured or iterative HB solves (exploiting the harmonic/node block pattern) are a noted **future optimization** if the `< 3 s`/point NFR (PRD §14) is missed at Hero-4 scale; v1 is dense.
+`J` is `2·N_nl·(K+1)` square (single-tone). **`N_nl`, the number of nonlinear-facing nodes, is far smaller than the full node count** — a single-FET PA has a handful, Hero 4's two FETs still only a small block. So the HB Newton system is solved **dense** (NumFlat LU), distinct from the sparse CSparse path the *linear* MNA uses for the full netlist. Per iteration: factor `J`, solve `J · ΔV = −F`, update `V ← V + λ·ΔV` (with optional damping `λ ≤ 1`, §11). Block-structured or iterative HB solves (exploiting the harmonic/node block pattern) are a noted **future optimization** if the `< 3 s`/point NFR (PRD §14) is missed at Hero-4 scale; v1 is dense. **Multi-tone does not change that**, contrary to the pairing §16 item 7 originally assumed: at `T` tones the system is `2·N_nl·M` for retained-product count `M`, and §6.6 caps `M` at 600 precisely so the dense solve stays adequate — 6 tones at order 3 (756 unknowns) converges in 4.3 s.
 
 This keeps the two linear-algebra regimes clean: **sparse** for the large frequency-domain MNA (10k components), **dense** for the small real HB Jacobian.
 
@@ -373,9 +453,10 @@ Beyond the cross-tool references, the deck establishes a **theory cross-check** 
 - **Nonlinear side** via the time-domain `(i, q, dg, dc)` contract: IFFT → `Evaluate` → FFT; `I_Qnonlinear = jω·Q`; derivatives from closed-form / AD / FD (`expressions.md` §12).
 - **FFT convention** frozen (DC + positive, DC halved, `2/N` scale, conjugate reconstruction), recorded in `src/Engine/CLAUDE.md`.
 - **Evaluation grid ≠ solution spectrum.** Grid floor resolves to harmonic **2K** (Jacobian sum term). **`FFTOverSample`** `(1,2,4,8…)` enlarges the grid for anti-aliasing and **does not** grow the Newton solve. Oversampled `G`/`C` feed the fixed-size Jacobian by default, behind an experiment flag.
-- **Multi-tone** via multidimensional real FFT on a rectangular `N₁×N₂` grid (real, periodic, exact — no APFT, no windowing), tone-pair `(k₁,k₂)` indexing, **diamond** retained set `|k₁|+|k₂| ≤ MaxMixingOrder` over the rectangular FFT, half-plane conjugate symmetry; linear `mixIndex` axis matches the measurement library.
+- **Two-tone** via multidimensional real FFT on a rectangular `N₁×N₂` grid (real, periodic, exact — no APFT, no windowing), tone-pair `(k₁,k₂)` indexing, **diamond** retained set `|k₁|+|k₂| ≤ MaxMixingOrder` over the rectangular FFT, half-plane conjugate symmetry; linear `mixIndex` axis matches the measurement library.
+- **Three to six tones** (§6.4–§6.6) via the **APFT** instead — the rectangular grid is `nextpow2(4·order)^T` samples and does not reach six tones (1.9 GB per iteration at order 3). Same diamond `Σ_t|k_t| ≤ MaxMixOrder`, same half-space rule, same `mixIndex` axis with the tag widened to `(k₁,…,k_T)`; the Jacobian becomes the exact triple product `A·diag(dg)·Γ`, which removes the need for the `4·order` grid entirely. Retained products capped at 600, refused at setup time. The two-tone path is untouched.
 - **Jacobian** `J = Y_{N×N} + ∂I_nl/∂V + ω·∂Q_nl/∂V`, the **conversion matrix** in **real-valued** form, size `2·N_nl·(K+1)` (diamond size `M` for multi-tone); each coupling a real 2×2 block from `G_{k±i}`/`C_{k±i}` (both terms required — `F` is not holomorphic); DC/`i=0`/`k=i=0` special-cases per Maas. Full 2K-resolved, not approximate.
-- **Newton solve** is **dense** (NumFlat) — `N_nl` ≪ total nodes; block/iterative solves deferred.
+- **Newton solve** is **dense** (NumFlat) — `N_nl` ≪ total nodes; block/iterative solves deferred, **including for multi-tone**: the §6.6 product ceiling keeps the T-tone system inside what dense handles (6 tones at order 3 converges in 4.3 s).
 - **Full internal V/I** recovered by one per-harmonic linear back-substitution after convergence; all spectra retained incl. k = 0 (`Pdc`/`PAE` source).
 - **Initial guess**: nonlinear DC (Newton + gmin + source-step) + `1e-3` harmonic seed, or previous continuation point. Nonlinear-DC specified here as the k = 0 specialization.
 - **Continuation**: power/source stepping (Heroes 2/4) and previous-point (Hero 3), with step-halving backoff on max-iter; extended-domain IV/QV required.
@@ -395,7 +476,13 @@ Beyond the cross-tool references, the deck establishes a **theory cross-check** 
 2. **Oversampled-vs-minimal `G`/`C` for the fixed-size Jacobian** (§5.3) — stays a flag **defaulting to oversampled**; revisit after measuring Hero-2/3 iteration counts. Affects convergence rate only, never the converged answer.
 4. **Damping policy** (§8, §11) — whether `λ` is fixed, line-searched, or engaged only after a failed full step; tune alongside the continuation step-backoff during heuristic bring-up.
 5. **Block-structured / iterative HB solve** (§8) — deferred; the dense solve stands unless a hero misses the `< 3 s`/point NFR at Hero-4 scale, at which point a block/iterative scheme is the profiled optimization.
-7. **True n-tone (≥ 3 tones)** (§6.4) — deferred to its own future phase; motivated by **RF mixer design** and multi-carrier work. A dimensionality refactor of the 2-tone FFT/index-map/Jacobian to general `T`, landing together with the iterative solver (item 5) since the retained set grows steeply with tone count. Not needed by the v1 hero suite.
+**Resolved by implementation:**
+
+7. **True n-tone (≥ 3 tones)** (§6.4–§6.6) — **BUILT** (up to 6 tones). Two corrections to what this item predicted, both worth keeping visible:
+   - It is **not** the "dimensionality refactor of the 2-tone FFT" this item described. A separable `N₁×…×N_T` real FFT is `nextpow2(4·order)^T` samples — 1.9 GB of working arrays per Newton iteration at 6 tones and order 3 — so the transform is an **APFT** instead, whose sample count scales with the retained set (1,512 samples for that same case). §6.4 carries the table.
+   - It did **not** need to land with the iterative solver (item 5), contrary to the pairing asserted here and in the old §6.4. The product ceiling (§6.6) bounds the retained set at a size the dense solve handles: 6 tones at order 3 converges in 4.3 s. Item 5 stays deferred on its own merits.
+
+   The two-tone path (`MixingGrid`/`HbFft2D`/`HbNewton2D`) is untouched and remains the `T = 2` implementation.
 
 ---
 
