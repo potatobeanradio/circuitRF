@@ -47,7 +47,10 @@ public static class MatchFlatten
     // is ever above the spine, so that route cannot cross a shunt leg however long the ladder is.
 
     private const double SeriesPitch = 600.0;   // one series element, lead to lead
-    private const double ShuntPitch  = 400.0;   // two shunt elements sharing one node
+    // 700, matching MatchLadderLayout.Pitch: a shunt element's labels now sit BESIDE it rather than
+    // under it (see Element), and 400 is not wide enough for one to clear the next column.
+    private const double ShuntPitch  = 700.0;   // two shunt elements sharing one node
+    private const double ShuntY      = 400.0;   // a shunt element's centre, below the spine
     private const double LeadRun     = 100.0;   // wire stub between a node and a pin
     private const double AnnexGap    = 500.0;   // interface pin to the first termination column
     private const double AnnexLift   = 400.0;   // how far above the spine the annex lead runs
@@ -122,7 +125,7 @@ public static class MatchFlatten
                     model.Wires.Add(Wire((cursor, 0), (cursor + ShuntPitch, 0)));
                     cursor += ShuntPitch;
                 }
-                model.Components.Add(Element(e, cursor, 400.0, SymbolRotation.R0));
+                model.Components.Add(Element(e, cursor, ShuntY, SymbolRotation.R0));
                 model.Wires.Add(Wire((cursor, 0), (cursor, 200)));
                 model.Components.Add(Ground(cursor, 700.0));
                 model.Wires.Add(Wire((cursor, 600), (cursor, 700)));
@@ -131,7 +134,8 @@ public static class MatchFlatten
             else
             {
                 model.Wires.Add(Wire((cursor, 0), (cursor + LeadRun, 0)));
-                model.Components.Add(Element(e, cursor + SeriesPitch / 2.0, 0.0, SymbolRotation.R270));
+                model.Components.Add(Element(e, cursor + SeriesPitch / 2.0, 0.0,
+                                             MatchSchematicModel.SeriesRotation));
                 model.Wires.Add(Wire((cursor + SeriesPitch - LeadRun, 0), (cursor + SeriesPitch, 0)));
                 cursor += SeriesPitch;
                 shuntAtNode = 0;
@@ -257,6 +261,18 @@ public static class MatchFlatten
             Symbol = isL ? SymbolKind.Inductor : SymbolKind.Capacitor,
             X = x, Y = y, Rotation = rot,
         };
+
+        // A SHUNT element's three label rows sit beside the symbol and centred on it, exactly as the
+        // Designer's own pane places them (owner, 2026-08-20: "adjust the vertical alignment such
+        // that the center of all 3 rows of text is at the same y coordinate as the center of the
+        // component symbol … do this for the flattened cell too"). The offsets are the pane's own
+        // constants rather than a second pair of numbers: the two drawings are meant to be the same
+        // drawing, and the whole point of flattening is that the user recognises what they designed.
+        // They are ordinary per-label offsets, so the user can still drag any of them.
+        if (rot == SymbolRotation.R0)
+            for (int i = 0; i < 3; i++)
+                c.LabelOffsets.Add((MatchSchematicModel.ShuntLabelDx, MatchSchematicModel.ShuntLabelDy));
+
         var quantity = isL ? MatchQuantity.Inductance : MatchQuantity.Capacitance;
         var (text, unit) = Exact(e.Value, quantity);
         c.Parameters.Add(new EditableParameter

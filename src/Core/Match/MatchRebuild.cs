@@ -138,8 +138,27 @@ public static class MatchRebuild
                 continue;
             }
 
-            var app = NortonTransform.Apply(
-                net, pair, rec.N, rec.Form, basis.AnalysisIsTerm1, allowNegative, ordinal);
+            // A pair Apply cannot realise is DROPPED WITH A NOTE, never thrown out of here. Discover
+            // and Apply have to agree about which pairs can be made adjacent, and when they have not
+            // the honest report is the one a rebuild already makes for a pair that has vanished —
+            // the Designer shows the note, keeps the rest of the sequence, and stays open. An
+            // escaping exception is an application crash from a menu click (owner-reported,
+            // 2026-08-20); the disagreement itself is fixed at its source in NortonTransform.Discover.
+            TransformApplication app;
+            try
+            {
+                app = NortonTransform.Apply(
+                    net, pair, rec.N, rec.Form, basis.AnalysisIsTerm1, allowNegative, ordinal);
+            }
+            catch (InvalidOperationException e)
+            {
+                dropped.Add(rec);
+                notes.Add(
+                    $"The transform on {rec.ElementA}/{rec.ElementB} was dropped: it cannot be " +
+                    $"applied to the ladder as it now stands. {e.Message}");
+                continue;
+            }
+
             if (app.Clamped)
                 notes.Add(
                     $"N on {rec.ElementA}/{rec.ElementB} was {rec.N:0.#####}, outside the range " +

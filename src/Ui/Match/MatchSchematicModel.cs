@@ -32,14 +32,28 @@ public static class MatchSchematicModel
 
     /// <summary>
     /// A shunt element's labels are pushed to the RIGHT of its column rather than left-below it.
-    /// Below is where the drop to the ground rail runs, and a label laid over a wire is the one place
-    /// the editor's own default placement does not survive being reused: on a page the user drags it
+    /// Below is where its own GND glyph sits, and a label laid over a symbol is the one place the
+    /// editor's own default placement does not survive being reused: on a page the user drags it
     /// clear, and here there is nobody to do that.
     /// </summary>
-    private const double ShuntLabelDx = 285.0;
+    public const double ShuntLabelDx = 285.0;
 
-    /// <summary>Matching vertical shift — see <see cref="ShuntLabelDx"/>.</summary>
-    private const double ShuntLabelDy = -482.0;
+    /// <summary>
+    /// The matching vertical shift, which centres the three label rows on the symbol's own centre
+    /// (owner, 2026-08-20: "adjust the vertical alignment such that the center of all 3 rows of text
+    /// is at the same y coordinate as the center of the component symbol").
+    /// </summary>
+    /// <remarks>
+    /// <b>Derived, not measured.</b> Row <i>i</i>'s baseline is
+    /// <c>cy + LabelBaseY + dy + i·LabelWorldStep</c>, so a three-row block runs from
+    /// <c>baseline₀ − LabelWorldHeight</c> to <c>baseline₂</c> and its centre sits at
+    /// <c>cy + LabelBaseY + dy + LabelWorldStep − LabelWorldHeight/2</c>. Setting that equal to
+    /// <c>cy</c> is the expression below — which means it tracks a change to the editor's own label
+    /// metrics instead of going quietly stale, the way the hand-tuned −482 it replaces did.
+    /// </remarks>
+    public const double ShuntLabelDy = -(SchematicComponent.LabelBaseY
+                                         + SchematicComponent.LabelWorldStep
+                                         - SchematicComponent.LabelWorldHeight / 2.0);
 
     /// <summary>An empty model — what a refused design shows.</summary>
     public static SchematicModel Empty { get; } = new();
@@ -49,40 +63,38 @@ public static class MatchSchematicModel
     {
         if (layout is null || layout.Elements.Count == 0) return Empty;
 
-        var comps = new List<SchematicComponent>(layout.Elements.Count + 4);
+        var comps = new List<SchematicComponent>(layout.Elements.Count * 2 + 2);
         var wires = new List<SchematicWire>();
 
         foreach (var e in layout.Elements)
+        {
             comps.Add(Element(e));
 
-        // The interface pins: the two signal ports, and — only when the network HAS a ground rail —
-        // the two reference terminals at its ends. Drawing a reference onto a rail that is not there
-        // would be a picture of a different circuit.
-        bool hasShunt = layout.Elements.Any(e => e.IsShunt);
-        comps.Add(Pin("P1", "1", layout.PortLeftX,  MatchLadderLayout.SpineY, pointsRight: true));
-        comps.Add(Pin("P2", "2", layout.PortRightX, MatchLadderLayout.SpineY, pointsRight: false));
-        if (hasShunt)
-        {
-            comps.Add(Pin("P3", "3", layout.PortLeftX,  MatchLadderLayout.GroundY, pointsRight: true));
-            comps.Add(Pin("P4", "4", layout.PortRightX, MatchLadderLayout.GroundY, pointsRight: false));
+            // Every shunt arm carries its OWN ground, sitting exactly on the element's lower pin —
+            // no rail, no drop wire, and no reference pin standing in for one.
+            if (e.IsShunt) comps.Add(Ground(e.Name, e.X, MatchLadderLayout.ShuntGroundY));
         }
+
+        // The two ends: a grounded termination each, never an interface pin (owner, 2026-08-20).
+        // A Pin says "this net leaves the drawing"; a TermG says what the net actually runs into,
+        // which is the whole subject of the Designer.
+        foreach (var t in layout.Terminations)
+            comps.Add(Termination(t));
 
         AddWiring(layout, wires);
 
-        // A junction dot wherever a shunt arm meets the spine or the rail — the same mark the editor
-        // puts on a genuine T-junction, and the reason the drops read as connections rather than as
-        // wires that happen to cross.
+        // A junction dot wherever a shunt arm taps the spine — the same mark the editor puts on a
+        // genuine T-junction, and the reason a drop reads as a connection rather than as a wire that
+        // happens to cross. There is no second dot at the bottom any more: the arm's GND is a
+        // component sitting on the pin, not a wire meeting a rail.
         var dots = new List<SchematicDot>();
         foreach (var s in layout.Elements.Where(e => e.IsShunt))
-        {
             dots.Add(new SchematicDot(s.X, MatchLadderLayout.SpineY));
-            dots.Add(new SchematicDot(s.X, MatchLadderLayout.GroundY));
-        }
 
         Bounds(comps, wires, out double minX, out double minY, out double maxX, out double maxY);
 
-        // The transform brackets live BELOW the rail, and the model's bounding box has to cover them
-        // or zoom-to-fit frames a drawing whose bottom half is off screen.
+        // The transform brackets live BELOW the ladder, and the model's bounding box has to cover
+        // them or zoom-to-fit frames a drawing whose bottom half is off screen.
         if (layout.Brackets.Count > 0)
         {
             int rows = layout.Brackets.Max(b => b.Row) + 1;
@@ -110,8 +122,13 @@ public static class MatchSchematicModel
         var kind = e.Type == ElementType.L ? SymbolKind.Inductor : SymbolKind.Capacitor;
 
         // The built-in 2-terminal glyphs are VERTICAL, which is what a shunt arm wants; a series arm
-        // is the same glyph placed at R90, exactly as it would be on a page.
-        var rot = e.IsShunt ? SymbolRotation.R0 : SymbolRotation.R90;
+        // is the same glyph placed HORIZONTAL. R270, not R90 (owner, 2026-08-20: "have the series L
+        // components rotated 180 degrees from their current orientation … make sure the flattened
+        // cell uses the same final orientation"): R270 is the rotation MatchFlatten already writes,
+        // so the Designer's picture and the cell it flattens into are now the same drawing rather
+        // than mirror images of one. A capacitor is symmetric under the swap and does not care; an
+        // inductor's coil bulge and its polarity dot do, which is what the owner was looking at.
+        var rot = e.IsShunt ? SymbolRotation.R0 : SeriesRotation;
 
         string type = e.Type == ElementType.L ? "L" : "C";
         var labels = new List<string> { type, e.Name, $"{type} = {e.ValueText}" };
@@ -123,27 +140,57 @@ public static class MatchSchematicModel
             e.Name, kind, e.X, e.Y, rot, labels, offsets,
             [new SchematicPortDef("1", 0, -200, PortConnectionState.Connected),
              new SchematicPortDef("2", 0, +200, PortConnectionState.Connected)],
-            e.IsShunt ? (-65, -210, 65, 210) : (-210, -65, 210, 65));
+            // The glyph box is the REAL extent of the built-in symbol — both the inductor and the
+            // capacitor run from lead tip to lead tip at ±200 — not that plus a little padding. It
+            // feeds SchematicComponent.LabelBaseYFor, which pushes labels clear of a glyph deeper
+            // than the default offset, so ten units of invented margin here silently moved every
+            // shunt label ten units down and broke the centring ShuntLabelDy computes.
+            e.IsShunt ? (-65, -200, 65, 200) : (-200, -65, 200, 65));
     }
 
     /// <summary>
-    /// One interface pin, its terminal landing exactly on the wire it marks. Pin's own terminal is at
-    /// local (+100, 0), so the glyph sits 100 behind the tip — R180 for the pair that face inward
-    /// from the right, which is what mirroring one on a page does.
+    /// A shunt arm's own ground. <b>Neither the type label nor the instance name is drawn</b> — the
+    /// glyph is unambiguous and the editor's own registry turns both off for a <c>Ground</c> by
+    /// default (<c>ComponentTypeRegistry</c>), which is the setting this reproduces.
     /// </summary>
-    private static SchematicComponent Pin(string name, string num, double tipX, double tipY, bool pointsRight)
-    {
-        double sx = pointsRight ? 1.0 : -1.0;
-        double cx = tipX - sx * 100.0;
-        var rot = pointsRight ? SymbolRotation.R0 : SymbolRotation.R180;
+    private static SchematicComponent Ground(string ofElement, double x, double y) =>
+        Compose(
+            ofElement + GroundIdSuffix, SymbolKind.Ground, x, y, SymbolRotation.R0, [], [],
+            [new SchematicPortDef("1", 0, 0, PortConnectionState.Connected)],
+            (-45, 0, 45, 70));
 
-        // Only the port NUMBER is labelled. A Pin is registered with the type label and the instance
-        // name off by default (ComponentTypeRegistry), and repeating "Pin"/"P1" beside four of them
-        // says nothing the glyph has not already said.
+    /// <summary>The suffix a shunt arm's own ground carries in the model, so it has a unique id.</summary>
+    public const string GroundIdSuffix = "_GND";
+
+    /// <summary>The rotation every SERIES element is placed at, here and in the flattened cell.</summary>
+    public const SymbolRotation SeriesRotation = SymbolRotation.R270;
+
+    /// <summary>
+    /// One end's grounded termination, its "+" pin landing exactly on the end of the spine.
+    /// </summary>
+    /// <remarks>
+    /// <c>TermG</c>'s own pin is at local (0, −200) and its ground bars run down to local +270, so
+    /// the glyph is placed a lead-length OUTWARD of the pin and turned to face the ladder: R90 maps
+    /// local (0, −200) to world (+200, 0) — the left end, body to the left of its pin — and R270 maps
+    /// it to (−200, 0) for the right. The three label rows are the editor's own, with the resistance
+    /// spelled the way a <c>Term</c>'s <c>Z</c> is.
+    /// </remarks>
+    private static SchematicComponent Termination(MatchLadderTermination t)
+    {
+        bool left = t.End == 1;
+        double cx = left ? t.X - LeadHalf : t.X + LeadHalf;
+        var rot = left ? SymbolRotation.R90 : SymbolRotation.R270;
+
+        // The glyph box is given in WORLD offsets, so it carries the rotation itself: TermG's local
+        // extent is x ∈ [−70, +45] (the polarity glyphs to the left of the body) and y ∈ [−200, +270]
+        // (pin to the last ground bar), and R90 maps (x, y) → (−y, x) while R270 maps it → (y, −x).
+        var glyph = left ? (-270.0, -70.0, 200.0, 45.0) : (-200.0, -45.0, 270.0, 70.0);
+
         return Compose(
-            name, SymbolKind.Pin, cx, tipY, rot, [num], [],
-            [new SchematicPortDef("1", 100, 0, PortConnectionState.Connected)],
-            (-100, -50, 100, 50));
+            t.InstanceName, SymbolKind.TermG, cx, MatchLadderLayout.SpineY, rot,
+            ["TermG", t.InstanceName, $"Z = {t.ResistanceText}"], [],
+            [new SchematicPortDef("+", 0, -200, PortConnectionState.Connected)],
+            glyph);
     }
 
     /// <summary>
@@ -188,11 +235,14 @@ public static class MatchSchematicModel
     // ── Wiring ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The spine, the shunt drops and the ground rail. <b>The spine is drawn in the GAPS between
-    /// series elements, never through them</b>: a built-in glyph carries its own leads out to ±200,
-    /// so a port-to-port line would lay a second wire across every series body. A schematic wire
-    /// stops at the pin it connects to.
+    /// The spine and the shunt drops — <b>and nothing below a shunt arm</b>, because each carries its
+    /// own <c>Ground</c> on its lower pin (owner, 2026-08-20).
     /// </summary>
+    /// <remarks>
+    /// <b>The spine is drawn in the GAPS between series elements, never through them</b>: a built-in
+    /// glyph carries its own leads out to ±200, so a port-to-port line would lay a second wire across
+    /// every series body. A schematic wire stops at the pin it connects to.
+    /// </remarks>
     private static void AddWiring(MatchLadderLayout layout, List<SchematicWire> wires)
     {
         double y = MatchLadderLayout.SpineY;
@@ -206,16 +256,8 @@ public static class MatchSchematicModel
         }
         if (layout.PortRightX > cursor) wires.Add(Wire(cursor, y, layout.PortRightX, y));
 
-        var shunts = layout.Elements.Where(e => e.IsShunt).ToList();
-        if (shunts.Count == 0) return;
-
-        double gy = MatchLadderLayout.GroundY;
-        wires.Add(Wire(layout.PortLeftX, gy, layout.PortRightX, gy));
-        foreach (var s in shunts)
-        {
+        foreach (var s in layout.Elements.Where(e => e.IsShunt))
             wires.Add(Wire(s.X, y, s.X, s.Y - LeadHalf));
-            wires.Add(Wire(s.X, s.Y + LeadHalf, s.X, gy));
-        }
     }
 
     private static SchematicWire Wire(double x0, double y0, double x1, double y1) => new()

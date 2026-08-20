@@ -115,8 +115,21 @@ public static class NortonTransform
             var mv2 = Opposite(j, j + 1) ? (0, -1) : (1, 0);
             Consider(j, j + 2, mv2.Item1, mv2.Item2, true);
 
-            // (j, j+3): only when what lies between them matches, so both walks stay inside an arm.
-            Consider(j, j + 3, 1, -1, el[j + 1].Type == el[j + 2].Type);
+            // (j, j+3): both ends have to walk INWARD one place, so both walks must stay inside an
+            // arm — which means el[j] shares an orientation with el[j+1], and el[j+3] with el[j+2].
+            //
+            // The orientation half of that condition was missing (owner-reported crash, 2026-08-20:
+            // adding a transform threw "Making a transform pair adjacent would swap
+            // C2_N1_1_N2_1_N3_2 past C2_N1_1_N2_1_N3_3, which have different orientations"). The
+            // TYPE test alone is not a proxy for it: a Norton transform's own three products are
+            // one type but alternate in orientation by construction (pi is shunt-series-shunt,
+            // T is series-shunt-series), so a pair straddling a previous transform's triple passed
+            // the type test, was offered in the + add menu, and then hit Apply's own assert - which
+            // is a hard throw out of a menu click, not a refusal the Designer can report.
+            Consider(j, j + 3, 1, -1,
+                     el[j + 1].Type == el[j + 2].Type
+                     && el[j].IsShunt == el[j + 1].IsShunt
+                     && el[j + 2].IsShunt == el[j + 3].IsShunt);
 
             Consider(j + 1, j + 2, 0, 0, true);
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using CircuitRF.Core.Matching;
 using CircuitRF.Ui.Theming;
@@ -45,30 +46,26 @@ public sealed record MatchLadderElement(
     /// The theme role the element's SYMBOL is drawn in — the single mapping from meaning to colour.
     /// </summary>
     /// <remarks>
-    /// <b>An out-of-range value no longer recolours the whole glyph</b> (owner, 2026-08-19: "a
-    /// component that has an invalid value should have its value rendered in 'bad' colour, not the
-    /// whole component"). The symbol stays the schematic's own symbol colour and only
-    /// <see cref="ValueColorRoleKey"/> turns red, which is the half that is actually wrong — the
-    /// capacitor is a perfectly ordinary capacitor, its VALUE is the unbuildable part.
+    /// <b>Every element is drawn at full brightness, absorbed ones included</b> (owner, 2026-08-20:
+    /// "do not render any component as dimmed — all components should render the same brightness
+    /// (even the components that represent the absorbed parasitic)"). Round 2's dimming made the one
+    /// part of the drawing a user most needs to read — the parasitic they are matching against — the
+    /// hardest part to see. What an absorbed element IS is said in words, by the pane's own legend
+    /// and by where it sits (always beside its termination), not by washing it out.
+    ///
+    /// <para><b>An out-of-range value does not recolour the glyph either</b> (owner, 2026-08-19).
+    /// Only <see cref="ValueColorRoleKey"/> turns red — the capacitor is a perfectly ordinary
+    /// capacitor, its VALUE is the unbuildable part.</para>
     /// </remarks>
-    public string ColorRoleKey => Role switch
-    {
-        MatchElementRole.Absorbed => ColorRole.MatchAbsorbed,
-        _                         => ColorRole.SchematicSymbolLine,
-    };
+    public string ColorRoleKey => ColorRole.SchematicSymbolLine;
 
     /// <summary>The theme role this element's VALUE text is drawn in.</summary>
-    public string ValueColorRoleKey => Role switch
-    {
-        MatchElementRole.OutOfRange => ColorRole.MatchNegative,
-        MatchElementRole.Absorbed   => ColorRole.MatchAbsorbed,
-        _                           => ColorRole.SchematicParameterNameText,
-    };
+    public string ValueColorRoleKey => Role == MatchElementRole.OutOfRange
+        ? ColorRole.MatchNegative
+        : ColorRole.SchematicParameterNameText;
 
     /// <summary>The theme role this element's NAME text is drawn in.</summary>
-    public string NameColorRoleKey => Role == MatchElementRole.Absorbed
-        ? ColorRole.MatchAbsorbed
-        : ColorRole.SchematicInstanceNameText;
+    public string NameColorRoleKey => ColorRole.SchematicInstanceNameText;
 }
 
 /// <summary>A transform bracket, spanning the products one Norton transform created.</summary>
@@ -82,9 +79,23 @@ public sealed record MatchLadderElement(
 /// </param>
 public sealed record MatchTransformBracket(string Label, int TransformIndex, double X0, double X1, int Row)
 {
-    /// <summary>Brackets are always drawn in one role; kept here so the view never picks a colour.</summary>
-    public string ColorRoleKey => ColorRole.MatchBracket;
+    /// <summary>
+    /// The brace itself — its curls, its horizontal run and its stem — in one role (owner,
+    /// 2026-08-20: "the entire curly brace should be rendered in Schematic.ParameterNameText colour
+    /// while the rendered text transform name should use Schematic.ComponentNameText").
+    /// </summary>
+    public string ColorRoleKey => ColorRole.SchematicParameterNameText;
+
+    /// <summary>The N1/N2 label hanging off the brace's stem — a different role from the brace.</summary>
+    public string LabelColorRoleKey => ColorRole.SchematicComponentNameText;
 }
+
+/// <summary>One end's grounded termination, as the pane places it.</summary>
+/// <param name="End">1 or 2 — which end of the ladder.</param>
+/// <param name="InstanceName">"Termination 1" / "Termination 2", the name the glyph is labelled with.</param>
+/// <param name="ResistanceText">The ladder's own port reference at this end, formatted with its unit.</param>
+/// <param name="X">The x its PIN lands on — the same point the spine ends at.</param>
+public sealed record MatchLadderTermination(int End, string InstanceName, string ResistanceText, double X);
 
 /// <summary>
 /// The ladder preview's geometry (match.md §9.3): where each element sits, and where each transform
@@ -120,14 +131,42 @@ public sealed class MatchLadderLayout
     /// <summary>A shunt element's centre y.</summary>
     public const double ShuntY = 400.0;
 
-    /// <summary>The ground rail's y.</summary>
-    public const double GroundY = 700.0;
+    /// <summary>
+    /// Where a shunt element's own GND sits — exactly on its lower pin, so there is no wire.
+    /// </summary>
+    /// <remarks>
+    /// <b>There is no ground RAIL any more</b> (owner, 2026-08-20: "remove all the 'ground' wires for
+    /// the shunt components — ground each such component with its own GND component"). A rail plus a
+    /// drop per arm is two wires and a reference pin saying what one GND glyph says, and it forced
+    /// the two extra interface pins the same round removed. <c>Ground</c>'s own pin is at its local
+    /// origin, so placing one here — a full lead-length below a shunt element's centre — lands it on
+    /// the pin itself and no connecting wire exists to draw.
+    /// </remarks>
+    public const double ShuntGroundY = ShuntY + MatchSchematicGeometry.LeadHalf;
 
-    /// <summary>The first bracket row's y, and the spacing between stacked rows.</summary>
+    /// <summary>The first bracket row's y.</summary>
     public const double BracketY = 900.0;
 
-    /// <summary>Row-to-row spacing for stacked brackets.</summary>
-    public const double BracketRowPitch = 150.0;
+    /// <summary>
+    /// Row-to-row spacing for stacked brackets — enough for a brace, its stem and its label.
+    /// </summary>
+    /// <remarks>
+    /// <b>260, not 150.</b> Round 2's bracket was three straight lines and a label 120 below them;
+    /// this one is a real brace with a curl at each end (<see cref="BraceCurl"/>), a stem down from
+    /// the middle (<see cref="BraceStem"/>) and the label under THAT, so a row now runs
+    /// curl + stem + label-drop + cap-height ≈ 263 deep and 150 would have stacked one brace onto
+    /// the next one's text.
+    /// </remarks>
+    public const double BracketRowPitch = 300.0;
+
+    /// <summary>Radius of the brace's four quarter-turns, world units.</summary>
+    public const double BraceCurl = 50.0;
+
+    /// <summary>Length of the stem from the brace's centre tip down to its label.</summary>
+    public const double BraceStem = 70.0;
+
+    /// <summary>Baseline of the brace's label, below the foot of the stem.</summary>
+    public const double BraceLabelDrop = 80.0;
 
     /// <summary>The placed elements, in ladder order.</summary>
     public IReadOnlyList<MatchLadderElement> Elements { get; init; } = [];
@@ -140,6 +179,19 @@ public sealed class MatchLadderLayout
 
     /// <summary>x of the port-2 connection.</summary>
     public double PortRightX { get; init; }
+
+    /// <summary>
+    /// The two grounded terminations the network runs between, end 1 first — what the pane draws in
+    /// place of the interface pins it used to (owner, 2026-08-20: "remove the pins … instead place a
+    /// TermG at each end of the network").
+    /// </summary>
+    /// <remarks>
+    /// The resistance quoted is the LADDER's own port reference (<c>MatchNetwork.R1</c>/<c>R2</c>),
+    /// not the declared termination's, for the same reason <c>MatchFlatten</c>'s annotation gives it:
+    /// that is what the plotted response is referenced to. In a finished design the two are the same
+    /// number — bringing them together is what the transforms are for.
+    /// </remarks>
+    public IReadOnlyList<MatchLadderTermination> Terminations { get; init; } = [];
 
     /// <summary>True when any element is absorbed — the one-line legend is shown only then.</summary>
     public bool HasAbsorbed => Elements.Any(e => e.Role == MatchElementRole.Absorbed);
@@ -155,10 +207,15 @@ public sealed class MatchLadderLayout
     /// order; a transform whose products are not in the network (it was dropped) simply gets no
     /// bracket, which is the honest rendering of "that pair no longer exists".
     /// </summary>
+    /// <param name="ohmsText">
+    /// Formats a port reference resistance for the two termination glyphs. Optional so a caller that
+    /// only wants the ladder geometry — every test that predates the terminations — still compiles.
+    /// </param>
     public static MatchLadderLayout Build(
         MatchNetwork? network,
         IReadOnlyList<AppliedTransform>? applied,
-        Func<MatchElement, string> valueText)
+        Func<MatchElement, string> valueText,
+        Func<double, string>? ohmsText = null)
     {
         ArgumentNullException.ThrowIfNull(valueText);
         if (network is null || network.Elements.Count == 0) return Empty;
@@ -167,7 +224,7 @@ public sealed class MatchLadderLayout
         var xByName = new Dictionary<string, double>(StringComparer.Ordinal);
 
         double x = Pitch;
-        foreach (var e in network.Elements)
+        foreach (var e in DisplayOrder(network.Elements))
         {
             placed.Add(new MatchLadderElement(
                 e.Name, e.Type, e.IsShunt, e.Value, RoleOf(e),
@@ -177,6 +234,7 @@ public sealed class MatchLadderLayout
         }
 
         var brackets = BuildBrackets(applied, xByName);
+        ohmsText ??= r => r.ToString("0.###", CultureInfo.InvariantCulture) + " Ω";
 
         return new MatchLadderLayout
         {
@@ -184,7 +242,58 @@ public sealed class MatchLadderLayout
             Brackets = brackets,
             PortLeftX = 0.0,
             PortRightX = x,
+            Terminations =
+            [
+                new MatchLadderTermination(1, "Termination 1", ohmsText(network.R1), 0.0),
+                new MatchLadderTermination(2, "Termination 2", ohmsText(network.R2), x),
+            ],
         };
+    }
+
+    /// <summary>
+    /// The ladder in the order the pane DRAWS it: an absorbed element is walked out to the end it
+    /// belongs to, so it always sits next to its own termination.
+    /// </summary>
+    /// <remarks>
+    /// <b>The owner's ask</b> (2026-08-20): "the absorbed parasitic component must always be placed
+    /// adjacent to its corresponding R termination (now the TermG component)". It is not where the
+    /// synthesis leaves it: <c>MatchSynthesis.Build</c> emits each arm as L-then-C, so an end arm
+    /// whose absorbed half is the C has the arm's own L standing between the parasitic and the
+    /// termination, and <c>WithEndSplits</c> then inserts the Fano/detune element further out still.
+    ///
+    /// <para><b>Only elements that provably commute are stepped over.</b> Two ADJACENT elements of a
+    /// ladder share an arm exactly when they share an orientation — a run of shunt elements hangs off
+    /// one node in parallel, a run of series elements is one chain — and reordering within an arm is
+    /// the same circuit, element for element and net for net. So the walk stops the moment the
+    /// orientation changes, which is the moment the next element is a different node. A blanket
+    /// "move it to the front of the list" would be a different circuit whenever a Norton transform
+    /// had left an absorbed element somewhere other than an end arm.</para>
+    /// </remarks>
+    public static IReadOnlyList<MatchElement> DisplayOrder(IReadOnlyList<MatchElement> elements)
+    {
+        ArgumentNullException.ThrowIfNull(elements);
+        var order = new List<MatchElement>(elements);
+
+        // End 2 first: walking one element to the right cannot disturb an index to its left, but
+        // walking one to the left shifts everything after it.
+        foreach (int end in (ReadOnlySpan<int>)[2, 1])
+        {
+            int i = order.FindIndex(e => e.AbsorbedEnd == end);
+            if (i < 0) continue;
+
+            var moving = order[i];
+            int step = end == 1 ? -1 : +1;
+            int j = i;
+            while (j + step >= 0 && j + step < order.Count
+                   && order[j + step].IsShunt == moving.IsShunt)
+            {
+                order[j] = order[j + step];
+                j += step;
+            }
+            order[j] = moving;
+        }
+
+        return order;
     }
 
     /// <summary>

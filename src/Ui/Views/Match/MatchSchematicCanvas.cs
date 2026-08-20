@@ -58,11 +58,17 @@ public sealed class MatchSchematicCanvas : Control
     private ColorTheme _theme = ColorTheme.BuiltIn;
 
     /// <summary>Builds a canvas that redraws itself whenever the active colour theme changes.</summary>
+    /// <remarks>
+    /// <b>The pointer keeps the ordinary arrow</b> (owner, 2026-08-20: "don't use mouse cross hair
+    /// cursor in the Match Designer schematic; stick to regular arrow icon"). The four-way
+    /// <c>SizeAll</c> this replaces advertised a move gesture the pane does not have — nothing here
+    /// is editable and nothing can be dragged but the view itself.
+    /// </remarks>
     public MatchSchematicCanvas()
     {
         ClipToBounds = true;
         Focusable = false;
-        Cursor = new Cursor(StandardCursorType.SizeAll);
+        Cursor = new Cursor(StandardCursorType.Arrow);
     }
 
     /// <inheritdoc/>
@@ -124,7 +130,29 @@ public sealed class MatchSchematicCanvas : Control
     /// <summary>Frames the whole network, the way the editor's own Zoom to Fit does.</summary>
     public void ZoomToFit()
     {
-        if (Bounds.Width < 1 || Bounds.Height < 1) return;
+        if (!Fit()) return;
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// The framing arithmetic on its own, <b>with no <c>InvalidateVisual</c> in it</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported crash, 2026-08-20</b> — changing a PI network to a T threw
+    /// <c>InvalidOperationException: Visual was invalidated during the render pass</c>, from
+    /// <c>ZoomToFit</c>, called by <c>Render</c>. A structural change clears <c>_fitted</c>, the next
+    /// <c>Render</c> re-fitted, and the fit invalidated the visual it was in the middle of drawing —
+    /// which Avalonia refuses outright rather than silently re-entering. The fix is not to guard the
+    /// call site: it is that a fit performed FROM the render pass has nothing to request, since the
+    /// frame it would ask for is the frame being drawn. So the arithmetic lives here and the two
+    /// callers differ only in whether they ask for a repaint afterwards.
+    ///
+    /// <para>Returns false when the control has no usable size yet, so <c>_fitted</c> stays clear and
+    /// the next frame tries again.</para>
+    /// </remarks>
+    private bool Fit()
+    {
+        if (Bounds.Width < 1 || Bounds.Height < 1) return false;
         double worldW = Math.Max(_model.BbMaxX - _model.BbMinX, 1);
         double worldH = Math.Max(_model.BbMaxY - _model.BbMinY, 1);
         const double pad = 0.04;
@@ -133,7 +161,7 @@ public sealed class MatchSchematicCanvas : Control
         _panX = _model.BbMinX - (Bounds.Width  - worldW * _zoom) / (2 * _zoom);
         _panY = _model.BbMinY - (Bounds.Height - worldH * _zoom) / (2 * _zoom);
         _fitted = true;
-        InvalidateVisual();
+        return true;
     }
 
     // ── The two gestures ──────────────────────────────────────────────────────
@@ -215,7 +243,7 @@ public sealed class MatchSchematicCanvas : Control
     public override void Render(DrawingContext context)
     {
         if (Bounds.Width < 4 || Bounds.Height < 4) return;
-        if (!_fitted) ZoomToFit();
+        if (!_fitted) Fit();   // never ZoomToFit() — see Fit()'s own note on the render-pass crash
 
         var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
         context.Custom(new Op(new Rect(Bounds.Size), _model, _layout,
@@ -225,7 +253,7 @@ public sealed class MatchSchematicCanvas : Control
 
     /// <summary>
     /// Draws the schematic, then the two things a schematic has no way to say about a match network:
-    /// which elements the external terminations already supply, and which values came out unbuildable.
+    /// which values came out unbuildable, and which transform produced which run of elements.
     /// </summary>
     private sealed class Op(
         Rect bounds, SchematicModel model, MatchLadderLayout? layout,
@@ -248,7 +276,7 @@ public sealed class MatchSchematicCanvas : Control
                                    panX, panY, zoom, render);
             if (layout is null) return;
 
-            DrawRoles(canvas);
+            DrawOutOfRange(canvas);
             DrawBrackets(canvas);
         }
 
@@ -262,21 +290,19 @@ public sealed class MatchSchematicCanvas : Control
             ((float)((wx - panX) * zoom), (float)((wy - panY) * zoom));
 
         /// <summary>
-        /// <b>Absorbed</b> elements are washed towards the background — the schematic renderer has one
-        /// symbol colour and no notion of an element this component does not contain, so the dimming
-        /// is applied over the finished glyph rather than by drawing it a second time in another
-        /// colour. <b>Out-of-range</b> values get a warning-coloured box around the glyph: the
-        /// capacitor is a perfectly ordinary capacitor, its VALUE is the unbuildable part, so the mark
-        /// says "look at this one" rather than recolouring the symbol.
+        /// <b>Out-of-range</b> values get a warning-coloured box around the glyph: the capacitor is a
+        /// perfectly ordinary capacitor, its VALUE is the unbuildable part, so the mark says "look at
+        /// this one" rather than recolouring the symbol.
         /// </summary>
-        private void DrawRoles(SKCanvas canvas)
+        /// <remarks>
+        /// <b>Absorbed elements are no longer washed out here</b> (owner, 2026-08-20: "do not render
+        /// any component as dimmed"). This method used to paint a semi-transparent background-coloured
+        /// rectangle over an absorbed glyph; what an absorbed element is now reads off its POSITION —
+        /// it is always the one beside its termination — and off the pane's own legend, which names
+        /// them.
+        /// </remarks>
+        private void DrawOutOfRange(SKCanvas canvas)
         {
-            using var wash = new SKPaint
-            {
-                IsAntialias = false,
-                Style = SKPaintStyle.Fill,
-                Color = Role(ColorRole.SchematicBackground).WithAlpha(150),
-            };
             using var bad = new SKPaint
             {
                 IsAntialias = true,
@@ -287,7 +313,7 @@ public sealed class MatchSchematicCanvas : Control
 
             foreach (var e in layout!.Elements)
             {
-                if (e.Role is not (MatchElementRole.Absorbed or MatchElementRole.OutOfRange)) continue;
+                if (e.Role != MatchElementRole.OutOfRange) continue;
 
                 var comp = model.Components.FirstOrDefault(
                     c => string.Equals(c.Id, e.Name, StringComparison.Ordinal));
@@ -300,39 +326,84 @@ public sealed class MatchSchematicCanvas : Control
                 float pad = (float)(zoom * 20);
                 var (ax, ay) = P(comp.GlyphBbMinX, comp.GlyphBbMinY);
                 var (bx, by) = P(comp.GlyphBbMaxX, comp.GlyphBbMaxY);
-                var box = new SKRect(ax - pad, ay - pad, bx + pad, by + pad);
-
-                if (e.Role == MatchElementRole.Absorbed) canvas.DrawRect(box, wash);
-                else canvas.DrawRoundRect(box, pad, pad, bad);
+                canvas.DrawRoundRect(new SKRect(ax - pad, ay - pad, bx + pad, by + pad), pad, pad, bad);
             }
         }
 
-        /// <summary>The transform brackets, beneath the products they act on (match.md §9.3).</summary>
+        /// <summary>
+        /// The transform braces, beneath the products they act on (match.md §9.3) — a real curly
+        /// brace, not three straight lines.
+        /// </summary>
+        /// <remarks>
+        /// <b>Owner, 2026-08-20:</b> "the transform curly brace rendering needs aesthetic improvement.
+        /// It needs to have smooth 'curl' at its left and right edge locations. It also needs a stem
+        /// from the center of its horizontal line to its rendered text transform name."
+        ///
+        /// <para>What is drawn is one continuous under-brace path: a quarter-turn UP at each end
+        /// (towards the elements the brace is about), a straight run along the top, and a
+        /// quarter-turn each side into a centre tip pointing DOWN — then the stem from that tip to the
+        /// label. Quadratic segments with the corner itself as the control point are what make each
+        /// turn tangent to both the vertical and the horizontal, which is the whole difference between
+        /// a brace and a bracket. The path is built in WORLD units and mapped point by point, so the
+        /// brace scales with the drawing exactly as the glyphs do.</para>
+        ///
+        /// <para><b>Two colours, and they are different roles</b> — the brace is
+        /// <c>Schematic.ParameterNameText</c> and the N1/N2 label is <c>Schematic.ComponentNameText</c>,
+        /// read off the bracket record rather than chosen here.</para>
+        /// </remarks>
         private void DrawBrackets(SKCanvas canvas)
         {
             if (layout!.Brackets.Count == 0) return;
 
-            var colour = Role(ColorRole.MatchBracket);
             using var pen = new SKPaint
             {
-                IsAntialias = true, Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)Math.Max(1.0, zoom * 12), Color = colour,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeCap = SKStrokeCap.Round,
+                StrokeJoin = SKStrokeJoin.Round,
+                StrokeWidth = (float)Math.Max(1.0, zoom * 12),
             };
-            using var text = new SKPaint { IsAntialias = true, Color = colour };
+            using var text = new SKPaint { IsAntialias = true };
             using var font = new SKFont(SkiaFonts.PlexRegular, (float)Math.Max(6.0, zoom * 90));
 
             foreach (var b in layout.Brackets)
             {
                 double y = MatchLadderLayout.BracketY + b.Row * MatchLadderLayout.BracketRowPitch;
-                var (x0, y0) = P(b.X0, y);
-                var (x1, _)  = P(b.X1, y);
-                var (_, yUp) = P(b.X0, y - 60);
-                canvas.DrawLine(x0, y0, x1, y0, pen);
-                canvas.DrawLine(x0, y0, x0, yUp, pen);
-                canvas.DrawLine(x1, y0, x1, yUp, pen);
 
-                var (cx, cy) = P((b.X0 + b.X1) / 2, y + 120);
-                canvas.DrawText(b.Label, cx, cy, SKTextAlign.Center, font, text);
+                var outline = MatchBraceGeometry.Outline(
+                    b.X0, b.X1, y, MatchLadderLayout.BraceCurl);
+                if (outline.Count == 0) continue;
+
+                pen.Color = Role(b.ColorRoleKey);
+
+                using var path = new SKPath();
+                foreach (var step in outline)
+                {
+                    var (ex, ey) = P(step.X, step.Y);
+                    switch (step.Kind)
+                    {
+                        case MatchBraceStepKind.Move: path.MoveTo(ex, ey); break;
+                        case MatchBraceStepKind.Line: path.LineTo(ex, ey); break;
+                        default:
+                            var (cx, cy) = P(step.CX, step.CY);
+                            path.QuadTo(cx, cy, ex, ey);
+                            break;
+                    }
+                }
+                canvas.DrawPath(path, pen);
+
+                if (MatchBraceGeometry.Stem(b.X0, b.X1, y, MatchLadderLayout.BraceCurl,
+                                            MatchLadderLayout.BraceStem,
+                                            MatchLadderLayout.BraceLabelDrop) is not { } s)
+                    continue;
+
+                var (sx, sy0) = P(s.X, s.Y0);
+                var (_,  sy1) = P(s.X, s.Y1);
+                canvas.DrawLine(sx, sy0, sx, sy1, pen);
+
+                text.Color = Role(b.LabelColorRoleKey);
+                var (lx, ly) = P(s.X, s.LabelBaselineY);
+                canvas.DrawText(b.Label, lx, ly, SKTextAlign.Center, font, text);
             }
         }
     }

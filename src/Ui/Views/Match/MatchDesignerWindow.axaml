@@ -228,6 +228,23 @@
             <Setter Property="HorizontalContentAlignment" Value="Right"/>
         </Style>
 
+        <!-- A click-to-sort column header. Borderless, transparent and with NO horizontal padding,
+             because the text under it is a bare TextBlock starting at the column's own left edge —
+             any padding or centring here is a misalignment the user can see (owner, 2026-08-20). -->
+        <Style Selector="Button.gridhdr">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="FontWeight"                 Value="SemiBold"/>
+            <Setter Property="Padding"                    Value="0,2"/>
+            <Setter Property="BorderThickness"            Value="0"/>
+            <Setter Property="Background"                 Value="Transparent"/>
+            <Setter Property="HorizontalAlignment"        Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor"                     Value="Hand"/>
+        </Style>
+        <Style Selector="Button.gridhdr:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+        </Style>
+
         <Style Selector="TextBox.num">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Padding"  Value="4,2"/>
@@ -407,29 +424,36 @@
 
                         <!-- The value listing. A plain header-plus-rows Grid rather than a DataGrid:
                              the DataGrid control lives in a package this project does not reference,
-                             and five read-only columns with click-to-sort headers do not justify
-                             adding one. -->
-                        <Grid Grid.Row="3" ColumnDefinitions="1.4*,*,1.2*,0.6*,0.9*,Auto" Margin="0,6,0,0">
-                            <Button Content="Instance" FontSize="10" Padding="2" Tag="instance" Click="OnSortGrid"/>
-                            <Button Grid.Column="1" Content="Type"  FontSize="10" Padding="2" Tag="type"  Click="OnSortGrid"/>
-                            <Button Grid.Column="2" Content="Value" FontSize="10" Padding="2" Tag="value" Click="OnSortGrid"/>
-                            <Button Grid.Column="3" Content="Unit"  FontSize="10" Padding="2" Tag="unit"  Click="OnSortGrid"/>
-                            <Button Grid.Column="4" Content=""      FontSize="10" Padding="2" Tag="note"  Click="OnSortGrid"/>
-                            <Button Grid.Column="5" Name="CopyGridButton" Content="Copy as CSV"
-                                    FontSize="10" Padding="6,2" Margin="6,0,0,0"/>
+                             and three read-only columns with click-to-sort headers do not justify
+                             adding one.
+
+                             THE TWO COLUMN STRINGS BELOW MUST STAY IDENTICAL — a source-scan test
+                             holds them together (MatchRound3Tests). Owner-reported, 2026-08-20: "the
+                             column headers in the grid view are not horizontally aligned with the
+                             contents below it". They could not be: the header carried a SIXTH `Auto`
+                             column for the Copy as CSV button, so the star pool it divided was ~80px
+                             narrower than the rows' and every boundary landed somewhere else. The
+                             button is gone entirely — copying is on the listing's own context menu
+                             now, which is where a grid's copy belongs. -->
+                        <Grid Grid.Row="3" ColumnDefinitions="1.6*,*,1.4*" Margin="0,6,0,0">
+                            <Button Classes="gridhdr" Content="Instance" Tag="instance" Click="OnSortGrid"/>
+                            <Button Grid.Column="1" Classes="gridhdr" Content="Type"  Tag="type"  Click="OnSortGrid"/>
+                            <Button Grid.Column="2" Classes="gridhdr" Content="Value" Tag="value" Click="OnSortGrid"/>
                         </Grid>
                         <ScrollViewer Grid.Row="4" MaxHeight="170" Margin="0,2,0,0"
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl ItemsSource="{Binding Elements}">
+                            <!-- Transparent, so the whole listing area takes the pointer and a
+                                 right-click on the empty part below the last row still opens the
+                                 menu. A panel with no background is not hit-testable in Avalonia. -->
+                            <ItemsControl Name="ElementsList" ItemsSource="{Binding Elements}"
+                                          Background="Transparent">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="mvm:MatchElementRowViewModel">
-                                        <Grid ColumnDefinitions="1.4*,*,1.2*,0.6*,0.9*" Margin="0,1">
+                                        <Grid ColumnDefinitions="1.6*,*,1.4*" Margin="0,1">
                                             <TextBlock Text="{Binding Instance}" FontSize="11"/>
                                             <TextBlock Grid.Column="1" Text="{Binding TypeText}" FontSize="11"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding ValueText}" FontSize="11"/>
-                                            <TextBlock Grid.Column="3" Text="{Binding Unit}" FontSize="11"/>
-                                            <TextBlock Grid.Column="4" Text="{Binding Note}" FontSize="11" Opacity="0.75"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding ValueWithUnit}" FontSize="11"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

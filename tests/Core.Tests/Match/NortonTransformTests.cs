@@ -174,6 +174,56 @@ public class NortonTransformTests
         }
     }
 
+    /// <summary>
+    /// <b>The same promise, on a ladder that has ALREADY been transformed</b> — which is where it was
+    /// actually broken (owner-reported crash, 2026-08-20: adding a transform threw "Making a
+    /// transform pair adjacent would swap C2_N1_1_N2_1_N3_2 past C2_N1_1_N2_1_N3_3, which have
+    /// different orientations", straight out of a menu click).
+    /// </summary>
+    /// <remarks>
+    /// The test above only ever asked the FRESH synthesis ladder, whose elements strictly alternate;
+    /// <c>Discover</c>'s gap-3 guard tested that the two middle elements shared a TYPE, which is a
+    /// true proxy for "same arm" only in a strictly alternating ladder. A transform's own three
+    /// products are all one type and alternate in ORIENTATION by construction (pi is
+    /// shunt-series-shunt, T is series-shunt-series), so the proxy fails on exactly the ladders this
+    /// walk produces — and nothing before this test ever walked one.
+    /// </remarks>
+    [Fact]
+    public void AdjacencyMoves_StayInsideAnArm_OnLaddersThatHaveAlreadyBeenTransformed()
+    {
+        foreach (int order in (int[])[2, 4, 6])
+            foreach (var form in (TransformForm[])[TransformForm.Pi, TransformForm.T])
+            {
+                var (net, r) = Golden(order);
+
+                // Four rounds is one more than the crash needed (its ladder was at N3). Each round
+                // takes the FIRST discoverable pair, applies it, and then re-discovers on the result
+                // — the same walk the Designer's + add menu and MatchRebuild.ApplySequence make.
+                for (int round = 1; round <= 4; round++)
+                {
+                    var pairs = NortonTransform.Discover(net);
+                    if (pairs.Count == 0) break;
+
+                    foreach (var pair in pairs)
+                    {
+                        var rng = NortonTransform.Range(net, pair, r.AnalysisIsTerm1, false);
+                        var ex = Record.Exception(() => NortonTransform.Apply(
+                            net, pair, 0.5 * (rng.Min + rng.Max), form, r.AnalysisIsTerm1, false, round));
+                        Assert.True(ex is null,
+                            $"order {order}, {form}, round {round}: Discover offered "
+                            + $"{pair.NameA}/{pair.NameB} ({pair.IndexA}→{pair.IndexB}) but Apply "
+                            + $"refused it — {ex?.Message}");
+                    }
+
+                    var first = pairs[0];
+                    var range = NortonTransform.Range(net, first, r.AnalysisIsTerm1, false);
+                    net = NortonTransform.Apply(
+                        net, first, 0.5 * (range.Min + range.Max), form,
+                        r.AnalysisIsTerm1, false, round).Network;
+                }
+            }
+    }
+
     [Fact]
     public void PropagationIsAlwaysAwayFromTheAnalysisEnd()
     {

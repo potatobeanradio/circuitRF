@@ -73,12 +73,31 @@ public sealed partial class MatchDesignerViewModel
     public ObservableCollection<string> Notes { get; } = [];
 
     /// <summary>
-    /// The legend the schematic view shows when anything is absorbed. One line, because the brief is
-    /// explicit that the dimming must not be left to be inferred.
+    /// The legend the schematic view shows when anything is absorbed. One line, and it now NAMES the
+    /// elements it is about.
     /// </summary>
-    public string LadderLegend => Ladder.HasAbsorbed
-        ? "Dimmed elements are supplied by the external terminations — this component does not contain them."
-        : "";
+    /// <remarks>
+    /// <b>Nothing is dimmed any more</b> (owner, 2026-08-20), so a legend that said "dimmed elements
+    /// are…" pointed at a treatment that no longer exists. Naming them is what is left, and it is
+    /// strictly better than the wash was: the reader gets the answer without having to compare
+    /// brightnesses across a drawing.
+    /// </remarks>
+    public string LadderLegend
+    {
+        get
+        {
+            var absorbed = Ladder.Elements
+                .Where(e => e.Role == MatchElementRole.Absorbed)
+                .Select(e => e.Name)
+                .ToList();
+            return absorbed.Count == 0
+                ? ""
+                : $"{string.Join(", ", absorbed)} {(absorbed.Count == 1 ? "is" : "are")} supplied by "
+                  + "the external terminations, drawn beside the termination that supplies "
+                  + $"{(absorbed.Count == 1 ? "it" : "them")} — this component does not contain "
+                  + $"{(absorbed.Count == 1 ? "it" : "them")}.";
+        }
+    }
 
     /// <summary>The grid's clipboard form (§9.3), and the component-listing export's own rows.</summary>
     public string ElementsCsv => MatchElementRowViewModel.ToCsv(Elements);
@@ -87,19 +106,24 @@ public sealed partial class MatchDesignerViewModel
     {
         var network = _rebuild?.Network;
 
-        Ladder = MatchLadderLayout.Build(network, _rebuild?.Applied, ValueTextFor);
+        Ladder = MatchLadderLayout.Build(network, _rebuild?.Applied, ValueTextFor, OhmsTextFor);
 
         Elements.Clear();
         if (network is not null)
         {
-            string instance = InstanceName.Length > 0 ? InstanceName : "MN1";
-            foreach (var e in network.Elements)
+            // The grid lists an element under the SAME name the schematic labels it with — "L1", not
+            // "MN1.L1" (owner, 2026-08-20). The qualified spelling was a path to a component that
+            // does not exist: a Match contains no sub-instances, and the one place the user reads
+            // both views at once is this pane, where two names for one element is just a puzzle.
+            // The same order the schematic draws in, so the two views of one network read down the
+            // page together — see MatchLadderLayout.DisplayOrder for why that is not ladder order.
+            foreach (var e in MatchLadderLayout.DisplayOrder(network.Elements))
             {
                 var quantity = MatchValueFormat.QuantityOf(e.Type);
                 var (text, unit) = MatchValueFormat.Format(
                     e.Value, quantity, Settings.UnitFor(quantity), Settings.SignificantDigits);
                 Elements.Add(new MatchElementRowViewModel(
-                    $"{instance}.{e.Name}", e.Name, e.Type, e.IsShunt, e.Value,
+                    e.Name, e.Name, e.Type, e.IsShunt, e.Value,
                     MatchLadderLayout.RoleOf(e), text, unit));
             }
         }
@@ -159,6 +183,11 @@ public sealed partial class MatchDesignerViewModel
         return MatchValueFormat.FormatWithUnit(
             e.Value, quantity, Settings.UnitFor(quantity), Settings.SignificantDigits);
     }
+
+    /// <summary>A port reference resistance, in the Designer's own resistance unit and digits.</summary>
+    private string OhmsTextFor(double r) => MatchValueFormat.FormatWithUnit(
+        r, MatchQuantity.Resistance,
+        Settings.UnitFor(MatchQuantity.Resistance), Settings.SignificantDigits);
 
     private void RefreshStatus()
     {

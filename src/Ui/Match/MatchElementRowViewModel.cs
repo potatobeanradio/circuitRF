@@ -23,6 +23,19 @@ public sealed record MatchElementRowViewModel(
     /// <summary>"L" or "C", plus how it sits.</summary>
     public string TypeText => (Type == ElementType.L ? "L" : "C") + (IsShunt ? " shunt" : " series");
 
+    /// <summary>
+    /// The value and its unit as one string — "112 pH" — which is how the grid shows it.
+    /// </summary>
+    /// <remarks>
+    /// <b>One column, not two</b> (owner, 2026-08-20: "merge the Value and Unit columns in the grid
+    /// view into one column called Value so that the value and units are on the same column"). Split
+    /// across two columns a number and its unit are read as two facts, and the gap between them
+    /// widened with the column; together they are the quantity, which is the one thing the row is
+    /// for. <see cref="ValueText"/> and <see cref="Unit"/> stay separate underneath because the CSV
+    /// and the sort both want the halves.
+    /// </remarks>
+    public string ValueWithUnit => Unit.Length == 0 ? ValueText : ValueText + " " + Unit;
+
     /// <summary>The theme role, so the grid and the preview cannot disagree about an element.</summary>
     public string ColorRoleKey =>
         new MatchLadderElement(Name, Type, IsShunt, Value, Role, 0, 0, ValueText).ColorRoleKey;

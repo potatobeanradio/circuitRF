@@ -130,11 +130,7 @@ public partial class MatchDesignerWindow : Window
         WireButton("CloseButton", (_, _) => Close());
         WireButton("ApplyButton", (_, _) => Vm.Apply());
         WireButton("RevertButton", (_, _) => Vm.Revert());
-        WireButton("CopyGridButton", async (_, _) =>
-        {
-            var clipboard = Clipboard;
-            if (clipboard is not null) await clipboard.SetTextAsync(Vm.ElementsCsv);
-        });
+        WireElementsContextMenu();
         WireButton("RemoveTransformButton", (_, _) => Vm.RemoveLastTransform());
         WireButton("AddTransformButton", (s, _) => ShowAddTransformMenu(s as Control));
         WireButton("ExportButton", (s, _) => ShowExportMenu(s as Control));
@@ -151,6 +147,31 @@ public partial class MatchDesignerWindow : Window
     private void WireButton(string name, EventHandler<RoutedEventArgs> handler)
     {
         if (this.FindControl<Button>(name) is { } b) b.Click += handler;
+    }
+
+    /// <summary>
+    /// <b>Copy as CSV</b>, on the network listing's own context menu (owner, 2026-08-20: "remove the
+    /// Copy as CSV button — instead make a context menu for the entire grid view with a Copy as CSV
+    /// menu that performs the same operation").
+    /// </summary>
+    /// <remarks>
+    /// Built here rather than declared in the AXAML for the reason every other menu in this window is:
+    /// a <c>ContextMenu</c> is a popup with its own visual root, so a <c>MenuItem</c> declared inside
+    /// one is not reliably reachable by <c>FindControl</c> from the window, and a handler that
+    /// silently never attaches is a menu entry that does nothing. The listing itself IS in the name
+    /// scope, so the menu is attached to it here and the item is wired in the same breath.
+    /// </remarks>
+    private void WireElementsContextMenu()
+    {
+        if (this.FindControl<ItemsControl>("ElementsList") is not { } list) return;
+
+        var copy = new MenuItem { Header = "Copy as CSV" };
+        copy.Click += async (_, _) =>
+        {
+            var clipboard = Clipboard;
+            if (Vm is not null && clipboard is not null) await clipboard.SetTextAsync(Vm.ElementsCsv);
+        };
+        list.ContextMenu = new ContextMenu { ItemsSource = new[] { copy } };
     }
 
     private void BindNumericBox(string name, Func<string> read, Action<string> write)

@@ -506,36 +506,101 @@ public class MatchDesignerTests(ITestOutputHelper output)
         designer.Dispose();
     }
 
-    // ── §4 — absorbed elements are visually distinct in BOTH presentations ────
+    // ── §4 — absorbed elements are identified in WORDS and by POSITION, never by dimming ──
 
+    /// <summary>
+    /// Round 3 inverted this test (owner, 2026-08-20: "do not render any component as dimmed"). What
+    /// it holds now is the pair of things that replaced the wash: <b>both presentations still name
+    /// the same elements</b>, the legend NAMES them rather than asking the user to spot a brightness
+    /// difference, and every glyph is drawn in the one symbol colour.
+    /// </summary>
     [Fact]
-    public void AbsorbedElements_AreADistinctColourRole_InTheSchematicAndInTheGrid()
+    public void AbsorbedElements_AreNamedByTheLegend_AndDrawnLikeEverythingElse()
     {
         var (_, _, designer) = Open(Golden());
 
         var absorbedInGrid = designer.Elements.Where(e => e.Role == MatchElementRole.Absorbed).ToList();
         Assert.Equal(2, absorbedInGrid.Count);      // the golden design absorbs one element per end
-        Assert.All(absorbedInGrid, e => Assert.Equal(ColorRole.MatchAbsorbed, e.ColorRoleKey));
-        Assert.All(absorbedInGrid, e => Assert.Equal("absorbed", e.Note));
 
         var absorbedInLadder = designer.Ladder.Elements
             .Where(e => e.Role == MatchElementRole.Absorbed).ToList();
-        Assert.Equal(absorbedInGrid.Count, absorbedInLadder.Count);
-        Assert.All(absorbedInLadder, e => Assert.Equal(ColorRole.MatchAbsorbed, e.ColorRoleKey));
 
         // The two presentations name the SAME elements, which is the property that matters.
         Assert.Equal(
             absorbedInGrid.Select(e => e.Name).OrderBy(n => n, StringComparer.Ordinal),
             absorbedInLadder.Select(e => e.Name).OrderBy(n => n, StringComparer.Ordinal));
 
-        // ...and the legend is present, rather than left to be inferred.
-        Assert.True(designer.Ladder.HasAbsorbed);
-        Assert.Contains("Dimmed", designer.LadderLegend);
+        // NOTHING is dimmed — every element, absorbed or not, is the schematic's own symbol colour.
+        Assert.All(designer.Ladder.Elements,
+                   e => Assert.Equal(ColorRole.SchematicSymbolLine, e.ColorRoleKey));
+        Assert.All(absorbedInGrid,
+                   e => Assert.Equal(ColorRole.SchematicSymbolLine, e.ColorRoleKey));
 
-        // Everything else is the ordinary symbol colour, so "distinct" means something.
-        Assert.Contains(designer.Ladder.Elements, e => e.ColorRoleKey == ColorRole.SchematicSymbolLine);
+        // The legend states it in words and names them, rather than leaving it to be inferred.
+        Assert.True(designer.Ladder.HasAbsorbed);
+        output.WriteLine(designer.LadderLegend);
+        Assert.DoesNotContain("Dimmed", designer.LadderLegend, StringComparison.OrdinalIgnoreCase);
+        foreach (var e in absorbedInLadder)
+            Assert.Contains(e.Name, designer.LadderLegend, StringComparison.Ordinal);
 
         designer.Dispose();
+    }
+
+    /// <summary>
+    /// <b>An absorbed element is drawn next to the termination that supplies it</b> (owner,
+    /// 2026-08-20: "the absorbed parasitic component must always be placed adjacent to its
+    /// corresponding R termination"). End 1's is the leftmost column, end 2's the rightmost.
+    /// </summary>
+    /// <remarks>
+    /// It is not where the synthesis leaves it: an arm is emitted L-then-C, so an end arm whose
+    /// absorbed half is the C has its own L standing between the parasitic and the termination, and
+    /// <c>WithEndSplits</c> then inserts the Fano/detune element further out still. The re-ordering
+    /// is display-only and provably circuit-preserving — see
+    /// <c>MatchLadderLayout.DisplayOrder</c>.
+    /// </remarks>
+    [Fact]
+    public void AnAbsorbedElement_SitsBesideItsOwnTermination()
+    {
+        var (_, _, designer) = Open(Golden());
+        var elements = designer.Ladder.Elements;
+
+        foreach (var e in elements)
+            output.WriteLine($"{e.Name,-10} x {e.X,7:F0} {(e.IsShunt ? "shunt" : "series")} {e.Role}");
+
+        var order = MatchLadderLayout.DisplayOrder(designer.Rebuild!.Network!.Elements);
+        int end1 = order.ToList().FindIndex(e => e.AbsorbedEnd == 1);
+        int end2 = order.ToList().FindIndex(e => e.AbsorbedEnd == 2);
+        Assert.Equal(0, end1);
+        Assert.Equal(order.Count - 1, end2);
+
+        // ...which in world terms is the column nearest each TermG.
+        Assert.Equal(elements.Min(e => e.X), elements.Single(e => e.Name == order[end1].Name).X, 6);
+        Assert.Equal(elements.Max(e => e.X), elements.Single(e => e.Name == order[end2].Name).X, 6);
+
+        designer.Dispose();
+    }
+
+    /// <summary>
+    /// The re-ordering above steps over elements it PROVABLY commutes with and nothing else: two
+    /// adjacent ladder elements share an arm exactly when they share an orientation, so a walk that
+    /// stops at the first orientation change never crosses a node.
+    /// </summary>
+    [Fact]
+    public void DisplayOrder_NeverStepsOverAnOrientationChange()
+    {
+        var absorbed1 = new MatchElement { Name = "Ca", Type = ElementType.C, IsShunt = false, Value = 1e-12, AbsorbedEnd = 1 };
+        var blocker   = new MatchElement { Name = "Lb", Type = ElementType.L, IsShunt = true,  Value = 1e-9 };
+        var tail      = new MatchElement { Name = "Cc", Type = ElementType.C, IsShunt = true,  Value = 2e-12 };
+
+        // The absorbed element is already at index 1, behind a SHUNT element it does not share a node
+        // with — so it must not move at all.
+        var order = MatchLadderLayout.DisplayOrder([blocker, absorbed1, tail]);
+        Assert.Equal(["Lb", "Ca", "Cc"], order.Select(e => e.Name));
+
+        // With a same-orientation neighbour in front of it, it walks past exactly that one.
+        var sameArm = new MatchElement { Name = "Ld", Type = ElementType.L, IsShunt = false, Value = 1e-9 };
+        var order2 = MatchLadderLayout.DisplayOrder([sameArm, absorbed1, blocker]);
+        Assert.Equal(["Ca", "Ld", "Lb"], order2.Select(e => e.Name));
     }
 
     /// <summary>Brackets are drawn under the products a transform created, and stacked when they
@@ -578,7 +643,16 @@ public class MatchDesignerTests(ITestOutputHelper output)
         Assert.Equal(designer.Elements.Count + 1, csv.TrimEnd().Split('\n').Length);
         Assert.DoesNotContain("E12", csv, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("E24", csv, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("MN1.", csv, StringComparison.Ordinal);
+
+        // An element is listed under the SAME name the schematic labels it with — "L1", never
+        // "MN1.L1" (owner, 2026-08-20). A Match contains no sub-instances, so the qualified spelling
+        // was a path to something that does not exist.
+        Assert.DoesNotContain("MN1.", csv, StringComparison.Ordinal);
+        Assert.All(designer.Elements, r => Assert.Equal(r.Name, r.Instance));
+
+        // Value and unit are one column in the VIEW and two in the CSV, on purpose: a spreadsheet
+        // wants to sort on the number.
+        Assert.Equal("14.9 pF", designer.Elements.Single(r => r.Name == "C1").ValueWithUnit);
 
         designer.Dispose();
     }

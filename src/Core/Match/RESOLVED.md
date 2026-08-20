@@ -5,6 +5,53 @@ Findings from the Match component's own briefs, kept out of any `CLAUDE.md`. Sam
 would cost someone real time to rediscover.
 
 
+## Match round 3 — `Discover` promised a pair `Apply` refuses (2026-08-20)
+
+Owner-reported crash, straight out of the *+ add* menu with no dialog and no recovery:
+
+```
+System.InvalidOperationException: Making a transform pair adjacent would swap
+C2_N1_1_N2_1_N3_2 past C2_N1_1_N2_1_N3_3, which have different orientations
+  at NortonTransform.RequireSameOrientation
+  at NortonTransform.Apply
+  at MatchRebuild.ApplySequence  →  MatchDesignerViewModel.AddTransform
+```
+
+### The type test was a proxy for "same arm", and the proxy is only true on a FRESH ladder
+
+`Discover`'s gap-3 case offers a pair three apart, which `Apply` makes adjacent by walking each end
+inward one place. Both walks are response-preserving only if each stays inside an arm — that is,
+`el[j]` shares an orientation with `el[j+1]`, and `el[j+3]` with `el[j+2]`. What the guard actually
+tested was `el[j+1].Type == el[j+2].Type`.
+
+On the ladder the synthesis emits, elements strictly alternate in both type and orientation, and the
+type test happens to select the same pairs the orientation test would. **A transform's own three
+products break that**: they are all one type and alternate in orientation by construction (pi is
+shunt-series-shunt, T is series-shunt-series). A pair straddling a previous transform's triple
+therefore passed the type test, was offered in the menu, and hit `Apply`'s assert. The reported names
+say it exactly — `_N3_2` and `_N3_3` are products 2 and 3 of one triple, which **always** differ in
+orientation.
+
+The fix is the orientation condition, stated rather than proxied. The type test is kept: it selects a
+strictly smaller set and removing it would change which transforms the solution search offers.
+
+### The existing test could not have caught it, and the reason is worth stating
+
+`AdjacencyMoves_NeverSwapAcrossAnOrientationBoundary` already walked *every discovered pair at every
+reachable order* and applied each one — on the **freshly synthesised** ladder only, which is precisely
+the ladder where the proxy holds. Nothing in the suite had ever re-discovered on a ladder that had
+already been transformed. `AdjacencyMoves_StayInsideAnArm_OnLaddersThatHaveAlreadyBeenTransformed`
+does: four rounds of apply-then-rediscover, both forms, three orders. Reverting the guard makes it
+fail with the owner's own message, at round 4.
+
+### A rebuild now reports an unapplicable transform instead of throwing
+
+`MatchRebuild.ApplySequence` already drops a transform *with a note* when its pair no longer exists in
+the ladder. An `Apply` that refuses is the same class of event and is handled the same way — the
+Designer shows the note, keeps the rest of the sequence, and stays open. This is belt-and-braces, not
+the fix: an escaping `InvalidOperationException` from a menu click is an application crash whatever
+caused it, and the disagreement itself is fixed at its source in `Discover`.
+
 ## MN-1 — the synthesis core (2026-08-19)
 
 Implements `docs/design/match.md` §4 (synthesis), §5 (inductive terminations), §6 (response shapes)

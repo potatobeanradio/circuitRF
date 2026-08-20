@@ -6,6 +6,105 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Match round 3 — the Designer's schematic, its grid, and two crashes (2026-08-20)
+
+The owner's third pass. Most of it is presentation and is recorded in the code itself; four findings
+cost real time to reach and are kept here. The `NortonTransform.Discover` half is a Core finding and
+lives in `src/Core/Match/RESOLVED.md`.
+
+### An open inline editor was in the LAYOUT, which is why the panel around it grew
+
+Owner: *"When the user invokes the inline text editor, the view around it shifts by a few pixels. For
+example the entire Band Group box gets larger when the user double-clicks on the f1 value."*
+
+`InlineEditText` is a `Panel`, and a `Panel` measures to the union of its children. Opening the
+editor adds a `TextBox` as a second child, and a `TextBox` is bigger than the `TextBlock` it covers in
+**both** directions — a border, a 2 px horizontal padding, and a taller line box. So the control grew,
+which grew its `Auto` grid row, which grew the card, which moved everything below it. **Nothing was
+wrong with the editor's own size**; the fault was letting layout see it at all — which is why the
+round-2 fix for "the box is too wide" (measuring its width from its text) reduced the shift without
+removing it.
+
+`MeasureOverride` now returns `_display.DesiredSize` and nothing else, in both states, and
+`ArrangeOverride` places the editor over the resting text at its own desired size — overflowing the
+control's bounds by the couple of pixels it is bigger, which paints outside without moving anything
+because nothing above it in the tree ever hears about it. The typing handler calls
+`InvalidateArrange`, **never** `InvalidateMeasure`. The alternative — reserving an editor-sized slot
+permanently — would pay those pixels in every row of every panel forever to save an overflow nobody
+can see.
+
+*This is a shared control.* The Match Designer's specification pane is where it was reported, but
+every `InlineEditText` in the application inherits the fix.
+
+### A fit performed FROM the render pass has nothing to invalidate
+
+Owner: *"I changed a PI to T network and app crashed: `Visual was invalidated during the render pass`
+at `MatchSchematicCanvas.ZoomToFit()` at `MatchSchematicCanvas.Render()`."*
+
+A structural change clears `_fitted`; the next `Render` re-fits; `ZoomToFit` ended with
+`InvalidateVisual()`; Avalonia refuses an invalidate raised from inside the render pass outright
+rather than silently re-entering. Guarding the call site is the wrong fix — the right one is that the
+frame a render-pass fit would ask for **is the frame being drawn**. `Fit()` is the arithmetic with no
+invalidate in it; `ZoomToFit()` is `Fit()` plus the repaint. `Render` calls `Fit()`.
+
+The general shape, worth remembering outside this file: **any `Render` that lazily computes state
+must not use the same entry point the event handlers use**, because that entry point almost always
+ends in a repaint request.
+
+### The grid headers could not line up, because they divided a different column pool
+
+Owner: *"The column headers in the grid view are not horizontally aligned with the contents below it
+in its own column."*
+
+The header row's `ColumnDefinitions` was `1.4*,*,1.2*,0.6*,0.9*,Auto` and the item template's was
+`1.4*,*,1.2*,0.6*,0.9*`. The sixth `Auto` column held the **Copy as CSV button**, so the header
+divided a star pool ~80 px narrower than the rows did and every boundary landed somewhere else — the
+misalignment grew with the button's own width and was invisible in any single-column inspection.
+Moving copy to the listing's context menu (which the owner asked for separately) removed the sixth
+column, and the two strings are now identical with a test holding them so.
+
+Secondary and real: a `Button` header centres its content and pads it, while the row beneath it is a
+bare `TextBlock` starting at the column's left edge. `Button.gridhdr` is borderless, transparent,
+`HorizontalContentAlignment="Left"`, and has no horizontal padding.
+
+### `Copy as CSV` is built in code-behind, not declared in the AXAML
+
+A `ContextMenu` is a popup with its own visual root, so a `MenuItem` declared inside one is not
+reliably reachable by `FindControl` from the window — and a handler that silently never attaches is a
+menu entry that does nothing, with no error anywhere. Every other menu in `MatchDesignerWindow`
+(Add transform, Export, Settings) is already built in code for the same reason; the CSV menu now is
+too, attached to the `ItemsControl` (which *is* in the window's name scope) at `OnLoaded`.
+
+### The brace's shape lives in `MatchBraceGeometry`, not in the draw operation
+
+A shape asked for on **aesthetic** grounds has to be inspectable without a running application, and
+the canvas's draw op is a private nested class inside a `Control` — nothing outside a live Avalonia
+render pass can reach it. `MatchBraceGeometry.Outline` returns the under-brace as world-space path
+steps and `Stem` returns the drop to the label; the canvas maps each through its own world-to-screen
+transform and owns no shape of its own. That is what let the round-3 result be rendered to a PNG and
+looked at, and it is what the brace test asserts against — the tip points down, the ends curl up, and
+**every turn's control point is the corner itself**, which is the whole difference between a brace and
+a bracket with rounded corners.
+
+### Two smaller things that were quietly wrong
+
+- **The pane's shunt glyph box lied by ten units.** `MatchSchematicModel.Element` declared a shunt
+  element's glyph as ±210 when both built-in glyphs run lead tip to lead tip at ±200. That box feeds
+  `SchematicComponent.LabelBaseYFor`, which pushes labels clear of a glyph deeper than the default
+  offset — so ten units of invented margin moved every shunt label ten units down, and the flattened
+  cell (which computes the box from the real primitives) disagreed with the pane by exactly that.
+  The label offset is now derived from the editor's own label metrics rather than hand-tuned, so it
+  tracks a change to them; the hand-tuned `−482` it replaces had gone stale.
+- **An absorbed element is placed by the LAYOUT, not by the synthesis.** `MatchSynthesis.Build`
+  emits each arm L-then-C, so an end arm whose absorbed half is the C has the arm's own L standing
+  between the parasitic and the termination, and `WithEndSplits` inserts the Fano/detune element
+  further out still. `MatchLadderLayout.DisplayOrder` walks the absorbed element out to its end —
+  **stepping only over elements it provably commutes with**: two adjacent ladder elements share an
+  arm exactly when they share an orientation (a shunt run hangs off one node in parallel, a series
+  run is one chain), so the walk stops at the first orientation change. A blanket "move it to index
+  0" would be a different circuit whenever a Norton transform had left an absorbed element somewhere
+  other than an end arm.
+
 ## Match round 2 — the Designer's panes (2026-08-19)
 
 The owner's second pass, all of it about how the Designer LOOKS and reads. Four findings are worth

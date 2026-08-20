@@ -144,14 +144,23 @@ public sealed class MatchRound1Tests
         Assert.Equal(ColorRole.SchematicInstanceNameText, ok.NameColorRoleKey);
     }
 
-    /// <summary>An absorbed element is still dimmed — the legend depends on it saying so.</summary>
+    /// <summary>
+    /// <b>An absorbed element is NOT dimmed</b> — Round 3 (owner, 2026-08-20: "do not render any
+    /// component as dimmed; all components should render the same brightness, even the components
+    /// that represent the absorbed parasitic"). This test asserted the opposite in Round 1 and is
+    /// kept, inverted, because the property is the one that changed rather than one that went away.
+    /// </summary>
     [Fact]
-    public void AnAbsorbedElement_StaysDimmed()
+    public void AnAbsorbedElement_IsDrawnLikeEveryOtherElement()
     {
         var e = new MatchLadderElement("C1", ElementType.C, true, 1e-12,
                                        MatchElementRole.Absorbed, 0, 0, "1 pF");
-        Assert.Equal(ColorRole.MatchAbsorbed, e.ColorRoleKey);
-        Assert.Equal(ColorRole.MatchAbsorbed, e.ValueColorRoleKey);
+        var ordinary = e with { Role = MatchElementRole.Normal };
+
+        Assert.Equal(ordinary.ColorRoleKey,     e.ColorRoleKey);
+        Assert.Equal(ordinary.ValueColorRoleKey, e.ValueColorRoleKey);
+        Assert.Equal(ordinary.NameColorRoleKey,  e.NameColorRoleKey);
+        Assert.Equal(ColorRole.SchematicSymbolLine, e.ColorRoleKey);
     }
 
     /// <summary>
@@ -192,36 +201,76 @@ public sealed class MatchRound1Tests
     }
 
     /// <summary>
-    /// <b>The interface pins are there, and they are the schematic's own Pin.</b>
+    /// <b>Each end of the network is a grounded termination, and there is no interface pin anywhere
+    /// in the drawing</b> (owner, 2026-08-20: "remove the pins from the Match Designer schematic;
+    /// instead place a TermG at each end of the network — left side instance name is 'Termination 1',
+    /// right side is 'Termination 2'").
     /// </summary>
     /// <remarks>
-    /// Round 1 had this as a source scan over the preview's hand-written primitive walker, which had
-    /// no <c>PolygonPrimitive</c> case — so the hexagon drew as nothing and the owner saw no pins at
-    /// all. Round 2 deleted the walker: the pane is a real <c>SchematicModel</c> rendered by
-    /// <c>SchematicRenderer</c>, which draws every primitive kind the editor draws, so the question
-    /// is no longer "does this file handle a polygon" but "is a Pin in the model". That is checkable
-    /// directly, without a render.
+    /// Rounds 1 and 2 asserted the opposite of this — four <c>Pin</c>s, two of them reference
+    /// terminals on a ground rail. Both the rail and the pins are gone: a <c>TermG</c> IS the
+    /// reference, so nothing is left for a reference pin to mark, and each <c>TermG</c>'s own "+"
+    /// terminal lands exactly on the end of the spine.
     /// </remarks>
     [Fact]
-    public void TheProjection_PutsARealPinOnEveryInterfaceTerminal()
+    public void TheProjection_PutsAGroundedTerminationOnEachEnd_AndNoPins()
     {
-        Assert.Contains(BuiltInSymbols.Primitives(SymbolKind.Pin).Primitives,
-                        prim => prim is PolygonPrimitive);
-
         var (_, _, d) = Open();
         var model = MatchSchematicModel.Build(d.Ladder);
 
-        var pins = model.Components.Where(c => c.Symbol == SymbolKind.Pin).ToList();
-        Assert.Equal(d.Ladder.Elements.Any(e => e.IsShunt) ? 4 : 2, pins.Count);
+        Assert.DoesNotContain(model.Components, c => c.Symbol == SymbolKind.Pin);
 
-        // Each pin's own terminal lands exactly on the wire it marks: local (+100, 0), so an
-        // unmirrored one sits 100 behind its tip and a mirrored one 100 in front.
-        var left = pins.OrderBy(p => p.X).First();
-        var right = pins.OrderByDescending(p => p.X).First();
-        Assert.Equal(SymbolRotation.R0, left.Rotation);
-        Assert.Equal(SymbolRotation.R180, right.Rotation);
-        Assert.Equal(d.Ladder.PortLeftX,  left.X + 100, 6);
-        Assert.Equal(d.Ladder.PortRightX, right.X - 100, 6);
+        var terms = model.Components.Where(c => c.Symbol == SymbolKind.TermG)
+                                    .OrderBy(c => c.X).ToList();
+        Assert.Equal(2, terms.Count);
+
+        var (left, right) = (terms[0], terms[1]);
+        Assert.Equal("Termination 1", left.InstanceName);
+        Assert.Equal("Termination 2", right.InstanceName);
+
+        // TermG's own pin is local (0, −200): R90 maps it to (+200, 0) and R270 to (−200, 0), so each
+        // glyph sits a lead-length OUTWARD of the spine end it terminates and faces the ladder.
+        Assert.Equal(SymbolRotation.R90,  left.Rotation);
+        Assert.Equal(SymbolRotation.R270, right.Rotation);
+        Assert.Equal(d.Ladder.PortLeftX,  left.X + 200, 6);
+        Assert.Equal(d.Ladder.PortRightX, right.X - 200, 6);
+
+        // Both are labelled the schematic's own three rows, the third carrying the port reference.
+        Assert.All(terms, t => Assert.Equal(3, t.Labels.Count));
+        Assert.Equal("TermG", left.Labels[0]);
+        Assert.StartsWith("Z = ", right.Labels[2], StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Every shunt arm carries its own GND, and no wire runs below one</b> (owner, 2026-08-20:
+    /// "remove all the 'ground' wires for the shunt components; ground each such component with its
+    /// own GND component"). <c>Ground</c>'s pin is at its local origin, so one placed a lead-length
+    /// below a shunt element's centre sits ON that element's lower pin — there is nothing to wire.
+    /// </summary>
+    [Fact]
+    public void EveryShuntArm_CarriesItsOwnGround_WithNoWireBelowIt()
+    {
+        var (_, _, d) = Open();
+        var model = MatchSchematicModel.Build(d.Ladder);
+
+        var shunts = d.Ladder.Elements.Where(e => e.IsShunt).ToList();
+        Assert.NotEmpty(shunts);
+
+        var grounds = model.Components.Where(c => c.Symbol == SymbolKind.Ground).ToList();
+        Assert.Equal(shunts.Count, grounds.Count);
+
+        foreach (var e in shunts)
+        {
+            var g = Assert.Single(grounds, c => Math.Abs(c.X - e.X) < 1e-9);
+            Assert.Equal(e.Y + MatchSchematicGeometry.LeadHalf, g.Y, 6);
+            // Neither the type label nor the instance name is drawn — the glyph says it all.
+            Assert.Empty(g.Labels);
+        }
+
+        // Nothing at all is drawn below a shunt element's lower pin.
+        double floor = shunts[0].Y + MatchSchematicGeometry.LeadHalf;
+        Assert.DoesNotContain(model.Wires, w =>
+            w.Points.Any(pt => pt.Y > floor - 1e-9));
     }
 
     /// <summary>
@@ -246,8 +295,10 @@ public sealed class MatchRound1Tests
             Assert.Equal(e.Type == ElementType.L ? SymbolKind.Inductor : SymbolKind.Capacitor, c.Symbol);
 
             // A shunt arm keeps the built-in glyph's own vertical orientation; a series arm is the
-            // SAME glyph at R90, exactly as placing one rotated on a page would be.
-            Assert.Equal(e.IsShunt ? SymbolRotation.R0 : SymbolRotation.R90, c.Rotation);
+            // SAME glyph at R270 — the rotation MatchFlatten writes, so the Designer's drawing and
+            // the cell it flattens into are the same drawing (owner, 2026-08-20).
+            Assert.Equal(e.IsShunt ? SymbolRotation.R0 : SymbolRotation.R270, c.Rotation);
+            Assert.Equal(MatchSchematicModel.SeriesRotation, SymbolRotation.R270);
 
             // Type, instance, value — the schematic's three label rows, in the schematic's order.
             Assert.Equal(3, c.Labels.Count);
@@ -298,9 +349,19 @@ public sealed class MatchRound1Tests
         Assert.Contains("SchematicRenderTheme.FromTheme", src, StringComparison.Ordinal);
         Assert.Contains("SchematicRenderer.Draw", src, StringComparison.Ordinal);
 
-        // The two exceptions, each saying something a schematic cannot.
+        // The one exception left, saying something a schematic cannot: which value is unbuildable.
         Assert.Contains("ColorRole." + nameof(ColorRole.MatchNegative), src, StringComparison.Ordinal);
-        Assert.Contains("ColorRole." + nameof(ColorRole.MatchBracket), src, StringComparison.Ordinal);
+
+        // The BRACE picks no colour of its own at all any more — it asks the bracket record, which
+        // answers with two of the schematic's own roles (owner, 2026-08-20).
+        Assert.Contains("Role(b.ColorRoleKey)", src, StringComparison.Ordinal);
+        Assert.Contains("Role(b.LabelColorRoleKey)", src, StringComparison.Ordinal);
+        var bracket = new MatchTransformBracket("N1", 0, 0, 100, 0);
+        Assert.Equal(ColorRole.SchematicParameterNameText, bracket.ColorRoleKey);
+        Assert.Equal(ColorRole.SchematicComponentNameText, bracket.LabelColorRoleKey);
+
+        // Nothing dims anything: the wash that used to be painted over an absorbed glyph is gone.
+        Assert.DoesNotContain("ColorRole." + nameof(ColorRole.MatchAbsorbed), src, StringComparison.Ordinal);
 
         var e = new MatchLadderElement("L2", ElementType.L, false, 1e-9,
                                        MatchElementRole.Normal, 0, 0, "1 nH");

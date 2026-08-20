@@ -151,6 +151,59 @@ public sealed class InlineEditText : Panel
         DoubleTapped += (_, e) => { BeginEdit(); e.Handled = true; };
     }
 
+    /// <summary>
+    /// <b>The open editor contributes NOTHING to this control's measured size.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> "when the user invokes the inline text editor, the view
+    /// around it shifts by a few pixels — for example the entire Band Group box gets larger when the
+    /// user double-clicks on the f1 value. There should be no shifts or movement in any other UI
+    /// element."
+    ///
+    /// <para>The cause is what a <see cref="Panel"/> does by default: it measures to the union of its
+    /// children, and the editor is a second child. A <see cref="TextBox"/> is bigger than the
+    /// <see cref="TextBlock"/> it covers in both directions — a border, a two-pixel horizontal
+    /// padding, and a taller line box — so opening one grew this control, which grew its `Auto` grid
+    /// row, which grew the card, which moved everything below it. Nothing was wrong with the editor's
+    /// own size; the fault was letting it be seen by layout at all.</para>
+    ///
+    /// <para>So the measure reports the RESTING text's size and only that, in both states. The editor
+    /// is still measured (it has to be, to have a desired size to arrange at) and then arranged over
+    /// the resting text, overflowing this control's own bounds by the couple of pixels it is bigger —
+    /// which paints outside without moving anything, because nothing above it in the tree ever hears
+    /// about it. The alternative, reserving an editor-sized slot permanently, would pay the same
+    /// pixels in every row of every panel forever to save an overflow nobody can see.</para>
+    /// </remarks>
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        foreach (var child in Children)
+            child.Measure(availableSize);
+        return _display.DesiredSize;
+    }
+
+    /// <inheritdoc cref="MeasureOverride"/>
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        _display.Arrange(new Rect(finalSize));
+
+        if (_editor is { } box)
+        {
+            var want = box.DesiredSize;
+            double w = Math.Min(want.Width, Math.Max(want.Width, finalSize.Width));
+            double x = HorizontalContentAlignment switch
+            {
+                HorizontalAlignment.Right   => finalSize.Width - w,
+                HorizontalAlignment.Center  => (finalSize.Width - w) / 2,
+                _                           => 0.0,
+            };
+            // Vertically CENTRED on the row it replaces, so the extra height a TextBox carries is
+            // split evenly above and below the text instead of pushing the baseline down.
+            box.Arrange(new Rect(x, (finalSize.Height - want.Height) / 2, w, want.Height));
+        }
+
+        return finalSize;
+    }
+
     /// <inheritdoc/>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -198,7 +251,10 @@ public sealed class InlineEditText : Panel
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         box.TextChanged += (_, _) =>
+        {
             box.Width = InlineEdit.MeasureWidth(box.Text ?? "", FontSize, typeface);
+            InvalidateArrange();   // NOT InvalidateMeasure: this control's size must not track it
+        };
 
         _editor = box;
         Children.Add(box);
