@@ -153,8 +153,10 @@ ranking-without-filtering once made a Linux-only kit answer a Windows search wit
 quietly re-emitted as an `ExtDevice`, because that would answer with something the user did not place.
 
 **An unconnected pin is not an error here.** The engine's mapping makes every node its own
-ground-referenced port, so an open thermal terminal is ordinary and correct — it just gets its own
-auto-named net.
+ground-referenced port, so an open pin is ordinary — it just gets its own auto-named net. **A
+thermal pin is the one exception, and it is handled rather than refused**: an open thermal terminal
+is a floating node fed by a constant current source and has no operating point at all, so the
+elaborator supplies the reference the design did not. See §5.1.
 
 ### 3.4 Data files a model opens itself
 
@@ -258,6 +260,84 @@ and `Type` are names, and a provider may declare file paths or enum values (a le
 the expression parser at position 0 — the same trap `SnP`'s `File=` hit). Rule: text that parses as a
 plain number is stored as a number, so units and arithmetic still work for genuinely numeric values;
 everything else is stored verbatim, and the provider does its own conversion.
+
+### 5.1 The thermal network is the HOST's to build, and its reference is the ambient
+
+circuitRF assumes a compiled electrothermal model does **not** contain its own thermal RC, even when
+it declares thermal parameters. The model **consumes** a junction temperature and **produces** a
+dissipated power; the loop between them is closed outside it, by the circuit. A model's declared
+`RTH`/`CTH`/heatsink parameters are therefore treated as values for the host to READ when building
+that network, never as something the model applies itself. The temperature reaches the model either
+as an ordinary node voltage on a thermal pin or as a scalar the host supplies — which of the two is
+the provider's business, not circuitRF's.
+
+**The network circuitRF expects a design to build** is a thermal resistance and capacitance in
+parallel, connected not to ground but to a **source holding the ambient temperature**. Dissipated
+power enters as a current; the node's voltage is then the junction temperature itself — ambient plus
+rise — which is what the model is handed.
+
+**Tying that resistance to ground instead is the mistake worth a warning.** The node then carries only
+the RISE, so the model is evaluated at a junction temperature short by the entire ambient, typically
+25 °C. Nothing objects: the network is well conditioned, the solve converges in the same number of
+iterations, and every number that comes back is finite and plausible. On a part with real temperature
+coefficients it moves the answer by several percent, and there is no symptom to notice.
+
+`NonlinearDcEngine.ReportThermalNodes` catches it, and the test it applies is
+deliberately narrow. It is **not** "the reference differs from the ambient" — a heatsink base or a
+second thermal stage legitimately sits at its own temperature, and a check that fired there would go off
+loudest on the designs that modelled the most carefully. It is "the reference is **zero** while the
+ambient is **not**", which is the signature of a thermal network wired to the electrical ground node.
+A design whose ambient really is 0 °C says so and is silent. The reference itself is read structurally,
+not guessed: one solve of the linear network alone is "no device dissipation", so what a thermal row
+holds there IS the temperature that network references it to.
+
+**An unconnected thermal terminal is held at the ambient**, by
+`Elaborator.PinUnreferencedThermalNodes`, which adds the source the design did not. This is not a
+convenience. Under the reading above the model contributes no thermal path of its own, so a thermal
+pin connected to nothing is a floating node fed by a constant current source: it has no DC solution
+at any temperature, and the solve can only run out its whole continuation budget before saying so.
+The ambient with **no rise** is the reading that cannot be wrong invisibly — a design stating no
+thermal network has stated no thermal resistance, it needs no knowledge of any vendor's parameter
+names, and a rise of zero shows in the answer where a guessed thermal resistance would not. It is
+always announced, and a design that *did* state its network gets nothing added.
+
+What counts as connected is "something OTHER than a thermal pin reaches this node". Counting any
+component would call a thermal net shared between two devices connected — each sees the other — and
+leave it exactly as singular as before.
+
+**And the device is asked, not assumed.** A provider is entitled to carry its own thermal resistance,
+and one that does has already referenced the node: its Jacobian has a real entry there, the open pin
+is not floating, and the rise it solves for IS the answer the design wanted. Pinning that node would
+silently delete the device's self-heating. So the last question before anything is added is whether
+the device's own Jacobian references the node, asked at the all-zero point the solve's own bias ramp
+starts from — any device that can be solved at all answers there. A device that refuses is left
+exactly as the user wrote it, which is the conservative reading: never add a source on the strength of
+a question that was not answered. INTERNAL thermal nodes are left alone too — the user cannot wire
+one, so an unreferenced internal node is the provider's own bug and pinning it would hide it.
+
+**How well a node is referenced is solved for, not estimated.** Both numbers — the reference
+temperature and the driving-point thermal resistance — come out of one factorization of the linear
+network: the reference is the linear solve itself, and the resistance is the same matrix against one
+watt injected at that row. `1/G[row,row]` is **not** an acceptable substitute, however much it reads
+like a safe lower bound. An ideal voltage source lives in a BRANCH row and puts no conductance on the
+node diagonal at all, so on the best-referenced node there is — a perfect isothermal boundary, which
+is how a bench pins a part at a stated case temperature — the diagonal reads zero and the bound reads
+infinity. A check built on it fires hardest on the designs that are most right.
+
+Together these catch the three ways a thermal node ends up somewhere nothing intended: unreferenced,
+referenced too weakly to be a thermal path, and referenced to ground instead of to the ambient.
+
+**And a solve that cannot settle gives up inside a stated budget**, of `DcBiasRampSteps ×
+NonlinearMaxHalvings × NonlinearMaxIter` Newton iterations. A ramp step that succeeds only after
+halving leaves the ramp barely moved, so the outer loop runs again from almost the same place; with
+nothing bounding it, a solve that creeps spends an unlimited number of iterations arriving nowhere,
+and against an external device every one of them is a round trip. When it does give up,
+`NonlinearDcEngine` names the unknowns furthest from settling and their units — a thermal row's
+residual is in **watts**, and a temperature that will not settle reads nothing like a bias problem.
+That report is rendered in exactly one place; an analysis that runs a DC solve of its own adds only
+what is specific to what it then does about the failure.
+
+---
 
 ---
 

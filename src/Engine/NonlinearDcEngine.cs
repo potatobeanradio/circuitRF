@@ -189,7 +189,7 @@ public sealed class NonlinearDcEngine
         ResolveControlCurrentBranches();
 
         CollectThermalNodes();
-        ReportImplausibleThermalResistances();
+        ReportThermalNodes();
     }
 
     /// <summary>
@@ -221,46 +221,156 @@ public sealed class NonlinearDcEngine
     }
 
     /// <summary>
-    /// Above this, a thermal resistance is not a thermal resistance. Real junction-to-ambient values
-    /// run from well under 1 to a few hundred °C/W; a few thousand is already beyond anything
-    /// physical. Four orders of magnitude of headroom above that is deliberate — this exists to
-    /// catch a node left on a keep-alive leak resistor, which is typically 10^7 or more, not to
-    /// second-guess an unusual but real design.
+    /// Above this, a thermal resistance is not a thermal resistance. Defined in
+    /// <see cref="Temperature.ImplausibleThermalResistanceCPerW"/>, which the elaborator draws the
+    /// same line from; kept named here because it is part of this engine's public surface.
     /// </summary>
-    public const double ImplausibleThermalResistance = 1e4;   // °C/W
+    public const double ImplausibleThermalResistance = Temperature.ImplausibleThermalResistanceCPerW;
 
     /// <summary>
-    /// Reports a thermal node whose path to its reference is too high to be a thermal path.
-    ///
-    /// <para><b>Why this is worth a warning and not a failure.</b> On such a node the model's own
-    /// dissipated-power current source sets the temperature to P × R — with R at keep-alive scale
-    /// that is tens of thousands of degrees, which the model clamps and evaluates without complaint.
-    /// The run therefore SUCCEEDS and returns an operating point computed at a temperature nothing
-    /// intended. That is precisely the case a user cannot see and the solver cannot object to.</para>
-    ///
-    /// <para>The diagonal is the sum of every conductance incident on the node, so 1/diagonal is a
-    /// LOWER bound on its resistance to anywhere. Testing that bound is what makes this free of
-    /// false positives: a node reported here is at least this badly connected, whatever else it
-    /// touches.</para>
+    /// How far a thermal node's reference may sit from the ambient before it is not the ambient.
+    /// A degree is well below any real difference between an ambient and a heatsink base, and well
+    /// above the numerical slack in reading one out of a linear solve.
     /// </summary>
-    private void ReportImplausibleThermalResistances()
+    private const double AmbientReferenceSlackC = 1.0;
+
+    /// <summary>What the circuit alone does to one thermal node, with the device contributing nothing.</summary>
+    /// <param name="ReferenceC">
+    /// The temperature the node is held at with no dissipation — what the network references it to.
+    /// </param>
+    /// <param name="ResistanceCPerW">
+    /// The driving-point thermal resistance seen looking into the node: the rise it takes per watt.
+    /// </param>
+    private readonly record struct ThermalMeasurement(double ReferenceC, double ResistanceCPerW);
+
+    /// <summary>
+    /// Measures what the circuit does to each thermal node, from the linear network the components
+    /// already stamped. Empty when that network has no solution to read.
+    ///
+    /// <para><b>Both numbers come out of one factorization, and both are solves rather than
+    /// estimates.</b> The reference is the linear solve itself — the nonlinear devices left out IS
+    /// "no dissipation", so what a thermal row reads there is the temperature the network holds it
+    /// at. The resistance is the same matrix against a unit current injected at that row, which is
+    /// the driving-point resistance by definition.</para>
+    ///
+    /// <para><b>Why the resistance is not read off the diagonal.</b> `1/G[row,row]` looks like a
+    /// safe lower bound and is not one: a node held by an IDEAL source has no conductance on its
+    /// diagonal at all, because a voltage source lives in a branch row. The diagonal reads zero, the
+    /// bound reads infinity, and the best-referenced node possible — a perfect isothermal boundary,
+    /// which is exactly how a bench pins a part at a stated case temperature — draws the loudest
+    /// "no path at all" warning in the file. Observed on a kit's own reference bench, where the
+    /// answer was correct to six figures. A solve has no such blind spot.</para>
+    /// </summary>
+    private Dictionary<int, ThermalMeasurement> MeasureThermalNodes()
     {
+        var measured = new Dictionary<int, ThermalMeasurement>();
+        if (_thermalNodes.Count == 0) return measured;
+
+        var j = new List<(int R, int C, double V)>(_systemSize * 4);
+        for (int i = 0; i < _systemSize; i++)
+            for (int k = 0; k < _systemSize; k++)
+            {
+                double g = _gAug[i, k];
+                if (i == k && i < _nodeCount) g += DefaultGmin;
+                if (g != 0.0) j.Add((i, k, g));
+            }
+
+        var x     = new double[_systemSize];
+        var probe = new double[_systemSize];
+        try
+        {
+            var csc  = AssembleCsc(j, _systemSize);
+            var perm = AMD.Generate(csc, ColumnOrdering.MinimumDegreeAtA);
+            var lu   = SparseLU.Create(csc, perm, 1.0);
+            if (lu is null) return measured;
+
+            lu.Solve(_bSource, x);
+
+            foreach (int row in _thermalNodes.Keys)
+            {
+                if (row >= _systemSize || !double.IsFinite(x[row])) continue;
+
+                Array.Clear(probe);
+                probe[row] = 1.0;                       // one watt in, at this node only
+                var rise = new double[_systemSize];
+                lu.Solve(probe, rise);
+                if (!double.IsFinite(rise[row])) continue;
+
+                measured[row] = new ThermalMeasurement(x[row], Math.Abs(rise[row]));
+            }
+        }
+        catch
+        {
+            // A diagnostic that cannot be computed is not a failure to report — the solve itself is
+            // what has to work here, and it has its own singularity handling.
+            return measured;
+        }
+
+        return measured;
+    }
+
+    /// <summary>
+    /// Reports the two ways a thermal node ends up somewhere nothing intended: too weakly referenced
+    /// to be a thermal path at all, and referenced to GROUND rather than to the ambient.
+    ///
+    /// <para><b>Both are worth a warning and neither is a failure.</b> In both cases the network is
+    /// well conditioned, the solve converges in the same number of iterations, and every number that
+    /// comes back is finite and plausible. What is wrong is the temperature the model was evaluated
+    /// at, and there is no symptom to notice — which is precisely the case a user cannot see and the
+    /// solver cannot object to.</para>
+    ///
+    /// <para><b>Weakly referenced</b> — the device's own dissipated power sets the node to P × R, and
+    /// with R at keep-alive scale that is tens of thousands of degrees, which a model clamps and
+    /// evaluates without complaint.</para>
+    ///
+    /// <para><b>Referenced to ground</b> — the standard electrothermal sub-network is a thermal
+    /// resistance and capacitance in parallel, connected NOT to ground but to a source whose value is
+    /// the ambient temperature; the node's voltage is then the junction temperature itself, ambient
+    /// plus rise. Tie the same R to ground instead and the node carries the RISE alone, so the model
+    /// runs short by the whole ambient — typically 25 °C, which on a part with real temperature
+    /// coefficients moves the answer by several percent.</para>
+    ///
+    /// <para>The ground test is deliberately narrow. It is not "the reference differs from the
+    /// ambient" — a heatsink base or a second thermal stage legitimately sits at its own temperature,
+    /// and a check that fired there would go off loudest on the designs that modelled most carefully.
+    /// It is "the reference is zero WHILE the ambient is not". A design whose ambient really is 0 °C
+    /// says so and is silent. And a node that has no usable reference at all is left to the
+    /// resistance warning above rather than being reported twice for one condition.</para>
+    /// </summary>
+    private void ReportThermalNodes()
+    {
+        var measured = MeasureThermalNodes();
+        double ambient = _nl.AmbientC;
+
         foreach (var (row, owner) in _thermalNodes.OrderBy(e => e.Key))
         {
-            double g = _gAug[row, row];
-            double r = g > 0 ? 1.0 / g : double.PositiveInfinity;
-            if (r <= ImplausibleThermalResistance) continue;
-
             string node = row + 1 < _nl.Nodes.Count ? _nl.Nodes.NameOf(row + 1) : $"node {row + 1}";
 
+            if (!measured.TryGetValue(row, out var m)) continue;
+
+            if (m.ResistanceCPerW > ImplausibleThermalResistance)
+            {
+                _nl.AddWarningOnce(
+                    $"thermal-resistance:{owner}:{row}",
+                    $"{owner}: the thermal node '{node}' reaches its reference only through " +
+                    $"{(double.IsPositiveInfinity(m.ResistanceCPerW) ? "no path at all" : $"{m.ResistanceCPerW:G3} °C/W")}, " +
+                    $"which is not a thermal resistance — real values are a few hundred °C/W at most. " +
+                    $"The device's own dissipated power sets this node's temperature, so the model " +
+                    $"will run at whatever that resistance implies. Connect it to the thermal network " +
+                    $"the rest of the design uses.");
+                continue;   // no usable reference — the reading below would be meaningless
+            }
+
+            if (Math.Abs(ambient) <= AmbientReferenceSlackC) continue;   // the ambient IS ground here
+            if (Math.Abs(m.ReferenceC) > AmbientReferenceSlackC) continue;
+
             _nl.AddWarningOnce(
-                $"thermal-resistance:{owner}:{row}",
-                $"{owner}: the thermal node '{node}' reaches its reference only through " +
-                $"{(double.IsPositiveInfinity(r) ? "no path at all" : $"{r:G3} °C/W")}, which is not a " +
-                $"thermal resistance — real values are a few hundred °C/W at most. The device's own " +
-                $"dissipated power sets this node's temperature, so the model will run at whatever " +
-                $"that resistance implies. Connect it to the thermal network the rest of the design " +
-                $"uses.");
+                $"thermal-ground-reference:{owner}:{row}",
+                $"{owner}: the thermal node '{node}' is referenced to {m.ReferenceC:0.###} °C, but the " +
+                $"design's ambient is {ambient:0.##} °C. A thermal network carries the junction " +
+                $"temperature, so its resistance belongs between this node and a source holding the " +
+                $"ambient — tied to ground instead, this node carries only the rise and the model " +
+                $"runs {ambient:0.##} °C cold.");
         }
     }
 
@@ -437,9 +547,27 @@ public sealed class NonlinearDcEngine
         double   stepFrac   = 1.0 / rampSteps;
         int      totalIters = 0;
         var      trace      = new ConvergenceTrace();
+        int      budget     = IterationBudget();
 
         while (targetFrac < 1.0 - 1e-12)
         {
+            // THE BUDGET IS ENFORCED HERE, not just described in the settings. A ramp step that
+            // succeeds only after halving leaves `targetFrac` barely moved, so the outer loop runs
+            // again from almost the same place — and with nothing bounding it, a solve that creeps
+            // can spend an unlimited number of Newton iterations arriving nowhere. Measured on a
+            // real design whose thermal network cannot settle: 403,893 iterations, every one of them
+            // a round trip to an external model, before the answer "did not converge" that was
+            // already true at a few thousand.
+            if (totalIters >= budget)
+            {
+                double[] nvOut     = x[.._nodeCount];
+                double[] fOverrun  = SafeResidualVector(x, 1.0) ?? [];
+                _lastX = x; ReportWorstResiduals(fOverrun);
+                return new DcResult(nvOut, false, totalIters,
+                                    fOverrun.Length > 0 ? L2(fOverrun) : double.PositiveInfinity, trace,
+                                    ExtractProbeCurrents(x), fOverrun, _branchOwners);
+            }
+
             double nextFrac = Math.Min(targetFrac + stepFrac, 1.0);
             bool   stepped  = false;
 
@@ -463,6 +591,7 @@ public sealed class NonlinearDcEngine
             {
                 double[] nv    = x[.._nodeCount];
                 double[] fFail = SafeResidualVector(x, 1.0) ?? [];
+                _lastX = x; ReportWorstResiduals(fFail);
                 return new DcResult(nv, false, totalIters,
                                     fFail.Length > 0 ? L2(fFail) : double.PositiveInfinity, trace,
                                     ExtractProbeCurrents(x), fFail, _branchOwners);
@@ -481,6 +610,72 @@ public sealed class NonlinearDcEngine
         return new DcResult(nodeV, finalRes < _settings.NonlinearAbsTol, totalIters, finalRes, trace,
                             ExtractProbeCurrents(x), fFinal, _branchOwners);
     }
+
+    /// <summary>
+    /// The most Newton iterations a ramped solve may spend in total — exactly the budget the
+    /// settings already describe: every ramp step, each retried down to its last halving, each
+    /// running to the iteration limit. Nothing new is being decided here; it is the existing
+    /// numbers being held to.
+    /// </summary>
+    private int IterationBudget()
+        => Math.Max(1, _settings.DcBiasRampSteps)
+         * Math.Max(1, _settings.NonlinearMaxHalvings)
+         * Math.Max(1, _settings.NonlinearMaxIter);
+
+    /// <summary>
+    /// Reports the unknowns furthest from settling when a solve gives up.
+    ///
+    /// <para>A failure could otherwise only say "residual 6.83", which is a number with no address:
+    /// it names neither the part of the circuit that will not settle nor how far off it is, leaving
+    /// bisecting the schematic as the only way forward. A handful of rows are almost always
+    /// enormously worse than the rest.</para>
+    ///
+    /// <para><b>The unit is part of the diagnosis.</b> A thermal row's residual is in WATTS, and a
+    /// temperature that will not settle reads nothing like a bias problem — saying which one this is
+    /// may be the most useful word in the message.</para>
+    ///
+    /// <para>This is the one place that renders it. <c>SParameterEngine</c> used to derive the same
+    /// report itself for the DC solve it runs, which meant two implementations of one idea and two
+    /// near-identical warnings whenever both fired; it now adds only what is specific to what an
+    /// S-parameter run does about the failure.</para>
+    /// </summary>
+    private void ReportWorstResiduals(double[] f)
+    {
+        if (f.Length == 0) return;
+
+        var worst = f.Select((r, i) => (Residual: Math.Abs(r), Index: i))
+                     .OrderByDescending(e => e.Residual)
+                     .Take(3)
+                     .Where(e => e.Residual > 0)
+                     .ToList();
+        if (worst.Count == 0) return;
+
+        var parts = worst.Select(e =>
+        {
+            // Past the node count the unknown is a branch current, which has no node name to give.
+            if (e.Index >= _nodeCount)
+            {
+                string owner = _branchOwners.TryGetValue(e.Index, out var o)
+                    ? o
+                    : $"branch unknown #{e.Index - _nodeCount}";
+                return $"{owner} branch (residual {e.Residual:G3} A)";
+            }
+
+            int    node = e.Index + 1;                   // index 0 is circuit node 1
+            string name = node < _nl.Nodes.Count ? _nl.Nodes.NameOf(node) : $"node {node}";
+
+            return _thermalNodes.ContainsKey(e.Index)
+                ? $"{name} = {_lastX[e.Index]:G4} °C — a TEMPERATURE, not a bias (residual {e.Residual:G3} W)"
+                : $"{name} = {_lastX[e.Index]:G4} V (residual {e.Residual:G3} A)";
+        });
+
+        _nl.AddWarningOnce(
+            "dc-worst-unsettled",
+            "DC did not converge. Worst-unsettled: " + string.Join("; ", parts) + ".");
+    }
+
+    /// <summary>The iterate the report above reads its values from — set alongside every call.</summary>
+    private double[] _lastX = [];
 
     private (bool OK, int Iters, double[] X, List<IterationRecord> Trace)
         NewtonAtFrac(double[] xStart, double frac)

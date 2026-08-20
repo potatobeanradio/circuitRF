@@ -126,7 +126,7 @@ public static class SParameterEngine
                 string detail = dc is null ? "(no result)" : $"residual {dc.FinalResidual:G3} after {dc.Iterations} iters";
                 netlist.AddWarningOnce("sparam-dc-nonconverged",
                     $"DC operating-point solve did not converge ({detail}); nonlinear components linearized at " +
-                    "0 V. S-parameters may be inaccurate." + WorstUnsettledNodes(netlist, dc));
+                    "0 V. S-parameters may be inaccurate.");
                 dcNodeVoltages = null;  // null ⇒ BuildBias yields 0 V
                 ResetSddControlBias(netlist);  // consistent 0 V seed for the control sensitivities
             }
@@ -426,51 +426,6 @@ public static class SParameterEngine
     /// indices are written into each SDD's ControlBranchIndices for the run. No-op when no SDD has
     /// control references (so purely-linear and control-free SDD runs are byte-identical).
     /// </summary>
-    /// <summary>
-    /// Names the unknowns still carrying the most KCL error, with the voltage each settled at.
-    ///
-    /// <para><b>Why a non-convergence message needs this.</b> "residual 35.6" is a number with no
-    /// address — it says neither which part of the circuit will not settle nor how far off it is,
-    /// which in a design with hundreds of unknowns leaves bisecting the schematic as the only way
-    /// forward. In practice one row is enormously worse than the rest, and naming it turns that
-    /// search into a sentence. Measured, where the offender was a thermal node sitting
-    /// at 10^8 because nothing bounded it.</para>
-    ///
-    /// <para>Three is enough to see whether the trouble is one node or the whole circuit, and few
-    /// enough to stay readable in a message box.</para>
-    /// </summary>
-    private static string WorstUnsettledNodes(ElaboratedNetlist netlist, NonlinearDcEngine.DcResult? dc)
-    {
-        if (dc is null || dc.ResidualPerUnknown.Length == 0) return "";
-
-        var worst = dc.ResidualPerUnknown
-            .Select((r, i) => (Residual: Math.Abs(r), Index: i))
-            .OrderByDescending(e => e.Residual)
-            .Take(3)
-            .Where(e => e.Residual > 0)
-            .ToList();
-
-        if (worst.Count == 0) return "";
-
-        var parts = worst.Select(e =>
-        {
-            // Past the node count the unknown is a branch current, which has no node name to give.
-            if (e.Index >= dc.NodeVoltages.Length)
-            {
-                string owner = dc.BranchOwners.TryGetValue(e.Index, out var o)
-                    ? o
-                    : $"branch unknown #{e.Index - dc.NodeVoltages.Length}";
-                return $"{owner} branch (residual {e.Residual:G3})";
-            }
-
-            int node = e.Index + 1;                       // index 0 is circuit node 1
-            string name = node < netlist.Nodes.Count ? netlist.Nodes.NameOf(node) : $"node {node}";
-            return $"{name} = {dc.NodeVoltages[e.Index]:G4} (residual {e.Residual:G3})";
-        });
-
-        return " Worst-unsettled: " + string.Join("; ", parts) + ".";
-    }
-
     private static void ResolveSParamControlBranches(
         ElaboratedNetlist netlist, double[] freqsHz, bool wavePath,
         List<PortEntry> ports, int N, double[]? dcNodeVoltages, AnalysisSettings settings)

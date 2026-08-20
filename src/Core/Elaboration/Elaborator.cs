@@ -65,6 +65,7 @@ public sealed class Elaborator
         // Ambient must be known BEFORE flattening: models are constructed during the walk, and a
         // temperature-aware one bakes its temperature in at construction.
         _ambientC = ResolveAmbient(tb, globalScope, netlist);
+        netlist.AmbientC = _ambientC;
 
         // The TestBench's instance list IS the root frame — no TopCell lookup.
         FlattenInstances(
@@ -74,6 +75,11 @@ public sealed class Elaborator
             currentScope:       globalScope,
             globalScope:        globalScope,
             netlist:            netlist);
+
+        // Post-flatten: an external device's thermal terminal that nothing else reaches has no
+        // operating point at all until the host supplies its reference. Runs before anything below
+        // reads the component list.
+        PinUnreferencedThermalNodes(netlist);
 
         // Post-flatten: resolve mutual inductance references now that all inductors exist.
         foreach (var ec in netlist.Components)
@@ -106,6 +112,157 @@ public sealed class Elaborator
             LintTopLevelTerms(netlist);
 
         return netlist;
+    }
+
+    /// <summary>
+    /// Holds every EXTERNAL thermal terminal that nothing else in the design reaches at the
+    /// ambient temperature, by adding the source the design did not.
+    ///
+    /// <para><b>Why the host has to do this.</b> A compiled electrothermal model does not contain
+    /// its own thermal RC even when it declares thermal parameters — it consumes a junction
+    /// temperature and produces a dissipated power, and the loop between them is closed outside the
+    /// model. Confirmed on two unrelated model families: sweeping their declared thermal-resistance
+    /// parameters over eight orders of magnitude changes nothing in their output. So an unconnected
+    /// thermal pin is not a harmless open like an unconnected electrical pin. It is a floating node
+    /// fed by a constant current source, and it has NO DC solution: the temperature runs away until
+    /// it hits the absolute-zero floor, and the solve grinds through every ramp step and every
+    /// halving before failing — measured at 6,210 Newton iterations on a kit, with a residual
+    /// that names nothing and a bias point the ramp never even reached.</para>
+    ///
+    /// <para><b>Why the ambient, and why an ideal source.</b> A design that states no thermal network
+    /// has stated no thermal resistance, so there is no rise to add: the part sits at the ambient.
+    /// That is the same thing a bench does by hand when it pins a part at a stated case temperature,
+    /// it needs no knowledge of any vendor's parameter names, and it is the reading that cannot be
+    /// wrong in a way the user cannot see — a rise of zero is visible in the answer, whereas a
+    /// guessed thermal resistance is not.</para>
+    ///
+    /// <para><b>And it is announced, never silent.</b> The whole point is that the design did not say
+    /// this, so the warning says what was supplied and what to do instead.</para>
+    ///
+    /// <para><b>And the device is ASKED, not assumed.</b> A provider is entitled to carry its own
+    /// thermal resistance internally, and one that does has already referenced the node — its
+    /// Jacobian has a real entry there, the open pin is not floating at all, and the rise it solves
+    /// for is the answer the design wanted. Holding that node at the ambient would silently delete
+    /// its self-heating. So the last question asked before adding anything is whether the device's
+    /// own Jacobian references the node, at the same all-zero point the solve's own ramp starts
+    /// from. A device that refuses that point is left exactly as it was.</para>
+    ///
+    /// <para>INTERNAL thermal nodes are deliberately left alone. The user cannot wire one, so an
+    /// internal node with no reference is the provider's own bug, and pinning it would hide it.</para>
+    /// </summary>
+    private void PinUnreferencedThermalNodes(ElaboratedNetlist netlist)
+    {
+        var thermalOwners = new Dictionary<int, string>();
+        var reachedByAnythingElse = new HashSet<int>();
+
+        foreach (var ec in netlist.Components)
+        {
+            var ownThermal = new HashSet<int>();
+
+            if (ec.Model is ExternalDeviceModel ed)
+            {
+                foreach (var n in ed.Descriptor.Nodes)
+                {
+                    if (n.QuantityKind != NodeQuantityKind.Thermal || !n.External) continue;
+
+                    // The elaborator's own ground-referenced pair layout: node k spans [2k], [2k+1].
+                    int np = ec.Nodes.Length > 2 * n.Index ? ec.Nodes[2 * n.Index] : 0;
+                    if (np <= 0) continue;                       // grounded is a stated reference
+
+                    ownThermal.Add(np);
+                    thermalOwners.TryAdd(np, $"{ec.ComponentType}:{ec.InstancePath}");
+                }
+            }
+
+            // Anything this component touches that is not one of ITS OWN thermal pins counts as a
+            // reference. Written this way so a thermal net shared between two devices and reaching
+            // nothing else is still recognised as unreferenced — which it is.
+            foreach (int nd in ec.Nodes)
+                if (nd > 0 && !ownThermal.Contains(nd)) reachedByAnythingElse.Add(nd);
+        }
+
+        var thermalSelfReferenced = SelfReferencedThermalNodes(netlist);
+
+        foreach (var (node, owner) in thermalOwners.OrderBy(e => e.Key))
+        {
+            if (reachedByAnythingElse.Contains(node)) continue;
+            if (thermalSelfReferenced.Contains(node)) continue;
+
+            string name  = node < netlist.Nodes.Count ? netlist.Nodes.NameOf(node) : $"node {node}";
+            var    model = ComponentModelFactory.TryCreate(
+                               "Vdc",
+                               new Dictionary<string, Value>(StringComparer.Ordinal),
+                               _functions,
+                               _ambientC);
+            if (model is null) continue;
+
+            netlist.AddComponent(new ElaboratedComponent(
+                "Vdc",
+                $"__ambient__{name}",
+                [node, 0],
+                new Dictionary<string, Value>(StringComparer.Ordinal) { ["Vdc"] = new Value(_ambientC) },
+                model));
+
+            netlist.AddWarningOnce(
+                $"thermal-pin-pinned-at-ambient:{node}",
+                $"{owner}: the thermal terminal '{name}' is not connected to anything, so circuitRF " +
+                $"is holding it at the ambient {_ambientC:0.##} °C — the part is simulated with no " +
+                $"temperature rise. Left floating it has no operating point at all. To model self-" +
+                $"heating, connect it through the part's thermal resistance to a source holding the " +
+                $"ambient.");
+        }
+    }
+
+    /// <summary>
+    /// Which thermal nodes their own device already references — the ones whose row in the device's
+    /// Jacobian is not empty, so the node has a path to a solution without the host adding one.
+    ///
+    /// <para><b>A real path means a POSITIVE conductance, not a non-zero one.</b> An electrothermal
+    /// model's thermal row is routinely non-zero and NEGATIVE — that entry is its self-heating
+    /// feedback, which pushes the node away from a solution rather than holding it near one. Reading
+    /// "non-zero" as "referenced" therefore leaves the exact devices this exists for unpinned, and
+    /// the sign is what tells the two apart. The magnitude has to clear the same line the engine
+    /// draws for a thermal resistance at all, since a conductance of 1e-12 is a path in the same
+    /// sense a keep-alive leak resistor is.</para>
+    ///
+    /// <para>Asked at the all-zero point, which is not an arbitrary choice: it is where the solve's
+    /// own bias ramp starts, so any device that can be solved at all answers there. A device that
+    /// refuses is reported as self-referenced — the conservative reading, because it leaves the
+    /// design exactly as the user wrote it rather than adding a source on the strength of a question
+    /// that was never answered.</para>
+    /// </summary>
+    private static HashSet<int> SelfReferencedThermalNodes(ElaboratedNetlist netlist)
+    {
+        var selfReferenced = new HashSet<int>();
+
+        foreach (var ec in netlist.Components)
+        {
+            if (ec.Model is not ExternalDeviceModel ed) continue;
+
+            var thermalPins = ed.Descriptor.Nodes
+                .Where(n => n.QuantityKind == NodeQuantityKind.Thermal && n.External)
+                .ToList();
+            if (thermalPins.Count == 0) continue;
+
+            NonlinearResult res;
+            try   { res = ec.Evaluate(new PortVoltages(new double[ec.Model.PortCount]), ControlCurrents.Empty); }
+            catch { foreach (var n in thermalPins) MarkPin(ec, n, selfReferenced); continue; }
+
+            foreach (var n in thermalPins)
+            {
+                if (n.Index >= res.Dg.GetLength(0) || n.Index >= res.Dg.GetLength(1)) continue;
+                if (res.Dg[n.Index, n.Index] > 1.0 / Temperature.ImplausibleThermalResistanceCPerW)
+                    MarkPin(ec, n, selfReferenced);
+            }
+        }
+
+        return selfReferenced;
+
+        static void MarkPin(ElaboratedComponent ec, ExternalNodeDescriptor n, HashSet<int> into)
+        {
+            int np = ec.Nodes.Length > 2 * n.Index ? ec.Nodes[2 * n.Index] : 0;
+            if (np > 0) into.Add(np);
+        }
     }
 
     // ── Scope helpers ─────────────────────────────────────────────────────────

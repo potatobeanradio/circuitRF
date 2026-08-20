@@ -12,6 +12,18 @@ public sealed class ElaboratedNetlist : IDisposable
     public List<ElaboratedComponent> Components { get; } = [];
     public NodeMap                   Nodes      { get; } = new();
 
+    /// <summary>
+    /// The ambient temperature this netlist was elaborated at, in °C — the design's own
+    /// <c>temp</c> global, or <see cref="Devices.Temperature.NominalC"/> when it states none.
+    ///
+    /// <para>Device models already receive it at construction, so nothing in the numeric layer
+    /// needed it until electrothermal devices arrived. Those bring a node whose voltage IS a
+    /// temperature, and the ambient is the reference that node is supposed to sit above — which
+    /// makes it a property of the circuit rather than of any one device, and therefore something
+    /// the engine has to be able to see.</para>
+    /// </summary>
+    public double AmbientC { get; internal set; } = Devices.Temperature.NominalC;
+
     /// <summary>Indices into Components whose Model is nonlinear (HB partition seed).</summary>
     public IReadOnlyList<int> NonlinearComponents => _nonlinearComponents;
     private readonly List<int> _nonlinearComponents = [];

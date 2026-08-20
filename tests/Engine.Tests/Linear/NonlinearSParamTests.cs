@@ -192,15 +192,22 @@ public class NonlinearSParamTests
 
         var (nl, _) = Run(cnl, [1e9], settings);
 
-        string warning = Assert.Single(nl.Warnings,
-            w => w.Contains("did not converge", StringComparison.OrdinalIgnoreCase));
+        // Two warnings, each saying the thing only it can. The DC engine names the unknowns, because
+        // it is the layer that has the residual vector, the node names and the branch owners — and it
+        // says so wherever a DC solve fails, not only under an S-parameter run. The S-parameter
+        // engine says what an S-parameter run then DOES about it, which nothing else knows.
+        string named = Assert.Single(nl.Warnings,
+            w => w.Contains("Worst-unsettled", StringComparison.Ordinal));
 
         // Names the offending unknown and how far off it is. Here that is the supply's branch
         // row — genuinely the worst, since the node rows have already settled — and a node entry
         // is rendered by the name the user gave it through the same path (netlist.Nodes.NameOf),
         // which is what makes the report readable on a real design.
-        Assert.Contains("Worst-unsettled", warning);
-        Assert.Contains("residual", warning);
-        Assert.Contains("Vdc:Vs branch", warning);   // named by the component that owns the row
+        Assert.Contains("residual", named);
+        Assert.Contains("Vdc:Vs branch", named);     // named by the component that owns the row
+
+        string consequence = Assert.Single(nl.Warnings,
+            w => w.Contains("linearized at", StringComparison.Ordinal));
+        Assert.Contains("S-parameters may be inaccurate", consequence);
     }
 }

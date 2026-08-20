@@ -49,6 +49,20 @@ public static class Temperature
     /// <summary>Nominal temperature in kelvin — exactly 300 K, by construction of <see cref="NominalC"/>.</summary>
     public const double NominalK = NominalC + KelvinOffset;
 
+    /// <summary>
+    /// Above this, a thermal resistance is not a thermal resistance. Real junction-to-ambient values
+    /// run from well under 1 to a few hundred °C/W; a few thousand is already beyond anything
+    /// physical. Four orders of magnitude of headroom above that is deliberate — this exists to
+    /// catch a node left on a keep-alive leak resistor, which is typically 10^7 or more, not to
+    /// second-guess an unusual but real design.
+    ///
+    /// <para>Lives here rather than in the engine because two layers need the same line: the
+    /// elaborator, deciding whether a device's own thermal conductance is a real path back, and the
+    /// engine, reporting a node that reaches its reference through no real path. Two copies of a
+    /// judgement like this drift.</para>
+    /// </summary>
+    public const double ImplausibleThermalResistanceCPerW = 1e4;
+
     /// <summary>°C → K.</summary>
     public static double ToKelvin(double celsius) => celsius + KelvinOffset;
 

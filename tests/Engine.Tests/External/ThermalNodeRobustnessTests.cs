@@ -102,6 +102,11 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
                 // backoff cannot be told apart.
                 new ExternalParamDescriptor("MinTemp", ExternalParamKind.Double, "-1e30", "degC"),
                 new ExternalParamDescriptor("MaxTemp", ExternalParamKind.Double, "1e30",  "degC"),
+                // An INTERNAL thermal resistance, to its own zero reference. A provider is entitled
+                // to carry one, and one that does has already referenced its thermal node — which is
+                // the difference between an open pin that is floating and an open pin that is fine.
+                // Infinite by default, so every test above is untouched.
+                new ExternalParamDescriptor("Rth", ExternalParamKind.Double, "0", "degC/W"),
             ],
             Nodes:
             [
@@ -139,6 +144,7 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
             private readonly HeatShape _shape   = (HeatShape)(int)Get(p, "Shape", 0);
             private readonly double    _minTemp = Get(p, "MinTemp", -1e30);
             private readonly double    _maxTemp = Get(p, "MaxTemp",  1e30);
+            private readonly double    _rth     = Get(p, "Rth",     0.0);   // 0 = none
 
             private static double Get(IReadOnlyDictionary<string, string> p, string k, double dflt)
                 => p.TryGetValue(k, out var s) &&
@@ -159,10 +165,11 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
                 var i = new double[NodeCount];
                 i[Elec]    = _gElec * v[Elec];
                 i[Thermal] = -Dissipation(_power, _shape, t);   // out of the node: watts as amps
+                if (_rth > 0) i[Thermal] += t / _rth;          // its own path back to its own zero
 
                 var g = new double[NodeCount, NodeCount];
                 g[Elec,    Elec]    = _gElec;
-                g[Thermal, Thermal] = -Slope(_power, _shape, t);
+                g[Thermal, Thermal] = -Slope(_power, _shape, t) + (_rth > 0 ? 1.0 / _rth : 0.0);
 
                 return new ExternalDeviceEvaluation(i, new double[NodeCount], g, new double[NodeCount, NodeCount]);
             }
@@ -181,7 +188,13 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
     {
         static string N(double d) => d.ToString("G17", CultureInfo.InvariantCulture);
 
-        return $"Vdc:V1  e  0  Vdc={N(vElec)}\n" +
+        // AMBIENT 0 °C, deliberately. This fixture's thermal resistance runs to ground, so the
+        // temperature it produces is a rise above zero — which is only the junction temperature if
+        // the ambient IS zero. Saying so keeps the oracle below (T/R = P(T)) exact and keeps this
+        // file's subject the SOLVER, rather than quietly making every case here an example of the
+        // mis-referenced network that AThermalNetworkTiedToGround_IsReported is about.
+        return $"temp = 0\n" +
+               $"Vdc:V1  e  0  Vdc={N(vElec)}\n" +
                $"R:Rth   tj 0  R={N(rThermal)}\n" +
                $"ExtDevice:X1  e  tj  Provider={Provider} Type={HeaterProvider.TypeName} " +
                $"Power={N(P0)} Gelec=0.001 Shape={(int)shape} " +
@@ -329,5 +342,253 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
             "close enough to real thermal resistances that it could fire on a real design");
         Assert.True(NonlinearDcEngine.ImplausibleThermalResistance <= 1e6,
             "high enough that a keep-alive leak resistor could slip under it");
+    }
+
+    // ── The thermal network's own reference ───────────────────────────────────
+
+    /// <summary>
+    /// The same heater, with its thermal resistance run to a chosen reference instead of to ground,
+    /// and an ambient the design actually states. <paramref name="referenceC"/> null ties it to
+    /// ground — the mistake these tests are about.
+    /// </summary>
+    private static string ReferencedNetlist(double ambientC, double? referenceC, double rThermal = 200.0)
+    {
+        static string N(double d) => d.ToString("G17", CultureInfo.InvariantCulture);
+
+        string network = referenceC is { } refC
+            ? $"Vdc:VAMB amb 0  Vdc={N(refC)}\n" + $"R:Rth   tj amb  R={N(rThermal)}\n"
+            : $"R:Rth   tj 0    R={N(rThermal)}\n";
+
+        return $"temp = {N(ambientC)}\n" +
+               $"Vdc:V1  e  0  Vdc=1\n" +
+               network +
+               $"ExtDevice:X1  e  tj  Provider={Provider} Type={HeaterProvider.TypeName} " +
+               $"Power={N(P0)} Gelec=0.001 Shape={(int)HeatShape.Constant}\n";
+    }
+
+    [Fact]
+    public void AThermalNetworkTiedToGround_IsReported()
+    {
+        // The whole error, in one number: the model is asked to evaluate at the RISE, so its
+        // junction temperature is short by the entire ambient. The solve is perfectly happy.
+        var (r, nl) = Run(ReferencedNetlist(ambientC: 25.0, referenceC: null));
+
+        Assert.True(r.Converged, "this is a warning, not a failure — the run must still answer");
+
+        string w = Assert.Single(nl.Warnings, x => x.Contains("referenced to", StringComparison.Ordinal));
+        Assert.Contains("tj", w, StringComparison.Ordinal);   // the node, by name
+        Assert.Contains("X1", w, StringComparison.Ordinal);   // the device that owns it
+        Assert.Contains("25", w, StringComparison.Ordinal);   // the ambient it should have been at
+
+        // And the damage is exactly the ambient, which is what makes it worth a warning at all.
+        double grounded = NodeV(r, nl, "tj");
+        var (r2, nl2)   = Run(ReferencedNetlist(ambientC: 25.0, referenceC: 25.0));
+        Assert.Equal(25.0, NodeV(r2, nl2, "tj") - grounded, 6);
+    }
+
+    [Fact]
+    public void AThermalNetworkReferencedToTheAmbient_IsNotReported()
+    {
+        var (_, nl) = Run(ReferencedNetlist(ambientC: 25.0, referenceC: 25.0));
+
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("referenced to", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AReferenceThatIsNotTheAmbientButIsNotGroundEither_IsNotReported()
+    {
+        // A heatsink base sitting at 60 °C in a 25 °C room is a design decision, not a mistake. The
+        // check is specifically "referenced to ground" — anything else is the designer's business,
+        // and a check that second-guessed it would fire on the designs that are most careful.
+        var (_, nl) = Run(ReferencedNetlist(ambientC: 25.0, referenceC: 60.0));
+
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("referenced to", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnAmbientOfZero_MakesGroundTheRightReference_AndIsNotReported()
+    {
+        // No false positive on the one design where tying the network to ground is exactly correct.
+        var (_, nl) = Run(ReferencedNetlist(ambientC: 0.0, referenceC: null));
+
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("referenced to", StringComparison.Ordinal));
+    }
+
+    // ── An unconnected thermal terminal ───────────────────────────────────────
+
+    /// <summary>The heater with its thermal pin wired to nothing at all.</summary>
+    private static string OpenThermalNetlist(double ambientC, int devices = 1)
+    {
+        static string N(double d) => d.ToString("G17", CultureInfo.InvariantCulture);
+
+        string s = $"temp = {N(ambientC)}\nVdc:V1  e  0  Vdc=1\n";
+        for (int k = 1; k <= devices; k++)
+            s += $"ExtDevice:X{k}  e  tj  Provider={Provider} Type={HeaterProvider.TypeName} " +
+                 $"Power={N(P0)} Gelec=0.001 Shape={(int)HeatShape.Constant}\n";
+        return s;
+    }
+
+    [Fact]
+    public void AnUnconnectedThermalTerminal_SolvesAtTheAmbient_InsteadOfNotSolvingAtAll()
+    {
+        // THE REGRESSION. A thermal pin left open is a floating node fed by a constant current
+        // source: it has no operating point, the temperature runs to the absolute-zero floor, and
+        // the solve grinds through every ramp step and every halving before failing. Measured on a
+        // kit before this was fixed: 6,210 Newton iterations, no convergence, and a reported
+        // bias point the ramp never even reached. The host supplying the reference the design did
+        // not is what turns that into an answer.
+        var (r, nl) = Run(OpenThermalNetlist(ambientC: 25.0));
+
+        Assert.True(r.Converged, "an unconnected thermal terminal must not cost the whole solve");
+        Assert.True(r.Iterations < 20, $"took {r.Iterations} iterations — the runaway is back");
+        Assert.Equal(25.0, NodeV(r, nl, "tj"), 6);   // ambient, and no rise: none was stated
+    }
+
+    [Fact]
+    public void PinningAnUnconnectedThermalTerminal_IsAnnounced()
+    {
+        // The design did not ask for this, so it is never allowed to be silent.
+        var (_, nl) = Run(OpenThermalNetlist(ambientC: 25.0));
+
+        string w = Assert.Single(nl.Warnings, x => x.Contains("not connected", StringComparison.Ordinal));
+        Assert.Contains("tj", w, StringComparison.Ordinal);
+        Assert.Contains("X1", w, StringComparison.Ordinal);
+        Assert.Contains("25", w, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AThermalNetSharedBetweenDevicesAndReachingNothingElse_IsStillUnreferenced()
+    {
+        // Two devices on one thermal net, and that net touches nothing else. Counting "is any other
+        // component on this node" would call it connected — each device sees the other — and leave
+        // it exactly as singular as before. What makes a node referenced is something OTHER than a
+        // thermal pin reaching it.
+        var (r, nl) = Run(OpenThermalNetlist(ambientC: 25.0, devices: 2));
+
+        Assert.True(r.Converged);
+        Assert.Equal(25.0, NodeV(r, nl, "tj"), 6);
+    }
+
+    [Fact]
+    public void AConnectedThermalTerminal_IsLeftEntirelyAlone()
+    {
+        // The other half of the contract: a design that DID state its thermal network gets nothing
+        // added to it, and no warning. Asserted against the temperature, which a spurious extra
+        // source holding the node at the ambient would visibly change.
+        var (r, nl) = Run(ReferencedNetlist(ambientC: 25.0, referenceC: 25.0, rThermal: 200.0));
+
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("not connected", StringComparison.Ordinal));
+        Assert.Equal(25.0 + P0 * 200.0, NodeV(r, nl, "tj"), 6);   // ambient + P·R, the rise intact
+    }
+
+    [Fact]
+    public void ADeviceThatCarriesItsOwnThermalResistance_IsNotPinned_EvenWithAnOpenPin()
+    {
+        // The boundary. A provider is entitled to model its own thermal resistance, and one that
+        // does has already referenced the node: its Jacobian has a real entry there, the open pin is
+        // not floating, and the rise it solves for IS the answer the design wanted. Holding it at the
+        // ambient would silently delete the device's self-heating — which is why the rule asks the
+        // device rather than reading the topology alone.
+        const double rth = 200.0;
+        string cnl = OpenThermalNetlist(ambientC: 25.0).TrimEnd('\n') +
+                     $" Rth={rth.ToString("G17", CultureInfo.InvariantCulture)}\n";
+
+        var (r, nl) = Run(cnl);
+
+        Assert.True(r.Converged);
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("not connected", StringComparison.Ordinal));
+        Assert.Equal(P0 * rth, NodeV(r, nl, "tj"), 6);   // its own rise, above its own zero, intact
+    }
+
+    [Fact]
+    public void ADeviceWhoseThermalDiagonalIsNegative_IsStillPinned()
+    {
+        // The subtlest half of the rule, and the one that bites. An electrothermal model's thermal
+        // row is routinely non-zero and NEGATIVE: that entry is its self-heating FEEDBACK, which
+        // pushes the node away from a solution rather than holding it near one. Reading "non-zero"
+        // as "the device references this node" therefore leaves the exact devices this exists for
+        // unpinned — verified against a real compiled model, whose thermal diagonal is a small
+        // negative number and which went straight back to not converging. The SIGN is the test.
+        string cnl = OpenThermalNetlist(ambientC: 25.0)
+                     .Replace($"Shape={(int)HeatShape.Constant}", $"Shape={(int)HeatShape.Runaway}",
+                              StringComparison.Ordinal);
+
+        var (r, nl) = Run(cnl);
+
+        Assert.True(r.Converged, "a negative thermal diagonal is not a reference — this must be pinned");
+        Assert.Contains(nl.Warnings, w => w.Contains("not connected", StringComparison.Ordinal));
+        Assert.Equal(25.0, NodeV(r, nl, "tj"), 6);
+    }
+
+    // ── A solve that cannot settle has to give up in bounded time ─────────────
+
+    [Fact]
+    public void ASolveThatCannotSettle_GivesUpWithinItsBudget()
+    {
+        // Positive thermal feedback with only a keep-alive path back: there is no operating point at
+        // any temperature, and no amount of continuation finds one. What matters is how long it
+        // takes to say so. A ramp step that succeeds only after halving leaves the ramp barely
+        // moved, so the outer loop runs again from almost the same place — and with nothing bounding
+        // it, a solve that creeps spends an unlimited number of Newton iterations arriving nowhere.
+        // Measured on a real design before this was bounded: 403,893 iterations, every one of them a
+        // round trip to an external model, before an answer that was already true at a few thousand.
+        var settings = new AnalysisSettings();
+        int budget   = settings.DcBiasRampSteps * settings.NonlinearMaxHalvings * settings.NonlinearMaxIter;
+
+        var (r, _) = Run(Netlist(rThermal: 1e7, shape: HeatShape.Runaway));
+
+        Assert.False(r.Converged, "the fixture is chosen to have no solution — if this passes, it is wrong");
+        Assert.True(r.Iterations <= budget,
+            $"spent {r.Iterations} iterations against a stated budget of {budget}");
+    }
+
+    [Fact]
+    public void ASolveThatFails_NamesTheUnknownFurthestFromSettling()
+    {
+        // "residual 6.83" is a number with no address: it names neither the part of the circuit that
+        // will not settle nor how far off it is, which leaves bisecting the schematic as the only way
+        // forward. One row is almost always enormously worse than the rest.
+        var (r, nl) = Run(Netlist(rThermal: 1e7, shape: HeatShape.Runaway));
+
+        Assert.False(r.Converged);
+        string w = Assert.Single(nl.Warnings, x => x.Contains("Worst-unsettled", StringComparison.Ordinal));
+
+        // Cross-checked against the residual vector rather than against a guess at which row wins.
+        // Which unknown is worst is the fixture's business and can move; that the message names the
+        // one the numbers actually pick out is the contract.
+        int worst = 0;
+        for (int i = 1; i < r.ResidualPerUnknown.Length; i++)
+            if (Math.Abs(r.ResidualPerUnknown[i]) > Math.Abs(r.ResidualPerUnknown[worst])) worst = i;
+
+        string expected = worst < r.NodeVoltages.Length
+            ? nl.Nodes.NameOf(worst + 1)
+            : r.BranchOwners[worst];
+        Assert.Contains(expected, w, StringComparison.Ordinal);
+    }
+
+    // ── How well a thermal node is referenced is SOLVED, not estimated ────────
+
+    [Fact]
+    public void AThermalNodeHeldByAnIdealSource_IsNotReportedAsUnreachable()
+    {
+        // The false positive this replaced. `1/G[row,row]` looks like a safe lower bound on a node's
+        // resistance and is not one: an ideal voltage source lives in a BRANCH row and puts no
+        // conductance on the node diagonal at all, so the diagonal reads zero and the bound reads
+        // infinity. The result was that the best-referenced node possible — a perfect isothermal
+        // boundary, which is how a bench pins a part at a stated case temperature — drew the
+        // loudest "no path at all" warning in the file. Seen on a kit's own reference bench,
+        // on a run whose answer was correct to six figures.
+        string cnl = "temp = 25\n" +
+                     "Vdc:V1  e  0   Vdc=1\n" +
+                     "Vdc:VT  tj 0   Vdc=25\n" +
+                     $"ExtDevice:X1  e  tj  Provider={Provider} Type={HeaterProvider.TypeName} " +
+                     $"Power={P0.ToString("G17", CultureInfo.InvariantCulture)} Gelec=0.001 " +
+                     $"Shape={(int)HeatShape.Constant}\n";
+
+        var (r, nl) = Run(cnl);
+
+        Assert.True(r.Converged);
+        Assert.Equal(25.0, NodeV(r, nl, "tj"), 9);
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("thermal node", StringComparison.Ordinal));
     }
 }
