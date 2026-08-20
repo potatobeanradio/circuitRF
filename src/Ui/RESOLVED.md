@@ -5371,3 +5371,262 @@ products (limit 600)"` next to the knob that sets it means the refusal is visibl
 instead of arriving at Run. It reports the over-cap case explicitly (`— OVER the 600 limit`) rather
 than just showing a large number, and stays blank when the order is an expression rather than a
 literal, since only the engine can resolve that.
+
+## User-Docs Factory (DF1–DF6) — vector UI capture and one-command doc generation (2026-08-20)
+
+`docs/sonnet-briefs/brief-docs-factory-infrastructure.md`. `tools/DocGen` now regenerates every
+user-doc figure and every generated page from the live application:
+
+```
+dotnet run --project tools/DocGen -- --out docs/user           # figures + toolbars + fonts + HTML
+dotnet run --project tools/DocGen -- --slides docs/slides      # landscape PDF decks
+```
+
+The brief's four enabling facts held exactly as written and are not restated here. What follows is
+what the build found that the brief and the design note did not.
+
+### The Skia black-alpha trap is wider than the brief's one case, in three specific ways
+
+The brief names Fluent's light-theme `ButtonBackground` (`#33000000`). All three of the following were
+found by running the lint over real captures, and each would have shipped a visibly wrong figure:
+
+1. **`Brushes.Transparent` is pure black too** (`#00000000`). It loses its paint the same way, so an
+   *invisible* border or background serialises as an **opaque black slab**. The generator's own
+   `Window.Background` was `Brushes.Transparent`, which painted a full-canvas black rectangle over
+   every dark-variant figure. The remap re-points a transparent brush to `#00010101` — still
+   invisible, but Skia now writes `fill="#010101" fill-opacity="0"`.
+2. **Opaque black had to be remapped as well, even though dropping its `fill` renders correctly.** A
+   light theme's icon foreground is opaque black, so a Material icon serialises with no paint at all —
+   byte-for-byte what a dropped paint looks like. Leaving it alone left the lint unable to tell a
+   correct icon from a black slab, and a lint with dozens of benign findings is a lint nobody reads.
+   Cost: about twenty bytes per glyph run. Benefit: every surviving finding is real.
+3. **A theme resource can be a `Color`, not a `Brush`, and a `Color` assigned to a brush property is
+   converted on the way in** — so it reaches Skia as a pure-black paint just the same, and a *brush*
+   override does not type-match it and is silently ignored. This is not hypothetical:
+   `CircuitRfStyles.axaml` softens toolbar icons with
+   `Foreground="{DynamicResource SystemBaseMediumColor}"`, which is `#99000000`, and **every** toolbar
+   icon in the Schematic and Data Display editors serialised with no paint until `DocsPaintRemap`
+   grew a `case Color`.
+
+**Strokes are NOT affected.** Measured directly: a `#99000000` pen emits
+`stroke="black" stroke-opacity="0.6"`, correctly. Only fills lose their paint — which is why
+`SvgLint` treats *a shape with neither attribute*, rather than "any black", as the defect.
+
+**The remap is discovered, not listed.** `DocsPaintRemap.Build` walks the live application's style
+tree for keys and resolves each **per theme variant through the ordinary resource lookup**. That
+second half is load-bearing: the Fluent theme dictionaries store **deferred items**, so enumerating
+their raw values finds nothing (a first attempt reported zero pure-black brushes while
+`TryGetResource("ButtonBackground", Light)` returned `#33000000`). The current run remaps **842**
+brushes and colours.
+
+### The lint's own false positives, and where they came from
+
+Two exclusions are not tidiness — without either, the lint is unusable:
+
+- **Anything inside `<clipPath>`/`<mask>`/`<defs>` is geometry, not ink.** Avalonia emits one clip per
+  control; a 320×200 four-control probe panel produced **thirteen** clip rectangles, every one of them
+  a paintless `<rect>`.
+- **The post-pass's own `<defs>` entries.** Path deduplication hoists repeated `d=` into `<defs>` with
+  the paint left on the `<use>` elements, so the definitions are paintless by construction.
+
+### Size reduction: 2.12×, not the 3–5× the brief expected — reported rather than rounded up
+
+Measured over a full run: **4,660,338 bytes before, 2,198,968 after (2.12×)**, from 908 no-op clips
+dropped and 1,100 repeated paths hoisted, plus 2-dp coordinate rounding. The shortfall is structural
+and not worth chasing: what dominates a captured window is **Skia's quadratic approximation of every
+rounded-rect corner** — roughly thirty `Q` segments per corner — and those are real geometry. Only the
+full-canvas clips can be proven redundant; the per-control text clips cannot be, cheaply.
+
+Whole-run numbers, for the record: **118 files, 3,673,125 bytes emitted (897,425 of it fonts),
+3.1 s wall clock.** Well inside the brief's 60 s threshold, so no complaint is due.
+
+### `circuitRF_demo/` is git-ignored, so fixtures cannot be built from it
+
+Both the brief (§3.2) and the design note (§5.2) say to build fixtures from the shipped example
+workspaces. **`circuitRF_demo/` is in `.gitignore`** — it is not in the repository, so a fresh clone
+and CI do not have it, and a fixture reading from it would work only on the author's own machine. The
+tracked equivalent that satisfies the same requirement is
+**`src/Ui/resources/schematic-templates/*.csch`**: four real, authored, version-controlled schematics,
+embedded in the assembly and read through the very `SchematicPersistence` a user's own file goes
+through. `DocFixtures` uses `FET_S-Parameters` from that set.
+
+### Popups: the two hosting modes produce the same figure, and one of them draws the window twice
+
+An open popup is either given its own top level or hosted in the parent's overlay layer, depending on
+the platform. Overlay-hosted, it is **already inside the window's visual tree**, so compositing it
+again draws the entire window a second time — measured: the context-menu figure came out at 178 KB
+against the same window's 93 KB, one window stacked on the other. `PopupCapture` therefore carries the
+popup's own **content** (what "did it actually render?" is asked of — asking it of the *root* would be
+trivially true in the overlay case and prove nothing) and a **`SeparateRoot` that is null unless the
+popup really went to its own top level**.
+
+Two smaller traps in the same area: `ContextMenu.Open` refuses any control other than the one the menu
+is attached to, and a menu opened at the control's origin sits on top of the synthetic title bar and
+reads as a rendering fault — `HorizontalOffset`/`VerticalOffset` place it over the canvas instead.
+
+### `DrawingContextHelper.RenderAsync` ignores the canvas transform in force when it is called
+
+It installs the visual's own. Measured twice, both times as a silently wrong picture rather than an
+error: a composited popup landed at the origin instead of its offset, and a slide figure drew at full
+size across the whole page instead of scaled into its box. **Record to an `SKPicture` and draw *that*
+with a matrix** — `UiArtworkGenerator.Record` exists for this and is the only way to place or scale a
+captured visual.
+
+### The toolbars needed a name in the XAML, and the manifest needed two filters
+
+Each of the five editor toolbars now carries `x:Name="DocsToolbar"`. Finding it by shape ("the first
+docked panel with three or more buttons") would silently pick a different panel after a refactor and
+produce a confident, wrong figure. Two things the traversal had to learn:
+
+- **Skip collapsed children.** A collapsed control arranges to a zero rectangle *at the panel's
+  origin*, so ten state-dependent items on the Layout toolbar stacked their callout numbers on top of
+  button 1 and put ten numbers in the table with nothing under them in the figure.
+- **Do not number separators.** They are not buttons, and numbering the gaps makes the prose count
+  wrong the first time somebody reads it out.
+
+The indexed variant positions each callout from its item's **arranged bounds in both axes**, not in a
+strip underneath: the Layout and wBond toolbars are WrapPanels and genuinely reflow onto a second row,
+where a strip put row two's numbers on top of row one's, out of order, and looked deliberate.
+
+**Every toolbar button in all five editors has a tooltip** (26 + 38 + 41 + 21 + 32 items). The brief
+asked for any missing one to be reported as a UI bug; there are none.
+
+### What the component registry can and cannot generate
+
+`ComponentTypeRegistry` knows a parameter's **name, default, unit and on-schematic visibility** — the
+facts that drift — but **not what it is for**: `ParameterDescription` covers `VerilogA` and nothing
+else. So `{{table: components/<Kind>}}` emits four columns and adds a *Meaning* column only where the
+registry has meanings to put in it. The words stay in the Markdown beside the table, because the
+alternative is prose in a C# string literal, which the brief forbids for good reason.
+
+### Symbol figures were missing their pins entirely, and the fix is a shared call
+
+`DrawSymbol` renders a primitive list only; on a real schematic the pin markers come from the render
+loop's `DrawPortMarkers` and the SDD/ZPort stubs from `DrawVariadicPortLeads`. Both are now reachable
+from a pin list alone (`SchematicRenderer.DrawUnconnectedPortMarker`,
+`DrawVariadicPortLeads(kind, pins, …)`) and the generator calls them rather than carrying a second
+copy of the geometry — so a documentation figure and the canvas cannot disagree. The bbox fit also had
+to grow by `PortMarkerWorldHalf`, or an outlying pin's marker is drawn outside the glyph box and
+clipped.
+
+Fifteen components gained a figure (`Diode Match Mlin MBend MTee MCross Mtaper Mklopf VerilogA WBond`
+and the five FET laws), and `wbond` is the one whose symbol is **generated from the shipped default
+design** rather than being a built-in. `fet.svg`/`fet-dark.svg` were hand-made, produced by nothing,
+and are deleted; a test now fails if either returns or if a page references it.
+
+### Doc size is app size, so three things are excluded from the bundle
+
+`CircuitRF.Ui.csproj` copies `docs/user/**` into the application output. Newly excluded, with the
+reason in the csproj: the Markdown sources under `docs/user/src/`, and **`assets/figures/**`** — every
+page *inlines* its figure as an `<svg>` element (an SVG referenced with `<img>` cannot see the page's
+`@font-face` rules), so the standalone captures are build intermediates and shipping them would ship
+every figure twice, for about 2 MB.
+
+Fonts are extracted **only for the families the emitted pages actually reference**, plus the body font,
+and stale faces are deleted. Shipping all eleven faces unconditionally costs 4.25 MB — most of it
+DejaVu — for faces no page may cite; the current set is 897 KB.
+
+### `reference/components.html` is now generated, and that was forced by the anchor contract
+
+The design note's migration plan names it as the right first page to port, and the anchor test made it
+the necessary one: `DocLauncher` can deep-link to `components.html#<symbolkind-lowercase>` for every
+placeable kind, and the hand-written page was missing **sixteen** of those anchors. Its prose is
+preserved; the figures and the parameter tables are placeholders now. **The new sections' prose is
+deliberately minimal** — writing the words for those sixteen components is
+`brief-user-docs-content.md`'s job, and this brief stopped at making the anchors exist and the
+pipeline work. `simulations.html` and `plot-types.html` already satisfy their own anchors and were
+left alone; migration stays incremental and un-ported pages are copied through untouched.
+
+### Every symbol caption shipped in the wrong weight, and the font gate had a hole that let it
+
+Reported by the owner as "the symbol generator is not using the correct font". It was not the
+generator's choice of typeface — it was what Skia writes into the SVG and what a browser does with it.
+
+For a face loaded from its own file, Skia's SVG device writes the font's **full name first, its family
+second, and a weight that matches neither**:
+
+```
+font-family="IBM Plex Sans SemiBold, IBM Plex Sans"  font-weight="500"      (the face is weight 600)
+```
+
+Neither half survives. `IBM Plex Sans SemiBold` is not a declared `@font-face` family, so the browser
+skips it; the fallback `IBM Plex Sans` **is** declared, at 400/600/700 — and CSS font matching for a
+requested **500** tries 500, then descends (400) before it ascends. It lands on **Regular**. All
+**76 symbol captions** were drawn SemiBold and shipped looking Regular, and 28 runs inside the Data
+Display capture did the same.
+
+The mis-weighting is specific to this case, which is why it is not obvious: Skia writes `Light` as 300
+correctly, and a weight set as a *property* (the toolbar callout numbers) as 600 correctly. It is the
+"distinct SemiBold file" path that emits 500.
+
+`SvgFontNormalizer` now rewrites every `<text>` to the base family and restates the weight from the
+full-name suffix, with an explicit nine-name table; **an unrecognised face-name word is a generation
+error, not a guess**, so a new face cannot ship silently mis-weighted. Counts after the fix, measured:
+366 `IBM Plex Sans` unweighted, 84 at 600 (8 pre-existing + the 76 captions), 268 `Inter` unweighted,
+266 at 600, 2 at 300.
+
+**One self-inflicted regression on the way, worth recording because the shape recurs:** the first
+version *removed* `font-weight` whenever it had none to restate, silently un-bolding the 238 runs Skia
+had already got right. Null must mean "leave alone", never "clear".
+
+**The owner kept the SemiBold caption** (2026-08-20) rather than matching the canvas's `PlexRegular`
+type label — a figure caption reads as a heading, not as an annotation floating beside a symbol. Note
+that the caption SIZE cannot be matched to the canvas even in principle: the canvas sizes it
+`zoom * LabelWorldHeight`, and each figure is fitted to its own box, so across this catalog the fit
+ranges 0.189 (wBond) to 1.308 (GND) — which would set GND's caption at 92 px and wBond's at 13 px on
+the same page. The fixed 15 pt sits just under the 17.2 px the two-terminal majority would produce.
+
+### Skia bakes a PLATFORM font into a figure when a glyph is uncovered
+
+Found by the same investigation: four text runs came out as **`Lucida Grande`**, and the text was a
+single `▾` (U+25BE) in the Layout and wBond status bars. Neither Inter nor IBM Plex Sans covers it, so
+Skia fell back to a macOS system font and wrote its name into the file. Two problems at once — the
+figure stops being reproducible across machines (a regenerate-and-diff check fails on the wrong OS),
+and the reader is pointed at a font the docs do not ship.
+
+The normaliser redirects any unshipped family to **DejaVu Sans**, which circuitRF does ship and which
+covers the geometric shapes the interface uses, and **reports every substitution by family and by
+codepoint** rather than quietly correcting it. The report is the point: the interface is drawing a
+glyph its own typefaces do not have, and that is worth fixing at the source — on macOS today the real
+application is silently substituting there too.
+
+### The font gate that let all of this through
+
+`EveryFontFamilyAnInlinedFigureUsesIsShippedWithTheDocs` accepted any name that *started with* a
+shipped family, so `IBM Plex Sans SemiBold` counted as covered by the `IBM Plex Sans` `@font-face`.
+It is replaced by two exact checks: **no emitted `font-family` may be outside the shipped set**, and
+**every (family, weight, style) an inlined figure asks for must be declared in the stylesheet**.
+Verified to bite rather than assumed — deleting the `IBM Plex Sans` 600 rule from the CSS fails the
+second one immediately, naming `reference/components.html: IBM Plex Sans 600 normal`.
+
+Same round, same shape: `EveryToolbarButtonHasATooltip` began `if (!File.Exists(json)) continue;`, so
+it would have passed on a fresh clone with no manifests. A gate that passes because its input is
+missing is worse than no gate; it asserts now.
+
+### A slides-only run reported success and wrote nothing
+
+`--slides` with no `--out` has to find the docs root on its own, and the obvious marker — "walk up
+until you see a `docs/user` directory" — finds the WRONG one. `tools/DocGen` references
+`CircuitRF.Ui`, which copies `docs/user` into its own build output, so the walk stopped at
+`tools/DocGen/bin/Debug/net10.0/docs/user`: a bundle copy with no `src/` in it (the `.md` sources are
+excluded from the bundle), so no source pages were found, no deck was produced, and the run printed
+"Slides regenerated in 0.0 s". The marker is now `circuitRF.slnx`, and a slides run that finds no
+sources throws instead of congratulating itself.
+
+Related, and the reason the deck lives at `docs/slides/` and not `docs/user/slides/`: **everything
+under `docs/user` is copied into the application bundle**, and a PDF deck is not a runtime asset. It
+is git-ignored as a build product, like the app icons — a committed PDF could only ever be reviewed
+as an opaque blob.
+
+### Two build-mechanics notes
+
+- **An XML comment cannot contain a double hyphen**, so no `.csproj`, no generated SVG banner and no
+  generated HTML comment can spell `--project` or `--out` literally. Every banner writes the flags in
+  words and says why. `DocGen.csproj` failed to *load* on the first attempt for exactly this.
+- **`Ui.Tests` deliberately touches no Avalonia runtime API**, so `DocsFactoryTests` asserts over the
+  generated artefacts in `docs/user/` rather than re-rendering. That is not the weaker test it looks
+  like: the generator already fails hard at capture time on an empty figure, a dropped paint, an
+  unopened popup, an unknown placeholder and an unresolvable cross-link. What the tests add is that
+  nobody can hand-edit or delete the result unnoticed, and that the catalog and the anchor contract
+  stay in step with the code. `tools/DocGen/check-docs-current.sh` is the regenerate-and-diff check;
+  **this repository has no CI workflow to add it to**, which is why it is a script.

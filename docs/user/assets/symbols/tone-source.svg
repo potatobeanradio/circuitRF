@@ -1,16 +1,11 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
-	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 24L120 59.7"/>
-	<ellipse fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="75" rx="15.300003" ry="15.300001"/>
-	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 90.3L120 126"/>
-	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M111.075 75L111.967 76.7336L112.86 78.2975L113.753 79.5386L114.645 80.3354L115.537 80.61L116.43 80.3354L117.323 79.5386L118.215 78.2975L119.107 76.7336L120 75L120.893 73.2664L121.785 71.7025L122.677 70.4614L123.57 69.6646L124.463 69.39L125.355 69.6646L126.247 70.4614L127.14 71.7025L128.033 73.2664L128.925 75"/>
-	<text fill="#D26328" transform="translate(113.625 41.85)" font-size="9.1800003" font-family="IBM Plex Sans" x="-2.7540002, " y="3.4424999, ">
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.96L120 60.29" /><ellipse fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="75" rx="14.71" ry="14.71" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 89.71L120 124.04" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M111.42 75L112.28 76.67L113.14 78.17L113.99 79.36L114.85 80.13L115.71 80.39L116.57 80.13L117.43 79.36L118.28 78.17L119.14 76.67L120 75L120.86 73.33L121.72 71.83L122.58 70.64L123.43 69.87L124.29 69.61L125.15 69.87L126.01 70.64L126.87 71.83L127.72 73.33L128.58 75" /><text fill="#D26328" transform="translate(113.87 43.13)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65, " y="3.31, ">
 			+
-	</text>
-	<text fill="#2D14C3" transform="translate(113.625 108.15)" font-size="9.1800003" font-family="IBM Plex Sans" x="-2.7540002, " y="3.4424999, ">
+	</text><text fill="#2D14C3" transform="translate(113.87 106.88)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65, " y="3.31, ">
 			−
-	</text>
-	<text fill="#6A8EF6" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="98.047501, 107.6175, 116.3175, 124.7625, 133.5825, " y="172.32001, ">
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="22.96" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121.04" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="98.05, 107.62, 116.32, 124.76, 133.58, " y="172.32, ">
 			VTone
-	</text>
-</svg>
+	</text></svg>

@@ -99,7 +99,9 @@
 
             <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Disabled">
-                <StackPanel Orientation="Horizontal" Spacing="2">
+                <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory
+                     needs a stable handle on this panel. -->
+                <StackPanel x:Name="DocsToolbar" Orientation="Horizontal" Spacing="2">
 
                     <!-- ── Navigation ──────────────────────────────────────── -->
 

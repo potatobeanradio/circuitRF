@@ -53,3 +53,8 @@ packaging/linux/icons/
 /publish/
 /dist/
 packaging/windows/Files.wxs
+
+# Generated slide decks (tools/DocGen --slides). A build product, like the app icons: regenerate
+# with `dotnet run --project tools/DocGen -- --slides docs/slides`. Kept out of git because a PDF
+# does not diff, so a committed one could only ever be reviewed as an opaque blob.
+docs/slides/

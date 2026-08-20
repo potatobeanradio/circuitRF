@@ -59,7 +59,9 @@
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="4,2">
-            <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
+            <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory needs a
+                 stable handle on this panel. -->
+            <StackPanel x:Name="DocsToolbar" Orientation="Horizontal" Spacing="2" Classes="Toolbar">
 
                 <!-- Datasource combo: lists results/ schematics + workspace Touchstone files -->
                 <ComboBox Width="200"

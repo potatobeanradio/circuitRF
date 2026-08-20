@@ -1,12 +1,7 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
-	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 24L188 24"/>
-	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 24L188 126"/>
-	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 126L52 126"/>
-	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 126L52 24"/>
-	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M86 62.25L154 62.25"/>
-	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M86 87.75L154 87.75"/>
-	<text fill="#6A8EF6" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="99.75, 112.005, 121.005, 131.08501, " y="172.32001, ">
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186"><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 24L188 24" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 24L188 126" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 126L52 126" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 126L52 24" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M86 62.25L154 62.25" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M86 87.75L154 87.75" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="99.75, 112.01, 121.01, 131.09, " y="172.32, ">
 			MEAS
-	</text>
-</svg>
+	</text></svg>

@@ -1,0 +1,376 @@
+{
+  "regenerate": "dotnet run --project tools/DocGen -- --out docs/user",
+  "id": "layout",
+  "title": "Layout editor",
+  "buttons": [
+    {
+      "Index": 1,
+      "Slot": 0,
+      "Id": "",
+      "Tooltip": "Zoom to Fit",
+      "Icon": "FitToPage",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 2,
+      "Slot": 1,
+      "Id": "",
+      "Tooltip": "Zoom In",
+      "Icon": "SearchPlusOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 3,
+      "Slot": 2,
+      "Id": "",
+      "Tooltip": "Zoom Out",
+      "Icon": "MagnifyMinusOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 4,
+      "Slot": 3,
+      "Id": "",
+      "Tooltip": "Zoom 1:1 (1 px per display-unit tick)",
+      "Icon": "Magnify",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 4,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 5,
+      "Slot": 5,
+      "Id": "",
+      "Tooltip": "Select",
+      "Icon": "CursorDefault",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 6,
+      "Slot": 6,
+      "Id": "",
+      "Tooltip": "Rectangle",
+      "Icon": "RectangleOutline",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 7,
+      "Slot": 7,
+      "Id": "",
+      "Tooltip": "Rounded Rectangle",
+      "Icon": "SquareRoundedOutline",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 8,
+      "Slot": 8,
+      "Id": "",
+      "Tooltip": "Circle (center-radius)",
+      "Icon": "VectorCircle",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 9,
+      "Slot": 9,
+      "Id": "",
+      "Tooltip": "Polygon  (double-click/Enter to close, Backspace removes last vertex)",
+      "Icon": "VectorPolygon",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 10,
+      "Slot": 10,
+      "Id": "",
+      "Tooltip": "Path (trace)",
+      "Icon": "VectorLine",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 11,
+      "Slot": 11,
+      "Id": "",
+      "Tooltip": "Label",
+      "Icon": "LabelOutline",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 12,
+      "Slot": 12,
+      "Id": "",
+      "Tooltip": "Via: this technology\u0027s stackup has no via layer \u2014 draw geometry on a via/drill layer directly instead.",
+      "Icon": "RecordCircleOutline",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 13,
+      "Slot": 13,
+      "Id": "",
+      "Tooltip": "Port \u2014 click a conductor end to place an EM port (auto-numbered)",
+      "Icon": "TargetVariant",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 14,
+      "Slot": 14,
+      "Id": "",
+      "Tooltip": "Insert Bitmap\u2026",
+      "Icon": "ImageAddOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 15,
+      "Slot": 15,
+      "Id": "",
+      "Tooltip": "Rotate 90\u00B0 CCW  (R)",
+      "Icon": "ArrowRotateLeft",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 16,
+      "Slot": 16,
+      "Id": "",
+      "Tooltip": "Rotate 90\u00B0 CW  (Shift\u002BR)",
+      "Icon": "RotateRight",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 17,
+      "Slot": 17,
+      "Id": "",
+      "Tooltip": "Mirror Horizontal  (M)",
+      "Icon": "FlipHorizontal",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 18,
+      "Slot": 18,
+      "Id": "",
+      "Tooltip": "Mirror Vertical  (Shift\u002BM)",
+      "Icon": "FlipVertical",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 19,
+      "Slot": 19,
+      "Id": "",
+      "Tooltip": "Instance\u2026 (place a cell reference)",
+      "Icon": "ViewGridPlusOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 20,
+      "Slot": 20,
+      "Id": "",
+      "Tooltip": "Show PCell pins",
+      "Icon": "PinOutline",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 21,
+      "Slot": 21,
+      "Id": "",
+      "Tooltip": "Geometry snap  (F3 / S)",
+      "Icon": "Magnet",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 22,
+      "Slot": 22,
+      "Id": "",
+      "Tooltip": "Snap to intersections",
+      "Icon": "VectorIntersection",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 0,
+      "Slot": 23,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 23,
+      "Slot": 24,
+      "Id": "",
+      "Tooltip": "Save layout  (Ctrl\u002BS)",
+      "Icon": "FloppyDisc",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 25,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 24,
+      "Slot": 26,
+      "Id": "PushInBtn",
+      "Tooltip": "Push Into Cell  (Ctrl\u002B])",
+      "Icon": "ArrowDownward",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 25,
+      "Slot": 27,
+      "Id": "PopOutBtn",
+      "Tooltip": "Pop Out  (Ctrl\u002B[)",
+      "Icon": "ArrowTop",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 36,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 26,
+      "Slot": 37,
+      "Id": "",
+      "Tooltip": "Check Design Rules (Ctrl/\u2318\u002BShift\u002BK)",
+      "Icon": "ShieldTickOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 27,
+      "Slot": 38,
+      "Id": "",
+      "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
+      "Icon": "SineWave",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 28,
+      "Slot": 39,
+      "Id": "",
+      "Tooltip": "Show EM cross-section mesh",
+      "Icon": "GridLarge",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 29,
+      "Slot": 40,
+      "Id": "",
+      "Tooltip": "Show full-wave surface mesh",
+      "Icon": "Grid",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 0,
+      "Slot": 41,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 30,
+      "Slot": 42,
+      "Id": "",
+      "Tooltip": "Export GDSII\u2026",
+      "Icon": "IosShare",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 31,
+      "Slot": 43,
+      "Id": "",
+      "Tooltip": "Export DXF\u2026",
+      "Icon": "FileExportOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 32,
+      "Slot": 44,
+      "Id": "",
+      "Tooltip": "Export Gerber\u2026",
+      "Icon": "FileChartOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 45,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 33,
+      "Slot": 46,
+      "Id": "",
+      "Tooltip": "Layer:",
+      "Icon": "text",
+      "Command": null,
+      "Kind": "text"
+    },
+    {
+      "Index": 34,
+      "Slot": 47,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "combo",
+      "Command": null,
+      "Kind": "combo"
+    },
+    {
+      "Index": 0,
+      "Slot": 48,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    }
+  ]
+}

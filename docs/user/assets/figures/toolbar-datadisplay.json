@@ -1,0 +1,196 @@
+{
+  "regenerate": "dotnet run --project tools/DocGen -- --out docs/user",
+  "id": "datadisplay",
+  "title": "Data Display",
+  "buttons": [
+    {
+      "Index": 1,
+      "Slot": 0,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "combo",
+      "Command": null,
+      "Kind": "combo"
+    },
+    {
+      "Index": 0,
+      "Slot": 1,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 2,
+      "Slot": 2,
+      "Id": "",
+      "Tooltip": "Add Rect Plot  (Ctrl\u002BShift\u002BA)",
+      "Icon": "ChartLine",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 3,
+      "Slot": 3,
+      "Id": "",
+      "Tooltip": "Add Smith Plot",
+      "Icon": "none",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 4,
+      "Slot": 4,
+      "Id": "",
+      "Tooltip": "Add Polar Plot",
+      "Icon": "none",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 5,
+      "Slot": 5,
+      "Id": "",
+      "Tooltip": "Add Table",
+      "Icon": "TableLarge",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 6,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 6,
+      "Slot": 7,
+      "Id": "",
+      "Tooltip": "New Tab  (Ctrl\u002BT)",
+      "Icon": "TabAdd",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 8,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 7,
+      "Slot": 9,
+      "Id": "",
+      "Tooltip": "Zoom In  (Ctrl\u002B\u002B)",
+      "Icon": "SearchPlusOutline",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 8,
+      "Slot": 10,
+      "Id": "",
+      "Tooltip": "Zoom Out  (Ctrl\u002B-)",
+      "Icon": "MagnifyMinusOutline",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 9,
+      "Slot": 11,
+      "Id": "",
+      "Tooltip": "Actual Size  (Ctrl\u002B1)",
+      "Icon": "Magnify",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 10,
+      "Slot": 12,
+      "Id": "",
+      "Tooltip": "Fit All  (Ctrl\u002B0)",
+      "Icon": "FitToPageOutline",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 13,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 11,
+      "Slot": 14,
+      "Id": "",
+      "Tooltip": "Undo  (Ctrl\u002BZ)",
+      "Icon": "Undo",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 12,
+      "Slot": 15,
+      "Id": "",
+      "Tooltip": "Redo  (Ctrl\u002BShift\u002BZ)",
+      "Icon": "Redo",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 16,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 13,
+      "Slot": 17,
+      "Id": "",
+      "Tooltip": "Save Display (.cdd)",
+      "Icon": "ContentSaveOutline",
+      "Command": "AsyncRelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 14,
+      "Slot": 18,
+      "Id": "",
+      "Tooltip": "Open Display (.cdd)",
+      "Icon": "FolderOpenOutline",
+      "Command": "AsyncRelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 19,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 15,
+      "Slot": 20,
+      "Id": "",
+      "Tooltip": "Export Data",
+      "Icon": "DatabaseExportOutline",
+      "Command": "AsyncRelayCommand",
+      "Kind": "button"
+    }
+  ]
+}

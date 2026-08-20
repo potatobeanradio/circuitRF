@@ -128,7 +128,9 @@
                      LayoutEditorView's own toolbar records: a ScrollViewer set to unbounded width can
                      measure non-wrapping content with infinite width on the first pass and paint it at
                      a degenerate size until something forces a relayout. -->
-                <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4" Margin="6,4">
+                <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory needs
+                     a stable handle on this panel. -->
+                <WrapPanel x:Name="DocsToolbar" Orientation="Horizontal" ItemSpacing="4" LineSpacing="4" Margin="6,4">
 
                     <!-- ── Zoom — the Layout Editor's own four, in the Layout Editor's own place:
                          far left, so a user moving between the schematic, layout and wBond editors

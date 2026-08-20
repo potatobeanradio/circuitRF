@@ -136,7 +136,11 @@
                 BorderThickness="0,0,0,1"
                 Padding="4,2">
 
-            <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
+            <!-- x:Name="DocsToolbar": the stable handle the User-Docs factory captures this
+                 toolbar and its per-button manifest through (src/Ui/Diagnostics/ToolbarCatalog.cs).
+                 Renaming it silently drops a documentation figure, so it is named rather than found
+                 by shape. -->
+            <StackPanel x:Name="DocsToolbar" Orientation="Horizontal" Spacing="2" Classes="Toolbar">
 
                 <!-- Zoom to Fit -->
                 <Button Click="OnZoomToFit"

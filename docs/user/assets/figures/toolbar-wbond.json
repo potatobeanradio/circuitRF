@@ -1,0 +1,295 @@
+{
+  "regenerate": "dotnet run --project tools/DocGen -- --out docs/user",
+  "id": "wbond",
+  "title": "wBond editor",
+  "buttons": [
+    {
+      "Index": 1,
+      "Slot": 0,
+      "Id": "",
+      "Tooltip": "Zoom to Fit",
+      "Icon": "FitToPage",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 2,
+      "Slot": 1,
+      "Id": "",
+      "Tooltip": "Zoom In",
+      "Icon": "SearchPlusOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 3,
+      "Slot": 2,
+      "Id": "",
+      "Tooltip": "Zoom Out",
+      "Icon": "MagnifyMinusOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 4,
+      "Slot": 3,
+      "Id": "",
+      "Tooltip": "Zoom 1:1 (1 px per display-unit tick)",
+      "Icon": "Magnify",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 4,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 5,
+      "Slot": 5,
+      "Id": "SaveBtn",
+      "Tooltip": "Save  (\u2318S / Ctrl\u002BS)",
+      "Icon": "FloppyDisc",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 6,
+      "Slot": 6,
+      "Id": "SaveAsBtn",
+      "Tooltip": "Save As\u2026",
+      "Icon": "ContentSaveEdit",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 7,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 7,
+      "Slot": 8,
+      "Id": "ViewModeToggle",
+      "Tooltip": "Showing: profile and layout  (V cycles)",
+      "Icon": "ViewSplitHorizontal",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 8,
+      "Slot": 9,
+      "Id": "PanelToggle",
+      "Tooltip": "Hide/Show Inductance panel  (I)",
+      "Icon": "TableLarge",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 9,
+      "Slot": 10,
+      "Id": "RulerToggle",
+      "Tooltip": "Hide/Show rulers on both views",
+      "Icon": "Ruler",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 10,
+      "Slot": 11,
+      "Id": "CapacitanceToggle",
+      "Tooltip": "Include capacitance to the reference plane in the reported inductance",
+      "Icon": "CircleMultipleOutline",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 0,
+      "Slot": 12,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 11,
+      "Slot": 13,
+      "Id": "",
+      "Tooltip": "Select  (Esc)",
+      "Icon": "CursorDefault",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 12,
+      "Slot": 14,
+      "Id": "",
+      "Tooltip": "Draw wire (W) \u2014 click start, click end; Shift constrains",
+      "Icon": "VectorPolyline",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 13,
+      "Slot": 15,
+      "Id": "",
+      "Tooltip": "Rotate about end point (R) \u2014 grab near the end you want to move (Shift: 45\u00B0 steps)",
+      "Icon": "RotateRight",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 16,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 14,
+      "Slot": 17,
+      "Id": "TrueDiameterToggle",
+      "Tooltip": "Draw wires at their true diameter",
+      "Icon": "text:\u00D8",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 15,
+      "Slot": 18,
+      "Id": "SnapToggle",
+      "Tooltip": "Snap wire points \u2014 to layout geometry first, then to the grid",
+      "Icon": "MagnetOn",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 16,
+      "Slot": 19,
+      "Id": "WireMarqueeToggle",
+      "Tooltip": "Marquee selects wires (off: selects layout shapes)",
+      "Icon": "SelectionDrag",
+      "Command": null,
+      "Kind": "toggle"
+    },
+    {
+      "Index": 0,
+      "Slot": 20,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 17,
+      "Slot": 21,
+      "Id": "ReverseBtn",
+      "Tooltip": "Reverse wire direction",
+      "Icon": "SwapHorizontal",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 18,
+      "Slot": 22,
+      "Id": "StraightenBtn",
+      "Tooltip": "Straighten",
+      "Icon": "VectorLine",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 19,
+      "Slot": 23,
+      "Id": "TransformBtn",
+      "Tooltip": "Transform Selection (T)\u2026",
+      "Icon": "AxisArrow",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 24,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 20,
+      "Slot": 25,
+      "Id": "ExportDxfBtn",
+      "Tooltip": "Export DXF\u2026",
+      "Icon": "FileExportOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 21,
+      "Slot": 26,
+      "Id": "ImportWiresBtn",
+      "Tooltip": "Import Wires from DXF\u2026",
+      "Icon": "FileImportOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 22,
+      "Slot": 27,
+      "Id": "ExportTouchstoneBtn",
+      "Tooltip": "Export Touchstone (.sNp)\u2026 \u2014 publish this wirebond\u0027s network. Choose the reference impedance, the frequency sweep and the port basis in the dialog.",
+      "Icon": "SineWave",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 23,
+      "Slot": 28,
+      "Id": "CompareModelBtn",
+      "Tooltip": "Compare Distributed Model\u2026 \u2014 run the distributed (MoM) model next to the lumped one on a frequency grid, and show the two side by side. Same design, same ports, no export needed.",
+      "Icon": "Legal",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 24,
+      "Slot": 29,
+      "Id": "CopyGraphicBtn",
+      "Tooltip": "Copy as a graphic (\u21E7\u2318C / Ctrl\u002BShift\u002BC)",
+      "Icon": "ImageOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 30,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 25,
+      "Slot": 31,
+      "Id": "",
+      "Tooltip": "Wires: 1",
+      "Icon": "text",
+      "Command": null,
+      "Kind": "text"
+    }
+  ]
+}

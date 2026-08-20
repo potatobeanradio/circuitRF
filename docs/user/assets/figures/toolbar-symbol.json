@@ -1,0 +1,349 @@
+{
+  "regenerate": "dotnet run --project tools/DocGen -- --out docs/user",
+  "id": "symbol",
+  "title": "Symbol editor",
+  "buttons": [
+    {
+      "Index": 1,
+      "Slot": 0,
+      "Id": "",
+      "Tooltip": "Zoom to Fit  (F)",
+      "Icon": "FitToPage",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 1,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 2,
+      "Slot": 2,
+      "Id": "",
+      "Tooltip": "Select / Move  (S)",
+      "Icon": "CursorDefault",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 3,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 3,
+      "Slot": 4,
+      "Id": "",
+      "Tooltip": "Line \u2014 click and drag",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 4,
+      "Slot": 5,
+      "Id": "",
+      "Tooltip": "Polyline \u2014 click points; Enter or double-click to finish",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 6,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 5,
+      "Slot": 7,
+      "Id": "",
+      "Tooltip": "Rectangle \u2014 drag corner to corner",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 6,
+      "Slot": 8,
+      "Id": "",
+      "Tooltip": "Rounded Rectangle \u2014 drag corner to corner",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 7,
+      "Slot": 9,
+      "Id": "",
+      "Tooltip": "Circle \u2014 drag from centre",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 8,
+      "Slot": 10,
+      "Id": "",
+      "Tooltip": "Ellipse \u2014 drag bounding box",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 11,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 9,
+      "Slot": 12,
+      "Id": "",
+      "Tooltip": "Arc \u2014 drag from centre; 270\u00B0 sweep",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 13,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 10,
+      "Slot": 14,
+      "Id": "",
+      "Tooltip": "Triangle \u2014 click 3 points (auto-commits)",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 11,
+      "Slot": 15,
+      "Id": "",
+      "Tooltip": "Polygon \u2014 click points; Enter or double-click to close",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 16,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 12,
+      "Slot": 17,
+      "Id": "",
+      "Tooltip": "Quadratic B\u00E9zier \u2014 click start, control, end (3 points)",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 13,
+      "Slot": 18,
+      "Id": "",
+      "Tooltip": "Cubic B\u00E9zier \u2014 click start, ctrl1, ctrl2, end (4 points)",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 19,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 14,
+      "Slot": 20,
+      "Id": "",
+      "Tooltip": "Sine wave \u2014 drag to set length and amplitude",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 15,
+      "Slot": 21,
+      "Id": "",
+      "Tooltip": "Exponential taper \u2014 drag to set length and start width",
+      "Icon": "path",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 22,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 16,
+      "Slot": 23,
+      "Id": "",
+      "Tooltip": "Text \u2014 click anchor, type, Enter to place",
+      "Icon": "FormatText",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 24,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 17,
+      "Slot": 25,
+      "Id": "",
+      "Tooltip": "Pin \u2014 click empty space to place; use Select tool to move, delete, or rotate pins  (P)",
+      "Icon": "Location",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 18,
+      "Slot": 26,
+      "Id": "",
+      "Tooltip": "Insert Bitmap\u2026",
+      "Icon": "ImageAddOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 27,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 19,
+      "Slot": 28,
+      "Id": "",
+      "Tooltip": "Snap: Fine Grid  (G)",
+      "Icon": "Grid",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 20,
+      "Slot": 29,
+      "Id": "",
+      "Tooltip": "Rotate Selection 90\u00B0 CW about origin  (R)",
+      "Icon": "RotateRight",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 30,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 21,
+      "Slot": 31,
+      "Id": "",
+      "Tooltip": "Stroke:",
+      "Icon": "text",
+      "Command": null,
+      "Kind": "text"
+    },
+    {
+      "Index": 22,
+      "Slot": 32,
+      "Id": "",
+      "Tooltip": "Normal stroke weight",
+      "Icon": "none",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 23,
+      "Slot": 33,
+      "Id": "",
+      "Tooltip": "Thin stroke weight",
+      "Icon": "none",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 24,
+      "Slot": 34,
+      "Id": "",
+      "Tooltip": "Thick stroke weight",
+      "Icon": "none",
+      "Command": "RelayCommand\u00601",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 35,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 25,
+      "Slot": 36,
+      "Id": "",
+      "Tooltip": "Undo  (\u2318Z / Ctrl\u002BZ)",
+      "Icon": "UndoVariant",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 26,
+      "Slot": 37,
+      "Id": "",
+      "Tooltip": "Redo  (\u2318\u21E7Z / Ctrl\u002BShift\u002BZ)",
+      "Icon": "RedoVariant",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    }
+  ]
+}

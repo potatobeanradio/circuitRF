@@ -794,12 +794,28 @@ public static class SchematicRenderer
         SKPaint paint)
     {
         if (c.Symbol is not (SymbolKind.ZPort or SymbolKind.Sdd)) return;
+        DrawVariadicPortLeads(canvas, c.Symbol,
+            c.Ports.Select(p => ((double)p.LocalX, (double)p.LocalY)).ToList(),
+            compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom, paint);
+    }
+
+    /// <summary>
+    /// The same stubs, reachable from a pin list alone — which is what the documentation artwork
+    /// generator has (<see cref="Diagnostics.SymbolArtworkGenerator"/>). The doc figures must show
+    /// exactly what the schematic shows, so both call this rather than each drawing its own leads.
+    /// </summary>
+    internal static void DrawVariadicPortLeads(
+        SKCanvas canvas, SymbolKind kind, IReadOnlyList<(double X, double Y)> pins,
+        double compX, double compY, SymbolRotation rotation, bool mirrorX,
+        double panX, double panY, double zoom, SKPaint paint)
+    {
+        if (kind is not (SymbolKind.ZPort or SymbolKind.Sdd)) return;
         const float bodyEdge = 90f;
-        foreach (var port in c.Ports)
+        foreach (var (lx, ly) in pins)
         {
-            float innerX = port.LocalX < 0f ? -bodyEdge : bodyEdge;
-            var (ax, ay) = LocalToPixel(port.LocalX, port.LocalY, compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom);
-            var (bx, by) = LocalToPixel(innerX,      port.LocalY, compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom);
+            double innerX = lx < 0 ? -bodyEdge : bodyEdge;
+            var (ax, ay) = LocalToPixel(lx,     ly, compX, compY, rotation, mirrorX, panX, panY, zoom);
+            var (bx, by) = LocalToPixel(innerX, ly, compX, compY, rotation, mirrorX, panX, panY, zoom);
             canvas.DrawLine(ax, ay, bx, by, paint);
         }
     }
@@ -837,6 +853,24 @@ public static class SchematicRenderer
                 canvas.DrawRect(SKRect.Create(px - connHalf, py - connHalf, connHalf * 2, connHalf * 2), connPaint);
         }
     }
+
+    /// <summary>
+    /// The UNCONNECTED port marker for one pin, at the size and shape <see cref="DrawPortMarkers"/>
+    /// draws. Used by the documentation artwork generator, whose figures show a component as the
+    /// user meets it in the palette — before anything is wired to it, so every pin is unconnected.
+    /// </summary>
+    internal static void DrawUnconnectedPortMarker(
+        SKCanvas canvas, double localX, double localY,
+        double compX, double compY, SymbolRotation rotation, bool mirrorX,
+        double panX, double panY, double zoom, SKPaint unconnPaint)
+    {
+        float boxHalf = (float)Math.Max(3.0, zoom * PortBoxHalf);
+        var (px, py) = LocalToPixel(localX, localY, compX, compY, rotation, mirrorX, panX, panY, zoom);
+        canvas.DrawRect(SKRect.Create(px - boxHalf, py - boxHalf, boxHalf * 2, boxHalf * 2), unconnPaint);
+    }
+
+    /// <summary>Half-width, in WORLD units, of an unconnected port marker — for bounding-box fits.</summary>
+    internal static float PortMarkerWorldHalf => PortBoxHalf;
 
     // ── Labels (left-aligned; order: type, name, params) ─────────────────────
     // Label index 0 = component/type name  → ComponentNameText

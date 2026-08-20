@@ -27,7 +27,7 @@
      [BASE]      page / typography               [CHROME]   header + footer
      [NAV]       breadcrumb + table of contents  [CONTENT]  prose elements
      [TABLE]     parameter / data tables         [CALLOUT]  note/tip/warning
-     [SYMBOL]    component symbol figures         [SHOT]     screenshot frames
+     [SYMBOL]    component symbol figures        [SHOT]     UI capture frames
      [CODE]      code + netlist blocks           [UTIL]     helpers / print
    ============================================================================ */
 
@@ -229,6 +229,7 @@ figure.symbol .frame {
 figure.symbol svg, figure.symbol img { max-width: 240px; height: auto; vertical-align: middle; }
 figure.symbol figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
 figure.symbol .sym-dark { display: none; }
+figure.symbol .sym-light svg, figure.symbol .sym-dark svg { max-width: 240px; height: auto; }
 .symbol-inline { vertical-align: middle; height: 1.6em; width: auto; }
 .symbol-inline.sym-dark { display: none; }
 @media (prefers-color-scheme: dark) {
@@ -239,8 +240,28 @@ figure.symbol .sym-dark { display: none; }
 }
 
 /* ----------------------------------------------------------------- [SHOT] -- */
-/* GUI screenshots are raster (PNG). Until captured, a labeled placeholder box
-   stands in. Replace <div class="shot-todo"> with <img> when the PNG exists. */
+/* GUI figures. These are VECTOR captures of the running application, generated
+   by tools/DocGen and INLINED into the page as <svg> rather than referenced with
+   <img>: an SVG loaded as an image cannot see this stylesheet's @font-face rules,
+   so a referenced figure would be set in whatever the reader happens to have
+   installed. Same light/dark pairing as the symbol figures above.
+   There are no PNGs in this documentation and there are not meant to be. */
+figure.figure { margin: 1.6rem 0; text-align: center; }
+figure.figure .frame {
+  display: inline-block; max-width: 100%;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.5rem; color: var(--text);
+}
+figure.figure svg { max-width: 100%; height: auto; display: block; }
+figure.figure figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+figure.figure .sym-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  figure.figure .sym-light { display: none; }
+  figure.figure .sym-dark  { display: block; }
+}
+
+/* Legacy raster frame — kept for any page still carrying a hand-placed screenshot.
+   Nothing generated uses it; a new figure must be a capture, not a bitmap. */
 figure.shot { margin: 1.4rem 0; }
 figure.shot img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius); display: block; }
 figure.shot figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
@@ -282,3 +303,42 @@ pre.netlist { border-left: 4px solid var(--crf-cyan); }      /* .cnl listings */
   a { color: var(--text); text-decoration: underline; }
   body { font-size: 11pt; }
 }
+
+/* ==== BEGIN GENERATED FONT BLOCK (tools/DocGen) ==== */
+/* ---------------------------------------------------------------- [FONTS] --
+   GENERATED BLOCK - do not hand-edit. Rewritten by tools/DocGen on every run;
+   see FontExtractor.cs. The .ttf files beside it are extracted from the
+   application's own assets, so a doc page renders with the exact typefaces the
+   captured figures were drawn with rather than a browser substitution.
+   Licences: assets/fonts/OFL.txt (Inter, IBM Plex Sans) and
+   assets/fonts/DejaVu Fonts License.txt (DejaVu Sans).
+   ------------------------------------------------------------------------- */
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/IBMPlexSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/IBMPlexSans-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/IBMPlexSans-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+/* ==== END GENERATED FONT BLOCK ==== */

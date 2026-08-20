@@ -1,0 +1,241 @@
+{
+  "regenerate": "dotnet run --project tools/DocGen -- --out docs/user",
+  "id": "schematic",
+  "title": "Schematic editor",
+  "buttons": [
+    {
+      "Index": 1,
+      "Slot": 0,
+      "Id": "",
+      "Tooltip": "Zoom to Fit  (F)",
+      "Icon": "FitToPage",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 2,
+      "Slot": 1,
+      "Id": "",
+      "Tooltip": "Reset to 1:1 zoom",
+      "Icon": "Magnify",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 3,
+      "Slot": 2,
+      "Id": "ZoomBoxToolBtn",
+      "Tooltip": "Zoom Box  (Z)",
+      "Icon": "SearchPlusOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 3,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 4,
+      "Slot": 4,
+      "Id": "SelectToolBtn",
+      "Tooltip": "Select  (S)",
+      "Icon": "CursorDefault",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 5,
+      "Slot": 5,
+      "Id": "WireToolBtn",
+      "Tooltip": "Wire  (W)",
+      "Icon": "path",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 6,
+      "Slot": 6,
+      "Id": "PlaceGroundBtn",
+      "Tooltip": "Place Ground  (Shift\u002BG)",
+      "Icon": "symbol:Ground",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 7,
+      "Slot": 7,
+      "Id": "PlacePortBtn",
+      "Tooltip": "Place Term  (T)",
+      "Icon": "symbol:Term",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 8,
+      "Slot": 8,
+      "Id": "PlacePinBtn",
+      "Tooltip": "Place Pin  (P)",
+      "Icon": "symbol:Pin",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 9,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 9,
+      "Slot": 10,
+      "Id": "RotateCcwBtn",
+      "Tooltip": "Rotate 90\u00B0 CCW  (R)",
+      "Icon": "ArrowRotateLeft",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 10,
+      "Slot": 11,
+      "Id": "RotateCwBtn",
+      "Tooltip": "Rotate 90\u00B0 CW  (Shift\u002BR)",
+      "Icon": "RotateRight",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 11,
+      "Slot": 12,
+      "Id": "MirrorHBtn",
+      "Tooltip": "Mirror Horizontal  (M)",
+      "Icon": "FlipHorizontal",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 12,
+      "Slot": 13,
+      "Id": "MirrorVBtn",
+      "Tooltip": "Mirror Vertical  (Shift\u002BM)",
+      "Icon": "FlipVertical",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 14,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 13,
+      "Slot": 15,
+      "Id": "DeleteBtn",
+      "Tooltip": "Delete  (Del)",
+      "Icon": "Trash",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 16,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 14,
+      "Slot": 17,
+      "Id": "SnapModeBtn",
+      "Tooltip": "Snap: Fine Grid  (G)",
+      "Icon": "Grid",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 18,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 15,
+      "Slot": 19,
+      "Id": "DisableOpenBtn",
+      "Tooltip": "Disable \u2192 Open circuit  (Q) \u2014 toggles if all selected are already disabled",
+      "Icon": "EyeOff",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 16,
+      "Slot": 20,
+      "Id": "DisableShortBtn",
+      "Tooltip": "Disable \u2192 Short circuit (toggles if all selected are already disabled)",
+      "Icon": "HideOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 21,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 17,
+      "Slot": 22,
+      "Id": "",
+      "Tooltip": "Save schematic  (Ctrl\u002BS)",
+      "Icon": "FloppyDisc",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 23,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 18,
+      "Slot": 24,
+      "Id": "PushInBtn",
+      "Tooltip": "Push Into Cell  (Ctrl\u002B])",
+      "Icon": "ArrowDownward",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 19,
+      "Slot": 25,
+      "Id": "PopOutBtn",
+      "Tooltip": "Pop Out  (Ctrl\u002B[)",
+      "Icon": "ArrowTop",
+      "Command": null,
+      "Kind": "button"
+    }
+  ]
+}

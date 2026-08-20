@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    circuitRF User-Docs Factory. One command regenerates every user-doc figure and every user-doc
+    page from the live application. See docs/design/user-docs-factory.md and
+    docs/sonnet-briefs/brief-docs-factory-infrastructure.md, and run it with the help flag for the
+    exact invocation:
+
+        dotnet run [project tools/DocGen] [flag out] docs/user      figures + fonts + HTML
+        dotnet run [project tools/DocGen] [flag slides] docs/slides landscape PDF decks
+
+    (XML comments cannot contain a double hyphen, hence the bracket notation above; the real
+    commands are printed by the tool itself and written in every generated file's banner.)
+
+    NOT in circuitrf.slnx, exactly like tools/IconGen, so a plain `dotnet build` at the root neither
+    builds this nor restores Avalonia.Headless. It is a BUILD TOOL, not one of the deliberately
+    independent programs under tools/ that exist to be tested against, so referencing CircuitRF.Ui
+    is correct here and is in fact the whole point: the figures come from the shipping controls.
+
+    Avalonia.Headless lives HERE and never in src/Ui, so the shipping UI assembly does not carry it.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>CircuitRF.DocGen</AssemblyName>
+    <RootNamespace>CircuitRF.DocGen</RootNamespace>
+    <StartupObject>CircuitRF.DocGen.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ui\CircuitRF.Ui.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Skia" Version="12.0.3" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="Markdig" Version="0.44.0" />
+  </ItemGroup>
+
+</Project>

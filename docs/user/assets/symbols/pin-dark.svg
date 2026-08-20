@@ -1,8 +1,7 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
-	<path fill="none" stroke="#9684FA" stroke-width="2.8800001" stroke-linecap="round" stroke-linejoin="round" d="M67.2 27L129.6 27L168 75L129.6 123L67.2 123L24 75L67.2 27Z"/>
-	<path fill="none" stroke="#9684FA" stroke-width="2.8800001" stroke-linecap="round" stroke-linejoin="round" d="M168 75L216 75"/>
-	<text fill="#8CAEFF" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="108.72, 118.335, 122.46, " y="172.32001, ">
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186"><path fill="none" stroke="#9684FA" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round" d="M65.54 28.85L125.54 28.85L162.46 75L125.54 121.15L65.54 121.15L24 75L65.54 28.85Z" /><path fill="none" stroke="#9684FA" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round" d="M162.46 75L208.62 75" /><rect fill="none" stroke="#F07846" stroke-width="1.85" stroke-miterlimit="4" x="201.23" y="67.62" width="14.77" height="14.77" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="108.72, 118.34, 122.46, " y="172.32, ">
 			Pin
-	</text>
-</svg>
+	</text></svg>

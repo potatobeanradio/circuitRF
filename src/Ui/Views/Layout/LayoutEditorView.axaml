@@ -110,7 +110,9 @@
                  a relayout — see PaletteToolView's WrapPanel note for the same gotcha. Wrapping
                  avoids the unbounded-width measurement entirely: it always reflows to the toolbar's
                  actual width, and does not need a ScrollViewer at all. -->
-            <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+            <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory needs a
+                 stable handle on this panel. -->
+            <WrapPanel x:Name="DocsToolbar" Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
                         <Button Click="OnZoomToFit" ToolTip.Tip="Zoom to Fit" Padding="6,3">
                             <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
                         </Button>

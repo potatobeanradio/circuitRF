@@ -239,11 +239,24 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Bundle the User Documentation into the app output (docs/user/) so the in-app Help menu and the
-         component/analysis Help buttons (DocLauncher) open it offline. The .md files (regeneration notes)
-         are excluded; not needed at runtime. Component symbols are refreshed by running the Ui app with
-         the generate-symbols argument (see SymbolArtworkGenerator / Program.cs). -->
-    <None Include="../../docs/user/**/*.*" Exclude="../../docs/user/**/*.md">
+    <!--
+      Bundle the User Documentation into the app output (docs/user/) so the in-app Help menu and the
+      component/analysis Help buttons (DocLauncher) open it offline. Component symbols and pages are
+      refreshed by the docs factory (tools/DocGen; see docs/design/user-docs-factory.md).
+
+      DOC SIZE IS APP SIZE, so three things are deliberately EXCLUDED as build inputs rather than
+      runtime assets:
+        *.md                  - the Markdown sources under docs/user/src/, which the generator reads
+                                and which nothing at runtime does.
+        assets/figures/**     - the captured UI figures. Every page INLINES its figure as an <svg>
+                                element (an SVG referenced with <img> cannot see the page's
+                                @font-face rules), so the standalone files are intermediates. They are
+                                ~2 MB; shipping them would be shipping every figure twice.
+        toolbar-*.json        - the per-button manifests the page generator reads. Covered by the
+                                figures exclusion above; named here so the reason is on the record.
+    -->
+    <None Include="../../docs/user/**/*.*"
+          Exclude="../../docs/user/**/*.md;../../docs/user/assets/figures/**/*.*">
       <Link>docs/user/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

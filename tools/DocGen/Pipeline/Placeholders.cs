@@ -1,0 +1,221 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text.RegularExpressions;
+using CircuitRF.Ui.Diagnostics;
+using CircuitRF.Ui.Schematic;
+
+namespace CircuitRF.DocGen.Pipeline;
+
+/// <summary>
+/// Expands the typed placeholders a source page writes into the generated HTML.
+///
+/// <list type="table">
+///   <item><term><c>{{ui: em-setup-editor}}</c></term><description>the light/dark figure pair, inline, framed, captioned</description></item>
+///   <item><term><c>{{symbol: resistor}}</c></term><description>the generated component-symbol figure</description></item>
+///   <item><term><c>{{toolbar: layout}}</c></term><description>the toolbar figure AND its generated per-button table</description></item>
+///   <item><term><c>{{table: components/Resistor}}</c></term><description>a parameter table read from the live registry</description></item>
+///   <item><term><c>{{anchor: components#sdd}}</c></term><description>a checked cross-link; add <c>|Link text</c> to word it</description></item>
+/// </list>
+///
+/// <para><b>An unknown placeholder is a generation error, never literal text.</b> A typo'd
+/// <c>{{ui: em-setup}}</c> must not reach a shipped page as five visible braces — that is the
+/// failure mode this whole pipeline exists to remove.</para>
+///
+/// <para><b>Figures are INLINED as <c>&lt;svg&gt;</c>, not referenced with <c>&lt;img&gt;</c>.</b>
+/// An SVG loaded as an image cannot see the page's <c>@font-face</c> rules, so the figure would fall
+/// back to whatever the reader has installed; data-URI fonts inside an SVG-as-image are unreliable
+/// in Safari, which is the default browser <c>DocLauncher</c> opens on macOS. The pages are
+/// generated anyway, so inlining costs nothing but bytes.</para>
+/// </summary>
+public sealed class Placeholders
+{
+    private static readonly Regex Rx = new(@"\{\{\s*(?<kind>[a-z]+)\s*:\s*(?<arg>[^}]+?)\s*\}\}",
+                                           RegexOptions.Compiled);
+
+    private readonly string _docsRoot;
+    private readonly string _pageDir;
+    private readonly Func<string, IReadOnlyList<ToolbarCatalog.Entry>> _toolbarManifest;
+    private readonly Func<string, bool> _anchorExists;
+
+    /// <summary>Families referenced by every figure inlined so far — drives which fonts get shipped.</summary>
+    public HashSet<string> FontFamiliesUsed { get; } = new(StringComparer.Ordinal);
+
+    public Placeholders(string docsRoot, string pageDir,
+                        Func<string, IReadOnlyList<ToolbarCatalog.Entry>> toolbarManifest,
+                        Func<string, bool> anchorExists)
+    {
+        _docsRoot = docsRoot;
+        _pageDir = pageDir;
+        _toolbarManifest = toolbarManifest;
+        _anchorExists = anchorExists;
+    }
+
+    /// <summary>Expand every placeholder in <paramref name="markdown"/>. Throws on anything unknown.</summary>
+    public string Expand(string markdown, string sourcePath) => Rx.Replace(markdown, m =>
+    {
+        string kind = m.Groups["kind"].Value, arg = m.Groups["arg"].Value.Trim();
+        try
+        {
+            return kind switch
+            {
+                "ui"      => UiFigure(arg),
+                "symbol"  => SymbolFigure(arg),
+                "toolbar" => ToolbarFigure(arg),
+                "table"   => Table(arg),
+                "anchor"  => Anchor(arg),
+                _ => throw new InvalidOperationException(
+                        $"unknown placeholder kind '{kind}'. Known kinds: ui, symbol, toolbar, table, anchor."),
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"{sourcePath}: {m.Value} — {ex.Message}", ex);
+        }
+    });
+
+    // ── {{ui: id}} ────────────────────────────────────────────────────────────
+
+    private string UiFigure(string id)
+    {
+        var row = FigureCatalog.Catalog.FirstOrDefault(r => r.Id == id);
+        if (row.Id is null)
+            throw new InvalidOperationException(
+                $"no figure with id '{id}' in FigureCatalog. Ids are a contract between a page and the " +
+                $"catalog. Known ids: {string.Join(", ", FigureCatalog.Catalog.Select(r => r.Id))}.");
+
+        return FigurePair(Path.Combine("assets", "figures"), id, row.Caption, "figure");
+    }
+
+    // ── {{symbol: stem}} ──────────────────────────────────────────────────────
+
+    private string SymbolFigure(string stem)
+    {
+        var row = SymbolArtworkGenerator.Catalog.FirstOrDefault(r => r.File == stem);
+        if (row.File is null)
+            throw new InvalidOperationException(
+                $"no symbol figure with stem '{stem}'. Add a row to SymbolArtworkGenerator.Catalog, " +
+                "or fix the spelling.");
+
+        string caption = ComponentTypeRegistry.DisplayName(row.Kind, row.Ports);
+        return FigurePair(Path.Combine("assets", "symbols"), stem, caption, "symbol");
+    }
+
+    // ── {{toolbar: id}} ───────────────────────────────────────────────────────
+
+    private string ToolbarFigure(string id)
+    {
+        var row = ToolbarCatalog.Catalog.FirstOrDefault(r => r.Id == id);
+        if (row.Id is null)
+            throw new InvalidOperationException(
+                $"no toolbar '{id}'. Known: {string.Join(", ", ToolbarCatalog.Catalog.Select(r => r.Id))}.");
+
+        var figure = FigurePair(Path.Combine("assets", "figures"), "toolbar-" + id + "-indexed",
+                                row.Title + " toolbar", "figure");
+        return figure + "\n" + DocTables.ToolbarButtons(_toolbarManifest(id));
+    }
+
+    // ── {{table: …}} ──────────────────────────────────────────────────────────
+
+    private string Table(string spec)
+    {
+        var parts = spec.Split('/', 2);
+        return parts switch
+        {
+            ["components", var name] => ComponentTable(name),
+            ["components"]           => DocTables.ComponentIndex(),
+            _ => throw new InvalidOperationException(
+                    $"unknown table '{spec}'. Supported: components, components/<SymbolKind>."),
+        };
+    }
+
+    private static string ComponentTable(string kindName)
+    {
+        if (!Enum.TryParse<SymbolKind>(kindName, ignoreCase: true, out var kind))
+            throw new InvalidOperationException($"'{kindName}' is not a SymbolKind.");
+
+        var row = SymbolArtworkGenerator.Catalog.FirstOrDefault(r => r.Kind == kind);
+        int ports = row.File is null ? 2 : row.Ports;
+        return DocTables.ComponentParameters(kind, ports);
+    }
+
+    // ── {{anchor: page#id}} ───────────────────────────────────────────────────
+
+    private string Anchor(string spec)
+    {
+        // Optional link text after a pipe: "{{anchor: dynamic-symbols#sdd|Dynamic symbols}}". Without
+        // it the fragment is used, which reads badly in prose — the point of the placeholder is the
+        // CHECK, not a particular wording.
+        string? label = null;
+        int bar = spec.IndexOf('|');
+        if (bar >= 0) { label = spec[(bar + 1)..].Trim(); spec = spec[..bar].Trim(); }
+
+        var parts = spec.Split('#', 2);
+        string page = parts[0].EndsWith(".html", StringComparison.Ordinal) ? parts[0] : parts[0] + ".html";
+        string frag = parts.Length > 1 ? parts[1] : "";
+
+        // A page is named the way a reader would write it in this page's own directory — the same
+        // spelling an ordinary Markdown link uses. The index is keyed from the docs root, so resolve
+        // one against the other rather than making the author write the root-relative form twice.
+        string rooted = Path.GetRelativePath(_docsRoot, Path.GetFullPath(Path.Combine(_pageDir, page)))
+                            .Replace(Path.DirectorySeparatorChar, '/');
+        string target = frag.Length == 0 ? rooted : rooted + "#" + frag;
+
+        if (!_anchorExists(target))
+            throw new InvalidOperationException(
+                $"cross-link target '{target}' does not exist in the generated site. An unresolvable " +
+                "link is a generation error here rather than a 404 a reader finds later.");
+
+        return $"<a href=\"{WebUtility.HtmlEncode(Relative(rooted))}"
+             + (frag.Length == 0 ? "" : "#" + WebUtility.HtmlEncode(frag)) + "\">"
+             + WebUtility.HtmlEncode(label ?? (frag.Length == 0 ? page : frag)) + "</a>";
+    }
+
+    // ── Shared figure markup ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// The light/dark pair, both inlined, one hidden by the stylesheet's <c>prefers-color-scheme</c>
+    /// rule — the same <c>.sym-light</c>/<c>.sym-dark</c> convention the hand-written pages already
+    /// use, so nothing about the look changes.
+    /// </summary>
+    private string FigurePair(string relDir, string stem, string caption, string figureClass)
+    {
+        string light = ReadInline(Path.Combine(relDir, stem + ".svg"));
+        string dark  = ReadInline(Path.Combine(relDir, stem + "-dark.svg"));
+
+        return $"""
+                <figure class="{figureClass}"><span class="frame">
+                <span class="sym-light">{light}</span>
+                <span class="sym-dark">{dark}</span>
+                </span><figcaption>{WebUtility.HtmlEncode(caption)}</figcaption></figure>
+                """;
+    }
+
+    private string ReadInline(string relPath)
+    {
+        string abs = Path.Combine(_docsRoot, relPath);
+        if (!File.Exists(abs))
+            throw new InvalidOperationException(
+                $"the figure file '{relPath}' has not been generated. Figures are produced before pages, " +
+                "so this means the catalog row exists but its capture did not run.");
+
+        string svg = File.ReadAllText(abs);
+
+        foreach (Match m in Regex.Matches(svg, @"font-family=""(?<f>[^""]+)"""))
+            foreach (var family in m.Groups["f"].Value.Split(',', StringSplitOptions.TrimEntries))
+                FontFamiliesUsed.Add(family);
+
+        // Drop the banner comment and the XML declaration: inline SVG is a fragment, not a document.
+        svg = Regex.Replace(svg, @"<\?xml[^>]*\?>", "");
+        svg = Regex.Replace(svg, @"<!--.*?-->", "", RegexOptions.Singleline);
+        return svg.Trim();
+    }
+
+    private string Relative(string page)
+    {
+        var rel = Path.GetRelativePath(_pageDir, Path.Combine(_docsRoot, page));
+        return rel.Replace(Path.DirectorySeparatorChar, '/');
+    }
+}
