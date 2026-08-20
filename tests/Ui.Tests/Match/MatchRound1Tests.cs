@@ -37,6 +37,9 @@ public sealed class MatchRound1Tests
         var vm = new SchematicViewModel(model);
         var designer = new MatchDesignerViewModel();
         designer.SetTarget(vm, comp);
+        // The response feasibility and the solutions are computed on a worker now; a test asserting
+        // on either is asserting on nothing until that pass has landed.
+        designer.WaitForAnalysis();
         return (vm, comp, designer);
     }
 
@@ -211,6 +214,11 @@ public sealed class MatchRound1Tests
     /// terminals on a ground rail. Both the rail and the pins are gone: a <c>TermG</c> IS the
     /// reference, so nothing is left for a reference pin to mark, and each <c>TermG</c>'s own "+"
     /// terminal lands exactly on the end of the spine.
+    ///
+    /// <para><b>Round 4 turned them upright</b> (owner, 2026-08-20: "the TermG components need to be
+    /// rotated 90 deg with the ground at the bottom"). The assertion below is amended rather than
+    /// duplicated in a round-4 file: it is the same fact — where each end's termination is — and two
+    /// tests disagreeing about it is how one of them goes stale unnoticed.</para>
     /// </remarks>
     [Fact]
     public void TheProjection_PutsAGroundedTerminationOnEachEnd_AndNoPins()
@@ -228,12 +236,14 @@ public sealed class MatchRound1Tests
         Assert.Equal("Termination 1", left.InstanceName);
         Assert.Equal("Termination 2", right.InstanceName);
 
-        // TermG's own pin is local (0, −200): R90 maps it to (+200, 0) and R270 to (−200, 0), so each
-        // glyph sits a lead-length OUTWARD of the spine end it terminates and faces the ladder.
-        Assert.Equal(SymbolRotation.R90,  left.Rotation);
-        Assert.Equal(SymbolRotation.R270, right.Rotation);
-        Assert.Equal(d.Ladder.PortLeftX,  left.X + 200, 6);
-        Assert.Equal(d.Ladder.PortRightX, right.X - 200, 6);
+        // TermG's own pin is local (0, −200) and at R0 that IS the world offset, so each glyph hangs
+        // a lead-length BELOW the spine end it terminates, ground bars pointing down — and its pin
+        // lands on the spine with no wire between them, exactly as a shunt arm does.
+        Assert.Equal(SymbolRotation.R0, left.Rotation);
+        Assert.Equal(SymbolRotation.R0, right.Rotation);
+        Assert.Equal(d.Ladder.PortLeftX,  left.X,  6);
+        Assert.Equal(d.Ladder.PortRightX, right.X, 6);
+        Assert.All(terms, t => Assert.Equal(MatchLadderLayout.SpineY + 200, t.Y, 6));
 
         // Both are labelled the schematic's own three rows, the third carrying the port reference.
         Assert.All(terms, t => Assert.Equal(3, t.Labels.Count));
@@ -512,6 +522,7 @@ public sealed class MatchRound1Tests
         foreach (int n in d.OrderOptions.ToList())
         {
             d.Order = n;
+            d.WaitForAnalysis();
             Assert.True(d.Solutions.Count > 0, $"order {n} is offered but returns no solutions");
             Assert.Equal("", d.SolutionsRefusal);
         }

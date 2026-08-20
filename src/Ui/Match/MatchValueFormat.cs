@@ -73,10 +73,42 @@ public static class MatchValueFormat
 
         double scaled = value / Scale(unit);
         int digits = Math.Clamp(significantDigits, 1, 12);
-        string text = double.IsFinite(scaled)
-            ? scaled.ToString("G" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)
-            : NonFinite(scaled);
-        return (text, unit);
+        return (double.IsFinite(scaled) ? Significant(scaled, digits) : NonFinite(scaled), unit);
+    }
+
+    /// <summary>
+    /// <paramref name="value"/> to <paramref name="digits"/> significant figures, in PLAIN notation.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not <c>"G{digits}"</c>, and the difference showed up the moment the display units stopped
+    /// being Auto</b> (owner, 2026-08-20, asking for pH and pF as the defaults). .NET's <c>G</c>
+    /// switches to exponential as soon as the decimal exponent reaches the precision, so a perfectly
+    /// ordinary 1.23 nH inductor displayed in pH at three significant digits came out
+    /// <c>"1.23E+03 pH"</c>. Auto had hidden that by always choosing a unit that puts the mantissa in
+    /// [1, 1000) — which is exactly the freedom a fixed unit gives up.
+    ///
+    /// <para>So the digit count is applied by ROUNDING and the rendering is fixed-point: the decimal
+    /// places needed are <c>digits − 1 − ⌊log₁₀|v|⌋</c>, floored at zero, and the trailing zeros a
+    /// fixed-point format pads with are trimmed so "2.00000000" reads "2". Very large and very small
+    /// magnitudes — where plain notation would be a screenful of zeros — still fall back to <c>G</c>;
+    /// no unit ladder puts a real component value there.</para>
+    /// </remarks>
+    public static string Significant(double value, int digits)
+    {
+        if (!double.IsFinite(value)) return NonFinite(value);
+        if (value == 0.0) return "0";
+
+        int exponent = (int)Math.Floor(Math.Log10(Math.Abs(value)));
+        if (exponent is < -6 or > 14)
+            return value.ToString("G" + digits.ToString(CultureInfo.InvariantCulture),
+                                  CultureInfo.InvariantCulture);
+
+        int decimals = Math.Clamp(digits - 1 - exponent, 0, 15);
+        string text = value.ToString("F" + decimals.ToString(CultureInfo.InvariantCulture),
+                                     CultureInfo.InvariantCulture);
+        if (decimals > 0 && text.Contains('.', StringComparison.Ordinal))
+            text = text.TrimEnd('0').TrimEnd('.');
+        return text.Length == 0 || text == "-" ? "0" : text;
     }
 
     /// <summary>The infinity glyph — never the word.</summary>
@@ -100,6 +132,22 @@ public static class MatchValueFormat
     {
         var (text, unit) = Format(value, quantity, displayUnit, significantDigits);
         return $"{text} {unit}";
+    }
+
+    /// <summary>
+    /// Splits <see cref="FormatWithUnit"/>'s one-string form back into its two halves.
+    /// </summary>
+    /// <remarks>
+    /// The exact inverse of that method, which joins with a single space and never puts one inside
+    /// either half — so the LAST space is the join, unambiguously. A string with no space at all is
+    /// returned whole as the number with an empty unit, which is what a caller wants for a value that
+    /// was formatted without one.
+    /// </remarks>
+    public static (string Text, string Unit) Split(string? valueWithUnit)
+    {
+        string s = valueWithUnit ?? "";
+        int i = s.LastIndexOf(' ');
+        return i < 0 ? (s, "") : (s[..i], s[(i + 1)..]);
     }
 
     /// <summary>

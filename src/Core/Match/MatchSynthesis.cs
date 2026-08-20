@@ -78,11 +78,96 @@ public static class MatchSynthesis
     /// <summary>Below this ratio of Q_far to Q_actual there is nothing to add at the far end.</summary>
     public const double ExcessRatioThreshold = 1.02;
 
+    /// <summary>
+    /// Everything <see cref="Synthesize"/> reads off a design — and therefore the whole of what makes
+    /// two calls the same call.
+    /// </summary>
+    /// <remarks>
+    /// The transforms are deliberately absent: they are applied to the basis by
+    /// <see cref="MatchRebuild"/> AFTERWARDS and the synthesis never sees them, which is precisely
+    /// why the cache below earns its keep on a slider drag.
+    /// </remarks>
+    private readonly record struct SynthesisKey(
+        double F1, double F2, int Order, ResponseShape Response, double RippleDb, double QAdjust,
+        AnalysisEndChoice AnalysisEnd, Termination Term1, Termination Term2);
+
+    /// <summary>
+    /// A bounded memo of recent syntheses.
+    /// </summary>
+    /// <remarks>
+    /// <b>One design is synthesised several times over per Designer refresh, and identically.</b>
+    /// <see cref="MatchRebuild.Rebuild"/> does one, <c>MatchFlattenService.Availability</c> rebuilds
+    /// to ask whether there is a ladder to write, <see cref="MatchSolutionSearch.Search"/> needs the
+    /// same basis, and the Designer probes each of the four response families — of which the selected
+    /// one is, again, the same call. On a Chebyshev design that is four repetitions of ~2 us and
+    /// nobody would notice; on a Butterworth or Bessel design it is four repetitions of a 50 ms
+    /// prototype search, and it is the whole of what a slider drag costs, because a transform's N is
+    /// not an input to the synthesis at all — every step of the gesture re-derives a basis that
+    /// cannot have changed. Measured on the design doc's order-4 interstage problem with Butterworth
+    /// selected: a non-specification refresh (the drag path) 110 ms -> 1.5 ms.
+    ///
+    /// <para><b>What comes out is a copy, so the cache is unobservable.</b> The result carries a
+    /// mutable <see cref="MatchNetwork"/> and a <c>double[]</c>; handing the same instance to two
+    /// callers would make one caller's edit appear in the other's result, which is a class of bug a
+    /// cache must never introduce to buy speed. Every in-repo caller happens to treat both as
+    /// read-only today, and that is not something this file gets to depend on.</para>
+    /// </remarks>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<SynthesisKey, MatchSynthesisResult>
+        Memo = new();
+
+    /// <summary>
+    /// How many syntheses <see cref="Memo"/> holds before it is dropped and refilled.
+    /// </summary>
+    /// <remarks>
+    /// Generous on purpose. One Designer refresh puts about twenty entries in — four response probes,
+    /// the rebuild, <c>FindQAdjust</c>'s fifteen bisection steps and the orders the background pass
+    /// warms — so a capacity in the tens would drop the whole table every second or third edit, and
+    /// the entry dropped would be the one the next keystroke wants. An entry is a g-vector and a
+    /// twelve-element ladder; a full table is well under a megabyte.
+    /// </remarks>
+    private const int MemoCapacity = 256;
+
     /// <summary>Synthesises the basis ladder for a design.</summary>
     public static MatchSynthesisResult Synthesize(MatchDesign design)
     {
         ArgumentNullException.ThrowIfNull(design);
 
+        var key = new SynthesisKey(
+            design.F1, design.F2, design.Order, design.Response, design.RippleDb, design.QAdjust,
+            design.AnalysisEnd, design.Term1, design.Term2);
+        if (Memo.TryGetValue(key, out var cached)) return Copy(cached);
+
+        var fresh = SynthesizeUncached(design);
+        // A plain clear rather than an LRU: the access pattern is a burst of calls about ONE design,
+        // so the entries that would be evicted are the ones nothing is going to ask for again.
+        if (Memo.Count >= MemoCapacity) Memo.Clear();
+        Memo[key] = fresh;
+        return Copy(fresh);
+    }
+
+    private static MatchSynthesisResult Copy(MatchSynthesisResult r) => new()
+    {
+        Refusal = r.Refusal,
+        G = (double[])r.G.Clone(),
+        Omega0 = r.Omega0,
+        W = r.W,
+        AnalysisIsTerm1 = r.AnalysisIsTerm1,
+        QAnalysis = r.QAnalysis,
+        QAnalysisActual = r.QAnalysisActual,
+        QFarSynthesised = r.QFarSynthesised,
+        QFarActual = r.QFarActual,
+        RAnalysis = r.RAnalysis,
+        RFarSynthesised = r.RFarSynthesised,
+        RFarTarget = r.RFarTarget,
+        Network = r.Network?.Clone(),
+        UsedRipplePrototype = r.UsedRipplePrototype,
+        NeedsExcessElement = r.NeedsExcessElement,
+        BasisFingerprint = r.BasisFingerprint,
+        Notes = r.Notes,
+    };
+
+    private static MatchSynthesisResult SynthesizeUncached(MatchDesign design)
+    {
         if (!(design.F1 > 0) || !(design.F2 > design.F1))
             return MatchSynthesisResult.Refuse(MatchRefusal.Create(
                 MatchRefusalKind.InvalidTermination,

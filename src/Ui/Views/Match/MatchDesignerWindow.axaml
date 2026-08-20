@@ -3,6 +3,8 @@
         xmlns:mvm="using:CircuitRF.Ui.Matching"
         xmlns:mv="using:CircuitRF.Ui.Views.Match"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ddv="using:CircuitRF.Ui.DataDisplay.ViewModels"
+        xmlns:ddvw="using:CircuitRF.Ui.Views.DataDisplay"
         xmlns:ctl="using:CircuitRF.Ui.Controls"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Match.MatchDesignerWindow"
@@ -416,17 +418,16 @@
                          views of one network, and a selector that showed one at a time made the user
                          choose between the picture and the numbers. -->
                     <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Classes="panelhdr" Text="Network"/>
-                            <TextBlock Grid.Column="1" Classes="detailLabel"
-                                       Text="scroll to zoom · drag to pan"/>
-                        </Grid>
+                        <!-- The pane header carries NOTHING but its own name (owner, 2026-08-20:
+                             "remove the entire 'scroll to zoom...' text that is rendered above the
+                             Match Designer schematic view"). -->
+                        <TextBlock Classes="panelhdr" Text="Network"/>
 
                         <!-- A REAL circuitRF schematic, drawn by the editor's own renderer. See
                              MatchSchematicCanvas — nothing here is editable. -->
                         <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
                                 BorderBrush="{DynamicResource CrfTileBorderBrush}">
-                            <mv:MatchSchematicCanvas Layout="{Binding Ladder}"/>
+                            <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
                         </Border>
 
                         <TextBlock Grid.Row="2" Classes="note" Text="{Binding LadderLegend}"
@@ -506,7 +507,11 @@
                             <ItemsControl ItemsSource="{Binding Transforms}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="mvm:MatchTransformRowViewModel">
-                                        <Grid ColumnDefinitions="34,44,74,*,30,Auto" Margin="0,1">
+                                        <!-- Five columns, not six: the trailing "on (C2, C3)"
+                                             indicator is gone (owner, 2026-08-20). The pair a
+                                             transform acts on is already said by the brace drawn
+                                             under those very elements in the schematic above. -->
+                                        <Grid ColumnDefinitions="34,44,74,*,30" Margin="0,1">
                                             <TextBlock Classes="lbl" Text="{Binding Label}" FontWeight="SemiBold"/>
                                             <ddc:IconSelectButton Grid.Column="1" Width="34" Height="19"
                                                                   IsEnabled="{Binding !IsDropped}"
@@ -539,8 +544,6 @@
                                                           ToolTip.Tip="A locked transform is never written by the linkage">
                                                 <mi:MaterialIcon Kind="Lock" Width="13" Height="13"/>
                                             </ToggleButton>
-                                            <TextBlock Grid.Column="5" Classes="detailLabel" Text="{Binding ActsOn}"
-                                                       Margin="6,0,0,0"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -551,7 +554,12 @@
             </Grid>
 
             <!-- Response -->
-            <Border Grid.Column="2" Classes="pane">
+            <!-- The pane sits on the Data Display's own canvas colour (owner, 2026-08-20: "background
+                 color of the Response group UI needs to be the same as the background color of the
+                 Data display"). CrfDataDisplayCanvasBrush is the same application-scope key
+                 PlotCanvasView paints with — see Styles/CircuitRfResources.axaml. -->
+            <Border Grid.Column="2" Classes="pane"
+                    Background="{DynamicResource CrfDataDisplayCanvasBrush}">
               <!-- The two plots are laid out at a FIXED aspect ratio, so their height follows the
                    pane's width rather than the pane's height — which means a short window can run out
                    of room. Scroll rather than squash: a golden-ratio plot that has been squashed is
@@ -563,10 +571,25 @@
                          LAYS the plot out at 1.618:1 — a Viewbox would scale the axis text and the
                          stroke weights along with the frame, which is a different thing entirely. -->
                     <ctl:AspectRatioPanel Grid.Row="1" Margin="0,2">
-                        <ddc:PlotControl Plot="{Binding MagnitudePlot}"/>
+                        <!-- CanDeletePlot / CanEditPlotProperties are OFF here (owner, 2026-08-20:
+                             "the plot's context menu shows Delete Plot as enabled — it should be
+                             disabled in a Match Designer window. Same with Plot Properties…").
+                             Neither is meaningful on a fixed pair of plots the Designer owns: there
+                             is nothing to delete them from, and their traces are rebuilt from the
+                             design on every edit, so an inspector edit would not survive the next
+                             keystroke. PlotTheme follows the window's own light/dark variant —
+                             without it the axes, ticks and marker glyphs render out of
+                             RenderTheme.Light whatever the application theme is. -->
+                        <ddc:PlotControl Name="MagnitudePlotControl"
+                                         Plot="{Binding MagnitudePlot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
                     </ctl:AspectRatioPanel>
                     <ctl:AspectRatioPanel Grid.Row="2" Margin="0,2">
-                        <ddc:PlotControl Plot="{Binding PhasePlot}"/>
+                        <ddc:PlotControl Name="PhasePlotControl"
+                                         Plot="{Binding PhasePlot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
                     </ctl:AspectRatioPanel>
 
                     <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*" Margin="0,4">
@@ -595,6 +618,38 @@
                             </ItemsControl>
                         </StackPanel>
                     </Border>
+                    <!--
+                        Marker info-box overlay — the Data Display's own, item for item: an
+                        ItemsControl over a Canvas, both with Background="{x:Null}" so they are NOT
+                        hit-testable and every click falls through to the plots beneath, while each
+                        MarkerInfoBoxView (which sets its own Background="Transparent") is.
+
+                        It spans the whole pane rather than one plot's cell because an info box is
+                        DRAGGABLE and belongs to the display, not to the plot it was made from —
+                        MarkerInfoBoxViewModel.ViewLeft/ViewTop are in this panel's coordinates, which
+                        is why MatchDesignerWindow.SyncPlotContainers keeps each container's
+                        Left/Top/Width/Height equal to its PlotControl's rectangle in the same space.
+                    -->
+                    <ItemsControl Name="MarkerInfoBoxLayer" Grid.Row="0" Grid.RowSpan="5"
+                                  ItemsSource="{Binding PlotHost.MarkerInfoBoxes}"
+                                  Background="{x:Null}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas Background="{x:Null}"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerTheme>
+                            <ControlTheme TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                                <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                            </ControlTheme>
+                        </ItemsControl.ItemContainerTheme>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="ddv:MarkerInfoBoxViewModel">
+                                <ddvw:MarkerInfoBoxView/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </Grid>
               </ScrollViewer>
             </Border>
@@ -639,7 +694,15 @@
 
         <!-- ── Footer ────────────────────────────────────────────────────── -->
         <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="10,6">
-            <TextBlock Text="{Binding SolutionsSummary}" FontSize="11" VerticalAlignment="Center"/>
+            <!-- The solutions summary, replaced while the background analysis runs: the two occupy
+                 the same slot because the summary IS what that analysis produces, and showing a
+                 stale count beside a spinner would be two answers to one question. -->
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="{Binding SolutionsSummary}" FontSize="11" VerticalAlignment="Center"
+                           IsVisible="{Binding !IsAnalysing}"/>
+                <TextBlock Text="Searching solutions and response families…" FontSize="11" Opacity="0.7"
+                           VerticalAlignment="Center" IsVisible="{Binding IsAnalysing}"/>
+            </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                 <Button Content="Flatten to Cell…" FontSize="11" Padding="8,3"
                         IsEnabled="{Binding CanFlatten}"

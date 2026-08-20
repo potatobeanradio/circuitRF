@@ -361,3 +361,85 @@ the designed behaviour for an N parked on a bound, not a repair. `MatchRound2Tes
 published formula at exactly 1 as its own oracle rather than calling `Apply`, because `Apply` now
 clamps and can no longer reach the pole: without that, the exclusion would read as decoration.
 
+
+## Match speed — the lowpass-prototype search was ~6x slower than it needed to be, and one of those factors was a wrong answer (2026-08-20)
+
+Owner: *"Match Designer appears slow to user when updated parameters… slowest when I change network
+order or filter response type. (I believe the step that involves solving the low pass prototype.)"*
+Right on both counts. Measured on the design doc's order-4 interstage problem, one specification edit
+cost **1,161 ms**, of which **1,143 ms** was `MatchPrototypes.Search`.
+
+### `MatchPoly.Roots` — the Cauchy scaling and the absolute stopping test were one fault, not two
+
+Durand-Kerner needs the roots near the unit circle. The scaling was Cauchy's bound,
+`1 + max|a_i/a_0|`, which bounds the **largest** root — so on a polynomial whose coefficients are
+skewed it divides the whole set far **below** the unit circle instead of onto it. A Bessel
+denominator at `alpha = 5` lands its roots near 1e-3, and the iteration then has to crawl inward from
+unit-modulus seeds. The stopping test was an absolute step of 1e-14, which is a different demand at
+every root modulus: it passes early on roots that are small, and is unreachable on roots that are
+large.
+
+Measured iteration counts at the same degree tell the whole story:
+
+| family, order | degree | iterations, before | after |
+|---|---|---|---|
+| Butterworth n=4 | 8 | 9–10 | 9 |
+| Bessel n=4 | 8 | **112–114** | 10–16 |
+| Butterworth n=6 | 12 | 9–10 | 12 |
+| Bessel n=6 | 12 | **196–200 (capped)** | 9–14 |
+
+**The n=6 Bessel case was not merely slow — it hit the 200-iteration cap with the roots still
+relatively wrong by a factor of 2.5**, and only the Newton polish afterwards made the answer usable at
+all. `|a_n/a_0|^(1/n)` is the exact geometric mean of the root moduli (the product of the roots is
+`a_n/a_0`), so it puts the set *on* the unit circle; the test is now relative. Residuals were compared
+across 36 family/order/shape-parameter combinations and are equal or better everywhere. **16–24x on
+the Bessel families.**
+
+### The bracket refinement was 70 % of every `Gvalues` call, at 40 evaluations a bracket
+
+`Search` runs 121 shape values, each scanning 17 points of the second parameter for sign changes, and
+each bracket found was refined by **40 fixed bisection steps**. That is ~4,800 of ~6,900 `Gvalues`
+calls. The Illinois variant of regula falsi keeps bisection's guarantee (the root stays bracketed, so
+it cannot run away on a badly-shaped family the way a bare secant can) and reaches the same interval
+in single figures. `SolveOther` also now returns the g-vector **with** the root, which removes the
+caller's re-evaluation at the answer — the one `Gvalues` result the old loop computed and threw away.
+
+### The denominator does not depend on the second parameter, in either family
+
+Chebyshev and Butterworth put `K` only in the numerator (`1 + e^2 F^2` against `K + e^2 F^2`); Bessel
+puts `C` only in the numerator. But the search holds the shape parameter fixed and sweeps the other
+one, so the same denominator was being spectrally factored dozens of times per shape value. Since the
+two `Hurwitz` calls are the whole cost of `Gvalues`, hoisting one halves it. A one-entry memo is
+enough — the access pattern is a run of calls at one shape value — and it is created per `Search`
+call and never shared, which is what keeps it safe on a background thread.
+
+### Round 1 of the refinement computes a number that is only ever printed in a refusal
+
+`Search` refines around **both** optima: the best score, and the family's maximum `Q_far`.
+`MaxQFar` is read in exactly one place — `MatchSynthesis`'s `ResponseInfeasible` message — and that
+branch is only reached when **no member was feasible**. So when one was, round 1 spent 44 of the
+method's 121 shape values on a sentence that was not going to be written. Skipping it changes no
+g-vector and no refusal.
+
+**Together: order-4 Butterworth 102 -> 19 ms, order-4 Bessel 199 -> 30 ms, order-6 Butterworth
+295 -> 51 ms, order-6 Bessel 342 -> 50 ms.** `Core.Tests`' own Match suite went from 6 s to 2 s.
+
+### `Synthesize` was called four to twenty times per refresh, on identical inputs
+
+`MatchRebuild.Rebuild` does one, `MatchFlattenService.Availability` rebuilds to ask whether there is a
+ladder to write, `MatchSolutionSearch.Search` needs the same basis, the Designer probes each of the
+four response families — of which the selected one is, again, the same call — and
+`MatchSolutionSearch.FindQAdjust` bisects fifteen times with a synthesis inside every step. On a
+Chebyshev design that is repetitions of ~2 us. On a Butterworth one it was repetitions of 50 ms.
+
+The memo keys on the complete set of fields `Synthesize` actually reads: F1, F2, Order, Response,
+RippleDb, QAdjust, AnalysisEnd and the two `Termination` records. **The transforms are deliberately
+absent — they are applied to the basis afterwards and the synthesis never sees them, which is exactly
+why this pays on a slider drag**: a non-specification refresh with Butterworth selected went from
+**110 ms to 1.5 ms**, because every step of the gesture had been re-deriving a basis that cannot have
+changed.
+
+**What comes out is a copy.** The result carries a mutable `MatchNetwork` and a `double[]`; handing
+one instance to two callers would let one caller's edit appear in the other's result. Every in-repo
+caller happens to treat both as read-only today, and that is not something the cache gets to depend
+on.

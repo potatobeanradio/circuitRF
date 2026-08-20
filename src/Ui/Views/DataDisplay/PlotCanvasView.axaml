@@ -24,32 +24,11 @@
     -->
 
     <!--
-        Canvas surface color.  This is the ONLY place the Data Display canvas
-        background is defined — it is deliberately NOT the shared dock-region
-        SystemChromeLowColor (~#F2F2F2 light) that every other panel uses.
-
-        Light mode wants a near-white off-white: the canvas sits directly behind
-        pure-white plot backgrounds (RenderTheme.Light.BackgroundColor), so
-        #F2F2F2 read as grey by contrast.  #FAFAFA keeps the plot/canvas edge
-        legible while looking off-white rather than grey.
-
-        Dark mode is pinned to the current SystemChromeLowColor dark value so
-        this change is light-mode-only; the two variants are stated as literal
-        colors (not a DynamicResource into the theme) so the canvas can never
-        drift back to the shared dock grey.
+        Canvas surface color: CrfDataDisplayCanvasBrush, defined once at application scope in
+        Styles/CircuitRfResources.axaml (see its own note for why it is not the shared dock grey).
+        It MOVED there rather than being copied when the Match Designer's Response pane was asked to
+        sit on the same ground — two literal copies of a colour is how two surfaces stop matching.
     -->
-    <UserControl.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="CrfDataDisplayCanvasBrush" Color="#FCFCFC"/>
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="CrfDataDisplayCanvasBrush" Color="#171717"/>
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-        </ResourceDictionary>
-    </UserControl.Resources>
 
     <Grid x:Name="ContentGrid">
 

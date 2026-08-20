@@ -56,6 +56,9 @@ public class MatchDesignerTests(ITestOutputHelper output)
         var vm = new SchematicViewModel(model);
         var designer = new MatchDesignerViewModel();
         designer.SetTarget(vm, comp);
+        // The response feasibility and the solutions are computed on a worker now; a test asserting
+        // on either is asserting on nothing until that pass has landed.
+        designer.WaitForAnalysis();
         return (vm, comp, designer);
     }
 
@@ -102,6 +105,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
         designer.Transforms[1].Locked = true;
 
         // A solution's fingerprint has to be in AppliedSolutions for the badge to survive.
+        designer.WaitForAnalysis();
         var solution = designer.Solutions.FirstOrDefault();
         Assert.NotNull(solution);
         solution!.Apply();
@@ -112,6 +116,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
 
         var reopened = new MatchDesignerViewModel();
         reopened.SetTarget(vm, comp);
+        reopened.WaitForAnalysis();
 
         Assert.Equal(before.Transforms.Count, reopened.Design.Transforms.Count);
         for (int i = 0; i < before.Transforms.Count; i++)
@@ -274,7 +279,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
         designer.SetTransformN(0, n0 * 0.9);
 
         foreach (var t in designer.Transforms)
-            output.WriteLine($"  {t.Label} {t.ActsOn} N={t.N:G8} locked={t.Locked} " +
+            output.WriteLine($"  {t.Label} on ({t.Record.ElementA}, {t.Record.ElementB}) N={t.N:G8} locked={t.Locked} " +
                              $"range=[{t.NMin:G6},{t.NMax:G6}]");
         output.WriteLine($"after:  achieved {designer.Rebuild!.Achieved:G8} " +
                          $"required {designer.Rebuild.Required:G8}");

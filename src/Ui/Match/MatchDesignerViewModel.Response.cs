@@ -10,6 +10,7 @@ using CircuitRF.Core.Matching;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using NumFlat;
 using RfCore;
@@ -33,11 +34,70 @@ namespace CircuitRF.Ui.Matching;
 /// </remarks>
 public sealed partial class MatchDesignerViewModel
 {
+    /// <summary>
+    /// The Data Display machinery the two response plots are hosted ON.
+    /// </summary>
+    /// <remarks>
+    /// <b>The plots were bare <c>PlotControl</c>s, and four of the owner's 2026-08-20 reports were the
+    /// same missing piece</b>: no marker info box appeared, the plot's own <c>Copy</c> did nothing,
+    /// the axis and marker colours came out of <c>RenderTheme.Light</c> whatever the application
+    /// theme was, and the background did not match the Data Display's. Every one of those lives on
+    /// <see cref="PlotContainerViewModel"/> / <see cref="DataDisplayViewModel"/> — a
+    /// <c>PlotControl</c> asks its host for the marker index, the info-box VM, the selected markers
+    /// and the container to export, and a host that is null answers "nothing" to all four, silently.
+    ///
+    /// <para>So the Designer now HAS a host: one <see cref="DataDisplayViewModel"/> with exactly two
+    /// containers in it, laid out by this window rather than by a canvas. That is the whole change —
+    /// the plots, the markers, the info boxes, the inspector and the clipboard are the Data
+    /// Display's, and the Designer only decides where the two boxes sit and which menu items it does
+    /// not want (see <c>MatchDesignerWindow</c>).</para>
+    ///
+    /// <para><b>It is not a Data Display document.</b> Nothing is persisted, no datasource library is
+    /// loaded into it, plots cannot be added or deleted, and its undo stack is its own — the
+    /// Designer's edits still go on the owning schematic's stack.</para>
+    /// </remarks>
+    public DataDisplayViewModel PlotHost { get; } = new(new DataSourceLibraryViewModel(),
+                                                        addEmptyPlot: false, selectEmptyPlot: false);
+
+    /// <summary>The container holding <see cref="MagnitudePlot"/>.</summary>
+    public PlotContainerViewModel MagnitudeContainer { get; private set; } = null!;
+
+    /// <summary>The container holding <see cref="PhasePlot"/>.</summary>
+    public PlotContainerViewModel PhaseContainer { get; private set; } = null!;
+
     /// <summary>|S11| and |S21| against frequency.</summary>
-    [ObservableProperty] private Plot _magnitudePlot = new(PlotType.Rect, FreqUnit.GHz);
+    public Plot MagnitudePlot => MagnitudeContainer.PlotVM.Plot;
 
     /// <summary>S21 phase and group delay.</summary>
-    [ObservableProperty] private Plot _phasePlot = new(PlotType.Rect, FreqUnit.GHz);
+    public Plot PhasePlot => PhaseContainer.PlotVM.Plot;
+
+    /// <summary>
+    /// Creates the two containers. Called once from the view-model's own constructor path, before
+    /// anything reads <see cref="MagnitudePlot"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Axes panning starts LOCKED</b> (owner, 2026-08-20: "have the plot's Lock Axes Panning set to
+    /// true when user first opens Match Designer"). These two plots are read-outs of a design that is
+    /// being edited underneath them: every committed edit re-runs the response and autoscales, so a
+    /// pan is undone by the next keystroke anyway — and a user who had dragged the window off the
+    /// trace would see an empty plot and read it as a broken design. The menu item still toggles it.
+    /// </remarks>
+    private void BuildPlotHost()
+    {
+        MagnitudeContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz,
+                                              left: 0, top: 0, width: PlotWidth, height: PlotHeight);
+        PhaseContainer     = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz,
+                                              left: 0, top: PlotHeight, width: PlotWidth, height: PlotHeight);
+        MagnitudePlot.Axes.LockedPanning = true;
+        PhasePlot.Axes.LockedPanning     = true;
+        PlotHost.SelectOnly((PlotContainerViewModel?)null);
+    }
+
+    /// <summary>Seed logical width of one response plot — the view re-sizes both to the pane.</summary>
+    public const double PlotWidth = 340.0;
+
+    /// <summary>Seed logical height, at the golden ratio the Data Display's own new plots open at.</summary>
+    public const double PlotHeight = PlotWidth / 1.618;
 
     /// <summary>The SNP the plots are built from — the design response, as the engine computed it.</summary>
     public SNP? ResponseSnp { get; private set; }
@@ -99,6 +159,8 @@ public sealed partial class MatchDesignerViewModel
             MagnitudePlot.Traces.Clear();
             PhasePlot.Traces.Clear();
             ResponseError = _rebuild?.Refusal is { } r ? r.Message : "";
+            MagnitudeContainer.OnPlotChanged(this, EventArgs.Empty);
+            PhaseContainer.OnPlotChanged(this, EventArgs.Empty);
             OnPropertyChanged(nameof(MagnitudePlot));
             OnPropertyChanged(nameof(PhasePlot));
             return;
@@ -222,6 +284,8 @@ public sealed partial class MatchDesignerViewModel
 
         if (ResponseSnp is not { } snp)
         {
+            MagnitudeContainer.OnPlotChanged(this, EventArgs.Empty);
+            PhaseContainer.OnPlotChanged(this, EventArgs.Empty);
             OnPropertyChanged(nameof(MagnitudePlot));
             OnPropertyChanged(nameof(PhasePlot));
             return;
@@ -229,9 +293,15 @@ public sealed partial class MatchDesignerViewModel
 
         var perPort = PortReferences();
 
-        var s11 = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db) { SourceZ0PerPort = perPort };
+        var s11 = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db, false, PrimaryStyle())
+            { SourceZ0PerPort = perPort };
         s11.BuildPath(PlotType.Rect, MagnitudePlot.FreqUnits);
-        var s21 = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Db) { SourceZ0PerPort = perPort };
+
+        // S21 reads the RIGHT axis (owner, 2026-08-20). |S11| runs to −40 dB and below while |S21|
+        // sits within a decibel of 0; sharing one axis spends the whole scale on the return loss and
+        // renders the insertion loss as a flat line on the ceiling. Two axes give each its own range.
+        var s21 = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Db, true, SecondaryStyle())
+            { SourceZ0PerPort = perPort };
         s21.BuildPath(PlotType.Rect, MagnitudePlot.FreqUnits);
         MagnitudePlot.Traces.Add(s11);
         MagnitudePlot.Traces.Add(s21);
@@ -239,7 +309,8 @@ public sealed partial class MatchDesignerViewModel
         MagnitudePlot.CustomTitle = "Design response";
         MagnitudePlot.Autoscale(force: true);
 
-        var phase = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Phase) { SourceZ0PerPort = perPort };
+        var phase = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Phase, false, PrimaryStyle())
+            { SourceZ0PerPort = perPort };
         phase.BuildPath(PlotType.Rect, PhasePlot.FreqUnits);
         PhasePlot.Traces.Add(phase);
 
@@ -249,8 +320,44 @@ public sealed partial class MatchDesignerViewModel
         PhasePlot.CustomTitle = "S21 phase and group delay";
         PhasePlot.Autoscale(force: true);
 
+        // The traces the markers were on have just been REPLACED — an edit rebuilds both plots from
+        // scratch — so the host has to be told, or its info boxes go on pointing at Trace objects
+        // that are no longer in any plot. OnPlotChanged is the same notification PlotContainerView
+        // raises on the canvas, and it drops exactly the boxes whose markers are gone.
+        MagnitudeContainer.OnPlotChanged(this, EventArgs.Empty);
+        PhaseContainer.OnPlotChanged(this, EventArgs.Empty);
+
         OnPropertyChanged(nameof(MagnitudePlot));
         OnPropertyChanged(nameof(PhasePlot));
+    }
+
+    /// <summary>
+    /// The style a FIRST trace gets, and <see cref="SecondaryStyle"/> the style a second one gets.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20: "use the same plot colors as the data display — same shade of red and
+    /// same shade of blue for all plot traces."</b> They were not: a <c>Trace</c> built with no
+    /// properties takes <c>LineColorOrder[0]</c>, so BOTH traces on each plot came out the same red.
+    /// The Data Display's own second trace is <c>new Trace(src, incrementColorBy: 1)</c>, which is
+    /// <c>LineColorOrder[1]</c> — so these two read the SHARED order table by index rather than
+    /// naming a colour, and a change to the application's palette moves this window with it.
+    /// </remarks>
+    private static TraceProperties PrimaryStyle() => StyleAt(0);
+
+    /// <inheritdoc cref="PrimaryStyle"/>
+    private static TraceProperties SecondaryStyle() => StyleAt(1);
+
+    private static TraceProperties StyleAt(int order)
+    {
+        int index = TraceProperties.LineColorOrder[order];
+        var props = new TraceProperties();
+        props.LineColorIndex   = index;
+        props.MarkerColorIndex = index;
+        props.FillColorIndex   = index;
+        // Custom is set by every setter above; clearing it keeps these traces reading as
+        // palette-default rather than user-overridden, which is what they are.
+        props.Custom = false;
+        return props;
     }
 
     /// <summary>The two ports' TRUE references — R1 and R2, which genuinely differ.</summary>
@@ -287,7 +394,8 @@ public sealed partial class MatchDesignerViewModel
         var tauNs = RFNetwork.GroupDelay(snp);
         for (int i = 0; i < tauNs.Length; i++) tauNs[i] *= 1e9;
 
-        var trace = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Real, secondaryAxis: true)
+        var trace = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Real,
+                              secondaryAxis: true, properties: SecondaryStyle())
         {
             CubeName = "GroupDelay",
         };

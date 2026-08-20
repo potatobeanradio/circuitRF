@@ -60,8 +60,10 @@ permits — which is the best any network can do.</p>
 Two consequences worth being clear about:
 
 - **The absorbed elements are not inside the component.** The external network supplies them — that is
-  what makes the match real. The Designer draws them beside the termination that supplies them, dimmed,
-  so it is obvious which two elements you do not have to buy.
+  what makes the match real. The Designer always draws them **immediately beside the termination that
+  supplies them** — that position, and the one-line legend under the schematic, are how you tell which
+  elements you do not have to buy. They are drawn at full brightness like everything else: the part
+  you are matching against is the last thing that should be hard to read.
 - **Q is the entire content of a termination**, as far as the synthesis is concerned. At band centre
   ω₀ = √(ω₁ω₂) with fractional bandwidth *w*: a parallel R‖C has `Q = ω₀RC`, a series R+C has
   `Q = 1/(ω₀RC)`. R re-appears later only as an impedance scale and as the Norton-transform target.
@@ -89,14 +91,18 @@ arriving with a solution already applied so there is something to look at rather
 Four regions, left to right and top to bottom:
 
 - **Specification** — the two terminations, the band, the order, the response shape and the options.
-- **Network** — the synthesised ladder, as a **schematic** or as a **value grid**, toggled. The
-  schematic draws each element with its instance name and value, out-of-range values in red, absorbed
-  elements dimmed, and the transform brackets under the pairs they act on. The grid is one row per
-  element, sortable, and copyable as CSV.
+- **Network** — the synthesised ladder as a real circuitRF **schematic**, with the **value grid** in a
+  scroll view underneath it. The schematic draws each element with its instance name and value,
+  out-of-range values in red, a grounded termination at each end, and a brace under the elements each
+  transform produced. Right-click either view for **Copy**, which puts the drawing on the clipboard as
+  something a schematic page can paste and PowerPoint can paste as vector art; the grid's menu also
+  offers **Copy as CSV**.
 - **Response** — two rectangular plots, drawn by the Data Display's own plot control from an S-parameter
   run of the **full design** (ladder plus both terminations, port references R1 and R2). |S11| and
-  |S21| on the first; phase and group delay on the second. The plot band defaults to the design band
-  ±10%.
+  |S21| on the first — S21 against the **right-hand axis**, because the two live decades apart and one
+  shared scale renders the insertion loss as a flat line on the ceiling; phase and group delay on the
+  second. Markers, their info boxes and the plot's own Copy work exactly as they do in a Data Display.
+  The plot band defaults to the design band ±10%.
 - **Transforms** — the linked Norton slider rack, and below everything the **status strip**: Q1, Q2,
   worst in-band return loss, insertion loss, ripple, and the achieved-versus-required Π N².
 
@@ -184,8 +190,9 @@ move. That is how a 2.1 pH inductor becomes something a PCB can actually build �
 any of the match you just synthesised.</p>
 </div>
 
-The rack has one row per applied transform: a π/T selector, a numeric box, a slider, a lock, and **the
-names of the two elements it acts on**. `+ add` lists the pairs currently available by element name;
+The rack has one row per applied transform: a π/T selector, a numeric box, a slider, and a lock. Which
+two elements a transform acts on is read off the **schematic above it**, where a brace spans exactly
+the elements that transform produced. `+ add` lists the pairs currently available by element name;
 `− remove` removes the last.
 
 - **The slider ends where the maths does.** Past a positivity threshold the transform produces negative
@@ -291,7 +298,9 @@ can enable the two `Term`s and run an S-parameter analysis on the cell alone.
 - **Prototype g-values (`.csv`)**, for anyone checking the synthesis against a published table.
 
 **Settings** holds the display units per dimension, the significant digits, the minimum Q for
-Q-adjusted solutions, and whether to offer them at all.
+Q-adjusted solutions, and whether to offer them at all. Inductance and capacitance default to **pH**
+and **pF** rather than to *Auto*: a fixed unit makes a column of values directly comparable, where
+*Auto* picks per value and leaves you converting "1.53 nH" against "680 pH" in your head.
 
 ## References {#refs}
 

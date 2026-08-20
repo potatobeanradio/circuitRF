@@ -132,8 +132,15 @@ public static class MatchSchematicModel
 
         string type = e.Type == ElementType.L ? "L" : "C";
         var labels = new List<string> { type, e.Name, $"{type} = {e.ValueText}" };
+
+        // A shunt arm's labels go beside it, or — when the text is wider than the gap to the next
+        // column — underneath its own ground. The decision is MatchShuntLabels', so the flattened
+        // cell makes it the same way (owner, 2026-08-20).
         var offsets = e.IsShunt
-            ? Enumerable.Repeat((ShuntLabelDx, ShuntLabelDy), labels.Count).ToList()
+            ? Enumerable.Repeat(
+                  MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
+                                           MatchLadderLayout.ShuntGroundY - e.Y),
+                  labels.Count).ToList()
             : [];
 
         return Compose(
@@ -166,32 +173,30 @@ public static class MatchSchematicModel
     public const SymbolRotation SeriesRotation = SymbolRotation.R270;
 
     /// <summary>
-    /// One end's grounded termination, its "+" pin landing exactly on the end of the spine.
+    /// One end's grounded termination, <b>upright, with its ground at the bottom</b> and its "+" pin
+    /// landing exactly on the end of the spine.
     /// </summary>
     /// <remarks>
-    /// <c>TermG</c>'s own pin is at local (0, −200) and its ground bars run down to local +270, so
-    /// the glyph is placed a lead-length OUTWARD of the pin and turned to face the ladder: R90 maps
-    /// local (0, −200) to world (+200, 0) — the left end, body to the left of its pin — and R270 maps
-    /// it to (−200, 0) for the right. The three label rows are the editor's own, with the resistance
-    /// spelled the way a <c>Term</c>'s <c>Z</c> is.
+    /// <b>Owner, 2026-08-20:</b> <i>"the TermG components need to be rotated 90 deg with the ground at
+    /// the bottom."</i> Round 3 laid them on their side (R90 / R270) so each faced the ladder along
+    /// the spine, which put one end's ground bars pointing left and the other's right — a ground
+    /// symbol that does not point down reads as something else entirely.
+    ///
+    /// <para><c>TermG</c>'s own pin is at local (0, −200) and its ground bars run down to local +270,
+    /// so at <see cref="SymbolRotation.R0"/> the glyph hangs a lead-length BELOW the point it
+    /// connects to — exactly the way a shunt arm does, and for the same reason there is no wire to
+    /// draw. The three label rows are the editor's own, with the resistance spelled the way a
+    /// <c>Term</c>'s <c>Z</c> is.</para>
     /// </remarks>
-    private static SchematicComponent Termination(MatchLadderTermination t)
-    {
-        bool left = t.End == 1;
-        double cx = left ? t.X - LeadHalf : t.X + LeadHalf;
-        var rot = left ? SymbolRotation.R90 : SymbolRotation.R270;
-
-        // The glyph box is given in WORLD offsets, so it carries the rotation itself: TermG's local
-        // extent is x ∈ [−70, +45] (the polarity glyphs to the left of the body) and y ∈ [−200, +270]
-        // (pin to the last ground bar), and R90 maps (x, y) → (−y, x) while R270 maps it → (y, −x).
-        var glyph = left ? (-270.0, -70.0, 200.0, 45.0) : (-200.0, -45.0, 270.0, 70.0);
-
-        return Compose(
-            t.InstanceName, SymbolKind.TermG, cx, MatchLadderLayout.SpineY, rot,
+    private static SchematicComponent Termination(MatchLadderTermination t) =>
+        Compose(
+            t.InstanceName, SymbolKind.TermG, t.X, MatchLadderLayout.SpineY + LeadHalf,
+            SymbolRotation.R0,
             ["TermG", t.InstanceName, $"Z = {t.ResistanceText}"], [],
             [new SchematicPortDef("+", 0, -200, PortConnectionState.Connected)],
-            glyph);
-    }
+            // TermG's local extent: x ∈ [−70, +45] (the polarity glyphs sit left of the body) and
+            // y ∈ [−200, +270] (pin down to the last ground bar). At R0 those ARE the world offsets.
+            (-70.0, -200.0, 45.0, 270.0));
 
     /// <summary>
     /// Assembles one component and its three bounding boxes. Every box the renderer and the spatial
@@ -235,13 +240,19 @@ public static class MatchSchematicModel
     // ── Wiring ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The spine and the shunt drops — <b>and nothing below a shunt arm</b>, because each carries its
-    /// own <c>Ground</c> on its lower pin (owner, 2026-08-20).
+    /// The spine, and <b>nothing else — the drawing has no vertical wire in it at all</b> (owner,
+    /// 2026-08-20: "there should be no vertical wires rendered in the schematic").
     /// </summary>
     /// <remarks>
-    /// <b>The spine is drawn in the GAPS between series elements, never through them</b>: a built-in
-    /// glyph carries its own leads out to ±200, so a port-to-port line would lay a second wire across
-    /// every series body. A schematic wire stops at the pin it connects to.
+    /// Every vertical run this used to draw has been designed away rather than hidden: a shunt arm's
+    /// ground is a <c>Ground</c> component sitting ON its lower pin, its upper pin now sits ON the
+    /// spine (<see cref="MatchLadderLayout.ShuntY"/>), and each end's <c>TermG</c> hangs from the
+    /// spine end the same way. A wire whose two endpoints coincide is not a shorter wire; it is no
+    /// wire.
+    ///
+    /// <para><b>The spine is drawn in the GAPS between series elements, never through them</b>: a
+    /// built-in glyph carries its own leads out to ±200, so a port-to-port line would lay a second
+    /// wire across every series body. A schematic wire stops at the pin it connects to.</para>
     /// </remarks>
     private static void AddWiring(MatchLadderLayout layout, List<SchematicWire> wires)
     {
@@ -255,9 +266,6 @@ public static class MatchSchematicModel
             cursor = Math.Max(cursor, e.X + LeadHalf);
         }
         if (layout.PortRightX > cursor) wires.Add(Wire(cursor, y, layout.PortRightX, y));
-
-        foreach (var s in layout.Elements.Where(e => e.IsShunt))
-            wires.Add(Wire(s.X, y, s.X, s.Y - LeadHalf));
     }
 
     private static SchematicWire Wire(double x0, double y0, double x1, double y1) => new()

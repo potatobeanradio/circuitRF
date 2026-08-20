@@ -350,6 +350,61 @@ finally:
     if proc.poll() is None:
         proc.kill()
 
+# ── The spiral example, over a pipe ──────────────────────────────────────────
+#
+# The second reference cell. MLIN proves the wire; this proves the vocabulary a real cell needs —
+# several interacting parameters, a refusal, and geometry whose SHAPE is the thing under test rather
+# than a single rectangle's coordinates.
+
+print("spiral example, over a pipe")
+spiral_path = Path(__file__).resolve().parent / "example" / "spiral.py"
+proc = subprocess.Popen([sys.executable, str(spiral_path)],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+try:
+    write_frame(proc.stdin, json.dumps({"op": "describe", "wireVersion": WIRE_VERSION}))
+    text, _ = read_frame(proc.stdout)
+    described = json.loads(text)
+    check({g["id"] for g in described["generators"]} == {"SPIRAL"},
+          "the spiral example declares its generator")
+    declared = {p["name"]: (p["kind"], p["dimension"])
+                for p in described["generators"][0]["parameters"]}
+    check(declared == {"Width": ("real", "length"), "Space": ("real", "length"),
+                       "Inner": ("real", "length"), "Turns": ("int", "none")},
+          "and declares each parameter correctly — Turns is a COUNT and carries no dimension, "
+          "so the host does not scale it")
+
+    write_frame(proc.stdin, json.dumps({
+        "op": "generate", "generatorId": "SPIRAL",
+        "parameters": {"Width": 10000, "Space": 10000, "Inner": 100000, "Turns": 3},
+        "layers": {"signal": {"layer": 1, "datatype": 0}},
+    }))
+    text, payload = read_frame(proc.stdout)
+    result = json.loads(text)
+    # Four segments per turn plus a step inward between turns: 3*4 + 2.
+    check(len(result["shapes"]) == 14, "three turns produce fourteen segments")
+    check([p["name"] for p in result["pins"]] == ["1", "2"],
+          "and an outer and an inner terminal")
+    check(result["pins"][0]["outwardDeg"] == 180.0 and result["pins"][1]["outwardDeg"] == 90.0,
+          "pin 1 leaves to the left; pin 2 is the inner terminal, facing up")
+    # Every coordinate is an integer DBU — the payload carries no fractions.
+    check(all(isinstance(v, int) for v in payload),
+          "every emitted coordinate is an integer database unit")
+
+    write_frame(proc.stdin, json.dumps({
+        "op": "generate", "generatorId": "SPIRAL",
+        "parameters": {"Width": 10000, "Space": 10000, "Inner": 100000, "Turns": 0},
+        "layers": {"signal": {"layer": 1, "datatype": 0}},
+    }))
+    text, _ = read_frame(proc.stdout)
+    check(json.loads(text)["ok"] is False,
+          "zero turns is REFUSED, not answered with an empty cell")
+
+    write_frame(proc.stdin, json.dumps({"op": "shutdown"}))
+    check(proc.wait(timeout=10) == 0, "the spiral example shuts down cleanly")
+finally:
+    if proc.poll() is None:
+        proc.kill()
+
 print()
 if _failures:
     print(f"{len(_failures)} FAILED:")

@@ -6044,3 +6044,169 @@ dialog a reader opens and not a reconstruction of it.
 `_nav.txt` also reordered: **Simulate now reads before Layout & EM**, since a user runs a simulation
 long before they lay anything out. `reference/index.md`'s explicit `{{toc: section:…}}` list is a
 second copy of that order and was moved to match — it does not follow `_nav.txt` automatically.
+
+## Match Designer round 4 (2026-08-20)
+
+The owner's round-4 list. Four separate reports about the response plots turned out to be **one
+missing thing**, and two of the schematic items exposed problems that had nothing to do with what was
+asked.
+
+### The response plots had no host, and that was four bugs
+
+Reported: no marker info box ever appeared; the plot's own **Copy** did nothing; axis, grid, tick and
+marker colours were wrong; and the pane's background did not match the Data Display's. They are one
+cause. A `PlotControl` is not self-sufficient — it asks its host for the next marker index, for a
+marker's info-box view-model, for the selected markers, and for the `PlotContainerViewModel` to
+export. The Match Designer hosted two bare `PlotControl`s in an `AspectRatioPanel`, so every one of
+those providers was null, and **a null host answers all of them with silence rather than an error**:
+`PlotExporter.CopyPlotToClipboardAsync` returns immediately on a null container, and nothing creates
+an info box on `MarkerAdded` because that path runs through the container.
+
+The fix is that the window now owns a real `DataDisplayViewModel` with exactly two containers in it
+(`MatchDesignerViewModel.PlotHost`), laid out by the window instead of by a canvas. The containers'
+logical rectangles are kept equal to the `PlotControl`s' real ones on every layout pass, because that
+is the coordinate space an info box is positioned and dragged in.
+
+**Two consequences worth knowing.** First, `DataDisplayViewModel` subscribes to the process-wide
+`AppSettingsViewModel.Instance` and — until this round — never unsubscribed; harmless for a Data
+Display window (one per session), an unbounded leak for a Designer (one per component, per open). It
+is `IDisposable` now; existing call sites simply do not call it, which is the behaviour they already
+had. Second, an edit rebuilds both plots' trace lists from scratch, so the host has to be told
+(`container.OnPlotChanged`) or its info boxes go on pointing at `Trace` objects no longer in any plot.
+
+`PlotControl` grew `CanDeletePlot` / `CanEditPlotProperties`, both defaulting true and both **re-read
+on every menu open** — the context menu is cached for the control's lifetime, so a flag consulted at
+build time would ignore a host that set it later.
+
+### A fixed display unit exposed a formatter bug that Auto had been hiding
+
+The owner asked for pH and pF as the default display units. `MatchValueFormat.Format` rendered with
+`"G{digits}"`, and .NET's `G` switches to exponential the moment the decimal exponent reaches the
+precision — so a perfectly ordinary 1.23 nH inductor displayed in pH at three significant digits read
+**`"1.23E+03 pH"`**. Auto had masked this for the life of the feature by always choosing a unit that
+puts the mantissa in [1, 1000), which is exactly the freedom a fixed unit gives up. `Format` now
+rounds to the digit count and renders fixed-point, trimming the padding zeros, and falls back to `G`
+only outside 10⁻⁶ … 10¹⁴ where plain notation would be a screenful of zeros.
+
+### "Does this label overlap that component" is a measurement, not a character count
+
+A shunt arm's labels sit beside its symbol; when they are wider than the gap to the next column they
+now go under the arm's own ground instead (`MatchShuntLabels`, shared by the pane and by
+`MatchFlatten` so the two drawings agree). The first cut estimated width at a per-character rate. That
+is wrong by ~20 % **in the direction that decides the outcome**: an ordinary `"C = 0.435 pF"` counts
+as 12 characters (480 estimated) and measures 407, because the spaces around the `=` are narrow — the
+difference between the fallback firing on a normal design and firing only on a long name. It measures
+with `SkiaFonts.PlexRegular` at the renderer's own label size now; the per-character rate survives
+only as a fallback for a headless host with no bundled font, and is calibrated against the real
+advances.
+
+Note that the flattened cell writes its values at 15 significant digits, so its value row is
+genuinely wider than the pane's and its shunt labels legitimately land under the ground where the
+pane's do not. Each drawing measures the rows *it* draws; that is the intended asymmetry, not drift.
+
+### A leak test that counts handlers on a singleton measures the suite, not the fix
+
+The first version of the disposal test tallied `AppSettingsViewModel.Instance`'s invocation-list
+length before and after. It passed alone and failed under a `~Match` filtered run: every other test in
+the file builds a Designer, and therefore a display, in parallel. It asks whether **this host's own**
+handler is still in the list instead.
+
+### Schematic geometry
+
+Terminations are upright (`R0`) with their ground bars down and their pin on the spine; shunt
+elements moved up a lead-length so their upper pin is on the spine too. Between those and the ground
+components each arm already carried, **the drawing now contains no vertical wire at all** — every
+endpoint that used to need one coincides with the thing it connects to. A right-click on the pane no
+longer pans it (the canvas captured the pointer on any button, so a right-click slid the drawing
+under the context menu it was aiming at).
+
+`Copy` on the pane and on the value listing goes through `SchematicClipboard.CopyAsync` — the
+schematic editor's own writer, so JSON, SVG, PDF, PNG and Windows CF_ENHMETAFILE come for free.
+`MatchSchematicCopy` supplies only the thing that call cannot: a selection, which this pane does not
+have because it is a projection of a ladder rather than an `EditableSchematic`. It names the two
+terminations `T1`/`T2` rather than the pane's captions, because an instance name with a space in it
+has to survive a netlist reader.
+
+## Match Designer speed — the two expensive answers move to a worker, and the two edits the owner named become cache hits (2026-08-20)
+
+Owner: *"Match Designer appears slow to user when updated parameters. Move the calculations off the
+UI thread and also look for speed optimizations in the calculations themselves,"* then, mid-work:
+*"I found it the slowest when I change network order or filter response type. (I believe the step
+that involves solving the low pass prototype.)"*
+
+**Both edits are the same edit.** `Order` and `Response` are the two setters that reach
+`Refresh(specChanged: true)`, and that is where the lowpass-prototype search runs. Measured on the
+design doc's order-4 interstage problem, one specification edit cost **1,161 ms** with Chebyshev
+selected and over two seconds with Butterworth. The numeric work itself was cut ~6x first — see
+`src/Core/Match/RESOLVED.md` — and what follows is the UI half.
+
+### Where the 1,161 ms actually was, before guessing
+
+| step | cost | share |
+|---|---|---|
+| `RefreshResponseOptions` — four probe syntheses, for enablement and tooltips | **1,143 ms** | **98.5 %** |
+| `MatchRebuild.Rebuild` + rows + ladder + grid + status + flatten availability | ~0.4 ms | |
+| `UpdatePlots` — elaborate and run `SParameterEngine` over 401 points | ~1.0 ms | |
+| `RefreshSolutions` | ~2.6 ms | |
+
+**The response plots are not the problem and never were**, which is worth recording because they look
+like the expensive thing on the screen. Four prototype searches per keystroke, run to decide which
+entries of a ComboBox are greyed out, were.
+
+### Only those two go to the worker
+
+`MatchDesignerViewModel.Analysis.cs` holds them. Everything else — the rebuild, the transform rows,
+the ladder, the grid, the status strip, the response plots — totals about 1.5 ms and stays
+synchronous, so it still lands on the same frame as the keystroke.
+
+- **Superseded, not queued.** Working the order spinner produces one request per step and every
+  intermediate answer is dead on arrival. Each request bumps a generation, cancels the one in flight,
+  and a result that comes back stale is dropped rather than applied. **This is the one thing about
+  the move that could be silently wrong** — a slow early pass completing after a fast later one would
+  leave the panel describing a design the user has moved off, with nothing anywhere saying so — so
+  `MatchDesignerSpecEditCostTests` runs a burst of edits with no waiting and checks the settled state
+  against a hand-run of the same probes.
+- **Nothing reads the live design.** The worker gets `MatchDesign.Clone()`. The badges —
+  "current", "previously applied" — are then decided when the result is *applied*, from the design as
+  it stands then.
+- **Enablement goes stale for a moment, and deliberately does not blank.** A family picked inside
+  that window is accepted and then refused by the rebuild instead: the status strip carries the
+  refusal with its numbers and the option disables itself when the pass lands. Blanking the
+  enablement while a pass runs would grey out every family for the duration of a search whose whole
+  purpose is to say which ones are fine.
+
+### The rebuild cannot be deferred, so it is done early instead
+
+`Rebuild` is the one synthesis that genuinely blocks: it is what produces the ladder, the grid and
+the plot being looked at. Cold on the numerical route it is ~120 ms at order 6.
+
+**A response change is already covered for free** — the feasibility pass probes all four families at
+the current order, so changing the response asks for exactly one of the designs it just synthesised
+and `MatchSynthesis`'s memo answers in microseconds. The **order** axis was the one still cold, so the
+background pass now also synthesises the current response at every *other* order the picker offers
+and throws the results away; the memo is the entire product. `MatchOrders.ValidOrders` is the short
+list the picker actually offers — a like or mixed termination pair fixes the parity, so it is two or
+three entries, never a range — which is what makes speculating here bounded rather than a guess.
+
+### Measured, on the same problem
+
+| edit | UI thread before | UI thread after |
+|---|---|---|
+| order change, Chebyshev | 1,161 ms | **4–9 ms** |
+| response change | 1,161 ms | **0–7 ms** |
+| order change, Butterworth selected | ~2,200 ms | **7–21 ms** |
+| slider drag step, Butterworth selected | 110 ms | **1.3 ms** |
+
+### The test seam
+
+`AnalysisTask` / `WaitForAnalysis()` are public because a test asserting on `ResponseOptions` or
+`Solutions` right after an edit is otherwise asserting on whatever the previous pass left there — six
+existing tests were doing exactly that and went red the moment the work moved. Nothing in the
+application awaits it; the window binds to the collections and to `IsAnalysing`, which replaces the
+solutions summary in the footer while a pass runs (the two share a slot because the summary *is* what
+that pass produces).
+
+**The result scheduler is captured at construction**, from `SynchronizationContext.Current` — the
+Avalonia dispatcher in the application, and nothing under xUnit, whose `AsyncTestSyncContext` posts to
+the pool rather than requiring a pump. That is what lets `WaitForAnalysis()` block without
+deadlocking; it was verified with a throwaway test rather than assumed.

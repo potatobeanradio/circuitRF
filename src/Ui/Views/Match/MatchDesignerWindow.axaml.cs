@@ -10,6 +10,11 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia;
+using CircuitRF.Ui.Clipboard;
+using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.DataDisplay.Controls;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Matching;
 using CircuitRF.Ui.Schematic;
 
@@ -131,6 +136,8 @@ public partial class MatchDesignerWindow : Window
         WireButton("ApplyButton", (_, _) => Vm.Apply());
         WireButton("RevertButton", (_, _) => Vm.Revert());
         WireElementsContextMenu();
+        WireSchematicContextMenu();
+        WirePlotHost();
         WireButton("RemoveTransformButton", (_, _) => Vm.RemoveLastTransform());
         WireButton("AddTransformButton", (s, _) => ShowAddTransformMenu(s as Control));
         WireButton("ExportButton", (s, _) => ShowExportMenu(s as Control));
@@ -168,13 +175,160 @@ public partial class MatchDesignerWindow : Window
     {
         if (this.FindControl<ItemsControl>("ElementsList") is not { } list) return;
 
-        var copy = new MenuItem { Header = "Copy as CSV" };
-        copy.Click += async (_, _) =>
+        var csv = new MenuItem { Header = "Copy as CSV" };
+        csv.Click += async (_, _) =>
         {
             var clipboard = Clipboard;
             if (Vm is not null && clipboard is not null) await clipboard.SetTextAsync(Vm.ElementsCsv);
         };
-        list.ContextMenu = new ContextMenu { ItemsSource = new[] { copy } };
+
+        // "Copy" ABOVE "Copy as CSV" (owner, 2026-08-20). The two views are two views of ONE network,
+        // so the grid offers the same picture the schematic does — the schematic's own item, built by
+        // the same method, not a second implementation of it.
+        list.ContextMenu = new ContextMenu { ItemsSource = new[] { CopySchematicMenuItem(), csv } };
+    }
+
+    /// <summary>
+    /// <b>Copy</b> — the network as a real schematic selection, on the clipboard in every format
+    /// <c>SchematicClipboard</c> writes: circuitRF JSON (so it pastes into a schematic page), SVG and
+    /// PDF, a PNG, and on Windows CF_ENHMETAFILE, which is the vector form PowerPoint pastes.
+    /// </summary>
+    /// <remarks>
+    /// The projection is <see cref="MatchSchematicCopy"/>'s and the clipboard write is the schematic
+    /// editor's own — this method is only the menu entry and the two things a VIEW knows: which
+    /// clipboard, and (on Windows) which window handle owns it.
+    /// </remarks>
+    private MenuItem CopySchematicMenuItem()
+    {
+        var item = new MenuItem { Header = "Copy" };
+        item.Click += async (_, _) => await CopySchematicAsync();
+        return item;
+    }
+
+    private async Task CopySchematicAsync()
+    {
+        var clipboard = Clipboard;
+        if (Vm is null || clipboard is null) return;
+
+        var model = MatchSchematicCopy.Build(Vm.Ladder);
+        if (model.Components.Count == 0) return;   // a refused design has no drawing to copy
+
+        IntPtr ownerHwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        await SchematicClipboard.CopyAsync(
+            clipboard, model.Components, model.Wires, model.CanvasObjects, model.GridSize,
+            netLabels: null, schematicDirectory: null, ownerHwnd: ownerHwnd);
+    }
+
+    /// <summary>
+    /// The network pane's own one-item context menu.
+    /// </summary>
+    /// <remarks>
+    /// Attached here rather than declared in the AXAML for the reason every other menu in this window
+    /// is: a <c>ContextMenu</c> is a popup with its own visual root, so a <c>MenuItem</c> declared
+    /// inside one is not reliably reachable by <c>FindControl</c>, and a handler that silently never
+    /// attaches is a menu entry that does nothing.
+    /// </remarks>
+    private void WireSchematicContextMenu()
+    {
+        if (this.FindControl<MatchSchematicCanvas>("NetworkSchematic") is not { } canvas) return;
+        canvas.ContextMenu = new ContextMenu { ItemsSource = new[] { CopySchematicMenuItem() } };
+    }
+
+    // ── The response plots' Data Display host ─────────────────────────────────
+
+    /// <summary>
+    /// Connects the two <c>PlotControl</c>s to the view-model's <c>PlotHost</c> — the wiring
+    /// <c>PlotContainerView</c> does for a plot on the Data Display canvas, done here because these
+    /// two live in a fixed pane instead.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every provider below is a question a PlotControl asks its host, and a null host answers all
+    /// of them with silence.</b> That was the shape of four owner-reported 2026-08-20 bugs at once: no
+    /// marker info box appeared (nobody created one on <c>MarkerAdded</c>), <c>Copy</c> did nothing
+    /// (<c>PlotExporter.CopyPlotToClipboardAsync</c> returns immediately on a null container), marker
+    /// selection never highlighted, and arrow keys did not step a marker.
+    /// </remarks>
+    private void WirePlotHost()
+    {
+        if (Vm is null) return;
+
+        // Cached, because SyncPlotContainers runs on every layout pass — a name-scope lookup per
+        // frame for two controls that cannot change is the kind of cost that only shows up later.
+        _magnitudePlot   = this.FindControl<PlotControl>("MagnitudePlotControl");
+        _phasePlot       = this.FindControl<PlotControl>("PhasePlotControl");
+        _markerInfoLayer = this.FindControl<ItemsControl>("MarkerInfoBoxLayer");
+
+        Bind(_magnitudePlot, Vm.MagnitudeContainer);
+        Bind(_phasePlot,     Vm.PhaseContainer);
+
+        SyncPlotTheme();
+        ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
+
+        // The containers' logical rectangles must equal the PlotControls' real ones, because that is
+        // the coordinate space a marker info box is placed and dragged in (see the overlay's own note
+        // in the AXAML). LayoutUpdated rather than SizeChanged: the pane's ScrollViewer can move a
+        // plot without resizing it, and a box that stayed behind would be pointing at nothing.
+        LayoutUpdated += (_, _) => SyncPlotContainers();
+        SyncPlotContainers();
+
+        void Bind(PlotControl? plot, PlotContainerViewModel container)
+        {
+            if (plot is null) return;
+
+            plot.NextMarkerIndexProvider     = container.GetNextMarkerIndex;
+            plot.FindMarkerInfoBoxVmProvider = container.FindMarkerInfoBoxVm;
+            plot.ContainerProvider           = () => container;
+            plot.SelectedMarkersProvider     = container.GetSelectedMarkers;
+            plot.StepSelectedMarkersHandler  = container.StepSelectedMarkers;
+
+            plot.PlotChanged += container.OnPlotChanged;
+            plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
+            plot.MarkerAdded += container.OnMarkerAdded;
+            container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
+
+            // DeletePlotRequested is deliberately NOT handled — the menu item is disabled in the
+            // AXAML (CanDeletePlot="False"), so it can never fire, and an unhandled event is the
+            // honest reading of "this host does not delete plots".
+        }
+    }
+
+    private PlotControl?  _magnitudePlot;
+    private PlotControl?  _phasePlot;
+    private ItemsControl? _markerInfoLayer;
+
+    private void SyncPlotTheme()
+    {
+        if (Vm is null) return;
+        Vm.PlotHost.Theme = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark
+            ? RenderTheme.Dark
+            : RenderTheme.Light;
+        _magnitudePlot?.SetValue(PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
+        _phasePlot?.SetValue(PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
+    }
+
+    private void SyncPlotContainers()
+    {
+        if (Vm is null || _markerInfoLayer is not { } layer) return;
+        Place(_magnitudePlot, Vm.MagnitudeContainer);
+        Place(_phasePlot,     Vm.PhaseContainer);
+
+        void Place(PlotControl? plot, PlotContainerViewModel container)
+        {
+            if (plot is null || plot.Bounds.Width < 1 || plot.Bounds.Height < 1) return;
+            if (plot.TranslatePoint(default, layer) is not { } origin) return;
+
+            if (Math.Abs(container.Left - origin.X) < 0.5
+                && Math.Abs(container.Top - origin.Y) < 0.5
+                && Math.Abs(container.Width - plot.Bounds.Width) < 0.5
+                && Math.Abs(container.Height - plot.Bounds.Height) < 0.5)
+                return;   // LayoutUpdated fires constantly; only a real move is worth notifying
+
+            container.Left   = origin.X;
+            container.Top    = origin.Y;
+            container.Width  = plot.Bounds.Width;
+            container.Height = plot.Bounds.Height;
+            container.NotifyViewProperties();
+        }
     }
 
     private void BindNumericBox(string name, Func<string> read, Action<string> write)

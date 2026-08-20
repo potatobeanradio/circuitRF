@@ -34,7 +34,9 @@ namespace CircuitRF.Ui.Matching;
 ///
 /// <h3>What is expensive, and when it runs</h3>
 /// <para>A rebuild is cheap and runs on every edit. Two things are not, and neither depends on a
-/// transform's N, so both run only when the SPECIFICATION changes:</para>
+/// transform's N, so both run only when the SPECIFICATION changes — and, since 2026-08-20, both run
+/// on a worker rather than in front of the user's typing. <c>MatchDesignerViewModel.Analysis.cs</c>
+/// holds them and records what they measured:</para>
 /// <list type="bullet">
 /// <item><b>Response feasibility.</b> Butterworth and Bessel go through
 ///   <c>MatchPrototypes.Search</c>, a 33-point shape sweep with two refinement rounds, each step
@@ -44,6 +46,9 @@ namespace CircuitRF.Ui.Matching;
 ///   reference implementation re-runs it inside a view body, which is affordable on a four-element
 ///   network and would not be here.</item>
 /// </list>
+/// <para><b>Everything else stays synchronous</b>, because everything else is about 1.5 ms: the
+/// rebuild, the transform rows, the ladder, the grid, the status strip and the response plots all
+/// still land on the same frame as the keystroke that caused them.</para>
 /// </summary>
 public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposable
 {
@@ -71,6 +76,8 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
             () => _schematicVm?.UndoRedo.Undo(), () => _schematicVm?.UndoRedo.CanUndo ?? false);
         RedoCommand = new RelayCommand(
             () => _schematicVm?.UndoRedo.Redo(), () => _schematicVm?.UndoRedo.CanRedo ?? false);
+
+        BuildPlotHost();   // the two response containers — see MatchDesignerViewModel.Response.cs
 
         Term1 = new MatchTerminationViewModel(this, 1);
         Term2 = new MatchTerminationViewModel(this, 2);
@@ -202,7 +209,11 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         _probeCts?.Cancel();
         _probeCts?.Dispose();
         _probeCts = null;
+        CancelAnalysis();
         Detach();
+        // The plot host subscribes to a PROCESS-WIDE settings singleton; a Designer is opened and
+        // closed per component, so not dropping it would strand one display per open.
+        PlotHost.Dispose();
         Settings.PropertyChanged -= OnSettingsChanged;
         _schematicVm = null;
         _target = null;
@@ -313,6 +324,15 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// button simply cannot be clicked, so the guard has to live here rather than in the view — and
     /// silently reverting with nothing said would be the worst of the three options, which is why
     /// <see cref="ResponseRefusal"/> exists.
+    ///
+    /// <para><b>What this guard reads is the last COMPLETED feasibility pass</b>, which since the
+    /// analysis moved to a worker can be a fraction of a second behind a specification the user has
+    /// just changed. A family picked inside that window is accepted here and then refused by the
+    /// rebuild instead — the status strip carries the refusal with its numbers, the affected
+    /// termination flags, and the option disables itself when the pass lands. Two refusals for one
+    /// mistake would be worse than one arriving from a different place, and blanking the enablement
+    /// while a pass runs would disable every family for the duration of a search whose whole purpose
+    /// is to say which ones are fine.</para>
     /// </remarks>
     public MatchResponseOptionViewModel? SelectedResponseOption
     {
@@ -616,8 +636,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
         if (specChanged)
         {
-            RefreshResponseOptions();
-            RefreshSolutions();
+            // The two expensive answers go to a worker and land when they land — see
+            // MatchDesignerViewModel.Analysis.cs for why they are the only two that do.
+            QueueAnalysis();
             OnPropertyChanged(nameof(OrderOptions));
             OnPropertyChanged(nameof(RippleEnabled));
         }

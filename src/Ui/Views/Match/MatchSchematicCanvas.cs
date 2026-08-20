@@ -186,10 +186,19 @@ public sealed class MatchSchematicCanvas : Control
         InvalidateVisual();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Starts a pan — <b>on the LEFT button only</b>.
+    /// </summary>
+    /// <remarks>
+    /// Capturing the pointer on any button meant a right-click both panned the view and opened the
+    /// pane's context menu (added 2026-08-20 for <c>Copy</c>), so the drawing slid a few pixels under
+    /// the menu the user was aiming at. Panning is a left-drag gesture; the right button belongs to
+    /// the menu.
+    /// </remarks>
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         _dragFrom = e.GetPosition(this);
         e.Pointer.Capture(this);
     }

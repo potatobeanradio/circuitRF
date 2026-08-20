@@ -224,7 +224,8 @@ public sealed partial class MatchDesignerViewModel
     // ── Solutions ─────────────────────────────────────────────────────────────
 
     /// <summary>The solutions panel's rows, in MN-1's own order: fewest transforms, then position,
-    /// then Q-adjust.</summary>
+    /// then Q-adjust. Filled by the background analysis — see
+    /// <c>MatchDesignerViewModel.Analysis.cs</c>.</summary>
     public ObservableCollection<MatchSolutionRowViewModel> Solutions { get; } = [];
 
     /// <summary>Whether the docked solutions list is out.</summary>
@@ -236,46 +237,6 @@ public sealed partial class MatchDesignerViewModel
     /// <summary>Non-empty when the search has nothing to offer — "No solutions available for order 4",
     /// said plainly, with the numbers behind it.</summary>
     [ObservableProperty] private string _solutionsRefusal = "";
-
-    private void RefreshSolutions()
-    {
-        Solutions.Clear();
-
-        var set = MatchSolutionSearch.Search(
-            _design, Settings.OfferQAdjustedSolutions, Settings.QMin);
-
-        string current = MatchSolutionSearch.SolutionFingerprint(_design, _design.Transforms);
-        foreach (var s in set.Solutions)
-        {
-            var badge =
-                string.Equals(s.Fingerprint, current, StringComparison.Ordinal) ? MatchSolutionBadge.Current
-                : _design.AppliedSolutions.Contains(s.Fingerprint, StringComparer.Ordinal)
-                    ? MatchSolutionBadge.PreviouslyApplied
-                    : MatchSolutionBadge.NeverApplied;
-            Solutions.Add(new MatchSolutionRowViewModel(this, s, badge, _design.Response));
-        }
-
-        SolutionsRefusal = set.Refusal is { } r
-            ? $"No solutions available for order {_design.Order}. {r.Message}"
-            : "";
-
-        var applied = Solutions.FirstOrDefault(s => s.Badge == MatchSolutionBadge.Current);
-        string appliedText = applied is null
-            ? _design.Transforms.Count == 0 ? "applied: none" : "applied: a hand-set transform set"
-            : $"applied: {applied.CountText}, {ResponseShortName(applied.Response)}";
-
-        SolutionsSummary = Solutions.Count == 0
-            ? "no solutions"
-            : $"{Solutions.Count} solution{(Solutions.Count == 1 ? "" : "s")} · {appliedText}";
-    }
-
-    private static string ResponseShortName(ResponseShape shape) => shape switch
-    {
-        ResponseShape.ChebyshevFano      => "Fano",
-        ResponseShape.ChebyshevTwoEnded  => "two-ended",
-        ResponseShape.Butterworth        => "Butterworth",
-        _                                => "Bessel",
-    };
 
     /// <summary>
     /// Applies one solution: its transforms, its Q-adjust, and its fingerprint into
@@ -292,27 +253,6 @@ public sealed partial class MatchDesignerViewModel
 
         Refresh(specChanged: true);
         Commit();
-    }
-
-    // ── Response feasibility ──────────────────────────────────────────────────
-
-    private void RefreshResponseOptions()
-    {
-        foreach (var option in ResponseOptions)
-        {
-            option.IsSelected = option.Shape == _design.Response;
-
-            var probe = _design.Clone();
-            probe.Response = option.Shape;
-            var result = MatchSynthesis.Synthesize(probe);
-
-            option.Refusal = result.Refusal;
-            option.IsEnabled = result.Ok;
-            // The refusal already carries its numbers (MN-1 makes that a rule); rendering them is all
-            // that is left to do, and recomputing them here would be a second opinion nobody asked for.
-            option.Tooltip = result.Ok ? option.Description : result.Refusal!.Message;
-        }
-        OnPropertyChanged(nameof(ResponseOptions));
     }
 
     // ── Flatten — MN-5 ────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
-public partial class DataDisplayViewModel : ViewModelBase
+public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 {
     // ---- Undo / Redo ------------------------------------------------
     // One manager per tab — each tab has its own independent undo history.
@@ -454,6 +454,28 @@ public partial class DataDisplayViewModel : ViewModelBase
             AddPlot(PlotType.Smith, FreqUnit.GHz);
             if (!selectEmptyPlot)
                 SelectOnly((PlotContainerViewModel?) null);
+    }
+
+    /// <summary>
+    /// Drops the subscription to the <b>static</b> <see cref="AppSettingsViewModel.Instance"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Only a display with a bounded lifetime needs to call this, and until 2026-08-20 none had
+    /// one.</b> A Data Display window lives about as long as the session, so a subscription to a
+    /// process-wide singleton cost nothing and nobody wrote the other half. The Match Designer is
+    /// different: it owns a DataDisplayViewModel of its own (see
+    /// <c>MatchDesignerViewModel.PlotHost</c>) and is opened and closed per component, so without this
+    /// every open would leave a display — its containers, plots, traces and response SNP — reachable
+    /// from a static event for the rest of the run.
+    ///
+    /// <para>Idempotent, and it deliberately does NOT tear down plots or markers: a caller may still
+    /// want to read what was on the display after it stops tracking settings.</para>
+    /// </remarks>
+    public void Dispose()
+    {
+        AppSettingsViewModel.Instance.PropertyChanged -= OnSettingsPropertyChanged;
+        if (_library is { } lib) lib.SelectedDataSourceChanged -= OnSelectedDataSourceChanged;
+        GC.SuppressFinalize(this);
     }
 
     private void OnLibraryEntryCountChanged()

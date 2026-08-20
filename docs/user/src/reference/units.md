@@ -186,23 +186,26 @@ factors, so <code>dBm</code> carries no multiplier.</p>
 
 ## A unit is a field, not part of an expression {#unit-field}
 
+**The expression parser has no unit-suffix production**: `2 GHz` is not an expression, and asking the
+parser for one is an error at the `GHz`. What saves you is that nothing asks it to. A VAR row whose unit
+column is empty has any trailing unit token lifted out of the expression first, so writing
+`RFfreq = 2 GHz` in the schematic VAR editor gives you the variable you meant — the `2` becomes the
+expression and `GHz` the unit — and a `.cnl`, which has no unit column at all, has always been read the
+same way. The two entry points cannot make identical text mean two different things.
+
+The lift is applied *only* when the text does not already parse and the split makes it parse. That
+restraint is the point: because every bare SI prefix is a valid unit, a token-based rule would tear
+`2 * f` into `2 *` plus femto and `R * m` into `R *` plus milli — expressions that are legal and common.
+Those parse as they stand, so nothing is lifted from them.
+
 <div class="callout warn">
-<span class="label">This one has bitten real designs</span>
-<p><strong>The expression parser has no unit-suffix production.</strong> Writing
-<code>RFfreq = 2 GHz</code> as a VAR expression is a <em>parse error at the <code>GHz</code></em> — and
-because an unresolvable global is skipped during elaboration, the result is not a wrong value but
-<strong>no variable at all</strong>. Put <code>2</code> in the expression and <code>GHz</code> in the
-row's unit column.</p>
+<span class="label">Where it still does not help</span>
+<p>The lift needs a <strong>separate token</strong>. <code>2GHz</code>, with no space, is one word to
+the splitter and stays a parse error — and because an unresolvable global is skipped during elaboration,
+that leaves <strong>no variable at all</strong> rather than a wrong value. The same is true of a bare
+<code>60u</code> in a PCell parameter. When in doubt, put the number in the expression and the unit in
+the row's unit column, which is unambiguous everywhere.</p>
 </div>
-
-The one place the inline spelling is accepted is a **netlist** (`.cnl`), which has no separate column to
-put a unit in; the reader lifts a trailing unit token off the right-hand side there. The schematic VAR
-editor, which does have a unit column, applies the same rule so that identical text no longer means two
-different things in the two entry points.
-
-Note the trap this creates in the other direction: because every bare SI prefix is a valid unit,
-`2 * f` ends in the femto- prefix and `R * m` in milli-. That is why the split is only applied when the
-unsplit text does not parse and the split text does — the last-token test alone is not safe.
 
 <p class="small">See also: <a href="expressions.html">Expressions</a> ·
 <a href="layout-editor.html">The Layout Editor</a> · <a href="wbond.html">wBond</a> ·

@@ -128,8 +128,19 @@ public sealed class MatchLadderLayout
     /// <summary>The through-path's y.</summary>
     public const double SpineY = 0.0;
 
-    /// <summary>A shunt element's centre y.</summary>
-    public const double ShuntY = 400.0;
+    /// <summary>
+    /// A shunt element's centre y — <b>one lead-length below the spine, so its upper pin lands
+    /// exactly ON it</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"the shunt component placement needs to move up such that the
+    /// shunt components are exactly at the top horizontal wire; there should be no vertical wires
+    /// rendered in the schematic."</i> A built-in two-terminal glyph carries its own leads out to
+    /// ±<see cref="MatchSchematicGeometry.LeadHalf"/>, so placing the centre one lead-length down puts
+    /// the pin on the spine and leaves nothing for a drop wire to span — the same reasoning that
+    /// removed the ground wires, applied to the other end of the arm.
+    /// </remarks>
+    public const double ShuntY = SpineY + MatchSchematicGeometry.LeadHalf;
 
     /// <summary>
     /// Where a shunt element's own GND sits — exactly on its lower pin, so there is no wire.
@@ -162,8 +173,15 @@ public sealed class MatchLadderLayout
     /// <summary>Radius of the brace's four quarter-turns, world units.</summary>
     public const double BraceCurl = 50.0;
 
-    /// <summary>Length of the stem from the brace's centre tip down to its label.</summary>
-    public const double BraceStem = 70.0;
+    /// <summary>
+    /// Length of the stem from the brace's centre tip down to its label.
+    /// </summary>
+    /// <remarks>
+    /// <b>52.5, not 70</b> (owner, 2026-08-20: "reduce the curly brace vertical line length by a
+    /// factor of 0.75"). The stem is the brace's only straight vertical run; the four quarter-turns
+    /// are set by <see cref="BraceCurl"/> and are not what was being looked at.
+    /// </remarks>
+    public const double BraceStem = 52.5;
 
     /// <summary>Baseline of the brace's label, below the foot of the stem.</summary>
     public const double BraceLabelDrop = 80.0;

@@ -51,6 +51,7 @@ public static class MatchFlatten
     // under it (see Element), and 400 is not wide enough for one to clear the next column.
     private const double ShuntPitch  = 700.0;   // two shunt elements sharing one node
     private const double ShuntY      = 400.0;   // a shunt element's centre, below the spine
+    private const double ShuntGroundY = 700.0;  // where that arm's own Ground sits
     private const double LeadRun     = 100.0;   // wire stub between a node and a pin
     private const double AnnexGap    = 500.0;   // interface pin to the first termination column
     private const double AnnexLift   = 400.0;   // how far above the spine the annex lead runs
@@ -125,9 +126,10 @@ public static class MatchFlatten
                     model.Wires.Add(Wire((cursor, 0), (cursor + ShuntPitch, 0)));
                     cursor += ShuntPitch;
                 }
-                model.Components.Add(Element(e, cursor, ShuntY, SymbolRotation.R0));
+                model.Components.Add(Element(e, cursor, ShuntY, SymbolRotation.R0,
+                                             shuntGroundOffsetY: ShuntGroundY - ShuntY));
                 model.Wires.Add(Wire((cursor, 0), (cursor, 200)));
-                model.Components.Add(Ground(cursor, 700.0));
+                model.Components.Add(Ground(cursor, ShuntGroundY));
                 model.Wires.Add(Wire((cursor, 600), (cursor, 700)));
                 shuntAtNode++;
             }
@@ -252,7 +254,14 @@ public static class MatchFlatten
     /// unique and already meaningful, and renumbering them would break the only correspondence
     /// between the flattened cell and the Designer that produced it.
     /// </summary>
-    private static EditableComponent Element(MatchElement e, double x, double y, SymbolRotation rot)
+    /// <param name="shuntGroundOffsetY">
+    /// For a LADDER shunt arm, how far below this element its own <c>Ground</c> sits — which is where
+    /// the label block goes when it is too wide to sit beside the symbol. Null for the two termination
+    /// annexes: nothing stands to their right to bleed into, and their grounds are not a uniform
+    /// distance away, so the rule has nothing to measure there.
+    /// </param>
+    private static EditableComponent Element(
+        MatchElement e, double x, double y, SymbolRotation rot, double? shuntGroundOffsetY = null)
     {
         bool isL = e.Type == ElementType.L;
         var c = new EditableComponent
@@ -262,26 +271,41 @@ public static class MatchFlatten
             X = x, Y = y, Rotation = rot,
         };
 
-        // A SHUNT element's three label rows sit beside the symbol and centred on it, exactly as the
-        // Designer's own pane places them (owner, 2026-08-20: "adjust the vertical alignment such
-        // that the center of all 3 rows of text is at the same y coordinate as the center of the
-        // component symbol … do this for the flattened cell too"). The offsets are the pane's own
-        // constants rather than a second pair of numbers: the two drawings are meant to be the same
-        // drawing, and the whole point of flattening is that the user recognises what they designed.
-        // They are ordinary per-label offsets, so the user can still drag any of them.
-        if (rot == SymbolRotation.R0)
-            for (int i = 0; i < 3; i++)
-                c.LabelOffsets.Add((MatchSchematicModel.ShuntLabelDx, MatchSchematicModel.ShuntLabelDy));
-
         var quantity = isL ? MatchQuantity.Inductance : MatchQuantity.Capacitance;
         var (text, unit) = Exact(e.Value, quantity);
+        string type = isL ? "L" : "C";
         c.Parameters.Add(new EditableParameter
         {
-            Name = isL ? "L" : "C",
+            Name = type,
             Expression = text,
             Unit = unit,
             Dimension = isL ? UnitDimension.Inductance : UnitDimension.Capacitance,
         });
+
+        // A SHUNT element's three label rows sit beside the symbol and centred on it, exactly as the
+        // Designer's own pane places them (owner, 2026-08-20: "adjust the vertical alignment such
+        // that the center of all 3 rows of text is at the same y coordinate as the center of the
+        // component symbol … do this for the flattened cell too"). The offsets are the pane's own
+        // decision rather than a second pair of numbers: the two drawings are meant to be the same
+        // drawing, and the whole point of flattening is that the user recognises what they designed.
+        // They are ordinary per-label offsets, so the user can still drag any of them.
+        //
+        // … including the fallback: a block too wide for the gap to the next column goes UNDER the
+        // arm's ground instead (owner, same round: "the flatten to cell should also do this"). Each
+        // drawing measures the rows IT draws, which is why the strings below are built the way
+        // EditableComponent.BuildRenderModel will build them — the cell writes its values at 15
+        // significant digits, so its value row is genuinely wider than the pane's three-digit one and
+        // genuinely does bleed at the same pitch.
+        if (rot == SymbolRotation.R0)
+        {
+            var (dx, dy) = shuntGroundOffsetY is { } groundDy
+                ? MatchShuntLabels.Offsets(
+                      [type, e.Name, $"{type} = {text} {unit}"], ShuntPitch, groundDy)
+                : (MatchSchematicModel.ShuntLabelDx, MatchSchematicModel.ShuntLabelDy);
+            for (int i = 0; i < 3; i++)
+                c.LabelOffsets.Add((dx, dy));
+        }
+
         return c;
     }
 

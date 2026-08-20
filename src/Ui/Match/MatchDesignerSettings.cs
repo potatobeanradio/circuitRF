@@ -22,11 +22,21 @@ namespace CircuitRF.Ui.Matching;
 /// </remarks>
 public sealed partial class MatchDesignerSettings : ObservableObject
 {
-    /// <summary>Display unit for inductances, or <see cref="MatchValueFormat.AutoUnit"/>.</summary>
-    [ObservableProperty] private string _inductanceUnit = MatchValueFormat.AutoUnit;
+    /// <summary>
+    /// Display unit for inductances, or <see cref="MatchValueFormat.AutoUnit"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>pH, not Auto</b> (owner, 2026-08-20: "change the default inductor units to pH and the
+    /// default capacitance units to pF"). Auto picks a unit per VALUE, so one ladder can read
+    /// "1.53 nH" beside "680 pH" beside "12 µH" and the eye has to convert before it can compare —
+    /// which is the whole thing a designer does while looking at this pane. A fixed unit makes the
+    /// column of numbers directly comparable; Auto is still one click away in Settings.
+    /// </remarks>
+    [ObservableProperty] private string _inductanceUnit = "pH";
 
     /// <summary>Display unit for capacitances, or <see cref="MatchValueFormat.AutoUnit"/>.</summary>
-    [ObservableProperty] private string _capacitanceUnit = MatchValueFormat.AutoUnit;
+    /// <remarks>pF, for the reason <see cref="InductanceUnit"/> gives.</remarks>
+    [ObservableProperty] private string _capacitanceUnit = "pF";
 
     /// <summary>Display unit for resistances.</summary>
     [ObservableProperty] private string _resistanceUnit = "Ω";

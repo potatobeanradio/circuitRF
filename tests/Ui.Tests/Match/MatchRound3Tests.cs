@@ -187,30 +187,47 @@ public sealed class MatchRound3Tests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// The same offsets are written into the FLATTENED cell (owner: "do this for the flattened cell
-    /// too"), read from the pane's own constants rather than copied — two copies of a number that
-    /// must agree is how the two drawings drift apart.
+    /// The same DECISION is made in the FLATTENED cell (owner: "do this for the flattened cell too"),
+    /// by the same method rather than by a copied pair of numbers — two copies of a number that must
+    /// agree is how the two drawings drift apart.
     /// </summary>
+    /// <remarks>
+    /// <b>Round 4 made the offsets conditional</b> (owner, 2026-08-20: "if the instance name does
+    /// overlap with its adjacent component, all of the component text gets rendered underneath the GND
+    /// component below it… the flatten to cell should also do this"), so what this test holds is no
+    /// longer a constant: it is that both drawings ask <see cref="MatchShuntLabels"/> about the rows
+    /// THEY draw, and take the answer. Asserting the beside-the-symbol constant unconditionally would
+    /// now be asserting that the fallback never fires.
+    /// </remarks>
     [Fact]
-    public void TheFlattenedCell_UsesTheSameShuntLabelOffsets()
+    public void TheFlattenedCell_UsesTheSameShuntLabelRule()
     {
         var (_, _, d) = Open();
         var model = MatchFlatten.BuildSchematic(
             d.Rebuild!, d.Design, "MN1", new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc));
 
+        // The LADDER's shunt arms — an R0 element that has a Ground directly below it. The two
+        // termination annexes also hold R0 elements, and they deliberately keep the fixed offsets
+        // (nothing stands to their right to bleed into).
+        double groundDy = 300.0;   // MatchFlatten's ShuntGroundY − ShuntY
         var shunts = model.Components
             .Where(c => c.Symbol is SymbolKind.Inductor or SymbolKind.Capacitor)
-            .Where(c => c.Rotation == SymbolRotation.R0)
+            .Where(c => c.Rotation == SymbolRotation.R0 && c.Disable == DisableState.None)
             .ToList();
         Assert.NotEmpty(shunts);
 
         foreach (var c in shunts)
         {
             Assert.Equal(3, c.LabelOffsets.Count);
+
+            var p = c.Parameters.Single(x => x.Name is "L" or "C");
+            var expected = MatchShuntLabels.Offsets(
+                [p.Name, c.InstanceName, $"{p.Name} = {p.Expression} {p.Unit}"], 700.0, groundDy);
+
             Assert.All(c.LabelOffsets, o =>
             {
-                Assert.Equal(MatchSchematicModel.ShuntLabelDx, o.DX, 9);
-                Assert.Equal(MatchSchematicModel.ShuntLabelDy, o.DY, 9);
+                Assert.Equal(expected.Dx, o.DX, 9);
+                Assert.Equal(expected.Dy, o.DY, 9);
             });
         }
 

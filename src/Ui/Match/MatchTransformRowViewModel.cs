@@ -37,8 +37,10 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
     /// <summary>The stored record.</summary>
     public TransformRecord Record => _owner.Design.Transforms[Index];
 
-    /// <summary>"on (L2, L4)" — the pair the transform acts on, by element name.</summary>
-    public string ActsOn => $"on ({Record.ElementA}, {Record.ElementB})";
+    // There is no "on (L2, L4)" row property any more (owner, 2026-08-20: "remove the '(C2, C3)'
+    // indicator text that appears to the right of the locked button in the Transform group"). The
+    // pair a transform acts on is already drawn, as a brace under those very elements, in the
+    // schematic directly above this rack — see MatchTransformBracket.
 
     // ── N ─────────────────────────────────────────────────────────────────────
 
@@ -163,7 +165,6 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
         _nStaged = null;
         OnPropertyChanged(nameof(Label));
         OnPropertyChanged(nameof(Record));
-        OnPropertyChanged(nameof(ActsOn));
         OnPropertyChanged(nameof(N));
         OnPropertyChanged(nameof(NText));
         OnPropertyChanged(nameof(NMin));

@@ -109,6 +109,44 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         }
 
         // ============================================================
+        //  Styled Properties: CanDeletePlot / CanEditPlotProperties
+        // ============================================================
+
+        public static readonly StyledProperty<bool> CanDeletePlotProperty =
+            AvaloniaProperty.Register<PlotControl, bool>(nameof(CanDeletePlot), defaultValue: true);
+
+        /// <summary>
+        /// When false, the context menu's <b>Delete Plot</b> is shown disabled.
+        /// </summary>
+        /// <remarks>
+        /// <b>Owner, 2026-08-20:</b> <i>"the plot's context menu shows Delete Plot as enabled. It
+        /// should be disabled in a Match Designer window."</i> A plot hosted OUTSIDE the Data Display
+        /// canvas has no owner to be removed from — <c>DeletePlotRequested</c> reaches nobody, so the
+        /// item did nothing and looked as though it should. Disabled rather than hidden: the menu is
+        /// the Data Display's, and a user who knows it should see the same entries in the same
+        /// places, greyed where this host does not offer them.
+        /// </remarks>
+        public bool CanDeletePlot
+        {
+            get => GetValue(CanDeletePlotProperty);
+            set => SetValue(CanDeletePlotProperty, value);
+        }
+
+        public static readonly StyledProperty<bool> CanEditPlotPropertiesProperty =
+            AvaloniaProperty.Register<PlotControl, bool>(nameof(CanEditPlotProperties), defaultValue: true);
+
+        /// <summary>
+        /// When false, the context menu's <b>Plot Properties…</b> is shown disabled and a double-tap
+        /// does not open the inspector flyout. Same report and same reasoning as
+        /// <see cref="CanDeletePlot"/>.
+        /// </summary>
+        public bool CanEditPlotProperties
+        {
+            get => GetValue(CanEditPlotPropertiesProperty);
+            set => SetValue(CanEditPlotPropertiesProperty, value);
+        }
+
+        // ============================================================
         //  Events
         // ============================================================
 
@@ -172,6 +210,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private Trace?   _rightClickedTrace;
         private MenuItem? _addMarkerMenuItem;
         private MenuItem? _selectAllMarkersMenuItem;
+        private MenuItem? _plotPropertiesMenuItem;
+        private MenuItem? _deletePlotMenuItem;
 
         // Inspector flyout state
         private Flyout?                  _inspectorFlyout;
@@ -329,6 +369,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var icon = new MaterialIcon { Kind = MaterialIconKind.Settings };
             var item1 = new MenuItem { Header = "Plot Properties…", Icon = icon };
             item1.Click += OnMenuPlotProperties;
+            _plotPropertiesMenuItem = item1;
 
             icon = new MaterialIcon { Kind = MaterialIconKind.Numeric };
             var item2 = new MenuItem { Header = "Axes Limits", Icon = icon };
@@ -380,6 +421,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             icon = new MaterialIcon { Kind = MaterialIconKind.DeleteOutline };
             var item9 = new MenuItem { Header = "Delete Plot", Icon = icon };
             item9.Click += (_, _) => DeletePlotRequested?.Invoke(this, EventArgs.Empty);
+            _deletePlotMenuItem = item9;
 
             menu.Items.Add(item1);
             menu.Items.Add(item2);
@@ -400,6 +442,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _iconAxesLocked.Kind = _plot?.Axes.LockedPanning ?? false
                     ? MaterialIconKind.CheckboxOutline
                     : MaterialIconKind.CheckboxBlankOutline;
+
+                // Re-read on every open, not once at build time: the menu instance is cached for the
+                // control's lifetime (Pattern A), so a host that sets either flag after the first
+                // right-click would otherwise never be heard.
+                if (_plotPropertiesMenuItem is not null)
+                    _plotPropertiesMenuItem.IsEnabled = CanEditPlotProperties;
+                if (_deletePlotMenuItem is not null)
+                    _deletePlotMenuItem.IsEnabled = CanDeletePlot;
             };
 
             return menu;
@@ -412,7 +462,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         private void ShowPlotInspector(int scrollToTraceIndex = -1)
         {
-            if (_plot is null) return;
+            if (_plot is null || !CanEditPlotProperties) return;
 
             _inspectorFlyout?.Hide();
 
