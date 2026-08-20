@@ -21,132 +21,24 @@
         <cv:EnumUpperConverter                   x:Key="EnumUpper"/>
         <sys:Double x:Key="FontSize">10</sys:Double>
 
-        <!-- ── IconSelectButton default ControlTheme ────────────────────── -->
-        <!--  PART_Button picks up the seg-btn style already defined below
-              (UserControl.Styles applies to all visual descendants).
-              The popup hosts a ListBox of full-width glyph buttons.          -->
-        <ControlTheme TargetType="ctl:IconSelectButton"
-                      x:Key="{x:Type ctl:IconSelectButton}">
-            <Setter Property="Width"  Value="28"/>
-            <Setter Property="Height" Value="22"/>
-            <Setter Property="HorizontalAlignment" Value="Stretch"/>
-            <Setter Property="VerticalAlignment"   Value="Stretch"/>
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <Panel>
-                        <!-- Idle toolbar button — class seg-btn wired in code-behind
-                             via ApplyHighlight() which adds/removes "active". -->
-                        <Button x:Name="PART_Button"
-                                Classes="seg-btn"
-                                Width="{TemplateBinding Width}"
-                                Height="{TemplateBinding Height}"
-                                Padding="2,0"
-                                MinWidth="0"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center">
-                            <ContentControl Content="{TemplateBinding SelectedItem}"
-                                            ContentTemplate="{TemplateBinding ItemTemplate}"
-                                            HorizontalContentAlignment="Center"
-                                            VerticalContentAlignment="Center"
-                                            IsHitTestVisible="False"/>
-                        </Button>
+        <!-- The IconSelectButton ControlTheme used to be declared HERE. It now lives at
+             application scope (Styles/SegmentedSelect.axaml), because the Match Designer uses the
+             same control and a second copy of the template is a copy that stops matching. Nothing
+             else changed: the theme resolves by {x:Type} exactly as it did from this dictionary. -->
 
-                        <!-- Vertical option popup -->
-                        <Popup x:Name="PART_Popup"
-                               Placement="Bottom"
-                               IsLightDismissEnabled="True"
-                               PlacementTarget="{Binding #PART_Button}">
-                            <Border Background="{DynamicResource SystemChromeMediumLowColor}"
-                                    BorderBrush="{DynamicResource SystemBaseMediumLowColor}"
-                                    BorderThickness="1"
-                                    CornerRadius="4"
-                                    Padding="2">
-                                <Border.Styles>
-                                    <!-- When HighlightSelected=False, code-behind adds flat-select to
-                                         PART_ListBox. Items in flat-select mode keep transparent bg
-                                         when selected (hover still shows); accent highlight is suppressed. -->
-                                    <Style Selector="ListBox.flat-select ListBoxItem:selected">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                    </Style>
-                                </Border.Styles>
-                                <ListBox x:Name="PART_ListBox"
-                                         ItemsSource="{TemplateBinding ItemsSource}"
-                                         ItemTemplate="{TemplateBinding ItemTemplate}"
-                                         Width="{TemplateBinding Width}"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         Padding="0">
-                                    <ListBox.ItemContainerTheme>
-                                        <ControlTheme TargetType="ListBoxItem">
-                                            <Setter Property="Padding"                    Value="2,1"/>
-                                            <Setter Property="MinHeight"                  Value="22"/>
-                                            <Setter Property="Height"                     Value="22"/>
-                                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                            <Setter Property="Background"                 Value="Transparent"/>
-                                            <Setter Property="Template">
-                                                <ControlTemplate>
-                                                    <Border Background="{TemplateBinding Background}"
-                                                            CornerRadius="2"
-                                                            Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter Content="{TemplateBinding Content}"
-                                                                          ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                                          VerticalContentAlignment="Center"/>
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter>
-                                            <Style Selector="^:pointerover">
-                                                <Setter Property="Background" Value="{DynamicResource SystemBaseLowColor}"/>
-                                            </Style>
-                                            <Style Selector="^:selected">
-                                                <Setter Property="Background">
-                                                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.7"/>
-                                                </Setter>
-                                            </Style>
-                                        </ControlTheme>
-                                    </ListBox.ItemContainerTheme>
-                                </ListBox>
-                            </Border>
-                        </Popup>
-                    </Panel>
-                </ControlTemplate>
-            </Setter>
-        </ControlTheme>
     </UserControl.Resources>
 
     <UserControl.Styles>
-        <!-- ── Segmented toggle buttons — toolbar look ──────────────────── -->
-        <Style Selector="Button.seg-btn">
-            <Setter Property="Background"      Value="Transparent"/>
-            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius"    Value="3"/>
-            <Setter Property="Padding"         Value="6,3"/>
-            <Setter Property="MinWidth"        Value="0"/>
-            <Setter Property="FontSize"        Value="11"/>
-            <Setter Property="Margin"          Value="0,0,2,0"/>
-        </Style>
+        <!-- ── Segmented toggle buttons ─────────────────────────────────────
+             The BASE look (Button.seg-btn, and the .active accent on its ContentPresenter) is an
+             application-scope style now — see Styles/CircuitRfStyles.axaml. What stays here is the
+             part that names controls only the Data Display hosts. -->
         <!-- grey icons in the default (non-active) state -->
         <Style Selector="Button.seg-btn mi|MaterialIcon">
             <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
         </Style>
         <Style Selector="Button.seg-btn ctl|PlotTypeGlyphControl">
             <Setter Property="Stroke" Value="{DynamicResource SystemBaseMediumColor}"/>
-        </Style>
-        <!-- active = accent bg + white glyph, on ContentPresenter (mirrors Button.ToolActive) -->
-        <Style Selector="Button.seg-btn.active /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
-            <Setter Property="Foreground" Value="White"/>
-        </Style>
-        <Style Selector="Button.seg-btn.active:pointerover /template/ ContentPresenter">
-            <Setter Property="Background">
-                <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
-            </Setter>
-        </Style>
-        <Style Selector="Button.seg-btn.active:pressed /template/ ContentPresenter">
-            <Setter Property="Background">
-                <SolidColorBrush Color="{DynamicResource SystemAccentColorDark1}"/>
-            </Setter>
         </Style>
         <!-- white glyphs when active -->
         <Style Selector="Button.seg-btn.active mi|MaterialIcon">

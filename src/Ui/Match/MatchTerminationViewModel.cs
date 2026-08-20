@@ -63,6 +63,26 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         set { if (value) Topology = TerminationTopology.Parallel; }
     }
 
+    /// <summary>What the topology selector offers, in order.</summary>
+    /// <remarks>
+    /// <b>The Designer's selectors are <c>IconSelectButton</c>s, not radio buttons</b> (owner,
+    /// 2026-08-19: "replace all radio UI selectors with the custom UI element we created for the
+    /// trace card S/Z/Y selection"). That control is list-driven — it shows the current choice and
+    /// opens the rest in a popup — so each selector needs its options as a list and its state as one
+    /// value rather than as one boolean per option. The booleans above stay: they are what the design
+    /// actually round-trips, and they are what the existing gate tests assert against.
+    /// </remarks>
+    public static IReadOnlyList<string> TopologyOptions { get; } = ["Series", "Parallel"];
+
+    /// <summary>The topology as one of <see cref="TopologyOptions"/>.</summary>
+    public string TopologyChoice
+    {
+        get => IsSeries ? TopologyOptions[0] : TopologyOptions[1];
+        set => Topology = string.Equals(value, TopologyOptions[0], StringComparison.Ordinal)
+            ? TerminationTopology.Series
+            : TerminationTopology.Parallel;
+    }
+
     // ── Resistance ────────────────────────────────────────────────────────────
 
     /// <summary>Port resistance, ohms.</summary>
@@ -140,6 +160,26 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
 
     /// <summary>Three-state selector, purely resistive.</summary>
     public bool IsNone { get => Kind == ReactanceKind.None; set { if (value) Kind = ReactanceKind.None; } }
+
+    /// <summary>What the reactance-kind selector offers, in order. "–" is purely resistive.</summary>
+    public static IReadOnlyList<string> KindOptions { get; } = ["C", "L", "–"];
+
+    /// <summary>The reactance kind as one of <see cref="KindOptions"/>.</summary>
+    public string KindChoice
+    {
+        get => Kind switch
+        {
+            ReactanceKind.C => KindOptions[0],
+            ReactanceKind.L => KindOptions[1],
+            _               => KindOptions[2],
+        };
+        set => Kind = value switch
+        {
+            "C" => ReactanceKind.C,
+            "L" => ReactanceKind.L,
+            _   => ReactanceKind.None,
+        };
+    }
 
     /// <summary>False when the end is purely resistive — the value field has nothing to hold.</summary>
     public bool HasReactance => Kind != ReactanceKind.None;
@@ -425,12 +465,14 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         OnPropertyChanged(nameof(Topology));
         OnPropertyChanged(nameof(IsSeries));
         OnPropertyChanged(nameof(IsParallel));
+        OnPropertyChanged(nameof(TopologyChoice));
         OnPropertyChanged(nameof(Resistance));
         OnPropertyChanged(nameof(ResistanceText));
         OnPropertyChanged(nameof(Kind));
         OnPropertyChanged(nameof(IsC));
         OnPropertyChanged(nameof(IsL));
         OnPropertyChanged(nameof(IsNone));
+        OnPropertyChanged(nameof(KindChoice));
         OnPropertyChanged(nameof(HasReactance));
         OnPropertyChanged(nameof(ReactanceQuantity));
         OnPropertyChanged(nameof(ReactanceUnitOptions));

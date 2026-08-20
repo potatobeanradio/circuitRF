@@ -54,6 +54,19 @@ public sealed class InlineEditText : Panel
     public static readonly StyledProperty<string?> WatermarkProperty =
         AvaloniaProperty.Register<InlineEditText, string?>(nameof(Watermark));
 
+    /// <summary>
+    /// Which edge the value sits against — <see cref="HorizontalAlignment.Left"/> by default, and
+    /// <see cref="HorizontalAlignment.Right"/> for a label-left/value-right properties row.
+    /// </summary>
+    /// <remarks>
+    /// The RESTING text and the OPEN editor honour it together, which is the whole point: a value
+    /// that is right-aligned until you double-click it and then jumps to the left edge of its column
+    /// reads as a different control appearing rather than the same one opening.
+    /// </remarks>
+    public static readonly StyledProperty<HorizontalAlignment> HorizontalContentAlignmentProperty =
+        AvaloniaProperty.Register<InlineEditText, HorizontalAlignment>(
+            nameof(HorizontalContentAlignment), HorizontalAlignment.Left);
+
     /// <summary>True while an editor box is open on this control.</summary>
     public static readonly DirectProperty<InlineEditText, bool> IsEditingProperty =
         AvaloniaProperty.RegisterDirect<InlineEditText, bool>(nameof(IsEditing), o => o.IsEditing);
@@ -97,6 +110,13 @@ public sealed class InlineEditText : Panel
         set => SetValue(WatermarkProperty, value);
     }
 
+    /// <inheritdoc cref="HorizontalContentAlignmentProperty"/>
+    public HorizontalAlignment HorizontalContentAlignment
+    {
+        get => GetValue(HorizontalContentAlignmentProperty);
+        set => SetValue(HorizontalContentAlignmentProperty, value);
+    }
+
     /// <inheritdoc cref="IsEditingProperty"/>
     public bool IsEditing
     {
@@ -136,7 +156,8 @@ public sealed class InlineEditText : Panel
     {
         base.OnPropertyChanged(change);
         if (change.Property == TextProperty || change.Property == FontSizeProperty
-            || change.Property == ForegroundProperty || change.Property == WatermarkProperty)
+            || change.Property == ForegroundProperty || change.Property == WatermarkProperty
+            || change.Property == HorizontalContentAlignmentProperty)
             SyncDisplay();
     }
 
@@ -147,6 +168,7 @@ public sealed class InlineEditText : Panel
         _display.Text = empty ? Watermark ?? "" : text;
         _display.Opacity = empty ? 0.5 : 1.0;
         _display.FontSize = FontSize;
+        _display.HorizontalAlignment = HorizontalContentAlignment;
         if (Foreground is { } fg) _display.Foreground = fg;
     }
 
@@ -164,12 +186,13 @@ public sealed class InlineEditText : Panel
             Padding = new Thickness(2, 0),
             MinHeight = 0,
             MinWidth = 0,
-            // Left-aligned and explicitly WIDTH-SET, never stretched (owner-reported, 2026-08-19:
+            // Aligned to its own edge and explicitly WIDTH-SET, never stretched (owner-reported,
+            // 2026-08-19:
             // "too wide when it appears — only slightly wider than the text that is present"). This
             // control usually sits in a `*` grid column, so a stretched box fills the column however
             // short the value is; the width is measured from the text and re-measured as it is
             // typed, which is what harmonicaRF's own strip editor does.
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalContentAlignment,
             Width = InlineEdit.MeasureWidth(_pristine, FontSize, typeface),
             VerticalAlignment = VerticalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,

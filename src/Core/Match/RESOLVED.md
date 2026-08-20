@@ -284,3 +284,33 @@ Measured through the shipped path: −0.100 dB at both band edges (the 0.1 dB de
 0.1 dB-ripple Chebyshev return loss. Order 3 with both ends parallel-resistive gives
 shunt-series-shunt, so it needs no internal net at all.
 
+
+## Round 2 — N = 1 is a pole, and the range did not exclude it (2026-08-19)
+
+Owner: *"If slider N1 goes to 1, the plots all fail."*
+
+It is not a plotting bug and it is not a clamping accident — **unity is a genuine pole of all four
+Norton product formulae**, and `NortonTransform.Range` returned it as a usable bound. Written out at
+N = 1 exactly (`Apply`'s own expressions):
+
+| form | products at N = 1 |
+|------|-------------------|
+| pi   | `N²·z1 / (1 − N)` → **±∞** |
+| T    | `(1 − N)·z2` → **0**, which for a capacitor pair inverts to **∞** |
+
+So the ladder acquired a non-finite element and there was no response left to evaluate — not a bad
+number the plots could draw and the guards could flag, but no curve at all.
+
+**The threshold end was already an open interval and the unity end was not.** `ThresholdMargin`
+(1e-9) had been keeping N strictly inside its positivity threshold since MN-1, for exactly this
+reason: *"at the threshold a product is infinite"*. The other end of the same interval is the other
+pole of the same formulae, and it was the bare `1.0` — in **both** branches, bounded and
+`allowNegative` alike. `UnityMargin` now closes it symmetrically.
+
+**Nothing else moves, and that is checkable rather than hoped for.** At N = 1 ± 1e-9 the products are
+enormous but finite, the transfer function is still exactly invariant (a near-identity transformer is
+a near-open shunt arm), and the absolute guards report the element as out of range in red — which is
+the designed behaviour for an N parked on a bound, not a repair. `MatchRound2Tests` evaluates the
+published formula at exactly 1 as its own oracle rather than calling `Apply`, because `Apply` now
+clamps and can no longer reach the pole: without that, the exclusion would read as decoration.
+

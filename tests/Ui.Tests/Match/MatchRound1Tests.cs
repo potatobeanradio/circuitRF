@@ -192,52 +192,116 @@ public sealed class MatchRound1Tests
     }
 
     /// <summary>
-    /// <b>The interface pins actually draw.</b> The Pin glyph is a hexagon POLYGON plus one stem
-    /// line, and the preview's primitive walker had no polygon case — so the hexagon drew as
-    /// nothing and the stem landed exactly on the wire it connects to, which is why the owner saw no
-    /// pins at all rather than half of one. Nothing else this preview draws is a polygon, which is
-    /// how the gap went unnoticed.
+    /// <b>The interface pins are there, and they are the schematic's own Pin.</b>
     /// </summary>
     /// <remarks>
-    /// Asserted by reading the source: <c>Ui.Tests</c> has no live Avalonia application, so a
-    /// <c>DrawingContext</c> cannot be created and a render cannot be exercised. What is checkable is
-    /// that the glyph IS a polygon and that the walker has a case for one — the two halves whose
-    /// disagreement was the bug.
+    /// Round 1 had this as a source scan over the preview's hand-written primitive walker, which had
+    /// no <c>PolygonPrimitive</c> case — so the hexagon drew as nothing and the owner saw no pins at
+    /// all. Round 2 deleted the walker: the pane is a real <c>SchematicModel</c> rendered by
+    /// <c>SchematicRenderer</c>, which draws every primitive kind the editor draws, so the question
+    /// is no longer "does this file handle a polygon" but "is a Pin in the model". That is checkable
+    /// directly, without a render.
     /// </remarks>
     [Fact]
-    public void ThePreview_DrawsPolygons_WhichIsWhatAPinIsMadeOf()
+    public void TheProjection_PutsARealPinOnEveryInterfaceTerminal()
     {
         Assert.Contains(BuiltInSymbols.Primitives(SymbolKind.Pin).Primitives,
                         prim => prim is PolygonPrimitive);
 
-        string src = System.IO.File.ReadAllText(System.IO.Path.Combine(
-            RepoRoot(), "src", "Ui", "Views", "Match", "MatchLadderPreview.cs"));
-        Assert.Contains("case PolygonPrimitive", src, StringComparison.Ordinal);
-        Assert.Contains("SymbolKind.Pin", src, StringComparison.Ordinal);
+        var (_, _, d) = Open();
+        var model = MatchSchematicModel.Build(d.Ladder);
+
+        var pins = model.Components.Where(c => c.Symbol == SymbolKind.Pin).ToList();
+        Assert.Equal(d.Ladder.Elements.Any(e => e.IsShunt) ? 4 : 2, pins.Count);
+
+        // Each pin's own terminal lands exactly on the wire it marks: local (+100, 0), so an
+        // unmirrored one sits 100 behind its tip and a mirrored one 100 in front.
+        var left = pins.OrderBy(p => p.X).First();
+        var right = pins.OrderByDescending(p => p.X).First();
+        Assert.Equal(SymbolRotation.R0, left.Rotation);
+        Assert.Equal(SymbolRotation.R180, right.Rotation);
+        Assert.Equal(d.Ladder.PortLeftX,  left.X + 100, 6);
+        Assert.Equal(d.Ladder.PortRightX, right.X - 100, 6);
     }
 
     /// <summary>
-    /// The preview paints the schematic's own background and labels each element with the schematic's
-    /// own three text roles — type, instance, value (owner, 2026-08-19).
+    /// <b>The network pane is a circuitRF schematic, not a drawing of one</b> (owner, 2026-08-19).
+    /// Every element becomes a placed component of the editor's own built-in kind, at the editor's
+    /// own grid size, labelled with the editor's own three rows — so the colours, the glyphs and the
+    /// label roles are the schematic's by construction rather than by a second implementation
+    /// agreeing with the first.
     /// </summary>
     [Fact]
-    public void ThePreview_UsesTheSchematicColourRoles()
+    public void TheProjection_IsARealSchematicModel()
+    {
+        var (_, _, d) = Open();
+        var model = MatchSchematicModel.Build(d.Ladder);
+
+        Assert.Equal(100.0, model.GridSize);
+        Assert.NotEmpty(model.Wires);
+
+        foreach (var e in d.Ladder.Elements)
+        {
+            var c = Assert.Single(model.Components, x => x.Id == e.Name);
+            Assert.Equal(e.Type == ElementType.L ? SymbolKind.Inductor : SymbolKind.Capacitor, c.Symbol);
+
+            // A shunt arm keeps the built-in glyph's own vertical orientation; a series arm is the
+            // SAME glyph at R90, exactly as placing one rotated on a page would be.
+            Assert.Equal(e.IsShunt ? SymbolRotation.R0 : SymbolRotation.R90, c.Rotation);
+
+            // Type, instance, value — the schematic's three label rows, in the schematic's order.
+            Assert.Equal(3, c.Labels.Count);
+            Assert.Equal(e.Type == ElementType.L ? "L" : "C", c.Labels[0]);
+            Assert.Equal(e.Name, c.Labels[1]);
+            Assert.Contains(e.ValueText, c.Labels[2], StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// The spine is drawn in the GAPS between series elements, never through them — a built-in glyph
+    /// carries its own leads out to ±200, so a port-to-port line would lay a second wire across every
+    /// series body.
+    /// </summary>
+    [Fact]
+    public void TheProjection_LeavesNoWireUnderASeriesBody()
+    {
+        var (_, _, d) = Open();
+        var model = MatchSchematicModel.Build(d.Ladder);
+
+        foreach (var e in d.Ladder.Elements.Where(x => !x.IsShunt))
+        {
+            var horizontals = model.Wires.Where(w =>
+                Math.Abs(w.Points[0].Y - MatchLadderLayout.SpineY) < 1e-9 &&
+                Math.Abs(w.Points[1].Y - MatchLadderLayout.SpineY) < 1e-9);
+            foreach (var w in horizontals)
+            {
+                double x0 = Math.Min(w.Points[0].X, w.Points[1].X);
+                double x1 = Math.Max(w.Points[0].X, w.Points[1].X);
+                Assert.False(x0 < e.X - 200 + 1e-9 && x1 > e.X + 200 - 1e-9,
+                             $"a spine wire runs straight through {e.Name}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Every colour the pane uses is a theme ROLE, and the two the schematic has no way to express
+    /// stay where the meaning lives — on the layout element, which the renderer's overlay reads.
+    /// </summary>
+    [Fact]
+    public void ThePane_UsesTheSchematicColourRoles()
     {
         string src = System.IO.File.ReadAllText(System.IO.Path.Combine(
-            RepoRoot(), "src", "Ui", "Views", "Match", "MatchLadderPreview.cs"));
+            RepoRoot(), "src", "Ui", "Views", "Match", "MatchSchematicCanvas.cs"));
 
-        foreach (string role in new[]
-        {
-            nameof(ColorRole.SchematicBackground),
-            nameof(ColorRole.SchematicWire),
-            nameof(ColorRole.SchematicSymbolLine),
-            nameof(ColorRole.SchematicComponentNameText),
-            nameof(ColorRole.SchematicConnectedPin),
-        })
-            Assert.Contains("ColorRole." + role, src, StringComparison.Ordinal);
+        // The schematic's own colours arrive as a whole token bundle rather than one role at a time
+        // — which is the point: there is no second list of roles here to fall behind the editor's.
+        Assert.Contains("SchematicRenderTheme.FromTheme", src, StringComparison.Ordinal);
+        Assert.Contains("SchematicRenderer.Draw", src, StringComparison.Ordinal);
 
-        // Instance and parameter roles reach the renderer through the layout element, which is where
-        // the meaning-to-colour mapping lives.
+        // The two exceptions, each saying something a schematic cannot.
+        Assert.Contains("ColorRole." + nameof(ColorRole.MatchNegative), src, StringComparison.Ordinal);
+        Assert.Contains("ColorRole." + nameof(ColorRole.MatchBracket), src, StringComparison.Ordinal);
+
         var e = new MatchLadderElement("L2", ElementType.L, false, 1e-9,
                                        MatchElementRole.Normal, 0, 0, "1 nH");
         Assert.Equal(ColorRole.SchematicInstanceNameText, e.NameColorRoleKey);
@@ -413,7 +477,11 @@ public sealed class MatchRound1Tests
         Assert.DoesNotContain("PointerPressed += ", src, StringComparison.Ordinal);
 
         // Explicit width from a measurement, re-measured as the user types, and never stretched.
-        Assert.Contains("HorizontalAlignment = HorizontalAlignment.Left", src, StringComparison.Ordinal);
+        // The box takes the control's OWN content alignment (Round 2: a right-aligned properties row
+        // must not jump to the left edge of its column the moment the editor opens) — the default is
+        // still Left, so this is the same behaviour every existing call site had.
+        Assert.Contains("HorizontalAlignment = HorizontalContentAlignment", src, StringComparison.Ordinal);
+        Assert.Contains("HorizontalAlignment.Left", src, StringComparison.Ordinal);
         Assert.Contains("Width = InlineEdit.MeasureWidth(_pristine, FontSize, typeface)", src,
                         StringComparison.Ordinal);
         Assert.Contains("box.TextChanged +=", src, StringComparison.Ordinal);

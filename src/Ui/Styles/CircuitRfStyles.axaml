@@ -221,4 +221,36 @@
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
         </Style>
 
+        <!-- ── Segmented select buttons ──────────────────────────────────────────
+             The resting look of IconSelectButton's PART_Button (Styles/SegmentedSelect.axaml) and of
+             any toolbar button that wants to read as one segment of a group. Application scope
+             because two windows use it: the Data Display's trace card and the Match Designer. The
+             Data Display adds its OWN selectors for the MaterialIcon / PlotTypeGlyphControl content
+             it hosts — those stay in PlotInspectorView.axaml, where the controls they name live. -->
+        <Style Selector="Button.seg-btn">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+            <Setter Property="Padding"         Value="6,3"/>
+            <Setter Property="MinWidth"        Value="0"/>
+            <Setter Property="FontSize"        Value="11"/>
+            <Setter Property="Margin"          Value="0,0,2,0"/>
+        </Style>
+        <!-- active = accent bg + white glyph, on ContentPresenter (mirrors Button.ToolActive) -->
+        <Style Selector="Button.seg-btn.active /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.seg-btn.active:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+            </Setter>
+        </Style>
+        <Style Selector="Button.seg-btn.active:pressed /template/ ContentPresenter">
+            <Setter Property="Background">
+                <SolidColorBrush Color="{DynamicResource SystemAccentColorDark1}"/>
+            </Setter>
+        </Style>
+
 </Styles>

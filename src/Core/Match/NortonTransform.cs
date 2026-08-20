@@ -51,6 +51,24 @@ public static class NortonTransform
     /// <summary>How far inside its positivity threshold N is kept; at the threshold a product is infinite.</summary>
     public const double ThresholdMargin = 1e-9;
 
+    /// <summary>
+    /// How far off <b>unity</b> N is kept. N = 1 is an identity transformer, and every one of the four
+    /// product formulae divides by (N − 1) or multiplies by it: pi produces an infinite element there
+    /// and T a zero one, which for a capacitor pair inverts to infinite as well.
+    /// </summary>
+    /// <remarks>
+    /// <b>Unity is a pole, exactly like the positivity threshold, and it was not excluded</b>
+    /// (owner-reported, 2026-08-19: <i>"if slider N1 goes to 1, the plots all fail"</i>). The range's
+    /// unity end was the bare 1.0, so the slider could be dragged onto the pole itself and the ladder
+    /// then carried a non-finite element — which is not a bad value the response engine can plot and
+    /// flag, it is no response at all. Both ends of the range are now open intervals, by the same
+    /// margin and for the same reason. Nothing else changes: at 1 ± 1e-9 the products are enormous
+    /// but FINITE, the transfer function is still exactly invariant (a near-identity transformer is
+    /// a near-open shunt), and the absolute guards report the element as out of range in red — which
+    /// is the designed behaviour for an N parked on a bound, not a repair.
+    /// </remarks>
+    public const double UnityMargin = 1e-9;
+
     /// <summary>Last-resort absolute guard: no inductance above this, in henries.</summary>
     public const double GuardMaxValue = 1.0;
 
@@ -153,16 +171,20 @@ public static class NortonTransform
 
         double threshold = nGreater ? 1.0 + z1 / z2 : z2 / (z1 + z2);
 
+        // Strictly OFF unity, at both ends: see UnityMargin. A step-up pair may not reach 1 from
+        // above, a step-down pair may not reach it from below, and neither may sit on it.
+        double up = 1.0 + UnityMargin, down = 1.0 - UnityMargin;
+
         double min, max;
         if (allowNegative)
         {
-            (min, max) = nGreater ? (1.0, 10.0) : (1e-3, 1.0);
+            (min, max) = nGreater ? (up, 10.0) : (1e-3, down);
         }
         else
         {
             // Strictly inside: exactly at the threshold one of the three products is infinite.
             double inside = 1.0 + (threshold - 1.0) * (1.0 - ThresholdMargin);
-            (min, max) = nGreater ? (1.0, inside) : (inside, 1.0);
+            (min, max) = nGreater ? (up, inside) : (inside, down);
         }
 
         return new TransformRange(min, max, propagateRight, threshold, nGreater);

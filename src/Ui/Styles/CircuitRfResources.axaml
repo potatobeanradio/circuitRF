@@ -71,4 +71,11 @@
         <SolidColorBrush x:Key="DockSplitterHoverBrush"              Color="{DynamicResource SystemAccentColorLight1}"/>
         <SolidColorBrush x:Key="DockSplitterDragBrush"               Color="{DynamicResource SystemAccentColor}"/>
 
+        <!-- The IconSelectButton default ControlTheme (the trace card's S/Y/Z selector, and every
+             two- or three-way selector in the Match Designer). ONE definition, application scope —
+             see the file's own header for why it is not two. -->
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceInclude Source="avares://CircuitRF.Ui/Styles/SegmentedSelect.axaml"/>
+        </ResourceDictionary.MergedDictionaries>
+
 </ResourceDictionary>

@@ -109,6 +109,19 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
     /// <summary>Two-state selector, T half.</summary>
     public bool IsT  { get => Form == TransformForm.T;  set { if (value) Form = TransformForm.T;  } }
 
+    /// <summary>What the form selector offers, in order — see <c>MatchTerminationViewModel.TopologyOptions</c>
+    /// for why the Designer's selectors are list-driven rather than pairs of radio buttons.</summary>
+    public static IReadOnlyList<string> FormOptions { get; } = ["π", "T"];
+
+    /// <summary>The form as one of <see cref="FormOptions"/>.</summary>
+    public string FormChoice
+    {
+        get => IsPi ? FormOptions[0] : FormOptions[1];
+        set => Form = string.Equals(value, FormOptions[1], StringComparison.Ordinal)
+            ? TransformForm.T
+            : TransformForm.Pi;
+    }
+
     // ── Lock ──────────────────────────────────────────────────────────────────
 
     /// <summary>A locked row is never written by the linkage.</summary>
@@ -161,6 +174,7 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
         OnPropertyChanged(nameof(Form));
         OnPropertyChanged(nameof(IsPi));
         OnPropertyChanged(nameof(IsT));
+        OnPropertyChanged(nameof(FormChoice));
         OnPropertyChanged(nameof(Locked));
         OnPropertyChanged(nameof(CanEditN));
         OnPropertyChanged(nameof(DisabledReason));

@@ -24,15 +24,13 @@
     </Window.KeyBindings>
 
     <Window.Resources>
-        <!-- One termination group. Two of them, identical in every way but which end they edit —
+        <!-- One termination card. Two of them, identical in every way but which end they edit —
              which is what a template is for; two hand-written copies drift. -->
         <DataTemplate x:Key="TerminationTemplate" x:DataType="mvm:MatchTerminationViewModel">
-            <!-- One group box per termination (owner, 2026-08-19). The border and its header are what
-                 make the two ends read as two THINGS rather than as one long column of controls. -->
-            <Border Classes="group">
-              <StackPanel Spacing="2">
+            <Border Classes="card">
+              <StackPanel Spacing="3">
                 <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Classes="grouphdr" Text="{Binding Header}"/>
+                    <TextBlock Classes="cardhdr" Text="{Binding Header}"/>
                     <TextBlock Grid.Column="1" Text="⚑" FontSize="12"
                                Foreground="{DynamicResource CrfWarningBrush}"
                                IsVisible="{Binding IsFlagged}"
@@ -40,44 +38,61 @@
                 </Grid>
 
                 <Grid ColumnDefinitions="Auto,*">
-                    <mv:MatchPictogramControl Width="58" Height="82" VerticalAlignment="Center"
+                    <mv:MatchPictogramControl Width="52" Height="76" VerticalAlignment="Center"
                                               Pictogram="{Binding Pictogram}"
                                               ResistorOnLeft="{Binding ResistorOnLeft}"
                                               Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
                                               ToolTip.Tip="{Binding Pictogram.Description}"/>
-                    <StackPanel Grid.Column="1" Spacing="2" Margin="6,0,0,0">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <RadioButton Content="Series" FontSize="11" GroupName="{Binding Header}"
-                                         IsChecked="{Binding IsSeries, Mode=TwoWay}"/>
-                            <RadioButton Content="Parallel" FontSize="11" GroupName="{Binding Header}"
-                                         IsChecked="{Binding IsParallel, Mode=TwoWay}"/>
-                        </StackPanel>
-                        <Grid ColumnDefinitions="20,*,Auto">
-                            <TextBlock Classes="lbl" Text="R"/>
-                            <ctl:InlineEditText Grid.Column="1" FontSize="11"
+
+                    <!-- Label left, value right — the Array Inductance panel's row shape (owner,
+                         2026-08-19: "see how the Array Inductance panel looks… get inspired by it").
+                         A column of these is readable at a glance, which a mixed row of radio
+                         buttons, boxes and combos never was. -->
+                    <StackPanel Grid.Column="1" Spacing="3" Margin="8,0,0,0">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Classes="detailLabel" Text="Topology"/>
+                            <ddc:IconSelectButton Grid.Column="1" Width="62" Height="19"
+                                                  HorizontalAlignment="Right"
+                                                  ItemsSource="{x:Static mvm:MatchTerminationViewModel.TopologyOptions}"
+                                                  SelectedItem="{Binding TopologyChoice, Mode=TwoWay}"
+                                                  ToolTip.Tip="Whether the reactance sits in series with R or across it">
+                                <ddc:IconSelectButton.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontSize="10"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </ddc:IconSelectButton.ItemTemplate>
+                            </ddc:IconSelectButton>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Classes="detailLabel" Text="R"/>
+                            <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                 Text="{Binding ResistanceEntry, Mode=TwoWay}"
                                                 ToolTip.Tip="Double-click to edit. Type a unit (50, 50 Ω, 1.2 kΩ) — the number is pre-selected and the unit is left alone."/>
-                            <ComboBox Grid.Column="2" FontSize="11" Margin="4,0,0,0"
-                                      ItemsSource="{x:Static mvm:MatchDesignerSettings.ResistanceUnitOptions}"
-                                      SelectedItem="{Binding ResistanceUnit, Mode=TwoWay}"/>
                         </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Classes="lbl" Text="X"/>
-                            <RadioButton Content="C" FontSize="11" GroupName="{Binding Header}X"
-                                         IsChecked="{Binding IsC, Mode=TwoWay}"/>
-                            <RadioButton Content="L" FontSize="11" GroupName="{Binding Header}X"
-                                         IsChecked="{Binding IsL, Mode=TwoWay}"/>
-                            <RadioButton Content="–" FontSize="11" GroupName="{Binding Header}X"
-                                         IsChecked="{Binding IsNone, Mode=TwoWay}"
-                                         ToolTip.Tip="Purely resistive: Q = 0, nothing to absorb"/>
-                        </StackPanel>
-                        <Grid ColumnDefinitions="20,*,Auto" IsEnabled="{Binding HasReactance}">
-                            <ctl:InlineEditText Grid.Column="1" FontSize="11"
+
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Classes="detailLabel" Text="X"/>
+                            <ddc:IconSelectButton Grid.Column="1" Width="62" Height="19"
+                                                  HorizontalAlignment="Right"
+                                                  ItemsSource="{x:Static mvm:MatchTerminationViewModel.KindOptions}"
+                                                  SelectedItem="{Binding KindChoice, Mode=TwoWay}"
+                                                  ToolTip.Tip="C, L, or – for purely resistive (Q = 0, nothing to absorb)">
+                                <ddc:IconSelectButton.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontSize="10"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </ddc:IconSelectButton.ItemTemplate>
+                            </ddc:IconSelectButton>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding HasReactance}">
+                            <TextBlock Classes="detailLabel" Text="Value"/>
+                            <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                 Text="{Binding ReactanceEntry, Mode=TwoWay}"
                                                 ToolTip.Tip="Double-click to edit. Type a unit (1.5 pF, 2.2 nH) to pin the display unit."/>
-                            <ComboBox Grid.Column="2" FontSize="11" Margin="4,0,0,0"
-                                      ItemsSource="{Binding ReactanceUnitOptions}"
-                                      SelectedItem="{Binding ReactanceUnit, Mode=TwoWay}"/>
                         </Grid>
                     </StackPanel>
                 </Grid>
@@ -94,8 +109,8 @@
                     <CheckBox Grid.Column="1" Content="Conjugate" FontSize="11" Margin="8,0,0,0"
                               IsChecked="{Binding Conjugate, Mode=TwoWay}"
                               ToolTip.Tip="{x:Static mvm:MatchTerminationViewModel.ConjugateNote}"/>
-                    <TextBlock Grid.Column="2" Classes="lbl" Text="{Binding ProbeProvenance}"
-                               Margin="6,0,0,0" Opacity="0.8" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="2" Classes="detailLabel" Text="{Binding ProbeProvenance}"
+                               Margin="6,0,0,0" TextTrimming="CharacterEllipsis"/>
                 </Grid>
 
                 <!-- The conjugate note used to be repeated HERE, as a wrapped paragraph that appeared
@@ -103,12 +118,10 @@
                      pane (owner, 2026-08-19: "not a good UX; don't show that text, we already have a
                      tooltip"). The checkbox's own ToolTip.Tip above says the same sentence. -->
 
-                <TextBlock Text="{Binding ProbeError}" FontSize="10" TextWrapping="Wrap"
-                           Foreground="{DynamicResource CrfWarningBrush}" Margin="0,2,0,0"
+                <TextBlock Classes="warn" Text="{Binding ProbeError}"
                            IsVisible="{Binding ProbeError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                <TextBlock Text="{Binding ProbeFlag}" FontSize="10" TextWrapping="Wrap"
-                           Foreground="{DynamicResource CrfWarningBrush}" Margin="0,2,0,0"
+                <TextBlock Classes="warn" Text="{Binding ProbeFlag}"
                            IsVisible="{Binding ProbeFlag, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                 <!-- All four candidates with their residuals, physical or not: §10.2 is explicit that
@@ -128,8 +141,7 @@
                                     <TextBlock FontSize="10" Opacity="0.7" Text="{Binding ResidualText}"/>
                                     <TextBlock FontSize="10" Opacity="0.7" Text="{Binding TargetNote}"
                                                IsVisible="{Binding TargetNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                    <TextBlock FontSize="10" Opacity="0.7" Text="{Binding PhysicalNote}"
-                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                    <TextBlock Classes="warn" Text="{Binding PhysicalNote}"
                                                IsVisible="{Binding PhysicalNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                 </StackPanel>
                                 <Button Grid.Column="1" Content="Use" FontSize="10" Padding="6,1"
@@ -147,42 +159,90 @@
     </Window.Resources>
 
     <Window.Styles>
-        <Style Selector="TextBlock.h">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Opacity" Value="0.75"/>
-            <Setter Property="Margin" Value="0,8,0,4"/>
+        <!-- ── The panel language, taken from the Array Inductance panel ───────────
+             (owner, 2026-08-19: "the UI for the SPECIFICATION panel needs to be cleaned up… the
+             group box needs a different background colour… get inspired by it to redesign the
+             SPECIFICATION panel and any other panels in the Match Designer").
+
+             Two tiers, and the whole point is that they are DIFFERENT: a pane is
+             SystemChromeMediumLowColor, a card inside it is SystemChromeLowColor, so a group reads
+             as a thing sitting ON the panel rather than as a rectangle drawn on it. Both carry the
+             one tile border the rest of the application uses. Headings are sentence case, not
+             SHOUTED (owner, same round). -->
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
         </Style>
-        <Style Selector="TextBlock.lbl">
-            <Setter Property="FontSize" Value="11"/>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8,5"/>
+            <Setter Property="Margin"          Value="0,0,0,5"/>
+        </Style>
+
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardhdr">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,2"/>
+        </Style>
+        <Style Selector="TextBlock.detailLabel">
+            <Setter Property="FontSize"          Value="10"/>
+            <Setter Property="Opacity"           Value="0.6"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+        <Style Selector="TextBlock.detailValue">
+            <Setter Property="FontSize"            Value="10"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.warn">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin"       Value="0,2,0,0"/>
+            <Setter Property="Foreground"   Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+
+        <!-- A settable value in a label-left/value-right row: same size and edge as detailValue, so
+             the settable rows and the read-only ones line up as one column of numbers. -->
+        <Style Selector="ctl|InlineEditText.val">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+        </Style>
+
         <Style Selector="TextBox.num">
             <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="Padding"  Value="4,2"/>
         </Style>
-        <!-- The two termination group boxes (owner, 2026-08-19). A Border plus a header row rather
-             than a HeaderedContentControl: nothing else in this application templates one, and two
-             elements say the same thing with no style to maintain. -->
-        <Style Selector="Border.group">
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-            <Setter Property="Padding" Value="6,4,6,6"/>
-            <Setter Property="Margin" Value="0,6,0,0"/>
-            <Setter Property="CornerRadius" Value="3"/>
-        </Style>
-        <Style Selector="TextBlock.grouphdr">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Opacity" Value="0.85"/>
-            <Setter Property="Margin" Value="0,0,0,2"/>
-        </Style>
-        <Style Selector="Border.pane">
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-            <Setter Property="Padding" Value="8"/>
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="CornerRadius" Value="3"/>
+
+        <!-- The transform rack's N slider (owner-reported, 2026-08-19: "the N indicator in the
+             TRANSFORMS panel has a very large height — perhaps the slider is messing with it").
+             It was: Fluent's Slider reserves room for tick bands and a full-size thumb, so one in a
+             row makes the whole row that tall. The Data Display's inspector already solved this and
+             the fix is its fix — no explicit Height (which would squash the thumb off-centre), a
+             negative vertical margin that pulls the layout footprint back in. The WIDTH is untouched,
+             as asked. -->
+        <Style Selector="Slider.compact">
+            <Setter Property="Margin"            Value="4,-7"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
     </Window.Styles>
 
@@ -207,16 +267,17 @@
         <!-- ── The three panes, plus the solutions drawer ─────────────────── -->
         <Grid Grid.Row="1" ColumnDefinitions="300,*,380,Auto">
 
-            <!-- SPECIFICATION -->
+            <!-- Specification -->
             <Border Grid.Column="0" Classes="pane">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="2">
-                        <TextBlock Classes="h" Text="SPECIFICATION"/>
-
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Classes="panelhdr" Text="Specification"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
                         <!-- A probe is a real S-parameter sweep, and on a biased transistor a real DC
                              solve first, so it runs off the UI thread with the engine's own progress
                              and cancellation. -->
-                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsProbing}" Margin="0,2">
+                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsProbing}" Margin="0,0,0,5">
                             <StackPanel Spacing="1">
                                 <TextBlock FontSize="10" Text="{Binding ProbeStatus}" Opacity="0.85"/>
                                 <ProgressBar Height="4" Minimum="0" Maximum="1"
@@ -226,136 +287,162 @@
                                     Margin="6,0,0,0" Command="{Binding CancelProbeCommand}"/>
                         </Grid>
 
-                        <TextBlock Text="{Binding PayloadError}" FontSize="11" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource CrfWarningBrush}"
+                        <TextBlock Classes="warn" Text="{Binding PayloadError}"
                                    IsVisible="{Binding PayloadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                         <ContentControl Content="{Binding Term1}" ContentTemplate="{StaticResource TerminationTemplate}"/>
                         <ContentControl Content="{Binding Term2}" ContentTemplate="{StaticResource TerminationTemplate}"/>
 
-                        <TextBlock Classes="h" Text="BAND"/>
-                        <Grid ColumnDefinitions="Auto,*,8,*,Auto">
-                            <TextBlock Classes="lbl" Text="f " Margin="0,0,4,0"/>
-                            <ctl:InlineEditText Grid.Column="1" FontSize="11"
-                                                Text="{Binding F1Entry, Mode=TwoWay}"
-                                                ToolTip.Tip="Lower band edge. Double-click to edit; a typed unit (2.4 GHz, 900 MHz) moves BOTH edges' display unit."/>
-                            <ctl:InlineEditText Grid.Column="3" FontSize="11"
-                                                Text="{Binding F2Entry, Mode=TwoWay}"
-                                                ToolTip.Tip="Upper band edge. Double-click to edit; a typed unit moves BOTH edges' display unit."/>
-                            <ComboBox Grid.Column="4" FontSize="11" Margin="4,0,0,0"
-                                      ItemsSource="{x:Static mvm:MatchDesignerSettings.FrequencyUnitOptions}"
-                                      SelectedItem="{Binding BandUnit, Mode=TwoWay}"/>
-                        </Grid>
+                        <!-- Band: TWO labelled edges (owner, 2026-08-19: "needs text labels for f1
+                             and f2, there's currently only just 'f'"). One "f" over two boxes left
+                             the reader to work out which was which from their order. The unit combo
+                             that used to sit beside them is gone with the others — see the R row. -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="cardhdr" Text="Band"/>
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="f1"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding F1Entry, Mode=TwoWay}"
+                                                        ToolTip.Tip="Lower band edge. Double-click to edit; a typed unit (2.4 GHz, 900 MHz) moves BOTH edges' display unit."/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="f2"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding F2Entry, Mode=TwoWay}"
+                                                        ToolTip.Tip="Upper band edge. Double-click to edit; a typed unit moves BOTH edges' display unit."/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
-                        <TextBlock Classes="h" Text="ORDER"/>
-                        <ctl:InlineEditText FontSize="11" HorizontalAlignment="Left" MinWidth="40"
-                                            Text="{Binding OrderEntry, Mode=TwoWay}"
-                                            ToolTip.Tip="{Binding OrderTooltip}"/>
-                        <TextBlock Text="{Binding OrderNote}" FontSize="10" TextWrapping="Wrap"
-                                   Opacity="0.8" Margin="0,3,0,0"
-                                   IsVisible="{Binding OrderNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <Border Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="cardhdr" Text="Order"/>
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Elements"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding OrderEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="{Binding OrderTooltip}"/>
+                                </Grid>
+                                <TextBlock Classes="note" Text="{Binding OrderNote}"
+                                           IsVisible="{Binding OrderNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                        </Border>
 
-                        <!-- RESPONSE is a ComboBox, not four radio buttons (owner, 2026-08-19). An
-                             infeasible family still APPEARS, disabled, carrying the refusal that
-                             explains it — dropping it from the list would answer "why can't I pick
-                             Bessel?" by saying nothing at all. -->
-                        <TextBlock Classes="h" Text="RESPONSE"/>
-                        <ComboBox FontSize="11" HorizontalAlignment="Stretch"
-                                  ItemsSource="{Binding ResponseOptions}"
-                                  SelectedItem="{Binding SelectedResponseOption, Mode=TwoWay}">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate x:DataType="mvm:MatchResponseOptionViewModel">
-                                    <TextBlock Text="{Binding Display}" FontSize="11"
-                                               IsEnabled="{Binding IsEnabled}"
-                                               Opacity="{Binding ListOpacity}"
-                                               ToolTip.Tip="{Binding Tooltip}"/>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <TextBlock Text="{Binding ResponseRefusal}" FontSize="10" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource CrfWarningBrush}" Margin="0,2,0,0"
-                                   IsVisible="{Binding ResponseRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <!-- The response family is a ComboBox, not four radio buttons (owner,
+                             2026-08-19). An infeasible family still APPEARS, disabled, carrying the
+                             refusal that explains it — dropping it from the list would answer "why
+                             can't I pick Bessel?" by saying nothing at all. It is a LIST of four with
+                             one-line descriptions, which is the one selector an IconSelectButton
+                             would make worse: that control shows a glyph, and these are sentences. -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="cardhdr" Text="Response"/>
+                                <ComboBox FontSize="11" HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding ResponseOptions}"
+                                          SelectedItem="{Binding SelectedResponseOption, Mode=TwoWay}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="mvm:MatchResponseOptionViewModel">
+                                            <TextBlock Text="{Binding Display}" FontSize="11"
+                                                       IsEnabled="{Binding IsEnabled}"
+                                                       Opacity="{Binding ListOpacity}"
+                                                       ToolTip.Tip="{Binding Tooltip}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <TextBlock Classes="warn" Text="{Binding ResponseRefusal}"
+                                           IsVisible="{Binding ResponseRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                        <!-- Ripple: four characters is the whole ask ("0.05"), so the field is sized
-                             for four and no more (owner, 2026-08-19). -->
-                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0"
-                                    IsEnabled="{Binding RippleEnabled}">
-                            <TextBlock Classes="lbl" Text="Ripple"/>
-                            <ctl:InlineEditText FontSize="11" MinWidth="46"
-                                                Text="{Binding RippleEntry, Mode=TwoWay}"
-                                                ToolTip.Tip="Equal-ripple level in dB — the real-to-real prototype only"/>
-                        </StackPanel>
+                                <!-- Ripple: four characters is the whole ask ("0.05"). -->
+                                <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding RippleEnabled}">
+                                    <TextBlock Classes="detailLabel" Text="Ripple, dB"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="46"
+                                                        Text="{Binding RippleEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="Equal-ripple level in dB — the real-to-real prototype only"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
-                        <CheckBox FontSize="11" Content="Q-adjust" Margin="0,6,0,0"
-                                  IsChecked="{Binding QAdjustEnabled, Mode=TwoWay}"
-                                  ToolTip.Tip="Deliberately inflate the analysis end's Q so a lower order completes — adds one element at that end"/>
-                        <CheckBox FontSize="11" Content="Allow negative components"
-                                  IsChecked="{Binding AllowNegativeComponents, Mode=TwoWay}"
-                                  ToolTip.Tip="Widens every transform's range past its positivity threshold"/>
+                        <Border Classes="card">
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="cardhdr" Text="Options"/>
+                                <CheckBox FontSize="11" Content="Q-adjust" MinHeight="0"
+                                          IsChecked="{Binding QAdjustEnabled, Mode=TwoWay}"
+                                          ToolTip.Tip="Deliberately inflate the analysis end's Q so a lower order completes — adds one element at that end"/>
+                                <CheckBox FontSize="11" Content="Allow negative components" MinHeight="0"
+                                          IsChecked="{Binding AllowNegativeComponents, Mode=TwoWay}"
+                                          ToolTip.Tip="Widens every transform's range past its positivity threshold"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                </ScrollViewer>
+                    </ScrollViewer>
+                </Grid>
             </Border>
 
-            <!-- NETWORK + TRANSFORMS -->
+            <!-- Network + Transforms -->
             <Grid Grid.Column="1" RowDefinitions="*,Auto">
                 <Border Classes="pane">
-                    <Grid RowDefinitions="Auto,*,Auto">
+                    <!-- The schematic on top, the component listing UNDER it (owner, 2026-08-19:
+                         "move the grid listing of components so that it appears in a scrollview under
+                         the schematic; remove the schematic/grid radio UI selector"). They are two
+                         views of one network, and a selector that showed one at a time made the user
+                         choose between the picture and the numbers. -->
+                    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Classes="h" Text="NETWORK"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0" Margin="0,6,0,0">
-                                <RadioButton GroupName="NetView" Content="schematic" FontSize="11"
-                                             IsChecked="{Binding !ShowGrid, Mode=TwoWay}"/>
-                                <RadioButton GroupName="NetView" Content="grid" FontSize="11" Margin="8,0,0,0"
-                                             IsChecked="{Binding ShowGrid, Mode=TwoWay}"/>
-                            </StackPanel>
+                            <TextBlock Classes="panelhdr" Text="Network"/>
+                            <TextBlock Grid.Column="1" Classes="detailLabel"
+                                       Text="scroll to zoom · drag to pan"/>
                         </Grid>
 
-                        <mv:MatchLadderPreview Grid.Row="1" Layout="{Binding Ladder}"
-                                               IsVisible="{Binding !ShowGrid}"/>
+                        <!-- A REAL circuitRF schematic, drawn by the editor's own renderer. See
+                             MatchSchematicCanvas — nothing here is editable. -->
+                        <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
+                                BorderBrush="{DynamicResource CrfTileBorderBrush}">
+                            <mv:MatchSchematicCanvas Layout="{Binding Ladder}"/>
+                        </Border>
 
-                        <!-- The value grid. A plain header-plus-rows Grid rather than a DataGrid:
+                        <TextBlock Grid.Row="2" Classes="note" Text="{Binding LadderLegend}"
+                                   Margin="0,4,0,0"
+                                   IsVisible="{Binding LadderLegend, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                        <!-- The value listing. A plain header-plus-rows Grid rather than a DataGrid:
                              the DataGrid control lives in a package this project does not reference,
                              and five read-only columns with click-to-sort headers do not justify
                              adding one. -->
-                        <Grid Grid.Row="1" RowDefinitions="Auto,*" IsVisible="{Binding ShowGrid}">
-                            <Grid ColumnDefinitions="1.4*,*,1.2*,0.6*,0.9*">
-                                <Button Content="Instance" FontSize="10" Padding="2" Tag="instance" Click="OnSortGrid"/>
-                                <Button Grid.Column="1" Content="Type"  FontSize="10" Padding="2" Tag="type"  Click="OnSortGrid"/>
-                                <Button Grid.Column="2" Content="Value" FontSize="10" Padding="2" Tag="value" Click="OnSortGrid"/>
-                                <Button Grid.Column="3" Content="Unit"  FontSize="10" Padding="2" Tag="unit"  Click="OnSortGrid"/>
-                                <Button Grid.Column="4" Content=""      FontSize="10" Padding="2" Tag="note"  Click="OnSortGrid"/>
-                            </Grid>
-                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding Elements}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="mvm:MatchElementRowViewModel">
-                                            <Grid ColumnDefinitions="1.4*,*,1.2*,0.6*,0.9*" Margin="0,1">
-                                                <TextBlock Text="{Binding Instance}" FontSize="11"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding TypeText}" FontSize="11"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding ValueText}" FontSize="11"/>
-                                                <TextBlock Grid.Column="3" Text="{Binding Unit}" FontSize="11"/>
-                                                <TextBlock Grid.Column="4" Text="{Binding Note}" FontSize="11" Opacity="0.75"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
+                        <Grid Grid.Row="3" ColumnDefinitions="1.4*,*,1.2*,0.6*,0.9*,Auto" Margin="0,6,0,0">
+                            <Button Content="Instance" FontSize="10" Padding="2" Tag="instance" Click="OnSortGrid"/>
+                            <Button Grid.Column="1" Content="Type"  FontSize="10" Padding="2" Tag="type"  Click="OnSortGrid"/>
+                            <Button Grid.Column="2" Content="Value" FontSize="10" Padding="2" Tag="value" Click="OnSortGrid"/>
+                            <Button Grid.Column="3" Content="Unit"  FontSize="10" Padding="2" Tag="unit"  Click="OnSortGrid"/>
+                            <Button Grid.Column="4" Content=""      FontSize="10" Padding="2" Tag="note"  Click="OnSortGrid"/>
+                            <Button Grid.Column="5" Name="CopyGridButton" Content="Copy as CSV"
+                                    FontSize="10" Padding="6,2" Margin="6,0,0,0"/>
                         </Grid>
-
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="{Binding LadderLegend}" FontSize="10" Opacity="0.8"
-                                       TextWrapping="Wrap"/>
-                            <Button Name="CopyGridButton" Content="Copy as CSV" FontSize="10" Padding="6,2"
-                                    IsVisible="{Binding ShowGrid}"/>
-                        </StackPanel>
+                        <ScrollViewer Grid.Row="4" MaxHeight="170" Margin="0,2,0,0"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Elements}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="mvm:MatchElementRowViewModel">
+                                        <Grid ColumnDefinitions="1.4*,*,1.2*,0.6*,0.9*" Margin="0,1">
+                                            <TextBlock Text="{Binding Instance}" FontSize="11"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding TypeText}" FontSize="11"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding ValueText}" FontSize="11"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding Unit}" FontSize="11"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding Note}" FontSize="11" Opacity="0.75"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                     </Grid>
                 </Border>
 
                 <Border Grid.Row="1" Classes="pane" MinHeight="150">
                     <Grid RowDefinitions="Auto,*">
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Classes="h" Text="TRANSFORMS"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,6,0,0">
+                            <TextBlock Classes="panelhdr" Text="Transforms"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
                                 <Button Name="AddTransformButton" Content="+ add ▾" FontSize="11" Padding="6,2"/>
                                 <Button Name="RemoveTransformButton" Content="−" FontSize="11" Padding="8,2"
                                         IsEnabled="{Binding CanRemoveTransform}"/>
@@ -369,18 +456,26 @@
                             <ItemsControl ItemsSource="{Binding Transforms}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="mvm:MatchTransformRowViewModel">
-                                        <Grid ColumnDefinitions="34,66,80,*,32,Auto" Margin="0,2">
+                                        <Grid ColumnDefinitions="34,44,74,*,30,Auto" Margin="0,1">
                                             <TextBlock Classes="lbl" Text="{Binding Label}" FontWeight="SemiBold"/>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                                                <RadioButton Content="π" FontSize="11" IsChecked="{Binding IsPi, Mode=TwoWay}"
-                                                             GroupName="{Binding Label}" IsEnabled="{Binding !IsDropped}"/>
-                                                <RadioButton Content="T" FontSize="11" IsChecked="{Binding IsT, Mode=TwoWay}"
-                                                             GroupName="{Binding Label}" IsEnabled="{Binding !IsDropped}"/>
-                                            </StackPanel>
-                                            <TextBox Grid.Column="2" Classes="num" Text="{Binding NText, Mode=TwoWay}"
+                                            <ddc:IconSelectButton Grid.Column="1" Width="34" Height="19"
+                                                                  IsEnabled="{Binding !IsDropped}"
+                                                                  ItemsSource="{x:Static mvm:MatchTransformRowViewModel.FormOptions}"
+                                                                  SelectedItem="{Binding FormChoice, Mode=TwoWay}"
+                                                                  ToolTip.Tip="Which three-element equivalent this transform produces: π or T">
+                                                <ddc:IconSelectButton.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}" FontSize="10"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </DataTemplate>
+                                                </ddc:IconSelectButton.ItemTemplate>
+                                            </ddc:IconSelectButton>
+                                            <TextBox Grid.Column="2" Classes="num" Margin="4,0,0,0"
+                                                     TextAlignment="Center"
+                                                     Text="{Binding NText, Mode=TwoWay}"
                                                      IsEnabled="{Binding CanEditN}" Tag="{Binding}"
                                                      LostFocus="OnTransformNLostFocus"/>
-                                            <Slider Grid.Column="3" Margin="6,0"
+                                            <Slider Grid.Column="3" Classes="compact"
                                                     Minimum="{Binding NMin}" Maximum="{Binding NMax}"
                                                     Value="{Binding N, Mode=TwoWay}"
                                                     IsEnabled="{Binding CanEditN}"
@@ -389,11 +484,12 @@
                                                     PointerPressed="OnSliderPressed"
                                                     PointerReleased="OnSliderReleased"/>
                                             <ToggleButton Grid.Column="4" FontSize="11" Padding="2"
+                                                          MinHeight="0" MinWidth="0"
                                                           IsChecked="{Binding Locked, Mode=TwoWay}"
                                                           Content="🔒"
                                                           ToolTip.Tip="A locked transform is never written by the linkage"/>
-                                            <TextBlock Grid.Column="5" Classes="lbl" Text="{Binding ActsOn}"
-                                                       Margin="6,0,0,0" Opacity="0.8"/>
+                                            <TextBlock Grid.Column="5" Classes="detailLabel" Text="{Binding ActsOn}"
+                                                       Margin="6,0,0,0"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -403,15 +499,15 @@
                 </Border>
             </Grid>
 
-            <!-- RESPONSE -->
+            <!-- Response -->
             <Border Grid.Column="2" Classes="pane">
-              <!-- The two plots are now laid out at a FIXED aspect ratio, so their height follows the
+              <!-- The two plots are laid out at a FIXED aspect ratio, so their height follows the
                    pane's width rather than the pane's height — which means a short window can run out
                    of room. Scroll rather than squash: a golden-ratio plot that has been squashed is
                    not a golden-ratio plot. -->
               <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-                    <TextBlock Classes="h" Text="RESPONSE"/>
+                    <TextBlock Classes="panelhdr" Text="Response"/>
                     <!-- Golden aspect ratio on both rect plots (owner, 2026-08-19). AspectRatioPanel
                          LAYS the plot out at 1.618:1 — a Viewbox would scale the axis text and the
                          stroke weights along with the frame, which is a different thing entirely. -->
@@ -423,61 +519,58 @@
                     </ctl:AspectRatioPanel>
 
                     <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*" Margin="0,4">
-                        <TextBlock Classes="lbl" Text="± band " />
+                        <TextBlock Classes="detailLabel" Text="± band "/>
                         <TextBox Grid.Column="1" Classes="num" Name="BandFractionBox"/>
-                        <TextBlock Grid.Column="2" Classes="lbl" Text=" points "/>
+                        <TextBlock Grid.Column="2" Classes="detailLabel" Text=" points "/>
                         <TextBox Grid.Column="3" Classes="num" Name="PlotPointsBox"/>
                     </Grid>
 
-                    <StackPanel Grid.Row="4" Spacing="2">
-                        <TextBlock Text="{Binding Status.QText}" FontSize="11"/>
-                        <TextBlock Text="{Binding Status.ReturnLossText}" FontSize="11"/>
-                        <TextBlock Text="{Binding Status.LossText}" FontSize="11"/>
-                        <TextBlock Text="{Binding Status.RatioText}" FontSize="11"/>
-                        <TextBlock Text="{Binding Status.Refusal.Message}" FontSize="11" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource CrfWarningBrush}"
-                                   IsVisible="{Binding Status.IsRefused}"/>
-                        <TextBlock Text="{Binding ResponseError}" FontSize="11" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource CrfWarningBrush}"
-                                   IsVisible="{Binding ResponseError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                        <ItemsControl ItemsSource="{Binding Notes}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap" Opacity="0.8"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
+                    <Border Grid.Row="4" Classes="card">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="{Binding Status.QText}" FontSize="11"/>
+                            <TextBlock Text="{Binding Status.ReturnLossText}" FontSize="11"/>
+                            <TextBlock Text="{Binding Status.LossText}" FontSize="11"/>
+                            <TextBlock Text="{Binding Status.RatioText}" FontSize="11"/>
+                            <TextBlock Classes="warn" Text="{Binding Status.Refusal.Message}"
+                                       IsVisible="{Binding Status.IsRefused}"/>
+                            <TextBlock Classes="warn" Text="{Binding ResponseError}"
+                                       IsVisible="{Binding ResponseError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <ItemsControl ItemsSource="{Binding Notes}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Classes="note" Text="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
                 </Grid>
               </ScrollViewer>
             </Border>
 
-            <!-- SOLUTIONS — a dockable drawer, NOT a modal sheet: the user has to be able to click
+            <!-- Solutions — a dockable drawer, NOT a modal sheet: the user has to be able to click
                  through candidates and watch the ladder and the response change. -->
             <Border Grid.Column="3" Classes="pane" Width="330"
                     IsVisible="{Binding SolutionsPanelOpen}">
                 <Grid RowDefinitions="Auto,Auto,*">
-                    <TextBlock Classes="h" Text="SOLUTIONS"/>
-                    <TextBlock Grid.Row="1" Text="{Binding SolutionsRefusal}" FontSize="11"
-                               TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                    <TextBlock Classes="panelhdr" Text="Solutions"/>
+                    <TextBlock Grid.Row="1" Classes="warn" Text="{Binding SolutionsRefusal}"
                                IsVisible="{Binding SolutionsRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding Solutions}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="mvm:MatchSolutionRowViewModel">
-                                    <Border BorderThickness="0,0,0,1" Padding="2,6"
-                                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                    <Border Classes="card">
                                         <Grid ColumnDefinitions="18,*,Auto">
                                             <TextBlock Text="{Binding BadgeGlyph}" FontSize="12"
                                                        ToolTip.Tip="{Binding BadgeTooltip}"/>
                                             <StackPanel Grid.Column="1">
                                                 <TextBlock Text="{Binding CountText}" FontSize="11" FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding PairsText}" FontSize="10" Opacity="0.8" TextWrapping="Wrap"/>
-                                                <TextBlock Text="{Binding QAdjustText}" FontSize="10" Opacity="0.8"
+                                                <TextBlock Classes="note" Text="{Binding PairsText}"/>
+                                                <TextBlock Classes="note" Text="{Binding QAdjustText}"
                                                            IsVisible="{Binding QAdjustText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                                <TextBlock Text="{Binding ReturnLossText}" FontSize="10" Opacity="0.8"/>
-                                                <TextBlock Text="{Binding ImplausibleNote}" FontSize="10" TextWrapping="Wrap"
-                                                           Foreground="{DynamicResource CrfWarningBrush}"
+                                                <TextBlock Classes="note" Text="{Binding ReturnLossText}"/>
+                                                <TextBlock Classes="warn" Text="{Binding ImplausibleNote}"
                                                            IsVisible="{Binding ImplausibleValues}"/>
                                             </StackPanel>
                                             <Button Grid.Column="2" Content="Apply" FontSize="10" Padding="6,2"

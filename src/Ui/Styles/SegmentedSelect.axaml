@@ -1,0 +1,105 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ctl="using:CircuitRF.Ui.DataDisplay.Controls">
+
+    <!--
+      THE ICON-SELECT BUTTON'S DEFAULT CONTROL THEME.
+
+      This started life inside PlotInspectorView.axaml, as the trace card's S / Y / Z selector. The
+      Match Designer asked for the same control (owner, 2026-08-19: "replace all radio UI selectors
+      with the custom UI element we created for the trace card S/Z/Y selection"), and a second copy
+      of a ninety-line template is a second copy that stops matching the first. It lives here, at
+      application scope, so both windows resolve the SAME theme and there is nothing to keep in step.
+
+      PART_Button carries the `seg-btn` class, whose base look is an application-scope style in
+      CircuitRfStyles.axaml for the same reason. The Data Display keeps its own EXTRA selectors for
+      the glyph controls only it hosts.
+    -->
+    <ControlTheme TargetType="ctl:IconSelectButton"
+                  x:Key="{x:Type ctl:IconSelectButton}">
+        <Setter Property="Width"  Value="28"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="VerticalAlignment"   Value="Stretch"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Panel>
+                    <!-- Idle toolbar button — the "active" class is added/removed by
+                         IconSelectButton.ApplyHighlight(). -->
+                    <Button x:Name="PART_Button"
+                            Classes="seg-btn"
+                            Width="{TemplateBinding Width}"
+                            Height="{TemplateBinding Height}"
+                            Padding="2,0"
+                            MinWidth="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center">
+                        <ContentControl Content="{TemplateBinding SelectedItem}"
+                                        ContentTemplate="{TemplateBinding ItemTemplate}"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        IsHitTestVisible="False"/>
+                    </Button>
+
+                    <!-- Vertical option popup -->
+                    <Popup x:Name="PART_Popup"
+                           Placement="Bottom"
+                           IsLightDismissEnabled="True"
+                           PlacementTarget="{Binding #PART_Button}">
+                        <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+                                BorderBrush="{DynamicResource SystemBaseMediumLowColor}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="2">
+                            <Border.Styles>
+                                <!-- When HighlightSelected=False, code-behind adds flat-select to
+                                     PART_ListBox. Items in flat-select mode keep transparent bg
+                                     when selected (hover still shows); accent highlight suppressed. -->
+                                <Style Selector="ListBox.flat-select ListBoxItem:selected">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+                            </Border.Styles>
+                            <ListBox x:Name="PART_ListBox"
+                                     ItemsSource="{TemplateBinding ItemsSource}"
+                                     ItemTemplate="{TemplateBinding ItemTemplate}"
+                                     Width="{TemplateBinding Width}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Padding="0">
+                                <ListBox.ItemContainerTheme>
+                                    <ControlTheme TargetType="ListBoxItem">
+                                        <Setter Property="Padding"                    Value="2,1"/>
+                                        <Setter Property="MinHeight"                  Value="22"/>
+                                        <Setter Property="Height"                     Value="22"/>
+                                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                        <Setter Property="Background"                 Value="Transparent"/>
+                                        <Setter Property="Template">
+                                            <ControlTemplate>
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="2"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                      VerticalContentAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter>
+                                        <Style Selector="^:pointerover">
+                                            <Setter Property="Background" Value="{DynamicResource SystemBaseLowColor}"/>
+                                        </Style>
+                                        <Style Selector="^:selected">
+                                            <Setter Property="Background">
+                                                <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.7"/>
+                                            </Setter>
+                                        </Style>
+                                    </ControlTheme>
+                                </ListBox.ItemContainerTheme>
+                            </ListBox>
+                        </Border>
+                    </Popup>
+                </Panel>
+            </ControlTemplate>
+        </Setter>
+    </ControlTheme>
+</ResourceDictionary>

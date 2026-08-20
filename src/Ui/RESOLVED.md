@@ -6,6 +6,90 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Match round 2 — the Designer's panes (2026-08-19)
+
+The owner's second pass, all of it about how the Designer LOOKS and reads. Four findings are worth
+keeping. The N = 1 half of the same round is a Core finding and lives in
+`src/Core/Match/RESOLVED.md`.
+
+### The network pane is now a real `SchematicModel`, not a second drawing of one
+
+Owner: *"The network schematic does not look good. It looks very different than a regular circuitRF
+schematic. Can we host a virtual schematic view in the Match Design… that way the network schematic
+look and feel will always be linked to a circuitRF schematic."*
+
+`MatchLadderPreview` drew the network itself: its own symbol walk over `BuiltInSymbols.Primitives`,
+its own wires, its own three-line label block, its own colour lookups. Every convention it shared
+with the editor was a convention somebody had copied — and the round-1 bug list proves the point:
+the walker had no `PolygonPrimitive` case, so the four interface pins (a hexagon plus a stem) drew as
+*nothing at all* while every other glyph was fine.
+
+It is replaced by two pieces with a much smaller contract:
+
+- **`MatchSchematicModel.Build(ladder)`** projects the ladder onto the read model the schematic
+  editor's canvas consumes — placed `SymbolKind.Inductor` / `Capacitor` components (R0 for a shunt
+  arm, R90 for a series one, which is the built-in glyph's own orientation and a page rotation of
+  it), `SymbolKind.Pin` on each interface terminal, wires, junction dots, `GridSize = 100`.
+- **`MatchSchematicCanvas`** hands that to `SchematicRenderer.Draw` and adds wheel-zoom and
+  drag-pan. No overlay is passed, no hit-test is done: there is no `EditableSchematic` behind this
+  and a component here has no persisted position to move.
+
+The grid, the glyphs, the LOD fade, the connected-pin markers and the three label roles are now the
+editor's by construction. **Two things a schematic has no way to say** are drawn by the canvas over
+the finished frame: an *absorbed* element is washed towards the background (the renderer has one
+symbol colour and no notion of an element this component does not contain), and an *out-of-range*
+value gets a warning box **around the glyph, not over it** — the capacitor is an ordinary capacitor,
+its value is the unbuildable part.
+
+**The trap in that overlay:** `SchematicComponent.FullBb` is inflated by
+`LabelWidthFor`, a deliberately generous per-character estimate floored at 500 world units. It is
+right for culling and about four times too wide for a mark the user is meant to read as being about
+one component — the box has to come from `GlyphBb`.
+
+### A rebuild that changed no shape must not re-fit the view
+
+Dragging a transform's N rebuilds the ladder on every frame. A pane that re-ran zoom-to-fit on each
+new `MatchLadderLayout` would swim under the pointer for the whole gesture. `MatchSchematicCanvas`
+compares the incoming layout's SHAPE — names, orientation, type and position — and keeps the user's
+zoom and pan when only values moved; a structural change (an element added, removed or reordered)
+re-fits, because the old viewport is then framing a circuit that no longer exists.
+
+### The `IconSelectButton` theme had to move before a second window could use it
+
+Owner: *"Replace all radio UI selectors with the custom UI element we created for the trace card
+S/Z/Y selection."* That control is `IconSelectButton`, and its ninety-line `ControlTheme` lived in
+`PlotInspectorView.axaml`'s own resources — reachable from the Data Display's visual tree and nowhere
+else. It is now `src/Ui/Styles/SegmentedSelect.axaml`, merged into `CircuitRfResources.axaml`, with
+its `PART_Button`'s `seg-btn` base look moved to `CircuitRfStyles.axaml` alongside it (both
+application scope, both therefore in *both* Applications by construction — the rule those two files
+exist to enforce). The Data Display keeps only the selectors that name controls only it hosts, the
+`MaterialIcon` and `PlotTypeGlyphControl` foregrounds.
+
+The control is **list-driven**, which is the part that reaches the view-model: it shows one choice
+and opens the rest in a popup, so a selector needs its options as a list and its state as one value
+rather than as one boolean per option. `TopologyChoice`, `KindChoice` and `FormChoice` are those
+values; the `IsSeries`/`IsC`/`IsPi` booleans stay, because they are what the design round-trips and
+what the existing gate tests assert against.
+
+### The N row's height was the Fluent Slider, and the fix already existed
+
+Owner: *"The N indicator in the TRANSFORMS panel has a very large height. Perhaps the slider is
+messing with it."* It was: Fluent's `Slider` reserves room for a tick band and a full-size thumb, so
+one in a row sets that row's height. **Setting an explicit `Height` is the wrong fix** — it squashes
+the thumb off the track. The Data Display's inspector had already solved this and `Slider.compact` is
+its solution: no `Height`, a negative vertical margin (`4,-7`) that pulls the layout footprint back
+in, `VerticalAlignment=Center`. The slider keeps its star column, so its width is untouched.
+
+### The unit combos were duplicating what the inline editor already does
+
+Round 1 turned the specification fields into `InlineEditText`, whose entry string CARRIES its unit
+(`"50 Ω"`, `"1.5 nH"`) and whose commit both parses a typed unit and pins the display unit. The
+`ComboBox` beside each field survived that change and had been a second, redundant way to set the
+same thing ever since. All three are gone (R, X, and the shared band unit). `InlineEditText` gained
+`HorizontalContentAlignment` in the same round so a value can sit against the right edge of a
+label-left/value-right row and **stay there when the editor opens** — a value that jumps to the left
+edge on double-click reads as a different control appearing, not as the same one opening.
+
 ## Match round 1 + group delay (2026-08-19)
 
 The owner's first pass over the shipped Match component and Designer. Four findings are worth

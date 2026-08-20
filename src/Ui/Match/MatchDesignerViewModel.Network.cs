@@ -65,9 +65,6 @@ public sealed partial class MatchDesignerViewModel
     /// <summary>The schematic view's geometry.</summary>
     [ObservableProperty] private MatchLadderLayout _ladder = MatchLadderLayout.Empty;
 
-    /// <summary>The network pane's segmented control: false = schematic, true = value grid.</summary>
-    [ObservableProperty] private bool _showGrid;
-
     /// <summary>The status strip.</summary>
     [ObservableProperty] private MatchStatus _status = MatchStatus.Empty;
 
