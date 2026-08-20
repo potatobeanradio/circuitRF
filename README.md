@@ -219,11 +219,14 @@ circuitRF/
 │  │  ├─ DataDisplay/    DataCube-native plots (Smith/polar/rect/table), loadpull surface, contours
 │  │  ├─ ViewModels/  Views/  Commands/  Theming/  …   the MVVM shell
 │  └─ Cli/             Headless driver + the engine's test harness (no UI)
+├─ tools/             programs that are not part of the application (not in circuitRF.slnx)
+│  └─ DocGen/           the user-docs factory: regenerates docs/user/ from the live application
 ├─ docs/
 │  ├─ PRD.md             what v1 must do + the five "hero" acceptance circuits
 │  ├─ Development_Plan.md  the roadmap, status, and AI-workflow strategy
 │  ├─ design/            per-subsystem design notes (the "why")  ← start here to go deep
-│  └─ skills/            step-by-step procedures (e.g. adding-a-library-component.md)
+│  ├─ skills/            step-by-step procedures (e.g. adding-a-library-component.md)
+│  └─ user/             the shipped user documentation — GENERATED; sources in docs/user/src/
 ├─ testdata/           golden references + regression fixtures
 └─ CLAUDE.md           standing project memory (architecture, invariants) — root + nested per subsystem
 ```
@@ -408,6 +411,28 @@ docs.
 - **Sparse block Jacobian for HB at scale.** v1 uses a dense per-block Jacobian; a sparse solve is the path to very large nonlinear problems.
 
 Full roadmap and current status: [`docs/Development_Plan.md`](docs/Development_Plan.md).
+
+---
+
+## User documentation
+
+The user documentation — Quick Start, New User's Guide and Reference Guide — lives in `docs/user/`
+and is what **Help ▸ circuitRF Documentation** opens. **It is generated, not hand-edited.** One
+command rebuilds every page and every figure from the live application:
+
+```bash
+dotnet run --project tools/DocGen -- --out docs/user
+```
+
+Prose is authored as Markdown under `docs/user/src/`; the pages under `docs/user/` are the output and
+any edit to one is reverted by the next run. Figures are **vector captures of the running interface**
+— the generator opens circuitRF headlessly, drives real views with real content, and writes SVG — so
+they cannot drift from the application. Component parameter tables come from the live registry for
+the same reason. There are no screenshots in this documentation and there are not meant to be.
+
+`tools/DocGen/check-docs-current.sh` regenerates and diffs, and fails if the committed output is not
+what the generator produces. Run it after a UI change that moves a figure. The design note is
+[`docs/design/user-docs-factory.md`](docs/design/user-docs-factory.md).
 
 ---
 

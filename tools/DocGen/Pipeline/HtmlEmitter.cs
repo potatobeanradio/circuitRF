@@ -26,7 +26,8 @@ public static class HtmlEmitter
             .Build();
 
     /// <summary>Render <paramref name="page"/> (placeholders already expanded) to a complete HTML file.</summary>
-    public static string Render(DocPage page, string expandedBody)
+    public static string Render(DocPage page, string expandedBody,
+                                SiteNav? nav = null, IReadOnlyDictionary<string, string>? titles = null)
     {
         string depth = string.Concat(Enumerable.Repeat("../", page.Slug.Count(c => c == '/')));
         string bodyHtml = Markdig.Markdown.ToHtml(expandedBody, Markdown);
@@ -67,6 +68,7 @@ public static class HtmlEmitter
             sb.AppendLine($"  <p class=\"lede\">{E(page.Lede)}</p>");
         sb.AppendLine();
         sb.AppendLine(bodyHtml);
+        if (nav is not null) sb.Append(PageNav(page.Slug, depth, nav, titles));
         sb.AppendLine("</main>");
         sb.AppendLine();
         sb.AppendLine("<footer class=\"doc-footer\">");
@@ -78,6 +80,39 @@ public static class HtmlEmitter
         sb.AppendLine();
         sb.AppendLine("</body>");
         sb.AppendLine("</html>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The Previous/Next pair at the foot of the page.
+    ///
+    /// <para>This is what makes the set readable end to end: a reader who starts at the index can
+    /// reach the last page without ever going back to it. Both ends of the chain are deliberately
+    /// asymmetric rather than absent — the first page still offers Next, the last still offers
+    /// Previous — so a missing link always means a broken chain and never "this is an edge".</para>
+    /// </summary>
+    private static string PageNav(string slug, string depth, SiteNav nav,
+                                  IReadOnlyDictionary<string, string>? titles)
+    {
+        string? prev = nav.Previous(slug), next = nav.Next(slug);
+        if (prev is null && next is null) return "";
+
+        string Label(string s) => titles is not null && titles.TryGetValue(s, out var t)
+            ? t : Path.GetFileNameWithoutExtension(s);
+
+        string Href(string s) => Normalise(depth + s, slug);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<nav class=\"page-nav\">");
+        sb.AppendLine(prev is null
+            ? "  <span></span>"
+            : $"  <a class=\"prev\" href=\"{Href(prev)}\"><span class=\"dir\">Previous</span>"
+              + $"<span class=\"name\">{E(Label(prev))}</span></a>");
+        sb.AppendLine(next is null
+            ? "  <span></span>"
+            : $"  <a class=\"next\" href=\"{Href(next)}\"><span class=\"dir\">Next</span>"
+              + $"<span class=\"name\">{E(Label(next))}</span></a>");
+        sb.AppendLine("</nav>");
         return sb.ToString();
     }
 

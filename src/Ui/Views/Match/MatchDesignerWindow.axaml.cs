@@ -136,7 +136,10 @@ public partial class MatchDesignerWindow : Window
         WireButton("ExportButton", (s, _) => ShowExportMenu(s as Control));
         WireButton("SettingsButton", (s, _) => ShowSettingsMenu(s as Control));
         // Same deep link the Parameter Editor's own Help button uses, to the same Reference page.
-        WireButton("HelpButton", (_, _) => DocLauncher.OpenComponent(SymbolKind.Match));
+        // The Match CHAPTER, not the components page's one-paragraph entry (brief-user-docs-content
+        // §10 gave Match a chapter of its own, and this window is what it documents). Listed in
+        // DocAnchors.WholePages, so the docs build fails if that page stops being emitted.
+        WireButton("HelpButton", (_, _) => DocLauncher.Open("reference/match.html"));
 
         BindNumericBox("BandFractionBox", () => (Vm.PlotBandFraction * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%",
                        t => { if (double.TryParse(t.Trim().TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) Vm.PlotBandFraction = v / 100.0; });

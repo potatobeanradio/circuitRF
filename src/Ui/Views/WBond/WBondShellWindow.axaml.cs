@@ -279,7 +279,7 @@ public partial class WBondShellWindow : Window
         _menus.SelectAllWiresHook   = () => Editor.SelectAllIncludingWires();
         _menus.CheckDesignRulesHook = RunAssemblyCheck;
         _menus.CompareDistributedModelHook = () => _ = Editor.CompareDistributedModelAsync();
-        _menus.HelpHook             = () => DocLauncher.Open("index.html");
+        _menus.HelpHook             = () => DocLauncher.Open("reference/wbond.html");
     }
 
     private async Task OpenAsync()

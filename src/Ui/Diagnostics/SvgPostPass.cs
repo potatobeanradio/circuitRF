@@ -27,6 +27,17 @@ namespace CircuitRF.Ui.Diagnostics;
 ///   <item>hoist repeated path data into <c>&lt;defs&gt;</c> and reference it with <c>&lt;use&gt;</c>.</item>
 /// </list>
 ///
+/// <para>Two further passes are not about size at all, and are here for the same reason the font
+/// normaliser is — this is the one place every emitted figure goes through:</para>
+/// <list type="number">
+///   <item><b>Scope every element id to the file</b> (<see cref="ScopeIds"/>). The docs pages INLINE
+///         several figures into one HTML document, where ids share a single namespace; a
+///         <c>&lt;use href="#d0"&gt;</c> then resolves to whichever figure came first on the page.</item>
+///   <item><b>Add a <c>viewBox</c></b>. Skia writes <c>width</c>/<c>height</c> and nothing else, and
+///         an inline <c>&lt;svg&gt;</c> with no <c>viewBox</c> does not scale: the CSS box shrinks to
+///         the column and the drawing is CLIPPED rather than resized.</item>
+/// </list>
+///
 /// <para>It also runs <see cref="SvgFontNormalizer"/> first. That is not a size pass and does not
 /// pretend to be — it is here because this is the one place every emitted figure passes through,
 /// whether it came from the symbol generator or from a window capture.</para>
@@ -58,7 +69,14 @@ public static class SvgPostPass
     ];
 
     /// <summary>Run every pass over <paramref name="svg"/> and return the rewritten document.</summary>
-    public static string Run(string svg, out Report report)
+    /// <param name="svg">The document Skia's SVG device just wrote.</param>
+    /// <param name="idScope">
+    /// A token unique to this FILE, prefixed onto every element id. Pass the emitted file's stem.
+    /// Empty means "do not scope", which is only ever right for a document that will never be
+    /// inlined beside another — see <see cref="ScopeIds"/> for why that is nearly never true here.
+    /// </param>
+    /// <param name="report">What the size passes did, for the generator's run summary.</param>
+    public static string Run(string svg, string idScope, out Report report)
     {
         int before = Encoding.UTF8.GetByteCount(svg);
 
@@ -73,6 +91,8 @@ public static class SvgPostPass
         int clipsDropped = DropNoOpClips(root);
         RoundNumbers(root);
         int deduped = DedupePaths(root);
+        ScopeIds(root, idScope);
+        AddViewBox(root);
 
         // Writing without an XML declaration and with no indentation is worth another few percent
         // and costs nothing: an SVG served inline in HTML has no use for either.
@@ -208,13 +228,41 @@ public static class SvgPostPass
         }
     }
 
+    /// <summary>
+    /// Significant figures kept for a magnitude BELOW one. Two decimal places is a hundredth of a
+    /// pixel on a coordinate and a 67% error on a matrix scale, which is not a rounding subtlety —
+    /// it is a differently-shaped drawing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured, not theorised.</b> Every ComboBox in the docs showed HALF a drop-down chevron:
+    /// the left stroke drawn, the right one simply absent. The chevron is a 2010-unit-wide geometry
+    /// scaled into a 12 px icon box — <c>matrix(0.00597 0 0 0.00597 …)</c> — and rounding that scale
+    /// to two decimals made it <c>0.01</c>, blowing the glyph up by 67% inside a clip that was still
+    /// 12 px wide. The clip did the rest. Anything whose value lives below one is cheap to keep
+    /// precise (few digits either way) and expensive to round, so it is kept to four significant
+    /// figures instead of two decimal places.
+    /// </remarks>
+    public const int SignificantFiguresBelowOne = 4;
+
     internal static string RoundAll(string s) => NumberRx.Replace(s, m =>
     {
         if (!double.TryParse(m.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
             return m.Value;
-        double r = Math.Round(v, Decimals, MidpointRounding.AwayFromZero);
-        return r.ToString("0.##", CultureInfo.InvariantCulture);
+        if (Math.Abs(v) >= 1)
+            return Math.Round(v, Decimals, MidpointRounding.AwayFromZero)
+                       .ToString("0.##", CultureInfo.InvariantCulture);
+        return RoundSignificant(v, SignificantFiguresBelowOne)
+                   .ToString("0.##########", CultureInfo.InvariantCulture);
     });
+
+    /// <summary>Round <paramref name="v"/> to <paramref name="figures"/> significant figures.</summary>
+    internal static double RoundSignificant(double v, int figures)
+    {
+        if (v == 0 || double.IsNaN(v) || double.IsInfinity(v)) return v;
+        int magnitude = (int)Math.Floor(Math.Log10(Math.Abs(v)));
+        int decimals = Math.Min(15, Math.Max(0, figures - 1 - magnitude));
+        return Math.Round(v, decimals, MidpointRounding.AwayFromZero);
+    }
 
     // ── Pass 3: repeated path data ────────────────────────────────────────────
 
@@ -250,5 +298,83 @@ public static class SvgPostPass
         }
         root.AddFirst(defs);
         return saved;
+    }
+
+    // ── Pass 4: id scoping ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Prefix every element id with <paramref name="scope"/>, and rewrite every reference to it.
+    ///
+    /// <para><b>Why a figure cannot keep its own id namespace.</b> The documentation pages inline
+    /// their figures as <c>&lt;svg&gt;</c> rather than referencing them with <c>&lt;img&gt;</c> (so
+    /// the page's <c>@font-face</c> rules reach them), and inline SVG shares the HTML document's
+    /// single id namespace. <see cref="DedupePaths"/> numbers its hoisted paths <c>d0, d1, …</c> from
+    /// zero in every file and Skia numbers its own <c>img_0</c>, <c>img_1</c> the same way, so two
+    /// figures on one page BOTH define <c>d0</c> — and every <c>&lt;use href="#d0"&gt;</c> in the
+    /// second one silently resolves to the first one's geometry.</para>
+    ///
+    /// <para><b>Every symptom of this looked like a different bug.</b> The Data Display toolbar
+    /// "glitched out"; the snap-glyph strip drew its glyphs over corrupted metal while being perfect
+    /// as a standalone file; and on the harmonicaRF page the DARK figure rendered the LIGHT
+    /// contour raster, because both variants define <c>img_0</c> and the light one is first in the
+    /// document. One cause, four reports.</para>
+    ///
+    /// <para>The scope is the file stem rather than a hash: it is provably unique across the run
+    /// (two figures cannot share a file), and it is readable in the emitted document, which a
+    /// six-character hash is not.</para>
+    /// </summary>
+    private static void ScopeIds(XElement root, string scope)
+    {
+        if (scope.Length == 0) return;
+
+        string prefix = Regex.Replace(scope, @"[^A-Za-z0-9_-]", "-") + "_";
+
+        var renamed = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var el in root.DescendantsAndSelf())
+            if (el.Attribute("id") is { } id && !id.Value.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                renamed[id.Value] = prefix + id.Value;
+                id.Value = prefix + id.Value;
+            }
+
+        if (renamed.Count == 0) return;
+
+        foreach (var el in root.DescendantsAndSelf())
+            foreach (var a in el.Attributes())
+            {
+                if (a.Name.LocalName == "id") continue;
+
+                // The two spellings a reference takes: a bare fragment (href / xlink:href) and a
+                // functional one (clip-path, mask, fill, stroke, filter, marker-*).
+                if (a.Value.StartsWith('#') && renamed.TryGetValue(a.Value[1..], out var direct))
+                    a.Value = "#" + direct;
+                else if (a.Value.Contains("url(#", StringComparison.Ordinal))
+                    a.Value = Regex.Replace(a.Value, @"url\(#(?<id>[^)]+)\)",
+                        m => renamed.TryGetValue(m.Groups["id"].Value, out var mapped)
+                             ? $"url(#{mapped})" : m.Value);
+            }
+    }
+
+    // ── Pass 5: the viewBox ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Give the root a <c>viewBox</c> matching the size Skia wrote, so the figure SCALES.
+    ///
+    /// <para>Skia emits <c>width</c> and <c>height</c> and nothing else. An inline
+    /// <c>&lt;svg&gt;</c> with no <c>viewBox</c> has no intrinsic aspect ratio to preserve and no
+    /// user-coordinate mapping to rescale, so the stylesheet's <c>max-width: 100%</c> narrows the
+    /// element's BOX and the drawing inside it is clipped at full size rather than resized. The
+    /// symbol figures never showed it because they are smaller than the column they sit in.</para>
+    ///
+    /// <para><c>width</c>/<c>height</c> stay: they are the figure's natural size, which is what a
+    /// page with room for it should use.</para>
+    /// </summary>
+    private static void AddViewBox(XElement root)
+    {
+        if (root.Attribute("viewBox") is not null) return;
+        double w = Num(root, "width"), h = Num(root, "height");
+        if (w <= 0 || h <= 0) return;
+        root.SetAttributeValue("viewBox",
+            string.Create(CultureInfo.InvariantCulture, $"0 0 {w:0.##} {h:0.##}"));
     }
 }

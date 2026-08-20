@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — PDK Authoring</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/pdk-authoring.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › PDK authoring</p>
+
+  <h1>PDK Authoring</h1>
+  <p class="lede">Building a kit: the OpenPDK layout, Python PCells, models, technology and artwork.</p>
+
+<p>This chapter is about <strong>producing</strong> a kit. If you are consuming one, read
+<a href="pdk-integration.html">PDK Integration</a> instead.</p>
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#openpdk">Follow OpenPDK</a></li>
+<li><a href="#four-halves">The four things a part needs</a></li>
+<li><a href="#python">PCell generation with Python</a></li>
+<li><a href="#worked">A complete worked example: a microstrip line</a></li>
+<li><a href="#handles">Parameter handles</a></li>
+<li><a href="#spiral">A second example: a spiral inductor</a></li>
+<li><a href="#declaring">Declaring your generators to circuitRF</a></li>
+<li><a href="#traps">Traps worth a callout</a></li>
+</ol>
+</nav>
+<h2 id="openpdk">Follow OpenPDK</h2>
+<p><strong>circuitRF supports the OpenPDK standard</strong> — <a href="https://github.com/fossi-foundation/open-pdks">https://github.com/fossi-foundation/open-pdks</a>.</p>
+<p>It is what the importer expects to find, it keeps a kit portable between tools, and it means the
+structure of your kit is a published thing rather than a convention you have to explain to every user.
+Produce that structure.</p>
+<p>Beyond the structure itself, circuitRF reads a kit <strong>entirely at run time</strong>. Nothing about your kit is
+compiled into the product: every device type, parameter name, pin count and node role is learned from
+what you supply. Anything circuitRF cannot derive, you declare in a run-time data file beside the kit —
+never in a list inside circuitRF.</p>
+<h2 id="four-halves">The four things a part needs</h2>
+<p>A complete part is four artefacts, and it is worth being explicit that they are separate:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>What it is</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Schematic side</strong></td>
+<td>A symbol with pins, and a published parameter interface</td>
+<td>A symbol description your kit ships, translated on import</td>
+</tr>
+<tr>
+<td><strong>Model</strong></td>
+<td>The device equations</td>
+<td>A compiled model library, or <a href="components.html#veriloga">Verilog-A</a>, or an <a href="sdd.html">SDD</a> written in circuitRF's own expression language</td>
+</tr>
+<tr>
+<td><strong>Technology</strong></td>
+<td>Layers, stackup, DRC rules</td>
+<td>A <code>.ctech</code>, or the OpenPDK technology description</td>
+</tr>
+<tr>
+<td><strong>Artwork</strong></td>
+<td>The layout</td>
+<td>A stored <code>.clay</code> for a fixed cell, or a <strong>PCell generator</strong> for a parameterised one</td>
+</tr>
+</tbody>
+</table>
+<p>The parameter interface is the join between the first two and the fourth. <strong>A PCell reads the same
+parameter list its symbol displays</strong> — one list, not two. A symbol showing <code>W</code> and a generator reading a
+different <code>W</code> is a defect that only surfaces as wrong artwork.</p>
+<h2 id="python">PCell generation with Python</h2>
+<p>A generated cell is a function of its parameters and its technology, and nothing else. Write the
+function, declare its parameters, call <code>run()</code>.</p>
+<pre><code class="language-python">from circuitrf_pcell import Parameter, Pin, Rect, Result, generator, run
+
+@generator(&quot;MLIN&quot;, [Parameter.length(&quot;W&quot;), Parameter.length(&quot;L&quot;)])
+def mlin(params, tech):
+    w = params.length(&quot;W&quot;)          # already in database units
+    length = params.length(&quot;L&quot;)
+    layer = tech.signal_layer
+    return Result(
+        shapes=[Rect(layer, 0, -(w // 2), length, w // 2)],
+        pins=[Pin(&quot;1&quot;, 0, 0, layer, w, 180.0),
+              Pin(&quot;2&quot;, length, 0, layer, w, 0.0)],
+    )
+
+run()
+</code></pre>
+<p>The support package is <code>tools/pcell-python/circuitrf_pcell</code>. <strong>Python 3.9 or later, and no third-party
+packages</strong> — a cell author should need nothing but an interpreter to get started.</p>
+<h3 id="what-you-get">What you get</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Shapes</td>
+<td><code>Rect</code> <code>RoundedRect</code> <code>Circle</code> <code>Polygon</code> (with holes) <code>Curve</code> <code>Path</code> <code>Via</code> <code>Label</code></td>
+</tr>
+<tr>
+<td>Curved edges</td>
+<td><code>Edge.line()</code> <code>Edge.arc(bulge)</code> <code>Edge.cubic(…)</code></td>
+</tr>
+<tr>
+<td>Pins</td>
+<td><code>Pin(name, x, y, layer, width, outward_deg)</code></td>
+</tr>
+<tr>
+<td>Parameters</td>
+<td><code>params.length()</code> <code>.real()</code> <code>.integer()</code> <code>.flag()</code> <code>.text()</code>, each with a default</td>
+</tr>
+<tr>
+<td>Technology</td>
+<td><code>tech.signal_layer</code> <code>tech.ground_layer</code> <code>tech.layer_named(…)</code> <code>tech.stackup</code></td>
+</tr>
+<tr>
+<td>Warnings</td>
+<td><code>Result(diagnostics=[…])</code></td>
+</tr>
+<tr>
+<td>Refusing</td>
+<td><code>raise</code> — circuitRF reports it, naming the cell</td>
+</tr>
+</tbody>
+</table>
+<p><code>tech.signal_layer</code> and <code>tech.ground_layer</code> are the <strong>resolved</strong> answer, worked out by circuitRF before
+the request was sent. Do not re-derive them from the stackup: a second implementation of that rule fails
+silently, putting geometry on a plausible but wrong layer. They can be <code>None</code> — a layout with no
+technology still generates geometry — so have a fallback.</p>
+<p><code>diagnostics</code> is <strong>not</strong> an error channel. It is for a generator that <em>did</em> produce geometry and has a
+caveat about it. To refuse outright, raise.</p>
+<h3 id="five-things-worth-knowing-before-writing-a-real-cell">Five things worth knowing before writing a real cell</h3>
+<p><strong>1. There are no metres.</strong> Every length arrives in <strong>database units</strong>, converted by circuitRF with its
+own single rounding rule before it was sent. The resolution is deliberately not on the wire, so a script
+<em>cannot</em> do its own conversion — there is nothing to do it with. That is what keeps one rounding rule
+across the process boundary instead of two.</p>
+<p><strong>2. Round your own arithmetic with <code>dbu()</code>.</strong> Not <code>round()</code>, which is banker's rounding in Python
+(<code>round(0.5)</code> is <code>0</code>, <code>round(2.5)</code> is <code>2</code>), and not <code>int()</code>, which truncates. Both disagree with
+circuitRF at exactly the midpoints where two adjacent shapes decide whether they abut. Passing a
+fractional float where a coordinate is expected is <strong>refused by name</strong> rather than silently rounded —
+being made to write <code>dbu(w / 2)</code> is the point.</p>
+<p><strong>3. A pin carries width and outward direction, and they are required arguments.</strong> A connection is an
+<strong>edge</strong>, not a point; a bend needs to know which way its arm faces. This is the field most easily
+omitted and the most expensive to add later, which is why the constructor will not let you.</p>
+<p><strong>4. Declare each parameter's dimension correctly.</strong> <code>Parameter.length(&quot;W&quot;)</code> is what tells circuitRF to
+convert <code>W</code> from metres. A length you forget to declare arrives unconverted and your geometry is off by
+nine orders of magnitude; a non-length you declare as one is silently scaled. <strong>This is the one
+declaration worth checking twice.</strong></p>
+<p><strong>5. A generator must be deterministic given its declared inputs.</strong> No clock, no ambient or global
+state, no randomness, no set-iteration order, no accumulation whose order varies between runs. Two users
+on different machines must get identical geometry — when they do not, what they see is a design that
+changed by itself, and the cache keyed on those inputs is quietly poisoned. Reading a file is fine
+<em>provided its content is part of your cell's cache key</em> — see <a href="#declaring"><code>dataFiles</code></a>.</p>
+<div class="callout warn">
+<span class="label">stdout is the wire</span>
+<p>A stray <code>print()</code> lands in the middle of a frame and desynchronises the stream, which
+surfaces as circuitRF reporting a malformed reply nowhere near the print. Write to
+<code>sys.stderr</code>; circuitRF surfaces that.</p>
+</div>
+<h2 id="worked">A complete worked example: a microstrip line</h2>
+<p>The full, running version is <code>tools/pcell-python/example/mlin.py</code> in the repository. It is deliberately
+written <strong>from the contract</strong>, not transcribed from circuitRF's own built-in MLIN — the test that
+compares the two asserts byte-identical geometry, and that proves something only because they were
+arrived at independently.</p>
+<p>Walking the four artefacts for this one part:</p>
+<p><strong>Schematic side.</strong> MLIN's symbol declares two pins and two parameters, <code>W</code> and <code>L</code>. Whatever your kit
+ships as a symbol description is translated on import.</p>
+<p><strong>Model.</strong> MLIN's electrical model is circuitRF's own microstrip line — it reads <code>W</code>, <code>L</code> and the
+substrate from the technology. A kit supplying its own device would point at a compiled model library
+instead; see <a href="pdk-integration.html#models">PDK Integration</a>.</p>
+<p><strong>Technology.</strong> The generator asks for <code>tech.signal_layer</code> and gets the resolved answer. The substrate
+underneath it comes from the same <code>.ctech</code>, which is also what the electrical model reads — so the
+artwork and the model cannot disagree about which stack they are on.</p>
+<p><strong>Artwork.</strong> The generator above. Three things in it are the contract rather than a choice:</p>
+<pre><code class="language-python">w = params.length(&quot;W&quot;)           # DATABASE UNITS, already converted
+length = params.length(&quot;L&quot;)
+half = w // 2                    # integer halving — an odd width lands the same way in C# and Python
+
+return Result(
+    shapes=[Rect(layer, 0, -half, length, half)],
+    pins=[
+        Pin(&quot;1&quot;, 0,      0, layer, w, 180.0),   # pin 1 AT THE ORIGIN, facing out to the left
+        Pin(&quot;2&quot;, length, 0, layer, w,   0.0),   # the line runs along +X
+    ],
+)
+</code></pre>
+<ul>
+<li><strong>Pin 1 sits at the cell origin, and the principal axis runs along +X.</strong> Every PCell follows this, or
+nothing abuts.</li>
+<li><strong>The pins carry width and outward direction.</strong> That is what makes them connectable, snappable and
+usable as EM ports.</li>
+<li><strong>The width is halved in integer arithmetic.</strong> circuitRF's built-in does the same, so an odd width
+straddles the axis identically on both sides.</li>
+</ul>
+<h3 id="checking-your-work">Checking your work</h3>
+<pre><code class="language-text">python3 tools/pcell-python/verify.py
+</code></pre>
+<p>Self-contained: no circuitRF, no .NET, no test framework. It drives the example generators as real
+subprocesses over the real wire.</p>
+<h2 id="handles">Parameter handles</h2>
+<p>A <a href="pcells.html#handles">parameter handle</a> makes a piece of your generated artwork <strong>draggable</strong>, with the
+drag editing the parameter that produced it. Declaring one is a list argument on the same <code>Result</code>, in
+the same function, in the same file — there is no separate declaration file, no second language and no
+registration step:</p>
+<pre><code class="language-python">@generator(&quot;MLIN&quot;, [Parameter.length(&quot;W&quot;), Parameter.length(&quot;L&quot;)])
+def mlin(params, tech):
+    w = params.length(&quot;W&quot;)
+    l = params.length(&quot;L&quot;)
+    layer = tech.signal_layer
+    return Result(
+        shapes=[Rect(layer, 0, -(w // 2), l, w // 2)],
+        pins=[Pin(&quot;1&quot;, 0, 0, layer, w, 180.0), Pin(&quot;2&quot;, l, 0, layer, w, 0.0)],
+        handles=[
+            Handle(&quot;L&quot;, anchor=(0, 0),     at=(l, 0),     axis=0),
+            Handle(&quot;W&quot;, anchor=(l // 2, 0), at=(l // 2, w // 2), axis=90),
+        ],
+    )
+</code></pre>
+<p>A handle states four things: <strong>which parameter</strong> it drives, <strong>where the grip is</strong> in cell-local database
+units, <strong>which way it moves</strong>, and — optionally — a <strong>label</strong> and a <strong>legal range</strong>. That is all.</p>
+<div class="callout note">
+<span class="label">You never state how much the parameter changes per unit of travel</span>
+<p>circuitRF measures it, by asking your generator: at the start of a drag it perturbs the parameter,
+regenerates in memory, and reads where the same handle moved to. That is why no units appear in the
+declaration above — and why the same cell written in C# and in Python reads identically.</p>
+</div>
+<p><strong>Declaring no handles is a complete and correct choice.</strong> A generator that declares none behaves
+exactly as it always did, and no existing cell has to be revisited.</p>
+<h2 id="spiral">A second example: a spiral inductor</h2>
+<p><code>tools/pcell-python/example/spiral.py</code>. Where MLIN is the smallest cell that is still real, this is the
+smallest cell that is still <em>interesting</em>: four parameters that interact, so it shows what a
+parameterised cell actually buys you.</p>
+<pre><code class="language-python">@generator(&quot;SPIRAL&quot;, [Parameter.length(&quot;Width&quot;), Parameter.length(&quot;Space&quot;),
+                      Parameter.length(&quot;Inner&quot;), Parameter.integer(&quot;Turns&quot;)])
+def spiral(params, tech):
+    w     = params.length(&quot;Width&quot;, 10_000)
+    s     = params.length(&quot;Space&quot;, 10_000)
+    inner = params.length(&quot;Inner&quot;, 100_000)
+    turns = params.integer(&quot;Turns&quot;, 3)
+
+    if turns &lt; 1:
+        raise ValueError(f&quot;a spiral needs at least one turn; got {turns}&quot;)
+
+    layer = tech.signal_layer or FALLBACK_LAYER
+    pitch = w + s
+    half, half_inner = dbu(w / 2), dbu(inner / 2)
+
+    shapes = []
+    for t in range(turns):
+        r      = half_inner + half + (turns - 1 - t) * pitch   # this turn's centre-line radius
+        r_next = r - pitch
+        shapes.append(Rect(layer, -r - half,  r - half, r + half,  r + half))   # top
+        shapes.append(Rect(layer,  r - half, -r - half, r + half,  r + half))   # right
+        shapes.append(Rect(layer, -r - half, -r - half, r + half, -r + half))   # bottom
+        top = r_next + half if t &lt; turns - 1 else half                          # left, stopped short
+        shapes.append(Rect(layer, -r - half, -r + half, -r + half, top))
+        if t &lt; turns - 1:                                                       # step inward
+            shapes.append(Rect(layer, -r - half, r_next - half, -r_next + half, r_next + half))
+    ...
+</code></pre>
+<p>Three things in it are worth copying:</p>
+<ul>
+<li><strong><code>Turns</code> is an <code>integer</code>, not a <code>length</code>.</strong> It carries no dimension, so circuitRF does not scale it.
+Getting this wrong is trap 4 above, in its most literal form.</li>
+<li><strong>The artwork is a chain of overlapping rectangles, not one closed outline.</strong> A spiral drawn as a
+single polygon needs a mitre rule at every corner, and getting that rule wrong is the classic way a
+spiral's inductance comes out plausible and wrong. Overlapping rectangles on one layer union exactly,
+because the coordinates are integers, and every corner is square by construction.</li>
+<li><strong>Zero turns raises.</strong> An empty <code>Result</code> would be a silently empty cell, which looks like it worked.</li>
+</ul>
+<p>The inner terminal is left facing +Y rather than being routed out: reaching it needs an air bridge or an
+underpass on another layer, which belongs to whatever places the cell, not to the cell.</p>
+<h2 id="declaring">Declaring your generators to circuitRF</h2>
+<p>A <code>pcell-generators.json</code> beside the kit — run-time data, never a list inside circuitRF:</p>
+<pre><code class="language-json">{
+  &quot;schemaVersion&quot;: 1,
+  &quot;entry&quot;: &quot;pcells/main.py&quot;,
+  &quot;pythonPath&quot;: [&quot;lib&quot;],
+  &quot;sources&quot;: [&quot;pcells&quot;, &quot;lib&quot;],
+  &quot;dataFiles&quot;: [&quot;tables/pads.csv&quot;],
+  &quot;interpreter&quot;: null
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>entry</code></td>
+<td>The script that calls <code>run()</code>. Relative to this file's own folder, so the kit can be moved or copied whole and still resolve.</td>
+</tr>
+<tr>
+<td><code>pythonPath</code></td>
+<td>Added to <code>PYTHONPATH</code>, so your kit's own modules import with nothing to configure.</td>
+</tr>
+<tr>
+<td><code>sources</code></td>
+<td>What your generators are built from — the cache key that decides whether an already-generated cell can be reused. Omit it and the entry script's own directory is used, which is the ordinary layout. <strong>Not</strong> <code>pythonPath</code>: that may point at a shared environment you do not own.</td>
+</tr>
+<tr>
+<td><code>dataFiles</code></td>
+<td>Files your geometry depends on but which are not source — a table of pad sizes, a device list. <strong>Reading a file is fine provided its content is part of your cell's cache key, and declaring it here is how it becomes part of it.</strong> Undeclared, editing it changes nothing: circuitRF keeps handing out the cells built before you changed it.</td>
+</tr>
+<tr>
+<td><code>interpreter</code></td>
+<td>Usually omitted; circuitRF finds one. Set it when your cells need packages that live in a particular environment. <strong>circuitRF does not bundle an interpreter and does not install packages on your behalf</strong> — a kit that needs an environment declares it.</td>
+</tr>
+</tbody>
+</table>
+<p>It deliberately does <strong>not</strong> list the generators the kit offers. The <code>describe</code> call is the only source
+of that, and a second one would be a cache that can silently disagree with the script.</p>
+<h2 id="traps">Traps worth a callout</h2>
+<div class="callout warn">
+<span class="label">A parameter declared as text silently ignores a number</span>
+<p>Kit PCell parameters are commonly declared as <strong>strings</strong>. Supply a numeric value where a
+string is expected and it can be <em>ignored</em> — the generator falls back to its default. There is no
+error message. The symptom is <strong>wrong artwork</strong>, and it will look entirely plausible.</p>
+<p><strong>Tell your users to check the produced geometry</strong>, not the messages. And when you author
+a parameter, ask whether it really needs to be text: a number declared as a number cannot fail this
+way.</p>
+</div>
+<div class="callout warn">
+<span class="label">A unit belongs in the row's unit field, not in the value</span>
+<p>circuitRF's expression parser has no unit-suffix production, so a value written as
+<code>60u</code> in an expression is a <em>parse error</em> — and an unresolvable value is skipped rather
+than reported at the point you typed it. Some kits' own scripting accepts that spelling, which means the
+difference does not show up until Run. See <a href="units.html#unit-field">Units</a>.</p>
+</div>
+<p><strong>Non-determinism poisons the cache silently.</strong> It is worth repeating because it is the failure with no
+symptom: generated cells are cached on <code>(cell, parameter values, technology)</code>, so a generator that
+consults anything outside those inputs produces stale or inconsistent geometry with no error anywhere.</p>
+<p><strong>Do not flatten your own curves.</strong> Emit <code>Edge.arc(bulge)</code> and <code>Edge.cubic(…)</code> and let circuitRF flatten
+at screen resolution. Flattening is a rendering decision, and a generator that pre-flattens has made it
+once, at the wrong time, for every zoom level.</p>
+<p class="small">See also: <a href="pcells.html">PCells</a> ·
+<a href="pdk-integration.html">PDK Integration</a> · <a href="units.html">Units</a> ·
+<a href="layout-editor.html#technology">Technology</a> ·
+<a href="components.html#veriloga">Compiled Verilog-A models</a> · <a href="sdd.html">The SDD</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="pdk-integration.html"><span class="dir">Previous</span><span class="name">PDK Integration</span></a>
+  <a class="next" href="mom-engine.html"><span class="dir">Next</span><span class="name">The MoM Engine</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+</body>
+</html>

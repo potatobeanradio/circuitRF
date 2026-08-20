@@ -186,7 +186,7 @@ public class SvgPaintAndPostPassTests
             <svg xmlns="http://www.w3.org/2000/svg" width="100" height="50">
             <text font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans">R</text></svg>
             """;
-        var result = SvgPostPass.Run(svg, out var report);
+        var result = SvgPostPass.Run(svg, "fixture", out var report);
         Assert.Contains("font-weight=\"600\"", result, StringComparison.Ordinal);
         Assert.Empty(report.FontSubstitutions);
     }
@@ -210,7 +210,7 @@ public class SvgPaintAndPostPassTests
             <g clip-path="url(#c)"><rect fill="red" width="4" height="4"/></g></svg>
             """;
 
-        var result = SvgPostPass.Run(svg, out var report);
+        var result = SvgPostPass.Run(svg, "fixture", out var report);
 
         Assert.Equal(1, report.ClipsDropped);
         Assert.DoesNotContain("clipPath", result, StringComparison.Ordinal);
@@ -227,7 +227,7 @@ public class SvgPaintAndPostPassTests
             <g clip-path="url(#c)"><rect fill="red" width="4" height="4"/></g></svg>
             """;
 
-        var result = SvgPostPass.Run(svg, out var report);
+        var result = SvgPostPass.Run(svg, "fixture", out var report);
 
         Assert.Equal(0, report.ClipsDropped);
         Assert.Contains("clip-path", result, StringComparison.Ordinal);
@@ -242,7 +242,7 @@ public class SvgPaintAndPostPassTests
             <path fill="#C3CDD6" d="M0 0L9 9Z"/></svg>
             """;
 
-        var result = SvgPostPass.Run(svg, out var report);
+        var result = SvgPostPass.Run(svg, "fixture", out var report);
 
         Assert.Equal(3, report.PathsDeduped);
         Assert.Contains("<defs", result, StringComparison.Ordinal);
@@ -258,7 +258,7 @@ public class SvgPaintAndPostPassTests
             <text fill="#5C6B7A" x="1.5" y="2.5">Hi</text></svg>
             """;
 
-        var result = SvgPostPass.Run(svg, out _);
+        var result = SvgPostPass.Run(svg, "fixture", out _);
 
         Assert.Contains("fill-opacity=\"0.2\"", result, StringComparison.Ordinal);
         Assert.Contains("10.12", result, StringComparison.Ordinal);
@@ -275,7 +275,7 @@ public class SvgPaintAndPostPassTests
                        "<clipPath id=\"c" + Guid.Empty.ToString("N") + "\"><rect width=\"100\" height=\"50\"/></clipPath>", 1))
                    + "<g clip-path=\"url(#c" + Guid.Empty.ToString("N") + "\"><path fill=\"red\" d=\"M0.123456 0.987654L9 9Z\"/></g></svg>";
 
-        SvgPostPass.Run(svg, out var report);
+        SvgPostPass.Run(svg, "fixture", out var report);
 
         Assert.True(report.BytesAfter < report.BytesBefore,
             $"post-pass produced {report.BytesAfter} bytes from {report.BytesBefore}");

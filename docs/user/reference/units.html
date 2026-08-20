@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Units</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/units.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Units</p>
+
+  <h1>Units</h1>
+  <p class="lede">Database units, display units, the snap grid, and what circuitRF accepts when you type a value into a field.</p>
+
+<p>circuitRF keeps three things apart that other tools tend to conflate: <strong>how a number is stored</strong>, <strong>how
+it is shown to you</strong>, and <strong>what grid new geometry lands on</strong>. Keeping them separate is what makes
+&quot;change the units&quot; an instant, lossless operation here instead of a destructive one.</p>
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#dbu">The database unit (DBU)</a></li>
+<li><a href="#storage-vs-display">Storage versus display</a></li>
+<li><a href="#resolution">Changing the DBU resolution is a migration</a></li>
+<li><a href="#snap">Layout units and the snap grid</a></li>
+<li><a href="#wbond">wBond units</a></li>
+<li><a href="#typing">Typing a value into a field</a></li>
+<li><a href="#unit-field">A unit is a field, not part of an expression</a></li>
+</ol>
+</nav>
+<h2 id="dbu">The database unit (DBU)</h2>
+<p>Every layout coordinate in circuitRF is a <strong>64-bit integer</strong> in <em>database units</em>. Not a floating-point
+millimetre — an integer count.</p>
+<p>The reason is exactness. After a rotate, a paste, a boolean operation and a GDSII round-trip, two
+vertices that ought to coincide must compare <strong>exactly</strong> equal, or the geometry silently develops
+hairline gaps and self-intersections that only show up at the fab. Integers give that guarantee;
+doubles do not. It also makes &quot;is this vertex on the grid?&quot; a division with no remainder rather than a
+comparison against a tolerance.</p>
+<p><strong>One DBU is one nanometre by default.</strong> The layout property that sets this is <code>DbuPerMicron</code>, and its
+default is <strong>1000</strong>. That specific number is chosen, not inherited:</p>
+<pre><code>1 µm  = 1000  DBU     exact
+1 mil = 25400 DBU     exact
+</code></pre>
+<p>Both are exact integers at 1 nm resolution. A metric-authored MMIC and an imperial-authored PCB are
+therefore commensurable in the same database, a cell can be copied from one to the other with an exact
+transform, and mil↔µm conversion never produces a fractional coordinate. That single choice removes the
+whole family of &quot;the imported board is 0.0003 mil off grid&quot; problems.</p>
+<p>At <code>long</code> range, ±9.2 × 10<sup>18</sup> DBU is ±9.2 × 10<sup>9</sup> metres of addressable space. There
+is no practical ceiling.</p>
+<h2 id="storage-vs-display">Storage versus display</h2>
+<div class="callout warn">
+<span class="label">The single most common source of confusion</span>
+<p><strong>The display unit is a presentation setting. Changing it moves nothing.</strong> A vertex
+stored at 25400 DBU reads <code>25.4</code> when the display unit is µm and <code>1</code> when it is
+mil. The stored integer is identical in both cases, and switching back and forth returns the byte-identical
+file.</p>
+</div>
+<p>So changing the display unit is free: every shape stays exactly where it was, stays exactly on whatever
+grid it was on, and the change needs no undo entry beyond a view preference. It round-trips perfectly.</p>
+<p>The display unit <em>is</em> saved in the <code>.clay</code> file, purely so a layout reopens in the unit it was authored
+in. It carries no other meaning. The available display units are <strong>nm, µm, mm, mil</strong> and <strong>inch</strong>, and
+the default comes from the technology — <code>mil</code> for the PCB starter technology, <code>µm</code> for the MMIC one.</p>
+<h2 id="resolution">Changing the DBU resolution is a migration</h2>
+<p><code>DbuPerMicron</code> is a different matter, and circuitRF treats it as one. It is <strong>not a preference toggle</strong>:</p>
+<ul>
+<li>It may only change by an <strong>exact integer ratio</strong>. A non-integer ratio is rejected outright.</li>
+<li><strong>Refining</strong> (1 nm → 0.1 nm, ratio 10) is always lossless — every coordinate is multiplied by ten and
+the operation proceeds, logged to the Messages pane.</li>
+<li><strong>Coarsening</strong> (0.1 nm → 1 nm) is lossy the moment any coordinate is not divisible by the ratio. The
+whole design, including every referenced sub-cell, is pre-scanned first; if any vertex would move, the
+specific offenders are reported to Messages and the change requires confirmation. It is never a silent
+snap.</li>
+<li>The whole thing is one undoable operation.</li>
+</ul>
+<p>In practice almost nobody touches it. The default is right for both target markets, and because
+refinement is always lossless, starting at 1 nm is safe even for a process that later needs finer
+resolution.</p>
+<h2 id="snap">Layout units and the snap grid</h2>
+<p>The <strong>snap grid</strong> is a third, independent number: the pitch that new and edited vertices land on. It is
+stored in DBU and it is yours to change at will.</p>
+<p><strong>R5 in one sentence: changing the snap grid never re-snaps existing geometry.</strong> Moving from 1 µm to
+0.5 µm does not move a single existing vertex. There is a separate, explicit <strong>Snap selection to grid</strong>
+command for when you actually want that, and it reports any shape it could not snap without
+self-intersecting.</p>
+<p>This is the opposite of the schematic's rule, and it is right for layout. In a schematic an off-grid pin
+is a correctness bug — it breaks connectivity. In a layout an off-grid vertex is merely unusual:
+imported GDSII, a 45° diagonal and a flattened arc all legitimately produce vertices between grid
+points.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>PCB starter technology</th>
+<th>MMIC starter technology</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Display unit</td>
+<td>mil</td>
+<td>µm</td>
+</tr>
+<tr>
+<td>Snap grid</td>
+<td>1 mil</td>
+<td>5 nm</td>
+</tr>
+<tr>
+<td><code>DbuPerMicron</code></td>
+<td>1000</td>
+<td>1000</td>
+</tr>
+</tbody>
+</table>
+<p>The layout toolbar's <strong>Snap</strong> field sets this grid pitch, and offers a ladder of multiples of the
+technology's own default rather than a fixed list. <strong>F9</strong> toggles it off and back to the last non-zero
+value.</p>
+<div class="callout note">
+<span class="label">Grid snap and geometry snap are two different things</span>
+<p>The <strong>Snap</strong> field is the <em>grid</em>. <strong>Geometry snap</strong> — snapping to a
+pin, a corner, a midpoint — is a separate feature with its own toolbar toggle (F3 or <kbd>S</kbd>), and
+its capture radius is not a setting at all: it is a fixed <strong>8 device pixels</strong> converted to
+DBU at the current zoom, so it stays the same size on screen at every zoom level. See
+<a href="layout-editor.html#geometry-snap">Geometry snap</a> in the layout editor chapter.</p>
+</div>
+<h2 id="wbond">wBond units</h2>
+<p>Bondwire geometry is stored in <strong>nanometres</strong> — plain nanometres, not DBU. At the default 1000 DBU/µm
+the two happen to coincide exactly, which is why the conversion between them is one deliberate,
+single-place bridge rather than something spread through the code.</p>
+<p>Everything a wire edit does quantises to <strong>one nanometre</strong>. On a 500 µm loop height that is a relative
+error of 2 × 10<sup>-6</sup> — physically about a fifth of a millionth of a mil.</p>
+<p>Inductance in the wBond panel is always read out in <strong>pH</strong>, fixed, never auto-ranged. That is
+deliberate: the panel exists so you can watch a number while dragging, and a unit that switches
+mid-drag fakes a 1000× jump.</p>
+<h2 id="typing">Typing a value into a field</h2>
+<p>There are two vocabularies, because there are two different kinds of field.</p>
+<h3 id="layout-dimension-fields">Layout dimension fields</h3>
+<p>A width, a length, a coordinate, a DRC rule value. These accept a bare number — interpreted in the
+current display unit — or a number with one of these suffixes, case-insensitively and with any amount
+of whitespace:</p>
+<table>
+<thead>
+<tr>
+<th>Suffix</th>
+<th>Means</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>(none)</em></td>
+<td>the current display unit</td>
+<td><code>2.5</code></td>
+</tr>
+<tr>
+<td><code>nm</code></td>
+<td>nanometre</td>
+<td><code>250nm</code></td>
+</tr>
+<tr>
+<td><code>u</code>, <code>um</code>, <code>µm</code></td>
+<td>micrometre</td>
+<td><code>50u</code></td>
+</tr>
+<tr>
+<td><code>mm</code></td>
+<td>millimetre</td>
+<td><code>2.9mm</code></td>
+</tr>
+<tr>
+<td><code>mil</code></td>
+<td>thousandth of an inch</td>
+<td><code>115mil</code></td>
+</tr>
+<tr>
+<td><code>in</code>, <code>inch</code></td>
+<td>inch</td>
+<td><code>0.25in</code></td>
+</tr>
+</tbody>
+</table>
+<p>Leading <code>+</code>/<code>-</code> and scientific notation (<code>1.5e3</code>) are accepted. Anything else is rejected and the field
+reverts — it does not silently guess.</p>
+<h3 id="component-parameter-fields">Component parameter fields</h3>
+<p>A resistance, a capacitance, a frequency. These are evaluated by the
+<a href="expressions.html">expression engine</a>, and the unit is a <strong>separate column in the row</strong>, not part of the
+number. The unit column accepts these:</p>
+<table>
+<thead>
+<tr>
+<th>Prefix</th>
+<th>Multiplier</th>
+<th></th>
+<th>Unit family</th>
+<th>Spellings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>T</code></td>
+<td>10<sup>12</sup></td>
+<td></td>
+<td>Frequency</td>
+<td><code>Hz</code> <code>kHz</code> <code>MHz</code> <code>GHz</code> <code>THz</code></td>
+</tr>
+<tr>
+<td><code>G</code></td>
+<td>10<sup>9</sup></td>
+<td></td>
+<td>Inductance</td>
+<td><code>H</code> <code>mH</code> <code>uH</code> <code>nH</code> <code>pH</code> <code>fH</code></td>
+</tr>
+<tr>
+<td><code>M</code></td>
+<td>10<sup>6</sup></td>
+<td></td>
+<td>Capacitance</td>
+<td><code>F</code> <code>mF</code> <code>uF</code> <code>nF</code> <code>pF</code> <code>fF</code></td>
+</tr>
+<tr>
+<td><code>k</code></td>
+<td>10<sup>3</sup></td>
+<td></td>
+<td>Resistance</td>
+<td><code>Ohm</code> <code>mOhm</code> <code>kOhm</code> <code>MOhm</code> <code>GOhm</code> <code>TOhm</code></td>
+</tr>
+<tr>
+<td><code>m</code></td>
+<td>10<sup>-3</sup></td>
+<td></td>
+<td>Length</td>
+<td><code>metre</code> <code>nm</code> <code>um</code> <code>mm</code> <code>cm</code> <code>mil</code> <code>in</code> <code>inch</code></td>
+</tr>
+<tr>
+<td><code>u</code></td>
+<td>10<sup>-6</sup></td>
+<td></td>
+<td>Angle</td>
+<td><code>deg</code> <code>rad</code></td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td>10<sup>-9</sup></td>
+<td></td>
+<td>Voltage / current / power</td>
+<td><code>V</code> <code>kV</code> <code>mV</code> <code>uV</code> <code>nV</code> · <code>A</code> <code>mA</code> <code>uA</code> <code>nA</code> · <code>W</code> <code>mW</code> <code>uW</code> <code>kW</code></td>
+</tr>
+<tr>
+<td><code>p</code></td>
+<td>10<sup>-12</sup></td>
+<td></td>
+<td>Logarithmic</td>
+<td><code>dB</code> <code>dBm</code> <code>dBc</code> <code>dBW</code></td>
+</tr>
+<tr>
+<td><code>f</code></td>
+<td>10<sup>-15</sup></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>The glyphs <strong>Ω</strong> and <strong>µ</strong> are accepted and normalised — <code>kΩ</code> is <code>kOhm</code>, <code>µF</code> is <code>uF</code>. A prefix on its
+own is also a valid unit, so a row whose value is <code>2.2</code> and whose unit is <code>p</code> resolves to 2.2 × 10<sup>-12</sup>.</p>
+<div class="callout warn">
+<span class="label">"m" is milli, not metre</span>
+<p>A bare <code>m</code> is the SI prefix <strong>milli</strong>. The metre has its own spelling,
+<code>metre</code>, and every other length (<code>mm</code>, <code>um</code>, <code>mil</code>, …)
+reduces to it. This is a deliberate decision, not an oversight: re-pointing <code>m</code> at the metre
+would silently multiply every hand-authored <code>C=1m</code> in an existing netlist by a thousand, with
+nothing anywhere reporting it. The logarithmic units are measurement functions rather than scale
+factors, so <code>dBm</code> carries no multiplier.</p>
+</div>
+<h2 id="unit-field">A unit is a field, not part of an expression</h2>
+<div class="callout warn">
+<span class="label">This one has bitten real designs</span>
+<p><strong>The expression parser has no unit-suffix production.</strong> Writing
+<code>RFfreq = 2 GHz</code> as a VAR expression is a <em>parse error at the <code>GHz</code></em> — and
+because an unresolvable global is skipped during elaboration, the result is not a wrong value but
+<strong>no variable at all</strong>. Put <code>2</code> in the expression and <code>GHz</code> in the
+row's unit column.</p>
+</div>
+<p>The one place the inline spelling is accepted is a <strong>netlist</strong> (<code>.cnl</code>), which has no separate column to
+put a unit in; the reader lifts a trailing unit token off the right-hand side there. The schematic VAR
+editor, which does have a unit column, applies the same rule so that identical text no longer means two
+different things in the two entry points.</p>
+<p>Note the trap this creates in the other direction: because every bare SI prefix is a valid unit,
+<code>2 * f</code> ends in the femto- prefix and <code>R * m</code> in milli-. That is why the split is only applied when the
+unsplit text does not parse and the split text does — the last-token test alone is not safe.</p>
+<p class="small">See also: <a href="expressions.html">Expressions</a> ·
+<a href="layout-editor.html">The Layout Editor</a> · <a href="wbond.html">wBond</a> ·
+<a href="components.html">Components</a> · <a href="pcells.html">PCells</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="workspace.html"><span class="dir">Previous</span><span class="name">The Workspace</span></a>
+  <a class="next" href="expressions.html"><span class="dir">Next</span><span class="name">Expressions</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+</body>
+</html>

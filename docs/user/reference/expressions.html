@@ -6,6 +6,12 @@
 <title>circuitRF — Expressions</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/expressions.md
+-->
 </head>
 <body>
 
@@ -19,11 +25,9 @@
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Expressions</p>
 
   <h1>Expressions</h1>
-  <p class="lede">One expression language runs everywhere a value can be computed: global variables, component
-  parameters, SDD device equations, and measurements. Anywhere you can type a number, you can type an
-  expression — <code>2*pi*freq0</code>, <code>polar(0.1, 35)</code>, <code>if(Vg &gt; Vth, gm*Vg, 0)</code>.</p>
+  <p class="lede">One expression language runs everywhere a value can be computed: global variables, component parameters, SDD device equations, and measurements. Anywhere you can type a number, you can type an expression — `2*pi*freq0`, `polar(0.1, 35)`, `if(Vg &gt; Vth, gm*Vg, 0)`.</p>
 
-  <nav class="toc">
+<nav class="toc">
     <h2>On this page</h2>
     <ol>
       <li><a href="#where">Where expressions are used</a></li>
@@ -36,9 +40,8 @@
       <li><a href="#cycles">Cycle detection &amp; errors</a></li>
     </ol>
   </nav>
-
-  <h2 id="where">Where expressions are used</h2>
-  <table>
+<h2 id="where">Where expressions are used</h2>
+<table>
     <thead><tr><th>Consumer</th><th>What it evaluates</th><th>Result</th></tr></thead>
     <tbody>
       <tr><td>Global variables (VAR)</td><td>a testbench variable</td><td>Real or Complex</td></tr>
@@ -48,34 +51,34 @@
     </tbody>
     <caption>Same grammar, operators, and functions everywhere; only the available <em>operands</em> differ.</caption>
   </table>
-  <p>circuitRF parses an expression once into a tree and evaluates it against a scope — it never does text
-  substitution. That makes it fast (an SDD equation is parsed once, evaluated thousands of times) and correct
-  (no fragile longest-name-first variable replacement).</p>
-
-  <h2 id="values">Values: Real, Complex, Bool, String</h2>
-  <p>Every value carries a <strong>kind</strong>:</p>
-  <ul>
-    <li><strong>Real</strong> — a plain number. Component values like <code>R</code>, <code>L</code>,
-      <code>C</code> are Real (<code>50</code> stays <code>50</code>, not <code>50+j0</code>).</li>
-    <li><strong>Complex</strong> — appears as soon as the imaginary unit <code>j</code> enters, or from an
-      operation that is mathematically complex (e.g. <code>sqrt</code> of a negative). Impedances resolve here.
-      Write imaginary values with <code>j*</code>: <code>j*4</code>, <code>2 + j*3</code>.</li>
-    <li><strong>Bool</strong> — the result of a comparison or logical operator; used only as a condition in
-      <code>if</code> / <code>?:</code>. A parameter that resolves to Bool is an error (a condition isn't a
-      component value).</li>
-    <li><strong>String</strong> — a double-quoted literal (<code>"spline"</code>, <code>"path/to/x.s2p"</code>).
-      Storage only — no string operators. Used for genuinely textual parameters (the SnP block's
-      <code>File</code>, <code>InterpMode</code>, …).</li>
-  </ul>
-  <div class="callout note">
+<p>circuitRF parses an expression once into a tree and evaluates it against a scope — it never does
+text substitution. That makes it fast (an SDD equation is parsed once, evaluated thousands of
+times) and correct (no fragile longest-name-first variable replacement).</p>
+<h2 id="values">Values: Real, Complex, Bool, String</h2>
+<p>Every value carries a <strong>kind</strong>:</p>
+<ul>
+<li><p><strong>Real</strong> — a plain number. Component values like <code>R</code>, <code>L</code>, <code>C</code> are Real (<code>50</code> stays <code>50</code>, not
+<code>50+j0</code>).</p>
+</li>
+<li><p><strong>Complex</strong> — appears as soon as the imaginary unit <code>j</code> enters, or from an operation that is
+mathematically complex (e.g. <code>sqrt</code> of a negative). Impedances resolve here. Write imaginary
+values with <code>j*</code>: <code>j*4</code>, <code>2 + j*3</code>.</p>
+</li>
+<li><p><strong>Bool</strong> — the result of a comparison or logical operator; used only as a condition in <code>if</code> /
+<code>?:</code>. A parameter that resolves to Bool is an error (a condition isn't a component value).</p>
+</li>
+<li><p><strong>String</strong> — a double-quoted literal (<code>&quot;spline&quot;</code>, <code>&quot;path/to/x.s2p&quot;</code>). Storage only — no string
+operators. Used for genuinely textual parameters (the SnP block's <code>File</code>, <code>InterpMode</code>, …).</p>
+</li>
+</ul>
+<div class="callout note">
     <span class="label">Ordering needs real operands</span>
     <p><code>&lt; &lt;= &gt; &gt;=</code> require Real operands (complex numbers are unordered); <code>==</code> /
     <code>!=</code> work on Real and Complex. Real ∘ Complex promotes to Complex.</p>
   </div>
-
-  <h2 id="operators">Operators &amp; precedence</h2>
-  <p>Lowest-binding (evaluated last) to highest-binding (tightest):</p>
-  <table>
+<h2 id="operators">Operators &amp; precedence</h2>
+<p>Lowest-binding (evaluated last) to highest-binding (tightest):</p>
+<table>
     <thead><tr><th>Operators</th><th>Notes</th></tr></thead>
     <tbody>
       <tr><td><code>?:</code> (ternary)</td><td><code>cond ? a : b</code> — same as <code>if(cond, a, b)</code></td></tr>
@@ -90,11 +93,10 @@
       <tr><td>function call, <code>( )</code>, atoms</td><td>highest</td></tr>
     </tbody>
   </table>
-
-  <h2 id="constants">Constants &amp; functions</h2>
-  <p><strong>Constants:</strong> <code>j = (0,1)</code>, <code>pi</code>, <code>e</code>. These (and all function
-  names) are reserved — a variable may not shadow them.</p>
-  <table>
+<h2 id="constants">Constants &amp; functions</h2>
+<p><strong>Constants:</strong> <code>j = (0,1)</code>, <code>pi</code>, <code>e</code>. These (and all function names) are reserved — a variable
+may not shadow them.</p>
+<table>
     <thead><tr><th>Group</th><th>Functions</th></tr></thead>
     <tbody>
       <tr><td>Trig</td><td><code>sin cos tan asin acos atan atan2(y,x)</code></td></tr>
@@ -108,12 +110,11 @@
     <code>dB</code>/<code>dBm</code> are <a href="measurements.html">measurement</a> functions, not general
     built-ins (and so are never unit suffixes).</caption>
   </table>
-
-  <h2 id="units">Units</h2>
-  <p>A unit attaches at the <strong>assignment</strong> level (after the expression), and scales the value by a
-  linear factor — <code>L = L1 nH</code>, <code>Z = 50 Ohm</code>, <code>M = 0.5 pH</code>. Units are not part
-  of the expression grammar.</p>
-  <table>
+<h2 id="units">Units</h2>
+<p>A unit attaches at the <strong>assignment</strong> level (after the expression), and scales the value by a
+linear factor — <code>L = L1 nH</code>, <code>Z = 50 Ohm</code>, <code>M = 0.5 pH</code>. Units are not part of the expression
+grammar.</p>
+<table>
     <thead><tr><th>Domain</th><th>Units</th></tr></thead>
     <tbody>
       <tr><td>SI prefixes</td><td><code>T G M k m u n p f</code> (1e12 … 1e-15)</td></tr>
@@ -125,47 +126,50 @@
       <tr><td>Angle</td><td><code>deg rad</code></td></tr>
     </tbody>
   </table>
-  <div class="callout warn">
+<div class="callout warn">
     <span class="label">dB and dBm are not units</span>
     <p>They are logarithmic, not linear scale factors, so they are <em>functions</em> — <code>dB(...)</code>,
     <code>dBm(...)</code> — never a trailing unit on a value.</p>
   </div>
-
-  <h2 id="vars">Variables, scope &amp; cell parameters</h2>
-  <p>Global variables (authored in a <a href="components.html#var">VAR</a> block) are visible everywhere. Cell
-  parameters pass <strong>top-down</strong>: an instance binds overrides in the <em>parent</em> scope; the cell
-  evaluates its own defaults and component values in its <em>own</em> scope, then passes its scope down to its
-  sub-cells. A name resolves to the local cell variable/parameter first, then the global — a cell never sees a
-  parent's locals or a sibling's, which is what keeps a cell's meaning independent of where it's placed.</p>
-  <div class="callout note">
+<h2 id="vars">Variables, scope &amp; cell parameters</h2>
+<p>Global variables (authored in a <a href="components.html#var">VAR</a> block) are visible everywhere. Cell
+parameters pass <strong>top-down</strong>: an instance binds overrides in the <em>parent</em> scope; the cell
+evaluates its own defaults and component values in its <em>own</em> scope, then passes its scope down to
+its sub-cells. A name resolves to the local cell variable/parameter first, then the global — a
+cell never sees a parent's locals or a sibling's, which is what keeps a cell's meaning independent
+of where it's placed.</p>
+<div class="callout note">
     <span class="label"><code>freq</code> is reserved</span>
     <p>Lowercase <code>freq</code> is the simulator's current stamping frequency (Hz), injected when the engine
     evaluates a frequency-dependent value (a <code>Z_Port</code> impedance, an SDD <code>H[w]</code>). You can't
     name a variable <code>freq</code>. It is distinct from a source's capital-<code>Freq</code> tone parameter.</p>
   </div>
-
-  <h2 id="functions">User-defined functions</h2>
-  <p>Define a function whose body is an expression in the same language, with any number of parameters:</p>
-  <pre><code>gm(vgs, vth) = beta * tanh(vgs - vth)</code></pre>
-  <p>A call binds arguments positionally into a fresh scope whose parent is the definition's scope (so a user
-  function sees globals, not the caller's locals). User functions compose with built-ins and with each other,
-  and are subject to the same cycle detection.</p>
-
-  <h2 id="cycles">Cycle detection &amp; errors</h2>
-  <p>circuitRF detects and rejects dependency <strong>cycles</strong> across the whole graph — global
-  variables, cell-parameter defaults, and overrides — and reports the chain (e.g. <code>a → b → a</code>)
-  rather than hanging. Every error names the offending text, never a silent zero or NaN:</p>
-  <ul>
-    <li><strong>Cycle</strong> — the dependency chain.</li>
-    <li><strong>Unresolved name</strong> — the name and the scope it was sought in.</li>
-    <li><strong>Type error</strong> — Bool where a number is required; ordering on a complex operand; a non-Bool
-      <code>if</code> condition.</li>
-    <li><strong>Arity / unknown function</strong> — wrong argument count or an undefined function.</li>
-    <li><strong>Domain</strong> — <code>log(0)</code>, <code>sqrt</code> of a negative in a real SDD context,
-      division by zero (reported with context).</li>
-  </ul>
-
-  <div class="callout note">
+<h2 id="functions">User-defined functions</h2>
+<p>Define a function whose body is an expression in the same language, with any number of parameters:</p>
+<pre><code class="language-text">gm(vgs, vth) = beta * tanh(vgs - vth)
+</code></pre>
+<p>A call binds arguments positionally into a fresh scope whose parent is the definition's scope (so
+a user function sees globals, not the caller's locals). User functions compose with built-ins and
+with each other, and are subject to the same cycle detection.</p>
+<h2 id="cycles">Cycle detection &amp; errors</h2>
+<p>circuitRF detects and rejects dependency <strong>cycles</strong> across the whole graph — global variables,
+cell-parameter defaults, and overrides — and reports the chain (e.g. <code>a → b → a</code>) rather than
+hanging. Every error names the offending text, never a silent zero or NaN:</p>
+<ul>
+<li><p><strong>Cycle</strong> — the dependency chain.</p>
+</li>
+<li><p><strong>Unresolved name</strong> — the name and the scope it was sought in.</p>
+</li>
+<li><p><strong>Type error</strong> — Bool where a number is required; ordering on a complex operand; a non-Bool <code>if</code>
+condition.</p>
+</li>
+<li><p><strong>Arity / unknown function</strong> — wrong argument count or an undefined function.</p>
+</li>
+<li><p><strong>Domain</strong> — <code>log(0)</code>, <code>sqrt</code> of a negative in a real SDD context, division by zero (reported
+with context).</p>
+</li>
+</ul>
+<div class="callout note">
     <span class="label">SDD equations are real-only</span>
     <p>SDD device equations operate on real time-domain voltages and produce real current/charge, so <code>j</code>
     is disallowed there and <code>sqrt</code>/<code>log</code> of a negative is a domain error rather than a
@@ -174,18 +178,21 @@
     that is taken. For tough convergence prefer soft switching (<code>tanh</code>) over a hard <code>if</code>.
     See <a href="sdd.html">The SDD</a>.</p>
   </div>
-
-  <hr>
-  <p class="small">See also: <a href="measurements.html">Measurements</a> · <a href="sdd.html">The SDD</a> ·
+<hr />
+<p class="small">See also: <a href="measurements.html">Measurements</a> · <a href="sdd.html">The SDD</a> ·
   <a href="components.html#var">VAR component</a>. Full design: <code>docs/design/expressions.md</code>.</p>
 
+<nav class="page-nav">
+  <a class="prev" href="units.html"><span class="dir">Previous</span><span class="name">Units</span></a>
+  <a class="next" href="grid.html"><span class="dir">Next</span><span class="name">Grid &amp; Connectivity</span></a>
+</nav>
 </main>
 
 <footer class="doc-footer">
   <img src="../assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <a href="index.html">Reference home</a>
+  <a href="../index.html">Documentation home</a>
 </footer>
 
 </body>

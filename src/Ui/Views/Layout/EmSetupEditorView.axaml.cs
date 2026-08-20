@@ -27,6 +27,8 @@ public partial class EmSetupEditorView : UserControl
         // Staged, exactly like every other typed field here and like the Analyses panel's own
         // "Results file:" box: commit on LostFocus/Enter, Escape reverts. A half-typed path must
         // never reach the model.
+        HelpButton.Click += (_, _) => DocLauncher.Open("reference/em-setup.html");
+
         BrowseSnpOutputButton.Click += OnBrowseSnpOutputClick;
         SnpOutputPathBox.LostFocus  += (_, _) => Vm?.CommitSnpOutputPath();
         SnpOutputPathBox.KeyDown    += OnSnpOutputPathKeyDown;

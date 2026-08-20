@@ -633,7 +633,13 @@
                             ToolTip.Tip="Technology">
                         <StackPanel Orientation="Horizontal" Spacing="2">
                             <TextBlock Classes="value" Text="{Binding ActiveViewModel.TechSummaryText}"/>
-                            <TextBlock Classes="value" Text="▾"/>
+                            <!-- A Material icon, NOT a "▾" text glyph. No circuitRF typeface covers
+                                 U+25BE, so Skia substituted a platform font for it — which the docs
+                                 factory then had to ship a 2.1 MB fallback family for, to render one
+                                 character in two figures. Every other chevron in this application is
+                                 already this icon. -->
+                            <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"
+                                             VerticalAlignment="Center"/>
                         </StackPanel>
                         <Button.Flyout>
                             <MenuFlyout Placement="Bottom">

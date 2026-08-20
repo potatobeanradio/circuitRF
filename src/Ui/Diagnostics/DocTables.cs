@@ -23,10 +23,27 @@ namespace CircuitRF.Ui.Diagnostics;
 /// </summary>
 public static class DocTables
 {
+    /// <summary>
+    /// A parameter a reader must never be offered as a row, because it is not a value: it is a
+    /// machine-written payload that CARRIES the component.
+    ///
+    /// <para>Match's and wBond's <c>Design</c> are base64 of the whole design's JSON. The parameter
+    /// panel already refuses to show either as a text row (<c>IsMatchPanelParameter</c>,
+    /// <c>IsWBondPanelParameter</c>) for the same reason: nobody can read it, act on it, or safely
+    /// edit it, and hand-editing it is the one way to produce a component that refuses at
+    /// elaboration. A documentation table listing it is the same mistake with a wider audience —
+    /// it invites exactly the edit the interface declines to offer (owner, 2026-08-20).</para>
+    /// </summary>
+    private static bool IsOpaquePayload(SymbolKind kind, string name)
+        => (kind == SymbolKind.Match || kind == SymbolKind.WBond)
+        && string.Equals(name, "Design", StringComparison.Ordinal);
+
     /// <summary>A component's parameter table, read from <see cref="ComponentTypeRegistry"/>.</summary>
     public static string ComponentParameters(SymbolKind kind, int ports)
     {
-        var rows = ComponentTypeRegistry.DefaultParameters(kind, ports);
+        var rows = ComponentTypeRegistry.DefaultParameters(kind, ports)
+                                        .Where(p => !IsOpaquePayload(kind, p.Name))
+                                        .ToList();
         if (rows.Count == 0)
             return "<p class=\"small\">No fixed parameters — this component's rows are authored by the user.</p>";
 
@@ -65,21 +82,51 @@ public static class DocTables
     /// A toolbar's per-button table, generated from the SAME manifest traversal that produced the
     /// figure — so the numbering in the prose and the numbering in the picture cannot disagree.
     /// </summary>
-    public static string ToolbarButtons(IReadOnlyList<ToolbarCatalog.Entry> entries)
+    /// <param name="entries">The toolbar manifest, in presentation order.</param>
+    /// <param name="buttonCell">
+    /// Renders the second column: the BUTTON ITSELF, captured on its own. Three columns became two
+    /// here (owner, 2026-08-20) — a <c>Button</c> column holding an <c>x:Name</c> and an <c>Icon</c>
+    /// column holding an icon's enum name said the same thing twice and neither said what the reader
+    /// is looking for, which is "which one of these is it on the toolbar". A null callback falls back
+    /// to the name, for a caller with no captures to hand (the tests).
+    /// </param>
+    public static string ToolbarButtons(IReadOnlyList<ToolbarCatalog.Entry> entries,
+                                        Func<ToolbarCatalog.Entry, string>? buttonCell = null)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("<table class=\"param-table\">");
-        sb.AppendLine("<thead><tr><th>#</th><th>Button</th><th>What it does</th><th>Icon</th></tr></thead>");
+        sb.AppendLine("<table class=\"param-table toolbar-table\">");
+        sb.AppendLine("<thead><tr><th>#</th><th>Button</th><th>What it does</th></tr></thead>");
         sb.AppendLine("<tbody>");
         foreach (var e in entries.Where(x => x.Index > 0))
         {
+            string cell = buttonCell?.Invoke(e)
+                       ?? (e.Id.Length == 0 ? "&mdash;" : "<code>" + E(e.Id) + "</code>");
             sb.Append("<tr>")
               .Append($"<td>{e.Index}</td>")
-              .Append($"<td>{(e.Id.Length == 0 ? "&mdash;" : "<code>" + E(e.Id) + "</code>")}</td>")
+              .Append($"<td class=\"glyph-cell\">{cell}</td>")
               .Append($"<td>{(e.Tooltip.Length == 0 ? "<em>no tooltip</em>" : E(e.Tooltip))}</td>")
-              .Append($"<td>{E(e.Icon)}</td>")
               .AppendLine("</tr>");
         }
+        sb.AppendLine("</tbody></table>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The workspace figure's legend: one row per numbered region, in the figure's own order.
+    ///
+    /// <para>Generated from <see cref="WorkspaceRegions.Catalog"/> for the same reason the toolbar
+    /// table is generated from the toolbar manifest — the number in the picture and the number in the
+    /// table have to be the same number, and a hand-written legend is one renumbering away from
+    /// pointing at the wrong panel.</para>
+    /// </summary>
+    public static string WorkspaceRegionLegend()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<table class=\"param-table\">");
+        sb.AppendLine("<thead><tr><th>#</th><th>Region</th><th>What it is for</th></tr></thead><tbody>");
+        foreach (var r in WorkspaceRegions.Catalog)
+            sb.AppendLine($"<tr><td>{r.Index}</td><td class=\"nowrap\"><b>{E(r.Title)}</b></td>"
+                        + $"<td>{E(r.What)}</td></tr>");
         sb.AppendLine("</tbody></table>");
         return sb.ToString();
     }

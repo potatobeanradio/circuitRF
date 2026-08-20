@@ -474,8 +474,12 @@ public class BuiltInSymbolsTests
     [InlineData(SymbolKind.Capacitor,     4)]  // top lead + flat plate + QuadCurve + bottom lead
     [InlineData(SymbolKind.Ground,        4)]  // stem + 3 horizontal bars
     [InlineData(SymbolKind.Vdc,           8)]  // 6 lines + 2 TextPrimitives (+/−)
-    [InlineData(SymbolKind.ZPort,         5)]  // 1 RRect + 4 TextPrims (N=2)
-    [InlineData(SymbolKind.Sdd,           5)]  // 1 RRect + 4 TextPrims (N=2)
+    // 1 RRect + 4 pin LEADS + 4 TextPrims (N=2). The leads were added 2026-08-20: the body is 180
+    // wide and the pins sit at +/-200, so without them a wire attached to an SDD or a ZPort ended
+    // 110 units short of the box with nothing between. Every other box-with-terminals glyph
+    // (VerilogA, SnP) already drew them.
+    [InlineData(SymbolKind.ZPort,         9)]
+    [InlineData(SymbolKind.Sdd,           9)]
     public void PrimitiveCount_MatchesExpected(SymbolKind kind, int expected)
     {
         var sym = BuiltInSymbols.Primitives(kind);

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — PDK Integration</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/pdk-integration.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › PDK integration</p>
+
+  <h1>PDK Integration</h1>
+  <p class="lede">Importing a process design kit and simulating the parts it supplies.</p>
+
+<p>A <strong>kit</strong> is a read-only tree supplied by a foundry or a device maker. It typically holds symbol
+descriptions, netlists defining its parts, palette icons, model data files, and — usually in a <em>separate</em>
+package beside it — the compiled model library those netlists name but never define.</p>
+<p>circuitRF reads a kit <strong>structurally</strong>. It does not carry a list of who makes what; nothing about a kit's
+identity is written into the product. Everything circuitRF knows about a kit it learned from the kit at
+run time.</p>
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What a kit contributes</a></li>
+<li><a href="#openpdk">OpenPDK</a></li>
+<li><a href="#importing">Importing one</a></li>
+<li><a href="#where">Where the parts go</a></li>
+<li><a href="#models">How a kit's models are evaluated</a></li>
+<li><a href="#failures">When something goes wrong</a></li>
+<li><a href="#managing">Managing kits</a></li>
+</ol>
+</nav>
+<h2 id="what">What a kit contributes</h2>
+<p>Four things, and they arrive by four different routes:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Symbols</strong></td>
+<td>Translated from the kit's own symbol descriptions into circuitRF symbols, in memory</td>
+</tr>
+<tr>
+<td><strong>Models</strong></td>
+<td>The device equations — usually a <em>compiled</em> library the kit names but ships separately</td>
+</tr>
+<tr>
+<td><strong>Technology</strong></td>
+<td>Layers, stackup and DRC rules, if the kit supplies them</td>
+</tr>
+<tr>
+<td><strong>Artwork</strong></td>
+<td>Layout for its parts, often as <a href="pcells.html">PCells</a> generated from parameters</td>
+</tr>
+</tbody>
+</table>
+<div class="callout note">
+<span class="label">A kit part is an ordinary cell reference</span>
+<p>This is the load-bearing decision of the whole area. A cell reference is <em>already</em> the
+component whose artwork lives in an external file and resolves at render time — so placement, rendering,
+pin geometry, hit-testing, net extraction and the symbol editor all work on a kit part unchanged. There
+is no "external part" species, and there deliberately is not going to be one.</p>
+</div>
+<p>Three things a kit does <strong>not</strong> tell circuitRF, which it therefore works out and records:</p>
+<ul>
+<li><strong>Which library implements its device types.</strong> A delivery is often several kits sitting beside one
+shared library package, and no kit says which. circuitRF establishes it by scanning candidate libraries
+for the entry points it calls.</li>
+<li><strong>Which build of that library to use.</strong> The same library name arrives in a dozen toolchain builds. The
+most specifically named build for your platform wins — and <strong>the choice is reported</strong>, because it was
+made automatically.</li>
+<li><strong>Which internal nodes of a model are not free unknowns.</strong> Detectable structurally; <em>which</em> node each
+one follows is not derivable from anything the model reports, and is supplied as run-time data.</li>
+</ul>
+<h2 id="openpdk">OpenPDK</h2>
+<p><strong>circuitRF supports the OpenPDK file structure</strong> — <a href="https://github.com/fossi-foundation/open-pdks">https://github.com/fossi-foundation/open-pdks</a>. If
+you are building a kit yourself, or normalising a supplied one, that is the layout to follow: it is an
+open standard, it is what circuitRF's importer expects to find, and it keeps a kit portable between
+tools. <a href="pdk-authoring.html">PDK Authoring</a> covers producing one.</p>
+<h2 id="importing">Importing one</h2>
+<p><strong>File ▸ Manage PDKs… ▸ Add…</strong> (<kbd>Ctrl/⌘ P</kbd>), then pick the kit's folder.</p>
+<div class="callout note">
+<span class="label">An import writes nothing into your workspace</span>
+<p>No symbols are copied in, no parameter interfaces, no icons. The workspace records a
+<strong>reference</strong> to the kit plus the decisions circuitRF made about it — the kit path, the
+provider name, the resolved model-library path per platform, the chosen variant defaults, and a
+translation version. Everything else is rebuilt in memory each time the workspace opens.</p>
+<p>The principle is <em>persist what was decided, rebuild what was translated</em>. The decisions are
+tiny and carry no geometry; they are the difference between a workspace that opens the same way twice
+and one that quietly re-decides.</p>
+</div>
+<p>A vendor delivery is often several part kits beside one shared package holding the compiled models, and
+discovery finds that package by <strong>adjacency</strong>. Once you reference a kit from somewhere else — a
+workspace folder, most obviously — that adjacency is gone and nothing on disk can recover it. So
+<strong>Add…</strong> also accepts a folder with no parts in it, when that folder holds the model libraries: adding
+the package directly is how you restore the link.</p>
+<h2 id="where">Where the parts go</h2>
+<p>Kit parts appear in the <strong>Library palette</strong>, ready to place. They do <strong>not</strong> appear in the Project Tree,
+because nothing is on disk — they are the kit's cells, not yours.</p>
+<p>Place one and it behaves like any other cell reference: it draws its symbol, it has pins you can wire
+to, and its parameters are seeded from the interface the kit published. A part that ships several
+formulations arrives on the one that works, so your first Run answers rather than explains.</p>
+<p>A welcome side effect of parts being virtual rather than on disk: <strong>placing one does not require a saved
+schematic.</strong> An ordinary cell reference is computed relative to the schematic's own folder, so it does;
+a kit part has no such need.</p>
+<h2 id="models">How a kit's models are evaluated</h2>
+<p>A kit's device models are usually <strong>compiled code</strong> — a shared library the vendor built, not equations
+you can read. circuitRF runs them in a <strong>separate worker process</strong>.</p>
+<p>That is a deliberate design, and it buys three things: a model that crashes takes the worker with it and
+not your session; a model built for a different operating system can still be reached (below); and
+circuitRF learns every device type, parameter name, pin count and node role <strong>at run time</strong> from the
+library itself, rather than carrying a table that would go stale.</p>
+<h3 id="what-to-expect">What to expect</h3>
+<p>Nothing to configure. The path is <em>import kit → place part → set up an analysis → Run</em>:</p>
+<ol>
+<li><strong>Import</strong> reads the kit and, when the kit ships no provider manifest of its own — the ordinary case
+for an unmodified vendor kit — <strong>synthesises one</strong>, recording which library it found. It is written
+into your workspace as plain JSON, because anything chosen automatically should be visible and
+one line to correct.</li>
+<li><strong>Placement</strong> seeds the instance's parameters from the published interface.</li>
+<li><strong>Run</strong> starts the worker on demand. Opening a workspace starts no processes, and a kit your design
+never uses is never launched.</li>
+</ol>
+<p>The first evaluation of a run is slower than the rest — the worker is starting, loading the library and
+interrogating it. After that it is a pipe.</p>
+<h3 id="node-roles-are-measured-not-declared">Node roles are measured, not declared</h3>
+<p>Before a model is used, circuitRF <strong>probes</strong> it: it perturbs each node and compares the model's own
+analytic Jacobian against finite differences of its own currents. From that it learns, per node, whether
+the node is a free unknown, whether it is conductively coupled to its neighbours, and therefore whether
+it is electrical or <strong>thermal</strong>.</p>
+<div class="callout warn">
+<span class="label">A thermal terminal needs a reference, and a floating one has no solution</span>
+<p>An unconnected ordinary pin is fine — it simply gets its own net. A <strong>thermal</strong> pin is
+not: an open thermal terminal is a floating node fed by a constant current source, and it has no
+operating point at all. circuitRF supplies the reference the design did not, so an unconnected thermal
+pin does not stop a run. If you are modelling self-heating deliberately, build the thermal RC network
+yourself, between the thermal node and an ambient source — the models do not build it for you, and a
+non-zero thermal diagonal in the model is self-heating feedback, not a reference.</p>
+</div>
+<h3 id="on-macos">On macOS</h3>
+<p>Vendor model libraries usually ship Linux and Windows builds only. A Linux library cannot be loaded on
+macOS at all — that is a binary-format and OS-ABI mismatch, not an instruction-set one, so nothing at the
+library level bridges it. <strong>circuitRF ships a small virtual machine</strong> for exactly this, and starts it for
+you; there is nothing to install. Expect a few seconds of startup on the first run of a session.</p>
+<h2 id="failures">When something goes wrong</h2>
+<p><strong>A broken kit reference is a first-class, repairable state.</strong> A workspace whose kits are missing still
+opens; its kit parts draw as the &quot;not found&quot; placeholder. Your design is your data — a missing dependency
+degrades, it does not deny.</p>
+<p>Reporting is <strong>one summary per kit, not one message per part</strong> — forty parts must not produce forty
+warnings. The details go to a log file in the workspace, and the Messages pane carries the summary with a
+clickable path to it.</p>
+<p>What to check first, in order:</p>
+<ol>
+<li><strong>Is the kit still where the workspace thinks it is?</strong> Manage PDKs… shows the stored path and whether
+it resolved. A kit is normally <em>outside</em> the workspace, so an absolute path is the common case and a
+moved kit is the common failure.</li>
+<li><strong>Was the model library found?</strong> The resolved library path per platform is recorded per kit. If the
+shared model package was never referenced — see <a href="#importing">Importing one</a> — the parts will draw and
+place but will not simulate.</li>
+<li><strong>Run <code>Validate PDK</code></strong> (below). It tells you whether the kit still holds the parts your design placed.</li>
+<li><strong>Read the Messages pane for the worker's own words.</strong> A refused evaluation usually explains itself
+only in the worker's own error output, and that output is attached to the failure.</li>
+</ol>
+<p>A model that stamps cleanly but will not converge is worth a specific mention: every number is finite,
+nothing errors, and the solve simply does not settle. That is the signature of a <strong>misread node role</strong> —
+worth reporting with the kit's details rather than tuning tolerances against.</p>
+<h2 id="managing">Managing kits</h2>
+<p><strong>File ▸ Manage PDKs…</strong> (<kbd>Ctrl/⌘ P</kbd>) lists every referenced kit with its name, stored path,
+whether it resolved, its part count and its translation version.</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Add…</strong></td>
+<td>Folder picker; imports and adds the reference through the ordinary import path</td>
+</tr>
+<tr>
+<td><strong>Remove</strong></td>
+<td>Drops the reference, after warning how many placed parts it will leave unresolved</td>
+</tr>
+<tr>
+<td><strong>Reveal</strong></td>
+<td>Opens the kit folder in your file manager</td>
+</tr>
+<tr>
+<td><strong>Validate</strong></td>
+<td>Runs the check below on the selected kit</td>
+</tr>
+</tbody>
+</table>
+<p>Every action reports in the dialog <strong>and</strong> posts to the Messages pane — the dialog gets dismissed, and
+the record of what you added, removed or validated should outlive it.</p>
+<h3 id="validate-pdk">Validate PDK</h3>
+<p>Re-reads the kit and reports <strong>drift</strong>, not just breakage: a part your design placed that the kit no
+longer offers, or a recorded translation version that no longer matches the reader.</p>
+<p>It reports what it <strong>checked</strong> as well as what was wrong — parts offered, placed parts checked, problems,
+notes. &quot;No problems found&quot; on its own cannot be told apart from a check that did nothing, and that is the
+one thing a validation must never be ambiguous about. A kit that could not be read at all reports
+<em>−1 parts offered</em> rather than 0, because &quot;offers nothing&quot; and &quot;could not be read&quot; are different answers
+to different questions.</p>
+<p>It checks your placed parts against a <strong>fresh read of the kit</strong>, never against whatever happens to be
+loaded in this session. The question is whether the kit still holds the part — conflating that with
+whether this session managed to load it turns <em>&quot;your kit changed&quot;</em> into <em>&quot;something went wrong at
+startup&quot;</em>.</p>
+<div class="callout note">
+<span class="label">Why a translation version exists</span>
+<p>Symbol pins are snapped to the connection grid when a kit's symbols are translated. If that reader
+ever changes — a scale fix, a snap fix, anything touching pin placement — re-deriving symbols would
+<strong>move pins, and wires attached to them would silently disconnect</strong>. The recorded
+translation version is what catches that: a mismatch is reported rather than re-derived underneath your
+wiring.</p>
+</div>
+<h2 id="authoring">Authoring a kit</h2>
+<p>PCells can be authored in <strong>Python</strong> — the generator, its parameters, its pins and its
+<a href="pcells.html#handles">parameter handles</a> all in one function in one file. That, the OpenPDK layout, and a
+complete worked example are in <a href="pdk-authoring.html">PDK Authoring</a>.</p>
+<p class="small">See also: <a href="pdk-authoring.html">PDK Authoring</a> ·
+<a href="pcells.html">PCells</a> · <a href="components.html#veriloga">Compiled Verilog-A models</a> ·
+<a href="layout-editor.html#technology">Technology</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="pcells.html"><span class="dir">Previous</span><span class="name">PCells</span></a>
+  <a class="next" href="pdk-authoring.html"><span class="dir">Next</span><span class="name">PDK Authoring</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+</body>
+</html>

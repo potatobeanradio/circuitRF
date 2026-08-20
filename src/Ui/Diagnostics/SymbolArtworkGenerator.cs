@@ -254,7 +254,7 @@ public static class SymbolArtworkGenerator
             throw new InvalidOperationException(
                 $"Symbol figure '{Path.GetFileName(path)}' produced an SVG with no drawing elements.");
 
-        string svg = SvgPostPass.Run(raw, out _);
+        string svg = SvgPostPass.Run(raw, Path.GetFileNameWithoutExtension(path), out _);
         var findings = SvgLint.DroppedPaint(svg);
         if (findings.Count > 0)
             throw new InvalidOperationException(SvgLint.Explain(Path.GetFileName(path), findings));

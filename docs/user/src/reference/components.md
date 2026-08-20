@@ -79,6 +79,13 @@ design rather than of the component type: the ladder it contains is the synthesi
 whatever the two external terminations already supply, since absorbing those reactances is the point.
 Edit it in the Match Designer.
 
+<div class="callout note">
+<span class="label">Match has its own chapter</span>
+<p>The synthesis, the Designer's four panes, the Norton-transform rack, the Probe button and a worked
+two-stage interstage example are all in <b><a href="match.html">The Match Component</a></b>. Read that
+before placing one — this entry is only the component's parameter table.</p>
+</div>
+
 {{table: components/Match}}
 
 ## Sources
@@ -272,7 +279,15 @@ either a length or a 3 dB corner frequency.
 
 A wirebond design placed as a single component. Its symbol is **generated from the design it carries**
 — two pins per wire array plus a `REF` pin — so both the pin count and the pin names are properties of
-that design rather than of the component type. Edit the design in the wBond editor.
+that design rather than of the component type. The wires themselves are drawn in the **layout** view,
+not here.
+
+<div class="callout note">
+<span class="label">wBond has its own chapter</span>
+<p>The geometry, loop height and span, the inductance and capacitance models, the 3D kernel, DXF
+interchange and Touchstone export are in <b><a href="wbond.html">wBond</a></b>. The two parameters
+most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> — are explained there.</p>
+</div>
 
 {{table: components/WBond}}
 
@@ -355,6 +370,68 @@ silently accept the wrong ones.
 All five **share one glyph and one three-pin geometry** — gate left, drain top, source bottom. The
 topology genuinely is the same, and the type label below the symbol names the law. **The source is an
 ordinary pin:** these are not hard-wired common-source.
+
+#### What all five share {#fet-shared}
+
+**Terminals and ports.** Three nets — `gate drain source` — mapped onto two ports: port 0 is
+(gate, source) and port 1 is (drain, source). So the first port voltage is **Vgs** and the second is
+**Vds**, which is the form every published FET equation is written in. Nothing has to be transposed to
+use a datasheet parameter set.
+
+**What is modelled.** The drain current and both of its derivatives — gm = ∂Id/∂Vgs and
+gds = ∂Id/∂Vds — computed **analytically** rather than by finite differences, which matters inside a
+Newton loop precisely where the device is most nonlinear. On top of that: optional forward gate
+conduction, as an ordinary diode from gate to source (set by `Is` and `N`, off when `Is` is zero), and
+gate charge (below). Parameter temperature scaling is modelled through `Temp` and `Tnom`.
+
+<div class="callout warn">
+<span class="label">What is NOT modelled — read this before choosing a model</span>
+<p><strong>The Statz/TOM-family charge formulation</strong> — it works on a smoothed effective voltage
+rather than on Vgs and Vgd separately, so it is a different scheme and not a parameter change to the two
+below. <strong>Transit-time delay. Breakdown. Self-heating</strong> — the device temperature is a
+parameter, not a solved node, so there is no electrothermal feedback. If your application depends on any
+of these, use a compiled model through
+<a href="#veriloga">VerilogA</a> instead.</p>
+</div>
+
+#### Cgs, Cgd and CapModel {#fet-capmodel}
+
+Gate charge is **selectable**, because the published models disagree about it. It is a parameter rather
+than a per-model decision for exactly that reason: two authors implementing "the Curtice model" from the
+literature will not necessarily give it the same gate charge.
+
+| `CapModel` | Gate charge | Are `Cgs`/`Cgd` linear? |
+|---|---|---|
+| `0` | None at all | n/a — no charge storage |
+| `1` *(default)* | **Constant** `Cgs`/`Cgd` | **Yes — linear.** They are fixed capacitances, independent of bias |
+| `2` | **Junction** (depletion) charge, applied to Vgs and Vgd separately | **No — bias-dependent.** `Cgs`/`Cgd` are then the *zero-bias* values, Cj0 |
+
+At `CapModel = 2` the charge on each junction is the standard depletion form:
+
+```
+Q = Cj0·Vbi/(1 − M) · [ 1 − (1 − V/Vbi)^(1 − M) ]        for V < Fc·Vbi
+                                                          continued by its TANGENT above Fc·Vbi
+
+parameters:  Cgs, Cgd   zero-bias capacitances (Cj0 for the two junctions)
+             Vbi        junction potential
+             M          grading coefficient
+             Fc         forward-bias changeover, as a fraction of Vbi
+```
+
+The tangent continuation above `Fc·Vbi` is not cosmetic: a hard clamp there would leave a kink in the
+Jacobian and stall Newton.
+
+**Which to pick.** Use `1` when your parameter set was extracted with fixed capacitances — which is the
+common case for the older laws — and when you want the cheapest evaluation. Use `2` when the extraction
+gives you junction parameters (Cj0, Vbi, M) and the gate swing is large enough for the bias dependence
+to matter, which in a power amplifier driven into compression it usually is.
+
+<div class="callout note">
+<span class="label">Cgd sees Vgd, not Vgs</span>
+<p>The gate–drain capacitance is across Vgd = Vgs − Vds, so it contributes to <em>both</em> ports and to
+the Jacobian's off-diagonal terms. That is why a change in drain bias moves the gate-side loading, and it
+is why <code>Cgd</code> dominates the input match of a device long before <code>Cgs</code> does.</p>
+</div>
 
 #### Curtice quadratic (FET_Curtice) {#fetcurtice}
 

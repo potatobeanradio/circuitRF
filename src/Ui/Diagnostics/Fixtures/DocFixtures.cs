@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.Schematic;
@@ -85,7 +86,13 @@ public static class DocFixtures
     // ── Symbol editor ─────────────────────────────────────────────────────────
 
     /// <summary>The symbol editor holding a real built-in symbol (the SDD's variadic body).</summary>
-    public static FigureScene SymbolEditor() => new(SymbolEditorFor());
+    /// <remarks>
+    /// Zoomed to fit after layout. An SDD's pins sit 200 units either side of a 180-wide body, and at
+    /// the editor's default zoom the right-hand pin column fell outside the capture entirely — the
+    /// figure showed a box with two loose pins beside it (owner, 2026-08-20).
+    /// </remarks>
+    public static FigureScene SymbolEditor()
+        => new(SymbolEditorFor()) { AfterLayout = root => ZoomToFit<SymbolEditorCanvas>(root) };
 
     // ── Layout editor ─────────────────────────────────────────────────────────
 
@@ -193,6 +200,42 @@ public static class DocFixtures
         DataContext = new WBondDocument(new WBondViewModel(WBondEmbedding.DefaultDesign()), title: "wBond"),
     };
 
+    // ── Zoom-to-fit helper ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fit the one <typeparamref name="TCanvas"/> inside <paramref name="root"/> to its content.
+    ///
+    /// <para><b>The canvas is driven directly, NOT through the document's
+    /// <c>RequestZoomToFit</c> event.</b> That event is the View menu's route and it is correct for
+    /// the application, but in a capture it did nothing at all and said nothing about it — measured
+    /// on the symbol-editor figure, which came back framed exactly as before. A figure that silently
+    /// declines to do what the fixture asked is the failure mode this whole generator is built to
+    /// remove, so the fixture calls the operation it actually wants and fails when the canvas it
+    /// needs is not there.</para>
+    /// </summary>
+    private static void ZoomToFit<TCanvas>(Control root) where TCanvas : Control
+    {
+        var canvas = root.GetVisualDescendants().OfType<TCanvas>().FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"This figure asked to be zoomed to fit, but its view contains no {typeof(TCanvas).Name}.");
+
+        switch (canvas)
+        {
+            case SymbolEditorCanvas s: s.ZoomToFit(); break;
+            case SchematicCanvas c:    c.ZoomToFit(); break;
+            case Controls.LayoutCanvas l: l.ZoomToFit(); break;
+            default:
+                throw new InvalidOperationException(
+                    $"{typeof(TCanvas).Name} has no ZoomToFit the docs factory knows how to call.");
+        }
+    }
+
+    /// <summary><see cref="ZoomToFit{TCanvas}"/>, for a fixture in another file.</summary>
+    public static void ZoomSchematicToFit(Control root) => ZoomToFit<SchematicCanvas>(root);
+
+    /// <inheritdoc cref="ZoomSchematicToFit"/>
+    public static void ZoomLayoutToFit(Control root) => ZoomToFit<Controls.LayoutCanvas>(root);
+
     // ── Popup helper ──────────────────────────────────────────────────────────
 
     /// <summary>
@@ -243,6 +286,10 @@ public static class DocFixtures
     /// Describe an opened popup for the generator: what to prove drew, and — only if it went to its
     /// own top level — what to composite and where.
     /// </summary>
+    /// <summary><see cref="Describe"/>, for a fixture in another file that opened its own popup.</summary>
+    public static IReadOnlyList<PopupCapture> DescribePopup(Visual popupContent, Visual inWindow, Point at)
+        => Describe(popupContent, inWindow, at);
+
     private static IReadOnlyList<PopupCapture> Describe(Visual popupContent, Visual inWindow, Point at)
     {
         var windowRoot = VisualRootOf(inWindow);

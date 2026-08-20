@@ -6,6 +6,12 @@
 <title>circuitRF — Results &amp; Data Export</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/npy-export.md
+-->
 </head>
 <body>
 
@@ -16,15 +22,12 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Results &amp; Data Export</p>
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Results &amp;amp; Data Export</p>
 
   <h1>Results &amp; Data Export</h1>
-  <p class="lede">Every run's results are written to disk as a self-describing NumPy <code>.npy</code> file you
-  can read from Python, MATLAB, or any tool that speaks NumPy — no re-running the simulation. This chapter
-  covers where results live, how to export them in other formats, and how to read the <code>.npy</code> in a
-  few lines of Python.</p>
+  <p class="lede">Every run&#39;s results are written to disk as a self-describing NumPy `.npy` file you can read from Python, MATLAB, or any tool that speaks NumPy — no re-running the simulation. This chapter covers where results live, how to export them in other formats, and how to read the `.npy` in a few lines of Python.</p>
 
-  <nav class="toc">
+<nav class="toc">
     <h2>On this page</h2>
     <ol>
       <li><a href="#datacube">The result model: DataSet &amp; DataCube</a></li>
@@ -35,30 +38,50 @@
       <li><a href="#stability">Format stability</a></li>
     </ol>
   </nav>
-
-  <h2 id="datacube">The result model: DataSet &amp; DataCube</h2>
-  <p>Every analysis returns a <strong>DataSet</strong> — a named collection of <strong>DataCubes</strong>.
-  A DataCube is an N-dimensional array of one kind (Real <em>or</em> Complex) with <strong>named, labelled
-  axes</strong>. For example, a harmonic-balance voltage cube <code>V</code> has axes
-  <code>[node, harmonic, sweep]</code>: the <code>node</code> axis carries string labels like
-  <code>X1.drain</code>, the <code>harmonic</code> axis carries integer orders, and the <code>sweep</code> axis
-  carries the swept values and their unit. This self-describing structure is exactly what the
-  <code>.npy</code> file preserves — so a trace, a marker, or a Python script all address the same data the same
-  way. Measurements (<a href="measurements.html">figures of merit</a>) are added to the DataSet as named cubes
-  too.</p>
-
-  <h2 id="where">Where results live</h2>
-  <p>When you run a TestBench, circuitRF writes the whole run to one file:</p>
-  <pre class="netlist"><code>&lt;workspace&gt;/results/&lt;schematicKey&gt;/run.npy</code></pre>
-  <p>The <code>&lt;schematicKey&gt;</code> is derived from the cell/schematic name. This single file holds every
-  analysis the run produced plus any measurements — see <a href="#groups">Grouped results</a> below. The
-  <a href="../index.html">Data Display</a> reads these files directly; nothing is recomputed to plot a result you
-  already ran.</p>
-
-  <h2 id="export">Exporting in other formats</h2>
-  <p>Open the exporter from <strong>File → Export…</strong> or the Export button on the Data Display toolbar.
-  Pick a run (any schematic with a <code>run.npy</code>), choose what to include, and pick a format:</p>
-  <table class="param-table">
+<h2 id="datacube">The result model: DataSet &amp; DataCube</h2>
+<p>Every analysis returns a <strong>DataSet</strong> — a named collection of <strong>DataCubes</strong>. A DataCube is an
+N-dimensional array of one kind (Real <em>or</em> Complex) with <strong>named, labelled axes</strong>. For example, a
+harmonic-balance voltage cube <code>V</code> has axes <code>[node, harmonic, sweep]</code>: the <code>node</code> axis carries
+string labels like <code>X1.drain</code>, the <code>harmonic</code> axis carries integer orders, and the <code>sweep</code> axis
+carries the swept values and their unit. This self-describing structure is exactly what the <code>.npy</code>
+file preserves — so a trace, a marker, or a Python script all address the same data the same way.
+Measurements (<a href="measurements.html">figures of merit</a>) are added to the DataSet as named cubes too.</p>
+<h2 id="where">Where results live</h2>
+<p>A run writes <strong>one file</strong> holding every analysis it produced, plus a <code>measurements</code> group. It goes to
+the workspace's shared results folder:</p>
+<pre><code class="language-netlist">&lt;workspace&gt;/results/&lt;name&gt;.npy
+</code></pre>
+<p><strong>You choose <code>&lt;name&gt;</code>, in the Analyses panel.</strong> Above the analyses list there is a single
+<strong>Results file</strong> field — one field for the whole run, not one per analysis card, because a run produces
+one file.</p>
+<table class="param-table">
+<thead><tr><th>Results file field</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td>Left blank <em>(the default)</em></td><td>The run writes <code>&lt;schematicKey&gt;.npy</code>, where the key is the cell or schematic name. Every run under that schematic overwrites it.</td></tr>
+<tr><td>A name you type</td><td>The run writes that file instead. <strong>This is how you keep a baseline:</strong> name one run <code>before-tuning.npy</code>, clear the field, and subsequent runs go back to the default file while the baseline stays put.</td></tr>
+</tbody>
+</table>
+<p>The name is sanitised to a plain file name — <code>.npy</code> is appended if you leave it off, and path
+separators are stripped, so the field names a <strong>file</strong>, not a folder. Every result of every schematic
+in the workspace lands side by side in that one <code>results/</code> directory, which is what lets the Data
+Display offer them all in one picker.</p>
+<div class="callout warn">
+<span class="label">A named file still overwrites</span>
+<p>Naming a file preserves it only until you run again <em>under the same name</em>. There is no
+automatic run history and no numbered suffixes: the named file is overwritten silently on every
+subsequent run under that name. Clear the field once you have the baseline you want.</p>
+</div>
+<p class="small">A scratch schematic — one you have not saved into a workspace — still writes its
+results, into the scratch recovery session's own <code>results/</code> folder, so a quick experiment is
+plottable without saving anything first.</p>
+<p>See <a href="#groups">Grouped results</a> below for what is inside the file. The
+<a href="data-display.html">Data Display</a> reads these files directly; nothing is recomputed to plot a result you
+already ran.</p>
+<h2 id="export">Exporting in other formats</h2>
+<p>Open the exporter from <strong>File → Export…</strong> or the Export button on the Data Display toolbar. Pick a
+run (any results file in the workspace's <code>results/</code> folder), choose what to include, and pick a
+format:</p>
+<table class="param-table">
     <thead><tr><th>Format</th><th>Extension</th><th>What it's for</th></tr></thead>
     <tbody>
       <tr><td>NumPy</td><td><code>.npy</code></td><td>The full grouped DataSet, lossless — the format this chapter documents.</td></tr>
@@ -69,28 +92,27 @@
       <tr><td>Loadpull LP-CWave</td><td><code>.lpcwave</code></td><td>A loadpull-shaped result as an LP-CWave dataset (offered only for loadpull runs).</td></tr>
     </tbody>
   </table>
-  <p>You can include or exclude the <code>measurements</code> group, and Touchstone/loadpull exports let you pin
-  or iterate sweep axes to slice out the block you want. Multi-frequency loadpull results export across all
-  their frequency blocks.</p>
-
-  <h2 id="groups">Grouped results</h2>
-  <p>A run that has several analyses produces <strong>one grouped DataSet</strong>: a group per analysis (named
-  for the analysis — <code>HB1</code>, <code>SP1</code>, <code>DC1</code>, …) plus a <code>measurements</code>
-  group for your figures of merit. In the <code>.npy</code> file:</p>
-  <ul>
-    <li>The metadata lists the groups in order, and every cube records which group and cube it is.</li>
-    <li>A cube is addressed by its <strong>qualified</strong> name (<code>HB1.V</code>) or, when unambiguous, its
-      <strong>bare</strong> name (<code>V</code>) — the same way a <a href="measurements.html">measurement</a>
-      references it.</li>
-  </ul>
-  <p>A single-analysis run (e.g. a CLI S-parameter export) typically has just one group plus possibly
-  <code>measurements</code>.</p>
-
-  <h2 id="python">Reading a <code>.npy</code> in Python</h2>
-  <p>The file is a single NumPy structured array. The <code>__meta__</code> field is a JSON blob describing
-  every cube — its group, kind, and axes (names, units, values, labels). Read the metadata, then index the
-  cube field:</p>
-  <pre><code>import json, numpy as np
+<p>You can include or exclude the <code>measurements</code> group, and Touchstone/loadpull exports let you pin
+or iterate sweep axes to slice out the block you want. Multi-frequency loadpull results export
+across all their frequency blocks.</p>
+<h2 id="groups">Grouped results</h2>
+<p>A run that has several analyses produces <strong>one grouped DataSet</strong>: a group per analysis (named for
+the analysis — <code>HB1</code>, <code>SP1</code>, <code>DC1</code>, …) plus a <code>measurements</code> group for your figures of merit. In
+the <code>.npy</code> file:</p>
+<ul>
+<li><p>The metadata lists the groups in order, and every cube records which group and cube it is.</p>
+</li>
+<li><p>A cube is addressed by its <strong>qualified</strong> name (<code>HB1.V</code>) or, when unambiguous, its <strong>bare</strong> name
+(<code>V</code>) — the same way a <a href="measurements.html">measurement</a> references it.</p>
+</li>
+</ul>
+<p>A single-analysis run (e.g. a CLI S-parameter export) typically has just one group plus possibly
+<code>measurements</code>.</p>
+<h2 id="python">Reading a <code>.npy</code> in Python</h2>
+<p>The file is a single NumPy structured array. The <code>__meta__</code> field is a JSON blob describing every
+cube — its group, kind, and axes (names, units, values, labels). Read the metadata, then index the
+cube field:</p>
+<pre><code class="language-text">import json, numpy as np
 
 arr  = np.load('run.npy', allow_pickle=False)
 meta = json.loads(arr['__meta__'][0])          # bytes → dict
@@ -118,7 +140,7 @@ fund   = V[drain, 1, :]                         # harmonic order 1, all sweep po
 for pin, v in zip(sweep, fund):
     print(f'Pin={pin} dBm  |V_drain|={abs(v):.4f} V')
 </code></pre>
-  <div class="callout note">
+<div class="callout note">
     <span class="label">Reconstructing un-probed nodes</span>
     <p>An export can optionally carry the run's <strong>linear network</strong> (the MNA matrices and source
     vectors), which lets a consumer reconstruct <em>any</em> linear-interior node voltage or branch current
@@ -126,29 +148,31 @@ for pin, v in zip(sweep, fund):
     math, field-by-field layout, and a worked Python example are in the developer guide
     <code>docs/design/npy-data-consumer-guide.md</code>.</p>
   </div>
-
-  <h2 id="stability">Format stability</h2>
-  <div class="callout warn">
+<h2 id="stability">Format stability</h2>
+<div class="callout warn">
     <span class="label">Alpha — not yet stable</span>
     <p>The on-disk <code>.npy</code> layout is <strong>not stable</strong> during the alpha. The current
     <code>format_version</code> is <strong>2</strong>; always check it before reading and reject a mismatch.
     Backward compatibility is explicitly declined — if the exporter changes, regenerate your files. Don't build
     persistent archives or third-party tooling on this format until it is declared stable (post-v1.0).</p>
   </div>
-
-  <hr>
-  <p class="small">See also: <a href="measurements.html">Measurements</a> · <a href="plot-types.html">Plot
+<hr />
+<p class="small">See also: <a href="measurements.html">Measurements</a> · <a href="plot-types.html">Plot
   types</a> · <a href="simulations.html">Simulations</a>. Full developer-facing format spec (groups, the
   <code>__meta__</code> schema, and linear-network reconstruction):
   <code>docs/design/npy-data-consumer-guide.md</code>.</p>
 
+<nav class="page-nav">
+  <a class="prev" href="plot-types.html"><span class="dir">Previous</span><span class="name">Plot Types</span></a>
+  <a class="next" href="layout-editor.html"><span class="dir">Next</span><span class="name">The Layout Editor</span></a>
+</nav>
 </main>
 
 <footer class="doc-footer">
   <img src="../assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <a href="index.html">Reference home</a>
+  <a href="../index.html">Documentation home</a>
 </footer>
 
 </body>

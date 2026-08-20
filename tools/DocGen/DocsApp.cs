@@ -38,8 +38,23 @@ public sealed class DocsApp : Application
             CircuitRF.Ui.Diagnostics.DocsPaintRemap.Build(this, out var remapped));
         RemapReport = remapped;
 
-        // The ViewLocator maps view-models to views exactly as the running app does, so a fixture
-        // may hand a document view-model straight to a ContentControl.
-        DataTemplates.Add(new ViewLocator());
+        // Every DataTemplate the running application declares, taken from the running application's
+        // own App.axaml rather than restated here.
+        //
+        // The ViewLocator alone is not enough. It maps CircuitRF.Ui.ViewModels.XViewModel to
+        // CircuitRF.Ui.Views.XView by name, which covers ordinary MVVM pairs — but every Dock tool
+        // and document view-model (ProjectTreeTool -> ProjectTreeView, SchematicDocument ->
+        // SchematicView, LayoutDocument -> LayoutEditorView, ...) is named nothing like its view and
+        // is mapped by an explicit template. Without them the workspace capture rendered every dock
+        // panel as the LITERAL TEXT of its view-model's type name, and reported nothing.
+        //
+        // Copied from a real App instance because a second hand-maintained list of nineteen
+        // templates is a list that drifts. Constructing App does NOT start the application:
+        // Initialize is only AvaloniaXamlLoader.Load(this), and it is
+        // OnFrameworkInitializationCompleted — never called here — that opens windows, restores the
+        // last workspace and loads installed PDKs.
+        var app = new App();
+        app.Initialize();
+        foreach (var template in app.DataTemplates) DataTemplates.Add(template);
     }
 }

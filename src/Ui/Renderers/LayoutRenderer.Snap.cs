@@ -91,9 +91,26 @@ public static partial class LayoutRenderer
         float half = DevicePixelsToPathSpace(scaleUm, SnapMarkerSizeDevicePixels) / 2f;
         float strokeWidth = DevicePixelsToPathSpace(scaleUm, SnapMarkerStrokeDevicePixels);
 
-        using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = strokeWidth, Color = color };
+        DrawSnapGlyph(canvas, candidate.Kind, cx, cy, half, strokeWidth, color);
+    }
 
-        switch (candidate.Kind)
+    /// <summary>
+    /// Draw ONE snap glyph, at a stated centre, size, stroke and colour.
+    ///
+    /// <para>Split out of <see cref="DrawSnapMarker"/> so the user documentation can put the real
+    /// glyph in its feature table instead of the word "diamond". <b>The point is that there is one
+    /// implementation:</b> a doc that draws its own approximation of these six shapes goes wrong the
+    /// first time one of them is redrawn, and goes wrong silently.</para>
+    /// </summary>
+    public static void DrawSnapGlyph(SKCanvas canvas, SnapFeatureKind kind,
+                                     float cx, float cy, float half, float strokeWidth, SKColor color)
+    {
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = strokeWidth, Color = color,
+        };
+
+        switch (kind)
         {
             case SnapFeatureKind.Pin:
                 DrawSnapDiamond(canvas, cx, cy, half, stroke);
@@ -113,6 +130,9 @@ public static partial class LayoutRenderer
             case SnapFeatureKind.Nearest:
                 DrawSnapBowtie(canvas, cx, cy, half, stroke);
                 break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(kind), kind,
+                    "A snap feature kind with no glyph would draw an empty cell in the docs table.");
         }
     }
 

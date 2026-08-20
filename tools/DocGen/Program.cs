@@ -54,6 +54,17 @@ public static class Program
 
         if (outDir is null && slidesDir is null) { Console.WriteLine(Usage); return 2; }
 
+        // A figure must not depend on whose machine generated it. WorkspaceViewModel's constructor
+        // reads the real preferences file and restores the PDKs installed from it, so the workspace
+        // capture carried the generating developer's launch window layout (visibly: the Library panel
+        // changed columns), colour scheme and installed kits. Point the per-user state directory at a
+        // throwaway one, and every run sees a first-launch installation.
+        //
+        // FIRST, before anything constructs a view-model or reads a preference.
+        string state = Path.Combine(Path.GetTempPath(), "circuitRF-docgen-state");
+        if (Directory.Exists(state)) Directory.Delete(state, recursive: true);
+        CircuitRF.Ui.AppDataRoot.RedirectTo(state);
+
         HeadlessHost.Start();
         CircuitRF.Ui.Diagnostics.UiArtworkGenerator.LintDiagnosticMode = lintDiag;
 

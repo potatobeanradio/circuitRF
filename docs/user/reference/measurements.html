@@ -6,6 +6,12 @@
 <title>circuitRF — Measurements</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/measurements.md
+-->
 </head>
 <body>
 
@@ -19,16 +25,13 @@
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Measurements</p>
 
   <h1>Measurements</h1>
-  <p class="lede">A measurement is a named figure of merit computed from a run's results — Gain, PAE, Pout,
-  whatever you can write as an equation over the analysis output. It draws no current and stamps nothing; it is
-  cube algebra evaluated after the analyses finish, and its result plots like any other trace.</p>
+  <p class="lede">A measurement is a named figure of merit computed from a run&#39;s results — Gain, PAE, Pout, whatever you can write as an equation over the analysis output. It draws no current and stamps nothing; it is cube algebra evaluated after the analyses finish, and its result plots like any other trace.</p>
 
-  <figure class="symbol"><span class="frame">
+<figure class="symbol"><span class="frame">
     <img class="sym-light" src="../assets/symbols/meas.svg" alt="MEAS symbol">
     <img class="sym-dark"  src="../assets/symbols/meas-dark.svg" alt="">
   </span><figcaption>The MEAS component holds your measurement equations</figcaption></figure>
-
-  <nav class="toc">
+<nav class="toc">
     <h2>On this page</h2>
     <ol>
       <li><a href="#what">What a measurement is</a></li>
@@ -39,96 +42,94 @@
       <li><a href="#swept">Swept variables</a></li>
     </ol>
   </nav>
-
-  <h2 id="what">What a measurement is</h2>
-  <p>It is the RF engineer's "equations" pane. Once your analyses have produced their result cubes, a
-  measurement pulls values out of them and computes a derived quantity: <code>Gain = dB(...)</code>,
-  <code>PAE = ...</code>, <code>Idc = DC1.I("Iout")</code>. The result is a new cube added to the run's
-  <code>measurements</code> group, addressable by its bare name and plottable like any trace. Measurements use
-  the same <a href="expressions.html">expression language</a> as everything else, with operands extended to
-  cube quantities.</p>
-
-  <h2 id="authoring">Authoring — the MEAS component</h2>
-  <p>Drop a <strong>MEAS</strong> component on the schematic (it is an annotation — no ports, nothing emitted to
-  the netlist) and edit its rows, one per line, exactly like a <a href="components.html#var">VAR</a> block:</p>
-  <pre class="netlist"><code>Gain  = dB( HB1.V("Vout", 1, All) / HB1.V("Vin", 1, All) )   dB
-Pout  = 0.5 * real( HB1.V[:, "Vout", 1] * conj(HB1.I[:, "Iout", 1]) )   W
-PAE   = 100 * (Pout - Pin) / Pdc   %</code></pre>
-  <p>Each row is <code>name = expression [unit]</code>. Row order — and the order of multiple MEAS components —
-  is the declaration order the evaluator uses (so later rows can reference earlier ones). A duplicate name is a
-  reported conflict; the first definition wins. MEAS at the top testbench level feeds
-  <code>TestBench.Measurements</code>; a MEAS inside a sub-cell is ignored (with a warning).</p>
-
-  <h2 id="refs">Referencing analysis results (two notations)</h2>
-  <p>A measurement reads an analysis by the <strong>name it appears under in the results tree</strong>
-  (<code>HB1</code>, <code>SP1</code>, <code>DC1</code>, …). There are <strong>two equivalent
-  notations</strong> for pulling a value out of a cube — mix them freely.</p>
-
-  <h3>1. Accessor — name-keyed (durable)</h3>
-  <p>You name the node/branch and the harmonic; remaining axes default to <code>All</code> (kept whole).</p>
-  <pre><code>HB1.V("Vout")          node Vout, all harmonics, all sweep points
-HB1.V("Vout", 1)       node Vout, fundamental, all sweep points
-HB1.I("M1:d", 1, All)  device-port branch current, fundamental, swept
-DC1.I("Iout")          no sweep → a scalar</code></pre>
-  <p><strong>Why use it:</strong> it is order-independent — the engine locates each axis by name, so adding or
-  reordering sweep axes never breaks the expression. This is the right choice for measurements you author by
-  hand and keep.</p>
-  <p>For a <strong>two-tone</strong> run the spectral axis is <code>mixIndex</code>, so the second argument is
-  the mixing-product tag <code>"(k₁,k₂)"</code> instead of a harmonic number:</p>
-  <pre><code>HB1.V("Vout", "(1,0)")    carrier 1 (f₁)
-HB1.V("Vout", "(1,-1)")   IM2 product (f₁−f₂)</code></pre>
-  <p>Because the accessor keeps swept axes automatically, the same expression works with or without a Pin
-  sweep (one value vs a curve) — see <a href="simulations.html#two-tone-meas">measuring intermodulation</a>.</p>
-
-  <h3>2. Bracket — positional (fast copy/paste)</h3>
-  <p>One token per cube axis, in cube-axis order (numpy-style): <code>:</code> keeps the axis, a name or integer
-  <em>fixes</em> and drops it, <code>a:b</code> keeps a sub-range.</p>
-  <pre><code>Pout_W = 0.5 * real( HB1.V[:, "Vout", 1] * conj(HB1.I[:, "Iout", 1]) )</code></pre>
-  <p><strong>Why use it:</strong> it is exactly what the Plot Inspector's trace card writes for you. Dial in a
-  trace, copy the shorthand string straight into a measurement, done — no remembering argument order. The
-  catch: brackets are positional, so a later outer sweep can shift the axis a hand-edited bracket addresses.</p>
-  <div class="callout note">
+<h2 id="what">What a measurement is</h2>
+<p>It is the RF engineer's &quot;equations&quot; pane. Once your analyses have produced their result cubes, a
+measurement pulls values out of them and computes a derived quantity: <code>Gain = dB(...)</code>, <code>PAE = ...</code>, <code>Idc = DC1.I(&quot;Iout&quot;)</code>. The result is a new cube added to the run's <code>measurements</code> group,
+addressable by its bare name and plottable like any trace. Measurements use the same <a href="expressions.html">expression
+language</a> as everything else, with operands extended to cube quantities.</p>
+<h2 id="authoring">Authoring — the MEAS component</h2>
+<p>Drop a <strong>MEAS</strong> component on the schematic (it is an annotation — no ports, nothing emitted to the
+netlist) and edit its rows, one per line, exactly like a <a href="components.html#var">VAR</a> block:</p>
+<pre><code class="language-netlist">Gain  = dB( HB1.V(&quot;Vout&quot;, 1, All) / HB1.V(&quot;Vin&quot;, 1, All) )   dB
+Pout  = 0.5 * real( HB1.V[:, &quot;Vout&quot;, 1] * conj(HB1.I[:, &quot;Iout&quot;, 1]) )   W
+PAE   = 100 * (Pout - Pin) / Pdc   %
+</code></pre>
+<p>Each row is <code>name = expression [unit]</code>. Row order — and the order of multiple MEAS components — is
+the declaration order the evaluator uses (so later rows can reference earlier ones). A duplicate
+name is a reported conflict; the first definition wins. MEAS at the top testbench level feeds
+<code>TestBench.Measurements</code>; a MEAS inside a sub-cell is ignored (with a warning).</p>
+<h2 id="refs">Referencing analysis results (two notations)</h2>
+<p>A measurement reads an analysis by the <strong>name it appears under in the results tree</strong> (<code>HB1</code>,
+<code>SP1</code>, <code>DC1</code>, …). There are <strong>two equivalent notations</strong> for pulling a value out of a cube — mix
+them freely.</p>
+<h3 id="accessor-name-keyed-durable">1. Accessor — name-keyed (durable)</h3>
+<p>You name the node/branch and the harmonic; remaining axes default to <code>All</code> (kept whole).</p>
+<pre><code class="language-text">HB1.V(&quot;Vout&quot;)          node Vout, all harmonics, all sweep points
+HB1.V(&quot;Vout&quot;, 1)       node Vout, fundamental, all sweep points
+HB1.I(&quot;M1:d&quot;, 1, All)  device-port branch current, fundamental, swept
+DC1.I(&quot;Iout&quot;)          no sweep → a scalar
+</code></pre>
+<p><strong>Why use it:</strong> it is order-independent — the engine locates each axis by name, so adding or
+reordering sweep axes never breaks the expression. This is the right choice for measurements you
+author by hand and keep.</p>
+<p>For a <strong>two-tone</strong> run the spectral axis is <code>mixIndex</code>, so the second argument is the
+mixing-product tag <code>&quot;(k₁,k₂)&quot;</code> instead of a harmonic number:</p>
+<pre><code class="language-text">HB1.V(&quot;Vout&quot;, &quot;(1,0)&quot;)    carrier 1 (f₁)
+HB1.V(&quot;Vout&quot;, &quot;(1,-1)&quot;)   IM2 product (f₁−f₂)
+</code></pre>
+<p>Because the accessor keeps swept axes automatically, the same expression works with or without a
+Pin sweep (one value vs a curve) — see <a href="simulations.html#two-tone-meas">measuring
+intermodulation</a>.</p>
+<h3 id="bracket-positional-fast-copypaste">2. Bracket — positional (fast copy/paste)</h3>
+<p>One token per cube axis, in cube-axis order (numpy-style): <code>:</code> keeps the axis, a name or integer
+<em>fixes</em> and drops it, <code>a:b</code> keeps a sub-range.</p>
+<pre><code class="language-text">Pout_W = 0.5 * real( HB1.V[:, &quot;Vout&quot;, 1] * conj(HB1.I[:, &quot;Iout&quot;, 1]) )
+</code></pre>
+<p><strong>Why use it:</strong> it is exactly what the Plot Inspector's trace card writes for you. Dial in a
+trace, copy the shorthand string straight into a measurement, done — no remembering argument
+order. The catch: brackets are positional, so a later outer sweep can shift the axis a hand-edited
+bracket addresses.</p>
+<div class="callout note">
     <span class="label">Rule of thumb</span>
     <p>Prefer the <strong>accessor</strong> for durable hand-authored measurements; reach for the
     <strong>bracket</strong> when copy-pasting from a trace you already have on screen.</p>
   </div>
-
-  <h2 id="sparam">S-parameters: 1-based ports</h2>
-  <p>On an S-parameter cube, the <code>i</code>/<code>j</code> axes carry <strong>1-based port numbers</strong> —
-  the way RF engineers name S-parameters — in both notations:</p>
-  <pre><code>s21    = SP1.S(2, 1)          S21 over frequency
+<h2 id="sparam">S-parameters: 1-based ports</h2>
+<p>On an S-parameter cube, the <code>i</code>/<code>j</code> axes carry <strong>1-based port numbers</strong> — the way RF engineers
+name S-parameters — in both notations:</p>
+<pre><code class="language-text">s21    = SP1.S(2, 1)          S21 over frequency
 s21_db = dB( SP1.S[:, 2, 1] ) S21, freq kept (:), ports fixed
-s11    = SP1.S[:, 1, 1]        S11</code></pre>
-  <p><code>SP1.S[:, 2, 1]</code> is <strong>S21</strong>, not "row 2 column 1 by zero-based index." A port
-  outside <code>1..nPorts</code> is a clear error listing the available ports.</p>
-
-  <h2 id="compose">Composition &amp; scope</h2>
-  <p>Measurements are evaluated in declaration order, and each is in scope by name for the ones after it — so a
-  complex figure of merit builds from intermediates. Also in scope: every global <a href="components.html#var">VAR</a>
-  variable (by name). The element-wise helpers <code>conj</code>, <code>real</code>, <code>imag</code>,
-  <code>mag</code>, <code>phase</code>, <code>dB</code>, <code>dB10</code>, <code>dBm</code>, <code>log10</code>,
-  <code>ln</code> broadcast over cubes. Referencing an unknown analysis raises an error naming the available
-  ones; a failing measurement is reported as a run note and does not fail the whole run.</p>
-
-  <h2 id="swept">Swept variables</h2>
-  <p>A global variable that is also a parametric-sweep axis is injected as a <strong>1-D cube</strong> (one
-  element per sweep point) rather than a scalar — so <code>Pin_avail = Pin</code> over a 10-point
-  <code>Pin</code> sweep yields a 10-element curve. Its axis matches the swept analysis's axis, so it
-  broadcast-aligns: <code>Gain = dB(HB1.V("out",1,All)) - Pin</code> resolves element-wise. A non-swept global
-  stays a scalar.</p>
-
-  <hr>
-  <p class="small">See also: <a href="expressions.html">Expressions</a> (the language) ·
+s11    = SP1.S[:, 1, 1]        S11
+</code></pre>
+<p><code>SP1.S[:, 2, 1]</code> is <strong>S21</strong>, not &quot;row 2 column 1 by zero-based index.&quot; A port outside <code>1..nPorts</code>
+is a clear error listing the available ports.</p>
+<h2 id="compose">Composition &amp; scope</h2>
+<p>Measurements are evaluated in declaration order, and each is in scope by name for the ones after
+it — so a complex figure of merit builds from intermediates. Also in scope: every global
+<a href="components.html#var">VAR</a> variable (by name). The element-wise helpers <code>conj</code>, <code>real</code>, <code>imag</code>,
+<code>mag</code>, <code>phase</code>, <code>dB</code>, <code>dB10</code>, <code>dBm</code>, <code>log10</code>, <code>ln</code> broadcast over cubes. Referencing an unknown
+analysis raises an error naming the available ones; a failing measurement is reported as a run
+note and does not fail the whole run.</p>
+<h2 id="swept">Swept variables</h2>
+<p>A global variable that is also a parametric-sweep axis is injected as a <strong>1-D cube</strong> (one element
+per sweep point) rather than a scalar — so <code>Pin_avail = Pin</code> over a 10-point <code>Pin</code> sweep yields a
+10-element curve. Its axis matches the swept analysis's axis, so it broadcast-aligns: <code>Gain = dB(HB1.V(&quot;out&quot;,1,All)) - Pin</code> resolves element-wise. A non-swept global stays a scalar.</p>
+<hr />
+<p class="small">See also: <a href="expressions.html">Expressions</a> (the language) ·
   <a href="components.html#meas">MEAS component</a> · <a href="plot-types.html">Plot types</a>. Full design:
   <code>docs/design/measurements.md</code>.</p>
 
+<nav class="page-nav">
+  <a class="prev" href="simulations.html"><span class="dir">Previous</span><span class="name">Simulations</span></a>
+  <a class="next" href="netlist.html"><span class="dir">Next</span><span class="name">The Netlist (.cnl) Format</span></a>
+</nav>
 </main>
 
 <footer class="doc-footer">
   <img src="../assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <a href="index.html">Reference home</a>
+  <a href="../index.html">Documentation home</a>
 </footer>
 
 </body>

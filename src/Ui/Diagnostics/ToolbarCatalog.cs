@@ -192,15 +192,21 @@ public static class ToolbarCatalog
     /// this figure exists to be read, and giving the numbers somewhere to live is what a printed
     /// figure would do.</para>
     /// </remarks>
-    public static Control WithCallouts(Panel toolbar, IReadOnlyList<Entry> entries, ColorVariant variant)
+    public static Control WithCallouts(Panel toolbar, IReadOnlyList<Entry> entries, ColorVariant variant,
+                                       double toolbarHeight)
     {
-        var accent   = variant == ColorVariant.Dark ? Color.Parse("#56D7EE") : Color.Parse("#0E7C99");
-        var onAccent = variant == ColorVariant.Dark ? Color.Parse("#0E1820") : Color.Parse("#FFFFFF");
-
         const double Dot = 18;
 
         // Room for a row of numbers under every row of buttons.
         if (toolbar is WrapPanel wrap) wrap.LineSpacing = Math.Max(wrap.LineSpacing, Dot + 8);
+
+        // Hold the toolbar to the SAME height the plain figure captures it at, pinned to the top.
+        // Left to fill the taller indexed frame, every separator — a stretched one-pixel Border —
+        // grows with it and runs down past the buttons through the row of numbers, which reads as a
+        // rendering fault rather than as a group divider (owner: "the vertical bar spacings within
+        // the svg are too tall").
+        toolbar.Height = toolbarHeight;
+        toolbar.VerticalAlignment = VerticalAlignment.Top;
 
         var callouts = new Canvas { ClipToBounds = false };
         var dots = new List<(Border Dot, int Slot)>();
@@ -208,21 +214,7 @@ public static class ToolbarCatalog
         foreach (var e in entries)
         {
             if (e.Index == 0) continue;   // separators carry no number
-            var dot = new Border
-            {
-                Width = Dot, Height = Dot,
-                CornerRadius = new CornerRadius(Dot / 2),
-                Background = new SolidColorBrush(accent),
-                Child = new TextBlock
-                {
-                    Text = e.Index.ToString(),
-                    FontSize = 10.5,
-                    FontWeight = FontWeight.Bold,
-                    Foreground = new SolidColorBrush(onAccent),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-            };
+            var dot = CalloutDot.Build(e.Index, variant, Dot);
             dots.Add((dot, e.Slot));
             callouts.Children.Add(dot);
         }

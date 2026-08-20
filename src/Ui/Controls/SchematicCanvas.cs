@@ -307,15 +307,52 @@ public sealed class SchematicCanvas : Control
     private void ZoomToFitInternal(double canvasW, double canvasH)
     {
         if (_model is null || canvasW < 1 || canvasH < 1) return;
-        double worldW = Math.Max(_model.BbMaxX - _model.BbMinX, 1);
-        double worldH = Math.Max(_model.BbMaxY - _model.BbMinY, 1);
+        var (minX, minY, maxX, maxY) = DrawnExtent(_model);
+        double worldW = Math.Max(maxX - minX, 1);
+        double worldH = Math.Max(maxY - minY, 1);
         const double pad = 0.05;
         _zoom = Math.Clamp(Math.Min(canvasW / worldW, canvasH / worldH) * (1.0 - 2 * pad), MinZoom, MaxZoom);
         double scaledW = worldW * _zoom;
         double scaledH = worldH * _zoom;
-        _panX = _model.BbMinX - (canvasW  - scaledW) / (2 * _zoom);
-        _panY = _model.BbMinY - (canvasH - scaledH) / (2 * _zoom);
+        _panX = minX - (canvasW  - scaledW) / (2 * _zoom);
+        _panY = minY - (canvasH - scaledH) / (2 * _zoom);
         if (_editContext is not null) _editContext.CanvasZoom = _zoom;
+    }
+
+    /// <summary>
+    /// What the schematic actually DRAWS — the union of every component's full bounding box (glyph
+    /// plus labels), every wire and every bitmap.
+    ///
+    /// <para><b>Not <see cref="SchematicModel.BbMinX"/> and friends.</b> A component's <c>Bb</c> is a
+    /// FIXED square around its origin (<c>EditableComponent.GetBoundingBox</c> — <c>X ± HalfBound</c>,
+    /// the same size for a resistor and for a twelve-port SnP), so the model box it aggregates is a
+    /// hit-test envelope, not an extent. Fitting to it over-zooms any symbol bigger than that square:
+    /// measured on a four-array wBond, whose body ran a fifth of its own height off the top and
+    /// bottom of the view no matter how the window was sized (2026-08-20, from the user-doc figure —
+    /// but View ▸ Zoom to Fit did the same thing in the application). <c>FullBb</c> is the value the
+    /// renderer and the spatial index already cull against, so this is the extent that is on screen.</para>
+    /// </summary>
+    private static (double MinX, double MinY, double MaxX, double MaxY) DrawnExtent(SchematicModel model)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue;
+        double maxX = double.MinValue, maxY = double.MinValue;
+
+        void Union(double x0, double y0, double x1, double y1)
+        {
+            if (x0 < minX) minX = x0; if (y0 < minY) minY = y0;
+            if (x1 > maxX) maxX = x1; if (y1 > maxY) maxY = y1;
+        }
+
+        foreach (var c in model.Components) Union(c.FullBbMinX, c.FullBbMinY, c.FullBbMaxX, c.FullBbMaxY);
+        foreach (var w in model.Wires)      Union(w.BbMinX, w.BbMinY, w.BbMaxX, w.BbMaxY);
+        foreach (var b in model.Bitmaps)    Union(b.X, b.Y, b.X + b.Width, b.Y + b.Height);
+
+        // Nothing on the sheet: keep the model's own empty-schematic box rather than inventing one.
+        if (minX == double.MaxValue)
+            return (model.BbMinX, model.BbMinY, model.BbMaxX, model.BbMaxY);
+
+        const double margin = 200;   // the same breathing room the model box adds
+        return (minX - margin, minY - margin, maxX + margin, maxY + margin);
     }
 
     public void ZoomToPage()

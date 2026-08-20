@@ -4,67 +4,128 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>circuitRF — Documentation</title>
-<!-- Relative paths only, so the docs work online or offline -->
 <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/index.md
+-->
 </head>
 <body>
 
-<!-- ============ HEADER (copy this block to every page; fix the relative ../ depth) ============ -->
 <header class="doc-header">
-  <span class="brand"><img class="logo" src="assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></span>
+  <a class="brand" href="index.html"><img class="logo" src="assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
   <span class="doc-kind">Documentation</span>
 </header>
 <hr class="doc-headrule">
-<!-- ============ /HEADER ============ -->
 
 <main class="page">
 
-  <h1>circuitRF Documentation</h1>
-  <p class="lede">A lightweight, cross-platform RF circuit simulator — DC, S-parameters, harmonic
-  balance, and loadpull. Pick the guide that fits where you are.</p>
+  <h1>Documentation</h1>
+  <p class="lede">A lightweight, cross-platform RF circuit simulator — DC, S-parameters, harmonic balance, and loadpull.</p>
 
-  <div class="card-grid">
-    <a class="card" href="quick-start/index.html">
-      <h3>Quick Start →</h3>
-      <p>For engineers who already know circuit simulators. Run a simulation and see a plot in a couple of
-      pages. Start here if you've used SPICE or a vendor RF tool.</p>
-    </a>
-    <a class="card" href="new-user-guide/index.html">
-      <h3>New User's Guide →</h3>
-      <p>Never used a circuit simulator? Start here. What a library, a cell, and a simulation are — explained
-      from the ground up, with worked examples.</p>
-    </a>
-    <a class="card" href="reference/index.html">
-      <h3>Reference Guide →</h3>
-      <p>The complete technical reference. Every simulation, every component and its parameters, the plot
-      types, the netlist format, and the symbol conventions.</p>
-    </a>
-  </div>
+<div class="card-grid">
+<a class="card" href="quick-start/index.html">
+<h3>Quick Start →</h3>
+<p>For engineers who already know circuit simulators. Run a simulation and see a plot in a couple of
+pages. Start here if you have used SPICE or a vendor RF tool.</p>
+</a>
+<a class="card" href="new-user-guide/index.html">
+<h3>New User's Guide →</h3>
+<p>Never used a circuit simulator? What a library, a cell and a simulation are — explained from the
+ground up, with worked examples.</p>
+</a>
+<a class="card" href="reference/index.html">
+<h3>Reference Guide →</h3>
+<p>The complete technical reference. Every analysis, every component, the layout and EM engines, the
+file formats and the two bundled tools.</p>
+</a>
+</div>
+<h2 id="what-is-circuitrf">What is circuitRF?</h2>
+<p>circuitRF studies the frequency response and nonlinear behaviour of RF circuits — from a handful of
+components to hierarchical, multi-port designs. It is an <strong>RF simulator, not a SPICE simulator</strong>:
+the analyses and the workflow are built around the RF/microwave problem, the file formats are
+human-readable, and loadpull is a first-class experiment. Results are stored as NumPy <code>.npy</code>
+datasets, so they drop straight into Python or MATLAB.</p>
+<p>Alongside the circuit engines it carries a planar
+<a href="reference/mom-engine.html">method-of-moments EM solver</a> for layout, a 3D
+<a href="reference/wbond.html">bondwire kernel</a>, and
+<a href="reference/harmonicarf.html">harmonicaRF</a> — an interactive harmonic load-pull bench for a single
+device.</p>
+<h2 id="everything-in-this-documentation">Everything in this documentation</h2>
+<p>Every page below is in one reading order. Start anywhere and follow <strong>Next</strong> at the foot of each
+page to reach the end without coming back here.</p>
+<div class="site-toc">
+<h3>Getting started</h3>
+<ul>
+<li><a href="quick-start/index.html">circuitRF Quick Start</a> <span>Run a simulation and read a plot, for engineers who already use circuit simulators.</span></li>
+<li><a href="new-user-guide/index.html">Welcome to circuitRF!</a> <span>Libraries, cells, test benches and analyses, explained from the ground up.</span></li>
+</ul>
+<h3>Core concepts</h3>
+<ul>
+<li><a href="reference/index.html">circuitRF Reference Guide</a> <span>The Reference Guide contents, and the in-app Help anchor scheme.</span></li>
+<li><a href="reference/workspace.html">The Workspace</a> <span>The workspace window: documents, tool panels, docking, and the folder behind it all.</span></li>
+<li><a href="reference/units.html">Units</a> <span>DBU, display units, the snap grid, and how to type a value with an SI prefix.</span></li>
+<li><a href="reference/expressions.html">Expressions</a> <span>Variables, cell parameters, functions and conditionals — one expression language.</span></li>
+<li><a href="reference/grid.html">Grid &amp; Connectivity</a> <span>The schematic grid, wires, and how connectivity is decided.</span></li>
+<li><a href="reference/pins-ports-terms.html">Pins, Ports &amp; Terms</a> <span>Pin, Port and Term: three different things with three different jobs.</span></li>
+<li><a href="reference/file-formats.html">File Formats</a> <span>Every circuitRF document type and what is inside it.</span></li>
+</ul>
+<h3>Design</h3>
+<ul>
+<li><a href="reference/schematic-editor.html">The Schematic Editor</a> <span>Drawing a circuit: the palette, placing and wiring, and setting up the analysis that runs it.</span></li>
+<li><a href="reference/components.html">Components</a> <span>Every component in the standard library: symbol, purpose and parameters.</span></li>
+<li><a href="reference/dynamic-symbols.html">Dynamic Symbols (SDD, ZPort, SnP)</a> <span>Components whose symbol changes with their parameters.</span></li>
+<li><a href="reference/symbol-editor.html">Symbol Editor</a> <span>Drawing and editing a symbol.</span></li>
+<li><a href="reference/sdd.html">The SDD (Symbolically-Defined Device)</a> <span>The Symbolically-Defined Device: writing a nonlinear model as equations.</span></li>
+<li><a href="reference/nonlinear-capacitor.html">The Nonlinear Capacitor &amp; the C–V Editor</a> <span>C(V) as a Taylor series, and the C–V Editor that fits one.</span></li>
+<li><a href="reference/match.html">The Match Component</a> <span>Direct synthesis of a bandpass matching network that absorbs both terminations.</span></li>
+</ul>
+<h3>Simulate</h3>
+<ul>
+<li><a href="reference/simulations.html">Simulations</a> <span>DC, S-parameters, harmonic balance, parametric sweeps, loadpull and pursuit.</span></li>
+<li><a href="reference/measurements.html">Measurements</a> <span>Post-processing a run into named quantities.</span></li>
+<li><a href="reference/netlist.html">The Netlist (.cnl) Format</a> <span>The .cnl elaborated-netlist format.</span></li>
+<li><a href="reference/data-display.html">The Data Display</a> <span>Plots, tables, trace cards and markers.</span></li>
+<li><a href="reference/plot-types.html">Plot Types</a> <span>Rectangular, Smith, Polar and Table — and which data each will accept.</span></li>
+<li><a href="reference/npy-export.html">Results &amp; Data Export</a> <span>Getting results out into Python, MATLAB or a Touchstone file.</span></li>
+</ul>
+<h3>Layout &amp; EM</h3>
+<ul>
+<li><a href="reference/layout-editor.html">The Layout Editor</a> <span>The layout view: technology, drawing, snapping, and the schematic it belongs to.</span></li>
+<li><a href="reference/pcells.html">PCells</a> <span>Parameterised cells — placing one, driving it, and its parameter handles.</span></li>
+<li><a href="reference/pdk-integration.html">PDK Integration</a> <span>Importing a kit and simulating the parts it supplies.</span></li>
+<li><a href="reference/pdk-authoring.html">PDK Authoring</a> <span>Authoring a kit: the OpenPDK layout, Python PCells, models and artwork.</span></li>
+<li><a href="reference/mom-engine.html">The MoM Engine</a> <span>The planar method-of-moments solver: what it does, what it will not do, and how.</span></li>
+<li><a href="reference/em-setup.html">EM Setup</a> <span>The EM Setup panel, control by control, and where the results land.</span></li>
+</ul>
+<h3>Tools</h3>
+<ul>
+<li><a href="reference/harmonicarf.html">harmonicaRF</a> <span>Interactive harmonic load-pull on one device, at the speed of a mouse drag.</span></li>
+<li><a href="reference/wbond.html">wBond</a> <span>Bondwire arrays: geometry, the 3D kernel, and S-parameters out.</span></li>
+</ul>
+</div>
+<div class="callout note">
+<span class="label">Alpha</span>
+<p>circuitRF is in active development. These docs track the current build and details may shift
+between releases. Every figure in them is a vector capture of the running application, regenerated
+from the live interface rather than drawn by hand — so a picture here is what the build does.</p>
+</div>
 
-  <h2>What is circuitRF?</h2>
-  <p>circuitRF studies the frequency response and nonlinear behavior of RF circuits — from a handful of
-  components to hierarchical, multi-port designs. It is an <strong>RF simulator, not a SPICE simulator</strong>:
-  the analyses and workflow are built around the RF/microwave problem, the file formats are human-readable,
-  and loadpull is a first-class experiment. Simulation results are stored as NumPy <code>.npy</code> datasets,
-  so they drop straight into Python/MATLAB workflows.</p>
-
-  <div class="callout note">
-    <span class="label">Alpha</span>
-    <p>circuitRF is in active development. These docs track the current build; some screenshots are
-    placeholders until captured, and details may shift between releases.</p>
-  </div>
-
+<nav class="page-nav">
+  <span></span>
+  <a class="next" href="quick-start/index.html"><span class="dir">Next</span><span class="name">circuitRF Quick Start</span></a>
+</nav>
 </main>
 
-<!-- ============ FOOTER (copy to every page; fix the relative ../ depth) ============ -->
 <footer class="doc-footer">
   <img src="assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <span>MIT-licensed · docs build: alpha</span>
+  <a href="index.html">Documentation home</a>
 </footer>
-<!-- ============ /FOOTER ============ -->
 
 </body>
 </html>

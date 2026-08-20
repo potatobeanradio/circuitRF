@@ -43,6 +43,7 @@ public sealed class DocGenRun
         if (!slidesOnly)
         {
             Symbols(symbols);
+            InlineGlyphs(figures);
             Figures(figures);
             Toolbars(figures);
         }
@@ -69,6 +70,14 @@ public sealed class DocGenRun
     private void Symbols(string outDir)
     {
         foreach (var f in SymbolArtworkGenerator.GenerateAll(outDir))
+            _written.Add(f);
+    }
+
+    // ── Inline glyphs (table cells, not figures) ──────────────────────────────
+
+    private void InlineGlyphs(string outDir)
+    {
+        foreach (var f in InlineGlyphArtwork.GenerateSnapGlyphs(outDir))
             _written.Add(f);
     }
 
@@ -108,11 +117,13 @@ public sealed class DocGenRun
 
                 var indexed = DocFixtures.Toolbar(row.Id);
                 var callouts = ToolbarCatalog.WithCallouts(
-                    indexed.Panel, ToolbarCatalog.Manifest(indexed.Panel), variant);
+                    indexed.Panel, ToolbarCatalog.Manifest(indexed.Panel), variant, row.Height);
                 string p2 = Path.Combine(outDir,
                     UiArtworkGenerator.FileStem("toolbar-" + row.Id + "-indexed", variant) + ".svg");
                 UiArtworkGenerator.RenderScene(new FigureScene(callouts), row.Width, row.Height + 26, variant, p2);
                 Account(p2);
+
+                foreach (var p3 in ToolbarButtons(row.Id, variant, outDir)) Account(p3);
             }
 
             _manifests[row.Id] = manifest!;
@@ -124,6 +135,48 @@ public sealed class DocGenRun
                                                                 && x.Tooltip.Length == 0))
                 _untooltipped.Add($"{row.Id}: item {e.Index} ({(e.Id.Length == 0 ? e.Icon : e.Id)})");
         }
+    }
+
+    /// <summary>
+    /// Capture each of a toolbar's buttons ON ITS OWN, so the per-button table can show the button
+    /// instead of naming its icon.
+    ///
+    /// <para>The owner asked for the picture and for the redundant Icon column to go (2026-08-20):
+    /// a reader looking up "what is button 7" wants to recognise it on the toolbar, and
+    /// <c>ZoomOutIcon</c> in a text column does not help them do that. The button is DETACHED from
+    /// the panel and captured at its own arranged size — the same reasoning as lifting the whole
+    /// toolbar out of its editor rather than cropping a screenshot.</para>
+    /// </summary>
+    private IEnumerable<string> ToolbarButtons(string id, ColorVariant variant, string outDir)
+    {
+        var fixture = DocFixtures.Toolbar(id);
+        var manifest = ToolbarCatalog.Manifest(fixture.Panel);
+        var written = new List<string>();
+
+        // Snapshot and detach first: a control cannot be hosted by a second window while it is still
+        // a child of the panel, and removing children shifts every later index.
+        var children = fixture.Panel.Children.ToList();
+        var context  = fixture.Panel.DataContext;
+        fixture.Panel.Children.Clear();
+
+        foreach (var e in manifest)
+        {
+            if (e.Index == 0 || e.Kind is not ("button" or "toggle")) continue;
+            if (e.Slot >= children.Count) continue;
+
+            var button = children[e.Slot];
+            var size = button.Bounds;
+            if (size.Width < 1 || size.Height < 1) continue;
+
+            button.DataContext = context;      // detaching cost it the inherited one
+            string path = Path.Combine(outDir,
+                UiArtworkGenerator.FileStem($"toolbar-{id}-btn-{e.Index}", variant) + ".svg");
+            UiArtworkGenerator.RenderScene(new FigureScene(button),
+                (int)Math.Round(size.Width), (int)Math.Round(size.Height), variant, path);
+            written.Add(path);
+        }
+
+        return written;
     }
 
     // ── Pages ─────────────────────────────────────────────────────────────────
@@ -156,6 +209,21 @@ public sealed class DocGenRun
         // forward cross-link resolves as readily as a backward one.
         var offered = AnchorIndex(pages);
 
+        // The reading order, checked against the page set BEFORE anything is written: a run that
+        // would produce an unreachable page fails instead of producing it.
+        var nav = SiteNav.Load(_docsRoot);
+        var titles = pages.Where(p => p.Kind != "slides")
+                          .ToDictionary(p => p.Slug, p => p.Title, StringComparer.Ordinal);
+        if (nav is not null && !slidesOnly)
+        {
+            var emitted = pages.Where(p => p.Kind != "slides").Select(p => p.Slug)
+                               .Concat(CopiedThroughPages(pages))
+                               .ToHashSet(StringComparer.Ordinal);
+            nav.Validate(emitted);
+            foreach (var slug in nav.Order.Where(s => !titles.ContainsKey(s)))
+                titles[slug] = TitleOfHtml(Path.Combine(_docsRoot, slug));
+        }
+
         foreach (var page in pages)
         {
             if (page.Kind == "slides")
@@ -176,11 +244,11 @@ public sealed class DocGenRun
             Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
 
             var expander = new Placeholders(_docsRoot, Path.GetDirectoryName(outPath)!,
-                                            id => _manifests[id], offered.Contains);
+                                            id => _manifests[id], offered.Contains, nav, titles, page.Slug);
             string expanded = expander.Expand(page.Body, page.SourcePath);
             foreach (var f in expander.FontFamiliesUsed) families.Add(f);
 
-            string html = HtmlEmitter.Render(page, expanded);
+            string html = HtmlEmitter.Render(page, expanded, nav, titles);
 
             var leftover = Regex.Match(html, @"\{\{[^}]*\}\}");
             if (leftover.Success)
@@ -197,6 +265,30 @@ public sealed class DocGenRun
         // Un-ported pages stay exactly as they are (migration is incremental, never big-bang), and
         // their font usage is whatever their <img>-referenced symbol files already used.
         return families;
+    }
+
+    /// <summary>
+    /// The hand-written HTML pages that survive this run untouched — everything under the docs root
+    /// that no Markdown source is about to overwrite. They are part of the site, so they are part of
+    /// the reading order and of the orphan check.
+    /// </summary>
+    private IEnumerable<string> CopiedThroughPages(IReadOnlyList<DocPage> pages)
+    {
+        var generated = pages.Select(p => p.Slug).ToHashSet(StringComparer.Ordinal);
+        foreach (var html in Directory.EnumerateFiles(_docsRoot, "*.html", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(_docsRoot, html).Replace(Path.DirectorySeparatorChar, '/');
+            if (!generated.Contains(rel)) yield return rel;
+        }
+    }
+
+    /// <summary>The <c>&lt;h1&gt;</c> of a page this run is not generating, for its nav label.</summary>
+    private static string TitleOfHtml(string path)
+    {
+        if (!File.Exists(path)) return Path.GetFileNameWithoutExtension(path);
+        var m = Regex.Match(File.ReadAllText(path), @"<h1[^>]*>(?<t>.*?)</h1>", RegexOptions.Singleline);
+        return m.Success ? Regex.Replace(m.Groups["t"].Value, "<[^>]+>", "").Trim()
+                         : Path.GetFileNameWithoutExtension(path);
     }
 
     /// <summary>

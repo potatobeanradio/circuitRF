@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — The MoM Engine</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/mom-engine.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › MoM engine</p>
+
+  <h1>The MoM Engine</h1>
+  <p class="lede">The planar method-of-moments solver: what it does, what it will not do, and how it works.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#plain">In plain terms</a></li>
+<li><a href="#can-cannot">What can and cannot be simulated</a></li>
+<li><a href="#implementation">For advanced users: how circuitRF implements MoM</a></li>
+<li><a href="#ports">Ports</a></li>
+<li><a href="#deembedding">De-embedding</a></li>
+<li><a href="#adaptive">Adaptive frequency sampling</a></li>
+<li><a href="#conformal">Conformal boundary cells</a></li>
+<li><a href="#mesh-convergence">Mesh convergence, and how to check it</a></li>
+<li><a href="#budget">What makes a run infeasible</a></li>
+<li><a href="#refusals">What the engine refuses, and why a refusal is better</a></li>
+<li><a href="#cosim">Using EM results in a circuit simulation</a></li>
+<li><a href="#worked">Worked example: a microstrip line with a bend</a></li>
+</ol>
+</nav>
+<h2 id="plain">In plain terms</h2>
+<p>A circuit model of a microstrip bend is a formula: someone measured a family of bends, fitted a
+closed-form expression, and published its validity range. It is fast, it is accurate inside that range,
+and it knows nothing about <em>your</em> bend — not that there is a via 200 µm away, not that the ground plane
+has a slot under it, not that the adjacent trace couples into it.</p>
+<p><strong>An electromagnetic solve computes the fields for the artwork you actually drew.</strong> It takes your layout,
+your stackup and your frequency range, and returns S-parameters. No formula, no validity range, no
+family of measured parts — just Maxwell's equations discretised over your geometry.</p>
+<p>What that buys you, concretely:</p>
+<ul>
+<li><strong>Discontinuities you have no model for</strong> — a bend into a taper into a pad, a coupled section with a
+via in the middle, a matching stub whose neighbour matters.</li>
+<li><strong>Coupling you did not intend.</strong> A circuit model connects what you wired; an EM solve reports what the
+metal actually does, including the parts you would rather it did not.</li>
+<li><strong>A number you can hand to a harmonic-balance run.</strong> An EM result is a Touchstone file, and a
+Touchstone file drops into a test bench beside the real device model. That is the workflow that makes
+this worth having rather than a curiosity — see <a href="#cosim">Co-simulation</a>.</li>
+</ul>
+<p>It is not free. A circuit model answers in microseconds; a full-wave solve of a small structure takes
+seconds per frequency point. Use the model where the model is valid, and the solver where it is not.</p>
+<h2 id="can-cannot">What can and cannot be simulated</h2>
+<p>This is a <strong>planar (2.5D) solver</strong>. It solves conductors embedded in a <strong>laterally infinite, vertically
+stratified</strong> medium: metal is horizontal and thin, current flows in-plane, and z-directed current flows
+through vias. That is the same class of tool as the commercial planar solvers, and it is <em>not</em> FEM and
+not general 3D.</p>
+<h3 id="can">Can</h3>
+<ul>
+<li><strong>Planar conductors on a layered substrate</strong> — any number of dielectric layers, with real ε<sub>r</sub>
+and tanδ, and conductor loss.</li>
+<li><strong>Arbitrary planar shapes</strong>: lines, bends, tapers, stubs, spirals, pads, coupled sections.</li>
+<li><strong>Multiple metal levels</strong>, with <strong>vias</strong> carrying z-directed current between them.</li>
+<li><strong>A ground plane</strong> at the bottom of the stack, or an open boundary.</li>
+<li><strong>Discontinuities and the coupling between them</strong> — which is the entire point.</li>
+<li><strong>Frequency sweeps</strong>, with <a href="#adaptive">adaptive sampling</a> so a resonant response does not need a fine
+uniform grid.</li>
+</ul>
+<h3 id="cannot">Cannot</h3>
+<div class="callout warn">
+<span class="label">Read this list before you trust a result</span>
+<p>A user who discovers a limit by getting a wrong answer has been failed by the documentation.</p>
+</div>
+<ul>
+<li><strong>Anything genuinely three-dimensional.</strong> A wirebond arcing through air is not a planar structure. Use
+<a href="wbond.html">wBond</a>, which is a separate 3D kernel built for exactly that.</li>
+<li><strong>Finite substrate extent.</strong> The dielectric layers are laterally <strong>infinite</strong>. A board edge, a cavity
+wall, a shielding can — none of these exist to this solver.</li>
+<li><strong>Enclosures and absorbing boundaries.</strong> There is no box. Real planar tools suppress port-to-port
+radiative and surface-wave coupling with box walls or absorbing boundaries; <strong>this kernel has
+neither, by design</strong>, and that is what sets the <a href="#deembedding">de-embedding accuracy floor</a>.</li>
+<li><strong>Vertical conductors other than vias.</strong> A via is a z-directed current path through the stack. An
+edge-plated wall, a connector barrel, a heatsink is not.</li>
+<li><strong>Non-planar dielectrics.</strong> Conformal coating, a partially milled cavity, a moulded package body — the
+medium is stratified, so a dielectric is a slab spanning the whole plane or it is not representable.</li>
+<li><strong>Magnetic materials beyond a scalar µ<sub>r</sub> per layer.</strong> No ferrites, no anisotropy.</li>
+<li><strong>Non-linearity of any kind.</strong> This solves a linear problem and returns S-parameters.</li>
+</ul>
+<p>There is also a <strong>quasi-static kernel</strong> for the special case of a uniform transmission-line
+cross-section, which is described below and which is far faster than the full-wave path where it
+applies. Its own limits are narrower: no discontinuities, no bends, no stubs, no spirals, no radiation,
+no resonance, and no coupling between non-parallel conductors.</p>
+<h2 id="implementation">For advanced users: how circuitRF implements MoM</h2>
+<p>Two kernels ship. circuitRF chooses between them from the geometry and tells you which one it picked and
+why.</p>
+<h3 id="the-quasi-static-kernel-uniform-cross-sections">The quasi-static kernel — uniform cross-sections</h3>
+<p>When the selected geometry reduces to straight, mutually parallel, constant-width conductors, it is not
+solved as a field problem at all. Its <strong>cross-section</strong> is solved for per-unit-length RLGC, and
+everything else follows in closed form.</p>
+<p>The unknowns are <strong>charge density on boundary segments</strong> — free charge on conductor perimeters, bound
+polarisation charge on dielectric interfaces. Carrying bound charge explicitly is the decision that
+makes this cheap: the Green's function stays the <strong>free-space 2D logarithmic potential</strong>, so there are
+no Sommerfeld integrals and no special functions, and an arbitrary number of dielectrics costs nothing.
+A ground plane is one image.</p>
+<p>From there:</p>
+<pre><code class="language-text">[C]  from the real stackup, with ε* = εr(1 − j·tanδ) carried through  →  C = Re(C), G = −ω·Im(C)
+[C₀] from the same geometry with every dielectric replaced by air
+εeff = C/C₀                    [L] = µ₀ε₀[C₀]⁻¹        (the TEM identity)
+[R]  from Wheeler's incremental inductance rule, summed over EVERY lossy surface — including the ground plane
+γ = √((R+jωL)(G+jωC))          Z_c = √((R+jωL)/(G+jωC))    →  ABCD of a length-ℓ line  →  S
+</code></pre>
+<p><strong>[C], [C₀] and ∂L/∂n are frequency-independent.</strong> A 1001-point sweep is therefore <em>one</em> matrix solve
+plus 1001 closed-form evaluations — effectively instantaneous. An optional closed-form
+Kirschning–Jansen dispersion correction extends the useful frequency range without needing a solver.</p>
+<p>The one place it can be quietly wrong is that dielectric interfaces are laterally infinite and must be
+truncated. The truncation distance is a visible setting with a sensible default, and extending it must
+not move Z₀ — which is a convergence test you can run yourself.</p>
+<h3 id="the-full-wave-planar-kernel">The full-wave planar kernel</h3>
+<p>The general case. It solves the mixed-potential integral equation over the metal.</p>
+<p><strong>Green's function.</strong> The spatial-domain Green's function for a layered medium requires inverting the
+spectral form through a <strong>Sommerfeld integral</strong> — oscillatory, slowly convergent, with branch points
+and surface-wave poles. circuitRF uses <strong>DCIM</strong> (the Discrete Complex Image Method): the spectral
+Green's function is approximated as a sum of complex exponentials by matrix-pencil fitting, and each
+term inverts in closed form by the Sommerfeld identity. It is validated against direct Sommerfeld
+integration — a second, independent formulation — over ρ/λ from 10<sup>-4</sup> to 10 on both starter
+substrates. As a fraction of the free-space kernel at the same ρ, which is what a matrix fill actually
+experiences, the error is <strong>≤ 6 × 10<sup>-3</sup> across that span</strong>; strict relative error is
+≤ 10<sup>-2</sup> out to ρ/λ ≈ 1, beyond which the fit <strong>refuses</strong> rather than extrapolating.</p>
+<p><strong>Basis functions and mesh.</strong> Rectangular <strong>rooftop</strong> basis functions on a <strong>tensor-product grid</strong>.
+Diagonals and curves are staircased by default, or cut conformally — see
+<a href="#conformal">Conformal boundary cells</a>. The unknown count is basis functions, not cells: a rooftop spans
+a pair of adjacent cells.</p>
+<p><strong>Edge mesh.</strong> Current density has a 1/√d singularity at a conductor edge, and a uniform mesh
+under-resolves it badly — which shows up directly as wrong loss and wrong Z₀. So every conductor edge
+gets 2–4 geometrically graded cells, the outermost a small fraction of the conductor width and growing
+inward by a ratio of about 1.5–2. The reference length for that grading is the <strong>conductor width</strong>, and
+that choice is measured rather than assumed: on the FR-4 reference structure it lands 0.18% from the
+converged limit at N = 552, where the alternative reference needs N = 7,562 for a comparable answer.</p>
+<p><strong>The fill.</strong> With a rectangular mesh and source and observer in one plane, the <strong>inner integral is
+closed form</strong> — six of them, checked against adaptive quadrature to 10<sup>-12</sup>. That is why the
+classic &quot;nearly touching cells&quot; problem is not where the difficulty lives here: only the outer integral
+is numerical, and it sees a continuous function with a kink, which is a quadrature-order question.
+Against an ε<sub>r</sub> = 1 reduction where the kernel is exact, the assembled matrix is right to
+<strong>5.0 × 10<sup>-6</sup></strong>.</p>
+<p><strong>The solve.</strong> Dense complex LU per frequency, or — optionally — an iterative solve against a
+grid-accelerated matrix–vector product. The accelerated path computes the same answer a different way,
+to its own accuracy gates; its win is <strong>working-set memory</strong>, roughly 4× less past about 900 unknowns,
+while the <em>time</em> crossover is much later, around 3,700 unknowns. Below that the dense path is faster. It
+does <strong>not</strong> raise the unknown ceiling.</p>
+<p><strong>De-embedding.</strong> A two-line calibration; see <a href="#deembedding">De-embedding</a>.</p>
+<h3 id="which-kernel-ran-and-why">Which kernel ran, and why</h3>
+<p>The EM Setup panel names it, with the reason. The quasi-static kernel is chosen when the geometry
+reduces to a uniform cross-section — and when it does, the panel shows you the cross-section it
+extracted: <em>&quot;uniform 2-conductor cross-section · W = 2.9 mm · ℓ = 20 mm&quot;</em>. If it does not reduce, the
+refusal is specific: <em>&quot;this geometry has a bend at (x, y)&quot;</em>, not a vague failure.</p>
+<h2 id="ports">Ports</h2>
+<h3 id="what-a-port-is">What a port is</h3>
+<p>A port is where power enters or leaves the structure. In this engine it is placed on a <strong>conductor edge</strong>
+— you tell the solver &quot;current enters the metal through this face&quot; — and the solve excites one port at a
+time to build the S-matrix.</p>
+<h3 id="how-you-define-one">How you define one</h3>
+<p><strong>A port is a label, not a new kind of shape.</strong> The Port tool places an ordinary layout label with its
+port flag set, which is why a layout carrying ports is still just a layout.</p>
+<ul>
+<li><strong>Numbering comes from the label's own text.</strong> <code>1</code>, <code>P1</code>, <code>p2</code>, <code>#3</code>, <code>Port 4</code> all parse. A label that
+names no number is auto-numbered to the lowest free one rather than refused.</li>
+<li><strong>Two labels naming the same number is a refusal by name</strong>, not a silent win for one of them.</li>
+<li><strong>The side is inferred from geometry, reported, and refused when ambiguous.</strong> A label at the exact
+corner of a conductor is equally close to two edges — and guessing reverses the direction of current
+into the structure, which is a hard π in S₂₁: smooth, plausible, and completely invisible in a
+magnitude plot. So it is named and refused: <em>&quot;Port 1 is ambiguous… Move the label.&quot;</em> Every resolved
+port reports the edge it landed on and which way current flows in. <strong>Read that report.</strong></li>
+<li><strong>The reference impedance lives in the EM setup</strong>, per port, not on the shape. A layout is geometry.</li>
+</ul>
+<h3 id="port-types-and-what-each-is-for">Port types, and what each is for</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>What it is</th>
+<th>Best suited to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Edge port</strong></td>
+<td>Excitation across a conductor's end face, referenced to the ground plane</td>
+<td><strong>The default, and the right answer for almost everything</strong>: any structure you would measure on a fixture or a probe station — a line, a bend, a filter, a matching network. Its reference plane is well defined and de-embedding is well posed.</td>
+</tr>
+<tr>
+<td><strong>Auto-generated feed extension</strong></td>
+<td>Not a port you place: a uniform lead the solver grows outward from your port's own end face, so the calibration has uniform line to work with</td>
+<td>Automatic; see below. You never place one, and it never changes where the answer is reported.</td>
+</tr>
+<tr>
+<td><strong>Internal delta-gap port</strong></td>
+<td>Excitation across a gap in the middle of a conductor</td>
+<td>Lumped elements embedded in metal, and active-device terminals in the middle of a structure. <strong>Not yet available</strong> — edge ports only in this release.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The decision rule is short because the choice is:</strong> if power crosses a boundary of your drawn metal,
+use an edge port on that boundary. If you find yourself wanting to excite something in the middle of a
+conductor, that is the delta-gap case and it is not here yet.</p>
+<h3 id="auto-ports-and-the-feed-extension">Auto-ports and the feed extension</h3>
+<p><strong>You do not have to add a feed line to your artwork.</strong> Place a port on the part you drew and press
+Simulate.</p>
+<p>This matters more than it sounds. The de-embedding calibration standard is an isolated <strong>uniform line</strong>
+of the port's cross-section, and the calibration is only valid if your metal looks like that line for
+the distance the standard replaces. A taper's flanks are oblique from the first cell, so it does not. So
+before meshing, each port's own polygon is <strong>extruded outward from its drawn end face</strong> by however much
+uniform line the calibration is short of; afterwards the lead is removed exactly, as a matched section
+in the line's own Z_c, using the propagation constant the calibration already measured.</p>
+<p>Three properties of that are load-bearing:</p>
+<ul>
+<li><strong>The reference plane is still your drawn metal edge.</strong> The lead moves where the <em>error box</em> is
+measured, never where the <em>answer</em> is reported.</li>
+<li><strong>A feed that is already uniform grows nothing</strong>, so a structure that never needed this is unchanged
+bit for bit. Running out of metal counts as uniform — a short line is a short structure, not a flared
+one.</li>
+<li><strong>Every case it cannot be sure of is declined, not guessed.</strong> An end face that is not a single
+straight segment, a port whose level is ambiguous, a lead that would run into other metal: all
+declined, with the warning you would have got anyway. Moving metal you drew would be a worse failure
+than the one being fixed.</li>
+</ul>
+<h3 id="port-z0">Port Z0</h3>
+<p>Default 50 Ω, editable per port in the EM Setup panel. It is a <strong>renormalisation</strong> applied to the
+result, not a property of the geometry — the solve does not change.</p>
+<h3 id="the-ground-reference">The ground reference</h3>
+<p><strong>Get this wrong and everything downstream is wrong.</strong> For microstrip the reference is the stackup's
+ground plane; for coplanar waveguide it is the adjacent coplanar conductors. The EM Setup panel shows
+the ground reference it resolved, under the cross-section readback. Check it once per new stackup.</p>
+<h2 id="deembedding">De-embedding</h2>
+<h3 id="what-it-does">What it does</h3>
+<p>A raw port excitation includes the <strong>port discontinuity</strong> — the local field disturbance where the
+excitation is applied, which is an artefact of the simulation and not a property of your structure.
+Reporting those S-parameters as the structure's response is simply wrong. De-embedding removes it.</p>
+<p>circuitRF uses a <strong>two-line calibration</strong>: it simulates a short and a longer uniform reference line of
+the port's cross-section, extracts the port's own reflection and the line's propagation constant, and
+removes them.</p>
+<h3 id="where-the-reference-plane-sits">Where the reference plane sits</h3>
+<div class="callout warn">
+<span class="label">The reference plane is not user-positionable, and that is a stated limitation</span>
+<p>It sits <strong>one mesh cell in from the drawn metal edge</strong>, because that is where the
+calibration actually removes the port discontinuity. There is deliberately no offset knob: offering one
+would offer a way to get a different answer for the same structure. The planes are <strong>drawn over
+your layout</strong>, from coordinates the engine reports, so their location is never a mystery.</p>
+<p>The corollary: if you need the reference plane somewhere else, move the drawn metal edge — that is,
+change where your structure ends — rather than looking for a setting.</p>
+</div>
+<p>One more property of the method, worth stating because it is a property and not a gap: <strong>the
+de-embedded S-matrix is referenced to the line's own Z_c, and the calibration cannot determine it.</strong>
+Z_c is recovered from γ and the per-unit-length capacitance, differenced between the two standards so
+the end effects cancel exactly. The assumption that C is frequency-independent is that route's real
+cost, and it is measured at 0.4% / 2.3% / 6.3% at 1 / 5 / 20 GHz.</p>
+<h3 id="the-accuracy-limit-is-radiation-not-the-algebra">The accuracy limit is radiation, not the algebra</h3>
+<p>The calibration algebra is <strong>exact</strong>: a de-embedded uniform section comes out perfectly matched at the
+two lengths the calibration was solved from (|S₁₁| = 8.5 × 10<sup>-16</sup>), and two independent routes
+to γ agree to between 2.5 × 10<sup>-4</sup> and 3.9 × 10<sup>-3</sup> across 2–10 GHz.</p>
+<p>What limits the answer is <strong>direct radiative and surface-wave coupling between the two ports</strong>. It
+decays only algebraically, and there is no term for it in a &quot;box + matched line + box&quot; model. Measured
+on 1.6 mm FR-4, a section that <em>should</em> be perfectly matched reads:</p>
+<table>
+<thead>
+<tr>
+<th>Frequency</th>
+<th></th>
+<th>S₁₁</th>
+<th>of a section that should be zero</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2 GHz</td>
+<td>3.9 × 10<sup>-4</sup></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10 GHz</td>
+<td>6.0 × 10<sup>-3</sup></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>That is an f² scaling — and, importantly, it is <strong>not monotone in the standard's length</strong>, which is how
+it was identified as coupling rather than as calibration error.</p>
+<div class="callout note">
+<span class="label">What that means for you, in one line</span>
+<p>A de-embedded answer here is good to <strong>a few parts in 10<sup>3</sup> at 2 GHz and a few parts
+in 10<sup>2</sup> at 10 GHz</strong>, and <strong>a longer feed does not improve it</strong>. Real planar
+tools suppress this with box walls or absorbing boundaries; this kernel has neither.</p>
+</div>
+<h3 id="rules-of-thumb-for-port-setup">Rules of thumb for port setup</h3>
+<p>All of these follow from one fact: <strong>de-embedding accuracy is limited by radiation, so a port whose feed
+radiates cannot be cleanly de-embedded.</strong></p>
+<ul>
+<li><strong>Keep ports apart.</strong> Port-to-port coupling is the error floor, and it grows as f². If you can place
+the two ports on opposite ends of the structure rather than on the same side, do. <em>Rule of thumb: at
+least a few substrate heights of separation, and more at the top of your band.</em></li>
+<li><strong>Do not lengthen the feed to fix accuracy.</strong> It does not work — the coupling is direct, not through
+the line — and it costs solve time. This is the counter-intuitive one, and it is measured.</li>
+<li><strong>Keep the feed's own cross-section uniform for the calibration's run</strong>, and keep other metal out of
+that run. The solver grows the uniform lead it needs, but <strong>a lead lengthens a feed, it cannot move a
+neighbour sideways.</strong> Metal running alongside the port inside the calibration's own run is still a
+limitation and is still warned about.</li>
+<li><strong>Use a feed width the mesh can resolve.</strong> The edge mesh needs several cells across the conductor; a
+feed narrower than a few cells is under-resolved exactly where the port excitation is applied. <em>Rule
+of thumb: at least 3–5 cells across the feed width, which is what the default mesh settings give you
+if you leave them alone.</em></li>
+<li><strong>Port the <em>end face</em>, not a corner.</strong> A label at a corner is ambiguous and will be refused; a label
+on a clean straight end face resolves without a guess.</li>
+<li><strong>Watch the band, not just the centre.</strong> Everything above degrades with frequency. If your structure
+is fine at 2 GHz and strange at 12 GHz, suspect the port before the geometry.</li>
+</ul>
+<h3 id="what-a-good-and-a-bad-de-embedded-result-look-like">What a good and a bad de-embedded result look like</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Good</th>
+<th>Bad</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Passivity</strong></td>
+<td>σ<sub>max</sub>(S) ≤ 1 at every frequency</td>
+<td>σ<sub>max</sub> &gt; 1 — the analysis, not the design</td>
+</tr>
+<tr>
+<td><strong>Σ|S|²</strong> for a low-loss structure</td>
+<td>Slightly below 1, decreasing smoothly with frequency</td>
+<td>Above 1, or wandering</td>
+</tr>
+<tr>
+<td><strong>A section you know is matched</strong></td>
+<td>|S₁₁| in the 10<sup>-4</sup>–10<sup>-2</sup> range, rising smoothly with f</td>
+<td>|S₁₁| near 1, or jumping between adjacent frequency points</td>
+</tr>
+<tr>
+<td><strong>∠S₂₁</strong></td>
+<td>Smooth, monotone, ≈ −βℓ</td>
+<td>Discontinuous, or with a hard π step (a reversed port side)</td>
+</tr>
+<tr>
+<td><strong>Refining the mesh</strong></td>
+<td>Moves the answer a little, and in one direction</td>
+<td>Moves it a lot, or in different directions each time</td>
+</tr>
+</tbody>
+</table>
+<div class="callout warn">
+<span class="label">A non-passive result is reported, not shipped quietly</span>
+<p>A de-embedded sweep that publishes σ<sub>max</sub>(S) > 1 says so — at the frequency, and by how
+much. <strong>The excess is the analysis, never the design</strong>, and you need to know that before you
+read the plot. A famous example: a 2000 mil 50 → 12 Ω Klopfenstein taper once came back as
+|S₁₁| = 1.0000, |S₂₁| = 0.0008, Σ|S|² = 1.06 — a non-passive open circuit — because the calibration
+standard did not resemble the taper's own flanks. That is what the automatic feed extension exists to
+prevent, and what the passivity check exists to catch if anything like it ever happens again.</p>
+</div>
+<h2 id="adaptive">Adaptive frequency sampling</h2>
+<h3 id="the-problem-it-solves">The problem it solves</h3>
+<p>Fill is O(N²) and solve is O(N³) <strong>per frequency</strong>, because the Green's function is frequency-dependent.
+So a sweep costs the number of points times the cost of a point, and a resonant structure needs a lot of
+points to look right. Sample a resonance on a coarse uniform grid and you get a plot that is <em>wrong</em> —
+the notch lands between two samples and vanishes. Sample it finely enough everywhere and you have paid
+for resolution across the whole band to get it in one place.</p>
+<h3 id="how-it-works">How it works</h3>
+<ol>
+<li>Solve a sparse subset of the requested frequencies.</li>
+<li>Fit a <strong>rational interpolant</strong> to what has been solved.</li>
+<li>Solve a <strong>midpoint</strong> and compare it with what the model predicted.</li>
+<li>Where they disagree, add samples there and refit. Where they agree, stop.</li>
+</ol>
+<p>The tolerance is agreement to 10<sup>-3</sup> in |S|. Two properties are worth knowing:</p>
+<ul>
+<li><strong>The published sweep is always exactly the grid you asked for.</strong> Adaptive sampling changes which
+points are <em>solved</em>, never which are <em>reported</em>.</li>
+<li><strong>Every solved point carries the solver's own result, unchanged.</strong> Nothing that was actually solved is
+replaced by the model.</li>
+</ul>
+<h3 id="what-the-tolerance-trades">What the tolerance trades</h3>
+<p>Tighter tolerance means more solved points, so more time, and a curve that tracks the true response more
+closely between the ones you asked for. Looser means fewer solves and a curve that may smooth a feature
+the solver would have found. Because the trade is <em>entirely</em> between solve count and fidelity in the
+un-solved gaps, the useful move when in doubt is not to loosen the tolerance — it is to reduce the
+number of requested points.</p>
+<h3 id="how-to-tell-it-converged-and-what-to-do-if-it-did-not">How to tell it converged, and what to do if it did not</h3>
+<p>The run reports how many points it solved out of how many you requested. Two checks:</p>
+<ul>
+<li><strong>Solve fraction.</strong> A smooth response converges after solving a small fraction of the grid. A run that
+solved nearly every point is telling you the response is not smooth on that grid — which is
+information, not a failure.</li>
+<li><strong>Re-run with the sampling off.</strong> If the curve does not move, it converged. This is the direct test and
+it costs one full sweep; it is worth doing once per new class of structure, not once per run.</li>
+</ul>
+<p>If it will not settle, the usual cause is a genuine sharp resonance. Narrow the band around it and sweep
+that region on its own rather than fighting the whole span.</p>
+<p>Adaptive sampling applies to the full-wave kernel only. The quasi-static kernel evaluates in closed form
+after one solve, so there is nothing to sample adaptively, and the control says so rather than sitting
+there greyed out with no explanation.</p>
+<h2 id="conformal">Conformal boundary cells</h2>
+<h3 id="what-it-is">What it is</h3>
+<p>The mesh is a rectangular tensor-product grid. Where a conductor's edge is oblique or curved, the grid
+has to decide what to do with the cells the edge passes through. Two options:</p>
+<ul>
+<li><strong>Staircase</strong> <em>(the default)</em> — a cell is either in the metal or not, so a diagonal becomes a
+staircase.</li>
+<li><strong>Conformal</strong> — the boundary cells are <strong>cut</strong> to follow the metal: one straight cut through an
+otherwise rectangular cell.</li>
+</ul>
+<h3 id="what-it-buys-measured">What it buys, measured</h3>
+<p>On a 96-sided disc refined from 316 to 3,964 unknowns:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Staircase</th>
+<th>Conformal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Does the simulated shape match what you drew?</td>
+<td>No — between 0.2% and 0.8% of the area is wrong, and <strong>the amount changes every time you refine</strong></td>
+<td><strong>Yes, exactly</strong> — to round-off, at every refinement</td>
+</tr>
+<tr>
+<td>Does refining converge?</td>
+<td><strong>No — the value wanders up and down</strong></td>
+<td><strong>Yes — it steps steadily toward a limit</strong></td>
+</tr>
+<tr>
+<td>Spread over the last three refinements</td>
+<td>0.669%</td>
+<td><strong>0.279%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The first row is the real result. Under a staircase, refining the mesh quietly changes <em>which shape</em> is
+being simulated, which is why the second row is possible at all.</p>
+<h3 id="what-it-costs">What it costs</h3>
+<p><strong>Essentially nothing.</strong> At matched settings the conformal mesh was <em>slightly smaller</em> than the
+staircased one (316 unknowns vs 324 coarse; 3,964 vs 3,972 fine), and solve time is set by the unknown
+count. Building the mesh does a little more geometry work, but meshing is milliseconds against a solve
+measured in seconds to minutes.</p>
+<h3 id="it-ships-off-and-that-is-not-an-oversight">It ships OFF, and that is not an oversight</h3>
+<div class="callout warn">
+<span class="label">Do not read this as a free win</span>
+<p>Two reasons it is opt-in. The bookkeeping one: <strong>every accuracy figure recorded for this engine
+was taken with the staircase</strong>, and anyone reproducing one has to be able to. The real one:
+<strong>a Klopfenstein taper comes out slightly worse under conformal cells at coarse PCB settings</strong>
+— 0.593% area error becomes 0.766%. Making something worse by default is not defensible even when it is
+better in most cases.</p>
+</div>
+<p><strong>Turn it on</strong> when you are simulating a bend, a linear taper, a disc, or any curved outline, and you
+want an answer you can refine toward with confidence. On a bend or a linear taper the area error goes
+from 0.10–0.47% to <strong>exact</strong>.</p>
+<p><strong>Leave it off</strong> for all-Manhattan artwork, where it has nothing to do, and for a Klopfenstein taper at
+coarse settings.</p>
+<h3 id="convex-decomposition-the-reflex-vertex-fallback">Convex decomposition — the reflex-vertex fallback</h3>
+<p>The cut works by clipping a rectangular cell against the metal outline, and the result has to be a
+region the fill's integrals can evaluate exactly. Where the clipped region fails that test — most often
+because the outline <strong>bends back on itself</strong> inside a single cell — the cell falls back to the staircase
+rule rather than producing an answer it cannot stand behind.</p>
+<p>The consequence you can observe: on artwork with many reflex vertices, the number of fallback cells
+<strong>saturates</strong>. Measured on a Klopfenstein taper at cells/λ of 20 / 40 / 80 / 160 / 320, the fallback
+count runs 52 / 78 / <strong>126 / 126 / 126</strong> — and the outline has exactly 126 reflex vertices. Once each
+reflex vertex owns a cell, refining the mesh cannot reduce the count any further.</p>
+<p><strong>That is why &quot;exact&quot; holds for a bend, a linear taper and a disc but not for a Klopfenstein taper</strong>, and
+why refining does not fix it. It is a property of the artwork, not of the settings.</p>
+<h2 id="mesh-convergence">Mesh convergence, and how to check it</h2>
+<p>A mesh is a discretisation, so <strong>an EM answer is only as good as its mesh, and the only honest test is
+refinement</strong>. The procedure:</p>
+<ol>
+<li>Run at the default mesh. Note the unknown count and the answer at a frequency you care about.</li>
+<li>Raise <strong>Cells per wavelength</strong> by roughly 1.4× and re-run.</li>
+<li>Repeat until the answer stops moving by more than you care about.</li>
+</ol>
+<p>What to look for:</p>
+<ul>
+<li><strong>A monotone, decreasing step.</strong> Each refinement should move the answer less than the last, in the
+same direction. That is convergence.</li>
+<li><strong>A wandering value is not converging</strong>, and on curved or oblique artwork it usually means the
+staircase is changing the shape at each refinement — see <a href="#conformal">Conformal boundary cells</a>.</li>
+<li><strong>Edge mesh matters more than cell size.</strong> If loss or Z₀ is off, refine the edge cells before refining
+the whole grid; the edge singularity is where the error lives.</li>
+</ul>
+<p>The <strong>Mesh</strong> button computes the mesh <strong>without solving</strong>, so the unknown count, the smallest and largest
+cell and the truncation extent are all visible before you commit to a run. Use it.</p>
+<h2 id="budget">What makes a run infeasible</h2>
+<p>The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes.</p>
+<table>
+<thead>
+<tr>
+<th>N</th>
+<th>Matrix memory</th>
+<th>Character</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>500</td>
+<td>4 MB</td>
+<td>A short line or a bend lives here</td>
+</tr>
+<tr>
+<td>2,000</td>
+<td>64 MB</td>
+<td>Interactive: seconds per frequency</td>
+</tr>
+<tr>
+<td>5,000</td>
+<td>400 MB</td>
+<td>The practical ceiling for a lightweight tool</td>
+</tr>
+<tr>
+<td>10,000</td>
+<td>1.6 GB</td>
+<td>Out of scope</td>
+</tr>
+</tbody>
+</table>
+<p><strong>There is a hard ceiling around 5,000 unknowns, the predicted N is shown before you solve, and a mesh
+above it is refused</strong> with a message pointing at mesh coarsening. A tool that silently tried to allocate
+12 GB would not be lightweight.</p>
+<p>Two numbers that surprise people, both measured on 1.6 mm FR-4 at 10 GHz:</p>
+<ul>
+<li><strong>A 4 MB matrix is not a 4 MB sweep.</strong> At N = 552, one frequency costs about 1.7 s once the
+frequency-independent core is built — so a 101-point sweep is about <strong>three minutes</strong>, not &quot;instant&quot;.</li>
+<li><strong>De-embedding multiplies that by about 4.4×.</strong> The calibration standards are not small — on that same
+structure they measure 2.58× the DUT's own unknowns — and they are <strong>78% of the total cost</strong>. A
+de-embedded 101-point sweep of that structure is about 13 minutes.</li>
+</ul>
+<p>That is the arithmetic behind <a href="#adaptive">adaptive sampling</a> being on by default: the per-point cost went
+up 4.4× and the number of points did not.</p>
+<p>The <strong>accelerated solve</strong> option changes the memory picture rather than the time one: roughly 4× less
+working set past about 900 unknowns, with the time crossover much later, around 3,700 unknowns. It does
+not raise the ceiling, and it is single-metal-level only, with no vias.</p>
+<h2 id="refusals">What the engine refuses, and why a refusal is better</h2>
+<p>A wrong EM answer is smooth, plausible and expensive — it goes into a design, and the board comes back
+wrong. So this engine refuses rather than extrapolating, and every refusal names the specific feature
+and says where the capability arrives.</p>
+<p>The refusals you are most likely to meet:</p>
+<table>
+<thead>
+<tr>
+<th>Refusal</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>&quot;This geometry has a bend at (x, y)&quot;</strong> — from the quasi-static kernel</td>
+<td>Nothing: the full-wave kernel takes it. This message means the cross-section extractor declined, which is how the two kernels divide the work.</td>
+</tr>
+<tr>
+<td><strong>The predicted unknown count exceeds the ceiling</strong></td>
+<td>Coarsen the mesh, or simulate less of the structure. See <a href="#budget">the budget</a>.</td>
+</tr>
+<tr>
+<td><strong>&quot;Port n is ambiguous&quot;</strong></td>
+<td>Move the label off the corner onto a clean end face.</td>
+</tr>
+<tr>
+<td><strong>Two ports naming the same number</strong></td>
+<td>Renumber one.</td>
+</tr>
+<tr>
+<td><strong>The DCIM fit is outside its validated range</strong></td>
+<td>The structure is electrically larger than the fitted kernel covers at that frequency. Narrow the band.</td>
+</tr>
+<tr>
+<td><strong>A via separation the vertical kernel cannot resolve</strong></td>
+<td>Turn on the <strong>direct vertical (via) kernel</strong>, which replaces the fitted Green's function with direct numerical integration for that one term, at 15–45% more per frequency point per via span.</td>
+</tr>
+<tr>
+<td><strong>No stackup</strong></td>
+<td>An EM run refuses without a technology rather than inventing one — the one place a missing technology is not degraded gracefully.</td>
+</tr>
+</tbody>
+</table>
+<p>A refusal you can read is worth more than a number you cannot check.</p>
+<h2 id="cosim">Using EM results in a circuit simulation</h2>
+<p><strong>An EM run produces a Touchstone file.</strong> That is the whole co-simulation story, and it needs no new
+machinery.</p>
+<ol>
+<li>Lay out the structure — a matching network, a coupler, a bias tee.</li>
+<li>Set up and run the EM analysis. It writes an <code>.sNp</code> to a predictable path derived from the layout and
+setup names.</li>
+<li>Drop an <a href="components.html#snp">SnP component</a> into your test bench and point it at that file.</li>
+<li>Run harmonic balance with the real device model beside it.</li>
+</ol>
+<p>Three consequences, all good ones:</p>
+<ul>
+<li><strong>The artefact is inspectable and portable.</strong> It is a Touchstone file: plot it, archive it, hand it to
+a colleague, diff it against a measurement.</li>
+<li><strong>Re-running is a file update</strong>, so the schematic picks up a new result the same way it picks up any
+changed source.</li>
+<li><strong>Staleness is detectable.</strong> The file's header is stamped with the stackup, the mesh settings, the port
+definitions and a hash of the geometry — hashed separately, so a warning can say <em>which</em> of the three
+moved. A stale <code>.sNp</code> sitting beside an edited layout is reported rather than silently wrong.</li>
+</ul>
+<p>The EM result also carries a <strong>diagnostics group</strong> alongside <code>S</code> and the per-port <code>Z0</code>, and the two
+kernels deliberately do not share its name: the quasi-static kernel's is <code>tline</code> (Z_c, γ, ε_eff,
+attenuation, R/L/G/C per unit length) and the full-wave kernel's is <code>planar</code> (γ, Z_c, ε_eff,
+attenuation, C per unit length, and the calibration's own residual and usability flags). A per-unit-length
+quantity from a 2D quasi-static solve and one back-solved from a de-embedded full-wave S-matrix are
+different claims. They agree on a uniform line, and they diverge with frequency — which is dispersion,
+and is a <em>result</em>.</p>
+<h2 id="worked">Worked example: a microstrip line with a bend</h2>
+<p>A 50 Ω line on the PCB starter technology, with a right-angle bend in it. The point of the exercise is
+that the bend is exactly what a circuit model handles badly and an EM solve handles well.</p>
+<h3 id="draw-it">1. Draw it</h3>
+<p>New layout on the PCB starter technology — 1.6 mm FR-4, ε<sub>r</sub> 4.4, tanδ 0.02, 1 oz copper,
+bottom ground. Display unit mil.</p>
+<p>A 50 Ω line on that stack is <strong>W ≈ 2.9 mm (114 mil)</strong>. Draw two rectangles on Top Copper:</p>
+<pre><code class="language-text">horizontal arm:   from (0, 0)          to (400 mil, 114 mil)
+vertical arm:     from (286 mil, 0)    to (400 mil, 400 mil)
+</code></pre>
+<p>They overlap in the corner square, which is what makes it one conductor. Leave the corner square — an
+unmitred bend is the thing being measured.</p>
+<h3 id="set-the-stackup">2. Set the stackup</h3>
+<p>Nothing to do. The stackup comes from the technology, and the EM Setup panel shows it back to you:
+<code>FR-4 1.6 mm εr 4.4 tanδ 0.02</code> between <code>Top Copper 35 µm</code> and the ground plane. Check the <strong>Ground
+reference</strong> row reads the ground plane and not something else.</p>
+<h3 id="place-ports">3. Place ports</h3>
+<p>Port tool; click the horizontal arm's left end face, then the vertical arm's top end face. Two labels,
+<code>1</code> and <code>2</code>. Check the notes: each port should report the edge it resolved to and the direction current
+flows in. If either says &quot;ambiguous&quot;, the label is on a corner — move it.</p>
+<p>Leave both reference impedances at 50 Ω.</p>
+<h3 id="choose-a-mesh">4. Choose a mesh</h3>
+<p>Leave the mesh on its defaults for the first run and press <strong>Mesh</strong> — not Simulate. Read the mesh
+report:</p>
+<ul>
+<li><strong>Unknowns</strong>: expect a few hundred. Well under the ceiling.</li>
+<li><strong>Smallest / largest cell</strong>: the smallest should be a small fraction of 114 mil — that is the edge
+mesh doing its job.</li>
+</ul>
+<p>At 10 GHz on FR-4, λ_g ≈ 16.5 mm, so λ_g/20 ≈ 0.8 mm gives roughly 24 cells along a 20 mm run and about
+6 across the width, before edge refinement. A few hundred unknowns is the expected answer, and a number
+wildly different from that means something is wrong with the geometry or the layer mapping.</p>
+<h3 id="set-the-sweep-and-run">5. Set the sweep and run</h3>
+<p>1 to 10 GHz, 101 points. Leave adaptive sampling on. Press <strong>Simulate</strong>.</p>
+<p>Expect roughly a minute or two — most of it in the calibration standards, not the structure. The run
+reports how many points it actually solved.</p>
+<h3 id="read-the-result">6. Read the result</h3>
+<p>The result opens in the <a href="data-display.html">Data Display</a>. Plot |S₂₁| in dB and |S₁₁| in dB against
+frequency.</p>
+<table>
+<thead>
+<tr>
+<th>What to look for</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S₂₁| close to 0 dB at 1 GHz, falling smoothly</td>
+<td>Ordinary conductor and dielectric loss on FR-4</td>
+</tr>
+<tr>
+<td>|S₁₁| low at 1 GHz, rising with frequency</td>
+<td>The bend's shunt capacitance beginning to matter</td>
+</tr>
+<tr>
+<td>A smooth ∠S₂₁, roughly −βℓ</td>
+<td>The electrical length of the two arms</td>
+</tr>
+<tr>
+<td>Σ|S|² slightly below 1, smooth</td>
+<td>Passive and lossy, as expected</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sanity-check-it-against-the-circuit-model">7. Sanity-check it against the circuit model</h3>
+<p>This is the step people skip and should not.</p>
+<p>Build the same thing in a schematic from <a href="components.html#mlin">MLIN</a> and
+<a href="components.html#mbend">MBEND</a> with the same widths, lengths and substrate, and run an S-parameter
+analysis over the same band. Overlay the two in one Data Display — the EM result is a Touchstone file,
+so <a href="data-display.html#free-floating">add it as a second data source</a> and put both traces on one plot.</p>
+<p>They should agree closely at the bottom of the band and separate at the top. <strong>If they disagree at
+1 GHz, something is wrong with your setup, not with the physics</strong> — check, in this order: the line width
+(is it really 50 Ω on this stack?), the substrate (does the schematic's MLIN carry the same
+ε<sub>r</sub> and h?), the ground reference, and the port sides.</p>
+<h3 id="refine-once">8. Refine once</h3>
+<p>Raise cells per wavelength by 1.4× and re-run. If |S₁₁| at the top of the band moves by less than you
+care about, you are converged. If it moves a lot, refine again — and if it moves <em>differently</em> each
+time on a mitred bend, turn on <a href="#conformal">conformal boundary cells</a>.</p>
+<p class="small">See also: <a href="em-setup.html">EM Setup</a> — the panel, control by control ·
+<a href="layout-editor.html">The Layout Editor</a> · <a href="wbond.html">wBond</a> (3D bondwires) ·
+<a href="components.html#mlin">The microstrip component family</a> ·
+<a href="data-display.html">The Data Display</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="pdk-authoring.html"><span class="dir">Previous</span><span class="name">PDK Authoring</span></a>
+  <a class="next" href="em-setup.html"><span class="dir">Next</span><span class="name">EM Setup</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+</body>
+</html>

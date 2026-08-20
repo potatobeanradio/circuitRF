@@ -40,6 +40,10 @@ public static class FontExtractor
     [
         // Avalonia control chrome. Embedded in the Avalonia.Fonts.Inter package, which is what
         // .WithInterFont() registers — so this is the very font the captured controls drew with.
+        // Weight 300 is real, not a rounding of 400: the Data Display's own tab headers are set in
+        // Inter Light, and a figure inlining them would otherwise be re-rendered by the browser in
+        // the nearest declared weight — which is exactly what the stylesheet-coverage gate catches.
+        new("avares://Avalonia.Fonts.Inter/Assets/Inter-Light.ttf",    "Inter-Light.ttf",    "Inter", 300, "normal"),
         new("avares://Avalonia.Fonts.Inter/Assets/Inter-Regular.ttf",  "Inter-Regular.ttf",  "Inter", 400, "normal"),
         new("avares://Avalonia.Fonts.Inter/Assets/Inter-Medium.ttf",   "Inter-Medium.ttf",   "Inter", 500, "normal"),
         new("avares://Avalonia.Fonts.Inter/Assets/Inter-SemiBold.ttf", "Inter-SemiBold.ttf", "Inter", 600, "normal"),

@@ -6,6 +6,12 @@
 <title>circuitRF — Grid &amp; Connectivity</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/grid.md
+-->
 </head>
 <body>
 
@@ -16,14 +22,12 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Grid &amp; Connectivity</p>
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Grid &amp;amp; Connectivity</p>
 
   <h1>Grid &amp; Connectivity</h1>
-  <p class="lede">Connecting components must be easy, and connections must be unambiguous: "do these two pins
-  touch?" has to have exactly one answer. circuitRF achieves both with <strong>two grids</strong> — a coarse
-  connection grid that all electrical points snap to, and a fine authoring grid for everything cosmetic.</p>
+  <p class="lede">Connecting components must be easy, and connections must be unambiguous: &quot;do these two pins touch?&quot; has to have exactly one answer. circuitRF achieves both with **two grids** — a coarse connection grid that all electrical points snap to, and a fine authoring grid for everything cosmetic.</p>
 
-  <nav class="toc">
+<nav class="toc">
     <h2>On this page</h2>
     <ol>
       <li><a href="#two">The two grids</a></li>
@@ -33,9 +37,8 @@
       <li><a href="#changing">Changing the grids</a></li>
     </ol>
   </nav>
-
-  <h2 id="two">The two grids</h2>
-  <table>
+<h2 id="two">The two grids</h2>
+<table>
     <thead><tr><th></th><th>Connection grid <code>P</code></th><th>Authoring grid <code>p</code></th></tr></thead>
     <tbody>
       <tr><td><strong>Default pitch</strong></td><td>100 units (the classic 100-mil EDA pitch)</td><td>5 units (<code>p = P/20</code>)</td></tr>
@@ -44,38 +47,34 @@
       <tr><td><strong>Can you change it?</strong></td><td>fixed for a design (design-level)</td><td>freely, anytime (cosmetic)</td></tr>
     </tbody>
   </table>
-  <p>Every electrically-connectable point lands on <code>P</code> <strong>exactly</strong> — an integer multiple,
-  verified by arithmetic, not by tolerance. Everything that carries no electrical meaning lives on the finer
-  <code>p</code>, which is always a refinement of <code>P</code> (<code>p = P/k</code>), so a point on <code>P</code>
-  is always also on <code>p</code>. A connection point can never fall "between" cells.</p>
-
-  <h2 id="why">Why two grids</h2>
-  <p>One grid can't serve both masters. "Easy to connect" wants a <em>coarse</em> grid (few, well-spaced targets
-  a wire snaps to cleanly); "freedom to place art and labels" wants a <em>fine</em> grid. Splitting them
-  resolves the conflict: pins/wires/dots on coarse <code>P</code> so connection is trivial and exact;
-  bodies/labels/decorations on fine <code>p</code> so authoring has room.</p>
-  <div class="callout warn">
+<p>Every electrically-connectable point lands on <code>P</code> <strong>exactly</strong> — an integer multiple, verified by
+arithmetic, not by tolerance. Everything that carries no electrical meaning lives on the finer
+<code>p</code>, which is always a refinement of <code>P</code> (<code>p = P/k</code>), so a point on <code>P</code> is always also on <code>p</code>. A
+connection point can never fall &quot;between&quot; cells.</p>
+<h2 id="why">Why two grids</h2>
+<p>One grid can't serve both masters. &quot;Easy to connect&quot; wants a <em>coarse</em> grid (few, well-spaced
+targets a wire snaps to cleanly); &quot;freedom to place art and labels&quot; wants a <em>fine</em> grid. Splitting
+them resolves the conflict: pins/wires/dots on coarse <code>P</code> so connection is trivial and exact;
+bodies/labels/decorations on fine <code>p</code> so authoring has room.</p>
+<div class="callout warn">
     <span class="label">Counter-intuitive but important</span>
     <p>Authoring freedom is controlled by <code>p</code>, <strong>not</strong> <code>P</code>. Making
     <code>P</code> finer does not give more freedom — it makes connection <em>harder</em> (targets get denser,
     easier to snap to the wrong one) and breaks the 100-mil convention every EDA tool and RF engineer assumes.
     Want finer placement? Shrink <code>p</code> (increase <code>k</code>). Leave <code>P = 100</code>.</p>
   </div>
-
-  <h2 id="exact">Connection is exact equality</h2>
-  <p>Two pins are connected <strong>if and only if</strong> their connection-grid coordinates are equal — not
-  "within a few pixels." Because placement, wire drawing, and dragging all snap to <code>P</code> at the moment
-  of input, coincident points are bit-for-bit equal, and the extracted netlist's connectivity is decided by
-  exact grid coincidence. There is no fuzzy radius that could disagree with what you see on screen. This is what
-  makes the netlist trustworthy: a connection, once made, is unambiguous.</p>
-  <p>A small junction dot is drawn only where incident wire segments form a real branch (a horizontal
-  <em>and</em> a vertical segment meet). Three collinear segments overlapping draw no dot — but still read as
-  connected.</p>
-
-  <h2 id="paste">Pasting across grids</h2>
-  <p>If you copy from a schematic authored on a different connection grid and paste into one using
-  <code>P = 100</code>, circuitRF <strong>detects, warns, and snaps</strong>:</p>
-  <ol class="steps">
+<h2 id="exact">Connection is exact equality</h2>
+<p>Two pins are connected <strong>if and only if</strong> their connection-grid coordinates are equal — not
+&quot;within a few pixels.&quot; Because placement, wire drawing, and dragging all snap to <code>P</code> at the moment
+of input, coincident points are bit-for-bit equal, and the extracted netlist's connectivity is
+decided by exact grid coincidence. There is no fuzzy radius that could disagree with what you see
+on screen. This is what makes the netlist trustworthy: a connection, once made, is unambiguous.</p>
+<p>A small junction dot is drawn only where incident wire segments form a real branch (a horizontal
+<em>and</em> a vertical segment meet). Three collinear segments overlapping draw no dot — but still read
+as connected.</p>
+<h2 id="paste">Pasting across grids</h2>
+<p>If you copy from a schematic authored on a different connection grid and paste into one using <code>P = 100</code>, circuitRF <strong>detects, warns, and snaps</strong>:</p>
+<ol class="steps">
     <li>The clipboard payload records the grid it was authored on.</li>
     <li>On paste, if the source grid differs, you get a message — e.g. <em>"Pasted content was created on a
       50-unit grid; this schematic uses 100. Pins were snapped to this grid — verify connections."</em></li>
@@ -83,30 +82,38 @@
       decorations snap to the fine grid. Internal coincidences within the pasted group are preserved where
       possible, and any point that can't land cleanly is reported — never a silent off-grid pin.</li>
   </ol>
-
-  <h2 id="changing">Changing the grids</h2>
-  <ul>
-    <li><strong>Display grid</strong> (which lines are drawn) and the <strong>authoring grid <code>p</code></strong>
-      — cosmetic, change anytime. <code>p</code> is constrained to <code>p = P/k</code> (a refinement of
-      <code>P</code>).</li>
-    <li><strong>Connection grid <code>P</code></strong> — fixed for a design. It is stored in the schematic file
-      and is stable; changing it could strand existing connection points off the new grid, so it is treated as a
-      deliberate migration, not a slider. In v1, <code>P</code> stays at the design's grid size; you change only
-      <code>p</code> and the display.</li>
-  </ul>
-
-  <hr>
-  <p class="small">See also: <a href="file-formats.html">File formats</a> (where the grid is stored) ·
+<h2 id="changing">Changing the grids</h2>
+<ul>
+<li><p><strong>Display grid</strong> (which lines are drawn) and the <strong>authoring grid <code>p</code></strong> — cosmetic, change
+anytime. <code>p</code> is constrained to <code>p = P/k</code> (a refinement of <code>P</code>).</p>
+</li>
+<li><p><strong>Connection grid <code>P</code></strong> — fixed for a design. It is stored in the schematic file and is stable;
+changing it could strand existing connection points off the new grid, so it is treated as a
+deliberate migration, not a slider. In v1, <code>P</code> stays at the design's grid size; you change only
+<code>p</code> and the display.</p>
+</li>
+</ul>
+<h2 id="editor">The schematic editor</h2>
+<p>Everything above is enforced by the editor you draw in. Its canvas, its toolbar button by button,
+the Library Palette and how a component gets from one to the other are on their own page:
+<a href="schematic-editor.html">The Schematic Editor</a>.</p>
+<hr />
+<p class="small">See also: <a href="schematic-editor.html">Schematic Editor</a> ·
+  <a href="file-formats.html">File formats</a> (where the grid is stored) ·
   <a href="symbol-editor.html">Symbol Editor</a> (pins on <code>P</code>, art on <code>p</code>). Full design:
   <code>docs/design/grid-and-connectivity.md</code>.</p>
 
+<nav class="page-nav">
+  <a class="prev" href="expressions.html"><span class="dir">Previous</span><span class="name">Expressions</span></a>
+  <a class="next" href="pins-ports-terms.html"><span class="dir">Next</span><span class="name">Pins, Ports &amp; Terms</span></a>
+</nav>
 </main>
 
 <footer class="doc-footer">
   <img src="../assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <a href="index.html">Reference home</a>
+  <a href="../index.html">Documentation home</a>
 </footer>
 
 </body>

@@ -6,6 +6,167 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## The workspace figure: capturing the whole shell, and making a capture machine-independent (2026-08-20)
+
+Added `workspace-overview` and `workspace-regions` to the docs factory — the real `WorkspaceWindow`,
+its dock tree, its panels and its open documents, rendered to SVG. `docs/design/user-docs-factory.md`
+§11 carries the architecture. What is here is what fails **silently**.
+
+**1. A detached window content has no DataContext, and the whole dock tree binds through it.** The
+generator renders the window's *content* (it draws its own frame, §3.3), so the fixture takes the
+content off the `WorkspaceWindow`. That loses the inherited DataContext. `DockControl.Layout` then
+binds to nothing, and the capture is a correctly-rendered toolbar above **an empty grey rectangle** —
+no exception, no warning. Set the DataContext on the content after detaching it.
+
+**2. `DocsApp` needed App.axaml's DataTemplates, not just the `ViewLocator`.** The ViewLocator maps
+`XViewModel` → `XView` by name. Every Dock tool and document view-model is named nothing like its view
+(`ProjectTreeTool` → `ProjectTreeView`, `SchematicDocument` → `SchematicView`) and is mapped by an
+explicit template. Without them every dock panel renders as **the literal text of its view-model's
+type name** — `CircuitRF.Ui.ViewModels.Dock.ProjectTreeTool` in a box where the tree should be.
+`DocsApp` now copies them off a real `App` instance instead of restating nineteen of them:
+`App.Initialize()` is only `AvaloniaXamlLoader.Load(this)`, and it is
+`OnFrameworkInitializationCompleted` — never called there — that opens windows and loads PDKs.
+
+**3. A figure was carrying the machine that generated it, and this was NOT specific to the
+workspace.** `WorkspaceViewModel`'s constructor reads the real `preferences.json` and restores the
+PDKs installed from it. The capture therefore inherited the generating developer's **Window Layout**
+preference (visibly: the Library panel sat in a different column), colour scheme, and installed kits
+in the palette. With `check-docs-current.sh` regenerating and diffing, that is not cosmetic — the
+output is not reproducible at all.
+
+`CircuitRF.Ui.AppDataRoot` is now the single definition of `LocalApplicationData/circuitRF`
+(`AppPreferencesIo` and `RecoveryManager` each computed it separately before), and `tools/DocGen`
+redirects it to a throwaway directory first thing, so a docs run is always a first-launch
+installation. **The environment cannot do this job** — measured, not assumed: on macOS .NET resolves
+`SpecialFolder.LocalApplicationData` to `~/Library/Application Support` from the platform, so setting
+`XDG_DATA_HOME` or `HOME` in-process changes nothing at all.
+
+Two smaller churn sources are handled in the fixture: message timestamps go to the application's own
+**Hidden** mode for the capture, and the message log — which correctly names the *absolute* path of
+the temporary workspace just opened — is cleared and restated without it. Verified by generating
+twice and diffing: byte-identical.
+
+**4. The in-window menu bar is `IsVisible="{OnPlatform True, macOS=False}"`.** macOS puts those menus
+in the system menu bar, which is in no visual tree and cannot be captured. Left alone, a figure
+generated on macOS is missing a menu bar that Windows and Linux readers have on screen, *and* differs
+from one generated on Linux. The fixture forces it on; the page says where macOS puts it.
+
+**5. A numbered region is located by finding its control, never by a coordinate.**
+`WorkspaceRegions.Catalog` is one row per region — number, title, sentence, a locator
+(`ByType<ProjectTreeView>()`, the toolbar `StackPanel` by style class, `DocumentControl` for the tab
+strip) and which corner of it the dot sits in. A region that cannot be found, or that arranged too
+small to carry its number, fails the run and names itself. The legend beside the figure is generated
+from the same list, so the number in the picture and the number in the table cannot disagree.
+
+**A watch-out, found by diffing:** `CalloutDot` was extracted so the toolbar's dots and the
+workspace's are one definition. Deriving the font size as `diameter * 0.583` instead of
+`diameter * 10.5 / 18.0` changed every existing toolbar figure from `font-size="10.5"` to `"10.49"` —
+a full-figure diff for a rounding difference nobody would ever look for.
+
+**Unrelated, same session: `figure.figure .frame` was full-width.** It is a flex container, and a
+flex container is block-level, so a narrow figure — a 440 px trace card, the Wire Profile panel — sat
+marooned in a box the width of the whole article (owner). `width: fit-content` plus
+`margin-inline: auto` shrinks the frame to the SVG's own intrinsic width (every generated file
+carries `width`/`height` as well as a `viewBox`) and re-centres it; `max-width: 100%` still holds a
+wide figure to the column, at which point the SVG scales down inside it. Same fix is not needed for
+`figure.symbol`, which is an inline-block and already shrink-wraps.
+
+## User docs, content build-out — the tool-chapter half (2026-08-20)
+
+`brief-user-docs-content.md`, the four chapters it left as stubs: `reference/em-setup.md`,
+`harmonicarf.md`, `wbond.md` and `match.md`, their figures, and the double-check pass. What is here
+is the part that cost time to find or that changes what somebody should do next; the pages
+themselves say what the software does.
+
+### Three source fixes the docs factory measured, and one it could not
+
+The factory's font check reports every character no circuitRF typeface covers, because Skia then
+substitutes a **platform** font and bakes its name into the SVG. Two of those were real defects
+rather than doc-generation noise:
+
+- **`🔒` and `🔗` in the Match Designer** (U+1F512, U+1F517 — the transform-rack lock and the link
+  toggle) are covered by **no shipped fallback either**: the redirect target, DejaVu Sans, does not
+  have them, so the figures carried tofu and the app itself depends on a platform colour-emoji font
+  being present. Replaced with `mi:MaterialIcon` `Lock` / `LinkVariant`. This is the same failure
+  the Technology `▾` had, and the same fix.
+- **`▸` / `▾` in three Match Designer buttons** — Solutions, Export, `+ add`. Covered by DejaVu, so
+  they rendered, but they still substituted a platform font. Replaced with `ChevronRight` /
+  `ChevronDown`.
+- **What is left is deliberate**: `∠` in the harmonicaRF readouts (U+2220) and `✔`/`✘` in the Match
+  status strip. Both are *content* — the angle operator and a matched/not-matched verdict — not
+  decoration, and DejaVu covers both. The cost is that **DejaVu Sans now ships with the docs
+  (3 faces, ~2.1 MB)** the moment any page cites a figure containing one. Worth knowing before
+  adding a fourth uncovered glyph: the bundle already pays for the family.
+
+### Back-annotation of an EM result into a schematic is reachable only from tests
+
+`EmBackAnnotation.Annotate` places-or-updates an ordinary `SnP` component pointing at a run's
+`.sNp`, is idempotent, and is exercised by `PlanarRunTests` and `EmCoSimulationTests`. **Nothing in
+`src/Ui` calls it** — no button, no menu item, no command. The shipped co-simulation route is
+therefore manual: run the EM setup, place an `SnP`, point its `File` at the written path.
+`reference/em-setup.html` documents that as it ships and says the automatic route is not wired.
+
+### A `.cem` figure records the machine that generated it
+
+`em-setup-loaded.svg` contains the Solver-options line *"This machine reports 10 core(s)"*, because
+the Cores row prints the host's own core count. It is honest and it is a committed artefact, so a
+regeneration on a different machine produces a real diff in that one figure. Nothing is wrong; it is
+the one figure in the set that is not machine-independent.
+
+### Headless capture: what renders and what does not
+
+- **A `ContextMenu` opens and composites** (`DocFixtures.OpenContextMenu` — the schematic
+  context-menu figure proves it). **A `MenuItem`'s submenu does not**: neither `MenuItem.Open()` nor
+  setting `IsSubMenuOpen` produced a visual root that drew anything, so a figure of the harmonicaRF
+  menu bar is not obtainable this way and the menus are documented as tables instead.
+- The in-window `Menu` is `IsVisible="{OnPlatform True, macOS=False}"` and the docs are generated on
+  macOS, so even the bar itself is invisible unless a fixture forces it.
+- **The Layout Editor's wire buttons are gated on a reachable workspace shell**
+  (`UpdateWirePanelButtonStates`), which a headless fixture has not — so Draw Wire / Rotate Wire /
+  Transform / the two wBond panel buttons are **absent from `toolbar-layout`** and from its
+  manifest. The wBond chapter uses `{{toolbar: wbond}}` (the standalone editor, which shows them) as
+  its button reference and says so.
+- **Blocking on an async view-model call deadlocks the run.**
+  `DocDataDisplayFixtures.Await` pumps the dispatcher for exactly this reason and its comment says
+  so; using `GetAwaiter().GetResult()` instead hung the generator with no output for six minutes
+  before it was killed. It is now `internal` so other fixture files use the same helper.
+
+### The Wire Profile panel's default plane is YZ, and wires usually fly along x
+
+`WBondViewState.DefaultProfileAxisDegrees` is 90°, so a profile view opened on an array bonded along
+x draws it **edge-on** — ten vertical sticks where the arch should be. It is not a bug (the plane is
+a picker, and 37° is a legal answer), but it is the first thing to change when the profile view looks
+empty. The doc fixture commits `XZ` through `CommitProfileAxisText`, the same path the combo uses.
+
+### Two brief statements that the shipped code has moved past
+
+Both are recorded because the brief asked for them and the pages deliberately say something else:
+
+- **"the profile editor edits every wire carrying that profile"** — there is no loop *profile* any
+  more. `LoopShape` replaced it on 2026-08-18 and a wire's own points are the only truth about its
+  shape. The shipped unit of bulk editing is the **array**: the profile view's alt-drag scales every
+  wire in the group. `reference/wbond.html` documents the array and carries a note for anyone who
+  read the older design text.
+- **"`alt` drag adjusts loop height AND span"** — true in the **profile** view (both axes,
+  independently, every frame, applied to the whole array). In the **layout** view alt-drag scales
+  **span only**, and correctly so: that view has no z axis to have meant anything by, and the drag is
+  projected onto the wire's own chord. Both are stated on the page.
+
+### A placed `Match` does not carry `MatchDesign`'s C# defaults
+
+`MatchDesign`'s field initialisers are the interstage case (200 Ω ‖ 0.125 pF to 1.25 Ω + 10 pF,
+3.3-5.0 GHz); `MatchEmbedding.DefaultDesign()` — what placement actually seeds — is 50 Ω to 10 Ω over
+1.8-2.2 GHz **with a solution already applied**. Reading the record's defaults tells you nothing about
+what a user sees. The docs show both: the placed default, and the interstage case built explicitly.
+
+### An all-inductor Norton solution is DC-singular, and the solutions list still offers it
+
+`MatchEmbedding.DefaultDesign`'s own comment records why the shipped default prefers a *capacitive*
+transform: three ideal inductors in a π are, at DC, a loop of ideal shorts, so the network sweeps
+S-parameters perfectly and refuses to DC-solve. That is a property of the solution, not of the
+default — the list offers every transform — so `reference/match.html` carries it as a callout: if the
+design has to DC-solve, take the capacitive solution.
+
 ## Match round 3 — the Designer's schematic, its grid, and two crashes (2026-08-20)
 
 The owner's third pass. Most of it is presentation and is recorded in the code itself; four findings
@@ -5729,3 +5890,157 @@ as an opaque blob.
   nobody can hand-edit or delete the result unnoticed, and that the catalog and the anchor contract
   stay in step with the code. `tools/DocGen/check-docs-current.sh` is the regenerate-and-diff check;
   **this repository has no CI workflow to add it to**, which is why it is a script.
+
+---
+
+## User-Docs Factory — the first read-it-in-a-browser pass (2026-08-20)
+
+The owner opened the generated site in a real browser and reported fourteen defects. **Four of them
+were one bug, two more were one bug, and one was a defect in the application rather than in the
+docs.** Recorded here because every one of them failed *silently* — a wrong picture, never an error.
+
+### 1. Inlined figures share the page's id namespace (four reports, one cause)
+
+Figures are inlined as `<svg>` rather than referenced with `<img>` (so the page's `@font-face` rules
+reach them). Inline SVG shares the HTML document's single id namespace, and **two of our own passes
+number ids from zero in every file**: `SvgPostPass.DedupePaths` writes `d0, d1, …`, and Skia numbers
+embedded rasters `img_0, img_1`. A second figure's `<use href="#d0">` therefore resolved to the
+*first* figure's geometry.
+
+Four reports, all of them this:
+
+| Symptom | What was actually happening |
+|---|---|
+| "the Data Display toolbar is glitched out, can't see the button numbers" | its `d0` resolved to the plot figure above it |
+| "the six snaps SVG is glitched, though the SVG looks fine by itself" | the standalone/in-page difference IS the tell |
+| "the Wire Profile panel renders crazy — rulers, no wires" | same |
+| "harmonicarf.html uses the LIGHT image in dark mode" | the dark figure's `<use href="#img_0">` found the light figure's raster, because the light span is first in the document |
+
+**Fix:** `SvgPostPass.ScopeIds` prefixes every id with the emitted file's stem and rewrites both
+reference spellings (`#id` and `url(#id)`). Gated by
+`DocsFactoryTests.NoGeneratedPageHasTwoElementsWithTheSameId`.
+
+### 2. Two decimal places is a two-thirds error on a matrix scale
+
+Every ComboBox in the docs drew **half a chevron** — the left stroke, no right stroke. The Fluent
+chevron is a 2010-unit-wide geometry scaled into a 12 px icon box, `matrix(0.00597 …)`, and
+`SvgPostPass.RoundAll` rounded that to **`0.01`** — 67 % too big, inside a clip that was still 12 px
+wide. Skia's own clip did the rest.
+
+**Fix:** below a magnitude of one, round to four significant figures instead of two decimal places.
+The size win is unchanged (small numbers are short either way). Gated by
+`SmallMagnitudesKeepTheirPrecision`.
+
+### 3. No `viewBox` means an inline SVG does not scale — it clips
+
+Skia writes `width`/`height` and nothing else. `figure.figure svg { max-width: 100% }` then narrows
+the *element box* and the drawing is cut off at full size rather than resized ("the schematic svg is
+not sized to the frame"). The symbol figures never showed it only because they are smaller than the
+column they sit in. `SvgPostPass.AddViewBox` adds one; `EveryEmittedFigureCarriesAViewBox` gates it.
+
+### 4. Inter drops its own hyphen — through the *contextual alternates* feature
+
+Not reported, found while investigating: **`circuitRF — Data Display` was rendering as
+`circuitRF Data Display`**, `C-V Editor - C1` as `CV Editor C1`, and the C-V editor's whole negative
+column as unsigned numbers (`-4` → `4`, `6.2E-13` → `6.2E13`). Probe string
+`"PROBE A-B c-d E - F g - h"` came out `"PROBE AB c-d E F g - h"`: **the hyphens next to a CAPITAL
+were gone, the ones next to a lower-case letter were intact.**
+
+Inter's `calt` feature substitutes a case-height hyphen (and case-height parentheses) beside
+uppercase. Those alternate glyphs have **no cmap entry**, so Skia's SVG device cannot map them back
+to a character and omits them — leaving the advance width behind, which is why it read as a gap
+rather than as missing text. `UiArtworkGenerator.SuppressContextualAlternates` turns `calt` off for
+the capture only, via the inherited `TextElement.FontFeatures`.
+
+### 5. A "transparent" window background is an opaque slab
+
+`SKSvgCanvas` writes a zero-alpha fill as an opaque one. Framed figures hid it under their own body
+colour; the bare-panel figures showed a **near-black rectangle** behind the panel in dark mode.
+Captures are now backed with the docs stylesheet's own `--surface` colour
+(`WindowFrame.DocsSurface`), so the unavoidable slab is the colour the figure's frame already is.
+
+### 6. `SchematicCanvas.ZoomToFit` fitted to a hit-test envelope, not to the drawing
+
+**This one is an application defect, not a docs one.** A component's `Bb` is a FIXED square around
+its origin (`EditableComponent.GetBoundingBox` — `X ± HalfBound`, the same size for a resistor and
+for a twelve-port SnP), and `ZoomToFit` fitted the model box that aggregates them. Any symbol bigger
+than that square over-zoomed: a four-array wBond ran a fifth of its own height off the top and bottom
+of the view **at every window size**, in View ▸ Zoom to Fit as much as in the capture.
+`SchematicCanvas.DrawnExtent` now unions each component's `FullBb` (the value the renderer and the
+spatial index already cull against), the wires and the bitmaps.
+
+### 7. Smaller things, each with a reason
+
+- **The SDD and ZPort glyphs had no pin leads.** The body is 180 wide and the pins sit at ±200, so a
+  wire attached to one ended 110 units short of the box with nothing between. Every other
+  box-with-terminals glyph (VerilogA, SnP) already drew them. `BuiltInSymbols` now does too — which
+  is why `PrimitiveCount_MatchesExpected` went from 5 to 9 for both kinds.
+- **A figure cannot be Zoom-to-Fitted at construction time.** Fitting is a viewport operation and a
+  control that has not been arranged has no viewport, so the request was silently ignored.
+  `FigureScene.AfterLayout` runs it once the window has been measured and arranged. The fixtures call
+  the canvas directly rather than the document's `RequestZoomToFit` event — through the event it did
+  nothing and said nothing about it.
+- **The indexed toolbar figure's separators ran past the buttons** into the row of callout numbers,
+  because a stretched one-pixel `Border` grows with the taller indexed frame.
+  `ToolbarCatalog.WithCallouts` now pins the toolbar to the plain figure's own height.
+- **Match's and wBond's `Design` is base64 of the whole design**, not a parameter. The parameter panel
+  already refuses to show it; the docs table listing it invited exactly the hand edit the interface
+  declines to offer. `DocTables.IsOpaquePayload` drops it.
+- **The toolbar table's `Button` and `Icon` columns said the same thing twice** — an `x:Name` and an
+  icon's enum name — and neither answered "which one of these is it on the toolbar". Each button is
+  now captured on its own (`DocGenRun.ToolbarButtons`) and drawn in the cell, at ~2.6 rem; the Icon
+  column is gone. Same reasoning put the real snap glyphs in `layout-editor.md`'s feature table
+  (`InlineGlyphArtwork`, drawing through `LayoutRenderer.DrawSnapGlyph` so there is one
+  implementation), in the surrounding text's colour rather than a layer colour — there is no layer in
+  a table cell.
+- **wbond.md was wrong about its own panel:** it claimed the Array Inductance panel reports `R/ωL`.
+  It does not, and there is no such quantity in the array reduction. The page now says so, and says
+  where to read R instead. It also now credits Grover (2nd ed., Dover) for every closed form in the
+  section, and states R(f) and its two asymptotes explicitly.
+
+### What the browser could not have told us, and the tooling that did
+
+Reproducing an id collision needs *two* figures in one document — a standalone file renders
+perfectly. The throwaway harness that found all of this inlines several generated SVGs into one HTML
+page and rasterises it through `qlmanage` (macOS QuickLook, WebKit). **A per-file check would have
+passed on every one of these bugs.** That is why the gate is a page-level duplicate-id test rather
+than a per-file one.
+
+## The schematic editor gets its own chapter (2026-08-20)
+
+`docs/user/src/reference/schematic-editor.html` is new: the canvas, the Library Palette, the two
+placement gestures, the context menu, the toolbar button by button, and — the part the page exists
+for — **that a simulation is called an *Analysis*, is configured through Simulate ▸ Setup
+Analyses…, and only then runs**. Three things about it are worth not rediscovering.
+
+**The schematic figure and the schematic toolbar table have MOVED OUT of `grid.md`.** That page had
+carried `{{ui: schematic-editor}}` and `{{toolbar: schematic}}` under a `#editor` heading since
+before there was an editor chapter. Leaving them there would have put ~180 KB of the same inlined
+SVG on two pages and given the schematic toolbar two owners — exactly the drift this pipeline
+exists to remove. `grid.md#editor` is now three lines and a link; the anchor is kept because
+removing it is free to do later and not free to undo. Nothing deep-links to it (`DocAnchors` does
+not name it, and no other page did).
+
+**Two of the three new figures are captured at their dialogs' OWN declared sizes, less the synthetic
+title bar** — `SetupAnalysesDialog` is 520×420 so the row states 520×386, and `AnalysisEditorDialog`
+is 520 wide and sizes to content up to `MaxHeight="650"` so the row states 520×616. The
+consequence is visible and is correct: at 616 the HB body genuinely overflows and the sweep's
+Start/Stop/Step row is cut off behind a scrollbar, **because that is what the real dialog does**.
+The figure caption and the page both say so, rather than the capture being quietly grown to a size
+no reader's build ever opens.
+
+**`library-palette` is captured at 280 px wide for a reason that is not aesthetic.** The tile grid
+is a `WrapPanel` of fixed-width tiles, so its column count is a pure function of panel width, and
+the default dock layout gives the left column 20 % of the window (~280 px). Captured wider, the
+figure would show a number of columns per row that no default install has.
+
+Two fixtures were added (`DocSchematicFixtures`), both on the shipped
+`FET_Harmonic_Balance_Sweep` template with a `DcAnalysis` inserted ahead of its HB — a real
+two-analysis test bench rather than a hand-built view-model. Both lift the **real dialog's own
+`Content`** out of the `Window` and re-attach its `DataContext` (a `Window` cannot be hosted inside
+the capture window, and detaching takes the inherited DataContext with it), so the figure is the
+dialog a reader opens and not a reconstruction of it.
+
+`_nav.txt` also reordered: **Simulate now reads before Layout & EM**, since a user runs a simulation
+long before they lay anything out. `reference/index.md`'s explicit `{{toc: section:…}}` list is a
+second copy of that order and was moved to match — it does not follow `_nav.txt` automatically.

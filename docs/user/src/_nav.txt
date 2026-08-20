@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+# The reading order of the circuitRF User Documentation.
+#
+# ONE order, top to bottom. It drives three things at once and they cannot
+# disagree with each other, because all three are derived from this file:
+#
+#   * the complete table of contents on index.html   ({{toc: site}})
+#   * the Previous / Next chain at the foot of every page
+#   * the orphan check — a generated page that is not listed here fails the
+#     run by name, and a page listed here that nothing produces does too
+#
+# index.html is the head of the chain implicitly. Do not list it: it IS the
+# table of contents.
+#
+# Format:   <slug relative to docs/user>  |  one-line blurb for the contents
+# Sections: == Section title
+# ---------------------------------------------------------------------------
+
+== Getting started
+quick-start/index.html      | Run a simulation and read a plot, for engineers who already use circuit simulators.
+new-user-guide/index.html   | Libraries, cells, test benches and analyses, explained from the ground up.
+
+== Core concepts
+reference/index.html            | The Reference Guide contents, and the in-app Help anchor scheme.
+reference/workspace.html        | The workspace window: documents, tool panels, docking, and the folder behind it all.
+reference/units.html            | DBU, display units, the snap grid, and how to type a value with an SI prefix.
+reference/expressions.html      | Variables, cell parameters, functions and conditionals — one expression language.
+reference/grid.html             | The schematic grid, wires, and how connectivity is decided.
+reference/pins-ports-terms.html | Pin, Port and Term: three different things with three different jobs.
+reference/file-formats.html     | Every circuitRF document type and what is inside it.
+
+== Design
+reference/schematic-editor.html    | Drawing a circuit: the palette, placing and wiring, and setting up the analysis that runs it.
+reference/components.html          | Every component in the standard library: symbol, purpose and parameters.
+reference/dynamic-symbols.html     | Components whose symbol changes with their parameters.
+reference/symbol-editor.html       | Drawing and editing a symbol.
+reference/sdd.html                 | The Symbolically-Defined Device: writing a nonlinear model as equations.
+reference/nonlinear-capacitor.html | C(V) as a Taylor series, and the C–V Editor that fits one.
+reference/match.html               | Direct synthesis of a bandpass matching network that absorbs both terminations.
+
+== Simulate
+reference/simulations.html  | DC, S-parameters, harmonic balance, parametric sweeps, loadpull and pursuit.
+reference/measurements.html | Post-processing a run into named quantities.
+reference/netlist.html      | The .cnl elaborated-netlist format.
+reference/data-display.html | Plots, tables, trace cards and markers.
+reference/plot-types.html   | Rectangular, Smith, Polar and Table — and which data each will accept.
+reference/npy-export.html   | Getting results out into Python, MATLAB or a Touchstone file.
+
+== Layout & EM
+reference/layout-editor.html   | The layout view: technology, drawing, snapping, and the schematic it belongs to.
+reference/pcells.html          | Parameterised cells — placing one, driving it, and its parameter handles.
+reference/pdk-integration.html | Importing a kit and simulating the parts it supplies.
+reference/pdk-authoring.html   | Authoring a kit: the OpenPDK layout, Python PCells, models and artwork.
+reference/mom-engine.html      | The planar method-of-moments solver: what it does, what it will not do, and how.
+reference/em-setup.html        | The EM Setup panel, control by control, and where the results land.
+
+== Tools
+reference/harmonicarf.html | Interactive harmonic load-pull on one device, at the speed of a mouse drag.
+reference/wbond.html       | Bondwire arrays: geometry, the 3D kernel, and S-parameters out.

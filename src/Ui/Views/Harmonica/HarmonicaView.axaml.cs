@@ -905,7 +905,11 @@ public partial class HarmonicaView : UserControl
 
     /// <summary>§7.6's <i>Help</i>. The bundled User Documentation, opened the same way every other
     /// Help button in the application opens it.</summary>
-    private void ShowHelp() => DocLauncher.Open("index.html");
+    /// <summary>Help ▸ harmonicaRF Documentation. Opens the tool's OWN chapter, not the index — the
+    /// chapter exists now (brief-user-docs-content §8) and its destination is listed in
+    /// <see cref="Diagnostics.DocAnchors.WholePages"/>, so the docs build fails if it stops being
+    /// emitted.</summary>
+    private void ShowHelp() => DocLauncher.Open("reference/harmonicarf.html");
 
     /// <summary>
     /// §5 (R1C) — tab-separated, one row per readout, grouped under a column heading so the shape a

@@ -6,6 +6,12 @@
 <title>circuitRF — Pins, Ports &amp; Terms</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/pins-ports-terms.md
+-->
 </head>
 <body>
 
@@ -16,21 +22,19 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Pins, Ports &amp; Terms</p>
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Pins, Ports &amp;amp; Terms</p>
 
   <h1>Pins, Ports &amp; Terms</h1>
-  <p class="lede">Three concepts that sound interchangeable but aren't. Getting them right is the difference
-  between a circuit that simulates what you intended and one that doesn't.</p>
+  <p class="lede">Three concepts that sound interchangeable but aren&#39;t. Getting them right is the difference between a circuit that simulates what you intended and one that doesn&#39;t.</p>
 
-  <h2 id="summary">The one-paragraph version</h2>
-  <p>A <span class="term">Port</span> is the abstract idea of an external connection. circuitRF realizes a
-  port two different ways depending on context: inside a reusable <strong>cell</strong>, a port is a
-  <span class="term">Pin</span> (a connectivity-only interface terminal); on an S-parameter <strong>test
-  bench</strong>, a port is a <span class="term">Term</span> (a numbered, reference-impedance termination the
-  simulator excites and measures). So: <em>Pin = a cell's connection point; Term = an S-parameter measurement
-  port; Port = the general concept either one realizes.</em></p>
-
-  <table>
+<h2 id="summary">The one-paragraph version</h2>
+<p>A <strong>Port</strong> is the abstract idea of an external connection. circuitRF realizes a port two different
+ways depending on context: inside a reusable <strong>cell</strong>, a port is a <strong>Pin</strong> (a connectivity-only
+interface terminal); on an S-parameter <strong>test bench</strong>, a port is a <strong>Term</strong> (a numbered,
+reference-impedance termination the simulator excites and measures). So: <em>Pin = a cell's
+connection point; Term = an S-parameter measurement port; Port = the general concept either one
+realizes.</em></p>
+<table>
     <thead><tr><th></th><th>Pin</th><th>Term</th></tr></thead>
     <tbody>
       <tr><td><strong>Role</strong></td><td>Cell interface terminal</td><td>S-parameter port termination</td></tr>
@@ -40,66 +44,67 @@
       <tr><td><strong>Use it to…</strong></td><td>Expose a reusable cell's connections to its parent</td><td>Define where S-parameters are measured, and the port impedance</td></tr>
     </tbody>
   </table>
-
-  <h2 id="pin">Pin — the cell interface terminal</h2>
-  <figure class="symbol"><span class="frame">
+<h2 id="pin">Pin — the cell interface terminal</h2>
+<figure class="symbol"><span class="frame">
     <img class="sym-light" src="../assets/symbols/pin.svg" alt="Pin symbol">
     <img class="sym-dark"  src="../assets/symbols/pin-dark.svg" alt="">
   </span><figcaption>Pin</figcaption></figure>
-  <p>A Pin marks a point where a <strong>cell</strong> connects to the world outside it. When you build a
-  reusable cell (say, an amplifier), you place Pins where its gate-in, drain-out, and bias connections should
-  be; those Pins become the cell's <strong>symbol pins</strong>, and the parent schematic wires to them. A Pin
-  carries no electrical model — it is pure connectivity. Its <code>Num</code> orders the cell's ports;
-  <code>Name</code> labels them; an optional <code>Plus</code>/<code>Minus</code> polarity pairs two Pins into
-  one differential port.</p>
-  <div class="callout note">
+<p>A Pin marks a point where a <strong>cell</strong> connects to the world outside it. When you build a reusable
+cell (say, an amplifier), you place Pins where its gate-in, drain-out, and bias connections should
+be; those Pins become the cell's <strong>symbol pins</strong>, and the parent schematic wires to them. A Pin
+carries no electrical model — it is pure connectivity. Its <code>Num</code> orders the cell's ports; <code>Name</code>
+labels them; an optional <code>Plus</code>/<code>Minus</code> polarity pairs two Pins into one differential port.</p>
+<div class="callout note">
     <span class="label">Why "no electrical model" matters</span>
     <p>A Pin does not source, load, or terminate anything — it just says "this net is exposed." If you want a
     50 Ω measurement port, a Pin alone won't give you one; that's a Term's job.</p>
   </div>
-
-  <h2 id="term">Term — the S-parameter port</h2>
-  <figure class="symbol"><span class="frame">
+<h2 id="term">Term — the S-parameter port</h2>
+<figure class="symbol"><span class="frame">
     <img class="sym-light" src="../assets/symbols/term.svg" alt="Term symbol">
     <img class="sym-dark"  src="../assets/symbols/term-dark.svg" alt="">
   </span><figcaption>Term</figcaption></figure>
-  <p>A Term is an active S-parameter port: it presents a reference impedance (<code>Z</code>, default 50 Ω)
-  and is the point at which an S-parameter analysis injects a wave and measures the scattered result. Place
-  two Terms on a network and run S-parameters to get the 2-port S-matrix; their <code>Num</code> values
-  (auto-assigned 1, 2, …) become the port indices you read as <code>S(2,1)</code>, etc. The
-  <a href="components.html#p1tone">P1Tone</a> source can also act as a numbered port for power-driven work.</p>
-
-  <h2 id="ground">A note on Ground</h2>
-  <figure class="symbol"><span class="frame">
+<p>A Term is an active S-parameter port: it presents a reference impedance (<code>Z</code>, default 50 Ω) and is
+the point at which an S-parameter analysis injects a wave and measures the scattered result. Place
+two Terms on a network and run S-parameters to get the 2-port S-matrix; their <code>Num</code> values
+(auto-assigned 1, 2, …) become the port indices you read as <code>S(2,1)</code>, etc. The
+<a href="components.html#p1tone">P1Tone</a> source can also act as a numbered port for power-driven work.</p>
+<h2 id="ground">A note on Ground</h2>
+<figure class="symbol"><span class="frame">
     <img class="sym-light" src="../assets/symbols/ground.svg" alt="Ground symbol">
     <img class="sym-dark"  src="../assets/symbols/ground-dark.svg" alt="">
   </span><figcaption>Ground</figcaption></figure>
-  <p>Ground (net <code>0</code>) is the global reference — not a port at all. A Term's impedance is referenced
-  to it; a Pin may connect to it like any net. Every port voltage is ultimately measured against ground unless
-  a component declares its own floating reference (see the SnP floating-reference option in
-  <a href="dynamic-symbols.html#snp">Dynamic symbols</a>).</p>
-
-  <h2 id="choosing">Choosing the right one</h2>
-  <ul>
-    <li>Building a reusable cell and need to expose its connections? → <strong>Pin</strong>.</li>
-    <li>Setting up an S-parameter measurement on a test bench? → <strong>Term</strong> (one per port).</li>
-    <li>Driving a power amplifier and also want it to be a numbered port? → <strong>P1Tone</strong> with a
-      <code>Num</code>.</li>
-    <li>Just need a reference node? → <strong>Ground</strong>.</li>
-  </ul>
-
-  <hr>
-  <p class="small">See also: <a href="components.html#pin">Components › Pin</a> /
+<p>Ground (net <code>0</code>) is the global reference — not a port at all. A Term's impedance is referenced to
+it; a Pin may connect to it like any net. Every port voltage is ultimately measured against ground
+unless a component declares its own floating reference (see the SnP floating-reference option in
+<a href="dynamic-symbols.html#snp">Dynamic symbols</a>).</p>
+<h2 id="choosing">Choosing the right one</h2>
+<ul>
+<li><p>Building a reusable cell and need to expose its connections? → <strong>Pin</strong>.</p>
+</li>
+<li><p>Setting up an S-parameter measurement on a test bench? → <strong>Term</strong> (one per port).</p>
+</li>
+<li><p>Driving a power amplifier and also want it to be a numbered port? → <strong>P1Tone</strong> with a <code>Num</code>.</p>
+</li>
+<li><p>Just need a reference node? → <strong>Ground</strong>.</p>
+</li>
+</ul>
+<hr />
+<p class="small">See also: <a href="components.html#pin">Components › Pin</a> /
   <a href="components.html#term">Term</a> · <a href="dynamic-symbols.html">Dynamic symbols</a> ·
   <a href="../new-user-guide/index.html#ppt">New User's Guide</a> for a gentler take.</p>
 
+<nav class="page-nav">
+  <a class="prev" href="grid.html"><span class="dir">Previous</span><span class="name">Grid &amp; Connectivity</span></a>
+  <a class="next" href="file-formats.html"><span class="dir">Next</span><span class="name">File Formats</span></a>
+</nav>
 </main>
 
 <footer class="doc-footer">
   <img src="../assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <a href="index.html">Reference home</a>
+  <a href="../index.html">Documentation home</a>
 </footer>
 
 </body>

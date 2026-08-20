@@ -3,9 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>circuitRF — Simulations Reference</title>
+<title>circuitRF — Simulations</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/simulations.md
+-->
 </head>
 <body>
 
@@ -19,11 +25,9 @@
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Simulations</p>
 
   <h1>Simulations</h1>
-  <p class="lede">Every analysis circuitRF runs, what it computes, a short overview of the method, and the
-  full set of settings. Algorithm details are deferred to the design notes / white papers; this chapter is
-  the operational reference.</p>
+  <p class="lede">Every analysis circuitRF runs, what it computes, a short overview of the method, and the full set of settings. Algorithm details are deferred to the design notes / white papers; this chapter is the operational reference.</p>
 
-  <nav class="toc">
+<nav class="toc">
     <h2>Analyses</h2>
     <ol>
       <li><a href="#dc">DC (operating point)</a></li>
@@ -33,23 +37,25 @@
       <li><a href="#loadpull">Loadpull / Sourcepull</a></li>
       <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
       <li><a href="#two-tone">Multi-Tone Harmonic Balance</a></li>
+      <li><a href="#cli">Running an analysis from the command line</a></li>
     </ol>
   </nav>
-
-  <div class="callout note">
-    <span class="label">How results are stored</span>
-    <p>Every analysis returns a <strong>DataSet</strong> — a named bundle of labeled, unit-bearing arrays
-    (<strong>DataCube</strong>s), written to <code>results/&lt;name&gt;/run.npy</code>. Each cube is a single
-    kind: real or complex. This is what the Data Display plots and what <code>.npy</code>/<code>.mat</code>
-    export produces.</p>
-  </div>
-
-  <h2 id="dc">DC (operating point)</h2>
-  <p><strong>Computes:</strong> the steady-state node voltages and branch currents with no signal applied —
-  the bias point. For nonlinear circuits this is the prerequisite to harmonic balance.</p>
-  <p><strong>Method:</strong> modified nodal analysis (MNA); nonlinear devices solved by Newton–Raphson with
-  <em>gmin</em> and source stepping for convergence robustness.</p>
-  <table class="param-table">
+<div class="callout note">
+<span class="label">How results are stored</span>
+<p>Every analysis returns a <strong>DataSet</strong> — a named bundle of labelled, unit-bearing arrays
+(<strong>DataCube</strong>s), each a single kind, real or complex. A whole run's DataSets go into
+<strong>one</strong> file in the workspace's shared <code>results/</code> folder, and
+<strong>you name that file</strong> in the <strong>Results file</strong> field above the analyses list;
+leaving it blank uses the schematic's own name. This is what the
+<a href="data-display.html">Data Display</a> plots and what <code>.npy</code> / <code>.mat</code> export
+produces. Full detail: <a href="npy-export.html#where">Where results live</a>.</p>
+</div>
+<h2 id="dc">DC (operating point)</h2>
+<p><strong>Computes:</strong> the steady-state node voltages and branch currents with no signal applied — the bias
+point. For nonlinear circuits this is the prerequisite to harmonic balance.</p>
+<p><strong>Method:</strong> modified nodal analysis (MNA); nonlinear devices solved by Newton–Raphson with <em>gmin</em>
+and source stepping for convergence robustness.</p>
+<table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td>Tol</td><td>Newton convergence tolerance on the residual.</td></tr>
@@ -57,35 +63,33 @@
       <tr><td>gmin / source stepping</td><td>Continuation aids that ease a hard bias point into convergence.</td></tr>
     </tbody>
   </table>
-  <p class="small">Read currents directly with an <a href="components.html#iprobe">IProbe</a> in series.</p>
-
-  <h2 id="s-parameters">S-Parameters</h2>
-  <p><strong>Computes:</strong> the linear, small-signal multiport network parameters over a frequency sweep —
-  the S-matrix at each frequency, with renormalization to the port reference impedances. Ports are defined by
-  <a href="components.html#term">Term</a> components (or <a href="components.html#p1tone">P1Tone</a> port
-  numbers).</p>
-  <p><strong>Method:</strong> complex MNA solved per frequency point; each port is excited in turn and the
-  scattered waves are extracted and renormalized. Embedded <a href="components.html#snp">Touchstone (SnP)
-  blocks</a> are interpolated onto the sweep.</p>
-  <table class="param-table">
+<p class="small">Read currents directly with an <a href="components.html#iprobe">IProbe</a> in series.</p>
+<h2 id="s-parameters">S-Parameters</h2>
+<p><strong>Computes:</strong> the linear, small-signal multiport network parameters over a frequency sweep — the
+S-matrix at each frequency, with renormalization to the port reference impedances. Ports are
+defined by <a href="components.html#term">Term</a> components (or <a href="components.html#p1tone">P1Tone</a> port
+numbers).</p>
+<p><strong>Method:</strong> complex MNA solved per frequency point; each port is excited in turn and the scattered
+waves are extracted and renormalized. Embedded <a href="components.html#snp">Touchstone (SnP) blocks</a> are
+interpolated onto the sweep.</p>
+<table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td>Frequency sweep</td><td>Start / Stop / Step (or point count); one or more segments. Units accepted (<code>GHz</code>, <code>MHz</code>, …).</td></tr>
       <tr><td>Reference impedance</td><td>Per-port reference (from each Term's <code>Z</code>); the result renormalizes to it.</td></tr>
     </tbody>
   </table>
-  <p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
-
-  <h2 id="harmonic-balance">Harmonic Balance</h2>
-  <p><strong>Computes:</strong> the steady-state response of a nonlinear circuit driven by one or more tones
-  (up to six) — the spectrum (DC + harmonics, and mixing products when there is more than one tone) at every node. From it come Pout, gain,
-  efficiency, PAE, compression, and intermodulation.</p>
-  <p><strong>Method:</strong> the circuit is split into a <em>linear</em> sub-network (solved in the frequency
-  domain) and <em>nonlinear</em> devices (evaluated in the time domain and transformed by FFT). A
-  multidimensional Newton solve drives the harmonic-balance residual — frequency-domain KCL — to zero, using a
-  conversion-matrix Jacobian. Power/source <strong>continuation</strong> ramps the drive to reach convergence
-  deep into compression. <a href="#two-tone">Multi-tone analysis</a> uses a diamond-truncated mixing spectrum.</p>
-  <table class="param-table">
+<p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
+<h2 id="harmonic-balance">Harmonic Balance</h2>
+<p><strong>Computes:</strong> the steady-state response of a nonlinear circuit driven by one or more tones (up to
+six) — the spectrum (DC + harmonics, and mixing products when there is more than one tone) at
+every node. From it come Pout, gain, efficiency, PAE, compression, and intermodulation.</p>
+<p><strong>Method:</strong> the circuit is split into a <em>linear</em> sub-network (solved in the frequency domain) and
+<em>nonlinear</em> devices (evaluated in the time domain and transformed by FFT). A multidimensional
+Newton solve drives the harmonic-balance residual — frequency-domain KCL — to zero, using a
+conversion-matrix Jacobian. Power/source <strong>continuation</strong> ramps the drive to reach convergence
+deep into compression. <a href="#two-tone">Multi-tone analysis</a> uses a diamond-truncated mixing spectrum.</p>
+<table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th><th>Typical</th></tr></thead>
     <tbody>
       <tr><td>Tone</td><td>The fundamental frequency (a value or a variable such as <code>RFfreq</code>). Two or more tones for intermodulation.</td><td>2 GHz</td></tr>
@@ -100,12 +104,11 @@
     </tbody>
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
-
-  <h2 id="parametric-sweep">Parametric Sweep</h2>
-  <p><strong>Computes:</strong> nothing new on its own — it <em>wraps</em> another analysis and re-runs it
-  across one or more variables (drive power, a bias voltage, frequency, any user variable). Nest sweeps to
-  cover several variables; the innermost analysis is what each point solves.</p>
-  <table class="param-table">
+<h2 id="parametric-sweep">Parametric Sweep</h2>
+<p><strong>Computes:</strong> nothing new on its own — it <em>wraps</em> another analysis and re-runs it across one or
+more variables (drive power, a bias voltage, frequency, any user variable). Nest sweeps to cover
+several variables; the innermost analysis is what each point solves.</p>
+<table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td>Var</td><td>The variable to sweep (e.g. <code>Pin</code>, <code>RFfreq</code>).</td></tr>
@@ -115,16 +118,15 @@
     </tbody>
     <caption>A whole sweep tree writes a single results file named after its innermost analysis.</caption>
   </table>
-
-  <h2 id="loadpull">Loadpull / Sourcepull</h2>
-  <p><strong>Computes:</strong> figures of merit (Pout, gain, efficiency, PAE) as the load (or source)
-  reflection coefficient is swept over a grid on the Smith chart — the classic loadpull experiment — ready to
-  draw as <strong>contours</strong>. Harmonic terminations can be swept too (harmonic loadpull).</p>
-  <p><strong>Method:</strong> a programmable <a href="components.html#tuner">Tuner</a> presents each grid
-  termination; a harmonic-balance solve runs per point (with previous-point continuation for convergence); the
-  FOMs are collected into the DataSet over the Γ-grid. The Data Display fits a surface and extracts contour
-  lines; measured loadpull files (<code>.spl</code>/<code>.lpcwave</code>) plot identically.</p>
-  <table class="param-table">
+<h2 id="loadpull">Loadpull / Sourcepull</h2>
+<p><strong>Computes:</strong> figures of merit (Pout, gain, efficiency, PAE) as the load (or source) reflection
+coefficient is swept over a grid on the Smith chart — the classic loadpull experiment — ready to
+draw as <strong>contours</strong>. Harmonic terminations can be swept too (harmonic loadpull).</p>
+<p><strong>Method:</strong> a programmable <a href="components.html#tuner">Tuner</a> presents each grid termination; a
+harmonic-balance solve runs per point (with previous-point continuation for convergence); the FOMs
+are collected into the DataSet over the Γ-grid. The Data Display fits a surface and extracts
+contour lines; measured loadpull files (<code>.spl</code>/<code>.lpcwave</code>) plot identically.</p>
+<table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td>Tuned port / role</td><td>Load or source side, and which DUT port the tuner terminates.</td></tr>
@@ -133,22 +135,19 @@
       <tr><td>Power / bias</td><td>The drive level and bias at which the pull is performed (often a power sweep too).</td></tr>
     </tbody>
   </table>
-
-  <h3 id="gam-file">The termination grid file (<code>.gam</code>)</h3>
-  <p>The grid of terminations a loadpull visits lives in a small, human-readable text file with a
-  <code>.gam</code> extension — one termination per line. It is kept <em>out</em> of the netlist on purpose:
-  a grid is <strong>data</strong> (often hundreds of points), and a real tuner system works the same way,
-  reading a "pattern file" of impedance states to visit. A loadpull analysis <strong>points its grid at a
-  <code>.gam</code> file</strong>; a <a href="#loadpull-pursuit">Loadpull Pursuit</a> can <strong>write
-  one</strong> for you (its recommended terminations).</p>
-
-  <p>Each point is either an <strong>impedance</strong> (Ω) or a <strong>reflection coefficient Γ</strong>, in
-  one of three column layouts. An optional header line (starting <code>#</code>) declares the form, the
-  reference impedance, and the layout; if you omit it, circuitRF assumes <strong>impedance</strong> and infers
-  the layout from the first data line. The parser is deliberately forgiving — blank lines and <code>;</code> or
-  <code>#</code> comment lines are skipped.</p>
-
-  <table class="param-table">
+<h3 id="gam-file">The termination grid file (<code>.gam</code>)</h3>
+<p>The grid of terminations a loadpull visits lives in a small, human-readable text file with a
+<code>.gam</code> extension — one termination per line. It is kept <em>out</em> of the netlist on purpose: a grid is
+<strong>data</strong> (often hundreds of points), and a real tuner system works the same way, reading a
+&quot;pattern file&quot; of impedance states to visit. A loadpull analysis <strong>points its grid at a <code>.gam</code>
+file</strong>; a <a href="#loadpull-pursuit">Loadpull Pursuit</a> can <strong>write one</strong> for you (its recommended
+terminations).</p>
+<p>Each point is either an <strong>impedance</strong> (Ω) or a <strong>reflection coefficient Γ</strong>, in one of three
+column layouts. An optional header line (starting <code>#</code>) declares the form, the reference impedance,
+and the layout; if you omit it, circuitRF assumes <strong>impedance</strong> and infers the layout from the
+first data line. The parser is deliberately forgiving — blank lines and <code>;</code> or <code>#</code> comment lines
+are skipped.</p>
+<table class="param-table">
     <thead><tr><th>Header token</th><th>Meaning</th><th>Default</th></tr></thead>
     <tbody>
       <tr><td><code>gamma</code> / <code>impedance</code></td><td>Values are reflection coefficients Γ, or impedances in Ω.</td><td><code>impedance</code></td></tr>
@@ -159,9 +158,8 @@
     </tbody>
     <caption>Header tokens are case-insensitive and may appear in any order, e.g. <code># gamma Z0=50 mag_ang</code>.</caption>
   </table>
-
-  <p>A Γ grid in magnitude/angle form (rings on the Smith chart):</p>
-  <pre class="netlist"><code># gamma Z0=50 mag_ang
+<p>A Γ grid in magnitude/angle form (rings on the Smith chart):</p>
+<pre><code class="language-netlist"># gamma Z0=50 mag_ang
 ; concentric rings of load reflection coefficient
 0.00    0
 0.20    0
@@ -170,9 +168,9 @@
 0.40   90
 0.40  180
 0.60    0
-0.80   30</code></pre>
-
-  <div class="callout note">
+0.80   30
+</code></pre>
+<div class="callout note">
     <span class="label">Multi-frequency grids</span>
     <p>One <code>.gam</code> file can hold a <strong>different grid per frequency</strong>, for frequency-swept
     loadpull. Start each block with a bare <code>freq=&lt;value&gt;&lt;unit&gt;</code> line
@@ -188,34 +186,30 @@ freq=2.2GHz
 85+j*5
 70+j*0</code></pre>
   </div>
-
-  <p><strong>Using one.</strong> In the Loadpull editor, set the grid field to your <code>.gam</code> file
-  (paths are resolved relative to the netlist). <strong>Getting one.</strong> A Loadpull Pursuit with an
-  <code>OutputGrid</code> path writes its recommended terminations as a <code>.gam</code> — always in
-  <code>impedance … re+j*imag</code> form, with a generated-by header and a <code># WARNING:</code> line if any
-  near-non-convergent points were dropped. That output reads straight back into a standard loadpull, including
-  the multi-frequency layout for a frequency-swept pursuit.</p>
-
-  <h2 id="loadpull-pursuit">Loadpull Pursuit</h2>
-  <p><strong>Computes:</strong> the load (or source) terminations that optimize a figure of merit — found
-  <em>automatically</em> by a query-minimizing search rather than by gridding the whole Smith chart. It
-  reports two optima at constant compression — <strong>MXP</strong> (maximum output power) and
-  <strong>MXE</strong> (maximum efficiency) — recommends a conjugate-match <strong>source impedance</strong>
-  for each, and can run a focused high-fidelity loadpull around them, all from one analysis.</p>
-
-  <p><strong>Why use it:</strong> it automates the real-world PA loadpull procedure — find the optimum, then
-  loadpull a focused grid around it with a sensible source match — into a single unattended run. Point it at a
-  DUT whose optimal terminations are unknown, run, and come back to a complete loadpull dataset already
-  concentrated at the right terminations. It is repeatable (great for characterizing many devices with one
-  netlist), avoids wasted query points far from the optima, and avoids non-convergent terminations.</p>
-
-  <p><strong>It complements, it doesn't replace, a standard loadpull.</strong> Pursuit finds the useful
-  terminations and the region of interest; a standard loadpull then shows the performance tradeoffs across that
-  region. Pursuit shares all <a href="#loadpull">Loadpull</a> settings <em>except the Γ grid</em> (it generates
-  terminations rather than reading them), plus the keys below.</p>
-
-  <h3>How a pursuit run works</h3>
-  <ol class="steps">
+<p><strong>Using one.</strong> In the Loadpull editor, set the grid field to your <code>.gam</code> file (paths are resolved
+relative to the netlist). <strong>Getting one.</strong> A Loadpull Pursuit with an <code>OutputGrid</code> path writes its
+recommended terminations as a <code>.gam</code> — always in <code>impedance … re+j*imag</code> form, with a generated-by
+header and a <code># WARNING:</code> line if any near-non-convergent points were dropped. That output reads
+straight back into a standard loadpull, including the multi-frequency layout for a frequency-swept
+pursuit.</p>
+<h2 id="loadpull-pursuit">Loadpull Pursuit</h2>
+<p><strong>Computes:</strong> the load (or source) terminations that optimize a figure of merit — found
+<em>automatically</em> by a query-minimizing search rather than by gridding the whole Smith chart. It
+reports two optima at constant compression — <strong>MXP</strong> (maximum output power) and <strong>MXE</strong> (maximum
+efficiency) — recommends a conjugate-match <strong>source impedance</strong> for each, and can run a focused
+high-fidelity loadpull around them, all from one analysis.</p>
+<p><strong>Why use it:</strong> it automates the real-world PA loadpull procedure — find the optimum, then
+loadpull a focused grid around it with a sensible source match — into a single unattended run.
+Point it at a DUT whose optimal terminations are unknown, run, and come back to a complete
+loadpull dataset already concentrated at the right terminations. It is repeatable (great for
+characterizing many devices with one netlist), avoids wasted query points far from the optima, and
+avoids non-convergent terminations.</p>
+<p><strong>It complements, it doesn't replace, a standard loadpull.</strong> Pursuit finds the useful terminations
+and the region of interest; a standard loadpull then shows the performance tradeoffs across that
+region. Pursuit shares all <a href="#loadpull">Loadpull</a> settings <em>except the Γ grid</em> (it generates
+terminations rather than reading them), plus the keys below.</p>
+<h3 id="how-a-pursuit-run-works">How a pursuit run works</h3>
+<ol class="steps">
     <li><strong>Search</strong> — a steepest-ascent search in the VSWR plane finds MXP, then MXE (seeded from
       MXP, so the second search is cheap). Each "query" is one drive-to-compression harmonic-balance run;
       queries are cached so MXE reuses MXP's data.</li>
@@ -224,19 +218,19 @@ freq=2.2GHz
     <li><strong>Loadpull</strong> — optionally runs a standard loadpull over those recommended terminations,
       using a recommended source match, producing the high-fidelity contour data.</li>
   </ol>
-
-  <h3>Search method</h3>
-  <ul>
-    <li><strong>SteepestAscent</strong> (default) — fits the gradient and ascends along a fixed direction,
-      shrinking the step on rejection; a final polynomial refinement pins the optimum. Fast and adequate for
-      the near-1-D real-axis optima typical of PA loadpull.</li>
-    <li><strong>IteratedQuadratic</strong> — a trust-region search that re-fits the local curvature at every
-      step, so it follows a curved 2-D ridge instead of committing to one direction. Reuses the same query
-      cache, so its query count stays comparable.</li>
-  </ul>
-
-  <h3>Pursuit settings</h3>
-  <table class="param-table">
+<h3 id="search-method">Search method</h3>
+<ul>
+<li><p><strong>SteepestAscent</strong> (default) — fits the gradient and ascends along a fixed direction, shrinking
+the step on rejection; a final polynomial refinement pins the optimum. Fast and adequate for the
+near-1-D real-axis optima typical of PA loadpull.</p>
+</li>
+<li><p><strong>IteratedQuadratic</strong> — a trust-region search that re-fits the local curvature at every step, so
+it follows a curved 2-D ridge instead of committing to one direction. Reuses the same query cache,
+so its query count stays comparable.</p>
+</li>
+</ul>
+<h3 id="pursuit-settings">Pursuit settings</h3>
+<table class="param-table">
     <thead><tr><th>Key</th><th>Meaning</th><th>Default</th></tr></thead>
     <tbody>
       <tr><td>EffType</td><td>The MXE (efficiency) criterion: drain efficiency <code>DE</code> or <code>PAE</code>.</td><td>DE</td></tr>
@@ -254,54 +248,53 @@ freq=2.2GHz
     </tbody>
     <caption>The recommended terminations always exist in memory; <code>OutputGrid</code> controls only the file, <code>CreateLoadpullResult</code> controls only the follow-on simulation — the two are orthogonal.</caption>
   </table>
-
-  <div class="callout note">
+<div class="callout note">
     <span class="label">Auto-Zsource — a recommended source match</span>
     <p>After each optimum is found, pursuit backs the drive off by <code>ZsourceOBO</code> dB, computes the DUT
     input impedance Zin there, and reports <strong>Zsource = Zin*</strong> (the conjugate match) — a
     ready-to-use input-match target, per optimum, without a separate sourcepull.</p>
   </div>
-
-  <div class="callout warn">
+<div class="callout warn">
     <span class="label">The DUT must compress</span>
     <p>MXP/MXE are defined <em>at compression</em>. If the DUT does not reach <code>Compression</code> within
     <code>PinMax</code>, the search aborts with a clear message (raise <code>PinMax</code> or check
     bias/load) — it never silently raises your <code>PinMax</code> cap.</p>
   </div>
-
-  <p class="small">Full design + algorithm: <code>docs/design/loadpull_pursuit.md</code> (in the repo).</p>
-
-  <h2 id="two-tone">Multi-Tone Harmonic Balance (2 to 6 tones)</h2>
-  <p><strong>Computes:</strong> the steady-state spectrum of a nonlinear circuit driven by <strong>several
-  carriers at once</strong> — every harmonic <em>and</em> every intermodulation (mixing) product. Two tones is
-  the standard test for <strong>linearity</strong>: third-order intermodulation (IM3), intercept points,
-  spectral regrowth, and the asymmetry between the lower and upper IM products. Three or more tones is the
-  natural setting for <strong>mixers</strong> (RF, LO and their products) and for multi-carrier work.</p>
-  <p>Multi-tone is not a separate analysis — it is <a href="#harmonic-balance">Harmonic Balance</a> with more
-  than one tone. Everything from the single-tone chapter (the linear/nonlinear split, the Newton solve, drive
-  continuation, all the convergence knobs) still applies. This chapter covers only what is different.</p>
-  <p>Up to <strong>six</strong> tones are supported. Everything below is written for two because that is the
-  common case, but it holds at any tone count: read "(k₁,&nbsp;k₂)" as the full list
-  "(k₁,&nbsp;…,&nbsp;k<sub>T</sub>)". The one thing that changes with tone count is how far you can push
-  <strong>Max mix order</strong> — see <a href="#multi-tone-size">How many tones, at what order</a>.</p>
-
-  <h3 id="two-tone-setup">Setting it up</h3>
-  <p>In the Harmonic Balance analysis editor, switch the <strong>Single&nbsp;/&nbsp;Multi-tone</strong> toggle to
-  <strong>Multi-tone</strong>. Three things change:</p>
-  <ul>
-    <li>The single <strong>Tone&nbsp;(f₀)</strong> field is replaced by a <strong>tone list</strong>, starting
-      with <strong>Tone&nbsp;1</strong> and <strong>Tone&nbsp;2</strong>. <strong>+&nbsp;Tone</strong> adds
-      another (up to six); the <strong>×</strong> on a row removes it, down to a minimum of two.</li>
-    <li><strong>Max harmonics</strong> is replaced by <strong>Max mix order</strong> — the truncation that
-      bounds the two-dimensional mixing spectrum (see below).</li>
-    <li>Every tone accepts an expression, so a common pattern is
-      <code>Tone&nbsp;1 = RFfreq − Spacing/2</code>, <code>Tone&nbsp;2 = RFfreq + Spacing/2</code> with
-      <code>RFfreq</code> and <code>Spacing</code> as variables you can sweep.</li>
-    <li>Beside <strong>Max mix order</strong> the editor shows how many mixing products the current tone
-      count and order retain, and warns when that is over the limit — so you can see the cost of an order
-      before you run it.</li>
-  </ul>
-  <div class="callout note">
+<p class="small">Full design + algorithm: <code>docs/design/loadpull_pursuit.md</code> (in the repo).</p>
+<h2 id="two-tone">Multi-Tone Harmonic Balance (2 to 6 tones)</h2>
+<p><strong>Computes:</strong> the steady-state spectrum of a nonlinear circuit driven by <strong>several carriers at
+once</strong> — every harmonic <em>and</em> every intermodulation (mixing) product. Two tones is the standard
+test for <strong>linearity</strong>: third-order intermodulation (IM3), intercept points, spectral regrowth,
+and the asymmetry between the lower and upper IM products. Three or more tones is the natural
+setting for <strong>mixers</strong> (RF, LO and their products) and for multi-carrier work.</p>
+<p>Multi-tone is not a separate analysis — it is <a href="#harmonic-balance">Harmonic Balance</a> with more than
+one tone. Everything from the single-tone chapter (the linear/nonlinear split, the Newton solve,
+drive continuation, all the convergence knobs) still applies. This chapter covers only what is
+different.</p>
+<p>Up to <strong>six</strong> tones are supported. Everything below is written for two because that is the common
+case, but it holds at any tone count: read &quot;(k₁, k₂)&quot; as the full list
+&quot;(k₁, …, k<sub>T</sub>)&quot;. The one thing that changes with tone count is how far you can
+push <strong>Max mix order</strong> — see <a href="#multi-tone-size">How many tones, at what order</a>.</p>
+<h3 id="two-tone-setup">Setting it up</h3>
+<p>In the Harmonic Balance analysis editor, switch the <strong>Single / Multi-tone</strong> toggle to
+<strong>Multi-tone</strong>. Three things change:</p>
+<ul>
+<li><p>The single <strong>Tone (f₀)</strong> field is replaced by a <strong>tone list</strong>, starting with
+<strong>Tone 1</strong> and <strong>Tone 2</strong>. <strong>+ Tone</strong> adds another (up to six); the <strong>×</strong> on a row
+removes it, down to a minimum of two.</p>
+</li>
+<li><p><strong>Max harmonics</strong> is replaced by <strong>Max mix order</strong> — the truncation that bounds the
+two-dimensional mixing spectrum (see below).</p>
+</li>
+<li><p>Every tone accepts an expression, so a common pattern is <code>Tone&amp;nbsp;1 = RFfreq − Spacing/2</code>,
+<code>Tone&amp;nbsp;2 = RFfreq + Spacing/2</code> with <code>RFfreq</code> and <code>Spacing</code> as variables you can sweep.</p>
+</li>
+<li><p>Beside <strong>Max mix order</strong> the editor shows how many mixing products the current tone count and
+order retain, and warns when that is over the limit — so you can see the cost of an order before
+you run it.</p>
+</li>
+</ul>
+<div class="callout note">
     <span class="label">The analysis owns the tones, not the source</span>
     <p>The fundamentals <strong>come from the HB analysis</strong> (the tone list, written as
     <code>NumFreqs=N&nbsp;Tone[1]=…&nbsp;Tone[N]=…</code> in the netlist), not from the source. A
@@ -309,33 +302,28 @@ freq=2.2GHz
     frequencies. Every source tone must land <strong>exactly</strong> on the analysis grid — an off-grid drive
     frequency is rejected at setup with a clear message rather than producing silent garbage.</p>
   </div>
-
-  <h3 id="two-tone-grid">The mixing grid and mixing order</h3>
-  <p>With two fundamentals, a spectral line is no longer indexed by a single harmonic number. Each line is a
-  pair of integers <strong>(k₁,&nbsp;k₂)</strong> sitting at the physical frequency</p>
-  <p style="text-align:center"><code>f = k₁·f₁ + k₂·f₂</code></p>
-  <p>and its <strong>mixing order</strong> is <code>m = |k₁| + |k₂|</code>. The carriers are (1,&nbsp;0) and
-  (0,&nbsp;1) at order 1; a third-order intermod such as 2f₁−f₂ is (2,&nbsp;−1) at order 3. Solving for every
-  possible (k₁,&nbsp;k₂) is infinite, so circuitRF keeps a finite set bounded by <strong>Max mix order</strong>:</p>
-  <p style="text-align:center"><code>retain (k₁, k₂)&nbsp; ⟺ &nbsp;|k₁| + |k₂| ≤ MaxMixOrder</code></p>
-  <p>That inequality is a <strong>diamond</strong> (a rotated square) in the (k₁,&nbsp;k₂) plane — hence
-  "diamond truncation." A diamond rather than a full rectangular box because the high–high corner products
-  (e.g. 5f₁+5f₂) carry no meaningful energy in a real intermod test, while every low-order product that
-  <em>does</em> matter is inside the diamond. <code>MaxMixOrder</code> is the two-tone analog of single-tone
-  <code>MaxHarm</code>: order 5 retains products down to IM5. The number of products grows
-  <em>quadratically</em> with the order (≈&nbsp;2·order² lines), so a two-tone run is much larger than a
-  single-tone run at the same order — order 5 yields dozens of mixing products versus a handful of harmonics.</p>
-
-  <p>With <strong>T</strong> tones the same rule reads
-  <code>retain (k₁,&nbsp;…,&nbsp;k<sub>T</sub>) ⟺ |k₁| + … + |k<sub>T</sub>| ≤ MaxMixOrder</code>, and the
-  diamond becomes a T-dimensional one. There is still a single order knob — no per-tone limits.</p>
-
-  <h3 id="multi-tone-size">How many tones, at what order</h3>
-  <p>The retained product count is what actually costs you, and it grows steeply with tone count — much
-  faster than the quadratic growth two tones would suggest. The default <code>MaxMixOrder&nbsp;=&nbsp;5</code>
-  is sized for two tones; <strong>lower it as you add tones</strong>:</p>
-
-  <table class="param-table">
+<h3 id="two-tone-grid">The mixing grid and mixing order</h3>
+<p>With two fundamentals, a spectral line is no longer indexed by a single harmonic number. Each line
+is a pair of integers <strong>(k₁, k₂)</strong> sitting at the physical frequency</p>
+<p style="text-align:center"><code>f = k₁·f₁ + k₂·f₂</code></p>
+<p>and its <strong>mixing order</strong> is <code>m = |k₁| + |k₂|</code>. The carriers are (1, 0) and (0, 1) at
+order 1; a third-order intermod such as 2f₁−f₂ is (2, −1) at order 3. Solving for every
+possible (k₁, k₂) is infinite, so circuitRF keeps a finite set bounded by <strong>Max mix order</strong>:</p>
+<p style="text-align:center"><code>retain (k₁, k₂)&nbsp; ⟺ &nbsp;|k₁| + |k₂| ≤ MaxMixOrder</code></p>
+<p>That inequality is a <strong>diamond</strong> (a rotated square) in the (k₁, k₂) plane — hence &quot;diamond
+truncation.&quot; A diamond rather than a full rectangular box because the high–high corner products
+(e.g. 5f₁+5f₂) carry no meaningful energy in a real intermod test, while every low-order product
+that <em>does</em> matter is inside the diamond. <code>MaxMixOrder</code> is the two-tone analog of single-tone
+<code>MaxHarm</code>: order 5 retains products down to IM5. The number of products grows <em>quadratically</em> with
+the order (≈ 2·order² lines), so a two-tone run is much larger than a single-tone run at the
+same order — order 5 yields dozens of mixing products versus a handful of harmonics.</p>
+<p>With <strong>T</strong> tones the same rule reads <code>retain (k₁,&amp;nbsp;…,&amp;nbsp;k&lt;sub&gt;T&lt;/sub&gt;) ⟺ |k₁| + … + |k&lt;sub&gt;T&lt;/sub&gt;| ≤ MaxMixOrder</code>, and the diamond becomes a T-dimensional one. There is still a
+single order knob — no per-tone limits.</p>
+<h3 id="multi-tone-size">How many tones, at what order</h3>
+<p>The retained product count is what actually costs you, and it grows steeply with tone count — much
+faster than the quadratic growth two tones would suggest. The default <code>MaxMixOrder&amp;nbsp;=&amp;nbsp;5</code>
+is sized for two tones; <strong>lower it as you add tones</strong>:</p>
+<table class="param-table">
     <caption>Retained mixing products. Configurations over the 600-product limit are refused, with a message
       naming the largest order that fits.</caption>
     <thead><tr><th>Tones</th><th>order 2</th><th>order 3</th><th>order 4</th><th>order 5</th></tr></thead>
@@ -346,19 +334,16 @@ freq=2.2GHz
       <tr><td>6</td><td>43</td><td>189</td><td>645 <em>(refused)</em></td><td>1827 <em>(refused)</em></td></tr>
     </tbody>
   </table>
-
-  <p>Practical starting points: <strong>order 5 at 2–3 tones</strong>, <strong>order 4 at 4 tones</strong>,
-  <strong>order 3 at 5–6 tones</strong>. On a single-FET PA, six tones at order 3 solves in a few seconds.</p>
-
-  <div class="callout note">
+<p>Practical starting points: <strong>order 5 at 2–3 tones</strong>, <strong>order 4 at 4 tones</strong>, <strong>order 3 at 5–6
+tones</strong>. On a single-FET PA, six tones at order 3 solves in a few seconds.</p>
+<div class="callout note">
     <span class="label">Too large is refused before the run starts, not after</span>
     <p>If the tone count and mixing order together ask for more products than the solver will take, circuitRF
     refuses <strong>immediately</strong> — not after a long solve — and the message tells you the largest
     <code>MaxMixOrder</code> that <em>would</em> work at that tone count. The editor shows the same number
     live beside the field, so you normally see it before you press Run.</p>
   </div>
-
-  <div class="callout note">
+<div class="callout note">
     <span class="label">Equally spaced tones put two products at the same frequency</span>
     <p>With evenly spaced carriers — the usual multi-carrier stimulus — different mixing products can land on
     the <em>same</em> physical frequency. At 1.99&nbsp;/&nbsp;2.00&nbsp;/&nbsp;2.01&nbsp;GHz, both
@@ -366,8 +351,7 @@ freq=2.2GHz
     products with their own phasors, and the spectrum plot shows both stems at the same position — they are
     not added together. Use the marker readout, which names the product, to tell them apart.</p>
   </div>
-
-  <table class="param-table">
+<table class="param-table">
     <thead><tr><th>(k₁, k₂)</th><th>Order</th><th>Frequency</th><th>What it is</th><th>At f₁=1.99, f₂=2.01 GHz</th></tr></thead>
     <tbody>
       <tr><td>(0, 0)</td><td>0</td><td>0</td><td>DC / baseband</td><td>0</td></tr>
@@ -384,8 +368,7 @@ freq=2.2GHz
     <caption>The IM "order" is the sum of the integer coefficients: IM3 = |2|+|−1|, IM5 = |3|+|−2|. Choose
     closely-spaced tones (small Δ) so the IM3 and IM5 products fall right beside the carriers.</caption>
   </table>
-
-  <div class="callout note">
+<div class="callout note">
     <span class="label">Reading the spectrum in the Data Display</span>
     <p>A multi-tone result plotted as a spectrum uses a <strong>mixIndex</strong> axis: each stem is a mixing
     product, drawn at its physical frequency, labelled with its <strong>(k₁,&nbsp;k₂)</strong> tag — or
@@ -395,20 +378,20 @@ freq=2.2GHz
     <p>Arrow keys step a marker in <strong>frequency</strong> order, which is what you want with tightly
     spaced IM products. Everything here works the same at any tone count.</p>
   </div>
-
-  <h3 id="two-tone-meas">Measuring intermodulation (IMD2 / IMD3)</h3>
-  <p>A <a href="measurements.html">measurement</a> reads a mixing product out of the result by its
-  <strong>(k₁,&nbsp;k₂) tag</strong> — at three tones the tag simply has three entries, e.g.
-  <code>HB1.V("Vout",&nbsp;"(1,1,-1)")</code> for the triple-beat product f₁+f₂−f₃. The classic figures of merit are the intermodulation ratios in
-  <strong>dBc</strong> — an IM product relative to its carrier:</p>
-  <pre class="netlist"><code>IMD2 = dB( HB1.V("Vout", "(1,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   dB
-IMD3 = dB( HB1.V("Vout", "(2,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   dB</code></pre>
-  <p>Replace <code>HB1</code> with your analysis name and <code>"Vout"</code> with your output node. IMD2 uses
-  the baseband product (1,−1) = f₁−f₂; IMD3 uses the lower third-order product (2,−1) = 2f₁−f₂ (use (−1,2),
-  referenced to the (0,1) carrier, for the upper IM3). To get the curve <em>vs Pin</em>, sweep the drive power
-  (a parametric sweep over the variable your source <code>Pavl</code> references) — the same expression then
-  returns IMD vs Pin instead of a single value.</p>
-  <div class="callout note">
+<h3 id="two-tone-meas">Measuring intermodulation (IMD2 / IMD3)</h3>
+<p>A <a href="measurements.html">measurement</a> reads a mixing product out of the result by its <strong>(k₁, k₂)
+tag</strong> — at three tones the tag simply has three entries, e.g. <code>HB1.V(&quot;Vout&quot;,&amp;nbsp;&quot;(1,1,-1)&quot;)</code> for
+the triple-beat product f₁+f₂−f₃. The classic figures of merit are the intermodulation ratios in
+<strong>dBc</strong> — an IM product relative to its carrier:</p>
+<pre><code class="language-netlist">IMD2 = dB( HB1.V(&quot;Vout&quot;, &quot;(1,-1)&quot;) ) - dB( HB1.V(&quot;Vout&quot;, &quot;(1,0)&quot;) )   dB
+IMD3 = dB( HB1.V(&quot;Vout&quot;, &quot;(2,-1)&quot;) ) - dB( HB1.V(&quot;Vout&quot;, &quot;(1,0)&quot;) )   dB
+</code></pre>
+<p>Replace <code>HB1</code> with your analysis name and <code>&quot;Vout&quot;</code> with your output node. IMD2 uses the baseband
+product (1,−1) = f₁−f₂; IMD3 uses the lower third-order product (2,−1) = 2f₁−f₂ (use (−1,2),
+referenced to the (0,1) carrier, for the upper IM3). To get the curve <em>vs Pin</em>, sweep the drive
+power (a parametric sweep over the variable your source <code>Pavl</code> references) — the same expression
+then returns IMD vs Pin instead of a single value.</p>
+<div class="callout note">
     <span class="label">Two ways to address a product — use the accessor for IMD</span>
     <p>The <strong>accessor</strong> <code>HB1.V("Vout", "(1,-1)")</code> names the node and the product tag and
     <strong>keeps any swept axes automatically</strong>, so the same expression works whether or not you have
@@ -418,61 +401,142 @@ IMD3 = dB( HB1.V("Vout", "(2,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   dB</code><
     accessor for IMD metrics you keep; reach for the bracket when copy-pasting from a trace card. See
     <a href="measurements.html#refs">Referencing analysis results</a>.</p>
   </div>
-
-  <h3 id="two-tone-z">Source impedance and harmonic terminations</h3>
-  <p>With dozens of products spread across the spectrum, each one needs a source termination. circuitRF assigns
-  it <strong>by frequency</strong>, not by mixing order. It defines a band-center fundamental — for two tones
-  the average <code>f_c = (f₁ + f₂) / 2</code> — and places each product in the harmonic band nearest its
-  frequency:</p>
-  <p style="text-align:center"><code>band n = round( |f| / f_c )</code>&nbsp;→&nbsp;<code>Z[n]</code> if declared, else the shared <code>Z</code></p>
-  <p>So band&nbsp;0 (|f|&nbsp;&lt;&nbsp;f_c/2) is the baseband and uses <code>Z[0]</code>; band&nbsp;1 (around
-  f_c) holds both carriers and all the close-in IM3/IM5 products and uses <code>Z[1]</code> (or the default
-  <code>Z</code>); band&nbsp;2 (around 2·f_c) holds the second-harmonic products and uses <code>Z[2]</code>; and
-  so on. The decision is purely the product's frequency: as a high-order product such as (3,&nbsp;−1) drifts
-  down past the band-1/band-2 boundary it switches from <code>Z[2]</code> to <code>Z[1]</code> automatically —
-  no order threshold is hard-coded. This is the same harmonic-termination model as
-  <a href="components.html#p1tone">P1Tone</a>, and a <a href="components.html#pntone">PnTone</a> presents its
-  shared <code>Z</code> and per-band <code>Z[k]</code> to the whole multi-tone spectrum this way.</p>
-  <div class="callout note">
+<h3 id="two-tone-z">Source impedance and harmonic terminations</h3>
+<p>With dozens of products spread across the spectrum, each one needs a source termination. circuitRF
+assigns it <strong>by frequency</strong>, not by mixing order. It defines a band-center fundamental — for two
+tones the average <code>f_c = (f₁ + f₂) / 2</code> — and places each product in the harmonic band nearest its
+frequency:</p>
+<p style="text-align:center"><code>band n = round( |f| / f_c )</code>&nbsp;→&nbsp;<code>Z[n]</code> if declared, else the shared <code>Z</code></p>
+<p>So band 0 (|f| &lt; f_c/2) is the baseband and uses <code>Z[0]</code>; band 1 (around f_c)
+holds both carriers and all the close-in IM3/IM5 products and uses <code>Z[1]</code> (or the default <code>Z</code>);
+band 2 (around 2·f_c) holds the second-harmonic products and uses <code>Z[2]</code>; and so on. The
+decision is purely the product's frequency: as a high-order product such as (3, −1) drifts
+down past the band-1/band-2 boundary it switches from <code>Z[2]</code> to <code>Z[1]</code> automatically — no order
+threshold is hard-coded. This is the same harmonic-termination model as
+<a href="components.html#p1tone">P1Tone</a>, and a <a href="components.html#pntone">PnTone</a> presents its shared <code>Z</code>
+and per-band <code>Z[k]</code> to the whole multi-tone spectrum this way.</p>
+<div class="callout note">
     <span class="label">Why baseband termination matters</span>
     <p>In single-tone HB the baseband is decoupled. In two-tone it is not — the IM2 product (1,&nbsp;−1) at
     f₁−f₂ lands at baseband, and its termination <code>Z[0]</code> feeds back into the carriers and the IM3
     levels. Studying source/load <strong>baseband-termination effects</strong> is a primary reason to run
     two-tone, so set <code>Z[0]</code> deliberately.</p>
   </div>
-
-  <h3 id="two-tone-vs-single">What's different from single-tone</h3>
-  <ul>
-    <li><strong>IM3 asymmetry.</strong> The lower IM3 (2f₁−f₂) and upper IM3 (2f₂−f₁) generally have
-      <em>different</em> levels in dBc, not just a phase difference — a direct consequence of the device's
-      nonlinear I–V/Q–V behaviour and its loading. The full diamond resolves both, so the asymmetry is a real
-      output of the run, not an artifact.</li>
-    <li><strong>A fully coupled solve.</strong> The two-tone result is <em>not</em> two single-tone solutions
-      superimposed. The carriers, harmonics, IM products, and baseband are all unknowns in one Newton solve
-      with a single conversion-matrix Jacobian — so the IM levels capture the true bidirectional coupling
-      between the carriers and the baseband.</li>
-    <li><strong>A bigger spectrum, a bigger cost.</strong> Because the product count grows quadratically with
-      <code>MaxMixOrder</code>, raise it only as far as you need: 5 captures IM5 (usually enough); higher
-      captures IM7+ at noticeably more cost.</li>
-    <li><strong>Commensurate tones.</strong> f₁ and f₂ must be commensurate (a rational ratio) so every mixing
-      product lands exactly on the grid and the waveform is exactly periodic — closely-spaced tones like
-      1.99 / 2.01 GHz satisfy this naturally.</li>
-  </ul>
-
-  <p class="small">Full design + algorithm: <code>docs/design/harmonic-balance.md</code> and the
+<h3 id="two-tone-vs-single">What's different from single-tone</h3>
+<ul>
+<li><p><strong>IM3 asymmetry.</strong> The lower IM3 (2f₁−f₂) and upper IM3 (2f₂−f₁) generally have <em>different</em>
+levels in dBc, not just a phase difference — a direct consequence of the device's nonlinear
+I–V/Q–V behaviour and its loading. The full diamond resolves both, so the asymmetry is a real
+output of the run, not an artifact.</p>
+</li>
+<li><p><strong>A fully coupled solve.</strong> The two-tone result is <em>not</em> two single-tone solutions superimposed.
+The carriers, harmonics, IM products, and baseband are all unknowns in one Newton solve with a
+single conversion-matrix Jacobian — so the IM levels capture the true bidirectional coupling
+between the carriers and the baseband.</p>
+</li>
+<li><p><strong>A bigger spectrum, a bigger cost.</strong> Because the product count grows quadratically with
+<code>MaxMixOrder</code>, raise it only as far as you need: 5 captures IM5 (usually enough); higher captures
+IM7+ at noticeably more cost.</p>
+</li>
+<li><p><strong>Commensurate tones.</strong> f₁ and f₂ must be commensurate (a rational ratio) so every mixing
+product lands exactly on the grid and the waveform is exactly periodic — closely-spaced tones like
+1.99 / 2.01 GHz satisfy this naturally.</p>
+</li>
+</ul>
+<p class="small">Full design + algorithm: <code>docs/design/harmonic-balance.md</code> and the
   harmonic-termination model in <code>docs/design/p1tone-harmonic-terminations.md</code> (in the repo).</p>
+<hr />
+<h2 id="cli">Running an analysis from the command line</h2>
+<p>Everything above is driven from the GUI's Run button, and everything above also runs headless. The
+command-line driver takes a <code>.cnl</code> netlist — hand-authored, or extracted from a schematic — and runs
+one of four verbs:</p>
+<pre><code class="language-text">circuitrf sparam &lt;file.cnl&gt; [--freq start:stop:step] [-o out.sNp]
+circuitrf dc     &lt;file.cnl&gt;
+circuitrf hb     &lt;file.cnl&gt;       harmonic balance; runs the sweep if one wraps it
+circuitrf elab   &lt;file.cnl&gt;       dump the elaborated netlist
+</code></pre>
+<p>From a source checkout, put <code>dotnet run --project src/Cli --</code> where <code>circuitrf</code> appears.</p>
+<h3 id="cli-hb">Harmonic balance from the command line</h3>
+<pre><code class="language-netlist">dotnet run --project src/Cli -- hb hero2.cnl -o out.mat
+</code></pre>
+<p>That runs the netlist's harmonic-balance analysis — <strong>single- or multi-tone; the same verb does both</strong>
+— prints the spectra as tables, and writes <code>out.mat</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-a</code>, <code>--analysis &lt;name&gt;</code></td>
+<td>Which analysis to run. Optional when the file declares only one HB chain.</td>
+</tr>
+<tr>
+<td><code>--set &lt;var=expr&gt;</code></td>
+<td>Override a global variable <strong>before elaboration</strong>, so anything derived from it follows. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--maxharm K</code></td>
+<td>Override <code>MaxHarm</code>.</td>
+</tr>
+<tr>
+<td><code>--maxmix M</code></td>
+<td>Override <code>MaxMixOrder</code> (multi-tone only).</td>
+</tr>
+<tr>
+<td><code>--tol t</code>, <code>--max-iter N</code></td>
+<td>Override the convergence tolerance and the iteration cap.</td>
+</tr>
+<tr>
+<td><code>--rows N</code>, <code>--all</code></td>
+<td>How much of each printed table to show. Default is a truncated head.</td>
+</tr>
+<tr>
+<td><code>--diag</code></td>
+<td>Engine convergence diagnostics to stderr.</td>
+</tr>
+<tr>
+<td><code>-o</code>, <code>--export &lt;path&gt;</code></td>
+<td>Export the results. The <strong>extension picks the format</strong>: <code>.mat</code>, <code>.npy</code> or <code>.txt</code>.</td>
+</tr>
+<tr>
+<td><code>--kits &lt;dir&gt;</code></td>
+<td>A folder of installed kits, for externally-supplied device models. Repeatable; valid on any verb.</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-netlist">dotnet run --project src/Cli -- hb hero5.cnl --set Pavl_dbm=0 -o hero5.txt
+</code></pre>
+<div class="callout warn">
+<span class="label">Name the wrapper, not the inner analysis</span>
+<p>When a <a href="#parametric-sweep">parametric sweep</a> wraps a harmonic-balance analysis,
+<code>hb</code> runs <strong>the whole sweep</strong> — and naming the inner HB with <code>-a</code>
+runs that one operating point instead, <strong>silently dropping the sweep axis</strong>. It does not
+error: you get a valid result of the wrong shape. Pass the sweep's own name, or pass nothing and let it
+find the chain.</p>
+</div>
+<p>The <code>measure</code> lines on the TestBench are evaluated exactly as the GUI evaluates them, and a
+measurement that fails to evaluate is reported on stderr and the run continues. <strong>A <code>.cnl</code> that works
+headless works when opened</strong>, which is what makes the command line usable as a regression harness:
+the two paths share the elaborator, the engines and the measurement evaluator.</p>
+<hr />
+<p class="small">See also: <a href="netlist.html">the netlist format</a> (how analyses are written) ·
+  <a href="components.html">Components</a> · <a href="plot-types.html">Plot types</a> ·
+  <a href="measurements.html">Measurements</a> · <a href="npy-export.html">Results &amp; data export</a>.</p>
 
-  <hr>
-  <p class="small">See also: <a href="netlist.html">the netlist format</a> (how analyses are written) ·
-  <a href="components.html">Components</a> · <a href="plot-types.html">Plot types</a>.</p>
-
+<nav class="page-nav">
+  <a class="prev" href="match.html"><span class="dir">Previous</span><span class="name">The Match Component</span></a>
+  <a class="next" href="measurements.html"><span class="dir">Next</span><span class="name">Measurements</span></a>
+</nav>
 </main>
 
 <footer class="doc-footer">
   <img src="../assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <a href="index.html">Reference home</a>
+  <a href="../index.html">Documentation home</a>
 </footer>
 
 </body>

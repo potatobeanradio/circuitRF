@@ -468,6 +468,15 @@ public static class BuiltInSymbols
         {
             bool isLeft = lx < 0;
             double ax    = isLeft ? -75.0 : 75.0;
+
+            // The LEAD from the body edge out to the pin tip. The body is 180 wide and the pins sit
+            // at +/-200, so without this there is a 110-unit gap between the box and the point a wire
+            // attaches to — the wire ends in mid-air and the symbol reads as broken. Every other
+            // box-with-terminals glyph here already draws it (BuildVerilogASymbol, BuildSnpSymbol);
+            // the SDD and ZPort were the two that did not (owner, 2026-08-20, from the symbol-editor
+            // figure, where a symbol with nothing else in it makes the gap unmissable).
+            prims.Add(L(isLeft ? -w * 0.5 : w * 0.5, ly, lx, ly));
+
             // "+" terminal labels render in the SymbolPlus color; "−"/others stay regular.
             var role = name.EndsWith("+", StringComparison.Ordinal)
                 ? SymbolColorRole.SymbolPlus

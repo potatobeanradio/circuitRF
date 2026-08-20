@@ -22,10 +22,8 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public sealed class RecoveryManager
 {
-    private static string RecoveryRoot =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "circuitRF", "recovery");
+    // Under the one per-user state directory, so a tool can redirect it (see CircuitRF.Ui.AppDataRoot).
+    private static string RecoveryRoot => AppDataRoot.SubDir("recovery");
 
     /// <summary>Absolute path of this session's recovery directory.</summary>
     public string SessionDir { get; }

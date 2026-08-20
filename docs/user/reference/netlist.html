@@ -6,25 +6,28 @@
 <title>circuitRF — The Netlist (.cnl) Format</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/netlist.md
+-->
 </head>
 <body>
 
-<!-- ============ HEADER (depth: ../) ============ -->
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
   <span class="doc-kind">Reference Guide</span>
 </header>
 <hr class="doc-headrule">
-<!-- ============ /HEADER ============ -->
 
 <main class="page">
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › The netlist (.cnl) format</p>
 
-  <h1>The Netlist (<code>.cnl</code>) Format</h1>
-  <p class="lede">A circuitRF netlist is a human-readable text description of a circuit and what to simulate.
-  It's the same thing the schematic editor produces internally, and it's what the engine actually runs.</p>
+  <h1>The Netlist (.cnl) Format</h1>
+  <p class="lede">A circuitRF netlist is a human-readable text description of a circuit and what to simulate. It&#39;s the same thing the schematic editor produces internally, and it&#39;s what the engine actually runs.</p>
 
-  <nav class="toc">
+<nav class="toc">
     <h2>On this page</h2>
     <ol>
       <li><a href="#what">What a netlist is, and why you'd use one</a></li>
@@ -42,27 +45,28 @@
       </li>
     </ol>
   </nav>
-
-  <h2 id="what">What a netlist is, and why you'd use one</h2>
-  <p>Most users never write a netlist by hand — you draw a schematic and press <strong>Run</strong>, and
-  circuitRF extracts the netlist for you. But the <code>.cnl</code> file is worth understanding because:</p>
-  <ul>
-    <li>It is <strong>human-readable and diff-friendly</strong> — you can read, review, and version-control a
-      design as text.</li>
-    <li>It is the <strong>engine's input contract</strong>: the schematic, the CLI, and the engine all meet
-      here. The headless CLI runs a <code>.cnl</code> directly.</li>
-    <li>It's the clearest way to see exactly <em>what</em> got simulated — components, parameter values after
-      resolution, analyses, and measurements, all in one place.</li>
-  </ul>
-  <p>Syntax basics: one statement per line; <code>;</code> begins a comment (to end of line); whitespace
-  separates tokens; values may carry a unit (<code>50 Ohm</code>, <code>2 GHz</code>, <code>1 mF</code>);
-  and expressions may reference variables and parameters.</p>
-
-  <h2 id="example">A complete example</h2>
-  <p>This is a single-FET GaN power-amplifier test bench: a harmonic-balance power sweep, swept again over
-  frequency, with measurements for gain, efficiency, and return loss. We'll walk through every line below.</p>
-
-  <pre class="netlist"><code>; netlist.cnl — generated from TestBench "HBTest.csch"
+<h2 id="what">What a netlist is, and why you'd use one</h2>
+<p>Most users never write a netlist by hand — you draw a schematic and press <strong>Run</strong>, and circuitRF
+extracts the netlist for you. But the <code>.cnl</code> file is worth understanding because:</p>
+<ul>
+<li><p>It is <strong>human-readable and diff-friendly</strong> — you can read, review, and version-control a design
+as text.</p>
+</li>
+<li><p>It is the <strong>engine's input contract</strong>: the schematic, the CLI, and the engine all meet here. The
+headless CLI runs a <code>.cnl</code> directly.</p>
+</li>
+<li><p>It's the clearest way to see exactly <em>what</em> got simulated — components, parameter values after
+resolution, analyses, and measurements, all in one place.</p>
+</li>
+</ul>
+<p>Syntax basics: one statement per line; <code>;</code> begins a comment (to end of line); whitespace separates
+tokens; values may carry a unit (<code>50 Ohm</code>, <code>2 GHz</code>, <code>1 mF</code>); and expressions may reference
+variables and parameters.</p>
+<h2 id="example">A complete example</h2>
+<p>This is a single-FET GaN power-amplifier test bench: a harmonic-balance power sweep, swept again
+over frequency, with measurements for gain, efficiency, and return loss. We'll walk through every
+line below.</p>
+<pre><code class="language-netlist">; netlist.cnl — generated from TestBench &quot;HBTest.csch&quot;
 
 define MyFET (gate drain)
   parameters Periphery_mm=1
@@ -95,70 +99,72 @@ IProbe:Iin  Vin  n3
 IProbe:IDC  VDD  n4
 C:C3  Vout  0  C=0.3 pF
 
-analysis HB1 type=hb Tone="RFfreq" ToneUnit=MHz MaxHarm=5 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary GuardHarmonic=0 Lambda=1 MaxIter=100
+analysis HB1 type=hb Tone=&quot;RFfreq&quot; ToneUnit=MHz MaxHarm=5 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary GuardHarmonic=0 Lambda=1 MaxIter=100
 analysis HB1_sweep_Pin type=parametric_sweep Var=Pin Start=0 Stop=30 Step=1 Inner=HB1
 analysis HB1_sweep_RFfreq type=parametric_sweep Var=RFfreq Start=1 Stop=3 Npts=3 Unit=GHz Inner=HB1_sweep_Pin
 measure Pin_avail_dBm = Pin
-measure Pin_deliv_W = real(0.5*HB1.V("Vin",1)*conj(HB1.I("Iin",1)))
+measure Pin_deliv_W = real(0.5*HB1.V(&quot;Vin&quot;,1)*conj(HB1.I(&quot;Iin&quot;,1)))
 measure Pin_deliv_dBm = 10*log10(Pin_deliv_W*1000)
 measure IRL_dB = Pin_deliv_dBm - Pin_avail_dBm; input return loss
-measure Pout_W = real(0.5*HB1.V("Vout",1)*conj(HB1.I("Iout",1)))
+measure Pout_W = real(0.5*HB1.V(&quot;Vout&quot;,1)*conj(HB1.I(&quot;Iout&quot;,1)))
 measure Pout_dBm = 10*log10(Pout_W*1000)
 measure Gp_dB = Pout_dBm - Pin_deliv_dBm          ; power
 measure Gt_dB = Pout_dBm - Pin_avail_dBm           ; transducer
-measure PDC_W = real(HB1.V("VDD",0)*HB1.I("IDC",0))
+measure PDC_W = real(HB1.V(&quot;VDD&quot;,0)*HB1.I(&quot;IDC&quot;,0))
 measure Eff = Pout_W/PDC_W*100
-labelednets VDD Vin Vout</code></pre>
-
-  <h2 id="walk">Line-by-line walkthrough</h2>
-
-  <h3 id="w-header">1 · Header comment</h3>
-  <pre class="netlist"><code>; netlist.cnl — generated from TestBench "HBTest.csch"</code></pre>
-  <p>Any line starting with <code>;</code> is a comment. When circuitRF generates the netlist from a
-  schematic it stamps a provenance line naming the source test bench. Comments are ignored by the engine.</p>
-
-  <h3 id="w-define">2 · Cell definition (<code>define … end</code>)</h3>
-  <pre class="netlist"><code>define MyFET (gate drain)
+labelednets VDD Vin Vout
+</code></pre>
+<h2 id="walk">Line-by-line walkthrough</h2>
+<h3 id="w-header">1 · Header comment</h3>
+<pre><code class="language-netlist">; netlist.cnl — generated from TestBench &quot;HBTest.csch&quot;
+</code></pre>
+<p>Any line starting with <code>;</code> is a comment. When circuitRF generates the netlist from a schematic it
+stamps a provenance line naming the source test bench. Comments are ignored by the engine.</p>
+<h3 id="w-define">2 · Cell definition (<code>define … end</code>)</h3>
+<pre><code class="language-netlist">define MyFET (gate drain)
   parameters Periphery_mm=1
   Sv = -0.837
   ...
   SDD:X1  gate  0  drain  0  I[1,0]=_v1/50  I[2,0]=Periphery_mm*(...)
-end MyFET</code></pre>
-  <p>A <code>define</code> block declares a reusable <strong>cell</strong> — here a GaN FET model named
-  <code>MyFET</code> with two ports, <code>gate</code> and <code>drain</code>. Inside:</p>
-  <ul>
-    <li><code>parameters Periphery_mm=1</code> — the cell's <strong>parameter interface</strong> with a
-      default. An instance can override it (and <code>X1</code> below does). Parameters pass <em>top-down</em>:
-      the override is evaluated in the parent's scope, then used inside the cell.</li>
-    <li><code>Sv = -0.837</code>, <code>Sc = 0.71</code>, … — <strong>local variables</strong> (model
-      coefficients) scoped to this cell. They feed the device equations.</li>
-    <li><code>SDD:X1 gate 0 drain 0 …</code> — a <strong>Symbolically-Defined Device</strong>: you write the
-      port currents as equations and circuitRF differentiates them automatically for the solver. The four
-      nets are two differential ports: port&nbsp;1 = <code>gate</code>–<code>0</code>, port&nbsp;2 =
-      <code>drain</code>–<code>0</code>. In the equations, <span class="term">_v1</span> and
-      <span class="term">_v2</span> are those two port voltages.</li>
-    <li><code>I[1,0]=_v1/50</code> — the current into port 1 (a simple 50&nbsp;Ω gate input);
-      <code>I[2,0]=…</code> — the drain current, the GaN <i>I–V</i> law scaled by <code>Periphery_mm</code>.
-      The index notation is <code>I[port, weight]</code> — weight <code>0</code> is the current itself. (The
-      SDD equation grammar is covered under <a href="components.html#sdd">Components › SDD</a>.)</li>
-  </ul>
-  <div class="callout note">
+end MyFET
+</code></pre>
+<p>A <code>define</code> block declares a reusable <strong>cell</strong> — here a GaN FET model named <code>MyFET</code> with two ports,
+<code>gate</code> and <code>drain</code>. Inside:</p>
+<ul>
+<li><p><code>parameters Periphery_mm=1</code> — the cell's <strong>parameter interface</strong> with a default. An instance can
+override it (and <code>X1</code> below does). Parameters pass <em>top-down</em>: the override is evaluated in the
+parent's scope, then used inside the cell.</p>
+</li>
+<li><p><code>Sv = -0.837</code>, <code>Sc = 0.71</code>, … — <strong>local variables</strong> (model coefficients) scoped to this cell.
+They feed the device equations.</p>
+</li>
+<li><p><code>SDD:X1 gate 0 drain 0 …</code> — a <strong>Symbolically-Defined Device</strong>: you write the port currents as
+equations and circuitRF differentiates them automatically for the solver. The four nets are two
+differential ports: port 1 = <code>gate</code>–<code>0</code>, port 2 = <code>drain</code>–<code>0</code>. In the equations, <strong>_v1</strong>
+and <strong>_v2</strong> are those two port voltages.</p>
+</li>
+<li><p><code>I[1,0]=_v1/50</code> — the current into port 1 (a simple 50 Ω gate input); <code>I[2,0]=…</code> — the
+drain current, the GaN <em>I–V</em> law scaled by <code>Periphery_mm</code>. The index notation is <code>I[port, weight]</code>
+— weight <code>0</code> is the current itself. (The SDD equation grammar is covered under <a href="components.html#sdd">Components ›
+SDD</a>.)</p>
+</li>
+</ul>
+<div class="callout note">
     <span class="label">Cells vs. the top level</span>
     <p>Everything inside <code>define … end</code> is a <em>template</em>. It isn't simulated until it's
     instanced at the top level (see <code>MyFET:X1</code> below). The lines <em>outside</em> any
     <code>define</code> block are the top-level test bench.</p>
   </div>
-
-  <h3 id="w-globals">3 · Global variables</h3>
-  <pre class="netlist"><code>Pin = 0
-RFfreq = 2 GHz</code></pre>
-  <p>Top-level <strong>global variables</strong>, usable anywhere a value is expected. They're also
-  <strong>sweepable</strong> — and both are swept by the analyses below (<code>Pin</code> is the drive level,
-  <code>RFfreq</code> the fundamental). A variable may carry a unit (<code>2 GHz</code>); when it does, that
-  unit wins wherever the variable is referenced.</p>
-
-  <h3 id="w-components">4 · Components &amp; instances</h3>
-  <pre class="netlist"><code>C:C1  Vin  n1  C=1 mF
+<h3 id="w-globals">3 · Global variables</h3>
+<pre><code class="language-netlist">Pin = 0
+RFfreq = 2 GHz
+</code></pre>
+<p>Top-level <strong>global variables</strong>, usable anywhere a value is expected. They're also <strong>sweepable</strong> —
+and both are swept by the analyses below (<code>Pin</code> is the drive level, <code>RFfreq</code> the fundamental). A
+variable may carry a unit (<code>2 GHz</code>); when it does, that unit wins wherever the variable is
+referenced.</p>
+<h3 id="w-components">4 · Components &amp; instances</h3>
+<pre><code class="language-netlist">C:C1  Vin  n1  C=1 mF
 L:L1  n2  n3  L=1 mH
 ...
 P1Tone:P1  n1  0  Pavl=Pin dBm  Z=50 Ohm  Freq=RFfreq  Phase=0 deg  Z[0]=1 Ohm  Z[2]=30 Ohm
@@ -166,38 +172,39 @@ Vdc:V1  n2  0  Vdc=-3.05 V
 Vdc:V2  VDD  0  Vdc=48 V
 MyFET:X1  n3  Vout  Periphery_mm=1
 IProbe:Iout  Vout  n6
-...</code></pre>
-  <p>Each line is <code>Type:Name net1 net2 … key=value …</code>. The first tokens after the name are the
-  <strong>nets</strong> the component's pins connect to (order = the component's pin order); the
-  <code>key=value</code> tokens are <strong>parameters</strong>. Nets named <code>0</code> are ground. Reading
-  the key lines:</p>
-  <ul>
-    <li><code>C:C1 Vin n1 C=1 mF</code> — a capacitor between nets <code>Vin</code> and <code>n1</code>. The
-      large <code>1 mF</code> caps and <code>1 mH</code> chokes here are DC-block / bias-feed elements.</li>
-    <li><code>P1Tone:P1 …</code> — the <strong>RF power source</strong> driving the input.
-      <code>Pavl=Pin dBm</code> sets the available power from the swept <code>Pin</code> variable;
-      <code>Freq=RFfreq</code> takes the fundamental from <code>RFfreq</code>; <code>Z=50 Ohm</code> is the
-      fundamental source impedance. <code>Z[0]=1 Ohm</code> and <code>Z[2]=30 Ohm</code> set the source
-      termination at the <strong>baseband (DC)</strong> and <strong>2nd-harmonic</strong> zones — harmonic
-      source-pull terminations.</li>
-    <li><code>Vdc:V1 n2 0 Vdc=-3.05 V</code> and <code>Vdc:V2 VDD 0 Vdc=48 V</code> — the gate and drain DC
-      bias supplies (fed to the device through the <code>L</code> chokes).</li>
-    <li><code>MyFET:X1 n3 Vout Periphery_mm=1</code> — an <strong>instance</strong> of the
-      <code>MyFET</code> cell: gate→<code>n3</code>, drain→<code>Vout</code>, with the
-      <code>Periphery_mm</code> parameter overridden (here to the same value as the default).</li>
-    <li><code>IProbe:Iout Vout n6</code> — a 0&nbsp;V series <strong>current probe</strong> (ammeter). Its
-      instance name (<code>Iout</code>, <code>Iin</code>, <code>IDC</code>) is how measurements read its
-      branch current, e.g. <code>I("Iout", 1)</code> below.</li>
-  </ul>
-
-  <h3 id="w-analyses">5 · Analyses (HB + parametric sweeps)</h3>
-  <pre class="netlist"><code>analysis HB1 type=hb Tone="RFfreq" ToneUnit=MHz MaxHarm=5 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary GuardHarmonic=0 Lambda=1 MaxIter=100
+...
+</code></pre>
+<p>Each line is <code>Type:Name net1 net2 … key=value …</code>. The first tokens after the name are the <strong>nets</strong>
+the component's pins connect to (order = the component's pin order); the <code>key=value</code> tokens are
+<strong>parameters</strong>. Nets named <code>0</code> are ground. Reading the key lines:</p>
+<ul>
+<li><p><code>C:C1 Vin n1 C=1 mF</code> — a capacitor between nets <code>Vin</code> and <code>n1</code>. The large <code>1 mF</code> caps and <code>1 mH</code>
+chokes here are DC-block / bias-feed elements.</p>
+</li>
+<li><p><code>P1Tone:P1 …</code> — the <strong>RF power source</strong> driving the input. <code>Pavl=Pin dBm</code> sets the available
+power from the swept <code>Pin</code> variable; <code>Freq=RFfreq</code> takes the fundamental from <code>RFfreq</code>; <code>Z=50 Ohm</code>
+is the fundamental source impedance. <code>Z[0]=1 Ohm</code> and <code>Z[2]=30 Ohm</code> set the source termination at
+the <strong>baseband (DC)</strong> and <strong>2nd-harmonic</strong> zones — harmonic source-pull terminations.</p>
+</li>
+<li><p><code>Vdc:V1 n2 0 Vdc=-3.05 V</code> and <code>Vdc:V2 VDD 0 Vdc=48 V</code> — the gate and drain DC bias supplies (fed
+to the device through the <code>L</code> chokes).</p>
+</li>
+<li><p><code>MyFET:X1 n3 Vout Periphery_mm=1</code> — an <strong>instance</strong> of the <code>MyFET</code> cell: gate→<code>n3</code>,
+drain→<code>Vout</code>, with the <code>Periphery_mm</code> parameter overridden (here to the same value as the
+default).</p>
+</li>
+<li><p><code>IProbe:Iout Vout n6</code> — a 0 V series <strong>current probe</strong> (ammeter). Its instance name
+(<code>Iout</code>, <code>Iin</code>, <code>IDC</code>) is how measurements read its branch current, e.g. <code>I(&quot;Iout&quot;, 1)</code> below.</p>
+</li>
+</ul>
+<h3 id="w-analyses">5 · Analyses (HB + parametric sweeps)</h3>
+<pre><code class="language-netlist">analysis HB1 type=hb Tone=&quot;RFfreq&quot; ToneUnit=MHz MaxHarm=5 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary GuardHarmonic=0 Lambda=1 MaxIter=100
 analysis HB1_sweep_Pin type=parametric_sweep Var=Pin Start=0 Stop=30 Step=1 Inner=HB1
-analysis HB1_sweep_RFfreq type=parametric_sweep Var=RFfreq Start=1 Stop=3 Npts=3 Unit=GHz Inner=HB1_sweep_Pin</code></pre>
-  <p>The first line is the harmonic-balance analysis; the next two <strong>wrap</strong> it in swept
-  variables. Each <code>analysis</code> line is <code>analysis Name type=… key=value …</code>. The HB
-  settings:</p>
-  <table class="param-table">
+analysis HB1_sweep_RFfreq type=parametric_sweep Var=RFfreq Start=1 Stop=3 Npts=3 Unit=GHz Inner=HB1_sweep_Pin
+</code></pre>
+<p>The first line is the harmonic-balance analysis; the next two <strong>wrap</strong> it in swept variables. Each
+<code>analysis</code> line is <code>analysis Name type=… key=value …</code>. The HB settings:</p>
+<table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td>Tone</td><td>The fundamental tone — here the variable <code>RFfreq</code>.</td></tr>
@@ -212,62 +219,65 @@ analysis HB1_sweep_RFfreq type=parametric_sweep Var=RFfreq Start=1 Stop=3 Npts=3
     </tbody>
     <caption>HB settings are detailed in <a href="simulations.html#harmonic-balance">Simulations › Harmonic Balance</a>.</caption>
   </table>
-  <p>The two <code>parametric_sweep</code> lines compose by <code>Inner=</code>:
-  <code>HB1_sweep_Pin</code> runs <code>HB1</code> at each <code>Pin</code> from 0 to 30 dBm in 1-dB steps
-  (31 points); <code>HB1_sweep_RFfreq</code> runs <em>that whole power sweep</em> at each of 3 frequencies
-  from 1 to 3 GHz (<code>Npts=3</code>, <code>Unit=GHz</code>). The result is a 3-frequency × 31-power
-  harmonic-balance sweep — frequency is the outer (slow) axis, power the inner.</p>
-  <div class="callout note">
+<p>The two <code>parametric_sweep</code> lines compose by <code>Inner=</code>: <code>HB1_sweep_Pin</code> runs <code>HB1</code> at each <code>Pin</code>
+from 0 to 30 dBm in 1-dB steps (31 points); <code>HB1_sweep_RFfreq</code> runs <em>that whole power sweep</em> at
+each of 3 frequencies from 1 to 3 GHz (<code>Npts=3</code>, <code>Unit=GHz</code>). The result is a 3-frequency ×
+31-power harmonic-balance sweep — frequency is the outer (slow) axis, power the inner.</p>
+<div class="callout note">
     <span class="label">Sweeps wrap, they don't replace</span>
     <p>A <code>parametric_sweep</code> never changes the inner analysis; it re-runs it across a variable.
     Nest them with <code>Inner=</code> to sweep more than one variable. The innermost non-sweep analysis
     (<code>HB1</code>) is what each point actually solves.</p>
   </div>
-
-  <h3 id="w-measures">6 · Measurements</h3>
-  <pre class="netlist"><code>measure Pin_avail_dBm = Pin
-measure Pin_deliv_W = real(0.5*HB1.V("Vin",1)*conj(HB1.I("Iin",1)))
-measure Pout_W = real(0.5*HB1.V("Vout",1)*conj(HB1.I("Iout",1)))
-measure PDC_W = real(HB1.V("VDD",0)*HB1.I("IDC",0))
+<h3 id="w-measures">6 · Measurements</h3>
+<pre><code class="language-netlist">measure Pin_avail_dBm = Pin
+measure Pin_deliv_W = real(0.5*HB1.V(&quot;Vin&quot;,1)*conj(HB1.I(&quot;Iin&quot;,1)))
+measure Pout_W = real(0.5*HB1.V(&quot;Vout&quot;,1)*conj(HB1.I(&quot;Iout&quot;,1)))
+measure PDC_W = real(HB1.V(&quot;VDD&quot;,0)*HB1.I(&quot;IDC&quot;,0))
 measure Eff = Pout_W/PDC_W*100
-measure IRL_dB = Pin_deliv_dBm - Pin_avail_dBm; input return loss</code></pre>
-  <p>A <code>measure</code> line computes a named result from an expression, evaluated at every sweep point.
-  Expressions use the same engine as everywhere else, plus accessors into the run's data:</p>
-  <ul>
-    <li><code>HB1.V("Vin", 1)</code> — the voltage at net <code>Vin</code> from analysis <code>HB1</code>, at
-      <strong>harmonic 1</strong> (the fundamental). <code>HB1.I("Iin", 1)</code> is the current through probe
-      <code>Iin</code> at the fundamental. Harmonic <code>0</code> is DC — used for <code>PDC_W</code>.</li>
-    <li><code>real(0.5·V·conj(I))</code> is average power into a port; <code>Pout_W</code>/<code>Pin_deliv_W</code>
-      apply it at the output and input. <code>Eff</code> is drain efficiency in percent.</li>
-    <li>Measurements can reference <em>earlier</em> measurements (<code>IRL_dB</code> uses
-      <code>Pin_deliv_dBm</code> and <code>Pin_avail_dBm</code>).</li>
-    <li>A trailing <code>; text</code> on a measure line is a comment/label (e.g. <code>; input return
-      loss</code>).</li>
-  </ul>
-  <p>Results land in the run dataset and plot like any other signal. (Authored on a schematic, these come
-  from a <strong>MEAS</strong> component — see <a href="components.html#meas">Components › MEAS</a>.)</p>
-
-  <h3 id="w-labeled">7 · Labeled nets</h3>
-  <pre class="netlist"><code>labelednets VDD Vin Vout</code></pre>
-  <p>Records which nets the user explicitly named (versus auto-numbered nodes like <code>n1</code>). The Data
-  Display uses this to default its node picker to the meaningful nets, so you see <code>VDD</code>,
-  <code>Vin</code>, and <code>Vout</code> first rather than every internal node.</p>
-
-  <hr>
-  <p class="small">See also: <a href="simulations.html">Simulations</a> for the full analysis settings and
+measure IRL_dB = Pin_deliv_dBm - Pin_avail_dBm; input return loss
+</code></pre>
+<p>A <code>measure</code> line computes a named result from an expression, evaluated at every sweep point.
+Expressions use the same engine as everywhere else, plus accessors into the run's data:</p>
+<ul>
+<li><p><code>HB1.V(&quot;Vin&quot;, 1)</code> — the voltage at net <code>Vin</code> from analysis <code>HB1</code>, at <strong>harmonic 1</strong> (the
+fundamental). <code>HB1.I(&quot;Iin&quot;, 1)</code> is the current through probe <code>Iin</code> at the fundamental. Harmonic
+<code>0</code> is DC — used for <code>PDC_W</code>.</p>
+</li>
+<li><p><code>real(0.5·V·conj(I))</code> is average power into a port; <code>Pout_W</code>/<code>Pin_deliv_W</code> apply it at the
+output and input. <code>Eff</code> is drain efficiency in percent.</p>
+</li>
+<li><p>Measurements can reference <em>earlier</em> measurements (<code>IRL_dB</code> uses <code>Pin_deliv_dBm</code> and
+<code>Pin_avail_dBm</code>).</p>
+</li>
+<li><p>A trailing <code>; text</code> on a measure line is a comment/label (e.g. <code>; input return loss</code>).</p>
+</li>
+</ul>
+<p>Results land in the run dataset and plot like any other signal. (Authored on a schematic, these
+come from a <strong>MEAS</strong> component — see <a href="components.html#meas">Components › MEAS</a>.)</p>
+<h3 id="w-labeled">7 · Labeled nets</h3>
+<pre><code class="language-netlist">labelednets VDD Vin Vout
+</code></pre>
+<p>Records which nets the user explicitly named (versus auto-numbered nodes like <code>n1</code>). The Data
+Display uses this to default its node picker to the meaningful nets, so you see <code>VDD</code>, <code>Vin</code>, and
+<code>Vout</code> first rather than every internal node.</p>
+<hr />
+<p class="small">See also: <a href="simulations.html">Simulations</a> for the full analysis settings and
   algorithms · <a href="components.html">Components</a> for each part and its parameters ·
   <a href="../new-user-guide/index.html">New User's Guide</a> for a gentler introduction.</p>
 
+<nav class="page-nav">
+  <a class="prev" href="measurements.html"><span class="dir">Previous</span><span class="name">Measurements</span></a>
+  <a class="next" href="data-display.html"><span class="dir">Next</span><span class="name">The Data Display</span></a>
+</nav>
 </main>
 
-<!-- ============ FOOTER (depth: ../) ============ -->
 <footer class="doc-footer">
   <img src="../assets/img/circuitRF-mark.svg" alt="">
   <span>circuitRF — RF circuit simulator</span>
   <span class="spacer"></span>
-  <a href="index.html">Reference home</a>
+  <a href="../index.html">Documentation home</a>
 </footer>
-<!-- ============ /FOOTER ============ -->
 
 </body>
 </html>

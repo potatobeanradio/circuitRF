@@ -39,6 +39,20 @@ public sealed class WindowFrame
     /// <summary>A frame carrying <paramref name="title"/> in its title bar.</summary>
     public static WindowFrame Titled(string title) => new(title);
 
+    /// <summary>
+    /// The docs stylesheet's <c>--surface</c> token — what <c>figure.figure .frame</c> is painted in.
+    ///
+    /// <para><b>Every capture is backed with this, framed or not.</b> Skia's SVG device writes a
+    /// zero-alpha fill as an OPAQUE one (it drops <c>fill-opacity</c>), so a transparent window
+    /// background serialised as a full-canvas slab: white in the light figures, near-black in the
+    /// dark ones. Framed figures hid it under their own body colour; the bare-panel figures — the
+    /// snap strip, the Wire Profile, the trace cards — showed a black rectangle behind the panel and
+    /// out to the edges of the frame (owner, 2026-08-20). Painting the frame's own colour instead
+    /// makes the slab invisible by being correct rather than by being covered.</para>
+    /// </summary>
+    public static Color DocsSurface(ColorVariant v)
+        => v == ColorVariant.Dark ? Color.Parse("#15222D") : Color.Parse("#F6F8FA");
+
     // Docs-stylesheet surface tokens, light and dark.
     private static (Color Bar, Color Border, Color Text, Color Dot, Color Body) Palette(ColorVariant v)
         => v == ColorVariant.Dark

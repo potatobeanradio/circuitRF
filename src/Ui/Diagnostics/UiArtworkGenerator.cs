@@ -82,15 +82,15 @@ public static class UiArtworkGenerator
             Width  = totalW,
             Height = totalH,
             Content = body,
-            // NOT Brushes.Transparent. Transparent is #00000000 — pure black — and Skia drops the
-            // paint of a pure-black fill along with its opacity, so a transparent window background
-            // serialises as a bare full-canvas <rect> that renders as an OPAQUE BLACK slab over the
-            // whole figure. The lint caught exactly that on the first dark-variant capture. One bit
-            // of red keeps the alpha, and the figure keeps its transparent background.
-            Background = new SolidColorBrush(Color.FromArgb(0, DocsPaintRemap.OffBlack,
-                                                               DocsPaintRemap.OffBlack,
-                                                               DocsPaintRemap.OffBlack)),
+            // NOT transparent, and not black. Skia's SVG device writes a zero-alpha fill as an
+            // OPAQUE one, so ANY transparent window background serialises as a full-canvas slab —
+            // and pure black loses its paint attributes entirely (DocsPaintRemap), which renders as
+            // an opaque black one. Painting the docs stylesheet's own surface colour makes that
+            // unavoidable slab the colour the figure's frame already is, in both variants.
+            Background = new SolidColorBrush(WindowFrame.DocsSurface(variant)),
         };
+
+        SuppressContextualAlternates(window);
 
         var popupRoots = new List<PopupCapture>();
         string raw;
@@ -101,6 +101,19 @@ public static class UiArtworkGenerator
             window.Measure(new Size(totalW, totalH));
             window.Arrange(new Rect(0, 0, totalW, totalH));
             Pump();
+
+            // Anything that needs the view to have a SIZE before it can be asked for. Zoom-to-fit is
+            // the whole reason this exists: a canvas fits its content to its viewport, and before the
+            // first arrange there is no viewport, so a fixture that asks for it at construction time
+            // is asking a control with zero bounds and gets silently ignored.
+            if (scene.AfterLayout is { } settle)
+            {
+                settle(scene.Content);
+                Pump();
+                window.Measure(new Size(totalW, totalH));
+                window.Arrange(new Rect(0, 0, totalW, totalH));
+                Pump();
+            }
 
             if (scene.Popups is { } open)
             {
@@ -175,7 +188,7 @@ public static class UiArtworkGenerator
                 "platform configured WITHOUT UseHeadlessDrawing = false, or a control that never " +
                 "got a size (every catalog row must state an explicit capture size).");
 
-        string svg = SvgPostPass.Run(raw, out var report);
+        string svg = SvgPostPass.Run(raw, Path.GetFileNameWithoutExtension(path), out var report);
         LastReport = report;
 
         var findings = SvgLint.DroppedPaint(svg);
@@ -185,6 +198,30 @@ public static class UiArtworkGenerator
         File.WriteAllText(path, Banner(path) + svg + "\n");
         return path;
     }
+
+    /// <summary>
+    /// Turn OFF the font's contextual alternates for everything in this capture.
+    ///
+    /// <para><b>Inter substitutes a case-height hyphen — and case-height parentheses — beside an
+    /// UPPERCASE letter, through the <c>calt</c> feature, which is on by default. Those alternate
+    /// glyphs have no cmap entry, so Skia's SVG device cannot map them back to a character and
+    /// SILENTLY OMITS THEM</b>, leaving the gap they occupied. Measured with a probe string:
+    /// <c>"PROBE A-B c-d E - F g - h"</c> came out as <c>"PROBE AB c-d E F g - h"</c> — the two
+    /// hyphens next to a capital gone, the two next to a lower-case letter intact.</para>
+    ///
+    /// <para>It is not a corner case: it hit every framed figure's title bar
+    /// (<c>circuitRF - Layout editor</c> rendered as <c>circuitRF Layout editor</c>), the C-V
+    /// editor's whole negative-voltage column (<c>-4</c> as <c>4</c>, <c>6.2E-13</c> as
+    /// <c>6.2E13</c>) and the EM panel's port coordinates (<c>('1') at (0, …)</c> losing its
+    /// parentheses) — a figure that states the wrong number, with nothing to say so.</para>
+    ///
+    /// <para>The property is inherited, so setting it on the window reaches every control in the
+    /// capture, templated ones included. It affects the DOCS RENDER ONLY; the application is
+    /// untouched and keeps Inter's typography as designed.</para>
+    /// </summary>
+    private static void SuppressContextualAlternates(Control root)
+        => Avalonia.Controls.Documents.TextElement.SetFontFeatures(
+               root, FontFeatureCollection.Parse("-calt"));
 
     /// <summary>
     /// Set BOTH theme systems for <paramref name="variant"/>. Public because a fixture that renders
@@ -294,6 +331,14 @@ public sealed class FigureScene(Control content) : IDisposable
     /// with the offset it should be composited at. Returning nothing is normal.
     /// </summary>
     public Func<Control, IReadOnlyList<PopupCapture>>? Popups { get; init; }
+
+    /// <summary>
+    /// Called once the view has been laid out, before any popup is opened, for anything that needs
+    /// a real size to answer — <b>Zoom to Fit above all</b>, which is a viewport operation and does
+    /// nothing at all when asked of a control that has not been arranged yet. The window is
+    /// re-measured and re-arranged afterwards, so the request is reflected in the capture.
+    /// </summary>
+    public Action<Control>? AfterLayout { get; init; }
 
     /// <summary>Cleanup for anything the fixture opened (documents, temp directories).</summary>
     public Action? Cleanup { get; init; }

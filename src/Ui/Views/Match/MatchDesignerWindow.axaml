@@ -4,6 +4,7 @@
         xmlns:mv="using:CircuitRF.Ui.Views.Match"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Match.MatchDesignerWindow"
         x:DataType="mvm:MatchDesignerViewModel"
         Title="{Binding Title}"
@@ -270,12 +271,22 @@
             <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
                        VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <ToggleButton Content="Solutions ▸" FontSize="11" Padding="8,3"
+                <ToggleButton FontSize="11" Padding="8,3"
                               IsChecked="{Binding SolutionsPanelOpen, Mode=TwoWay}"
-                              ToolTip.Tip="Every valid transform set, simplest first — click through them and watch the ladder and the response change"/>
+                              ToolTip.Tip="Every valid transform set, simplest first — click through them and watch the ladder and the response change">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Solutions" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="ChevronRight" Width="13" Height="13"/>
+                    </StackPanel>
+                </ToggleButton>
                 <Button Name="SettingsButton" Content="Settings" FontSize="11" Padding="8,3"/>
-                <Button Name="ExportButton" Content="Export ▾" FontSize="11" Padding="8,3"
-                        ToolTip.Tip="Touchstone of the design response, the component listing, or the prototype g-values"/>
+                <Button Name="ExportButton" FontSize="11" Padding="8,3"
+                        ToolTip.Tip="Touchstone of the design response, the component listing, or the prototype g-values">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Export" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="ChevronDown" Width="13" Height="13"/>
+                    </StackPanel>
+                </Button>
                 <Button Name="HelpButton" Content="Help" FontSize="11" Padding="8,3"/>
                 <Button Name="CloseButton" Content="Close" FontSize="11" Padding="8,3"/>
             </StackPanel>
@@ -467,12 +478,27 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Classes="panelhdr" Text="Transforms"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                                <Button Name="AddTransformButton" Content="+ add ▾" FontSize="11" Padding="6,2"/>
+                                <Button Name="AddTransformButton" FontSize="11" Padding="6,2">
+                                    <StackPanel Orientation="Horizontal" Spacing="3">
+                                        <TextBlock Text="+ add" VerticalAlignment="Center"/>
+                                        <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button Name="RemoveTransformButton" Content="−" FontSize="11" Padding="8,2"
                                         IsEnabled="{Binding CanRemoveTransform}"/>
-                                <ToggleButton Content="🔗 link" FontSize="11" Padding="6,2"
+                                <!-- Icons, not emoji. The user-docs factory measured it (2026-08-20):
+                                     U+1F517 and U+1F512 are covered by NO circuitRF typeface and by no
+                                     shipped fallback either, so Skia substituted the platform colour-emoji
+                                     font and the generated figures carried a name that only resolves on
+                                     this machine. The same fix the Technology chevron already took. -->
+                                <ToggleButton FontSize="11" Padding="6,2"
                                               IsChecked="{Binding LinkTransforms, Mode=TwoWay}"
-                                              ToolTip.Tip="Moving one N re-solves the unlocked others so Π N² stays on target"/>
+                                              ToolTip.Tip="Moving one N re-solves the unlocked others so Π N² stays on target">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <mi:MaterialIcon Kind="LinkVariant" Width="13" Height="13"/>
+                                        <TextBlock Text="link" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </ToggleButton>
                             </StackPanel>
                         </Grid>
 
@@ -510,8 +536,9 @@
                                             <ToggleButton Grid.Column="4" FontSize="11" Padding="2"
                                                           MinHeight="0" MinWidth="0"
                                                           IsChecked="{Binding Locked, Mode=TwoWay}"
-                                                          Content="🔒"
-                                                          ToolTip.Tip="A locked transform is never written by the linkage"/>
+                                                          ToolTip.Tip="A locked transform is never written by the linkage">
+                                                <mi:MaterialIcon Kind="Lock" Width="13" Height="13"/>
+                                            </ToggleButton>
                                             <TextBlock Grid.Column="5" Classes="detailLabel" Text="{Binding ActsOn}"
                                                        Margin="6,0,0,0"/>
                                         </Grid>

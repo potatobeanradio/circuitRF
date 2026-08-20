@@ -215,8 +215,8 @@ public static class AppPreferencesIo
         PropertyNameCaseInsensitive = true,
     };
 
-    private static string PrefsDir =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "circuitRF");
+    // The one per-user state directory, so a tool can redirect it (see CircuitRF.Ui.AppDataRoot).
+    private static string PrefsDir => AppDataRoot.Dir;
 
     private static string PrefsPath => Path.Combine(PrefsDir, "preferences.json");
 

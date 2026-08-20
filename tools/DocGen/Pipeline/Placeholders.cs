@@ -16,8 +16,11 @@ namespace CircuitRF.DocGen.Pipeline;
 ///   <item><term><c>{{ui: em-setup-editor}}</c></term><description>the light/dark figure pair, inline, framed, captioned</description></item>
 ///   <item><term><c>{{symbol: resistor}}</c></term><description>the generated component-symbol figure</description></item>
 ///   <item><term><c>{{toolbar: layout}}</c></term><description>the toolbar figure AND its generated per-button table</description></item>
+///   <item><term><c>{{snapglyph: pin}}</c></term><description>one geometry-snap glyph, inline, for a table cell</description></item>
 ///   <item><term><c>{{table: components/Resistor}}</c></term><description>a parameter table read from the live registry</description></item>
 ///   <item><term><c>{{anchor: components#sdd}}</c></term><description>a checked cross-link; add <c>|Link text</c> to word it</description></item>
+///   <item><term><c>{{toc: site}}</c></term><description>the complete table of contents, from the reading order</description></item>
+///   <item><term><c>{{regions: workspace}}</c></term><description>the numbered legend of the workspace figure</description></item>
 /// </list>
 ///
 /// <para><b>An unknown placeholder is a generation error, never literal text.</b> A typo'd
@@ -39,18 +42,27 @@ public sealed class Placeholders
     private readonly string _pageDir;
     private readonly Func<string, IReadOnlyList<ToolbarCatalog.Entry>> _toolbarManifest;
     private readonly Func<string, bool> _anchorExists;
+    private readonly SiteNav? _nav;
+    private readonly IReadOnlyDictionary<string, string>? _titles;
+    private readonly string? _pageSlug;
 
     /// <summary>Families referenced by every figure inlined so far — drives which fonts get shipped.</summary>
     public HashSet<string> FontFamiliesUsed { get; } = new(StringComparer.Ordinal);
 
     public Placeholders(string docsRoot, string pageDir,
                         Func<string, IReadOnlyList<ToolbarCatalog.Entry>> toolbarManifest,
-                        Func<string, bool> anchorExists)
+                        Func<string, bool> anchorExists,
+                        SiteNav? nav = null,
+                        IReadOnlyDictionary<string, string>? titles = null,
+                        string? pageSlug = null)
     {
         _docsRoot = docsRoot;
         _pageDir = pageDir;
         _toolbarManifest = toolbarManifest;
         _anchorExists = anchorExists;
+        _nav = nav;
+        _titles = titles;
+        _pageSlug = pageSlug;
     }
 
     /// <summary>Expand every placeholder in <paramref name="markdown"/>. Throws on anything unknown.</summary>
@@ -63,11 +75,15 @@ public sealed class Placeholders
             {
                 "ui"      => UiFigure(arg),
                 "symbol"  => SymbolFigure(arg),
-                "toolbar" => ToolbarFigure(arg),
+                "toolbar"   => ToolbarFigure(arg),
+                "snapglyph" => SnapGlyph(arg),
                 "table"   => Table(arg),
                 "anchor"  => Anchor(arg),
+                "toc"     => Toc(arg),
+                "regions" => Regions(arg),
                 _ => throw new InvalidOperationException(
-                        $"unknown placeholder kind '{kind}'. Known kinds: ui, symbol, toolbar, table, anchor."),
+                        $"unknown placeholder kind '{kind}'. Known kinds: ui, symbol, toolbar, snapglyph, "
+                      + "table, anchor, toc, regions."),
             };
         }
         catch (Exception ex)
@@ -114,7 +130,49 @@ public sealed class Placeholders
 
         var figure = FigurePair(Path.Combine("assets", "figures"), "toolbar-" + id + "-indexed",
                                 row.Title + " toolbar", "figure");
-        return figure + "\n" + DocTables.ToolbarButtons(_toolbarManifest(id));
+        return figure + "\n" + DocTables.ToolbarButtons(_toolbarManifest(id), e => ButtonGlyph(id, e));
+    }
+
+    /// <summary>
+    /// The captured button itself, inlined, for the per-button table's Button column.
+    ///
+    /// <para>Drawn LARGER than the toolbar draws it — the table has the room, and a 28-pixel icon in
+    /// a body-text row is smaller than the surrounding letters (owner, 2026-08-20). The SVG carries a
+    /// viewBox, so the width in the stylesheet is all it takes.</para>
+    /// </summary>
+    private string ButtonGlyph(string toolbarId, ToolbarCatalog.Entry e)
+    {
+        string stem = $"toolbar-{toolbarId}-btn-{e.Index}";
+        if (!File.Exists(Path.Combine(_docsRoot, "assets", "figures", stem + ".svg")))
+            return e.Id.Length == 0 ? "&mdash;" : "<code>" + WebUtility.HtmlEncode(e.Id) + "</code>";
+
+        return InlinePair(Path.Combine("assets", "figures"), stem, "toolbar-glyph");
+    }
+
+    // ── {{snapglyph: id}} ─────────────────────────────────────────────────────
+
+    private string SnapGlyph(string id)
+    {
+        if (!InlineGlyphArtwork.SnapGlyphs.Any(g => g.Id == id))
+            throw new InvalidOperationException(
+                $"no snap glyph '{id}'. Known: "
+              + string.Join(", ", InlineGlyphArtwork.SnapGlyphs.Select(g => g.Id)) + ".");
+
+        return InlinePair(Path.Combine("assets", "figures"),
+                          InlineGlyphArtwork.SnapGlyphStem + id, "snap-glyph");
+    }
+
+    /// <summary>
+    /// A light/dark pair inlined with no frame and no caption — for a mark that lives INSIDE running
+    /// text or a table cell, where <see cref="FigurePair"/>'s block-level figure markup would break
+    /// the row it is in.
+    /// </summary>
+    private string InlinePair(string relDir, string stem, string cssClass)
+    {
+        string light = ReadInline(Path.Combine(relDir, stem + ".svg"));
+        string dark  = ReadInline(Path.Combine(relDir, stem + "-dark.svg"));
+        return $"<span class=\"{cssClass} sym-light\">{light}</span>"
+             + $"<span class=\"{cssClass} sym-dark\">{dark}</span>";
     }
 
     // ── {{table: …}} ──────────────────────────────────────────────────────────
@@ -172,6 +230,78 @@ public sealed class Placeholders
              + (frag.Length == 0 ? "" : "#" + WebUtility.HtmlEncode(frag)) + "\">"
              + WebUtility.HtmlEncode(label ?? (frag.Length == 0 ? page : frag)) + "</a>";
     }
+
+    // ── {{toc: site}} ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The complete table of contents: every section, every page, in the one reading order, with the
+    /// blurb the manifest gives it. Generated rather than authored because a hand-written contents
+    /// page is the first thing to go stale, and a page missing from it is invisible.
+    /// </summary>
+    private string Toc(string arg)
+    {
+        if (_nav is null)
+            throw new InvalidOperationException(
+                "there is no reading order to build a table of contents from — docs/user/src/_nav.txt "
+              + "is missing.");
+
+        IReadOnlyList<SiteNav.Section> chosen;
+        if (arg == "site")
+        {
+            chosen = _nav.Sections;
+        }
+        else if (arg.StartsWith("section:", StringComparison.Ordinal))
+        {
+            string want = arg["section:".Length..].Trim();
+            chosen = _nav.Sections.Where(s => s.Title == want).ToList();
+            if (chosen.Count == 0)
+                throw new InvalidOperationException(
+                    $"no section titled '{want}' in the reading order. Sections: "
+                  + string.Join(", ", _nav.Sections.Select(s => s.Title)) + ".");
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"unknown table of contents '{arg}'. Supported: site, section:<Section title>.");
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<div class=\"site-toc\">");
+        foreach (var section in chosen)
+        {
+            sb.AppendLine($"<h3>{WebUtility.HtmlEncode(section.Title)}</h3>");
+            sb.AppendLine("<ul>");
+            foreach (var e in section.Entries)
+            {
+                // Never link a page to itself. reference/index.html IS the Reference Guide contents
+                // and is listed in the reading order like every other page, so its own "Core concepts"
+                // section opened with a link back to the page the reader is already on (owner,
+                // 2026-08-20). It stays in the reading order — Previous/Next still runs through it —
+                // it simply does not appear inside its own list.
+                if (_pageSlug is not null && e.Slug == _pageSlug) continue;
+
+                string label = _titles is not null && _titles.TryGetValue(e.Slug, out var t)
+                    ? t : Path.GetFileNameWithoutExtension(e.Slug);
+                sb.Append($"<li><a href=\"{WebUtility.HtmlEncode(Relative(e.Slug))}\">"
+                        + $"{WebUtility.HtmlEncode(label)}</a>");
+                if (e.Blurb.Length > 0) sb.Append($" <span>{WebUtility.HtmlEncode(e.Blurb)}</span>");
+                sb.AppendLine("</li>");
+            }
+            sb.AppendLine("</ul>");
+        }
+        sb.AppendLine("</div>");
+        return sb.ToString();
+    }
+
+    // ── {{regions: workspace}} ────────────────────────────────────────────────
+
+    /// <summary>The numbered legend of an indexed figure whose numbers are regions, not buttons.</summary>
+    private string Regions(string arg) => arg switch
+    {
+        "workspace" => DocTables.WorkspaceRegionLegend(),
+        _ => throw new InvalidOperationException(
+                 $"unknown region legend '{arg}'. Supported: workspace."),
+    };
 
     // ── Shared figure markup ──────────────────────────────────────────────────
 

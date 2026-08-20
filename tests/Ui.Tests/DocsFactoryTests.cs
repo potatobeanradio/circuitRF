@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -181,6 +182,45 @@ public class DocsFactoryTests
             var cells = Regex.Matches(table, @"<tr><td>(?<n>\d+)</td>").Select(m => int.Parse(m.Groups["n"].Value));
             Assert.Equal(numbered.Select(e => e.Index), cells);
         }
+    }
+
+    // ── The workspace figure's regions and its legend agree ───────────────────
+
+    [Fact]
+    public void EveryWorkspaceRegionIsNumberedOnceAndAppearsInTheLegendInOrder()
+    {
+        var regions = WorkspaceRegions.Catalog;
+        Assert.NotEmpty(regions);
+
+        // 1..N with no gaps and no repeats: the page says "3 — Project panel", and the number in the
+        // picture is placed from this same list, so a gap or a duplicate makes one of them wrong.
+        Assert.Equal(Enumerable.Range(1, regions.Count), regions.Select(r => r.Index));
+
+        var legend = DocTables.WorkspaceRegionLegend();
+        var cells = Regex.Matches(legend, @"<tr><td>(?<n>\d+)</td>").Select(m => int.Parse(m.Groups["n"].Value));
+        Assert.Equal(regions.Select(r => r.Index), cells);
+
+        foreach (var r in regions)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(r.Title), $"Region {r.Index} has no title.");
+            Assert.False(string.IsNullOrWhiteSpace(r.What),  $"Region {r.Index} ('{r.Title}') says nothing.");
+            Assert.Contains(WebUtility.HtmlEncode(r.Title), legend);
+        }
+    }
+
+    /// <summary>
+    /// The generated page must actually carry the legend, not just be able to produce one — the
+    /// figure's numbers mean nothing on a page that lost the table beside them.
+    /// </summary>
+    [Fact]
+    public void TheWorkspacePageCarriesTheRegionLegend()
+    {
+        string page = Path.Combine(DocsRoot(), "reference", "workspace.html");
+        Assert.True(File.Exists(page), "reference/workspace.html has not been generated.");
+
+        string html = File.ReadAllText(page);
+        foreach (var r in WorkspaceRegions.Catalog)
+            Assert.Contains(WebUtility.HtmlEncode(r.Title), html);
     }
 
     [Fact]
@@ -365,6 +405,96 @@ public class DocsFactoryTests
         foreach (var licence in new[] { "OFL.txt", "DejaVu Fonts License.txt" })
             Assert.True(File.Exists(Path.Combine(fontsDir, licence)),
                 $"{licence} must ship beside the extracted typefaces.");
+    }
+
+    // ── Inlined SVGs share the page's id namespace ────────────────────────────
+
+    /// <summary>
+    /// <b>No two elements on a generated page may share an id.</b>
+    ///
+    /// <para>This is the gate for the defect that produced four separate bug reports at once
+    /// (2026-08-20). Figures are INLINED, so several SVGs land in one HTML document and share its
+    /// single id namespace; <c>SvgPostPass.DedupePaths</c> numbers its hoisted paths <c>d0, d1, …</c>
+    /// from zero per file, and Skia numbers its embedded images <c>img_0, img_1</c> the same way. A
+    /// second figure's <c>&lt;use href="#d0"&gt;</c> then silently resolved to the FIRST figure's
+    /// geometry. Symptoms: the Data Display toolbar "glitched out", the snap-glyph strip drew over
+    /// corrupted metal while being perfect as a standalone file, the Wire Profile panel drew rulers
+    /// and no wires, and the harmonicaRF page's DARK figure rendered the LIGHT contour raster.</para>
+    /// </summary>
+    [Fact]
+    public void NoGeneratedPageHasTwoElementsWithTheSameId()
+    {
+        var idRx = new Regex(@"\bid=""(?<id>[^""]+)""", RegexOptions.Compiled);
+        foreach (var page in AllPages())
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var dupes = new List<string>();
+            foreach (System.Text.RegularExpressions.Match m in idRx.Matches(File.ReadAllText(page)))
+                if (!seen.Add(m.Groups["id"].Value)) dupes.Add(m.Groups["id"].Value);
+
+            Assert.True(dupes.Count == 0,
+                $"{Path.GetRelativePath(DocsRoot(), page)} defines these ids more than once: "
+              + string.Join(", ", dupes.Distinct().Take(8))
+              + ". Inlined figures share one id namespace, so a reference resolves to whichever "
+              + "figure came first on the page. SvgPostPass scopes every id to its file for exactly "
+              + "this reason — something has bypassed it.");
+        }
+    }
+
+    /// <summary>
+    /// <b>Every emitted figure carries a <c>viewBox</c>.</b> Without one an inline
+    /// <c>&lt;svg&gt;</c> does not scale: the stylesheet's <c>max-width: 100%</c> narrows the
+    /// element's box and the drawing is CLIPPED at full size rather than resized. Reported as "the
+    /// schematic svg is not sized to the frame"; the symbol figures never showed it only because
+    /// they are smaller than the column they sit in.
+    /// </summary>
+    [Fact]
+    public void EveryEmittedFigureCarriesAViewBox()
+    {
+        foreach (var svg in AllSvgs())
+        {
+            if (Path.GetRelativePath(DocsRoot(), svg).Replace('\\', '/').StartsWith("assets/img/")) continue;
+
+            var root = Regex.Match(File.ReadAllText(svg), @"<svg\b[^>]*>");
+            Assert.True(root.Success, $"{Path.GetFileName(svg)} has no <svg> root element.");
+            Assert.True(root.Value.Contains("viewBox=", StringComparison.Ordinal),
+                $"{Path.GetFileName(svg)} has no viewBox, so inlined in a page it will be clipped "
+              + "rather than scaled.");
+        }
+    }
+
+    // ── Small numbers keep their precision ────────────────────────────────────
+
+    /// <summary>
+    /// <b>A magnitude below one is rounded to significant figures, not to two decimal places.</b>
+    ///
+    /// <para>Every ComboBox in the docs was drawing HALF a drop-down chevron. The chevron is a
+    /// 2010-unit-wide geometry scaled into a 12 px icon box — <c>matrix(0.00597 0 0 0.00597 …)</c> —
+    /// and rounding that scale to 2 dp made it <c>0.01</c>, blowing the glyph up by 67 % inside a
+    /// clip that was still 12 px wide. Two decimal places is a hundredth of a pixel on a coordinate
+    /// and a two-thirds error on a matrix scale.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("matrix(0.00597 0 0 0.00597 228 70.23)", "matrix(0.00597 0 0 0.00597 228 70.23)")]
+    [InlineData("matrix(0.5 0 0 0.5 148 713)",           "matrix(0.5 0 0 0.5 148 713)")]
+    [InlineData("M8.30361 12.99999L0.000123 1",          "M8.3 13L0.000123 1")]
+    public void SmallMagnitudesKeepTheirPrecision(string input, string expected)
+        => Assert.Equal(expected, SvgPostPass.RoundAll(input));
+
+    // ── The opaque design payload is not a documented parameter ───────────────
+
+    /// <summary>
+    /// Match's and wBond's <c>Design</c> is base64 of the whole design's JSON. The parameter panel
+    /// already refuses to show it as a text row; a documentation table listing it invites exactly
+    /// the hand edit the interface declines to offer (owner, 2026-08-20).
+    /// </summary>
+    [Theory]
+    [InlineData(CircuitRF.Ui.Schematic.SymbolKind.Match)]
+    [InlineData(CircuitRF.Ui.Schematic.SymbolKind.WBond)]
+    public void TheOpaqueDesignPayloadIsNotListedAsAParameter(SymbolKind kind)
+    {
+        Assert.Contains(ComponentTypeRegistry.DefaultParameters(kind, 2), p => p.Name == "Design");
+        Assert.DoesNotContain("<td>Design</td>", DocTables.ComponentParameters(kind, 2));
     }
 
     // ── Generated files say how to regenerate themselves ──────────────────────

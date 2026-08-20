@@ -356,3 +356,100 @@ Rewriting 3,300 lines of good HTML into Markdown up front is the way this stalls
   handle everything Avalonia can draw.
 - **Replacing the symbol generator.** It works, it is proven, and `--generate-symbols` stays — the
   factory calls the same code rather than reimplementing it.
+
+---
+
+## 11. Capturing the WORKSPACE — the whole window, not one view
+
+Added 2026-08-20, after the rest of the factory was already running. Everything in §1-§9 captures one
+view: a dialog, a panel, an editor. This section is about capturing the **shell those views live
+in** — `WorkspaceWindow` with its menu bar, toolbar, dock tree and open documents. It is a different
+problem only in what it has to arrange beforehand; the render call is the same one.
+
+**It works, and it is worth stating why that was not obvious.** The workspace is the one figure that
+depends on Dock.Avalonia's `DockControl`, on a `WorkspaceViewModel` (11,000 lines, a constructor with
+real side effects), and on a workspace existing on disk. All three turned out to be fine.
+
+### 11.1 What the capture needs, and why each is load-bearing
+
+Each of these fails **silently** — a wrong figure, not an error — which is why each is written down.
+
+1. **The DataContext must be set on the CONTENT, not on the `Window`.** The generator renders the
+   window's content and draws its own frame (§3.3), so the fixture detaches the content — and a
+   detached control loses the DataContext it inherited. The whole dock tree binds through it, so the
+   first capture was a correctly-rendered toolbar above an empty grey rectangle. `DockControl`'s
+   `Layout` had bound to nothing and reported nothing.
+
+2. **`DocsApp` needs the application's DataTemplates, not just the `ViewLocator`.** The ViewLocator
+   maps `XViewModel` → `XView` by name. Every Dock tool and document view-model is named nothing like
+   its view (`ProjectTreeTool` → `ProjectTreeView`, `SchematicDocument` → `SchematicView`) and is
+   mapped by an explicit `DataTemplate` in `App.axaml`. Without them each dock panel rendered as the
+   **literal text of its view-model's type name**. `DocsApp` now copies them off a real `App`
+   instance rather than restating nineteen templates: constructing `App` does not start the
+   application (`Initialize` is only `AvaloniaXamlLoader.Load(this)`; it is
+   `OnFrameworkInitializationCompleted` — never called — that opens windows and loads PDKs).
+
+3. **The in-window menu bar has to be forced visible.** It carries
+   `IsVisible="{OnPlatform True, macOS=False}"` because macOS puts those menus in the system menu
+   bar, which is not in any visual tree. Left alone, a figure generated on macOS is missing a menu
+   bar that Windows and Linux readers have on screen — and differs from one generated on Linux. The
+   fixture turns it on, and the page says where macOS puts it.
+
+### 11.2 A figure must not depend on whose machine generated it
+
+This is the finding that generalises beyond the workspace. `WorkspaceViewModel`'s constructor reads
+the real `preferences.json` and restores the PDKs installed from it, so the capture carried the
+generating developer's **launch window layout** (visibly — the Library panel changed columns), their
+colour scheme, and their installed kits in the palette. With `check-docs-current.sh` regenerating and
+diffing, that is not cosmetic: the output would never be reproducible.
+
+The fix is one lever. `CircuitRF.Ui.AppDataRoot` is now the single definition of the per-user state
+directory — `AppPreferencesIo` and `RecoveryManager` computed `LocalApplicationData/circuitRF`
+independently before — and `tools/DocGen` redirects it to a throwaway directory before it starts, so
+every run sees a **first-launch installation**.
+
+The environment cannot do this job, and this was measured rather than assumed: on macOS .NET resolves
+`SpecialFolder.LocalApplicationData` to `~/Library/Application Support` from the platform, so setting
+`XDG_DATA_HOME` or `HOME` in-process changes nothing.
+
+Two smaller sources of churn are handled in the fixture itself. Message timestamps are switched to
+the application's own **Hidden** mode for the capture (a real setting, not a docs hook), and the
+message log — which correctly names the absolute path of the temporary workspace that was just
+opened — is cleared and restated without it.
+
+### 11.3 The workspace the figure opens
+
+There is no example workspace tracked in this repository (`circuitRF_demo/` is git-ignored, which
+§5.2 did not anticipate). The fixture therefore **writes one** into a temporary directory it deletes
+afterwards: two cells — one carrying the shipped FET S-parameter schematic template, one carrying a
+layout — plus the starter PCB technology, all through the real `CellPersistence` /
+`SchematicPersistence` / `LayoutPersistence` / `WorkspacePersistence` writers. Only the folder
+scaffolding is synthesised, which is exactly what **File ▸ New Cell** writes; the content is shipped,
+tracked content, and a format change breaks the run rather than quietly producing a stale picture.
+
+It is then driven the way a user drives it: the cell is found in the **Project panel's own tree** and
+opened through `OpenCellSchematic` / `OpenCellLayout`, so primacy resolution, tab de-duplication and
+active-tab bookkeeping all run as they do for a double-click.
+
+### 11.4 Indexed figures whose numbers are REGIONS
+
+`workspace-regions` is the numbered version, and it generalises the toolbar's indexed figure from
+buttons to arbitrary parts of a window:
+
+- `WorkspaceRegions.Catalog` is one row per numbered region — number, title, one sentence, **a
+  locator, and which corner of that region the number sits in**.
+- **The locator finds a real control** (`ByType<ProjectTreeView>()`, the toolbar `StackPanel` by its
+  style class, `DocumentControl` for the tab strip). Never a coordinate: a dot placed at "about
+  x=180" is a screenshot with extra steps — right until a panel changes width, then wrong without
+  saying so. A region that cannot be found, or that arranged too small to carry its number, fails the
+  run and names itself.
+- The legend beside the figure is generated from the same list (`{{regions: workspace}}` →
+  `DocTables.WorkspaceRegionLegend`), so the number in the picture and the number in the table cannot
+  disagree.
+- `CalloutDot` is the numbered dot both indexed figure kinds draw, defined once.
+
+### 11.5 Cost
+
+Two figures, four files (light and dark), ~280 KB each after the post-pass, and about a second of the
+run. The whole regeneration is 14 s for 438 files, so the workspace capture does not change the shape
+of the command: it stays a deliberate one, never a build step.
