@@ -51,6 +51,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _nonlinearC   = BuildNonlinearC();
     private static readonly Symbol _mutual        = BuildMutual();
     private static readonly Symbol _tline         = BuildTline();
+    private static readonly Symbol _match         = BuildMatch();
     private static readonly Symbol _tuner         = BuildTuner();
     private static readonly Symbol _sourceTuner   = BuildSourceTuner();
     private static readonly Symbol _loadTuner     = BuildLoadTuner();
@@ -120,6 +121,7 @@ public static class BuiltInSymbols
             case SymbolKind.NonlinearC: return _nonlinearC;
             case SymbolKind.Mutual:     return _mutual;
             case SymbolKind.Tline:      return _tline;
+            case SymbolKind.Match:      return _match;
             case SymbolKind.Mlin:       return _mlin;
             case SymbolKind.MBend:      return _mbend;
             case SymbolKind.MTee:       return _mtee;
@@ -627,6 +629,29 @@ public static class BuiltInSymbols
         RRect( 0,  0,  180,  90,  18),      // body (rounded rect, x∈[−90,90], y∈[−45,45])
         L( -60,   0,   60,   0),            // centre conductor line through the body
     ], SymbolKind.Tline);
+
+    // ── Match — the standard BANDPASS glyph: three stacked sine waves in a square body, ──────
+    // with a slash struck through the top one and through the bottom one (match.md §8.4).
+    // Pins: (−200,0) left = port 1 = Termination 1 side / (+200,0) right, matching TLIN's own
+    // horizontal 2-port convention.
+    //
+    // The two slashes are PLAIN LINES while the waves are SinePrimitives, and the primitive is the
+    // only one of the two that knows anything about the glyph — so the strikethrough reads as a
+    // strikethrough only if the lines are drawn to cross the waves geometrically, at every rotation
+    // and mirrored. They are therefore centred on their own wave (y = ∓45, the same centres the
+    // sines use) and long enough (±55 in x, against the waves' ±60) to overhang the wave's own
+    // amplitude at both ends. Both run the same way (lower-left to upper-right), so the pair reads
+    // as one annotation rather than as a cross.
+    private static Symbol BuildMatch() => Sym([
+        L(-200,   0, -110,   0),                                   // left lead
+        L( 110,   0,  200,   0),                                   // right lead
+        RRect( 0,  0,  220, 220,  18),                             // square body
+        Sine(  0, -55,  16, 1, 120, SineAxis.Horizontal),          // top wave (blocked)
+        Sine(  0,   0,  16, 1, 120, SineAxis.Horizontal),          // passband wave
+        Sine(  0,  55,  16, 1, 120, SineAxis.Horizontal),          // bottom wave (blocked)
+        L( -55, -30,   55, -80),                                   // strike through the top wave
+        L( -55,  80,   55,  30),                                   // strike through the bottom wave
+    ], SymbolKind.Match);
 
     // ── Microstrip built-ins (brief-L5a-pcell-contract-and-microstrip.md) ──────────
     // Every body element below is an UNFILLED RoundedRectPrimitive (RRect never sets Filled, which

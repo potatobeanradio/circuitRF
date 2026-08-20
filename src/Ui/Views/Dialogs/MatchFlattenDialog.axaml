@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.MatchFlattenDialog"
+        Title="Flatten to Cell"
+        Width="470"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+
+            <TextBlock x:Name="PromptLabel" FontSize="12" TextWrapping="Wrap"/>
+
+            <TextBlock Text="New cell name:" FontSize="12" Margin="0,4,0,0"/>
+            <TextBox   x:Name="NameBox"
+                       FontSize="12"
+                       MaxLength="200"
+                       KeyDown="OnKeyDown"/>
+
+            <TextBlock Text="Destination folder:" FontSize="12" Margin="0,4,0,0"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox x:Name="DestinationBox" FontSize="12" IsReadOnly="True"/>
+                <Button Grid.Column="1" Content="Browse…" FontSize="12" Margin="6,0,0,0"
+                        Click="OnBrowseClick"
+                        ToolTip.Tip="Choose another folder inside this workspace to create the cell in."/>
+            </Grid>
+
+            <CheckBox x:Name="ReplaceBox" FontSize="12" IsChecked="True" Margin="0,6,0,0"/>
+            <TextBlock x:Name="ReplaceNote"
+                       FontSize="11"
+                       Opacity="0.75"
+                       TextWrapping="Wrap"
+                       Text="The new cell reuses this component's own symbol and pin positions, so every wire stays connected. Creating the cell and replacing the instance is one undoable step."/>
+
+            <TextBlock x:Name="ValidationMessage"
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" Click="OnCancelClick"/>
+            <Button Content="Flatten" Width="90" IsDefault="True" FontSize="12" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

@@ -468,6 +468,19 @@ public partial class SchematicView : UserControl
 
         CtxPushIn.IsVisible      = isCell;
         CtxOpenInNewTab.IsVisible = isCell;
+
+        // Flatten to Cell — a Match and nothing else. Shown only for one, and DISABLED with the
+        // reason as its tooltip when the design refuses, the schematic is unsaved or there is no
+        // workspace to write into: those are states the user has to act on, and a silently missing
+        // item reads as a bug.
+        bool isMatch = comp?.Symbol == SymbolKind.Match;
+        CtxFlattenMatch.IsVisible = isMatch;
+        if (isMatch)
+        {
+            var availability = Matching.MatchFlattenService.Availability(Vm, comp);
+            CtxFlattenMatch.IsEnabled = availability.CanRun;
+            ToolTip.SetTip(CtxFlattenMatch, availability.Reason);
+        }
         if (isCell && comp is not null)
         {
             var doc      = DataContext as SchematicDocument;
@@ -517,6 +530,41 @@ public partial class SchematicView : UserControl
         if (comp is null) return;
 
         OpenParameterEditorFor(comp);
+    }
+
+    /// <summary>
+    /// Context menu ▸ Flatten to Cell… — the SAME operation the Match Designer's own footer button
+    /// runs (match.md §11, brief §4: "both routes go through one command object"). The dialog and
+    /// the window ownership are the view's; everything else is
+    /// <see cref="Matching.MatchFlattenService"/>'s.
+    /// </summary>
+    private async void OnCtxFlattenMatch(object? sender, RoutedEventArgs e)
+    {
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (Vm is null || comp is not { Symbol: SymbolKind.Match }) return;
+
+        var availability = Matching.MatchFlattenService.Availability(Vm, comp);
+        if (!availability.CanRun || availability.ParentDir is null)
+        {
+            Vm.MessageSink?.Warning(availability.Reason);
+            return;
+        }
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var dialog = new Dialogs.MatchFlattenDialog(
+            comp.InstanceName, availability.DefaultName, availability.ParentDir);
+        var choice = owner is null
+            ? null
+            : await dialog.ShowDialog<Dialogs.MatchFlattenChoice?>(owner);
+        if (choice is null) return;
+
+        var result = Matching.MatchFlattenService.Run(
+            Vm, comp, choice.ParentDir, choice.CellName, choice.ReplaceInPlace);
+        if (result.Ok) Vm.MessageSink?.Success(result.Message);
+        else Vm.MessageSink?.Warning(result.Message);
+
+        SchematicCanvasCtrl.InvalidateVisual();
     }
 
     private void OnCtxPushIn(object? sender, RoutedEventArgs e)
@@ -799,6 +847,17 @@ public partial class SchematicView : UserControl
             var varDialog = new VarEditorDialog { DataContext = varVm };
             varDialog.Closed += (_, _) => varVm.Dispose();
             varDialog.Show(owner!);
+            return;
+        }
+
+        // Match -> the Match Designer, NOT the 420 px generic dialog (match.md §9.8). A matching
+        // network's parameters are a band, two terminations and a rack of linked sliders; the generic
+        // editor can only offer them as text rows, and its ONE interesting parameter (`Design`) is a
+        // base64 blob it deliberately hides. One window per instance — MatchDesignerWindow.Show
+        // raises an existing one rather than opening a second working copy of the same design.
+        if (comp.Symbol == SymbolKind.Match)
+        {
+            Views.Match.MatchDesignerWindow.Show(Vm, comp, owner);
             return;
         }
 

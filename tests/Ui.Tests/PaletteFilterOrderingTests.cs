@@ -44,9 +44,12 @@ public class PaletteFilterOrderingTests
     [Fact]
     public void AllItemsPinnedOrder_EverythingAfterThePinnedRows_KeepsAllItemsOwnRelativeOrder()
     {
+        // 23 = the length of LibraryCatalog's own AllFilterPinnedOrder. Bump this when a row is
+        // pinned or unpinned; Match was the 23rd (2026-08-19).
+        const int PinnedRows = 23;
         var pinned      = LibraryCatalog.AllItemsPinnedOrder();
-        var pinnedSet   = pinned.Take(22).Select(i => (i.Kind, i.PortCount)).ToHashSet();
-        var restActual  = pinned.Skip(22).Select(i => (i.Kind, i.PortCount)).ToList();
+        var pinnedSet   = pinned.Take(PinnedRows).Select(i => (i.Kind, i.PortCount)).ToHashSet();
+        var restActual  = pinned.Skip(PinnedRows).Select(i => (i.Kind, i.PortCount)).ToList();
         var restInAllItems = LibraryCatalog.AllItems
             .Where(i => !pinnedSet.Contains((i.Kind, i.PortCount)))
             .Select(i => (i.Kind, i.PortCount))

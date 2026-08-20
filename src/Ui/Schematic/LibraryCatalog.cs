@@ -139,6 +139,7 @@ public static class LibraryCatalog
         (SymbolKind.LoadTuner,   0),
         (SymbolKind.ZPort,       1),   // Z1P
         (SymbolKind.WBond,       0),
+        (SymbolKind.Match,       0),
     ];
 
     /// <summary>Built-ins in <see cref="AllFilterPinnedOrder"/> order, then everything else in the
@@ -299,7 +300,8 @@ public static class LibraryCatalog
         ComponentCategory.Terminals        => 3,
         ComponentCategory.TransmissionLine => 4,
         ComponentCategory.Microstrip       => 5,
-        ComponentCategory.DataFiles        => 6,
-        _                                  => 7,
+        ComponentCategory.Matching         => 6,
+        ComponentCategory.DataFiles        => 7,
+        _                                  => 8,
     };
 }

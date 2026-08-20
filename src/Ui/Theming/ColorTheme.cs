@@ -141,6 +141,12 @@ public sealed class ColorTheme
             [ColorRole.WBondWireVertex] = new( 60,  27, 243),
             [ColorRole.WBondSelected]  = new( 46,  36,  42),
             [ColorRole.WBondEnvelope]  = new(165,  64, 130,  52),
+
+            // Match Designer. Absorbed carries its own ALPHA rather than a lighter grey: dimming has
+            // to read as dimming over whatever the preview's background happens to be.
+            [ColorRole.MatchAbsorbed]  = new( 60,  60,  66, 105),
+            [ColorRole.MatchNegative]  = new(198,  40,  40),
+            [ColorRole.MatchBracket]   = new( 21, 101, 192),
         },
         new Dictionary<string, Rgba>
         {
@@ -219,5 +225,9 @@ public sealed class ColorTheme
             [ColorRole.WBondWireVertex] = new(142, 122, 255),
             [ColorRole.WBondSelected]  = new(244, 241, 243),
             [ColorRole.WBondEnvelope]  = new(214, 122, 182,  60),
+
+            [ColorRole.MatchAbsorbed]  = new(214, 214, 222, 100),
+            [ColorRole.MatchNegative]  = new(255, 118, 110),
+            [ColorRole.MatchBracket]   = new(120, 178, 255),
         });
 }

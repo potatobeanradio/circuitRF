@@ -160,6 +160,21 @@ public sealed class CcellFile
     public string? ExternalNetlistCell { get; set; }
 
     /// <summary>
+    /// The <c>Match</c> design this cell was flattened from — base64 of its JSON, exactly the blob a
+    /// <c>Match</c> component carries (match.md §11.1). Present only on a cell that <b>Flatten to
+    /// Cell</b> wrote; omitted from every other <c>.ccell</c>, which therefore stays byte-identical.
+    ///
+    /// <para><b>Deliberately NOT a <see cref="CcellParameter"/>.</b> A declared parameter is seeded
+    /// onto every placed instance as an override, and an instance override is <i>eagerly evaluated
+    /// as an expression</i> at elaboration — a base64 blob is not one, so every placement of a
+    /// flattened cell would refuse to elaborate. This is cell metadata, like
+    /// <see cref="ExternalNetlistPath"/> beside it, and nothing in the cell's own netlist reads
+    /// it.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MatchDesign { get; set; }
+
+    /// <summary>
     /// Number of electrical ports this cell exposes to instantiating parents.
     /// Default 0 so existing alpha .ccell files (which omit this field) load cleanly.
     /// The primary symbol's ExternalPortCount is fed from this value, not the other way around.

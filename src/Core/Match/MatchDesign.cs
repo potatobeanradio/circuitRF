@@ -1,0 +1,252 @@
+namespace CircuitRF.Core.Matching;
+
+/// <summary>Which single reactive element a termination carries, if any (match.md §5.3).</summary>
+/// <remarks>
+/// <c>None</c> is a first-class value rather than <c>Value == 0</c>. The reference implementation
+/// overloaded a zero capacitance to mean "purely resistive" and could then not tell it apart from a
+/// legitimately tiny one, which forced it to silently rewrite a series termination to parallel. An
+/// inductive "no reactance" has no zero to overload at all (it would be L = infinity), so the
+/// convention could not have survived <see cref="ReactanceKind.L"/> even in principle.
+/// </remarks>
+public enum ReactanceKind
+{
+    /// <summary>Purely resistive: Q = 0, nothing to absorb.</summary>
+    None,
+
+    /// <summary>A capacitance, in farads.</summary>
+    C,
+
+    /// <summary>An inductance, in henries.</summary>
+    L,
+}
+
+/// <summary>How the termination's reactance sits against its resistance.</summary>
+public enum TerminationTopology
+{
+    /// <summary>R and the reactance in series — the end arm is a SERIES arm.</summary>
+    Series,
+
+    /// <summary>R and the reactance in parallel — the end arm is a SHUNT arm.</summary>
+    Parallel,
+}
+
+/// <summary>The prototype family the synthesis draws from (match.md §4.3, §6).</summary>
+public enum ResponseShape
+{
+    /// <summary>Levy's singly-prescribed closed form with the Fano root — the default.</summary>
+    ChebyshevFano,
+
+    /// <summary>
+    /// Levy's doubly-prescribed closed form. Both end Q's are inputs, so the far end absorbs exactly
+    /// and no excess element is ever needed; what it gives up is Fano optimality.
+    /// </summary>
+    ChebyshevTwoEnded,
+
+    /// <summary>Maximally-flat magnitude, via the numerical route.</summary>
+    Butterworth,
+
+    /// <summary>Maximally-flat group delay, via the numerical route. Usually refused by the far end.</summary>
+    Bessel,
+}
+
+/// <summary>Which end pins g1 (match.md §4.2).</summary>
+public enum AnalysisEndChoice
+{
+    /// <summary>The higher-Q end — the binding constraint, and the default.</summary>
+    Highest,
+
+    /// <summary>Force termination 1.</summary>
+    Term1,
+
+    /// <summary>Force termination 2.</summary>
+    Term2,
+}
+
+/// <summary>Which three-element equivalent a Norton transform produces (match.md §4.7).</summary>
+public enum TransformForm
+{
+    /// <summary>shunt - series - shunt.</summary>
+    Pi,
+
+    /// <summary>series - shunt - series.</summary>
+    T,
+}
+
+/// <summary>
+/// One end of the match: a resistance with at most one reactive element (match.md §4.1, §5).
+/// </summary>
+/// <param name="R">Port resistance, ohms.</param>
+/// <param name="Kind">Which reactance, or <see cref="ReactanceKind.None"/>.</param>
+/// <param name="Topology">Series or parallel against <paramref name="R"/>.</param>
+/// <param name="Value">Farads or henries, per <paramref name="Kind"/>. Ignored when None.</param>
+/// <param name="Probed">True when §10's probe supplied this, rather than the user.</param>
+/// <param name="ProbedAtUtc">When the probe ran; provenance for the Designer.</param>
+public sealed record Termination(
+    double R,
+    ReactanceKind Kind,
+    TerminationTopology Topology,
+    double Value,
+    bool Probed = false,
+    DateTime? ProbedAtUtc = null)
+{
+    /// <summary>A purely resistive end.</summary>
+    public static Termination Resistive(double r, TerminationTopology topology = TerminationTopology.Parallel)
+        => new(r, ReactanceKind.None, topology, 0.0);
+
+    /// <summary>
+    /// The equivalent capacitance at band centre — <b>the whole of match.md §5</b>, and the only place
+    /// (with <see cref="MatchQ.SplitExcess"/> and <c>NortonTransform</c>'s absorbed-type rule) that is
+    /// allowed to look at <see cref="Kind"/>. Everything downstream sees C_eq and Q and therefore
+    /// supports inductive terminations without knowing that it does.
+    /// </summary>
+    public double CeqAt(double omega0) => Kind switch
+    {
+        ReactanceKind.C => Value,
+        ReactanceKind.L => Value > 0 ? 1.0 / (omega0 * omega0 * Value) : double.PositiveInfinity,
+        _ => 0.0,
+    };
+
+    /// <summary>
+    /// The termination's Q at band centre. Parallel: omega0*R*C_eq. Series: its reciprocal — and that
+    /// inversion is why match.md §4.5's excess rule reads the same for all four combinations.
+    /// </summary>
+    public double QAt(double omega0)
+    {
+        double ceq = CeqAt(omega0);
+        if (Kind == ReactanceKind.None || ceq == 0.0) return 0.0;
+        return Topology == TerminationTopology.Parallel
+            ? omega0 * R * ceq
+            : 1.0 / (omega0 * R * ceq);
+    }
+
+    /// <summary>True when this end has a reactance for the synthesis to absorb.</summary>
+    public bool HasReactance => Kind != ReactanceKind.None && Value > 0.0;
+
+    /// <summary>Which ladder element type this end supplies, or null when it supplies none.</summary>
+    public ElementType? AbsorbedType => Kind switch
+    {
+        ReactanceKind.C => ElementType.C,
+        ReactanceKind.L => ElementType.L,
+        _ => null,
+    };
+}
+
+/// <summary>
+/// One applied Norton transform, keyed <b>by element name</b> (match.md §7.3).
+/// </summary>
+/// <remarks>
+/// <b>NMin/NMax are deliberately absent.</b> A pair's range is the positivity threshold computed from
+/// the element values as they stand when that transform is applied, which depends on every earlier
+/// transform. A stored bound goes stale against the elements it bounds, and a stale bound silently
+/// permits a negative element — strictly worse than no bound. The range is recomputed during the
+/// sequential rebuild, where the state it depends on exists.
+/// </remarks>
+public sealed record TransformRecord(
+    string ElementA,
+    string ElementB,
+    TransformForm Form,
+    double N,
+    bool Locked);
+
+/// <summary>
+/// The serializable Match design — <b>the single source of truth</b>. Everything else (g-values, the
+/// element list, the response, the transform ranges) is derived at load and never stored, so a design
+/// cannot disagree with its own inputs (match.md §7.1).
+/// </summary>
+public sealed class MatchDesign
+{
+    /// <summary>Payload version, for future readers.</summary>
+    public int Version { get; set; } = 1;
+
+    /// <summary>Lower band edge, Hz.</summary>
+    public double F1 { get; set; } = 3.3e9;
+
+    /// <summary>Upper band edge, Hz.</summary>
+    public double F2 { get; set; } = 5.0e9;
+
+    /// <summary>Network order, 2..6.</summary>
+    public int Order { get; set; } = 4;
+
+    /// <summary>Which prototype family.</summary>
+    public ResponseShape Response { get; set; } = ResponseShape.ChebyshevFano;
+
+    /// <summary>Equal-ripple level, dB — the real-to-real prototype only (match.md §4.3).</summary>
+    public double RippleDb { get; set; } = 0.1;
+
+    /// <summary>The port-1 end.</summary>
+    public Termination Term1 { get; set; } = new(200.0, ReactanceKind.C, TerminationTopology.Parallel, 0.125e-12);
+
+    /// <summary>The port-2 end.</summary>
+    public Termination Term2 { get; set; } = new(1.25, ReactanceKind.C, TerminationTopology.Series, 10e-12);
+
+    /// <summary>Which end pins g1.</summary>
+    public AnalysisEndChoice AnalysisEnd { get; set; } = AnalysisEndChoice.Highest;
+
+    /// <summary>Deliberately inflated analysis-end Q, or 0 for none (match.md §4.6).</summary>
+    public double QAdjust { get; set; }
+
+    /// <summary>Widens every transform range past its positivity threshold.</summary>
+    public bool AllowNegativeComponents { get; set; }
+
+    /// <summary>Moving one N re-solves the unlocked others so the product stays on target.</summary>
+    public bool LinkTransforms { get; set; } = true;
+
+    /// <summary>The applied transforms, in application order.</summary>
+    public List<TransformRecord> Transforms { get; set; } = [];
+
+    /// <summary>Fingerprints of solutions the user has applied, for the Designer's badges.</summary>
+    public List<string> AppliedSolutions { get; set; } = [];
+
+    /// <summary>The basis ladder's structure hash when the design was last edited (match.md §7.3).</summary>
+    public string? BasisFingerprint { get; set; }
+
+    /// <summary>How far outside the band the Designer plots, as a fraction of the band.</summary>
+    public double PlotBandFraction { get; set; } = 0.10;
+
+    /// <summary>How many points the Designer plots — and the grid match.md §10.1's probe runs on.</summary>
+    public int PlotPoints { get; set; } = 401;
+
+    /// <summary>
+    /// Whether the port-1 probe aims at the conjugate of what it measures (match.md §10.3).
+    /// </summary>
+    /// <remarks>
+    /// <b>On the design rather than on the view-model</b> for the same reason every other switch here
+    /// is: it changes what the next probe produces, so it has to still be set when the schematic is
+    /// reopened. It does NOT change the stored termination — a probed termination is a snapshot, and
+    /// flipping this re-probes nothing.
+    /// </remarks>
+    public bool Term1Conjugate { get; set; }
+
+    /// <inheritdoc cref="Term1Conjugate"/>
+    public bool Term2Conjugate { get; set; }
+
+    /// <summary>Band centre, rad/s: omega0 = sqrt(omega1*omega2).</summary>
+    public double Omega0 => 2.0 * Math.PI * Math.Sqrt(F1 * F2);
+
+    /// <summary>Fractional bandwidth w = (omega2 - omega1)/omega0.</summary>
+    public double W => (F2 - F1) / Math.Sqrt(F1 * F2);
+
+    /// <summary>A deep copy — the rebuild and the solution search both mutate working copies.</summary>
+    public MatchDesign Clone() => new()
+    {
+        Version = Version,
+        F1 = F1,
+        F2 = F2,
+        Order = Order,
+        Response = Response,
+        RippleDb = RippleDb,
+        Term1 = Term1,
+        Term2 = Term2,
+        AnalysisEnd = AnalysisEnd,
+        QAdjust = QAdjust,
+        AllowNegativeComponents = AllowNegativeComponents,
+        LinkTransforms = LinkTransforms,
+        Transforms = [.. Transforms],
+        AppliedSolutions = [.. AppliedSolutions],
+        BasisFingerprint = BasisFingerprint,
+        PlotBandFraction = PlotBandFraction,
+        PlotPoints = PlotPoints,
+        Term1Conjugate = Term1Conjugate,
+        Term2Conjugate = Term2Conjugate,
+    };
+}

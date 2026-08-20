@@ -1,0 +1,286 @@
+# src/Core/Match — resolved briefs
+
+Findings from the Match component's own briefs, kept out of any `CLAUDE.md`. Same pattern as
+`src/Core/RESOLVED.md`: one `##` section per brief, only what is still true, still surprising, and
+would cost someone real time to rediscover.
+
+
+## MN-1 — the synthesis core (2026-08-19)
+
+Implements `docs/design/match.md` §4 (synthesis), §5 (inductive terminations), §6 (response shapes)
+and §7 (data model and rebuild) as pure algorithm. No UI, no `ComponentModel`, no stamping.
+Gate: `dotnet test tests/Core.Tests` (1,444 tests, ~4 s) and `dotnet test tests/Firewall.Tests`.
+
+### The namespace is `CircuitRF.Core.Matching`, not `CircuitRF.Core.Match`
+
+The directory is `src/Core/Match/` as the design doc specifies, but the namespace could not be. A
+namespace named `Match` under `CircuitRF.Core` is visible as the bare identifier `Match` from every
+sibling namespace, which collides with `System.Text.RegularExpressions.Match` — `PdkImporter.cs`
+alone has four `foreach (Match m in ...)` loops, and the whole project stops compiling with
+`CS0118: 'Match' is a namespace but is used like a type`. Renaming the namespace costs nothing and
+touches no file outside this directory; renaming four loop variables in someone else's file to make
+room for a namespace is the wrong trade. `Matching` also matches the palette category the design doc
+already decided on (§14 item 3).
+
+### The absolute value guards REPORT, they do not repair — and the reason is measurable
+
+The reference implementation clamps any produced Norton value above 1 H / 1 F to exactly 1.0 and
+anything below 1e-24 to 0.0. That clamp is kept as a *condition* (`TransformApplication.GuardFired`)
+and dropped as an *action*, because rewriting a value is precisely what breaks the one invariant the
+whole transform rack rests on: a "repaired" network no longer has the response it claims, and nothing
+anywhere says so.
+
+It is reachable, which is the part worth knowing. `N` held one part in 1e9 inside its positivity
+threshold is still one part in 1e9 from a pole, so a solver that parks `N` on the bound produces a
+mathematically exact, response-preserving, and completely unbuildable element. **On the design doc's
+own §4.9 problem that is a 2.9 kH inductor.** The brief's own §11 sweep never sees it (it samples
+2 %..98 % of each range and the guard correctly never fires there); only the solution search's drive
+reaches the bound. So "a firing guard means the threshold logic is wrong" is not quite right — here
+it meant the *N allocation* was wrong.
+
+### The solution search seeds N at its equal geometric share, not at 1
+
+Brief §8 starts every `N` at 1 and then corrects index by index. The first index then asks for the
+entire ratio at once — `sqrt(119.027) = 10.91` on the golden problem — is clamped onto its own
+positivity threshold of 5.989, and every later index only mops up the remainder. That is what parks
+`N` on the bound and produces the 2.9 kH element above; with the guards clamping as specified, the
+network is then silently corrupted and every solution is rejected. Seeding each `N` at
+`required^(1/2k)` lands the same two-transform set on `N = 3.303` each, well inside both ranges, with
+the same product and the same response. **The index-by-index correction after the seed is unchanged**
+and is still what handles a set whose ranges cannot take equal shares.
+
+### The §4.5/§4.6 end splits run LAST, after every transform — not inside the basis ladder
+
+Two independent reasons, both load-bearing:
+
+1. **An extra element inside the basis list breaks pair discovery.** Brief §7.3's move offsets are
+   only response-preserving because every swap they ask for is between two elements of the *same*
+   arm; that holds because the basis list alternates strictly `(L, C) x (shunt, series)` with period
+   four. Insert `CFano` next to the far arm's absorbed capacitor and the period breaks: the gap-3
+   move then swaps a shunt element past a series one, which is a different circuit, not a
+   re-ordering. (`NortonTransform.Apply` asserts the orientation rather than trusting the table, so
+   this fails loudly rather than silently — but it fails.)
+2. **Applied last, the split is exact by construction.** The far port has by then reached its target
+   resistance, so `X_old` comes out equal to the termination's own value to machine precision. On the
+   golden problem: far arm C = 38.114 pF at 1.6803 Ω becomes 0.32022 pF at 200 Ω, and the split gives
+   0.19522 pF of `CFano` plus **exactly 0.125 pF** kept. Applied to the basis instead, the kept value
+   is `0.125 pF x 119.027` and only becomes the load's own value after the transforms have run.
+
+The arm total is unchanged either way, so the response is unchanged — and that is asserted at 1e-12.
+
+### The excess split is worked in C_eq, not in element values
+
+Brief §5 writes `X_new = (Q_far - Q_actual)/(R*omega0)` for a shunt end. That is a *capacitance*
+formula. At a shunt end with an **inductive** termination the two inductors combine reciprocally
+(`1/L_tot = 1/L_old + 1/L_new`), and the raw formula is simply wrong there. Working the whole split in
+`C_eq` and converting back with `MatchQ.FromCeq` makes one formula serve all four
+(series|parallel) x (C|L) combinations, which is exactly the property §5.3 claims for the rule and the
+reason it is stated in Q.
+
+Worth recording alongside it: **for every end arm, `C_eq` is just the arm's C value**, whichever
+element the termination supplies. A shunt arm has `L = 1/(omega0^2 C)`, so `C_eq(L_arm) = C_arm`
+identically. That one identity is what makes the inductive case free everywhere downstream.
+
+### `movable` — the general rule, and a design that proves it is needed
+
+The reference expresses it as *"allowed if the pair's type is L, otherwise neither index may be
+absorbed"*, which is correct only because in that implementation the absorbed element is always a
+capacitor. The general form is
+
+```
+movable(a,b) := type(a) is not an absorbed type  ||  neither a nor b is absorbed
+```
+
+Fixture that separates them (`NortonTransformTests.MovableRule_...`): replace the golden problem's
+1.25 Ω + 10 pF series load with the dual 1.25 Ω + 153.51694 pH. `L4` is then the absorbed element, and
+the `L3/L4` pair must be refused — the reference's rule allows it, because its type is L, and moving
+it breaks the absorption. A stronger version of the same design (200 Ω ‖ 8 nH against 1.25 Ω + 10 pF
+at n = 2) makes **both** L and C absorbed types and leaves the ladder with **no transformable pair at
+all**, which the reference implementation would have reported as four available transforms.
+
+### `NoRealRoot` cannot happen for orders 2..6, and the reason is structural
+
+Both the brief and `match.md` treat "P_n(c) has no real root" as a first-class outcome. It is
+implemented, it carries its numbers, and **it is unreachable with the design doc's own coefficient
+table**: n = 3 and n = 4 give a *cubic* in r, n = 5 and n = 6 a *quintic*, and a real polynomial of
+odd degree always has a real root; n = 2 sets r = 1/2 without root-finding at all. Measured over 240
+(n, Q, w) combinations spanning `Q` from 1e-6 to 1e6 and `w` from 1e-4 to 1.9: **zero** refusals.
+The path is kept (it is the right shape for a future order or a different table, and the guard on
+`d = sqrt(c^2/4 + r)` and on `D > 0` still needs somewhere to go), and `MatchRefusalTests` records the
+measurement so a reader does not assume it fires.
+
+### Root ordering, pinned
+
+`FanoG` takes the **smallest** real root of `P_n(c)` that satisfies `c^2/4 + r >= 0`, sorted
+ascending. A root finder's own ordering is an implementation detail, and a different member of the
+family is a different (and generally worse) design with no error anywhere — so the choice has to be
+pinned to something stable. It reproduces the design doc: at n = 4 on §4.9's problem the polynomial
+has exactly one real root, r = 0.2278528, giving `D = 1.9176740` and
+`g = [1, 1.311823, 1.106975, 1.717201, 0.508891, 1.344236]`.
+
+### `FromRoots` must accumulate in complex arithmetic
+
+The Hurwitz factor is rebuilt from a conjugate-closed root set. Taking the real part *after each
+linear factor* — which looks safe, since the finished product is real — silently produces a different
+polynomial: only the product over a conjugate **pair** is real. The symptom is total and silent, the
+same shape as the leading-coefficient trap the brief warns about: every `Gvalues` call returns null,
+every family search reports "infeasible", and `maxQFar` comes back 0.0000 for Butterworth and Bessel
+at every order. Accumulate in `Complex[]`, take `Real` once at the end.
+
+### The numerical route reproduces the closed form far better than the 0.5 % gate
+
+`MatchPrototypes.Search` on the Chebyshev family at n = 4, scored by worst in-band |S11|:
+
+```
+  numerical: 1.000000, 1.311823, 1.107065, 1.717321, 0.509001, 1.344237
+  closed:    1.000000, 1.311823, 1.106975, 1.717201, 0.508891, 1.344236
+  worst relative error 0.022 %      score -16.6629 dB vs the closed form's -16.663
+```
+
+The design doc's own numerical answer was 0.4 % off; the difference is the local refinement pass
+described below, not a better extractor.
+
+### The family search refines around BOTH optima, and the second one is not optional
+
+A coarse grid over the shape parameter finds the right neighbourhood, but two different numbers are
+read out of the search and each needs its own refinement:
+
+- the **score** optimum, which is flat near its own minimum — without refinement the winning
+  g-vector lands a few per cent off the closed form (0.65 % on a 60-point grid);
+- the family's **maximum Q_far**, which is what an infeasible response has to quote in its refusal.
+  Un-refined it read 0.196 for Bessel at n = 4 against the design doc's 0.325 — a 40 % understatement
+  of how far off the family is, in a message whose entire job is to say how far off it is. Refined:
+  0.3153 (n = 4) and 0.1826 (n = 6), against the doc's 0.325 and 0.183.
+
+### Measured: Butterworth and Bessel on the design doc's own problem
+
+Worst in-band |S11| over 3.3-5.0 GHz, and the far-end Q against the 0.6381 required:
+
+| n | Butterworth | Bessel |
+|---|---|---|
+| 2 | **-9.946 dB**, Q_far 1.1415 | **-7.800 dB**, Q_far 0.6381 |
+| 4 | **-13.205 dB**, Q_far 0.6702 | *infeasible*, max Q_far 0.3153 |
+| 6 | **-8.470 dB**, Q_far 0.6381 | *infeasible*, max Q_far 0.1826 |
+
+against the design doc's 9.94 / 13.20 / 8.29 dB and 0.325 / 0.183. **The n = 6 Butterworth constraint
+really does bind**: the best-return-loss member reaches -14.729 dB at Q_far 0.4985 and is rejected;
+the constrained best is -8.470 dB. An unconstrained search returns a network that cannot absorb the
+far termination at all, with nothing to show for it.
+
+### Cost, measured
+
+- **Solution enumeration at n = 6: 1.6 ms** (8 pairs, 28 candidate sets, 8 solutions). Including the
+  15-step Q-adjust bisection, which re-runs the whole enumeration per step: **9.4 ms**. The brief
+  asked for this number and set 1 s as the point at which to stop and explain; it is three orders of
+  magnitude clear.
+- **The numerical route is the expensive part, and it is per-synthesis**: Butterworth 63 / 332 / 534 ms
+  at n = 2 / 4 / 6, Bessel 98 / 787 / 1,453 ms. `MatchPrototypeTests` therefore runs ~4 s as a class
+  and the Bessel test alone ~2.4 s — under the ~5 s `Category=Benchmark` threshold, so untagged, but
+  it is the one thing in this area that would cross it if the grids grew. The grids
+  (32 shape steps, 16 scan steps, 40 bisection steps, 200 Durand-Kerner iterations) were tuned down
+  from 2.5x that cost with **no** loss on any gate: the cross-check moved from 0.010 % to 0.022 %.
+  MN-3 must cache the search rather than re-run it per keystroke — the Chebyshev closed form is
+  microseconds, but Butterworth and Bessel are not.
+
+### Smaller things that are still true
+
+- **Propagation is always *away* from the analysis end.** It falls out of `NGreaterThan1` and
+  `PropagateRight` together rather than being stated anywhere, and it is what makes two separate
+  claims work: the analysis end's absorbed element stays at exactly the termination's own value
+  however many transforms are applied, and `achieved = product(N^2)` is a statement about the **far**
+  port rather than an average over both.
+- **The ratio tolerance is relative.** The reference uses an absolute `1e3*epsilon` (~2.2e-13) against
+  a required ratio of ~119 — that is 1e-15 of the quantity being tested, i.e. an exact-equality test
+  wearing a tolerance's clothes.
+- **Nets are derived by walking the element list, never stored.** Order plus orientation determines
+  the topology completely, which collapses brief §7.4's "swap its nets with the neighbour it
+  displaced" into a plain list swap, and makes the pi/T net table (`a-gnd, a-b, b-gnd` /
+  `a-t, t-gnd, t-b`) fall out of the walk rather than needing to be implemented.
+- **Reverse by ARM, not by element.** Turning an analysis-end-first ladder into a Term1-first one by
+  reversing the flat element list puts C before L inside every arm; reversing the arm order and
+  keeping `(L, C)` inside each preserves the strict type alternation that the move offsets need.
+- **The Q-adjust bracket moves are right and their label is not.** Brief §6 annotates both bracket
+  updates "move toward MORE detune"; the operations it gives (series `lo = guess`, parallel
+  `hi = guess`) both narrow toward LESS detune on a successful guess, which is what finding the
+  *minimum* such Q requires — and is what §4.6 asks for. The operations are implemented; the label is
+  not. Note also that on the golden problem the minimum Q-adjust is essentially the true Q (the
+  design already completes without one), so no `CDetune` is produced there — a test that expects one
+  has to set `QAdjust` explicitly.
+- **`MatchResponse` is production code, and the test oracle is a second implementation.** The
+  constrained family search scores members by the worst in-band return loss of the resulting bandpass
+  ladder, so a response evaluator has to exist in `src/Core`; `tests/Core.Tests/Match/MatchAbcdOracle`
+  is written separately from it, so the golden numbers are not checked by the code that produced them.
+- **Two files beyond the design doc's §12 list**: `MatchResponse.cs` (above) and `MatchRebuild.cs`
+  (§7.3's sequential rebuild, which both the Designer's load path and the solution search's inner loop
+  need). `MatchPoly` lives inside `MatchPrototypes.cs` to keep the file list otherwise exact.
+- **`MatchDesign` uses properties, not fields.** The brief writes `public double F1, F2;`;
+  `System.Text.Json` needs `IncludeFields` for those and nullable analysis does not track them.
+  The JSON property names are identical either way.
+
+## MN-2 — the component, the symbol and the palette (2026-08-19)
+
+Makes a `Match` placeable, elaboratable and simulatable: `MatchModel`, the factory and elaborator
+wiring, a symbol, a registry entry and a new `Matching` palette category. No Designer — MN-3.
+Gate: `Core.Tests` 1,454 in 4 s, `Engine.Tests` 1,257 in 4 m 52 s, `Ui.Tests` 8,129 in 30 s,
+`Firewall.Tests` 6. All green.
+
+### The elaborator needed a SECOND edit, and without it nothing decodes
+
+The brief allows exactly one change to an existing Core file outside `src/Core/Devices/` — the
+internal-node mint — and that is not enough to run a `Match` at all. `Design` is base64 and
+`Response` is an enum name; both reach `Elaborator.ResolveParameters`' generic branch, which calls
+the expression evaluator on every override with **no** try/catch. Base64 tokenises as an identifier,
+so a placed `Match` throws during elaboration before the factory is ever reached. `wBond` already has
+exactly this branch for exactly this reason, so `ResolveMatchParameters` is that same rule applied
+again: `Design` and `Response` verbatim, the numeric echoes evaluated, and — unlike the generic
+branch — a failed echo **swallowed**, since an echo is display-only and `Design` carries the truth.
+
+That branch is also what lets a refusal name the instance. The factory sees a parameter dictionary
+and no instance name, so `ResolveMatchParameters` injects `MatchName` the way `ResolveChainParameters`
+injects `ChainName`. Without it the message could only have named the type, which on a schematic
+holding several `Match`es is not a message.
+
+### One series ARM is one branch, and that is what fixes the internal-node count
+
+`MatchNetwork.AssignNets` gives every SERIES ELEMENT its own node — correct as a topology
+description, and not what gets stamped. The stamp groups each maximal run of through-path elements
+into ONE branch carrying `Z = jwL + 1/(jwC)` (`InductorModel`'s `L=` plus `C=` shape, DC-open case
+included), so `InternalNodeCount` is *series runs − 1*, not *series elements − 1*.
+
+The grouping is not cosmetic: §4.5's `CFano` is inserted **into** an end arm with the same
+orientation, so a series end arm can hold three elements and still be one branch — which is exactly
+right, because `MatchQ.SplitExcess`'s series case combines reciprocally (`1/C_tot = 1/C_kept +
+1/C_added`), i.e. the split element really is in series with the one it came from. Accumulating
+`sum(1/C)` reproduces that identically.
+
+Measured: the golden §4.9 design has **2 series runs → 1 internal node** and 7 stamped elements out
+of 9 (two absorbed); the shipped default has **1 series run → 0 internal nodes** and 6 elements.
+
+### The hand-built oracle is only an oracle because the node structure DIFFERS
+
+`Engine.Tests`' comparison netlist writes one component per element and one node per series
+*element* — deliberately not the component's own grouping. Agreement is then a statement about the
+topology and the DC/AC limits rather than a tautology. **Measured worst |ΔS| = 5.4e-16** over nine
+frequencies for the golden design and 4.3e-16 for the default, against the brief's 1e-12 gate; the
+HB spectra (DC through the 3rd harmonic, driven by a rectifying diode) agree to the same order. The
+same fixture stamped **with** the absorbed reactances differs by **0.99** — the invertible mistake is
+not subtle once something looks for it, and nothing was looking before.
+
+### Two DC claims need two different circuits, and only one of them is the obvious one
+
+"Shunt arms are shorts" shows up anywhere: every bandpass ladder grounds its through nodes through a
+shunt inductor, so both pins read exactly 0 V. **"Series arms are opens" is invisible in that same
+circuit** — every node is already grounded, so an open and a short give the same node voltages. It
+needs a ladder that STARTS and ENDS with a series arm, which means both terminations declared
+`TerminationTopology.Series` (`s[1] = ana.Topology == Series` sets the whole alternation). Then each
+pin's only path is through a capacitor-bearing series arm, the source sees no load at all, and the
+drop across its own resistor is zero. Tolerance there is 1e-9 and not 1e-12: the DC engine's gmin
+leaks ~1e-12 S across every open branch, which is 5e-11 of the source.
+
+### The default design is 1-2 GHz / order 3 / 50 ohms both ends, and it is a real bandpass
+
+Measured through the shipped path: −0.100 dB at both band edges (the 0.1 dB design ripple, exactly),
+−0.023 dB mid-band, −27.8 dB an octave out on either side, with |S11| = −16.43 dB at the edges — the
+0.1 dB-ripple Chebyshev return loss. Order 3 with both ends parallel-resistive gives
+shunt-series-shunt, so it needs no internal net at all.
+

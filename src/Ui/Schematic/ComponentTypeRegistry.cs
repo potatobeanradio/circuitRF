@@ -1,4 +1,5 @@
 using System.Linq;
+using CircuitRF.Core.Matching;
 using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Schematic;
@@ -19,6 +20,12 @@ public enum ComponentCategory
     Devices,
     TransmissionLine,
     Microstrip,
+    /// <summary>Impedance-matching networks (owner decision, 2026-08-19 — match.md §8.4). A NEW
+    /// category for what is currently one component, deliberately, against the wBond precedent of
+    /// not inventing one: "Matching" names a class of things a user goes looking for, not this one
+    /// part, and it is where a future matching-network family belongs. <c>Other</c> would hide the
+    /// headline component of the release behind the least descriptive label in the picker.</summary>
+    Matching,
     Sources,
     DataFiles,
     Terminals,
@@ -292,6 +299,16 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.TransmissionLine,
             SearchTerms: ["TLIN", "TLine", "transmission line", "tline", "ideal", "lossless", "line"],
             IsCommon: true),
+        // Match — a synthesised bandpass matching network (match.md §8.4). Prefix "MN", NOT "M":
+        // "M" is Mutual. The search terms deliberately cover what it SOLVES (match, interstage, Cgs,
+        // Ropt) as well as how it works (Fano, Norton, Chebyshev), because the people who reach for
+        // it think of it both ways.
+        [SymbolKind.Match]         = new("Match", "MN",
+            Category: ComponentCategory.Matching,
+            SearchTerms: ["impedance matching", "filter", "filter design", "transform", "Chebyshev",
+                          "Butterworth", "Bessel", "match", "matching", "interstage", "Fano", "Norton",
+                          "absorb", "Cgs", "Cds", "Ropt", "bandpass"],
+            IsCommon: true),
         // Tuner: general programmable RF termination (loadpull.md §1). Single DUT-facing pin;
         // the reference net is hard-coded ground at extraction. Appears under Terminals + Sources.
         [SymbolKind.Tuner]         = new("Tuner", "Tuner",
@@ -416,6 +433,7 @@ public static class ComponentTypeRegistry
         SymbolKind.NonlinearC    => "NonlinearC",
         SymbolKind.Mutual        => "Mutual",
         SymbolKind.Tline         => "TLIN",
+        SymbolKind.Match         => "Match",
         // All three tuner tiles place the identical engine component.
         SymbolKind.Tuner         => "Tuner",
         SymbolKind.SourceTuner   => "Tuner",
@@ -851,6 +869,27 @@ public static class ComponentTypeRegistry
                         new("E", "90", "deg", true, UnitDimension.Angle),
                         new("F", "1",  "GHz", true, UnitDimension.Frequency)];
 
+            // Match: `Design` is the WHOLE design, base64 of its JSON (match.md §7.2) — hidden, never
+            // a text row (ParameterEditorViewModel.IsMatchPanelParameter), and the only input the
+            // model reads. The rest are ECHO parameters: the Designer writes them so the user can
+            // display the design on the schematic, and NOTHING reads them back. That is why they are
+            // duplicated here at all rather than derived at render time — an instance has to carry
+            // them to be able to show them, and match.md §7.2 makes the design authoritative so the
+            // echo cannot become a second input.
+            //
+            // The default payload is a REAL design (1–2 GHz, order 3, 50 Ω both ends, Chebyshev-Fano)
+            // and not a blank: a freshly dropped Match must simulate immediately, since until the
+            // Designer (MN-3) lands there is no way to give it one. Same rule wBond follows in
+            // shipping a default wire rather than an empty array.
+            case SymbolKind.Match:
+                return [new("Design",   MatchEmbedding.DefaultPayload, "", false, UnitDimension.None),
+                        new("F1",       "1",             "GHz", true,  UnitDimension.Frequency),
+                        new("F2",       "2",             "GHz", true,  UnitDimension.Frequency),
+                        new("Order",    "3",             "",    true,  UnitDimension.None),
+                        new("Response", "ChebyshevFano", "",    false, UnitDimension.None),
+                        new("R1",       "50",            "Ω",   false, UnitDimension.Resistance),
+                        new("R2",       "50",            "Ω",   false, UnitDimension.Resistance)];
+
             // Mutual: Inductor1 and Inductor2 are instance-name strings (no unit);
             // M is the mutual inductance value.
             case SymbolKind.Mutual:
@@ -1031,6 +1070,8 @@ public static class ComponentTypeRegistry
             case "MUT":    kind = SymbolKind.Mutual;       return true;
             case "TLIN":
             case "TL":     kind = SymbolKind.Tline;        return true;
+            case "MATCH":
+            case "MN":     kind = SymbolKind.Match;        return true;
             case "TUNER":  kind = SymbolKind.Tuner;         return true;
             case "SOURCETUNER":
             case "SRCTUNER": kind = SymbolKind.SourceTuner; return true;

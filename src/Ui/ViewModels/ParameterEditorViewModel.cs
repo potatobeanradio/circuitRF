@@ -439,6 +439,14 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 // 4). `GroundPlane` left them on 2026-08-17: it is read as a BOOLEAN, so a picker
                 // states the three values that work instead of a box that accepts anything.
                 if (comp.Symbol == SymbolKind.WBond && IsWBondPanelParameter(param.Name)) continue;
+
+                // A Match's `Design` is the WHOLE design, base64 of its JSON (match.md §7.2) — the
+                // same "gibberish row" wBond's own `Design` was, and hidden for the same reason. The
+                // ECHO parameters (F1/F2/Order/Response/R1/R2) DO stay as ordinary rows: they exist
+                // precisely so the user can read and show the design on the schematic. They are
+                // read-only in the sense that nothing reads them BACK — the Designer writes them —
+                // and MN-3 is what enforces that at the control level.
+                if (comp.Symbol == SymbolKind.Match && IsMatchPanelParameter(param.Name)) continue;
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
                 built.Add(row);
@@ -479,6 +487,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
+        RefreshMatchProperties();
         SyncVerilogAFromModelFile();
     }
 
@@ -1147,6 +1156,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             row.RefreshFromModel();
         _isRefreshing = false;
         if (_target.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        // The Match panel is a READOUT of the design, so it has to follow every change to it —
+        // including the ones the Designer window makes, and including an undo of one.
+        if (_target.Symbol == SymbolKind.Match) RefreshMatchProperties();
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────

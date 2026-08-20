@@ -67,6 +67,21 @@ public sealed partial class SchematicViewModel : ObservableObject
     public LayoutUnit LengthDisplayUnit => WorkspaceDisplayUnitProvider?.Invoke() ?? LayoutUnit.Mil;
 
     /// <summary>
+    /// Resolves a cell instance to its schematic, so anything that needs a full extraction of THIS
+    /// schematic — <c>NetExtractor.Extract</c>'s <c>cells:</c> argument — can hand one over. Supplied
+    /// by <c>WorkspaceViewModel</c>, which is the resolver; null in a scratch session with no
+    /// workspace, where a flat extraction is still correct and a hierarchical one is impossible.
+    ///
+    /// <para>Wired on the schematic SESSION, like the two providers above and for the same reason: the
+    /// Match Designer is handed a <see cref="SchematicViewModel"/> and nothing else, and MN-4's probe
+    /// has to see the same circuit a Run would.</para>
+    /// </summary>
+    public Func<CircuitRF.Ui.Schematic.ICellResolver?>? CellResolverProvider { get; set; }
+
+    /// <summary>The workspace's cell resolver, or null.</summary>
+    public CircuitRF.Ui.Schematic.ICellResolver? CellResolver => CellResolverProvider?.Invoke();
+
+    /// <summary>
     /// Runs <b>Update Layout</b> for one wBond component and nothing else — the button on the wBond
     /// parameter panel (owner, 2026-08-17). Supplied by <c>WorkspaceViewModel</c>, which owns the layout
     /// documents, the cell folders and the report; null when there is no workspace, and the panel hides

@@ -133,6 +133,18 @@ public enum SymbolKind
     /// fallback every switch over <see cref="SymbolKind"/> already has); the rest of the schematic
     /// still loads and simulates normally around it.</summary>
     Unknown,
+
+    /// <summary>
+    /// A synthesised bandpass matching network placed as one component (engine "Match",
+    /// <c>docs/design/match.md</c> §8). Two pins, ground the common return; its whole design rides in
+    /// a hidden base64 <c>Design</c> parameter, exactly as <see cref="WBond"/>'s wires do.
+    ///
+    /// <para>The component contains the ladder <b>minus</b> whatever the two external terminations
+    /// supply — absorbing those reactances is the entire premise — so what it stamps is a property of
+    /// the design rather than of this kind. Unlike <see cref="WBond"/> the pin COUNT is fixed at two,
+    /// so the built-in symbol and geometry serve every design.</para>
+    /// </summary>
+    Match,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

@@ -203,6 +203,24 @@ public static class ColorRole
     // The first recoloured a wire as a side effect of an unrelated edit; the second recoloured it for
     // being shaped differently. Both are gone, and `wBond.Wire` is the only wire colour there is.
 
+    // ── Match Designer (docs/design/match.md §9.3) ────────────────────────────
+    // Three roles, because the ladder preview has to say three different things about an element
+    // and only one of them is "this is a component". They are Match.* rather than Schematic.* on
+    // purpose: the Designer's preview is not a schematic view, and re-tinting Schematic.SymbolLine
+    // to dim an absorbed element would dim every symbol in the application.
+
+    /// <summary>An element the two external terminations supply — drawn dimmed, because it is the
+    /// one the user does not have to buy (§9.3). The distinction is read off
+    /// <c>MatchElement.IsAbsorbed</c>, never off a name.</summary>
+    public const string MatchAbsorbed = "Match.Absorbed";
+
+    /// <summary>A negative or out-of-range element value. Exact and response-preserving, and still
+    /// unbuildable — so it is stated rather than hidden or clamped.</summary>
+    public const string MatchNegative = "Match.Negative";
+
+    /// <summary>A Norton-transform bracket and its label, drawn beneath the products it created.</summary>
+    public const string MatchBracket = "Match.Bracket";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -229,5 +247,6 @@ public static class ColorRole
         HarmonicaMarkerBand1, HarmonicaMarkerBand2, HarmonicaMarkerBand3,
         HarmonicaMarkerBand4, HarmonicaMarkerBand5,
         WBondWire, WBondWireStart, WBondWireVertex, WBondSelected, WBondEnvelope,
+        MatchAbsorbed, MatchNegative, MatchBracket,
     ];
 }

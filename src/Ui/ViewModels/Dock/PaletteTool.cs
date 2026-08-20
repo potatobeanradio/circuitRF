@@ -196,6 +196,7 @@ public sealed partial class PaletteTool : Tool
             ComponentCategory.Terminals,
             ComponentCategory.TransmissionLine,
             ComponentCategory.Microstrip,
+            ComponentCategory.Matching,
             ComponentCategory.DataFiles,
         })
         {

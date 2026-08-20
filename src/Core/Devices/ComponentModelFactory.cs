@@ -6,6 +6,7 @@ using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
 using RfCore;
 
+using CircuitRF.Core.Matching;
 using CircuitRF.WBond;
 
 namespace CircuitRF.Core.Devices;
@@ -38,7 +39,7 @@ public static class ComponentModelFactory
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
-            "ExtDevice", "wBond",
+            "ExtDevice", "wBond", "Match",
         };
 
     /// <summary>
@@ -112,6 +113,8 @@ public static class ComponentModelFactory
             return CreateChainModel(parameters, functions);
         if (typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase))
             return CreateWBondModel(parameters);
+        if (typeName.Equals("Match", StringComparison.OrdinalIgnoreCase))
+            return CreateMatchModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -1401,6 +1404,58 @@ public static class ComponentModelFactory
             : null;
 
         return new WBondModel(design, path, refPin, notes, includeCapacitance);
+    }
+
+    /// <summary>
+    /// Match: a synthesised bandpass matching network (<c>docs/design/match.md</c> §7.2, §8).
+    ///
+    /// <para><c>Design</c> carries the whole design as base64 JSON — the <c>wBond</c> pattern
+    /// exactly — and is <b>the only input</b>. <c>F1</c>, <c>F2</c>, <c>Order</c>, <c>Response</c>,
+    /// <c>R1</c> and <c>R2</c> are ECHO parameters the Designer writes so the user can display them
+    /// on the schematic; they are never read back here, because a second input is a second thing that
+    /// can disagree with the first.</para>
+    ///
+    /// <para><b>An unreadable design refuses, and never falls back to a default network.</b> A
+    /// default one would simulate — and would be a different circuit, in the one place where nothing
+    /// on screen would say so. §7.2 states this as a requirement; the message names the instance and
+    /// sends the user to the Designer.</para>
+    ///
+    /// <para>What the REBUILD found that is not fatal — a dropped transform, a clamped N, a
+    /// fingerprint mismatch (match.md §7.3) — rides into the model as notes and reaches the Messages
+    /// panel through <see cref="IReportsWarnings"/>, phrased with the instance path.</para>
+    /// </summary>
+    private static ComponentModel CreateMatchModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        // Injected by the elaborator (Elaborator.ResolveMatchParameters), exactly as Chain's
+        // `ChainName` and Tuner's `TunerName` are, so a refusal can name the part the user placed
+        // rather than the type. A hand-built parameter dictionary (a test, a headless caller) simply
+        // gets the type name.
+        string name = parameters.TryGetValue("MatchName", out var nm) && nm.Kind == ValueKind.String
+            ? nm.AsString()
+            : "Match";
+
+        if (!parameters.TryGetValue(MatchEmbedding.DesignParameter, out var payload) ||
+            payload.Kind != ValueKind.String ||
+            string.IsNullOrWhiteSpace(payload.AsString()))
+            throw new InvalidOperationException(
+                $"Match '{name}': its 'Design' parameter is empty, so there is no matching network to " +
+                "build. Open the Match Designer on this component and synthesise one.");
+
+        if (!MatchEmbedding.TryDecode(payload.AsString(), out var design) || design is null)
+            throw new InvalidOperationException(
+                $"Match '{name}': its 'Design' parameter could not be read as a matching-network " +
+                "design. Re-open the Match Designer on this component to replace it.");
+
+        var rebuilt = MatchRebuild.Rebuild(design);
+        if (rebuilt.Refusal is { } refusal)
+            throw new InvalidOperationException(
+                $"Match '{name}': this design cannot be synthesised. {refusal.Message}");
+        if (rebuilt.Network is null)
+            throw new InvalidOperationException(
+                $"Match '{name}': this design produced no ladder. Re-open the Match Designer on this " +
+                "component.");
+
+        return new MatchModel(design, rebuilt.Network, rebuilt.Notes);
     }
 
     /// <summary>

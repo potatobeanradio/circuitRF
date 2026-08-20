@@ -6,6 +6,355 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Match MN-5 — Flatten to Cell (2026-08-19)
+
+`docs/design/match.md` §11. A designed `Match` becomes an ordinary cell folder — `.ccell`,
+`schematic/<name>.csch`, `symbol/<name>.csym` — whose schematic is the LC network it synthesised, with
+both terminations carried along disabled and the design recorded twice (in a text annotation and, as
+the blob, on the cell). One path serves both entry points (`MatchFlattenService`), reached from the
+Designer's footer button and from the schematic context menu, where the item is **shown only for a
+`Match`** and disabled-with-its-reason when it cannot run.
+
+Files: `src/Core/Match/MatchFlattenPlan.cs` (the framework-free topology), `src/Ui/Match/MatchFlatten.cs`
+(layout, annotation, symbol copy, transactional write), `src/Ui/Match/MatchFlattenService.cs`,
+`src/Ui/Commands/Schematic/FlattenMatchCommand.cs`, `src/Ui/Views/Dialogs/MatchFlattenDialog.axaml`.
+
+### A base64 blob cannot be a declared cell parameter — every placement would refuse to elaborate
+
+The brief says the `Design` blob is "carried onto the cell". The obvious home — a `CcellParameter` —
+is a **trap**. A cell's declared parameters are seeded onto every placed instance as *overrides*, and
+`Elaborator.BuildCellScope` evaluates an override **eagerly, as an expression**, in the parent scope.
+A base64 payload is not an expression (it contains `+` and `/` and resolves as an unbound identifier
+at best), so every instance of a flattened cell would have failed at elaboration — not at flatten
+time, and not visibly related to the parameter that caused it. A cell *default* is bound lazily and
+would have survived, which is exactly what makes this the kind of defect that ships.
+
+It lives on `CcellFile.MatchDesign` instead — cell metadata beside `ExternalNetlistPath`,
+`WhenWritingNull` so every other `.ccell` stays byte-identical, and read by
+`MatchFlatten.TryReadDesign(cellDir)`. The replacement instance therefore carries **no parameters at
+all**, which `TheDesignBlob_IsCellMetadata_NotADeclaredParameter` pins from both sides.
+
+### The nets must be walked over the STAMPED ladder, not the whole one
+
+`MatchNetwork.AssignNets()` mints a node per series element across *every* element. An absorbed
+element is not in the cell's live netlist — the external network supplies it, which is §8.2's whole
+premise — so walking the full list mints a node for an end series arm that is not there and shifts
+every net after it. `MatchFlattenPlan.Build` filters first; that is what makes its `Port1Net`/
+`Port2Net` the same two nodes `MatchModel` stamps as `Nodes[0]`/`Nodes[1]`.
+
+### Six significant digits misses the 1e-12 equivalence gate by five orders of magnitude
+
+The gate is "the component and the flattened cell agree to 1e-12 in S-parameters". The Designer's own
+display precision (`MatchValueFormat.Format`, clamped to 12 digits and used at 4–6) carries a relative
+1e-7 into every element value. `MatchFlatten.Exact` writes **G15** in an engineering unit; the unit
+scale is a power of ten and therefore not exact in binary, so the round trip costs about an ulp.
+**Measured agreement: 1.26e-15** end to end (real files, real extraction, `SParameterEngine`), and
+4.3e-16 at netlist level. The digit count is load-bearing, not a display choice.
+
+### The `Term`s carry the LADDER's port resistances, not the terminations' — on purpose
+
+For §4.9's golden design the network's own ends are 1.68 Ω and 1.25 Ω while the terminations are
+200 Ω and 1.25 Ω; the missing factor is exactly the Π N² = 119.03 the transforms have not been applied
+to reach. Writing the *termination's* R would break §11.3's stated purpose — enabling both `Term`s and
+running the cell alone must reproduce the Designer's plot, and that plot is referenced to the ladder's
+ends (`MatchResponse.At` uses `network.R1`/`R2`). In a finished design the two numbers coincide, which
+is what the transforms are for. In an unfinished one the annotation now says which is which, because
+1.68 Ω sitting beside a 200 Ω termination otherwise reads as a bug.
+
+### Undo deletes the cell folder here, and deliberately does NOT in Layout's Group into Cell
+
+Two features, opposite answers, and both are right. Layout's `CommitGroupIntoCell` keeps its folder
+(R-L3c-6): there the *cell* is the deliverable, it may already have been opened and edited, and the
+instance is incidental. Here the *replacement* is the deliverable and the cell is written from a design
+still sitting in the schematic, so a Redo can rewrite it byte-identically — and an undo that left the
+folder behind would make the next Flatten refuse the name it had just handed back.
+`FlattenMatchCommand.Undo` deletes only when the folder still holds **exactly** the three files it
+wrote, byte for byte; anything else and it stays, with a warning naming it.
+
+### Two MN-3 tests were superseded rather than deleted
+
+`FlattenIsWiredAndDisabled_AndSaysWhichBriefItWaitsOn` asserted the footer button was dead and named
+MN-5 in its tooltip. It is now
+`ADisabledFooterControl_NamesAConditionTheUserCanActOn_NeverABriefItWaitsOn`, which is the property
+that survived MN-4 building the probe and MN-5 building the flatten. `MatchDesignerHostingTests`'
+"the Designer never calls `ShowDialog`" was narrowed to `window.ShowDialog` — the Designer window is
+still non-modal, and the *name prompt it opens* is modal and rightly so.
+
+### What was reused, and the one seam that was added
+
+Reused unchanged: `CellFolder.CreateCellFolder`, `CellPersistence`, `SchematicPersistence.SaveToFile`,
+`SymbolPersistence`, `AtomicFile`, `NameValidator`, `InputNameDialog`'s shape, `ChangeComponentTypeCommand`'s
+replace-in-place pattern, and `MatchNetwork.AssignNets`. **`SavePlan`/`SavePlanExecutor` were read and
+not used**: every step of that machinery is expressed in terms of a `SchematicDocument` being
+materialised out of scratch (`SaveStep.Document`, `Document.Materialize`), and a flatten has no
+document — it has a `SchematicEditModel` built from a design. What it *does* have that the executor
+does not is **rollback**: `MatchFlatten.Write` creates the folder itself and removes it again if any
+later step throws, so a failure part-way leaves nothing behind. There is no portable way to make a
+filesystem write fail at that exact point, so `Write` has an `internal` overload taking a
+`faultAfterSchematic` action — null everywhere in the application, and the only reason
+`AFailedWrite_LeavesNothingBehind` is testing the guarantee rather than the argument check.
+
+### Deferred, named rather than forgotten: the Designer does not open on a flattened cell
+
+The blob round-trips (`MatchFlatten.TryReadDesign(cellDir)`, pinned by
+`ReopeningTheGeneratedCell_ReconstructsTheOriginalDesign` — same ladder, same transforms, same N's), but
+there is **no menu item that opens the Match Designer on a flattened cell instance**. Binding it there
+would be a lie in two directions: `MatchDesignerViewModel.Commit` writes the design onto its *target
+component's* `Design` parameter, so an edit would change nothing about the cell's already-written
+components, and the parameter it wrote would be the expression-shaped landmine the first finding above
+exists to avoid. The honest version is a mode whose only action is "flatten again to a new cell"; that
+is a small brief of its own, not a line of plumbing.
+
+## Match MN-4 — the Probe button (2026-08-19)
+
+`docs/design/match.md` §10.4/§10.5. `src/Ui/Match/MatchProbeAvailability.cs` answers "can this pin be
+probed, and if not, which reason is it"; `MatchDesignerViewModel.Probe.cs` runs one off the UI thread
+with the engine's own `RunControl`. The measurement, the fits and the ranking are
+`CircuitRF.Engine.Matching.TerminationProbe`'s — see `src/Engine/RESOLVED.md` for what was found there,
+including why the conjugate is applied to the fit rather than to the data.
+
+### "The pin is unconnected" is not a state an extracted testbench can report
+
+MN-4 §5 lists *the pin is unconnected* and *the pin's net carries no component other than the `Match`*
+as two disabling reasons. **After extraction they are one reason, plus a different one that is not
+about wiring.** An unwired pin still gets a net of its own out of `NetExtractor` — the union-find seeds
+component pin positions — so it reads as `NetIsBare` ("net 'n3' carries nothing but MN1 itself"), not as
+ground. What genuinely reads as unconnected is a pin the extractor could give no net to *or* one wired
+straight to ground, and those two are indistinguishable from a testbench and mean the same thing here.
+So `PinUnconnected` is spelled as "sits on ground — either wired there, or not wired to anything, which
+reads the same way once the schematic is extracted", and the two states have separate fixtures
+(`APinTiedToGroundIsDisabled_AndSaysSo`, `ANetCarryingOnlyTheMatchIsDisabled_AndSaysSo`). Deciding this
+from the canvas instead would mean a second implementation of what a net is, and the two would
+eventually disagree on exactly the cases the button exists to catch.
+
+### The Designer is handed a `SchematicViewModel` and nothing else, so the cell resolver had to be wired onto the session
+
+A hierarchical extraction needs an `ICellResolver`, and the only one is `WorkspaceViewModel`. The
+Designer never sees it — `MatchDesignerWindow.Show(schematicVm, comp, owner)` is the whole binding — so
+`SchematicViewModel.CellResolverProvider` joins `WorkspaceRootProvider` and
+`WorkspaceDisplayUnitProvider` on the session, set at the two places a session is built. Without it a
+probe on a schematic containing cell instances would silently measure a flat circuit missing them. The
+probe also takes its base directory from `WorkspaceRoot`, which is what a Run passes, so a file-backed
+model resolves the same way in both.
+
+### The provenance rule lives in `SetTermination`, not at the edit sites
+
+§10.5 — "the user's override always wins and is never silently re-probed" — is one line in the single
+method every termination edit already goes through: anything not flagged `fromProbe` clears
+`Probed`/`ProbedAtUtc`. Spelling it at the six call sites (R, topology, kind, value, and the two staged
+text commits) is how it would eventually be forgotten at the seventh.
+
+### Small things
+
+- The four fits are listed **including the non-physical ones**, labelled and with their residuals —
+  §10.2 is explicit that the residual is data the user is entitled to see, never a hidden gate. Each
+  physical row carries a *Use* button, which is §10.2's "take the second-best when you know better", and
+  a hand-taken second-best is still probed provenance.
+- The `Conjugate` toggle is on `MatchDesign` (`Term1Conjugate`/`Term2Conjugate`), not on the view-model:
+  it changes what the next probe produces, so it has to still be set after a reload. It does **not**
+  change a stored termination — flipping it re-probes nothing, per §10.5's snapshot rule.
+- `MatchDesignerSettings.ProbeResidualWarning` defaults to 0.05 (match.md §14.5) and only ever adds a
+  warning; the best physical fit is applied at any setting.
+
+## Match MN-3 — the Match Designer (2026-08-19)
+
+`docs/design/match.md` §9: the component's own window — specification pane, live ladder preview,
+response plots, the linked Norton-transform rack, and the solutions list. View-models under
+`src/Ui/Match/`, views under `src/Ui/Views/Match/`, tests in `tests/Ui.Tests/Match/`. It adds no
+synthesis: every number comes out of `src/Core/Match`.
+
+### `namespace CircuitRF.Ui.Match` breaks four unrelated files, and the error names none of them
+
+`Match` is `System.Text.RegularExpressions.Match`. A namespace of that name anywhere under
+`CircuitRF.Ui` makes the bare identifier resolve to the NAMESPACE from every other `CircuitRF.Ui.*`
+file, so `src/Ui/Layout/TechImport`'s three regex readers stopped compiling with
+`CS0118: 'Match' is a namespace but is used like a type` — in files that have nothing to do with
+matching networks. **The namespace is `CircuitRF.Ui.Matching`; the DIRECTORIES stay `Match/`**, which
+is what the brief actually asks for. MN-1 had already made the same choice
+(`CircuitRF.Core.Matching`) and the reason was not written down.
+
+### A transform range that does NOT move is a theorem, not a stale bound
+
+The obvious test of "the slider's range is recomputed, never stored" — add two transforms and check
+the second's bounds moved — **fails on most pairs, correctly**. `NortonTransform.Range`'s positivity
+threshold is `1 + z1/z2` (or its reciprocal): a RATIO. Absorbing the ideal transformer scales
+everything on one side by N², which leaves every such ratio untouched. So a pair lying entirely on
+one side of an earlier transform has *exactly* the same range before and after, and could never tell
+a recomputed bound from a stored one.
+
+The pairs whose range does move are the ones containing a transform's own PRODUCTS. That is what
+`SliderBounds_AreRecomputedAgainstTheLadderAsItStands` uses, and it makes the assertion stronger than
+the brief's version: the same pair, the same row, two different bounds, from two different values of
+the first transform's N.
+
+### With Link on and ONE transform, N is pinned — and on a real problem it pins onto the pole
+
+`MatchLinkage` with a single slot sets `N = clamp(sqrt(required))`. On match.md §4.9's own interstage
+problem that is `sqrt(119.03) = 10.91` against a positivity threshold of `5.989`, so it clamps onto
+the bound and one of the three π products comes out at kilohenries — exactly the pathology
+`MatchSolutionSearch.Drive`'s remarks describe, reached here through the UI instead of through the
+search. **Nothing repairs it**: the status strip says `Π N² 35.87 / 119.03 ✘ not reached`, the ladder
+shows the value, and adding a second transform on a genuinely different pair (`L1/L2` + `L3/L4`)
+lands both on N = 3.303 and the product exactly on target. The user-facing consequence is that the
+first useful gesture is usually the solutions list, not `+ add` — the list enumerates the sets that
+work and ranks the simplest first.
+
+A second transform taken from the FIRST one's products is offered and is nearly always useless: its
+range comes out degenerate (`[1, 1]`) because the products are already extreme. It is still offered,
+because hiding a legal pair would be a rule the user cannot see; the row simply shows its own bounds.
+
+### An infinite element value surfaces three layers away, as an unresolved NAME
+
+A transform parked a part in 1e9 from its threshold produces an infinite element. `double.ToString("R")`
+writes that as the literal `Infinity`, `CnlReader` accepts it as a token, and the failure arrives from
+the expression engine as `UnresolvedNameException: Unresolved name 'Infinity' in scope 'global'` —
+from inside `Elaborator.ResolveParameters`, with nothing anywhere naming the transform that caused it.
+`UpdatePlots` now refuses at the netlist boundary and names the element and the cause; the ladder, the
+grid and the status strip stay usable.
+
+### Group delay does not exist anywhere in circuitRF, and was not made to
+
+`DependentVarFormat` is `{Complex, Db, Mag, Phase, Real, Imaginary}` and RfCore has no group-delay
+metric — a repo-wide search for the term finds only prose. §9.6 asks for it on the second plot.
+
+It is computed in the Designer and injected through `Trace.SetCubeData(..., transformBaked: true)`,
+the seam the Data Display already uses for any value it has reduced to numbers itself. A sixth
+`DependentVarFormat` was rejected deliberately: a new member has to mean something for a Smith trace,
+a table cell, a marker readout and a persisted `.cdd`, and none of those wanted it. The delay is
+`-dφ/dω` on the UNWRAPPED S21 phase — unwrapping first is not optional, since a raw `Complex.Phase`
+jumps by 2π somewhere in every passband and a difference across that jump is a delay spike the width
+of the grid.
+
+### Touchstone cannot carry the design's two port references
+
+§9.9 asks for "the per-port references R1/R2 written as the file's own". Touchstone's option line
+carries ONE real R, which is why `TouchstoneIO`'s own per-port note prints the uniform value N times.
+The export writes the data **unrenormalised** (it is referenced to R1 and R2, and renormalising to
+hide the format's limit would change the numbers a reader gets), puts R1 on the option line, and
+states both references in header comments above it. This is the one thing in §9 that is not buildable
+as written.
+
+### Opening the Designer writes nothing, so a hand-authored echo can be stale
+
+The six ECHO parameters (`F1`, `F2`, `Order`, `Response`, `R1`, `R2`) are rewritten on every committed
+edit and on none other. A `Design` blob written by hand into a `.cnl`, with the echoes left at their
+placement defaults, therefore still shows `F1 = 1 GHz` on the page until the user changes something.
+The alternative — syncing on open — is an undo entry and a dirty document produced by nothing more
+than looking at a component, which is worse.
+
+### The plots are held for the drag; nothing else is
+
+Measured on §4.9's problem, order 4, 11 elements, 2 transforms, 401 plot points:
+
+| | per step |
+|---|---|
+| live drag step — linkage, rebuild, ladder, grid, status | **0.20 ms** |
+| the same step with the response sweep | **6.6 ms** |
+| release — one response sweep | **5.8 ms** |
+
+The sweep is ~30× the rest of the chain, so `BeginTransformDrag`/`EndTransformDrag` hold the two
+`PlotControl`s for the gesture and refresh once on release. The ladder, the element values and the
+status strip are never throttled — they track the slider live, which is the thing the window exists
+for. `MatchDesignerDragCostTests` measures it and is deliberately NOT `Category=Benchmark`: at ~3 s
+for the file it belongs in the default gate, where a regression in the drag path is noticed.
+
+The same reasoning governs two other costs. **Response feasibility** (Butterworth and Bessel go
+through `MatchPrototypes.Search` — a 33-point shape sweep with two refinement rounds, each building a
+ladder and scoring it over 201 frequencies) and **the solution search** both run only when the
+SPECIFICATION changes, never on a transform drag. Neither can be changed by moving a slider.
+
+### Three colour roles, and `Default.ccolor` needs no edit
+
+`Match.Absorbed`, `Match.Negative`, `Match.Bracket` — added to `ColorRole` (constants + `All`) and to
+both variants of `ColorTheme.BuiltIn`. `ColorThemeTests.DefaultPresetFile_MatchesBuiltIn` still
+passes without touching the asset, because `ColorTheme.Resolve` falls back to `BuiltIn` for a role a
+theme leaves unsaid — a new role only has to be added to the FILE when its shipped value differs from
+the built-in one.
+
+Absorbed carries its own alpha rather than being a lighter grey: dimming has to read as dimming over
+whatever the preview's background happens to be. Out-of-range takes precedence over absorbed in
+`MatchLadderLayout.RoleOf` — a negative value is the one thing the user has to act on, and dimming it
+would hide it.
+
+### This project has no `DataGrid`
+
+`Avalonia.Controls.DataGrid` is not referenced. The value grid is a header-plus-rows `Grid` with
+click-to-sort header buttons (`MatchDesignerViewModel.SortElements`); adding a package for five
+read-only columns is not a trade worth making. Sorting is display order only and never touches the
+ladder, whose order IS the topology.
+
+### The guided mode is deliberately not built — do not re-derive it as a gap
+
+The reference implementation has a one-click "add the transform that reaches the required ratio".
+brief §7.2 says not to build it and this records why: the solutions panel already enumerates every
+valid transform set and ranks the simplest first, which is the same answer with the reasoning visible.
+A second, opaque path to the same place is worse than one.
+
+### Two things are wired and disabled, and say which brief they wait on
+
+`Probe` (per termination) and `Flatten to Cell…` are present, disabled, and carry tooltips naming
+**MN-4** and **MN-5**. Neither is stubbed in a way that looks implemented.
+
+## Match MN-2 — the symbol, the registry entry and a new palette category (2026-08-19)
+
+The schematic half of `docs/design/match.md` §8.4: `SymbolKind.Match`, the bandpass glyph, prefix
+`MN`, and `ComponentCategory.Matching` — a new category for one component, on the owner's decision
+and deliberately against the `wBond` precedent of not inventing one. Findings about the model, the
+stamp and the elaborator are in `src/Core/Match/RESOLVED.md`.
+
+### A new `ComponentCategory` has FOUR sites, and missing one fails quietly in a different way each time
+
+The enum, `LibraryCatalog.CategorySortKey`, `LibraryCatalog.AllFilterPinnedOrder`, and
+`PaletteTool.BuildCategories`. Nothing errors if one is missed:
+
+- **no sort key** → the category falls to the catch-all rank and sorts among `Other`, so the tile
+  appears in a place nobody would look for it;
+- **not in `BuildCategories`** → the category exists, `ByCategory` returns its members, and the
+  picker simply never offers it — a filter that cannot be selected;
+- **`AllItems` needs nothing at all**, because it is derived from `Enum.GetValues<SymbolKind>()`.
+  That is the one that lulls you: the tile shows up unaided under "All", which reads as done.
+
+`PaletteTool.RealDisplayName` genuinely needs no entry — "Matching" is one word and falls through to
+`ToString()`. Asserted rather than assumed, since the two-word categories beside it do need one.
+
+### `PaletteFilterOrderingTests` hard-codes the pinned-row COUNT
+
+`AllItemsPinnedOrder_EverythingAfterThePinnedRows_KeepsAllItemsOwnRelativeOrder` splits the list at a
+literal 22 — the length of `AllFilterPinnedOrder`. Pinning `Match` made it 23 and the test failed on
+a diff that reads like an ordering bug rather than a stale constant. It is now a named constant with
+a note; anything that pins or unpins a row has to bump it.
+
+### The strikethroughs are plain lines and the waves are `SinePrimitive`s — so the test intersects them
+
+The glyph is three stacked full-cycle sines with a slash across the top one and the bottom one. The
+sine primitive rotates itself; the slashes do not know what they cross, and a slash that reads as a
+strikethrough only at 0 degrees is the specific mistake the brief warns about. The gate samples the
+wave from its own parameterisation, runs both it and the slash segment through the same
+`SchematicGeometry.LocalToWorld` the renderer uses, and asserts a genuine segment crossing at all
+four rotations x mirrored — **and that the MIDDLE wave is not crossed**, since a third slash there
+inverts the glyph from bandpass to bandstop while still looking deliberate.
+
+### The exported netlist puts the payload FIRST on the instance line, and that is the risky order
+
+File ▸ Export Netlist writes `Match:MN1  n1  n2  Design=<base64>  F1=1 GHz  F2=2 GHz  …` through
+`CnlWriter`, unquoted. `CnlReader`'s spaced-assignment merge reads a token ENDING in `=` as an empty
+assignment and glues the next token on as its value — so a PADDED payload followed by any other
+parameter on the same line arrives as one run-on string and decodes to nothing. `MatchEmbedding`
+strips the padding for exactly this reason (MN-1), and the echo parameters sitting after `Design` are
+what make the trap reachable rather than theoretical.
+`MatchComponentPlacementTests.TheDesignSurvivesAnExportedNetlist` is the round trip that would notice.
+
+### Only `Design` is hidden from the parameter rows — the echoes stay visible on purpose
+
+`IsMatchPanelParameter` covers `Design` alone, following `IsWBondPanelParameter`'s mechanism. The
+echoes (`F1`, `F2`, `Order`, `Response`, `R1`, `R2`) are the only description of the network a user
+has until MN-3 ships, so hiding them would leave a component with nothing readable about it at all.
+They are read-only in the sense that matters — `MatchModel` never reads them back, which
+`MatchComponentTests.TheEchoParameters_AreNeverReadBack` pins by contradicting every one of them and
+showing the ladder is unchanged — but they are still TYPABLE in the generic editor. Making them
+genuinely read-only needs a row-level mechanism `ParameterRowViewModel` does not have; that belongs
+with MN-3's panel, not here.
+
 ## The built-in assembly rule set, and the two routing faults that hid it (2026-08-19)
 
 Owner: *"Do we have a DRC rule for touching wires? ... If no `.wasm` has been referenced by the user

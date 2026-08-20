@@ -1,0 +1,330 @@
+using System;
+using System.Linq;
+using System.Numerics;
+using CircuitRF.Core.Devices;
+using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Matching;
+using CircuitRF.Engine;
+using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.ViewModels;
+using CircuitRF.Ui.ViewModels.Dock;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace CircuitRF.Ui.Tests;
+
+/// <summary>
+/// MN-2's UI-side gates (match.md §8.4): the symbol, the registry entry, the new Matching category,
+/// and the one claim that ties them together — <b>a freshly placed Match simulates with no edits</b>.
+/// </summary>
+public class MatchComponentPlacementTests(ITestOutputHelper output)
+{
+    // ── placement ─────────────────────────────────────────────────────────────
+
+    /// <summary>Exactly what the placement path produces: a component seeded from the registry's
+    /// default parameters and nothing else.</summary>
+    private static EditableComponent PlaceFresh(string name, double x, double y)
+    {
+        var comp = new EditableComponent { InstanceName = name, Symbol = SymbolKind.Match, X = x, Y = y };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Match, 0))
+            comp.Parameters.Add(new EditableParameter
+            {
+                Name = dp.Name,
+                Expression = dp.Expression,
+                Unit = dp.Unit,
+                ShowOnSchematic = dp.ShowOnSchematic,
+            });
+        return comp;
+    }
+
+    private static EditableComponent Term(int num, double x, double y)
+    {
+        var comp = new EditableComponent { InstanceName = $"T{num}", Symbol = SymbolKind.Term, X = x, Y = y };
+        comp.Parameters.Add(new EditableParameter { Name = "Num", Expression = num.ToString() });
+        comp.Parameters.Add(new EditableParameter { Name = "Z", Expression = "50" });
+        return comp;
+    }
+
+    /// <summary>
+    /// The headline claim of §2: drop a <c>Match</c>, wire it up, Run. No Designer, no edits, no
+    /// hand-written <c>Design</c> — which matters because until MN-3 there is no way to give one.
+    /// </summary>
+    [Fact]
+    public void AFreshlyPlacedMatch_RunsAOnePortSParameterSweep()
+    {
+        // Match at the origin: pins (-200,0) and (+200,0). Term "+" is at (0,-200) local, so a Term
+        // centred at (-200,200) lands its + pin exactly on the Match's left pin; the Match's right
+        // pin is grounded, making this a 1-port.
+        var model = new SchematicEditModel();
+        model.Components.Add(PlaceFresh("MN1", 0, 0));
+        model.Components.Add(Term(1, -200, 200));
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = -200, Y = 400 });
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = 200, Y = 0 });
+
+        var testBench = NetExtractor.Extract(model).TestBench;
+        var netlist = new Elaborator().Elaborate(testBench);
+
+        var placed = netlist.Components.Single(c => c.InstancePath == "MN1");
+        var mm = Assert.IsType<MatchModel>(placed.Model);
+        Assert.Equal(1e9, mm.Design.F1);
+        Assert.Equal(2e9, mm.Design.F2);
+
+        double[] freqs = [0.5e9, 1.0e9, 1.5e9, 2.0e9, 2.5e9];
+        var s = SParameterEngine.Run(netlist, freqs)["S"];
+
+        for (int f = 0; f < freqs.Length; f++)
+        {
+            double mag = ((Complex)s[f, 0, 0]).Magnitude;
+            output.WriteLine($"{freqs[f] / 1e9:F1} GHz  |S11| = {mag:F9}");
+
+            // Every element is lossless and port 2 is a short, so the 1-port reflects everything.
+            // A stamp with a sign error on a reactance shows up here as |S11| > 1.
+            Assert.Equal(1.0, mag, 1e-9);
+        }
+    }
+
+    /// <summary>
+    /// The same component between two Terms is the bandpass its design describes — flat in
+    /// 1-2 GHz at the 0.1 dB design ripple, an octave down at half the lower edge. This is what
+    /// makes the default a REAL design rather than merely a decodable one.
+    /// </summary>
+    [Fact]
+    public void AFreshlyPlacedMatch_IsTheBandpassItsDefaultDesignDescribes()
+    {
+        var model = new SchematicEditModel();
+        model.Components.Add(PlaceFresh("MN1", 0, 0));
+        model.Components.Add(Term(1, -200, 200));
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = -200, Y = 400 });
+        model.Components.Add(Term(2, 200, 200));
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = 200, Y = 400 });
+
+        var netlist = new Elaborator().Elaborate(NetExtractor.Extract(model).TestBench);
+        double[] freqs = [0.5e9, 1.0e9, 1.5e9, 2.0e9, 4.0e9];
+        var s = SParameterEngine.Run(netlist, freqs)["S"];
+
+        double Db(int f) => 20.0 * Math.Log10(((Complex)s[f, 1, 0]).Magnitude);
+        for (int f = 0; f < freqs.Length; f++)
+            output.WriteLine($"{freqs[f] / 1e9:F1} GHz  |S21| = {Db(f):F3} dB");
+
+        Assert.True(Db(1) > -0.11, $"1 GHz is the lower band edge: {Db(1):F3} dB");
+        Assert.True(Db(2) > -0.11, $"1.5 GHz is mid-band: {Db(2):F3} dB");
+        Assert.True(Db(3) > -0.11, $"2 GHz is the upper band edge: {Db(3):F3} dB");
+        Assert.True(Db(0) < -20.0, $"0.5 GHz is an octave below the band: {Db(0):F3} dB");
+        Assert.True(Db(4) < -20.0, $"4 GHz is an octave above the band: {Db(4):F3} dB");
+    }
+
+    /// <summary>
+    /// The design survives the netlist FILE — the path File ▸ Export Netlist takes, and the one the
+    /// in-memory tests above cannot see.
+    ///
+    /// <para><c>CnlWriter</c> writes <c>Design=&lt;base64&gt;</c> unquoted, and <c>CnlReader</c>'s
+    /// spaced-assignment merge treats a token ENDING in <c>=</c> as an empty assignment and glues the
+    /// next token on as its value. A padded payload followed by any other parameter on the same
+    /// instance line therefore arrives as one run-on string and decodes to nothing — which is exactly
+    /// why <c>MatchEmbedding.Encode</c> strips the padding, and why a placed Match writes its echo
+    /// parameters after <c>Design</c> on that same line.</para>
+    /// </summary>
+    [Fact]
+    public void TheDesignSurvivesAnExportedNetlist()
+    {
+        var model = new SchematicEditModel();
+        model.Components.Add(PlaceFresh("MN1", 0, 0));
+        model.Components.Add(Term(1, -200, 200));
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = -200, Y = 400 });
+        model.Components.Add(Term(2, 200, 200));
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = 200, Y = 400 });
+
+        var extracted = NetExtractor.Extract(model);
+        string cnl = CircuitRF.Core.Netlist.CnlWriter.Write(extracted.TestBench, extracted.Library, "test");
+        output.WriteLine(cnl);
+
+        // The instance line carries the payload AND the echoes, in that order — the arrangement the
+        // merge rule would break on a padded payload.
+        string line = cnl.Split('\n').Single(l => l.TrimStart().StartsWith("Match:", StringComparison.Ordinal));
+        Assert.Contains("Design=", line, StringComparison.Ordinal);
+        Assert.Contains("F1=", line, StringComparison.Ordinal);
+
+        var (lib, tb) = new CircuitRF.Core.Netlist.CnlReader().Read(cnl);
+        var netlist = new Elaborator(lib).Elaborate(tb);
+        var mm = Assert.IsType<MatchModel>(netlist.Components.Single(c => c.InstancePath == "MN1").Model);
+        Assert.Equal(1e9, mm.Design.F1);
+        Assert.Equal(6, mm.StampedElements.Count);
+    }
+
+    // ── §4: registry, category, palette ───────────────────────────────────────
+
+    /// <summary>The prefix is <c>MN</c> and NOT <c>M</c> — <c>M</c> is <see cref="SymbolKind.Mutual"/>,
+    /// and two kinds sharing a prefix hand out colliding instance names.</summary>
+    [Fact]
+    public void ThePrefixIsMn_AndDoesNotCollideWithMutual()
+    {
+        Assert.Equal("MN", ComponentTypeRegistry.InstancePrefix(SymbolKind.Match));
+        Assert.Equal("M", ComponentTypeRegistry.InstancePrefix(SymbolKind.Mutual));
+        Assert.Equal("Match", ComponentTypeRegistry.EngineReference(SymbolKind.Match));
+    }
+
+    /// <summary>Auto-naming counts up from <c>MN1</c>, and is not confused by a <c>Mutual</c> beside
+    /// it — the concrete reason the prefix is two letters.</summary>
+    [Fact]
+    public void AutoNaming_GivesMn1ThenMn2()
+    {
+        var existing = new System.Collections.Generic.List<EditableComponent>();
+        string first = SchematicEditModel.NextAvailableName(existing, SymbolKind.Match);
+        Assert.Equal("MN1", first);
+
+        existing.Add(new EditableComponent { InstanceName = first, Symbol = SymbolKind.Match });
+        existing.Add(new EditableComponent { InstanceName = "M1", Symbol = SymbolKind.Mutual });
+        Assert.Equal("MN2", SchematicEditModel.NextAvailableName(existing, SymbolKind.Match));
+        Assert.Equal("M2", SchematicEditModel.NextAvailableName(existing, SymbolKind.Mutual));
+    }
+
+    /// <summary>It is in the palette, under the new Matching category, and findable by what it
+    /// SOLVES as well as by how it works.</summary>
+    [Fact]
+    public void MatchIsInThePalette_UnderTheMatchingCategory()
+    {
+        var item = Assert.Single(LibraryCatalog.AllItems.Where(i => i.Kind == SymbolKind.Match));
+        Assert.Equal("Match", item.DisplayName);
+        Assert.Equal(ComponentCategory.Matching, item.Category);
+        Assert.True(item.IsCommon);
+
+        Assert.Contains(LibraryCatalog.ByCategory(ComponentCategory.Matching),
+                        i => i.Kind == SymbolKind.Match);
+        Assert.Contains(LibraryCatalog.AllItemsPinnedOrder(), i => i.Kind == SymbolKind.Match);
+
+        foreach (string query in new[] { "matching", "Chebyshev", "Fano", "interstage", "Cgs", "bandpass" })
+            Assert.Contains(LibraryCatalog.Search(query), i => i.Kind == SymbolKind.Match);
+    }
+
+    /// <summary>
+    /// A new <see cref="ComponentCategory"/> is only real if every one of the four places that knows
+    /// about categories was updated — the enum, the sort key, the catalog and the picker. Missing the
+    /// picker leaves a category nothing can be filtered to; missing the sort key files it under the
+    /// catch-all with <c>Other</c>.
+    /// </summary>
+    [Fact]
+    public void TheMatchingCategory_ReachesThePicker_BetweenMicrostripAndDataFiles()
+    {
+        var tool = new PaletteTool();
+        var names = tool.Categories.Select(c => c.DisplayName).ToList();
+        output.WriteLine(string.Join(" | ", names));
+
+        // "Matching" is one word, so PaletteTool.RealDisplayName needs no entry and the name falls
+        // through to ToString() — asserted here rather than assumed.
+        Assert.Contains("Matching", names);
+        Assert.True(names.IndexOf("Microstrip") < names.IndexOf("Matching"));
+        Assert.True(names.IndexOf("Matching") < names.IndexOf("Data Files"));
+
+        // AllItems is sorted by CategorySortKey, so the same order has to hold there — an unmapped
+        // category would fall to the catch-all rank and sort with Other instead.
+        var order = LibraryCatalog.AllItems.Select(i => i.Category).ToList();
+        Assert.True(order.LastIndexOf(ComponentCategory.Microstrip) < order.IndexOf(ComponentCategory.Matching));
+        Assert.True(order.LastIndexOf(ComponentCategory.Matching) < order.IndexOf(ComponentCategory.DataFiles));
+    }
+
+    /// <summary><c>Design</c> is base64 of the whole design and must never render as a text row; the
+    /// echo parameters must, because they are the only description of the network a user has.</summary>
+    [Fact]
+    public void TheDesignPayload_IsNotAGenericParameterRow()
+    {
+        Assert.True(ParameterEditorViewModel.IsMatchPanelParameter("Design"));
+        foreach (string echo in new[] { "F1", "F2", "Order", "Response", "R1", "R2" })
+            Assert.False(ParameterEditorViewModel.IsMatchPanelParameter(echo), echo);
+    }
+
+    // ── §3: the symbol ────────────────────────────────────────────────────────
+
+    /// <summary>Three stacked full-cycle sines, two slashes, a body and two pins.</summary>
+    [Fact]
+    public void TheSymbolIsTheStandardBandpassGlyph()
+    {
+        var sym = BuiltInSymbols.Primitives(SymbolKind.Match);
+
+        var sines = sym.Primitives.OfType<SinePrimitive>().OrderBy(s => s.Cy).ToList();
+        Assert.Equal(3, sines.Count);
+        Assert.All(sines, s => Assert.Equal(1.0, s.Cycles));
+        Assert.All(sines, s => Assert.Equal(SineAxis.Horizontal, s.Axis));
+        Assert.All(sines, s => Assert.Equal(sines[0].Length, s.Length));
+
+        // Stacked and not touching: the gap between neighbouring centres must exceed the peak-to-peak
+        // amplitude, or the three waves read as one smear.
+        Assert.True(sines[1].Cy - sines[0].Cy > 2 * sines[0].Amp);
+        Assert.True(sines[2].Cy - sines[1].Cy > 2 * sines[1].Amp);
+
+        var body = Assert.Single(sym.Primitives.OfType<RoundedRectPrimitive>());
+        Assert.False(body.Filled);
+
+        Assert.Equal(2, sym.Pins.Count);
+        Assert.Equal((-200.0, 0.0), (sym.Pins[0].LocalX, sym.Pins[0].LocalY));
+        Assert.Equal((200.0, 0.0), (sym.Pins[1].LocalX, sym.Pins[1].LocalY));
+        Assert.All(sym.Pins, p => Assert.Equal(0.0, p.LocalX % 100));
+    }
+
+    /// <summary>
+    /// <b>The strikethroughs actually strike, at every orientation.</b> The waves are
+    /// <c>SinePrimitive</c>s, which know how to rotate; the slashes are plain lines, and a slash
+    /// drawn so that it only LOOKS like a strikethrough at 0° is the specific mistake worth a test.
+    /// Checked by intersecting the real geometry — sampled wave against slash segment — after running
+    /// both through the same <see cref="SchematicGeometry.LocalToWorld"/> the renderer uses.
+    /// </summary>
+    [Theory]
+    [InlineData(SymbolRotation.R0, false)]
+    [InlineData(SymbolRotation.R90, false)]
+    [InlineData(SymbolRotation.R180, false)]
+    [InlineData(SymbolRotation.R270, false)]
+    [InlineData(SymbolRotation.R0, true)]
+    [InlineData(SymbolRotation.R90, true)]
+    [InlineData(SymbolRotation.R180, true)]
+    [InlineData(SymbolRotation.R270, true)]
+    public void TheSlashesCrossTheOuterWaves_AndNotTheMiddleOne(SymbolRotation rotation, bool mirrored)
+    {
+        var sym = BuiltInSymbols.Primitives(SymbolKind.Match);
+        var sines = sym.Primitives.OfType<SinePrimitive>().OrderBy(s => s.Cy).ToList();
+        var slashes = sym.Primitives.OfType<LinePrimitive>()
+                         .Where(l => l.X1 != l.X2 && l.Y1 != l.Y2)   // the leads are axis-aligned
+                         .ToList();
+        Assert.Equal(2, slashes.Count);
+
+        (double X, double Y) W(double lx, double ly)
+            => SchematicGeometry.LocalToWorld((float)lx, (float)ly, 0, 0, rotation, mirrored);
+
+        bool Crosses(SinePrimitive wave, LinePrimitive slash)
+        {
+            var (ax, ay) = W(slash.X1, slash.Y1);
+            var (bx, by) = W(slash.X2, slash.Y2);
+
+            const int samples = 400;
+            (double X, double Y)? previous = null;
+            for (int i = 0; i <= samples; i++)
+            {
+                double t = i / (double)samples;
+                double lx = wave.Cx - wave.Length / 2 + t * wave.Length;
+                double ly = wave.Cy + wave.Amp * Math.Sin(2 * Math.PI * wave.Cycles * t);
+                var here = W(lx, ly);
+                if (previous is { } p && SegmentsCross(p.X, p.Y, here.X, here.Y, ax, ay, bx, by))
+                    return true;
+                previous = here;
+            }
+            return false;
+        }
+
+        Assert.True(slashes.Any(s => Crosses(sines[0], s)), "the top wave must be struck through");
+        Assert.True(slashes.Any(s => Crosses(sines[2], s)), "the bottom wave must be struck through");
+        Assert.False(slashes.Any(s => Crosses(sines[1], s)),
+            "the passband wave must be left unstruck — a slash across it inverts the glyph's meaning");
+    }
+
+    private static bool SegmentsCross(double ax, double ay, double bx, double by,
+                                      double cx, double cy, double dx, double dy)
+    {
+        static double Cross(double ox, double oy, double px, double py, double qx, double qy)
+            => (px - ox) * (qy - oy) - (py - oy) * (qx - ox);
+
+        double d1 = Cross(cx, cy, dx, dy, ax, ay);
+        double d2 = Cross(cx, cy, dx, dy, bx, by);
+        double d3 = Cross(ax, ay, bx, by, cx, cy);
+        double d4 = Cross(ax, ay, bx, by, dx, dy);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0))
+            && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+    }
+}

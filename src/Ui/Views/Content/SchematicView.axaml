@@ -441,6 +441,19 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- Flatten to Cell — a Match instance only (match.md §11). Hidden, not
+                             merely disabled, for every other component: it is not an action that
+                             exists for a resistor, so a permanently greyed row on every context
+                             menu in the editor would be clutter with no muscle memory to protect. -->
+                        <MenuItem x:Name="CtxFlattenMatch"
+                                  Header="Flatten to Cell…"
+                                  IsVisible="False"
+                                  Click="OnCtxFlattenMatch">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="CallSplit" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <Separator x:Name="CtxSep1"/>
 
                         <MenuItem Header="Rotate 90°"

@@ -1,0 +1,579 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
+using System.Linq;
+using CircuitRF.Core.Matching;
+using CircuitRF.Ui.Commands;
+using CircuitRF.Ui.Commands.Schematic;
+using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.ViewModels;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace CircuitRF.Ui.Matching;
+
+/// <summary>
+/// The Match Designer (docs/design/match.md §9): specification, live ladder, response plots, the
+/// linked Norton-transform rack, and the solutions list.
+///
+/// <h3>It adds no synthesis</h3>
+/// <para>Every number here comes out of <c>src/Core/Match</c>. This class decides <i>when</i> to
+/// rebuild and <i>what</i> to say; it never decides what an element value is. If a formula appears in
+/// this file it is in the wrong place.</para>
+///
+/// <h3>Nothing lives only in the view-model</h3>
+/// <para>Brief §0.3: pi/T choice, every N, every lock, the link state, the applied solution and the
+/// Q-adjust all have to survive a save and a reload. They do because every one of them is a property
+/// of <see cref="MatchDesign"/> and every committed edit writes the whole design back to the
+/// component's <c>Design</c> parameter through one <c>SetParametersCommand</c> — which is also what
+/// makes a Designer edit undoable from the schematic's own stack. The only state this class owns is
+/// display state (which pane is showing, whether the solutions panel is out) and the settings of
+/// §9.9, which are display choices and deliberately NOT part of the design.</para>
+///
+/// <h3>What is expensive, and when it runs</h3>
+/// <para>A rebuild is cheap and runs on every edit. Two things are not, and neither depends on a
+/// transform's N, so both run only when the SPECIFICATION changes:</para>
+/// <list type="bullet">
+/// <item><b>Response feasibility.</b> Butterworth and Bessel go through
+///   <c>MatchPrototypes.Search</c>, a 33-point shape sweep with two refinement rounds, each step
+///   building a ladder and scoring it over 201 frequencies. Four of those per keystroke is not
+///   affordable and buys nothing: dragging a slider cannot make Bessel feasible.</item>
+/// <item><b>The solution search.</b> Same reasoning, and match.md §13.3 warns about it by name — the
+///   reference implementation re-runs it inside a view body, which is affordable on a four-element
+///   network and would not be here.</item>
+/// </list>
+/// </summary>
+public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposable
+{
+    private SchematicViewModel? _schematicVm;
+    private EditableComponent?  _target;
+    private UndoRedoStack?      _hookedStack;
+
+    private MatchDesign _design = MatchEmbedding.DefaultDesign();
+    private MatchDesign _openingDesign = MatchEmbedding.DefaultDesign();
+    private MatchRebuildResult? _rebuild;
+    private bool _isCommitting;
+    private bool _isDragging;
+    private bool _plotsStaleFromDrag;
+
+    /// <summary>Undo and redo, delegated to the owning schematic's stack — the Designer has none.</summary>
+    public IRelayCommand UndoCommand { get; }
+
+    /// <inheritdoc cref="UndoCommand"/>
+    public IRelayCommand RedoCommand { get; }
+
+    /// <summary>Builds an unbound Designer; call <see cref="SetTarget"/> before using it.</summary>
+    public MatchDesignerViewModel()
+    {
+        UndoCommand = new RelayCommand(
+            () => _schematicVm?.UndoRedo.Undo(), () => _schematicVm?.UndoRedo.CanUndo ?? false);
+        RedoCommand = new RelayCommand(
+            () => _schematicVm?.UndoRedo.Redo(), () => _schematicVm?.UndoRedo.CanRedo ?? false);
+
+        Term1 = new MatchTerminationViewModel(this, 1);
+        Term2 = new MatchTerminationViewModel(this, 2);
+        Settings = new MatchDesignerSettings();
+        Settings.PropertyChanged += OnSettingsChanged;
+
+        ResponseOptions =
+        [
+            new(ResponseShape.ChebyshevFano, "Chebyshev — Fano optimum",
+                "The singly-prescribed closed form with the Fano root. The default, and the best "
+                + "in-band match a network of this order can reach for this termination."),
+            new(ResponseShape.ChebyshevTwoEnded, "Chebyshev — both ends prescribed",
+                "Both end Q's are inputs, so the far end absorbs exactly and no surplus element is "
+                + "ever needed. What it gives up is Fano optimality."),
+            new(ResponseShape.Butterworth, "Butterworth",
+                "Maximally-flat magnitude, through the numerical route. Roughly half the "
+                + "group-delay variation of the Chebyshev design."),
+            new(ResponseShape.Bessel, "Bessel",
+                "Maximally-flat group delay. Feasible as a prototype and usually refused by the far "
+                + "end, which is why the refusal names its numbers."),
+        ];
+    }
+
+    // ── Binding ───────────────────────────────────────────────────────────────
+
+    /// <summary>Binds this Designer to one placed <c>Match</c>.</summary>
+    public void SetTarget(SchematicViewModel schematicVm, EditableComponent comp)
+    {
+        ArgumentNullException.ThrowIfNull(schematicVm);
+        ArgumentNullException.ThrowIfNull(comp);
+
+        Detach();
+
+        _schematicVm = schematicVm;
+        _target = comp;
+        _schematicVm.EditModel.Changed += OnModelChanged;
+        HookStack(schematicVm);
+
+        LoadFromComponent();
+        _openingDesign = _design.Clone();
+        Refresh(specChanged: true);
+        RefreshProbeAvailability();
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(InstanceName));
+    }
+
+    /// <summary>The component this Designer edits — one window per instance keys on it.</summary>
+    public EditableComponent? Target => _target;
+
+    /// <summary>The instance name, "MN1".</summary>
+    public string InstanceName => _target?.InstanceName ?? "";
+
+    /// <summary>"Match — MN1".</summary>
+    public string Title => $"Match — {InstanceName}";
+
+    /// <summary>The working design. <b>Read it; write it only through this class's setters</b>, which
+    /// rebuild and commit.</summary>
+    public MatchDesign Design => _design;
+
+    /// <summary>Display and search settings (§9.9). Not part of the design.</summary>
+    public MatchDesignerSettings Settings { get; }
+
+    /// <summary>The result of the last rebuild — the source of every number on screen.</summary>
+    public MatchRebuildResult? Rebuild => _rebuild;
+
+    private void LoadFromComponent()
+    {
+        string payload = _target?.Parameters
+            .FirstOrDefault(p => p.Name == MatchEmbedding.DesignParameter)?.Expression ?? "";
+
+        if (MatchEmbedding.TryDecode(payload, out var decoded) && decoded is not null)
+        {
+            _design = decoded;
+            PayloadError = "";
+        }
+        else
+        {
+            // An unreadable payload is a reported, repairable state — never a crash and never a
+            // silently-substituted design that would overwrite the user's on the next commit.
+            _design = MatchEmbedding.DefaultDesign();
+            PayloadError = payload.Length == 0
+                ? "This Match carries no design; the default 1–2 GHz, order 3, 50 Ω network is shown."
+                : "This Match's Design parameter could not be decoded. The default network is shown; "
+                  + "nothing has been written back, so the stored payload is still there to repair.";
+        }
+    }
+
+    private void Detach()
+    {
+        if (_schematicVm is not null) _schematicVm.EditModel.Changed -= OnModelChanged;
+        if (_hookedStack is not null) _hookedStack.PropertyChanged -= OnStackChanged;
+        _hookedStack = null;
+    }
+
+    private void HookStack(SchematicViewModel? vm)
+    {
+        if (_hookedStack is not null) _hookedStack.PropertyChanged -= OnStackChanged;
+        _hookedStack = vm?.UndoRedo;
+        if (_hookedStack is not null) _hookedStack.PropertyChanged += OnStackChanged;
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnStackChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
+        if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// The design changed underneath us — an undo, a redo, or another editor. Re-read it rather than
+    /// keep showing the one we last wrote, which is the specific failure
+    /// <c>ParameterRowStaleBindingTests</c> pins for the generic editor.
+    /// </summary>
+    private void OnModelChanged(object? sender, EventArgs e)
+    {
+        if (_isCommitting) return;
+        LoadFromComponent();
+        Refresh(specChanged: true);
+        // Availability depends on the SCHEMATIC and on nothing in the design, so it is recomputed
+        // here and not in Refresh: a band edit or a slider cannot change what is wired to a pin, and
+        // an extraction per keystroke on a hierarchical schematic reads every referenced cell off disk.
+        RefreshProbeAvailability();
+    }
+
+    /// <summary>Unhooks everything. Safe to call twice.</summary>
+    public void Dispose()
+    {
+        _probeCts?.Cancel();
+        _probeCts?.Dispose();
+        _probeCts = null;
+        Detach();
+        Settings.PropertyChanged -= OnSettingsChanged;
+        _schematicVm = null;
+        _target = null;
+    }
+
+    private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // Units and digits are display only — re-render, do not rebuild and do not commit. Qmin and
+        // the Q-adjust toggle change what the SEARCH offers, so they re-run it.
+        bool searchAffecting = e.PropertyName is nameof(MatchDesignerSettings.QMin)
+                                              or nameof(MatchDesignerSettings.OfferQAdjustedSolutions);
+        Refresh(specChanged: searchAffecting);
+    }
+
+    // ── The specification ─────────────────────────────────────────────────────
+
+    /// <summary>Termination 1 — the port-1 end.</summary>
+    public MatchTerminationViewModel Term1 { get; }
+
+    /// <summary>Termination 2 — the port-2 end.</summary>
+    public MatchTerminationViewModel Term2 { get; }
+
+    /// <summary>An unreadable or absent <c>Design</c> payload, stated rather than hidden.</summary>
+    [ObservableProperty] private string _payloadError = "";
+
+    /// <summary>
+    /// Replaces one termination, adjusting the order when the new parity demands it.
+    /// </summary>
+    /// <param name="fromProbe">
+    /// True only when MN-4's probe supplied this. <b>Every other path clears the probed badge</b>,
+    /// which is match.md §10.5's rule stated once in the one place every edit goes through: the
+    /// user's override always wins, and a hand-edited value must never keep claiming a provenance it
+    /// no longer has.
+    /// </param>
+    internal void SetTermination(int end, Termination replacement, bool fromProbe = false)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (!fromProbe && replacement.Probed)
+            replacement = replacement with { Probed = false, ProbedAtUtc = null };
+        if (end == 1) _design.Term1 = replacement; else _design.Term2 = replacement;
+        AdjustOrderForParity();
+        Refresh(specChanged: true);
+        Commit();
+    }
+
+    /// <summary>
+    /// match.md §9.2: the Order picker offers only the parities §4.2 permits, and a topology change
+    /// that invalidates the current order ADJUSTS it — <b>and says so in one line</b>, because a
+    /// control that silently changes another control is worse than one that explains itself.
+    /// </summary>
+    private void AdjustOrderForParity()
+    {
+        var valid = MatchOrders.ValidOrders(_design.Term1, _design.Term2);
+        if (valid.Contains(_design.Order)) { OrderNote = ""; return; }
+
+        int old = _design.Order;
+        int chosen = valid.OrderBy(o => Math.Abs(o - old)).ThenBy(o => o).First();
+        _design.Order = chosen;
+        bool like = _design.Term1.Topology == _design.Term2.Topology;
+        OrderNote =
+            $"Order {old} cannot absorb both ends now: with a {(like ? "like" : "mixed")} termination "
+            + $"pair the arms alternate, so only {string.Join(", ", valid)} fit. The order moved to "
+            + $"{chosen}.";
+    }
+
+    /// <summary>The one line explaining an automatic order change, or empty.</summary>
+    [ObservableProperty] private string _orderNote = "";
+
+    /// <summary>The orders <c>MatchOrders.ValidOrders</c> permits for the current pair.</summary>
+    public IReadOnlyList<int> OrderOptions => MatchOrders.ValidOrders(_design.Term1, _design.Term2);
+
+    /// <summary>Network order.</summary>
+    public int Order
+    {
+        get => _design.Order;
+        set
+        {
+            if (value == _design.Order) return;
+            _design.Order = value;
+            OrderNote = "";
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>The four response families, each with its enablement and its reason.</summary>
+    public IReadOnlyList<MatchResponseOptionViewModel> ResponseOptions { get; }
+
+    /// <summary>The prototype family.</summary>
+    public ResponseShape Response
+    {
+        get => _design.Response;
+        set
+        {
+            if (value == _design.Response) return;
+            _design.Response = value;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>Equal-ripple level, dB — the real-to-real prototype only.</summary>
+    public double RippleDb
+    {
+        get => _design.RippleDb;
+        set
+        {
+            if (value == _design.RippleDb || !(value > 0)) return;
+            _design.RippleDb = value;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>
+    /// True only when neither end has a reactance to prescribe (§6.6) — the equal-ripple prototype is
+    /// what runs then, and the ripple is the only thing left to set.
+    /// </summary>
+    public bool RippleEnabled => !_design.Term1.HasReactance && !_design.Term2.HasReactance;
+
+    /// <summary>Deliberately inflated analysis-end Q (match.md §4.6), or 0 for none.</summary>
+    public double QAdjust
+    {
+        get => _design.QAdjust;
+        set
+        {
+            if (value == _design.QAdjust) return;
+            _design.QAdjust = value;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>The Q-adjust checkbox. Turning it on seeds the smallest Q that completes, when one does.</summary>
+    public bool QAdjustEnabled
+    {
+        get => _design.QAdjust > 0;
+        set
+        {
+            if (value == QAdjustEnabled) return;
+            _design.QAdjust = value
+                ? MatchSolutionSearch.FindQAdjust(_design, Settings.QMin) ?? Settings.QMin
+                : 0.0;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>Widens every transform range past its positivity threshold.</summary>
+    public bool AllowNegativeComponents
+    {
+        get => _design.AllowNegativeComponents;
+        set
+        {
+            if (value == _design.AllowNegativeComponents) return;
+            _design.AllowNegativeComponents = value;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>Which end pins g1 (match.md §4.2). Defaults to the higher-Q end.</summary>
+    public AnalysisEndChoice AnalysisEnd
+    {
+        get => _design.AnalysisEnd;
+        set
+        {
+            if (value == _design.AnalysisEnd) return;
+            _design.AnalysisEnd = value;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>Lower band edge, Hz.</summary>
+    public double F1
+    {
+        get => _design.F1;
+        set
+        {
+            if (value == _design.F1 || !(value > 0)) return;
+            _design.F1 = value;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>Upper band edge, Hz.</summary>
+    public double F2
+    {
+        get => _design.F2;
+        set
+        {
+            if (value == _design.F2 || !(value > 0)) return;
+            _design.F2 = value;
+            Refresh(specChanged: true);
+            Commit();
+        }
+    }
+
+    /// <summary>The band's display unit.</summary>
+    public string BandUnit
+    {
+        get => Settings.FrequencyUnit;
+        set => Settings.FrequencyUnit = value;
+    }
+
+    /// <summary>F1 as typed.</summary>
+    public string F1Text
+    {
+        get => _f1Staged ?? MatchValueFormat.Format(
+            F1, MatchQuantity.Frequency, BandUnit, Settings.SignificantDigits).Text;
+        set { _f1Staged = value; OnPropertyChanged(); NotifyPendingEdits(); }
+    }
+    private string? _f1Staged;
+
+    /// <summary>F2 as typed.</summary>
+    public string F2Text
+    {
+        get => _f2Staged ?? MatchValueFormat.Format(
+            F2, MatchQuantity.Frequency, BandUnit, Settings.SignificantDigits).Text;
+        set { _f2Staged = value; OnPropertyChanged(); NotifyPendingEdits(); }
+    }
+    private string? _f2Staged;
+
+    /// <summary>Parses and commits the staged band edges.</summary>
+    public void CommitBand()
+    {
+        string? f1 = _f1Staged, f2 = _f2Staged;
+        _f1Staged = _f2Staged = null;
+        if (f1 is not null && MatchValueFormat.TryParse(f1, BandUnit, out double v1)) F1 = v1;
+        if (f2 is not null && MatchValueFormat.TryParse(f2, BandUnit, out double v2)) F2 = v2;
+        OnPropertyChanged(nameof(F1Text));
+        OnPropertyChanged(nameof(F2Text));
+    }
+
+    // ── Apply / Revert ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when a field holds text nobody has parsed yet.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is what Apply is FOR.</b> Every committed edit already writes the design, so there is
+    /// no "pending design" to apply — what can be pending is a number half-typed in a box that has not
+    /// lost focus. Apply flushes those. An Apply button that could only ever be a no-op would be
+    /// worse than none.
+    /// </remarks>
+    public bool HasPendingEdits =>
+        _f1Staged is not null || _f2Staged is not null
+        || Term1.HasPendingText || Term2.HasPendingText
+        || Transforms.Any(t => t.HasPendingText);
+
+    /// <summary>Raises <see cref="HasPendingEdits"/>; called by every staged-text setter.</summary>
+    internal void NotifyPendingEdits() => OnPropertyChanged(nameof(HasPendingEdits));
+
+    /// <summary>Parses every staged field and commits.</summary>
+    public void Apply()
+    {
+        CommitBand();
+        Term1.CommitResistance();
+        Term1.CommitReactance();
+        Term2.CommitResistance();
+        Term2.CommitReactance();
+        foreach (var t in Transforms.ToList()) t.CommitN();
+        NotifyPendingEdits();
+        UpdatePlots();
+    }
+
+    /// <summary>
+    /// Restores the design this window opened with, as ONE undoable command. Not a discard: the
+    /// intervening edits were real commits, so undoing them has to be a commit too.
+    /// </summary>
+    public void Revert()
+    {
+        _design = _openingDesign.Clone();
+        Refresh(specChanged: true);
+        Commit();
+    }
+
+    // ── Rebuild ───────────────────────────────────────────────────────────────
+
+    /// <summary>Re-derives everything from the design. <paramref name="specChanged"/> also re-runs the
+    /// two expensive searches.</summary>
+    public void Refresh(bool specChanged)
+    {
+        _rebuild = MatchRebuild.Rebuild(_design);
+
+        RefreshTransformRows();
+        RefreshLadderAndGrid();
+        RefreshStatus();
+        RefreshFlatten();
+
+        if (specChanged)
+        {
+            RefreshResponseOptions();
+            RefreshSolutions();
+            OnPropertyChanged(nameof(OrderOptions));
+            OnPropertyChanged(nameof(RippleEnabled));
+        }
+
+        Term1.Refresh();
+        Term2.Refresh();
+
+        if (_isDragging) _plotsStaleFromDrag = true;
+        else UpdatePlots();
+
+        OnPropertyChanged(nameof(Design));
+        OnPropertyChanged(nameof(Rebuild));
+        OnPropertyChanged(nameof(Order));
+        OnPropertyChanged(nameof(Response));
+        OnPropertyChanged(nameof(RippleDb));
+        OnPropertyChanged(nameof(QAdjust));
+        OnPropertyChanged(nameof(QAdjustEnabled));
+        OnPropertyChanged(nameof(AllowNegativeComponents));
+        OnPropertyChanged(nameof(AnalysisEnd));
+        OnPropertyChanged(nameof(F1));
+        OnPropertyChanged(nameof(F2));
+        OnPropertyChanged(nameof(F1Text));
+        OnPropertyChanged(nameof(F2Text));
+        OnPropertyChanged(nameof(LinkTransforms));
+        NotifyPendingEdits();
+    }
+
+    // ── Commit ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Writes the whole design back to the component's <c>Design</c> parameter, and refreshes the six
+    /// ECHO parameters beside it, as ONE <c>SetParametersCommand</c> — one undo entry per edit,
+    /// undoable from the schematic's own stack (brief §1).
+    /// </summary>
+    public void Commit()
+    {
+        if (_target is null || _schematicVm is null) return;
+
+        // Keep the stored fingerprint in step with the basis we just synthesised, so a reload
+        // compares this session's synthesis against itself and only reports a mismatch when the
+        // synthesis has genuinely changed underneath the design (match.md §7.3).
+        if (_rebuild?.Basis.Ok == true) _design.BasisFingerprint = _rebuild.Basis.BasisFingerprint;
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        Set(updated, MatchEmbedding.DesignParameter, MatchEmbedding.Encode(_design), "", UnitDimension.None, false);
+        Set(updated, "F1", Echo(_design.F1 / 1e9), "GHz", UnitDimension.Frequency, true);
+        Set(updated, "F2", Echo(_design.F2 / 1e9), "GHz", UnitDimension.Frequency, true);
+        Set(updated, "Order", _design.Order.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None, true);
+        Set(updated, "Response", _design.Response.ToString(), "", UnitDimension.None, false);
+        Set(updated, "R1", Echo(_design.Term1.R), "Ω", UnitDimension.Resistance, false);
+        Set(updated, "R2", Echo(_design.Term2.R), "Ω", UnitDimension.Resistance, false);
+
+        _isCommitting = true;
+        try { _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated)); }
+        finally { _isCommitting = false; }
+
+        return;
+
+        static string Echo(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+
+        static void Set(List<EditableParameter> list, string name, string expression, string unit,
+                        UnitDimension dim, bool showOnSchematic)
+        {
+            var existing = list.FirstOrDefault(p => p.Name == name);
+            if (existing is not null)
+            {
+                existing.Expression = expression;
+                if (existing.Unit.Length == 0) existing.Unit = unit;
+                return;
+            }
+            list.Add(new EditableParameter
+            {
+                Name = name, Expression = expression, Unit = unit,
+                Dimension = dim, ShowOnSchematic = showOnSchematic,
+            });
+        }
+    }
+}

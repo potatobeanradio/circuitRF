@@ -2,6 +2,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Core.Matching;
 using CircuitRF.Core.Elaboration;
 using System.Text.RegularExpressions;
 using System.Linq;
@@ -351,6 +352,18 @@ public sealed class Elaborator
                     resolvedNodes = [..resolvedNodes, nDrv];
                 }
 
+                // Match: one internal net per series arm past the first (match.md §8.3). Minted here,
+                // keyed on the instance path, so two Matches carrying the SAME design still get
+                // independent internal nets — the mechanism Tuner, P1Tone and Diode already use. The
+                // __ prefix is reserved so a user net can never collide.
+                if (model is MatchModel mm && mm.InternalNodeCount > 0)
+                {
+                    var extra = new int[mm.InternalNodeCount];
+                    for (int k = 0; k < extra.Length; k++)
+                        extra[k] = netlist.Nodes.GetOrAssign($"__match_{childPath}_{k}");
+                    resolvedNodes = [..resolvedNodes, ..extra];
+                }
+
                 // Diode with series resistance: three nets, [anode, internal, internal, cathode],
                 // so the model's two ports are the resistor and the junction. The internal node is
                 // minted here and gets an ordinary matrix row for the same reason ExtDevice's do —
@@ -443,6 +456,10 @@ public sealed class Elaborator
         // '/' alone crashes the expression parser at position 0.
         if (inst.Reference.Equals("wBond", StringComparison.OrdinalIgnoreCase))
             return ResolveWBondParameters(inst, parentScope);
+        // Match's `Design` is base64 and its `Response` is an enum name — neither is an expression,
+        // and the evaluator reads both as identifiers and fails. Same rule, same reason as wBond's.
+        if (inst.Reference.Equals("Match", StringComparison.OrdinalIgnoreCase))
+            return ResolveMatchParameters(inst, parentScope);
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
@@ -965,6 +982,48 @@ public sealed class Elaborator
         if (string.IsNullOrEmpty(BaseDirectory))   return file;   // no workspace root → legacy behavior
         var rel = file.Replace('\\', '/');                        // tolerate Windows-authored separators
         return Path.GetFullPath(Path.Combine(BaseDirectory, rel));
+    }
+
+    // ── Match parameter resolution ────────────────────────────────────────────
+
+    /// <summary>
+    /// Match stores <c>Design</c> (the base64 design payload — see <c>MatchEmbedding</c>) and the
+    /// <c>Response</c> echo verbatim, and evaluates the remaining echo parameters as ordinary
+    /// expressions.
+    ///
+    /// <para><b><c>Design</c> is a payload, not an expression.</b> Base64 is a bare identifier to the
+    /// tokenizer and would fail — or, worse, resolve against a variable that happens to share its
+    /// spelling. <c>Response</c> is an enum NAME and has the same problem. Everything else here is a
+    /// number the user may want to read on the schematic, so it goes through the evaluator like any
+    /// other parameter; none of it is an input (match.md §7.2 — <c>Design</c> is authoritative and
+    /// complete), so an echo that fails to evaluate is skipped rather than fatal.</para>
+    ///
+    /// <para><c>MatchName</c> is injected, not authored: it is what lets the factory's refusal name
+    /// the instance the user placed rather than the type. Chain's <c>ChainName</c> and Tuner's
+    /// <c>TunerName</c> are the same device.</para>
+    /// </summary>
+    private IReadOnlyDictionary<string, Value> ResolveMatchParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal)
+        {
+            ["MatchName"] = new Value(inst.InstanceName),
+        };
+
+        foreach (var ov in inst.Overrides)
+        {
+            if (ov.Name.Equals(MatchEmbedding.DesignParameter, StringComparison.OrdinalIgnoreCase)
+                || ov.Name.Equals("Response", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+            }
+            else
+            {
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* an echo parameter is display only; the design itself carries the truth */ }
+            }
+        }
+        return result;
     }
 
     // ── wBond parameter resolution ────────────────────────────────────────────

@@ -24,9 +24,17 @@ public partial class ParameterEditorView : UserControl
 
     private void OnDataContextChanged(object? sender, System.EventArgs e)
     {
-        if (_boundVm is not null) _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
+        if (_boundVm is not null)
+        {
+            _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
+            _boundVm.OpenMatchDesignerRequested -= OnOpenMatchDesigner;
+        }
         _boundVm = DataContext as ParameterEditorViewModel;
-        if (_boundVm is not null) _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
+        if (_boundVm is not null)
+        {
+            _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
+            _boundVm.OpenMatchDesignerRequested += OnOpenMatchDesigner;
+        }
 
         if (DataContext is ParameterEditorViewModel vm)
         {
@@ -36,6 +44,16 @@ public partial class ParameterEditorView : UserControl
             vm.RevealFileAsync        = RevealFileAsync;
             vm.OpenCvEditorDialogAsync = OpenCvEditorDialogAsync;
         }
+    }
+
+    /// <summary>
+    /// Opens the Match Designer for the selected instance. Only the view knows which window owns this
+    /// panel, which is why the view-model raises an event rather than opening one itself.
+    /// </summary>
+    private void OnOpenMatchDesigner(CircuitRF.Ui.Schematic.EditableComponent comp)
+    {
+        if (Vm?.SchematicVm is not { } schematicVm) return;
+        Views.Match.MatchDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
     }
 
     private async Task OpenCvEditorDialogAsync()

@@ -87,6 +87,51 @@
                      They are filtered out of the generic rows above; this is where they live.
                      `GroundPlane` joined them on 2026-08-17 — a boolean, so a picker. `Temp` is an
                      ordinary engine value and stays a generic row. -->
+                <!-- ══ Match compact panel (match.md §9.8) ═══════════════════════════════
+                     A READOUT and one button, not a half-editor. A matching network's parameters are
+                     a band, two terminations and a rack of linked sliders; none of that fits in a
+                     420 px column of text rows, and a second place to type them is how the design and
+                     the label come to disagree. The `Design` blob is filtered out of the generic rows
+                     above (IsMatchPanelParameter); the six ECHO rows stay, because they are what a
+                     user reads on the schematic page itself. -->
+                <StackPanel IsVisible="{Binding IsMatch}" Margin="6,4" Spacing="4">
+                    <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Band" FontSize="11"/>
+                        <SelectableTextBlock Grid.Row="0" Grid.Column="1" FontSize="11"
+                                             Text="{Binding MatchBandSummary}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Network" FontSize="11"/>
+                        <SelectableTextBlock Grid.Row="1" Grid.Column="1" FontSize="11" TextWrapping="Wrap"
+                                             Text="{Binding MatchOrderSummary}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Term 1" FontSize="11"/>
+                        <SelectableTextBlock Grid.Row="2" Grid.Column="1" FontSize="11" TextWrapping="Wrap"
+                                             Text="{Binding MatchTerm1Summary}"/>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Term 2" FontSize="11"/>
+                        <SelectableTextBlock Grid.Row="3" Grid.Column="1" FontSize="11" TextWrapping="Wrap"
+                                             Text="{Binding MatchTerm2Summary}"/>
+                        <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Spacing="3">
+                            <TextBlock Text="Match" FontSize="11"/>
+                            <!-- One glyph, two states: a refusal and an unreached Π N² are both things
+                                 to act on, and a user reading a match summary needs the same warning
+                                 for either. -->
+                            <TextBlock Text="⚑" FontSize="11"
+                                       Foreground="{DynamicResource CrfWarningBrush}"
+                                       IsVisible="{Binding MatchNeedsAttention}"/>
+                        </StackPanel>
+                        <SelectableTextBlock Grid.Row="4" Grid.Column="1" FontSize="11" TextWrapping="Wrap"
+                                             Text="{Binding MatchReturnLossSummary}"/>
+                    </Grid>
+
+                    <TextBlock Text="{Binding MatchPayloadError}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource CrfWarningBrush}"
+                               IsVisible="{Binding MatchPayloadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                    <Button Content="Open Match Designer…"
+                            HorizontalAlignment="Right"
+                            FontSize="11" Padding="8,3"
+                            Command="{Binding OpenMatchDesignerCommand}"
+                            ToolTip.Tip="Band, terminations, order, response, the ladder, its response, and the Norton-transform sliders"/>
+                </StackPanel>
+
                 <StackPanel IsVisible="{Binding IsWBond}"
                             Margin="6,4"
                             Spacing="8">
