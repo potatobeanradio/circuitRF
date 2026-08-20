@@ -17,6 +17,13 @@ namespace CircuitRF.Ui.Views.Match;
 /// It is the fastest way to show series-versus-parallel, which is the one thing about a termination
 /// that a pair of radio buttons states and does not show. The glyphs are circuitRF's own
 /// (<see cref="BuiltInSymbols"/>), so the R here is the R on the page.
+///
+/// <para><b>Drawn VERTICALLY — rotated 90° from the original</b> (owner, 2026-08-19). A termination
+/// hangs between a node and ground, which is what a vertical drawing shows and a horizontal one does
+/// not; the built-in glyphs are vertical to begin with, so this orientation is also the one that
+/// needs no rotation of its own. <see cref="ResistorOnLeft"/> then puts termination 1's R on the LEFT
+/// branch of a parallel pair and termination 2's on the RIGHT, so the two pictograms mirror each
+/// other the way the two ends of the network do.</para>
 /// </remarks>
 public sealed class MatchPictogramControl : Control
 {
@@ -28,8 +35,17 @@ public sealed class MatchPictogramControl : Control
     public static readonly StyledProperty<IBrush?> StrokeProperty =
         AvaloniaProperty.Register<MatchPictogramControl, IBrush?>(nameof(Stroke));
 
+    /// <summary>
+    /// Which branch of a PARALLEL pair the resistor takes — true = left (termination 1), false =
+    /// right (termination 2). Ignored by the series and resistor-only arrangements, which have only
+    /// one branch to draw.
+    /// </summary>
+    public static readonly StyledProperty<bool> ResistorOnLeftProperty =
+        AvaloniaProperty.Register<MatchPictogramControl, bool>(nameof(ResistorOnLeft), true);
+
     static MatchPictogramControl() =>
-        AffectsRender<MatchPictogramControl>(PictogramProperty, StrokeProperty);
+        AffectsRender<MatchPictogramControl>(
+            PictogramProperty, StrokeProperty, ResistorOnLeftProperty);
 
     /// <inheritdoc cref="PictogramProperty"/>
     public MatchPictogram Pictogram
@@ -45,9 +61,17 @@ public sealed class MatchPictogramControl : Control
         set => SetValue(StrokeProperty, value);
     }
 
-    // The drawing's own world, in the same 100-units-per-grid-square the symbols use.
-    private const double WorldW = 1200.0;
-    private const double WorldH = 900.0;
+    /// <inheritdoc cref="ResistorOnLeftProperty"/>
+    public bool ResistorOnLeft
+    {
+        get => GetValue(ResistorOnLeftProperty);
+        set => SetValue(ResistorOnLeftProperty, value);
+    }
+
+    // The drawing's own world, in the same 100-units-per-grid-square the symbols use. Portrait, since
+    // the arrangement is now vertical.
+    private const double WorldW = 900.0;
+    private const double WorldH = 1200.0;
 
     /// <inheritdoc/>
     public override void Render(DrawingContext ctx)
@@ -68,41 +92,48 @@ public sealed class MatchPictogramControl : Control
         if (p.Kind == ReactanceKind.None)
         {
             Glyph(ctx, pen, brush, SymbolKind.Resistor, 0, 0, P);
-            ctx.DrawLine(pen, P(-560, 0), P(-200, 0));
-            ctx.DrawLine(pen, P(200, 0), P(560, 0));
+            ctx.DrawLine(pen, P(0, -560), P(0, -200));
+            ctx.DrawLine(pen, P(0, 200), P(0, 560));
             return;
         }
 
         if (p.Topology == TerminationTopology.Series)
         {
-            Glyph(ctx, pen, brush, SymbolKind.Resistor, -280, 0, P);
-            Glyph(ctx, pen, brush, reactive, 280, 0, P);
-            ctx.DrawLine(pen, P(-560, 0), P(-480, 0));
-            ctx.DrawLine(pen, P(-80, 0), P(80, 0));
-            ctx.DrawLine(pen, P(480, 0), P(560, 0));
+            Glyph(ctx, pen, brush, SymbolKind.Resistor, 0, -280, P);
+            Glyph(ctx, pen, brush, reactive, 0, 280, P);
+            ctx.DrawLine(pen, P(0, -560), P(0, -480));
+            ctx.DrawLine(pen, P(0, -80), P(0, 80));
+            ctx.DrawLine(pen, P(0, 480), P(0, 560));
             return;
         }
 
-        // Parallel: two branches between one pair of nodes.
-        Glyph(ctx, pen, brush, SymbolKind.Resistor, 0, -220, P);
-        Glyph(ctx, pen, brush, reactive, 0, 220, P);
-        ctx.DrawLine(pen, P(-380, -220), P(-200, -220));
-        ctx.DrawLine(pen, P(200, -220), P(380, -220));
-        ctx.DrawLine(pen, P(-380, 220), P(-200, 220));
-        ctx.DrawLine(pen, P(200, 220), P(380, 220));
-        ctx.DrawLine(pen, P(-380, -220), P(-380, 220));
-        ctx.DrawLine(pen, P(380, -220), P(380, 220));
-        ctx.DrawLine(pen, P(-560, 0), P(-380, 0));
-        ctx.DrawLine(pen, P(380, 0), P(560, 0));
+        // Parallel: two vertical branches between one pair of nodes. The resistor takes the side this
+        // end is drawn on, so termination 1 and termination 2 read as mirror images.
+        double rx = ResistorOnLeft ? -220 : 220;
+        double xx = -rx;
+        Glyph(ctx, pen, brush, SymbolKind.Resistor, rx, 0, P);
+        Glyph(ctx, pen, brush, reactive, xx, 0, P);
+
+        foreach (double x in new[] { rx, xx })
+        {
+            ctx.DrawLine(pen, P(x, -380), P(x, -200));
+            ctx.DrawLine(pen, P(x, 200), P(x, 380));
+        }
+        ctx.DrawLine(pen, P(rx, -380), P(xx, -380));
+        ctx.DrawLine(pen, P(rx, 380), P(xx, 380));
+        ctx.DrawLine(pen, P(0, -560), P(0, -380));
+        ctx.DrawLine(pen, P(0, 380), P(0, 560));
     }
 
-    /// <summary>Draws one built-in glyph, rotated to lie horizontally, centred at (cx, cy).</summary>
+    /// <summary>
+    /// Draws one built-in glyph in its own natural (vertical) orientation, centred at (cx, cy).
+    /// </summary>
     private static void Glyph(
         DrawingContext ctx, IPen pen, IBrush brush, SymbolKind kind,
         double cx, double cy, Func<double, double, Point> P)
     {
         var symbol = BuiltInSymbols.Primitives(kind);
-        Point T(double lx, double ly) => P(cx - ly, cy + lx);
+        Point T(double lx, double ly) => P(cx + lx, cy + ly);
 
         foreach (var prim in symbol.Primitives)
         {
@@ -146,7 +177,7 @@ public sealed class MatchPictogramControl : Control
                 case CirclePrimitive c:
                 {
                     var centre = T(c.Cx, c.Cy);
-                    double r = Math.Max(1.0, Math.Abs((T(c.Cx, c.Cy + c.R) - centre).X));
+                    double r = Math.Max(1.0, Math.Abs((T(c.Cx + c.R, c.Cy) - centre).X));
                     ctx.DrawEllipse(c.Filled ? brush : Brushes.Transparent, pen, centre, r, r);
                     break;
                 }

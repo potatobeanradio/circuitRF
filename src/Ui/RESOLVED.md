@@ -6,6 +6,83 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Match round 1 + group delay (2026-08-19)
+
+The owner's first pass over the shipped Match component and Designer. Four findings are worth
+keeping; the rest of the list was ordinary polish.
+
+### The shipped default was not a matching problem, and its own order picker had a dead end
+
+`MatchEmbedding.DefaultDesign` was 1-2 GHz, order 3, **50 Ω to 50 Ω**, both ends resistive. It
+synthesised, so nothing was ever red — but Π N² is 1/1, there is nothing for a Norton transform to
+do, and the FIRST entry of its own order picker (order 2) returned no solutions at all. Giving either
+end a reactance — the obvious first thing to try — landed on "Termination 2 is not absorbable at
+order 3" immediately. The new default is **1.8-2.2 GHz, order 4, 50 Ω down to 10 Ω**, chosen by
+MEASURING robustness rather than by taste: every valid order, every response family, and every single-
+and double-step change reachable from the specification pane (either topology, either reactance kind,
+at either end) still returns at least one solution.
+
+### A real transformation has to arrive with a solution APPLIED, and which one is not free
+
+50 Ω into 10 Ω needs transforms to REACH it, so an unapplied default opens on
+`Π N² 1 / 0.271 ✘ not reached` with termination 2 flagged — the wall of warning text the change was
+supposed to remove. `DefaultDesign` now runs the (deterministic) solution search and applies one.
+
+**But the first-ranked solution transforms the INDUCTOR pair, and that network cannot DC-solve.** A
+Norton transform replaces one element with a π of three of its own KIND; three ideal inductors in a
+loop is a loop of ideal shorts, which is a singular MNA system — the S-parameter sweep runs perfectly
+while `NonlinearDcEngine` returns residual 1 and never converges. The pick therefore prefers a
+solution whose products are all CAPACITORS (a series capacitor in the middle branch is a DC open).
+This is a property of the DEFAULT only: an inductor Norton transform is a legitimate thing for a user
+to apply, and every one is still offered. Gated by
+`MatchStampTests.TheShippedDefault_IsNotAnInductorLoop_AndDcSolves`.
+
+### The ladder preview drew no interface pins because it had no polygon case
+
+`MatchLadderPreview.DrawPrimitives` handled Line/Polyline/Arc/QuadCurve/Circle. The built-in `Pin`
+glyph is a **hexagon `PolygonPrimitive`** plus one stem line — so the hexagon drew as nothing and the
+stem landed exactly on the wire it connects to. The visible result was *no pin at all* rather than
+half of one, which is why it read as "the pins were never added". Nothing else the preview draws is a
+polygon, which is how the gap survived.
+
+Two other geometry traps in the same file: the spine must be drawn in the GAPS between series
+elements (a built-in glyph carries its own leads out to ±200, so a full-width port-to-port line lays a
+second wire across every series body), and the vertical air must exceed the horizontal (`AirY` 500 vs
+`AirX` 340) or a series element's three-line label is clipped off the top.
+
+### A slash centred exactly on its wave does not "cross" it
+
+The Match symbol's strikethroughs were re-sloped and shortened. A symmetric slash centred on the
+wave's own centre passes THROUGH the point `(0, ∓55)` that the wave itself passes through, and two
+segments meeting at a shared point do not strictly cross — which
+`MatchComponentPlacementTests.TheSlashesCrossTheOuterWaves_AndNotTheMiddleOne` correctly reads as "not
+struck through". The 4-unit y offset in `BuildMatch` is load-bearing, not cosmetic.
+
+### An inline editor that only commits on LostFocus never closes
+
+`InlineEditText` (new, `src/Ui/Controls/`) shares harmonicaRF's two pure decisions —
+`InlineEdit.ValueSelectionLength` and `InlineEdit.MeasureWidth`, now one implementation for both — but
+hosts them differently: the strip floats its box in a `Canvas` overlay because its columns are
+width-shared, while a Designer row is a fixed grid cell and swaps in place. Three things had to be
+got right and each was reported: it opens on **double**-click (a single click opens an editor the user
+meant to click past); the box carries an explicit measured `Width` and `HorizontalAlignment=Left` (a
+stretched box fills its whole `*` column however short the value is); and a click outside is caught by
+**tunnelling from the top level**, because clicking a non-focusable area — a label, a drawn canvas,
+the pane background — moves focus nowhere at all, so `LostFocus` never fires and the editor just stays
+open. A `Panel` with no `Background` is also not hit-testable, so the double-click only landed when
+the pointer hit a glyph exactly.
+
+### Group delay now exists in RfCore
+
+`RFNetwork.GroupDelay` (seconds) plus a `NetworkMetrics.GroupDelay` cube adapter, and
+`DerivedParameters.GroupDelay` in the Data Display beside μ/μ′. It is **not** a `NetworkMetric` member
+and that is structural: every member of that enum is a function of ONE matrix, which is what lets
+`EvaluateTwoPort` loop point by point; group delay is a derivative ALONG the sweep. It is also **not
+reference-independent** — S21's phase is defined against the terminations — so the adapter
+renormalises to a uniform real reference first, exactly like every other 2-port metric. The Match
+Designer's own private copy is gone. Supersedes this file's earlier "Group delay does not exist
+anywhere in circuitRF, and was not made to".
+
 ## Match MN-5 — Flatten to Cell (2026-08-19)
 
 `docs/design/match.md` §11. A designed `Match` becomes an ordinary cell folder — `.ccell`,
@@ -212,7 +289,12 @@ from inside `Elaborator.ResolveParameters`, with nothing anywhere naming the tra
 `UpdatePlots` now refuses at the netlist boundary and names the element and the cause; the ladder, the
 grid and the status strip stay usable.
 
-### Group delay does not exist anywhere in circuitRF, and was not made to
+### Group delay does not exist anywhere in circuitRF, and was not made to — SUPERSEDED 2026-08-19
+
+> It exists now: `RFNetwork.GroupDelay` / `NetworkMetrics.GroupDelay`, and
+> `DerivedParameters.GroupDelay` in the Data Display. See "Match round 1 + group delay" above. The
+> Designer still INJECTS the numbers through `Trace.SetCubeData` for the reason below — only the
+> arithmetic moved.
 
 `DependentVarFormat` is `{Complex, Db, Mag, Phase, Real, Imaginary}` and RfCore has no group-delay
 metric — a repo-wide search for the term finds only prose. §9.6 asks for it on the second plot.

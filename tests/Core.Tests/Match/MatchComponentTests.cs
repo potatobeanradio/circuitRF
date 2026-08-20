@@ -80,27 +80,45 @@ public class MatchComponentTests
     {
         Assert.True(MatchEmbedding.TryDecode(MatchEmbedding.DefaultPayload, out var decoded));
         Assert.NotNull(decoded);
-        Assert.Equal(1e9, decoded!.F1);
-        Assert.Equal(2e9, decoded.F2);
-        Assert.Equal(3, decoded.Order);
+        Assert.Equal(1.8e9, decoded!.F1);
+        Assert.Equal(2.2e9, decoded.F2);
+        Assert.Equal(4, decoded.Order);
         Assert.Equal(ResponseShape.ChebyshevFano, decoded.Response);
+        Assert.Equal(50.0, decoded.Term1.R);
+        Assert.Equal(10.0, decoded.Term2.R);
         Assert.False(decoded.Term1.HasReactance);
         Assert.False(decoded.Term2.HasReactance);
+
+        // 2026-08-19: the default now ARRIVES with a solution applied, because 50 Ω into 10 Ω is a
+        // real transformation and an unapplied one opens the Designer on "Π N² not reached".
+        Assert.NotEmpty(decoded.Transforms);
+        Assert.Single(decoded.AppliedSolutions);
 
         var rebuilt = MatchRebuild.Rebuild(decoded);
         Assert.Null(rebuilt.Refusal);
         Assert.NotNull(rebuilt.Network);
         Assert.Empty(rebuilt.Notes);
+        Assert.True(rebuilt.OnTarget,
+            "the shipped default must open ON TARGET — its own applied transform is what gets it there");
     }
 
-    /// <summary>The default is shunt-series-shunt, so it needs NO internal net: its one series arm
-    /// runs straight from pin to pin.</summary>
+    /// <summary>
+    /// The default's own shape, stated so a change to it is a deliberate one: an order-4 bandpass
+    /// ladder with one Norton transform already applied — nine elements, and the two internal nets
+    /// its series arms need.
+    /// </summary>
+    /// <remarks>
+    /// This used to assert ZERO internal nodes, which was a property of the OLD 50 Ω-to-50 Ω default
+    /// (shunt-series-shunt, one series arm running pin to pin). Internal nets are not a cost worth
+    /// choosing a default for — they are numbered and eliminated like any other — and the property
+    /// that actually matters, that the thing simulates and matches, is asserted above.
+    /// </remarks>
     [Fact]
-    public void TheDefaultDesign_NeedsNoInternalNodes()
+    public void TheDefaultDesign_HasTheLadderItsOrderImplies()
     {
         var model = ModelOf(MatchEmbedding.DefaultDesign());
-        Assert.Equal(0, model.InternalNodeCount);
-        Assert.Equal(6, model.StampedElements.Count);
+        Assert.Equal(9, model.StampedElements.Count);
+        Assert.Equal(2, model.InternalNodeCount);
     }
 
     // ── §0.1: absorbed elements are not ours ──────────────────────────────────
@@ -186,10 +204,10 @@ public class MatchComponentTests
             """);
 
         var model = (MatchModel)netlist.Components.Single(c => c.InstancePath == "MN1").Model;
-        Assert.Equal(1e9, model.Design.F1);
-        Assert.Equal(2e9, model.Design.F2);
-        Assert.Equal(3, model.Design.Order);
+        Assert.Equal(1.8e9, model.Design.F1);
+        Assert.Equal(2.2e9, model.Design.F2);
+        Assert.Equal(4, model.Design.Order);
         Assert.Equal(ResponseShape.ChebyshevFano, model.Design.Response);
-        Assert.Equal(6, model.StampedElements.Count);
+        Assert.Equal(9, model.StampedElements.Count);
     }
 }

@@ -41,13 +41,34 @@ public sealed record MatchLadderElement(
     string Name, ElementType Type, bool IsShunt, double Value,
     MatchElementRole Role, double X, double Y, string ValueText)
 {
-    /// <summary>The theme role this element is drawn in — the single mapping from meaning to colour.</summary>
+    /// <summary>
+    /// The theme role the element's SYMBOL is drawn in — the single mapping from meaning to colour.
+    /// </summary>
+    /// <remarks>
+    /// <b>An out-of-range value no longer recolours the whole glyph</b> (owner, 2026-08-19: "a
+    /// component that has an invalid value should have its value rendered in 'bad' colour, not the
+    /// whole component"). The symbol stays the schematic's own symbol colour and only
+    /// <see cref="ValueColorRoleKey"/> turns red, which is the half that is actually wrong — the
+    /// capacitor is a perfectly ordinary capacitor, its VALUE is the unbuildable part.
+    /// </remarks>
     public string ColorRoleKey => Role switch
+    {
+        MatchElementRole.Absorbed => ColorRole.MatchAbsorbed,
+        _                         => ColorRole.SchematicSymbolLine,
+    };
+
+    /// <summary>The theme role this element's VALUE text is drawn in.</summary>
+    public string ValueColorRoleKey => Role switch
     {
         MatchElementRole.OutOfRange => ColorRole.MatchNegative,
         MatchElementRole.Absorbed   => ColorRole.MatchAbsorbed,
-        _                           => ColorRole.SchematicSymbolLine,
+        _                           => ColorRole.SchematicParameterNameText,
     };
+
+    /// <summary>The theme role this element's NAME text is drawn in.</summary>
+    public string NameColorRoleKey => Role == MatchElementRole.Absorbed
+        ? ColorRole.MatchAbsorbed
+        : ColorRole.SchematicInstanceNameText;
 }
 
 /// <summary>A transform bracket, spanning the products one Norton transform created.</summary>
@@ -78,8 +99,20 @@ public sealed record MatchTransformBracket(string Label, int TransformIndex, dou
 /// </remarks>
 public sealed class MatchLadderLayout
 {
-    /// <summary>Horizontal spacing between element columns, world units.</summary>
-    public const double Pitch = 400.0;
+    /// <summary>
+    /// Horizontal spacing between element columns, world units.
+    /// </summary>
+    /// <remarks>
+    /// <b>700, not 400</b> (owner, 2026-08-19: "the horizontal spacing between components in the
+    /// network diagram is too small to support even 3 significant digits + units for adjacent
+    /// parallel components"). A label's width in WORLD units is very nearly constant — the preview's
+    /// font size is a fixed multiple of its own scale, so a glyph is ~90 world units wide however
+    /// many elements there are — which is exactly why widening the pitch buys real clearance instead
+    /// of shrinking everything by the same factor. "153 pH" plus its name needs roughly 300 world
+    /// units; a shunt label starts 130 to the right of its column, so 400 left ~30 units of gap and
+    /// 700 leaves ~330.
+    /// </remarks>
+    public const double Pitch = 700.0;
 
     /// <summary>The through-path's y.</summary>
     public const double SpineY = 0.0;

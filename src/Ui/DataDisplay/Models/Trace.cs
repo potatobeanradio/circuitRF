@@ -56,6 +56,9 @@ namespace CircuitRF.Ui.DataDisplay
         // brief-stability-passivity-touchstone.md — K/|Δ| complete the standard stability set;
         // Passivity is the one metric here that is NOT 2-port-limited (R-stb-6).
         K, DeltaMag, Passivity,
+        // 2026-08-19 — group delay, −dφ/dω on the unwrapped S21 phase. APPENDED, like everything
+        // else here: the ordinal is persisted in `.cdd`.
+        GroupDelay,
     }
 
     public static class DerivedParametersExtensions
@@ -70,6 +73,7 @@ namespace CircuitRF.Ui.DataDisplay
             DerivedParameters.K                     => "Rollett K",
             DerivedParameters.DeltaMag              => "|Δ|",
             DerivedParameters.Passivity             => "Passivity, σmax",
+            DerivedParameters.GroupDelay            => "Group Delay (ns)",
             _                                       => ""
         };
 
@@ -81,7 +85,7 @@ namespace CircuitRF.Ui.DataDisplay
         public static bool IsScalarVsFrequency(this DerivedParameters d) =>
             d is DerivedParameters.Mu or DerivedParameters.MuPrime or DerivedParameters.K
               or DerivedParameters.DeltaMag or DerivedParameters.MaxGain
-              or DerivedParameters.Passivity;
+              or DerivedParameters.Passivity or DerivedParameters.GroupDelay;
 
         /// <summary>True for the Γ-plane loci (Smith/Polar only).</summary>
         public static bool IsCircleLocus(this DerivedParameters d) =>
@@ -93,6 +97,15 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         public static bool NeedsPortPair(this DerivedParameters d) =>
             d != DerivedParameters.None && d != DerivedParameters.Passivity;
+
+        /// <summary>
+        /// True when the metric is a derivative along the SWEEP rather than a function of one matrix
+        /// — so it needs the frequency axis and cannot go through <c>NetworkMetrics.TwoPortMetric</c>.
+        /// Group delay is the only one today; <see cref="ToNetworkMetric"/> refuses it for the same
+        /// reason <c>NetworkMetric</c> has no member for it.
+        /// </summary>
+        public static bool IsSweepDerivative(this DerivedParameters d) =>
+            d is DerivedParameters.GroupDelay;
 
         /// <summary>Maps to the RfCore metric enum; throws for non-scalar/None members.</summary>
         public static RfCore.Data.NetworkMetric ToNetworkMetric(this DerivedParameters d) => d switch
@@ -1431,14 +1444,7 @@ namespace CircuitRF.Ui.DataDisplay
                 {
                     // Passivity has its own two scopes and is NOT a 2-port metric, so it must not
                     // be routed through TwoPortMetric (which correctly refuses it).
-                    yData = Derived == DerivedParameters.Passivity
-                        ? (PassivityWholeNetwork
-                            ? RfCore.Data.NetworkMetrics.PassivityFull(Data.Matrices, z0PerPort)
-                            : RfCore.Data.NetworkMetrics.PassivityPair(
-                                  Data.Matrices, z0PerPort, InputPort, OutputPort))
-                        : RfCore.Data.NetworkMetrics.TwoPortMetric(
-                              Data.Matrices, z0PerPort, Derived.ToNetworkMetric(),
-                              InputPort, OutputPort);
+                    yData = DerivedScalarArray(z0PerPort);
                 }
                 catch (ArgumentException) { return; }   // invalid port pair → empty, never a crash
 
@@ -1532,6 +1538,39 @@ namespace CircuitRF.Ui.DataDisplay
         private bool _derivedMetricCachePassivityScope;
         private Mat<Complex>[]? _derivedMetricCacheMats;
 
+        /// <summary>
+        /// The derived scalar versus frequency, whatever kind of derived it is — the ONE place the
+        /// three routes (whole-network passivity, the per-matrix 2-port metrics, and the sweep
+        /// derivative that is group delay) are chosen between, so the plotted path and the
+        /// Table/marker path cannot pick differently.
+        /// </summary>
+        /// <remarks>
+        /// Group delay is returned in NANOSECONDS while <c>NetworkMetrics.GroupDelay</c> returns
+        /// seconds. The conversion belongs here rather than in RfCore: SI seconds is the right thing
+        /// for a library to hand back, and a rectangular axis running from 0 to 3e-9 is not something
+        /// to make a user read. The unit is stated in the trace's own label ("Group Delay (ns)"), so
+        /// nothing has to infer it.
+        /// </remarks>
+        private double[] DerivedScalarArray(Complex[] z0PerPort)
+        {
+            if (Derived == DerivedParameters.Passivity)
+                return PassivityWholeNetwork
+                    ? RfCore.Data.NetworkMetrics.PassivityFull(Data.Matrices, z0PerPort)
+                    : RfCore.Data.NetworkMetrics.PassivityPair(
+                          Data.Matrices, z0PerPort, InputPort, OutputPort);
+
+            if (Derived == DerivedParameters.GroupDelay)
+            {
+                var tau = RfCore.Data.NetworkMetrics.GroupDelay(
+                    Data.Matrices, z0PerPort, Data.Frequencies, InputPort, OutputPort);
+                for (int i = 0; i < tau.Length; i++) tau[i] *= 1e9;
+                return tau;
+            }
+
+            return RfCore.Data.NetworkMetrics.TwoPortMetric(
+                Data.Matrices, z0PerPort, Derived.ToNetworkMetric(), InputPort, OutputPort);
+        }
+
         private double[] GetDerivedMetricArray()
         {
             if (_derivedMetricCache != null
@@ -1547,14 +1586,7 @@ namespace CircuitRF.Ui.DataDisplay
             int nPorts = Data.Ports;
             Complex[] z0PerPort = SourceZ0PerPortResolved(nPorts);
 
-            double[] values = Derived == DerivedParameters.Passivity
-                ? (PassivityWholeNetwork
-                    ? RfCore.Data.NetworkMetrics.PassivityFull(Data.Matrices, z0PerPort)
-                    : RfCore.Data.NetworkMetrics.PassivityPair(
-                          Data.Matrices, z0PerPort, InputPort, OutputPort))
-                : RfCore.Data.NetworkMetrics.TwoPortMetric(
-                      Data.Matrices, z0PerPort, Derived.ToNetworkMetric(),
-                      InputPort, OutputPort);
+            double[] values = DerivedScalarArray(z0PerPort);
 
             _derivedMetricCache = values;
             _derivedMetricCacheDerived = Derived;

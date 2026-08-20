@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
@@ -258,7 +259,11 @@ public class MatchFlattenPlanTests(ITestOutputHelper output)
         {
             Assert.Null(t.Absorbed);
             Assert.Equal(t.PortNet, t.TermHighNet);
-            Assert.Equal(50.0, t.R, 12);
         });
+
+        // The shipped default transforms 50 ohms down to 10 (2026-08-19), so the two ends carry
+        // different resistances — asserting one number for both would only pin a symmetric default.
+        Assert.Equal(50.0, plan.Terminations.Single(t => t.End == 1).R, 12);
+        Assert.Equal(10.0, plan.Terminations.Single(t => t.End == 2).R, 12);
     }
 }

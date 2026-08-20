@@ -877,18 +877,20 @@ public static class ComponentTypeRegistry
             // them to be able to show them, and match.md §7.2 makes the design authoritative so the
             // echo cannot become a second input.
             //
-            // The default payload is a REAL design (1–2 GHz, order 3, 50 Ω both ends, Chebyshev-Fano)
-            // and not a blank: a freshly dropped Match must simulate immediately, since until the
-            // Designer (MN-3) lands there is no way to give it one. Same rule wBond follows in
-            // shipping a default wire rather than an empty array.
+            // The default payload is a REAL design (1.8–2.2 GHz, order 4, 50 Ω to 10 Ω,
+            // Chebyshev-Fano) and not a blank: a freshly dropped Match must simulate immediately. The
+            // six ECHO parameters below MUST agree with MatchEmbedding.DefaultDesign — they are what
+            // a reader sees on the page before the Designer has ever rewritten them, and a set that
+            // disagrees with the payload describes a component that does not exist. Same rule wBond
+            // follows in shipping a default wire rather than an empty array.
             case SymbolKind.Match:
                 return [new("Design",   MatchEmbedding.DefaultPayload, "", false, UnitDimension.None),
-                        new("F1",       "1",             "GHz", true,  UnitDimension.Frequency),
-                        new("F2",       "2",             "GHz", true,  UnitDimension.Frequency),
-                        new("Order",    "3",             "",    true,  UnitDimension.None),
+                        new("F1",       "1.8",           "GHz", true,  UnitDimension.Frequency),
+                        new("F2",       "2.2",           "GHz", true,  UnitDimension.Frequency),
+                        new("Order",    "4",             "",    true,  UnitDimension.None),
                         new("Response", "ChebyshevFano", "",    false, UnitDimension.None),
                         new("R1",       "50",            "Ω",   false, UnitDimension.Resistance),
-                        new("R2",       "50",            "Ω",   false, UnitDimension.Resistance)];
+                        new("R2",       "10",            "Ω",   false, UnitDimension.Resistance)];
 
             // Mutual: Inductor1 and Inductor2 are instance-name strings (no unit);
             // M is the mutual inductance value.

@@ -673,6 +673,91 @@ namespace RfCore
         }
 
         // ----------------------------------------------------------
+        //  Group delay
+        //  τ(ω) = −dφ/dω on the UNWRAPPED phase of one S element
+        // ----------------------------------------------------------
+
+        /// <summary>
+        /// Group delay in SECONDS versus frequency for one S-parameter element.
+        /// </summary>
+        /// <remarks>
+        /// <b>The phase must be unwrapped first, and that is not an optimisation.</b>
+        /// <see cref="Complex.Phase"/> returns a principal value in (−π, π], so a network whose
+        /// transmission phase runs through many cycles wraps somewhere inside every passband; a
+        /// difference taken across that wrap is a delay spike the width of the frequency grid, and it
+        /// moves when the grid does. Unwrapping is done by accumulating a ±2π offset whenever the
+        /// step between adjacent samples exceeds π — which assumes the grid resolves the phase to
+        /// better than half a cycle per step. That assumption is the one real limit here: a sweep too
+        /// coarse to see the phase turn cannot have its group delay measured, by any method.
+        ///
+        /// <para>The derivative is a central difference on the sweep's own grid, one-sided at the two
+        /// ends, so the result has exactly as many points as the sweep and needs no separate x axis.
+        /// The grid need not be uniform.</para>
+        ///
+        /// <para>Repeated frequencies (a zero-width difference) yield 0 rather than an infinity — a
+        /// duplicated point in a file is a defect in the file, and propagating an infinity through an
+        /// autoscale would take the whole plot with it.</para>
+        /// </remarks>
+        /// <param name="values">The S element at each frequency, in sweep order.</param>
+        /// <param name="freqs">The frequencies, Hz, in the same order.</param>
+        public static double[] GroupDelay(IReadOnlyList<Complex> values, IReadOnlyList<double> freqs)
+        {
+            ArgumentNullException.ThrowIfNull(values);
+            ArgumentNullException.ThrowIfNull(freqs);
+            int n = Math.Min(values.Count, freqs.Count);
+            var tau = new double[n];
+            if (n < 2) return tau;
+
+            var phi = new double[n];
+            double prev = values[0].Phase, offset = 0.0;
+            phi[0] = prev;
+            for (int i = 1; i < n; i++)
+            {
+                double p = values[i].Phase;
+                double d = p - prev;
+                if (d > Math.PI) offset -= 2.0 * Math.PI;
+                else if (d < -Math.PI) offset += 2.0 * Math.PI;
+                prev = p;
+                phi[i] = p + offset;
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                int a = Math.Max(0, i - 1), b = Math.Min(n - 1, i + 1);
+                double dw = 2.0 * Math.PI * (freqs[b] - freqs[a]);
+                tau[i] = dw != 0.0 ? -(phi[b] - phi[a]) / dw : 0.0;
+            }
+            return tau;
+        }
+
+        /// <summary>
+        /// Group delay in seconds of the (<paramref name="row"/>, <paramref name="col"/>) element,
+        /// 0-based, of each matrix in a sweep.
+        /// </summary>
+        public static double[] GroupDelay(
+            IReadOnlyList<Mat<Complex>> mats, IReadOnlyList<double> freqs, int row, int col)
+        {
+            ArgumentNullException.ThrowIfNull(mats);
+            var values = new Complex[mats.Count];
+            for (int i = 0; i < mats.Count; i++)
+            {
+                var m = mats[i];
+                if (row < 0 || row >= m.RowCount || col < 0 || col >= m.ColCount)
+                    throw new ArgumentOutOfRangeException(nameof(row),
+                        $"S({row + 1},{col + 1}) is outside a {m.RowCount}x{m.ColCount} matrix.");
+                values[i] = m[row, col];
+            }
+            return GroupDelay(values, freqs);
+        }
+
+        /// <summary>Group delay in seconds of S21 (transmission) for a 2-port SNP.</summary>
+        public static double[] GroupDelay(SNP snp)
+        {
+            ArgumentNullException.ThrowIfNull(snp);
+            return GroupDelay(snp.Matrices, snp.Frequencies, 1, 0);
+        }
+
+        // ----------------------------------------------------------
         //  μ′  (Edwards-Sinsky)
         //  μ′ = (1 − |S22|²) / (|S11 − Δ·S22*| + |S12·S21|)
         // ----------------------------------------------------------

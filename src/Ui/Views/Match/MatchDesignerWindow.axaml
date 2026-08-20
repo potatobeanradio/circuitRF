@@ -3,6 +3,7 @@
         xmlns:mvm="using:CircuitRF.Ui.Matching"
         xmlns:mv="using:CircuitRF.Ui.Views.Match"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
         x:Class="CircuitRF.Ui.Views.Match.MatchDesignerWindow"
         x:DataType="mvm:MatchDesignerViewModel"
         Title="{Binding Title}"
@@ -26,9 +27,12 @@
         <!-- One termination group. Two of them, identical in every way but which end they edit —
              which is what a template is for; two hand-written copies drift. -->
         <DataTemplate x:Key="TerminationTemplate" x:DataType="mvm:MatchTerminationViewModel">
-            <StackPanel Spacing="2" Margin="0,6,0,0">
+            <!-- One group box per termination (owner, 2026-08-19). The border and its header are what
+                 make the two ends read as two THINGS rather than as one long column of controls. -->
+            <Border Classes="group">
+              <StackPanel Spacing="2">
                 <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Classes="h" Text="{Binding Header}" Margin="0,0,0,2"/>
+                    <TextBlock Classes="grouphdr" Text="{Binding Header}"/>
                     <TextBlock Grid.Column="1" Text="⚑" FontSize="12"
                                Foreground="{DynamicResource CrfWarningBrush}"
                                IsVisible="{Binding IsFlagged}"
@@ -36,8 +40,9 @@
                 </Grid>
 
                 <Grid ColumnDefinitions="Auto,*">
-                    <mv:MatchPictogramControl Width="86" Height="60"
+                    <mv:MatchPictogramControl Width="58" Height="82" VerticalAlignment="Center"
                                               Pictogram="{Binding Pictogram}"
+                                              ResistorOnLeft="{Binding ResistorOnLeft}"
                                               Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
                                               ToolTip.Tip="{Binding Pictogram.Description}"/>
                     <StackPanel Grid.Column="1" Spacing="2" Margin="6,0,0,0">
@@ -49,9 +54,9 @@
                         </StackPanel>
                         <Grid ColumnDefinitions="20,*,Auto">
                             <TextBlock Classes="lbl" Text="R"/>
-                            <TextBox Grid.Column="1" Classes="num" Tag="{Binding}"
-                                     Text="{Binding ResistanceText, Mode=TwoWay}"
-                                     LostFocus="OnResistanceLostFocus"/>
+                            <ctl:InlineEditText Grid.Column="1" FontSize="11"
+                                                Text="{Binding ResistanceEntry, Mode=TwoWay}"
+                                                ToolTip.Tip="Double-click to edit. Type a unit (50, 50 Ω, 1.2 kΩ) — the number is pre-selected and the unit is left alone."/>
                             <ComboBox Grid.Column="2" FontSize="11" Margin="4,0,0,0"
                                       ItemsSource="{x:Static mvm:MatchDesignerSettings.ResistanceUnitOptions}"
                                       SelectedItem="{Binding ResistanceUnit, Mode=TwoWay}"/>
@@ -67,9 +72,9 @@
                                          ToolTip.Tip="Purely resistive: Q = 0, nothing to absorb"/>
                         </StackPanel>
                         <Grid ColumnDefinitions="20,*,Auto" IsEnabled="{Binding HasReactance}">
-                            <TextBox Grid.Column="1" Classes="num" Tag="{Binding}"
-                                     Text="{Binding ReactanceText, Mode=TwoWay}"
-                                     LostFocus="OnReactanceLostFocus"/>
+                            <ctl:InlineEditText Grid.Column="1" FontSize="11"
+                                                Text="{Binding ReactanceEntry, Mode=TwoWay}"
+                                                ToolTip.Tip="Double-click to edit. Type a unit (1.5 pF, 2.2 nH) to pin the display unit."/>
                             <ComboBox Grid.Column="2" FontSize="11" Margin="4,0,0,0"
                                       ItemsSource="{Binding ReactanceUnitOptions}"
                                       SelectedItem="{Binding ReactanceUnit, Mode=TwoWay}"/>
@@ -93,9 +98,10 @@
                                Margin="6,0,0,0" Opacity="0.8" TextTrimming="CharacterEllipsis"/>
                 </Grid>
 
-                <TextBlock Text="{x:Static mvm:MatchTerminationViewModel.ConjugateNote}"
-                           FontSize="10" TextWrapping="Wrap" Opacity="0.7" Margin="0,2,0,0"
-                           IsVisible="{Binding Conjugate}"/>
+                <!-- The conjugate note used to be repeated HERE, as a wrapped paragraph that appeared
+                     the moment the checkbox was ticked — and every control beneath it jumped down the
+                     pane (owner, 2026-08-19: "not a good UX; don't show that text, we already have a
+                     tooltip"). The checkbox's own ToolTip.Tip above says the same sentence. -->
 
                 <TextBlock Text="{Binding ProbeError}" FontSize="10" TextWrapping="Wrap"
                            Foreground="{DynamicResource CrfWarningBrush}" Margin="0,2,0,0"
@@ -135,7 +141,8 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </StackPanel>
+              </StackPanel>
+            </Border>
         </DataTemplate>
     </Window.Resources>
 
@@ -153,6 +160,22 @@
         <Style Selector="TextBox.num">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Padding" Value="4,2"/>
+        </Style>
+        <!-- The two termination group boxes (owner, 2026-08-19). A Border plus a header row rather
+             than a HeaderedContentControl: nothing else in this application templates one, and two
+             elements say the same thing with no style to maintain. -->
+        <Style Selector="Border.group">
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+            <Setter Property="Padding" Value="6,4,6,6"/>
+            <Setter Property="Margin" Value="0,6,0,0"/>
+            <Setter Property="CornerRadius" Value="3"/>
+        </Style>
+        <Style Selector="TextBlock.grouphdr">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.85"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
         </Style>
         <Style Selector="Border.pane">
             <Setter Property="BorderThickness" Value="1"/>
@@ -211,43 +234,57 @@
                         <ContentControl Content="{Binding Term2}" ContentTemplate="{StaticResource TerminationTemplate}"/>
 
                         <TextBlock Classes="h" Text="BAND"/>
-                        <Grid ColumnDefinitions="Auto,*,4,*,Auto">
+                        <Grid ColumnDefinitions="Auto,*,8,*,Auto">
                             <TextBlock Classes="lbl" Text="f " Margin="0,0,4,0"/>
-                            <TextBox Grid.Column="1" Classes="num" Name="F1Box" Text="{Binding F1Text, Mode=TwoWay}"/>
-                            <TextBox Grid.Column="3" Classes="num" Name="F2Box" Text="{Binding F2Text, Mode=TwoWay}"/>
+                            <ctl:InlineEditText Grid.Column="1" FontSize="11"
+                                                Text="{Binding F1Entry, Mode=TwoWay}"
+                                                ToolTip.Tip="Lower band edge. Double-click to edit; a typed unit (2.4 GHz, 900 MHz) moves BOTH edges' display unit."/>
+                            <ctl:InlineEditText Grid.Column="3" FontSize="11"
+                                                Text="{Binding F2Entry, Mode=TwoWay}"
+                                                ToolTip.Tip="Upper band edge. Double-click to edit; a typed unit moves BOTH edges' display unit."/>
                             <ComboBox Grid.Column="4" FontSize="11" Margin="4,0,0,0"
                                       ItemsSource="{x:Static mvm:MatchDesignerSettings.FrequencyUnitOptions}"
                                       SelectedItem="{Binding BandUnit, Mode=TwoWay}"/>
                         </Grid>
 
                         <TextBlock Classes="h" Text="ORDER"/>
-                        <ComboBox FontSize="11" HorizontalAlignment="Stretch"
-                                  ItemsSource="{Binding OrderOptions}"
-                                  SelectedItem="{Binding Order, Mode=TwoWay}"
-                                  ToolTip.Tip="Only the parities the two terminations permit — an order that cannot absorb both ends is not offered"/>
+                        <ctl:InlineEditText FontSize="11" HorizontalAlignment="Left" MinWidth="40"
+                                            Text="{Binding OrderEntry, Mode=TwoWay}"
+                                            ToolTip.Tip="{Binding OrderTooltip}"/>
                         <TextBlock Text="{Binding OrderNote}" FontSize="10" TextWrapping="Wrap"
                                    Opacity="0.8" Margin="0,3,0,0"
                                    IsVisible="{Binding OrderNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
+                        <!-- RESPONSE is a ComboBox, not four radio buttons (owner, 2026-08-19). An
+                             infeasible family still APPEARS, disabled, carrying the refusal that
+                             explains it — dropping it from the list would answer "why can't I pick
+                             Bessel?" by saying nothing at all. -->
                         <TextBlock Classes="h" Text="RESPONSE"/>
-                        <ItemsControl ItemsSource="{Binding ResponseOptions}">
-                            <ItemsControl.ItemTemplate>
+                        <ComboBox FontSize="11" HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding ResponseOptions}"
+                                  SelectedItem="{Binding SelectedResponseOption, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="mvm:MatchResponseOptionViewModel">
-                                    <RadioButton GroupName="MatchResponse" FontSize="11"
-                                                 Content="{Binding Display}"
-                                                 IsEnabled="{Binding IsEnabled}"
-                                                 IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                 ToolTip.Tip="{Binding Tooltip}"/>
+                                    <TextBlock Text="{Binding Display}" FontSize="11"
+                                               IsEnabled="{Binding IsEnabled}"
+                                               Opacity="{Binding ListOpacity}"
+                                               ToolTip.Tip="{Binding Tooltip}"/>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="{Binding ResponseRefusal}" FontSize="10" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource CrfWarningBrush}" Margin="0,2,0,0"
+                                   IsVisible="{Binding ResponseRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0"
-                              IsEnabled="{Binding RippleEnabled}">
-                            <TextBlock Classes="lbl" Text="Ripple" Margin="0,0,6,0"/>
-                            <TextBox Grid.Column="1" Classes="num" Name="RippleBox"/>
-                            <TextBlock Grid.Column="2" Classes="lbl" Text=" dB"/>
-                        </Grid>
+                        <!-- Ripple: four characters is the whole ask ("0.05"), so the field is sized
+                             for four and no more (owner, 2026-08-19). -->
+                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0"
+                                    IsEnabled="{Binding RippleEnabled}">
+                            <TextBlock Classes="lbl" Text="Ripple"/>
+                            <ctl:InlineEditText FontSize="11" MinWidth="46"
+                                                Text="{Binding RippleEntry, Mode=TwoWay}"
+                                                ToolTip.Tip="Equal-ripple level in dB — the real-to-real prototype only"/>
+                        </StackPanel>
 
                         <CheckBox FontSize="11" Content="Q-adjust" Margin="0,6,0,0"
                                   IsChecked="{Binding QAdjustEnabled, Mode=TwoWay}"
@@ -368,10 +405,22 @@
 
             <!-- RESPONSE -->
             <Border Grid.Column="2" Classes="pane">
-                <Grid RowDefinitions="Auto,*,*,Auto,Auto">
+              <!-- The two plots are now laid out at a FIXED aspect ratio, so their height follows the
+                   pane's width rather than the pane's height — which means a short window can run out
+                   of room. Scroll rather than squash: a golden-ratio plot that has been squashed is
+                   not a golden-ratio plot. -->
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                     <TextBlock Classes="h" Text="RESPONSE"/>
-                    <ddc:PlotControl Grid.Row="1" Plot="{Binding MagnitudePlot}" Margin="0,2"/>
-                    <ddc:PlotControl Grid.Row="2" Plot="{Binding PhasePlot}" Margin="0,2"/>
+                    <!-- Golden aspect ratio on both rect plots (owner, 2026-08-19). AspectRatioPanel
+                         LAYS the plot out at 1.618:1 — a Viewbox would scale the axis text and the
+                         stroke weights along with the frame, which is a different thing entirely. -->
+                    <ctl:AspectRatioPanel Grid.Row="1" Margin="0,2">
+                        <ddc:PlotControl Plot="{Binding MagnitudePlot}"/>
+                    </ctl:AspectRatioPanel>
+                    <ctl:AspectRatioPanel Grid.Row="2" Margin="0,2">
+                        <ddc:PlotControl Plot="{Binding PhasePlot}"/>
+                    </ctl:AspectRatioPanel>
 
                     <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*" Margin="0,4">
                         <TextBlock Classes="lbl" Text="± band " />
@@ -400,6 +449,7 @@
                         </ItemsControl>
                     </StackPanel>
                 </Grid>
+              </ScrollViewer>
             </Border>
 
             <!-- SOLUTIONS — a dockable drawer, NOT a modal sheet: the user has to be able to click

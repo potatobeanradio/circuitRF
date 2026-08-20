@@ -37,11 +37,15 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
         return comp;
     }
 
-    private static EditableComponent Term(int num, double x, double y)
+    private static EditableComponent Term(int num, double x, double y, double z = 50.0)
     {
         var comp = new EditableComponent { InstanceName = $"T{num}", Symbol = SymbolKind.Term, X = x, Y = y };
         comp.Parameters.Add(new EditableParameter { Name = "Num", Expression = num.ToString() });
-        comp.Parameters.Add(new EditableParameter { Name = "Z", Expression = "50" });
+        comp.Parameters.Add(new EditableParameter
+        {
+            Name = "Z",
+            Expression = z.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
         return comp;
     }
 
@@ -66,10 +70,10 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
 
         var placed = netlist.Components.Single(c => c.InstancePath == "MN1");
         var mm = Assert.IsType<MatchModel>(placed.Model);
-        Assert.Equal(1e9, mm.Design.F1);
-        Assert.Equal(2e9, mm.Design.F2);
+        Assert.Equal(1.8e9, mm.Design.F1);
+        Assert.Equal(2.2e9, mm.Design.F2);
 
-        double[] freqs = [0.5e9, 1.0e9, 1.5e9, 2.0e9, 2.5e9];
+        double[] freqs = [1.0e9, 1.8e9, 2.0e9, 2.2e9, 3.0e9];
         var s = SParameterEngine.Run(netlist, freqs)["S"];
 
         for (int f = 0; f < freqs.Length; f++)
@@ -85,9 +89,14 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
 
     /// <summary>
     /// The same component between two Terms is the bandpass its design describes — flat in
-    /// 1-2 GHz at the 0.1 dB design ripple, an octave down at half the lower edge. This is what
-    /// makes the default a REAL design rather than merely a decodable one.
+    /// 1.8-2.2 GHz at the 0.1 dB design ripple, well down an octave either side. This is what makes
+    /// the default a REAL design rather than merely a decodable one.
     /// </summary>
+    /// <remarks>
+    /// <b>Port 2 is terminated in 10 Ω, not 50</b>: the shipped default transforms 50 Ω down to 10 Ω
+    /// (2026-08-19), which is the whole point of it being a matching network rather than a filter.
+    /// Measuring it into 50 Ω would measure the mismatch this component exists to remove.
+    /// </remarks>
     [Fact]
     public void AFreshlyPlacedMatch_IsTheBandpassItsDefaultDesignDescribes()
     {
@@ -95,22 +104,22 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
         model.Components.Add(PlaceFresh("MN1", 0, 0));
         model.Components.Add(Term(1, -200, 200));
         model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = -200, Y = 400 });
-        model.Components.Add(Term(2, 200, 200));
+        model.Components.Add(Term(2, 200, 200, z: 10.0));
         model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = 200, Y = 400 });
 
         var netlist = new Elaborator().Elaborate(NetExtractor.Extract(model).TestBench);
-        double[] freqs = [0.5e9, 1.0e9, 1.5e9, 2.0e9, 4.0e9];
+        double[] freqs = [1.0e9, 1.8e9, 2.0e9, 2.2e9, 4.0e9];
         var s = SParameterEngine.Run(netlist, freqs)["S"];
 
         double Db(int f) => 20.0 * Math.Log10(((Complex)s[f, 1, 0]).Magnitude);
         for (int f = 0; f < freqs.Length; f++)
             output.WriteLine($"{freqs[f] / 1e9:F1} GHz  |S21| = {Db(f):F3} dB");
 
-        Assert.True(Db(1) > -0.11, $"1 GHz is the lower band edge: {Db(1):F3} dB");
-        Assert.True(Db(2) > -0.11, $"1.5 GHz is mid-band: {Db(2):F3} dB");
-        Assert.True(Db(3) > -0.11, $"2 GHz is the upper band edge: {Db(3):F3} dB");
-        Assert.True(Db(0) < -20.0, $"0.5 GHz is an octave below the band: {Db(0):F3} dB");
-        Assert.True(Db(4) < -20.0, $"4 GHz is an octave above the band: {Db(4):F3} dB");
+        Assert.True(Db(1) > -0.11, $"1.8 GHz is the lower band edge: {Db(1):F3} dB");
+        Assert.True(Db(2) > -0.11, $"2.0 GHz is mid-band: {Db(2):F3} dB");
+        Assert.True(Db(3) > -0.11, $"2.2 GHz is the upper band edge: {Db(3):F3} dB");
+        Assert.True(Db(0) < -20.0, $"1.0 GHz is well below the band: {Db(0):F3} dB");
+        Assert.True(Db(4) < -20.0, $"4.0 GHz is well above the band: {Db(4):F3} dB");
     }
 
     /// <summary>
@@ -147,8 +156,8 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
         var (lib, tb) = new CircuitRF.Core.Netlist.CnlReader().Read(cnl);
         var netlist = new Elaborator(lib).Elaborate(tb);
         var mm = Assert.IsType<MatchModel>(netlist.Components.Single(c => c.InstancePath == "MN1").Model);
-        Assert.Equal(1e9, mm.Design.F1);
-        Assert.Equal(6, mm.StampedElements.Count);
+        Assert.Equal(1.8e9, mm.Design.F1);
+        Assert.Equal(9, mm.StampedElements.Count);
     }
 
     // ── §4: registry, category, palette ───────────────────────────────────────

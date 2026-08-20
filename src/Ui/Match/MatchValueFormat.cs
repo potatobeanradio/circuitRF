@@ -75,9 +75,24 @@ public static class MatchValueFormat
         int digits = Math.Clamp(significantDigits, 1, 12);
         string text = double.IsFinite(scaled)
             ? scaled.ToString("G" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)
-            : scaled.ToString(CultureInfo.InvariantCulture);
+            : NonFinite(scaled);
         return (text, unit);
     }
+
+    /// <summary>The infinity glyph — never the word.</summary>
+    /// <remarks>
+    /// Owner, 2026-08-19: "use a real infinity symbol instead of the words 'infinity'". Under
+    /// <see cref="CultureInfo.InvariantCulture"/> .NET renders a non-finite double as the literal
+    /// text <c>Infinity</c>/<c>-Infinity</c>, which is what the ladder and the value grid were
+    /// showing for an element a transform parked at its threshold. NaN keeps its own spelling: it
+    /// is not an infinity and saying so would be a lie about which failure happened.
+    /// </remarks>
+    public const string InfinityGlyph = "∞";
+
+    private static string NonFinite(double v) =>
+        double.IsPositiveInfinity(v) ? InfinityGlyph
+        : double.IsNegativeInfinity(v) ? "-" + InfinityGlyph
+        : "NaN";
 
     /// <summary>The one-string form, "153.5169 pH".</summary>
     public static string FormatWithUnit(
@@ -99,6 +114,95 @@ public static class MatchValueFormat
             return false;
         value = raw * Scale(displayUnit);
         return double.IsFinite(value);
+    }
+
+    /// <summary>
+    /// Parses a typed <c>"value unit"</c> string — the form an inline editor seeds and hands back.
+    /// </summary>
+    /// <remarks>
+    /// <b>A trailing unit token is honoured, not ignored.</b> The inline editor pre-selects only the
+    /// number and leaves the unit standing (<c>InlineEdit.ValueSelectionLength</c>), so the usual
+    /// gesture types over "1" in "1 pF" and commits "2.2 pF"; but a user who deliberately types
+    /// "2.2 nF" means nanofarads, and silently reading that as picofarads is off by a thousand with
+    /// nothing said. An unrecognised trailing token is a parse FAILURE rather than a token to
+    /// discard — "2.2 nH" in a capacitance field is a mistake worth refusing.
+    /// </remarks>
+    /// <param name="text">What the user typed.</param>
+    /// <param name="quantity">Which unit ladder a trailing token is matched against.</param>
+    /// <param name="fallbackUnit">The unit to assume when no token was typed.</param>
+    /// <param name="value">The value in SI base units.</param>
+    /// <param name="unit">The unit that was actually used.</param>
+    public static bool TryParseWithUnit(
+        string? text, MatchQuantity quantity, string? fallbackUnit,
+        out double value, out string unit)
+    {
+        value = 0.0;
+        unit = string.IsNullOrEmpty(fallbackUnit) || fallbackUnit == AutoUnit
+            ? AutoUnitFor(0.0, quantity)
+            : fallbackUnit!;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        string trimmed = text.Trim();
+        int split = InlineEditSplit(trimmed);
+        if (split > 0)
+        {
+            string token = trimmed[split..].Trim();
+            string? matched = MatchUnit(token, quantity);
+            if (matched is null) return false;
+            unit = matched;
+            trimmed = trimmed[..split].Trim();
+        }
+
+        if (!double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out double raw))
+            return false;
+        value = raw * Scale(unit);
+        return double.IsFinite(value);
+    }
+
+    /// <summary>Index of the unit token in a "value unit" string, or -1 when there is none.</summary>
+    private static int InlineEditSplit(string text)
+    {
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (char.IsDigit(c) || c == '.' || c == '+' || c == '-') continue;
+            if ((c == 'e' || c == 'E') && i + 1 < text.Length
+                && (char.IsDigit(text[i + 1]) || text[i + 1] == '+' || text[i + 1] == '-'))
+                continue;
+            return i;
+        }
+        return -1;
+    }
+
+    /// <summary>The ladder spelling one typed unit token means, or null when it means none of them.</summary>
+    /// <remarks>
+    /// <b>Case is only ignored when ignoring it is unambiguous.</b> On the resistance ladder "mΩ" and
+    /// "MΩ" are milliohms and megaohms — a factor of 1e9 apart — so a case-insensitive match there
+    /// must find exactly one candidate or find none at all. Everywhere else (a typed "ghz", "nh")
+    /// there is only ever one candidate and the loose match is a convenience with no cost. "u" for
+    /// "µ" and "ohm" for "Ω" are spelled out first, because they are what a keyboard can produce.
+    /// </remarks>
+    private static string? MatchUnit(string token, MatchQuantity quantity)
+    {
+        if (token.Length == 0) return null;
+        string normalized = token.Replace('u', 'µ').Replace("ohm", "Ω", StringComparison.OrdinalIgnoreCase);
+
+        var ladder = LadderFor(quantity);
+        foreach (string u in ladder)
+            if (string.Equals(u, token, StringComparison.Ordinal)
+                || string.Equals(u, normalized, StringComparison.Ordinal))
+                return u;
+
+        string? loose = null;
+        foreach (string u in ladder)
+        {
+            if (!string.Equals(u, token, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(u, normalized, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (loose is not null) return null;   // ambiguous — mΩ vs MΩ
+            loose = u;
+        }
+        return loose;
     }
 
     /// <summary>The natural quantity of a ladder element: an inductor is henries, a capacitor farads.</summary>

@@ -266,17 +266,17 @@ public sealed partial class MatchDesignerViewModel
     /// The group-delay trace, in nanoseconds against the secondary axis.
     /// </summary>
     /// <remarks>
-    /// <b>Group delay has no existing support anywhere in circuitRF</b> — <c>DependentVarFormat</c>
-    /// has Db, Mag, Phase, Real, Imaginary and nothing else, and RfCore has no metric for it. Rather
-    /// than add a sixth format (which would then have to mean something for a Smith trace, a table
-    /// cell, a marker readout and a `.cdd` file), the delay is computed here and injected through
-    /// <c>Trace.SetCubeData</c> with the transform already baked — the same seam the Data Display uses
-    /// for any value it has already reduced to numbers. It renders, autoscales and reads out like any
-    /// other trace, and nothing else in the application had to learn a new concept.
+    /// <b>The delay itself is <c>RFNetwork.GroupDelay</c>'s</b> — RfCore grew a group-delay metric on
+    /// 2026-08-19 (it is a Data Display derived parameter now, beside μ and μ′), and this window was
+    /// only ever computing its own because at the time there was nothing to call. There is exactly
+    /// one −dφ/dω in the application again.
     ///
-    /// <para>tau = -d(phi)/d(omega) on the UNWRAPPED phase, by central differences on the plot's own
-    /// grid. Unwrapping first is not optional: a raw <c>Complex.Phase</c> jumps by 2*pi somewhere in
-    /// every passband, and a difference across that jump is a delay spike of the grid's own spacing.</para>
+    /// <para>What stays local is how it is PLOTTED. <c>DependentVarFormat</c> has Db, Mag, Phase,
+    /// Real and Imaginary and nothing else, and a sixth member would have to mean something for a
+    /// Smith trace, a table cell, a marker readout and a persisted <c>.cdd</c> — none of which wanted
+    /// it. The already-reduced numbers go in through <c>Trace.SetCubeData</c> with the transform
+    /// baked, the seam the Data Display already uses for any value it has reduced itself, so the
+    /// trace renders, autoscales and reads out like any other.</para>
     /// </remarks>
     public static Trace? GroupDelayTrace(SNP snp, FreqUnit freqUnit)
     {
@@ -284,27 +284,8 @@ public sealed partial class MatchDesignerViewModel
         var f = snp.Frequencies;
         if (f.Length < 3 || snp.Ports < 2) return null;
 
-        var phi = new double[f.Length];
-        double prev = snp.Matrices[0][1, 0].Phase;
-        phi[0] = prev;
-        double offset = 0.0;
-        for (int i = 1; i < f.Length; i++)
-        {
-            double p = snp.Matrices[i][1, 0].Phase;
-            double d = p - prev;
-            if (d > Math.PI) offset -= 2.0 * Math.PI;
-            else if (d < -Math.PI) offset += 2.0 * Math.PI;
-            prev = p;
-            phi[i] = p + offset;
-        }
-
-        var tauNs = new double[f.Length];
-        for (int i = 0; i < f.Length; i++)
-        {
-            int a = Math.Max(0, i - 1), b = Math.Min(f.Length - 1, i + 1);
-            double dw = 2.0 * Math.PI * (f[b] - f[a]);
-            tauNs[i] = dw != 0.0 ? -(phi[b] - phi[a]) / dw * 1e9 : 0.0;
-        }
+        var tauNs = RFNetwork.GroupDelay(snp);
+        for (int i = 0; i < tauNs.Length; i++) tauNs[i] *= 1e9;
 
         var trace = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Real, secondaryAxis: true)
         {

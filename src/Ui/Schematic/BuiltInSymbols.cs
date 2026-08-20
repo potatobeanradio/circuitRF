@@ -638,10 +638,18 @@ public static class BuiltInSymbols
     // The two slashes are PLAIN LINES while the waves are SinePrimitives, and the primitive is the
     // only one of the two that knows anything about the glyph — so the strikethrough reads as a
     // strikethrough only if the lines are drawn to cross the waves geometrically, at every rotation
-    // and mirrored. They are therefore centred on their own wave (y = ∓45, the same centres the
-    // sines use) and long enough (±55 in x, against the waves' ±60) to overhang the wave's own
-    // amplitude at both ends. Both run the same way (lower-left to upper-right), so the pair reads
-    // as one annotation rather than as a cross.
+    // and mirrored. They are therefore centred on their own wave (y = ∓55 / +55, the same centres
+    // the sines use) and just long enough (±14 in x, against the waves' ±60) to overhang the
+    // wave's own local amplitude at both ends — owner, 2026-08-19: "much shorter", then "make them
+    // half as long" (±28 x 50 -> ±14 x 26, half the length, same slope and same centre). Both run the
+    // same way, DOWNWARD from left to right, so the pair reads as one annotation rather than as a
+    // cross.
+    //
+    // The y offset off the wave's own centre is load-bearing, not cosmetic: a slash
+    // centred exactly on its wave's own centre passes THROUGH the point (0, ∓55) that the wave
+    // itself passes through, and two segments meeting at a shared point do not strictly cross —
+    // which MatchComponentPlacementTests.TheSlashesCrossTheOuterWaves_AndNotTheMiddleOne, quite
+    // correctly, reads as "not struck through".
     private static Symbol BuildMatch() => Sym([
         L(-200,   0, -110,   0),                                   // left lead
         L( 110,   0,  200,   0),                                   // right lead
@@ -649,8 +657,8 @@ public static class BuiltInSymbols
         Sine(  0, -55,  16, 1, 120, SineAxis.Horizontal),          // top wave (blocked)
         Sine(  0,   0,  16, 1, 120, SineAxis.Horizontal),          // passband wave
         Sine(  0,  55,  16, 1, 120, SineAxis.Horizontal),          // bottom wave (blocked)
-        L( -55, -30,   55, -80),                                   // strike through the top wave
-        L( -55,  80,   55,  30),                                   // strike through the bottom wave
+        L( -14, -64,   14, -38),                                   // strike through the top wave
+        L( -14,  38,   14,  64),                                   // strike through the bottom wave
     ], SymbolKind.Match);
 
     // ── Microstrip built-ins (brief-L5a-pcell-contract-and-microstrip.md) ──────────

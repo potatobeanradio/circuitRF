@@ -68,15 +68,10 @@ public partial class MatchDesignerWindow : Window
 
     // ── Field commits ─────────────────────────────────────────────────────────
 
-    private void OnResistanceLostFocus(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.Tag is MatchTerminationViewModel t) t.CommitResistance();
-    }
-
-    private void OnReactanceLostFocus(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.Tag is MatchTerminationViewModel t) t.CommitReactance();
-    }
+    // The termination R/X fields, the band edges, the order and the ripple are all InlineEditText now
+    // (owner, 2026-08-19). That control owns the whole three-key contract and commits through the
+    // view-model's own *Entry properties, so the LostFocus handlers and the BindNumericBox plumbing
+    // those fields used to need are gone rather than left wired to controls that no longer exist.
 
     private void OnTransformNLostFocus(object? sender, RoutedEventArgs e)
     {
@@ -147,16 +142,10 @@ public partial class MatchDesignerWindow : Window
         // Same deep link the Parameter Editor's own Help button uses, to the same Reference page.
         WireButton("HelpButton", (_, _) => DocLauncher.OpenComponent(SymbolKind.Match));
 
-        BindNumericBox("RippleBox", () => Vm.RippleDb.ToString("0.###", CultureInfo.InvariantCulture),
-                       t => { if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) Vm.RippleDb = v; });
         BindNumericBox("BandFractionBox", () => (Vm.PlotBandFraction * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%",
                        t => { if (double.TryParse(t.Trim().TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) Vm.PlotBandFraction = v / 100.0; });
         BindNumericBox("PlotPointsBox", () => Vm.PlotPoints.ToString(CultureInfo.InvariantCulture),
                        t => { if (int.TryParse(t, out int v)) Vm.PlotPoints = v; });
-
-        foreach (string name in new[] { "F1Box", "F2Box" })
-            if (this.FindControl<TextBox>(name) is { } box)
-                box.LostFocus += (_, _) => Vm.CommitBand();
     }
 
     private void WireButton(string name, EventHandler<RoutedEventArgs> handler)

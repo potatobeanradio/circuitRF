@@ -378,6 +378,34 @@ namespace RfCore.Data
         }
 
         /// <summary>
+        /// Group delay in SECONDS versus frequency for the transmission from
+        /// <paramref name="inPort"/> to <paramref name="outPort"/> (both 1-based), straight from an
+        /// S cube.
+        /// </summary>
+        /// <remarks>
+        /// <b>It is not a member of <see cref="NetworkMetric"/>, and that is structural.</b> Every
+        /// metric in that enum is a function of ONE matrix, which is what lets
+        /// <c>EvaluateTwoPort</c> loop over the sweep evaluating them point by point. Group delay is
+        /// a derivative ALONG the sweep — it needs the frequency axis and its neighbours — so routing
+        /// it through the same enum would mean handing <c>EvaluateTwoPort</c> a frequency array it
+        /// has no use for in five cases out of six. It gets its own entry point instead.
+        ///
+        /// <para>The renormalisation is the same as every other 2-port metric's (R-stb-2): S21's
+        /// phase depends on the reference impedance, so a cube referenced per-port or complex is
+        /// renormalised to a uniform real reference first, always.</para>
+        /// </remarks>
+        public static double[] GroupDelay(DataSet ds, int inPort, int outPort, out double[] freqs)
+        {
+            var mats = TwoPortUniformReal(ds, inPort, outPort, out freqs);
+            return RFNetwork.GroupDelay(mats, freqs, 1, 0);
+        }
+
+        /// <summary>Matrix-level core: group delay in seconds of the extracted S21.</summary>
+        public static double[] GroupDelay(
+            Mat<Complex>[] full, Complex[] z0, double[] freqs, int inPort, int outPort)
+            => RFNetwork.GroupDelay(TwoPortUniformReal(full, z0, inPort, outPort), freqs, 1, 0);
+
+        /// <summary>
         /// σ_max(S) versus frequency for the WHOLE network (R-stb-6) — any N ≥ 1, no port pair.
         /// </summary>
         public static double[] PassivityFull(DataSet ds, out double[] freqs)

@@ -86,6 +86,7 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
             _resistanceUnit = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ResistanceText));
+            OnPropertyChanged(nameof(ResistanceEntry));
         }
     }
     private string _resistanceUnit = "Ω";
@@ -94,7 +95,7 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
     public string ResistanceText
     {
         get => _resistanceStaged ?? MatchValueFormat.Format(
-            Resistance, MatchQuantity.Resistance, ResistanceUnit, _owner.Settings.SignificantDigits).Text;
+            Resistance, MatchQuantity.Resistance, ResistanceUnit, MatchDesignerSettings.EntryDigits).Text;
         set
         {
             _resistanceStaged = value;
@@ -174,6 +175,8 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
             _reactanceUnit = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ReactanceText));
+            OnPropertyChanged(nameof(ReactanceUnitShown));
+            OnPropertyChanged(nameof(ReactanceEntry));
         }
     }
     private string _reactanceUnit = MatchValueFormat.AutoUnit;
@@ -182,7 +185,7 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
     public string ReactanceText
     {
         get => _reactanceStaged ?? MatchValueFormat.Format(
-            Reactance, ReactanceQuantity, ReactanceUnit, _owner.Settings.SignificantDigits).Text;
+            Reactance, ReactanceQuantity, ReactanceUnit, MatchDesignerSettings.EntryDigits).Text;
         set
         {
             _reactanceStaged = value;
@@ -207,6 +210,63 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         if (MatchValueFormat.TryParse(staged, unit, out double v) && v > 0.0)
             Reactance = v;
         OnPropertyChanged(nameof(ReactanceText));
+    }
+
+    // ── Inline-editor entry text (owner, 2026-08-19) ──────────────────────────
+    //
+    // The specification pane's fields are InlineEditText controls, which show and seed ONE string
+    // carrying the value and its unit together. The staged/committed halves are the existing
+    // ResistanceText/ReactanceText — these two properties only compose and decompose the unit, so
+    // there is still exactly one place that parses and one place that writes the design.
+
+    /// <summary>The resistance as "50 Ω" — what the inline editor shows and seeds from.</summary>
+    public string ResistanceEntry
+    {
+        get => $"{ResistanceText} {ResistanceUnit}";
+        set
+        {
+            if (!MatchValueFormat.TryParseWithUnit(
+                    value, MatchQuantity.Resistance, ResistanceUnit, out double r, out string unit))
+            {
+                OnPropertyChanged();     // refuse it and put the field back
+                return;
+            }
+            ResistanceUnit = unit;
+            _resistanceStaged = MatchValueFormat.Format(
+                r, MatchQuantity.Resistance, unit, MatchDesignerSettings.EntryDigits).Text;
+            CommitResistance();
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>The reactance as "1 pF" / "1.5 nH".</summary>
+    public string ReactanceEntry
+    {
+        get => $"{ReactanceText} {ReactanceUnitShown}";
+        set
+        {
+            if (!MatchValueFormat.TryParseWithUnit(
+                    value, ReactanceQuantity, ReactanceUnitShown, out double v, out string unit))
+            {
+                OnPropertyChanged();
+                return;
+            }
+            // A unit typed by hand PINS the display unit; one that merely matched the Auto choice
+            // leaves Auto alone, or every commit would quietly turn Auto off.
+            if (ReactanceUnit != MatchValueFormat.AutoUnit || unit != ReactanceUnitShown)
+                ReactanceUnit = unit;
+            _reactanceStaged = MatchValueFormat.Format(
+                v, ReactanceQuantity, unit, MatchDesignerSettings.EntryDigits).Text;
+            CommitReactance();
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Re-reads both entry strings — called after the design changes underneath.</summary>
+    internal void NotifyEntryText()
+    {
+        OnPropertyChanged(nameof(ResistanceEntry));
+        OnPropertyChanged(nameof(ReactanceEntry));
     }
 
     /// <summary>True when either field holds text that has not been parsed yet.</summary>
@@ -349,6 +409,13 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
     /// <summary>What the little R-and-reactance drawing shows. The view draws it; this decides it.</summary>
     public MatchPictogram Pictogram => new(Kind, Topology);
 
+    /// <summary>
+    /// Which branch of a PARALLEL pictogram the resistor takes: left for termination 1, right for
+    /// termination 2 (owner, 2026-08-19), so the two ends read as mirror images of each other rather
+    /// than as two copies of the same drawing.
+    /// </summary>
+    public bool ResistorOnLeft => End == 1;
+
     /// <summary>Raises every derived property after the owning design changed underneath.</summary>
     internal void Refresh()
     {
@@ -375,6 +442,7 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         OnPropertyChanged(nameof(ProbeProvenance));
         OnPropertyChanged(nameof(Conjugate));
         OnPropertyChanged(nameof(Pictogram));
+        NotifyEntryText();
     }
 }
 

@@ -304,6 +304,38 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         }
     }
 
+    /// <summary>
+    /// The Response ComboBox's selection (owner, 2026-08-19 — it was four radio buttons).
+    /// </summary>
+    /// <remarks>
+    /// <b>Picking an infeasible family is REFUSED, and the refusal is what the pane then shows.</b>
+    /// A ComboBox's drop-down will hand back a disabled item on some platforms where a disabled radio
+    /// button simply cannot be clicked, so the guard has to live here rather than in the view — and
+    /// silently reverting with nothing said would be the worst of the three options, which is why
+    /// <see cref="ResponseRefusal"/> exists.
+    /// </remarks>
+    public MatchResponseOptionViewModel? SelectedResponseOption
+    {
+        get => ResponseOptions.FirstOrDefault(o => o.Shape == _design.Response);
+        set
+        {
+            if (value is null || value.Shape == _design.Response) return;
+            if (!value.IsEnabled)
+            {
+                ResponseRefusal = value.Refusal?.Message
+                    ?? $"{value.Display} cannot absorb both ends at order {_design.Order}.";
+                OnPropertyChanged();
+                return;
+            }
+            ResponseRefusal = "";
+            Response = value.Shape;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Why the last attempted response change was refused, or empty.</summary>
+    [ObservableProperty] private string _responseRefusal = "";
+
     /// <summary>Equal-ripple level, dB — the real-to-real prototype only.</summary>
     public double RippleDb
     {
@@ -414,7 +446,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     public string F1Text
     {
         get => _f1Staged ?? MatchValueFormat.Format(
-            F1, MatchQuantity.Frequency, BandUnit, Settings.SignificantDigits).Text;
+            F1, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
         set { _f1Staged = value; OnPropertyChanged(); NotifyPendingEdits(); }
     }
     private string? _f1Staged;
@@ -423,7 +455,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     public string F2Text
     {
         get => _f2Staged ?? MatchValueFormat.Format(
-            F2, MatchQuantity.Frequency, BandUnit, Settings.SignificantDigits).Text;
+            F2, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
         set { _f2Staged = value; OnPropertyChanged(); NotifyPendingEdits(); }
     }
     private string? _f2Staged;
@@ -438,6 +470,93 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(F1Text));
         OnPropertyChanged(nameof(F2Text));
     }
+
+    // ── Inline-editor entry text (owner, 2026-08-19) ──────────────────────────
+    //
+    // Same shape as MatchTerminationViewModel's own pair: one string carrying value AND unit, which
+    // is what an InlineEditText shows and seeds from. The parse and the write both still go through
+    // the properties above — these only compose and decompose the unit.
+
+    /// <summary>The lower band edge as "1 GHz".</summary>
+    public string F1Entry
+    {
+        get => $"{F1Text} {BandUnit}";
+        set => SetBandEntry(value, isF1: true);
+    }
+
+    /// <summary>The upper band edge as "2 GHz".</summary>
+    public string F2Entry
+    {
+        get => $"{F2Text} {BandUnit}";
+        set => SetBandEntry(value, isF1: false);
+    }
+
+    private void SetBandEntry(string? text, bool isF1)
+    {
+        if (!MatchValueFormat.TryParseWithUnit(
+                text, MatchQuantity.Frequency, BandUnit, out double f, out string unit))
+        {
+            OnPropertyChanged(isF1 ? nameof(F1Entry) : nameof(F2Entry));
+            return;
+        }
+        // Both edges share ONE display unit, so a unit typed into either moves both.
+        if (unit != BandUnit) BandUnit = unit;
+        if (isF1) F1 = f; else F2 = f;
+        OnPropertyChanged(nameof(F1Text));
+        OnPropertyChanged(nameof(F2Text));
+        OnPropertyChanged(nameof(F1Entry));
+        OnPropertyChanged(nameof(F2Entry));
+    }
+
+    /// <summary>The equal-ripple level as "0.1 dB".</summary>
+    public string RippleEntry
+    {
+        get => RippleDb.ToString("0.###", CultureInfo.InvariantCulture) + " dB";
+        set
+        {
+            string t = (value ?? "").Trim();
+            if (t.EndsWith("dB", StringComparison.OrdinalIgnoreCase)) t = t[..^2].Trim();
+            if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v > 0)
+                RippleDb = v;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// The network order as text, for the inline editor.
+    /// </summary>
+    /// <remarks>
+    /// <b>An order the terminations cannot absorb is REFUSED, not accepted and quietly corrected.</b>
+    /// <see cref="OrderOptions"/> is not a preference list — with a like or mixed termination pair the
+    /// arms alternate and only one parity fits at all (match.md §4.2), which is why the picker never
+    /// offered the others. Typing one of them puts the field straight back and leaves
+    /// <see cref="OrderNote"/> saying which orders do fit; that is the same refusal the ComboBox made
+    /// by simply not listing them, said out loud instead.
+    /// </remarks>
+    public string OrderEntry
+    {
+        get => Order.ToString(CultureInfo.InvariantCulture);
+        set
+        {
+            var valid = OrderOptions;
+            if (int.TryParse((value ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture,
+                             out int n)
+                && valid.Contains(n))
+            {
+                Order = n;
+            }
+            else
+            {
+                OrderNote = $"Order must be one of {string.Join(", ", valid)} for this termination pair.";
+            }
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>What the order field's tooltip states — the orders this pair actually permits.</summary>
+    public string OrderTooltip =>
+        $"Only the parities the two terminations permit: {string.Join(", ", OrderOptions)}. "
+        + "An order that cannot absorb both ends is refused.";
 
     // ── Apply / Revert ────────────────────────────────────────────────────────
 
@@ -513,6 +632,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(Rebuild));
         OnPropertyChanged(nameof(Order));
         OnPropertyChanged(nameof(Response));
+        OnPropertyChanged(nameof(SelectedResponseOption));
         OnPropertyChanged(nameof(RippleDb));
         OnPropertyChanged(nameof(QAdjust));
         OnPropertyChanged(nameof(QAdjustEnabled));
@@ -522,6 +642,11 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(F2));
         OnPropertyChanged(nameof(F1Text));
         OnPropertyChanged(nameof(F2Text));
+        OnPropertyChanged(nameof(F1Entry));
+        OnPropertyChanged(nameof(F2Entry));
+        OnPropertyChanged(nameof(RippleEntry));
+        OnPropertyChanged(nameof(OrderEntry));
+        OnPropertyChanged(nameof(OrderTooltip));
         OnPropertyChanged(nameof(LinkTransforms));
         NotifyPendingEdits();
     }

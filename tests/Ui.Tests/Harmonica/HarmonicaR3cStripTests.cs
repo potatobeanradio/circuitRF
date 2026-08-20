@@ -477,6 +477,17 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
     // this is a screenshot, not a unit test. Pinned by source scan instead: the 0.55 formula is GONE,
     // and a real measurement (FormattedText, against the passed-in typeface) replaced it.
 
+    /// <summary>
+    /// R7C §1.3 — the editor's width is a real measurement against the live typeface, never a
+    /// character count times an assumed advance.
+    /// </summary>
+    /// <remarks>
+    /// <b>The formula moved</b> (2026-08-19): the Match Designer's specification pane needed the same
+    /// inline editor, so the measurement now lives once in <c>Controls/InlineEdit.MeasureWidth</c> and
+    /// this file's <c>CalcInlineEditWidth</c> delegates to it. The property under test is unchanged —
+    /// what a strip editor's width is computed FROM — so the scan follows the delegation rather than
+    /// pinning the strip to holding its own copy.
+    /// </remarks>
     [Fact]
     public void CalcInlineEditWidth_MeasuresAgainstTheTypeface_NotAnAssumedPerCharacterAdvance()
     {
@@ -489,8 +500,12 @@ public sealed class HarmonicaR3cStripTests(ITestOutputHelper output)
         string body = src[m..mEnd];
 
         Assert.Contains("Typeface typeface", body, StringComparison.Ordinal);
-        Assert.Contains("new FormattedText(", body, StringComparison.Ordinal);
+        Assert.Contains("InlineEdit.MeasureWidth(text, fontSize, typeface)", body, StringComparison.Ordinal);
         Assert.DoesNotContain("* 0.55", body, StringComparison.Ordinal);
+
+        string shared = ReadSource("src", "Ui", "Controls", "InlineEdit.cs");
+        Assert.Contains("new FormattedText(", shared, StringComparison.Ordinal);
+        Assert.DoesNotContain("* 0.55", shared, StringComparison.Ordinal);
     }
 
     [Fact]

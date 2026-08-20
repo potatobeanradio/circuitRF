@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -76,27 +78,94 @@ public static class MatchEmbedding
     }
 
     /// <summary>
-    /// The design a freshly-placed <c>Match</c> carries: 1-2 GHz, order 3, both ends 50 ohms and
-    /// purely resistive, Chebyshev-Fano.
+    /// The design a freshly-placed <c>Match</c> carries: 1.8-2.2 GHz, order 4, 50 ohms down to
+    /// 10 ohms, both ends purely resistive, Chebyshev-Fano.
     /// </summary>
     /// <remarks>
-    /// <b>It has to synthesise cleanly, because nothing else will make it.</b> Until the Designer
-    /// (MN-3) exists a placed <c>Match</c> is edited only by hand-writing this parameter, so a
-    /// component that arrives refusing would be a component nobody could repair from the schematic.
-    /// Both ends resistive also makes it the ONE default whose meaning does not depend on what it is
-    /// wired to: it absorbs nothing, so it stamps its whole ladder wherever it is dropped. Same rule
-    /// <c>WBondEmbedding.DefaultDesign</c> follows in shipping one real wire rather than an empty
-    /// array.
+    /// <b>It has to synthesise cleanly, because nothing else will make it.</b> A placed <c>Match</c>
+    /// can be edited by hand-writing this parameter, so a component that arrives refusing would be a
+    /// component nobody could repair from the schematic. Both ends resistive also makes it the ONE
+    /// default whose meaning does not depend on what it is wired to: it absorbs nothing, so it stamps
+    /// its whole ladder wherever it is dropped. Same rule <c>WBondEmbedding.DefaultDesign</c> follows
+    /// in shipping one real wire rather than an empty array.
+    ///
+    /// <para><b>It also has to survive being POKED</b> (owner, 2026-08-19: "the default settings need
+    /// to show solutions and not have any immediate dead ends for the user to play with the UI"). The
+    /// former default — 1-2 GHz, order 3, 50 Ω to 50 Ω — synthesised, but it is not a matching problem
+    /// at all: ΠN² is 1/1, there is nothing for a transform to do, and the FIRST entry of its own
+    /// order picker (order 2) returned no solutions. This one was chosen by measuring that: every
+    /// valid order, every response family, and every single- and double-step change a user can make
+    /// from the specification pane (either topology, either reactance kind, at either end) still
+    /// returns at least one solution. 50 Ω into 10 Ω is also a real problem — a 5:1 transformation an
+    /// output match actually has to do — so the transform rack and the solutions list have something
+    /// to show rather than an identity.</para>
     /// </remarks>
-    public static MatchDesign DefaultDesign() => new()
+    public static MatchDesign DefaultDesign()
     {
-        F1 = 1e9,
-        F2 = 2e9,
-        Order = 3,
-        Response = ResponseShape.ChebyshevFano,
-        Term1 = Termination.Resistive(50.0),
-        Term2 = Termination.Resistive(50.0),
-    };
+        var design = new MatchDesign
+        {
+            F1 = 1.8e9,
+            F2 = 2.2e9,
+            Order = 4,
+            Response = ResponseShape.ChebyshevFano,
+            Term1 = Termination.Resistive(50.0),
+            Term2 = Termination.Resistive(10.0),
+        };
+
+        // ── and it arrives with a solution already APPLIED ────────────────────
+        //
+        // A real 5:1 transformation needs Norton transforms to REACH it: leave the list empty and the
+        // status strip opens on "Π N² 1 / 0.271 ✘ not reached" with termination 2 flagged, which is
+        // exactly the wall of warning text the owner asked to be rid of. The former 50 Ω → 50 Ω
+        // default avoided that only by needing no transform at all — a matching component that does
+        // not match anything.
+        //
+        // The search is deterministic and its ranking is defined (fewest transforms, then pair
+        // position, then Q-adjust), so picking from its list is reproducible rather than arbitrary;
+        // two freshly-placed Match components still decode to the same design. If it ever finds
+        // nothing, the design is returned untransformed rather than throwing: an unapplied default is
+        // a worse default, not a broken one.
+        //
+        // ── and the pick prefers a CAPACITIVE transform, for a reason worth stating ────────────
+        //
+        // A Norton transform replaces one element with a pi (or T) of three of its own kind. Do that
+        // to an INDUCTOR pair and the result is three ideal inductors in a loop — which at DC is a
+        // loop of ideal shorts, and a loop of ideal shorts is a SINGULAR MNA system. The default's
+        // first-ranked solution (L1/L2) is exactly that, and it makes a freshly-placed Match run an
+        // S-parameter sweep perfectly while refusing to DC-solve at all. Three capacitors carry a
+        // series capacitor in the middle branch, which is a DC open, and the network stays solvable.
+        //
+        // This is a property of the DEFAULT, not a rule about transforms: an inductor Norton
+        // transform is a legitimate thing for a user to apply, and the solutions list still offers
+        // every one of them. What a shipped default may not be is a circuit that refuses one of the
+        // analyses it is placed to run.
+        var set = MatchSolutionSearch.Search(design, includeQAdjust: false);
+        var plain = set.Solutions.Where(s => s.QAdjust == 0.0 && !s.ImplausibleValues).ToList();
+        var pick = plain.FirstOrDefault(AllProductsAreCapacitors) ?? plain.FirstOrDefault();
+        if (pick is not null)
+        {
+            design.Transforms = [.. pick.Transforms];
+            design.AppliedSolutions.Add(pick.Fingerprint);
+        }
+        return design;
+    }
+
+    /// <summary>
+    /// True when every element a solution's transforms PRODUCED is a capacitor.
+    /// </summary>
+    /// <remarks>
+    /// The products of the transform at one-based ordinal <c>k</c> are named
+    /// <c>{ElementA}_N{k}_1..3</c> (<c>NortonTransform.Apply</c>) — the same convention the Designer's
+    /// bracket layout keys on — so they are found by that infix rather than by re-deriving the pair,
+    /// which no longer exists once the transform has run.
+    /// </remarks>
+    private static bool AllProductsAreCapacitors(MatchSolution s)
+    {
+        var products = s.Network.Elements
+            .Where(e => e.Name.Contains("_N", StringComparison.Ordinal))
+            .ToList();
+        return products.Count > 0 && products.All(e => e.Type == ElementType.C);
+    }
 
     /// <summary>
     /// The encoded default, computed once — every freshly-placed <c>Match</c> carries this exact

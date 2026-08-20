@@ -121,6 +121,7 @@ public sealed class TraceDataItem
             DerivedParameters.K                     => "Rollett K",
             DerivedParameters.DeltaMag              => "|Δ|",
             DerivedParameters.Passivity             => "Passivity σmax",
+            DerivedParameters.GroupDelay            => "Group Delay (ns)",
             _                                       => "?",
         };
         IsEnabled = enabled;

@@ -192,7 +192,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
         var (_, comp, designer) = Open(Golden());
         string Value(string n) => comp.Parameters.First(p => p.Name == n).Expression;
 
-        Assert.Equal("1", Value("F1"));            // the placement default; opening wrote nothing
+        Assert.Equal("1.8", Value("F1"));          // the placement default; opening wrote nothing
 
         designer.Term2.Resistance = 2.5;
 

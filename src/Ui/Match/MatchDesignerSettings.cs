@@ -34,8 +34,26 @@ public sealed partial class MatchDesignerSettings : ObservableObject
     /// <summary>Display unit for the band edges.</summary>
     [ObservableProperty] private string _frequencyUnit = "GHz";
 
-    /// <summary>Significant digits in every displayed value.</summary>
-    [ObservableProperty] private int _significantDigits = 6;
+    /// <summary>
+    /// Significant digits in the NETWORK READOUT — the ladder preview's labels and the value grid
+    /// (owner, 2026-08-19: "set the default significant digits for the network component readout to
+    /// 3"). The Settings flyout offers 3..9, so anyone who wants the old six gets them back in one
+    /// click.
+    /// </summary>
+    /// <remarks>
+    /// <b>The specification pane's own entry fields do NOT read this</b> — they use
+    /// <see cref="EntryDigits"/>. A field the user types into has to round-trip what was typed: at
+    /// three digits a 12.345 GHz band edge redisplays as 12.3 and the next commit would silently
+    /// write that back. Rounding a READOUT is a display choice; rounding an INPUT is data loss.
+    /// </remarks>
+    [ObservableProperty] private int _significantDigits = 3;
+
+    /// <summary>
+    /// Digits the specification pane's editable fields render with — enough that a typed value
+    /// survives a redisplay. See <see cref="SignificantDigits"/>'s own remark for why this is not
+    /// the same number.
+    /// </summary>
+    public const int EntryDigits = 9;
 
     /// <summary>match.md §4.6's floor on a deliberately-inflated analysis-end Q.</summary>
     [ObservableProperty] private double _qMin = MatchSolutionSearch.DefaultQMin;

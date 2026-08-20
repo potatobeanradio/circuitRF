@@ -901,13 +901,7 @@ public partial class ReadoutStripView : UserControl
     /// with the schematic editor's, which measures nothing and is out of this brief's scope.
     /// </summary>
     private static double CalcInlineEditWidth(string text, double fontSize, Typeface typeface)
-    {
-        string measured = text.Length > 0 ? text : "0";
-        var formatted = new FormattedText(measured, System.Globalization.CultureInfo.InvariantCulture,
-                                          FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black);
-        double textWidth = text.Length > 0 ? formatted.Width : 0;
-        return Math.Max(fontSize * 2.0, textWidth + fontSize * 0.8);
-    }
+        => CircuitRF.Ui.Controls.InlineEdit.MeasureWidth(text, fontSize, typeface);
 
     /// <summary>Projects the theme's own readout role to a brush. §7.9.2: Harmonica.ReadoutText
     /// covers ALL text in this strip, so there is exactly one colour decision here.</summary>

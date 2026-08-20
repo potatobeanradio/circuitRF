@@ -40,4 +40,17 @@ public sealed partial class MatchResponseOptionViewModel : ObservableObject
 
     /// <summary>The refusal behind a disabled entry, or null.</summary>
     public MatchRefusal? Refusal { get; internal set; }
+
+    /// <summary>
+    /// How solid the entry looks in the drop-down list.
+    /// </summary>
+    /// <remarks>
+    /// The Response selector became a ComboBox (owner, 2026-08-19), and a ComboBox item does not dim
+    /// itself from <c>IsEnabled</c> the way a RadioButton's own content does — its item container
+    /// stays fully opaque, so an infeasible family would look pickable. This is the one place that
+    /// decides how "cannot be picked" looks in the list.
+    /// </remarks>
+    public double ListOpacity => IsEnabled ? 1.0 : 0.45;
+
+    partial void OnIsEnabledChanged(bool value) => OnPropertyChanged(nameof(ListOpacity));
 }

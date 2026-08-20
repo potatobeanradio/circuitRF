@@ -2634,6 +2634,7 @@ public partial class TraceRowViewModel : ViewModelBase
                     DerivedParameters.MaxGain,
                     DerivedParameters.K,
                     DerivedParameters.DeltaMag,
+                    DerivedParameters.GroupDelay,
                 })
                     _allSignals.Add(new TraceDataItem(entry, d, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
             }
@@ -2746,6 +2747,7 @@ public partial class TraceRowViewModel : ViewModelBase
                     DerivedParameters.MaxGain,
                     DerivedParameters.K,
                     DerivedParameters.DeltaMag,
+                    DerivedParameters.GroupDelay,
                 })
                     _allSignals.Add(new TraceDataItem(entry, d, _parent.PlotType, omitFilePrefix: true)
                                     { Group = metricGroup });

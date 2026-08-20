@@ -228,6 +228,44 @@ public class MatchStampTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// <b>The shipped default DC-solves, and the reason it does is a choice.</b>
+    /// </summary>
+    /// <remarks>
+    /// A Norton transform replaces one element with a pi of three of its own KIND. Applied to an
+    /// inductor pair, the products are three ideal inductors in a loop — a loop of ideal shorts, and
+    /// therefore a singular MNA system: the DC solve returns a residual of 1 and never converges,
+    /// while the S-parameter sweep runs perfectly. The default's own FIRST-ranked solution (L1/L2) is
+    /// exactly that shape, which is why <c>MatchEmbedding.DefaultDesign</c> prefers a CAPACITIVE
+    /// transform — three capacitors put a series capacitor in the middle branch, a DC open, and the
+    /// network stays solvable.
+    ///
+    /// <para>This is a claim about the DEFAULT and not about transforms: an inductor Norton transform
+    /// is a legitimate thing to apply and the solutions list still offers every one. What a shipped
+    /// default may not be is a circuit that refuses one of the analyses it is placed to run.</para>
+    /// </remarks>
+    [Fact]
+    public void TheShippedDefault_IsNotAnInductorLoop_AndDcSolves()
+    {
+        var design = MatchEmbedding.DefaultDesign();
+        Assert.NotEmpty(design.Transforms);
+
+        var network = MatchRebuild.Rebuild(design).Network;
+        Assert.NotNull(network);
+        var products = network!.Elements.Where(e => e.Name.Contains("_N", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(products);
+        Assert.All(products, e => Assert.Equal(ElementType.C, e.Type));
+
+        var netlist = Elaborate($"""
+            Vdc:VS  in 0  Vdc=1
+            R:Rs    in p1  R=50
+            {MatchInstance(design)}
+            R:RL    p2 0  R=10
+            """);
+        var result = NonlinearDcEngine.Run(netlist);
+        Assert.True(result.Converged, $"the shipped default did not DC-solve (residual {result.FinalResidual:G3})");
+    }
+
+    /// <summary>
     /// <b>Shunt arms are DC shorts</b>, exactly — a bare inductor to ground. The shipped default
     /// starts and ends with a shunt arm, so both pins are pinned to zero and the source's whole
     /// current flows through the component.
@@ -438,12 +476,14 @@ public class MatchStampTests(ITestOutputHelper output)
         Assert.True(File.Exists(cliDll), $"the CLI was not built beside these tests: {cliDll}");
 
         string path = Path.Combine(Path.GetTempPath(), $"match-cli-{Guid.NewGuid():N}.cnl");
+        // Port 2 is terminated in 10 ohms, matching the shipped default's own far end (2026-08-19).
+        // Measuring a 50-to-10 transformer into 50 ohms measures the mismatch it exists to remove.
         File.WriteAllText(path, $"""
             Term:T1  p1 0  Num=1 Z=50
-            Term:T2  p2 0  Num=2 Z=50
+            Term:T2  p2 0  Num=2 Z=10
             {MatchInstance(MatchEmbedding.DefaultDesign())}
 
-            analysis SP1  type=sparam  start=0.5 GHz  stop=2.5 GHz  step=0.5 GHz
+            analysis SP1  type=sparam  start=1.0 GHz  stop=3.0 GHz  step=0.5 GHz
             """);
 
         try
@@ -482,9 +522,10 @@ public class MatchStampTests(ITestOutputHelper output)
                 double.Parse(r[4], CultureInfo.InvariantCulture) * double.Parse(r[4], CultureInfo.InvariantCulture));
 
             output.WriteLine(string.Join("  ", rows.Select(r => $"{r[0]}GHz {S21Db(r):F2}dB")));
-            Assert.True(S21Db(rows[1]) > -0.2, "1 GHz is in band");    // 1.0 GHz — the lower edge
-            Assert.True(S21Db(rows[3]) > -0.2, "2 GHz is in band");    // 2.0 GHz — the upper edge
-            Assert.True(S21Db(rows[0]) < -20.0, "0.5 GHz is an octave below the band");
+            // 1.0, 1.5, 2.0, 2.5, 3.0 GHz — the band is 1.8-2.2.
+            Assert.True(S21Db(rows[2]) > -0.2, "2 GHz is mid-band");
+            Assert.True(S21Db(rows[0]) < -20.0, "1.0 GHz is well below the band");
+            Assert.True(S21Db(rows[4]) < -20.0, "3.0 GHz is well above the band");
             File.Delete(touchstone);
         }
         finally
