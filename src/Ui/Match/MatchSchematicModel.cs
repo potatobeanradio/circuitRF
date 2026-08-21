@@ -169,6 +169,16 @@ public static class MatchSchematicModel
     /// <summary>The suffix a shunt arm's own ground carries in the model, so it has a unique id.</summary>
     public const string GroundIdSuffix = "_GND";
 
+    /// <summary>
+    /// Which label row carries the VALUE — the only editable one in this pane.
+    /// </summary>
+    /// <remarks>
+    /// Every labelled component this projection builds writes the same three rows: type, instance
+    /// name, then the value ("L = 1.53 nH", "Z = 50 Ω"). Named rather than spelled 2 in three files,
+    /// because the inline editor, its hit-test fallback and the tests all have to mean the same row.
+    /// </remarks>
+    public const int ValueRow = 2;
+
     /// <summary>The rotation every SERIES element is placed at, here and in the flattened cell.</summary>
     public const SymbolRotation SeriesRotation = SymbolRotation.R270;
 

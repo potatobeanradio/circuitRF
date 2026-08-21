@@ -542,7 +542,7 @@ public sealed class MatchRound3Tests(ITestOutputHelper output)
         net.Elements.Add(new MatchElement { Name = "L1", Type = ElementType.L, IsShunt = false, Value = 1e-9 });
         net.Elements.Add(new MatchElement { Name = "C1", Type = ElementType.C, IsShunt = false, Value = 1e-12 });
 
-        var layout = MatchLadderLayout.Build(net, null, _ => "x", r => $"{r:F0} Ω");
+        var layout = MatchLadderLayout.Build(net, null, _ => "x", (_, r) => $"{r:F0} Ω");
         var model = MatchSchematicModel.Build(layout);
 
         Assert.Equal(2, model.Components.Count(c => c.Symbol == SymbolKind.TermG));

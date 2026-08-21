@@ -549,7 +549,7 @@
                  Padding="4,2" is explicit so ShowInlineEditBox can use known constants.
                  ContextMenu replaces the theme's built-in ContextFlyout so we can track
                  Opening/Closed and prevent LostFocus from dismissing the box prematurely. -->
-            <TextBox x:Name="InlineEditBox"
+            <ctrl:SchematicInlineEditBox x:Name="InlineEditBox"
                      IsVisible="False"
                      Width="140"
                      FontSize="11"
@@ -562,7 +562,7 @@
                      VerticalAlignment="Top"
                      LostFocus="OnInlineEditLostFocus"
                      KeyDown="OnInlineEditKeyDown">
-                <TextBox.ContextMenu>
+                <ctrl:SchematicInlineEditBox.ContextMenu>
                     <ContextMenu Opening="OnInlineEditContextMenuOpening">
                         <MenuItem x:Name="InlineCtxCut"
                                   Header="Cut"
@@ -576,8 +576,8 @@
                         <MenuItem Header="Select All"
                                   Click="OnInlineCtxSelectAll"/>
                     </ContextMenu>
-                </TextBox.ContextMenu>
-            </TextBox>
+                </ctrl:SchematicInlineEditBox.ContextMenu>
+            </ctrl:SchematicInlineEditBox>
         </Grid>
 
     </DockPanel>

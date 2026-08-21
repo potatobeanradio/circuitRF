@@ -11,7 +11,10 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.Clipboard;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.Controls;
 using CircuitRF.Ui.DataDisplay.ViewModels;
@@ -26,8 +29,19 @@ namespace CircuitRF.Ui.Views.Match;
 /// second view of the same design, which would let two windows write the same <c>Design</c> parameter
 /// from two different working copies.
 /// </summary>
-public partial class MatchDesignerWindow : Window
+public partial class MatchDesignerWindow : Window, ICrfMenuWindow
 {
+    /// <summary>
+    /// What this window is called in the application's <b>Window</b> menu (owner, 2026-08-20: "have it
+    /// show up in the circuitRF Window menu, just like any other window").
+    /// </summary>
+    /// <remarks>
+    /// The view-model's own <c>Title</c> — "Match — MN1" — so the menu entry, the title bar and the OS
+    /// window title are one string. A Designer whose target has been deleted keeps its entry: the
+    /// window is still open and still readable, which is the whole point of leaving it that way.
+    /// </remarks>
+    public string WindowMenuHeader => Vm?.Title ?? "Match Designer";
+
     // Keyed on the component, held weakly: a Designer must not be the reason a component the user
     // deleted stays alive, and closing the window removes the entry anyway.
     private static readonly ConditionalWeakTable<EditableComponent, MatchDesignerWindow> Open = new();
@@ -36,6 +50,44 @@ public partial class MatchDesignerWindow : Window
     public MatchDesignerWindow()
     {
         InitializeComponent();
+
+        // TUNNELLING, and on the window rather than on any one pane: a press that lands on a plot, a
+        // slider, a specification field or the network canvas is handled by that control and never
+        // bubbles anywhere a deselect could hang off. See OnWindowPointerPressed.
+        AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>
+    /// <b>A press anywhere that is not a marker's info box clears the marker selection.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"clicking away from a marker needs to deselect it (even
+    /// clicking in another panel or opening the inline text editor)."</i> Nothing ever deselected,
+    /// because the Data Display does it from a control this window does not have: a press on the
+    /// empty PLOT CANVAS background (<c>PlotCanvasView.OnCanvasPointerPressed</c> →
+    /// <c>SelectOnly((PlotContainerViewModel?)null)</c>). The Designer lays its two plots out itself
+    /// and has no canvas, so a marker selected by clicking its info box stayed selected for the rest
+    /// of the session — visibly highlighted, and still the target of Delete and the arrow keys.
+    ///
+    /// <para>The rule is deliberately the WHOLE WINDOW rather than the response pane: the owner's
+    /// "even clicking in another panel" is the point, and a selection that survives a trip to the
+    /// specification pane is the same bug in a smaller area. Two things are excluded — a press inside
+    /// a <c>MarkerInfoBoxView</c>, which IS the selecting gesture, and a Ctrl/Meta press, which is the
+    /// additive one the info box implements. Both would otherwise undo themselves in the same
+    /// event.</para>
+    /// </remarks>
+    private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (Vm is null) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+            return;
+
+        if (e.Source is Visual v
+            && v.FindAncestorOfType<Views.DataDisplay.MarkerInfoBoxView>(includeSelf: true) is not null)
+            return;
+
+        Vm.PlotHost.SelectOnly((MarkerInfoBoxViewModel?)null);
     }
 
     /// <summary>The view-model, or null before one is bound.</summary>
@@ -67,9 +119,72 @@ public partial class MatchDesignerWindow : Window
             vm.Dispose();
         };
 
-        window.Show(owner!);
+        ShowUnowned(window, owner);
         return window;
     }
+
+    /// <summary>
+    /// Shows the Designer as an <b>independent</b> top-level window, positioned over
+    /// <paramref name="owner"/> but not owned by it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"the Match Designer window is always in front. I can't
+    /// get back to the workspace with the designer window open."</i>
+    ///
+    /// <para>That is what <c>Show(owner)</c> means. An OWNED window is not merely non-modal — every
+    /// platform keeps it above its owner in the z-order for as long as it exists, so clicking the
+    /// workspace raises the workspace <i>underneath</i> the Designer and the Designer never goes
+    /// behind. It is the right relationship for the <c>MatchFlattenDialog</c> this window opens (a
+    /// prompt that belongs to one window and must not be lost behind it) and the wrong one for a
+    /// Designer the user works alongside their schematic.</para>
+    ///
+    /// <para>Dropping the owner costs the two things the owner was providing, so both are done here
+    /// instead. <b>Placement</b>: the Designer opens <b>cascaded off the workspace's top-left corner</b>
+    /// (owner, 2026-08-20: "needs to open slightly down and to the right of the parent window that
+    /// opened it") — computed before <c>Show</c>, off the DECLARED size, because a window that has not
+    /// been shown yet reports no frame and positioning it afterwards is a visible jump, and clamped
+    /// into the owner's screen so an owner dragged half off one does not put the Designer entirely off
+    /// it. <b>Lifetime</b>: an owned window closes with its owner, so that is wired explicitly — a
+    /// Designer outliving the workspace it edits would be a window with nothing behind it.</para>
+    /// </remarks>
+    private static void ShowUnowned(MatchDesignerWindow window, Window? owner)
+    {
+        if (owner is null)
+        {
+            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            window.Show();
+            return;
+        }
+
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+
+        void CloseWithOwner(object? _, EventArgs __) => window.Close();
+        owner.Closed += CloseWithOwner;
+        window.Closed += (_, _) => owner.Closed -= CloseWithOwner;
+
+        // Set BEFORE and re-asserted AFTER. Before, because a window positioned only once it is on
+        // screen is a visible jump; after, because whether a platform honours a Move on a window it
+        // has not shown yet is a platform's business, and the second assignment is a no-op when the
+        // first one took. Manual startup location means Show() does not overwrite it either way.
+        var at = CascadedFrom(owner);
+        window.Position = at;
+        window.Show();
+        window.Position = at;
+    }
+
+    /// <summary>
+    /// Where the Designer sits, cascaded off <paramref name="owner"/>'s top-left.
+    /// </summary>
+    /// <remarks>
+    /// The arithmetic is <see cref="MatchWindowPlacement.Cascade"/>'s — pure, and asserted by test,
+    /// because placement is otherwise only checkable by opening the application and looking. All this
+    /// adds is reading the three things off a live window.
+    /// </remarks>
+    private static PixelPoint CascadedFrom(Window owner) =>
+        MatchWindowPlacement.Cascade(
+            owner.Position,
+            owner.RenderScaling,
+            owner.Screens?.ScreenFromWindow(owner)?.WorkingArea);
 
     // ── Field commits ─────────────────────────────────────────────────────────
 
@@ -132,11 +247,13 @@ public partial class MatchDesignerWindow : Window
         base.OnLoaded(e);
         if (Vm is null) return;
 
-        WireButton("CloseButton", (_, _) => Close());
+        // There is no CloseButton to wire (owner, 2026-08-20: "remove the close button from the top
+        // of window") — the title bar's own is the one that closes this window.
         WireButton("ApplyButton", (_, _) => Vm.Apply());
         WireButton("RevertButton", (_, _) => Vm.Revert());
         WireElementsContextMenu();
         WireSchematicContextMenu();
+        WireSchematicInlineEditor();
         WirePlotHost();
         WireButton("RemoveTransformButton", (_, _) => Vm.RemoveLastTransform());
         WireButton("AddTransformButton", (s, _) => ShowAddTransformMenu(s as Control));
@@ -148,10 +265,14 @@ public partial class MatchDesignerWindow : Window
         // DocAnchors.WholePages, so the docs build fails if that page stops being emitted.
         WireButton("HelpButton", (_, _) => DocLauncher.Open("reference/match.html"));
 
-        BindNumericBox("BandFractionBox", () => (Vm.PlotBandFraction * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%",
-                       t => { if (double.TryParse(t.Trim().TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) Vm.PlotBandFraction = v / 100.0; });
-        BindNumericBox("PlotPointsBox", () => Vm.PlotPoints.ToString(CultureInfo.InvariantCulture),
-                       t => { if (int.TryParse(t, out int v)) Vm.PlotPoints = v; });
+        BindNumericBox(
+            "BandFractionBox",
+            () => (Vm.PlotBandFraction * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%",
+            t => Vm.CommitPlotWindow(MatchDesignerViewModel.ParseBandPercent(t), null));
+        BindNumericBox(
+            "PlotPointsBox",
+            () => Vm.PlotPoints.ToString(CultureInfo.InvariantCulture),
+            t => Vm.CommitPlotWindow(null, MatchDesignerViewModel.ParsePlotPoints(t)));
     }
 
     private void WireButton(string name, EventHandler<RoutedEventArgs> handler)
@@ -234,6 +355,148 @@ public partial class MatchDesignerWindow : Window
         canvas.ContextMenu = new ContextMenu { ItemsSource = new[] { CopySchematicMenuItem() } };
     }
 
+    // ── The network pane's inline value editor ────────────────────────────────
+
+    private SchematicInlineEditBox? _labelEditor;
+    private MatchInlineEditTarget?  _labelEditTarget;
+    private (string Id, int Row)?   _labelEditAnchor;
+
+    /// <summary>
+    /// Puts <b>the schematic editor's own inline text box</b> over the network pane and connects it to
+    /// the canvas's label hit-test.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"Allow user to double click on the TermG to give the schematic
+    /// editor's inline text editor to allow user to change the R for the termination… Similarly, allow
+    /// user to use inline text editor to change any value in the schematic… Can you reuse the exact
+    /// same inline text editor from the regular schematic? That is the preferred solution."</i>
+    ///
+    /// <para>It IS the same control — <see cref="SchematicInlineEditBox"/>, which
+    /// <c>SchematicView</c> now hosts too — carrying the same padding, the same font size rule, the
+    /// same baseline arithmetic and the same three-key contract (Return commits, LostFocus commits,
+    /// Escape reverts). Only the two ends differ, and they have to: WHAT was hit is the canvas's
+    /// answer, and what a typed value MEANS is the view-model's. On a schematic page a value is
+    /// written to a parameter; here it is a target the Norton transforms are searched for.</para>
+    ///
+    /// <para>The box is created here rather than declared in the AXAML so that the control's own
+    /// constructor stays the single definition of how one looks. It is added as a SIBLING of the
+    /// canvas — <c>MatchSchematicCanvas</c> renders through a Skia draw operation and has no visual
+    /// children — inside a <c>Panel</c> that shares the canvas's coordinate space exactly, which is
+    /// what lets the hit's screen numbers be used unchanged.</para>
+    /// </remarks>
+    private void WireSchematicInlineEditor()
+    {
+        if (this.FindControl<Panel>("NetworkSchematicHost") is not { } host) return;
+        if (this.FindControl<MatchSchematicCanvas>("NetworkSchematic") is not { } canvas) return;
+        if (_labelEditor is not null) return;
+
+        _labelEditor = new SchematicInlineEditBox();
+        host.Children.Add(_labelEditor);
+
+        canvas.LabelDoubleTapped += OnSchematicLabelDoubleTapped;
+
+        // A pan or a zoom moves the label the box is sitting on. Following it is what the schematic
+        // page does (SchematicView.OnViewportChanged); the alternative — leaving the box behind over
+        // a different component — is worse than dismissing it.
+        canvas.ViewportChanged += (_, _) => RepositionLabelEditor();
+
+        _labelEditor.KeyDown += OnLabelEditorKeyDown;
+        // Deferred, so a click that moves focus INSIDE the box (its own context menu, a drag-select)
+        // is not read as leaving it — the same guard SchematicView's MaybeDismissInlineEdit makes.
+        _labelEditor.LostFocus += (_, _) =>
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (_labelEditor is { IsVisible: true } b && !b.IsKeyboardFocusWithin)
+                        CommitLabelEdit();
+                },
+                DispatcherPriority.Background);
+    }
+
+    private void OnSchematicLabelDoubleTapped(object? sender, MatchSchematicLabelHit hit)
+    {
+        if (Vm is null || _labelEditor is null) return;
+
+        // An editor already open is COMMITTED, not abandoned. The deferred LostFocus check below
+        // cannot do it: focus is posted at Input priority and the check runs at Background, so by the
+        // time it looks the new box already has the focus and the first edit would be dropped in
+        // silence — which is the one outcome the three-key contract exists to prevent.
+        if (_labelEditor.IsVisible) CommitLabelEdit();
+
+        // WHICH row was hit is not the question — WHICH COMPONENT is. Only the value row is editable,
+        // and at this pane's zoom the type and name rows above it are two thirds of a 16-pixel label
+        // block with nothing to do; a double-click anywhere on the component (its glyph included)
+        // therefore lands on its value. The view-model decides what that value is, and says which row
+        // to open the editor on so the user can see what they are editing.
+        if (Vm.ResolveInlineEdit(hit.ComponentId) is not { } target)
+        {
+            DismissLabelEditor();
+            return;
+        }
+
+        // Re-anchored onto the VALUE row, which is not necessarily the row under the pointer.
+        var at = (this.FindControl<MatchSchematicCanvas>("NetworkSchematic")?
+                      .AnchorFor(hit.ComponentId, target.Row)) ?? hit;
+
+        _labelEditTarget = target;
+        _labelEditAnchor = (hit.ComponentId, target.Row);
+        _labelEditor.Open(at.Text, at.ScreenX, at.ScreenY, at.FontSize);
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _labelEditor?.Focus();
+                _labelEditor?.SelectValueOnly();
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void RepositionLabelEditor()
+    {
+        if (_labelEditor is not { IsVisible: true }) return;
+        if (_labelEditAnchor is not { } anchor) return;
+        if (this.FindControl<MatchSchematicCanvas>("NetworkSchematic") is not { } canvas) return;
+
+        if (canvas.AnchorFor(anchor.Id, anchor.Row) is not { } at)
+        {
+            DismissLabelEditor();      // the element it was about is no longer in the drawing
+            return;
+        }
+        _labelEditor.MoveTo(at.ScreenX, at.ScreenY, at.FontSize);
+    }
+
+    private void OnLabelEditorKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Return or Key.Enter)
+        {
+            CommitLabelEdit();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            DismissLabelEditor();
+            e.Handled = true;
+        }
+    }
+
+    private void CommitLabelEdit()
+    {
+        if (Vm is null || _labelEditor is null) return;
+        string text = _labelEditor.Text ?? "";
+        var target = _labelEditTarget;
+        // Dismiss FIRST, so the LostFocus this triggers sees a hidden box and returns — the same
+        // belt-and-braces order SchematicView.CommitAndDismissInlineEdit uses.
+        DismissLabelEditor();
+        if (target is not null) Vm.CommitInlineEdit(target, text);
+    }
+
+    private void DismissLabelEditor()
+    {
+        _labelEditTarget = null;
+        _labelEditAnchor = null;
+        if (_labelEditor is not null) _labelEditor.IsVisible = false;
+    }
+
     // ── The response plots' Data Display host ─────────────────────────────────
 
     /// <summary>
@@ -280,6 +543,18 @@ public partial class MatchDesignerWindow : Window
             plot.ContainerProvider           = () => container;
             plot.SelectedMarkersProvider     = container.GetSelectedMarkers;
             plot.StepSelectedMarkersHandler  = container.StepSelectedMarkers;
+
+            // A double-click near a trace adds a marker there, and one on empty plot area opens the
+            // Plot Properties flyout. Both live in PlotControl.HandleDoubleTapAt, which is documented
+            // as "called by the HOST on DoubleTapped" — and this window is the host. Nobody called it
+            // (owner-reported, 2026-08-20: "double-clicking on a plot trace does not create a marker
+            // at the spot it was clicked; this already works in a true Data Display plot"), which is
+            // the same class of omission as the four null providers below.
+            plot.DoubleTapped += (_, args) =>
+            {
+                plot.HandleDoubleTapAt(args.GetPosition(plot));
+                args.Handled = true;
+            };
 
             plot.PlotChanged += container.OnPlotChanged;
             plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
@@ -331,11 +606,33 @@ public partial class MatchDesignerWindow : Window
         }
     }
 
+    /// <summary>
+    /// A small numeric box that commits on <b>Return as well as on focus loss</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"committing using return key on band and points textedit
+    /// boxes does not update the frequency response plots."</i> They had only a <c>LostFocus</c>
+    /// handler, so a user who typed a number and pressed Return got no movement and no reason to
+    /// believe the value had been rejected. Return is the third key of this application's inline-edit
+    /// contract everywhere else; these two boxes were simply missing it.
+    /// </remarks>
     private void BindNumericBox(string name, Func<string> read, Action<string> write)
     {
         if (this.FindControl<TextBox>(name) is not { } box) return;
         box.Text = read();
-        box.LostFocus += (_, _) => { write(box.Text ?? ""); box.Text = read(); };
+        box.LostFocus += (_, _) => Commit();
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key is not (Key.Return or Key.Enter)) return;
+            Commit();
+            e.Handled = true;
+        };
+
+        void Commit()
+        {
+            write(box.Text ?? "");
+            box.Text = read();
+        }
     }
 
     // ── Menus ─────────────────────────────────────────────────────────────────
@@ -487,10 +784,16 @@ public partial class MatchDesignerWindow : Window
         var sp = StorageProvider;
         if (sp is null || Vm is null) return;
 
+        // The suggested name carries NO extension (owner-reported, 2026-08-20: "Export Touchstone
+        // file picker shows .s2p twice in its suggested file name"). Avalonia's storage provider
+        // appends DefaultExtension to SuggestedFileName itself when the name has none, so supplying
+        // both spelled the extension twice — "MN1.s2p.s2p". Dropping DefaultExtension instead would
+        // be the wrong half to drop: it is what makes a name the user types WITHOUT an extension come
+        // back with one.
         var file = await sp.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = $"Export {label}",
-            SuggestedFileName = $"{Vm.InstanceName}.{extension}",
+            SuggestedFileName = Vm.InstanceName,
             DefaultExtension = extension,
             FileTypeChoices = [new FilePickerFileType(label) { Patterns = [$"*.{extension}"] }],
         });

@@ -58,6 +58,20 @@ public static class InlineEdit
         var formatted = new FormattedText(measured, CultureInfo.InvariantCulture,
                                           FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black);
         double textWidth = string.IsNullOrEmpty(text) ? 0 : formatted.Width;
-        return Math.Max(fontSize * 2.0, textWidth + fontSize * 0.8);
+        return WidthFromMeasuredText(textWidth, fontSize);
     }
+
+    /// <summary>
+    /// The slack-and-floor policy on its own, for a caller that has already measured its own text.
+    /// </summary>
+    /// <remarks>
+    /// <b>An editor drawn on a Skia canvas has to be measured with Skia</b>, against the very
+    /// typeface the label beneath it is rendered in — an Avalonia <see cref="FormattedText"/> of the
+    /// same nominal family is a different measurement, and the box would not line up with the text it
+    /// replaces. <see cref="SchematicInlineEditBox"/> is that caller. What must NOT differ between
+    /// the two is how much room a caret needs and how narrow an empty box may get, so that half of
+    /// the decision lives here and is shared.
+    /// </remarks>
+    public static double WidthFromMeasuredText(double textWidth, double fontSize) =>
+        Math.Max(fontSize * 2.0, textWidth + fontSize * 0.8);
 }

@@ -184,10 +184,37 @@ public sealed partial class MatchDesignerViewModel
             e.Value, quantity, Settings.UnitFor(quantity), Settings.SignificantDigits);
     }
 
-    /// <summary>A port reference resistance, in the Designer's own resistance unit and digits.</summary>
-    private string OhmsTextFor(double r) => MatchValueFormat.FormatWithUnit(
-        r, MatchQuantity.Resistance,
-        Settings.UnitFor(MatchQuantity.Resistance), Settings.SignificantDigits);
+    /// <summary>
+    /// One termination glyph's label: the ladder's own port reference, <b>and the declared one when
+    /// they disagree</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"I changed the TermG and it updated in the Termination 1
+    /// specification, but did not update in the schematic (the old value was retained)."</i>
+    ///
+    /// <para>The glyph was not stale — it quotes <c>MatchNetwork.R1</c>/<c>R2</c>, the reference the
+    /// plotted response is actually referenced to, and that is deliberate. But the FAR end's reference
+    /// is the analysis end's scaled by Π N², so re-declaring it does not move it until the transforms
+    /// are re-solved; the user typed 25 Ω into a field and the same glyph went on reading 15 Ω, with
+    /// the only hint three panes away in the status strip. <see cref="SetTermination"/> now re-solves
+    /// the linkage so the ladder reaches the new number whenever it can — and when it cannot (link
+    /// off, every transform locked, the target outside their range) the glyph says both numbers rather
+    /// than silently showing one the user did not type.</para>
+    /// </remarks>
+    private string OhmsTextFor(int end, double ladderR)
+    {
+        string unit = Settings.UnitFor(MatchQuantity.Resistance);
+        int digits = Settings.SignificantDigits;
+        string text = MatchValueFormat.FormatWithUnit(ladderR, MatchQuantity.Resistance, unit, digits);
+
+        double declared = (end == 1 ? _design.Term1 : _design.Term2).R;
+        if (!double.IsFinite(ladderR) || !double.IsFinite(declared)
+            || Math.Abs(ladderR - declared) <= 1e-9 * Math.Max(1.0, Math.Abs(declared)))
+            return text;
+
+        return text + " (target "
+             + MatchValueFormat.FormatWithUnit(declared, MatchQuantity.Resistance, unit, digits) + ")";
+    }
 
     private void RefreshStatus()
     {
@@ -267,10 +294,10 @@ public sealed partial class MatchDesignerViewModel
         new(false, "Flatten to Cell acts on a Match component.", null, "MN_match");
 
     /// <summary>True when the footer's Flatten button is live.</summary>
-    public bool CanFlatten => FlattenAvailability.CanRun;
+    public bool CanFlatten => FlattenAvailability.CanRun && !IsOrphaned;
 
     /// <summary>What the Flatten button offers, or the one thing standing in its way.</summary>
-    public string FlattenTooltip => FlattenAvailability.Reason;
+    public string FlattenTooltip => IsOrphaned ? OrphanNote : FlattenAvailability.Reason;
 
     private void RefreshFlatten()
     {

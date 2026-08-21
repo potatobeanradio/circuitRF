@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Collections.ObjectModel;
 using CircuitRF.Core.Matching;
 using CircuitRF.Engine.Matching;
@@ -279,25 +280,95 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         }
     }
 
-    /// <summary>The reactance as "1 pF" / "1.5 nH".</summary>
+    /// <summary>
+    /// The reactance as "1 pF" / "1.5 nH" — and <b>the reactance KIND, typed as a unit</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"Allow the termination 'reactance' value to be always editable with
+    /// the inline text editor (even when '–' is selected). Allow the user entered units to change
+    /// whether the X is an L or C or none. If user sets it to a pH or nH (or any H) unit, then the X
+    /// component becomes an L. If it's changed to any farad unit, then it becomes a C. If user enters
+    /// 0, then it becomes a '–' component."</i>
+    ///
+    /// <para>So the typed unit is matched against BOTH ladders before a quantity is chosen, rather
+    /// than against the current kind's — which is the one thing <c>TryParseWithUnit</c> cannot do,
+    /// since it takes the quantity as an input. A bare number with no unit keeps the kind that is
+    /// already selected, so typing over the digits (which is exactly what the inline editor
+    /// pre-selects) never changes a C into an L behind the user's back.</para>
+    ///
+    /// <para>A zero clears the reactance to <see cref="ReactanceKind.None"/>, and the field stays
+    /// live afterwards — it is the only way back to a reactance without touching the kind selector,
+    /// and a disabled field would be a door that locks behind you. When None is selected the field
+    /// shows "0" plus whichever unit the end last carried, so the unit the user types is the whole
+    /// of the decision.</para>
+    /// </remarks>
     public string ReactanceEntry
     {
-        get => $"{ReactanceText} {ReactanceUnitShown}";
+        get => Kind == ReactanceKind.None
+            ? $"0 {ReactanceUnitShown}"
+            : $"{ReactanceText} {ReactanceUnitShown}";
         set
         {
-            if (!MatchValueFormat.TryParseWithUnit(
-                    value, ReactanceQuantity, ReactanceUnitShown, out double v, out string unit))
+            var (number, token) = MatchValueFormat.SplitTypedValue(value);
+
+            // The typed unit picks the kind. No unit typed keeps the kind that is selected — or, when
+            // that is None, whichever one the field is currently displaying in.
+            ReactanceKind kind = Kind;
+            string? unit = null;
+            if (token.Length > 0)
+            {
+                if (MatchValueFormat.TryMatchUnit(token, MatchQuantity.Inductance) is { } henries)
+                {
+                    kind = ReactanceKind.L;
+                    unit = henries;
+                }
+                else if (MatchValueFormat.TryMatchUnit(token, MatchQuantity.Capacitance) is { } farads)
+                {
+                    kind = ReactanceKind.C;
+                    unit = farads;
+                }
+                else
+                {
+                    OnPropertyChanged();     // refuse it and put the field back
+                    return;
+                }
+            }
+
+            if (kind == ReactanceKind.None) kind = ReactanceKind.C;
+
+            var quantity = kind == ReactanceKind.L
+                ? MatchQuantity.Inductance
+                : MatchQuantity.Capacitance;
+            unit ??= ReactanceUnit == MatchValueFormat.AutoUnit
+                ? MatchValueFormat.AutoUnitFor(Reactance, quantity)
+                : ReactanceUnit;
+
+            if (!double.TryParse(number.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture,
+                                 out double raw) || !double.IsFinite(raw) || raw < 0)
             {
                 OnPropertyChanged();
                 return;
             }
+
+            double v = raw * MatchValueFormat.Scale(unit);
+
+            if (v == 0.0)
+            {
+                // Zero means "no reactance at this end". The VALUE is left standing so switching the
+                // kind back with the selector does not have to invent one.
+                if (Kind != ReactanceKind.None)
+                    _owner.SetTermination(End, Value with { Kind = ReactanceKind.None });
+                OnPropertyChanged();
+                return;
+            }
+
             // A unit typed by hand PINS the display unit; one that merely matched the Auto choice
             // leaves Auto alone, or every commit would quietly turn Auto off.
-            if (ReactanceUnit != MatchValueFormat.AutoUnit || unit != ReactanceUnitShown)
+            if (token.Length > 0 && (ReactanceUnit != MatchValueFormat.AutoUnit || unit != ReactanceUnitShown))
                 ReactanceUnit = unit;
-            _reactanceStaged = MatchValueFormat.Format(
-                v, ReactanceQuantity, unit, MatchDesignerSettings.EntryDigits).Text;
-            CommitReactance();
+
+            _reactanceStaged = null;
+            _owner.SetTermination(End, Value with { Kind = kind, Value = v });
             OnPropertyChanged();
         }
     }
@@ -352,14 +423,15 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         new(MatchProbeBlock.NoSchematic, "This Match is not open in a schematic.", null, null, "", 0);
 
     /// <summary>True when the Probe button is live.</summary>
-    public bool CanProbe => _availability.CanProbe && !_owner.IsProbing;
+    public bool CanProbe => _availability.CanProbe && !_owner.IsProbing && !_owner.IsOrphaned;
 
     /// <summary>
     /// Why the Probe button is what it is — <b>the disabled state always says WHICH</b> (§10.4). A
     /// greyed button with no reason is the failure mode this tooltip exists to prevent.
     /// </summary>
-    public string ProbeTooltip => _owner.IsProbing && _availability.CanProbe
-        ? "A probe is already running."
+    public string ProbeTooltip =>
+        _owner.IsOrphaned ? _owner.OrphanNote
+        : _owner.IsProbing && _availability.CanProbe ? "A probe is already running."
         : _availability.Reason;
 
     /// <summary>Runs the probe for this end.</summary>

@@ -93,7 +93,10 @@ public sealed record MatchTransformBracket(string Label, int TransformIndex, dou
 /// <summary>One end's grounded termination, as the pane places it.</summary>
 /// <param name="End">1 or 2 — which end of the ladder.</param>
 /// <param name="InstanceName">"Termination 1" / "Termination 2", the name the glyph is labelled with.</param>
-/// <param name="ResistanceText">The ladder's own port reference at this end, formatted with its unit.</param>
+/// <param name="ResistanceText">
+/// What the glyph is labelled with: the ladder's own port reference at this end, and — when that is
+/// not the resistance the specification declares — the declared one beside it.
+/// </param>
 /// <param name="X">The x its PIN lands on — the same point the spine ends at.</param>
 public sealed record MatchLadderTermination(int End, string InstanceName, string ResistanceText, double X);
 
@@ -177,11 +180,14 @@ public sealed class MatchLadderLayout
     /// Length of the stem from the brace's centre tip down to its label.
     /// </summary>
     /// <remarks>
-    /// <b>52.5, not 70</b> (owner, 2026-08-20: "reduce the curly brace vertical line length by a
-    /// factor of 0.75"). The stem is the brace's only straight vertical run; the four quarter-turns
-    /// are set by <see cref="BraceCurl"/> and are not what was being looked at.
+    /// <b>26.25</b> — halved on 2026-08-20 from the 52.5 the previous round had already cut from 70,
+    /// to the owner's "reduce the curly brace's vertical line length rendering (above the N1, N2
+    /// text)". The stem is the brace's ONLY straight vertical run, so it is the whole of what that
+    /// ask names; the four quarter-turns are <see cref="BraceCurl"/> and are not part of it.
+    /// <see cref="BracketRowPitch"/> is deliberately left alone — a shorter stem cannot make two
+    /// stacked braces collide, and shrinking the row pitch to match would.
     /// </remarks>
-    public const double BraceStem = 52.5;
+    public const double BraceStem = 26.25;
 
     /// <summary>Baseline of the brace's label, below the foot of the stem.</summary>
     public const double BraceLabelDrop = 80.0;
@@ -226,14 +232,16 @@ public sealed class MatchLadderLayout
     /// bracket, which is the honest rendering of "that pair no longer exists".
     /// </summary>
     /// <param name="ohmsText">
-    /// Formats a port reference resistance for the two termination glyphs. Optional so a caller that
-    /// only wants the ladder geometry — every test that predates the terminations — still compiles.
+    /// Formats one termination glyph's resistance, given which END it is and the resistance the
+    /// LADDER actually presents there. Taking the end as well as the number is what lets a caller say
+    /// when the two disagree — see <see cref="MatchLadderTermination.ResistanceText"/>. Optional so a
+    /// caller that only wants the ladder geometry still compiles.
     /// </param>
     public static MatchLadderLayout Build(
         MatchNetwork? network,
         IReadOnlyList<AppliedTransform>? applied,
         Func<MatchElement, string> valueText,
-        Func<double, string>? ohmsText = null)
+        Func<int, double, string>? ohmsText = null)
     {
         ArgumentNullException.ThrowIfNull(valueText);
         if (network is null || network.Elements.Count == 0) return Empty;
@@ -252,7 +260,7 @@ public sealed class MatchLadderLayout
         }
 
         var brackets = BuildBrackets(applied, xByName);
-        ohmsText ??= r => r.ToString("0.###", CultureInfo.InvariantCulture) + " Ω";
+        ohmsText ??= (_, r) => r.ToString("0.###", CultureInfo.InvariantCulture) + " Ω";
 
         return new MatchLadderLayout
         {
@@ -262,8 +270,8 @@ public sealed class MatchLadderLayout
             PortRightX = x,
             Terminations =
             [
-                new MatchLadderTermination(1, "Termination 1", ohmsText(network.R1), 0.0),
-                new MatchLadderTermination(2, "Termination 2", ohmsText(network.R2), x),
+                new MatchLadderTermination(1, "Termination 1", ohmsText(1, network.R1), 0.0),
+                new MatchLadderTermination(2, "Termination 2", ohmsText(2, network.R2), x),
             ],
         };
     }

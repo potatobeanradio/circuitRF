@@ -6,6 +6,240 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Match Designer round 5: editing a value that nothing owns, and four host-shaped omissions (2026-08-20)
+
+The owner's fifth round on the Match Designer. Most of it was layout; four items were the same class
+of bug, and one was a design problem with no obvious right answer.
+
+**1. An element value in a match network is a TARGET, not a setting — there is nothing to write it
+to.** The owner asked to "use inline text editor to change any value in the schematic… all other
+components are updated accordingly (using the available transforms N1, N2, N3 etc.) to maintain the
+frequency response". Every value in a synthesised ladder is fixed by the specification; the only
+degree of freedom is where each Norton transform sits (match.md §4.7). So a typed value runs
+`MatchElementSolve` — a sweep-plus-ternary search over one transform's range, with every candidate
+put through `MatchLinkage.Redistribute(link: true)` so `Π N²` stays on target. **Link is forced on
+regardless of the design's own Link setting**: without it the far termination is rescaled and the
+network is matched to a resistance the user does not have, which is precisely the "maintain the
+frequency response" the ask is about.
+
+**2. The search must be seeded with the rack AS IT STANDS, or an unreachable value rearranges every
+slider for nothing.** In a ladder whose transforms all act at one end, the elements at the other end
+are genuinely unreachable — every N gives the same value. The first version scored every sample
+identically, kept whichever it saw first, and applied it: the element did not move, the response did
+not move, and three sliders had jumped. Seeding `best` with the current setting and requiring a
+candidate to beat it by a real margin makes "it cannot be done" mean "nothing happens".
+
+**3. "Nothing may move" and "nothing CAN reach it" are different answers and must not share a
+message.** Both surface as "the search returned the rack unchanged". Eligibility (any transform
+unlocked, with a usable range?) is therefore counted in `MatchDesignerViewModel.SetElementValue`
+BEFORE the search runs, so an all-locked rack says "unlock one first" rather than "this value is
+unreachable" — which would send the user looking at the wrong thing entirely.
+
+**4. Four owner-reported bugs, one shape: a raw `PlotControl` is not a Data Display, and the host has
+to do the host's half.** Round 4 fixed four of these by giving the Designer a real
+`DataDisplayViewModel`; two more were left. `PlotControl.HandleDoubleTapAt` is documented as "called
+by the host on DoubleTapped" — `PlotContainerView` calls it and the Designer did not, so
+double-clicking a trace added no marker. `Delete` is a `KeyBinding` on `DataDisplayView` and this
+window had none, so a selected marker could not be deleted. **Neither fails loudly; both are simply a
+gesture that does nothing.** When hosting a Data Display control outside the Data Display, walk
+`PlotContainerView`/`DataDisplayView` and check what each one does that the new host does not.
+
+The Designer's Delete deliberately binds `DeleteSelectedMarkersCommand`, **not** the Data Display's
+own `DeleteSelected`: that method also removes selected plot CONTAINERS, and these two plots are
+declared undeletable in the same AXAML (`CanDeletePlot="False"`).
+
+**5. `SuggestedFileName` and `DefaultExtension` are not independent.** "Export Touchstone file picker
+shows .s2p twice in its suggested file name" — Avalonia's storage provider appends
+`DefaultExtension` to a `SuggestedFileName` that has none, so supplying both spelled it twice
+(`MN1.s2p.s2p`). Drop the extension from the NAME, never the `DefaultExtension`: that is what gives a
+name the user types without one an extension.
+
+**6. A non-modal editor window has to survive its subject being deleted.** Owner: "what happens if
+user goes back to schematic and deletes its instance? Perhaps the window becomes orphaned? I am ok
+with that. Just need to handle it gracefully." The window stays open and readable and every write is
+shut off at ONE choke point — `MatchDesignerViewModel.Commit`, which every setter in the class already
+funnels through. Guarding the two dozen setters instead would have been two dozen chances to miss
+one. It is reversible: an undo of the deletion puts the component back, `CheckOrphaned` sees it on the
+next model change, and the Designer is live again.
+
+**6b. Non-modal is not the same claim as "can go behind".** Follow-up report on the same day: "the
+Match Designer window is always in front. I can't get back to the workspace with the designer window
+open." The window had been non-modal since it was built — `Show(owner)`, never `ShowDialog`. But
+`Show(owner)` makes an **owned** window, and every platform pins an owned window above its owner in
+the z-order for as long as it exists; clicking the workspace raises the workspace *underneath* it.
+For a prompt that belongs to one window (the Flatten-to-Cell name dialog) that is exactly right. For
+a window the user works alongside their schematic it is indistinguishable from modal.
+
+`MatchDesignerWindow.ShowUnowned` therefore shows it as an independent top-level and takes on the two
+things the owner had been doing for free: **placement** (`WindowStartupLocation.CenterOwner` requires
+an `Owner`, so the position is computed from the owner's frame — before `Show`, off the declared size,
+because an unshown window reports no frame and repositioning afterwards is a visible jump — and
+clamped to the owner's screen) and **lifetime** (an owned window closes with its owner; this one is
+wired to). Dropping the owner without either would trade the bug for a window that opens in a corner
+and outlives the session.
+
+**The placement is a CASCADE off the workspace's top-left, not a centring** — corrected the same day
+("needs to open slightly down and to the right of the parent window that opened it"). A centred
+Designer covers exactly the part of the workspace a user reaches for to get back to it, which
+re-creates most of the feeling of the bug the unowning fixed. The 36-unit offset is scaled by
+`RenderScaling` or it is a different physical distance on every display.
+
+**And then the cascade was computed correctly and thrown away by its own safety clamp** — reported as
+"window placement on open is still in top left corner of my screen", which looked exactly like the fix
+never landing. **A window-placement clamp must not contain the new window's SIZE.** The obvious guard
+is "keep the whole window inside the working area", i.e. clamp `x` to `area.X + area.Width − width` —
+but that needs the width in the units `Window.Position` uses, and those are not knowable from managed
+code. Converting a DIP width with `RenderScaling` assumes `Screen.WorkingArea` is in physical pixels;
+**on macOS it is in points, the same space as the DIP width**, so a 1360-DIP window measured 2720
+against a 1728-wide area, the upper bound went negative, `Math.Max` floored it at `area.X`, and the
+window was pinned to exactly (0, 0).
+
+The guard is now expressed without the size at all — keep `MinOnScreen` (240) of the window's leading
+corner inside the working area. Unit-agnostic, it is what the guard was actually for (a window you can
+still grab), and cascading a small offset off a window that is itself on screen means it essentially
+never fires. The arithmetic moved to `Views/Match/MatchWindowPlacement`, pure and asserted by test with
+a working area SMALLER than the window — placement is otherwise only checkable by opening the
+application and looking, which is how this reached the owner twice.
+
+The position is also assigned **before `Show()` and again after**: before so a window positioned only
+once it is on screen is not a visible jump, after because whether a platform honours a `Move` on a
+window it has not shown yet is the platform's business, and the second assignment is a no-op when the
+first one took.
+
+**6c. The label hit bands OVERLAP, and first-match order gave the overlap to the wrong row.**
+Reported as "cannot double click on TermG value to get the inline text editor", and it was not about
+`TermG` — every value label had it. `SchematicComponent.LabelRowGeometry`'s band runs 76 world units
+above the baseline and 25.6 below (101.6 tall) on a row PITCH of 72, so consecutive rows share 29.6
+units. A hit-test that returns the first containing row hands all of that to the row above; because a
+label's glyphs sit above their own baseline, **the top 34% of the value text resolved to the
+instance-name row** — which is not editable, so the gesture did nothing and said nothing, about a
+third of the time. `SchematicHitTest.TestComponentLabels` has the same shape and the same latent
+issue; it is masked on a page, where a row is tens of pixels tall.
+
+Rows are now resolved by **distance to the row's own GLYPHS**, not by the band. Text intervals are
+`[baseline − capHeight, baseline]` — 70 units on a 72 pitch — so they abut and never overlap, which
+makes "is the point on this row's text?" a question with exactly one answer; only a point on no row's
+text falls back to the nearest. Anything derived from the bands (first match, nearest band centre)
+has to split the shared strip somewhere arbitrary and takes a slice of a real row's text with it.
+
+The second half of the same report: **a world-unit hit band is the wrong size in a pane that frames a
+whole network.** `MatchSchematicCanvas` therefore passes a tolerance of `PickPixels / _zoom`, so the
+pick area has a floor in screen pixels and shrinks to nothing as the user zooms in. The geometry moved
+to `MatchSchematicLabels` — pure, and asserted by calling it, because "the double-click does nothing"
+is a report with no way to tell a wrong band from a pointer that never arrived.
+
+**Neither was enough, and the third report is the one worth keeping: the target itself was one label
+row.** "I still cannot use inline text editor on the TermG Z value." The two fixes above were real
+defects and both were on the way to the wrong place — *which* row wins, and *how much slack* it gets,
+are irrelevant if the row is five pixels tall.
+
+**The measurement that ended it came out of the pane's own committed figure.** `match-designer.svg` is
+a vector capture of a real render, so its text elements carry the actual on-screen positions: the three
+`TermG` rows sit at y 204.3 / 209.15 / 214, a pitch of **4.85 px**, and `font-size="4.72"`. That fixes
+the pane's zoom at 0.0674 and every other number with it — the value text is 4.7 px tall, the label
+block 16.7, the `TermG` glyph 31.7 x 7.7. **A committed vector figure is a measurement of the running
+interface, and it is available without building or clicking anything** — worth remembering the next
+time a "the click does nothing" report needs a real number.
+
+**And none of that was it either.** Third report: "still not fixed", plus — independently confirming
+it — "the inline text edit also does not work in the regular schematic now."
+
+**A subclass of a templated Avalonia control renders NOTHING unless it declares the style key it is
+themed by.** Avalonia resolves a templated control's implicit `ControlTheme` by the control's OWN type
+and does not fall back to a base type. Fluent keys its theme on `typeof(TextBox)`, so
+`SchematicInlineEditBox` found no theme, got no `Template`, built no visual children and measured
+**zero high** — while remaining focusable, holding its text, and reporting `IsVisible = true`. Nothing
+throws and nothing warns. The gesture, the hit-test, the resolve and the open were all working the
+whole time; the box was simply invisible. One line fixes it:
+
+```csharp
+protected override Type StyleKeyOverride => typeof(TextBox);
+```
+
+**`UserControl` and `Window` subclasses are not at risk**, which is why this application is full of
+`: UserControl` views that render fine: Fluent themes those through a `Style` whose selector matches
+by "is", subclasses included, while every templated PRIMITIVE is themed by a `ControlTheme` keyed on
+an exact style key. `MatchRound5Tests.EverySubclassedTemplatedControl_IsThemed_OrItDrawsNothing`
+asserts the rule over the whole assembly with that exclusion, because the same one line took out the
+schematic PAGE's inline editor at the same time — the moment its AXAML started declaring this type
+instead of a bare `TextBox`, label editing broke on every schematic in the application, silently.
+
+**How it was finally found, which is the part worth keeping.** Three fixes had been reasoned from the
+source and all three were wrong about the cause. What settled it was building the real window under
+`tools/DocGen`'s headless host in a throwaway project, laying it out, and asking the live control
+directly: `AnchorFor` gave a screen point, `HitLabel` at that point returned the TermG's value row,
+`InputHitTest` returned the canvas, a raised two-click press produced `LabelDoubleTapped`, and the
+editor reported `IsVisible=true, Text='50 Ω'` — and then `CaptureRenderedFrame` showed the label with
+**nothing over it**. A plain `TextBox` in the same panel reported `template=set, visualChildren=1`
+against the subclass's `template=NULL, visualChildren=0`. **`tools/DocGen`'s `HeadlessHost` is a
+general-purpose way to drive and photograph the real UI without a display**, and it is the right first
+move for any "the click does nothing" report — not the fourth.
+
+So, alongside that, the target is now the whole COMPONENT. `MatchDesignerViewModel.ResolveInlineEdit` no longer takes a
+row at all: only the value row is editable — the type is what the synthesis produced and the name is
+the key every stored transform resolves through — so the other two rows had no meaning of their own to
+compete with, and were two thirds of the block sitting on top of the third that does something.
+`MatchSchematicLabels.HitGlyph` adds the symbol itself, which is the schematic page's own convention
+(`SchematicView.OnComponentDoubleTapped` opens the parameter editor for the component that was hit) and
+is the part a user actually aims at. A shunt arm's own `Ground` has no labels and still resolves to
+nothing, so empty space and grounds still re-frame. 4.7 px became 16.7, or 31.7 on the `TermG` that was
+reported.
+
+**6d. Nothing deselected a marker, because the Data Display does it from a control this window does
+not have.** "Clicking away from a marker needs to deselect it (even clicking in another panel or
+opening the inline text editor)." `PlotCanvasView.OnCanvasPointerPressed` clears the selection on a
+press against the empty plot-canvas BACKGROUND; the Designer lays its two plots out itself and has no
+canvas, so a marker selected by clicking its info box stayed selected for the session — highlighted,
+and still the target of Delete and the arrow keys. The handler is on the WINDOW and **tunnels**: a
+press that lands on a plot, a slider or a specification field is handled there and bubbles nowhere a
+deselect could hang off. Two exclusions, or the gesture would undo itself in the same event — a press
+inside a `MarkerInfoBoxView` (that IS the selecting gesture) and a Ctrl/Meta press (the additive one).
+
+**6e. A re-declared termination did not move the LADDER, only the specification.** "I changed the
+TermG and it updated in the Termination 1 specification, but did not update in the schematic (the old
+value was retained)." The glyph was not stale: it quotes `MatchNetwork.R1`/`R2`, the reference the
+plotted response is actually referenced to, which is deliberate. But **the far end's reference is the
+analysis end's scaled by Π N²** (§4.8), so re-declaring it does nothing until the transforms are
+re-solved — measured on the shipped default, setting termination 2 to 25 Ω left the ladder presenting
+15 Ω while the specification pane read 25, with the only hint (`Π N²  ✘ not reached`) three panes away.
+
+Two halves, and both are needed:
+
+- `MatchDesignerViewModel.RelinkAfterSpecChange` re-drives one unlocked transform at its CURRENT N so
+  `MatchLinkage.Redistribute` puts the others where the new required ratio needs them. This is the
+  same move `LinkTransforms`'s own setter already makes the instant it is switched on. It runs from
+  **user edits only** — never `SetTarget` or `OnModelChanged`, because a design must not rewrite
+  itself just by being opened, and a commit on load would put an edit nobody made on the schematic's
+  undo stack. It replaces the edit's own `Commit`, so an edit is still exactly one undo entry.
+- When the linkage cannot get there — Link off, every transform locked, the target outside their
+  ranges — the glyph reads `25 Ω (target 40 Ω)`. A symbol that silently displays a number the user did
+  not type is the bug however defensible the number is; `MatchLadderLayout.Build`'s `ohmsText` now
+  takes the END as well as the resistance, which is what lets the caller compare the two.
+
+**7. The Window menu now enumerates `ICrfMenuWindow`, not a list of window classes.**
+`WorkspaceViewModel.EnumerateWindowEntries` listed the shell plus floating `CrfHostWindow`s; a Match
+Designer is neither. An `OfType<MatchDesignerWindow>()` there would have been a menu the NEXT
+standalone editor window is silently missing from.
+
+**8. The inline text editor is now ONE control with two hosts.** `Controls/SchematicInlineEditBox`
+carries the box's appearance, the placement arithmetic (`LeftPad`/`TopPad`/`AscenderRatio`/
+`MarginFor`) and the label font-size rule; `SchematicView` and the Designer's network pane both use
+it. The page's own `CalcInlineEditWidth` was an assumed 0.55-em-per-character estimate and is now a
+real Skia measurement against the label typeface — the same correction `ReadoutStripView` already
+took for its strip editor. What is deliberately NOT shared is what a hit MEANS: on a page it writes an
+`EditableParameter`, here it runs the transform search above.
+
+`MatchSchematicCanvas` cannot call `SchematicHitTest.TestComponentLabels` for its own label
+hit-testing — that walks an `EditableSchematic`, and this pane is a projection with no edit model
+behind it. It reads `SchematicComponent.LabelRowGeometry` with the same port count and glyph
+half-height `SchematicRenderer.DrawLabels` passes, which is the part that must not drift.
+
+**9. `docs/user` was already 264 files out of date with its generator on this machine, BEFORE any of
+this round's changes** (verified by stashing the whole change and regenerating from a clean tree —
+same 264). Round 5 moves several Match figures, so a regeneration is genuinely owed; it was not done
+here because folding an unrelated 264-file diff into this change would bury it. Run
+`tools/DocGen/check-docs-current.sh` deliberately, as its own commit.
+
 ## The workspace figure: capturing the whole shell, and making a capture machine-independent (2026-08-20)
 
 Added `workspace-overview` and `workspace-regions` to the docs factory — the real `WorkspaceWindow`,

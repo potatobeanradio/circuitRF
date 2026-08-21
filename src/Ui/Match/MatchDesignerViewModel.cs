@@ -195,12 +195,64 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     private void OnModelChanged(object? sender, EventArgs e)
     {
         if (_isCommitting) return;
+        if (CheckOrphaned()) return;
         LoadFromComponent();
         Refresh(specChanged: true);
         // Availability depends on the SCHEMATIC and on nothing in the design, so it is recomputed
         // here and not in Refresh: a band edit or a slider cannot change what is wired to a pin, and
         // an extraction per keystroke on a hierarchical schematic reads every referenced cell off disk.
         RefreshProbeAvailability();
+    }
+
+    /// <summary>
+    /// True once the component this Designer edits has been deleted from its schematic.
+    /// </summary>
+    /// <remarks>
+    /// <b>The window is left OPEN and readable</b> (owner, 2026-08-20: "what happens if user goes back
+    /// to schematic and deletes its instance? Perhaps the window becomes orphaned? I am ok with that
+    /// — just need to handle it gracefully"). Closing it out from under the user would discard a
+    /// design they may still want to read the numbers off, and an undo of the delete would then have
+    /// no window to come back to. So the design freezes exactly as it stands and every path that
+    /// WRITES is shut off at its one choke point — <see cref="Commit"/> — rather than at each of the
+    /// two dozen setters that call it. Nothing is written to a component that is no longer in the
+    /// drawing, and nothing pretends to have been.
+    ///
+    /// <para>It is not permanent: an undo puts the component back, <see cref="CheckOrphaned"/> sees it
+    /// again on the next model change, and the Designer picks up where it left off.</para>
+    /// </remarks>
+    [ObservableProperty] private bool _isOrphaned;
+
+    /// <summary>The one line an orphaned Designer says, or empty.</summary>
+    public string OrphanNote => IsOrphaned
+        ? $"{InstanceName} has been deleted from its schematic. This window is now read-only — "
+          + "nothing it shows will be written back. Undo the deletion to make it live again."
+        : "";
+
+    partial void OnIsOrphanedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(OrphanNote));
+        OnPropertyChanged(nameof(CanFlatten));
+        OnPropertyChanged(nameof(HasPendingEdits));
+        Term1.RefreshProbeState();
+        Term2.RefreshProbeState();
+    }
+
+    /// <summary>
+    /// Re-tests whether the target component is still in the schematic, and flips
+    /// <see cref="IsOrphaned"/> when the answer changed. Returns true when the Designer is orphaned
+    /// and the caller should stop.
+    /// </summary>
+    private bool CheckOrphaned()
+    {
+        if (_schematicVm is null || _target is null) return IsOrphaned;
+
+        bool gone = _schematicVm.EditModel.FindComponent(_target.Id) is null;
+        if (gone != IsOrphaned)
+        {
+            IsOrphaned = gone;
+            RefreshFlatten();
+        }
+        return gone;
     }
 
     /// <summary>Unhooks everything. Safe to call twice.</summary>
@@ -256,7 +308,51 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         if (end == 1) _design.Term1 = replacement; else _design.Term2 = replacement;
         AdjustOrderForParity();
         Refresh(specChanged: true);
+        if (RelinkAfterSpecChange()) return;
         Commit();
+    }
+
+    /// <summary>
+    /// Re-solves the transform rack against the ratio the SPECIFICATION now requires, when Link is on.
+    /// Returns true when it did, in which case it has already refreshed and committed.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"I changed the TermG and it updated in the Termination 1
+    /// specification, but did not update in the schematic (the old value was retained)."</i>
+    ///
+    /// <para>Re-declaring a termination changes <c>MatchSynthesisResult.RequiredTransformRatio</c>,
+    /// but the stored N's are what they were, so <c>Π N²</c> is now off target and the FAR end's
+    /// reference — which is the analysis end's scaled by that product (§4.8) — does not move. Measured
+    /// on the shipped default: setting termination 2 to 25 Ω left the ladder presenting 15 Ω, so the
+    /// glyph went on reading the old number while the specification pane read the new one.</para>
+    ///
+    /// <para>With Link on, that is precisely the case the linkage exists to absorb, and this is the
+    /// same move <see cref="LinkTransforms"/>'s own setter already makes the moment it is switched on:
+    /// re-drive one unlocked transform at its CURRENT N and let <c>MatchLinkage.Redistribute</c> put
+    /// the others where the new product needs them. With Link off — or with every transform locked, or
+    /// the target outside their ranges — nothing is written, and the disagreement is then stated on
+    /// the glyph itself by <c>OhmsTextFor</c> rather than left to be noticed.</para>
+    ///
+    /// <para><b>Only user edits call this</b>, never <see cref="SetTarget"/> or
+    /// <see cref="OnModelChanged"/>: a design must not rewrite itself just by being opened, and a
+    /// commit on load would put an edit on the schematic's undo stack that nobody made.</para>
+    /// </remarks>
+    private bool RelinkAfterSpecChange()
+    {
+        if (!_design.LinkTransforms) return false;
+
+        int index = -1;
+        for (int i = 0; i < _design.Transforms.Count; i++)
+        {
+            if (_design.Transforms[i].Locked) continue;
+            if (i < Transforms.Count && Transforms[i].IsDropped) continue;
+            index = i;
+            break;
+        }
+        if (index < 0) return false;
+
+        SetTransformN(index, _design.Transforms[index].N);   // refreshes and commits
+        return true;
     }
 
     /// <summary>
@@ -682,6 +778,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     public void Commit()
     {
         if (_target is null || _schematicVm is null) return;
+        // A deleted component is not written to. See IsOrphaned — this is the single choke point
+        // every setter in this class already funnels through, which is why the guard is only here.
+        if (IsOrphaned) return;
 
         // Keep the stored fingerprint in step with the basis we just synthesised, so a reload
         // compares this session's synthesis against itself and only reports a mismatch when the

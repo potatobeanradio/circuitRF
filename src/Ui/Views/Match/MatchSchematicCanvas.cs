@@ -28,10 +28,13 @@ namespace CircuitRF.Ui.Views.Match;
 /// connected-pin markers, the LOD fade — comes from the editor's own renderer through
 /// <see cref="MatchSchematicModel"/>, so none of it can drift out of step with a schematic page.
 ///
-/// <para><b>Nothing is editable and there is no selection.</b> No overlay is passed to the renderer,
-/// no hit-testing is done, and no pointer gesture reaches the design: the only two the control
-/// accepts are the two the owner asked for. The Designer edits a network through its own panes; a
-/// click on this one must never be able to move a component that has no persisted position.</para>
+/// <para><b>There is no selection and nothing can be MOVED.</b> No overlay is passed to the renderer
+/// and no gesture can reposition a component that has no persisted position to reposition. What the
+/// pane does accept, since 2026-08-20, is a double-click on a VALUE label — which opens the schematic
+/// editor's own inline text box over it (<see cref="Controls.SchematicInlineEditBox"/>) and hands the
+/// typed value to the Designer. The canvas only says WHICH label was hit and WHERE it is on screen;
+/// what a value means and what changing it costs is the view-model's, in
+/// <c>MatchDesignerViewModel.InlineEdit.cs</c>.</para>
 /// </remarks>
 public sealed class MatchSchematicCanvas : Control
 {
@@ -132,6 +135,7 @@ public sealed class MatchSchematicCanvas : Control
     {
         if (!Fit()) return;
         InvalidateVisual();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -184,23 +188,28 @@ public sealed class MatchSchematicCanvas : Control
         _fitted = true;
         e.Handled = true;
         InvalidateVisual();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
-    /// Starts a pan — <b>on the LEFT button only</b>.
+    /// Starts a pan — <b>on the MIDDLE button only</b>, exactly as a schematic page does.
     /// </summary>
     /// <remarks>
-    /// Capturing the pointer on any button meant a right-click both panned the view and opened the
-    /// pane's context menu (added 2026-08-20 for <c>Copy</c>), so the drawing slid a few pixels under
-    /// the menu the user was aiming at. Panning is a left-drag gesture; the right button belongs to
-    /// the menu.
+    /// <b>Owner, 2026-08-20:</b> <i>"panning in the schematic view should work using center mouse
+    /// button (just like regular schematic), not the left mouse button."</i>
+    /// <c>SchematicCanvas</c> pans on <c>IsMiddleButtonPressed</c> and reserves the left button for
+    /// what the pointer is aimed AT; this pane now agrees, which is what frees the left button for
+    /// the double-click that opens a label's inline editor. The right button still belongs to the
+    /// context menu — a right-drag that also panned slid the drawing under the menu the user was
+    /// aiming at, which is the bug that made this a left-only gesture in the first place.
     /// </remarks>
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (!e.GetCurrentPoint(this).Properties.IsMiddleButtonPressed) return;
         _dragFrom = e.GetPosition(this);
         e.Pointer.Capture(this);
+        e.Handled = true;
     }
 
     /// <inheritdoc/>
@@ -214,6 +223,7 @@ public sealed class MatchSchematicCanvas : Control
         _dragFrom = to;
         _fitted = true;
         InvalidateVisual();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc/>
@@ -231,20 +241,71 @@ public sealed class MatchSchematicCanvas : Control
         _dragFrom = null;
     }
 
-    /// <summary>Double-click re-frames — the way back from a pan that lost the drawing.</summary>
+    /// <summary>
+    /// Double-click on a value label opens its inline editor; anywhere else it re-frames — the way
+    /// back from a pan that lost the drawing.
+    /// </summary>
     protected override void OnDoubleTapped(TappedEventArgs e)
     {
         base.OnDoubleTapped(e);
-        ZoomToFit();
+        if (HitLabel(e.GetPosition(this)) is { } hit)
+            LabelDoubleTapped?.Invoke(this, hit);
+        else
+            ZoomToFit();
         e.Handled = true;
     }
 
-    /// <inheritdoc/>
-    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    // ── Label hit-testing, for the inline editor ──────────────────────────────
+
+    /// <summary>Raised when a component label is double-clicked. The HOST decides what is editable.</summary>
+    public event EventHandler<MatchSchematicLabelHit>? LabelDoubleTapped;
+
+    /// <summary>
+    /// Raised after any zoom, pan or re-fit, so an open editor can follow the label it sits on.
+    /// </summary>
+    public event EventHandler? ViewportChanged;
+
+    /// <summary>
+    /// The label under one point in control-local pixels, or null.
+    /// </summary>
+    /// <remarks>
+    /// The geometry is <see cref="MatchSchematicLabels"/>'s — pure, and asserted directly by test.
+    /// All this adds is the two things only a live control knows: the world-to-screen mapping, and
+    /// whether the renderer is drawing labels at this zoom at all.
+    /// </remarks>
+    public MatchSchematicLabelHit? HitLabel(Point p)
     {
-        base.OnSizeChanged(e);
-        if (!_fitted) ZoomToFit();
+        // Zoomed far enough out, the renderer draws no labels. Offering a click target for text that
+        // is not on screen would open an editor over nothing.
+        if (!SchematicRenderer.LabelsVisibleAt(_zoom)) return null;
+
+        // The pick tolerance is a SCREEN distance converted back to world units. A label row is about
+        // nine pixels tall at the zoom this pane frames a whole network at, and a world-unit-only band
+        // is a target the user has to fight — see MatchSchematicLabels.HitTest. Zoomed in, PickPixels
+        // divided by a large zoom is a fraction of a world unit and the tolerance vanishes.
+        double tolerance = PickPixels / _zoom;
+        return ToScreen(MatchSchematicLabels.HitTest(
+            _model, p.X / _zoom + _panX, p.Y / _zoom + _panY, tolerance));
     }
+
+    /// <summary>How far off a label the pointer may be and still pick it, screen pixels.</summary>
+    private const double PickPixels = 4.0;
+
+    /// <summary>
+    /// Re-derives one label's on-screen anchor at the CURRENT zoom and pan — what an open editor needs
+    /// after the view moves under it. Null when that label is no longer in the drawing.
+    /// </summary>
+    public MatchSchematicLabelHit? AnchorFor(string componentId, int row) =>
+        ToScreen(MatchSchematicLabels.Locate(_model, componentId, row));
+
+    private MatchSchematicLabelHit? ToScreen(MatchLabelHit? hit) =>
+        hit is null
+            ? null
+            : new MatchSchematicLabelHit(
+                hit.ComponentId, hit.Row, hit.Text,
+                ScreenX: (hit.BaseX + hit.PrefixWidth - _panX) * _zoom,
+                ScreenY: (hit.BaselineY - _panY) * _zoom,
+                FontSize: Controls.SchematicInlineEditBox.FontSizeAt(_zoom));
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -417,3 +478,15 @@ public sealed class MatchSchematicCanvas : Control
         }
     }
 }
+
+/// <summary>
+/// One component label in the Designer's network pane, as the canvas found it.
+/// </summary>
+/// <param name="ComponentId">The projected component's id — an element's ladder name, or "Termination 1".</param>
+/// <param name="Row">Which label row: 0 type, 1 instance name, 2 the value.</param>
+/// <param name="Text">The EDITABLE part of the row — "1.53 nH", not "L = 1.53 nH".</param>
+/// <param name="ScreenX">Where that part's text starts, in the canvas's own pixels.</param>
+/// <param name="ScreenY">Its Skia baseline, in the same pixels.</param>
+/// <param name="FontSize">The point size the row is drawn at, at the current zoom.</param>
+public sealed record MatchSchematicLabelHit(
+    string ComponentId, int Row, string Text, double ScreenX, double ScreenY, double FontSize);

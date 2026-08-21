@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using CircuitRF.Core.Matching;
@@ -67,23 +68,45 @@ public sealed class MatchDesignerHostingTests(ITestOutputHelper output)
     {
         string xaml = ReadSource("src", "Ui", "Views", "Match", "MatchDesignerWindow.axaml");
 
-        Assert.Contains("Width=\"1280\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Height=\"860\"", xaml, StringComparison.Ordinal);
+        // The opening size is the GOLDEN RATIO (owner, 2026-08-20: "have the Match Designer window
+        // size open at the Golden Ratio"). Asserted as the RATIO rather than as two literals, so the
+        // claim survives a future resize and a future resize cannot quietly break the claim.
+        var size = System.Text.RegularExpressions.Regex.Match(
+            xaml, @"Width=""(\d+)""\s+Height=""(\d+)""");
+        Assert.True(size.Success, "the window declares no Width/Height pair");
+        double w = double.Parse(size.Groups[1].Value, CultureInfo.InvariantCulture);
+        double h = double.Parse(size.Groups[2].Value, CultureInfo.InvariantCulture);
+        Assert.Equal(1.618, w / h, 2);
         Assert.Contains("MinWidth=\"1000\"", xaml, StringComparison.Ordinal);
         Assert.Contains("MinHeight=\"700\"", xaml, StringComparison.Ordinal);
         Assert.Contains("CanResize=\"True\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("WindowStartupLocation=\"CenterOwner\"", xaml, StringComparison.Ordinal);
+        // No WindowStartupLocation in the AXAML: the Designer is shown UNOWNED (below), and
+        // CenterOwner needs an Owner. ShowUnowned sets the mode and the position together.
+        Assert.DoesNotContain("WindowStartupLocation=", xaml, StringComparison.Ordinal);
 
         // Undo/redo bind to the view-model's commands, which delegate to the SCHEMATIC's stack.
         Assert.Contains("Command=\"{Binding UndoCommand}\"", xaml, StringComparison.Ordinal);
 
-        // ...and THIS WINDOW is opened with Show(), never ShowDialog(): non-modal is what lets the
-        // user watch the schematic update while they design. A dialog the Designer itself opens —
-        // MN-5's Flatten to Cell name prompt — is modal and rightly so; the claim here is about the
-        // Designer window, so it is asserted against the call that opens the Designer window.
+        // ...and THIS WINDOW is opened with Show(), never ShowDialog(), and never with an OWNER.
+        //
+        // Non-modal was never enough on its own (owner-reported, 2026-08-20: "the Match Designer
+        // window is always in front. I can't get back to the workspace with the designer window
+        // open"). An owned window is kept above its owner in the z-order by every platform for as
+        // long as it exists, so Show(owner) is exactly as unreachable-behind as a dialog. The
+        // Designer is therefore an independent top-level, placed over the workspace by ShowUnowned
+        // and closed with it. A dialog the Designer itself opens — MN-5's Flatten to Cell name prompt
+        // — is still modal and rightly so, which is why the claim is asserted against the call that
+        // opens the DESIGNER.
         string cs = StripComments(ReadSource("src", "Ui", "Views", "Match", "MatchDesignerWindow.axaml.cs"));
-        Assert.Contains("window.Show(owner", cs, StringComparison.Ordinal);
+        Assert.Contains("ShowUnowned(window, owner)", cs, StringComparison.Ordinal);
+        Assert.DoesNotContain("window.Show(owner", cs, StringComparison.Ordinal);
         Assert.DoesNotContain("window.ShowDialog", cs, StringComparison.Ordinal);
+
+        // ShowUnowned's two obligations, both of which the owner had been discharging for it.
+        Assert.Contains("WindowStartupLocation.Manual", cs, StringComparison.Ordinal);
+        Assert.Contains("CascadedFrom(owner)", cs, StringComparison.Ordinal);
+        Assert.Contains("window.Position = at;", cs, StringComparison.Ordinal);
+        Assert.Contains("owner.Closed += CloseWithOwner", cs, StringComparison.Ordinal);
     }
 
     [Fact]

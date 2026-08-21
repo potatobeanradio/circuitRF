@@ -207,6 +207,29 @@ public static class MatchValueFormat
         return double.IsFinite(value);
     }
 
+    /// <summary>
+    /// Splits a typed <c>"value unit"</c> string into its number and its unit token, without deciding
+    /// what either means.
+    /// </summary>
+    /// <remarks>
+    /// <b>The termination's reactance field reads the KIND off the unit</b> (owner, 2026-08-20: "if
+    /// user sets it to a pH or nH — or any H — unit, then the X component becomes an L; if it's
+    /// changed to any farad unit, then it becomes a C"). That decision needs the token BEFORE a
+    /// quantity is chosen, which is the one thing <see cref="TryParseWithUnit"/> cannot offer: it takes
+    /// the quantity as an input. So the split is exposed and the caller matches the token against
+    /// whichever ladders it is willing to accept, with <see cref="TryMatchUnit"/>.
+    /// </remarks>
+    public static (string Number, string Unit) SplitTypedValue(string? text)
+    {
+        string trimmed = (text ?? "").Trim();
+        int split = InlineEditSplit(trimmed);
+        return split <= 0 ? (trimmed, "") : (trimmed[..split].Trim(), trimmed[split..].Trim());
+    }
+
+    /// <summary>The ladder spelling a typed unit token means for one quantity, or null.</summary>
+    public static string? TryMatchUnit(string? token, MatchQuantity quantity) =>
+        string.IsNullOrEmpty(token) ? null : MatchUnit(token, quantity);
+
     /// <summary>Index of the unit token in a "value unit" string, or -1 when there is none.</summary>
     private static int InlineEditSplit(string text)
     {

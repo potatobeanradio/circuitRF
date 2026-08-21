@@ -225,7 +225,7 @@ public sealed class MatchRound4Tests(ITestOutputHelper output)
         {
             Name = "CFano_N1_2_N2_3", Type = ElementType.C, IsShunt = true, Value = 1.23e-12,
         });
-        var layout = MatchLadderLayout.Build(net, null, _ => "1.23 pF", r => $"{r:F0} Ω");
+        var layout = MatchLadderLayout.Build(net, null, _ => "1.23 pF", (_, r) => $"{r:F0} Ω");
         var model = MatchSchematicModel.Build(layout);
 
         var comp = model.Components.Single(c => c.Id == "CFano_N1_2_N2_3");
@@ -331,14 +331,16 @@ public sealed class MatchRound4Tests(ITestOutputHelper output)
     // ══ The brace ════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// <b>The brace's stem is three quarters of what it was</b> (owner: "reduce the curly brace
-    /// vertical line length by a factor of 0.75"). The stem is the brace's only straight vertical run;
-    /// the label hangs the same distance below its foot, so the whole assembly moves up with it.
+    /// <b>The brace's stem has been shortened twice</b> — 70 to 52.5 ("reduce the curly brace vertical
+    /// line length by a factor of 0.75"), then 52.5 to 26.25 on 2026-08-20 ("reduce the curly brace's
+    /// vertical line length rendering above the N1, N2 text"). The stem is the brace's only straight
+    /// vertical run; the label hangs the same distance below its foot, so the whole assembly moves up
+    /// with it.
     /// </summary>
     [Fact]
-    public void TheBraceStem_IsThreeQuartersOfItsFormerLength()
+    public void TheBraceStem_IsHalfOfWhatRound4LeftIt()
     {
-        Assert.Equal(70.0 * 0.75, MatchLadderLayout.BraceStem, 9);
+        Assert.Equal(70.0 * 0.75 * 0.5, MatchLadderLayout.BraceStem, 9);
 
         var stem = MatchBraceGeometry.Stem(0, 1000, 900, MatchLadderLayout.BraceCurl,
                                            MatchLadderLayout.BraceStem,

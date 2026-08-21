@@ -12,10 +12,33 @@ namespace CircuitRF.Ui.Renderers;
 public static class SchematicRenderer
 {
     private const double LodThreshold        = 6.0;
-    // Labels/port markers fade out below this on-screen component width. Lowered from 22.0 so text stays
-    // rendered ~2 more scroll-wheel zoom-out clicks (ZoomFactor 1.15 → 22.0 / 1.15² ≈ 16.64).
-    private const double SimplifiedThreshold = 16.64;
+    // Labels/port markers fade out below this on-screen component width.
+    //
+    // Lowered TWICE, both times to the same owner ask ("keep the text rendering for 2 more zoom out
+    // clicks of the scroll wheel before the text is no longer rendered"): 22.0 to 16.64 on
+    // 2026-06-24, and 16.64 to 12.583 on 2026-08-20. Each step divides by 1.15**2 — the canvas's own
+    // ZoomFactor squared — so "two scroll-wheel clicks" is arithmetic here rather than a number
+    // somebody liked. It moves the Match Designer's network pane with it: that pane draws through
+    // this renderer, which is the whole reason it was built on SchematicModel.
+    private const double SimplifiedThreshold = 12.583;
     private const double MinGridSpacingPx    = 4.0;
+
+    /// <summary>
+    /// The nominal on-screen component width at one zoom level — the quantity both LOD thresholds
+    /// above are compared against.
+    /// </summary>
+    public static double ComponentPixelWidth(double zoom) => zoom * 300.0;
+
+    /// <summary>
+    /// True when component LABELS are actually drawn at <paramref name="zoom"/>.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so a hit-test cannot offer a click target for text the renderer is not drawing. The
+    /// Match Designer's network pane opens an inline editor on a label double-click, and without this
+    /// a click on where a faded-out label WOULD be would open an editor over nothing.
+    /// </remarks>
+    public static bool LabelsVisibleAt(double zoom) => ComponentPixelWidth(zoom) >= SimplifiedThreshold;
+
     private const double CoarseGridRatio     = 10.0;
 
     // Single switch point for symbol stroke joins (schematic + symbol editor).

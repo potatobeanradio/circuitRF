@@ -22,10 +22,6 @@ namespace CircuitRF.Ui.Views.Content;
 
 public partial class SchematicView : UserControl
 {
-    // Ascender ratio measured from the Skia font the renderer uses.
-    // Computed once at construction — update SkiaFonts.PlexRegular to switch fonts.
-    private readonly double _fontAscenderRatio;
-
     // Tracks the VM we're currently subscribed to so we can unsubscribe on retarget.
     private SchematicViewModel? _subscribedVm;
 
@@ -35,7 +31,6 @@ public partial class SchematicView : UserControl
     public SchematicView()
     {
         InitializeComponent();
-        _fontAscenderRatio = MeasureAscenderRatio();
 
         DataContextChanged += OnDataContextChanged;
 
@@ -807,7 +802,7 @@ public partial class SchematicView : UserControl
         _inlineEditAnchorLeft = sx - TextBoxLeftPad;
         InlineEditBox.Margin  = new Thickness(
             _inlineEditAnchorLeft,
-            sy - TextBoxTopPad - fontSize * _fontAscenderRatio,
+            sy - TextBoxTopPad - fontSize * SchematicInlineEditBox.AscenderRatio,
             0, 0);
     }
 
@@ -878,22 +873,12 @@ public partial class SchematicView : UserControl
 
     // ── Shared inline edit box helper ─────────────────────────────────────────
 
-    // TextBox has Padding="4,2" (set in AXAML) and FontFamily=IBMPlexSans to match the renderer.
-    // Text left edge is at Margin.Left + TextBoxLeftPad.
-    // Skia baseline aligns with Margin.Top + TextBoxTopPad + fontSize * _fontAscenderRatio.
-    // Height is left unset so Avalonia auto-sizes to the font's natural line height (no multiplier needed).
-    private const double TextBoxLeftPad = 4.0;
-    private const double TextBoxTopPad  = 2.0;
-
-    // Measures the ascender ratio from the Skia typeface the renderer uses.
-    // Skia's Ascent is negative (distance above baseline); negating gives the ratio.
-    // Works for any font — swap SkiaFonts.PlexRegular to change the label font everywhere.
-    private static double MeasureAscenderRatio()
-    {
-        using var font = new SKFont(SkiaFonts.PlexRegular, 100f);
-        font.GetFontMetrics(out var m);
-        return -m.Ascent / 100.0;
-    }
+    // The box's padding, its ascender ratio and its width rule all live on the control itself now
+    // (SchematicInlineEditBox), because the Match Designer's network pane hosts the SAME editor over
+    // its own canvas and the two must place it identically. Height is still left unset so Avalonia
+    // auto-sizes to the font's natural line height.
+    private const double TextBoxLeftPad = SchematicInlineEditBox.LeftPad;
+    private const double TextBoxTopPad  = SchematicInlineEditBox.TopPad;
 
     // TextBox Margin.Left anchor (= text left edge - TextBoxLeftPad); fixed while user types.
     private double _inlineEditAnchorLeft;
@@ -941,7 +926,7 @@ public partial class SchematicView : UserControl
         // Height is not set explicitly — Avalonia auto-sizes to the font's natural line height.
 
         _inlineEditAnchorLeft = screenX - TextBoxLeftPad;
-        double top            = screenY - TextBoxTopPad - fontSize * _fontAscenderRatio;
+        double top            = screenY - TextBoxTopPad - fontSize * SchematicInlineEditBox.AscenderRatio;
         InlineEditBox.Margin  = new Thickness(_inlineEditAnchorLeft, top, 0, 0);
         InlineEditBox.Text    = initialText;
 
@@ -961,11 +946,10 @@ public partial class SchematicView : UserControl
         InlineEditBox.Margin = new Thickness(_inlineEditAnchorLeft, InlineEditBox.Margin.Top, 0, 0);
     }
 
-    private static double CalcInlineEditWidth(string text, double fontSize)
-    {
-        double charWidth = fontSize * 0.55;  // average char width for IBM Plex Sans proportional font
-        return Math.Max(fontSize * 2.0, text.Length * charWidth + fontSize * 0.8);
-    }
+    // A MEASUREMENT against the label typeface, not an assumed per-character advance — the same
+    // correction ReadoutStripView already took for its own strip editor (RESOLVED.md, 2026-08-13).
+    private static double CalcInlineEditWidth(string text, double fontSize) =>
+        SchematicInlineEditBox.WidthFor(text, fontSize);
 
     private void OnInlineEditWheel(object? sender, PointerWheelEventArgs e)
     {

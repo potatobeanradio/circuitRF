@@ -12,6 +12,7 @@ using CircuitRF.Engine;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using NumFlat;
 using RfCore;
 
@@ -91,6 +92,24 @@ public sealed partial class MatchDesignerViewModel
         MagnitudePlot.Axes.LockedPanning = true;
         PhasePlot.Axes.LockedPanning     = true;
         PlotHost.SelectOnly((PlotContainerViewModel?)null);
+    }
+
+    /// <summary>
+    /// Removes every SELECTED marker from its trace, as one undoable step on the plot host's own
+    /// stack — what the Delete key does on a Data Display canvas.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately not <c>DataDisplayViewModel.DeleteSelected</c>.</b> That method also removes
+    /// selected PLOT CONTAINERS, and this window's two plots are not deletable — the AXAML disables
+    /// their own Delete Plot for the same reason (there is nothing to delete them from, and their
+    /// traces are rebuilt from the design on every edit). A shared gesture that could silently take a
+    /// plot with the marker would be worse than no gesture.
+    /// </remarks>
+    [RelayCommand]
+    public void DeleteSelectedMarkers()
+    {
+        foreach (var box in PlotHost.MarkerInfoBoxes.Where(b => b.IsSelected).ToList())
+            box.Container.RemoveMarkerWithUndo(box.Marker, box.Trace);
     }
 
     /// <summary>Seed logical width of one response plot — the view re-sizes both to the pane.</summary>
@@ -306,7 +325,9 @@ public sealed partial class MatchDesignerViewModel
         MagnitudePlot.Traces.Add(s11);
         MagnitudePlot.Traces.Add(s21);
         MagnitudePlot.CustomTitleOn = true;
-        MagnitudePlot.CustomTitle = "Design response";
+        // Named for what is ON it, not for what it is of (owner, 2026-08-20). "Design response" was
+        // true of both plots and so distinguished neither.
+        MagnitudePlot.CustomTitle = "Return and Insertion Loss";
         MagnitudePlot.Autoscale(force: true);
 
         var phase = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Phase, false, PrimaryStyle())
@@ -317,7 +338,7 @@ public sealed partial class MatchDesignerViewModel
         var delay = GroupDelayTrace(snp, PhasePlot.FreqUnits);
         if (delay is not null) PhasePlot.Traces.Add(delay);
         PhasePlot.CustomTitleOn = true;
-        PhasePlot.CustomTitle = "S21 phase and group delay";
+        PhasePlot.CustomTitle = "Phase and Group Delay";
         PhasePlot.Autoscale(force: true);
 
         // The traces the markers were on have just been REPLACED — an edit rebuilds both plots from

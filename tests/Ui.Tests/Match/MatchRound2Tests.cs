@@ -281,9 +281,15 @@ public sealed class MatchRound2Tests
         })
             Assert.DoesNotContain($"Text=\"{shouted}\"", xaml, StringComparison.Ordinal);
 
+        // "Band", "Response" and "Network" were RENAMED on 2026-08-20 (owner: "change the Network
+        // text above the schematic to Impedance Matching Network"; "change Band in the specification
+        // panel to Frequency Band; change Response below it to Filter Response"). The sentence-case
+        // rule is what this test is about and it still holds of all three — the right-hand plots pane
+        // is still headed "Response", so that spelling is checked as well.
         foreach (string heading in new[]
         {
-            "Specification", "Band", "Response", "Order", "Network", "Transforms", "Solutions",
+            "Specification", "Frequency Band", "Filter Response", "Order",
+            "Impedance Matching Network", "Transforms", "Solutions", "Response",
         })
             Assert.Contains($"Text=\"{heading}\"", xaml, StringComparison.Ordinal);
     }

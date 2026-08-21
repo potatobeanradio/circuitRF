@@ -1,3 +1,13 @@
+<!-- The Match Designer window (match.md §9).
+
+     Its opening size is the GOLDEN RATIO, 1360 : 841 (owner, 2026-08-20: "have the Match Designer
+     window size open at the Golden Ratio"). The two response plots inside it are already laid out at
+     1.618:1 by AspectRatioPanel, so the window and its contents now agree. MinHeight stays 700 —
+     1000 / 1.618 is 618, and a Designer that short cannot show the specification pane at all.
+
+     There is deliberately NO WindowStartupLocation here: the Designer is shown UNOWNED so it can go
+     behind the workspace, and CenterOwner needs an Owner. MatchDesignerWindow.ShowUnowned sets both
+     the location mode and the position — see its own note on why the owner had to go. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mvm="using:CircuitRF.Ui.Matching"
@@ -10,10 +20,9 @@
         x:Class="CircuitRF.Ui.Views.Match.MatchDesignerWindow"
         x:DataType="mvm:MatchDesignerViewModel"
         Title="{Binding Title}"
-        Width="1280" Height="860"
+        Width="1360" Height="841"
         MinWidth="1000" MinHeight="700"
-        CanResize="True"
-        WindowStartupLocation="CenterOwner">
+        CanResize="True">
 
     <!-- Undo/Redo act on the OWNING SCHEMATIC's stack — this window has none of its own, exactly as
          ParameterEditorDialog does. Every committed edit here is one SetParametersCommand, so a
@@ -24,6 +33,20 @@
         <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}"/>
         <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding RedoCommand}"/>
         <KeyBinding Gesture="Ctrl+Y"       Command="{Binding RedoCommand}"/>
+        <!-- Delete removes a SELECTED MARKER, exactly as it does on a Data Display canvas (owner,
+             2026-08-20: "clicking <delete> keystroke with a marker selected does not remove the
+             marker from the trace"). DataDisplayView carries the same gesture; this window has no
+             canvas and so had nothing bound at all. It is deliberately NOT DeleteSelected: that also
+             removes selected PLOT containers, and the Designer's two plots are not deletable
+             (CanDeletePlot="False" on both). A TextBox that has focus handles Delete itself, so
+             typing is unaffected.
+
+             Delete ONLY, not Backspace as well: several controls in this window are focusable
+             without being text fields (InlineEditText at rest, the icon selectors), and a Backspace
+             landing on one of those would delete a marker the user was not looking at. The Data
+             Display binds Delete alone, and parity with the surface the owner says already works is
+             the point of the fix. -->
+        <KeyBinding Gesture="Delete"       Command="{Binding DeleteSelectedMarkersCommand}"/>
     </Window.KeyBindings>
 
     <Window.Resources>
@@ -41,7 +64,7 @@
                 </Grid>
 
                 <Grid ColumnDefinitions="Auto,*">
-                    <mv:MatchPictogramControl Width="52" Height="76" VerticalAlignment="Center"
+                    <mv:MatchPictogramControl Width="44" Height="70" VerticalAlignment="Center"
                                               Pictogram="{Binding Pictogram}"
                                               ResistorOnLeft="{Binding ResistorOnLeft}"
                                               Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
@@ -51,10 +74,10 @@
                          2026-08-19: "see how the Array Inductance panel looks… get inspired by it").
                          A column of these is readable at a glance, which a mixed row of radio
                          buttons, boxes and combos never was. -->
-                    <StackPanel Grid.Column="1" Spacing="3" Margin="8,0,0,0">
+                    <StackPanel Grid.Column="1" Spacing="3" Margin="6,0,0,0">
                         <Grid ColumnDefinitions="Auto,*">
                             <TextBlock Classes="detailLabel" Text="Topology"/>
-                            <ddc:IconSelectButton Grid.Column="1" Width="62" Height="19"
+                            <ddc:IconSelectButton Grid.Column="1" Width="56" Height="19"
                                                   HorizontalAlignment="Right"
                                                   ItemsSource="{x:Static mvm:MatchTerminationViewModel.TopologyOptions}"
                                                   SelectedItem="{Binding TopologyChoice, Mode=TwoWay}"
@@ -75,10 +98,21 @@
                                                 ToolTip.Tip="Double-click to edit. Type a unit (50, 50 Ω, 1.2 kΩ) — the number is pre-selected and the unit is left alone."/>
                         </Grid>
 
+                        <!-- ONE row for the reactance, not two (owner, 2026-08-20: "replace the
+                             'X' text in the Termination readouts with the C, L, or - selector;
+                             reduce [it] to be only 1 character wide; move the Value readout up a row
+                             to occupy the former place where the C, L, or - selector used to be").
+                             The selector is the row's LABEL now — it names the quantity beside it,
+                             which is what the bare "X" was doing and less well.
+
+                             The value is EDITABLE WHATEVER THE KIND IS, "–" included: a typed unit
+                             sets the kind (any henry makes it an L, any farad a C) and a typed 0
+                             clears it, so this one field is the whole reactance. Disabling it on "–"
+                             would be a door that locks behind you — see
+                             MatchTerminationViewModel.ReactanceEntry. -->
                         <Grid ColumnDefinitions="Auto,*">
-                            <TextBlock Classes="detailLabel" Text="X"/>
-                            <ddc:IconSelectButton Grid.Column="1" Width="62" Height="19"
-                                                  HorizontalAlignment="Right"
+                            <ddc:IconSelectButton Width="24" Height="19"
+                                                  HorizontalAlignment="Left"
                                                   ItemsSource="{x:Static mvm:MatchTerminationViewModel.KindOptions}"
                                                   SelectedItem="{Binding KindChoice, Mode=TwoWay}"
                                                   ToolTip.Tip="C, L, or – for purely resistive (Q = 0, nothing to absorb)">
@@ -89,13 +123,9 @@
                                     </DataTemplate>
                                 </ddc:IconSelectButton.ItemTemplate>
                             </ddc:IconSelectButton>
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding HasReactance}">
-                            <TextBlock Classes="detailLabel" Text="Value"/>
-                            <ctl:InlineEditText Grid.Column="1" Classes="val"
+                            <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
                                                 Text="{Binding ReactanceEntry, Mode=TwoWay}"
-                                                ToolTip.Tip="Double-click to edit. Type a unit (1.5 pF, 2.2 nH) to pin the display unit."/>
+                                                ToolTip.Tip="Double-click to edit. The UNIT decides the kind: any henry (2.2 nH) makes it an L, any farad (1.5 pF) a C, and 0 clears it to –."/>
                         </Grid>
                     </StackPanel>
                 </Grid>
@@ -272,30 +302,52 @@
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,6">
             <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
                        VerticalAlignment="Center"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <ToggleButton FontSize="11" Padding="8,3"
+            <!-- Icons, not words (owner, 2026-08-20: "change the Solutions, Export, Help and Close
+                 buttons to icons, similar to how the Schematic editor toolbar looks"). That toolbar's
+                 shape exactly: a bare MaterialIcon at 16 px in a Padding="6,3" button, with the word
+                 that used to be on the face moved into ToolTip.Tip — nothing is lost, because a
+                 toolbar button with no tooltip is the thing this style would otherwise cost.
+
+                 SETTINGS went with them although the owner named only four. It is the same kind of
+                 button on the same strip; left as the one word among the glyphs it reads as an
+                 unstyled leftover rather than as a deliberate exception. CLOSE was dropped outright
+                 in the same round — see below. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <ToggleButton Padding="6,3"
                               IsChecked="{Binding SolutionsPanelOpen, Mode=TwoWay}"
-                              ToolTip.Tip="Every valid transform set, simplest first — click through them and watch the ladder and the response change">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="Solutions" VerticalAlignment="Center"/>
-                        <mi:MaterialIcon Kind="ChevronRight" Width="13" Height="13"/>
-                    </StackPanel>
+                              ToolTip.Tip="Solutions — every valid transform set, simplest first; click through them and watch the ladder and the response change">
+                    <mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/>
                 </ToggleButton>
-                <Button Name="SettingsButton" Content="Settings" FontSize="11" Padding="8,3"/>
-                <Button Name="ExportButton" FontSize="11" Padding="8,3"
-                        ToolTip.Tip="Touchstone of the design response, the component listing, or the prototype g-values">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="Export" VerticalAlignment="Center"/>
-                        <mi:MaterialIcon Kind="ChevronDown" Width="13" Height="13"/>
-                    </StackPanel>
+                <Button Name="SettingsButton" Padding="6,3"
+                        ToolTip.Tip="Settings — display units, significant digits, Qmin, and whether Q-adjusted solutions are offered">
+                    <mi:MaterialIcon Kind="CogOutline" Width="16" Height="16"/>
                 </Button>
-                <Button Name="HelpButton" Content="Help" FontSize="11" Padding="8,3"/>
-                <Button Name="CloseButton" Content="Close" FontSize="11" Padding="8,3"/>
+                <Button Name="ExportButton" Padding="6,3"
+                        ToolTip.Tip="Export — Touchstone of the design response, the component listing, or the prototype g-values">
+                    <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
+                </Button>
+                <Button Name="HelpButton" Padding="6,3"
+                        ToolTip.Tip="Help — the Match chapter of the circuitRF reference">
+                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
+                </Button>
+                <!-- No Close button (owner, 2026-08-20). The window's own title bar already carries
+                     one, and a second in the client area is a second thing to aim at that does the
+                     same job — it made sense when this strip's buttons were words and the window read
+                     as a panel; beside four glyphs it read as chrome duplicating chrome. -->
             </StackPanel>
         </Grid>
 
         <!-- ── The three panes, plus the solutions drawer ─────────────────── -->
-        <Grid Grid.Row="1" ColumnDefinitions="300,*,380,Auto">
+        <!-- The specification column is 215, not 300 (owner, 2026-08-20: "reduce the width of the
+             Specification panel so the text and UI elements are closer together within its panel —
+             looks like a reduction of 100 pixels or so; careful, we don't want overlapping text").
+             Nothing in it wraps or collides at that width because three things gave room back in the
+             same round: the reactance's two rows became one, its kind selector went to a single
+             character, and the pictogram and topology selector each lost a few pixels. The widest
+             row left is "Topology" (about 46 px at 10 pt) plus a 56 px selector, in a card interior
+             of 169 px once the pictogram's 44 + 6 is taken out — which leaves room for the pane's
+             own scrollbar as well. -->
+        <Grid Grid.Row="1" ColumnDefinitions="215,*,380,Auto">
 
             <!-- Specification -->
             <Border Grid.Column="0" Classes="pane">
@@ -329,7 +381,7 @@
                              that used to sit beside them is gone with the others — see the R row. -->
                         <Border Classes="card">
                             <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Band"/>
+                                <TextBlock Classes="cardhdr" Text="Frequency Band"/>
                                 <Grid ColumnDefinitions="Auto,*">
                                     <TextBlock Classes="detailLabel" Text="f1"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
@@ -367,7 +419,7 @@
                              would make worse: that control shows a glyph, and these are sentences. -->
                         <Border Classes="card">
                             <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Response"/>
+                                <TextBlock Classes="cardhdr" Text="Filter Response"/>
                                 <ComboBox FontSize="11" HorizontalAlignment="Stretch"
                                           ItemsSource="{Binding ResponseOptions}"
                                           SelectedItem="{Binding SelectedResponseOption, Mode=TwoWay}">
@@ -421,18 +473,36 @@
                         <!-- The pane header carries NOTHING but its own name (owner, 2026-08-20:
                              "remove the entire 'scroll to zoom...' text that is rendered above the
                              Match Designer schematic view"). -->
-                        <TextBlock Classes="panelhdr" Text="Network"/>
+                        <TextBlock Classes="panelhdr" Text="Impedance Matching Network"/>
 
                         <!-- A REAL circuitRF schematic, drawn by the editor's own renderer. See
                              MatchSchematicCanvas — nothing here is editable. -->
                         <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
                                 BorderBrush="{DynamicResource CrfTileBorderBrush}">
-                            <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
+                            <!-- The canvas and, over it, the SCHEMATIC EDITOR'S OWN inline text box
+                                 (owner, 2026-08-20: "reuse the exact same inline text editor from the
+                                 regular schematic — that is the preferred solution"). The box is added
+                                 from code rather than declared here so both surfaces get it from the
+                                 one place that defines it, Controls/SchematicInlineEditBox; a second
+                                 declaration is a second set of paddings to drift.
+
+                                 It is a sibling of the canvas in a Panel — NOT a child of it — because
+                                 the canvas is a Control that renders through a Skia draw operation and
+                                 has no visual children of its own. -->
+                            <Panel Name="NetworkSchematicHost">
+                                <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
+                            </Panel>
                         </Border>
 
-                        <TextBlock Grid.Row="2" Classes="note" Text="{Binding LadderLegend}"
-                                   Margin="0,4,0,0"
-                                   IsVisible="{Binding LadderLegend, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <StackPanel Grid.Row="2" Margin="0,4,0,0">
+                            <TextBlock Classes="note" Text="{Binding LadderLegend}"
+                                       IsVisible="{Binding LadderLegend, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <!-- What the last inline value edit did. A typed element value is a
+                                 TARGET the transforms are searched for, so "the closest this ladder
+                                 can reach is X" is an ordinary outcome and has to be said. -->
+                            <TextBlock Classes="warn" Text="{Binding InlineEditNote}"
+                                       IsVisible="{Binding InlineEditNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
 
                         <!-- The value listing. A plain header-plus-rows Grid rather than a DataGrid:
                              the DataGrid control lives in a package this project does not reference,
@@ -592,6 +662,11 @@
                                          CanDeletePlot="False" CanEditPlotProperties="False"/>
                     </ctl:AspectRatioPanel>
 
+                    <!-- Both boxes commit on RETURN as well as on focus loss (owner, 2026-08-20:
+                         "committing using return key on band and points textedit boxes does not
+                         update the frequency response plots"). They only ever had a LostFocus
+                         handler, so a user who typed a number and pressed Return saw nothing move
+                         and had no reason to think the value had not been taken. -->
                     <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*" Margin="0,4">
                         <TextBlock Classes="detailLabel" Text="± band "/>
                         <TextBox Grid.Column="1" Classes="num" Name="BandFractionBox"/>
@@ -698,10 +773,19 @@
                  the same slot because the summary IS what that analysis produces, and showing a
                  stale count beside a spinner would be two answers to one question. -->
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                <TextBlock Text="{Binding SolutionsSummary}" FontSize="11" VerticalAlignment="Center"
-                           IsVisible="{Binding !IsAnalysing}"/>
-                <TextBlock Text="Searching solutions and response families…" FontSize="11" Opacity="0.7"
-                           VerticalAlignment="Center" IsVisible="{Binding IsAnalysing}"/>
+                <!-- The ORPHAN line replaces both, because it is the only thing worth saying about a
+                     window whose component has been deleted (owner, 2026-08-20). Everything that
+                     writes is already shut off at MatchDesignerViewModel.Commit; this is the part the
+                     user can see. -->
+                <TextBlock Classes="warn" Text="{Binding OrphanNote}" TextWrapping="NoWrap"
+                           VerticalAlignment="Center" IsVisible="{Binding IsOrphaned}"/>
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                            IsVisible="{Binding !IsOrphaned}">
+                    <TextBlock Text="{Binding SolutionsSummary}" FontSize="11" VerticalAlignment="Center"
+                               IsVisible="{Binding !IsAnalysing}"/>
+                    <TextBlock Text="Searching solutions and response families…" FontSize="11" Opacity="0.7"
+                               VerticalAlignment="Center" IsVisible="{Binding IsAnalysing}"/>
+                </StackPanel>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                 <Button Content="Flatten to Cell…" FontSize="11" Padding="8,3"
@@ -712,6 +796,7 @@
                         IsEnabled="{Binding HasPendingEdits}"
                         ToolTip.Tip="Parse every field that is still being typed and commit it. Edits commit as they are made, so this is only ever about a box that has not lost focus."/>
                 <Button Name="RevertButton" Content="Revert" FontSize="11" Padding="8,3"
+                        IsEnabled="{Binding !IsOrphaned}"
                         ToolTip.Tip="Put the design back the way this window found it — one undoable step"/>
             </StackPanel>
         </Grid>

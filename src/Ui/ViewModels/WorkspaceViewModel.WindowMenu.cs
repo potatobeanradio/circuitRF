@@ -17,8 +17,11 @@ namespace CircuitRF.Ui.ViewModels;
 /// The <b>Window</b> menu: every open circuitRF window, selectable to bring it to the front.
 ///
 /// <para>Order is deliberate and fixed: the workspace window first (it is the anchor of the whole
-/// session), then any torn-off DOCUMENT windows, then a separator, then any floating TOOL windows.
-/// Documents are the user's own work and tools are chrome, so tools sit below the rule.</para>
+/// session), then any torn-off DOCUMENT windows, then a separator, then any floating TOOL windows,
+/// then a separator and any standalone EDITOR windows — the Match Designer today, anything else that
+/// implements <see cref="ICrfMenuWindow"/> tomorrow. Documents are the user's own work and tools are
+/// chrome, so tools sit below the rule; an editor window is neither a dock host nor a document, which
+/// is why it gets a band of its own rather than being filed under one of theirs.</para>
 ///
 /// <para>A dirty entry is marked with the same leading bullet the document tabs already use
 /// (<see cref="DirtyMark"/>), so the menu and the tab strip cannot disagree about what "unsaved"
@@ -109,6 +112,20 @@ public partial class WorkspaceViewModel
         var tools = floats.Where(w => w.FloatsAnyTool()).ToList();
         for (int i = 0; i < tools.Count; i++)
             entries.Add(new WindowMenuEntry(FloatHeader(tools[i], "Panel"), tools[i], SeparatorBefore: i == 0));
+
+        // 4. Standalone editor windows. Enumerated through ICrfMenuWindow rather than by naming
+        //    MatchDesignerWindow here: a menu built from a list of concrete window types is a menu a
+        //    new window is silently missing from. Same PlatformImpl guard as the floats — a window
+        //    that has just closed can linger in desktop.Windows.
+        var editors = desktop.Windows
+            .OfType<ICrfMenuWindow>()
+            .OfType<Window>()
+            .Where(w => w.PlatformImpl is not null)
+            .ToList();
+
+        for (int i = 0; i < editors.Count; i++)
+            entries.Add(new WindowMenuEntry(
+                ((ICrfMenuWindow)editors[i]).WindowMenuHeader, editors[i], SeparatorBefore: i == 0));
 
         return entries;
     }
