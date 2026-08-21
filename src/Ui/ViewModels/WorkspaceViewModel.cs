@@ -5375,12 +5375,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
     }
 
+    /// <summary>Reflects a .cem editor's dirty state onto its own tree node's dirty dot — the exact
+    /// mirror of <see cref="HookTechFileDirty"/>.
+    ///
+    /// <para><b>Owner-reported, 2026-08-21:</b> <i>"a dirty .cem does not show as dirty in the Project
+    /// tree /em folder."</i> This hook called the .ctech setter, whose <c>NodeKind.TechFile</c> guard
+    /// discarded a <c>.cem</c> node in silence. There is one setter for every file kind now
+    /// (<see cref="Dock.ProjectTreeTool.SetFileDirty"/>), so the wrong one cannot be reached.</para>
+    /// </summary>
     private void HookEmSetupDirty(EmSetupDocument doc)
     {
         doc.ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(EmSetupEditorViewModel.IsDirty))
-                _factory.ProjectTreeTool?.SetTechFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+                _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
         };
     }
 
@@ -5392,7 +5400,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         doc.ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(TechEditorViewModel.IsDirty))
-                _factory.ProjectTreeTool?.SetTechFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+                _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
         };
     }
 
@@ -5551,6 +5559,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         vm.Window.GetResultsRootAction = GetResultsRoot;
         WireDataDisplayLibraryEvents(vm);
+        WireDataDisplayTreeDirty(doc);
         _factory.OpenDocument(doc);
         // Seed the toolbar combo with the most-recent run.npy.
         vm.Window.RefreshAvailableDataSources();
@@ -5602,6 +5611,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         newVm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         newVm.Window.GetResultsRootAction = GetResultsRoot;
         WireDataDisplayLibraryEvents(newVm);
+        WireDataDisplayTreeDirty(newDoc);
         _factory.OpenDocument(newDoc);
 
         // format_version check throws InvalidDataException on mismatch.
@@ -6464,6 +6474,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         lib.ResultsRootProvider     = GetResultsRoot;
         lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
         lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
+    }
+
+    /// <summary>
+    /// Keeps the .cdd node in the project tree in step with an open Data Display's unsaved state —
+    /// the same push <c>.csch</c> cells and <c>.ctech</c> files already had
+    /// (<see cref="Dock.ProjectTreeTool.SetCellDirty"/>, <see cref="Dock.ProjectTreeTool.SetFileDirty"/>).
+    ///
+    /// <para><b>Owner-reported, 2026-08-21:</b> <i>"after I saved a .cdd file to my results directory,
+    /// the project tree view still indicated it was dirty in the tree."</i> Nothing pushed a .cdd
+    /// node's mark at all: it was written only when the tree was REBUILT, which happens on the
+    /// workspace window's <c>Activated</c>. A save raises no <c>Activated</c>, so the mark a rescan
+    /// had put there stayed until some later, unrelated focus change cleared it.</para>
+    ///
+    /// <para>The pushed value is <see cref="DataDisplay.ViewModels.DisplayWindowViewModel.HasUnsavedChanges"/>,
+    /// not <c>DataDisplayDocumentViewModel.IsDirty</c> — the baseline comparison is the authoritative
+    /// answer everywhere else in this file (close, quit, the Window menu, <see cref="IsNodeDirty"/>),
+    /// so the tree must not disagree with the prompt that decides whether work is lost.</para>
+    /// </summary>
+    private void WireDataDisplayTreeDirty(DataDisplayDocument doc)
+    {
+        doc.ViewModel.Window.DirtyChanged += (_, _) =>
+        {
+            // Scratch documents have no node to mark; the save that gives them one refreshes the
+            // tree instead (SaveDataDisplayDoc), which builds the new node already asking IsNodeDirty.
+            if (doc.FilePath is { } fp)
+                _factory.ProjectTreeTool?.SetFileDirty(fp, doc.ViewModel.Window.HasUnsavedChanges());
+        };
     }
 
     // ---- Symbol Editor commands ---------------------------------------------
@@ -9137,6 +9174,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         newVm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         newVm.Window.GetResultsRootAction = GetResultsRoot;
         WireDataDisplayLibraryEvents(newVm);
+        WireDataDisplayTreeDirty(newDoc);
         _factory.OpenDocument(newDoc);
 
         var lib = newVm.Window.DataSourceLibrary;
@@ -10043,6 +10081,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchSymbols.Remove(scratchSymbol);
         if (dockable is DataDisplayDocument scratchDisplay)
             _scratchDataDisplays.Remove(scratchDisplay);
+        // A closed .cdd / .ctech / .cem can no longer hold unsaved work — IsNodeDirty answers each of
+        // those from the OPEN documents alone, so once the document is gone the honest answer is
+        // "clean" and the mark it pushed has to come off. Without this a "Don't Save" close leaves the
+        // mark standing until an unrelated window Activated rebuilds the tree. Deliberately NOT done
+        // for schematic/symbol/layout: a dirty session for those outlives its document in the session
+        // registry (that is what the orphaned-dirty-session prompt is about), so their mark is still
+        // true after the tab closes.
+        string? closedFilePath = dockable switch
+        {
+            DataDisplayDocument d => d.FilePath,
+            TechDocument d        => d.FilePath,
+            EmSetupDocument d     => d.FilePath,
+            _                     => null,
+        };
+        if (closedFilePath is not null)
+            _factory.ProjectTreeTool?.SetFileDirty(closedFilePath, false);
         if (dockable is LayoutDocument scratchLayout)
             _scratchLayouts.Remove(scratchLayout);
         if (dockable is WBondDocument scratchWBond)
@@ -11086,6 +11140,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchDataDisplays.Remove(dd);
         dd.Materialize(picked);
         _openDocsByPath[picked] = dd;
+        // The file did not exist when the tree was last scanned — a rescan is what puts a node there
+        // at all, and the node it builds asks IsNodeDirty for itself, so it arrives clean.
+        _factory.ProjectTreeTool?.Refresh();
         Messages.Success("Saved", picked);
         return true;
     }

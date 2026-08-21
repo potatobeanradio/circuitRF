@@ -198,7 +198,8 @@
                                                 Margin="0,0,4,0"
                                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
-                                <!-- Dirty bullet: shown on Cell nodes with an unsaved editing session. -->
+                                <!-- Dirty bullet: any node with unsaved work — a cell with a dirty session, or a
+                                     .cdd / .ctech / .cem file whose editor is dirty. -->
                                 <TextBlock Grid.Column="1"
                                            Text="•"
                                            FontSize="11"

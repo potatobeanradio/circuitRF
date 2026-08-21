@@ -287,21 +287,24 @@ nothing anywhere reporting it. The logarithmic units are measurement functions r
 factors, so <code>dBm</code> carries no multiplier.</p>
 </div>
 <h2 id="unit-field">A unit is a field, not part of an expression</h2>
+<p><strong>The expression parser has no unit-suffix production</strong>: <code>2 GHz</code> is not an expression, and asking the
+parser for one is an error at the <code>GHz</code>. What saves you is that nothing asks it to. A VAR row whose unit
+column is empty has any trailing unit token lifted out of the expression first, so writing
+<code>RFfreq = 2 GHz</code> in the schematic VAR editor gives you the variable you meant — the <code>2</code> becomes the
+expression and <code>GHz</code> the unit — and a <code>.cnl</code>, which has no unit column at all, has always been read the
+same way. The two entry points cannot make identical text mean two different things.</p>
+<p>The lift is applied <em>only</em> when the text does not already parse and the split makes it parse. That
+restraint is the point: because every bare SI prefix is a valid unit, a token-based rule would tear
+<code>2 * f</code> into <code>2 *</code> plus femto and <code>R * m</code> into <code>R *</code> plus milli — expressions that are legal and common.
+Those parse as they stand, so nothing is lifted from them.</p>
 <div class="callout warn">
-<span class="label">This one has bitten real designs</span>
-<p><strong>The expression parser has no unit-suffix production.</strong> Writing
-<code>RFfreq = 2 GHz</code> as a VAR expression is a <em>parse error at the <code>GHz</code></em> — and
-because an unresolvable global is skipped during elaboration, the result is not a wrong value but
-<strong>no variable at all</strong>. Put <code>2</code> in the expression and <code>GHz</code> in the
-row's unit column.</p>
+<span class="label">Where it still does not help</span>
+<p>The lift needs a <strong>separate token</strong>. <code>2GHz</code>, with no space, is one word to
+the splitter and stays a parse error — and because an unresolvable global is skipped during elaboration,
+that leaves <strong>no variable at all</strong> rather than a wrong value. The same is true of a bare
+<code>60u</code> in a PCell parameter. When in doubt, put the number in the expression and the unit in
+the row's unit column, which is unambiguous everywhere.</p>
 </div>
-<p>The one place the inline spelling is accepted is a <strong>netlist</strong> (<code>.cnl</code>), which has no separate column to
-put a unit in; the reader lifts a trailing unit token off the right-hand side there. The schematic VAR
-editor, which does have a unit column, applies the same rule so that identical text no longer means two
-different things in the two entry points.</p>
-<p>Note the trap this creates in the other direction: because every bare SI prefix is a valid unit,
-<code>2 * f</code> ends in the femto- prefix and <code>R * m</code> in milli-. That is why the split is only applied when the
-unsplit text does not parse and the split text does — the last-token test alone is not safe.</p>
 <p class="small">See also: <a href="expressions.html">Expressions</a> ·
 <a href="layout-editor.html">The Layout Editor</a> · <a href="wbond.html">wBond</a> ·
 <a href="components.html">Components</a> · <a href="pcells.html">PCells</a>.</p>

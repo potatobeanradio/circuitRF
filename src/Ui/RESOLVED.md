@@ -6,6 +6,97 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## The project tree's dirty mark on FILE nodes — two reports, one shape (2026-08-21)
+
+Two owner reports a few minutes apart:
+
+1. *"after I saved a .cdd file to my results directory, the project tree view still indicated it was
+   dirty in the tree."*
+2. *"a dirty .cem does not show as dirty in the Project tree /em folder."*
+
+Both are about the same mechanism from opposite ends — a mark that would not clear, and a mark that
+would not appear — and both were invisible failures: nothing threw, nothing logged.
+
+### 1 — the `.cdd` that would not go clean
+
+**The `.cdd` node had no push site at all.** Cells (`.csch`) and technology files (`.ctech`) each have
+one — `ProjectTreeTool.SetCellDirty` / `SetTechFileDirty` (as the setters were then named),
+called from `WorkspaceViewModel` whenever
+the corresponding editor's dirty state changes. A Data Display node's mark was written by exactly one
+thing: `RestoreDirtyFlags`, the pass round-7 added so a REBUILD re-derives every node's mark from
+`ITreeActions.IsNodeDirty`. The rebuild runs on the workspace window's `Activated`. **Saving raises no
+`Activated`**, so the mark a previous focus change had put there stayed on the node until some later,
+unrelated one happened to rebuild the tree — the document tab's own bullet cleared immediately, and
+the two disagreed for as long as the user stayed in the window.
+
+Note the symmetry with round 7's item 1, and that it is the mirror image rather than the same bug:
+there, a rebuild DROPPED a mark that was still true; here, no rebuild happens and a stale mark that is
+no longer true SURVIVES. A pushed flag on a rebuildable view object needs both halves — the rebuild
+must pull it back, and every state change must push it.
+
+The fix adds the missing push (`ProjectTreeTool.SetFileDirty`, wired by
+`WorkspaceViewModel.WireDataDisplayTreeDirty` at all three `DataDisplayDocument` creation sites: New
+Data Display, open-or-activate, and the post-run auto-open), plus two edges that would otherwise have
+been the same staleness in a different door:
+
+- **The pushed value is `DisplayWindowViewModel.HasUnsavedChanges()`, not
+  `DataDisplayDocumentViewModel.IsDirty`.** The baseline comparison is what `IsNodeDirty`, the
+  close/quit prompt and the Window menu all use; the VM flag only mirrors the `DirtyChanged` event and
+  can lag a live edit (`WorkspaceViewModel.WindowMenu.cs` already re-derives around it for the same
+  reason). The tree must not disagree with the prompt that decides whether work is lost.
+- **A scratch display saved through the picker refreshes the tree instead of pushing.** Its file did
+  not exist when the tree was last scanned, so there is no node to mark — and the `DirtyChanged` the
+  save raises arrives while `FilePath` is still null, because `SaveAllAsync` fires it BEFORE
+  `ConfigPathSaved` sets the path. `SaveDataDisplayDoc` therefore calls `ProjectTreeTool.Refresh()`
+  after `Materialize`, and the node the rebuild creates asks `IsNodeDirty` for itself, arriving clean.
+  This is also the path a post-run auto-created display takes: it is registered in `_openDocsByPath`
+  under its would-be path but with `FilePath` still null, so its first save goes through the picker.
+- **`OnDockableClosed` clears the mark of a closing display** (generalised below to every file-backed
+  document whose dirty answer comes from the open documents alone). A "Don't Save" close removes the
+  document, so nothing can answer the question any more — and the mark it pushed would otherwise stand
+  until the next rescan.
+
+Gate: `tests/Ui.Tests/DataDisplayTreeDirtyTests.cs` (6). The tree-tool half is a real behavioural test
+(`ProjectTreeTool` needs only a scanned folder — no Avalonia, no dock factory); the save ordering is
+tested for real too (a save raises `DirtyChanged` with `HasUnsavedChanges()` ALREADY false, which is
+what makes the push clear rather than re-assert the mark); the `WorkspaceViewModel` wiring is a source
+claim naming the mechanism.
+
+### 2 — the `.cem` that never went dirty
+
+`WorkspaceViewModel.HookEmSetupDirty` is a copy of `HookTechFileDirty` and called the `.ctech` setter,
+`ProjectTreeTool.SetTechFileDirty`. That setter guarded `node is { Kind: NodeKind.TechFile }` — and a
+`.cem` node is `NodeKind.EmSetupFile`, so **every push was found, kind-tested, and thrown away in
+silence.** The hook fired correctly, the path was right, the node existed, and the mark never appeared.
+
+Worth keeping the two facts about where a `.cem` lives, because they are what makes the node kind
+correct in the first place: the file goes in `<workspace>/em/`, an ordinary user folder listed by
+extension, and NOT beside its `.clay` — a cell's `layout/` sub-folder is enumerated with
+`"*" + ViewExtension(vt)`, i.e. `*.clay` only, so a `.cem` written there is invisible in the tree
+entirely (`OpenOrCreateEmSetupForLayout` documents this).
+
+### The shared fix: one setter, not one per kind
+
+`SetTechFileDirty` and the new `SetDataDisplayDirty` are gone; there is one
+`ProjectTreeTool.SetFileDirty(path, isDirty)` that marks whichever file node is at that path (guarded
+only by "is this a kind something can EDIT" — `ViewFile`, `DataDisplayFile`, `TechFile`, `EmSetupFile`,
+`HarmonicaFile`, `WBondFile`). `SetCellDirty` stays separate: a cell is the one node kind that is a
+directory. The path already identified the node uniquely, so the per-kind parameter added nothing but a
+way to pick the wrong one — and picking the wrong one cost nothing at compile time, at run time, or in
+any log. **A guard that can only ever be wrong about its own caller is a silent failure waiting for the
+next file type.** `SetFileDirty` also normalises with `GetFullPath`, so a relative `FilePath` reaches
+its node instead of missing by spelling.
+
+`OnDockableClosed` now clears the mark for a closing `.cdd`, `.ctech` or `.cem` — the three whose dirty
+answer `IsNodeDirty` derives from the OPEN documents alone. Deliberately not for schematic/symbol/layout:
+a dirty session for those OUTLIVES its tab in the session registry (that is what the orphaned-dirty-session
+prompt exists for), so their mark is still true after the tab closes.
+
+Gate: `tests/Ui.Tests/Em/EmSetupTreeDirtyTests.cs` (6) — a real `.cem` node in a real scanned `em/`
+folder, asserted to be `EmSetupFile` and markable; one setter proven to serve `.cem`, `.ctech` and
+`.cdd` while leaving a `.npy` alone; an edit→save round trip through the real `EmSetupEditorViewModel`
+and `EmSetupDocument`; and a scan that no kind-specific setter has come back.
+
 ## Match Designer round 7 — and the three application-wide defects it exposed (2026-08-20)
 
 The owner's seventh round. Three of the items were not Match Designer bugs at all: one is in the

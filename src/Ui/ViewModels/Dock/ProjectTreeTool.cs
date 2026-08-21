@@ -243,16 +243,47 @@ public partial class ProjectTreeTool : Tool
     }
 
     /// <summary>
-    /// Sets (or clears) the dirty indicator on a .ctech node. Called by WorkspaceViewModel when an
-    /// open TechEditorViewModel's dirty state changes. Mirrors <see cref="SetCellDirty"/>.
+    /// Sets (or clears) the dirty indicator on the FILE node at <paramref name="fileAbsPath"/> — a
+    /// <c>.ctech</c>, <c>.cem</c> or <c>.cdd</c> node, or a cell view file. Called by
+    /// WorkspaceViewModel whenever the corresponding open editor's dirty state changes, including the
+    /// clear a save performs. No-op when no such node is in the tree (no workspace, a different
+    /// workspace, or a file written since the last scan).
     /// </summary>
-    public void SetTechFileDirty(string techAbsPath, bool isDirty)
+    /// <remarks>
+    /// <b>One method for every file kind, deliberately</b> — this used to be one method PER kind, each
+    /// guarding <c>node.Kind</c>, and two owner reports came straight out of that shape:
+    ///
+    /// <list type="bullet">
+    /// <item><description><b>2026-08-21:</b> <i>"a dirty .cem does not show as dirty in the Project
+    /// tree /em folder."</i> <c>HookEmSetupDirty</c> called the <c>.ctech</c> setter — a copy of the
+    /// tech hook, correct in every respect except that a <c>.cem</c> node is
+    /// <see cref="NodeKind.EmSetupFile"/>, so the <see cref="NodeKind.TechFile"/> guard threw the push
+    /// away in silence. Nothing errored and nothing logged; the mark simply never appeared.</description></item>
+    /// <item><description><b>2026-08-21:</b> <i>"after I saved a .cdd file to my results directory, the
+    /// project tree view still indicated it was dirty in the tree."</i> A <c>.cdd</c> had no setter at
+    /// all, so its mark was written only by <see cref="RestoreDirtyFlags"/> during a rebuild — and a
+    /// save raises no window <c>Activated</c>, so the stale mark stood until an unrelated focus change
+    /// rebuilt the tree.</description></item>
+    /// </list>
+    ///
+    /// <para>The path already identifies the node uniquely, so a per-kind parameter added nothing but a
+    /// way to pick the wrong one. The kind test that remains is only about what a mark MEANS on a node
+    /// — a folder is marked through <see cref="SetCellDirty"/>, which owns the one node kind that is a
+    /// directory.</para>
+    /// </remarks>
+    public void SetFileDirty(string? fileAbsPath, bool isDirty)
     {
-        if (RootItems.Count == 0) return;
-        var node = FindNodeByPath(RootItems[0], techAbsPath);
-        if (node is { Kind: NodeKind.TechFile })
+        if (RootItems.Count == 0 || string.IsNullOrEmpty(fileAbsPath)) return;
+        var node = FindNodeByPath(RootItems[0], Path.GetFullPath(fileAbsPath));
+        if (node is not null && IsDirtyableFile(node.Kind))
             node.IsDirty = isDirty;
     }
+
+    /// <summary>File node kinds that can carry a dirty mark — every kind this application can open in
+    /// an editor. A kind absent here is one nothing can make dirty yet.</summary>
+    private static bool IsDirtyableFile(NodeKind kind) => kind is
+        NodeKind.ViewFile or NodeKind.DataDisplayFile or NodeKind.TechFile
+        or NodeKind.EmSetupFile or NodeKind.HarmonicaFile or NodeKind.WBondFile;
 
     private static ProjectTreeNodeViewModel? FindNodeByPath(
         ProjectTreeNodeViewModel root, string absPath)
@@ -291,7 +322,7 @@ public partial class ProjectTreeTool : Tool
     /// dirty."</i>
     ///
     /// <para>Nothing about the Match Designer did that; <b>closing any window did</b>. The dirty
-    /// indicator is PUSHED onto a node (<see cref="SetCellDirty"/>, <see cref="SetTechFileDirty"/>) and
+    /// indicator is PUSHED onto a node (<see cref="SetCellDirty"/>, <see cref="SetFileDirty"/>) and
     /// therefore lives only on the node object. <see cref="ProjectTreeView"/> re-scans on the
     /// workspace window's <c>Activated</c>, which is exactly what closing a second window raises, and
     /// <see cref="RebuildVmTree"/> throws every node away and builds new ones whose <c>IsDirty</c> is
